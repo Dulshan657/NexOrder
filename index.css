@@ -1,0 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-nexgen-blue: #2E86DE;
+  --color-nexgen-blue-dark: #2472C2;
+  --color-nexgen-blue-light: #e8f2fc;
+  --color-nexgen-charcoal: #1e293b;
+  --color-nexgen-charcoal-dark: #0f172a;
+  --color-nexgen-charcoal-light: #334155;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f5f5f5;
+  color: #333333;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom utility classes */
+@layer utilities {
+  .glass-panel {
+    @apply bg-white/80 backdrop-blur-md border border-white/20;
+    box-shadow: 0 1px 3px rgba(120,113,108,0.06), 0 1px 2px rgba(120,113,108,0.04);
+  }
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-xl border border-stone-200/50 shadow-[0_1px_3px_rgba(120,113,108,0.06),inset_0_1px_0_rgba(255,255,255,0.8)];
+  }
+  .gradient-card {
+    background: linear-gradient(135deg, rgba(46,134,222,0.05) 0%, rgba(255,255,255,0.8) 100%);
+  }
+  .glow-blue {
+    box-shadow: 0 0 20px rgba(0,123,255,0.15);
+  }
+  .shadow-card {
+    box-shadow: 0 1px 3px rgba(120,113,108,0.06), 0 1px 2px rgba(120,113,108,0.04);
+  }
+  .shadow-card-hover {
+    box-shadow: 0 4px 12px rgba(120,113,108,0.1), 0 2px 4px rgba(120,113,108,0.06);
+  }
+  .shadow-elevated {
+    box-shadow: 0 8px 24px rgba(120,113,108,0.12), 0 2px 8px rgba(120,113,108,0.06);
+  }
+  .btn-press {
+    @apply transition-all duration-150 active:scale-[0.98] active:brightness-95;
+  }
+}
+
+/* Icon click animations */
+@keyframes icon-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes icon-bounce {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+  60% { transform: translateY(-3px); }
+}
+@keyframes icon-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px) rotate(-5deg); }
+  40% { transform: translateX(3px) rotate(5deg); }
+  60% { transform: translateX(-2px) rotate(-3deg); }
+  80% { transform: translateX(2px) rotate(3deg); }
+}
+@keyframes icon-pulse {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+@keyframes icon-ring {
+  0% { transform: rotate(0deg); }
+  15% { transform: rotate(15deg); }
+  30% { transform: rotate(-12deg); }
+  45% { transform: rotate(8deg); }
+  60% { transform: rotate(-5deg); }
+  75% { transform: rotate(2deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes icon-pop {
+  0% { transform: scale(1); opacity: 1; }
+  30% { transform: scale(0.8); opacity: 0.7; }
+  60% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-icon-spin    { animation: icon-spin 0.5s ease-in-out; }
+.animate-icon-bounce  { animation: icon-bounce 0.4s ease-in-out; }
+.animate-icon-shake   { animation: icon-shake 0.4s ease-in-out; }
+.animate-icon-pulse   { animation: icon-pulse 0.35s ease-in-out; }
+.animate-icon-ring    { animation: icon-ring 0.6s ease-in-out; }
+.animate-icon-pop     { animation: icon-pop 0.35s ease-in-out; }
+
+/* Cart slide-over panel push — only on desktop */
+@media (min-width: 1024px) {
+  .cart-push {
+    margin-right: 420px;
+  }
+}
+.cart-push {
+  transition: margin-right 300ms ease-in-out;
+}

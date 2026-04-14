@@ -1,0 +1,21 @@
+-- Temporarily disable RLS for development (no auth session yet).
+-- Re-enable when the login page is wired in.
+
+ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.suppliers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.products DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.horecas DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.horeca_pricing DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.horeca_payment_methods DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.order_items DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invoices DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purchase_orders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purchase_order_items DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.promotions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pantry_items DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_targets DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.routes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.visits DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_settings DISABLE ROW LEVEL SECURITY;

@@ -1,0 +1,234 @@
+import React, { useState } from 'react';
+import type { Order, OrderStatus, User, Invoice } from '../types';
+import { UserRole } from '../types';
+import { ORDER_STATUS_SEQUENCE } from '../constants';
+import StatusBadge from './StatusBadge';
+import StatusTimeline from './StatusTimeline';
+import { X, Package, Truck, Calendar, FileText } from 'lucide-react';
+
+interface OrderDetailViewProps {
+    order: Order;
+    currentUser: User;
+    invoice?: Invoice;
+    onUpdateStatus?: (orderId: string, newStatus: OrderStatus, note?: string) => void;
+    onClose: () => void;
+}
+
+const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, invoice, onUpdateStatus, onClose }) => {
+    const [statusNote, setStatusNote] = useState('');
+    const isAdmin = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
+
+    const currentIdx = ORDER_STATUS_SEQUENCE.indexOf(order.status);
+    const nextStatus = currentIdx < ORDER_STATUS_SEQUENCE.length - 1 ? ORDER_STATUS_SEQUENCE[currentIdx + 1] : null;
+
+    const handleAdvanceStatus = () => {
+        if (nextStatus && onUpdateStatus) {
+            onUpdateStatus(order.id, nextStatus, statusNote || undefined);
+            setStatusNote('');
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-stone-900/50 p-4 sm:p-8">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl my-4">
+                {/* Header */}
+                <div className="flex items-center justify-between p-6 border-b border-stone-200">
+                    <div>
+                        <h2 className="text-xl font-display font-bold text-stone-900">Order {order.id}</h2>
+                        <p className="text-sm text-stone-500 mt-0.5">
+                            {new Date(order.orderDate).toLocaleDateString('en-AU', { dateStyle: 'long' })}
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <StatusBadge status={order.status} size="md" />
+                        <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition-colors cursor-pointer">
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="p-6 space-y-6">
+                    {/* OrderStream notice */}
+                    <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+                        <Truck className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                        <p className="text-sm text-blue-700">This order is managed via <strong>OrderStream</strong> for fulfillment and delivery tracking.</p>
+                    </div>
+
+                    {/* Order Info Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <div className="bg-stone-50 rounded-lg p-3">
+                            <p className="text-xs text-stone-500 uppercase tracking-wider">HoReCa</p>
+                            <p className="text-sm font-semibold text-stone-900 mt-1">{order.hoReCa.name}</p>
+                        </div>
+                        <div className="bg-stone-50 rounded-lg p-3">
+                            <p className="text-xs text-stone-500 uppercase tracking-wider">Total</p>
+                            <p className="text-sm font-semibold text-emerald-700 mt-1">${order.total.toFixed(2)}</p>
+                        </div>
+                        <div className="bg-stone-50 rounded-lg p-3">
+                            <p className="text-xs text-stone-500 uppercase tracking-wider">Submitted By</p>
+                            <p className="text-sm font-semibold text-stone-900 mt-1">{order.submittedBy.name}</p>
+                        </div>
+                        <div className="bg-stone-50 rounded-lg p-3">
+                            <p className="text-xs text-stone-500 uppercase tracking-wider">Items</p>
+                            <p className="text-sm font-semibold text-stone-900 mt-1">{order.items.length} products</p>
+                        </div>
+                    </div>
+
+                    {/* Delivery Info */}
+                    {order.deliveryDate && (
+                        <div className="flex items-center gap-3 bg-stone-50 rounded-xl px-4 py-3">
+                            <Calendar className="w-5 h-5 text-stone-500 flex-shrink-0" />
+                            <div>
+                                <p className="text-sm font-medium text-stone-900">
+                                    Scheduled Delivery: {new Date(order.deliveryDate + 'T00:00:00').toLocaleDateString('en-AU', { dateStyle: 'long' })}
+                                </p>
+                                {order.deliveryTimeSlot && (
+                                    <p className="text-xs text-stone-500">{order.deliveryTimeSlot}</p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Status Timeline */}
+                    <div>
+                        <h3 className="text-sm font-semibold text-stone-700 uppercase tracking-wider mb-3">Order Status</h3>
+                        <StatusTimeline statusHistory={order.statusHistory} currentStatus={order.status} />
+                    </div>
+
+                    {/* Admin status update */}
+                    {isAdmin && nextStatus && onUpdateStatus && (
+                        <div className="bg-stone-50 rounded-xl p-4 border border-stone-200">
+                            <h3 className="text-sm font-semibold text-stone-700 mb-3">Update Status</h3>
+                            <div className="flex items-end gap-3">
+                                <div className="flex-1">
+                                    <label className="block text-xs text-stone-500 mb-1">Optional note</label>
+                                    <input
+                                        type="text"
+                                        value={statusNote}
+                                        onChange={e => setStatusNote(e.target.value)}
+                                        placeholder="Add a note about this status change..."
+                                        className="w-full px-3 py-2 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleAdvanceStatus}
+                                    className="px-4 py-2 bg-stone-900 text-white text-sm font-medium rounded-lg hover:bg-stone-800 transition-colors cursor-pointer whitespace-nowrap"
+                                >
+                                    Mark as {nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Invoice Section */}
+                    {invoice && (
+                        <div className="border border-stone-200 rounded-xl p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <FileText className="w-4 h-4 text-stone-500" />
+                                <h3 className="text-sm font-semibold text-stone-700 uppercase tracking-wider">Invoice</h3>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                                <div>
+                                    <p className="text-xs text-stone-500">Invoice ID</p>
+                                    <p className="font-medium text-stone-900">{invoice.id}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-stone-500">Amount</p>
+                                    <p className="font-medium text-stone-900">${invoice.amount.toFixed(2)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-stone-500">Due Date</p>
+                                    <p className="font-medium text-stone-900">{new Date(invoice.dueDate).toLocaleDateString('en-AU')}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-stone-500">Status</p>
+                                    <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${
+                                        invoice.status === 'paid' ? 'bg-emerald-50 text-emerald-700' :
+                                        invoice.status === 'overdue' ? 'bg-red-50 text-red-700' :
+                                        'bg-amber-50 text-amber-700'
+                                    }`}>
+                                        {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Order Items */}
+                    <div>
+                        <div className="flex items-center gap-2 mb-3">
+                            <Package className="w-4 h-4 text-stone-500" />
+                            <h3 className="text-sm font-semibold text-stone-700 uppercase tracking-wider">Items</h3>
+                        </div>
+                        <div className="border border-stone-200 rounded-xl overflow-hidden">
+                            <table className="w-full text-sm">
+                                <thead className="bg-stone-50">
+                                    <tr>
+                                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Product</th>
+                                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Price</th>
+                                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Qty</th>
+                                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Subtotal</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-stone-100">
+                                    {order.items.map((item, i) => (
+                                        <tr key={i}>
+                                            <td className="px-4 py-3">
+                                                <p className="font-medium text-stone-900">{item.name}</p>
+                                                <p className="text-xs text-stone-400">{item.sku} &middot; {item.unit}</p>
+                                            </td>
+                                            <td className="px-4 py-3 text-right text-stone-700">${item.price.toFixed(2)}</td>
+                                            <td className="px-4 py-3 text-right text-stone-700">{item.quantity}</td>
+                                            <td className="px-4 py-3 text-right font-medium text-stone-900">${(item.price * item.quantity).toFixed(2)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot className="bg-stone-50">
+                                    <tr>
+                                        <td colSpan={3} className="px-4 py-3 text-right font-semibold text-stone-700">Total</td>
+                                        <td className="px-4 py-3 text-right font-bold text-stone-900">${order.total.toFixed(2)}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Notes */}
+                    {order.notes && (
+                        <div className="bg-stone-50 rounded-xl p-4">
+                            <p className="text-xs text-stone-500 uppercase tracking-wider mb-1">Order Notes</p>
+                            <p className="text-sm text-stone-700">{order.notes}</p>
+                        </div>
+                    )}
+
+                    {/* Verification */}
+                    {order.verification && (
+                        <div className="bg-stone-50 rounded-xl p-4">
+                            <p className="text-xs text-stone-500 uppercase tracking-wider mb-2">Order Verification</p>
+                            {order.verification.method === 'signature' && (
+                                <div>
+                                    <p className="text-xs text-stone-500 mb-2">HoReCa Signature — {new Date(order.verification.timestamp).toLocaleString()}</p>
+                                    <div className="bg-white border border-stone-200 rounded-lg p-2 inline-block">
+                                        <img src={order.verification.signatureDataUrl} alt="HoReCa signature" className="h-20 object-contain" />
+                                    </div>
+                                </div>
+                            )}
+                            {order.verification.method === 'call_reference' && (
+                                <div className="space-y-1">
+                                    <p className="text-sm text-stone-700"><span className="font-medium">Caller:</span> {order.verification.callerName}</p>
+                                    <p className="text-sm text-stone-700"><span className="font-medium">Call Date:</span> {order.verification.callDate} at {order.verification.callTime}</p>
+                                    {order.verification.referenceNumber && (
+                                        <p className="text-sm text-stone-700"><span className="font-medium">Reference:</span> {order.verification.referenceNumber}</p>
+                                    )}
+                                    <p className="text-xs text-stone-400 mt-1">Recorded {new Date(order.verification.timestamp).toLocaleString()}</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default OrderDetailView;
