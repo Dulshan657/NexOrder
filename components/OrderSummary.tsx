@@ -182,8 +182,20 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
                 </div>
               ) : (
                 <div className="divide-y divide-stone-100">
-                {items.map(item => (
-                  <div key={`${item.id}-${item.packSize}`} className="flex items-start justify-between py-3.5">
+                {(() => {
+                  const renderedFreePromoIds = new Set<string>();
+                  return items.map(item => {
+                    // Attach bogo free items to their trigger line. Each promo renders once,
+                    // anchored to the first cart line matching triggerProductId.
+                    const attachedFrees = (cartPromos?.bogoFreeItems ?? []).filter(f => {
+                      if (renderedFreePromoIds.has(f.promoId)) return false;
+                      if (f.triggerProductId !== item.id) return false;
+                      renderedFreePromoIds.add(f.promoId);
+                      return true;
+                    });
+                    return (
+                  <div key={`${item.id}-${item.packSize}`} className="py-3.5">
+                  <div className="flex items-start justify-between">
                     <div className="flex-grow pr-4">
                         <p className="font-medium text-stone-900">{item.name}</p>
                         <p className="text-xs text-stone-400 mb-0.5">SKU: {item.sku}</p>
@@ -207,7 +219,39 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
                         <p className="text-sm font-semibold text-stone-900 pr-10 tabular-nums">${(item.price * item.quantity).toFixed(2)}</p>
                     </div>
                   </div>
-                ))}
+                  {attachedFrees.map(free => {
+                    const sameProduct = free.productId === item.id;
+                    const totalReceived = sameProduct ? item.quantity + free.freeQuantity : free.freeQuantity;
+                    return (
+                      <div key={free.promoId} className="mt-2 ml-1 rounded-lg border border-dashed border-purple-300 bg-gradient-to-r from-purple-50 to-purple-50/40 px-3 py-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="flex items-center gap-1 text-[10px] font-bold bg-purple-600 text-white px-2 py-0.5 rounded-full shadow-sm shrink-0">
+                              <svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a1 1 0 01.894.553l1.382 2.763 3.05.443a1 1 0 01.554 1.706l-2.207 2.15.521 3.037a1 1 0 01-1.451 1.054L10 12.27l-2.743 1.436a1 1 0 01-1.451-1.054l.521-3.037L4.12 7.465a1 1 0 01.554-1.706l3.05-.443L9.106 2.553A1 1 0 0110 2z" /></svg>
+                              FREE
+                            </span>
+                            <p className="text-sm font-semibold text-purple-900 truncate">
+                              +{free.freeQuantity} {free.productName}
+                              <span className="text-xs font-normal text-purple-600 ml-1">({free.unit})</span>
+                            </p>
+                          </div>
+                          <span className="text-sm font-semibold text-purple-700 tabular-nums shrink-0">$0.00</span>
+                        </div>
+                        {sameProduct && (
+                          <p className="text-xs text-purple-700/80 mt-1 ml-1">
+                            You'll receive <span className="font-semibold">{totalReceived}</span> {free.productName} total ({item.quantity} paid + {free.freeQuantity} free)
+                          </p>
+                        )}
+                        {!sameProduct && (
+                          <p className="text-xs text-purple-700/80 mt-1 ml-1">Added automatically from "{free.promoName}"</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                  </div>
+                    );
+                  });
+                })()}
                 </div>
               )}
             </div>
@@ -247,21 +291,12 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
             </div>
           </div>
         )}
-        {cartPromos && (
+        {cartPromos && cartPromos.bundleDiscounts.length > 0 && (
           <div className="mb-3 space-y-1.5 border-b border-stone-100 pb-3">
             <div className="flex justify-between items-center text-sm text-stone-600">
               <span>Subtotal:</span>
               <span>${total.toFixed(2)}</span>
             </div>
-            {cartPromos.bogoFreeItems.map(item => (
-              <div key={item.promoId} className="flex justify-between items-center text-sm text-purple-700">
-                <span className="flex items-center gap-1 truncate mr-2">
-                  <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">FREE</span>
-                  <span className="truncate">+{item.freeQuantity} {item.productName} <span className="text-stone-400">({item.unit})</span></span>
-                </span>
-                <span className="tabular-nums">$0.00</span>
-              </div>
-            ))}
             {cartPromos.bundleDiscounts.map(bundle => (
               <div key={bundle.promoId} className="flex justify-between items-center text-sm text-indigo-700">
                 <span className="truncate mr-2">{bundle.promoName}</span>
