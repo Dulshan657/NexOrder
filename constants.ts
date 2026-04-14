@@ -23,7 +23,8 @@ export const SUPPLIERS: Supplier[] = [
   { id: 3, name: 'AYAM Organic Supply', contactPerson: 'Lisa Chen', email: 'organic@ayam.com.au', phone: '+61-3-8765-4321' },
 ];
 
-const IMG = 'https://ayam.com/images/com_hikashop/upload/thumbnails/263x263f';
+const IMG = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_IMAGE_CDN_URL)
+  || 'https://ayam.com/images/com_hikashop/upload/thumbnails/263x263f';
 
 export const PRODUCTS: Product[] = [
   // ===== COCONUT (22 products) =====

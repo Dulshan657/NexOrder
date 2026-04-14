@@ -10,10 +10,13 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const DB_PASSWORD = process.env.SUPABASE_DB_PASSWORD
-const PROJECT_REF = 'lsgkznyiabqitqfpveey'
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
+const PROJECT_REF = process.env.SUPABASE_PROJECT_REF
+  || SUPABASE_URL.match(/\/\/([^.]+)\.supabase\.co/)?.[1]
+  || ''
 
-if (!DB_PASSWORD) {
-  console.error('Set SUPABASE_DB_PASSWORD environment variable')
+if (!DB_PASSWORD || !PROJECT_REF) {
+  console.error('Set SUPABASE_DB_PASSWORD and (SUPABASE_PROJECT_REF or SUPABASE_URL) environment variables')
   process.exit(1)
 }
 

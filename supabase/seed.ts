@@ -161,7 +161,7 @@ async function seedUsers() {
     // Create auth user
     const { error: authErr } = await supabase.auth.admin.createUser({
       email: user.email,
-      password: 'Password123!', // Default password for seeded users
+      password: process.env.SEED_USER_PASSWORD || 'Password123!',
       email_confirm: true,
       user_metadata: { name: user.name, role: user.role },
     })
