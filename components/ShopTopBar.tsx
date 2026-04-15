@@ -45,7 +45,7 @@ const ShopTopBar: React.FC<ShopTopBarProps> = ({
   selectedHoReCaName,
 }) => {
   const isRep = currentUser.role === UserRole.FIELD_REP || currentUser.role === UserRole.OFFICE_REP;
-  const showHoReCaSelector = isRep || currentUser.role === UserRole.CUSTOMER;
+  const showHoReCaSelector = isRep || currentUser.role === UserRole.CUSTOMER || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
 
   return (
     <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm border-b border-stone-200/60 shadow-card -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3">
