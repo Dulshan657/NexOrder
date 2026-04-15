@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "deploy": "node scripts/deploy.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.19.0",
