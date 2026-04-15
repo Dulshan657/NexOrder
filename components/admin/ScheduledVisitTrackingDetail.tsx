@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import type { Route, HoReCa, User, Visit, MockRepPosition, VisitOutcome } from '../../types';
+import type { ScheduledVisit, HoReCa, User, Visit, MockRepPosition, VisitOutcome } from '../../types';
 import { ArrowLeft, CheckCircle2, XCircle, Clock, MapPin, Activity, ChevronDown, ChevronUp, Navigation, Image } from 'lucide-react';
 
 interface RouteTrackingDetailProps {
-  route: Route;
+  route: ScheduledVisit;
   hoReCas: HoReCa[];
   users: User[];
   visits: Visit[];
@@ -31,7 +31,7 @@ interface ActivityEvent {
   dotColor: string;
 }
 
-const RouteTrackingDetail: React.FC<RouteTrackingDetailProps> = ({ route, hoReCas, users, visits, repPosition, elapsedMinutes, onBack }) => {
+const ScheduledVisitTrackingDetail: React.FC<RouteTrackingDetailProps> = ({ route, hoReCas, users, visits, repPosition, elapsedMinutes, onBack }) => {
   const [expandedStopIdx, setExpandedStopIdx] = useState<number | null>(null);
 
   const hoReCaMap = useMemo(() => new Map(hoReCas.map(h => [h.id, h])), [hoReCas]);
@@ -256,4 +256,4 @@ const RouteTrackingDetail: React.FC<RouteTrackingDetailProps> = ({ route, hoReCa
   );
 };
 
-export default RouteTrackingDetail;
+export default ScheduledVisitTrackingDetail;

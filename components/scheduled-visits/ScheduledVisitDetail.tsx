@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
-import type { Route, HoReCa, Visit, User } from '../../types';
-import { startRoute, completeRoute, arriveAtStop, skipStop, isAssignedRoute } from '../../services/routeService';
-import RouteStopCard from './RouteStopCard';
-import RouteMap from './RouteMap';
+import type { ScheduledVisit, HoReCa, Visit, User } from '../../types';
+import { startScheduledVisit, completeScheduledVisit, arriveAtStop, skipStop, isAssignedScheduledVisit } from '../../services/scheduledVisitService';
+import ScheduledVisitStopCard from './ScheduledVisitStopCard';
+import ScheduledVisitMap from './ScheduledVisitMap';
 import ChangeRequestModal from './ChangeRequestModal';
 import { ArrowLeft, Play, CheckCircle2, Clock, UserCheck, GitPullRequest, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface RouteDetailProps {
-  route: Route;
+  route: ScheduledVisit;
   hoReCas: HoReCa[];
   visits: Visit[];
   users?: User[];
   currentUserId?: number;
-  onUpdateRoute: (route: Route) => void;
+  onUpdateRoute: (route: ScheduledVisit) => void;
   onBack: () => void;
   onCheckIn: (stopIndex: number) => void;
 }
@@ -23,10 +23,10 @@ const CR_STATUS_COLORS: Record<string, string> = {
   rejected: 'text-red-700 bg-red-50 border-red-200',
 };
 
-const RouteDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visits, users, currentUserId, onUpdateRoute, onBack, onCheckIn }) => {
+const ScheduledVisitDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visits, users, currentUserId, onUpdateRoute, onBack, onCheckIn }) => {
   const [showChangeRequest, setShowChangeRequest] = useState(false);
   const [showCRHistory, setShowCRHistory] = useState(false);
-  const assigned = isAssignedRoute(route);
+  const assigned = isAssignedScheduledVisit(route);
   const userMap = new Map((users ?? []).map(u => [u.id, u]));
   const assignerName = assigned && route.assignedBy ? userMap.get(route.assignedBy)?.name : undefined;
   const customerMap = new Map(hoReCas.map(c => [c.id, c]));
@@ -37,11 +37,11 @@ const RouteDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visits, users
   const allDone = completedStops === totalStops && totalStops > 0;
 
   const handleStartRoute = () => {
-    onUpdateRoute(startRoute(route));
+    onUpdateRoute(startScheduledVisit(route));
   };
 
   const handleCompleteRoute = () => {
-    onUpdateRoute(completeRoute(route));
+    onUpdateRoute(completeScheduledVisit(route));
   };
 
   const handleSkip = (stopIndex: number) => {
@@ -66,17 +66,17 @@ const RouteDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visits, users
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Route actions */}
+            {/* ScheduledVisit actions */}
             {route.status === 'planned' && (
               <button onClick={handleStartRoute} className="flex items-center gap-1 text-sm font-medium text-white bg-nexgen-blue px-4 py-2 rounded-lg hover:bg-nexgen-blue-dark transition-colors">
                 <Play className="w-4 h-4" />
-                Start Route
+                Start ScheduledVisit
               </button>
             )}
             {route.status === 'in_progress' && allDone && (
               <button onClick={handleCompleteRoute} className="flex items-center gap-1 text-sm font-medium text-white bg-emerald-600 px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors">
                 <CheckCircle2 className="w-4 h-4" />
-                Complete Route
+                Complete ScheduledVisit
               </button>
             )}
           </div>
@@ -158,7 +158,7 @@ const RouteDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visits, users
       )}
 
       {/* Map — always visible */}
-      <RouteMap stops={route.stops} hoReCas={hoReCas} />
+      <ScheduledVisitMap stops={route.stops} hoReCas={hoReCas} />
 
       {/* Stop list with timeline connector */}
       <div className="relative pl-4">
@@ -170,7 +170,7 @@ const RouteDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visits, users
             const visit = stop.visitId ? visitMap.get(stop.visitId) : undefined;
 
             return (
-              <RouteStopCard
+              <ScheduledVisitStopCard
                 key={stop.hoReCaId}
                 stop={stop}
                 customer={customer}
@@ -187,4 +187,4 @@ const RouteDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visits, users
   );
 };
 
-export default RouteDetail;
+export default ScheduledVisitDetail;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserRole, User, Product, HoReCa, Supplier, PurchaseOrder, Order, AppSettings, Invoice, OrderStatus, SalesTarget, Promotion, Visit, Route } from '../types';
+import { UserRole, User, Product, HoReCa, Supplier, PurchaseOrder, Order, AppSettings, Invoice, OrderStatus, SalesTarget, Promotion, Visit, ScheduledVisit } from '../types';
 import ProductAdmin from './ProductAdmin';
 import HoReCaAdmin from './HoReCaAdmin';
 import HoReCaListView from './HoReCaListView';
@@ -13,7 +13,7 @@ import AccountsAgingTable from './AccountsAgingTable';
 import OrderHistory from './OrderHistory';
 import HoReCaInsightsPanel from './HoReCaInsightsPanel';
 import PromotionAdmin from './PromotionAdmin';
-import RoutesAdmin from './admin/RoutesAdmin';
+import ScheduledVisitsAdmin from './admin/ScheduledVisitsAdmin';
 import StockView from './StockView';
 
 interface AdminViewProps {
@@ -55,13 +55,13 @@ interface AdminViewProps {
     onViewOrderDetail: (orderId: string) => void;
     activeTab: AdminTab;
     visits?: Visit[];
-    routes?: Route[];
-    onSetRoutes?: (routes: Route[]) => void;
+    routes?: ScheduledVisit[];
+    onSetRoutes?: (routes: ScheduledVisit[]) => void;
     addToast?: (message: string, type: 'success' | 'error' | 'info') => void;
     onSetAdminView?: (tab: AdminTab) => void;
 }
 
-export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Orders' | 'Promotions' | 'Accounts' | 'Stock' | 'Routes' | 'Users' | 'Suppliers' | 'Purchase Orders' | 'Settings';
+export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Orders' | 'Promotions' | 'Accounts' | 'Stock' | 'Scheduled Visits' | 'Users' | 'Suppliers' | 'Purchase Orders' | 'Settings';
 
 const AdminView: React.FC<AdminViewProps> = (props) => {
     const isDashboard = props.activeTab === 'Dashboard';
@@ -78,8 +78,8 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 )}
                 {props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
                 {props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} />}
-                {props.activeTab === 'Routes' && props.routes && props.onSetRoutes && props.addToast && (
-                    <RoutesAdmin routes={props.routes} users={props.users} hoReCas={props.hoReCas} visits={props.visits ?? []} currentUser={props.currentUser} onSetRoutes={props.onSetRoutes} addToast={props.addToast} />
+                {props.activeTab === 'Scheduled Visits' && props.routes && props.onSetRoutes && props.addToast && (
+                    <ScheduledVisitsAdmin routes={props.routes} users={props.users} hoReCas={props.hoReCas} visits={props.visits ?? []} currentUser={props.currentUser} onSetRoutes={props.onSetRoutes} addToast={props.addToast} />
                 )}
                 {props.activeTab === 'Users' && props.currentUser.role === UserRole.ADMIN && <UserAdmin users={props.users} onAddUser={props.onAddUser} onUpdateUser={props.onUpdateUser} onDeleteUser={props.onDeleteUser} />}
                 {props.activeTab === 'Suppliers' && props.currentUser.role === UserRole.ADMIN && <SupplierAdmin suppliers={props.suppliers} onAddSupplier={props.onAddSupplier} onUpdateSupplier={props.onUpdateSupplier} onDeleteSupplier={props.onDeleteSupplier} />}

@@ -402,9 +402,9 @@ async function seedRoutes() {
     recurrence: r.recurrence ?? null,
     change_requests: r.changeRequests ?? [],
   }))
-  const { error } = await supabase.from('routes').upsert(rows, { onConflict: 'id' })
-  if (error) throw new Error(`Routes: ${error.message}`)
-  console.log(`  ✓ ${rows.length} routes`)
+  const { error } = await supabase.from('scheduled_visits').upsert(rows, { onConflict: 'id' })
+  if (error) throw new Error(`Scheduled Visits: ${error.message}`)
+  console.log(`  ✓ ${rows.length} scheduled visits`)
 }
 
 async function seedVisits() {
@@ -413,7 +413,7 @@ async function seedVisits() {
     id: v.id,
     horeca_id: v.hoReCaId,
     user_id: mapUserId(v.userId),
-    route_id: v.routeId ?? null,
+    scheduled_visit_id: v.scheduledVisitId ?? null,
     arrival_time: v.arrivalTime,
     departure_time: v.departureTime ?? null,
     outcome: v.outcome ?? null,

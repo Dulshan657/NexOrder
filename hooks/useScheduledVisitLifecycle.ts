@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
-import type { Route, AppNotification, User, ToastType } from '../types';
+import type { ScheduledVisit, AppNotification, User, ToastType } from '../types';
 
 interface UseRouteLifecycleParams {
-  routes: Route[];
+  routes: ScheduledVisit[];
   users: User[];
   currentUser: User;
   notifications: AppNotification[];
@@ -10,7 +10,7 @@ interface UseRouteLifecycleParams {
   addToast: (message: string, type: ToastType) => void;
 }
 
-export function useRouteLifecycle({
+export function useScheduledVisitLifecycle({
   routes,
   users,
   currentUser,
@@ -18,7 +18,7 @@ export function useRouteLifecycle({
   setNotifications,
   addToast,
 }: UseRouteLifecycleParams) {
-  const prevRoutesRef = useRef<Route[]>(routes);
+  const prevRoutesRef = useRef<ScheduledVisit[]>(routes);
   const userMap = new Map(users.map(u => [u.id, u]));
 
   useEffect(() => {
@@ -35,27 +35,27 @@ export function useRouteLifecycle({
         const notification: AppNotification = {
           id: `notif-route-assign-${route.id}-${Date.now()}`,
           type: 'route_assigned',
-          message: `Route "${route.name}" has been assigned to ${repName}`,
+          message: `ScheduledVisit "${route.name}" has been assigned to ${repName}`,
           timestamp: new Date().toISOString(),
           read: false,
-          metadata: { routeId: route.id, userId: route.assignedTo },
+          metadata: { scheduledVisitId: route.id, userId: route.assignedTo },
         };
         setNotifications(prev => [notification, ...prev]);
       }
 
-      // Route completed
+      // ScheduledVisit completed
       if (route.status === 'completed' && old && old.status !== 'completed' && route.assignedBy) {
         const repName = userMap.get(route.assignedTo ?? route.createdBy)?.name ?? 'A rep';
         const notification: AppNotification = {
           id: `notif-route-complete-${route.id}-${Date.now()}`,
           type: 'route_completed',
-          message: `Route "${route.name}" completed by ${repName}`,
+          message: `ScheduledVisit "${route.name}" completed by ${repName}`,
           timestamp: new Date().toISOString(),
           read: false,
-          metadata: { routeId: route.id, userId: route.assignedBy },
+          metadata: { scheduledVisitId: route.id, userId: route.assignedBy },
         };
         setNotifications(prev => [notification, ...prev]);
-        addToast(`Route "${route.name}" completed by ${repName}`, 'success');
+        addToast(`ScheduledVisit "${route.name}" completed by ${repName}`, 'success');
       }
 
       // New change request
@@ -69,7 +69,7 @@ export function useRouteLifecycle({
           message: `${repName} requested a change to "${route.name}"`,
           timestamp: new Date().toISOString(),
           read: false,
-          metadata: { routeId: route.id, userId: route.assignedBy },
+          metadata: { scheduledVisitId: route.id, userId: route.assignedBy },
         };
         setNotifications(prev => [notification, ...prev]);
       }
@@ -86,7 +86,7 @@ export function useRouteLifecycle({
               message: `Your change request for "${route.name}" was ${newCR.status}`,
               timestamp: new Date().toISOString(),
               read: false,
-              metadata: { routeId: route.id, userId: newCR.requestedBy },
+              metadata: { scheduledVisitId: route.id, userId: newCR.requestedBy },
             };
             setNotifications(prev => [notification, ...prev]);
           }

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { HoReCa, User } from '../../types';
-import { createRoute, createAssignedRoute } from '../../services/routeService';
+import { createScheduledVisit, createAssignedScheduledVisit } from '../../services/scheduledVisitService';
 import { Check, MapPin, Calendar, UserCheck, Search, ArrowRight, ArrowLeft } from 'lucide-react';
 import DraggableStopList from './DraggableStopList';
 
@@ -9,7 +9,7 @@ interface RouteWizardProps {
   userId: number;
   users?: User[];
   isAdminMode?: boolean;
-  onSave: (route: ReturnType<typeof createRoute>) => void;
+  onSave: (route: ReturnType<typeof createScheduledVisit>) => void;
   onCancel: () => void;
 }
 
@@ -19,7 +19,7 @@ const STEPS = [
   { num: 3, label: 'Confirm' },
 ];
 
-const RouteWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, users, isAdminMode, onSave, onCancel }) => {
+const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, users, isAdminMode, onSave, onCancel }) => {
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -42,9 +42,9 @@ const RouteWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, users, isAdm
   const handleSubmit = () => {
     if (!name.trim() || selectedHoReCaIds.length === 0) return;
     if (isAdminMode && assignToUserId !== '') {
-      onSave(createAssignedRoute(name.trim(), date, selectedHoReCaIds, assignToUserId as number, userId));
+      onSave(createAssignedScheduledVisit(name.trim(), date, selectedHoReCaIds, assignToUserId as number, userId));
     } else {
-      onSave(createRoute(name.trim(), date, selectedHoReCaIds, userId));
+      onSave(createScheduledVisit(name.trim(), date, selectedHoReCaIds, userId));
     }
   };
 
@@ -79,12 +79,12 @@ const RouteWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, users, isAdm
         {step === 1 && (
           <div className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1.5">Route name</label>
+              <label className="block text-sm font-medium text-stone-700 mb-1.5">ScheduledVisit name</label>
               <input
                 type="text"
                 value={name}
                 onChange={e => setName(e.target.value)}
-                placeholder="e.g. Monday CBD Route"
+                placeholder="e.g. Monday CBD ScheduledVisit"
                 className="w-full px-4 py-3 rounded-lg border-0 bg-stone-50 ring-1 ring-inset ring-stone-200 text-stone-900 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400 text-sm"
                 autoFocus
               />
@@ -161,7 +161,7 @@ const RouteWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, users, isAdm
             {/* Right: selected stops with drag reorder */}
             <div className="space-y-3">
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wider">
-                Route order ({selectedHoReCaIds.length} stop{selectedHoReCaIds.length !== 1 ? 's' : ''}) — drag to reorder
+                ScheduledVisit order ({selectedHoReCaIds.length} stop{selectedHoReCaIds.length !== 1 ? 's' : ''}) — drag to reorder
               </p>
               <DraggableStopList
                 hoReCaIds={selectedHoReCaIds}
@@ -178,7 +178,7 @@ const RouteWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, users, isAdm
           <div className="space-y-4">
             <div className="bg-stone-50 rounded-xl p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-stone-500">Route name</span>
+                <span className="text-sm text-stone-500">ScheduledVisit name</span>
                 <span className="text-sm font-semibold text-stone-900">{name}</span>
               </div>
               <div className="flex items-center justify-between">
@@ -236,7 +236,7 @@ const RouteWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, users, isAdm
             className="flex items-center gap-1 text-sm font-medium text-white bg-emerald-600 px-5 py-2 rounded-lg hover:bg-emerald-700 btn-press cursor-pointer"
           >
             <Check className="w-4 h-4" />
-            Create Route
+            Create ScheduledVisit
           </button>
         )}
       </div>
@@ -244,4 +244,4 @@ const RouteWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, users, isAdm
   );
 };
 
-export default RouteWizard;
+export default ScheduledVisitWizard;

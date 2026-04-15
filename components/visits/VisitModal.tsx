@@ -6,7 +6,7 @@ import { X, Clock, CheckCircle2, AlertCircle, UserX, Search, ShoppingCart } from
 interface VisitModalProps {
   hoReCaId: number;
   userId: number;
-  routeId?: string;
+  scheduledVisitId?: string;
   hoReCas: HoReCa[];
   onSave: (visit: Visit) => void;
   onClose: () => void;
@@ -20,7 +20,7 @@ const OUTCOMES: Array<{ value: VisitOutcome; label: string; icon: React.ReactNod
   { value: 'stock_check_only', label: 'Stock Check Only', icon: <Search className="w-4 h-4" />, color: 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100' },
 ];
 
-const VisitModal: React.FC<VisitModalProps> = ({ hoReCaId, userId, routeId, hoReCas, onSave, onClose }) => {
+const VisitModal: React.FC<VisitModalProps> = ({ hoReCaId, userId, scheduledVisitId, hoReCas, onSave, onClose }) => {
   const [outcome, setOutcome] = useState<VisitOutcome | undefined>();
   const [notes, setNotes] = useState('');
   const [competitorNotes, setCompetitorNotes] = useState('');
@@ -36,7 +36,7 @@ const VisitModal: React.FC<VisitModalProps> = ({ hoReCaId, userId, routeId, hoRe
       id: `VISIT-${Date.now()}`,
       hoReCaId,
       userId,
-      routeId,
+      scheduledVisitId,
       arrivalTime,
       departureTime: new Date().toISOString(),
       outcome,

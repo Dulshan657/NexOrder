@@ -1,22 +1,22 @@
 import React, { useState, useMemo } from 'react';
-import type { Route, User, HoReCa, Visit } from '../../types';
+import type { ScheduledVisit, User, HoReCa, Visit } from '../../types';
 import { UserRole } from '../../types';
-import { getPendingChangeRequests, reassignRoute, isAssignedRoute, createAssignedRoute } from '../../services/routeService';
-import RouteApprovalQueue from './RouteApprovalQueue';
-import RouteTrackingMap from './RouteTrackingMap';
-import RouteForm from '../routes/RouteForm';
-import RouteTemplateForm from '../routes/RouteTemplateForm';
+import { getPendingChangeRequests, reassignScheduledVisit, isAssignedScheduledVisit, createAssignedScheduledVisit } from '../../services/scheduledVisitService';
+import ScheduledVisitApprovalQueue from './ScheduledVisitApprovalQueue';
+import ScheduledVisitTrackingMap from './ScheduledVisitTrackingMap';
+import ScheduledVisitForm from '../scheduled-visits/ScheduledVisitForm';
+import ScheduledVisitTemplateForm from '../scheduled-visits/ScheduledVisitTemplateForm';
 import { MapPin, ClipboardList, Repeat, Navigation, Plus, Calendar, Clock, Play, CheckCircle2, UserCheck, ArrowRightLeft, Trash2 } from 'lucide-react';
 
 type SubTab = 'all' | 'approvals' | 'templates' | 'tracking';
 
 interface RoutesAdminProps {
-  routes: Route[];
+  routes: ScheduledVisit[];
   users: User[];
   hoReCas: HoReCa[];
   visits: Visit[];
   currentUser: User;
-  onSetRoutes: (routes: Route[]) => void;
+  onSetRoutes: (routes: ScheduledVisit[]) => void;
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -26,7 +26,7 @@ const STATUS_BADGE: Record<string, { label: string; color: string; icon: React.R
   completed: { label: 'Completed', color: 'text-emerald-700 bg-emerald-50 border-emerald-200', icon: <CheckCircle2 className="w-3 h-3" /> },
 };
 
-const RoutesAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visits, currentUser, onSetRoutes, addToast }) => {
+const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visits, currentUser, onSetRoutes, addToast }) => {
   const [subTab, setSubTab] = useState<SubTab>('all');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showTemplateForm, setShowTemplateForm] = useState(false);
@@ -53,20 +53,20 @@ const RoutesAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visit
     return result.sort((a, b) => b.date.localeCompare(a.date));
   }, [allRoutes, filterRep, filterStatus]);
 
-  const handleUpdateRoute = (updated: Route) => {
+  const handleUpdateRoute = (updated: ScheduledVisit) => {
     onSetRoutes(routes.map(r => r.id === updated.id ? updated : r));
   };
 
-  const handleSaveNewRoute = (route: Route) => {
+  const handleSaveNewRoute = (route: ScheduledVisit) => {
     onSetRoutes([...routes, route]);
     setShowCreateForm(false);
-    addToast('Route created and assigned', 'success');
+    addToast('ScheduledVisit created and assigned', 'success');
   };
 
-  const handleSaveTemplate = (template: Route) => {
+  const handleSaveTemplate = (template: ScheduledVisit) => {
     onSetRoutes([...routes, template]);
     setShowTemplateForm(false);
-    addToast('Route template created', 'success');
+    addToast('ScheduledVisit template created', 'success');
   };
 
   const handleDeleteTemplate = (templateId: string) => {
@@ -74,20 +74,20 @@ const RoutesAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visit
     addToast('Template deleted', 'info');
   };
 
-  const handleReassign = (routeId: string) => {
+  const handleReassign = (scheduledVisitId: string) => {
     if (reassignTarget === '') return;
-    const route = routes.find(r => r.id === routeId);
+    const route = routes.find(r => r.id === scheduledVisitId);
     if (!route) return;
-    const updated = reassignRoute(route, reassignTarget, currentUser.id);
+    const updated = reassignScheduledVisit(route, reassignTarget, currentUser.id);
     handleUpdateRoute(updated);
     setReassignRouteId(null);
     setReassignTarget('');
     const repName = userMap.get(reassignTarget)?.name ?? 'rep';
-    addToast(`Route reassigned to ${repName}`, 'success');
+    addToast(`ScheduledVisit reassigned to ${repName}`, 'success');
   };
 
   const subTabs: Array<{ key: SubTab; label: string; icon: React.ReactNode; badge?: number }> = [
-    { key: 'all', label: 'All Routes', icon: <ClipboardList className="w-4 h-4" /> },
+    { key: 'all', label: 'All Scheduled Visits', icon: <ClipboardList className="w-4 h-4" /> },
     { key: 'approvals', label: 'Approvals', icon: <UserCheck className="w-4 h-4" />, badge: pendingCount },
     { key: 'templates', label: 'Templates', icon: <Repeat className="w-4 h-4" />, badge: templates.length },
     { key: 'tracking', label: 'Live Tracking', icon: <Navigation className="w-4 h-4" /> },
@@ -98,7 +98,7 @@ const RoutesAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visit
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <MapPin className="w-5 h-5 text-stone-700" />
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Route Management</h1>
+          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">ScheduledVisit Management</h1>
         </div>
         <div className="flex gap-2">
           {subTab === 'templates' && (
@@ -116,7 +116,7 @@ const RoutesAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visit
               className="flex items-center gap-1 text-sm font-medium text-white bg-nexgen-blue px-4 py-2 rounded-lg hover:bg-nexgen-blue-dark transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Create & Assign Route
+              Create & Assign ScheduledVisit
             </button>
           )}
         </div>
@@ -147,7 +147,7 @@ const RoutesAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visit
 
       {/* Content */}
       {showCreateForm && subTab === 'all' ? (
-        <RouteForm
+        <ScheduledVisitForm
           hoReCas={hoReCas}
           userId={currentUser.id}
           users={reps}
@@ -156,7 +156,7 @@ const RoutesAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visit
           onCancel={() => setShowCreateForm(false)}
         />
       ) : showTemplateForm && subTab === 'templates' ? (
-        <RouteTemplateForm
+        <ScheduledVisitTemplateForm
           hoReCas={hoReCas}
           users={users}
           currentUser={currentUser}
@@ -187,12 +187,12 @@ const RoutesAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visit
             </select>
           </div>
 
-          {/* Route table */}
+          {/* ScheduledVisit table */}
           <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-stone-50 border-b border-stone-200">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-stone-600">Route</th>
+                  <th className="text-left px-4 py-3 font-medium text-stone-600">ScheduledVisit</th>
                   <th className="text-left px-4 py-3 font-medium text-stone-600">Date</th>
                   <th className="text-left px-4 py-3 font-medium text-stone-600">Assigned To</th>
                   <th className="text-left px-4 py-3 font-medium text-stone-600">Status</th>
@@ -259,7 +259,7 @@ const RoutesAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visit
                               className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
                             >
                               <ArrowRightLeft className="w-3 h-3" />
-                              {isAssignedRoute(route) ? 'Reassign' : 'Assign'}
+                              {isAssignedScheduledVisit(route) ? 'Reassign' : 'Assign'}
                             </button>
                           )
                         )}
@@ -277,7 +277,7 @@ const RoutesAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visit
           </div>
         </>
       ) : subTab === 'approvals' ? (
-        <RouteApprovalQueue
+        <ScheduledVisitApprovalQueue
           routes={routes}
           users={users}
           hoReCas={hoReCas}
@@ -328,10 +328,10 @@ const RoutesAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReCas, visit
           )}
         </div>
       ) : (
-        <RouteTrackingMap routes={routes} hoReCas={hoReCas} users={users} visits={visits} />
+        <ScheduledVisitTrackingMap routes={routes} hoReCas={hoReCas} users={users} visits={visits} />
       )}
     </div>
   );
 };
 
-export default RoutesAdmin;
+export default ScheduledVisitsAdmin;

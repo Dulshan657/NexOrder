@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import type { RouteStop, HoReCa } from '../../types';
+import type { ScheduledVisitStop, HoReCa } from '../../types';
 
 // Fix Leaflet default marker icon issue with bundlers
 const createNumberedIcon = (num: number, isVisited: boolean) => {
@@ -36,11 +36,11 @@ const FitBounds: React.FC<FitBoundsProps> = ({ positions }) => {
 };
 
 interface RouteMapProps {
-  stops: RouteStop[];
+  stops: ScheduledVisitStop[];
   hoReCas: HoReCa[];
 }
 
-const RouteMap: React.FC<RouteMapProps> = ({ stops, hoReCas }) => {
+const ScheduledVisitMap: React.FC<RouteMapProps> = ({ stops, hoReCas }) => {
   const customerMap = new Map(hoReCas.map(c => [c.id, c]));
 
   const positions: [number, number][] = stops
@@ -101,4 +101,4 @@ const RouteMap: React.FC<RouteMapProps> = ({ stops, hoReCas }) => {
   );
 };
 
-export default RouteMap;
+export default ScheduledVisitMap;

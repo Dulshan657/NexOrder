@@ -7,7 +7,7 @@ type VisitUpdate = Database['public']['Tables']['visits']['Update']
 export interface VisitFilters {
   userId?: string
   horecaId?: number
-  routeId?: string
+  scheduledVisitId?: string
 }
 
 export async function getVisits(filters: VisitFilters = {}) {
@@ -22,8 +22,8 @@ export async function getVisits(filters: VisitFilters = {}) {
   if (filters.horecaId !== undefined) {
     query = query.eq('horeca_id', filters.horecaId)
   }
-  if (filters.routeId !== undefined) {
-    query = query.eq('route_id', filters.routeId)
+  if (filters.scheduledVisitId !== undefined) {
+    query = query.eq('scheduled_visit_id', filters.scheduledVisitId)
   }
 
   const { data, error } = await query

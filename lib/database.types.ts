@@ -487,7 +487,7 @@ export interface Database {
           created_at?: string
         }
       }
-      routes: {
+      scheduled_visits: {
         Row: {
           id: string
           name: string
@@ -545,7 +545,7 @@ export interface Database {
           id: string
           horeca_id: number
           user_id: string
-          route_id: string | null
+          scheduled_visit_id: string | null
           arrival_time: string
           departure_time: string | null
           outcome: 'order_placed' | 'follow_up_needed' | 'not_available' | 'no_interest' | 'stock_check_only' | null
@@ -560,7 +560,7 @@ export interface Database {
           id?: string
           horeca_id: number
           user_id: string
-          route_id?: string | null
+          scheduled_visit_id?: string | null
           arrival_time: string
           departure_time?: string | null
           outcome?: 'order_placed' | 'follow_up_needed' | 'not_available' | 'no_interest' | 'stock_check_only' | null
@@ -575,7 +575,7 @@ export interface Database {
           id?: string
           horeca_id?: number
           user_id?: string
-          route_id?: string | null
+          scheduled_visit_id?: string | null
           arrival_time?: string
           departure_time?: string | null
           outcome?: 'order_placed' | 'follow_up_needed' | 'not_available' | 'no_interest' | 'stock_check_only' | null

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import type { Order, Product, HoReCa, User, Invoice, SalesTarget, Promotion, Visit, Route, DashboardTimePeriod } from '../types';
+import type { Order, Product, HoReCa, User, Invoice, SalesTarget, Promotion, Visit, ScheduledVisit, DashboardTimePeriod } from '../types';
 import { UserRole } from '../types';
 import { DollarSign, ShoppingBag, BarChart3, Wallet, AlertTriangle, CreditCard, Users, Package, Target, Download, TrendingUp } from 'lucide-react';
 import KPICard from './dashboard/KPICard';
@@ -28,7 +28,7 @@ interface AdminDashboardProps {
   lowStockThreshold?: number;
   promotions?: Promotion[];
   visits?: Visit[];
-  routes?: Route[];
+  routes?: ScheduledVisit[];
   onNavigateTab?: (tab: string) => void;
 }
 

@@ -1,15 +1,15 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import type { Route, HoReCa, User } from '../../types';
-import { isAssignedRoute } from '../../services/routeService';
+import type { ScheduledVisit, HoReCa, User } from '../../types';
+import { isAssignedScheduledVisit } from '../../services/scheduledVisitService';
 import { MapPin, Clock, Play, CheckCircle2, UserCheck, AlertCircle, Eye, ChevronUp, ChevronDown } from 'lucide-react';
 
 type SortColumn = 'name' | 'date' | 'status' | 'stops';
 
 interface RouteListProps {
-  routes: Route[];
+  routes: ScheduledVisit[];
   hoReCas: HoReCa[];
   users?: User[];
-  onSelectRoute: (routeId: string) => void;
+  onSelectRoute: (scheduledVisitId: string) => void;
 }
 
 const STATUS_BADGE: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -21,7 +21,7 @@ const STATUS_BADGE: Record<string, { label: string; color: string; icon: React.R
 const STATUS_ORDER: Record<string, number> = { planned: 0, in_progress: 1, completed: 2 };
 const ITEMS_PER_PAGE = 15;
 
-const RouteList: React.FC<RouteListProps> = ({ routes, hoReCas, users, onSelectRoute }) => {
+const ScheduledVisitList: React.FC<RouteListProps> = ({ routes, hoReCas, users, onSelectRoute }) => {
   const [sortColumn, setSortColumn] = useState<SortColumn>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
@@ -81,7 +81,7 @@ const RouteList: React.FC<RouteListProps> = ({ routes, hoReCas, users, onSelectR
     return (
       <div className="text-center py-12 bg-white rounded-xl border border-stone-200/60 border-dashed shadow-card">
         <MapPin className="w-10 h-10 text-stone-300 mx-auto mb-3" />
-        <h3 className="text-lg font-display font-semibold text-stone-700">No Routes</h3>
+        <h3 className="text-lg font-display font-semibold text-stone-700">No Scheduled Visits</h3>
         <p className="text-stone-500 text-sm mt-1">Create a new route to get started.</p>
       </div>
     );
@@ -93,7 +93,7 @@ const RouteList: React.FC<RouteListProps> = ({ routes, hoReCas, users, onSelectR
         <table className="w-full text-sm text-left min-w-[600px]">
           <thead>
             <tr className="border-b border-stone-200 bg-stone-50/50">
-              <SortHeader column="name" label="Route" />
+              <SortHeader column="name" label="ScheduledVisit" />
               <SortHeader column="date" label="Date" />
               <SortHeader column="stops" label="Stops" />
               <th className="px-4 py-3 font-semibold text-stone-600">Progress</th>
@@ -106,7 +106,7 @@ const RouteList: React.FC<RouteListProps> = ({ routes, hoReCas, users, onSelectR
             {paginatedRoutes.map(route => {
               const badge = STATUS_BADGE[route.status];
               const completedStops = route.stops.filter(s => s.status === 'arrived').length;
-              const assigned = isAssignedRoute(route);
+              const assigned = isAssignedScheduledVisit(route);
               const pendingCRs = (route.changeRequests ?? []).filter(cr => cr.status === 'pending').length;
 
               return (
@@ -148,7 +148,7 @@ const RouteList: React.FC<RouteListProps> = ({ routes, hoReCas, users, onSelectR
                     )}
                   </td>
                   <td className="px-4 py-3 align-middle text-right">
-                    <button onClick={() => onSelectRoute(route.id)} className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer" title="View Route">
+                    <button onClick={() => onSelectRoute(route.id)} className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer" title="View ScheduledVisit">
                       <Eye className="w-4 h-4" />
                     </button>
                   </td>
@@ -174,4 +174,4 @@ const RouteList: React.FC<RouteListProps> = ({ routes, hoReCas, users, onSelectR
   );
 };
 
-export default RouteList;
+export default ScheduledVisitList;

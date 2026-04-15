@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
-import type { Route, HoReCa, RouteChangeRequestType } from '../../types';
-import { addChangeRequest } from '../../services/routeService';
+import type { ScheduledVisit, HoReCa, ScheduledVisitChangeRequestType } from '../../types';
+import { addChangeRequest } from '../../services/scheduledVisitService';
 import { X, ArrowUpDown, Plus, Minus, GripVertical, MapPin } from 'lucide-react';
 
 interface ChangeRequestModalProps {
-  route: Route;
+  route: ScheduledVisit;
   hoReCas: HoReCa[];
   userId: number;
-  onSave: (updated: Route) => void;
+  onSave: (updated: ScheduledVisit) => void;
   onClose: () => void;
 }
 
 const ChangeRequestModal: React.FC<ChangeRequestModalProps> = ({ route, hoReCas, userId, onSave, onClose }) => {
-  const [type, setType] = useState<RouteChangeRequestType>('reorder');
+  const [type, setType] = useState<ScheduledVisitChangeRequestType>('reorder');
   const [description, setDescription] = useState('');
 
   // Reorder state
@@ -56,7 +56,7 @@ const ChangeRequestModal: React.FC<ChangeRequestModalProps> = ({ route, hoReCas,
     }
 
     const updated = addChangeRequest(route, {
-      routeId: route.id,
+      scheduledVisitId: route.id,
       requestedBy: userId,
       type,
       description: description.trim(),
@@ -65,7 +65,7 @@ const ChangeRequestModal: React.FC<ChangeRequestModalProps> = ({ route, hoReCas,
     onSave(updated);
   };
 
-  const types: Array<{ key: RouteChangeRequestType; label: string; icon: React.ReactNode }> = [
+  const types: Array<{ key: ScheduledVisitChangeRequestType; label: string; icon: React.ReactNode }> = [
     { key: 'reorder', label: 'Reorder Stops', icon: <ArrowUpDown className="w-4 h-4" /> },
     { key: 'add_stop', label: 'Add Stop', icon: <Plus className="w-4 h-4" /> },
     { key: 'remove_stop', label: 'Remove Stop', icon: <Minus className="w-4 h-4" /> },
@@ -75,7 +75,7 @@ const ChangeRequestModal: React.FC<ChangeRequestModalProps> = ({ route, hoReCas,
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-xl border border-stone-200 p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto mx-4">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-display font-bold text-stone-800">Request Route Change</h2>
+          <h2 className="text-lg font-display font-bold text-stone-800">Request ScheduledVisit Change</h2>
           <button onClick={onClose} className="p-2 hover:bg-stone-100 rounded-lg transition-colors">
             <X className="w-5 h-5 text-stone-400" />
           </button>

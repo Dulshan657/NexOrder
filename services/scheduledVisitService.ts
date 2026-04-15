@@ -1,12 +1,12 @@
-import type { Route, RouteStop, RouteStatus, RouteChangeRequest, RecurrenceRule, MockRepPosition, HoReCa, ReorderPayload, AddStopPayload, RemoveStopPayload } from '../types';
+import type { ScheduledVisit, ScheduledVisitStop, ScheduledVisitStatus, ScheduledVisitChangeRequest, RecurrenceRule, MockRepPosition, HoReCa, ReorderPayload, AddStopPayload, RemoveStopPayload } from '../types';
 
-export function createRoute(
+export function createScheduledVisit(
   name: string,
   date: string,
   hoReCaIds: number[],
   userId: number,
-): Route {
-  const stops: RouteStop[] = hoReCaIds.map((hoReCaId, i) => ({
+): ScheduledVisit {
+  const stops: ScheduledVisitStop[] = hoReCaIds.map((hoReCaId, i) => ({
     hoReCaId,
     sequence: i + 1,
     status: 'pending' as const,
@@ -23,7 +23,7 @@ export function createRoute(
   };
 }
 
-export function reorderStops(route: Route, fromIndex: number, toIndex: number): Route {
+export function reorderStops(route: ScheduledVisit, fromIndex: number, toIndex: number): ScheduledVisit {
   const stops = [...route.stops];
   const [moved] = stops.splice(fromIndex, 1);
   stops.splice(toIndex, 0, moved);
@@ -33,7 +33,7 @@ export function reorderStops(route: Route, fromIndex: number, toIndex: number): 
   };
 }
 
-export function addStopToRoute(route: Route, hoReCaId: number): Route {
+export function addStopToScheduledVisit(route: ScheduledVisit, hoReCaId: number): ScheduledVisit {
   return {
     ...route,
     stops: [
@@ -43,7 +43,7 @@ export function addStopToRoute(route: Route, hoReCaId: number): Route {
   };
 }
 
-export function removeStopFromRoute(route: Route, hoReCaId: number): Route {
+export function removeStopFromScheduledVisit(route: ScheduledVisit, hoReCaId: number): ScheduledVisit {
   return {
     ...route,
     stops: route.stops
@@ -52,15 +52,15 @@ export function removeStopFromRoute(route: Route, hoReCaId: number): Route {
   };
 }
 
-export function startRoute(route: Route): Route {
+export function startScheduledVisit(route: ScheduledVisit): ScheduledVisit {
   return { ...route, status: 'in_progress' };
 }
 
-export function completeRoute(route: Route): Route {
+export function completeScheduledVisit(route: ScheduledVisit): ScheduledVisit {
   return { ...route, status: 'completed', completedAt: new Date().toISOString() };
 }
 
-export function arriveAtStop(route: Route, stopIndex: number, visitId: string): Route {
+export function arriveAtStop(route: ScheduledVisit, stopIndex: number, visitId: string): ScheduledVisit {
   return {
     ...route,
     stops: route.stops.map((s, i) =>
@@ -69,7 +69,7 @@ export function arriveAtStop(route: Route, stopIndex: number, visitId: string): 
   };
 }
 
-export function skipStop(route: Route, stopIndex: number): Route {
+export function skipStop(route: ScheduledVisit, stopIndex: number): ScheduledVisit {
   return {
     ...route,
     stops: route.stops.map((s, i) =>
@@ -93,37 +93,37 @@ function isPast(dateStr: string): boolean {
   return dateStr < today;
 }
 
-function matchesUser(route: Route, userId?: number): boolean {
+function matchesUser(route: ScheduledVisit, userId?: number): boolean {
   if (userId === undefined) return true;
   return route.createdBy === userId || route.assignedTo === userId;
 }
 
-export function getTodaysRoutes(routes: readonly Route[], userId?: number): Route[] {
+export function getTodaysScheduledVisits(routes: readonly ScheduledVisit[], userId?: number): ScheduledVisit[] {
   return routes.filter(r => !r.isTemplate && isToday(r.date) && matchesUser(r, userId));
 }
 
-export function getUpcomingRoutes(routes: readonly Route[], userId?: number): Route[] {
+export function getUpcomingScheduledVisits(routes: readonly ScheduledVisit[], userId?: number): ScheduledVisit[] {
   return routes
     .filter(r => !r.isTemplate && isFuture(r.date) && matchesUser(r, userId))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function getPastRoutes(routes: readonly Route[], userId?: number): Route[] {
+export function getPastScheduledVisits(routes: readonly ScheduledVisit[], userId?: number): ScheduledVisit[] {
   return routes
     .filter(r => !r.isTemplate && (isPast(r.date) || r.status === 'completed') && matchesUser(r, userId))
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
-// --- Route Assignment ---
+// --- ScheduledVisit Assignment ---
 
-export function createAssignedRoute(
+export function createAssignedScheduledVisit(
   name: string,
   date: string,
   hoReCaIds: number[],
   assignedTo: number,
   assignedBy: number,
-): Route {
-  const base = createRoute(name, date, hoReCaIds, assignedBy);
+): ScheduledVisit {
+  const base = createScheduledVisit(name, date, hoReCaIds, assignedBy);
   return {
     ...base,
     assignedTo,
@@ -132,7 +132,7 @@ export function createAssignedRoute(
   };
 }
 
-export function assignRoute(route: Route, assignedTo: number, assignedBy: number): Route {
+export function assignScheduledVisit(route: ScheduledVisit, assignedTo: number, assignedBy: number): ScheduledVisit {
   return {
     ...route,
     assignedTo,
@@ -141,7 +141,7 @@ export function assignRoute(route: Route, assignedTo: number, assignedBy: number
   };
 }
 
-export function reassignRoute(route: Route, newAssignedTo: number, reassignedBy: number): Route {
+export function reassignScheduledVisit(route: ScheduledVisit, newAssignedTo: number, reassignedBy: number): ScheduledVisit {
   if (route.status === 'completed') return route;
   return {
     ...route,
@@ -151,15 +151,15 @@ export function reassignRoute(route: Route, newAssignedTo: number, reassignedBy:
   };
 }
 
-export function isAssignedRoute(route: Route): boolean {
+export function isAssignedScheduledVisit(route: ScheduledVisit): boolean {
   return route.assignedTo !== undefined && route.assignedBy !== undefined;
 }
 
-export function getRoutesForRep(routes: readonly Route[], userId: number): Route[] {
+export function getScheduledVisitsForRep(routes: readonly ScheduledVisit[], userId: number): ScheduledVisit[] {
   return routes.filter(r => !r.isTemplate && (r.createdBy === userId || r.assignedTo === userId));
 }
 
-export function getAssignedRoutes(routes: readonly Route[], assignedBy?: number): Route[] {
+export function getAssignedScheduledVisits(routes: readonly ScheduledVisit[], assignedBy?: number): ScheduledVisit[] {
   return routes.filter(r =>
     !r.isTemplate &&
     r.assignedTo !== undefined &&
@@ -170,10 +170,10 @@ export function getAssignedRoutes(routes: readonly Route[], assignedBy?: number)
 // --- Change Requests ---
 
 export function addChangeRequest(
-  route: Route,
-  request: Omit<RouteChangeRequest, 'id' | 'status' | 'requestedAt'>,
-): Route {
-  const newRequest: RouteChangeRequest = {
+  route: ScheduledVisit,
+  request: Omit<ScheduledVisitChangeRequest, 'id' | 'status' | 'requestedAt'>,
+): ScheduledVisit {
+  const newRequest: ScheduledVisitChangeRequest = {
     ...request,
     id: `CR-${Date.now()}`,
     status: 'pending',
@@ -185,7 +185,7 @@ export function addChangeRequest(
   };
 }
 
-export function approveChangeRequest(route: Route, requestId: string, reviewerId: number): Route {
+export function approveChangeRequest(route: ScheduledVisit, requestId: string, reviewerId: number): ScheduledVisit {
   const request = route.changeRequests?.find(cr => cr.id === requestId);
   if (!request || request.status !== 'pending') return route;
 
@@ -197,11 +197,11 @@ export function approveChangeRequest(route: Route, requestId: string, reviewerId
     const stopMap = new Map(route.stops.map(s => [s.hoReCaId, s]));
     updatedStops = payload.newStopOrder
       .map(hoReCaId => stopMap.get(hoReCaId))
-      .filter((s): s is RouteStop => s !== undefined)
+      .filter((s): s is ScheduledVisitStop => s !== undefined)
       .map((s, i) => ({ ...s, sequence: i + 1 }));
   } else if (request.type === 'add_stop') {
     const payload = request.payload as AddStopPayload;
-    const newStop: RouteStop = { hoReCaId: payload.hoReCaId, sequence: 0, status: 'pending' };
+    const newStop: ScheduledVisitStop = { hoReCaId: payload.hoReCaId, sequence: 0, status: 'pending' };
     if (payload.atIndex !== undefined) {
       updatedStops.splice(payload.atIndex, 0, newStop);
     } else {
@@ -226,7 +226,7 @@ export function approveChangeRequest(route: Route, requestId: string, reviewerId
   };
 }
 
-export function rejectChangeRequest(route: Route, requestId: string, reviewerId: number): Route {
+export function rejectChangeRequest(route: ScheduledVisit, requestId: string, reviewerId: number): ScheduledVisit {
   return {
     ...route,
     changeRequests: (route.changeRequests ?? []).map(cr =>
@@ -237,8 +237,8 @@ export function rejectChangeRequest(route: Route, requestId: string, reviewerId:
   };
 }
 
-export function getPendingChangeRequests(routes: readonly Route[]): { route: Route; request: RouteChangeRequest }[] {
-  const results: { route: Route; request: RouteChangeRequest }[] = [];
+export function getPendingChangeRequests(routes: readonly ScheduledVisit[]): { route: ScheduledVisit; request: ScheduledVisitChangeRequest }[] {
+  const results: { route: ScheduledVisit; request: ScheduledVisitChangeRequest }[] = [];
   for (const route of routes) {
     for (const cr of route.changeRequests ?? []) {
       if (cr.status === 'pending') {
@@ -249,16 +249,16 @@ export function getPendingChangeRequests(routes: readonly Route[]): { route: Rou
   return results;
 }
 
-// --- Route Templates ---
+// --- ScheduledVisit Templates ---
 
-export function createRouteTemplate(
+export function createScheduledVisitTemplate(
   name: string,
   hoReCaIds: number[],
   recurrence: RecurrenceRule,
   assignedTo: number,
   createdBy: number,
-): Route {
-  const stops: RouteStop[] = hoReCaIds.map((hoReCaId, i) => ({
+): ScheduledVisit {
+  const stops: ScheduledVisitStop[] = hoReCaIds.map((hoReCaId, i) => ({
     hoReCaId,
     sequence: i + 1,
     status: 'pending' as const,
@@ -278,12 +278,12 @@ export function createRouteTemplate(
   };
 }
 
-export function generateRoutesFromTemplates(
-  templates: readonly Route[],
-  existingRoutes: readonly Route[],
+export function generateScheduledVisitsFromTemplates(
+  templates: readonly ScheduledVisit[],
+  existingRoutes: readonly ScheduledVisit[],
   daysAhead: number = 7,
-): Route[] {
-  const generated: Route[] = [];
+): ScheduledVisit[] {
+  const generated: ScheduledVisit[] = [];
   const now = new Date();
 
   for (const tmpl of templates) {
@@ -309,7 +309,7 @@ export function generateRoutesFromTemplates(
       );
       if (alreadyExists) continue;
 
-      const stops: RouteStop[] = tmpl.stops.map((s, i) => ({
+      const stops: ScheduledVisitStop[] = tmpl.stops.map((s, i) => ({
         hoReCaId: s.hoReCaId,
         sequence: i + 1,
         status: 'pending' as const,
@@ -340,7 +340,7 @@ const TRAVEL_MINUTES_BETWEEN_STOPS = 15;
 const DWELL_MINUTES_PER_STOP = 10;
 
 export function simulateRepPosition(
-  route: Route,
+  route: ScheduledVisit,
   hoReCas: readonly HoReCa[],
   elapsedMinutes: number,
 ): MockRepPosition | null {
@@ -350,7 +350,7 @@ export function simulateRepPosition(
       const h = hoReCaMap.get(s.hoReCaId);
       return h ? { ...s, lat: h.lat ?? -33.87, lng: h.lng ?? 151.21 } : null;
     })
-    .filter((s): s is RouteStop & { lat: number; lng: number } => s !== null);
+    .filter((s): s is ScheduledVisitStop & { lat: number; lng: number } => s !== null);
 
   if (stopsWithCoords.length === 0) return null;
 
@@ -392,7 +392,7 @@ export function simulateRepPosition(
     lng,
     heading,
     timestamp: new Date().toISOString(),
-    routeId: route.id,
+    scheduledVisitId: route.id,
     currentStopIndex: segIndex,
   };
 }

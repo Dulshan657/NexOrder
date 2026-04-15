@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { Route, HoReCa, User, Visit, MockRepPosition } from '../../types';
-import { simulateRepPosition } from '../../services/routeService';
+import type { ScheduledVisit, HoReCa, User, Visit, MockRepPosition } from '../../types';
+import { simulateRepPosition } from '../../services/scheduledVisitService';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Play, CheckCircle2, MapPin } from 'lucide-react';
-import RouteTrackingDetail from './RouteTrackingDetail';
+import ScheduledVisitTrackingDetail from './ScheduledVisitTrackingDetail';
 
 interface RouteTrackingMapProps {
-  routes: Route[];
+  routes: ScheduledVisit[];
   hoReCas: HoReCa[];
   users: User[];
   visits?: Visit[];
@@ -58,7 +58,7 @@ function FitBounds({ positions }: { positions: [number, number][] }) {
   return null;
 }
 
-const RouteTrackingMap: React.FC<RouteTrackingMapProps> = ({ routes, hoReCas, users, visits = [] }) => {
+const ScheduledVisitTrackingMap: React.FC<RouteTrackingMapProps> = ({ routes, hoReCas, users, visits = [] }) => {
   const hoReCaMap = new Map(hoReCas.map(h => [h.id, h]));
   const userMap = new Map(users.map(u => [u.id, u]));
 
@@ -89,7 +89,7 @@ const RouteTrackingMap: React.FC<RouteTrackingMapProps> = ({ routes, hoReCas, us
     ? simulateRepPosition(selectedTrackingRoute, hoReCas, elapsedMinutes)
     : null;
   const routeVisits = selectedTrackingRoute
-    ? visits.filter(v => v.routeId === selectedTrackingRoute.id)
+    ? visits.filter(v => v.scheduledVisitId === selectedTrackingRoute.id)
     : [];
 
   // All positions for bounds fitting (scope to selected route when drilled in)
@@ -115,8 +115,8 @@ const RouteTrackingMap: React.FC<RouteTrackingMapProps> = ({ routes, hoReCas, us
     return (
       <div className="text-center py-12 bg-white rounded-xl border border-stone-200 border-dashed">
         <MapPin className="w-10 h-10 text-stone-300 mx-auto mb-3" />
-        <h3 className="text-lg font-display font-semibold text-stone-700">No Active Routes</h3>
-        <p className="text-stone-500 text-sm mt-1">Routes that are in progress will appear here with live tracking.</p>
+        <h3 className="text-lg font-display font-semibold text-stone-700">No Active Scheduled Visits</h3>
+        <p className="text-stone-500 text-sm mt-1">Scheduled visits that are in progress will appear here with live tracking.</p>
       </div>
     );
   }
@@ -126,7 +126,7 @@ const RouteTrackingMap: React.FC<RouteTrackingMapProps> = ({ routes, hoReCas, us
       {/* Sidebar */}
       <div className={`${selectedTrackingRoute ? 'w-80' : 'w-64'} flex-shrink-0 overflow-hidden flex flex-col transition-all duration-200 bg-white rounded-xl border border-stone-200`}>
         {selectedTrackingRoute ? (
-          <RouteTrackingDetail
+          <ScheduledVisitTrackingDetail
             route={selectedTrackingRoute}
             hoReCas={hoReCas}
             users={users}
@@ -137,7 +137,7 @@ const RouteTrackingMap: React.FC<RouteTrackingMapProps> = ({ routes, hoReCas, us
           />
         ) : (
           <div className="p-3 space-y-3 overflow-y-auto">
-            <h3 className="text-sm font-semibold text-stone-700">Active Routes</h3>
+            <h3 className="text-sm font-semibold text-stone-700">Active Scheduled Visits</h3>
             {activeRoutes.map((route, i) => {
               const rep = userMap.get(route.assignedTo ?? route.createdBy);
               const completed = route.stops.filter(s => s.status !== 'pending').length;
@@ -172,8 +172,8 @@ const RouteTrackingMap: React.FC<RouteTrackingMapProps> = ({ routes, hoReCas, us
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OSM' />
           {allPositions.length > 0 && <FitBounds positions={allPositions} />}
 
-          {activeRoutes.map((route, routeIdx) => {
-            const color = REP_COLORS[routeIdx % REP_COLORS.length];
+          {activeRoutes.map((route, scheduledVisitIdx) => {
+            const color = REP_COLORS[scheduledVisitIdx % REP_COLORS.length];
             const coords: [number, number][] = route.stops
               .map(s => {
                 const h = hoReCaMap.get(s.hoReCaId);
@@ -221,4 +221,4 @@ const RouteTrackingMap: React.FC<RouteTrackingMapProps> = ({ routes, hoReCas, us
   );
 };
 
-export default RouteTrackingMap;
+export default ScheduledVisitTrackingMap;

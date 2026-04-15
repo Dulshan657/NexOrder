@@ -137,7 +137,7 @@ export interface AppNotification {
         productId?: number;
         orderId?: string;
         invoiceId?: string;
-        routeId?: string;
+        scheduledVisitId?: string;
         userId?: number;
     };
 }
@@ -367,25 +367,25 @@ export interface CartPromotionResult {
     totalDiscount: number;
 }
 
-// --- Route Planning & Visit Tracking ---
+// --- Scheduled Visit Planning & Check-in Tracking ---
 
-export type RouteStatus = 'planned' | 'in_progress' | 'completed';
-export type RouteStopStatus = 'pending' | 'arrived' | 'skipped';
+export type ScheduledVisitStatus = 'planned' | 'in_progress' | 'completed';
+export type ScheduledVisitStopStatus = 'pending' | 'arrived' | 'skipped';
 
-export interface RouteStop {
+export interface ScheduledVisitStop {
     hoReCaId: number;
     sequence: number;
     plannedArrival?: string;
-    status: RouteStopStatus;
+    status: ScheduledVisitStopStatus;
     visitId?: string;
 }
 
-export interface Route {
+export interface ScheduledVisit {
     id: string;
     name: string;
     date: string;
-    stops: RouteStop[];
-    status: RouteStatus;
+    stops: ScheduledVisitStop[];
+    status: ScheduledVisitStatus;
     createdBy: number;
     createdAt: string;
     completedAt?: string;
@@ -395,7 +395,7 @@ export interface Route {
     isTemplate?: boolean;
     templateId?: string;
     recurrence?: RecurrenceRule;
-    changeRequests?: RouteChangeRequest[];
+    changeRequests?: ScheduledVisitChangeRequest[];
 }
 
 export interface RecurrenceRule {
@@ -403,8 +403,8 @@ export interface RecurrenceRule {
     dayOfWeek: number; // 0=Sunday, 1=Monday, etc.
 }
 
-export type RouteChangeRequestType = 'reorder' | 'add_stop' | 'remove_stop';
-export type RouteChangeRequestStatus = 'pending' | 'approved' | 'rejected';
+export type ScheduledVisitChangeRequestType = 'reorder' | 'add_stop' | 'remove_stop';
+export type ScheduledVisitChangeRequestStatus = 'pending' | 'approved' | 'rejected';
 
 export interface ReorderPayload {
     newStopOrder: number[]; // hoReCaIds in new order
@@ -419,13 +419,13 @@ export interface RemoveStopPayload {
     hoReCaId: number;
 }
 
-export interface RouteChangeRequest {
+export interface ScheduledVisitChangeRequest {
     id: string;
-    routeId: string;
+    scheduledVisitId: string;
     requestedBy: number;
     requestedAt: string;
-    type: RouteChangeRequestType;
-    status: RouteChangeRequestStatus;
+    type: ScheduledVisitChangeRequestType;
+    status: ScheduledVisitChangeRequestStatus;
     reviewedBy?: number;
     reviewedAt?: string;
     description: string;
@@ -438,7 +438,7 @@ export interface MockRepPosition {
     lng: number;
     heading: number;
     timestamp: string;
-    routeId?: string;
+    scheduledVisitId?: string;
     currentStopIndex?: number;
 }
 
@@ -448,7 +448,7 @@ export interface Visit {
     id: string;
     hoReCaId: number;
     userId: number;
-    routeId?: string;
+    scheduledVisitId?: string;
     arrivalTime: string;
     departureTime?: string;
     outcome?: VisitOutcome;

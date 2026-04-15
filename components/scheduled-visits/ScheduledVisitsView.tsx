@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import type { Route, HoReCa, Visit, User, Order } from '../../types';
-import { getTodaysRoutes, getUpcomingRoutes, getPastRoutes, arriveAtStop, startRoute, getRoutesForRep } from '../../services/routeService';
-import RouteList from './RouteList';
-import RouteDetail from './RouteDetail';
-import RouteWizard from './RouteWizard';
+import type { ScheduledVisit, HoReCa, Visit, User, Order } from '../../types';
+import { getTodaysScheduledVisits, getUpcomingScheduledVisits, getPastScheduledVisits, arriveAtStop, startScheduledVisit, getScheduledVisitsForRep } from '../../services/scheduledVisitService';
+import ScheduledVisitList from './ScheduledVisitList';
+import ScheduledVisitDetail from './ScheduledVisitDetail';
+import ScheduledVisitWizard from './ScheduledVisitWizard';
 import VisitModal from '../visits/VisitModal';
 import { Plus, MapPin, Calendar, History, Play, ArrowRight } from 'lucide-react';
 
@@ -12,8 +12,8 @@ type RoutesTab = 'today' | 'upcoming' | 'past';
 interface RoutesViewProps {
   currentUser: User;
   hoReCas: HoReCa[];
-  routes: Route[];
-  setRoutes: (routes: Route[]) => void;
+  routes: ScheduledVisit[];
+  setRoutes: (routes: ScheduledVisit[]) => void;
   visits: Visit[];
   setVisits: (visits: Visit[]) => void;
   orders: Order[];
@@ -23,7 +23,7 @@ interface RoutesViewProps {
   onClearInitialRoute?: () => void;
 }
 
-const RoutesView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, routes, setRoutes, visits, setVisits, orders, users, onStartOrder, initialSelectedRouteId, onClearInitialRoute }) => {
+const ScheduledVisitsView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, routes, setRoutes, visits, setVisits, orders, users, onStartOrder, initialSelectedRouteId, onClearInitialRoute }) => {
   const [activeTab, setActiveTab] = useState<RoutesTab>('today');
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -36,20 +36,20 @@ const RoutesView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, routes, s
     }
   }, [initialSelectedRouteId, onClearInitialRoute]);
 
-  const todaysRoutes = useMemo(() => getTodaysRoutes(routes, currentUser.id), [routes, currentUser.id]);
-  const upcomingRoutes = useMemo(() => getUpcomingRoutes(routes, currentUser.id), [routes, currentUser.id]);
-  const pastRoutes = useMemo(() => getPastRoutes(routes, currentUser.id), [routes, currentUser.id]);
+  const todaysRoutes = useMemo(() => getTodaysScheduledVisits(routes, currentUser.id), [routes, currentUser.id]);
+  const upcomingRoutes = useMemo(() => getUpcomingScheduledVisits(routes, currentUser.id), [routes, currentUser.id]);
+  const pastRoutes = useMemo(() => getPastScheduledVisits(routes, currentUser.id), [routes, currentUser.id]);
 
   const selectedRoute = useMemo(() => routes.find(r => r.id === selectedRouteId), [routes, selectedRouteId]);
 
   const currentRoutes = activeTab === 'today' ? todaysRoutes : activeTab === 'upcoming' ? upcomingRoutes : pastRoutes;
 
-  const handleSaveRoute = (route: Route) => {
+  const handleSaveRoute = (route: ScheduledVisit) => {
     setRoutes([...routes, route]);
     setShowForm(false);
   };
 
-  const handleUpdateRoute = (updated: Route) => {
+  const handleUpdateRoute = (updated: ScheduledVisit) => {
     setRoutes(routes.map(r => r.id === updated.id ? updated : r));
   };
 
@@ -84,19 +84,19 @@ const RoutesView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, routes, s
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <MapPin className="w-5 h-5 text-stone-700" />
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Routes & Visits</h1>
+          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Scheduled Visits & Check-ins</h1>
         </div>
         <button
           onClick={() => { setShowForm(true); setSelectedRouteId(null); }}
           className="flex items-center gap-1 text-sm font-medium text-white bg-nexgen-blue px-4 py-2 rounded-lg hover:bg-nexgen-blue-dark transition-colors"
         >
           <Plus className="w-4 h-4" />
-          New Route
+          New ScheduledVisit
         </button>
       </div>
 
       {showForm ? (
-        <RouteWizard
+        <ScheduledVisitWizard
           hoReCas={hoReCas}
           userId={currentUser.id}
           users={users}
@@ -104,10 +104,10 @@ const RoutesView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, routes, s
           onCancel={() => setShowForm(false)}
         />
       ) : selectedRoute ? (
-        <RouteDetail
+        <ScheduledVisitDetail
           route={selectedRoute}
           hoReCas={hoReCas}
-          visits={visits.filter(v => v.routeId === selectedRoute.id)}
+          visits={visits.filter(v => v.scheduledVisitId === selectedRoute.id)}
           users={users}
           currentUserId={currentUser.id}
           onUpdateRoute={handleUpdateRoute}
@@ -116,7 +116,7 @@ const RoutesView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, routes, s
         />
       ) : (
         <>
-          {/* Start/Continue Route Banner */}
+          {/* Start/Continue ScheduledVisit Banner */}
           {(() => {
             const plannedRoute = todaysRoutes.find(r => r.status === 'planned');
             const inProgressRoute = todaysRoutes.find(r => r.status === 'in_progress');
@@ -135,7 +135,7 @@ const RoutesView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, routes, s
                 <button
                   onClick={() => {
                     if (plannedRoute) {
-                      const started = startRoute(plannedRoute);
+                      const started = startScheduledVisit(plannedRoute);
                       handleUpdateRoute(started);
                       setSelectedRouteId(started.id);
                     } else if (inProgressRoute) {
@@ -144,7 +144,7 @@ const RoutesView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, routes, s
                   }}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-nexgen-blue text-white text-sm font-semibold hover:bg-nexgen-blue-dark btn-press cursor-pointer whitespace-nowrap min-h-[44px]"
                 >
-                  {plannedRoute ? <><Play className="w-4 h-4" /> Start Route</> : <><ArrowRight className="w-4 h-4" /> Continue Route</>}
+                  {plannedRoute ? <><Play className="w-4 h-4" /> Start ScheduledVisit</> : <><ArrowRight className="w-4 h-4" /> Continue ScheduledVisit</>}
                 </button>
               </div>
             );
@@ -175,7 +175,7 @@ const RoutesView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, routes, s
             ))}
           </div>
 
-          <RouteList routes={currentRoutes} hoReCas={hoReCas} users={users} onSelectRoute={setSelectedRouteId} />
+          <ScheduledVisitList routes={currentRoutes} hoReCas={hoReCas} users={users} onSelectRoute={setSelectedRouteId} />
         </>
       )}
 
@@ -184,7 +184,7 @@ const RoutesView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, routes, s
         <VisitModal
           hoReCaId={checkInHoReCaId}
           userId={currentUser.id}
-          routeId={selectedRoute?.id}
+          scheduledVisitId={selectedRoute?.id}
           hoReCas={hoReCas}
           onSave={handleVisitSave}
           onClose={() => setCheckInStopIndex(null)}
@@ -194,4 +194,4 @@ const RoutesView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, routes, s
   );
 };
 
-export default RoutesView;
+export default ScheduledVisitsView;

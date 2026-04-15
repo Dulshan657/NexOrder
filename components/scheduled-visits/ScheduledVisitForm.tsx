@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { HoReCa, User } from '../../types';
-import { createRoute, createAssignedRoute } from '../../services/routeService';
+import { createScheduledVisit, createAssignedScheduledVisit } from '../../services/scheduledVisitService';
 import { Plus, X, GripVertical, MapPin, Calendar, UserCheck } from 'lucide-react';
 
 interface RouteFormProps {
@@ -8,11 +8,11 @@ interface RouteFormProps {
   userId: number;
   users?: User[];
   isAdminMode?: boolean;
-  onSave: (route: ReturnType<typeof createRoute>) => void;
+  onSave: (route: ReturnType<typeof createScheduledVisit>) => void;
   onCancel: () => void;
 }
 
-const RouteForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, isAdminMode, onSave, onCancel }) => {
+const ScheduledVisitForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, isAdminMode, onSave, onCancel }) => {
   const [name, setName] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [selectedHoReCaIds, setSelectedHoReCaIds] = useState<number[]>([]);
@@ -50,10 +50,10 @@ const RouteForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, isAdminMo
   const handleSubmit = () => {
     if (!name.trim() || selectedHoReCaIds.length === 0) return;
     if (isAdminMode && assignToUserId !== '') {
-      const route = createAssignedRoute(name.trim(), date, selectedHoReCaIds, assignToUserId, userId);
+      const route = createAssignedScheduledVisit(name.trim(), date, selectedHoReCaIds, assignToUserId, userId);
       onSave(route);
     } else {
-      const route = createRoute(name.trim(), date, selectedHoReCaIds, userId);
+      const route = createScheduledVisit(name.trim(), date, selectedHoReCaIds, userId);
       onSave(route);
     }
   };
@@ -63,7 +63,7 @@ const RouteForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, isAdminMo
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-display font-bold text-stone-800">{isAdminMode ? 'Create & Assign Route' : 'New Route'}</h2>
+        <h2 className="text-xl font-display font-bold text-stone-800">{isAdminMode ? 'Create & Assign ScheduledVisit' : 'New ScheduledVisit'}</h2>
         <button onClick={onCancel} className="p-2 hover:bg-stone-100 rounded-lg transition-colors">
           <X className="w-5 h-5 text-stone-400" />
         </button>
@@ -72,7 +72,7 @@ const RouteForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, isAdminMo
       {/* Name, Date, and optional Assign To */}
       <div className={`grid grid-cols-1 ${isAdminMode ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-4`}>
         <div>
-          <label className="block text-sm font-medium text-stone-700 mb-1">Route Name</label>
+          <label className="block text-sm font-medium text-stone-700 mb-1">ScheduledVisit Name</label>
           <input
             type="text"
             value={name}
@@ -139,7 +139,7 @@ const RouteForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, isAdminMo
       {selectedHoReCaIds.length > 0 && (
         <div>
           <label className="block text-sm font-medium text-stone-700 mb-2">
-            Route Stops ({selectedHoReCaIds.length}) — drag to reorder
+            ScheduledVisit Stops ({selectedHoReCaIds.length}) — drag to reorder
           </label>
           <div className="space-y-2">
             {selectedHoReCaIds.map((hoReCaId, index) => {
@@ -186,11 +186,11 @@ const RouteForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, isAdminMo
           disabled={!name.trim() || selectedHoReCaIds.length === 0}
           className="px-5 py-2 text-sm font-medium text-white bg-nexgen-blue rounded-lg hover:bg-nexgen-blue-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Create Route
+          Create ScheduledVisit
         </button>
       </div>
     </div>
   );
 };
 
-export default RouteForm;
+export default ScheduledVisitForm;

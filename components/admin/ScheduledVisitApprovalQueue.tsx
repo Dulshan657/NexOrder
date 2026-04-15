@@ -1,14 +1,14 @@
 import React from 'react';
-import type { Route, User, HoReCa, RouteChangeRequest } from '../../types';
-import { approveChangeRequest, rejectChangeRequest, getPendingChangeRequests } from '../../services/routeService';
+import type { ScheduledVisit, User, HoReCa, ScheduledVisitChangeRequest } from '../../types';
+import { approveChangeRequest, rejectChangeRequest, getPendingChangeRequests } from '../../services/scheduledVisitService';
 import { Check, X, ArrowUpDown, Plus, Minus, UserCheck } from 'lucide-react';
 
 interface RouteApprovalQueueProps {
-  routes: Route[];
+  routes: ScheduledVisit[];
   users: User[];
   hoReCas: HoReCa[];
   currentUser: User;
-  onUpdateRoute: (route: Route) => void;
+  onUpdateRoute: (route: ScheduledVisit) => void;
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -18,24 +18,24 @@ const CHANGE_TYPE_CONFIG: Record<string, { label: string; icon: React.ReactNode;
   remove_stop: { label: 'Remove Stop', icon: <Minus className="w-4 h-4" />, color: 'text-red-700 bg-red-50 border-red-200' },
 };
 
-const RouteApprovalQueue: React.FC<RouteApprovalQueueProps> = ({ routes, users, hoReCas, currentUser, onUpdateRoute, addToast }) => {
+const ScheduledVisitApprovalQueue: React.FC<RouteApprovalQueueProps> = ({ routes, users, hoReCas, currentUser, onUpdateRoute, addToast }) => {
   const userMap = new Map(users.map(u => [u.id, u]));
   const hoReCaMap = new Map(hoReCas.map(h => [h.id, h]));
   const pending = getPendingChangeRequests(routes);
 
-  const handleApprove = (route: Route, requestId: string) => {
+  const handleApprove = (route: ScheduledVisit, requestId: string) => {
     const updated = approveChangeRequest(route, requestId, currentUser.id);
     onUpdateRoute(updated);
     addToast('Change request approved', 'success');
   };
 
-  const handleReject = (route: Route, requestId: string) => {
+  const handleReject = (route: ScheduledVisit, requestId: string) => {
     const updated = rejectChangeRequest(route, requestId, currentUser.id);
     onUpdateRoute(updated);
     addToast('Change request rejected', 'info');
   };
 
-  const renderPayloadDetail = (request: RouteChangeRequest) => {
+  const renderPayloadDetail = (request: ScheduledVisitChangeRequest) => {
     if (request.type === 'reorder') {
       const payload = request.payload as { newStopOrder: number[] };
       return (
@@ -113,4 +113,4 @@ const RouteApprovalQueue: React.FC<RouteApprovalQueueProps> = ({ routes, users, 
   );
 };
 
-export default RouteApprovalQueue;
+export default ScheduledVisitApprovalQueue;

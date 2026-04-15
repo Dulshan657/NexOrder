@@ -1,6 +1,6 @@
 // FIX: Implement the main App component to manage state and render the UI.
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { UserRole, Product, HoReCa, User, OrderItem, Order, Supplier, PurchaseOrder, PantryItem, AppSettings, OrderStatus, Invoice, AppNotification, DeliveryTimeSlot, OrderVerification, SalesTarget, Promotion, Route, Visit } from './types';
+import { UserRole, Product, HoReCa, User, OrderItem, Order, Supplier, PurchaseOrder, PantryItem, AppSettings, OrderStatus, Invoice, AppNotification, DeliveryTimeSlot, OrderVerification, SalesTarget, Promotion, ScheduledVisit, Visit } from './types';
 import OrderVerificationModal from './components/OrderVerificationModal';
 import CategoryFilter from './components/CategoryFilter';
 import ProductCard from './components/ProductCard';
@@ -27,7 +27,7 @@ import { USERS, CATEGORIES, INITIAL_PANTRY_LISTS, DEFAULT_SETTINGS } from './con
 import { getHoReCaOutstanding } from './services/accountingService';
 import type { PantryLists } from './types';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { startRoute } from './services/routeService';
+import { startScheduledVisit } from './services/scheduledVisitService';
 import { resolveHoReCaPrice, getAllApplicablePromotions, isPromotionActive } from './pricing';
 import { LayoutDashboard, ShoppingCart, ShoppingBag, History, Menu, X, Users as UsersIcon, Package, FileText, Settings, Truck, Wallet, BarChart3, Tag, MapPin, Warehouse } from 'lucide-react';
 import OutstandingPayments from './components/OutstandingPayments';
@@ -35,7 +35,7 @@ import AccountsAgingTable from './components/AccountsAgingTable';
 import StockView from './components/StockView';
 import HoReCaListView from './components/HoReCaListView';
 import MissingItemsNudge from './components/MissingItemsNudge';
-import RoutesView from './components/routes/RoutesView';
+import ScheduledVisitsView from './components/scheduled-visits/ScheduledVisitsView';
 import { getOrderingHints } from './services/buyingPatternsService';
 import type { OrderingHint } from './types';
 import CartSlidePanel from './components/CartSlidePanel';
@@ -50,7 +50,7 @@ import { useInvoices, useUpdateInvoiceStatus } from './hooks/queries/useInvoices
 import { useSuppliers, useCreateSupplier, useUpdateSupplier, useDeleteSupplier } from './hooks/queries/useSuppliers';
 import { usePurchaseOrders, useCreatePurchaseOrder, useUpdatePurchaseOrder } from './hooks/queries/usePurchaseOrders';
 import { usePromotions, useCreatePromotion, useUpdatePromotion, useDeletePromotion } from './hooks/queries/usePromotions';
-import { useRoutes, useUpdateRoute, useCreateRoute } from './hooks/queries/useRoutes';
+import { useScheduledVisits, useUpdateScheduledVisit, useCreateScheduledVisit } from './hooks/queries/useScheduledVisits';
 import { useVisits, useCreateVisit } from './hooks/queries/useVisits';
 import { useSalesTargets } from './hooks/queries/useSalesTargets';
 import { useSettings, useUpdateSettings } from './hooks/queries/useSettings';
@@ -59,8 +59,8 @@ import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead 
 // ── Adapters ──────────────────────────────────────────────────────────────────
 import {
     toProduct, toHoReCa, toOrder, toInvoice, toSupplier, toPurchaseOrder,
-    toPromotion, toRoute, toVisit, toSalesTarget, toAppSettings, toNotification,
-    fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromRoute, fromAppSettings,
+    toPromotion, toScheduledVisit, toVisit, toSalesTarget, toAppSettings, toNotification,
+    fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit, fromAppSettings,
 } from './lib/adapters';
 
 const App: React.FC = () => {
@@ -80,7 +80,7 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [errors, setErrors] = useState<{hoReCa?: string; emptyOrder?: string, api?: string}>({});
     const [confirmation, setConfirmation] = useState<{order: Order, message: string} | null>(null);
-    const [view, setView] = useState<'ordering' | 'history' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'routes'>('dashboard');
+    const [view, setView] = useState<'ordering' | 'history' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits'>('dashboard');
     const [adminView, setAdminView] = useState<AdminTab>('Dashboard');
     const [orderingTab, setOrderingTab] = useState<'catalogue' | 'pantry' | 'reorder'>('catalogue');
     const [deliveryDate, setDeliveryDate] = useState('');
@@ -102,7 +102,7 @@ const App: React.FC = () => {
     const { data: rawPurchaseOrders = [] } = usePurchaseOrders();
 
     const { data: rawPromotions = [] } = usePromotions();
-    const { data: rawRoutes = [] } = useRoutes();
+    const { data: rawRoutes = [] } = useScheduledVisits();
     const { data: rawVisits = [] } = useVisits();
     const { data: rawSalesTargets = [] } = useSalesTargets();
     const { data: rawSettings } = useSettings();
@@ -113,7 +113,7 @@ const App: React.FC = () => {
     const hoReCas = useMemo(() => rawHoReCas.map(toHoReCa), [rawHoReCas]);
     const suppliers = useMemo(() => rawSuppliers.map(toSupplier), [rawSuppliers]);
     const promotions = useMemo(() => rawPromotions.map(toPromotion), [rawPromotions]);
-    const routes = useMemo(() => rawRoutes.map(toRoute), [rawRoutes]);
+    const routes = useMemo(() => rawRoutes.map(toScheduledVisit), [rawRoutes]);
     const visits = useMemo(() => rawVisits.map(toVisit), [rawVisits]);
     const salesTargets = useMemo(() => rawSalesTargets.map(toSalesTarget), [rawSalesTargets]);
     const invoices = useMemo(() => rawInvoices.map(toInvoice), [rawInvoices]);
@@ -160,8 +160,8 @@ const App: React.FC = () => {
     const updatePromotionMutation = useUpdatePromotion();
     const deletePromotionMutation = useDeletePromotion();
 
-    const updateRouteMutation = useUpdateRoute();
-    const createRouteMutation = useCreateRoute();
+    const updateRouteMutation = useUpdateScheduledVisit();
+    const createRouteMutation = useCreateScheduledVisit();
 
     const markNotificationReadMutation = useMarkNotificationRead();
     const markAllNotificationsReadMutation = useMarkAllNotificationsRead();
@@ -669,12 +669,12 @@ const App: React.FC = () => {
     }, [markAllNotificationsReadMutation, currentUser.id]);
 
     // ── setRoutes shim — child components that accept setRoutes as a prop ─────
-    // RoutesView and AdminView pass setRoutes to update route state. Since routes
+    // ScheduledVisitsView and AdminView pass setRoutes to update route state. Since routes
     // are now in Supabase we intercept the setter pattern and fire mutations instead.
     // We support the two write patterns used in child components:
-    //   (prev) => prev.map(r => r.id === id ? updated : r)   → updateRoute
-    //   (prev) => [...prev, newRoute]                        → createRoute
-    const setRoutes = useCallback((updater: Route[] | ((prev: Route[]) => Route[])) => {
+    //   (prev) => prev.map(r => r.id === id ? updated : r)   → updateScheduledVisit
+    //   (prev) => [...prev, newRoute]                        → createScheduledVisit
+    const setRoutes = useCallback((updater: ScheduledVisit[] | ((prev: ScheduledVisit[]) => ScheduledVisit[])) => {
         const next = typeof updater === 'function' ? updater(routes) : updater;
         // Detect which routes changed
         const prevIds = new Set(routes.map(r => r.id));
@@ -683,7 +683,7 @@ const App: React.FC = () => {
         // Create: routes present in next but not in prev
         for (const r of next) {
             if (!prevIds.has(r.id)) {
-                createRouteMutation.mutate(fromRoute(r) as any);
+                createRouteMutation.mutate(fromScheduledVisit(r) as any);
             }
         }
 
@@ -692,7 +692,7 @@ const App: React.FC = () => {
             if (prevIds.has(r.id)) {
                 const prev = routes.find(pr => pr.id === r.id);
                 if (prev && JSON.stringify(prev) !== JSON.stringify(r)) {
-                    updateRouteMutation.mutate({ id: r.id, updates: fromRoute(r) as any });
+                    updateRouteMutation.mutate({ id: r.id, updates: fromScheduledVisit(r) as any });
                 }
             }
         }
@@ -710,7 +710,7 @@ const App: React.FC = () => {
                 createVisitMutation.mutate({
                     horeca_id: v.hoReCaId,
                     user_id: String(v.userId),
-                    route_id: v.routeId ?? null,
+                    scheduled_visit_id: v.scheduledVisitId ?? null,
                     arrival_time: v.arrivalTime,
                     departure_time: v.departureTime ?? null,
                     outcome: v.outcome ?? null,
@@ -892,10 +892,10 @@ const App: React.FC = () => {
                                     </button>
                                     {isFieldRep && (
                                         <button
-                                            onClick={() => { setView('routes'); setIsSidebarOpen(false); }}
-                                            className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'routes' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                            onClick={() => { setView('scheduled_visits'); setIsSidebarOpen(false); }}
+                                            className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'scheduled_visits' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                         >
-                                            <MapPin className="w-5 h-5 mr-3" /> Routes
+                                            <MapPin className="w-5 h-5 mr-3" /> Scheduled Visits
                                             {newAssignmentCount > 0 && (
                                                 <span className="ml-auto text-xs font-bold text-white bg-teal-500 px-1.5 py-0.5 rounded-full min-w-[20px] text-center">{newAssignmentCount}</span>
                                             )}
@@ -969,10 +969,10 @@ const App: React.FC = () => {
                                 <BarChart3 className="w-5 h-5 mr-3" /> HoReCa Insights
                             </button>
                             <button
-                                onClick={() => { setAdminView('Routes'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Routes' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                onClick={() => { setAdminView('Scheduled Visits'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Scheduled Visits' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <MapPin className="w-5 h-5 mr-3" /> Routes
+                                <MapPin className="w-5 h-5 mr-3" /> Scheduled Visits
                             </button>
 
                             {/* Catalogue */}
@@ -1319,16 +1319,16 @@ const App: React.FC = () => {
                                         setVisits={setVisits}
                                         routes={routes}
                                         onStartRoute={(route) => {
-                                            const started = startRoute(route);
-                                            updateRouteMutation.mutate({ id: started.id, updates: fromRoute(started) as any }, {
-                                                onError: (err) => addToast(`Error starting route: ${err.message}`, 'error'),
+                                            const started = startScheduledVisit(route);
+                                            updateRouteMutation.mutate({ id: started.id, updates: fromScheduledVisit(started) as any }, {
+                                                onError: (err) => addToast(`Error starting scheduled visit: ${err.message}`, 'error'),
                                             });
                                             setInitialRouteId(started.id);
-                                            setView('routes');
+                                            setView('scheduled_visits');
                                         }}
-                                        onViewRoute={(routeId) => {
-                                            setInitialRouteId(routeId);
-                                            setView('routes');
+                                        onViewRoute={(scheduledVisitId) => {
+                                            setInitialRouteId(scheduledVisitId);
+                                            setView('scheduled_visits');
                                         }}
                                     />
                                 )}
@@ -1495,8 +1495,8 @@ const App: React.FC = () => {
                                 {view === 'accounts' && (
                                     <AccountsAgingTable invoices={invoices} hoReCas={hoReCas} currentUser={currentUser} />
                                 )}
-                                {view === 'routes' && isFieldRep && (
-                                    <RoutesView
+                                {view === 'scheduled_visits' && isFieldRep && (
+                                    <ScheduledVisitsView
                                         currentUser={currentUser}
                                         hoReCas={hoReCas}
                                         routes={routes}

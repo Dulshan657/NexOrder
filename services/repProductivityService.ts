@@ -1,4 +1,4 @@
-import type { Visit, Route, Order } from '../types';
+import type { Visit, ScheduledVisit, Order } from '../types';
 import type { RepProductivity } from '../types';
 
 const MS_PER_DAY = 86_400_000;
@@ -10,7 +10,7 @@ function isInDateRange(dateStr: string, startDate: Date, endDate: Date): boolean
 
 export function getVisitCompletionRate(
   visits: readonly Visit[],
-  routes: readonly Route[],
+  routes: readonly ScheduledVisit[],
   userId: number,
   startDate: Date,
   endDate: Date,
@@ -52,7 +52,7 @@ export function getVisitConversionRate(
 }
 
 export function getRouteEfficiency(
-  routes: readonly Route[],
+  routes: readonly ScheduledVisit[],
   visits: readonly Visit[],
   userId: number,
 ): { avgStopsPerRoute: number; avgMinutesPerVisit: number; routesCompleted: number } {
@@ -80,7 +80,7 @@ export function getRouteEfficiency(
 
 export function computeRepProductivity(
   visits: readonly Visit[],
-  routes: readonly Route[],
+  routes: readonly ScheduledVisit[],
   orders: readonly Order[],
   userId: number,
   startDate: Date,

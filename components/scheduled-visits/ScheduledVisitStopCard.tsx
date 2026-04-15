@@ -1,9 +1,9 @@
 import React from 'react';
-import type { RouteStop, HoReCa, Visit } from '../../types';
+import type { ScheduledVisitStop, HoReCa, Visit } from '../../types';
 import { MapPin, CheckCircle2, XCircle, Clock, Navigation } from 'lucide-react';
 
 interface RouteStopCardProps {
-  stop: RouteStop;
+  stop: ScheduledVisitStop;
   customer: HoReCa;
   visit?: Visit;
   isRouteActive: boolean;
@@ -25,7 +25,7 @@ const OUTCOME_LABELS: Record<string, { label: string; color: string }> = {
   stock_check_only: { label: 'Stock Check', color: 'text-blue-700 bg-blue-50' },
 };
 
-const RouteStopCard: React.FC<RouteStopCardProps> = ({ stop, customer, visit, isRouteActive, onCheckIn, onSkip }) => {
+const ScheduledVisitStopCard: React.FC<RouteStopCardProps> = ({ stop, customer, visit, isRouteActive, onCheckIn, onSkip }) => {
   const config = STATUS_CONFIG[stop.status];
   const StatusIcon = config.icon;
 
@@ -92,4 +92,4 @@ const RouteStopCard: React.FC<RouteStopCardProps> = ({ stop, customer, visit, is
   );
 };
 
-export default RouteStopCard;
+export default ScheduledVisitStopCard;

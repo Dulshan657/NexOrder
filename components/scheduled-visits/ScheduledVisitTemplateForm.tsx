@@ -1,20 +1,20 @@
 import React, { useState } from 'react';
 import type { HoReCa, User, RecurrenceRule } from '../../types';
 import { UserRole } from '../../types';
-import { createRouteTemplate } from '../../services/routeService';
+import { createScheduledVisitTemplate } from '../../services/scheduledVisitService';
 import { Plus, X, GripVertical, MapPin, Repeat, UserCheck } from 'lucide-react';
 
 interface RouteTemplateFormProps {
   hoReCas: HoReCa[];
   users: User[];
   currentUser: User;
-  onSave: (template: ReturnType<typeof createRouteTemplate>) => void;
+  onSave: (template: ReturnType<typeof createScheduledVisitTemplate>) => void;
   onCancel: () => void;
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-const RouteTemplateForm: React.FC<RouteTemplateFormProps> = ({ hoReCas, users, currentUser, onSave, onCancel }) => {
+const ScheduledVisitTemplateForm: React.FC<RouteTemplateFormProps> = ({ hoReCas, users, currentUser, onSave, onCancel }) => {
   const [name, setName] = useState('');
   const [selectedHoReCaIds, setSelectedHoReCaIds] = useState<number[]>([]);
   const [frequency, setFrequency] = useState<'weekly' | 'biweekly'>('weekly');
@@ -41,14 +41,14 @@ const RouteTemplateForm: React.FC<RouteTemplateFormProps> = ({ hoReCas, users, c
   const handleSubmit = () => {
     if (!name.trim() || selectedHoReCaIds.length === 0 || assignedTo === '') return;
     const recurrence: RecurrenceRule = { frequency, dayOfWeek };
-    const template = createRouteTemplate(name.trim(), selectedHoReCaIds, recurrence, assignedTo, currentUser.id);
+    const template = createScheduledVisitTemplate(name.trim(), selectedHoReCaIds, recurrence, assignedTo, currentUser.id);
     onSave(template);
   };
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-display font-bold text-stone-800">New Route Template</h2>
+        <h2 className="text-xl font-display font-bold text-stone-800">New ScheduledVisit Template</h2>
         <button onClick={onCancel} className="p-2 hover:bg-stone-100 rounded-lg transition-colors">
           <X className="w-5 h-5 text-stone-400" />
         </button>
@@ -189,4 +189,4 @@ const RouteTemplateForm: React.FC<RouteTemplateFormProps> = ({ hoReCas, users, c
   );
 };
 
-export default RouteTemplateForm;
+export default ScheduledVisitTemplateForm;

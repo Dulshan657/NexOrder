@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { User, HoReCa, Product, Order, Invoice, SalesTarget, Visit, Route } from '../types';
+import type { User, HoReCa, Product, Order, Invoice, SalesTarget, Visit, ScheduledVisit } from '../types';
 import { UserRole } from '../types';
 import { MapPin, Target, ShoppingBag, DollarSign, BarChart3, CheckCircle2, AlertCircle, Clock, Phone, ArrowRight, Package, UserCheck, Play } from 'lucide-react';
 import KPICard from './dashboard/KPICard';
@@ -12,7 +12,7 @@ import SalesTargetModal from './SalesTargetModal';
 import SegmentBadge from './SegmentBadge';
 import VisitModal from './visits/VisitModal';
 import { computeAllHoReCaInsights, getReorderPredictions, getAtRiskCustomersForRep } from '../services/buyingPatternsService';
-import { getTodaysRoutes } from '../services/routeService';
+import { getTodaysScheduledVisits } from '../services/scheduledVisitService';
 import { getHoReCaOutstanding } from '../services/accountingService';
 import { getVisitCompletionRate } from '../services/repProductivityService';
 import { computeTargetProjection } from '../services/targetProjectionService';
@@ -28,9 +28,9 @@ interface RepDashboardV2Props {
   onUpdateSalesTargets?: (targets: SalesTarget[]) => void;
   visits?: Visit[];
   setVisits?: (visits: Visit[]) => void;
-  routes?: Route[];
-  onStartRoute?: (route: Route) => void;
-  onViewRoute?: (routeId: string) => void;
+  routes?: ScheduledVisit[];
+  onStartRoute?: (route: ScheduledVisit) => void;
+  onViewRoute?: (scheduledVisitId: string) => void;
 }
 
 const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
@@ -73,7 +73,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
 
   // Today's route (only for field reps)
   const isFieldRep = currentUser.role === UserRole.FIELD_REP;
-  const todaysRoutes = useMemo(() => isFieldRep ? getTodaysRoutes(routes, currentUser.id) : [], [routes, currentUser.id, isFieldRep]);
+  const todaysRoutes = useMemo(() => isFieldRep ? getTodaysScheduledVisits(routes, currentUser.id) : [], [routes, currentUser.id, isFieldRep]);
   const todayRoute = todaysRoutes[0] ?? null;
 
   const todayStopsWithContext = useMemo(() => {
@@ -205,7 +205,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
         </div>
       </div>
 
-      {/* B. Today's Route Card (HERO) */}
+      {/* B. Today's ScheduledVisit Card (HERO) */}
       {todayRoute ? (
         <div className="glass-card rounded-xl overflow-hidden">
           <div className="p-4 sm:p-5 border-b border-stone-200/50">
@@ -224,7 +224,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
                 onClick={() => onStartRoute(todayRoute)}
                 className="w-full flex items-center justify-center gap-2 mt-3 px-4 py-3 rounded-lg bg-nexgen-blue text-white text-sm font-semibold hover:bg-nexgen-blue-dark btn-press cursor-pointer min-h-[44px]"
               >
-                <Play className="w-4 h-4" /> Start Route
+                <Play className="w-4 h-4" /> Start ScheduledVisit
               </button>
             )}
             {todayRoute.status === 'in_progress' && onViewRoute && (
@@ -232,7 +232,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
                 onClick={() => onViewRoute(todayRoute.id)}
                 className="w-full flex items-center justify-center gap-2 mt-3 px-4 py-3 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 btn-press cursor-pointer min-h-[44px]"
               >
-                <ArrowRight className="w-4 h-4" /> Continue Route
+                <ArrowRight className="w-4 h-4" /> Continue ScheduledVisit
               </button>
             )}
           </div>
@@ -323,8 +323,8 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
       ) : (
         <div className="glass-card rounded-xl p-5 text-center">
           <MapPin className="w-8 h-8 text-stone-300 mx-auto mb-2" />
-          <p className="text-sm text-stone-600 mb-3">No route planned for today</p>
-          <p className="text-xs text-stone-400">Head to Routes to plan your visits</p>
+          <p className="text-sm text-stone-600 mb-3">No scheduled visit planned for today</p>
+          <p className="text-xs text-stone-400">Head to Scheduled Visits to plan your day</p>
         </div>
       )}
 

@@ -1,5 +1,5 @@
 // Nex Order — product catalog and mock data for the application.
-import type { Product, HoReCa, User, Category, Supplier, Order, PurchaseOrder, PantryLists, AppSettings, OrderStatus, DeliveryTimeSlot, Invoice, OrderVerification, SalesTarget, Promotion, Route, Visit, RouteChangeRequest } from './types';
+import type { Product, HoReCa, User, Category, Supplier, Order, PurchaseOrder, PantryLists, AppSettings, OrderStatus, DeliveryTimeSlot, Invoice, OrderVerification, SalesTarget, Promotion, ScheduledVisit, Visit, ScheduledVisitChangeRequest } from './types';
 import { UserRole } from './types';
 
 export const USERS: User[] = [
@@ -872,7 +872,7 @@ const visitTime = (daysAgo: number, hour: number, minute: number = 0): string =>
   return date.toISOString();
 };
 
-export const INITIAL_ROUTES: Route[] = [
+export const INITIAL_ROUTES: ScheduledVisit[] = [
   {
     id: 'ROUTE-001',
     name: 'Sydney CBD Run',
@@ -945,7 +945,7 @@ export const INITIAL_ROUTES: Route[] = [
     changeRequests: [
       {
         id: 'CR-001',
-        routeId: 'ROUTE-A02',
+        scheduledVisitId: 'ROUTE-A02',
         requestedBy: 3,
         requestedAt: visitTime(0, 10),
         type: 'reorder',
@@ -955,7 +955,7 @@ export const INITIAL_ROUTES: Route[] = [
       },
     ],
   },
-  // Route template
+  // ScheduledVisit template
   {
     id: 'TMPL-001',
     name: 'Weekly Sydney CBD',
@@ -981,7 +981,7 @@ export const INITIAL_VISITS: Visit[] = [
     id: 'VISIT-001',
     hoReCaId: 1,
     userId: 3,
-    routeId: 'ROUTE-002',
+    scheduledVisitId: 'ROUTE-002',
     arrivalTime: visitTime(1, 9, 15),
     departureTime: visitTime(1, 10, 30),
     outcome: 'order_placed',
@@ -996,7 +996,7 @@ export const INITIAL_VISITS: Visit[] = [
     id: 'VISIT-002',
     hoReCaId: 3,
     userId: 3,
-    routeId: 'ROUTE-002',
+    scheduledVisitId: 'ROUTE-002',
     arrivalTime: visitTime(1, 11, 45),
     departureTime: visitTime(1, 12, 15),
     outcome: 'follow_up_needed',

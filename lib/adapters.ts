@@ -8,9 +8,9 @@
 
 import type {
   Product, HoReCa, User, Supplier, Order, OrderItem, PurchaseOrder,
-  Invoice, Promotion, Route, Visit, SalesTarget, AppSettings,
+  Invoice, Promotion, ScheduledVisit, Visit, SalesTarget, AppSettings,
   AppNotification, PantryItem, PaymentMethod, StatusHistoryEntry,
-  OrderVerification, AppliedPromotion, RouteStop, RouteChangeRequest,
+  OrderVerification, AppliedPromotion, ScheduledVisitStop, ScheduledVisitChangeRequest,
   RecurrenceRule, BogoConfig, BundleConfig, PromotionScope,
   PromotionTargeting, OrderStatus, DeliveryTimeSlot, PurchaseOrderItem,
 } from '@/types'
@@ -24,7 +24,7 @@ type OrderRow = Database['public']['Tables']['orders']['Row']
 type OrderItemRow = Database['public']['Tables']['order_items']['Row']
 type InvoiceRow = Database['public']['Tables']['invoices']['Row']
 type PromotionRow = Database['public']['Tables']['promotions']['Row']
-type RouteRow = Database['public']['Tables']['routes']['Row']
+type RouteRow = Database['public']['Tables']['scheduled_visits']['Row']
 type VisitRow = Database['public']['Tables']['visits']['Row']
 type SalesTargetRow = Database['public']['Tables']['sales_targets']['Row']
 type SettingsRow = Database['public']['Tables']['app_settings']['Row']
@@ -336,15 +336,15 @@ export function fromPromotion(p: Partial<Promotion>): Record<string, unknown> {
   return row
 }
 
-// ── Route ─────────────────────────────────────────────────────────
+// ── ScheduledVisit ─────────────────────────────────────────────────────────
 
-export function toRoute(row: RouteRow): Route {
+export function toScheduledVisit(row: RouteRow): ScheduledVisit {
   return {
     id: row.id,
     name: row.name,
     date: row.date ?? '',
-    stops: (row.stops ?? []) as RouteStop[],
-    status: row.status as Route['status'],
+    stops: (row.stops ?? []) as ScheduledVisitStop[],
+    status: row.status as ScheduledVisit['status'],
     createdBy: Number(row.created_by) || 0,
     createdAt: row.created_at,
     completedAt: row.completed_at ?? undefined,
@@ -354,11 +354,11 @@ export function toRoute(row: RouteRow): Route {
     isTemplate: row.is_template ?? undefined,
     templateId: row.template_id ?? undefined,
     recurrence: (row.recurrence as RecurrenceRule) ?? undefined,
-    changeRequests: (row.change_requests ?? []) as RouteChangeRequest[],
+    changeRequests: (row.change_requests ?? []) as ScheduledVisitChangeRequest[],
   }
 }
 
-export function fromRoute(r: Partial<Route>): Record<string, unknown> {
+export function fromScheduledVisit(r: Partial<ScheduledVisit>): Record<string, unknown> {
   const row: Record<string, unknown> = {}
   if (r.name !== undefined) row.name = r.name
   if (r.date !== undefined) row.date = r.date || null
@@ -382,7 +382,7 @@ export function toVisit(row: VisitRow): Visit {
     id: row.id,
     hoReCaId: row.horeca_id,
     userId: Number(row.user_id) || 0,
-    routeId: row.route_id ?? undefined,
+    scheduledVisitId: row.scheduled_visit_id ?? undefined,
     arrivalTime: row.arrival_time,
     departureTime: row.departure_time ?? undefined,
     outcome: (row.outcome as Visit['outcome']) ?? undefined,
