@@ -10,7 +10,7 @@ import AdminDashboard from './AdminDashboard';
 import SettingsPanel from './SettingsPanel';
 import InvoiceAdmin from './InvoiceAdmin';
 import AccountsAgingTable from './AccountsAgingTable';
-import OrderHistory from './OrderHistory';
+import OrdersPage from './OrdersPage';
 import HoReCaInsightsPanel from './HoReCaInsightsPanel';
 import PromotionAdmin from './PromotionAdmin';
 import ScheduledVisitsAdmin from './admin/ScheduledVisitsAdmin';
@@ -72,7 +72,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {props.activeTab === 'Products' && <ProductAdmin products={props.products} suppliers={props.suppliers} onAddProduct={props.onAddProduct} onUpdateProduct={props.onUpdateProduct} onDeleteProduct={props.onDeleteProduct} />}
                 {props.activeTab === 'HoReCa' && <HoReCaListView hoReCas={props.hoReCas} orders={props.allOrders} invoices={props.invoices} currentUser={props.currentUser} visits={props.visits} onAddHoReCa={props.onAddHoReCa} onUpdateHoReCa={props.onUpdateHoReCa} onDeleteHoReCa={props.onDeleteHoReCa} />}
                 {props.activeTab === 'HoReCa Insights' && <HoReCaInsightsPanel allOrders={props.allOrders} hoReCas={props.hoReCas} products={props.products} />}
-                {props.activeTab === 'Orders' && <OrderHistory orders={props.allOrders} hoReCas={props.hoReCas} currentUser={props.currentUser} onReorder={props.onReorder} onViewDetail={props.onViewOrderDetail} onBack={() => {}} />}
+                {props.activeTab === 'Orders' && <OrdersPage orders={props.allOrders} hoReCas={props.hoReCas} currentUser={props.currentUser} onReorder={props.onReorder} onViewDetail={props.onViewOrderDetail} onUpdateStatus={props.onUpdateOrderStatus} onBack={() => {}} />}
                 {props.activeTab === 'Promotions' && props.currentUser.role === UserRole.ADMIN && props.promotions && props.onAddPromotion && props.onUpdatePromotion && props.onDeletePromotion && (
                     <PromotionAdmin promotions={props.promotions} products={props.products} hoReCas={props.hoReCas} users={props.users} onAdd={props.onAddPromotion} onUpdate={props.onUpdatePromotion} onDelete={props.onDeletePromotion} />
                 )}
