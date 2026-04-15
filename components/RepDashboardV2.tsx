@@ -3,7 +3,8 @@ import type { User, HoReCa, Product, Order, Invoice, SalesTarget, Visit, Schedul
 import { UserRole } from '../types';
 import { MapPin, Target, ShoppingBag, DollarSign, BarChart3, CheckCircle2, AlertCircle, Clock, Phone, ArrowRight, Package, UserCheck, Play } from 'lucide-react';
 import KPICard from './dashboard/KPICard';
-import AlertBanner from './dashboard/AlertBanner';
+import ActionItemsBoard from './ActionItemsBoard';
+import type { ActionItemColumn, ActionItem } from './ActionItemsBoard';
 import ExpandableSection from './dashboard/ExpandableSection';
 import SalesLineChart from './charts/SalesLineChart';
 import HorizontalBarChart from './charts/HorizontalBarChart';
@@ -134,6 +135,48 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
     myOrders.forEach(o => o.items.forEach(item => repProductIds.add(item.id)));
     return products.filter(p => repProductIds.has(p.id) && p.inventory <= 10);
   }, [myOrders, products]);
+
+  const actionColumns = useMemo((): ActionItemColumn[] => {
+    const reorderItems: ActionItem[] = reorderPredictions.map(p => ({
+      id: `reorder-${p.hoReCaId}`,
+      title: p.hoReCaName,
+      badge: p.segment ? {
+        label: p.segment === 'high_value' ? 'High Value' : p.segment === 'growing' ? 'Growing' : p.segment,
+        color: p.segment === 'high_value' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+               p.segment === 'growing' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+               'bg-stone-50 text-stone-700 border-stone-200',
+      } : undefined,
+      actions: [{
+        label: 'Order',
+        icon: ArrowRight,
+        onClick: () => onStartOrder(p.hoReCaId),
+      }],
+    }));
+
+    const riskItems: ActionItem[] = atRiskCustomers.map(c => ({
+      id: `risk-${c.hoReCaId}`,
+      title: c.hoReCaName,
+      subtitle: `${c.daysSinceLastOrder}d ago`,
+      actions: [{
+        label: 'Visit',
+        icon: ArrowRight,
+        onClick: () => handleCheckIn(c.hoReCaId),
+      }],
+    }));
+
+    const stockItems: ActionItem[] = lowStockProducts.map(p => ({
+      id: `stock-${p.id}`,
+      title: p.name,
+      subtitle: p.inventory <= 0 ? 'Out of stock' : `${p.inventory} left`,
+      badge: p.inventory <= 0 ? { label: 'Out', color: 'bg-red-50 text-red-700 border-red-200' } : undefined,
+    }));
+
+    return [
+      { id: 'reorder', label: 'Reorder Due', icon: Clock, severity: 'info' as const, items: reorderItems },
+      { id: 'at-risk', label: 'At-Risk', icon: AlertCircle, severity: 'warning' as const, items: riskItems },
+      { id: 'low-stock', label: 'Low Stock', icon: Package, severity: 'warning' as const, items: stockItems },
+    ];
+  }, [reorderPredictions, atRiskCustomers, lowStockProducts, onStartOrder]);
 
   // Sales trend chart data (last 30 days)
   const salesChartData = useMemo(() => {
@@ -400,56 +443,12 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
       )}
 
       {/* D. Action Items */}
-      {(reorderPredictions.length > 0 || atRiskCustomers.length > 0 || lowStockProducts.length > 0) && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
-          <AlertBanner icon={Clock} label="Reorder Due" count={reorderPredictions.length} severity="info">
-            <div className="space-y-2">
-              {reorderPredictions.slice(0, 5).map(p => (
-                <div key={p.hoReCaId} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm text-stone-700 truncate">{p.hoReCaName}</span>
-                    <SegmentBadge segment={p.segment} />
-                  </div>
-                  <button onClick={() => onStartOrder(p.hoReCaId)}
-                    className="text-xs text-nexgen-blue hover:text-nexgen-blue-dark font-semibold shrink-0 cursor-pointer ml-2">
-                    Order <ArrowRight className="w-3 h-3 inline" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </AlertBanner>
-
-          <AlertBanner icon={AlertCircle} label="At-Risk" count={atRiskCustomers.length} severity="warning">
-            <div className="space-y-2">
-              {atRiskCustomers.slice(0, 5).map(c => (
-                <div key={c.hoReCaId} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm text-stone-700 truncate">{c.hoReCaName}</span>
-                    <span className="text-xs text-stone-500">{c.daysSinceLastOrder}d ago</span>
-                  </div>
-                  <button onClick={() => handleCheckIn(c.hoReCaId)}
-                    className="text-xs text-amber-600 hover:text-amber-700 font-semibold shrink-0 cursor-pointer ml-2">
-                    Visit <ArrowRight className="w-3 h-3 inline" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </AlertBanner>
-
-          <AlertBanner icon={Package} label="Low Stock" count={lowStockProducts.length} severity="warning">
-            <div className="space-y-2">
-              {lowStockProducts.slice(0, 5).map(p => (
-                <div key={p.id} className="flex items-center justify-between text-sm">
-                  <span className="text-stone-700 truncate">{p.name}</span>
-                  <span className={`font-semibold ${p.inventory <= 0 ? 'text-red-600' : 'text-amber-600'}`}>
-                    {p.inventory <= 0 ? 'Out' : `${p.inventory} left`}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </AlertBanner>
-        </div>
-      )}
+      <ActionItemsBoard
+        title="Action Items"
+        columns={actionColumns}
+        storageKey="rep_action_items"
+        showAssign={false}
+      />
 
       {/* E. Performance Snapshot (KPI Cards) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">

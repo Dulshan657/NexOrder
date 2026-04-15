@@ -3,7 +3,8 @@ import type { Order, Product, HoReCa, User, Invoice, SalesTarget, Promotion, Vis
 import { UserRole } from '../types';
 import { DollarSign, ShoppingBag, BarChart3, Wallet, AlertTriangle, CreditCard, Users, Package, Target, Download, TrendingUp } from 'lucide-react';
 import KPICard from './dashboard/KPICard';
-import AlertBanner from './dashboard/AlertBanner';
+import ActionItemsBoard from './ActionItemsBoard';
+import type { ActionItemColumn, ActionItem } from './ActionItemsBoard';
 import TimePeriodToggle from './dashboard/TimePeriodToggle';
 import ExpandableSection from './dashboard/ExpandableSection';
 import SalesLineChart from './charts/SalesLineChart';
@@ -133,6 +134,57 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return { overdue, outstanding, restockAlerts, stockoutData, lowStock, outOfStock, atRisk };
   }, [invoices, hoReCas, allOrders, products, lowStockThreshold]);
 
+  const actionColumns = useMemo((): ActionItemColumn[] => {
+    const overdueItems: ActionItem[] = alerts.outstanding.map(o => ({
+      id: `overdue-${o.hoReCaId}`,
+      title: o.hoReCaName,
+      subtitle: `$${o.totalOutstanding.toFixed(2)}${o.isBlocked ? ' · Blocked' : ''}`,
+      onClick: onNavigateTab ? () => onNavigateTab('Accounts') : undefined,
+    }));
+
+    const stockItems: ActionItem[] = [
+      ...alerts.outOfStock.map(p => ({
+        id: `stock-out-${p.id}`,
+        title: p.name,
+        subtitle: 'Out of stock',
+        badge: { label: 'Out', color: 'bg-red-50 text-red-700 border-red-200' },
+        onClick: onNavigateTab ? () => onNavigateTab('Products') : undefined,
+      })),
+      ...alerts.stockoutData.map(s => ({
+        id: `stock-risk-${s.productId}`,
+        title: s.productName,
+        subtitle: `${s.currentStock} left · ${s.daysRemaining ?? '?'}d`,
+        onClick: onNavigateTab ? () => onNavigateTab('Products') : undefined,
+      })),
+      ...alerts.lowStock.map(p => ({
+        id: `stock-low-${p.id}`,
+        title: p.name,
+        subtitle: `${p.inventory} left`,
+        onClick: onNavigateTab ? () => onNavigateTab('Products') : undefined,
+      })),
+    ];
+
+    const riskItems: ActionItem[] = alerts.atRisk.map(c => ({
+      id: `risk-${c.hoReCaId}`,
+      title: c.hoReCaName,
+      subtitle: c.daysSinceLastOrder != null ? `${c.daysSinceLastOrder}d ago` : undefined,
+      badge: {
+        label: c.segment === 'at_risk' ? 'At Risk' : 'Declining',
+        color: c.segment === 'at_risk' ? 'bg-red-50 text-red-800 border-red-200' : 'bg-orange-50 text-orange-800 border-orange-200',
+      },
+      onClick: onNavigateTab ? () => onNavigateTab('HoReCa Insights') : undefined,
+    }));
+
+    return [
+      { id: 'overdue', label: 'Overdue Payments', icon: CreditCard, severity: 'critical' as const,
+        items: overdueItems, onViewAll: onNavigateTab ? () => onNavigateTab('Accounts') : undefined },
+      { id: 'stock', label: 'Low / Out of Stock', icon: Package, severity: 'warning' as const,
+        items: stockItems, onViewAll: onNavigateTab ? () => onNavigateTab('Products') : undefined },
+      { id: 'at-risk', label: 'At-Risk Customers', icon: AlertTriangle, severity: 'warning' as const,
+        items: riskItems, onViewAll: onNavigateTab ? () => onNavigateTab('HoReCa Insights') : undefined },
+    ];
+  }, [alerts, onNavigateTab]);
+
   // Sales trend chart data
   const salesOverTimeData = useMemo(() => {
     const salesByDate = new Map<string, number>();
@@ -251,65 +303,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* B. Operational Alerts Banner */}
-      {(alerts.overdue.count > 0 || alerts.lowStock.length + alerts.outOfStock.length > 0 || alerts.atRisk.length > 0) ? (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <AlertBanner icon={CreditCard} label="Overdue Payments" count={alerts.overdue.count}
-            severity="critical" subtitle={`$${alerts.overdue.totalAmount.toFixed(2)}`}
-            onViewAll={onNavigateTab ? () => onNavigateTab('Accounts') : undefined}>
-            <div className="space-y-2">
-              {alerts.outstanding.slice(0, 5).map(o => (
-                <div key={o.hoReCaId} className="flex items-center justify-between text-sm">
-                  <span className="text-stone-700">{o.hoReCaName}</span>
-                  <span className={`font-semibold ${o.isBlocked ? 'text-red-600' : 'text-amber-600'}`}>
-                    ${o.totalOutstanding.toFixed(2)} {o.isBlocked && '(Blocked)'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </AlertBanner>
-
-          <AlertBanner icon={Package} label="Low / Out of Stock"
-            count={alerts.lowStock.length + alerts.outOfStock.length}
-            severity="warning"
-            onViewAll={onNavigateTab ? () => onNavigateTab('Products') : undefined}>
-            <div className="space-y-2">
-              {alerts.outOfStock.slice(0, 3).map(p => (
-                <div key={p.id} className="flex items-center justify-between text-sm">
-                  <span className="text-stone-700">{p.name}</span>
-                  <span className="text-red-600 font-semibold">Out of stock</span>
-                </div>
-              ))}
-              {alerts.stockoutData.slice(0, 3).map(s => (
-                <div key={s.productId} className="flex items-center justify-between text-sm">
-                  <span className="text-stone-700">{s.productName}</span>
-                  <span className="text-amber-600 font-semibold">{s.currentStock} left ({s.daysRemaining}d)</span>
-                </div>
-              ))}
-            </div>
-          </AlertBanner>
-
-          <AlertBanner icon={AlertTriangle} label="At-Risk Customers" count={alerts.atRisk.length}
-            severity="warning"
-            onViewAll={onNavigateTab ? () => onNavigateTab('HoReCa Insights') : undefined}>
-            <div className="space-y-2">
-              {alerts.atRisk.slice(0, 5).map(c => (
-                <div key={c.hoReCaId} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-stone-700">{c.hoReCaName}</span>
-                    <SegmentBadge segment={c.segment} />
-                  </div>
-                  <span className="text-orange-600 text-xs">{c.daysSinceLastOrder}d ago</span>
-                </div>
-              ))}
-            </div>
-          </AlertBanner>
-        </div>
-      ) : (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-500" />
-          <span className="text-sm text-emerald-700 font-medium">All clear — no urgent alerts</span>
-        </div>
-      )}
+      <ActionItemsBoard
+        title="Action Items"
+        columns={actionColumns}
+        storageKey="admin_action_items"
+        users={users}
+        showAssign={true}
+      />
 
       {/* C. Revenue Snapshot KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

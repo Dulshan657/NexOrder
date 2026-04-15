@@ -105,3 +105,18 @@ body {
 .cart-push {
   transition: margin-right 300ms ease-in-out;
 }
+
+/* Action Items Board — subtle scrollbar */
+.action-items-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.action-items-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.action-items-scroll::-webkit-scrollbar-thumb {
+  background: #d6d3d1; /* stone-300 */
+  border-radius: 2px;
+}
+.action-items-scroll::-webkit-scrollbar-thumb:hover {
+  background: #a8a29e; /* stone-400 */
+}
