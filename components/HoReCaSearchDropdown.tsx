@@ -23,7 +23,11 @@ const HoReCaSearchDropdown: React.FC<HoReCaSearchDropdownProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const isRep = currentUser.role === UserRole.FIELD_REP || currentUser.role === UserRole.OFFICE_REP;
+  const canSelect =
+    currentUser.role === UserRole.FIELD_REP ||
+    currentUser.role === UserRole.OFFICE_REP ||
+    currentUser.role === UserRole.ADMIN ||
+    currentUser.role === UserRole.MANAGER;
   const isCustomer = currentUser.role === UserRole.CUSTOMER;
 
   const selectedHoReCa = hoReCas.find(h => h.id === selectedHoReCaId);
@@ -53,7 +57,7 @@ const HoReCaSearchDropdown: React.FC<HoReCaSearchDropdownProps> = ({
     );
   }
 
-  if (!isRep) return null;
+  if (!canSelect) return null;
 
   return (
     <div ref={containerRef} className="relative">
