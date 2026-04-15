@@ -24,9 +24,8 @@ import ReorderTab from './components/ReorderTab';
 import OrderDetailView from './components/OrderDetailView';
 import NotificationBell from './components/NotificationBell';
 import NotificationPanel from './components/NotificationPanel';
-import { USERS, CATEGORIES, INITIAL_PANTRY_LISTS, DEFAULT_SETTINGS } from './constants';
+import { USERS, CATEGORIES, DEFAULT_SETTINGS } from './constants';
 import { getHoReCaOutstanding } from './services/accountingService';
-import type { PantryLists } from './types';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { startScheduledVisit } from './services/scheduledVisitService';
 import { resolveHoReCaPrice, getAllApplicablePromotions, isPromotionActive } from './pricing';
@@ -56,6 +55,7 @@ import { useVisits, useCreateVisit } from './hooks/queries/useVisits';
 import { useSalesTargets } from './hooks/queries/useSalesTargets';
 import { useSettings, useUpdateSettings } from './hooks/queries/useSettings';
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from './hooks/queries/useNotifications';
+import { usePantryItems, useUpsertPantryItem, useDeletePantryItem } from './hooks/queries/usePantry';
 
 // ── Adapters ──────────────────────────────────────────────────────────────────
 import {
@@ -67,10 +67,10 @@ import {
 const App: React.FC = () => {
     // ── UI-only / client state (unchanged) ───────────────────────────────────
     const [currentUser, setCurrentUser] = useState<User>(USERS[2]); // Default to Sales Rep
-    const [appLogo, setAppLogo] = useLocalStorage<string | null>('app_logo', null);
+    // appLogo now persisted in app_settings.companyLogoUrl (Supabase Storage URL).
 
     // Pantry kept in localStorage — complex keyed structure, migrated later
-    const [pantryLists, setPantryLists] = useLocalStorage<PantryLists>('pantry_lists', INITIAL_PANTRY_LISTS);
+    // Pantry now persisted in Supabase per HoReCa via usePantryItems below.
 
     const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
     const [selectedHoReCaId, setSelectedHoReCaId] = useState<number | null>(null);
@@ -178,6 +178,11 @@ const App: React.FC = () => {
         }
         return hoReCas.find(c => c.id === selectedHoReCaId);
     }, [hoReCas, selectedHoReCaId, currentUser]);
+
+    // ── Pantry (per HoReCa, persisted in Supabase) ────────────────────────────
+    const { data: rawPantryRows = [] } = usePantryItems(selectedHoReCa?.id ?? null);
+    const upsertPantryItemMutation = useUpsertPantryItem();
+    const deletePantryItemMutation = useDeletePantryItem();
 
     const total = useMemo(() => orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0), [orderItems]);
 
@@ -328,12 +333,14 @@ const App: React.FC = () => {
         }
     };
 
-    // ── Pantry handlers (localStorage, unchanged) ─────────────────────────────
-    const currentPantryItems = useMemo(() => {
-        const custId = selectedHoReCa?.id;
-        if (!custId) return [];
-        return pantryLists[custId] ?? [];
-    }, [pantryLists, selectedHoReCa]);
+    // ── Pantry handlers (Supabase-backed) ─────────────────────────────────────
+    const currentPantryItems: PantryItem[] = useMemo(() => {
+        return rawPantryRows.map(row => ({
+            productId: row.product_id,
+            preferredPackSize: row.preferred_pack_size ?? undefined,
+            defaultQuantity: row.default_quantity,
+        }));
+    }, [rawPantryRows]);
 
     const getLastOrderedQuantity = useCallback((hoReCaId: number, productId: number, packSize?: number): number => {
         const hoReCaOrders = allOrders
@@ -349,36 +356,39 @@ const App: React.FC = () => {
     const handleTogglePantry = useCallback((productId: number) => {
         const custId = selectedHoReCa?.id;
         if (!custId) return;
-        setPantryLists(prev => {
-            const list = prev[custId] ?? [];
-            const exists = list.some(item => item.productId === productId);
-            if (exists) {
-                return { ...prev, [custId]: list.filter(item => item.productId !== productId) };
-            }
-            const defaultQuantity = getLastOrderedQuantity(custId, productId);
-            return { ...prev, [custId]: [...list, { productId, preferredPackSize: undefined, defaultQuantity }] };
+        const exists = currentPantryItems.some(item => item.productId === productId);
+        if (exists) {
+            deletePantryItemMutation.mutate({ horecaId: custId, productId });
+            return;
+        }
+        const defaultQuantity = getLastOrderedQuantity(custId, productId);
+        upsertPantryItemMutation.mutate({
+            horeca_id: custId,
+            product_id: productId,
+            preferred_pack_size: null,
+            default_quantity: defaultQuantity,
         });
-    }, [selectedHoReCa, getLastOrderedQuantity]);
+    }, [selectedHoReCa, currentPantryItems, getLastOrderedQuantity, upsertPantryItemMutation, deletePantryItemMutation]);
 
     const handleRemoveFromPantry = useCallback((productId: number) => {
         const custId = selectedHoReCa?.id;
         if (!custId) return;
-        setPantryLists(prev => ({
-            ...prev,
-            [custId]: (prev[custId] ?? []).filter(item => item.productId !== productId),
-        }));
-    }, [selectedHoReCa]);
+        deletePantryItemMutation.mutate({ horecaId: custId, productId });
+    }, [selectedHoReCa, deletePantryItemMutation]);
 
     const handleUpdatePantryItem = useCallback((productId: number, updates: Partial<Pick<PantryItem, 'preferredPackSize' | 'defaultQuantity'>>) => {
         const custId = selectedHoReCa?.id;
         if (!custId) return;
-        setPantryLists(prev => ({
-            ...prev,
-            [custId]: (prev[custId] ?? []).map(item =>
-                item.productId === productId ? { ...item, ...updates } : item
-            ),
-        }));
-    }, [selectedHoReCa]);
+        const existing = currentPantryItems.find(i => i.productId === productId);
+        if (!existing) return;
+        const merged = { ...existing, ...updates };
+        upsertPantryItemMutation.mutate({
+            horeca_id: custId,
+            product_id: productId,
+            preferred_pack_size: merged.preferredPackSize ?? null,
+            default_quantity: merged.defaultQuantity,
+        });
+    }, [selectedHoReCa, currentPantryItems, upsertPantryItemMutation]);
 
     const handleAddPantryItemToOrder = useCallback((pantryItem: PantryItem) => {
         const product = products.find(p => p.id === pantryItem.productId);
@@ -798,14 +808,12 @@ const App: React.FC = () => {
     }, [showStockTab, view, isHoReCaUser]);
 
     const ordersForHistory = useMemo(() => {
-        if (isRep) {
-            return allOrders.filter(o => o.submittedBy.id === currentUser.id);
-        }
         if (isHoReCaUser) {
             return allOrders.filter(o => o.hoReCa.id === currentUser.hoReCaId);
         }
-        return [];
-    }, [allOrders, currentUser, isRep, isHoReCaUser]);
+        // Reps, Admins, Managers see all orders
+        return allOrders;
+    }, [allOrders, currentUser, isHoReCaUser]);
 
 
     if (confirmation) {
@@ -1290,11 +1298,12 @@ const App: React.FC = () => {
                                 onSetRoutes={setRoutes}
                                 addToast={addToast}
                                 onSetAdminView={setAdminView}
-                                appLogo={appLogo}
+                                appLogo={appSettings.companyLogoUrl ?? null}
                                 appSettings={appSettings}
                                 onUpdateLogo={(logo) => {
-                                    setAppLogo(logo);
-                                    addToast('Logo updated successfully!', 'success');
+                                    updateSettingsMutation.mutate(fromAppSettings({ companyLogoUrl: logo }) as any, {
+                                        onError: (err) => addToast(`Error saving logo: ${err.message}`, 'error'),
+                                    });
                                 }}
                                 onSaveSettings={(s) => {
                                     updateSettingsMutation.mutate(fromAppSettings(s) as any, {

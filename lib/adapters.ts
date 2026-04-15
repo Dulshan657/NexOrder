@@ -424,6 +424,7 @@ export function toAppSettings(row: SettingsRow): AppSettings {
     lowStockThreshold: row.low_stock_threshold,
     currency: row.currency,
     showStockToHoReCa: row.show_stock_to_horeca,
+    companyLogoUrl: row.company_logo_url,
   }
 }
 
@@ -440,6 +441,7 @@ export function fromAppSettings(s: Partial<AppSettings>): Record<string, unknown
   if (s.lowStockThreshold !== undefined) row.low_stock_threshold = s.lowStockThreshold
   if (s.currency !== undefined) row.currency = s.currency
   if (s.showStockToHoReCa !== undefined) row.show_stock_to_horeca = s.showStockToHoReCa
+  if (s.companyLogoUrl !== undefined) row.company_logo_url = s.companyLogoUrl
   return row
 }
 
