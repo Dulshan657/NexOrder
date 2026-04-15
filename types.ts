@@ -194,6 +194,7 @@ export interface AppSettings {
     lowStockThreshold: number;
     currency: string;
     showStockToHoReCa: boolean;
+    companyLogoUrl?: string | null;
 }
 
 export interface PantryItem {

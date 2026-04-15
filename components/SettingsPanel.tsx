@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import type { AppSettings, HoReCa, Product } from '../types';
-import { Building2, FileText, Package, CreditCard, DollarSign, AlertTriangle, Tags } from 'lucide-react';
+import { Building2, FileText, Package, CreditCard, DollarSign, AlertTriangle, Tags, Loader2 } from 'lucide-react';
+import { uploadToBucket, deleteFromBucketByUrl } from '../services/supabase/storageService';
+import { useToasts } from '../hooks/useToasts';
 
 interface SettingsPanelProps {
     settings: AppSettings;
@@ -17,6 +19,8 @@ const CURRENCIES = ['AUD', 'USD', 'NZD', 'GBP', 'EUR', 'SGD', 'MYR'];
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, appLogo, hoReCas, products, onSaveSettings, onUpdateLogo, onUpdateHoReCa }) => {
     const [draft, setDraft] = useState<AppSettings>(settings);
     const [logoPreview, setLogoPreview] = useState<string | null>(appLogo);
+    const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+    const { addToast } = useToasts();
     const [creditLimitEdits, setCreditLimitEdits] = useState<Record<number, string>>({});
     const [stockTabEdits, setStockTabEdits] = useState<Record<number, boolean | undefined>>({});
     const [saved, setSaved] = useState(false);
@@ -98,19 +102,35 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, appLogo, hoReCa
         setSaved(false);
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file && file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onloadend = () => setLogoPreview(reader.result as string);
-            reader.readAsDataURL(file);
-            setSaved(false);
+        if (!file || !file.type.startsWith('image/')) return;
+        setIsUploadingLogo(true);
+        try {
+            const url = await uploadToBucket('company-assets', file, { prefix: 'logos' });
+            setLogoPreview(url);
+            onUpdateLogo(url);
+            addToast('Logo uploaded.', 'success');
+        } catch (err) {
+            addToast(err instanceof Error ? `Logo upload failed: ${err.message}` : 'Logo upload failed', 'error');
+        } finally {
+            setIsUploadingLogo(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleRemoveLogo = async () => {
+        const previousUrl = logoPreview;
+        setLogoPreview(null);
+        onUpdateLogo(null);
+        if (previousUrl) {
+            try { await deleteFromBucketByUrl('company-assets', previousUrl); } catch { /* ignore */ }
         }
     };
 
     const handleSave = () => {
         onSaveSettings(draft);
-        onUpdateLogo(logoPreview);
+        // Logo persistence happens inline via handleFileChange / handleRemoveLogo.
 
         // Save any edited credit limits
         for (const [idStr, valStr] of Object.entries(creditLimitEdits)) {
@@ -216,25 +236,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, appLogo, hoReCa
                         <p className="text-xs text-stone-500 mb-3">Displayed in the sidebar. Recommended: 200x50px.</p>
                         <div className="flex items-center gap-4">
                             <div className="w-40 h-20 bg-white border border-stone-200 rounded-lg flex items-center justify-center p-2 shadow-sm">
-                                {logoPreview ? (
+                                {isUploadingLogo ? (
+                                    <Loader2 className="w-6 h-6 text-stone-400 animate-spin" />
+                                ) : logoPreview ? (
                                     <img src={logoPreview} alt="Logo" className="max-w-full max-h-full object-contain" />
                                 ) : (
                                     <span className="text-stone-400 text-xs">No Logo</span>
                                 )}
                             </div>
                             <div className="flex flex-col gap-2">
-                                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+                                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" disabled={isUploadingLogo} />
                                 <button
                                     type="button"
                                     onClick={() => fileInputRef.current?.click()}
-                                    className="bg-white py-2 px-3 border border-stone-300 rounded-lg text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-emerald-500"
+                                    disabled={isUploadingLogo}
+                                    className="bg-white py-2 px-3 border border-stone-300 rounded-lg text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
-                                    Upload Logo
+                                    {isUploadingLogo ? 'Uploading…' : 'Upload Logo'}
                                 </button>
-                                {logoPreview && (
+                                {logoPreview && !isUploadingLogo && (
                                     <button
                                         type="button"
-                                        onClick={() => { setLogoPreview(null); setSaved(false); }}
+                                        onClick={handleRemoveLogo}
                                         className="text-xs font-medium text-red-600 hover:text-red-800 self-start transition-colors duration-200 cursor-pointer rounded px-1 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-red-500"
                                     >
                                         Remove

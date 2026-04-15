@@ -633,6 +633,7 @@ export interface Database {
           low_stock_threshold: number
           currency: string
           show_stock_to_horeca: boolean
+          company_logo_url: string | null
         }
         Insert: {
           id?: number
@@ -647,6 +648,7 @@ export interface Database {
           low_stock_threshold: number
           currency: string
           show_stock_to_horeca: boolean
+          company_logo_url: string | null
         }
         Update: {
           id?: number
@@ -661,6 +663,7 @@ export interface Database {
           low_stock_threshold?: number
           currency?: string
           show_stock_to_horeca?: boolean
+          company_logo_url?: string | null
         }
       }
     }

@@ -1,7 +1,9 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import type { OrderVerification, OrderVerificationMethod } from '../types';
 import { UserRole } from '../types';
-import { PenLine, Phone, X } from 'lucide-react';
+import { PenLine, Phone, X, Loader2 } from 'lucide-react';
+import { uploadToBucket, dataUrlToBlob } from '../services/supabase/storageService';
+import { useToasts } from '../hooks/useToasts';
 
 interface OrderVerificationModalProps {
     userRole: UserRole;
@@ -25,6 +27,10 @@ const OrderVerificationModal: React.FC<OrderVerificationModalProps> = ({ userRol
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [hasSignature, setHasSignature] = useState(false);
+
+    // Upload state
+    const [isUploading, setIsUploading] = useState(false);
+    const { addToast } = useToasts();
 
     // Call reference state
     const [callerName, setCallerName] = useState('');
@@ -94,13 +100,23 @@ const OrderVerificationModal: React.FC<OrderVerificationModalProps> = ({ userRol
         setHasSignature(false);
     };
 
-    const handleConfirm = () => {
+    const handleConfirm = async () => {
         const now = new Date().toISOString();
 
         if (method === 'signature') {
-            if (!hasSignature) return;
+            if (!hasSignature || isUploading) return;
             const dataUrl = canvasRef.current?.toDataURL('image/png') ?? '';
-            onConfirm({ method: 'signature', signatureDataUrl: dataUrl, timestamp: now });
+            if (!dataUrl) return;
+            setIsUploading(true);
+            try {
+                const blob = dataUrlToBlob(dataUrl);
+                const url = await uploadToBucket('signatures', blob, { prefix: 'orders', contentType: 'image/png', ext: 'png' });
+                onConfirm({ method: 'signature', signatureDataUrl: url, timestamp: now });
+            } catch (err) {
+                addToast(err instanceof Error ? `Signature upload failed: ${err.message}` : 'Signature upload failed', 'error');
+            } finally {
+                setIsUploading(false);
+            }
         } else {
             if (!callerName.trim()) return;
             onConfirm({
@@ -269,10 +285,11 @@ const OrderVerificationModal: React.FC<OrderVerificationModalProps> = ({ userRol
                     </button>
                     <button
                         onClick={handleConfirm}
-                        disabled={!isValid}
-                        className="px-5 py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors cursor-pointer disabled:bg-stone-300 disabled:text-stone-500 disabled:cursor-not-allowed"
+                        disabled={!isValid || isUploading}
+                        className="px-5 py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors cursor-pointer disabled:bg-stone-300 disabled:text-stone-500 disabled:cursor-not-allowed flex items-center gap-2"
                     >
-                        Confirm & Place Order
+                        {isUploading && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {isUploading ? 'Uploading signature…' : 'Confirm & Place Order'}
                     </button>
                 </div>
             </div>
