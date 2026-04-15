@@ -13,6 +13,7 @@ import { useToasts } from './hooks/useToasts';
 import UserSelector from './components/UserSelector';
 import AdminView, { AdminTab } from './components/AdminView';
 import OrderHistory from './components/OrderHistory';
+import OrdersPage from './components/OrdersPage';
 import UserProfile from './components/UserProfile';
 import MobileCheckoutButton from './components/MobileCheckoutButton';
 import RepDashboardV2 from './components/RepDashboardV2';
@@ -80,7 +81,7 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [errors, setErrors] = useState<{hoReCa?: string; emptyOrder?: string, api?: string}>({});
     const [confirmation, setConfirmation] = useState<{order: Order, message: string} | null>(null);
-    const [view, setView] = useState<'ordering' | 'history' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits'>('dashboard');
+    const [view, setView] = useState<'ordering' | 'orders' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits'>('dashboard');
     const [adminView, setAdminView] = useState<AdminTab>('Dashboard');
     const [orderingTab, setOrderingTab] = useState<'catalogue' | 'pantry' | 'reorder'>('catalogue');
     const [deliveryDate, setDeliveryDate] = useState('');
@@ -868,10 +869,10 @@ const App: React.FC = () => {
                                 <ShoppingCart className="w-5 h-5 mr-3" /> Shop
                             </button>
                             <button
-                                onClick={() => { setView('history'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'history' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                onClick={() => { setView('orders'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'orders' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <History className="w-5 h-5 mr-3" /> Order History
+                                <History className="w-5 h-5 mr-3" /> Orders
                             </button>
                             <button
                                 onClick={() => { setView('accounts'); setIsSidebarOpen(false); }}
@@ -1456,19 +1457,35 @@ const App: React.FC = () => {
                                     />
                                     </>
                                 )}
-                                {view === 'history' && <OrderHistory orders={ordersForHistory} hoReCas={hoReCas} currentUser={currentUser} onReorder={handleReorder} onBulkReorder={(selectedOrders) => {
-                                    resetOrder();
-                                    const allItems: OrderItem[] = [];
-                                    for (const order of selectedOrders) {
-                                        for (const item of order.items) {
-                                            const existing = allItems.find(i => i.id === item.id && i.packSize === item.packSize);
-                                            if (existing) { existing.quantity += item.quantity; }
-                                            else { allItems.push({ ...item }); }
-                                        }
-                                    }
-                                    handleReorderItems(allItems, 'replace');
-                                    setView('ordering');
-                                }} onViewDetail={setSelectedOrderId} onBack={() => setView(isRep ? 'dashboard' : 'ordering')} />}
+                                {view === 'orders' && (
+                                    isHoReCaUser
+                                        ? <OrderHistory orders={ordersForHistory} hoReCas={hoReCas} currentUser={currentUser} onReorder={handleReorder} onBulkReorder={(selectedOrders) => {
+                                            resetOrder();
+                                            const allItems: OrderItem[] = [];
+                                            for (const order of selectedOrders) {
+                                                for (const item of order.items) {
+                                                    const existing = allItems.find(i => i.id === item.id && i.packSize === item.packSize);
+                                                    if (existing) { existing.quantity += item.quantity; }
+                                                    else { allItems.push({ ...item }); }
+                                                }
+                                            }
+                                            handleReorderItems(allItems, 'replace');
+                                            setView('ordering');
+                                        }} onViewDetail={setSelectedOrderId} onBack={() => setView('ordering')} />
+                                        : <OrdersPage orders={ordersForHistory} hoReCas={hoReCas} currentUser={currentUser} onReorder={handleReorder} onBulkReorder={(selectedOrders) => {
+                                            resetOrder();
+                                            const allItems: OrderItem[] = [];
+                                            for (const order of selectedOrders) {
+                                                for (const item of order.items) {
+                                                    const existing = allItems.find(i => i.id === item.id && i.packSize === item.packSize);
+                                                    if (existing) { existing.quantity += item.quantity; }
+                                                    else { allItems.push({ ...item }); }
+                                                }
+                                            }
+                                            handleReorderItems(allItems, 'replace');
+                                            setView('ordering');
+                                        }} onViewDetail={setSelectedOrderId} onUpdateStatus={handleUpdateOrderStatus} onBack={() => setView(isRep ? 'dashboard' : 'ordering')} />
+                                )}
                                 {view === 'hoReCas' && isRep && (
                                     <HoReCaListView
                                         hoReCas={hoReCas}
