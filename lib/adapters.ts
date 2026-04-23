@@ -189,7 +189,7 @@ export function toOrder(
     address: '',
   } as HoReCa
 
-  const submittedBy = users.find(u => String(u.id) === row.submitted_by) ?? {
+  const submittedBy = users.find(u => u.id === uuidToNumericId(row.submitted_by)) ?? {
     id: 0,
     name: 'Unknown',
     email: '',
@@ -278,7 +278,7 @@ export function toPurchaseOrder(
     phone: '',
   }
 
-  const submittedBy = users.find(u => String(u.id) === row.submitted_by) ?? {
+  const submittedBy = users.find(u => u.id === uuidToNumericId(row.submitted_by)) ?? {
     id: 0, name: 'Unknown', email: '', role: 'Admin' as const,
   } as User
 
@@ -393,7 +393,7 @@ export function toVisit(row: VisitRow): Visit {
   return {
     id: row.id,
     hoReCaId: row.horeca_id,
-    userId: Number(row.user_id) || 0,
+    userId: uuidToNumericId(row.user_id),
     scheduledVisitId: row.scheduled_visit_id ?? undefined,
     arrivalTime: row.arrival_time,
     departureTime: row.departure_time ?? undefined,

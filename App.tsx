@@ -57,7 +57,7 @@ import { useSettings, useUpdateSettings } from './hooks/queries/useSettings';
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from './hooks/queries/useNotifications';
 import { usePantryItems, useUpsertPantryItem, useDeletePantryItem } from './hooks/queries/usePantry';
 import { useProfiles } from './hooks/queries/useProfiles';
-import { setUserIdMap } from './lib/userIdMap';
+import { setUserIdMap, numericIdToUuid } from './lib/userIdMap';
 
 // ── Adapters ──────────────────────────────────────────────────────────────────
 import {
@@ -124,7 +124,7 @@ const App: React.FC = () => {
     }, [rawProfiles]);
     const { data: rawSalesTargets = [] } = useSalesTargets();
     const { data: rawSettings } = useSettings();
-    const { data: rawNotifications = [] } = useNotifications(String(currentUser.id), currentUser.role);
+    const { data: rawNotifications = [] } = useNotifications(numericIdToUuid(currentUser.id), currentUser.role);
 
     // ── Adapt DB rows → frontend types ───────────────────────────────────────
     const products = useMemo(() => rawProducts.map(toProduct), [rawProducts]);
@@ -591,7 +591,7 @@ const App: React.FC = () => {
             createOrderMutation.mutate({
                 order: {
                     horeca_id: hoReCaForOrder.id,
-                    submitted_by: String(currentUser.id),
+                    submitted_by: numericIdToUuid(currentUser.id),
                     total,
                     order_date: now,
                     notes: notes || null,
@@ -693,7 +693,7 @@ const App: React.FC = () => {
     }, [markNotificationReadMutation]);
 
     const handleMarkAllNotificationsRead = useCallback(() => {
-        markAllNotificationsReadMutation.mutate(String(currentUser.id));
+        markAllNotificationsReadMutation.mutate(numericIdToUuid(currentUser.id));
     }, [markAllNotificationsReadMutation, currentUser.id]);
 
     // ── setRoutes shim — child components that accept setRoutes as a prop ─────
@@ -737,7 +737,7 @@ const App: React.FC = () => {
             if (!prevIds.has(v.id)) {
                 createVisitMutation.mutate({
                     horeca_id: v.hoReCaId,
-                    user_id: String(v.userId),
+                    user_id: numericIdToUuid(v.userId),
                     scheduled_visit_id: v.scheduledVisitId ?? null,
                     arrival_time: v.arrivalTime,
                     departure_time: v.departureTime ?? null,
@@ -1280,7 +1280,7 @@ const App: React.FC = () => {
                                     createPurchaseOrderMutation.mutate({
                                         po: {
                                             supplier_id: po.supplier.id,
-                                            submitted_by: String(currentUser.id),
+                                            submitted_by: numericIdToUuid(currentUser.id),
                                             total: po.total,
                                             order_date: po.orderDate,
                                             status: po.status,
