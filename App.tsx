@@ -56,6 +56,8 @@ import { useSalesTargets } from './hooks/queries/useSalesTargets';
 import { useSettings, useUpdateSettings } from './hooks/queries/useSettings';
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from './hooks/queries/useNotifications';
 import { usePantryItems, useUpsertPantryItem, useDeletePantryItem } from './hooks/queries/usePantry';
+import { useProfiles } from './hooks/queries/useProfiles';
+import { setUserIdMap } from './lib/userIdMap';
 
 // ── Adapters ──────────────────────────────────────────────────────────────────
 import {
@@ -105,6 +107,21 @@ const App: React.FC = () => {
     const { data: rawPromotions = [] } = usePromotions();
     const { data: rawRoutes = [] } = useScheduledVisits();
     const { data: rawVisits = [] } = useVisits();
+    const { data: rawProfiles = [] } = useProfiles();
+
+    // Populate the numeric-id → real-profile-UUID registry used by adapters
+    // (scheduled_visits, etc). Falls back to deterministic UUIDs if profiles
+    // haven't loaded yet. See lib/userIdMap.ts for the rationale.
+    useEffect(() => {
+        if (!rawProfiles.length) return;
+        const byEmail = new Map(rawProfiles.map(p => [p.email, p.id]));
+        const entries: Array<[number, string]> = [];
+        for (const u of USERS) {
+            const uuid = byEmail.get(u.email);
+            if (uuid) entries.push([u.id, uuid]);
+        }
+        setUserIdMap(entries);
+    }, [rawProfiles]);
     const { data: rawSalesTargets = [] } = useSalesTargets();
     const { data: rawSettings } = useSettings();
     const { data: rawNotifications = [] } = useNotifications(String(currentUser.id), currentUser.role);

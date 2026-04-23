@@ -55,3 +55,11 @@ export async function getProfile(userId: string) {
   if (error) throw error
   return data
 }
+
+export async function listProfiles() {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, email, name, role')
+  if (error) throw error
+  return data
+}
