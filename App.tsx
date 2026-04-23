@@ -10,7 +10,10 @@ import BundleSelectModal from './components/BundleSelectModal';
 import { applyCartPromotions } from './services/promotionService';
 import OrderConfirmation from './components/OrderConfirmation';
 import { useToasts } from './hooks/useToasts';
-import UserSelector from './components/UserSelector';
+import ProfileMenu from './components/auth/ProfileMenu';
+import { useAuth } from './hooks/useAuth';
+import { profileToUser } from './lib/profileToUser';
+import { useQueryClient } from '@tanstack/react-query';
 import AdminView, { AdminTab } from './components/AdminView';
 import OrderHistory from './components/OrderHistory';
 import OrdersPage from './components/OrdersPage';
@@ -67,8 +70,16 @@ import {
 } from './lib/adapters';
 
 const App: React.FC = () => {
-    // ── UI-only / client state (unchanged) ───────────────────────────────────
-    const [currentUser, setCurrentUser] = useState<User>(USERS[2]); // Default to Sales Rep
+    // ── Auth ────────────────────────────────────────────────────────────────
+    // currentUser is derived from the real logged-in profile. AuthGate above
+    // this component guarantees user + profile are non-null by the time App
+    // renders, so the non-null assertions are safe here.
+    const auth = useAuth();
+    const currentUser = useMemo(() => profileToUser(auth.profile!), [auth.profile]);
+    const currentUserUuid = auth.user?.id ?? '';
+    const queryClient = useQueryClient();
+
+    // ── UI-only / client state ────────────────────────────────────────────────
     // appLogo now persisted in app_settings.companyLogoUrl (Supabase Storage URL).
 
     // Pantry kept in localStorage — complex keyed structure, migrated later
@@ -124,7 +135,7 @@ const App: React.FC = () => {
     }, [rawProfiles]);
     const { data: rawSalesTargets = [] } = useSalesTargets();
     const { data: rawSettings } = useSettings();
-    const { data: rawNotifications = [] } = useNotifications(numericIdToUuid(currentUser.id), currentUser.role);
+    const { data: rawNotifications = [] } = useNotifications(currentUserUuid, currentUser.role);
 
     // ── Adapt DB rows → frontend types ───────────────────────────────────────
     const products = useMemo(() => rawProducts.map(toProduct), [rawProducts]);
@@ -138,8 +149,14 @@ const App: React.FC = () => {
     const notifications = useMemo(() => rawNotifications.map(toNotification), [rawNotifications]);
     const appSettings = useMemo(() => rawSettings ? toAppSettings(rawSettings) : DEFAULT_SETTINGS, [rawSettings]);
 
-    // Keep mock users for now — auth migration handled separately
-    const users = USERS;
+    // Users are derived from real profiles loaded from Supabase. Seeded
+    // profiles map back to their numeric USERS id via profileToUser;
+    // unknown profiles get a stable high-range id. Falls back to mock USERS
+    // during the brief boot window before profiles have loaded.
+    const users = useMemo(
+        () => (rawProfiles.length > 0 ? rawProfiles.map(profileToUser) : USERS),
+        [rawProfiles],
+    );
 
     // Orders embed hoReCa, user, and product objects
     const allOrders = useMemo(
@@ -591,7 +608,7 @@ const App: React.FC = () => {
             createOrderMutation.mutate({
                 order: {
                     horeca_id: hoReCaForOrder.id,
-                    submitted_by: numericIdToUuid(currentUser.id),
+                    submitted_by: currentUserUuid,
                     total,
                     order_date: now,
                     notes: notes || null,
@@ -693,7 +710,7 @@ const App: React.FC = () => {
     }, [markNotificationReadMutation]);
 
     const handleMarkAllNotificationsRead = useCallback(() => {
-        markAllNotificationsReadMutation.mutate(numericIdToUuid(currentUser.id));
+        markAllNotificationsReadMutation.mutate(currentUserUuid);
     }, [markAllNotificationsReadMutation, currentUser.id]);
 
     // ── setRoutes shim — child components that accept setRoutes as a prop ─────
@@ -1063,7 +1080,7 @@ const App: React.FC = () => {
                         </>
                     )}
                 </nav>
-                <UserSelector users={USERS} currentUser={currentUser} onSelectUser={setCurrentUser} />
+                <ProfileMenu currentUser={currentUser} />
             </aside>
 
             {/* Main Content Area */}
@@ -1280,7 +1297,7 @@ const App: React.FC = () => {
                                     createPurchaseOrderMutation.mutate({
                                         po: {
                                             supplier_id: po.supplier.id,
-                                            submitted_by: numericIdToUuid(currentUser.id),
+                                            submitted_by: currentUserUuid,
                                             total: po.total,
                                             order_date: po.orderDate,
                                             status: po.status,
@@ -1580,10 +1597,21 @@ const App: React.FC = () => {
                     <UserProfile
                         user={currentUser}
                         onClose={() => setIsProfileOpen(false)}
-                        onSave={(updatedUser) => {
-                            setCurrentUser(updatedUser);
-                            setIsProfileOpen(false);
-                            addToast('Profile updated!', 'success');
+                        onSave={async (updatedUser) => {
+                            try {
+                                const { supabase } = await import('./lib/supabase');
+                                const { error } = await supabase
+                                    .from('profiles')
+                                    .update({ name: updatedUser.name, email: updatedUser.email })
+                                    .eq('id', currentUserUuid);
+                                if (error) throw error;
+                                queryClient.invalidateQueries({ queryKey: ['profiles'] });
+                                addToast('Profile updated!', 'success');
+                            } catch (err) {
+                                addToast('Could not update profile.', 'error');
+                            } finally {
+                                setIsProfileOpen(false);
+                            }
                         }}
                     />
                 )}

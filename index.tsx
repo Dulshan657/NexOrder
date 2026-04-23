@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import { ToastProvider } from './hooks/useToasts';
 import { AuthProvider } from './components/auth/AuthProvider';
+import AuthGate from './components/auth/AuthGate';
 import { queryClient } from './lib/queryClient';
 import ToastContainer from './components/ToastContainer';
 
@@ -18,7 +19,9 @@ root.render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ToastProvider>
-          <App />
+          <AuthGate>
+            <App />
+          </AuthGate>
           <ToastContainer />
         </ToastProvider>
       </AuthProvider>
