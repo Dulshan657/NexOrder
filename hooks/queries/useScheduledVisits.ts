@@ -40,6 +40,7 @@ export function useCreateScheduledVisit() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: routeKeys.all })
     },
+    onError: (err) => console.error('[scheduled_visits] create failed', err),
   })
 }
 
@@ -51,6 +52,7 @@ export function useUpdateScheduledVisit() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: routeKeys.all })
     },
+    onError: (err) => console.error('[scheduled_visits] update failed', err),
   })
 }
 
@@ -61,5 +63,6 @@ export function useDeleteScheduledVisit() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: routeKeys.all })
     },
+    onError: (err) => console.error('[scheduled_visits] delete failed', err),
   })
 }

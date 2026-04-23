@@ -15,6 +15,7 @@ import type {
   PromotionTargeting, OrderStatus, DeliveryTimeSlot, PurchaseOrderItem,
 } from '@/types'
 import type { Database } from './database.types'
+import { numericIdToUuid, uuidToNumericId } from './userIdMap'
 
 // ── DB Row types ──────────────────────────────────────────────────
 type ProductRow = Database['public']['Tables']['products']['Row']
@@ -345,11 +346,11 @@ export function toScheduledVisit(row: RouteRow): ScheduledVisit {
     date: row.date ?? '',
     stops: (row.stops ?? []) as ScheduledVisitStop[],
     status: row.status as ScheduledVisit['status'],
-    createdBy: Number(row.created_by) || 0,
+    createdBy: uuidToNumericId(row.created_by),
     createdAt: row.created_at,
     completedAt: row.completed_at ?? undefined,
-    assignedTo: row.assigned_to != null ? Number(row.assigned_to) || 0 : undefined,
-    assignedBy: row.assigned_by != null ? Number(row.assigned_by) || 0 : undefined,
+    assignedTo: row.assigned_to != null ? uuidToNumericId(row.assigned_to) : undefined,
+    assignedBy: row.assigned_by != null ? uuidToNumericId(row.assigned_by) : undefined,
     assignedAt: row.assigned_at ?? undefined,
     isTemplate: row.is_template ?? undefined,
     templateId: row.template_id ?? undefined,
@@ -360,13 +361,16 @@ export function toScheduledVisit(row: RouteRow): ScheduledVisit {
 
 export function fromScheduledVisit(r: Partial<ScheduledVisit>): Record<string, unknown> {
   const row: Record<string, unknown> = {}
+  if (r.id !== undefined) row.id = r.id
   if (r.name !== undefined) row.name = r.name
   if (r.date !== undefined) row.date = r.date || null
   if (r.stops !== undefined) row.stops = r.stops
   if (r.status !== undefined) row.status = r.status
+  if (r.createdBy !== undefined) row.created_by = numericIdToUuid(r.createdBy)
+  if (r.createdAt !== undefined) row.created_at = r.createdAt
   if (r.completedAt !== undefined) row.completed_at = r.completedAt
-  if (r.assignedTo !== undefined) row.assigned_to = r.assignedTo
-  if (r.assignedBy !== undefined) row.assigned_by = r.assignedBy
+  if (r.assignedTo !== undefined) row.assigned_to = numericIdToUuid(r.assignedTo)
+  if (r.assignedBy !== undefined) row.assigned_by = numericIdToUuid(r.assignedBy)
   if (r.assignedAt !== undefined) row.assigned_at = r.assignedAt
   if (r.isTemplate !== undefined) row.is_template = r.isTemplate
   if (r.templateId !== undefined) row.template_id = r.templateId
