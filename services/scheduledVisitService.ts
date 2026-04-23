@@ -1,4 +1,17 @@
-import type { ScheduledVisit, ScheduledVisitStop, ScheduledVisitStatus, ScheduledVisitChangeRequest, RecurrenceRule, MockRepPosition, HoReCa, ReorderPayload, AddStopPayload, RemoveStopPayload } from '../types';
+import type { ScheduledVisit, ScheduledVisitStop, ScheduledVisitStatus, ScheduledVisitChangeRequest, RecurrenceRule, MockRepPosition, HoReCa, ReorderPayload, AddStopPayload, RemoveStopPayload, User } from '../types';
+import { UserRole } from '../types';
+
+/**
+ * Whether the given user is allowed to add a stop to this route.
+ * Feature rule: assignee, creator, admin, or manager can add stops to a
+ * route in 'planned' or 'in_progress' status. Completed routes are locked.
+ */
+export function canAddStopToRoute(route: ScheduledVisit, user: User): boolean {
+  if (route.status === 'completed') return false;
+  if (user.role === UserRole.ADMIN || user.role === UserRole.MANAGER) return true;
+  const assignee = route.assignedTo ?? route.createdBy;
+  return assignee === user.id;
+}
 
 export function createScheduledVisit(
   name: string,
@@ -33,13 +46,21 @@ export function reorderStops(route: ScheduledVisit, fromIndex: number, toIndex: 
   };
 }
 
-export function addStopToScheduledVisit(route: ScheduledVisit, hoReCaId: number): ScheduledVisit {
+export function addStopToScheduledVisit(
+  route: ScheduledVisit,
+  hoReCaId: number,
+  atIndex?: number,
+): ScheduledVisit {
+  const newStop: ScheduledVisitStop = { hoReCaId, sequence: 0, status: 'pending' };
+  const next = [...route.stops];
+  if (atIndex === undefined || atIndex < 0 || atIndex > next.length) {
+    next.push(newStop);
+  } else {
+    next.splice(atIndex, 0, newStop);
+  }
   return {
     ...route,
-    stops: [
-      ...route.stops,
-      { hoReCaId, sequence: route.stops.length + 1, status: 'pending' as const },
-    ],
+    stops: next.map((s, i) => ({ ...s, sequence: i + 1 })),
   };
 }
 

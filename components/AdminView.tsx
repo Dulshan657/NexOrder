@@ -14,6 +14,7 @@ import OrdersPage from './OrdersPage';
 import HoReCaInsightsPanel from './HoReCaInsightsPanel';
 import PromotionAdmin from './PromotionAdmin';
 import ScheduledVisitsAdmin from './admin/ScheduledVisitsAdmin';
+import WalkInReviewTab from './admin/WalkInReviewTab';
 import StockView from './StockView';
 
 interface AdminViewProps {
@@ -61,7 +62,7 @@ interface AdminViewProps {
     onSetAdminView?: (tab: AdminTab) => void;
 }
 
-export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Orders' | 'Promotions' | 'Accounts' | 'Stock' | 'Scheduled Visits' | 'Users' | 'Suppliers' | 'Purchase Orders' | 'Settings';
+export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Orders' | 'Promotions' | 'Accounts' | 'Stock' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'Purchase Orders' | 'Settings';
 
 const AdminView: React.FC<AdminViewProps> = (props) => {
     const isDashboard = props.activeTab === 'Dashboard';
@@ -80,6 +81,9 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} />}
                 {props.activeTab === 'Scheduled Visits' && props.routes && props.onSetRoutes && props.addToast && (
                     <ScheduledVisitsAdmin routes={props.routes} users={props.users} hoReCas={props.hoReCas} visits={props.visits ?? []} currentUser={props.currentUser} onSetRoutes={props.onSetRoutes} addToast={props.addToast} />
+                )}
+                {props.activeTab === 'Walk-in Review' && (
+                    <WalkInReviewTab hoReCas={props.hoReCas} users={props.users} currentUser={props.currentUser} addToast={props.addToast} />
                 )}
                 {props.activeTab === 'Users' && props.currentUser.role === UserRole.ADMIN && <UserAdmin users={props.users} onAddUser={props.onAddUser} onUpdateUser={props.onUpdateUser} onDeleteUser={props.onDeleteUser} />}
                 {props.activeTab === 'Suppliers' && props.currentUser.role === UserRole.ADMIN && <SupplierAdmin suppliers={props.suppliers} onAddSupplier={props.onAddSupplier} onUpdateSupplier={props.onUpdateSupplier} onDeleteSupplier={props.onDeleteSupplier} />}

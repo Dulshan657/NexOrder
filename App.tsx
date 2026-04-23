@@ -29,7 +29,7 @@ import { getHoReCaOutstanding } from './services/accountingService';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { startScheduledVisit } from './services/scheduledVisitService';
 import { resolveHoReCaPrice, getAllApplicablePromotions, isPromotionActive } from './pricing';
-import { LayoutDashboard, ShoppingCart, ShoppingBag, History, Menu, X, Users as UsersIcon, Package, FileText, Settings, Truck, Wallet, BarChart3, Tag, MapPin, Warehouse } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, ShoppingBag, History, Menu, X, Users as UsersIcon, Package, FileText, Settings, Truck, Wallet, BarChart3, Tag, MapPin, Warehouse, UserPlus } from 'lucide-react';
 import OutstandingPayments from './components/OutstandingPayments';
 import AccountsAgingTable from './components/AccountsAgingTable';
 import StockView from './components/StockView';
@@ -800,6 +800,12 @@ const App: React.FC = () => {
     const isHoReCaUser = currentUser.role === UserRole.CUSTOMER;
     const isAdminOrManager = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
 
+    // Badge count: walk-in customers awaiting admin review
+    const walkInReviewCount = useMemo(
+        () => hoReCas.filter(h => h.isTemporary && !h.reviewedAt).length,
+        [hoReCas],
+    );
+
     // Badge count: newly assigned routes (within 48h, still planned)
     const newAssignmentCount = useMemo(() => {
       if (!isFieldRep) return 0;
@@ -999,6 +1005,18 @@ const App: React.FC = () => {
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Scheduled Visits' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <MapPin className="w-5 h-5 mr-3" /> Scheduled Visits
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Walk-in Review'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Walk-in Review' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <UserPlus className="w-5 h-5 mr-3" />
+                                <span className="flex-1 text-left">Walk-in Review</span>
+                                {walkInReviewCount > 0 && (
+                                    <span className="text-[10px] font-bold bg-amber-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                                        {walkInReviewCount}
+                                    </span>
+                                )}
                             </button>
 
                             {/* Catalogue */}

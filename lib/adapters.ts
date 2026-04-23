@@ -138,6 +138,10 @@ export function toHoReCa(
     tier: (row.tier as HoReCa['tier']) ?? undefined,
     lat: row.lat != null ? Number(row.lat) : undefined,
     lng: row.lng != null ? Number(row.lng) : undefined,
+    isTemporary: row.is_temporary ?? false,
+    createdByUserId: row.created_by_user_id != null ? uuidToNumericId(row.created_by_user_id) : undefined,
+    reviewedAt: row.reviewed_at ?? undefined,
+    reviewedByUserId: row.reviewed_by != null ? uuidToNumericId(row.reviewed_by) : undefined,
   }
 }
 
@@ -151,6 +155,10 @@ export function fromHoReCa(h: Partial<HoReCa>): Record<string, unknown> {
   if (h.tier !== undefined) row.tier = h.tier
   if (h.lat !== undefined) row.lat = h.lat
   if (h.lng !== undefined) row.lng = h.lng
+  if (h.isTemporary !== undefined) row.is_temporary = h.isTemporary
+  if (h.createdByUserId !== undefined) row.created_by_user_id = numericIdToUuid(h.createdByUserId)
+  if (h.reviewedAt !== undefined) row.reviewed_at = h.reviewedAt
+  if (h.reviewedByUserId !== undefined) row.reviewed_by = numericIdToUuid(h.reviewedByUserId)
   return row
 }
 

@@ -132,6 +132,10 @@ export interface Database {
           lat: number | null
           lng: number | null
           created_at: string
+          is_temporary: boolean
+          created_by_user_id: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
         }
         Insert: {
           id?: number
@@ -144,6 +148,10 @@ export interface Database {
           lat?: number | null
           lng?: number | null
           created_at?: string
+          is_temporary?: boolean
+          created_by_user_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
         }
         Update: {
           id?: number
@@ -156,6 +164,10 @@ export interface Database {
           lat?: number | null
           lng?: number | null
           created_at?: string
+          is_temporary?: boolean
+          created_by_user_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
         }
       }
       horeca_pricing: {

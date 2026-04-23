@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import type { ScheduledVisit, HoReCa, Visit, User } from '../../types';
-import { startScheduledVisit, completeScheduledVisit, arriveAtStop, skipStop, isAssignedScheduledVisit } from '../../services/scheduledVisitService';
+import { startScheduledVisit, completeScheduledVisit, arriveAtStop, skipStop, isAssignedScheduledVisit, canAddStopToRoute } from '../../services/scheduledVisitService';
 import ScheduledVisitStopCard from './ScheduledVisitStopCard';
 import ScheduledVisitMap from './ScheduledVisitMap';
 import ChangeRequestModal from './ChangeRequestModal';
-import { ArrowLeft, Play, CheckCircle2, Clock, UserCheck, GitPullRequest, ChevronDown, ChevronUp } from 'lucide-react';
+import AddStopModal from './AddStopModal';
+import { ArrowLeft, Play, CheckCircle2, Clock, UserCheck, GitPullRequest, ChevronDown, ChevronUp, Plus } from 'lucide-react';
 
 interface RouteDetailProps {
   route: ScheduledVisit;
   hoReCas: HoReCa[];
   visits: Visit[];
   users?: User[];
+  currentUser?: User;
   currentUserId?: number;
   onUpdateRoute: (route: ScheduledVisit) => void;
   onBack: () => void;
@@ -23,9 +25,11 @@ const CR_STATUS_COLORS: Record<string, string> = {
   rejected: 'text-red-700 bg-red-50 border-red-200',
 };
 
-const ScheduledVisitDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visits, users, currentUserId, onUpdateRoute, onBack, onCheckIn }) => {
+const ScheduledVisitDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visits, users, currentUser, currentUserId, onUpdateRoute, onBack, onCheckIn }) => {
   const [showChangeRequest, setShowChangeRequest] = useState(false);
   const [showCRHistory, setShowCRHistory] = useState(false);
+  const [showAddStop, setShowAddStop] = useState(false);
+  const canAddStop = currentUser ? canAddStopToRoute(route, currentUser) : false;
   const assigned = isAssignedScheduledVisit(route);
   const userMap = new Map((users ?? []).map(u => [u.id, u]));
   const assignerName = assigned && route.assignedBy ? userMap.get(route.assignedBy)?.name : undefined;
@@ -66,6 +70,16 @@ const ScheduledVisitDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visi
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Add stop (planned or in-progress, assignee/creator/admin/manager only) */}
+            {canAddStop && (
+              <button
+                onClick={() => setShowAddStop(true)}
+                className="flex items-center gap-1 text-sm font-medium text-stone-700 bg-white px-3 py-2 rounded-lg ring-1 ring-inset ring-stone-300 hover:bg-stone-50 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add stop
+              </button>
+            )}
             {/* ScheduledVisit actions */}
             {route.status === 'planned' && (
               <button onClick={handleStartRoute} className="flex items-center gap-1 text-sm font-medium text-white bg-nexgen-blue px-4 py-2 rounded-lg hover:bg-nexgen-blue-dark transition-colors">
@@ -154,6 +168,17 @@ const ScheduledVisitDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visi
           userId={currentUserId}
           onSave={(updated) => { onUpdateRoute(updated); setShowChangeRequest(false); }}
           onClose={() => setShowChangeRequest(false)}
+        />
+      )}
+
+      {/* Add stop modal */}
+      {showAddStop && currentUser && (
+        <AddStopModal
+          route={route}
+          hoReCas={hoReCas}
+          currentUser={currentUser}
+          onSaved={(updated) => { onUpdateRoute(updated); setShowAddStop(false); }}
+          onClose={() => setShowAddStop(false)}
         />
       )}
 

@@ -77,6 +77,13 @@ export interface HoReCa {
     tier?: HoReCaTier;
     lat?: number;
     lng?: number;
+    // Walk-in support: when a rep adds an ad-hoc stop on a route we create a
+    // temporary HoReCa flagged for office follow-up. Review fields record the
+    // admin who promoted the temp to a full record.
+    isTemporary?: boolean;
+    createdByUserId?: number;
+    reviewedAt?: string;
+    reviewedByUserId?: number;
 }
 
 export interface OrderItem extends Product {

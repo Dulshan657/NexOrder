@@ -109,6 +109,7 @@ const ScheduledVisitsView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, 
           hoReCas={hoReCas}
           visits={visits.filter(v => v.scheduledVisitId === selectedRoute.id)}
           users={users}
+          currentUser={currentUser}
           currentUserId={currentUser.id}
           onUpdateRoute={handleUpdateRoute}
           onBack={() => setSelectedRouteId(null)}

@@ -5,6 +5,7 @@ import {
   updateHoReCa,
   deleteHoReCa,
   upsertHoReCaPricing,
+  markHoReCaReviewed,
 } from '@/services/supabase/horecaService'
 import type { Database } from '@/lib/database.types'
 
@@ -50,6 +51,18 @@ export function useDeleteHoReCa() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: horecaKeys.all })
     },
+  })
+}
+
+export function useMarkHoReCaReviewed() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, reviewerUuid }: { id: number; reviewerUuid: string }) =>
+      markHoReCaReviewed(id, reviewerUuid),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: horecaKeys.all })
+    },
+    onError: (err) => console.error('[horecas] mark reviewed failed', err),
   })
 }
 

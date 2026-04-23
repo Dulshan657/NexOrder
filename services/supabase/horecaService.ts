@@ -53,6 +53,21 @@ export async function deleteHoReCa(id: number) {
   if (error) throw error
 }
 
+export async function markHoReCaReviewed(id: number, reviewerUuid: string) {
+  const { data, error } = await supabase
+    .from('horecas')
+    .update({
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: reviewerUuid,
+      is_temporary: false,
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
 export async function upsertHoReCaPricing(
   horecaId: number,
   productId: number,
