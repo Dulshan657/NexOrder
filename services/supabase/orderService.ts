@@ -2,9 +2,6 @@ import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 
 type OrderRow = Database['public']['Tables']['orders']['Row']
-type OrderInsert = Database['public']['Tables']['orders']['Insert']
-type OrderUpdate = Database['public']['Tables']['orders']['Update']
-type OrderItemInsert = Database['public']['Tables']['order_items']['Insert']
 type OrderStatus = OrderRow['status']
 
 export interface OrderFilters {
@@ -97,34 +94,17 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
 
 export async function updateOrderStatus(
   id: string,
-  status: string,
+  status: OrderStatus,
   note?: string
 ) {
-  const { data: existing, error: fetchError } = await supabase
-    .from('orders')
-    .select('status_history')
-    .eq('id', id)
-    .single()
-  if (fetchError) throw fetchError
-
-  const previousHistory = Array.isArray(existing?.status_history)
-    ? existing.status_history
-    : []
-
-  const newEntry = {
-    status,
-    timestamp: new Date().toISOString(),
-    ...(note !== undefined ? { note } : {}),
+  const { data, error } = await supabase.functions.invoke<{ order: OrderRow }>('update-order-status', {
+    body: { orderId: id, status, note },
+  })
+  if (error) {
+    const ctx = (error as { context?: { error?: { code?: string; message?: string } } }).context
+    const msg = ctx?.error?.message ?? error.message ?? 'Status update failed'
+    throw new Error(msg)
   }
-
-  const updatedHistory = [...previousHistory, newEntry]
-
-  const { data, error } = await supabase
-    .from('orders')
-    .update({ status, status_history: updatedHistory } as OrderUpdate)
-    .eq('id', id)
-    .select()
-    .single()
-  if (error) throw error
-  return data
+  if (!data?.order) throw new Error('Status update returned no order')
+  return data.order
 }

@@ -59,7 +59,7 @@ export function useUpdateOrderStatus() {
       note,
     }: {
       id: string
-      status: string
+      status: 'processing' | 'confirmed' | 'packed' | 'shipped' | 'delivered'
       note?: string
     }) => updateOrderStatus(id, status, note),
     onSuccess: () => {
