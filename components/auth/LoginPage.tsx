@@ -6,6 +6,22 @@ function getErrorMessage(error: unknown): string {
   return 'An unexpected error occurred. Please try again.'
 }
 
+interface DemoAccount {
+  role: string
+  email: string
+}
+
+const DEMO_PASSWORD = 'Password123!'
+
+const DEMO_ACCOUNTS: readonly DemoAccount[] = [
+  { role: 'Admin', email: 'alice@nexorder.com.au' },
+  { role: 'Manager', email: 'bob@nexorder.com.au' },
+  { role: 'Field Rep', email: 'charlie@nexorder.com.au' },
+  { role: 'Office Rep', email: 'emma@nexorder.com.au' },
+  { role: 'Customer (Seaside Bistro)', email: 'david@seasidebistro.com' },
+  { role: 'Customer (Lotus Garden)', email: 'mei@lotusgarden.com.au' },
+]
+
 export default function LoginPage() {
   const { signIn } = useAuth()
   const [email, setEmail] = useState('')
@@ -116,9 +132,45 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="mt-6 text-center text-xs text-stone-400 font-sans">
-          Contact your administrator if you need access.
-        </p>
+        {/* Demo credentials */}
+        <div className="mt-6 bg-amber-50 border border-amber-200 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-amber-900 font-display">
+              Demo accounts
+            </h3>
+            <span className="text-[10px] uppercase tracking-wider font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
+              Demo mode
+            </span>
+          </div>
+          <p className="text-xs text-amber-800 mb-3 font-sans">
+            Click any role to fill the form. Password:{' '}
+            <code className="px-1.5 py-0.5 bg-amber-100 rounded text-amber-900 font-mono text-[11px]">
+              {DEMO_PASSWORD}
+            </code>
+          </p>
+          <ul className="space-y-1.5">
+            {DEMO_ACCOUNTS.map((account) => (
+              <li key={account.email}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail(account.email)
+                    setPassword(DEMO_PASSWORD)
+                    setError(null)
+                  }}
+                  disabled={isSubmitting}
+                  className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-white
+                             border border-amber-200 hover:border-amber-400 hover:bg-amber-50
+                             text-left text-xs font-sans transition
+                             disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="font-semibold text-stone-800">{account.role}</span>
+                  <span className="text-stone-500 font-mono text-[11px]">{account.email}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
   )
