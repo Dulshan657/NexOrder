@@ -28,3 +28,6 @@ coverage
 .env
 .env.local
 .env.*.local
+
+# Supabase CLI artifacts (project link metadata)
+supabase/.temp/
