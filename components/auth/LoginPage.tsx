@@ -61,7 +61,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-[100dvh] bg-stone-50 grid grid-cols-1 lg:grid-cols-[5fr_7fr]">
       {/* Brand pane */}
-      <aside className="relative hidden lg:flex flex-col overflow-hidden bg-stone-950 text-stone-100 p-12 xl:p-16">
+      <aside className="relative hidden lg:flex flex-col overflow-hidden bg-gradient-to-br from-nexgen-blue to-nexgen-blue-dark text-stone-100 p-12 xl:p-16">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-[0.06]"
@@ -73,18 +73,21 @@ export default function LoginPage() {
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -top-40 -right-40 h-[520px] w-[520px] rounded-full bg-stone-700/30 blur-3xl"
+          className="pointer-events-none absolute -top-40 -right-40 h-[520px] w-[520px] rounded-full bg-white/10 blur-3xl"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -bottom-32 -left-24 h-[420px] w-[420px] rounded-full bg-stone-800/40 blur-3xl"
+          className="pointer-events-none absolute -bottom-32 -left-24 h-[420px] w-[420px] rounded-full bg-nexgen-blue-dark/60 blur-3xl"
         />
 
-        <header className="relative z-10 flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-md bg-stone-50 text-stone-950 font-display text-base font-bold">
-            N
+        <header className="relative z-10 flex items-center">
+          <div className="rounded-lg bg-white p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
+            <img
+              src="/assets/Nex-Order-no-bg-logo.png"
+              alt="Nex Order"
+              className="h-9 w-auto object-contain"
+            />
           </div>
-          <span className="font-display text-base tracking-tight text-stone-100">Nex Order</span>
         </header>
 
         <div className="relative z-10 mt-auto">
@@ -97,7 +100,7 @@ export default function LoginPage() {
           <ul className="mt-10 space-y-3">
             {CAPABILITIES.map((cap) => (
               <li key={cap} className="flex items-start gap-2.5 text-sm leading-relaxed text-stone-300">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" strokeWidth={2} />
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-white" strokeWidth={2} />
                 <span>{cap}</span>
               </li>
             ))}
@@ -113,12 +116,11 @@ export default function LoginPage() {
       {/* Form pane */}
       <main className="flex flex-col px-6 py-10 sm:px-10 lg:px-16 xl:px-24">
         <div className="flex items-center justify-between lg:hidden">
-          <div className="flex items-center gap-2.5">
-            <div className="grid h-9 w-9 place-items-center rounded-md bg-stone-950 text-stone-50 font-display text-sm font-bold">
-              N
-            </div>
-            <span className="font-display text-sm tracking-tight text-stone-900">Nex Order</span>
-          </div>
+          <img
+            src="/assets/Nex-Order-no-bg-logo.png"
+            alt="Nex Order"
+            className="h-9 w-auto object-contain"
+          />
           <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-stone-500">
             Demo build
           </span>
@@ -166,7 +168,7 @@ export default function LoginPage() {
                 style={{ transitionTimingFunction: easing }}
                 className="w-full rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900
                            placeholder-stone-400
-                           focus:border-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900/10
+                           focus:border-nexgen-blue focus:outline-none focus:ring-2 focus:ring-nexgen-blue/15
                            disabled:bg-stone-100 disabled:text-stone-400
                            transition-[border-color,box-shadow,background-color] duration-300"
               />
@@ -191,7 +193,7 @@ export default function LoginPage() {
                 style={{ transitionTimingFunction: easing }}
                 className="w-full rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900
                            placeholder-stone-400
-                           focus:border-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900/10
+                           focus:border-nexgen-blue focus:outline-none focus:ring-2 focus:ring-nexgen-blue/15
                            disabled:bg-stone-100 disabled:text-stone-400
                            transition-[border-color,box-shadow,background-color] duration-300"
               />
@@ -202,10 +204,10 @@ export default function LoginPage() {
               disabled={isSubmitting || email === '' || password === ''}
               style={{ transitionTimingFunction: easing }}
               className="group mt-2 inline-flex w-full items-center justify-between gap-3 rounded-lg
-                         bg-stone-900 px-5 py-3 text-sm font-semibold text-stone-50
-                         shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]
-                         hover:bg-stone-800 active:translate-y-[1px]
-                         focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-2 focus:ring-offset-stone-50
+                         bg-nexgen-blue px-5 py-3 text-sm font-semibold text-white
+                         shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]
+                         hover:bg-nexgen-blue-dark active:translate-y-[1px]
+                         focus:outline-none focus:ring-2 focus:ring-nexgen-blue focus:ring-offset-2 focus:ring-offset-stone-50
                          disabled:cursor-not-allowed disabled:opacity-40
                          transition-[background-color,transform,opacity] duration-300"
             >
@@ -240,7 +242,7 @@ export default function LoginPage() {
                     style={{ transitionTimingFunction: easing }}
                     className="group flex w-full items-center gap-4 py-3
                                text-left
-                               hover:bg-stone-100/70 active:translate-y-[0.5px]
+                               hover:bg-nexgen-blue/5 active:translate-y-[0.5px]
                                disabled:cursor-not-allowed disabled:opacity-50
                                transition-[background-color,transform] duration-300
                                px-2 -mx-2 rounded"
