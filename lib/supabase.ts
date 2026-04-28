@@ -10,7 +10,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   global: {
-    fetch: (...args) => fetch(...args),
+    fetch: (input, init) => fetch(input, init),
   },
   auth: {
     persistSession: false,

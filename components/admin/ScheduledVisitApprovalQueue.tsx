@@ -19,8 +19,8 @@ const CHANGE_TYPE_CONFIG: Record<string, { label: string; icon: React.ReactNode;
 };
 
 const ScheduledVisitApprovalQueue: React.FC<RouteApprovalQueueProps> = ({ routes, users, hoReCas, currentUser, onUpdateRoute, addToast }) => {
-  const userMap = new Map(users.map(u => [u.id, u]));
-  const hoReCaMap = new Map(hoReCas.map(h => [h.id, h]));
+  const userMap = new Map<number, User>(users.map(u => [u.id, u]));
+  const hoReCaMap = new Map<number, HoReCa>(hoReCas.map(h => [h.id, h]));
   const pending = getPendingChangeRequests(routes);
 
   const handleApprove = (route: ScheduledVisit, requestId: string) => {

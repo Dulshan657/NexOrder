@@ -38,7 +38,7 @@ const AddStopModal: React.FC<AddStopModalProps> = ({ route, hoReCas, currentUser
 
   const existingStopIds = useMemo(() => new Set(route.stops.map(s => s.hoReCaId)), [route.stops]);
   const stopCustomers = useMemo(() => {
-    const byId = new Map(hoReCas.map(h => [h.id, h]));
+    const byId = new Map(hoReCas.map(h => [h.id, h] as const));
     return route.stops.map(s => byId.get(s.hoReCaId));
   }, [route.stops, hoReCas]);
 

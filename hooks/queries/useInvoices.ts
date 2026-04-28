@@ -35,8 +35,8 @@ export function useUpdateInvoiceStatus() {
       status,
       paidDate,
     }: {
-      id: number
-      status: string
+      id: string
+      status: 'pending' | 'paid' | 'overdue'
       paidDate?: string
     }) => updateInvoiceStatus(id, status, paidDate),
     onSuccess: () => {

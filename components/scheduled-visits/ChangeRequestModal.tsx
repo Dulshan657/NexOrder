@@ -25,7 +25,7 @@ const ChangeRequestModal: React.FC<ChangeRequestModalProps> = ({ route, hoReCas,
   // Remove stop state
   const [removeHoReCaId, setRemoveHoReCaId] = useState<number | ''>('');
 
-  const hoReCaMap = new Map(hoReCas.map(c => [c.id, c]));
+  const hoReCaMap = new Map<number, HoReCa>(hoReCas.map(c => [c.id, c]));
   const existingIds = new Set(route.stops.map(s => s.hoReCaId));
   const availableToAdd = hoReCas.filter(c => !existingIds.has(c.id));
 

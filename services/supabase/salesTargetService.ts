@@ -30,7 +30,7 @@ export async function createSalesTarget(target: SalesTargetInsert) {
 }
 
 export async function updateSalesTarget(
-  id: number,
+  id: string,
   updates: SalesTargetUpdate
 ) {
   const { data, error } = await supabase
@@ -43,7 +43,7 @@ export async function updateSalesTarget(
   return data
 }
 
-export async function deleteSalesTarget(id: number) {
+export async function deleteSalesTarget(id: string) {
   const { error } = await supabase
     .from('sales_targets')
     .delete()

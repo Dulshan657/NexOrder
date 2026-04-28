@@ -34,8 +34,8 @@ interface ActivityEvent {
 const ScheduledVisitTrackingDetail: React.FC<RouteTrackingDetailProps> = ({ route, hoReCas, users, visits, repPosition, elapsedMinutes, onBack }) => {
   const [expandedStopIdx, setExpandedStopIdx] = useState<number | null>(null);
 
-  const hoReCaMap = useMemo(() => new Map(hoReCas.map(h => [h.id, h])), [hoReCas]);
-  const visitMap = useMemo(() => new Map(visits.map(v => [v.id, v])), [visits]);
+  const hoReCaMap = useMemo(() => new Map(hoReCas.map(h => [h.id, h] as const)), [hoReCas]);
+  const visitMap = useMemo(() => new Map(visits.map(v => [v.id, v] as const)), [visits]);
   const rep = useMemo(() => users.find(u => u.id === (route.assignedTo ?? route.createdBy)), [users, route]);
 
   const completedStops = route.stops.filter(s => s.status !== 'pending').length;

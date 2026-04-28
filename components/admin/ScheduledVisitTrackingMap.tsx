@@ -59,8 +59,8 @@ function FitBounds({ positions }: { positions: [number, number][] }) {
 }
 
 const ScheduledVisitTrackingMap: React.FC<RouteTrackingMapProps> = ({ routes, hoReCas, users, visits = [] }) => {
-  const hoReCaMap = new Map(hoReCas.map(h => [h.id, h]));
-  const userMap = new Map(users.map(u => [u.id, u]));
+  const hoReCaMap = new Map<number, HoReCa>(hoReCas.map(h => [h.id, h]));
+  const userMap = new Map<number, User>(users.map(u => [u.id, u]));
 
   const activeRoutes = routes.filter(r => r.status === 'in_progress' && !r.isTemplate);
   const [selectedTrackingRouteId, setSelectedTrackingRouteId] = useState<string | null>(null);

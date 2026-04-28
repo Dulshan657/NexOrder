@@ -40,7 +40,7 @@ export function useCreatePurchaseOrder() {
 export function useUpdatePurchaseOrder() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, updates }: { id: number; updates: PurchaseOrderUpdate }) =>
+    mutationFn: ({ id, updates }: { id: string; updates: PurchaseOrderUpdate }) =>
       updatePurchaseOrder(id, updates),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: purchaseOrderKeys.all })

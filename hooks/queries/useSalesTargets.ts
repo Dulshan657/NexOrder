@@ -35,7 +35,7 @@ export function useCreateSalesTarget() {
 export function useUpdateSalesTarget() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, updates }: { id: number; updates: SalesTargetUpdate }) =>
+    mutationFn: ({ id, updates }: { id: string; updates: SalesTargetUpdate }) =>
       updateSalesTarget(id, updates),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: salesTargetKeys.all })
@@ -46,7 +46,7 @@ export function useUpdateSalesTarget() {
 export function useDeleteSalesTarget() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => deleteSalesTarget(id),
+    mutationFn: (id: string) => deleteSalesTarget(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: salesTargetKeys.all })
     },

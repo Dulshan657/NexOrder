@@ -41,7 +41,7 @@ interface RouteMapProps {
 }
 
 const ScheduledVisitMap: React.FC<RouteMapProps> = ({ stops, hoReCas }) => {
-  const customerMap = new Map(hoReCas.map(c => [c.id, c]));
+  const customerMap = new Map<number, HoReCa>(hoReCas.map(c => [c.id, c]));
 
   const positions: [number, number][] = stops
     .map(stop => {

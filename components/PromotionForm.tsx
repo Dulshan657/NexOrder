@@ -48,7 +48,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
     );
     const [targetingKind, setTargetingKind] = useState<PromotionTargeting['kind']>(promotion?.targeting.kind ?? 'all');
     const [targetHoReCaIds, setTargetCustomerIds] = useState<number[]>(
-        promotion?.targeting.kind === 'hoReCas' ? promotion.targeting.hoReCaIds : []
+        promotion?.targeting.kind === 'horecas' ? promotion.targeting.hoReCaIds : []
     );
     const [targetTiers, setTargetTiers] = useState<HoReCaTier[]>(
         promotion?.targeting.kind === 'tier' ? promotion.targeting.tiers : []
@@ -74,7 +74,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
             { kind: 'storewide' };
 
         const targeting: PromotionTargeting =
-            targetingKind === 'hoReCas' ? { kind: 'hoReCas', hoReCaIds: targetHoReCaIds } :
+            targetingKind === 'horecas' ? { kind: 'horecas', hoReCaIds: targetHoReCaIds } :
             targetingKind === 'tier' ? { kind: 'tier', tiers: targetTiers } :
             targetingKind === 'rep' ? { kind: 'rep', repUserId: Number(targetRepId) } :
             { kind: 'all' };
@@ -331,14 +331,14 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
                     <div>
                         <label className={labelClass}>Targeting — who sees this?</label>
                         <div className="flex flex-wrap gap-2 mb-3">
-                            {([['all', 'All HoReCa'], ['hoReCas', 'Specific Customers'], ['tier', 'By Tier'], ['rep', 'Per Sales Rep']] as const).map(([k, label]) => (
+                            {([['all', 'All HoReCa'], ['horecas', 'Specific Customers'], ['tier', 'By Tier'], ['rep', 'Per Sales Rep']] as const).map(([k, label]) => (
                                 <button key={k} onClick={() => setTargetingKind(k)}
                                     className={`py-1.5 px-3 rounded-lg border text-sm font-medium cursor-pointer ${targetingKind === k ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-stone-200 text-stone-600 hover:bg-stone-50'}`}>
                                     {label}
                                 </button>
                             ))}
                         </div>
-                        {targetingKind === 'hoReCas' && (
+                        {targetingKind === 'horecas' && (
                             <div className="max-h-36 overflow-y-auto border border-stone-200 rounded-lg divide-y divide-stone-100">
                                 {hoReCas.map(c => (
                                     <label key={c.id} className="flex items-center gap-2 px-3 py-2 hover:bg-stone-50 cursor-pointer">

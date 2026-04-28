@@ -139,7 +139,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, appLogo, hoReCa
             if (customer) {
                 const newLimit = valStr === '' ? undefined : Number(valStr);
                 if (newLimit !== customer.creditLimit) {
-                    onUpdateHoReCa({ ...hoReCa, creditLimit: newLimit });
+                    onUpdateHoReCa({ ...customer, creditLimit: newLimit });
                 }
             }
         }
@@ -150,7 +150,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, appLogo, hoReCa
             const hoReCaId = Number(idStr);
             const customer = hoReCas.find(c => c.id === hoReCaId);
             if (customer && val !== customer.showStockTab) {
-                onUpdateHoReCa({ ...hoReCa, showStockTab: val });
+                onUpdateHoReCa({ ...customer, showStockTab: val });
             }
         }
         setStockTabEdits({});

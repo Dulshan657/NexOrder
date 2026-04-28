@@ -16,7 +16,7 @@ const formatDate = (iso: string): string => {
 
 const StatusTimeline: React.FC<StatusTimelineProps> = ({ statusHistory, currentStatus }) => {
     const currentIdx = ORDER_STATUS_SEQUENCE.indexOf(currentStatus);
-    const historyMap = new Map(statusHistory.map(h => [h.status, h]));
+    const historyMap = new Map<OrderStatus, StatusHistoryEntry>(statusHistory.map(h => [h.status, h]));
 
     return (
         <div className="space-y-0">

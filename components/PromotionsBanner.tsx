@@ -32,7 +32,7 @@ const PromotionsBanner: React.FC<PromotionsBannerProps> = ({ promotions, custome
         if (promo.targeting.kind === 'all' && promo.scope.kind === 'storewide') return true;
         if (promo.targeting.kind === 'all') return true;
         // Check targeting
-        if (promo.targeting.kind === 'hoReCas' && customer && promo.targeting.hoReCaIds.includes(customer.id)) return true;
+        if (promo.targeting.kind === 'horecas' && customer && promo.targeting.hoReCaIds.includes(customer.id)) return true;
         if (promo.targeting.kind === 'tier' && customer?.tier && promo.targeting.tiers.includes(customer.tier)) return true;
         if (promo.targeting.kind === 'rep' && currentUser && promo.targeting.repUserId === currentUser.id) return true;
         return false;

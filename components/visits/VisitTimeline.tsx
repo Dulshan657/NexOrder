@@ -18,7 +18,7 @@ const OUTCOME_COLORS: Record<string, { dot: string; badge: string; label: string
 
 const VisitTimeline: React.FC<VisitTimelineProps> = ({ visits, hoReCas, onClickHoReCa }) => {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const customerMap = useMemo(() => new Map(hoReCas.map(c => [c.id, c])), [hoReCas]);
+  const customerMap = useMemo(() => new Map(hoReCas.map(c => [c.id, c] as const)), [hoReCas]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Visit[]>();

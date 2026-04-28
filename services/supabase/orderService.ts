@@ -1,14 +1,16 @@
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 
+type OrderRow = Database['public']['Tables']['orders']['Row']
 type OrderInsert = Database['public']['Tables']['orders']['Insert']
 type OrderUpdate = Database['public']['Tables']['orders']['Update']
 type OrderItemInsert = Database['public']['Tables']['order_items']['Insert']
+type OrderStatus = OrderRow['status']
 
 export interface OrderFilters {
   horecaId?: number
   submittedBy?: string
-  status?: string
+  status?: OrderStatus
 }
 
 export async function getOrders(filters: OrderFilters = {}) {

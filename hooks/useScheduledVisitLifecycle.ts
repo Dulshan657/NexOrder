@@ -19,11 +19,11 @@ export function useScheduledVisitLifecycle({
   addToast,
 }: UseRouteLifecycleParams) {
   const prevRoutesRef = useRef<ScheduledVisit[]>(routes);
-  const userMap = new Map(users.map(u => [u.id, u]));
+  const userMap = new Map<number, User>(users.map(u => [u.id, u]));
 
   useEffect(() => {
     const prev = prevRoutesRef.current;
-    const prevMap = new Map(prev.map(r => [r.id, r]));
+    const prevMap = new Map<string, ScheduledVisit>(prev.map(r => [r.id, r]));
 
     for (const route of routes) {
       if (route.isTemplate) continue;

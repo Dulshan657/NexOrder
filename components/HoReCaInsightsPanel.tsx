@@ -77,7 +77,7 @@ const HoReCaInsightsPanel: React.FC<HoReCaInsightsPanelProps> = ({ allOrders, ho
   );
 
   const frequencyDistribution = useMemo(() => {
-    const buckets = { 'Weekly (1-7d)': 0, 'Biweekly (8-14d)': 0, 'Monthly (15-30d)': 0, 'Infrequent (30d+)': 0, 'Single order': 0 };
+    const buckets: Record<string, number> = { 'Weekly (1-7d)': 0, 'Biweekly (8-14d)': 0, 'Monthly (15-30d)': 0, 'Infrequent (30d+)': 0, 'Single order': 0 };
     for (const insight of allInsights) {
       if (insight.avgDaysBetweenOrders === null) { buckets['Single order']++; continue; }
       if (insight.avgDaysBetweenOrders <= 7) buckets['Weekly (1-7d)']++;
@@ -250,8 +250,8 @@ const HoReCaInsightsPanel: React.FC<HoReCaInsightsPanelProps> = ({ allOrders, ho
       {/* Order Frequency Distribution */}
       <Section title="Order Frequency Distribution" icon={<Calendar className="w-5 h-5 text-stone-500" />} isExpanded={expandedSection === 'frequency'} onToggle={() => toggleSection('frequency')}>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          {Object.entries(frequencyDistribution).map(([label, count]) => {
-            const maxCount = Math.max(...Object.values(frequencyDistribution));
+          {Object.entries(frequencyDistribution).map(([label, count]: [string, number]) => {
+            const maxCount = Math.max(...Object.values(frequencyDistribution) as number[]);
             const barHeight = maxCount > 0 ? (count / maxCount) * 100 : 0;
             return (
               <div key={label} className="text-center">

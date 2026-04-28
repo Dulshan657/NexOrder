@@ -1,12 +1,14 @@
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 
+type InvoiceRow = Database['public']['Tables']['invoices']['Row']
 type InvoiceInsert = Database['public']['Tables']['invoices']['Insert']
 type InvoiceUpdate = Database['public']['Tables']['invoices']['Update']
+type InvoiceStatus = InvoiceRow['status']
 
 export interface InvoiceFilters {
   horecaId?: number
-  status?: string
+  status?: InvoiceStatus
 }
 
 export async function getInvoices(filters: InvoiceFilters = {}) {
@@ -48,8 +50,8 @@ export async function createInvoice(invoice: InvoiceInsert) {
 }
 
 export async function updateInvoiceStatus(
-  id: number,
-  status: string,
+  id: string,
+  status: InvoiceStatus,
   paidDate?: string
 ) {
   const updates: InvoiceUpdate = { status }

@@ -39,7 +39,7 @@ export async function createPurchaseOrder(
 }
 
 export async function updatePurchaseOrder(
-  id: number,
+  id: string,
   updates: PurchaseOrderUpdate
 ) {
   const { data, error } = await supabase
@@ -52,7 +52,7 @@ export async function updatePurchaseOrder(
   return data
 }
 
-export async function deletePurchaseOrder(id: number) {
+export async function deletePurchaseOrder(id: string) {
   const { error } = await supabase
     .from('purchase_orders')
     .delete()

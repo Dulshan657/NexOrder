@@ -60,7 +60,7 @@ function formatScope(promo: Promotion, products: Product[]): string {
 function formatTargeting(promo: Promotion, hoReCas: HoReCa[]): string {
     if (promo.targeting.kind === 'all') return 'All hoReCas';
     if (promo.targeting.kind === 'tier') return promo.targeting.tiers.join(', ') + ' tier';
-    if (promo.targeting.kind === 'hoReCas') {
+    if (promo.targeting.kind === 'horecas') {
         const names = promo.targeting.hoReCaIds.map(id => hoReCas.find(c => c.id === id)?.name ?? `#${id}`);
         return names.length <= 2 ? names.join(', ') : `${names[0]} +${names.length - 1} more`;
     }

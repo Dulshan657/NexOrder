@@ -1,6 +1,7 @@
 // FIX: Implement the main App component to manage state and render the UI.
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { UserRole, Product, HoReCa, User, OrderItem, Order, Supplier, PurchaseOrder, PantryItem, AppSettings, OrderStatus, Invoice, AppNotification, DeliveryTimeSlot, OrderVerification, SalesTarget, Promotion, ScheduledVisit, Visit } from './types';
+import type { Json } from './lib/database.types';
 import OrderVerificationModal from './components/OrderVerificationModal';
 import CategoryFilter from './components/CategoryFilter';
 import ProductCard from './components/ProductCard';
@@ -369,7 +370,8 @@ const App: React.FC = () => {
 
     // ── Pantry handlers (Supabase-backed) ─────────────────────────────────────
     const currentPantryItems: PantryItem[] = useMemo(() => {
-        return rawPantryRows.map(row => ({
+        type PantryRow = { product_id: number; preferred_pack_size: number | null; default_quantity: number }
+        return (rawPantryRows as PantryRow[]).map(row => ({
             productId: row.product_id,
             preferredPackSize: row.preferred_pack_size ?? undefined,
             defaultQuantity: row.default_quantity,
@@ -616,7 +618,7 @@ const App: React.FC = () => {
                     status_history: [{ status: 'processing', timestamp: now }],
                     delivery_date: deliveryDate || null,
                     delivery_time_slot: deliveryTimeSlot || null,
-                    verification: verification ?? null,
+                    verification: (verification ?? null) as unknown as Json,
                 },
                 items: orderItems.map(item => ({
                     product_id: item.id,
@@ -693,7 +695,7 @@ const App: React.FC = () => {
     const handleUpdateInvoiceStatus = useCallback((invoiceId: string, status: Invoice['status']) => {
         updateInvoiceStatusMutation.mutate(
             {
-                id: Number(invoiceId),
+                id: invoiceId,
                 status,
                 paidDate: status === 'paid' ? new Date().toISOString() : undefined,
             },
@@ -706,7 +708,7 @@ const App: React.FC = () => {
 
     // ── Notification management ───────────────────────────────────────────────
     const handleMarkNotificationRead = useCallback((id: string) => {
-        markNotificationReadMutation.mutate(Number(id));
+        markNotificationReadMutation.mutate(id);
     }, [markNotificationReadMutation]);
 
     const handleMarkAllNotificationsRead = useCallback(() => {
@@ -1314,7 +1316,7 @@ const App: React.FC = () => {
                                     });
                                 }}
                                 onUpdatePurchaseOrder={(po) => {
-                                    updatePurchaseOrderMutation.mutate({ id: po.id as unknown as number, updates: { status: po.status } as any }, {
+                                    updatePurchaseOrderMutation.mutate({ id: po.id, updates: { status: po.status } as any }, {
                                         onSuccess: () => addToast('PO updated', 'success'),
                                         onError: (err) => addToast(`Error: ${err.message}`, 'error'),
                                     });
@@ -1330,13 +1332,13 @@ const App: React.FC = () => {
                                     });
                                 }}
                                 onUpdatePromotion={(p) => {
-                                    updatePromotionMutation.mutate({ id: p.id as unknown as number, updates: fromPromotion(p) as any }, {
+                                    updatePromotionMutation.mutate({ id: p.id, updates: fromPromotion(p) as any }, {
                                         onSuccess: () => addToast('Promotion updated!', 'success'),
                                         onError: (err) => addToast(`Error: ${err.message}`, 'error'),
                                     });
                                 }}
                                 onDeletePromotion={(id) => {
-                                    deletePromotionMutation.mutate(id as unknown as number, {
+                                    deletePromotionMutation.mutate(id, {
                                         onSuccess: () => addToast('Promotion deleted', 'success'),
                                         onError: (err) => addToast(`Error: ${err.message}`, 'error'),
                                     });

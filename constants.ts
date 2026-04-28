@@ -852,7 +852,7 @@ export const INITIAL_PROMOTIONS: Promotion[] = [
     id: 'PROMO-006', name: 'Grand Hotel VIP', description: 'Exclusive 10% storewide discount for The Grand Hotel',
     type: 'percentage', percentOff: 10,
     scope: { kind: 'storewide' },
-    targeting: { kind: 'hoReCas', hoReCaIds: [1] },
+    targeting: { kind: 'horecas', hoReCaIds: [1] },
     stackWithHoReCaPricing: false,
     isActive: true, createdAt: '2026-03-25T14:00:00Z', createdBy: 1, priority: 20,
   },

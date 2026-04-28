@@ -58,7 +58,7 @@ const ScheduledVisitForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, 
     }
   };
 
-  const customerMap = new Map(hoReCas.map(c => [c.id, c]));
+  const customerMap = new Map<number, HoReCa>(hoReCas.map(c => [c.id, c]));
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 space-y-6">

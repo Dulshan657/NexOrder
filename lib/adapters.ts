@@ -226,11 +226,11 @@ export function toOrder(
     orderDate: row.order_date,
     notes: row.notes ?? undefined,
     status: row.status as OrderStatus,
-    statusHistory: (row.status_history ?? []) as StatusHistoryEntry[],
+    statusHistory: (row.status_history ?? []) as unknown as StatusHistoryEntry[],
     deliveryDate: row.delivery_date ?? undefined,
     deliveryTimeSlot: (row.delivery_time_slot as DeliveryTimeSlot) ?? undefined,
-    verification: (row.verification as OrderVerification) ?? undefined,
-    appliedPromotions: (row.applied_promotions as AppliedPromotion[]) ?? undefined,
+    verification: (row.verification as unknown as OrderVerification) ?? undefined,
+    appliedPromotions: (row.applied_promotions as unknown as AppliedPromotion[]) ?? undefined,
   }
 }
 
@@ -308,8 +308,8 @@ export function toPromotion(row: PromotionRow): Promotion {
     type: row.type as Promotion['type'],
     percentOff: row.percent_off != null ? Number(row.percent_off) : undefined,
     fixedPrice: row.fixed_price != null ? Number(row.fixed_price) : undefined,
-    bogoConfig: (row.bogo_config as BogoConfig) ?? undefined,
-    bundleConfig: (row.bundle_config as BundleConfig) ?? undefined,
+    bogoConfig: (row.bogo_config as unknown as BogoConfig) ?? undefined,
+    bundleConfig: (row.bundle_config as unknown as BundleConfig) ?? undefined,
     clearancePercent: row.clearance_percent != null ? Number(row.clearance_percent) : undefined,
     scope: row.scope as PromotionScope,
     targeting: row.targeting as PromotionTargeting,
@@ -352,7 +352,7 @@ export function toScheduledVisit(row: RouteRow): ScheduledVisit {
     id: row.id,
     name: row.name,
     date: row.date ?? '',
-    stops: (row.stops ?? []) as ScheduledVisitStop[],
+    stops: (row.stops ?? []) as unknown as ScheduledVisitStop[],
     status: row.status as ScheduledVisit['status'],
     createdBy: uuidToNumericId(row.created_by),
     createdAt: row.created_at,
@@ -362,8 +362,8 @@ export function toScheduledVisit(row: RouteRow): ScheduledVisit {
     assignedAt: row.assigned_at ?? undefined,
     isTemplate: row.is_template ?? undefined,
     templateId: row.template_id ?? undefined,
-    recurrence: (row.recurrence as RecurrenceRule) ?? undefined,
-    changeRequests: (row.change_requests ?? []) as ScheduledVisitChangeRequest[],
+    recurrence: (row.recurrence as unknown as RecurrenceRule) ?? undefined,
+    changeRequests: (row.change_requests ?? []) as unknown as ScheduledVisitChangeRequest[],
   }
 }
 

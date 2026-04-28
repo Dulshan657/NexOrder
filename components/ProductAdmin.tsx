@@ -17,7 +17,7 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
     const [productToDelete, setProductToDelete] = useState<Product | null>(null);
 
-    const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.id, s.name])), [suppliers]);
+    const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.id, s.name] as const)), [suppliers]);
 
     const handleOpenFormForEdit = (product: Product) => {
         setProductToEdit(product);

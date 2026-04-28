@@ -35,7 +35,7 @@ export function useCreateVisit() {
 export function useUpdateVisit() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, updates }: { id: number; updates: VisitUpdate }) =>
+    mutationFn: ({ id, updates }: { id: string; updates: VisitUpdate }) =>
       updateVisit(id, updates),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: visitKeys.all })

@@ -19,7 +19,7 @@ const WalkInReviewTab: React.FC<WalkInReviewTabProps> = ({ hoReCas, users, curre
   const markReviewedMutation = useMarkHoReCaReviewed();
   const updateHoReCaMutation = useUpdateHoReCa();
 
-  const userMap = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
+  const userMap = useMemo(() => new Map(users.map(u => [u.id, u] as const)), [users]);
 
   const walkIns = useMemo(() => {
     const all = hoReCas.filter(h => h.isTemporary || h.reviewedAt);

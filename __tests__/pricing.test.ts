@@ -76,7 +76,7 @@ describe('isPromotionApplicable', () => {
     });
 
     it('hoReCas targeting requires matching customer id', () => {
-        const promo = mkPercentPromo({ targeting: { kind: 'hoReCas', hoReCaIds: [99] } });
+        const promo = mkPercentPromo({ targeting: { kind: 'horecas', hoReCaIds: [99] } });
         const customer = mkHoReCa({ id: 10 });
         expect(isPromotionApplicable(promo, product, customer, user)).toBe(false);
     });

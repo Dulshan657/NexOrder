@@ -26,7 +26,7 @@ const ScheduledVisitList: React.FC<RouteListProps> = ({ routes, hoReCas, users, 
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
 
-  const userMap = new Map((users ?? []).map(u => [u.id, u]));
+  const userMap = new Map((users ?? []).map(u => [u.id, u] as const));
 
   const sortedRoutes = useMemo(() => {
     const sorted = [...routes];

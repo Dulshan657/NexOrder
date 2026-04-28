@@ -27,7 +27,7 @@ const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, use
   const [assignToUserId, setAssignToUserId] = useState<number | ''>('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const hoReCaMap = useMemo(() => new Map(hoReCas.map(c => [c.id, c])), [hoReCas]);
+  const hoReCaMap = useMemo(() => new Map(hoReCas.map(c => [c.id, c] as const)), [hoReCas]);
 
   const availableHoReCas = useMemo(() => {
     const filtered = hoReCas.filter(c => !selectedHoReCaIds.includes(c.id));

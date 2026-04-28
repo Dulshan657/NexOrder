@@ -13,7 +13,7 @@ const MissingItemsNudge: React.FC<MissingItemsNudgeProps> = ({ hints, products, 
 
   if (hints.length === 0) return null;
 
-  const productMap = new Map(products.map(p => [p.id, p]));
+  const productMap = new Map(products.map(p => [p.id, p] as const));
 
   return (
     <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">

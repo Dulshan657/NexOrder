@@ -31,10 +31,10 @@ const ScheduledVisitDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visi
   const [showAddStop, setShowAddStop] = useState(false);
   const canAddStop = currentUser ? canAddStopToRoute(route, currentUser) : false;
   const assigned = isAssignedScheduledVisit(route);
-  const userMap = new Map((users ?? []).map(u => [u.id, u]));
+  const userMap = new Map<number, User>((users ?? []).map(u => [u.id, u]));
   const assignerName = assigned && route.assignedBy ? userMap.get(route.assignedBy)?.name : undefined;
-  const customerMap = new Map(hoReCas.map(c => [c.id, c]));
-  const visitMap = new Map(visits.map(v => [v.id, v]));
+  const customerMap = new Map<number, HoReCa>(hoReCas.map(c => [c.id, c]));
+  const visitMap = new Map<string, Visit>(visits.map(v => [v.id, v]));
 
   const completedStops = route.stops.filter(s => s.status !== 'pending').length;
   const totalStops = route.stops.length;

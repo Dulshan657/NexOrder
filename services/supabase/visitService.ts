@@ -41,7 +41,7 @@ export async function createVisit(visit: VisitInsert) {
   return data
 }
 
-export async function updateVisit(id: number, updates: VisitUpdate) {
+export async function updateVisit(id: string, updates: VisitUpdate) {
   const { data, error } = await supabase
     .from('visits')
     .update(updates)

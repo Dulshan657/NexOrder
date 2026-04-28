@@ -35,8 +35,8 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
   const [reassignRouteId, setReassignRouteId] = useState<string | null>(null);
   const [reassignTarget, setReassignTarget] = useState<number | ''>('');
 
-  const userMap = new Map(users.map(u => [u.id, u]));
-  const hoReCaMap = new Map(hoReCas.map(h => [h.id, h]));
+  const userMap = new Map<number, User>(users.map(u => [u.id, u]));
+  const hoReCaMap = new Map<number, HoReCa>(hoReCas.map(h => [h.id, h]));
   const reps = users.filter(u => u.role === UserRole.FIELD_REP);
   const pendingCount = getPendingChangeRequests(routes).length;
 

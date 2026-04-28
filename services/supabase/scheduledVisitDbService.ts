@@ -1,13 +1,15 @@
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 
+type ScheduledVisitRow = Database['public']['Tables']['scheduled_visits']['Row']
 type ScheduledVisitInsert = Database['public']['Tables']['scheduled_visits']['Insert']
 type ScheduledVisitUpdate = Database['public']['Tables']['scheduled_visits']['Update']
+type ScheduledVisitStatus = ScheduledVisitRow['status']
 
 export interface ScheduledVisitFilters {
   assignedTo?: string
   createdBy?: string
-  status?: string
+  status?: ScheduledVisitStatus
 }
 
 export async function getScheduledVisits(filters: ScheduledVisitFilters = {}) {

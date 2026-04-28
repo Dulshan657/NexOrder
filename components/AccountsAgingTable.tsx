@@ -16,7 +16,7 @@ type SortDir = 'asc' | 'desc';
 
 /** Merge current+30 into "30 Days", keep 60 and 90+ as-is */
 function getThreeBuckets(co: HoReCaOutstanding) {
-    const bucketMap = new Map(co.buckets.map(b => [b.key, b]));
+    const bucketMap = new Map(co.buckets.map(b => [b.key, b] as const));
     const currentBucket = bucketMap.get('current');
     const thirtyBucket = bucketMap.get('30');
     const sixtyBucket = bucketMap.get('60');

@@ -40,7 +40,7 @@ export async function createPromotion(promo: PromotionInsert) {
   return data
 }
 
-export async function updatePromotion(id: number, updates: PromotionUpdate) {
+export async function updatePromotion(id: string, updates: PromotionUpdate) {
   const { data, error } = await supabase
     .from('promotions')
     .update(updates)
@@ -51,7 +51,7 @@ export async function updatePromotion(id: number, updates: PromotionUpdate) {
   return data
 }
 
-export async function deletePromotion(id: number) {
+export async function deletePromotion(id: string) {
   const { error } = await supabase
     .from('promotions')
     .delete()

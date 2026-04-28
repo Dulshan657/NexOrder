@@ -27,7 +27,7 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ photos, onPhotosChange, maxPh
     // Snapshot the current photos array via ref-style closure to avoid races between concurrent uploads.
     let workingPhotos = photos;
     await Promise.all(
-      filesToProcess.map(async file => {
+      filesToProcess.map(async (file: File) => {
         try {
           const url = await uploadToBucket('visit-photos', file, { prefix: 'visits' });
           workingPhotos = [...workingPhotos, url];

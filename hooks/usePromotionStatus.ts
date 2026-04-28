@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type Dispatch, type SetStateAction } from 'react';
 import type { Promotion } from '../types';
 
 /**
@@ -7,7 +7,7 @@ import type { Promotion } from '../types';
  */
 export function usePromotionStatus(
     promotions: Promotion[],
-    setPromotions: React.Dispatch<React.SetStateAction<Promotion[]>>,
+    setPromotions: Dispatch<SetStateAction<Promotion[]>>,
 ) {
     useEffect(() => {
         const check = () => {

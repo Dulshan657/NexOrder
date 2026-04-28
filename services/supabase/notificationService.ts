@@ -31,7 +31,7 @@ export async function createNotification(notification: NotificationInsert) {
   return data
 }
 
-export async function markAsRead(id: number) {
+export async function markAsRead(id: string) {
   const { data, error } = await supabase
     .from('notifications')
     .update({ read: true } as NotificationUpdate)

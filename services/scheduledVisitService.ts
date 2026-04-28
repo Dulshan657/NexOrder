@@ -215,7 +215,7 @@ export function approveChangeRequest(route: ScheduledVisit, requestId: string, r
 
   if (request.type === 'reorder') {
     const payload = request.payload as ReorderPayload;
-    const stopMap = new Map(route.stops.map(s => [s.hoReCaId, s]));
+    const stopMap = new Map(route.stops.map(s => [s.hoReCaId, s] as const));
     updatedStops = payload.newStopOrder
       .map(hoReCaId => stopMap.get(hoReCaId))
       .filter((s): s is ScheduledVisitStop => s !== undefined)
@@ -365,7 +365,7 @@ export function simulateRepPosition(
   hoReCas: readonly HoReCa[],
   elapsedMinutes: number,
 ): MockRepPosition | null {
-  const hoReCaMap = new Map(hoReCas.map(h => [h.id, h]));
+  const hoReCaMap = new Map(hoReCas.map(h => [h.id, h] as const));
   const stopsWithCoords = route.stops
     .map(s => {
       const h = hoReCaMap.get(s.hoReCaId);

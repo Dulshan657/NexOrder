@@ -1,6 +1,9 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
-export interface Database {
+export type Database = {
+  __InternalSupabase: {
+    PostgrestVersion: '12'
+  }
   public: {
     Tables: {
       profiles: {
@@ -31,6 +34,7 @@ export interface Database {
           horeca_id?: number | null
           created_at?: string
         }
+        Relationships: []
       }
       suppliers: {
         Row: {
@@ -57,6 +61,7 @@ export interface Database {
           phone?: string
           created_at?: string
         }
+        Relationships: []
       }
       products: {
         Row: {
@@ -119,6 +124,7 @@ export interface Database {
           height_cm?: number | null
           created_at?: string
         }
+        Relationships: []
       }
       horecas: {
         Row: {
@@ -169,6 +175,7 @@ export interface Database {
           reviewed_at?: string | null
           reviewed_by?: string | null
         }
+        Relationships: []
       }
       horeca_pricing: {
         Row: {
@@ -189,6 +196,7 @@ export interface Database {
           product_id?: number
           custom_price?: number
         }
+        Relationships: []
       }
       horeca_payment_methods: {
         Row: {
@@ -212,6 +220,7 @@ export interface Database {
           details?: string
           is_default?: boolean
         }
+        Relationships: []
       }
       orders: {
         Row: {
@@ -259,6 +268,7 @@ export interface Database {
           applied_promotions?: Json | null
           created_at?: string
         }
+        Relationships: []
       }
       order_items: {
         Row: {
@@ -291,6 +301,7 @@ export interface Database {
           product_name?: string
           product_sku?: string
         }
+        Relationships: []
       }
       invoices: {
         Row: {
@@ -326,6 +337,7 @@ export interface Database {
           paid_date?: string | null
           created_date?: string
         }
+        Relationships: []
       }
       purchase_orders: {
         Row: {
@@ -355,6 +367,7 @@ export interface Database {
           submitted_by?: string
           created_at?: string
         }
+        Relationships: []
       }
       purchase_order_items: {
         Row: {
@@ -381,6 +394,7 @@ export interface Database {
           quantity?: number
           cost?: number
         }
+        Relationships: []
       }
       promotions: {
         Row: {
@@ -446,6 +460,7 @@ export interface Database {
           created_by?: string
           priority?: number
         }
+        Relationships: []
       }
       pantry_items: {
         Row: {
@@ -469,6 +484,7 @@ export interface Database {
           preferred_pack_size?: number | null
           default_quantity?: number
         }
+        Relationships: []
       }
       sales_targets: {
         Row: {
@@ -498,6 +514,7 @@ export interface Database {
           end_date?: string
           created_at?: string
         }
+        Relationships: []
       }
       scheduled_visits: {
         Row: {
@@ -551,6 +568,7 @@ export interface Database {
           recurrence?: Json | null
           change_requests?: Json
         }
+        Relationships: []
       }
       visits: {
         Row: {
@@ -598,6 +616,7 @@ export interface Database {
           photos?: string[] | null
           created_at?: string
         }
+        Relationships: []
       }
       notifications: {
         Row: {
@@ -630,6 +649,7 @@ export interface Database {
           metadata?: Json | null
           user_id?: string | null
         }
+        Relationships: []
       }
       app_settings: {
         Row: {
@@ -677,10 +697,12 @@ export interface Database {
           show_stock_to_horeca?: boolean
           company_logo_url?: string | null
         }
+        Relationships: []
       }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
     Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
   }
 }

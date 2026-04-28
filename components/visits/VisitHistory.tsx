@@ -25,7 +25,7 @@ const VisitHistory: React.FC<VisitHistoryProps> = ({ visits, hoReCas, filterHoRe
   const [outcomeFilter, setOutcomeFilter] = useState<VisitOutcome | 'all'>('all');
   const [viewMode, setViewMode] = useState<'timeline' | 'cards'>('timeline');
 
-  const customerMap = new Map(hoReCas.map(c => [c.id, c]));
+  const customerMap = new Map(hoReCas.map(c => [c.id, c] as const));
 
   const filteredVisits = useMemo(() => {
     let result = filterHoReCaId !== undefined

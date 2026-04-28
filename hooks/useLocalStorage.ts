@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type Dispatch, type SetStateAction } from 'react';
 
 const STORAGE_PREFIX = 'nexorder_v1_';
 
-function useLocalStorage<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+function useLocalStorage<T>(key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>] {
     const prefixedKey = `${STORAGE_PREFIX}${key}`;
 
     const [storedValue, setStoredValue] = useState<T>(() => {

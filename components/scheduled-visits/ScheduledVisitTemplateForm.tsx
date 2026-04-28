@@ -24,7 +24,7 @@ const ScheduledVisitTemplateForm: React.FC<RouteTemplateFormProps> = ({ hoReCas,
 
   const reps = users.filter(u => u.role === UserRole.FIELD_REP);
   const availableHoReCas = hoReCas.filter(c => !selectedHoReCaIds.includes(c.id));
-  const customerMap = new Map(hoReCas.map(c => [c.id, c]));
+  const customerMap = new Map<number, HoReCa>(hoReCas.map(c => [c.id, c]));
 
   const handleDragStart = (index: number) => setDragIndex(index);
   const handleDragOver = (e: React.DragEvent, index: number) => {
