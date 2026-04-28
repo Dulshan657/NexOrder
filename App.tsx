@@ -1,7 +1,6 @@
 // FIX: Implement the main App component to manage state and render the UI.
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { UserRole, Product, HoReCa, User, OrderItem, Order, Supplier, PurchaseOrder, PantryItem, AppSettings, OrderStatus, Invoice, AppNotification, DeliveryTimeSlot, OrderVerification, SalesTarget, Promotion, ScheduledVisit, Visit } from './types';
-import type { Json } from './lib/database.types';
 import OrderVerificationModal from './components/OrderVerificationModal';
 import CategoryFilter from './components/CategoryFilter';
 import ProductCard from './components/ProductCard';
@@ -49,7 +48,7 @@ import type { SortOption } from './components/ShopTopBar';
 // ── Query hooks ───────────────────────────────────────────────────────────────
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct } from './hooks/queries/useProducts';
 import { useHoReCas, useCreateHoReCa, useUpdateHoReCa, useDeleteHoReCa } from './hooks/queries/useHoReCas';
-import { useOrders, useCreateOrder, useUpdateOrderStatus } from './hooks/queries/useOrders';
+import { useOrders, usePlaceOrder, useUpdateOrderStatus } from './hooks/queries/useOrders';
 import { useInvoices, useUpdateInvoiceStatus } from './hooks/queries/useInvoices';
 import { useSuppliers, useCreateSupplier, useUpdateSupplier, useDeleteSupplier } from './hooks/queries/useSuppliers';
 import { usePurchaseOrders, useCreatePurchaseOrder, useUpdatePurchaseOrder } from './hooks/queries/usePurchaseOrders';
@@ -184,7 +183,7 @@ const App: React.FC = () => {
     const updateSupplierMutation = useUpdateSupplier();
     const deleteSupplierMutation = useDeleteSupplier();
 
-    const createOrderMutation = useCreateOrder();
+    const placeOrderMutation = usePlaceOrder();
     const updateOrderStatusMutation = useUpdateOrderStatus();
 
     const updateInvoiceStatusMutation = useUpdateInvoiceStatus();
@@ -601,36 +600,33 @@ const App: React.FC = () => {
 
         const confirmationMessage = `Your order has been sent to OrderStream for fulfillment.`;
 
-        setTimeout(() => {
-            setConfirmation({ order: newOrder, message: confirmationMessage });
-            addToast('Order submitted successfully!', 'success');
-            setIsLoading(false);
-
-            // Persist the order to Supabase
-            createOrderMutation.mutate({
-                order: {
-                    horeca_id: hoReCaForOrder.id,
-                    submitted_by: currentUserUuid,
-                    total,
-                    order_date: now,
-                    notes: notes || null,
-                    status: 'processing',
-                    status_history: [{ status: 'processing', timestamp: now }],
-                    delivery_date: deliveryDate || null,
-                    delivery_time_slot: deliveryTimeSlot || null,
-                    verification: (verification ?? null) as unknown as Json,
-                },
-                items: orderItems.map(item => ({
-                    product_id: item.id,
-                    quantity: item.quantity,
-                    pack_size: item.packSize ?? null,
-                    unit_price: item.price,
-                    product_name: item.name,
-                    product_sku: item.sku,
-                })),
-            });
-        }, 500);
-    }, [selectedHoReCa, appSettings.orderIdPrefix, orderItems, total, currentUser, notes, deliveryDate, deliveryTimeSlot, addToast, createOrderMutation]);
+        // Persist the order to Supabase via the place-order Edge Function.
+        // Server recomputes prices, applies promotions, checks stock + credit.
+        placeOrderMutation.mutate({
+            hoReCaId: hoReCaForOrder.id,
+            items: orderItems.map(item => ({
+                productId: item.id,
+                quantity: item.quantity,
+                packSize: item.packSize ?? null,
+            })),
+            notes: notes || null,
+            deliveryDate: deliveryDate || null,
+            deliveryTimeSlot: (deliveryTimeSlot || null) as 'AM' | 'PM' | null,
+            verification: (verification ?? null) as unknown as Record<string, unknown> | null,
+        }, {
+            onSuccess: (result) => {
+                const persistedOrder: Order = { ...newOrder, id: result.orderId, total: result.total };
+                setConfirmation({ order: persistedOrder, message: confirmationMessage });
+                addToast('Order submitted successfully!', 'success');
+                setIsLoading(false);
+            },
+            onError: (err) => {
+                setIsLoading(false);
+                setErrors({ api: err.message });
+                addToast(err.message, 'error');
+            },
+        });
+    }, [selectedHoReCa, orderItems, total, currentUser, notes, deliveryDate, deliveryTimeSlot, addToast, placeOrderMutation]);
 
     const handleReorder = (order: Order) => {
         resetOrder();

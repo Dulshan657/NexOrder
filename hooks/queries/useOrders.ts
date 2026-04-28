@@ -3,15 +3,11 @@ import {
   getOrders,
   getOrdersByHoReCa,
   getOrdersByUser,
-  createOrder,
+  placeOrder,
   updateOrderStatus,
 } from '@/services/supabase/orderService'
-import type { OrderFilters } from '@/services/supabase/orderService'
-import type { Database } from '@/lib/database.types'
+import type { OrderFilters, PlaceOrderInput, PlaceOrderResult } from '@/services/supabase/orderService'
 import { productKeys } from './useProducts'
-
-type OrderInsert = Database['public']['Tables']['orders']['Insert']
-type OrderItemInsert = Database['public']['Tables']['order_items']['Insert']
 
 export const orderKeys = {
   all: ['orders'] as const,
@@ -43,20 +39,12 @@ export function useOrdersByUser(userId: string | null | undefined) {
   })
 }
 
-export function useCreateOrder() {
+export function usePlaceOrder() {
   const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({
-      order,
-      items,
-    }: {
-      order: Omit<OrderInsert, 'id'>
-      items: Omit<OrderItemInsert, 'order_id'>[]
-    }) => createOrder(order, items),
+  return useMutation<PlaceOrderResult, Error, PlaceOrderInput>({
+    mutationFn: (input) => placeOrder(input),
     onSuccess: () => {
-      // Invalidate all order queries since the new order affects every filter view
       qc.invalidateQueries({ queryKey: orderKeys.all })
-      // Inventory levels change when an order is placed
       qc.invalidateQueries({ queryKey: productKeys.all })
     },
   })

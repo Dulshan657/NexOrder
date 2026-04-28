@@ -64,27 +64,35 @@ export async function getOrdersByUser(userId: string) {
   return data
 }
 
-export async function createOrder(
-  order: Omit<OrderInsert, 'id'>,
-  items: Omit<OrderItemInsert, 'order_id'>[]
-) {
-  const orderId = `ORD-${Date.now()}`
+export interface PlaceOrderInput {
+  hoReCaId: number
+  items: Array<{ productId: number; quantity: number; packSize?: number | null }>
+  notes?: string | null
+  deliveryDate?: string | null
+  deliveryTimeSlot?: 'AM' | 'PM' | null
+  verification?: Record<string, unknown> | null
+}
 
-  const { data: newOrder, error: orderError } = await supabase
-    .from('orders')
-    .insert({ ...order, id: orderId })
-    .select()
-    .single()
-  if (orderError) throw orderError
+export interface PlaceOrderResult {
+  orderId: string
+  total: number
+  cartDiscount: number
+  appliedPromotionIds: string[]
+  bogoFreeItems: Array<{ productId: number; freeQuantity: number; promoId: string }>
+}
 
-  const itemsWithOrderId = items.map((item) => ({ ...item, order_id: orderId }))
-
-  const { error: itemsError } = await supabase
-    .from('order_items')
-    .insert(itemsWithOrderId)
-  if (itemsError) throw itemsError
-
-  return newOrder
+export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
+  const { data, error } = await supabase.functions.invoke<PlaceOrderResult>('place-order', {
+    body: input,
+  })
+  if (error) {
+    // Edge Function errors come back with status + parsed body in error.context
+    const ctx = (error as { context?: { error?: { code?: string; message?: string } } }).context
+    const msg = ctx?.error?.message ?? error.message ?? 'Order placement failed'
+    throw new Error(msg)
+  }
+  if (!data) throw new Error('Order placement returned no data')
+  return data
 }
 
 export async function updateOrderStatus(

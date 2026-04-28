@@ -20,14 +20,30 @@ if (!DB_PASSWORD || !PROJECT_REF) {
   process.exit(1)
 }
 
-const client = new pg.Client({
-  host: `db.${PROJECT_REF}.supabase.co`,
-  port: 5432,
-  database: 'postgres',
-  user: 'postgres',
-  password: DB_PASSWORD,
-  ssl: { rejectUnauthorized: false },
-})
+// Direct DB endpoint (db.<ref>.supabase.co) is IPv6-only on the free tier.
+// Use the regional pooler (IPv4) when SUPABASE_DB_REGION is set; default to
+// direct connection for backwards compatibility.
+const REGION = process.env.SUPABASE_DB_REGION
+const POOLER_PREFIX = process.env.SUPABASE_POOLER_PREFIX || 'aws-1'
+const config = REGION
+  ? {
+      host: `${POOLER_PREFIX}-${REGION}.pooler.supabase.com`,
+      port: 5432,
+      database: 'postgres',
+      user: `postgres.${PROJECT_REF}`,
+      password: DB_PASSWORD,
+      ssl: { rejectUnauthorized: false },
+    }
+  : {
+      host: `db.${PROJECT_REF}.supabase.co`,
+      port: 5432,
+      database: 'postgres',
+      user: 'postgres',
+      password: DB_PASSWORD,
+      ssl: { rejectUnauthorized: false },
+    }
+
+const client = new pg.Client(config)
 
 async function main() {
   console.log('Connecting to Supabase PostgreSQL...')
