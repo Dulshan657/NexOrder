@@ -8,6 +8,7 @@ import OrderSummary from './components/OrderSummary';
 import PromotionsBanner from './components/PromotionsBanner';
 import BundleSelectModal from './components/BundleSelectModal';
 import { applyCartPromotions } from './services/promotionService';
+import { inviteUser } from './services/supabase/inviteUserService';
 import OrderConfirmation from './components/OrderConfirmation';
 import { useToasts } from './hooks/useToasts';
 import ProfileMenu from './components/auth/ProfileMenu';
@@ -1264,14 +1265,24 @@ const App: React.FC = () => {
                                     });
                                 }}
                                 onAddUser={(u) => {
-                                    // Users are managed via auth — no-op for now with feedback
-                                    addToast('User management requires the auth migration. Coming soon.', 'info');
+                                    inviteUser({
+                                        email: u.email,
+                                        name: u.name,
+                                        role: u.role as 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer',
+                                        hoReCaId: u.hoReCaId ?? null,
+                                        avatarUrl: u.avatarUrl ?? null,
+                                    })
+                                        .then(() => {
+                                            addToast(`Invite sent to ${u.email}`, 'success');
+                                            queryClient.invalidateQueries({ queryKey: ['profiles'] });
+                                        })
+                                        .catch((err) => addToast(`Invite failed: ${err.message}`, 'error'));
                                 }}
                                 onUpdateUser={(u) => {
-                                    addToast('User management requires the auth migration. Coming soon.', 'info');
+                                    addToast('User editing not yet supported via the secure path.', 'info');
                                 }}
                                 onDeleteUser={(id) => {
-                                    addToast('User management requires the auth migration. Coming soon.', 'info');
+                                    addToast('User deletion not yet supported via the secure path.', 'info');
                                 }}
                                 onAddSupplier={(s) => {
                                     createSupplierMutation.mutate(fromSupplier(s) as any, {
