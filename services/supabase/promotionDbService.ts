@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 
+type PromotionRow = Database['public']['Tables']['promotions']['Row']
 type PromotionInsert = Database['public']['Tables']['promotions']['Insert']
 type PromotionUpdate = Database['public']['Tables']['promotions']['Update']
 
@@ -30,31 +31,28 @@ export async function getActivePromotions() {
   })
 }
 
-export async function createPromotion(promo: PromotionInsert) {
-  const { data, error } = await supabase
-    .from('promotions')
-    .insert(promo)
-    .select()
-    .single()
+export async function createPromotion(promo: PromotionInsert): Promise<PromotionRow> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; promotion: PromotionRow }>(
+    'mutate-promotion',
+    { body: { action: 'create', data: promo } },
+  )
   if (error) throw error
-  return data
+  return data!.promotion
 }
 
-export async function updatePromotion(id: string, updates: PromotionUpdate) {
-  const { data, error } = await supabase
-    .from('promotions')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single()
+export async function updatePromotion(id: string, updates: PromotionUpdate): Promise<PromotionRow> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; promotion: PromotionRow }>(
+    'mutate-promotion',
+    { body: { action: 'update', id, data: updates } },
+  )
   if (error) throw error
-  return data
+  return data!.promotion
 }
 
-export async function deletePromotion(id: string) {
-  const { error } = await supabase
-    .from('promotions')
-    .delete()
-    .eq('id', id)
+export async function deletePromotion(id: string): Promise<void> {
+  const { error } = await supabase.functions.invoke<{ ok: true }>(
+    'mutate-promotion',
+    { body: { action: 'delete', id } },
+  )
   if (error) throw error
 }

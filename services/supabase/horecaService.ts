@@ -1,9 +1,9 @@
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 
+type HoReCaRow = Database['public']['Tables']['horecas']['Row']
 type HoReCaInsert = Database['public']['Tables']['horecas']['Insert']
 type HoReCaUpdate = Database['public']['Tables']['horecas']['Update']
-type HoReCaPricingInsert = Database['public']['Tables']['horeca_pricing']['Insert']
 
 export async function getHoReCas() {
   const { data, error } = await supabase
@@ -24,32 +24,29 @@ export async function getHoReCaById(id: number) {
   return data
 }
 
-export async function createHoReCa(horeca: HoReCaInsert) {
-  const { data, error } = await supabase
-    .from('horecas')
-    .insert(horeca)
-    .select()
-    .single()
+export async function createHoReCa(horeca: HoReCaInsert, reason?: string): Promise<HoReCaRow> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; horeca: HoReCaRow }>(
+    'mutate-horeca',
+    { body: { action: 'create', data: horeca, reason } },
+  )
   if (error) throw error
-  return data
+  return data!.horeca
 }
 
-export async function updateHoReCa(id: number, updates: HoReCaUpdate) {
-  const { data, error } = await supabase
-    .from('horecas')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single()
+export async function updateHoReCa(id: number, updates: HoReCaUpdate, reason?: string): Promise<HoReCaRow> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; horeca: HoReCaRow }>(
+    'mutate-horeca',
+    { body: { action: 'update', id, data: updates, reason } },
+  )
   if (error) throw error
-  return data
+  return data!.horeca
 }
 
-export async function deleteHoReCa(id: number) {
-  const { error } = await supabase
-    .from('horecas')
-    .delete()
-    .eq('id', id)
+export async function deleteHoReCa(id: number, reason?: string): Promise<void> {
+  const { error } = await supabase.functions.invoke<{ ok: true }>(
+    'mutate-horeca',
+    { body: { action: 'delete', id, reason } },
+  )
   if (error) throw error
 }
 

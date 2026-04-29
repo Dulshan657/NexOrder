@@ -3,6 +3,7 @@ import type { Database } from '@/lib/database.types'
 
 type SalesTargetInsert = Database['public']['Tables']['sales_targets']['Insert']
 type SalesTargetUpdate = Database['public']['Tables']['sales_targets']['Update']
+type SalesTargetRow = Database['public']['Tables']['sales_targets']['Row']
 
 export async function getSalesTargets(userId?: string) {
   let query = supabase
@@ -19,34 +20,31 @@ export async function getSalesTargets(userId?: string) {
   return data
 }
 
-export async function createSalesTarget(target: SalesTargetInsert) {
-  const { data, error } = await supabase
-    .from('sales_targets')
-    .insert(target)
-    .select()
-    .single()
+export async function createSalesTarget(target: SalesTargetInsert): Promise<SalesTargetRow> {
+  const { data, error } = await supabase.functions.invoke<SalesTargetRow>(
+    'mutate-sales-target',
+    { body: { action: 'create', data: target } }
+  )
   if (error) throw error
-  return data
+  return data as SalesTargetRow
 }
 
 export async function updateSalesTarget(
   id: string,
   updates: SalesTargetUpdate
-) {
-  const { data, error } = await supabase
-    .from('sales_targets')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single()
+): Promise<SalesTargetRow> {
+  const { data, error } = await supabase.functions.invoke<SalesTargetRow>(
+    'mutate-sales-target',
+    { body: { action: 'update', id, data: updates } }
+  )
   if (error) throw error
-  return data
+  return data as SalesTargetRow
 }
 
-export async function deleteSalesTarget(id: string) {
-  const { error } = await supabase
-    .from('sales_targets')
-    .delete()
-    .eq('id', id)
+export async function deleteSalesTarget(id: string): Promise<void> {
+  const { error } = await supabase.functions.invoke<{ ok: true }>(
+    'mutate-sales-target',
+    { body: { action: 'delete', id } }
+  )
   if (error) throw error
 }

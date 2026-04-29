@@ -3,7 +3,16 @@ import type { Database } from '@/lib/database.types'
 
 type PurchaseOrderInsert = Database['public']['Tables']['purchase_orders']['Insert']
 type PurchaseOrderUpdate = Database['public']['Tables']['purchase_orders']['Update']
+type PurchaseOrderRow = Database['public']['Tables']['purchase_orders']['Row']
 type PurchaseOrderItemInsert = Database['public']['Tables']['purchase_order_items']['Insert']
+
+/** Item shape accepted by the mutate-purchase-order Edge Function */
+type PurchaseOrderItemBody = {
+  product_id: number
+  product_name: string
+  quantity: number
+  cost: number
+}
 
 export async function getPurchaseOrders() {
   const { data, error } = await supabase
@@ -17,45 +26,44 @@ export async function getPurchaseOrders() {
 export async function createPurchaseOrder(
   po: PurchaseOrderInsert,
   items: Omit<PurchaseOrderItemInsert, 'purchase_order_id'>[]
-) {
-  const { data: newPO, error: poError } = await supabase
-    .from('purchase_orders')
-    .insert(po)
-    .select()
-    .single()
-  if (poError) throw poError
-
-  const itemsWithPoId = items.map((item) => ({
-    ...item,
-    purchase_order_id: newPO.id,
+): Promise<PurchaseOrderRow> {
+  // Map items to the shape the Edge Function expects (strips purchase_order_id if present)
+  const itemBodies: PurchaseOrderItemBody[] = items.map(({ product_id, product_name, quantity, cost }) => ({
+    product_id,
+    product_name,
+    quantity,
+    cost,
   }))
 
-  const { error: itemsError } = await supabase
-    .from('purchase_order_items')
-    .insert(itemsWithPoId)
-  if (itemsError) throw itemsError
-
-  return newPO
+  const { data, error } = await supabase.functions.invoke<PurchaseOrderRow>(
+    'mutate-purchase-order',
+    { body: { action: 'create', data: { po, items: itemBodies } } }
+  )
+  if (error) throw error
+  return data as PurchaseOrderRow
 }
 
 export async function updatePurchaseOrder(
   id: string,
   updates: PurchaseOrderUpdate
-) {
-  const { data, error } = await supabase
-    .from('purchase_orders')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single()
+): Promise<PurchaseOrderRow> {
+  const { data, error } = await supabase.functions.invoke<PurchaseOrderRow>(
+    'mutate-purchase-order',
+    { body: { action: 'update', id, data: { po: updates } } }
+  )
   if (error) throw error
-  return data
+  return data as PurchaseOrderRow
 }
 
-export async function deletePurchaseOrder(id: string) {
-  const { error } = await supabase
-    .from('purchase_orders')
-    .delete()
-    .eq('id', id)
+export async function updatePurchaseOrderStatus(
+  id: string,
+  status: 'Pending' | 'Submitted' | 'Completed' | 'Cancelled',
+  note?: string
+): Promise<PurchaseOrderRow> {
+  const { data, error } = await supabase.functions.invoke<PurchaseOrderRow>(
+    'mutate-purchase-order',
+    { body: { action: 'update-status', id, status, ...(note !== undefined && { note }) } }
+  )
   if (error) throw error
+  return data as PurchaseOrderRow
 }

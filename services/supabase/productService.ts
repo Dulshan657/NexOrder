@@ -24,31 +24,28 @@ export async function getProductById(id: number) {
   return data
 }
 
-export async function createProduct(product: ProductInsert) {
-  const { data, error } = await supabase
-    .from('products')
-    .insert(product)
-    .select()
-    .single()
+export async function createProduct(product: ProductInsert): Promise<ProductRow> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; product: ProductRow }>(
+    'mutate-product',
+    { body: { action: 'create', data: product } },
+  )
   if (error) throw error
-  return data
+  return data!.product
 }
 
-export async function updateProduct(id: number, updates: ProductUpdate) {
-  const { data, error } = await supabase
-    .from('products')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single()
+export async function updateProduct(id: number, updates: ProductUpdate): Promise<ProductRow> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; product: ProductRow }>(
+    'mutate-product',
+    { body: { action: 'update', id, data: updates } },
+  )
   if (error) throw error
-  return data
+  return data!.product
 }
 
-export async function deleteProduct(id: number) {
-  const { error } = await supabase
-    .from('products')
-    .delete()
-    .eq('id', id)
+export async function deleteProduct(id: number): Promise<void> {
+  const { error } = await supabase.functions.invoke<{ ok: true }>(
+    'mutate-product',
+    { body: { action: 'delete', id } },
+  )
   if (error) throw error
 }

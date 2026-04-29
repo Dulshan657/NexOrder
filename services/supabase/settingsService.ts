@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 
+type SettingsRow = Database['public']['Tables']['app_settings']['Row']
 type SettingsUpdate = Database['public']['Tables']['app_settings']['Update']
 
 /**
@@ -17,13 +18,11 @@ export async function getSettings() {
   return data
 }
 
-export async function updateSettings(updates: SettingsUpdate) {
-  const { data, error } = await supabase
-    .from('app_settings')
-    .update(updates)
-    .eq('id', 1)
-    .select()
-    .single()
+export async function updateSettings(updates: SettingsUpdate): Promise<SettingsRow> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; settings: SettingsRow }>(
+    'mutate-app-settings',
+    { body: { action: 'update', data: updates } },
+  )
   if (error) throw error
-  return data
+  return data!.settings
 }
