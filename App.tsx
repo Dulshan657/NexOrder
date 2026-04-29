@@ -1170,6 +1170,7 @@ const App: React.FC = () => {
                                             categories={CATEGORIES}
                                             selectedHoReCa={selectedHoReCa ?? null}
                                             allOrders={allOrders}
+                                            currentCart={orderItems}
                                             cartonDiscountPercent={appSettings.cartonDiscountPercent}
                                             onAddToOrder={handleAddPantryItemToOrder}
                                             onAddAllToOrder={handleAddAllPantryToOrder}
@@ -1479,6 +1480,7 @@ const App: React.FC = () => {
                                                     categories={CATEGORIES}
                                                     selectedHoReCa={selectedHoReCa ?? null}
                                                     allOrders={allOrders}
+                                                    currentCart={orderItems}
                                                     cartonDiscountPercent={appSettings.cartonDiscountPercent}
                                                     onAddToOrder={handleAddPantryItemToOrder}
                                                     onAddAllToOrder={handleAddAllPantryToOrder}
