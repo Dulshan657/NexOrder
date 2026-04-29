@@ -4,6 +4,8 @@ import { UserRole, Product, HoReCa, User, OrderItem, Order, Supplier, PurchaseOr
 import OrderVerificationModal from './components/OrderVerificationModal';
 import OrderSummary from './components/OrderSummary';
 import BundleSelectModal from './components/BundleSelectModal';
+import OrdersHistoryView from './views/OrdersHistoryView';
+import RepDashboardView from './views/RepDashboardView';
 import { applyCartPromotions } from './services/promotionService';
 import { inviteUser } from './services/supabase/inviteUserService';
 import OrderConfirmation from './components/OrderConfirmation';
@@ -13,11 +15,8 @@ import { useAuth } from './hooks/useAuth';
 import { profileToUser } from './lib/profileToUser';
 import { useQueryClient } from '@tanstack/react-query';
 import AdminView, { AdminTab } from './components/AdminView';
-import OrderHistory from './components/OrderHistory';
-import OrdersPage from './components/OrdersPage';
 import UserProfile from './components/UserProfile';
 import MobileCheckoutButton from './components/MobileCheckoutButton';
-import RepDashboardV2 from './components/RepDashboardV2';
 import type { OrderingTabKey } from './components/OrderingTabBar';
 import OrderDetailView from './components/OrderDetailView';
 import NotificationBell from './components/NotificationBell';
@@ -25,7 +24,6 @@ import NotificationPanel from './components/NotificationPanel';
 import { USERS, CATEGORIES, DEFAULT_SETTINGS } from './constants';
 import { getHoReCaOutstanding } from './services/accountingService';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { startScheduledVisit } from './services/scheduledVisitService';
 import { resolveHoReCaPrice, getAllApplicablePromotions, isPromotionActive } from './pricing';
 import { LayoutDashboard, ShoppingCart, ShoppingBag, History, Menu, X, Users as UsersIcon, Package, FileText, Settings, Truck, Wallet, BarChart3, Tag, MapPin, Warehouse, UserPlus } from 'lucide-react';
 import OutstandingPayments from './components/OutstandingPayments';
@@ -1298,27 +1296,25 @@ const App: React.FC = () => {
                         {(isRep || isHoReCaUser) && (
                             <div>
                                 {view === 'dashboard' && isRep && (
-                                    <RepDashboardV2
+                                    <RepDashboardView
                                         currentUser={currentUser}
                                         hoReCas={hoReCas}
                                         products={products}
                                         orders={allOrders}
-                                        onStartOrder={handleStartOrder}
                                         invoices={invoices}
                                         salesTargets={salesTargets}
-                                        onUpdateSalesTargets={setSalesTargets}
                                         visits={visits}
-                                        setVisits={setVisits}
                                         routes={routes}
-                                        onStartRoute={(route) => {
-                                            const started = startScheduledVisit(route);
-                                            updateRouteMutation.mutate({ id: started.id, updates: fromScheduledVisit(started) as any }, {
-                                                onError: (err) => addToast(`Error starting scheduled visit: ${err.message}`, 'error'),
-                                            });
-                                            setInitialRouteId(started.id);
-                                            setView('scheduled_visits');
+                                        onStartOrder={handleStartOrder}
+                                        onUpdateSalesTargets={setSalesTargets}
+                                        onSetVisits={setVisits}
+                                        onUpdateRoute={(started) => {
+                                            updateRouteMutation.mutate(
+                                                { id: started.id, updates: fromScheduledVisit(started) as any },
+                                                { onError: (err) => addToast(`Error starting scheduled visit: ${err.message}`, 'error') },
+                                            );
                                         }}
-                                        onViewRoute={(scheduledVisitId) => {
+                                        onSelectRoute={(scheduledVisitId) => {
                                             setInitialRouteId(scheduledVisitId);
                                             setView('scheduled_visits');
                                         }}
@@ -1378,33 +1374,18 @@ const App: React.FC = () => {
                                     />
                                 )}
                                 {view === 'orders' && (
-                                    isHoReCaUser
-                                        ? <OrderHistory orders={ordersForHistory} hoReCas={hoReCas} currentUser={currentUser} onReorder={handleReorder} onBulkReorder={(selectedOrders) => {
-                                            resetOrder();
-                                            const allItems: OrderItem[] = [];
-                                            for (const order of selectedOrders) {
-                                                for (const item of order.items) {
-                                                    const existing = allItems.find(i => i.id === item.id && i.packSize === item.packSize);
-                                                    if (existing) { existing.quantity += item.quantity; }
-                                                    else { allItems.push({ ...item }); }
-                                                }
-                                            }
-                                            handleReorderItems(allItems, 'replace');
-                                            setView('ordering');
-                                        }} onViewDetail={setSelectedOrderId} onBack={() => setView('ordering')} />
-                                        : <OrdersPage orders={ordersForHistory} hoReCas={hoReCas} currentUser={currentUser} onReorder={handleReorder} onBulkReorder={(selectedOrders) => {
-                                            resetOrder();
-                                            const allItems: OrderItem[] = [];
-                                            for (const order of selectedOrders) {
-                                                for (const item of order.items) {
-                                                    const existing = allItems.find(i => i.id === item.id && i.packSize === item.packSize);
-                                                    if (existing) { existing.quantity += item.quantity; }
-                                                    else { allItems.push({ ...item }); }
-                                                }
-                                            }
-                                            handleReorderItems(allItems, 'replace');
-                                            setView('ordering');
-                                        }} onViewDetail={setSelectedOrderId} onUpdateStatus={handleUpdateOrderStatus} onBack={() => setView(isRep ? 'dashboard' : 'ordering')} />
+                                    <OrdersHistoryView
+                                        orders={ordersForHistory}
+                                        hoReCas={hoReCas}
+                                        currentUser={currentUser}
+                                        onReorder={handleReorder}
+                                        onReorderItems={handleReorderItems}
+                                        onResetOrder={resetOrder}
+                                        onSelectOrder={setSelectedOrderId}
+                                        onUpdateStatus={handleUpdateOrderStatus}
+                                        onNavigateToShop={() => setView('ordering')}
+                                        onNavigateBack={() => setView(isRep ? 'dashboard' : 'ordering')}
+                                    />
                                 )}
                                 {view === 'hoReCas' && isRep && (
                                     <HoReCaListView
