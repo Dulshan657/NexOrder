@@ -2,10 +2,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { UserRole, Product, HoReCa, User, OrderItem, Order, Supplier, PurchaseOrder, PantryItem, AppSettings, OrderStatus, Invoice, AppNotification, DeliveryTimeSlot, OrderVerification, SalesTarget, Promotion, ScheduledVisit, Visit } from './types';
 import OrderVerificationModal from './components/OrderVerificationModal';
-import CategoryFilter from './components/CategoryFilter';
-import ProductCard from './components/ProductCard';
 import OrderSummary from './components/OrderSummary';
-import PromotionsBanner from './components/PromotionsBanner';
 import BundleSelectModal from './components/BundleSelectModal';
 import { applyCartPromotions } from './services/promotionService';
 import { inviteUser } from './services/supabase/inviteUserService';
@@ -21,10 +18,7 @@ import OrdersPage from './components/OrdersPage';
 import UserProfile from './components/UserProfile';
 import MobileCheckoutButton from './components/MobileCheckoutButton';
 import RepDashboardV2 from './components/RepDashboardV2';
-import OrderingTabBar from './components/OrderingTabBar';
 import type { OrderingTabKey } from './components/OrderingTabBar';
-import PantryList from './components/PantryList';
-import ReorderTab from './components/ReorderTab';
 import OrderDetailView from './components/OrderDetailView';
 import NotificationBell from './components/NotificationBell';
 import NotificationPanel from './components/NotificationPanel';
@@ -38,13 +32,11 @@ import OutstandingPayments from './components/OutstandingPayments';
 import AccountsAgingTable from './components/AccountsAgingTable';
 import StockView from './components/StockView';
 import HoReCaListView from './components/HoReCaListView';
-import MissingItemsNudge from './components/MissingItemsNudge';
 import ScheduledVisitsView from './components/scheduled-visits/ScheduledVisitsView';
 import { getOrderingHints } from './services/buyingPatternsService';
 import type { OrderingHint } from './types';
-import CartSlidePanel from './components/CartSlidePanel';
-import ShopTopBar from './components/ShopTopBar';
 import type { SortOption } from './components/ShopTopBar';
+import ShopView from './views/ShopView';
 
 // ── Query hooks ───────────────────────────────────────────────────────────────
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct } from './hooks/queries/useProducts';
@@ -1095,129 +1087,57 @@ const App: React.FC = () => {
                 <main className="flex-1 overflow-y-auto">
                     <div>
                         {isAdminOrManager && adminView === 'Shop' && (
-                            <>
-                            <div className={isCartOpen ? 'cart-push' : ''}>
-                                <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-                                    <OrderingTabBar
-                                        activeTab={orderingTab}
-                                        onTabChange={setOrderingTab as (tab: OrderingTabKey) => void}
-                                        pantryItemCount={currentPantryItems.length}
-                                        pantryEstTotal={pantryEstTotal}
-                                        hasHoReCa={!!selectedHoReCa}
-                                        hasLastOrder={!!lastOrderForHoReCa}
-                                    />
-                                    <ShopTopBar
-                                        currentUser={currentUser}
-                                        hoReCas={hoReCas}
-                                        selectedHoReCaId={selectedHoReCaId}
-                                        onSelectHoReCa={setSelectedHoReCaId}
-                                        hoReCaError={errors.hoReCa}
-                                        cartItemCount={orderItems.reduce((sum, i) => sum + i.quantity, 0)}
-                                        cartTotal={total}
-                                        isCartOpen={isCartOpen}
-                                        onToggleCart={() => setIsCartOpen(!isCartOpen)}
-                                        searchQuery={searchQuery}
-                                        onSearchChange={setSearchQuery}
-                                        sortOption={sortOption}
-                                        onSortChange={setSortOption}
-                                        products={products}
-                                        recentItems={recentHoReCaProducts}
-                                        selectedHoReCaName={selectedHoReCa?.name ?? ''}
-                                    />
-                                    {orderingTab === 'catalogue' && (
-                                        <>
-                                            {promotions.length > 0 && (
-                                                <PromotionsBanner promotions={promotions} customer={selectedHoReCa} currentUser={currentUser} products={products} onApplyPromo={handleApplyPromo} />
-                                            )}
-                                            <CategoryFilter categories={CATEGORIES} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} hasDeals={promotions.some(p => p.isActive)} />
-                                            {selectedHoReCa && orderItems.length > 0 && missingItemHints.length > 0 && (
-                                                <MissingItemsNudge
-                                                    hints={missingItemHints}
-                                                    products={products}
-                                                    onAddItem={(product) => handleAddItem(product, { price: resolveHoReCaPrice(product, selectedHoReCa), unit: product.unit })}
-                                                />
-                                            )}
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                                {filteredProducts.length > 0 ? (
-                                                    filteredProducts.map(product => (
-                                                        <ProductCard
-                                                            key={product.id}
-                                                            product={product}
-                                                            onAddItem={handleAddItem}
-                                                            selectedHoReCa={selectedHoReCa}
-                                                            onTogglePantry={selectedHoReCa ? handleTogglePantry : undefined}
-                                                            isPantryItem={currentPantryItems.some(i => i.productId === product.id)}
-                                                            cartonDiscountPercent={appSettings.cartonDiscountPercent}
-                                                            lowStockThreshold={appSettings.lowStockThreshold}
-                                                            hints={hintsPerProduct.get(product.id)}
-                                                            promotions={promotions}
-                                                            currentUser={currentUser}
-                                                        />
-                                                    ))
-                                                ) : (
-                                                    <div className="md:col-span-2 lg:col-span-3 xl:col-span-4 text-center py-16 bg-white rounded-xl border border-stone-200/60 border-dashed shadow-card">
-                                                        <h3 className="text-xl font-display font-semibold text-stone-800 text-balance">No Products Found</h3>
-                                                        <p className="text-stone-500 mt-2">No products match your current search and category filters.</p>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </>
-                                    )}
-                                    {orderingTab === 'pantry' && (
-                                        <PantryList
-                                            pantryItems={currentPantryItems}
-                                            products={products}
-                                            categories={CATEGORIES}
-                                            selectedHoReCa={selectedHoReCa ?? null}
-                                            allOrders={allOrders}
-                                            currentCart={orderItems}
-                                            cartonDiscountPercent={appSettings.cartonDiscountPercent}
-                                            onAddToOrder={handleAddPantryItemToOrder}
-                                            onAddAllToOrder={handleAddAllPantryToOrder}
-                                            onAddSelectedToOrder={handleAddSelectedPantryToOrder}
-                                            onRemoveFromPantry={handleRemoveFromPantry}
-                                            onUpdatePantryItem={handleUpdatePantryItem}
-                                            onAddToPantry={handleTogglePantry}
-                                        />
-                                    )}
-                                    {orderingTab === 'reorder' && (
-                                        <ReorderTab
-                                            lastOrder={lastOrderForHoReCa}
-                                            products={products}
-                                            selectedHoReCa={selectedHoReCa ?? null}
-                                            cartonDiscountPercent={appSettings.cartonDiscountPercent}
-                                            cartItemCount={orderItems.length}
-                                            onAddItems={handleReorderItems}
-                                        />
-                                    )}
-                                </div>
-                            </div>
-                            <CartSlidePanel
-                                isOpen={isCartOpen}
-                                onClose={() => setIsCartOpen(false)}
-                                items={orderItems}
-                                total={total}
-                                currentUser={currentUser}
-                                userRole={currentUser.role}
+                            <ShopView
+                                products={products}
                                 hoReCas={hoReCas}
+                                promotions={promotions}
+                                invoices={invoices}
+                                allOrders={allOrders}
+                                currentUser={currentUser}
+                                appSettings={appSettings}
+                                orderItems={orderItems}
+                                selectedHoReCa={selectedHoReCa}
                                 selectedHoReCaId={selectedHoReCaId}
                                 notes={notes}
                                 deliveryDate={deliveryDate}
                                 deliveryTimeSlot={deliveryTimeSlot}
-                                onSelectHoReCa={setSelectedHoReCaId}
+                                isLoading={isLoading}
+                                errors={errors}
+                                total={total}
+                                isAdminOrManager={isAdminOrManager}
+                                currentPantryItems={currentPantryItems}
+                                pantryEstTotal={pantryEstTotal}
+                                filteredProducts={filteredProducts}
+                                hintsPerProduct={hintsPerProduct}
+                                missingItemHints={missingItemHints}
+                                recentHoReCaProducts={recentHoReCaProducts}
+                                lastOrderForHoReCa={lastOrderForHoReCa}
+                                orderingTab={orderingTab}
+                                onOrderingTabChange={setOrderingTab as (t: OrderingTabKey) => void}
+                                selectedCategory={selectedCategory}
+                                onSelectedCategoryChange={setSelectedCategory}
+                                searchQuery={searchQuery}
+                                onSearchQueryChange={setSearchQuery}
+                                sortOption={sortOption}
+                                onSortOptionChange={setSortOption}
+                                isCartOpen={isCartOpen}
+                                onCartOpenChange={setIsCartOpen}
+                                onAddItem={handleAddItem}
+                                onApplyPromo={handleApplyPromo}
                                 onUpdateQuantity={handleUpdateQuantity}
                                 onSubmitOrder={handleSubmitOrder}
+                                onSelectHoReCa={setSelectedHoReCaId}
                                 onNotesChange={setNotes}
                                 onDeliveryDateChange={setDeliveryDate}
                                 onDeliveryTimeSlotChange={setDeliveryTimeSlot}
-                                isLoading={isLoading}
-                                errors={errors}
-                                invoices={invoices}
-                                isAdminOrManager={isAdminOrManager}
-                                promotions={promotions}
-                                products={products}
+                                onReorderItems={handleReorderItems}
+                                onTogglePantry={handleTogglePantry}
+                                onAddPantryItemToOrder={handleAddPantryItemToOrder}
+                                onAddAllPantryToOrder={handleAddAllPantryToOrder}
+                                onAddSelectedPantryToOrder={handleAddSelectedPantryToOrder}
+                                onRemoveFromPantry={handleRemoveFromPantry}
+                                onUpdatePantryItem={handleUpdatePantryItem}
                             />
-                            </>
                         )}
                         {isAdminOrManager && adminView !== 'Shop' && (
                             <AdminView
@@ -1405,129 +1325,57 @@ const App: React.FC = () => {
                                     />
                                 )}
                                 {view === 'ordering' && (
-                                    <>
-                                    <div className={isCartOpen ? 'cart-push' : ''}>
-                                        <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-                                            <OrderingTabBar
-                                                activeTab={orderingTab}
-                                                onTabChange={setOrderingTab as (tab: OrderingTabKey) => void}
-                                                pantryItemCount={currentPantryItems.length}
-                                                pantryEstTotal={pantryEstTotal}
-                                                hasHoReCa={!!selectedHoReCa}
-                                                hasLastOrder={!!lastOrderForHoReCa}
-                                            />
-                                            <ShopTopBar
-                                                currentUser={currentUser}
-                                                hoReCas={hoReCas}
-                                                selectedHoReCaId={selectedHoReCaId}
-                                                onSelectHoReCa={setSelectedHoReCaId}
-                                                hoReCaError={errors.hoReCa}
-                                                cartItemCount={orderItems.reduce((sum, i) => sum + i.quantity, 0)}
-                                                cartTotal={total}
-                                                isCartOpen={isCartOpen}
-                                                onToggleCart={() => setIsCartOpen(!isCartOpen)}
-                                                searchQuery={searchQuery}
-                                                onSearchChange={setSearchQuery}
-                                                sortOption={sortOption}
-                                                onSortChange={setSortOption}
-                                                products={products}
-                                                recentItems={recentHoReCaProducts}
-                                                selectedHoReCaName={selectedHoReCa?.name ?? ''}
-                                            />
-                                            {orderingTab === 'catalogue' && (
-                                                <>
-                                                    {promotions.length > 0 && (
-                                                        <PromotionsBanner promotions={promotions} customer={selectedHoReCa} currentUser={currentUser} products={products} onApplyPromo={handleApplyPromo} />
-                                                    )}
-                                                    <CategoryFilter categories={CATEGORIES} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} hasDeals={promotions.some(p => p.isActive)} />
-                                                    {selectedHoReCa && orderItems.length > 0 && missingItemHints.length > 0 && (
-                                                        <MissingItemsNudge
-                                                            hints={missingItemHints}
-                                                            products={products}
-                                                            onAddItem={(product) => handleAddItem(product, { price: resolveHoReCaPrice(product, selectedHoReCa), unit: product.unit })}
-                                                        />
-                                                    )}
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                                        {filteredProducts.length > 0 ? (
-                                                            filteredProducts.map(product => (
-                                                                <ProductCard
-                                                                    key={product.id}
-                                                                    product={product}
-                                                                    onAddItem={handleAddItem}
-                                                                    selectedHoReCa={selectedHoReCa}
-                                                                    onTogglePantry={selectedHoReCa ? handleTogglePantry : undefined}
-                                                                    isPantryItem={currentPantryItems.some(i => i.productId === product.id)}
-                                                                    cartonDiscountPercent={appSettings.cartonDiscountPercent}
-                                                                    lowStockThreshold={appSettings.lowStockThreshold}
-                                                                    hints={hintsPerProduct.get(product.id)}
-                                                                    promotions={promotions}
-                                                                    currentUser={currentUser}
-                                                                />
-                                                            ))
-                                                        ) : (
-                                                            <div className="md:col-span-2 lg:col-span-3 xl:col-span-4 text-center py-16 bg-white rounded-xl border border-stone-200/60 border-dashed shadow-card">
-                                                                <h3 className="text-xl font-display font-semibold text-stone-800 text-balance">No Products Found</h3>
-                                                                <p className="text-stone-500 mt-2">No products match your current search and category filters.</p>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </>
-                                            )}
-                                            {orderingTab === 'pantry' && (
-                                                <PantryList
-                                                    pantryItems={currentPantryItems}
-                                                    products={products}
-                                                    categories={CATEGORIES}
-                                                    selectedHoReCa={selectedHoReCa ?? null}
-                                                    allOrders={allOrders}
-                                                    currentCart={orderItems}
-                                                    cartonDiscountPercent={appSettings.cartonDiscountPercent}
-                                                    onAddToOrder={handleAddPantryItemToOrder}
-                                                    onAddAllToOrder={handleAddAllPantryToOrder}
-                                                    onAddSelectedToOrder={handleAddSelectedPantryToOrder}
-                                                    onRemoveFromPantry={handleRemoveFromPantry}
-                                                    onUpdatePantryItem={handleUpdatePantryItem}
-                                                    onAddToPantry={handleTogglePantry}
-                                                />
-                                            )}
-                                            {orderingTab === 'reorder' && (
-                                                <ReorderTab
-                                                    lastOrder={lastOrderForHoReCa}
-                                                    products={products}
-                                                    selectedHoReCa={selectedHoReCa ?? null}
-                                                    cartonDiscountPercent={appSettings.cartonDiscountPercent}
-                                                    cartItemCount={orderItems.length}
-                                                    onAddItems={handleReorderItems}
-                                                />
-                                            )}
-                                        </div>
-                                    </div>
-                                    <CartSlidePanel
-                                        isOpen={isCartOpen}
-                                        onClose={() => setIsCartOpen(false)}
-                                        items={orderItems}
-                                        total={total}
-                                        currentUser={currentUser}
-                                        userRole={currentUser.role}
+                                    <ShopView
+                                        products={products}
                                         hoReCas={hoReCas}
+                                        promotions={promotions}
+                                        invoices={invoices}
+                                        allOrders={allOrders}
+                                        currentUser={currentUser}
+                                        appSettings={appSettings}
+                                        orderItems={orderItems}
+                                        selectedHoReCa={selectedHoReCa}
                                         selectedHoReCaId={selectedHoReCaId}
                                         notes={notes}
                                         deliveryDate={deliveryDate}
                                         deliveryTimeSlot={deliveryTimeSlot}
-                                        onSelectHoReCa={setSelectedHoReCaId}
+                                        isLoading={isLoading}
+                                        errors={errors}
+                                        total={total}
+                                        isAdminOrManager={isAdminOrManager}
+                                        currentPantryItems={currentPantryItems}
+                                        pantryEstTotal={pantryEstTotal}
+                                        filteredProducts={filteredProducts}
+                                        hintsPerProduct={hintsPerProduct}
+                                        missingItemHints={missingItemHints}
+                                        recentHoReCaProducts={recentHoReCaProducts}
+                                        lastOrderForHoReCa={lastOrderForHoReCa}
+                                        orderingTab={orderingTab}
+                                        onOrderingTabChange={setOrderingTab as (t: OrderingTabKey) => void}
+                                        selectedCategory={selectedCategory}
+                                        onSelectedCategoryChange={setSelectedCategory}
+                                        searchQuery={searchQuery}
+                                        onSearchQueryChange={setSearchQuery}
+                                        sortOption={sortOption}
+                                        onSortOptionChange={setSortOption}
+                                        isCartOpen={isCartOpen}
+                                        onCartOpenChange={setIsCartOpen}
+                                        onAddItem={handleAddItem}
+                                        onApplyPromo={handleApplyPromo}
                                         onUpdateQuantity={handleUpdateQuantity}
                                         onSubmitOrder={handleSubmitOrder}
+                                        onSelectHoReCa={setSelectedHoReCaId}
                                         onNotesChange={setNotes}
                                         onDeliveryDateChange={setDeliveryDate}
                                         onDeliveryTimeSlotChange={setDeliveryTimeSlot}
-                                        isLoading={isLoading}
-                                        errors={errors}
-                                        invoices={invoices}
-                                        isAdminOrManager={isAdminOrManager}
-                                        promotions={promotions}
-                                        products={products}
+                                        onReorderItems={handleReorderItems}
+                                        onTogglePantry={handleTogglePantry}
+                                        onAddPantryItemToOrder={handleAddPantryItemToOrder}
+                                        onAddAllPantryToOrder={handleAddAllPantryToOrder}
+                                        onAddSelectedPantryToOrder={handleAddSelectedPantryToOrder}
+                                        onRemoveFromPantry={handleRemoveFromPantry}
+                                        onUpdatePantryItem={handleUpdatePantryItem}
                                     />
-                                    </>
                                 )}
                                 {view === 'orders' && (
                                     isHoReCaUser

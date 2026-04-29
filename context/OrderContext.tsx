@@ -54,6 +54,7 @@ export interface OrderContextValue {
     handleSubmitOrder: () => void;
     placeOrder: (verification?: OrderVerification) => void;
     handleReorder: (order: Order) => void;
+    handleReorderItems: (items: OrderItem[], mode: 'replace' | 'merge') => void;
     handleStartOrder: (hoReCaId: number) => void;
     resetOrder: () => void;
 }
@@ -374,6 +375,28 @@ export function OrderProvider({
         [resetOrder, hoReCas, products, appSettings.cartonDiscountPercent, currentUser.role, addToast],
     );
 
+    const handleReorderItems = useCallback(
+        (items: OrderItem[], mode: 'replace' | 'merge') => {
+            if (mode === 'replace') {
+                setOrderItems(items);
+            } else {
+                setOrderItems(prev => {
+                    const merged = [...prev];
+                    for (const newItem of items) {
+                        const existing = merged.find(
+                            i => i.id === newItem.id && i.packSize === newItem.packSize,
+                        );
+                        if (existing) existing.quantity += newItem.quantity;
+                        else merged.push(newItem);
+                    }
+                    return merged;
+                });
+            }
+            addToast(`${items.length} item${items.length !== 1 ? 's' : ''} added to order!`, 'success');
+        },
+        [addToast],
+    );
+
     const handleStartOrder = useCallback(
         (hoReCaId: number) => {
             resetOrder();
@@ -410,6 +433,7 @@ export function OrderProvider({
         handleSubmitOrder,
         placeOrder,
         handleReorder,
+        handleReorderItems,
         handleStartOrder,
         resetOrder,
     };
