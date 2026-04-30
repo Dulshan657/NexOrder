@@ -13,7 +13,8 @@ import { z } from 'https://esm.sh/zod@3.23.8'
 import { requireAuth, type UserRole } from '../_shared/auth.ts'
 import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
-import { corsHeaders } from '../_shared/cors.ts'
+import { corsHeadersFor } from '../_shared/cors.ts'
+import { checkRateLimit } from '../_shared/rateLimit.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = [
   'Admin',
@@ -84,10 +85,19 @@ async function findExistingPantryItem(
 }
 
 serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req)
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
+
+    // Rate limit per user — pantry edits can be rapid (drag-resort, bulk
+    // toggles) so 60 req/min is generous; meaningful guard against script
+    // abuse from a compromised session.
+    const rl = checkRateLimit(`mutate-pantry-item:${auth.userId}`, { windowMs: 60_000, max: 60 })
+    if (!rl.ok) {
+      throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')
+    }
 
     const body = await req.json().catch(() => {
       throw new EdgeFunctionError('INVALID_INPUT', 'Request body must be valid JSON')
@@ -242,7 +252,7 @@ serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (e) {
-    if (isEdgeFunctionError(e)) return e.toResponse()
-    return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error')
+    if (isEdgeFunctionError(e)) return e.toResponse(req)
+    return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error', undefined, undefined, req)
   }
 })

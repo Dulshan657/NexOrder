@@ -26,7 +26,8 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { z } from 'https://esm.sh/zod@3.23.8'
 import { errorResponse } from '../_shared/errors.ts'
-import { corsHeaders } from '../_shared/cors.ts'
+import { corsHeadersFor } from '../_shared/cors.ts'
+import { checkRateLimit, clientIp } from '../_shared/rateLimit.ts'
 
 const DEFAULT_APP_URL = 'https://nexorder.vercel.app'
 const DEFAULT_FROM = 'Nex Order <onboarding@resend.dev>'
@@ -55,18 +56,29 @@ interface RenderedEmail {
 }
 
 serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req)
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') {
-    return errorResponse('INVALID_INPUT', 'Method not allowed', undefined, 405)
+    return errorResponse('INVALID_INPUT', 'Method not allowed', undefined, 405, req)
+  }
+
+  // Rate limit by IP. send-email is invoked fire-and-forget by other Edge
+  // Functions (service role) and could in principle be called from the
+  // browser too. 20 req/min per IP is generous for the legitimate path
+  // (one order = one email) and tight enough to throttle abuse.
+  const ip = clientIp(req)
+  const rl = checkRateLimit(`send-email:${ip}`, { windowMs: 60_000, max: 20 })
+  if (!rl.ok) {
+    return errorResponse('TOO_MANY_REQUESTS', 'Rate limit exceeded', undefined, 429, req)
   }
 
   try {
     const body = await req.json().catch(() => null)
-    if (!body) return errorResponse('INVALID_INPUT', 'Request body must be valid JSON')
+    if (!body) return errorResponse('INVALID_INPUT', 'Request body must be valid JSON', undefined, undefined, req)
 
     const parsed = inputSchema.safeParse(body)
     if (!parsed.success) {
-      return errorResponse('INVALID_INPUT', 'Invalid email payload', parsed.error.flatten())
+      return errorResponse('INVALID_INPUT', 'Invalid email payload', parsed.error.flatten(), undefined, req)
     }
     const input = parsed.data
 
@@ -118,7 +130,7 @@ serve(async (req: Request) => {
     if (!resendResp.ok) {
       const errText = await resendResp.text().catch(() => '')
       console.error('send-email: Resend API error', { status: resendResp.status, body: errText })
-      return errorResponse('INTERNAL', 'Email provider rejected the message')
+      return errorResponse('INTERNAL', 'Email provider rejected the message', undefined, undefined, req)
     }
 
     const data = (await resendResp.json().catch(() => ({}))) as { id?: string }
@@ -127,7 +139,7 @@ serve(async (req: Request) => {
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   } catch (e) {
-    return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error')
+    return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error', undefined, undefined, req)
   }
 })
 

@@ -16,7 +16,7 @@ import { z } from 'https://esm.sh/zod@3.23.8'
 import { requireAuth, type UserRole } from '../_shared/auth.ts'
 import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
-import { corsHeaders } from '../_shared/cors.ts'
+import { corsHeadersFor } from '../_shared/cors.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -99,6 +99,7 @@ function targetIdToString(id: string | number): string {
 }
 
 serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req)
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
@@ -267,7 +268,7 @@ serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (e) {
-    if (isEdgeFunctionError(e)) return e.toResponse()
-    return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error')
+    if (isEdgeFunctionError(e)) return e.toResponse(req)
+    return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error', undefined, undefined, req)
   }
 })

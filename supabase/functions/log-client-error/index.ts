@@ -15,7 +15,8 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { z } from 'https://esm.sh/zod@3.23.8'
 import { errorResponse } from '../_shared/errors.ts'
-import { corsHeaders } from '../_shared/cors.ts'
+import { corsHeadersFor } from '../_shared/cors.ts'
+import { checkRateLimit, clientIp } from '../_shared/rateLimit.ts'
 
 // Hard caps to keep the table healthy and prevent abuse:
 //   - message:        4 KB (typical Error.message is short)
@@ -34,21 +35,31 @@ const inputSchema = z.object({
 })
 
 serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req)
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   if (req.method !== 'POST') {
-    return errorResponse('INVALID_INPUT', 'Method not allowed', undefined, 405)
+    return errorResponse('INVALID_INPUT', 'Method not allowed', undefined, 405, req)
+  }
+
+  // Rate limit by IP — log-client-error accepts unauthenticated callers, so
+  // a malicious site could otherwise spam the table. 30 req/min is enough
+  // for a frontend that genuinely dedups by stack signature.
+  const ip = clientIp(req)
+  const rl = checkRateLimit(`log-client-error:${ip}`, { windowMs: 60_000, max: 30 })
+  if (!rl.ok) {
+    return errorResponse('TOO_MANY_REQUESTS', 'Rate limit exceeded', undefined, 429, req)
   }
 
   try {
     const body = await req.json().catch(() => null)
     if (!body) {
-      return errorResponse('INVALID_INPUT', 'Request body must be valid JSON')
+      return errorResponse('INVALID_INPUT', 'Request body must be valid JSON', undefined, undefined, req)
     }
 
     const parsed = inputSchema.safeParse(body)
     if (!parsed.success) {
-      return errorResponse('INVALID_INPUT', 'Invalid error payload', parsed.error.flatten())
+      return errorResponse('INVALID_INPUT', 'Invalid error payload', parsed.error.flatten(), undefined, req)
     }
     const input = parsed.data
 
@@ -103,7 +114,7 @@ serve(async (req: Request) => {
     if (insertError) {
       // Don't echo DB errors back to the client; just log.
       console.error('client_errors insert failed:', insertError.message)
-      return errorResponse('INTERNAL', 'Failed to log error')
+      return errorResponse('INTERNAL', 'Failed to log error', undefined, undefined, req)
     }
 
     return new Response(JSON.stringify({ ok: true }), {
@@ -111,6 +122,6 @@ serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (e) {
-    return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error')
+    return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error', undefined, undefined, req)
   }
 })

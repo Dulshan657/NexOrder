@@ -11,7 +11,8 @@
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
-import { corsHeaders } from '../_shared/cors.ts'
+import { corsHeadersFor } from '../_shared/cors.ts'
+import { checkRateLimit } from '../_shared/rateLimit.ts'
 
 type Role =
   | 'Admin'
@@ -41,17 +42,6 @@ interface InviteUserResponse {
   email: string
 }
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
-}
-
-function errorResponse(code: string, message: string, status = 400): Response {
-  return jsonResponse({ error: { code, message } }, status)
-}
-
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
@@ -67,6 +57,15 @@ async function loadCallerProfile(userClient: SupabaseClient, userId: string) {
 }
 
 serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req)
+  const jsonResponse = (body: unknown, status = 200): Response =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  const errorResponse = (code: string, message: string, status = 400): Response =>
+    jsonResponse({ error: { code, message } }, status)
+
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
   if (req.method !== 'POST') return errorResponse('METHOD_NOT_ALLOWED', 'POST only', 405)
 
@@ -123,6 +122,13 @@ serve(async (req: Request) => {
 
   if (caller.role !== 'Admin') {
     return errorResponse('FORBIDDEN', 'Only Admin can invite users', 403)
+  }
+
+  // Rate limit per admin: invitations are a privileged email action and
+  // shouldn't bulk-fire. 5/min is plenty for legitimate onboarding bursts.
+  const rl = checkRateLimit(`invite-user:${caller.id}`, { windowMs: 60_000, max: 5 })
+  if (!rl.ok) {
+    return errorResponse('TOO_MANY_REQUESTS', 'Rate limit exceeded — slow down on invites', 429)
   }
 
   // If the customer's HoReCa is named, verify it exists

@@ -7,7 +7,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
-import { corsHeaders } from '../_shared/cors.ts'
+import { corsHeadersFor } from '../_shared/cors.ts'
 
 type OrderStatus = 'processing' | 'confirmed' | 'packed' | 'shipped' | 'delivered'
 
@@ -32,16 +32,8 @@ interface StatusHistoryEntry {
   actor?: string
 }
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
-}
-
-function errorResponse(code: string, message: string, status = 400): Response {
-  return jsonResponse({ error: { code, message } }, status)
-}
+// jsonResponse / errorResponse are defined inside `serve` so they close over
+// the per-request CORS headers (echo of the inbound origin if allowlisted).
 
 async function loadProfile(userClient: SupabaseClient, userId: string) {
   const { data, error } = await userClient
@@ -54,6 +46,15 @@ async function loadProfile(userClient: SupabaseClient, userId: string) {
 }
 
 serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req)
+  const jsonResponse = (body: unknown, status = 200): Response =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  const errorResponse = (code: string, message: string, status = 400): Response =>
+    jsonResponse({ error: { code, message } }, status)
+
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
   if (req.method !== 'POST') return errorResponse('METHOD_NOT_ALLOWED', 'POST only', 405)
 

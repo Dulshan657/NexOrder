@@ -7,7 +7,7 @@
 // throw `EdgeFunctionError` from helpers to bubble structured errors up to a
 // single try/catch in the request handler.
 
-import { corsHeaders } from './cors.ts'
+import { corsHeaders, corsHeadersFor } from './cors.ts'
 
 export type ErrorCode =
   | 'UNAUTHORIZED'
@@ -15,6 +15,7 @@ export type ErrorCode =
   | 'INVALID_INPUT'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'TOO_MANY_REQUESTS'
   | 'INTERNAL'
 
 const DEFAULT_STATUS: Record<ErrorCode, number> = {
@@ -23,6 +24,7 @@ const DEFAULT_STATUS: Record<ErrorCode, number> = {
   INVALID_INPUT: 400,
   NOT_FOUND: 404,
   CONFLICT: 409,
+  TOO_MANY_REQUESTS: 429,
   INTERNAL: 500,
 }
 
@@ -39,13 +41,15 @@ export function errorResponse(
   message: string,
   details?: unknown,
   status?: number,
+  req?: Request,
 ): Response {
   const body: ErrorEnvelope = {
     error: details === undefined ? { code, message } : { code, message, details },
   }
+  const headers = req ? corsHeadersFor(req) : corsHeaders
   return new Response(JSON.stringify(body), {
     status: status ?? DEFAULT_STATUS[code],
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...headers, 'Content-Type': 'application/json' },
   })
 }
 
@@ -62,8 +66,8 @@ export class EdgeFunctionError extends Error {
     this.details = details
   }
 
-  toResponse(): Response {
-    return errorResponse(this.code, this.message, this.details, this.status)
+  toResponse(req?: Request): Response {
+    return errorResponse(this.code, this.message, this.details, this.status, req)
   }
 }
 

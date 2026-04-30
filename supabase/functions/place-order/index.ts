@@ -8,7 +8,8 @@
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
-import { corsHeaders } from '../_shared/cors.ts'
+import { corsHeadersFor } from '../_shared/cors.ts'
+import { checkRateLimit } from '../_shared/rateLimit.ts'
 import {
   applyCartPromotions,
   resolveUnitPrice,
@@ -43,16 +44,8 @@ interface PlaceOrderResponse {
   bogoFreeItems: Array<{ productId: number; freeQuantity: number; promoId: string }>
 }
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
-}
-
-function errorResponse(code: string, message: string, status = 400): Response {
-  return jsonResponse({ error: { code, message } }, status)
-}
+// jsonResponse / errorResponse are defined inside `serve` so they close over
+// the per-request CORS headers (echo of the inbound origin if allowlisted).
 
 async function loadProfile(userClient: SupabaseClient, userId: string) {
   const { data, error } = await userClient
@@ -187,6 +180,15 @@ async function decrementInventory(
 }
 
 serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req)
+  const jsonResponse = (body: unknown, status = 200): Response =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  const errorResponse = (code: string, message: string, status = 400): Response =>
+    jsonResponse({ error: { code, message } }, status)
+
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
   if (req.method !== 'POST') return errorResponse('METHOD_NOT_ALLOWED', 'POST only', 405)
 
@@ -242,6 +244,14 @@ serve(async (req: Request) => {
     role !== 'Field Sales Rep' && role !== 'Office Sales Rep'
   ) {
     return errorResponse('FORBIDDEN', 'Role not permitted to place orders', 403)
+  }
+
+  // Rate limit per authenticated user. 10 orders/min is well above any
+  // realistic interactive pace and tight enough to slow down a hijacked
+  // session firing through a script.
+  const rl = checkRateLimit(`place-order:${profile.id}`, { windowMs: 60_000, max: 10 })
+  if (!rl.ok) {
+    return errorResponse('TOO_MANY_REQUESTS', 'Rate limit exceeded — too many orders in a short period', 429)
   }
 
   // Load data via service client (bypasses RLS, all reads needed for pricing)
