@@ -11,7 +11,7 @@ interface SettingsPanelProps {
     products: Product[];
     onSaveSettings: (settings: AppSettings) => void;
     onUpdateLogo: (logo: string | null) => void;
-    onUpdateHoReCa: (customer: HoReCa) => void;
+    onUpdateHoReCa: (customer: HoReCa, reason?: string) => void;
 }
 
 const CURRENCIES = ['AUD', 'USD', 'NZD', 'GBP', 'EUR', 'SGD', 'MYR'];

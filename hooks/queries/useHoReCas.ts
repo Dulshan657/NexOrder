@@ -26,7 +26,8 @@ export function useHoReCas() {
 export function useCreateHoReCa() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (horeca: HoReCaInsert) => createHoReCa(horeca),
+    mutationFn: ({ horeca, reason }: { horeca: HoReCaInsert; reason?: string }) =>
+      createHoReCa(horeca, reason),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: horecaKeys.all })
     },
@@ -36,8 +37,8 @@ export function useCreateHoReCa() {
 export function useUpdateHoReCa() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, updates }: { id: number; updates: HoReCaUpdate }) =>
-      updateHoReCa(id, updates),
+    mutationFn: ({ id, updates, reason }: { id: number; updates: HoReCaUpdate; reason?: string }) =>
+      updateHoReCa(id, updates, reason),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: horecaKeys.all })
     },

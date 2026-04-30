@@ -23,4 +23,21 @@ export const ProductCardSkeleton: React.FC = () => (
   </div>
 );
 
+/**
+ * LoadingSkeleton — generic full-area fallback used as Suspense fallback
+ * for lazy-loaded views and modals. Stone-palette spinner centered in
+ * a flex container so it works inside both pages and modal overlays.
+ */
+export const LoadingSkeleton: React.FC<{ className?: string }> = ({
+  className = '',
+}) => (
+  <div
+    className={`flex items-center justify-center w-full h-full min-h-[200px] p-8 ${className}`}
+    role="status"
+    aria-label="Loading"
+  >
+    <div className="h-8 w-8 rounded-full border-2 border-stone-200 border-t-nexgen-blue animate-spin" />
+  </div>
+);
+
 export default Skeleton;

@@ -11,6 +11,8 @@
  * onResetView is defined in AppShell and passed to OrderProvider.
  */
 import React, {
+    Suspense,
+    lazy,
     useState,
     useMemo,
     useCallback,
@@ -72,13 +74,10 @@ import {
     useDeletePromotion,
 } from '../hooks/queries/usePromotions';
 
-import AdminView, { type AdminTab } from './AdminView';
+import { type AdminTab } from './AdminView';
 import UserProfile from './UserProfile';
 import MobileCheckoutButton from './MobileCheckoutButton';
 import OrderSummary from './OrderSummary';
-import OrderDetailView from './OrderDetailView';
-import OrderVerificationModal from './OrderVerificationModal';
-import BundleSelectModal from './BundleSelectModal';
 import OrderConfirmation from './OrderConfirmation';
 import OrdersHistoryView from '../views/OrdersHistoryView';
 import RepDashboardView from '../views/RepDashboardView';
@@ -87,9 +86,18 @@ import NotificationBell from './NotificationBell';
 import NotificationPanel from './NotificationPanel';
 import ProfileMenu from './auth/ProfileMenu';
 import HoReCaListView from './HoReCaListView';
-import StockView from './StockView';
 import AccountsAgingTable from './AccountsAgingTable';
-import ScheduledVisitsView from './scheduled-visits/ScheduledVisitsView';
+import { LoadingSkeleton } from './Skeleton';
+
+// Lazy-loaded heavy chunks. The rep + customer hot paths (Shop, OrderHistory)
+// don't render any of these on initial load, so keeping them out of the main
+// bundle drops first-load JS substantially.
+const AdminView = lazy(() => import('./AdminView'));
+const OrderDetailView = lazy(() => import('./OrderDetailView'));
+const OrderVerificationModal = lazy(() => import('./OrderVerificationModal'));
+const BundleSelectModal = lazy(() => import('./BundleSelectModal'));
+const StockView = lazy(() => import('./StockView'));
+const ScheduledVisitsView = lazy(() => import('./scheduled-visits/ScheduledVisitsView'));
 
 import { inviteUser } from '../services/supabase/inviteUserService';
 import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit, fromAppSettings } from '../lib/adapters';
@@ -809,6 +817,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             />
                         )}
                         {isAdminOrManager && adminView !== 'Shop' && (
+                            <Suspense fallback={<LoadingSkeleton />}>
                             <AdminView
                                 activeTab={adminView}
                                 currentUser={currentUser}
@@ -836,14 +845,14 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         onError: err => addToast(`Error: ${err.message}`, 'error'),
                                     });
                                 }}
-                                onAddHoReCa={c => {
-                                    createHoReCaMutation.mutate(fromHoReCa(c) as any, {
+                                onAddHoReCa={(c, reason) => {
+                                    createHoReCaMutation.mutate({ horeca: fromHoReCa(c) as any, reason }, {
                                         onSuccess: () => addToast('HoReCa added', 'success'),
                                         onError: err => addToast(`Error: ${err.message}`, 'error'),
                                     });
                                 }}
-                                onUpdateHoReCa={c => {
-                                    updateHoReCaMutation.mutate({ id: c.id, updates: fromHoReCa(c) as any }, {
+                                onUpdateHoReCa={(c, reason) => {
+                                    updateHoReCaMutation.mutate({ id: c.id, updates: fromHoReCa(c) as any, reason }, {
                                         onSuccess: () => addToast('HoReCa updated', 'success'),
                                         onError: err => addToast(`Error: ${err.message}`, 'error'),
                                     });
@@ -963,6 +972,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     });
                                 }}
                             />
+                            </Suspense>
                         )}
                         {(isRep || isHoReCaUser) && (
                             <div>
@@ -1065,8 +1075,8 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         invoices={invoices}
                                         currentUser={currentUser}
                                         visits={visits}
-                                        onAddHoReCa={c => {
-                                            createHoReCaMutation.mutate(fromHoReCa(c) as any, {
+                                        onAddHoReCa={(c, reason) => {
+                                            createHoReCaMutation.mutate({ horeca: fromHoReCa(c) as any, reason }, {
                                                 onSuccess: () => addToast('HoReCa added', 'success'),
                                                 onError: err => addToast(`Error: ${err.message}`, 'error'),
                                             });
@@ -1076,28 +1086,32 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     />
                                 )}
                                 {view === 'stock' && (
-                                    <StockView
-                                        products={products}
-                                        currentUser={currentUser}
-                                    />
+                                    <Suspense fallback={<LoadingSkeleton />}>
+                                        <StockView
+                                            products={products}
+                                            currentUser={currentUser}
+                                        />
+                                    </Suspense>
                                 )}
                                 {view === 'accounts' && (
                                     <AccountsAgingTable invoices={invoices} hoReCas={hoReCas} currentUser={currentUser} />
                                 )}
                                 {view === 'scheduled_visits' && isFieldRep && (
-                                    <ScheduledVisitsView
-                                        currentUser={currentUser}
-                                        hoReCas={hoReCas}
-                                        routes={routes}
-                                        setRoutes={setRoutes}
-                                        visits={visits}
-                                        setVisits={setVisits}
-                                        orders={allOrders}
-                                        users={users}
-                                        onStartOrder={handleStartOrderWithNav}
-                                        initialSelectedRouteId={initialRouteId}
-                                        onClearInitialRoute={() => setInitialRouteId(null)}
-                                    />
+                                    <Suspense fallback={<LoadingSkeleton />}>
+                                        <ScheduledVisitsView
+                                            currentUser={currentUser}
+                                            hoReCas={hoReCas}
+                                            routes={routes}
+                                            setRoutes={setRoutes}
+                                            visits={visits}
+                                            setVisits={setVisits}
+                                            orders={allOrders}
+                                            users={users}
+                                            onStartOrder={handleStartOrderWithNav}
+                                            initialSelectedRouteId={initialRouteId}
+                                            onClearInitialRoute={() => setInitialRouteId(null)}
+                                        />
+                                    </Suspense>
                                 )}
                             </div>
                         )}
@@ -1169,33 +1183,39 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
 
             {/* Order Detail Modal */}
             {selectedOrder && (
-                <OrderDetailView
-                    order={selectedOrder}
-                    currentUser={currentUser}
-                    invoice={selectedOrderInvoice}
-                    onUpdateStatus={isAdminOrManager ? handleUpdateOrderStatus : undefined}
-                    onClose={() => setSelectedOrderId(null)}
-                />
+                <Suspense fallback={<LoadingSkeleton />}>
+                    <OrderDetailView
+                        order={selectedOrder}
+                        currentUser={currentUser}
+                        invoice={selectedOrderInvoice}
+                        onUpdateStatus={isAdminOrManager ? handleUpdateOrderStatus : undefined}
+                        onClose={() => setSelectedOrderId(null)}
+                    />
+                </Suspense>
             )}
 
             {/* Order Verification Modal */}
             {showVerificationModal && (
-                <OrderVerificationModal
-                    userRole={currentUser.role}
-                    onConfirm={verification => placeOrder(verification)}
-                    onCancel={() => setShowVerificationModal(false)}
-                />
+                <Suspense fallback={<LoadingSkeleton />}>
+                    <OrderVerificationModal
+                        userRole={currentUser.role}
+                        onConfirm={verification => placeOrder(verification)}
+                        onCancel={() => setShowVerificationModal(false)}
+                    />
+                </Suspense>
             )}
 
             {/* Bundle Promo Selector */}
             {bundleModalPromo && (
-                <BundleSelectModal
-                    promotion={bundleModalPromo}
-                    products={products}
-                    cartonDiscountPercent={appSettings.cartonDiscountPercent}
-                    onClose={() => setBundleModalPromo(null)}
-                    onConfirm={handleBundleConfirm}
-                />
+                <Suspense fallback={<LoadingSkeleton />}>
+                    <BundleSelectModal
+                        promotion={bundleModalPromo}
+                        products={products}
+                        cartonDiscountPercent={appSettings.cartonDiscountPercent}
+                        onClose={() => setBundleModalPromo(null)}
+                        onConfirm={handleBundleConfirm}
+                    />
+                </Suspense>
             )}
         </div>
     );

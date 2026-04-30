@@ -1,21 +1,22 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { UserRole, User, Product, HoReCa, Supplier, PurchaseOrder, Order, AppSettings, Invoice, OrderStatus, SalesTarget, Promotion, Visit, ScheduledVisit } from '../types';
+import { LoadingSkeleton } from './Skeleton';
 import ProductAdmin from './ProductAdmin';
-import HoReCaAdmin from './HoReCaAdmin';
 import HoReCaListView from './HoReCaListView';
 import UserAdmin from './UserAdmin';
 import SupplierAdmin from './SupplierAdmin';
-import PurchaseOrderAdmin from './PurchaseOrderAdmin';
-import AdminDashboard from './AdminDashboard';
 import SettingsPanel from './SettingsPanel';
-import InvoiceAdmin from './InvoiceAdmin';
 import AccountsAgingTable from './AccountsAgingTable';
 import OrdersPage from './OrdersPage';
-import HoReCaInsightsPanel from './HoReCaInsightsPanel';
-import PromotionAdmin from './PromotionAdmin';
-import ScheduledVisitsAdmin from './admin/ScheduledVisitsAdmin';
 import WalkInReviewTab from './admin/WalkInReviewTab';
-import StockView from './StockView';
+
+// Heavy admin views — lazy-loaded so rep/customer paths don't pull them in.
+const AdminDashboard = lazy(() => import('./AdminDashboard'));
+const PurchaseOrderAdmin = lazy(() => import('./PurchaseOrderAdmin'));
+const PromotionAdmin = lazy(() => import('./PromotionAdmin'));
+const HoReCaInsightsPanel = lazy(() => import('./HoReCaInsightsPanel'));
+const ScheduledVisitsAdmin = lazy(() => import('./admin/ScheduledVisitsAdmin'));
+const StockView = lazy(() => import('./StockView'));
 
 interface AdminViewProps {
     currentUser: User;
@@ -32,8 +33,8 @@ interface AdminViewProps {
     onAddProduct: (product: Omit<Product, 'id' | 'inventory'>) => void;
     onUpdateProduct: (product: Product) => void;
     onDeleteProduct: (productId: number) => void;
-    onAddHoReCa: (customer: Omit<HoReCa, 'id'>) => void;
-    onUpdateHoReCa: (customer: HoReCa) => void;
+    onAddHoReCa: (customer: Omit<HoReCa, 'id'>, reason?: string) => void;
+    onUpdateHoReCa: (customer: HoReCa, reason?: string) => void;
     onDeleteHoReCa: (hoReCaId: number) => void;
     onAddUser: (user: Omit<User, 'id'>) => void;
     onUpdateUser: (user: User) => void;
@@ -68,6 +69,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
     const isDashboard = props.activeTab === 'Dashboard';
     return (
         <div>
+            <Suspense fallback={<LoadingSkeleton />}>
             <div>
                 {isDashboard && <AdminDashboard allOrders={props.allOrders} products={props.products} hoReCas={props.hoReCas} users={props.users} lowStockThreshold={props.appSettings.lowStockThreshold} invoices={props.invoices} salesTargets={props.salesTargets} onUpdateSalesTargets={props.onUpdateSalesTargets} currentUser={props.currentUser} promotions={props.promotions} visits={props.visits} routes={props.routes} onNavigateTab={props.onSetAdminView ? (tab: string) => props.onSetAdminView!(tab as AdminTab) : undefined} />}
                 {props.activeTab === 'Products' && <ProductAdmin products={props.products} suppliers={props.suppliers} onAddProduct={props.onAddProduct} onUpdateProduct={props.onUpdateProduct} onDeleteProduct={props.onDeleteProduct} />}
@@ -100,6 +102,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                     />
                 )}
             </div>
+            </Suspense>
         </div>
     );
 };

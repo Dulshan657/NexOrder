@@ -1,20 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import type { HoReCa, PaymentMethod } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import type { HoReCa, HoReCaTier, PaymentMethod } from '../types';
+import { UserRole } from '../types';
+
+// Defaults used by the Edge Function / DB schema
+const SENSITIVE_DEFAULTS = {
+    creditLimit: 0,
+    tier: 'Bronze' as HoReCaTier,
+    discountPercent: 0,
+} as const;
 
 interface HoReCaFormProps {
     hoReCaToEdit: HoReCa | null;
-    onSave: (customerData: HoReCa | Omit<HoReCa, 'id'>) => void;
+    onSave: (customerData: HoReCa | Omit<HoReCa, 'id'>, reason?: string) => void;
     onClose: () => void;
+    userRole?: UserRole;
 }
 
-const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose }) => {
+const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, userRole }) => {
     const [formData, setFormData] = useState({
         name: '',
         address: '',
         creditLimit: '',
+        tier: '' as HoReCaTier | '',
+        discountPercent: '',
     });
     const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
     const [editingMethod, setEditingMethod] = useState<Partial<PaymentMethod> | null>(null);
+    const [reason, setReason] = useState('');
 
     useEffect(() => {
         if (hoReCaToEdit) {
@@ -22,17 +34,50 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose }
                 name: hoReCaToEdit.name,
                 address: hoReCaToEdit.address,
                 creditLimit: hoReCaToEdit.creditLimit !== undefined ? String(hoReCaToEdit.creditLimit) : '',
+                tier: hoReCaToEdit.tier ?? '',
+                discountPercent: hoReCaToEdit.discountPercent !== undefined ? String(hoReCaToEdit.discountPercent) : '',
             });
             setPaymentMethods(hoReCaToEdit.paymentMethods || []);
         } else {
             // Reset form for new customer
-            setFormData({ name: '', address: '', creditLimit: '' });
+            setFormData({ name: '', address: '', creditLimit: '', tier: '', discountPercent: '' });
             setPaymentMethods([]);
         }
+        setReason('');
         setEditingMethod(null);
     }, [hoReCaToEdit]);
 
-    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Derive whether any sensitive fields have changed vs original or defaults.
+    // For create: compare against schema defaults (creditLimit=0, tier=Bronze, discountPercent=0).
+    // For edit:   compare against the original hoReCaToEdit values.
+    const sensitiveFieldsTouched: string[] = useMemo(() => {
+        const touched: string[] = [];
+
+        const originalCreditLimit = hoReCaToEdit
+            ? (hoReCaToEdit.creditLimit ?? SENSITIVE_DEFAULTS.creditLimit)
+            : SENSITIVE_DEFAULTS.creditLimit;
+        const formCreditLimit = formData.creditLimit ? parseFloat(formData.creditLimit) : SENSITIVE_DEFAULTS.creditLimit;
+        if (formCreditLimit !== originalCreditLimit) touched.push('creditLimit');
+
+        const originalTier = hoReCaToEdit
+            ? (hoReCaToEdit.tier ?? SENSITIVE_DEFAULTS.tier)
+            : SENSITIVE_DEFAULTS.tier;
+        const formTier = (formData.tier || SENSITIVE_DEFAULTS.tier) as HoReCaTier;
+        if (formTier !== originalTier) touched.push('tier');
+
+        const originalDiscount = hoReCaToEdit
+            ? (hoReCaToEdit.discountPercent ?? SENSITIVE_DEFAULTS.discountPercent)
+            : SENSITIVE_DEFAULTS.discountPercent;
+        const formDiscount = formData.discountPercent ? parseFloat(formData.discountPercent) : SENSITIVE_DEFAULTS.discountPercent;
+        if (formDiscount !== originalDiscount) touched.push('discountPercent');
+
+        return touched;
+    }, [formData.creditLimit, formData.tier, formData.discountPercent, hoReCaToEdit]);
+
+    // Show the reason prompt only for Managers who have touched a sensitive field.
+    const showReasonPrompt = userRole === UserRole.MANAGER && sensitiveFieldsTouched.length > 0;
+
+    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
@@ -78,19 +123,27 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose }
             return;
         }
 
+        if (showReasonPrompt && reason.trim().length < 5) {
+            alert('Please provide a reason for changing the sensitive field(s). Minimum 5 characters.');
+            return;
+        }
+
         const customerData = {
             name: formData.name,
             address: formData.address,
             creditLimit: formData.creditLimit ? parseFloat(formData.creditLimit) : undefined,
+            tier: (formData.tier || undefined) as HoReCaTier | undefined,
+            discountPercent: formData.discountPercent ? parseFloat(formData.discountPercent) : undefined,
             pricing: hoReCaToEdit?.pricing,
-            discountPercent: hoReCaToEdit?.discountPercent,
             paymentMethods: paymentMethods.length > 0 ? paymentMethods : undefined,
         };
 
+        const reasonToSend = showReasonPrompt ? reason.trim() : undefined;
+
         if (hoReCaToEdit) {
-            onSave({ ...customerData, id: hoReCaToEdit.id });
+            onSave({ ...customerData, id: hoReCaToEdit.id }, reasonToSend);
         } else {
-            onSave(customerData);
+            onSave(customerData, reasonToSend);
         }
     };
 
@@ -115,7 +168,44 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose }
                             <label htmlFor="creditLimit" className="block text-sm font-medium text-stone-700 mb-1.5">Credit Limit ($)</label>
                             <input type="number" name="creditLimit" id="creditLimit" value={formData.creditLimit} onChange={handleFormChange} min="0" step="0.01" className={inputClasses} placeholder="e.g., 5000" />
                         </div>
+                        <div>
+                            <label htmlFor="tier" className="block text-sm font-medium text-stone-700 mb-1.5">Tier</label>
+                            <select name="tier" id="tier" value={formData.tier} onChange={handleFormChange} className={inputClasses}>
+                                <option value="">Bronze (default)</option>
+                                <option value="Bronze">Bronze</option>
+                                <option value="Silver">Silver</option>
+                                <option value="Gold">Gold</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label htmlFor="discountPercent" className="block text-sm font-medium text-stone-700 mb-1.5">Discount (%)</label>
+                            <input type="number" name="discountPercent" id="discountPercent" value={formData.discountPercent} onChange={handleFormChange} min="0" max="100" step="0.1" className={inputClasses} placeholder="e.g., 10" />
+                        </div>
                     </div>
+
+                    {/* Reason for change — shown only to Managers who touch a sensitive field */}
+                    {showReasonPrompt && (
+                        <div className="mt-6 pt-5 border-t border-amber-100 bg-amber-50/60 rounded-xl p-4 space-y-2">
+                            <label htmlFor="reason" className="block text-sm font-semibold text-amber-800">
+                                Reason for change <span className="text-red-500">*</span>
+                            </label>
+                            <p className="text-xs text-amber-700">
+                                You changed: {sensitiveFieldsTouched.join(', ')}. An audit reason is required.
+                            </p>
+                            <textarea
+                                id="reason"
+                                name="reason"
+                                value={reason}
+                                onChange={e => setReason(e.target.value)}
+                                rows={3}
+                                minLength={5}
+                                maxLength={500}
+                                placeholder="Why are you changing the credit limit / tier / discount? Required for audit trail."
+                                className="block w-full rounded-lg border-0 bg-white py-2.5 px-3 text-stone-900 shadow-sm ring-1 ring-inset ring-amber-300 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-amber-500 sm:text-sm transition-all resize-none"
+                            />
+                            <p className="text-xs text-stone-400 text-right">{reason.length}/500</p>
+                        </div>
+                    )}
                     
                     {/* Payment Methods Section */}
                     <div className="mt-8 pt-6 border-t border-stone-100">
@@ -169,7 +259,11 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose }
                         <button type="button" onClick={onClose} className="bg-white py-2.5 px-4 border border-stone-300 rounded-lg shadow-sm text-sm font-medium text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors">
                             Cancel
                         </button>
-                        <button type="submit" className="inline-flex justify-center py-2.5 px-5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-stone-900 hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors">
+                        <button
+                            type="submit"
+                            disabled={showReasonPrompt && reason.trim().length < 5}
+                            className="inline-flex justify-center py-2.5 px-5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-stone-900 hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
                             Save HoReCa
                         </button>
                     </div>

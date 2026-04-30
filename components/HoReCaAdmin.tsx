@@ -1,17 +1,18 @@
 import React, { useState, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
-import type { HoReCa } from '../types';
+import type { HoReCa, User } from '../types';
 import HoReCaForm from './HoReCaForm';
 import ConfirmationDialog from './ConfirmationDialog';
 
 interface HoReCaAdminProps {
     hoReCas: HoReCa[];
-    onAddHoReCa: (customer: Omit<HoReCa, 'id'>) => void;
-    onUpdateHoReCa: (customer: HoReCa) => void;
+    currentUser?: User;
+    onAddHoReCa: (customer: Omit<HoReCa, 'id'>, reason?: string) => void;
+    onUpdateHoReCa: (customer: HoReCa, reason?: string) => void;
     onDeleteHoReCa: (hoReCaId: number) => void;
 }
 
-const HoReCaAdmin: React.FC<HoReCaAdminProps> = ({ hoReCas, onAddHoReCa, onUpdateHoReCa, onDeleteHoReCa }) => {
+const HoReCaAdmin: React.FC<HoReCaAdminProps> = ({ hoReCas, currentUser, onAddHoReCa, onUpdateHoReCa, onDeleteHoReCa }) => {
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [hoReCaToEdit, setHoReCaToEdit] = useState<HoReCa | null>(null);
     const [hoReCaToDelete, setHoReCaToDelete] = useState<HoReCa | null>(null);
@@ -40,11 +41,11 @@ const HoReCaAdmin: React.FC<HoReCaAdminProps> = ({ hoReCas, onAddHoReCa, onUpdat
         setIsFormOpen(true);
     };
 
-    const handleSaveCustomer = (customerData: HoReCa | Omit<HoReCa, 'id'>) => {
+    const handleSaveCustomer = (customerData: HoReCa | Omit<HoReCa, 'id'>, reason?: string) => {
         if ('id' in customerData) {
-            onUpdateHoReCa(customerData);
+            onUpdateHoReCa(customerData, reason);
         } else {
-            onAddHoReCa(customerData);
+            onAddHoReCa(customerData, reason);
         }
         setIsFormOpen(false);
     };
@@ -133,6 +134,7 @@ const HoReCaAdmin: React.FC<HoReCaAdminProps> = ({ hoReCas, onAddHoReCa, onUpdat
                     hoReCaToEdit={hoReCaToEdit}
                     onSave={handleSaveCustomer}
                     onClose={() => setIsFormOpen(false)}
+                    userRole={currentUser?.role}
                 />
             )}
 

@@ -91,12 +91,14 @@ const AddStopModal: React.FC<AddStopModalProps> = ({ route, hoReCas, currentUser
         // Create a temporary HoReCa flagged for office follow-up.
         const { numericIdToUuid } = await import('../../lib/userIdMap');
         const created = await createHoReCaMutation.mutateAsync({
-          name: walkInName.trim(),
-          address: walkInAddress.trim(),
-          lat: walkInLat ?? null,
-          lng: walkInLng ?? null,
-          is_temporary: true,
-          created_by_user_id: numericIdToUuid(currentUser.id),
+          horeca: {
+            name: walkInName.trim(),
+            address: walkInAddress.trim(),
+            lat: walkInLat ?? null,
+            lng: walkInLng ?? null,
+            is_temporary: true,
+            created_by_user_id: numericIdToUuid(currentUser.id),
+          },
         });
         if (!created) throw new Error('Failed to create walk-in customer.');
         hoReCaId = created.id;

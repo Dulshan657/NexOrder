@@ -19,7 +19,7 @@ interface HoReCaProfileProps {
   visits?: Visit[];
   hoReCas: HoReCa[];
   onBack: () => void;
-  onUpdateHoReCa?: (customer: HoReCa) => void;
+  onUpdateHoReCa?: (customer: HoReCa, reason?: string) => void;
   onStartOrder?: (hoReCaId: number) => void;
   onLogVisit?: (hoReCaId: number) => void;
   setVisits?: (visits: Visit[]) => void;
@@ -228,8 +228,9 @@ const HoReCaProfile: React.FC<HoReCaProfileProps> = ({
       {showEditForm && onUpdateHoReCa && (
         <HoReCaForm
           hoReCaToEdit={hoReCa}
-          onSave={(updated) => { onUpdateHoReCa(updated as HoReCa); setShowEditForm(false); }}
+          onSave={(updated, reason) => { onUpdateHoReCa(updated as HoReCa, reason); setShowEditForm(false); }}
           onClose={() => setShowEditForm(false)}
+          userRole={currentUser.role}
         />
       )}
 

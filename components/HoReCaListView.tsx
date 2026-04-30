@@ -16,8 +16,8 @@ interface HoReCaListViewProps {
   invoices: Invoice[];
   currentUser: User;
   visits?: Visit[];
-  onAddHoReCa?: (customer: Omit<HoReCa, 'id'>) => void;
-  onUpdateHoReCa?: (customer: HoReCa) => void;
+  onAddHoReCa?: (customer: Omit<HoReCa, 'id'>, reason?: string) => void;
+  onUpdateHoReCa?: (customer: HoReCa, reason?: string) => void;
   onDeleteHoReCa?: (hoReCaId: number) => void;
   onStartOrder?: (hoReCaId: number) => void;
   setVisits?: (visits: Visit[]) => void;
@@ -343,8 +343,9 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
       {showAddForm && onAddHoReCa && (
         <HoReCaForm
           hoReCaToEdit={null}
-          onSave={(data) => { onAddHoReCa(data as Omit<HoReCa, 'id'>); setShowAddForm(false); }}
+          onSave={(data, reason) => { onAddHoReCa(data as Omit<HoReCa, 'id'>, reason); setShowAddForm(false); }}
           onClose={() => setShowAddForm(false)}
+          userRole={currentUser.role}
         />
       )}
 
@@ -352,8 +353,9 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
       {hoReCaToEdit && onUpdateHoReCa && (
         <HoReCaForm
           hoReCaToEdit={hoReCaToEdit}
-          onSave={(data) => { onUpdateHoReCa(data as HoReCa); setHoReCaToEdit(null); }}
+          onSave={(data, reason) => { onUpdateHoReCa(data as HoReCa, reason); setHoReCaToEdit(null); }}
           onClose={() => setHoReCaToEdit(null)}
+          userRole={currentUser.role}
         />
       )}
 
