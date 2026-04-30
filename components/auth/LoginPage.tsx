@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { ArrowRight, Check } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import ForgotPasswordDialog from './ForgotPasswordDialog'
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
@@ -35,6 +36,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [forgotOpen, setForgotOpen] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -175,12 +177,22 @@ export default function LoginPage() {
             </div>
 
             <div className="grid gap-2">
-              <label
-                htmlFor="password"
-                className="font-mono text-[10px] uppercase tracking-[0.18em] text-stone-600"
-              >
-                Password
-              </label>
+              <div className="flex items-baseline justify-between">
+                <label
+                  htmlFor="password"
+                  className="font-mono text-[10px] uppercase tracking-[0.18em] text-stone-600"
+                >
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setForgotOpen(true)}
+                  disabled={isSubmitting}
+                  className="text-[11px] font-medium text-nexgen-blue hover:text-nexgen-blue-dark hover:underline disabled:opacity-50 cursor-pointer"
+                >
+                  Forgot your password?
+                </button>
+              </div>
               <input
                 id="password"
                 type="password"
@@ -271,6 +283,12 @@ export default function LoginPage() {
           Trouble signing in? Contact your administrator if you need access.
         </p>
       </main>
+
+      <ForgotPasswordDialog
+        open={forgotOpen}
+        onClose={() => setForgotOpen(false)}
+        initialEmail={email}
+      />
     </div>
   )
 }

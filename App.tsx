@@ -23,6 +23,7 @@ import { useSettings } from './hooks/queries/useSettings';
 import { useNotifications } from './hooks/queries/useNotifications';
 import { useProfiles } from './hooks/queries/useProfiles';
 import { useRealtimeSubscriptions } from './hooks/useRealtimeSubscriptions';
+import { useIdleTimeout } from './hooks/useIdleTimeout';
 import { setUserIdMap } from './lib/userIdMap';
 
 // ── Adapters ──────────────────────────────────────────────────────────────────
@@ -44,6 +45,19 @@ const App: React.FC = () => {
     // Subscribe to Supabase postgres_changes so orders / notifications /
     // products stay live without polling. RLS filters per-user automatically.
     useRealtimeSubscriptions(currentUserUuid);
+
+    // Auto-signout after 30 minutes of inactivity.
+    useIdleTimeout({
+        enabled: !!currentUserUuid,
+        onIdle: async () => {
+            try {
+                await auth.signOut();
+                addToast('Signed out due to inactivity', 'info');
+            } catch (err) {
+                console.warn('Idle signOut failed:', err);
+            }
+        },
+    });
 
     // ── Server state — Supabase query hooks ───────────────────────────────────
     const { data: rawProducts = [] } = useProducts();
