@@ -22,6 +22,7 @@ import { useSalesTargets } from './hooks/queries/useSalesTargets';
 import { useSettings } from './hooks/queries/useSettings';
 import { useNotifications } from './hooks/queries/useNotifications';
 import { useProfiles } from './hooks/queries/useProfiles';
+import { useRealtimeSubscriptions } from './hooks/useRealtimeSubscriptions';
 import { setUserIdMap } from './lib/userIdMap';
 
 // ── Adapters ──────────────────────────────────────────────────────────────────
@@ -39,6 +40,10 @@ const App: React.FC = () => {
     const currentUserUuid = auth.user?.id ?? '';
     const queryClient = useQueryClient();
     const { addToast } = useToasts();
+
+    // Subscribe to Supabase postgres_changes so orders / notifications /
+    // products stay live without polling. RLS filters per-user automatically.
+    useRealtimeSubscriptions(currentUserUuid);
 
     // ── Server state — Supabase query hooks ───────────────────────────────────
     const { data: rawProducts = [] } = useProducts();
