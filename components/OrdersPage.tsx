@@ -3,6 +3,7 @@ import type { Order, HoReCa, User, OrderStatus } from '../types';
 import { UserRole } from '../types';
 import StatusBadge from './StatusBadge';
 import { ORDER_STATUS_SEQUENCE, ORDER_STATUS_LABELS } from '../constants';
+import { downloadCsv } from '../lib/csvExport';
 import {
   Search,
   Eye,
@@ -71,9 +72,10 @@ function canAdvanceStatus(user: User): boolean {
   return user.role === UserRole.ADMIN || user.role === UserRole.MANAGER;
 }
 
-function buildCsv(ordersToExport: Order[]): string {
-  const headers = ['Order ID', 'HoReCa', 'Date', 'Status', 'Items', 'Total'];
-  const rows = ordersToExport.map((o) => [
+const ORDERS_CSV_HEADERS = ['Order ID', 'HoReCa', 'Date', 'Status', 'Items', 'Total'];
+
+function ordersToCsvRows(ordersToExport: Order[]): string[][] {
+  return ordersToExport.map((o) => [
     o.id,
     o.hoReCa.name,
     new Date(o.orderDate).toLocaleDateString(),
@@ -81,19 +83,6 @@ function buildCsv(ordersToExport: Order[]): string {
     String(o.items.reduce((acc, i) => acc + i.quantity, 0)),
     o.total.toFixed(2),
   ]);
-  const escape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-  return [headers, ...rows].map((row) => row.map(escape).join(',')).join('\n');
-}
-
-function downloadCsv(ordersToExport: Order[], filename: string): void {
-  const csv = buildCsv(ordersToExport);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 // ---------------------------------------------------------------------------
@@ -334,12 +323,12 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
   }, []);
 
   const handleExportAll = useCallback(() => {
-    downloadCsv(sortedOrders, `orders-${activeTab}-export.csv`);
+    downloadCsv(ORDERS_CSV_HEADERS, ordersToCsvRows(sortedOrders), `orders-${activeTab}-export.csv`);
   }, [sortedOrders, activeTab]);
 
   const handleExportSelected = useCallback(() => {
     const selected = sortedOrders.filter((o) => selectedIds.has(o.id));
-    downloadCsv(selected, `orders-${activeTab}-selected-export.csv`);
+    downloadCsv(ORDERS_CSV_HEADERS, ordersToCsvRows(selected), `orders-${activeTab}-selected-export.csv`);
   }, [sortedOrders, selectedIds, activeTab]);
 
   const handleBulkReorder = useCallback(() => {

@@ -18,6 +18,7 @@ const PromotionAdmin = lazy(() => import('./PromotionAdmin'));
 const HoReCaInsightsPanel = lazy(() => import('./HoReCaInsightsPanel'));
 const ScheduledVisitsAdmin = lazy(() => import('./admin/ScheduledVisitsAdmin'));
 const StockView = lazy(() => import('./StockView'));
+const AuditLogTab = lazy(() => import('./admin/AuditLogTab'));
 
 interface AdminViewProps {
     currentUser: User;
@@ -64,7 +65,7 @@ interface AdminViewProps {
     onSetAdminView?: (tab: AdminTab) => void;
 }
 
-export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Orders' | 'Promotions' | 'Accounts' | 'Stock' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'Purchase Orders' | 'Settings';
+export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Orders' | 'Promotions' | 'Accounts' | 'Stock' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'Purchase Orders' | 'Settings' | 'Audit Log';
 
 const AdminView: React.FC<AdminViewProps> = (props) => {
     const isDashboard = props.activeTab === 'Dashboard';
@@ -102,6 +103,9 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                         onUpdateLogo={props.onUpdateLogo}
                         onUpdateHoReCa={props.onUpdateHoReCa}
                     />
+                )}
+                {props.activeTab === 'Audit Log' && props.currentUser.role === UserRole.ADMIN && (
+                    <AuditLogTab users={props.users} />
                 )}
             </div>
             </Suspense>

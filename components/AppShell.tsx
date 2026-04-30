@@ -124,6 +124,7 @@ import {
     MapPin,
     Warehouse,
     UserPlus,
+    ScrollText,
 } from 'lucide-react';
 import type { AppNotification } from '../types';
 
@@ -300,6 +301,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const isFieldRep = currentUser.role === UserRole.FIELD_REP;
     const isHoReCaUser = currentUser.role === UserRole.CUSTOMER;
     const isAdminOrManager = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
+    const isAdmin = currentUser.role === UserRole.ADMIN;
 
     // ── Derived notification state ────────────────────────────────────────────
     const userNotifications = useMemo(
@@ -747,6 +749,14 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             >
                                 <Settings className="w-5 h-5 mr-3" /> Settings
                             </button>
+                            {isAdmin && (
+                                <button
+                                    onClick={() => { setAdminView('Audit Log'); setIsSidebarOpen(false); }}
+                                    className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Audit Log' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                >
+                                    <ScrollText className="w-5 h-5 mr-3" /> Audit Log
+                                </button>
+                            )}
                         </>
                     )}
                 </nav>
