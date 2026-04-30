@@ -7,6 +7,10 @@ import { AuthProvider } from './components/auth/AuthProvider';
 import AuthGate from './components/auth/AuthGate';
 import { queryClient } from './lib/queryClient';
 import ToastContainer from './components/ToastContainer';
+import { ErrorBoundary, FullPageErrorFallback } from './components/ErrorBoundary';
+import { installGlobalErrorHandlers } from './lib/errorReporter';
+
+installGlobalErrorHandlers();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -16,15 +20,17 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <ToastProvider>
-          <AuthGate>
-            <App />
-          </AuthGate>
-          <ToastContainer />
-        </ToastProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    <ErrorBoundary label="Application" fallback={FullPageErrorFallback}>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <ToastProvider>
+            <AuthGate>
+              <App />
+            </AuthGate>
+            <ToastContainer />
+          </ToastProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );

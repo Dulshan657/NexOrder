@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { UserRole, User, Product, HoReCa, Supplier, PurchaseOrder, Order, AppSettings, Invoice, OrderStatus, SalesTarget, Promotion, Visit, ScheduledVisit } from '../types';
 import { LoadingSkeleton } from './Skeleton';
+import { ErrorBoundary } from './ErrorBoundary';
 import ProductAdmin from './ProductAdmin';
 import HoReCaListView from './HoReCaListView';
 import UserAdmin from './UserAdmin';
@@ -69,6 +70,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
     const isDashboard = props.activeTab === 'Dashboard';
     return (
         <div>
+            <ErrorBoundary label={`Admin · ${props.activeTab}`}>
             <Suspense fallback={<LoadingSkeleton />}>
             <div>
                 {isDashboard && <AdminDashboard allOrders={props.allOrders} products={props.products} hoReCas={props.hoReCas} users={props.users} lowStockThreshold={props.appSettings.lowStockThreshold} invoices={props.invoices} salesTargets={props.salesTargets} onUpdateSalesTargets={props.onUpdateSalesTargets} currentUser={props.currentUser} promotions={props.promotions} visits={props.visits} routes={props.routes} onNavigateTab={props.onSetAdminView ? (tab: string) => props.onSetAdminView!(tab as AdminTab) : undefined} />}
@@ -103,6 +105,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 )}
             </div>
             </Suspense>
+            </ErrorBoundary>
         </div>
     );
 };

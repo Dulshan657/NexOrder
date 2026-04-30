@@ -88,6 +88,7 @@ import ProfileMenu from './auth/ProfileMenu';
 import HoReCaListView from './HoReCaListView';
 import AccountsAgingTable from './AccountsAgingTable';
 import { LoadingSkeleton } from './Skeleton';
+import { ErrorBoundary } from './ErrorBoundary';
 
 // Lazy-loaded heavy chunks. The rep + customer hot paths (Shop, OrderHistory)
 // don't render any of these on initial load, so keeping them out of the main
@@ -817,6 +818,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             />
                         )}
                         {isAdminOrManager && adminView !== 'Shop' && (
+                            <ErrorBoundary label="Admin view">
                             <Suspense fallback={<LoadingSkeleton />}>
                             <AdminView
                                 activeTab={adminView}
@@ -973,6 +975,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 }}
                             />
                             </Suspense>
+                            </ErrorBoundary>
                         )}
                         {(isRep || isHoReCaUser) && (
                             <div>
@@ -1086,32 +1089,36 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     />
                                 )}
                                 {view === 'stock' && (
-                                    <Suspense fallback={<LoadingSkeleton />}>
-                                        <StockView
-                                            products={products}
-                                            currentUser={currentUser}
-                                        />
-                                    </Suspense>
+                                    <ErrorBoundary label="Stock view">
+                                        <Suspense fallback={<LoadingSkeleton />}>
+                                            <StockView
+                                                products={products}
+                                                currentUser={currentUser}
+                                            />
+                                        </Suspense>
+                                    </ErrorBoundary>
                                 )}
                                 {view === 'accounts' && (
                                     <AccountsAgingTable invoices={invoices} hoReCas={hoReCas} currentUser={currentUser} />
                                 )}
                                 {view === 'scheduled_visits' && isFieldRep && (
-                                    <Suspense fallback={<LoadingSkeleton />}>
-                                        <ScheduledVisitsView
-                                            currentUser={currentUser}
-                                            hoReCas={hoReCas}
-                                            routes={routes}
-                                            setRoutes={setRoutes}
-                                            visits={visits}
-                                            setVisits={setVisits}
-                                            orders={allOrders}
-                                            users={users}
-                                            onStartOrder={handleStartOrderWithNav}
-                                            initialSelectedRouteId={initialRouteId}
-                                            onClearInitialRoute={() => setInitialRouteId(null)}
-                                        />
-                                    </Suspense>
+                                    <ErrorBoundary label="Scheduled visits">
+                                        <Suspense fallback={<LoadingSkeleton />}>
+                                            <ScheduledVisitsView
+                                                currentUser={currentUser}
+                                                hoReCas={hoReCas}
+                                                routes={routes}
+                                                setRoutes={setRoutes}
+                                                visits={visits}
+                                                setVisits={setVisits}
+                                                orders={allOrders}
+                                                users={users}
+                                                onStartOrder={handleStartOrderWithNav}
+                                                initialSelectedRouteId={initialRouteId}
+                                                onClearInitialRoute={() => setInitialRouteId(null)}
+                                            />
+                                        </Suspense>
+                                    </ErrorBoundary>
                                 )}
                             </div>
                         )}
@@ -1183,39 +1190,45 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
 
             {/* Order Detail Modal */}
             {selectedOrder && (
-                <Suspense fallback={<LoadingSkeleton />}>
-                    <OrderDetailView
-                        order={selectedOrder}
-                        currentUser={currentUser}
-                        invoice={selectedOrderInvoice}
-                        onUpdateStatus={isAdminOrManager ? handleUpdateOrderStatus : undefined}
-                        onClose={() => setSelectedOrderId(null)}
-                    />
-                </Suspense>
+                <ErrorBoundary label="Order detail">
+                    <Suspense fallback={<LoadingSkeleton />}>
+                        <OrderDetailView
+                            order={selectedOrder}
+                            currentUser={currentUser}
+                            invoice={selectedOrderInvoice}
+                            onUpdateStatus={isAdminOrManager ? handleUpdateOrderStatus : undefined}
+                            onClose={() => setSelectedOrderId(null)}
+                        />
+                    </Suspense>
+                </ErrorBoundary>
             )}
 
             {/* Order Verification Modal */}
             {showVerificationModal && (
-                <Suspense fallback={<LoadingSkeleton />}>
-                    <OrderVerificationModal
-                        userRole={currentUser.role}
-                        onConfirm={verification => placeOrder(verification)}
-                        onCancel={() => setShowVerificationModal(false)}
-                    />
-                </Suspense>
+                <ErrorBoundary label="Order verification">
+                    <Suspense fallback={<LoadingSkeleton />}>
+                        <OrderVerificationModal
+                            userRole={currentUser.role}
+                            onConfirm={verification => placeOrder(verification)}
+                            onCancel={() => setShowVerificationModal(false)}
+                        />
+                    </Suspense>
+                </ErrorBoundary>
             )}
 
             {/* Bundle Promo Selector */}
             {bundleModalPromo && (
-                <Suspense fallback={<LoadingSkeleton />}>
-                    <BundleSelectModal
-                        promotion={bundleModalPromo}
-                        products={products}
-                        cartonDiscountPercent={appSettings.cartonDiscountPercent}
-                        onClose={() => setBundleModalPromo(null)}
-                        onConfirm={handleBundleConfirm}
-                    />
-                </Suspense>
+                <ErrorBoundary label="Bundle selector">
+                    <Suspense fallback={<LoadingSkeleton />}>
+                        <BundleSelectModal
+                            promotion={bundleModalPromo}
+                            products={products}
+                            cartonDiscountPercent={appSettings.cartonDiscountPercent}
+                            onClose={() => setBundleModalPromo(null)}
+                            onConfirm={handleBundleConfirm}
+                        />
+                    </Suspense>
+                </ErrorBoundary>
             )}
         </div>
     );
