@@ -388,6 +388,22 @@ serve(async (req: Request) => {
     console.warn('Invoice creation failed, order placed without invoice:', invoiceError.message)
   }
 
+  // Fire-and-forget order confirmation email. Failure must never roll back
+  // the placed order, so any error is logged and swallowed.
+  try {
+    const fnUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/send-email`
+    void fetch(fnUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ template: 'order_confirmation', orderId }),
+    }).catch((err) => console.warn('order_confirmation email dispatch failed:', err))
+  } catch (e) {
+    console.warn('order_confirmation email dispatch threw:', e)
+  }
+
   const response: PlaceOrderResponse = {
     orderId,
     total,
