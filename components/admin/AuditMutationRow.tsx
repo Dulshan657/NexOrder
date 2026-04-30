@@ -91,7 +91,7 @@ const AuditMutationRow: React.FC<AuditMutationRowProps> = memo(function AuditMut
                 onClick={onToggle}
                 className="hover:bg-stone-50 cursor-pointer transition-colors"
             >
-                <td className="px-4 py-3 text-sm">
+                <td className="px-6 py-4 text-sm">
                     <div className="flex items-center gap-2">
                         <ChevronRight
                             className={`w-4 h-4 text-stone-400 transition-transform ${expanded ? 'rotate-90' : ''}`}
@@ -101,22 +101,22 @@ const AuditMutationRow: React.FC<AuditMutationRowProps> = memo(function AuditMut
                         </span>
                     </div>
                 </td>
-                <td className="px-4 py-3 text-sm">
+                <td className="px-6 py-4 text-sm">
                     <div className="text-stone-900">{actorName}</div>
                     <div className="text-xs text-stone-500">{row.actor_role}</div>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-6 py-4">
                     <span className={`inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${ACTION_PILL[row.action]}`}>
                         {row.action}
                     </span>
                 </td>
-                <td className="px-4 py-3 text-sm text-stone-700">{row.resource}</td>
-                <td className="px-4 py-3 text-sm">
+                <td className="px-6 py-4 text-sm text-stone-700">{row.resource}</td>
+                <td className="px-6 py-4 text-sm">
                     <span title={row.resource_id ?? ''} className="font-mono text-xs text-stone-600">
                         {truncateId(row.resource_id)}
                     </span>
                 </td>
-                <td className="px-4 py-3 text-sm text-stone-600 max-w-xs truncate" title={row.reason ?? ''}>
+                <td className="px-6 py-4 text-sm text-stone-600 max-w-xs truncate" title={row.reason ?? ''}>
                     {row.reason ?? '—'}
                 </td>
             </tr>

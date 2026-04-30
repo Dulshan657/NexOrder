@@ -38,7 +38,7 @@ const AuditErrorRow: React.FC<AuditErrorRowProps> = memo(function AuditErrorRow(
                 onClick={onToggle}
                 className="hover:bg-stone-50 cursor-pointer transition-colors"
             >
-                <td className="px-4 py-3 text-sm">
+                <td className="px-6 py-4 text-sm">
                     <div className="flex items-center gap-2">
                         <ChevronRight
                             className={`w-4 h-4 text-stone-400 transition-transform ${expanded ? 'rotate-90' : ''}`}
@@ -48,16 +48,16 @@ const AuditErrorRow: React.FC<AuditErrorRowProps> = memo(function AuditErrorRow(
                         </span>
                     </div>
                 </td>
-                <td className="px-4 py-3 text-sm">
+                <td className="px-6 py-4 text-sm">
                     <div className="text-stone-900">{actorName}</div>
                     {row.actor_role && (
                         <div className="text-xs text-stone-500">{row.actor_role}</div>
                     )}
                 </td>
-                <td className="px-4 py-3 text-sm text-stone-700 max-w-md truncate" title={row.message}>
+                <td className="px-6 py-4 text-sm text-stone-700 max-w-md truncate" title={row.message}>
                     {row.message}
                 </td>
-                <td className="px-4 py-3 text-sm max-w-xs truncate" title={row.url ?? ''}>
+                <td className="px-6 py-4 text-sm max-w-xs truncate" title={row.url ?? ''}>
                     <span className="font-mono text-xs text-stone-500">{row.url ?? '—'}</span>
                 </td>
             </tr>

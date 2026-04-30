@@ -5,7 +5,8 @@ import {
     ChevronLeft,
     ChevronRight as ChevronRightIcon,
     AlertTriangle,
-    ScrollText,
+    Search,
+    X,
 } from 'lucide-react';
 import type { User } from '../../types';
 import { numericIdToUuid } from '../../lib/userIdMap';
@@ -58,8 +59,6 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
         return m;
     }, [users]);
 
-    // Filter object for the active mode. Identity changes invalidate the
-    // TanStack query cache key, so memoise per-input.
     const mutationFilters = useMemo(
         () => ({
             fromDate: fromDate || undefined,
@@ -162,53 +161,32 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
 
     const hasFilters = !!(fromDate || toDate || actorId || resource || action || search);
 
+    const totalLabel = mode === 'mutations' ? 'mutation events' : 'client errors';
+
+    const inputClass =
+        'w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue';
+    const selectClass =
+        'w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue cursor-pointer';
+
     return (
-        <div className="space-y-4">
+        <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
             {/* Header */}
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div className="flex items-start gap-3">
-                    <div className="hidden sm:flex w-10 h-10 rounded-lg bg-nexgen-blue/10 items-center justify-center shrink-0">
-                        <ScrollText className="w-5 h-5 text-nexgen-blue" />
-                    </div>
-                    <div>
-                        <h2 className="text-lg font-semibold tracking-tight text-stone-900">Audit log</h2>
-                        <p className="text-sm text-stone-500">
-                            {isLoading ? 'Loading…' : `${total.toLocaleString()} ${mode === 'mutations' ? 'mutation events' : 'client errors'}`}
-                            {isFetching && !isLoading ? ' · refreshing' : ''}
-                        </p>
-                    </div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                    <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Audit Log</h1>
+                    <p className="text-xs text-stone-500 mt-0.5">
+                        {isLoading
+                            ? 'Loading…'
+                            : `${total.toLocaleString()} ${totalLabel}`}
+                        {isFetching && !isLoading ? ' · refreshing' : ''}
+                    </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    {/* Segmented mode toggle */}
-                    <div className="inline-flex bg-stone-100 rounded-lg p-1">
-                        <button
-                            type="button"
-                            onClick={() => handleSwitchMode('mutations')}
-                            className={`text-sm px-3 py-1.5 rounded-md transition-colors btn-press ${
-                                mode === 'mutations'
-                                    ? 'bg-white text-stone-900 shadow-sm'
-                                    : 'text-stone-600 hover:text-stone-900'
-                            }`}
-                        >
-                            Mutations
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => handleSwitchMode('errors')}
-                            className={`text-sm px-3 py-1.5 rounded-md transition-colors btn-press ${
-                                mode === 'errors'
-                                    ? 'bg-white text-stone-900 shadow-sm'
-                                    : 'text-stone-600 hover:text-stone-900'
-                            }`}
-                        >
-                            Errors
-                        </button>
-                    </div>
                     <button
                         type="button"
                         onClick={handleRefresh}
                         disabled={isFetching}
-                        className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-white text-stone-700 ring-1 ring-inset ring-stone-200 hover:bg-stone-50 disabled:opacity-60 btn-press"
+                        className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-white text-stone-700 border border-stone-200 hover:bg-stone-50 text-sm font-medium transition-colors disabled:opacity-60 cursor-pointer btn-press"
                         title="Refresh"
                     >
                         <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
@@ -218,7 +196,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                         type="button"
                         onClick={handleDownloadCsv}
                         disabled={total === 0}
-                        className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-stone-900 text-white hover:bg-stone-800 disabled:opacity-50 btn-press"
+                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors disabled:opacity-50 cursor-pointer btn-press"
                         title="Download visible page as CSV"
                     >
                         <Download className="w-4 h-4" />
@@ -227,33 +205,59 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                 </div>
             </div>
 
-            {/* Filter row */}
-            <div className="bg-stone-50 rounded-xl border border-stone-100 p-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end">
-                    <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">From</span>
+            {/* Mode chips */}
+            <div className="flex gap-2 overflow-x-auto pb-1">
+                <button
+                    type="button"
+                    onClick={() => handleSwitchMode('mutations')}
+                    className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                        mode === 'mutations'
+                            ? 'bg-nexgen-blue text-white'
+                            : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                    }`}
+                >
+                    Mutations
+                </button>
+                <button
+                    type="button"
+                    onClick={() => handleSwitchMode('errors')}
+                    className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                        mode === 'errors'
+                            ? 'bg-nexgen-blue text-white'
+                            : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                    }`}
+                >
+                    Errors
+                </button>
+            </div>
+
+            {/* Filters */}
+            <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
+                    <div className="lg:col-span-2">
+                        <label className="block text-[11px] font-medium text-stone-500 uppercase tracking-wider mb-1">From</label>
                         <input
                             type="date"
                             value={fromDate}
                             onChange={(e) => { setFromDate(e.target.value); setPage(0); }}
-                            className="text-sm rounded-md border border-stone-200 bg-white px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+                            className={inputClass}
                         />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">To</span>
+                    </div>
+                    <div className="lg:col-span-2">
+                        <label className="block text-[11px] font-medium text-stone-500 uppercase tracking-wider mb-1">To</label>
                         <input
                             type="date"
                             value={toDate}
                             onChange={(e) => { setToDate(e.target.value); setPage(0); }}
-                            className="text-sm rounded-md border border-stone-200 bg-white px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+                            className={inputClass}
                         />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">Actor</span>
+                    </div>
+                    <div className="lg:col-span-3">
+                        <label className="block text-[11px] font-medium text-stone-500 uppercase tracking-wider mb-1">Actor</label>
                         <select
                             value={actorId}
                             onChange={(e) => { setActorId(e.target.value); setPage(0); }}
-                            className="text-sm rounded-md border border-stone-200 bg-white px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+                            className={selectClass}
                         >
                             <option value="">All actors</option>
                             {users.map((u) => (
@@ -262,58 +266,69 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                                 </option>
                             ))}
                         </select>
-                    </label>
-                    {mode === 'mutations' && (
+                    </div>
+                    {mode === 'mutations' ? (
                         <>
-                            <label className="flex flex-col gap-1">
-                                <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">Resource</span>
+                            <div className="lg:col-span-2">
+                                <label className="block text-[11px] font-medium text-stone-500 uppercase tracking-wider mb-1">Resource</label>
                                 <select
                                     value={resource}
                                     onChange={(e) => { setResource(e.target.value); setPage(0); }}
-                                    className="text-sm rounded-md border border-stone-200 bg-white px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+                                    className={selectClass}
                                 >
                                     <option value="">All resources</option>
                                     {KNOWN_RESOURCES.map((r) => (
-                                        <option key={r} value={r}>
-                                            {r}
-                                        </option>
+                                        <option key={r} value={r}>{r}</option>
                                     ))}
                                 </select>
-                            </label>
-                            <label className="flex flex-col gap-1">
-                                <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">Action</span>
+                            </div>
+                            <div className="lg:col-span-3">
+                                <label className="block text-[11px] font-medium text-stone-500 uppercase tracking-wider mb-1">Action</label>
                                 <select
                                     value={action}
                                     onChange={(e) => { setAction(e.target.value as AuditAction | ''); setPage(0); }}
-                                    className="text-sm rounded-md border border-stone-200 bg-white px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+                                    className={selectClass}
                                 >
                                     <option value="">All actions</option>
                                     {KNOWN_ACTIONS.map((a) => (
-                                        <option key={a} value={a}>
-                                            {a}
-                                        </option>
+                                        <option key={a} value={a}>{a}</option>
                                     ))}
                                 </select>
-                            </label>
+                            </div>
                         </>
+                    ) : (
+                        <div className="lg:col-span-5" />
                     )}
-                    <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">Search</span>
-                        <input
-                            type="search"
-                            value={search}
-                            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-                            placeholder={mode === 'mutations' ? 'Reason or resource ID…' : 'Message or URL…'}
-                            className="text-sm rounded-md border border-stone-200 bg-white px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
-                        />
-                    </label>
+                </div>
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                    <input
+                        type="search"
+                        value={search}
+                        onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+                        placeholder={mode === 'mutations' ? 'Search reason or resource ID…' : 'Search message or URL…'}
+                        className="w-full pl-10 pr-10 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+                    />
+                    {search && (
+                        <button
+                            type="button"
+                            onClick={() => { setSearch(''); setPage(0); }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
+                            aria-label="Clear search"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    )}
                 </div>
                 {hasFilters && (
-                    <div className="mt-3 flex justify-end">
+                    <div className="flex justify-between items-center">
+                        <p className="text-xs text-stone-400">
+                            {total.toLocaleString()} matching {totalLabel}
+                        </p>
                         <button
                             type="button"
                             onClick={handleClearFilters}
-                            className="text-xs text-nexgen-blue hover:underline btn-press"
+                            className="text-xs font-medium text-nexgen-blue hover:text-nexgen-blue/80 cursor-pointer"
                         >
                             Clear filters
                         </button>
@@ -325,55 +340,53 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
             {queryError ? (
                 <ErrorState error={queryError as Error} onRetry={handleRefresh} />
             ) : (
-                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="bg-stone-50">
-                                {mode === 'mutations' ? (
-                                    <tr>
-                                        <Th>When</Th>
-                                        <Th>Actor</Th>
-                                        <Th>Action</Th>
-                                        <Th>Resource</Th>
-                                        <Th>Resource ID</Th>
-                                        <Th>Reason</Th>
-                                    </tr>
-                                ) : (
-                                    <tr>
-                                        <Th>When</Th>
-                                        <Th>Actor</Th>
-                                        <Th>Message</Th>
-                                        <Th>URL</Th>
-                                    </tr>
-                                )}
-                            </thead>
-                            <tbody className="divide-y divide-stone-100">
-                                {isLoading ? (
-                                    <SkeletonRows columns={mode === 'mutations' ? 6 : 4} />
-                                ) : mode === 'mutations' ? (
-                                    (mutationsQuery.data?.rows ?? []).map((row) => (
-                                        <AuditMutationRow
-                                            key={row.id}
-                                            row={row}
-                                            actorName={actorNameFor(row.actor_id)}
-                                            expanded={expandedId === row.id}
-                                            onToggle={() => setExpandedId((cur) => (cur === row.id ? null : row.id))}
-                                        />
-                                    ))
-                                ) : (
-                                    (errorsQuery.data?.rows ?? []).map((row) => (
-                                        <AuditErrorRow
-                                            key={row.id}
-                                            row={row}
-                                            actorName={actorNameFor(row.actor_id)}
-                                            expanded={expandedId === row.id}
-                                            onToggle={() => setExpandedId((cur) => (cur === row.id ? null : row.id))}
-                                        />
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                <div className="overflow-x-auto border border-stone-200 rounded-xl shadow-card">
+                    <table className="min-w-full divide-y divide-stone-200">
+                        <thead className="bg-stone-50">
+                            {mode === 'mutations' ? (
+                                <tr>
+                                    <Th>When</Th>
+                                    <Th>Actor</Th>
+                                    <Th>Action</Th>
+                                    <Th>Resource</Th>
+                                    <Th>Resource ID</Th>
+                                    <Th>Reason</Th>
+                                </tr>
+                            ) : (
+                                <tr>
+                                    <Th>When</Th>
+                                    <Th>Actor</Th>
+                                    <Th>Message</Th>
+                                    <Th>URL</Th>
+                                </tr>
+                            )}
+                        </thead>
+                        <tbody className="bg-white divide-y divide-stone-200">
+                            {isLoading ? (
+                                <SkeletonRows columns={mode === 'mutations' ? 6 : 4} />
+                            ) : mode === 'mutations' ? (
+                                (mutationsQuery.data?.rows ?? []).map((row) => (
+                                    <AuditMutationRow
+                                        key={row.id}
+                                        row={row}
+                                        actorName={actorNameFor(row.actor_id)}
+                                        expanded={expandedId === row.id}
+                                        onToggle={() => setExpandedId((cur) => (cur === row.id ? null : row.id))}
+                                    />
+                                ))
+                            ) : (
+                                (errorsQuery.data?.rows ?? []).map((row) => (
+                                    <AuditErrorRow
+                                        key={row.id}
+                                        row={row}
+                                        actorName={actorNameFor(row.actor_id)}
+                                        expanded={expandedId === row.id}
+                                        onToggle={() => setExpandedId((cur) => (cur === row.id ? null : row.id))}
+                                    />
+                                ))
+                            )}
+                        </tbody>
+                    </table>
                     {!isLoading && total === 0 && (
                         <EmptyState onClear={hasFilters ? handleClearFilters : undefined} mode={mode} />
                     )}
@@ -383,7 +396,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
             {/* Pagination */}
             {!queryError && total > 0 && (
                 <div className="flex items-center justify-between text-sm">
-                    <span className="text-stone-500 font-mono">
+                    <span className="text-stone-500 font-mono text-xs">
                         Showing {page * PAGE_SIZE + 1}–{Math.min(total, (page + 1) * PAGE_SIZE)} of {total.toLocaleString()}
                     </span>
                     <div className="flex items-center gap-1">
@@ -391,7 +404,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                             type="button"
                             onClick={() => setPage((p) => Math.max(0, p - 1))}
                             disabled={page === 0 || isFetching}
-                            className="inline-flex items-center gap-1 text-sm px-2.5 py-1.5 rounded-md bg-white text-stone-700 ring-1 ring-inset ring-stone-200 hover:bg-stone-50 disabled:opacity-50 btn-press"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white text-stone-700 border border-stone-200 hover:bg-stone-50 text-sm font-medium transition-colors disabled:opacity-50 cursor-pointer btn-press"
                         >
                             <ChevronLeft className="w-4 h-4" />
                             Prev
@@ -403,7 +416,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                             type="button"
                             onClick={() => setPage((p) => p + 1)}
                             disabled={page + 1 >= totalPages || isFetching}
-                            className="inline-flex items-center gap-1 text-sm px-2.5 py-1.5 rounded-md bg-white text-stone-700 ring-1 ring-inset ring-stone-200 hover:bg-stone-50 disabled:opacity-50 btn-press"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white text-stone-700 border border-stone-200 hover:bg-stone-50 text-sm font-medium transition-colors disabled:opacity-50 cursor-pointer btn-press"
                         >
                             Next
                             <ChevronRightIcon className="w-4 h-4" />
@@ -416,18 +429,24 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
 };
 
 const Th: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <th className="text-left px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+    <th
+        scope="col"
+        className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider"
+    >
         {children}
     </th>
 );
 
 const SkeletonRows: React.FC<{ columns: number }> = ({ columns }) => (
     <>
-        {Array.from({ length: 12 }).map((_, i) => (
+        {Array.from({ length: 8 }).map((_, i) => (
             <tr key={i}>
                 {Array.from({ length: columns }).map((__, j) => (
-                    <td key={j} className="px-4 py-3">
-                        <div className="h-4 bg-stone-100 rounded animate-pulse" style={{ width: `${50 + ((i + j) % 5) * 10}%` }} />
+                    <td key={j} className="px-6 py-4">
+                        <div
+                            className="h-4 bg-stone-100 rounded animate-pulse"
+                            style={{ width: `${50 + ((i + j) % 5) * 10}%` }}
+                        />
                     </td>
                 ))}
             </tr>
@@ -441,7 +460,7 @@ interface EmptyStateProps {
 }
 
 const EmptyState: React.FC<EmptyStateProps> = ({ mode, onClear }) => (
-    <div className="p-12 text-center">
+    <div className="bg-white p-12 text-center">
         <p className="text-stone-500">
             {mode === 'mutations'
                 ? 'No mutation events match these filters.'
@@ -451,7 +470,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({ mode, onClear }) => (
             <button
                 type="button"
                 onClick={onClear}
-                className="mt-3 text-sm text-nexgen-blue hover:underline btn-press"
+                className="mt-3 text-sm font-medium text-nexgen-blue hover:text-nexgen-blue/80 cursor-pointer"
             >
                 Clear filters
             </button>
@@ -465,16 +484,16 @@ interface ErrorStateProps {
 }
 
 const ErrorState: React.FC<ErrorStateProps> = ({ error, onRetry }) => (
-    <div className="p-6 bg-rose-50 border border-rose-200 rounded-xl text-rose-900">
+    <div className="p-6 bg-red-50 border border-red-200 rounded-xl text-red-900 shadow-card">
         <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="flex-1">
                 <p className="font-semibold mb-1">Could not load audit log</p>
-                <p className="text-sm text-rose-800/80 mb-3">{error.message}</p>
+                <p className="text-sm text-red-800/80 mb-3">{error.message}</p>
                 <button
                     type="button"
                     onClick={onRetry}
-                    className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-white text-rose-900 ring-1 ring-inset ring-rose-200 hover:bg-rose-100 btn-press"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-red-900 border border-red-200 hover:bg-red-100 text-sm font-medium transition-colors cursor-pointer btn-press"
                 >
                     <RefreshCw className="w-4 h-4" />
                     Retry
