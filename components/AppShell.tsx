@@ -1252,9 +1252,10 @@ const AppShell: React.FC<AppShellProps> = props => {
     const { products, hoReCas, promotions, invoices, appSettings, allOrders, addToast, placeOrderMutation, currentUser, currentUserUuid, users, queryClient } = props;
 
     // ── UI / nav state ────────────────────────────────────────────────────────
+    // Customers have no dashboard route — land them on Shop. Reps land on Dashboard.
     const [view, setView] = useState<
         'ordering' | 'orders' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits'
-    >('dashboard');
+    >(currentUser.role === UserRole.CUSTOMER ? 'ordering' : 'dashboard');
     const [adminView, setAdminView] = useState<AdminTab>('Dashboard');
     const [orderingTab, setOrderingTab] = useState<OrderingTabKey>('catalogue');
     const [selectedCategory, setSelectedCategory] = useState('All');
