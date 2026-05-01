@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nex Order — Product &amp; Production Spec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  /* ---------- design tokens ---------- */
+  :root {
+    --stone-50:  #fafaf9;
+    --stone-100: #f5f5f4;
+    --stone-200: #e7e5e4;
+    --stone-300: #d6d3d1;
+    --stone-400: #a8a29e;
+    --stone-500: #78716c;
+    --stone-600: #57534e;
+    --stone-700: #44403c;
+    --stone-800: #292524;
+    --stone-900: #1c1917;
+    --amber-50:  #fffbeb;
+    --amber-200: #fde68a;
+    --amber-700: #b45309;
+    --red-50:    #fef2f2;
+    --red-200:   #fecaca;
+    --red-700:   #b91c1c;
+    --emerald-50: #ecfdf5;
+    --emerald-200:#a7f3d0;
+    --emerald-700:#047857;
+    --display: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --body:    'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono:    'JetBrains Mono', ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+  }
+
+  /* ---------- reset / base ---------- */
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--stone-100);
+    color: var(--stone-900);
+    font-family: var(--body);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    max-width: 920px;
+    margin: 0 auto;
+    background: white;
+    padding: 56px 64px;
+    border-bottom: 1px solid var(--stone-200);
+  }
+  .page:last-child { border-bottom: none; }
+
+  /* ---------- typography ---------- */
+  h1, h2, h3, h4 { font-family: var(--display); color: var(--stone-900); margin: 0 0 12px; line-height: 1.2; }
+  h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; padding-bottom: 12px; border-bottom: 2px solid var(--stone-900); margin-top: 0; }
+  h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin-top: 36px; }
+  h3 { font-size: 17px; font-weight: 700; margin-top: 28px; color: var(--stone-800); }
+  h4 { font-size: 14px; font-weight: 600; margin-top: 18px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--stone-600); }
+  p  { margin: 0 0 12px; }
+  a  { color: var(--stone-900); text-decoration: underline; text-decoration-color: var(--stone-300); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--stone-900); }
+  code, .mono { font-family: var(--mono); font-size: 12.5px; background: var(--stone-100); padding: 1px 6px; border-radius: 3px; color: var(--stone-800); }
+  ul, ol { margin: 0 0 12px; padding-left: 22px; }
+  li { margin-bottom: 4px; }
+  hr { border: none; border-top: 1px solid var(--stone-200); margin: 32px 0; }
+
+  /* ---------- cover ---------- */
+  .cover {
+    min-height: 100vh;
+    background: linear-gradient(180deg, var(--stone-50) 0%, var(--stone-100) 100%);
+    padding: 80px 64px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    border-bottom: none;
+  }
+  .cover .eyebrow { font-family: var(--display); font-size: 12px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--stone-600); }
+  .cover h1 {
+    font-size: 64px; font-weight: 800; letter-spacing: -0.035em; line-height: 1.02;
+    border-bottom: none; padding-bottom: 0; margin-top: 24px;
+  }
+  .cover h1 em { font-style: normal; color: var(--stone-500); font-weight: 600; }
+  .cover .lead { font-size: 18px; color: var(--stone-700); max-width: 560px; margin-top: 24px; line-height: 1.5; }
+  .cover .meta {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 56px;
+    padding-top: 28px; border-top: 1px solid var(--stone-300);
+  }
+  .cover .meta div { font-size: 13px; }
+  .cover .meta .label { color: var(--stone-500); text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; font-weight: 600; }
+  .cover .meta .value { color: var(--stone-900); font-weight: 600; margin-top: 4px; font-family: var(--display); }
+
+  /* ---------- table of contents ---------- */
+  .toc { list-style: none; padding: 0; margin: 0; counter-reset: toc; }
+  .toc > li {
+    counter-increment: toc;
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 10px 0; border-bottom: 1px dashed var(--stone-200);
+    font-family: var(--display); font-weight: 600;
+  }
+  .toc > li::before {
+    content: counter(toc, decimal-leading-zero);
+    color: var(--stone-400); font-size: 12px; min-width: 32px;
+    font-feature-settings: 'tnum';
+  }
+  .toc > li a { text-decoration: none; flex: 1; color: var(--stone-900); }
+  .toc > li .pg { color: var(--stone-500); font-size: 12px; font-weight: 500; font-family: var(--mono); }
+
+  /* ---------- capability matrix ---------- */
+  table.matrix, table.gap, table.data {
+    width: 100%; border-collapse: collapse; margin: 12px 0 20px;
+    font-size: 12.5px;
+  }
+  table.matrix th, table.matrix td,
+  table.gap th, table.gap td,
+  table.data th, table.data td {
+    border-bottom: 1px solid var(--stone-200);
+    padding: 8px 10px;
+    text-align: left; vertical-align: top;
+  }
+  table.matrix thead th, table.gap thead th, table.data thead th {
+    background: var(--stone-900); color: white;
+    font-family: var(--display); font-weight: 600; font-size: 11px;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    border-bottom: none;
+  }
+  table.matrix tbody tr:nth-child(odd), table.gap tbody tr:nth-child(odd), table.data tbody tr:nth-child(odd) { background: var(--stone-50); }
+  table.matrix th.role, table.matrix td.role { text-align: center; width: 64px; font-family: var(--mono); }
+  table.matrix td.role .y  { color: var(--emerald-700); font-weight: 700; }
+  table.matrix td.role .n  { color: var(--stone-300); }
+  table.matrix td.role .own { color: var(--amber-700); font-weight: 600; font-size: 11px; }
+  table.matrix td.role .rzn { color: var(--amber-700); font-weight: 600; font-size: 11px; }
+  table.matrix td.cap { font-weight: 600; }
+
+  /* ---------- story cards ---------- */
+  .epic { margin-top: 28px; }
+  .epic h3 { display: flex; align-items: baseline; gap: 12px; margin-top: 0; }
+  .epic h3 .eid {
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    color: var(--stone-500); letter-spacing: 0.04em;
+  }
+  .stories { display: grid; gap: 8px; margin-top: 8px; }
+  .story {
+    background: var(--stone-50);
+    border-left: 3px solid var(--stone-300);
+    padding: 10px 14px;
+    font-size: 13px;
+    page-break-inside: avoid;
+  }
+  .story .role { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--stone-700); background: white; border: 1px solid var(--stone-200); padding: 1px 6px; border-radius: 3px; margin-right: 6px; }
+  .story .impl { display: block; margin-top: 4px; font-family: var(--mono); font-size: 11px; color: var(--stone-500); }
+  .story.role-admin     { border-left-color: #7c2d12; }
+  .story.role-manager   { border-left-color: #b45309; }
+  .story.role-field     { border-left-color: #047857; }
+  .story.role-office    { border-left-color: #0e7490; }
+  .story.role-customer  { border-left-color: #6d28d9; }
+
+  /* ---------- callouts ---------- */
+  .callout {
+    border-left: 4px solid var(--stone-400);
+    background: var(--stone-50);
+    padding: 12px 16px; margin: 16px 0;
+    border-radius: 0 4px 4px 0;
+  }
+  .callout.warn { border-left-color: var(--amber-700); background: var(--amber-50); }
+  .callout.high { border-left-color: var(--red-700); background: var(--red-50); }
+  .callout.ok   { border-left-color: var(--emerald-700); background: var(--emerald-50); }
+  .callout strong { font-family: var(--display); }
+
+  /* ---------- severity pills ---------- */
+  .sev { display: inline-block; font-family: var(--mono); font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 3px; letter-spacing: 0.04em; }
+  .sev.critical { background: var(--red-700); color: white; }
+  .sev.high     { background: var(--red-50); color: var(--red-700); border: 1px solid var(--red-200); }
+  .sev.medium   { background: var(--amber-50); color: var(--amber-700); border: 1px solid var(--amber-200); }
+  .sev.low      { background: var(--stone-100); color: var(--stone-700); border: 1px solid var(--stone-300); }
+  .sev.shipped  { background: var(--emerald-50); color: var(--emerald-700); border: 1px solid var(--emerald-200); }
+
+  /* ---------- numbered flow steps ---------- */
+  ol.flow { list-style: none; padding: 0; margin: 12px 0 24px; counter-reset: step; }
+  ol.flow > li {
+    counter-increment: step;
+    position: relative;
+    padding: 10px 14px 10px 48px;
+    background: var(--stone-50);
+    margin-bottom: 4px;
+    border-radius: 4px;
+    page-break-inside: avoid;
+  }
+  ol.flow > li::before {
+    content: counter(step);
+    position: absolute; left: 12px; top: 10px;
+    font-family: var(--display); font-weight: 700; font-size: 13px;
+    color: white; background: var(--stone-900);
+    width: 24px; height: 24px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  ol.flow .actor { font-family: var(--mono); font-size: 11px; color: var(--stone-500); margin-right: 6px; }
+
+  /* ---------- footer ---------- */
+  .pagefoot { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--stone-200); font-size: 11px; color: var(--stone-500); display: flex; justify-content: space-between; }
+
+  /* ---------- print rules ---------- */
+  @page { size: A4; margin: 18mm 16mm; }
+  @page :first { margin: 0; }
+  @media print {
+    body { background: white; }
+    .page { max-width: none; margin: 0; padding: 0 4mm; border: none; box-shadow: none; }
+    .cover { min-height: 257mm; padding: 28mm 18mm; }
+    h1 { page-break-before: always; }
+    .cover h1 { page-break-before: avoid; }
+    h2, h3 { page-break-after: avoid; }
+    .story, ol.flow > li, tr { page-break-inside: avoid; }
+    table.matrix, table.gap, table.data { page-break-inside: auto; }
+    a { color: inherit; text-decoration: none; }
+    .toc > li a { text-decoration: none; }
+    .pagefoot { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- COVER                                                        -->
+<!-- ============================================================ -->
+<section class="cover">
+  <div>
+    <div class="eyebrow">Nex Order &middot; AYAM Order System</div>
+    <h1>Product &amp;<br/>Production Spec<br/><em>v1.0 dossier</em></h1>
+    <p class="lead">A complete handoff document covering every user story, the role &amp; capability map, the work shipped to date, and the work remaining before this B2B ordering platform is production-ready.</p>
+  </div>
+  <div class="meta">
+    <div>
+      <div class="label">Document</div>
+      <div class="value">Internal handoff</div>
+    </div>
+    <div>
+      <div class="label">Generated</div>
+      <div class="value">2026-05-01</div>
+    </div>
+    <div>
+      <div class="label">Production URL</div>
+      <div class="value">nexorder.vercel.app</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- TOC                                                          -->
+<!-- ============================================================ -->
+<section class="page">
+  <h1>Table of Contents</h1>
+  <ol class="toc">
+    <li><a href="#sec-1">Executive Summary</a><span class="pg">§ 1</span></li>
+    <li><a href="#sec-2">Roles &amp; Capabilities</a><span class="pg">§ 2</span></li>
+    <li><a href="#sec-3">User Stories</a><span class="pg">§ 3</span></li>
+    <li><a href="#sec-4">End-to-End Use Cases</a><span class="pg">§ 4</span></li>
+    <li><a href="#sec-5">What&rsquo;s Been Shipped</a><span class="pg">§ 5</span></li>
+    <li><a href="#sec-6">Production Readiness Gaps</a><span class="pg">§ 6</span></li>
+    <li><a href="#sec-7">Recommended Sequence to Production</a><span class="pg">§ 7</span></li>
+  </ol>
+
+  <h3 style="margin-top:48px">Reading order</h3>
+  <p>If you are new to the system, read sections 1 and 2 (~10 minutes) to understand who the app serves and what each role can do. If you are picking up implementation work, jump to section 6 for the open issues, then section 7 for the prioritised sequence. Sections 3 and 4 are reference material — useful for QA, onboarding, and writing tests.</p>
+
+  <h3>Conventions used</h3>
+  <ul>
+    <li>Roles are quoted verbatim from <code>types.ts</code>: <code>Admin</code>, <code>Manager</code>, <code>Field Sales Rep</code>, <code>Office Sales Rep</code>, <code>Restaurant/Hotel Customer</code> (the last is shortened to <em>&ldquo;Customer&rdquo;</em> in body copy but is always the same role internally).</li>
+    <li>File paths are relative to <code>copy-of-curatif-order-system-v1.3/</code> unless stated otherwise.</li>
+    <li>Severity pills: <span class="sev critical">CRIT</span> blocks launch &middot; <span class="sev high">HIGH</span> ship before v1.0 &middot; <span class="sev medium">MED</span> ship in v1.x &middot; <span class="sev low">LOW</span> post-launch &middot; <span class="sev shipped">DONE</span> already shipped.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 1                                                    -->
+<!-- ============================================================ -->
+<section class="page" id="sec-1">
+  <h1>1 &middot; Executive Summary</h1>
+
+  <p><strong>Nex Order</strong> (internally also referenced as the AYAM Order System) is a B2B order-management web application that lets restaurant and hotel customers (HoReCa) place orders for AYAM-brand Asian food products, sales reps place orders on their customers&rsquo; behalf, and a back-office team manage the catalogue, accounts, and field operations that surround that order flow.</p>
+
+  <p>The application is a single-page React 19 + TypeScript app served from Vercel (<code>nexorder.vercel.app</code>), with all state of record living in a Supabase Postgres database. The architectural shape is deliberate: <strong>every privileged write goes through a Deno Edge Function</strong> rather than direct database access. Row-Level Security on the underlying tables is configured to revoke <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> from the <code>authenticated</code> role for everything that matters, so a compromised browser session cannot bypass the validation, role gates, audit logging, or rate limits that the Edge Functions enforce.</p>
+
+  <p>The system has five roles &mdash; <em>Admin</em>, <em>Manager</em>, <em>Field Sales Rep</em>, <em>Office Sales Rep</em>, and <em>Customer</em> &mdash; and supports the full B2B distribution loop: catalog browsing, tier-aware pricing, multi-format promotions (percentage, fixed-price, BOGO, bundle, clearance), cart with delivery scheduling, an authoritative <code>place-order</code> path that runs stock and credit checks atomically, an order-status state machine, accounts-aging with order blocking, supplier and purchase-order management, sales targets with dashboards, route planning with check-in / visit logging for field reps, walk-in customer onboarding, transactional email scaffolding, real-time subscription updates, and a complete audit trail of every privileged mutation. The codebase has roughly 50 user-facing components across 16 functional epics, 13 deployed Edge Functions, and 16 numbered Postgres migrations.</p>
+
+  <h3>What this document does, and what it does not</h3>
+  <p>This document is a <strong>dev-team handoff artifact</strong>. Its goal is that a new engineer can read it cold and understand the entire system &mdash; what each role can do, what flows exist, what is shipped, and what is left. It is not a marketing brochure: section 6 lists every known production gap, including six new issues uncovered while preparing this document. Where there is a tension between honesty and polish, this document errs toward honesty.</p>
+
+  <p>The document does <em>not</em> include API contracts, database column specifications, or per-component prop tables &mdash; those live next to the code. It does include enough file paths and Edge Function names that any claim made here can be verified in source within seconds.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 2                                                    -->
+<!-- ============================================================ -->
+<section class="page" id="sec-2">
+  <h1>2 &middot; Roles &amp; Capabilities</h1>
+
+  <h2>2.1 Role descriptions</h2>
+
+  <h3>Admin</h3>
+  <p>The platform owner. Has unconditional access to everything: catalog management, customer (HoReCa) creation and deletion, promotion design, supplier and purchase-order management, user provisioning, app-wide settings (currency, low-stock thresholds, payment-blocking limits, blanket discounts), and the audit log of every mutation in the system. Admins can edit a HoReCa&rsquo;s sensitive fields (credit limit, tier, discount percent) without justification &mdash; the reason-prompt gate applies only to Managers.</p>
+
+  <h3>Manager</h3>
+  <p>A back-office user who runs day-to-day operations but does not own platform configuration. Managers can advance order status through the state machine, manage the product catalog, manage HoReCas (with a mandatory 5&ndash;500 character <em>reason</em> attached to any change of credit limit, tier, or discount), manage suppliers and purchase orders, set sales targets for reps, and approve or reject route plans submitted by field reps. Managers cannot invite users, edit app settings, view the audit log, or modify promotions on the same level as Admin (in practice promotion CRUD is also gated to Admin+Manager at the Edge Function, but the UI surface for promotions sits in the Admin tab tree).</p>
+
+  <h3>Field Sales Rep</h3>
+  <p>A mobile-first user who is out visiting customers in person. Has the same shopping interface as a Customer but can switch between any of their assigned HoReCas to place an order on their behalf. Owns route planning &mdash; creating a multi-stop visit list, optimising the order, starting the route, checking in at each stop, logging visit outcomes (Order Placed, Follow-up, Not Available, No Interest, Stock Check), and capturing photos and competitor notes. Sees a dashboard tuned for their personal performance: own revenue, AOV, target progress, at-risk customers, and reorder predictions.</p>
+
+  <h3>Office Sales Rep</h3>
+  <p>A desk-bound counterpart to the field rep. Same shopping and order-history capabilities, same dashboard, but no route planning, no scheduled visits, and no walk-in review &mdash; this role exists for inside-sales staff who take phone orders or work the order pipeline without doing physical site visits.</p>
+
+  <h3>Customer (Restaurant/Hotel)</h3>
+  <p>The end customer &mdash; a restaurant, hotel, or other HoReCa that buys from the brand. Self-service ordering only: can browse the catalog, build a cart, manage their own pantry of frequently-ordered items, reorder from any of their past orders, see their own delivery and invoice history, and view their own outstanding balance. Cannot see other customers&rsquo; data, cannot manage anything, and cannot place an order if their account is blocked for being over the payment threshold.</p>
+
+  <h2>2.2 Capability matrix</h2>
+  <p>Cell legend: <span class="mono">&check;</span> = full access &middot; <span class="mono">&middot;</span> = no access &middot; <span class="mono">own</span> = scoped to own HoReCa &middot; <span class="mono">rsn</span> = allowed but requires a written reason (audited).</p>
+
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th style="width:42%">Capability</th>
+        <th class="role">Admin</th>
+        <th class="role">Mgr</th>
+        <th class="role">Field</th>
+        <th class="role">Office</th>
+        <th class="role">Cust</th>
+        <th>Enforced at</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="cap">Sign in &middot; reset own password &middot; idle-timeout</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td><code>AuthGate</code> &middot; <code>useIdleTimeout</code></td></tr>
+      <tr><td class="cap">Browse product catalogue</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td>Public read via RLS</td></tr>
+      <tr><td class="cap">Place order on behalf of any HoReCa</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="own">own</span></td><td><code>place-order</code></td></tr>
+      <tr><td class="cap">Update order status (state machine)</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>update-order-status</code></td></tr>
+      <tr><td class="cap">View all orders</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="own">own</span></td><td class="role"><span class="own">own</span></td><td class="role"><span class="own">own</span></td><td>RLS + view filter</td></tr>
+      <tr><td class="cap">Reorder from past orders</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="own">own</span></td><td><code>OrderContext.handleReorder</code></td></tr>
+      <tr><td class="cap">Manage personal pantry (saved items)</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="own">own</span></td><td><code>mutate-pantry-item</code></td></tr>
+      <tr><td class="cap">Create / edit / delete products</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>mutate-product</code></td></tr>
+      <tr><td class="cap">Create / edit HoReCa records</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>mutate-horeca</code></td></tr>
+      <tr><td class="cap">Edit HoReCa <em>sensitive</em> fields (tier / credit / discount)</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="rzn">rsn</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>mutate-horeca</code> reason gate</td></tr>
+      <tr><td class="cap">Delete HoReCa (blocked if non-cancelled orders exist)</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>mutate-horeca</code></td></tr>
+      <tr><td class="cap">Manage promotions (CRUD, schedule, enable/disable)</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>mutate-promotion</code></td></tr>
+      <tr><td class="cap">View accounts-aging report</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="own">own</span></td><td><code>AccountsAgingTable</code></td></tr>
+      <tr><td class="cap">Block / unblock customer over payment threshold</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>mutate-horeca</code></td></tr>
+      <tr><td class="cap">Manage suppliers (CRUD)</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>mutate-supplier</code></td></tr>
+      <tr><td class="cap">Manage purchase orders + status transitions</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>mutate-purchase-order</code></td></tr>
+      <tr><td class="cap">Manage sales targets (per rep, no period overlap)</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>mutate-sales-target</code></td></tr>
+      <tr><td class="cap">View own performance dashboard</td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>RepDashboardV2</code></td></tr>
+      <tr><td class="cap">View executive / KPI dashboard</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>AdminDashboard</code></td></tr>
+      <tr><td class="cap">Plan and edit own visit routes</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>ScheduledVisitsView</code></td></tr>
+      <tr><td class="cap">Approve / reject rep-submitted routes</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>ScheduledVisitsAdmin</code></td></tr>
+      <tr><td class="cap">Log a visit (check-in, outcome, notes, photos)</td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>VisitModal</code></td></tr>
+      <tr><td class="cap">Review walk-in (unscheduled) visits</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>WalkInReviewTab</code></td></tr>
+      <tr><td class="cap">Invite users &amp; assign roles</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>invite-user</code></td></tr>
+      <tr><td class="cap">Edit app-wide settings (currency, thresholds, branding)</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>mutate-app-settings</code></td></tr>
+      <tr><td class="cap">View audit log of every privileged mutation</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>AuditLogTab</code> + RLS</td></tr>
+      <tr><td class="cap">View client error log</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td class="role"><span class="n">&middot;</span></td><td><code>client_errors</code> table</td></tr>
+      <tr><td class="cap">Receive in-app notifications (low-stock, status, route&hellip;)</td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td class="role"><span class="y">&check;</span></td><td><code>NotificationPanel</code> + Realtime</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>How the matrix is enforced.</strong> Every <code>mutate-*</code> Edge Function calls <code>requireAuth(req, { allowedRoles: [&hellip;] })</code> on entry. If the JWT&rsquo;s profile.role is not in the allowlist, the function throws a structured <code>FORBIDDEN</code> (HTTP 403) before any work happens. Migration <code>00013_lockdown_admin_mutations.sql</code> additionally <code>REVOKE</code>s direct <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> on the underlying tables from the <code>authenticated</code> Postgres role, so even a malicious browser cannot bypass the function.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 3                                                    -->
+<!-- ============================================================ -->
+<section class="page" id="sec-3">
+  <h1>3 &middot; User Stories</h1>
+
+  <p>Stories are grouped into 16 epics. Each story uses the standard form &ldquo;<em>As a {role}, I want {capability}, so that {benefit}.</em>&rdquo; The footer of each story names the primary file or Edge Function that implements it, so a developer can jump from story to source in one step.</p>
+
+  <!-- E1 -->
+  <div class="epic">
+    <h3><span class="eid">E1</span> Authentication, Session &amp; Account</h3>
+    <div class="stories">
+      <div class="story role-customer"><span class="role">Any role</span>I want to sign in with my email and password so that I reach my role-specific home view without configuring anything.<span class="impl">components/auth/LoginPage.tsx &middot; AuthGate.tsx</span></div>
+      <div class="story role-customer"><span class="role">Any role</span>I want a &ldquo;Forgot your password?&rdquo; link that emails me a reset URL so that I can recover access without contacting an admin.<span class="impl">ForgotPasswordDialog.tsx &middot; supabase.auth.resetPasswordForEmail</span></div>
+      <div class="story role-customer"><span class="role">Any role</span>I want to land on a password-reset screen when I click an email recovery link so that I can set a new password and immediately sign back in.<span class="impl">components/auth/ResetPasswordView.tsx &middot; index.tsx isRecoveryUrl()</span></div>
+      <div class="story role-customer"><span class="role">Any role</span>I want my session to time out after 30 minutes of inactivity so that an unattended laptop cannot be used to place orders or view data.<span class="impl">hooks/useIdleTimeout.ts</span></div>
+      <div class="story role-customer"><span class="role">Any role</span>I want my session to survive a page refresh but not a tab close so that I am not pestered with every reload but the laptop is safe when I leave.<span class="impl">lib/supabase.ts &middot; sessionStorage persistence</span></div>
+      <div class="story role-customer"><span class="role">Any role</span>I want to see my role and email in the profile menu so that I know which account I am signed in as.<span class="impl">components/auth/ProfileMenu.tsx</span></div>
+    </div>
+  </div>
+
+  <!-- E2 -->
+  <div class="epic">
+    <h3><span class="eid">E2</span> Product Catalogue &amp; Browsing</h3>
+    <div class="stories">
+      <div class="story role-customer"><span class="role">Customer</span>I want to browse all products with photos, prices, and stock indicators so that I can decide what to order without contacting a rep.<span class="impl">components/ProductCard.tsx &middot; views/ShopView.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to filter by category (Coconut, Meal Pastes, Asian Sauces, Soy Sauces, Chilli Sauces, Condiments, Noodles, Fish, Satay Sauces, Desserts, Ready Meal Sauces, Other) and search by name so that I can find a product in a long catalogue.<span class="impl">CategoryFilter.tsx &middot; SearchAutocomplete.tsx &middot; ShopTopBar.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to see <em>my</em> tier-aware price (Gold/Silver/Bronze plus any per-product override) so that I am not surprised at checkout.<span class="impl">pricing.ts &middot; resolveHoReCaPrice()</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to see active promotions clearly above the catalogue so that I do not miss a discount I qualify for.<span class="impl">components/PromotionsBanner.tsx</span></div>
+      <div class="story role-field"><span class="role">Field Rep</span>I want to sort by popularity so that I can suggest fast-movers when a customer is undecided.<span class="impl">ShopTopBar.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to create, edit, and delete products with images, base price, tier prices, and carton size so that the catalogue stays accurate.<span class="impl">components/ProductAdmin.tsx &middot; ProductForm.tsx &middot; mutate-product</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want product deletion blocked when any customer has the product in their pantry so that I cannot accidentally orphan saved orders.<span class="impl">supabase/functions/mutate-product/index.ts</span></div>
+    </div>
+  </div>
+
+  <!-- E3 -->
+  <div class="epic">
+    <h3><span class="eid">E3</span> Ordering &amp; Checkout</h3>
+    <div class="stories">
+      <div class="story role-customer"><span class="role">Customer</span>I want to add a product to my cart and adjust the quantity so that I can build an order before committing.<span class="impl">context/OrderContext.tsx &middot; handleAddItem / handleUpdateQuantity</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to choose between unit and carton pack sizes so that I get the carton discount when I buy a full carton.<span class="impl">ProductCard.tsx &middot; pricing.ts cartonDiscount</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want a verification modal that summarises items, total, and delivery info before I submit so that I cannot place an order by accident.<span class="impl">components/OrderVerificationModal.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to pick a delivery date and time slot during checkout so that the warehouse knows when to ship.<span class="impl">components/DeliveryScheduler.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to leave delivery notes on the order so that special instructions reach the courier.<span class="impl">OrderSummary.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to be told <em>before</em> I submit if my account has an outstanding balance so that I can choose to pay first.<span class="impl">OutstandingPayments.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want my order rejected with a clear message if my outstanding balance is over the credit limit so that I do not get a partial confirmation that later fails.<span class="impl">place-order &middot; CREDIT_EXCEEDED 422</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want my order rejected with a clear message if any line item is below available stock so that I do not believe an order has been confirmed when it cannot be fulfilled.<span class="impl">place-order &middot; INSUFFICIENT_STOCK 409</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want my order rejected if the total is below the configured minimum so that I am nudged to consolidate rather than placing a tiny order.<span class="impl">place-order &middot; BELOW_MINIMUM 422</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want a confirmation modal with my order ID, total, and delivery date after a successful submission so that I have a receipt I can reference.<span class="impl">components/OrderConfirmation.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want a confirmation email when an order is placed so that I have a record outside the app.<span class="impl">send-email &middot; template=order_confirmation (RESEND_API_KEY required)</span></div>
+      <div class="story role-field"><span class="role">Field / Office Rep</span>I want to switch the active HoReCa during ordering so that I can place an order on behalf of any of my customers without re-logging-in.<span class="impl">HoReCaListView.tsx &middot; handleStartOrder</span></div>
+      <div class="story role-field"><span class="role">Field / Office Rep</span>I want a slide-out cart on desktop and a floating checkout button on mobile so that the cart is reachable on whatever device I happen to be using.<span class="impl">CartSlidePanel.tsx &middot; MobileCheckoutButton.tsx</span></div>
+    </div>
+  </div>
+
+  <!-- E4 -->
+  <div class="epic">
+    <h3><span class="eid">E4</span> Pantry (saved frequent items)</h3>
+    <div class="stories">
+      <div class="story role-customer"><span class="role">Customer</span>I want to save my regular SKUs to a per-HoReCa pantry with a default quantity so that I do not have to hunt them down every order.<span class="impl">context/PantryContext.tsx &middot; mutate-pantry-item</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want the default quantity to be pre-filled from my last order of that product so that I do not have to remember.<span class="impl">getLastOrderedQuantity()</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to add a pantry item to my cart with one click, or bulk-add several at once, so that a recurring order takes seconds.<span class="impl">PantryToolbar.tsx &middot; handleAddSelectedPantryToOrder</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to be shown substitute products when a pantry item is out of stock so that I do not have to abandon the order or search manually.<span class="impl">components/pantry/PantrySubstitutePopover.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want keyboard shortcuts for power-use of the pantry (move up/down, toggle, add) so that recurring orders stay fast on a laptop.<span class="impl">components/pantry/PantryKeyboardHints.tsx</span></div>
+      <div class="story role-field"><span class="role">Field Rep</span>I want to mutate any HoReCa&rsquo;s pantry on their behalf so that I can set up a customer&rsquo;s recurring order during a visit.<span class="impl">mutate-pantry-item allowedRoles</span></div>
+    </div>
+  </div>
+
+  <!-- E5 -->
+  <div class="epic">
+    <h3><span class="eid">E5</span> Order History, Status &amp; Reorder</h3>
+    <div class="stories">
+      <div class="story role-customer"><span class="role">Customer</span>I want a sortable, filterable list of my past orders with search by ID and a date range filter so that I can find any order in seconds.<span class="impl">components/OrderHistory.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to expand any order inline to see line items and a status timeline so that I do not have to navigate away to see detail.<span class="impl">OrderDetailView.tsx &middot; StatusTimeline.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to reorder from any past order with one click and choose to merge into or replace my current cart so that re-stocking is fast and the choice is mine.<span class="impl">OrderContext.handleReorder &middot; ReorderTab.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want unavailable items in a reorder flagged automatically so that I do not believe the cart matches the past order when it does not.<span class="impl">ReorderTab.tsx unavailable items panel</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to bulk-select past orders and reorder them together so that I can rebuild a multi-week pattern in one go.<span class="impl">OrderHistory.tsx bulk select</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to advance any order through processing &rarr; confirmed &rarr; packed &rarr; shipped &rarr; delivered, optionally adding a note, so that the customer always sees the current state.<span class="impl">update-order-status &middot; OrdersPage.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want forward-only status transitions so that an accidental click cannot move an order backwards.<span class="impl">supabase/functions/update-order-status/index.ts</span></div>
+      <div class="story role-customer"><span class="role">Any role</span>I want order-status changes to appear instantly in the history without a refresh so that I do not have to poll.<span class="impl">hooks/useRealtimeSubscriptions.ts</span></div>
+    </div>
+  </div>
+
+  <!-- E6 -->
+  <div class="epic">
+    <h3><span class="eid">E6</span> Customer (HoReCa) Management</h3>
+    <div class="stories">
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to create, edit, and delete HoReCas with name, contact, address, tier, blanket discount, and per-product pricing overrides so that the customer file stays accurate.<span class="impl">HoReCaListView.tsx &middot; HoReCaForm.tsx &middot; mutate-horeca</span></div>
+      <div class="story role-admin"><span class="role">Manager</span>I want a 5&ndash;500 character reason prompt when I edit credit limit, tier, or discount percent so that the change is auditable and Managers cannot quietly downgrade an account.<span class="impl">mutate-horeca SENSITIVE_FIELDS gate</span></div>
+      <div class="story role-admin"><span class="role">Admin</span>I want to skip the reason prompt when I edit sensitive fields so that the gate does not slow me down for genuine policy changes.<span class="impl">mutate-horeca role-bypass</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want a HoReCa deletion to be blocked when non-cancelled orders reference it so that I cannot orphan order rows.<span class="impl">mutate-horeca delete gate (409 with sample order names)</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to see each customer&rsquo;s segment (High Value / Growing / Declining / At Risk / New) so that I can prioritise outreach by behaviour, not just spend.<span class="impl">HoReCaInsightsPanel.tsx &middot; SegmentBadge.tsx</span></div>
+      <div class="story role-field"><span class="role">Field Rep</span>I want to open a customer&rsquo;s profile with one click from my route or list view to see contact, recent orders, outstanding balance, and visit history so that I can prepare for a visit in 30 seconds.<span class="impl">components/HoReCaProfile.tsx</span></div>
+    </div>
+  </div>
+
+  <!-- E7 -->
+  <div class="epic">
+    <h3><span class="eid">E7</span> Pricing &amp; Promotions</h3>
+    <div class="stories">
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to create five flavours of promotion (percentage, fixed price, BOGO, bundle, clearance) so that I have one place to model every campaign.<span class="impl">PromotionAdmin.tsx &middot; PromotionForm.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to scope a promotion storewide, by category, or by specific products so that a campaign does not bleed into the wrong SKUs.<span class="impl">mutate-promotion scope schema</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to target a promotion to a tier (Gold / Silver / Bronze), to specific HoReCas, to a specific rep, or to all so that I can run channel-specific or VIP campaigns.<span class="impl">mutate-promotion targeting schema</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want a start and end date with active / scheduled / expired badges so that I can plan campaigns ahead and see at-a-glance status.<span class="impl">isPromotionActive() &middot; PromotionAdmin filters</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to enable or disable a promotion with a toggle (without deletion) so that I can pause an under-performer without losing the configuration.<span class="impl">PromotionAdmin toggle</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want a promotion that has already been applied to a confirmed order to be immutable so that historical orders cannot be altered retroactively.<span class="impl">mutate-promotion immutability gate (409 CONFLICT)</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want a bundle promotion to prompt me for the secondary item selection at the moment I trigger it so that I get the discount without manual fiddling.<span class="impl">components/BundleSelectModal.tsx</span></div>
+    </div>
+  </div>
+
+  <!-- E8 -->
+  <div class="epic">
+    <h3><span class="eid">E8</span> Invoicing &amp; Accounts Receivable</h3>
+    <div class="stories">
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want an aging table grouped into 0&ndash;30, 30&ndash;60, 60&ndash;90, and 90+ day buckets, sortable by customer or by overdue total, so that I know exactly who to chase.<span class="impl">components/AccountsAgingTable.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to expand each customer in the aging table to drill into individual invoices so that collections calls can quote specific invoice IDs.<span class="impl">AccountsAgingTable expand row</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to update an invoice through draft / issued / overdue / paid so that the aging report stays accurate.<span class="impl">components/InvoiceAdmin.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin</span>I want to set a payment-blocking threshold in app settings so that a customer over the limit cannot place new orders.<span class="impl">app_settings.minimum_order_value, payment_blocking</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want to see my own outstanding balance and aging buckets so that I know where I stand without asking my rep.<span class="impl">OutstandingPayments.tsx</span></div>
+      <div class="story role-customer"><span class="role">Customer</span>I want an invoice issued for me automatically when my order is placed (due 30 days) so that the paperwork side just works.<span class="impl">place-order invoice insert</span></div>
+    </div>
+  </div>
+
+  <!-- E9 -->
+  <div class="epic">
+    <h3><span class="eid">E9</span> Inventory &amp; Stock</h3>
+    <div class="stories">
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want a stock view that lists every product with current inventory, in-stock / low-stock / out filters, search and category filter, and aggregate counts so that I can see the warehouse state at a glance.<span class="impl">components/StockView.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin</span>I want a configurable low-stock threshold so that the alert calculation matches our policy.<span class="impl">app_settings.low_stock_threshold</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want product inventory to be modifiable only via order placement (decrement) and explicit warehouse actions (never via the generic mutate-product path) so that catalogue edits cannot touch stock.<span class="impl">mutate-product strips inventory; place-order optimistic-locked decrement</span></div>
+      <div class="story role-admin"><span class="role">Admin</span>I want concurrent place-order calls to never over-sell a product so that two parallel orders cannot both succeed on the last unit.<span class="impl">place-order optimistic lock UPDATE WHERE inventory=&lt;old&gt;</span></div>
+    </div>
+  </div>
+
+  <!-- E10 -->
+  <div class="epic">
+    <h3><span class="eid">E10</span> Suppliers &amp; Purchase Orders</h3>
+    <div class="stories">
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to manage suppliers (name, contact person, email, phone) so that POs can reference a clean supplier file.<span class="impl">SupplierAdmin.tsx &middot; mutate-supplier</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want supplier deletion blocked while open POs (Pending / Submitted) reference the supplier so that data does not split.<span class="impl">mutate-supplier delete gate</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to create a PO with a supplier, item lines, and a delivery date, then transition it forward (Pending &rarr; Submitted &rarr; Completed, with Cancelled available from any non-terminal state) so that I cannot move a PO sideways or backwards.<span class="impl">PurchaseOrderAdmin.tsx &middot; mutate-purchase-order ALLOWED_TRANSITIONS</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want PO body edits frozen once status is past Pending so that completed POs are immutable.<span class="impl">mutate-purchase-order body freeze</span></div>
+    </div>
+  </div>
+
+  <!-- E11 -->
+  <div class="epic">
+    <h3><span class="eid">E11</span> Sales Targets &amp; Performance Dashboards</h3>
+    <div class="stories">
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to set per-rep targets for revenue, order count, and new HoReCas, with a date range so that performance can be measured against an explicit goal.<span class="impl">SalesTargetModal.tsx &middot; mutate-sales-target</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want overlapping target periods rejected for the same rep + type so that &ldquo;which target counts?&rdquo; cannot become ambiguous.<span class="impl">mutate-sales-target overlap check</span></div>
+      <div class="story role-field"><span class="role">Field / Office Rep</span>I want a personal dashboard that shows my revenue, AOV, order count, unique customers, and target progress for today / this week / this month / a custom range so that I always know where I stand.<span class="impl">components/RepDashboardV2.tsx</span></div>
+      <div class="story role-field"><span class="role">Field / Office Rep</span>I want a list of customers predicted to reorder soon so that I can call them before a competitor does.<span class="impl">RepDashboardV2 reorder-predictions panel</span></div>
+      <div class="story role-field"><span class="role">Field / Office Rep</span>I want a list of at-risk and declining customers so that I can intervene before churn.<span class="impl">RepDashboardV2 at-risk panel</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want an executive dashboard with revenue, AOV, orders KPIs and period-over-period deltas so that the leadership view fits in one glance.<span class="impl">components/AdminDashboard.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want an action-items board that surfaces overdue payments, low stock, predicted reorders, and at-risk customers so that I have a single place to start the day.<span class="impl">ActionItemsBoard.tsx</span></div>
+    </div>
+  </div>
+
+  <!-- E12 -->
+  <div class="epic">
+    <h3><span class="eid">E12</span> Scheduled Visits &amp; Route Planning</h3>
+    <div class="stories">
+      <div class="story role-field"><span class="role">Field Rep</span>I want a wizard to build a multi-stop route by date with a search-and-add stop list and drag-to-reorder so that route creation takes minutes, not hours.<span class="impl">ScheduledVisitWizard.tsx &middot; DraggableStopList.tsx</span></div>
+      <div class="story role-field"><span class="role">Field Rep</span>I want a map preview of a route with markers and distances so that I can validate the plan visually before saving.<span class="impl">ScheduledVisitMap.tsx</span></div>
+      <div class="story role-field"><span class="role">Field Rep</span>I want to save reusable route templates so that recurring weekly routes do not require recreation.<span class="impl">ScheduledVisitTemplateForm.tsx</span></div>
+      <div class="story role-field"><span class="role">Field Rep</span>I want today&rsquo;s, upcoming, and past routes split into clear tabs so that the right view is one click away.<span class="impl">ScheduledVisitsView tabs</span></div>
+      <div class="story role-field"><span class="role">Field Rep</span>I want to start a route, check in at each stop, and have the stop status update so that the system knows where I am without manual data entry.<span class="impl">ScheduledVisitDetail.tsx arrive/leave actions</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to approve or reject any rep-submitted route from a queue so that I retain control over field activity.<span class="impl">components/admin/ScheduledVisitApprovalQueue.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want a tracking map that overlays every active route in real time so that I can monitor field operations centrally.<span class="impl">components/admin/ScheduledVisitTrackingMap.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want a tracking detail screen with completion percentages and visit outcomes per route so that compliance can be audited after the fact.<span class="impl">ScheduledVisitTrackingDetail.tsx</span></div>
+    </div>
+  </div>
+
+  <!-- E13 -->
+  <div class="epic">
+    <h3><span class="eid">E13</span> Visit Logging (Field Activity)</h3>
+    <div class="stories">
+      <div class="story role-field"><span class="role">Field Rep</span>I want to log a visit with a clear outcome (Order Placed, Follow-up, Not Available, No Interest, Stock Check) so that downstream analytics know what actually happened.<span class="impl">components/visits/VisitModal.tsx</span></div>
+      <div class="story role-field"><span class="role">Field Rep</span>I want to capture general notes, competitor notes, and stock-check notes separately so that each fact lands in the right downstream report.<span class="impl">VisitModal note fields</span></div>
+      <div class="story role-field"><span class="role">Field Rep</span>I want to recommend a next visit date from inside the visit form so that I can plan ahead while context is fresh.<span class="impl">VisitModal next-visit recommendation</span></div>
+      <div class="story role-field"><span class="role">Field Rep</span>I want to attach photos to a visit (shelf state, competitor displays) so that the office can see the situation, not just my prose.<span class="impl">components/visits/PhotoUpload.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager / Field Rep</span>I want a customer-level timeline of all visits so that the next rep walking in already knows the history.<span class="impl">VisitHistory.tsx &middot; VisitTimeline.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin / Manager</span>I want to review walk-in (unscheduled) visits separately so that ad-hoc activity does not pollute the planned-route compliance view.<span class="impl">components/admin/WalkInReviewTab.tsx</span></div>
+    </div>
+  </div>
+
+  <!-- E14 -->
+  <div class="epic">
+    <h3><span class="eid">E14</span> Notifications &amp; Alerts</h3>
+    <div class="stories">
+      <div class="story role-customer"><span class="role">Any role</span>I want a notification bell with an unread count and a dropdown panel so that I see updates without leaving my current screen.<span class="impl">NotificationBell.tsx &middot; NotificationPanel.tsx</span></div>
+      <div class="story role-customer"><span class="role">Any role</span>I want notifications for low_stock, order_status, invoice, system, route_assigned, route_completed, and change_request types so that the surface covers every operational signal.<span class="impl">NotificationPanel.tsx</span></div>
+      <div class="story role-customer"><span class="role">Any role</span>I want notifications to arrive in real time without a refresh so that I do not work off stale data.<span class="impl">useRealtimeSubscriptions.ts &middot; migration 00015</span></div>
+      <div class="story role-customer"><span class="role">Any role</span>I want a &ldquo;mark all read&rdquo; action so that I can clear noise once I have triaged.<span class="impl">NotificationPanel mark-all-read</span></div>
+    </div>
+  </div>
+
+  <!-- E15 -->
+  <div class="epic">
+    <h3><span class="eid">E15</span> Audit Log &amp; Error Telemetry</h3>
+    <div class="stories">
+      <div class="story role-admin"><span class="role">Admin</span>I want to see every privileged mutation (create / update / delete / status-transition) with actor, role, resource, before/after diff, and optional reason so that I have a forensic record for every change.<span class="impl">components/admin/AuditLogTab.tsx &middot; audit_events table</span></div>
+      <div class="story role-admin"><span class="role">Admin</span>I want to filter the audit log by date range, actor, resource type, action, and free-text search, with server-side pagination, so that the log is usable at any scale.<span class="impl">AuditLogTab filters &middot; services/supabase/auditService.ts</span></div>
+      <div class="story role-admin"><span class="role">Admin</span>I want to export filtered audit results as CSV so that I can take the data into a spreadsheet for an investigation.<span class="impl">lib/csvExport.ts</span></div>
+      <div class="story role-admin"><span class="role">Admin</span>I want every uncaught client-side error logged automatically (with stack, component stack, URL, user agent, and dedup-by-stack within 60 s) so that user-impacting bugs surface even if the user never reports them.<span class="impl">lib/errorReporter.ts &middot; log-client-error &middot; client_errors table</span></div>
+      <div class="story role-admin"><span class="role">Admin</span>I want pre-auth crashes captured even though there is no actor yet so that the very first impression of a broken build does not silently disappear.<span class="impl">client_errors.actor_id nullable</span></div>
+    </div>
+  </div>
+
+  <!-- E16 -->
+  <div class="epic">
+    <h3><span class="eid">E16</span> Settings &amp; Configuration</h3>
+    <div class="stories">
+      <div class="story role-admin"><span class="role">Admin</span>I want to upload an app logo and pick a currency (AUD / USD / NZD / GBP / EUR / SGD / MYR) so that the app brand and money formatting match the operating market.<span class="impl">SettingsPanel.tsx &middot; mutate-app-settings</span></div>
+      <div class="story role-admin"><span class="role">Admin</span>I want to set the low-stock threshold, carton-discount percentage, payment-blocking threshold, default delivery time slots, and per-HoReCa pricing rules so that platform-wide policy lives in one place.<span class="impl">SettingsPanel.tsx</span></div>
+      <div class="story role-admin"><span class="role">Admin</span>I want to provision a new user by email, picking their role and (for Customers) their HoReCa, with a Supabase invite email automatically sent so that onboarding is one form.<span class="impl">UserAdmin.tsx &middot; invite-user</span></div>
+      <div class="story role-admin"><span class="role">Admin</span>I want invite-user rate-limited to 5/min so that a stolen admin token cannot be used to mass-provision accounts.<span class="impl">supabase/functions/invite-user/index.ts</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 4 — USE CASES                                        -->
+<!-- ============================================================ -->
+<section class="page" id="sec-4">
+  <h1>4 &middot; End-to-End Use Cases</h1>
+
+  <p>Eight critical flows, written as numbered steps with role + screen labels, in the order they would typically run during QA. Each step references the screen or component a tester is on at that moment.</p>
+
+  <h3>UC-1 &middot; Customer self-service order</h3>
+  <ol class="flow">
+    <li><span class="actor">[Customer]</span>Sign in at <code>/</code>; <code>AuthGate</code> resolves the role from <code>profiles</code> and routes to <code>ShopView</code> with the customer&rsquo;s own HoReCa pre-selected.</li>
+    <li><span class="actor">[Customer]</span>Browse the catalogue, optionally filter by category, and click <em>Add</em> on a product card. Quantity and pack-size are confirmed; cart updates in <code>OrderContext</code>.</li>
+    <li><span class="actor">[Customer]</span>Open the cart panel; review applied promotions, choose a delivery date and time slot, add notes.</li>
+    <li><span class="actor">[Customer]</span>If outstanding balance exists, the alert displays. If the account is blocked, the submit button is disabled.</li>
+    <li><span class="actor">[Customer]</span>Click <em>Submit</em>; <code>OrderVerificationModal</code> shows items, total, HoReCa, delivery info.</li>
+    <li><span class="actor">[client &rarr; server]</span><code>place-order</code> runs auth, scope check, stock check (optimistic-locked), credit check, minimum-order check; on success inserts orders + order_items + invoice and decrements inventory.</li>
+    <li><span class="actor">[server]</span><code>place-order</code> fires a fire-and-forget POST to <code>send-email</code> with template <code>order_confirmation</code>; failure is logged and does not roll back the order.</li>
+    <li><span class="actor">[Customer]</span><code>OrderConfirmation</code> modal shows order ID, total, delivery date, status. Realtime subscription pushes the new row into <code>OrderHistory</code>.</li>
+  </ol>
+
+  <h3>UC-2 &middot; Field rep places order on behalf of a HoReCa with a promotion applied</h3>
+  <ol class="flow">
+    <li><span class="actor">[Field Rep]</span>From <code>HoReCaListView</code> click <em>Start Order</em> on the customer; <code>handleStartOrder</code> seeds <code>OrderContext.selectedHoReCaId</code>.</li>
+    <li><span class="actor">[Field Rep]</span>Add products; <code>PromotionsBanner</code> shows that a BOGO is active for one of the categories.</li>
+    <li><span class="actor">[Field Rep]</span>Once the BOGO trigger threshold is hit, <code>BundleSelectModal</code> opens to pick the free secondary item; selection writes back into the cart line.</li>
+    <li><span class="actor">[Field Rep]</span>Submit; same <code>place-order</code> path as UC-1, but the JWT identifies a Field Rep so the server allows any HoReCa.</li>
+    <li><span class="actor">[Customer]</span>Receives the same realtime order-status updates and confirmation email path.</li>
+  </ol>
+
+  <h3>UC-3 &middot; Reorder from past order (single + bulk merge/replace)</h3>
+  <ol class="flow">
+    <li><span class="actor">[Customer]</span>Open <code>OrderHistory</code>; expand a past order; click <em>Reorder</em>.</li>
+    <li><span class="actor">[Customer]</span><code>handleReorder</code> populates the cart; unavailable items are flagged in the <em>Unavailable</em> panel.</li>
+    <li><span class="actor">[Customer]</span>Choose <em>Merge</em> (add to existing cart) or <em>Replace</em> (overwrite cart). Adjust quantities.</li>
+    <li><span class="actor">[Customer]</span>Bulk reorder: select multiple past orders via the table&rsquo;s checkbox column, click <em>Reorder selected</em>; the same merge/replace prompt appears.</li>
+    <li><span class="actor">[Customer]</span>Continue to checkout as in UC-1.</li>
+  </ol>
+
+  <h3>UC-4 &middot; Pantry — add, edit, bulk-add, OOS substitute</h3>
+  <ol class="flow">
+    <li><span class="actor">[Customer]</span>Switch to the <em>Pantry</em> tab in <code>OrderingTabBar</code>; the list reflects rows from <code>pantry_items</code> filtered to the active HoReCa.</li>
+    <li><span class="actor">[Customer]</span>Click <em>Add to pantry</em> on a product; <code>PantryAddDrawer</code> sets default quantity (pre-filled from last-ordered quantity) and optional preferred pack size.</li>
+    <li><span class="actor">[client &rarr; server]</span><code>mutate-pantry-item</code> validates pack size against <code>products.carton_size</code>, persists, audit-logs.</li>
+    <li><span class="actor">[Customer]</span>If a pantry item is out of stock, the row shows the warning; click opens <code>PantrySubstitutePopover</code> with suggestions; pick one to swap into the cart this time only.</li>
+    <li><span class="actor">[Customer]</span>Bulk-select multiple pantry rows; <em>Add selected to cart</em>; quantities default to the saved pantry quantity.</li>
+  </ol>
+
+  <h3>UC-5 &middot; Field rep plans a route, starts it, checks in, logs a visit</h3>
+  <ol class="flow">
+    <li><span class="actor">[Field Rep]</span>Open <em>Scheduled Visits</em>; click <em>New Route</em>; pick a date.</li>
+    <li><span class="actor">[Field Rep]</span><code>ScheduledVisitWizard</code>: search-and-add HoReCas as stops; drag to reorder; review map; save.</li>
+    <li><span class="actor">[Field Rep]</span>Submit for approval; route enters Admin&rsquo;s approval queue.</li>
+    <li><span class="actor">[Field Rep]</span>On the day, open the route from the <em>Today</em> tab; click <em>Start route</em>.</li>
+    <li><span class="actor">[Field Rep]</span>Arrive at first stop; click <em>Check in</em>; <code>VisitModal</code> opens with outcome chooser, notes fields, photo upload, next-visit recommendation.</li>
+    <li><span class="actor">[Field Rep]</span>Submit visit; stop status flips to <em>Visited</em>; departure time is captured.</li>
+    <li><span class="actor">[Admin]</span>The completion percentage on the tracking map updates in real time via the realtime subscription.</li>
+  </ol>
+
+  <h3>UC-6 &middot; Admin approves a rep-submitted route and tracks completion</h3>
+  <ol class="flow">
+    <li><span class="actor">[Admin]</span>Open <em>Scheduled Visits</em> tab; click into <em>Approval Queue</em>; review the rep&rsquo;s draft route.</li>
+    <li><span class="actor">[Admin]</span>Click <em>Approve</em>; rep is notified via <code>NotificationPanel</code>.</li>
+    <li><span class="actor">[Admin]</span>On execution day, open <em>Tracking Map</em>; see live stop status across all reps.</li>
+    <li><span class="actor">[Admin]</span>Drill into <code>ScheduledVisitTrackingDetail</code> to see per-stop dwell time and visit outcomes.</li>
+  </ol>
+
+  <h3>UC-7 &middot; Manager edits a HoReCa&rsquo;s tier — reason gate &rarr; audit entry</h3>
+  <ol class="flow">
+    <li><span class="actor">[Manager]</span>Open <code>HoReCaForm</code> for an existing customer; change <em>tier</em> from Silver to Gold.</li>
+    <li><span class="actor">[Manager]</span>Save; the form intercepts: a 5&ndash;500 char reason is required because tier is in <code>SENSITIVE_FIELDS</code> and role is Manager.</li>
+    <li><span class="actor">[client &rarr; server]</span><code>mutate-horeca</code> updates the row, then <code>logAuditEvent</code> writes <code>{action: 'update', resource: 'horecas', before, after, reason}</code> to <code>audit_events</code>.</li>
+    <li><span class="actor">[Admin]</span>Open <em>Audit Log</em>; filter by resource = horecas, action = update; expand the row to see the diff and the reason text.</li>
+  </ol>
+
+  <h3>UC-8 &middot; Admin reviews aging, blocks an over-limit customer; subsequent order attempt is rejected</h3>
+  <ol class="flow">
+    <li><span class="actor">[Admin]</span>Open <em>Accounts</em>; sort the aging table by 90+ bucket descending.</li>
+    <li><span class="actor">[Admin]</span>Drill into the top customer; review their unpaid invoices.</li>
+    <li><span class="actor">[Admin]</span>Open the customer&rsquo;s HoReCa profile; toggle the block flag (or rely on the configured payment-blocking threshold).</li>
+    <li><span class="actor">[Customer]</span>Attempts to place a new order; <code>OutstandingPayments</code> surfaces the alert at checkout; <code>place-order</code> rejects with HTTP 422 <code>CREDIT_EXCEEDED</code>.</li>
+    <li><span class="actor">[Customer]</span>Sees a clear error and a CTA to settle the outstanding amount.</li>
+  </ol>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 5 — WHAT'S BEEN SHIPPED                               -->
+<!-- ============================================================ -->
+<section class="page" id="sec-5">
+  <h1>5 &middot; What&rsquo;s Been Shipped</h1>
+
+  <p>This section is the &ldquo;already in production&rdquo; ledger. Each line ships against the live <code>nexorder.vercel.app</code> deployment. Items are sourced from the project&rsquo;s <code>CLAUDE.md &raquo; Recently shipped</code> list and re-confirmed against the source tree.</p>
+
+  <h3>5.1 Foundations</h3>
+  <ul>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Phase 1 &mdash; App.tsx decomposition.</strong> The 1,703-line monolith was split into <code>App.tsx</code> (~130 lines, data root only), <code>components/AppShell.tsx</code> (UI + render tree), per-role <code>views/*</code>, <code>context/OrderContext.tsx</code> + <code>context/PantryContext.tsx</code>, and <code>hooks/useOrderingState.ts</code>. Behaviour-neutral.</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Phase 2 &mdash; Admin-mutation lockdown.</strong> Eight new Edge Functions (<code>mutate-app-settings</code>, <code>mutate-promotion</code>, <code>mutate-horeca</code>, <code>mutate-product</code>, <code>mutate-supplier</code>, <code>mutate-purchase-order</code>, <code>mutate-sales-target</code>, <code>mutate-pantry-item</code>) plus shared helpers (<code>_shared/auth.ts</code>, <code>errors.ts</code>, <code>audit.ts</code>, <code>cors.ts</code>) and migration <code>00013_lockdown_admin_mutations.sql</code>.</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>RLS lockdown sequence.</strong> Migrations 00009 (orders + order_items + inventory), 00010 (orders.status), 00011 (profiles), 00012 (audit_events), 00013 (admin tables), 00014 (client_errors), 00015 (realtime publication), 00016 (DB polish indexes + check constraints).</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>HoReCa sensitive-field reason prompt.</strong> Manager edits to <code>credit_limit</code>, <code>tier</code>, or <code>discount_percent</code> require a 5&ndash;500 char reason; Admin bypasses; reason flows through to <code>audit_events.reason</code>.</li>
+  </ul>
+
+  <h3>5.2 Performance &amp; UX</h3>
+  <ul>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Pantry redesign.</strong> Frequency intelligence, OOS substitutes, keyboard navigation, mobile card stack — full rebuild under <code>components/pantry/*</code>.</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Bundle splitting.</strong> <code>React.lazy</code> + <code>Suspense</code> for AdminView, modal trio, StockView, ScheduledVisitsView, and per-tab admin children. Main chunk dropped 1.2&nbsp;MB &rarr; 829&nbsp;KB (gzip 311&nbsp;KB &rarr; 221&nbsp;KB, ~30%). Generic <code>&lt;LoadingSkeleton/&gt;</code> fallback in <code>components/Skeleton.tsx</code>.</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Realtime subscriptions.</strong> Single <code>postgres_changes</code> channel per authenticated user covering <code>orders</code>, <code>order_items</code>, <code>notifications</code>, and <code>products</code>. Each event invalidates the matching TanStack Query key; RLS filters per-subscriber on the wire (<code>hooks/useRealtimeSubscriptions.ts</code> + migration 00015).</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Error boundaries + telemetry.</strong> <code>&lt;ErrorBoundary/&gt;</code> wraps the root mount and every lazy <code>&lt;Suspense/&gt;</code> region. Uncaught errors flow to <code>client_errors</code> via the public <code>log-client-error</code> Edge Function. <code>lib/errorReporter.ts</code> dedups by stack within a 60s window and also catches <code>window.error</code> + <code>unhandledrejection</code>.</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Audit log viewer.</strong> Admin-only tab over <code>audit_events</code> and <code>client_errors</code>: segmented Mutations/Errors toggle, filters (date range, actor, resource, action, free-text), server-side pagination (50 / page), inline before/after diff, CSV export.</li>
+  </ul>
+
+  <h3>5.3 Auth &amp; security</h3>
+  <ul>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Password reset.</strong> &ldquo;Forgot your password?&rdquo; on LoginPage opens <code>ForgotPasswordDialog</code>; recovery URL detected by <code>isRecoveryUrl()</code> in <code>index.tsx</code>; <code>ResetPasswordView</code> exchanges tokens, sets the new password, signs out.</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Idle-timeout.</strong> <code>hooks/useIdleTimeout.ts</code> listens to mousedown / keydown / scroll / touchstart / visibilitychange and signs out after 30&nbsp;min idle.</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Session persistence.</strong> Switched from <code>persistSession: false</code> (no refresh survival) to <code>sessionStorage</code>-backed persistence (refresh survives, tab-close still requires re-login). Chosen instead of <code>localStorage</code> to avoid the original Windows hang.</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Edge-Function CORS allowlist.</strong> <code>_shared/cors.ts</code> exports <code>corsHeadersFor(req)</code> that echoes only allowlisted origins (production, Vercel previews, localhost:3000). Replaces <code>Access-Control-Allow-Origin: *</code>.</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Per-IP / per-user rate limits.</strong> <code>_shared/rateLimit.ts</code> wired into <code>place-order</code> (10/min/user), <code>invite-user</code> (5/min/admin), <code>mutate-pantry-item</code> (60/min/user), <code>log-client-error</code> (30/min/IP), <code>send-email</code> (20/min/IP). Limit exceeded &rarr; 429 <code>TOO_MANY_REQUESTS</code>.</li>
+  </ul>
+
+  <h3>5.4 Operations</h3>
+  <ul>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>Transactional email scaffold.</strong> <code>send-email</code> Edge Function with three template renderers (<code>order_confirmation</code>, <code>invoice_issued</code>, <code>user_invitation</code>), each looking up the recipient + payload server-side and posting to Resend. Self-disabling when <code>RESEND_API_KEY</code> is unset (returns <code>{ ok: true, sent: false, reason: 'not_configured' }</code>) so order placement is never blocked. <code>place-order</code> fires a fire-and-forget <code>order_confirmation</code> after a successful order.</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>CI workflow.</strong> <code>.github/workflows/ci.yml</code> runs on every PR and push to <code>main</code>. Single <code>verify</code> job: <code>npx tsc --noEmit</code> &rarr; <code>npm test</code> (vitest, 41 tests today) &rarr; <code>npm run build</code>. Concurrency-grouped to cancel superseded runs.</li>
+    <li><span class="sev shipped">DONE</span> &nbsp;<strong>DB polish (migration 00016).</strong> <code>UNIQUE</code> on <code>suppliers.email</code>; index <code>idx_invoices_due_date</code> for the aging-report scan; composite index <code>idx_notifications_user_timestamp</code> on <code>(user_id, timestamp DESC)</code>; conservative <code>jsonb_typeof = 'array'</code> CHECK on <code>orders.status_history</code> and <code>scheduled_visits.change_requests</code>.</li>
+  </ul>
+
+  <div class="callout ok">
+    <strong>Architectural takeaway.</strong> The mutation surface is locked down end-to-end: Edge Function role-gate &rarr; Zod schema validation &rarr; business-rule checks (deletion gates, transition state machines, immutability for already-applied promotions) &rarr; audit log write &rarr; RLS revoke as a defence-in-depth backstop. Twelve of the thirteen functions follow this pattern; <code>place-order</code> is the only one missing the audit log call (see &sect; 6.2 AUDIT-1).
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 6 — PRODUCTION GAPS                                  -->
+<!-- ============================================================ -->
+<section class="page" id="sec-6">
+  <h1>6 &middot; Production Readiness Gaps</h1>
+
+  <h2>6.1 Documented backlog (from <code>CLAUDE.md &raquo; Pending Work</code>)</h2>
+
+  <table class="gap">
+    <thead>
+      <tr><th style="width:6%">#</th><th style="width:11%">Severity</th><th>Item</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td><span class="sev high">HIGH</span></td><td><strong>Component test coverage.</strong> Vitest is wired up; today only <code>pricing.ts</code> and the promotion service have tests (41 total). Add coverage for cart submission, pantry add/remove, HoReCa reason-prompt gate, role-based routing.</td></tr>
+      <tr><td>2</td><td><span class="sev high">HIGH</span></td><td><strong>Branch protection.</strong> The CI workflow exists but <code>main</code> does not require the <code>verify</code> check before merge. Flip on at GitHub repo Settings &rarr; Branches.</td></tr>
+      <tr><td>3</td><td><span class="sev high">HIGH</span></td><td><strong>Email setup (operator).</strong> <code>send-email</code> is live but dormant. Set <code>RESEND_API_KEY</code> (and optionally <code>EMAIL_FROM</code>, <code>EMAIL_REPLY_TO</code>, <code>APP_URL</code>) via <code>npx supabase secrets set</code>.</td></tr>
+      <tr><td>4</td><td><span class="sev medium">MED</span></td><td><strong>Accessibility pass.</strong> Minimal ARIA today. Add labels to icon-only buttons (<code>AccountsAgingTable</code>, sort headers, modal close), focus traps in <code>BundleSelectModal</code>/<code>OrderVerificationModal</code>, ARIA-live region for the toast container.</td></tr>
+      <tr><td>5</td><td><span class="sev medium">MED</span></td><td><strong>Email expansion.</strong> Wire <code>invoice_issued</code> template (when an invoice transitions to <code>issued</code>); decide whether to use the custom <code>user_invitation</code> template instead of Supabase&rsquo;s built-in invite email.</td></tr>
+      <tr><td>6</td><td><span class="sev medium">MED</span></td><td><strong>True &ldquo;Remember me&rdquo;.</strong> Today: <code>sessionStorage</code> (refresh survives, tab-close requires re-login). A <code>localStorage</code>-backed checkbox would survive browser close but needs careful Windows retesting (the original hang was specifically about <code>localStorage</code>).</td></tr>
+      <tr><td>7</td><td><span class="sev medium">MED</span></td><td><strong>Recovery URL setup (operator).</strong> Add <code>https://nexorder.vercel.app</code> and <code>http://localhost:3000</code> to Supabase Studio &rarr; Auth &rarr; URL Configuration &rarr; Redirect URLs so password-reset emails land back on the app.</td></tr>
+      <tr><td>8</td><td><span class="sev medium">MED</span></td><td><strong>Global rate-limit upgrade.</strong> Today is per-Deno-isolate in-memory. Swap the storage layer in <code>_shared/rateLimit.ts</code> to Upstash Redis or a Postgres table for a true cross-isolate cap.</td></tr>
+      <tr><td>9</td><td><span class="sev low">LOW</span></td><td><strong>Dead code sweep.</strong> <code>CustomerForm.tsx</code> (98-byte stub), <code>constants.ts</code> (1,044 LOC of seed data still shipped to browser; move to <code>supabase/seed.ts</code> only), <code>hooks/useLocalStorage.ts</code> (zero imports). Verify with <code>knip</code>/<code>ts-prune</code> before deleting.</td></tr>
+      <tr><td>10</td><td><span class="sev low">LOW</span></td><td><strong>Inventory automation.</strong> Restock alerts are read-only. Add &ldquo;generate PO from low-stock alerts&rdquo;, soft stock reservations on order confirmation, expiry/FIFO tracking for perishable SKUs.</td></tr>
+      <tr><td>11</td><td><span class="sev low">LOW</span></td><td><strong>Reports export.</strong> Admin dashboard has KPIs but no CSV/PDF export. Add download buttons on accounts-aging, sales-by-rep, stock-status, promotion-ROI panels.</td></tr>
+      <tr><td>12</td><td><span class="sev low">LOW</span></td><td><strong>i18n.</strong> Entire UI is English. If Sri Lankan retail customers come into scope, wire <code>react-i18next</code> early (currency already hardcoded <code>AUD</code>).</td></tr>
+      <tr><td>13</td><td><span class="sev low">LOW</span></td><td><strong>Image optimization.</strong> Product/HoReCa photos served raw from Supabase Storage. Add a transform on upload (resize + WebP) and lazy-load in <code>ProductCard</code>.</td></tr>
+      <tr><td>14</td><td><span class="sev low">LOW</span></td><td><strong>PWA.</strong> No manifest, no service worker. Lowish priority for B2B but install-to-home-screen would help field reps.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>6.2 Newly identified during this audit</h2>
+
+  <p>The following items surfaced while preparing this document and are not in <code>CLAUDE.md</code>. They have been verified in source.</p>
+
+  <table class="gap">
+    <thead>
+      <tr><th style="width:9%">ID</th><th style="width:11%">Severity</th><th>Issue &amp; locus</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>AUDIT-1</strong></td>
+        <td><span class="sev high">HIGH</span></td>
+        <td>
+          <strong><code>place-order</code> does not call <code>logAuditEvent()</code></strong> after a successful order insert. Every other mutation Edge Function (<code>mutate-horeca</code>, <code>mutate-product</code>, <code>mutate-promotion</code>, <code>mutate-supplier</code>, <code>mutate-purchase-order</code>, <code>mutate-sales-target</code>, <code>mutate-app-settings</code>, <code>mutate-pantry-item</code>, <code>update-order-status</code>, <code>invite-user</code>) writes to <code>audit_events</code>. Order creation does not, which means the audit trail has a hole around the most-frequent privileged write in the system.
+          <br/><br/>
+          <em>Fix: call <code>logAuditEvent</code> with <code>{action: 'create', resource: 'orders', resourceId, after: orderSnapshot}</code> after the order insert succeeds.</em>
+          <br/>
+          <em>Locus: <code>supabase/functions/place-order/index.ts</code> ~line 354.</em>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>AUDIT-2</strong></td>
+        <td><span class="sev high">HIGH</span></td>
+        <td>
+          <strong>Three direct DB writes in <code>services/supabase/horecaService.ts</code> bypass Edge Functions.</strong> <code>markHoReCaReviewed</code> (lines 53&ndash;66), <code>upsertHoReCaPricing</code> (lines 68&ndash;83), and <code>deleteHoReCaPricing</code> (lines 85&ndash;92) call <code>supabase.from('horecas').update</code> and <code>supabase.from('horeca_pricing').upsert/delete</code> directly. These bypass role-gating, validation, and audit logging entirely. Migration 00013 currently <code>REVOKE</code>s those table permissions from <code>authenticated</code>, so in production these calls fail at the RLS layer — making them either dead code or silently broken UI affordances.
+          <br/><br/>
+          <em>Fix: introduce <code>mutate-horeca-pricing</code> + <code>mutate-horeca-review</code> Edge Functions (or extend <code>mutate-horeca</code> with new <code>action</code> variants) that gate by Admin/Manager role, audit-log, and replace these direct calls. Then verify the UI surfaces that depend on these are still reachable, or remove the dead code.</em>
+          <br/>
+          <em>Locus: <code>services/supabase/horecaService.ts</code> lines 53&ndash;92.</em>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>AUDIT-3</strong></td>
+        <td><span class="sev medium">MED</span></td>
+        <td>
+          <strong><code>RESEND_API_KEY</code> not yet set</strong> in Supabase secrets &rarr; <code>send-email</code> returns <code>{ ok: true, sent: false, reason: 'not_configured' }</code> silently. The system is functioning correctly by design (orders should not block on email outage), but the operational reality is: today no order or invoice email is being sent. Operator runbook: <code>npx supabase secrets set RESEND_API_KEY=re_&hellip;  EMAIL_FROM='Nex Order &lt;orders@&hellip;&gt;'</code>. (Already in CLAUDE.md backlog item 3, restated here so the audit context is in one place.)
+        </td>
+      </tr>
+      <tr>
+        <td><strong>AUDIT-4</strong></td>
+        <td><span class="sev medium">MED</span></td>
+        <td>
+          <strong><code>mutate-promotion</code> accepts <code>targeting.kind = 'rep'</code> with arbitrary <code>repUserId</code></strong> but does not verify the user exists or has a sales-rep role. A typo in admin entry creates a promotion that targets a non-existent user; nothing fails until query time, and the failure is silent (no matches).
+          <br/><br/>
+          <em>Fix: add a profile lookup in the Zod refinement step; reject if profile missing or role not in [&lsquo;Field Sales Rep&rsquo;, &lsquo;Office Sales Rep&rsquo;].</em>
+          <br/>
+          <em>Locus: <code>supabase/functions/mutate-promotion/index.ts</code>.</em>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>AUDIT-5</strong></td>
+        <td><span class="sev low">LOW</span></td>
+        <td>
+          <strong>Rate limiter is per-isolate / in-memory only.</strong> Counters reset on cold start; warm isolates do not share state. This is fine for v1 (it stops simple bursts) but is not a true global cap. (Backlog item 8 covers the same issue from the operator side; restated as an audit row so the cross-reference is clear.)
+        </td>
+      </tr>
+      <tr>
+        <td><strong>AUDIT-6</strong></td>
+        <td><span class="sev low">LOW</span></td>
+        <td>
+          <strong><code>place-order</code> rollback on inventory race is best-effort.</strong> If the optimistic-lock UPDATE fails (concurrent decrement), the function tries to <code>DELETE</code> the order + items it just inserted. Supabase-js has no transactions, so a partial DELETE failure could leave a phantom invoice referencing an orphaned/deleted order. Watch for this pattern in production logs; if observed, hoist the whole flow into a Postgres function with a true transaction.
+          <br/>
+          <em>Locus: <code>supabase/functions/place-order/index.ts</code>.</em>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>6.3 Operator setup checklist</h2>
+
+  <p>Five concrete steps an operator must run before declaring &ldquo;production&rdquo;. None of these are code changes; they are platform config.</p>
+
+  <ol class="flow">
+    <li><span class="actor">[Resend]</span>Verify the sending domain (e.g. <code>orders.example.com</code>); add SPF/DKIM/DMARC records.</li>
+    <li><span class="actor">[Supabase]</span><code>npx supabase secrets set RESEND_API_KEY=&hellip; EMAIL_FROM='Nex Order &lt;orders@&hellip;&gt;' EMAIL_REPLY_TO=&hellip; APP_URL=https://nexorder.vercel.app</code> &mdash; resolves AUDIT-3 / backlog #3.</li>
+    <li><span class="actor">[Supabase]</span>Add <code>https://nexorder.vercel.app</code> and <code>http://localhost:3000</code> to <em>Auth &rarr; URL Configuration &rarr; Redirect URLs</em> &mdash; resolves backlog #7.</li>
+    <li><span class="actor">[GitHub]</span>Repo Settings &rarr; Branches &rarr; <code>main</code> &rarr; require status checks before merge; tick <em>verify</em> &mdash; resolves backlog #2.</li>
+    <li><span class="actor">[optional]</span>Provision Upstash Redis (or a Postgres rate-limit table); swap <code>_shared/rateLimit.ts</code> backend &mdash; resolves backlog #8 / AUDIT-5.</li>
+  </ol>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 7 — SEQUENCE TO PRODUCTION                           -->
+<!-- ============================================================ -->
+<section class="page" id="sec-7">
+  <h1>7 &middot; Recommended Sequence to Production</h1>
+
+  <p>A prioritised waterfall. Effort is a T-shirt size: <span class="mono">XS</span> &lt; 1 day &middot; <span class="mono">S</span> 1&ndash;2 days &middot; <span class="mono">M</span> 3&ndash;5 days &middot; <span class="mono">L</span> &gt; 1 week. The first tier is the &ldquo;cannot launch without these&rdquo; cut.</p>
+
+  <h2>Tier 1 &middot; Blockers (ship before public launch)</h2>
+  <table class="data">
+    <thead><tr><th style="width:9%">Ref</th><th style="width:9%">Effort</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>AUDIT-1</td><td><span class="mono">XS</span></td><td>Add <code>logAuditEvent</code> call in <code>place-order</code> after order insert. Without this, the audit trail has a hole around the most frequent privileged write.</td></tr>
+      <tr><td>AUDIT-2</td><td><span class="mono">M</span></td><td>Build <code>mutate-horeca-pricing</code> and (if used) <code>mutate-horeca-review</code> Edge Functions; replace direct <code>.from()</code> calls in <code>horecaService.ts</code>; verify HoReCa pricing UI still works end-to-end.</td></tr>
+      <tr><td>Backlog #2</td><td><span class="mono">XS</span></td><td>GitHub branch protection on <code>main</code>: require <code>verify</code> CI check before merge.</td></tr>
+      <tr><td>Backlog #3 / AUDIT-3</td><td><span class="mono">XS</span></td><td>Set Resend API key and email-from domain via Supabase secrets; verify a real order produces a real email.</td></tr>
+      <tr><td>Backlog #7</td><td><span class="mono">XS</span></td><td>Add production + dev redirect URLs in Supabase Auth so password reset emails land on the app, not on a 404.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Tier 2 &middot; v1.0 polish (ship in the first month after launch)</h2>
+  <table class="data">
+    <thead><tr><th style="width:9%">Ref</th><th style="width:9%">Effort</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>Backlog #1</td><td><span class="mono">L</span></td><td>Component test coverage. Cover cart submission, pantry mutations, HoReCa reason-prompt gate, role-based routing. Target 60%+ statement coverage on the lifted files; CI already runs vitest, so every test added becomes load-bearing.</td></tr>
+      <tr><td>Backlog #4</td><td><span class="mono">M</span></td><td>Accessibility pass: ARIA labels on icon-only buttons, focus traps in modals, ARIA-live region for toasts, axe-lint in CI.</td></tr>
+      <tr><td>Backlog #5</td><td><span class="mono">S</span></td><td>Wire <code>invoice_issued</code> email template into invoice status transitions; decide if <code>user_invitation</code> custom template replaces Supabase&rsquo;s built-in.</td></tr>
+      <tr><td>AUDIT-4</td><td><span class="mono">XS</span></td><td>Validate <code>targeting.kind === 'rep'</code> repUserId in <code>mutate-promotion</code> &mdash; profile lookup + role check.</td></tr>
+      <tr><td>Backlog #6</td><td><span class="mono">S</span></td><td>True &ldquo;Remember me&rdquo; checkbox &mdash; localStorage path with explicit Windows hang regression test.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Tier 3 &middot; Post-launch / nice-to-have</h2>
+  <table class="data">
+    <thead><tr><th style="width:9%">Ref</th><th style="width:9%">Effort</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>Backlog #8 / AUDIT-5</td><td><span class="mono">M</span></td><td>Global rate-limit backend (Upstash Redis or Postgres table). Implement only if traffic patterns show isolate-local limits being defeated.</td></tr>
+      <tr><td>AUDIT-6</td><td><span class="mono">M</span></td><td>Hoist <code>place-order</code> into a Postgres function for true transactional rollback. Defer until phantom-invoice pattern is observed in error logs.</td></tr>
+      <tr><td>Backlog #9</td><td><span class="mono">S</span></td><td>Dead-code sweep. Run <code>knip</code>/<code>ts-prune</code>, remove <code>CustomerForm.tsx</code>, move <code>constants.ts</code> seed data into <code>supabase/seed.ts</code>, drop <code>hooks/useLocalStorage.ts</code>.</td></tr>
+      <tr><td>Backlog #11</td><td><span class="mono">S</span></td><td>Reports export &mdash; CSV download buttons on accounts-aging, sales-by-rep, stock-status, promotion-ROI panels.</td></tr>
+      <tr><td>Backlog #13</td><td><span class="mono">M</span></td><td>Image optimisation &mdash; resize + WebP transform on upload; lazy-load in <code>ProductCard</code>.</td></tr>
+      <tr><td>Backlog #10</td><td><span class="mono">L</span></td><td>Inventory automation &mdash; soft stock reservations on order confirmation, expiry/FIFO tracking, &ldquo;generate PO from low-stock alerts&rdquo; action.</td></tr>
+      <tr><td>Backlog #12</td><td><span class="mono">L</span></td><td>i18n &mdash; wire <code>react-i18next</code>; replace hardcoded currency; add language switcher.</td></tr>
+      <tr><td>Backlog #14</td><td><span class="mono">M</span></td><td>PWA &mdash; manifest, service worker, install-to-home-screen for field reps.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Definition of done for &ldquo;production&rdquo;</h2>
+  <ol>
+    <li>Tier 1 items are merged to <code>main</code> and the <code>verify</code> CI check is green on the deployed commit.</li>
+    <li>An end-to-end smoke test (UC-1 through UC-8) passes manually on <code>nexorder.vercel.app</code>.</li>
+    <li>An order placement on production produces (a) an <code>audit_events</code> row, (b) a <code>send-email</code> response with <code>sent: true</code>, (c) a real email arrival, (d) decremented inventory.</li>
+    <li>The audit-log viewer (Admin tab) loads under 1 s for the most-recent 50 events.</li>
+    <li>Resetting a password on production (real email account) lands on the app and signs the user in successfully.</li>
+  </ol>
+
+  <hr/>
+  <p style="color:var(--stone-500); font-size:12px; margin-top:32px">
+    &mdash; End of document. For the canonical project README and command catalogue, see <code>copy-of-curatif-order-system-v1.3/CLAUDE.md</code>. To regenerate this PDF after a content change, see <code>docs/README.md</code>.
+  </p>
+</section>
+
+</body>
+</html>
