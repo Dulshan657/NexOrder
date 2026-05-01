@@ -61,7 +61,8 @@ const App: React.FC = () => {
 
     // ── Server state — Supabase query hooks ───────────────────────────────────
     const { data: rawProducts = [] } = useProducts();
-    const { data: rawHoReCas = [] } = useHoReCas();
+    const horecasQuery = useHoReCas();
+    const { data: rawHoReCas = [] } = horecasQuery;
     const { data: rawOrders = [] } = useOrders();
     const { data: rawInvoices = [] } = useInvoices();
     const { data: rawSuppliers = [] } = useSuppliers();
@@ -101,6 +102,31 @@ const App: React.FC = () => {
         () => (rawSettings ? toAppSettings(rawSettings) : DEFAULT_SETTINGS),
         [rawSettings],
     );
+
+    // TEMP DIAGNOSTIC — REMOVE after the rep "only see 1 horeca" investigation is closed.
+    // Logs unconditionally so we don't need a build-time env flag for the one-shot capture.
+    useEffect(() => {
+        // eslint-disable-next-line no-console
+        console.groupCollapsed('[horeca-debug]');
+        // eslint-disable-next-line no-console
+        console.log('currentUser', { role: currentUser.role, hoReCaId: currentUser.hoReCaId, id: currentUser.id, email: currentUser.email });
+        // eslint-disable-next-line no-console
+        console.log('currentUserUuid', currentUserUuid);
+        // eslint-disable-next-line no-console
+        console.log('useHoReCas state', { status: horecasQuery.status, fetchStatus: horecasQuery.fetchStatus, isError: horecasQuery.isError, errorMessage: horecasQuery.error instanceof Error ? horecasQuery.error.message : null });
+        // eslint-disable-next-line no-console
+        console.log('rawHoReCas', {
+            count: (rawHoReCas as Array<{ id: number; name: string }>).length,
+            names: (rawHoReCas as Array<{ id: number; name: string }>).map(h => h.name),
+            ids: (rawHoReCas as Array<{ id: number; name: string }>).map(h => h.id),
+        });
+        // eslint-disable-next-line no-console
+        console.log('hoReCas (adapted)', { count: hoReCas.length, names: hoReCas.map(h => h.name), ids: hoReCas.map(h => h.id) });
+        // eslint-disable-next-line no-console
+        console.log('mode', import.meta.env.MODE);
+        // eslint-disable-next-line no-console
+        console.groupEnd();
+    }, [currentUser, currentUserUuid, horecasQuery.status, horecasQuery.fetchStatus, horecasQuery.isError, horecasQuery.error, rawHoReCas, hoReCas]);
 
     // Users are derived from real profiles. Falls back to mock USERS during
     // the brief boot window before profiles have loaded.
