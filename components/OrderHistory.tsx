@@ -1,15 +1,38 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import type { Order, HoReCa, User } from '../types';
+import type { Order, HoReCa, User, Invoice } from '../types';
 import { UserRole } from '../types';
 import StatusBadge from './StatusBadge';
+import PaymentStatusBadge, {
+  getPaymentDisplayState,
+  getPaymentLabel,
+  type PaymentDisplayState,
+} from './PaymentStatusBadge';
 import { RefreshCw, Eye, ChevronUp, ChevronDown, Copy, Check, Download } from 'lucide-react';
 import { ORDER_STATUS_SEQUENCE } from '../constants';
 
-type SortColumn = 'date' | 'total' | 'status' | 'horeca';
+type SortColumn = 'date' | 'total' | 'status' | 'horeca' | 'payment';
+type PaymentFilterValue = 'all' | PaymentDisplayState;
+
+// Sort priority: surface unpaid/late invoices ahead of paid ones in `asc` order.
+const PAYMENT_SORT_RANK: Record<PaymentDisplayState, number> = {
+  overdue: 0,
+  pending: 1,
+  not_invoiced: 2,
+  paid: 3,
+};
+
+const PAYMENT_FILTER_OPTIONS: ReadonlyArray<{ value: PaymentFilterValue; label: string }> = [
+  { value: 'all', label: 'All Payments' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'not_invoiced', label: 'Not Invoiced' },
+  { value: 'paid', label: 'Paid' },
+];
 
 interface OrderHistoryProps {
   orders: Order[];
   hoReCas: HoReCa[];
+  invoices: Invoice[];
   currentUser: User;
   onReorder: (order: Order) => void;
   onBulkReorder?: (orders: Order[]) => void;
@@ -19,12 +42,20 @@ interface OrderHistoryProps {
 
 const ITEMS_PER_PAGE = 20;
 
-const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUser, onReorder, onBulkReorder, onViewDetail, onBack }) => {
+const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, currentUser, onReorder, onBulkReorder, onViewDetail, onBack }) => {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [filterHoReCaId, setFilterHoReCaId] = useState('all');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
+  const [filterPaymentStatus, setFilterPaymentStatus] = useState<PaymentFilterValue>('all');
+
+  // Lookup: orderId → invoice
+  const invoicesByOrderId = useMemo(() => {
+    const map = new Map<string, Invoice>();
+    for (const inv of invoices) map.set(inv.orderId, inv);
+    return map;
+  }, [invoices]);
 
   // Sort
   const [sortColumn, setSortColumn] = useState<SortColumn>('date');
@@ -46,7 +77,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUse
   useEffect(() => {
     setCurrentPage(1);
     setSelectedIds(new Set());
-  }, [searchQuery, filterHoReCaId, filterStartDate, filterEndDate]);
+  }, [searchQuery, filterHoReCaId, filterStartDate, filterEndDate, filterPaymentStatus]);
 
   const displayedHoReCa = useMemo(() => {
     if (currentUser.role === UserRole.CUSTOMER && currentUser.hoReCaId) {
@@ -67,9 +98,11 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUse
       const hoReCaMatch = filterHoReCaId === 'all' || order.hoReCa.id === parseInt(filterHoReCaId, 10);
       const startDateMatch = !filterStartDate || orderDate >= new Date(filterStartDate);
       const endDateMatch = !filterEndDate || orderDate < new Date(new Date(filterEndDate).setDate(new Date(filterEndDate).getDate() + 1));
-      return searchMatch && hoReCaMatch && startDateMatch && endDateMatch;
+      const paymentMatch = filterPaymentStatus === 'all'
+        || getPaymentDisplayState(invoicesByOrderId.get(order.id)) === filterPaymentStatus;
+      return searchMatch && hoReCaMatch && startDateMatch && endDateMatch && paymentMatch;
     });
-  }, [orders, searchQuery, filterHoReCaId, filterStartDate, filterEndDate]);
+  }, [orders, searchQuery, filterHoReCaId, filterStartDate, filterEndDate, filterPaymentStatus, invoicesByOrderId]);
 
   const sortedOrders = useMemo(() => {
     const sorted = [...filteredOrders];
@@ -88,11 +121,17 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUse
         case 'horeca':
           cmp = a.hoReCa.name.localeCompare(b.hoReCa.name);
           break;
+        case 'payment': {
+          const sa = PAYMENT_SORT_RANK[getPaymentDisplayState(invoicesByOrderId.get(a.id))];
+          const sb = PAYMENT_SORT_RANK[getPaymentDisplayState(invoicesByOrderId.get(b.id))];
+          cmp = sa - sb;
+          break;
+        }
       }
       return sortDirection === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  }, [filteredOrders, sortColumn, sortDirection]);
+  }, [filteredOrders, sortColumn, sortDirection, invoicesByOrderId]);
 
   const totalPages = Math.max(1, Math.ceil(sortedOrders.length / ITEMS_PER_PAGE));
   const paginatedOrders = useMemo(() => {
@@ -155,18 +194,19 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUse
   }, []);
 
   const generateCsv = useCallback((ordersToExport: Order[]): string => {
-    const headers = ['Order ID', 'HoReCa', 'Date', 'Status', 'Total', 'Items'];
+    const headers = ['Order ID', 'HoReCa', 'Date', 'Status', 'Payment', 'Total', 'Items'];
     const rows = ordersToExport.map(o => [
       o.id,
       o.hoReCa.name,
       new Date(o.orderDate).toLocaleDateString(),
       o.status,
+      getPaymentLabel(invoicesByOrderId.get(o.id), true),
       o.total.toFixed(2),
       o.items.map(i => `${i.name} x${i.quantity}`).join('; '),
     ]);
     const escape = (val: string) => `"${val.replace(/"/g, '""')}"`;
     return [headers, ...rows].map(row => row.map(escape).join(',')).join('\n');
-  }, []);
+  }, [invoicesByOrderId]);
 
   const downloadCsv = useCallback((ordersToExport: Order[], filename: string) => {
     const csv = generateCsv(ordersToExport);
@@ -203,6 +243,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUse
     setFilterHoReCaId('all');
     setFilterStartDate('');
     setFilterEndDate('');
+    setFilterPaymentStatus('all');
   };
 
   const inputClasses = "block w-full rounded-lg border-0 bg-stone-50 py-2.5 px-3 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300";
@@ -264,7 +305,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUse
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <div className={`grid grid-cols-1 sm:grid-cols-2 ${currentUser.role === UserRole.CUSTOMER ? 'lg:grid-cols-4' : 'lg:grid-cols-5'} gap-5 items-end`}>
+        <div className={`grid grid-cols-1 sm:grid-cols-2 ${currentUser.role === UserRole.CUSTOMER ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-5 items-end`}>
           {currentUser.role !== UserRole.CUSTOMER && (
             <div>
               <label htmlFor="customer-filter" className="block text-sm font-medium text-stone-700 mb-1.5">Filter by HoReCa</label>
@@ -274,6 +315,19 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUse
               </select>
             </div>
           )}
+          <div>
+            <label htmlFor="payment-filter" className="block text-sm font-medium text-stone-700 mb-1.5">Payment</label>
+            <select
+              id="payment-filter"
+              value={filterPaymentStatus}
+              onChange={e => setFilterPaymentStatus(e.target.value as PaymentFilterValue)}
+              className={inputClasses}
+            >
+              {PAYMENT_FILTER_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
           <div>
             <label htmlFor="start-date" className="block text-sm font-medium text-stone-700 mb-1.5">Start Date</label>
             <input type="date" id="start-date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className={inputClasses} />
@@ -321,7 +375,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUse
       ) : (
         <div className="bg-white rounded-xl border border-stone-200/60 shadow-card overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left min-w-[700px]">
+            <table className="w-full text-sm text-left min-w-[860px]">
               <thead>
                 <tr className="border-b border-stone-200 bg-stone-50/50">
                   <th className="px-4 py-3 w-10">
@@ -337,6 +391,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUse
                   <SortHeader column="horeca" label="HoReCa" />
                   <SortHeader column="date" label="Date" />
                   <SortHeader column="status" label="Status" />
+                  <SortHeader column="payment" label="Payment" />
                   <SortHeader column="total" label="Total" align="right" />
                   <th className="px-4 py-3 font-semibold text-stone-600 text-right whitespace-nowrap">Actions</th>
                 </tr>
@@ -364,6 +419,9 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUse
                       <td className="px-4 py-3 align-middle text-stone-700">{order.hoReCa.name}</td>
                       <td className="px-4 py-3 align-middle text-stone-500 whitespace-nowrap">{new Date(order.orderDate).toLocaleDateString()}</td>
                       <td className="px-4 py-3 align-middle whitespace-nowrap"><StatusBadge status={order.status} /></td>
+                      <td className="px-4 py-3 align-middle whitespace-nowrap">
+                        <PaymentStatusBadge invoice={invoicesByOrderId.get(order.id)} compact />
+                      </td>
                       <td className="px-4 py-3 align-middle text-right font-semibold text-stone-900 tabular-nums whitespace-nowrap">${order.total.toFixed(2)}</td>
                       <td className="px-4 py-3 align-middle text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
@@ -381,7 +439,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, currentUse
                     </tr>
                     {expandedIds.has(order.id) && (
                       <tr>
-                        <td colSpan={7} className="px-4 py-3 bg-stone-50/50">
+                        <td colSpan={8} className="px-4 py-3 bg-stone-50/50">
                           <ul className="divide-y divide-stone-100 max-w-2xl">
                             {order.items.map((item, i) => (
                               <li key={`${item.id}-${i}`} className="flex justify-between py-2 text-sm">

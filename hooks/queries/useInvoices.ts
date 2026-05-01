@@ -2,7 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getInvoices,
   getInvoiceByOrderId,
-  updateInvoiceStatus,
+  mutateInvoiceStatus,
+  type MutateInvoiceStatusInput,
 } from '@/services/supabase/invoiceService'
 import type { InvoiceFilters } from '@/services/supabase/invoiceService'
 
@@ -30,17 +31,10 @@ export function useInvoiceByOrderId(orderId: string | null | undefined) {
 export function useUpdateInvoiceStatus() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({
-      id,
-      status,
-      paidDate,
-    }: {
-      id: string
-      status: 'pending' | 'paid' | 'overdue'
-      paidDate?: string
-    }) => updateInvoiceStatus(id, status, paidDate),
+    mutationFn: (input: MutateInvoiceStatusInput) => mutateInvoiceStatus(input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: invoiceKeys.all })
+      qc.invalidateQueries({ queryKey: ['orders'] })
     },
   })
 }

@@ -3,7 +3,6 @@ import type { Database } from '@/lib/database.types'
 
 type InvoiceRow = Database['public']['Tables']['invoices']['Row']
 type InvoiceInsert = Database['public']['Tables']['invoices']['Insert']
-type InvoiceUpdate = Database['public']['Tables']['invoices']['Update']
 type InvoiceStatus = InvoiceRow['status']
 
 export interface InvoiceFilters {
@@ -29,12 +28,12 @@ export async function getInvoices(filters: InvoiceFilters = {}) {
   return data
 }
 
-export async function getInvoiceByOrderId(orderId: string) {
+export async function getInvoiceByOrderId(orderId: string): Promise<InvoiceRow | null> {
   const { data, error } = await supabase
     .from('invoices')
     .select('*')
     .eq('order_id', orderId)
-    .single()
+    .maybeSingle()
   if (error) throw error
   return data
 }
@@ -49,22 +48,31 @@ export async function createInvoice(invoice: InvoiceInsert) {
   return data
 }
 
-export async function updateInvoiceStatus(
-  id: string,
-  status: InvoiceStatus,
-  paidDate?: string
-) {
-  const updates: InvoiceUpdate = { status }
-  if (paidDate !== undefined) {
-    updates.paid_date = paidDate
-  }
+export interface MutateInvoiceStatusInput {
+  orderId: string
+  status: InvoiceStatus
+  reason?: string
+}
 
-  const { data, error } = await supabase
-    .from('invoices')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single()
-  if (error) throw error
+export interface MutateInvoiceStatusResult {
+  ok: true
+  invoice: InvoiceRow | null
+  created: boolean
+  noop?: boolean
+}
+
+export async function mutateInvoiceStatus(
+  input: MutateInvoiceStatusInput,
+): Promise<MutateInvoiceStatusResult> {
+  const { data, error } = await supabase.functions.invoke<MutateInvoiceStatusResult>(
+    'mutate-invoice-status',
+    { body: input },
+  )
+  if (error) {
+    const ctx = (error as { context?: { error?: { code?: string; message?: string } } }).context
+    const msg = ctx?.error?.message ?? error.message ?? 'Failed to update payment status'
+    throw new Error(msg)
+  }
+  if (!data) throw new Error('Payment status update returned no data')
   return data
 }

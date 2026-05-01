@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
-import type { Order, OrderStatus, User, Invoice } from '../types';
+import type { Order, OrderStatus, User, Invoice, InvoiceStatus } from '../types';
 import { UserRole } from '../types';
 import { ORDER_STATUS_SEQUENCE } from '../constants';
 import StatusBadge from './StatusBadge';
 import StatusTimeline from './StatusTimeline';
+import PaymentStatusBadge from './PaymentStatusBadge';
+import PaymentActionModal from './PaymentActionModal';
+import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
+import { useToasts } from '../hooks/useToasts';
 import { X, Package, Truck, Calendar, FileText } from 'lucide-react';
 
 interface OrderDetailViewProps {
@@ -17,6 +21,29 @@ interface OrderDetailViewProps {
 const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, invoice, onUpdateStatus, onClose }) => {
     const [statusNote, setStatusNote] = useState('');
     const isAdmin = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
+    const isManager = currentUser.role === UserRole.MANAGER;
+
+    const updateInvoiceStatus = useUpdateInvoiceStatus();
+    const { addToast } = useToasts();
+    const [paymentAction, setPaymentAction] = useState<InvoiceStatus | null>(null);
+    const [paymentError, setPaymentError] = useState<string | undefined>(undefined);
+
+    const submitPaymentAction = (reason?: string) => {
+        if (!paymentAction) return;
+        setPaymentError(undefined);
+        updateInvoiceStatus.mutate(
+            { orderId: order.id, status: paymentAction, reason },
+            {
+                onSuccess: () => {
+                    addToast(`Order ${order.id} marked as ${paymentAction}`, 'success');
+                    setPaymentAction(null);
+                },
+                onError: (err) => {
+                    setPaymentError(err instanceof Error ? err.message : 'Failed to update payment status');
+                },
+            },
+        );
+    };
 
     const currentIdx = ORDER_STATUS_SEQUENCE.indexOf(order.status);
     const nextStatus = currentIdx < ORDER_STATUS_SEQUENCE.length - 1 ? ORDER_STATUS_SEQUENCE[currentIdx + 1] : null;
@@ -41,6 +68,7 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                     </div>
                     <div className="flex items-center gap-3">
                         <StatusBadge status={order.status} size="md" />
+                        <PaymentStatusBadge invoice={invoice} />
                         <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition-colors cursor-pointer">
                             <X className="w-5 h-5" />
                         </button>
@@ -123,9 +151,12 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                     {/* Invoice Section */}
                     {invoice && (
                         <div className="border border-stone-200 rounded-xl p-4">
-                            <div className="flex items-center gap-2 mb-3">
-                                <FileText className="w-4 h-4 text-stone-500" />
-                                <h3 className="text-sm font-semibold text-stone-700 uppercase tracking-wider">Invoice</h3>
+                            <div className="flex items-center justify-between gap-2 mb-3">
+                                <div className="flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-stone-500" />
+                                    <h3 className="text-sm font-semibold text-stone-700 uppercase tracking-wider">Invoice</h3>
+                                </div>
+                                <PaymentStatusBadge invoice={invoice} />
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                                 <div>
@@ -140,16 +171,52 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                                     <p className="text-xs text-stone-500">Due Date</p>
                                     <p className="font-medium text-stone-900">{new Date(invoice.dueDate).toLocaleDateString('en-AU')}</p>
                                 </div>
-                                <div>
-                                    <p className="text-xs text-stone-500">Status</p>
-                                    <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${
-                                        invoice.status === 'paid' ? 'bg-emerald-50 text-emerald-700' :
-                                        invoice.status === 'overdue' ? 'bg-red-50 text-red-700' :
-                                        'bg-amber-50 text-amber-700'
-                                    }`}>
-                                        {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
-                                    </span>
-                                </div>
+                                {invoice.paidDate && (
+                                    <div>
+                                        <p className="text-xs text-stone-500">Paid Date</p>
+                                        <p className="font-medium text-stone-900">{new Date(invoice.paidDate).toLocaleDateString('en-AU')}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Admin/Manager: payment status actions (works whether or not an invoice exists) */}
+                    {isAdmin && (
+                        <div className="bg-stone-50 rounded-xl p-4 border border-stone-200">
+                            <h3 className="text-sm font-semibold text-stone-700 mb-3">Payment Status</h3>
+                            <p className="text-xs text-stone-500 mb-3">
+                                {invoice
+                                    ? 'Mark this invoice as paid, overdue, or pending. Actions are audit-logged.'
+                                    : 'No invoice on this order yet. Marking it paid or overdue will create one (Net-30 default).'}
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => { setPaymentError(undefined); setPaymentAction('paid'); }}
+                                    disabled={invoice?.status === 'paid'}
+                                    className="px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    Mark Paid
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setPaymentError(undefined); setPaymentAction('overdue'); }}
+                                    disabled={invoice?.status === 'overdue'}
+                                    className="px-3 py-1.5 text-sm font-medium rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    Mark Overdue
+                                </button>
+                                {invoice && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setPaymentError(undefined); setPaymentAction('pending'); }}
+                                        disabled={invoice.status === 'pending'}
+                                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Mark Pending
+                                    </button>
+                                )}
                             </div>
                         </div>
                     )}
@@ -227,6 +294,19 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                     )}
                 </div>
             </div>
+
+            {paymentAction && (
+                <PaymentActionModal
+                    isOpen
+                    orderId={order.id}
+                    targetStatus={paymentAction}
+                    reasonRequired={isManager}
+                    isSubmitting={updateInvoiceStatus.isPending}
+                    errorMessage={paymentError}
+                    onConfirm={submitPaymentAction}
+                    onCancel={() => { setPaymentAction(null); setPaymentError(undefined); }}
+                />
+            )}
         </div>
     );
 };

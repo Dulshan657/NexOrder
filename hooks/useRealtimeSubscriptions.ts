@@ -30,6 +30,12 @@ export function useRealtimeSubscriptions(userId: string | null | undefined): voi
     const invalidateProducts = () => {
       qc.invalidateQueries({ queryKey: ['products'] })
     }
+    // Invoice changes also affect the orders tab payment column, so we
+    // invalidate both query keys.
+    const invalidateInvoicesAndOrders = () => {
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['orders'] })
+    }
 
     const channel = supabase
       .channel(`app-realtime-${userId}`)
@@ -52,6 +58,11 @@ export function useRealtimeSubscriptions(userId: string | null | undefined): voi
         'postgres_changes',
         { event: '*', schema: 'public', table: 'products' },
         invalidateProducts,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'invoices' },
+        invalidateInvoicesAndOrders,
       )
       .subscribe()
 

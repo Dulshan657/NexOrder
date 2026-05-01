@@ -416,19 +416,20 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
 
     const handleUpdateInvoiceStatus = useCallback(
         (invoiceId: string, status: Invoice['status']) => {
+            const target = invoices.find(inv => inv.id === invoiceId);
+            if (!target) {
+                addToast(`Invoice ${invoiceId} not found`, 'error');
+                return;
+            }
             updateInvoiceStatusMutation.mutate(
-                {
-                    id: invoiceId,
-                    status,
-                    paidDate: status === 'paid' ? new Date().toISOString() : undefined,
-                },
+                { orderId: target.orderId, status },
                 {
                     onSuccess: () => addToast(`Invoice ${invoiceId} marked as ${status}.`, 'success'),
                     onError: err => addToast(`Error updating invoice: ${err.message}`, 'error'),
                 },
             );
         },
-        [updateInvoiceStatusMutation, addToast],
+        [updateInvoiceStatusMutation, addToast, invoices],
     );
 
     const handleMarkNotificationRead = useCallback(
@@ -1071,6 +1072,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     <OrdersHistoryView
                                         orders={ordersForHistory}
                                         hoReCas={hoReCas}
+                                        invoices={invoices}
                                         currentUser={currentUser}
                                         onReorder={handleReorderWithNav}
                                         onReorderItems={handleReorderItems}

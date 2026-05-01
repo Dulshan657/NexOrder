@@ -1,11 +1,12 @@
 import React, { useCallback } from 'react';
-import { UserRole, type HoReCa, type Order, type OrderItem, type OrderStatus, type User } from '../types';
+import { UserRole, type HoReCa, type Invoice, type Order, type OrderItem, type OrderStatus, type User } from '../types';
 import OrderHistory from '../components/OrderHistory';
 import OrdersPage from '../components/OrdersPage';
 
 export interface OrdersHistoryViewProps {
     orders: Order[];
     hoReCas: HoReCa[];
+    invoices: Invoice[];
     currentUser: User;
     onReorder: (order: Order) => void;
     onReorderItems: (items: OrderItem[], mode: 'replace' | 'merge') => void;
@@ -19,6 +20,7 @@ export interface OrdersHistoryViewProps {
 const OrdersHistoryView: React.FC<OrdersHistoryViewProps> = ({
     orders,
     hoReCas,
+    invoices,
     currentUser,
     onReorder,
     onReorderItems,
@@ -55,6 +57,7 @@ const OrdersHistoryView: React.FC<OrdersHistoryViewProps> = ({
             <OrderHistory
                 orders={orders}
                 hoReCas={hoReCas}
+                invoices={invoices}
                 currentUser={currentUser}
                 onReorder={onReorder}
                 onBulkReorder={handleBulkReorder}
@@ -68,6 +71,7 @@ const OrdersHistoryView: React.FC<OrdersHistoryViewProps> = ({
         <OrdersPage
             orders={orders}
             hoReCas={hoReCas}
+            invoices={invoices}
             currentUser={currentUser}
             onReorder={onReorder}
             onBulkReorder={handleBulkReorder}

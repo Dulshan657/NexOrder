@@ -1,7 +1,15 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import type { Order, HoReCa, User, OrderStatus } from '../types';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import type { Order, HoReCa, User, OrderStatus, Invoice, InvoiceStatus } from '../types';
 import { UserRole } from '../types';
 import StatusBadge from './StatusBadge';
+import PaymentStatusBadge, {
+  getPaymentDisplayState,
+  getPaymentLabel,
+  type PaymentDisplayState,
+} from './PaymentStatusBadge';
+import PaymentActionModal from './PaymentActionModal';
+import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
+import { useToasts } from '../hooks/useToasts';
 import { ORDER_STATUS_SEQUENCE, ORDER_STATUS_LABELS } from '../constants';
 import { downloadCsv } from '../lib/csvExport';
 import {
@@ -14,6 +22,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowUpDown,
+  MoreVertical,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -23,6 +32,7 @@ import {
 interface OrdersPageProps {
   orders: Order[];
   hoReCas: HoReCa[];
+  invoices: Invoice[];
   currentUser: User;
   onReorder: (order: Order) => void;
   onBulkReorder?: (orders: Order[]) => void;
@@ -32,8 +42,24 @@ interface OrdersPageProps {
 }
 
 type ActiveTab = 'received' | 'process' | 'confirmed';
-type SortColumn = 'date' | 'total' | 'status' | 'horeca';
+type SortColumn = 'date' | 'total' | 'status' | 'horeca' | 'payment';
 type SortDirection = 'asc' | 'desc';
+type PaymentFilterValue = 'all' | PaymentDisplayState;
+
+const PAYMENT_SORT_RANK: Record<PaymentDisplayState, number> = {
+  overdue: 0,
+  pending: 1,
+  not_invoiced: 2,
+  paid: 3,
+};
+
+const PAYMENT_FILTER_OPTIONS: ReadonlyArray<{ value: PaymentFilterValue; label: string }> = [
+  { value: 'all', label: 'All Payments' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'not_invoiced', label: 'Not Invoiced' },
+  { value: 'paid', label: 'Paid' },
+];
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -72,14 +98,18 @@ function canAdvanceStatus(user: User): boolean {
   return user.role === UserRole.ADMIN || user.role === UserRole.MANAGER;
 }
 
-const ORDERS_CSV_HEADERS = ['Order ID', 'HoReCa', 'Date', 'Status', 'Items', 'Total'];
+const ORDERS_CSV_HEADERS = ['Order ID', 'HoReCa', 'Date', 'Status', 'Payment', 'Items', 'Total'];
 
-function ordersToCsvRows(ordersToExport: Order[]): string[][] {
+function ordersToCsvRows(
+  ordersToExport: Order[],
+  invoicesByOrderId: Map<string, Invoice>,
+): string[][] {
   return ordersToExport.map((o) => [
     o.id,
     o.hoReCa.name,
     new Date(o.orderDate).toLocaleDateString(),
     o.status,
+    getPaymentLabel(invoicesByOrderId.get(o.id), true),
     String(o.items.reduce((acc, i) => acc + i.quantity, 0)),
     o.total.toFixed(2),
   ]);
@@ -128,6 +158,7 @@ function SortHeader({ column, label, align = 'left', sortColumn, sortDirection, 
 const OrdersPage: React.FC<OrdersPageProps> = ({
   orders,
   hoReCas,
+  invoices,
   currentUser,
   onReorder,
   onBulkReorder,
@@ -143,6 +174,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
   const [filterHoReCaId, setFilterHoReCaId] = useState('all');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
+  const [filterPaymentStatus, setFilterPaymentStatus] = useState<PaymentFilterValue>('all');
 
   // Sort
   const [sortColumn, setSortColumn] = useState<SortColumn>('date');
@@ -157,8 +189,45 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
   // Expandable rows
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
+  // Payment-action menu (admin/manager only): which row's dropdown is open.
+  const [paymentMenuOrderId, setPaymentMenuOrderId] = useState<string | null>(null);
+  const [paymentAction, setPaymentAction] = useState<{ orderId: string; targetStatus: InvoiceStatus } | null>(null);
+  const [paymentError, setPaymentError] = useState<string | undefined>(undefined);
+
   const isAdminOrManager = canAdvanceStatus(currentUser);
   const isCustomer = currentUser.role === UserRole.CUSTOMER;
+  const isManager = currentUser.role === UserRole.MANAGER;
+
+  const updateInvoiceStatus = useUpdateInvoiceStatus();
+  const { addToast } = useToasts();
+
+  // orderId → Invoice lookup
+  const invoicesByOrderId = useMemo(() => {
+    const map = new Map<string, Invoice>();
+    for (const inv of invoices) map.set(inv.orderId, inv);
+    return map;
+  }, [invoices]);
+
+  // Dismiss the payment dropdown on outside click / escape
+  const tableRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!paymentMenuOrderId) return;
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (target && tableRef.current && !tableRef.current.contains(target)) {
+        setPaymentMenuOrderId(null);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPaymentMenuOrderId(null);
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [paymentMenuOrderId]);
 
   // ---------------------------------------------------------------------------
   // Tab counts — unfiltered, show totals across all orders for each tab group
@@ -203,9 +272,13 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
         orderDate <
           new Date(new Date(filterEndDate).setDate(new Date(filterEndDate).getDate() + 1));
 
-      return searchMatch && hoReCaMatch && startMatch && endMatch;
+      const paymentMatch =
+        filterPaymentStatus === 'all' ||
+        getPaymentDisplayState(invoicesByOrderId.get(order.id)) === filterPaymentStatus;
+
+      return searchMatch && hoReCaMatch && startMatch && endMatch && paymentMatch;
     });
-  }, [tabOrders, searchQuery, filterHoReCaId, filterStartDate, filterEndDate]);
+  }, [tabOrders, searchQuery, filterHoReCaId, filterStartDate, filterEndDate, filterPaymentStatus, invoicesByOrderId]);
 
   // ---------------------------------------------------------------------------
   // Sort
@@ -228,11 +301,17 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
         case 'horeca':
           cmp = a.hoReCa.name.localeCompare(b.hoReCa.name);
           break;
+        case 'payment': {
+          const sa = PAYMENT_SORT_RANK[getPaymentDisplayState(invoicesByOrderId.get(a.id))];
+          const sb = PAYMENT_SORT_RANK[getPaymentDisplayState(invoicesByOrderId.get(b.id))];
+          cmp = sa - sb;
+          break;
+        }
       }
       return sortDirection === 'asc' ? cmp : -cmp;
     });
     return copy;
-  }, [filteredOrders, sortColumn, sortDirection]);
+  }, [filteredOrders, sortColumn, sortDirection, invoicesByOrderId]);
 
   // ---------------------------------------------------------------------------
   // Pagination
@@ -262,7 +341,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
   useEffect(() => {
     setCurrentPage(1);
     setSelectedIds(new Set());
-  }, [searchQuery, filterHoReCaId, filterStartDate, filterEndDate, activeTab]);
+  }, [searchQuery, filterHoReCaId, filterStartDate, filterEndDate, filterPaymentStatus, activeTab]);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -287,9 +366,11 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
     setFilterHoReCaId('all');
     setFilterStartDate('');
     setFilterEndDate('');
+    setFilterPaymentStatus('all');
     setSortColumn('date');
     setSortDirection('desc');
     setExpandedIds(new Set());
+    setPaymentMenuOrderId(null);
   }, []);
 
   const toggleSelectAll = useCallback(() => {
@@ -323,13 +404,13 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
   }, []);
 
   const handleExportAll = useCallback(() => {
-    downloadCsv(ORDERS_CSV_HEADERS, ordersToCsvRows(sortedOrders), `orders-${activeTab}-export.csv`);
-  }, [sortedOrders, activeTab]);
+    downloadCsv(ORDERS_CSV_HEADERS, ordersToCsvRows(sortedOrders, invoicesByOrderId), `orders-${activeTab}-export.csv`);
+  }, [sortedOrders, activeTab, invoicesByOrderId]);
 
   const handleExportSelected = useCallback(() => {
     const selected = sortedOrders.filter((o) => selectedIds.has(o.id));
-    downloadCsv(ORDERS_CSV_HEADERS, ordersToCsvRows(selected), `orders-${activeTab}-selected-export.csv`);
-  }, [sortedOrders, selectedIds, activeTab]);
+    downloadCsv(ORDERS_CSV_HEADERS, ordersToCsvRows(selected, invoicesByOrderId), `orders-${activeTab}-selected-export.csv`);
+  }, [sortedOrders, selectedIds, activeTab, invoicesByOrderId]);
 
   const handleBulkReorder = useCallback(() => {
     const selected = sortedOrders.filter((o) => selectedIds.has(o.id));
@@ -356,13 +437,48 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
     setFilterHoReCaId('all');
     setFilterStartDate('');
     setFilterEndDate('');
+    setFilterPaymentStatus('all');
   }, []);
 
   const hasActiveFilters =
     searchQuery !== '' ||
     filterHoReCaId !== 'all' ||
     filterStartDate !== '' ||
-    filterEndDate !== '';
+    filterEndDate !== '' ||
+    filterPaymentStatus !== 'all';
+
+  // ---------------------------------------------------------------------------
+  // Payment-status mutation handlers
+  // ---------------------------------------------------------------------------
+
+  const openPaymentAction = useCallback((orderId: string, targetStatus: InvoiceStatus) => {
+    setPaymentMenuOrderId(null);
+    setPaymentError(undefined);
+    setPaymentAction({ orderId, targetStatus });
+  }, []);
+
+  const closePaymentAction = useCallback(() => {
+    setPaymentAction(null);
+    setPaymentError(undefined);
+  }, []);
+
+  const submitPaymentAction = useCallback((reason?: string) => {
+    if (!paymentAction) return;
+    setPaymentError(undefined);
+    updateInvoiceStatus.mutate(
+      { orderId: paymentAction.orderId, status: paymentAction.targetStatus, reason },
+      {
+        onSuccess: () => {
+          addToast(`Order ${paymentAction.orderId} marked as ${paymentAction.targetStatus}`, 'success');
+          closePaymentAction();
+        },
+        onError: (err) => {
+          const msg = err instanceof Error ? err.message : 'Failed to update payment status';
+          setPaymentError(msg);
+        },
+      },
+    );
+  }, [paymentAction, updateInvoiceStatus, addToast, closePaymentAction]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -447,7 +563,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
         {/* Filter row */}
         <div
           className={`grid grid-cols-1 sm:grid-cols-2 ${
-            !isCustomer ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
+            !isCustomer ? 'lg:grid-cols-6' : 'lg:grid-cols-5'
           } gap-4 items-end`}
         >
           {!isCustomer && (
@@ -473,6 +589,25 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
               </select>
             </div>
           )}
+
+          <div>
+            <label
+              htmlFor="payment-filter"
+              className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
+            >
+              Payment
+            </label>
+            <select
+              id="payment-filter"
+              value={filterPaymentStatus}
+              onChange={(e) => setFilterPaymentStatus(e.target.value as PaymentFilterValue)}
+              className={INPUT_CLASSES}
+            >
+              {PAYMENT_FILTER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
 
           <div>
             <label
@@ -581,9 +716,9 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-stone-200/60 shadow-sm overflow-hidden">
+        <div ref={tableRef} className="bg-white rounded-xl border border-stone-200/60 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left min-w-[800px]">
+            <table className="w-full text-sm text-left min-w-[960px]">
               <thead>
                 <tr className="border-b border-stone-200 bg-stone-50/70">
                   {/* Checkbox */}
@@ -633,6 +768,15 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
                   <SortHeader
                     column="status"
                     label="Status"
+                    sortColumn={sortColumn}
+                    sortDirection={sortDirection}
+                    onSort={handleSort}
+                  />
+
+                  {/* Payment sortable */}
+                  <SortHeader
+                    column="payment"
+                    label="Payment"
                     sortColumn={sortColumn}
                     sortDirection={sortDirection}
                     onSort={handleSort}
@@ -717,6 +861,61 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
                           <StatusBadge status={order.status} />
                         </td>
 
+                        {/* Payment status */}
+                        <td className="px-4 py-3 align-middle whitespace-nowrap">
+                          {isAdminOrManager ? (
+                            <div className="relative inline-block">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPaymentMenuOrderId((prev) => (prev === order.id ? null : order.id));
+                                }}
+                                className="inline-flex items-center gap-1 rounded-full hover:ring-2 hover:ring-stone-200 focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all cursor-pointer"
+                                aria-haspopup="menu"
+                                aria-expanded={paymentMenuOrderId === order.id}
+                                aria-label={`Change payment status for order ${order.id}`}
+                              >
+                                <PaymentStatusBadge invoice={invoicesByOrderId.get(order.id)} compact />
+                                <MoreVertical className="w-3.5 h-3.5 text-stone-400" />
+                              </button>
+                              {paymentMenuOrderId === order.id && (
+                                <div
+                                  role="menu"
+                                  className="absolute z-20 mt-1 left-0 w-44 rounded-lg border border-stone-200 bg-white shadow-lg py-1"
+                                >
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => openPaymentAction(order.id, 'paid')}
+                                    className="block w-full text-left px-3 py-1.5 text-sm text-stone-700 hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer"
+                                  >
+                                    Mark as Paid
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => openPaymentAction(order.id, 'overdue')}
+                                    className="block w-full text-left px-3 py-1.5 text-sm text-stone-700 hover:bg-rose-50 hover:text-rose-800 cursor-pointer"
+                                  >
+                                    Mark as Overdue
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => openPaymentAction(order.id, 'pending')}
+                                    className="block w-full text-left px-3 py-1.5 text-sm text-stone-700 hover:bg-amber-50 hover:text-amber-800 cursor-pointer"
+                                  >
+                                    Mark as Pending
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <PaymentStatusBadge invoice={invoicesByOrderId.get(order.id)} compact />
+                          )}
+                        </td>
+
                         {/* Date */}
                         <td className="px-4 py-3 align-middle text-stone-500 whitespace-nowrap text-xs">
                           {new Date(order.orderDate).toLocaleDateString(undefined, {
@@ -768,7 +967,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
                       {isExpanded && (
                         <tr>
                           <td
-                            colSpan={8}
+                            colSpan={9}
                             className="px-4 pb-4 pt-0 bg-stone-50/60 border-t-0"
                           >
                             <div className="ml-6 mt-2 rounded-lg border border-stone-200 bg-white overflow-hidden">
@@ -896,6 +1095,20 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Payment status action modal (Admin/Manager) */}
+      {paymentAction && (
+        <PaymentActionModal
+          isOpen
+          orderId={paymentAction.orderId}
+          targetStatus={paymentAction.targetStatus}
+          reasonRequired={isManager}
+          isSubmitting={updateInvoiceStatus.isPending}
+          errorMessage={paymentError}
+          onConfirm={submitPaymentAction}
+          onCancel={closePaymentAction}
+        />
       )}
     </div>
   );
