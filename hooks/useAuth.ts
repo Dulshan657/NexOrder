@@ -51,32 +51,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Retrieve the initial session on mount
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user)
-        const profileData = await fetchProfile(session.user.id)
-        setProfile(profileData)
-      }
-      setIsLoading(false)
-    })
+    let cancelled = false
 
-    // Subscribe to auth state changes for the lifetime of the provider
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+    // Defense-in-depth: any error in getSession or fetchProfile must
+    // still flip isLoading to false, otherwise AuthGate's spinner is
+    // stuck forever. The previous .then-chain swallowed rejections.
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (cancelled) return
         if (session?.user) {
           setUser(session.user)
           const profileData = await fetchProfile(session.user.id)
+          if (cancelled) return
           setProfile(profileData)
-        } else {
-          setUser(null)
-          setProfile(null)
         }
-        setIsLoading(false)
+      } catch {
+        // Fall through — render LoginPage instead of hanging.
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    })()
+
+    // Subscribe to auth state changes for the lifetime of the provider
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        try {
+          if (session?.user) {
+            setUser(session.user)
+            const profileData = await fetchProfile(session.user.id)
+            setProfile(profileData)
+          } else {
+            setUser(null)
+            setProfile(null)
+          }
+        } finally {
+          setIsLoading(false)
+        }
       }
     )
 
     return () => {
+      cancelled = true
       subscription.unsubscribe()
     }
   }, [])
