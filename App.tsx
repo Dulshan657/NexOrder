@@ -44,7 +44,9 @@ const App: React.FC = () => {
 
     // Subscribe to Supabase postgres_changes so orders / notifications /
     // products stay live without polling. RLS filters per-user automatically.
-    useRealtimeSubscriptions(currentUserUuid);
+    // Admin/Manager additionally subscribe to PO Inbox tables via a
+    // separate channel; reps + customers never receive those events.
+    useRealtimeSubscriptions({ userId: currentUserUuid, role: currentUser.role });
 
     // Auto-signout after 30 minutes of inactivity.
     useIdleTimeout({

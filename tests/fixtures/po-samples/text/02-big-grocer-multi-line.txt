@@ -1,0 +1,28 @@
+From: purchasing@big-grocer.com.au
+Subject: Weekly order - PO BG-2026-0521
+Date: Wed, 21 May 2026 14:11:00 +1000
+
+Hello,
+
+Please process the following order for delivery to our Sydney DC.
+We need this by Monday next week (26 May), morning slot.
+
+PO Number: BG-2026-0521
+Customer: Big Grocer Wholesale
+Delivery: Big Grocer DC, 88 Industry Park Drive, Banksmeadow NSW 2019
+Requested date: 26 May 2026
+
+Line items:
+  1. SKU-RED-TOM     Red Curry Paste              48 jars (1 carton x 48)
+  2. SKU-GRN-CRY     Green Curry Paste            24 jars
+  3. SKU-FISH-S      Fish Sauce 700ml             12 bottles
+  4. SKU-COC-CR      Coconut Cream 400ml          120 cans (5 cartons x 24)
+  5. SKU-SOY-LT      Light Soy 600ml              36 bottles
+  6. SKU-NOO-RIC     Rice Vermicelli 400g         72 packs
+
+Please confirm receipt and ETA.
+
+Best regards,
+Asha Patel
+Buyer, Big Grocer Wholesale
++61 2 9000 1111

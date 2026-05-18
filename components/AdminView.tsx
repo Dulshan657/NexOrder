@@ -8,7 +8,7 @@ import UserAdmin from './UserAdmin';
 import SupplierAdmin from './SupplierAdmin';
 import SettingsPanel from './SettingsPanel';
 import AccountsAgingTable from './AccountsAgingTable';
-import OrdersPage from './OrdersPage';
+import OrderImportPage from './OrderImportPage';
 import WalkInReviewTab from './admin/WalkInReviewTab';
 
 // Heavy admin views — lazy-loaded so rep/customer paths don't pull them in.
@@ -19,6 +19,9 @@ const HoReCaInsightsPanel = lazy(() => import('./HoReCaInsightsPanel'));
 const ScheduledVisitsAdmin = lazy(() => import('./admin/ScheduledVisitsAdmin'));
 const StockView = lazy(() => import('./StockView'));
 const AuditLogTab = lazy(() => import('./admin/AuditLogTab'));
+const EmailAccountsTab = lazy(() => import('./admin/EmailAccountsTab'));
+const POInboxTab = lazy(() => import('./admin/POInboxTab'));
+const POAliasesTab = lazy(() => import('./admin/POAliasesTab'));
 
 interface AdminViewProps {
     currentUser: User;
@@ -65,7 +68,7 @@ interface AdminViewProps {
     onSetAdminView?: (tab: AdminTab) => void;
 }
 
-export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Orders' | 'Promotions' | 'Accounts' | 'Stock' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'Purchase Orders' | 'Settings' | 'Audit Log';
+export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Order Import' | 'Promotions' | 'Accounts' | 'Stock' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'Purchase Orders' | 'PO Inbox' | 'PO Aliases' | 'Email Accounts' | 'Settings' | 'Audit Log';
 
 const AdminView: React.FC<AdminViewProps> = (props) => {
     const isDashboard = props.activeTab === 'Dashboard';
@@ -78,7 +81,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {props.activeTab === 'Products' && <ProductAdmin products={props.products} suppliers={props.suppliers} onAddProduct={props.onAddProduct} onUpdateProduct={props.onUpdateProduct} onDeleteProduct={props.onDeleteProduct} />}
                 {props.activeTab === 'HoReCa' && <HoReCaListView hoReCas={props.hoReCas} orders={props.allOrders} invoices={props.invoices} currentUser={props.currentUser} visits={props.visits} onAddHoReCa={props.onAddHoReCa} onUpdateHoReCa={props.onUpdateHoReCa} onDeleteHoReCa={props.onDeleteHoReCa} />}
                 {props.activeTab === 'HoReCa Insights' && <HoReCaInsightsPanel allOrders={props.allOrders} hoReCas={props.hoReCas} products={props.products} />}
-                {props.activeTab === 'Orders' && <OrdersPage orders={props.allOrders} hoReCas={props.hoReCas} currentUser={props.currentUser} onReorder={props.onReorder} onViewDetail={props.onViewOrderDetail} onUpdateStatus={props.onUpdateOrderStatus} onBack={() => {}} />}
+                {props.activeTab === 'Order Import' && <OrderImportPage orders={props.allOrders} hoReCas={props.hoReCas} currentUser={props.currentUser} onReorder={props.onReorder} onViewDetail={props.onViewOrderDetail} onUpdateStatus={props.onUpdateOrderStatus} onBack={() => {}} />}
                 {props.activeTab === 'Promotions' && props.currentUser.role === UserRole.ADMIN && props.promotions && props.onAddPromotion && props.onUpdatePromotion && props.onDeletePromotion && (
                     <PromotionAdmin promotions={props.promotions} products={props.products} hoReCas={props.hoReCas} users={props.users} onAdd={props.onAddPromotion} onUpdate={props.onUpdatePromotion} onDelete={props.onDeletePromotion} />
                 )}
@@ -103,6 +106,15 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                         onUpdateLogo={props.onUpdateLogo}
                         onUpdateHoReCa={props.onUpdateHoReCa}
                     />
+                )}
+                {props.activeTab === 'Email Accounts' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER) && (
+                    <EmailAccountsTab addToast={props.addToast} />
+                )}
+                {props.activeTab === 'PO Inbox' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER) && (
+                    <POInboxTab hoReCas={props.hoReCas} addToast={props.addToast} />
+                )}
+                {props.activeTab === 'PO Aliases' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER) && (
+                    <POAliasesTab hoReCas={props.hoReCas} products={props.products} />
                 )}
                 {props.activeTab === 'Audit Log' && props.currentUser.role === UserRole.ADMIN && (
                     <AuditLogTab users={props.users} />

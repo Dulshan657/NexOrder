@@ -115,6 +115,10 @@ export interface Order {
     deliveryTimeSlot?: DeliveryTimeSlot;
     verification?: OrderVerification;
     appliedPromotions?: AppliedPromotion[];
+    // Set by the data adapter when this order was created from an inbound email PO.
+    // Drives the "Email PO" source badge. Joined via pending_pos.approved_order_id;
+    // see lib/orderSource.ts and the approve-po Edge Function (Stream F).
+    inboundMessageId?: string;
 }
 
 export type InvoiceStatus = 'pending' | 'paid' | 'overdue';

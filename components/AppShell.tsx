@@ -83,6 +83,7 @@ import OrdersHistoryView from '../views/OrdersHistoryView';
 import RepDashboardView from '../views/RepDashboardView';
 import ShopView from '../views/ShopView';
 import NotificationBell from './NotificationBell';
+import POInboxHeaderBadge from './admin/POInboxHeaderBadge';
 import NotificationPanel from './NotificationPanel';
 import ProfileMenu from './auth/ProfileMenu';
 import HoReCaListView from './HoReCaListView';
@@ -125,6 +126,9 @@ import {
     Warehouse,
     UserPlus,
     ScrollText,
+    Mail,
+    Inbox,
+    BookOpen,
 } from 'lucide-react';
 import type { AppNotification } from '../types';
 
@@ -549,6 +553,11 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                         <img src="/assets/Nex-Order-no-bg-logo.png" alt="Nex Order" className="h-16 object-contain" />
                     </div>
                     <div className="flex items-center gap-2">
+                        {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER) && (
+                            <POInboxHeaderBadge
+                                onClick={() => setAdminView('PO Inbox')}
+                            />
+                        )}
                         <div className="relative">
                             <NotificationBell
                                 unreadCount={unreadNotificationCount}
@@ -597,7 +606,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 onClick={() => { setView('orders'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'orders' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <History className="w-5 h-5 mr-3" /> Orders
+                                <History className="w-5 h-5 mr-3" /> Order Import
                             </button>
                             <button
                                 onClick={() => { setView('accounts'); setIsSidebarOpen(false); }}
@@ -661,10 +670,10 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 <ShoppingBag className="w-5 h-5 mr-3" /> Shop
                             </button>
                             <button
-                                onClick={() => { setAdminView('Orders'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Orders' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                onClick={() => { setAdminView('Order Import'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Order Import' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <ShoppingCart className="w-5 h-5 mr-3" /> Orders
+                                <ShoppingCart className="w-5 h-5 mr-3" /> Order Import
                             </button>
                             <button
                                 onClick={() => { setAdminView('Accounts'); setIsSidebarOpen(false); }}
@@ -749,6 +758,24 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Settings' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <Settings className="w-5 h-5 mr-3" /> Settings
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Email Accounts'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Email Accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <Mail className="w-5 h-5 mr-3" /> Email Accounts
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('PO Inbox'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'PO Inbox' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <Inbox className="w-5 h-5 mr-3" /> PO Inbox
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('PO Aliases'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'PO Aliases' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <BookOpen className="w-5 h-5 mr-3" /> PO Aliases
                             </button>
                             {isAdmin && (
                                 <button

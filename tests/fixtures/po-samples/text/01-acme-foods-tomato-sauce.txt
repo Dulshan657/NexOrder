@@ -1,0 +1,19 @@
+From: orders@acmefoods.com
+Subject: PO 12345 - Tomato Sauce delivery
+Date: Tue, 18 May 2026 09:42:00 +1000
+
+Hi Nex Order team,
+
+Please supply the following items to our Pyrmont warehouse by
+Thursday 28 May 2026:
+
+  PO #: 12345
+  Customer: Acme Foods Pty Ltd
+  Ship to: Acme Foods DC, 123 Main St, Pyrmont NSW 2009
+
+  Line 1: Item 402 - Tomato Sauce, 12 pallets
+
+Thanks,
+Mei Chen
+Procurement, Acme Foods
++61 2 9000 0000

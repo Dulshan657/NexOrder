@@ -8,6 +8,7 @@ import type { ActionItemColumn, ActionItem } from './ActionItemsBoard';
 import TimePeriodToggle from './dashboard/TimePeriodToggle';
 import ExpandableSection from './dashboard/ExpandableSection';
 import SalesLineChart from './charts/SalesLineChart';
+import POInboxStatsTile from './admin/POInboxStatsTile';
 import HorizontalBarChart from './charts/HorizontalBarChart';
 import SalesTargetModal from './SalesTargetModal';
 import SegmentBadge from './SegmentBadge';
@@ -318,6 +319,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <KPICard icon={BarChart3} label="Avg Order Value" value={`$${metrics.aov.toFixed(2)}`} delta={metrics.aovDelta} />
         <KPICard icon={Wallet} label="Collection Rate" value={`${metrics.collectionRate.toFixed(0)}%`}
           subtitle={metrics.totalOverdue > 0 ? `$${metrics.totalOverdue.toFixed(2)} overdue` : undefined} />
+      </div>
+
+      {/* PO Inbox health tile — visible to Admin + Manager */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-1">
+          <POInboxStatsTile onNavigate={onNavigateTab ? () => onNavigateTab('PO Inbox') : undefined} />
+        </div>
       </div>
 
       {/* D. Sales Trend + Team Performance */}
