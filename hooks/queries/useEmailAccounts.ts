@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  disconnectEmailAccount,
   type EmailAccountProvider,
   type EmailAccountRow,
   listEmailAccounts,
@@ -28,6 +29,14 @@ export function usePauseEmailAccount() {
   return useMutation({
     mutationFn: ({ id, desiredStatus }: { id: string; desiredStatus: 'active' | 'paused' }) =>
       pauseEmailAccount(id, desiredStatus),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export function useDisconnectEmailAccount() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (emailAccountId: string) => disconnectEmailAccount(emailAccountId),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }

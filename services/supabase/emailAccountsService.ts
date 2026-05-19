@@ -5,7 +5,7 @@
 import { supabase } from '@/lib/supabase'
 
 export type EmailAccountProvider = 'gmail' | 'outlook'
-export type EmailAccountStatus = 'active' | 'paused' | 'error'
+export type EmailAccountStatus = 'active' | 'paused' | 'error' | 'signed_out'
 
 export interface EmailAccountRow {
   id: string
@@ -24,6 +24,10 @@ export async function listEmailAccounts(): Promise<EmailAccountRow[]> {
   const { data, error } = await supabase
     .from('email_accounts')
     .select('id, provider, email_address, status, watermark, last_sync_at, last_error, connected_by, created_at, updated_at')
+    // Hide signed-out rows from the admin list — they remain in the DB
+    // so historical inbound_messages keep their FK, but the operator
+    // reconnects via the top Connect button (which upserts the same row).
+    .neq('status', 'signed_out')
     .order('created_at', { ascending: false })
   if (error) throw new Error(`listEmailAccounts: ${error.message}`)
   return (data ?? []) as unknown as EmailAccountRow[]
@@ -75,4 +79,22 @@ export async function pauseEmailAccount(
   })
   if (error) throw new Error(`pauseEmailAccount: ${error.message}`)
   throwOnStructuredError(data, 'pause-email-account failed')
+}
+
+export interface DisconnectEmailAccountResponse {
+  provider: EmailAccountProvider
+  /** Present for Outlook only — Microsoft has no programmatic revoke. */
+  manualRevokeUrl?: string
+  alreadySignedOut?: boolean
+}
+
+export async function disconnectEmailAccount(
+  emailAccountId: string,
+): Promise<DisconnectEmailAccountResponse> {
+  const { data, error } = await supabase.functions.invoke('disconnect-email-account', {
+    body: { emailAccountId },
+  })
+  if (error) throw new Error(`disconnectEmailAccount: ${error.message}`)
+  throwOnStructuredError(data, 'disconnect-email-account failed')
+  return data as DisconnectEmailAccountResponse
 }
