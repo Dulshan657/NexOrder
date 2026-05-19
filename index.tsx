@@ -14,49 +14,93 @@ import ResetPasswordView, { isRecoveryUrl } from './components/auth/ResetPasswor
 // Popup OAuth completion handshake.
 //
 // When the operator clicks "Connect Gmail" on the Email Accounts tab we
-// open a popup pointed at Google's authorize URL. The provider redirects
-// to our Supabase callback, which redirects to
-// `https://nexorder.vercel.app/admin/email-accounts?connected=1` — but
-// the redirect now lands inside the *popup*, not the parent tab. Because
-// `lib/supabase.ts` has `persistSession: false`, the popup loads a fresh
-// app with no session and would otherwise show the LoginPage.
+// open a popup pointed at Google's authorize URL. The provider chain
+// (Google → Supabase callback → /admin/email-accounts?connected=1) lands
+// inside the *popup*. Because `lib/supabase.ts` has persistSession:false,
+// letting the SPA mount here would render the LoginPage inside the popup.
 //
-// We short-circuit that here: before React even mounts, detect "I'm in
-// a popup window that just finished an OAuth round-trip" and post the
-// result back to the opener tab (which still has its in-memory session
-// intact). The opener refreshes the mailbox list and toasts the result;
-// this popup closes itself.
+// Detect the OAuth completion via the URL params (always reliable — they
+// were written by the Supabase callback) and short-circuit React entirely.
 //
-// Falls through to normal rendering if `window.opener` is gone (popup
-// blocked → full-tab fallback), the URL doesn't carry the OAuth params,
-// or `window.close()` is denied by the browser (rare — only happens when
-// the popup wasn't opened via JS in the first place).
-(function handlePopupOAuthCompletion() {
-  if (typeof window === 'undefined' || !window.opener || window.opener === window) {
-    return;
+// Signaling channels, tried in order:
+//   1. BroadcastChannel  — same-origin pub/sub; works even after the
+//      cross-origin redirect chain severed `window.opener` (which it
+//      reliably does in Chrome's default COOP).
+//   2. window.opener.postMessage — fallback for the older browsers that
+//      don't expose BroadcastChannel.
+// Then attempt window.close(). If the browser denies it, replace the
+// document body with a "you can close this window" message so the user
+// never sees a stranded LoginPage.
+
+const oauthParams = (typeof window !== 'undefined')
+  ? new URLSearchParams(window.location.search)
+  : null;
+const oauthConnected = oauthParams?.get('connected');
+const oauthConnectError = oauthParams?.get('connect_error');
+// window.name survives the cross-origin redirect chain within the popup
+// and is the cleanest discriminator between "I'm the popup" vs "I'm the
+// main tab returning from the popup-blocked fallback". The parent sets
+// it to NEXORDER_OAUTH_POPUP_NAME in EmailAccountsTab::handleConnect.
+const isOAuthPopup = (typeof window !== 'undefined') && window.name === 'nexorder-po-oauth';
+const isOAuthPopupCompletion = isOAuthPopup && !!(oauthConnected || oauthConnectError);
+
+if (isOAuthPopupCompletion) {
+  const payload = {
+    type: 'nexorder-oauth-complete' as const,
+    connected: oauthConnected === '1',
+    error: oauthConnectError,
+    message: oauthParams!.get('message'),
+    accountId: oauthParams!.get('account_id'),
+  };
+
+  // 1) BroadcastChannel — survives severed openers; same-origin guarantees
+  //    only NexOrder windows in this browser can receive.
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      const channel = new BroadcastChannel('nexorder-oauth');
+      channel.postMessage(payload);
+      // Let the message drain before tearing down the channel. 50ms is
+      // sub-perceptual and well within the popup-close latency budget.
+      setTimeout(() => channel.close(), 50);
+    } catch {
+      // ignore — fall through to opener path
+    }
   }
-  const params = new URLSearchParams(window.location.search);
-  const connected = params.get('connected');
-  const connectError = params.get('connect_error');
-  if (!connected && !connectError) return;
-  try {
-    window.opener.postMessage(
-      {
-        type: 'nexorder-oauth-complete',
-        connected: connected === '1',
-        error: connectError,
-        message: params.get('message'),
-        accountId: params.get('account_id'),
-      },
-      window.location.origin,
-    );
-  } catch {
-    // Best-effort: if postMessage to opener fails (e.g., opener was
-    // already closed) just close the popup. The opener can re-fetch
-    // on its next focus event anyway.
+
+  // 2) Legacy opener path. Cross-origin redirects usually sever this,
+  //    but it's free to attempt and helps on browsers that maintain it.
+  if (window.opener && window.opener !== window) {
+    try {
+      window.opener.postMessage(payload, window.location.origin);
+    } catch {
+      // ignore
+    }
   }
+
+  // Attempt to close. Browsers only honor close() on windows opened via
+  // JS — which this one was — but the chain of cross-origin redirects
+  // can occasionally invalidate that. If close is denied, render a
+  // minimal "all done" UI in place of the React app.
   window.close();
-})();
+  setTimeout(() => {
+    if (!window.closed) {
+      document.body.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#1c1917;background:#fafaf9;">
+          <div style="text-align:center;padding:2rem;max-width:24rem;">
+            <h1 style="font-size:1.125rem;font-weight:600;margin:0 0 0.5rem;">
+              ${oauthConnected === '1' ? 'Mailbox connected' : 'Connection failed'}
+            </h1>
+            <p style="margin:0;color:#78716c;font-size:0.875rem;line-height:1.5;">
+              ${oauthConnected === '1'
+                ? "You can close this window — we've returned you to the Email Accounts tab."
+                : "You can close this window. The error has been reported to the Email Accounts tab."}
+            </p>
+          </div>
+        </div>
+      `;
+    }
+  }, 100);
+}
 
 installGlobalErrorHandlers();
 
@@ -78,23 +122,29 @@ function Root() {
   );
 }
 
-const rootElement = document.getElementById('root');
-if (!rootElement) {
-  throw new Error("Could not find root element to mount to");
-}
+// Skip the React mount when we're a popup completing OAuth — the handshake
+// above already wrote a minimal status UI (or closed the window). Rendering
+// the SPA on top would re-trigger AuthGate → LoginPage, the very thing this
+// whole machinery exists to avoid.
+if (!isOAuthPopupCompletion) {
+  const rootElement = document.getElementById('root');
+  if (!rootElement) {
+    throw new Error("Could not find root element to mount to");
+  }
 
-const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <ErrorBoundary label="Application" fallback={FullPageErrorFallback}>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <ToastProvider>
-            <Root />
-            <ToastContainer />
-          </ToastProvider>
-        </AuthProvider>
-      </QueryClientProvider>
-    </ErrorBoundary>
-  </React.StrictMode>
-);
+  const root = ReactDOM.createRoot(rootElement);
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary label="Application" fallback={FullPageErrorFallback}>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <ToastProvider>
+              <Root />
+              <ToastContainer />
+            </ToastProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </ErrorBoundary>
+    </React.StrictMode>
+  );
+}

@@ -99,16 +99,14 @@ const EmailAccountsTab: React.FC<EmailAccountsTabProps> = ({ addToast }) => {
       const { authorizeUrl } = await startOAuth.mutateAsync(provider)
 
       // Open the OAuth flow in a popup so the parent tab keeps its
-      // in-memory NexOrder session. Without this, the redirect chain
-      // (provider → Supabase callback → /admin/email-accounts) lands
-      // back inside this tab and the persistSession:false config in
-      // lib/supabase.ts means the operator gets the LoginPage instead
-      // of their dashboard. index.tsx detects "I'm in a popup that just
-      // finished OAuth" and posts the result back to us.
+      // in-memory NexOrder session. The window name 'nexorder-po-oauth'
+      // is the discriminator index.tsx uses to know "I'm a popup that
+      // just finished OAuth" vs "I'm the main tab returning from the
+      // popup-blocked fallback".
       const popup = window.open(
         authorizeUrl,
         'nexorder-po-oauth',
-        'width=520,height=720,popup=yes,noopener=no',
+        'width=520,height=720,popup=yes',
       )
       if (!popup) {
         // Popup blocked. Fall back to full-tab navigation — the operator
@@ -121,15 +119,19 @@ const EmailAccountsTab: React.FC<EmailAccountsTabProps> = ({ addToast }) => {
         return
       }
 
-      // Listen for the success/failure message from the popup. We must
-      // origin-check every message because anything on the page can
-      // post arbitrary data here.
+      // Signal channels the popup will use to tell us it's done.
+      // BroadcastChannel is the primary path because it works even after
+      // the cross-origin redirect chain (Google → Supabase → Vercel)
+      // severs window.opener. postMessage is kept as a belt-and-suspenders
+      // fallback for older browsers without BroadcastChannel.
       const expectedOrigin = window.location.origin
-      const handleMessage = (event: MessageEvent) => {
-        if (event.origin !== expectedOrigin) return
-        const data = event.data as
-          | { type?: string; connected?: boolean; error?: string | null; message?: string | null }
-          | null
+      type OAuthCompleteMessage = {
+        type?: string
+        connected?: boolean
+        error?: string | null
+        message?: string | null
+      }
+      const onComplete = (data: OAuthCompleteMessage) => {
         if (!data || data.type !== 'nexorder-oauth-complete') return
         cleanup()
         if (data.connected) {
@@ -140,10 +142,22 @@ const EmailAccountsTab: React.FC<EmailAccountsTabProps> = ({ addToast }) => {
         }
       }
 
+      let channel: BroadcastChannel | null = null
+      if (typeof BroadcastChannel !== 'undefined') {
+        channel = new BroadcastChannel('nexorder-oauth')
+        channel.addEventListener('message', e => onComplete(e.data as OAuthCompleteMessage))
+      }
+
+      const handleMessage = (event: MessageEvent) => {
+        if (event.origin !== expectedOrigin) return
+        onComplete(event.data as OAuthCompleteMessage)
+      }
+      window.addEventListener('message', handleMessage)
+
       // If the operator closes the popup without completing OAuth we
       // need to release the busy spinner. Poll until the popup is gone,
-      // and also bound the wait at 5 minutes so a forgotten popup
-      // doesn't pin the interval handler forever.
+      // and bound the wait at 5 minutes so a forgotten popup doesn't
+      // pin the interval handler forever.
       const startedAt = Date.now()
       const closedPoll = window.setInterval(() => {
         if (popup.closed) {
@@ -158,9 +172,12 @@ const EmailAccountsTab: React.FC<EmailAccountsTabProps> = ({ addToast }) => {
       function cleanup() {
         window.removeEventListener('message', handleMessage)
         window.clearInterval(closedPoll)
+        if (channel) {
+          channel.close()
+          channel = null
+        }
         setConnecting(null)
       }
-      window.addEventListener('message', handleMessage)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       addToast?.(`Could not start OAuth flow: ${message}`, 'error')
