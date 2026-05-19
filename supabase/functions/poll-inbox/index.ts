@@ -331,7 +331,10 @@ async function persistInboundMessage(
 
   // 2) Upload original payload + attachments before inserting the row, so
   //    a Storage failure doesn't leave us with a DB pointer to nothing.
-  await uploadJson(serviceClient, originalPath(prefix), envelope.rawPayload)
+  //    We persist the *parsed* envelope (bodyText/bodyHtml/attachments) —
+  //    extract-po reads those fields. rawPayload is nested inside for
+  //    forensic re-parsing if MIME logic changes later.
+  await uploadJson(serviceClient, originalPath(prefix), envelope)
   const attachments = await loadAttachments()
   let i = 0
   for (const att of attachments) {

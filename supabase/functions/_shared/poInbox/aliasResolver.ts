@@ -6,8 +6,14 @@
 //     1. exact `po_customer_aliases.source_type='sender_email'` match
 //     2. exact `po_customer_aliases.source_type='sender_domain'` match
 //     3. exact (normalized) `po_customer_aliases.source_type='po_text'` match
-//     4. AI fuzzy match against `horecas`; auto-create alias on ≥0.9
-//     5. NULL — pending_po lands in needs_review
+//     4. exact `horecas.contact_email = lower(sender_email)` lookup
+//        — deterministic; the contact_email column is user-curated on the
+//        HoReCa record (added in migration 00021), so a hit is as
+//        authoritative as an alias-table hit.  Sits AFTER the alias-table
+//        steps so an operator-curated alias still overrides a stale
+//        contact_email on the HoReCa.
+//     5. AI fuzzy match against `horecas`; auto-create alias on ≥0.9
+//     6. NULL — pending_po lands in needs_review
 //
 //   Product  (per line, scoped to the resolved customer)
 //     1. exact `po_product_aliases(horeca_id, source_code)`
@@ -81,6 +87,7 @@ export type AliasMatchSource =
   | 'sender_email_alias'
   | 'sender_domain_alias'
   | 'po_text_alias'
+  | 'horeca_contact_email'
   | 'ai_fuzzy_match'
   | 'product_code_alias'
   | 'product_desc_alias'
@@ -150,7 +157,14 @@ export async function resolveCustomer(
     if (hit) return deterministic(hit.horeca_id, 'po_text_alias')
   }
 
-  // 4. AI fuzzy match. Only fire when there is a customer name to match
+  // 4. horecas.contact_email exact match (lower-cased). Deterministic and
+  //    auditable: the column is user-curated on the HoReCa record.
+  if (senderEmail) {
+    const horecaId = await fetchHorecaByContactEmail(supa, senderEmail)
+    if (horecaId !== null) return deterministic(horecaId, 'horeca_contact_email')
+  }
+
+  // 5. AI fuzzy match. Only fire when there is a customer name to match
   //    against — sender-only matching is best left to the alias table.
   if (!normName) return missing()
 
@@ -234,6 +248,29 @@ async function fetchCustomerAlias(
     return null
   }
   return result.data
+}
+
+/**
+ * Look up a HoReCa whose curated contact_email matches the inbound sender.
+ * Returns the HoReCa id on a unique hit, null otherwise. Note: the migration
+ * 00021 index is on `lower(contact_email)`, and senderEmail is already
+ * lower-cased by normalizeEmail() upstream, so an .eq() comparison hits the
+ * index cleanly.
+ */
+async function fetchHorecaByContactEmail(
+  supa: SupabaseLike,
+  senderEmail: string,
+): Promise<number | null> {
+  const result = await (supa
+    .from('horecas')
+    .select('id') as unknown as SupabaseSelectBuilder<{ id: number }>)
+    .eq('contact_email', senderEmail)
+    .maybeSingle()
+  if (result.error) {
+    console.warn('[aliasResolver] horeca contact_email lookup failed:', result.error.message)
+    return null
+  }
+  return result.data?.id ?? null
 }
 
 async function fetchHoRecaCatalog(supa: SupabaseLike): Promise<HoRecaRow[]> {

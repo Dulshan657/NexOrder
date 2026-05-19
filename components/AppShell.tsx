@@ -1283,7 +1283,12 @@ const AppShell: React.FC<AppShellProps> = props => {
     const [view, setView] = useState<
         'ordering' | 'orders' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits'
     >(currentUser.role === UserRole.CUSTOMER ? 'ordering' : 'dashboard');
-    const [adminView, setAdminView] = useState<AdminTab>('Dashboard');
+    const [adminView, setAdminView] = useState<AdminTab>(() => {
+        if (typeof window === 'undefined') return 'Dashboard';
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('connected') || params.has('connect_error')) return 'Email Accounts';
+        return 'Dashboard';
+    });
     const [orderingTab, setOrderingTab] = useState<OrderingTabKey>('catalogue');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [searchQuery, setSearchQuery] = useState('');

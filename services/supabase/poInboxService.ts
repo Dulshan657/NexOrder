@@ -183,12 +183,33 @@ export async function getPendingPoDetail(id: string): Promise<PendingPoDetailRow
   }
 }
 
+export interface ApproveDeliveryAddress {
+  street?: string
+  city?: string | null
+  postcode?: string | null
+  country?: string | null
+  recipient_name?: string | null
+  /** UUID of an existing horeca_addresses row to copy from. */
+  source_address_id?: string | null
+  /** Default true. When false, the typed address is used for this order only
+   * and NOT appended to the HoReCa's address book. */
+  save_to_horeca_address_book?: boolean
+}
+
 export interface ApproveOverrides {
   horecaId?: number
-  items?: Array<{ po_line_index: number; product_id: number; quantity: number; pack_size?: number | null }>
+  /** Replaces the line set entirely. Lines with po_line_index=null are
+   *  operator-added (no alias write-back). */
+  lines?: Array<{
+    po_line_index: number | null
+    product_id: number
+    quantity: number
+    pack_size?: number | null
+  }>
   notes?: string | null
   deliveryDate?: string | null
   deliveryTimeSlot?: 'Morning (8am-12pm)' | 'Afternoon (12pm-4pm)' | 'Evening (4pm-8pm)' | null
+  deliveryAddress?: ApproveDeliveryAddress | null
 }
 
 export interface ApprovePoResponse {
@@ -208,10 +229,11 @@ export async function approvePo(
       pendingPoId,
       mode: 'human',
       overrideHorecaId: overrides.horecaId,
-      overrideItems: overrides.items,
+      overrideLines: overrides.lines,
       overrideNotes: overrides.notes,
       overrideDeliveryDate: overrides.deliveryDate,
       overrideDeliveryTimeSlot: overrides.deliveryTimeSlot,
+      overrideDeliveryAddress: overrides.deliveryAddress,
     },
   })
   if (error) throw new Error(`approvePo: ${error.message}`)

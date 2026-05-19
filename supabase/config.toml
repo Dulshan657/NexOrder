@@ -1,0 +1,38 @@
+# Per-function deploy settings.
+#
+# These functions disable the platform JWT gateway and do their own auth
+# in-function. They're called by callers that cannot send a Supabase JWT
+# (pg_cron, OAuth providers) OR are called Function->Function using the
+# service-role key — which after the 2026-05 key migration is no longer
+# JWT-format (sb_secret_*), so the platform gateway would 401 it.
+#
+# - poll-inbox            — pg_cron sends POLL_INBOX_CRON_TOKEN (constant-
+#                           time compared in the function)
+# - gmail-oauth-callback  — Google calls this directly after consent; uses
+#                           the OAuth `state` parameter (CSRF + PKCE) for
+#                           auth
+# - outlook-oauth-callback — same, but for Microsoft Graph
+# - extract-po            — invoked by poll-inbox with service-role bearer;
+#                           verified via isServiceRoleBearer (constant-time)
+# - approve-po            — invoked by extract-po (auto-approve path) with
+#                           service-role bearer; also serves human-approval
+#                           calls with a user JWT — both checks live in the
+#                           function body
+#
+# All other functions keep the default verify_jwt = true so callers must
+# supply a valid Supabase auth JWT.
+
+[functions.poll-inbox]
+verify_jwt = false
+
+[functions.gmail-oauth-callback]
+verify_jwt = false
+
+[functions.outlook-oauth-callback]
+verify_jwt = false
+
+[functions.extract-po]
+verify_jwt = false
+
+[functions.approve-po]
+verify_jwt = false

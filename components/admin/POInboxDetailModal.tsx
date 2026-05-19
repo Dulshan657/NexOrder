@@ -11,20 +11,33 @@
 // nothing extra needs to happen here for the learning loop.
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, FileText, Loader2, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileText,
+  Loader2,
+  MapPin,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react'
 import {
   useApprovePo,
   usePendingPoDetail,
   useRejectPo,
 } from '@/hooks/queries/usePendingPos'
 import { useProducts } from '@/hooks/queries/useProducts'
+import { useHorecaAddresses } from '@/hooks/queries/useHorecaAddresses'
 import { getPoDocumentUrl } from '@/services/supabase/poInboxService'
+import type { ApproveDeliveryAddress } from '@/services/supabase/poInboxService'
 import { confidenceBadgeStyle, statusBadge } from './poInboxFormat'
+import ProductSearchDropdown from './ProductSearchDropdown'
 import type {
   ExtractedPoLine,
   MatchedItem,
   PendingPoDetailRow,
 } from '@/services/supabase/poInboxService'
+import type { HorecaAddressRow } from '@/services/supabase/horecaAddressService'
 import type { HoReCa, Product } from '../../types'
 
 interface POInboxDetailModalProps {
@@ -37,7 +50,8 @@ interface POInboxDetailModalProps {
 type DeliveryTimeSlot = 'Morning (8am-12pm)' | 'Afternoon (12pm-4pm)' | 'Evening (4pm-8pm)'
 
 interface EditableLine {
-  po_line_index: number
+  /** Index in the original extracted_po.lines array. null for operator-added lines. */
+  po_line_index: number | null
   productId: number | null
   quantity: number
   packSize: number | null
@@ -45,6 +59,24 @@ interface EditableLine {
   rawDescription: string | null
   rawQuantity: number
   rawUom: string | null
+  /** Per-line confidence from extract-po's matched_items (only set for AI lines). */
+  confidence: number | null
+}
+
+interface NewAddressForm {
+  street: string
+  city: string
+  postcode: string
+  country: string
+  recipient_name: string
+}
+
+const EMPTY_ADDRESS_FORM: NewAddressForm = {
+  street: '',
+  city: '',
+  postcode: '',
+  country: '',
+  recipient_name: '',
 }
 
 const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
@@ -66,11 +98,27 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
   const [rejectionReason, setRejectionReason] = useState<string>('')
   const [showRejectForm, setShowRejectForm] = useState(false)
 
+  // Delivery address state. addressMode='saved' uses selectedAddressId
+  // (from horeca_addresses); addressMode='new' uses newAddress; on Approve
+  // we shape an ApproveDeliveryAddress out of whichever is active.
+  const [addressMode, setAddressMode] = useState<'saved' | 'new'>('saved')
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null)
+  const [newAddress, setNewAddress] = useState<NewAddressForm>(EMPTY_ADDRESS_FORM)
+  const [saveToBook, setSaveToBook] = useState<boolean>(true)
+
   const [docUrl, setDocUrl] = useState<string | null>(null)
   const [docError, setDocError] = useState<string | null>(null)
+  const [bodyText, setBodyText] = useState<string | null>(null)
+  const [bodyHtml, setBodyHtml] = useState<string | null>(null)
+  const [bodyLoading, setBodyLoading] = useState(false)
 
   const productsQuery = useProducts()
   const products: Product[] = productsQuery.data ?? []
+
+  // Address book for the currently-selected HoReCa. Refetches when the
+  // operator switches HoReCa via the customer picker.
+  const addressesQuery = useHorecaAddresses(horecaId)
+  const addresses: HorecaAddressRow[] = addressesQuery.data ?? []
 
   useEffect(() => {
     if (!detailQuery.data) return
@@ -83,18 +131,68 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
     })
   }, [detailQuery.data])
 
+  // Seed the address picker when the HoReCa's saved addresses load.
+  // Default to the HoReCa's is_default=true row when present; otherwise
+  // the first listed address. Operator can switch via the picker. We do
+  // NOT clobber a selection the user has explicitly made — keyed on the
+  // current selection being empty.
+  useEffect(() => {
+    if (addressMode !== 'saved') return
+    if (selectedAddressId !== null) return
+    if (addresses.length === 0) return
+    const def = addresses.find(a => a.is_default) ?? addresses[0]
+    setSelectedAddressId(def.id)
+  }, [addresses, addressMode, selectedAddressId])
+
+  // Switching HoReCa wipes the picked address — addresses belong to one
+  // HoReCa, so a stale selection from the previous customer is wrong.
+  useEffect(() => {
+    setSelectedAddressId(null)
+    setAddressMode('saved')
+    setNewAddress(EMPTY_ADDRESS_FORM)
+    setSaveToBook(true)
+  }, [horecaId])
+
   // Fetch document signed URL once we know which kind of document to show.
+  // Text-body POs: fetch original.json (the parsed envelope) and surface
+  //   bodyText / bodyHtml so the operator can read the source email.
+  // Attachment POs: fetch the binary attachment as a signed URL for an
+  //   iframe / img preview.
   useEffect(() => {
     if (!detailQuery.data) return
     const format = detailQuery.data.extracted_po.source?.format ?? 'text'
-    // Text-body POs have no attachment to render. Skip the signed-URL
-    // fetch and let DocumentPane show an explanatory message.
-    if (format === 'text' || !detailQuery.data.extracted_po.source?.original_filename) {
-      setDocUrl(null)
-      setDocError(null)
-      return
-    }
+    const isTextBody = format === 'text' || !detailQuery.data.extracted_po.source?.original_filename
     let cancelled = false
+
+    if (isTextBody) {
+      setBodyLoading(true)
+      setDocError(null)
+      setBodyText(null)
+      setBodyHtml(null)
+      getPoDocumentUrl({ pendingPoId: detailQuery.data.id, kind: 'original' })
+        .then(async r => {
+          const resp = await fetch(r.signedUrl)
+          if (!resp.ok) throw new Error(`fetch envelope: ${resp.status}`)
+          // original.json is the parsed envelope: { bodyText, bodyHtml, ... }
+          const envelope = (await resp.json()) as {
+            bodyText?: string | null
+            bodyHtml?: string | null
+          }
+          if (cancelled) return
+          setBodyText(envelope.bodyText ?? null)
+          setBodyHtml(envelope.bodyHtml ?? null)
+        })
+        .catch(err => {
+          if (!cancelled) setDocError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          if (!cancelled) setBodyLoading(false)
+        })
+      return () => {
+        cancelled = true
+      }
+    }
+
     getPoDocumentUrl({
       pendingPoId: detailQuery.data.id,
       kind: 'attachment',
@@ -119,22 +217,47 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
 
   const allLinesResolved = lines.every(l => l.productId != null)
   const allQuantitiesPositive = lines.every(l => Number.isFinite(l.quantity) && l.quantity > 0)
+  const addressOk =
+    addressMode === 'saved'
+      ? selectedAddressId != null
+      : newAddress.street.trim().length > 0
   const canApprove =
     horecaId != null
     && lines.length > 0
     && allLinesResolved
     && allQuantitiesPositive
+    && addressOk
     && !approveMutation.isPending
   const detail = detailQuery.data
 
   const handleApprove = async () => {
     if (!detail) return
+    // Build the delivery-address override. Saved-mode passes the picked
+    // address row's id; new-mode passes the form fields plus the
+    // save-to-book preference.
+    let deliveryAddress: ApproveDeliveryAddress | null = null
+    if (addressMode === 'saved' && selectedAddressId) {
+      deliveryAddress = { source_address_id: selectedAddressId }
+    } else if (addressMode === 'new') {
+      const street = newAddress.street.trim()
+      if (street) {
+        deliveryAddress = {
+          street,
+          city: newAddress.city.trim() || null,
+          postcode: newAddress.postcode.trim() || null,
+          country: newAddress.country.trim() || null,
+          recipient_name: newAddress.recipient_name.trim() || null,
+          save_to_horeca_address_book: saveToBook,
+        }
+      }
+    }
+
     try {
       const result = await approveMutation.mutateAsync({
         pendingPoId,
         overrides: {
           horecaId: horecaId ?? undefined,
-          items: lines.map(l => ({
+          lines: lines.map(l => ({
             po_line_index: l.po_line_index,
             product_id: l.productId as number,
             quantity: l.quantity,
@@ -143,6 +266,7 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
           notes: notes.trim() || null,
           deliveryDate: deliveryDate || null,
           deliveryTimeSlot: deliveryTimeSlot || null,
+          deliveryAddress,
         },
       })
       const orderRef = result.orderId ?? '(no order id)'
@@ -152,6 +276,41 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       const msg = err instanceof Error ? err.message : String(err)
       addToast?.(`Approve failed: ${msg}`, 'error')
     }
+  }
+
+  const addLine = () => {
+    setLines([
+      ...lines,
+      {
+        po_line_index: null,
+        productId: null,
+        quantity: 1,
+        packSize: null,
+        rawCode: null,
+        rawDescription: null,
+        rawQuantity: 1,
+        rawUom: null,
+        confidence: null,
+      },
+    ])
+  }
+
+  const removeLine = (idx: number) => {
+    setLines(lines.filter((_, i) => i !== idx))
+  }
+
+  const useExtractedAddress = () => {
+    const shipTo = detail?.extracted_po.ship_to
+    if (!shipTo) return
+    setAddressMode('new')
+    setNewAddress({
+      street: shipTo.street ?? '',
+      city: shipTo.city ?? '',
+      postcode: '',
+      country: '',
+      recipient_name: shipTo.name ?? '',
+    })
+    setSaveToBook(true)
   }
 
   const handleReject = async () => {
@@ -195,7 +354,14 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
           </div>
         ) : (
           <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden">
-            <DocumentPane url={docUrl} error={docError} detail={detail} />
+            <DocumentPane
+              url={docUrl}
+              error={docError}
+              detail={detail}
+              bodyText={bodyText}
+              bodyHtml={bodyHtml}
+              bodyLoading={bodyLoading}
+            />
             <FormPane
               detail={detail}
               hoReCas={hoReCas}
@@ -205,12 +371,25 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
               setHorecaId={setHorecaId}
               lines={lines}
               setLines={setLines}
+              onAddLine={addLine}
+              onRemoveLine={removeLine}
               deliveryDate={deliveryDate}
               setDeliveryDate={setDeliveryDate}
               deliveryTimeSlot={deliveryTimeSlot}
               setDeliveryTimeSlot={setDeliveryTimeSlot}
               notes={notes}
               setNotes={setNotes}
+              addresses={addresses}
+              addressesLoading={addressesQuery.isLoading}
+              addressMode={addressMode}
+              setAddressMode={setAddressMode}
+              selectedAddressId={selectedAddressId}
+              setSelectedAddressId={setSelectedAddressId}
+              newAddress={newAddress}
+              setNewAddress={setNewAddress}
+              saveToBook={saveToBook}
+              setSaveToBook={setSaveToBook}
+              useExtractedAddress={useExtractedAddress}
             />
           </div>
         )}
@@ -265,6 +444,7 @@ export function buildEditableLines(
       rawDescription: line.description_raw,
       rawQuantity: line.quantity,
       rawUom: line.uom,
+      confidence: typeof match?.confidence === 'number' ? match.confidence : null,
     }
   })
 }
@@ -317,24 +497,61 @@ interface DocumentPaneProps {
   url: string | null
   error: string | null
   detail: PendingPoDetailRow
+  bodyText: string | null
+  bodyHtml: string | null
+  bodyLoading: boolean
 }
 
-const DocumentPane: React.FC<DocumentPaneProps> = ({ url, error, detail }) => {
+const DocumentPane: React.FC<DocumentPaneProps> = ({
+  url,
+  error,
+  detail,
+  bodyText,
+  bodyHtml,
+  bodyLoading,
+}) => {
   const format = detail.extracted_po.source?.format ?? 'text'
   const isTextBody = format === 'text' || !detail.extracted_po.source?.original_filename
+  const hasAnyBody = (bodyText && bodyText.trim().length > 0) || (bodyHtml && bodyHtml.trim().length > 0)
 
   return (
     <div className="bg-stone-100 border-b md:border-b-0 md:border-r border-stone-200 flex flex-col">
       <div className="px-3 py-2 text-xs text-stone-500 border-b border-stone-200 bg-white flex items-center gap-2">
         <FileText className="w-3 h-3" />
-        Original ({format.toUpperCase()})
+        Original ({isTextBody ? 'EMAIL BODY' : format.toUpperCase()})
       </div>
       <div className="flex-1 overflow-auto">
         {isTextBody ? (
-          <div className="p-6 text-sm text-stone-600">
-            This PO was extracted from the email body — there is no attachment to display.
-            The fields on the right reflect what the AI parsed from the body text.
-          </div>
+          bodyLoading ? (
+            <div className="p-6 flex items-center justify-center text-stone-500">
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading email…
+            </div>
+          ) : error ? (
+            <div className="p-6 text-sm text-rose-700 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" /> {error}
+            </div>
+          ) : !hasAnyBody ? (
+            <div className="p-6 text-sm text-stone-600">
+              This PO was extracted from the email body, but no body text or HTML was found
+              in the archived envelope. The fields on the right reflect what the AI parsed.
+            </div>
+          ) : bodyText && bodyText.trim().length > 0 ? (
+            <pre className="p-6 text-sm text-stone-800 whitespace-pre-wrap break-words font-sans">
+              {bodyText}
+            </pre>
+          ) : (
+            // HTML-only emails: render inside a fully-locked iframe via
+            // srcDoc — content originated from an inbound email and MUST
+            // be treated as attacker-controlled. sandbox="" disables
+            // scripts, forms, popups, same-origin, and top-navigation.
+            <iframe
+              srcDoc={bodyHtml ?? ''}
+              title="PO email body"
+              sandbox=""
+              referrerPolicy="no-referrer"
+              className="w-full h-full min-h-[60vh] bg-white"
+            />
+          )
         ) : error ? (
           <div className="p-6 text-sm text-rose-700 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" /> {error}
@@ -387,12 +604,25 @@ interface FormPaneProps {
   setHorecaId: (v: number | null) => void
   lines: EditableLine[]
   setLines: (v: EditableLine[]) => void
+  onAddLine: () => void
+  onRemoveLine: (idx: number) => void
   deliveryDate: string
   setDeliveryDate: (v: string) => void
   deliveryTimeSlot: DeliveryTimeSlot | ''
   setDeliveryTimeSlot: (v: DeliveryTimeSlot | '') => void
   notes: string
   setNotes: (v: string) => void
+  addresses: HorecaAddressRow[]
+  addressesLoading: boolean
+  addressMode: 'saved' | 'new'
+  setAddressMode: (v: 'saved' | 'new') => void
+  selectedAddressId: string | null
+  setSelectedAddressId: (v: string | null) => void
+  newAddress: NewAddressForm
+  setNewAddress: (v: NewAddressForm) => void
+  saveToBook: boolean
+  setSaveToBook: (v: boolean) => void
+  useExtractedAddress: () => void
 }
 
 const FormPane: React.FC<FormPaneProps> = props => {
@@ -403,11 +633,31 @@ const FormPane: React.FC<FormPaneProps> = props => {
 
   const readOnly = props.detail.status !== 'needs_review'
 
+  // Per-field confidence from extract-po (Record<string, unknown> on the
+  // row — narrow with a helper before reading).
+  const perField: Record<string, unknown> =
+    (props.detail.confidence_fields as { per_field?: Record<string, unknown> })?.per_field ?? {}
+  const customerMatch =
+    (props.detail.confidence_fields as { customer_match?: string })?.customer_match ?? null
+
+  const extractedPo = props.detail.extracted_po
+
   return (
     <div className="flex flex-col overflow-auto">
       <div className="p-4 sm:p-5 space-y-4">
+        {/* PO header chips — surface fields buried in the JSONB */}
+        <POHeaderChips
+          poNumber={extractedPo.po_number}
+          orderDate={extractedPo.order_date}
+          requestedDate={extractedPo.requested_date}
+        />
+
+        {/* Customer */}
         <div>
-          <label className="block text-xs font-medium text-stone-600 mb-1">Customer</label>
+          <div className="flex items-baseline justify-between mb-1">
+            <label className="block text-xs font-medium text-stone-600">Customer</label>
+            <ConfidenceDot value={readConfidence(perField, 'customer_name_raw')} />
+          </div>
           <select
             value={props.horecaId ?? ''}
             onChange={e => props.setHorecaId(e.target.value ? Number(e.target.value) : null)}
@@ -421,44 +671,95 @@ const FormPane: React.FC<FormPaneProps> = props => {
               </option>
             ))}
           </select>
-          {props.detail.extracted_po.customer_name_raw && (
-            <p className="mt-1 text-xs text-stone-500">
-              Extracted as: <em>{props.detail.extracted_po.customer_name_raw}</em>
-            </p>
-          )}
+          <CustomerMatchHint
+            matchSource={customerMatch}
+            extractedName={extractedPo.customer_name_raw}
+            picked={props.horecaId != null}
+          />
         </div>
 
+        {/* Delivery date + slot */}
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-xs">
+            <span className="block text-stone-600 mb-0.5 flex items-center gap-1.5">
+              Delivery date
+              <ConfidenceDot value={readConfidence(perField, 'requested_date')} />
+            </span>
+            <input
+              type="date"
+              value={props.deliveryDate}
+              onChange={e => props.setDeliveryDate(e.target.value)}
+              disabled={readOnly}
+              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+            />
+          </label>
+          <label className="text-xs">
+            <span className="block text-stone-600 mb-0.5">Time slot</span>
+            <select
+              value={props.deliveryTimeSlot}
+              onChange={e => props.setDeliveryTimeSlot(e.target.value as DeliveryTimeSlot | '')}
+              disabled={readOnly}
+              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+            >
+              <option value="">—</option>
+              <option value="Morning (8am-12pm)">Morning (8am-12pm)</option>
+              <option value="Afternoon (12pm-4pm)">Afternoon (12pm-4pm)</option>
+              <option value="Evening (4pm-8pm)">Evening (4pm-8pm)</option>
+            </select>
+          </label>
+        </div>
+
+        {/* Delivery address — book + new-address form */}
+        <DeliveryAddressBlock {...props} readOnly={readOnly} perField={perField} />
+
+        {/* Line items — picker, qty, pack, confidence, delete */}
         <fieldset>
-          <legend className="text-xs font-medium text-stone-600 mb-1">Line items</legend>
+          <legend className="text-xs font-medium text-stone-600 mb-1 flex items-center gap-2">
+            <span>Line items</span>
+            <span className="text-stone-400 font-normal">({props.lines.length})</span>
+          </legend>
           <ul className="space-y-2">
             {props.lines.map((line, idx) => (
               <li
-                key={line.po_line_index}
+                key={`${idx}-${line.po_line_index ?? 'new'}`}
                 className="rounded-lg border border-stone-200 bg-stone-50 p-3 space-y-2"
               >
-                <div className="text-[11px] text-stone-500">
-                  <span className="font-mono">{line.rawCode ?? '(no code)'}</span> ·{' '}
-                  {line.rawDescription ?? '(no description)'}
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <div className="text-stone-500 truncate min-w-0">
+                    {line.po_line_index === null ? (
+                      <span className="text-stone-400 italic">(operator-added line)</span>
+                    ) : (
+                      <>
+                        <span className="font-mono">{line.rawCode ?? '(no code)'}</span> ·{' '}
+                        {line.rawDescription ?? '(no description)'}
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <LineConfidenceBadge value={line.confidence} />
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => props.onRemoveLine(idx)}
+                        className="p-1 rounded text-stone-400 hover:text-rose-600 hover:bg-rose-50"
+                        aria-label="Remove line"
+                        title="Remove line"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <label className="col-span-2 sm:col-span-2 text-xs">
+                  <div className="col-span-2 sm:col-span-2 text-xs">
                     <span className="block text-stone-600 mb-0.5">Product</span>
-                    <select
-                      value={line.productId ?? ''}
-                      onChange={e =>
-                        updateLine(idx, { productId: e.target.value ? Number(e.target.value) : null })
-                      }
+                    <ProductSearchDropdown
+                      products={props.products}
+                      selectedProductId={line.productId}
+                      onSelect={pid => updateLine(idx, { productId: pid })}
                       disabled={readOnly}
-                      className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
-                    >
-                      <option value="">— pick product —</option>
-                      {props.products.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.sku} · {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    />
+                  </div>
                   <label className="text-xs">
                     <span className="block text-stone-600 mb-0.5">Qty</span>
                     <input
@@ -496,34 +797,17 @@ const FormPane: React.FC<FormPaneProps> = props => {
               </li>
             ))}
           </ul>
-        </fieldset>
-
-        <div className="grid grid-cols-2 gap-3">
-          <label className="text-xs">
-            <span className="block text-stone-600 mb-0.5">Delivery date</span>
-            <input
-              type="date"
-              value={props.deliveryDate}
-              onChange={e => props.setDeliveryDate(e.target.value)}
-              disabled={readOnly}
-              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
-            />
-          </label>
-          <label className="text-xs">
-            <span className="block text-stone-600 mb-0.5">Time slot</span>
-            <select
-              value={props.deliveryTimeSlot}
-              onChange={e => props.setDeliveryTimeSlot(e.target.value as DeliveryTimeSlot | '')}
-              disabled={readOnly}
-              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={props.onAddLine}
+              className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-stone-300 bg-white px-3 py-2 text-xs text-stone-600 hover:border-nexgen-blue hover:text-nexgen-blue transition-colors"
             >
-              <option value="">—</option>
-              <option value="Morning (8am-12pm)">Morning (8am-12pm)</option>
-              <option value="Afternoon (12pm-4pm)">Afternoon (12pm-4pm)</option>
-              <option value="Evening (4pm-8pm)">Evening (4pm-8pm)</option>
-            </select>
-          </label>
-        </div>
+              <Plus className="w-3.5 h-3.5" />
+              Add line
+            </button>
+          )}
+        </fieldset>
 
         <label className="block text-xs">
           <span className="block text-stone-600 mb-0.5">Notes (admin-internal)</span>
@@ -535,6 +819,346 @@ const FormPane: React.FC<FormPaneProps> = props => {
             className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
           />
         </label>
+      </div>
+    </div>
+  )
+}
+
+function readConfidence(perField: Record<string, unknown>, key: string): number | null {
+  const v = perField[key]
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// Supporting subcomponents for the rebuilt right pane
+// ---------------------------------------------------------------------------
+
+const POHeaderChips: React.FC<{
+  poNumber: string | null
+  orderDate: string | null
+  requestedDate: string | null
+}> = ({ poNumber, orderDate, requestedDate }) => {
+  const Chip: React.FC<{ label: string; value: string | null }> = ({ label, value }) => (
+    <div className="flex flex-col rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5">
+      <span className="text-[10px] uppercase tracking-wide text-stone-500">{label}</span>
+      <span className="text-xs font-medium text-stone-800 truncate">
+        {value && value.trim().length > 0 ? value : <span className="text-stone-400 italic">—</span>}
+      </span>
+    </div>
+  )
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      <Chip label="PO #" value={poNumber} />
+      <Chip label="Order date" value={orderDate} />
+      <Chip label="Requested" value={requestedDate} />
+    </div>
+  )
+}
+
+/** Subtle confidence dot rendered next to a label. Hovering shows the
+ *  full score so the operator can decide how much to trust the AI on
+ *  this field. */
+const ConfidenceDot: React.FC<{ value: number | null }> = ({ value }) => {
+  if (value == null) return null
+  const tone =
+    value < 0.5 ? 'bg-rose-400' : value < 0.85 ? 'bg-amber-400' : 'bg-emerald-400'
+  return (
+    <span
+      className={`inline-block w-2 h-2 rounded-full ${tone}`}
+      title={`AI confidence ${(value * 100).toFixed(0)}%`}
+      aria-label={`AI confidence ${(value * 100).toFixed(0)}%`}
+    />
+  )
+}
+
+const LineConfidenceBadge: React.FC<{ value: number | null }> = ({ value }) => {
+  if (value == null) return null
+  const pct = Math.round(value * 100)
+  const cls =
+    value < 0.5
+      ? 'bg-rose-50 border-rose-200 text-rose-700'
+      : value < 0.85
+        ? 'bg-amber-50 border-amber-200 text-amber-700'
+        : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
+      title={`Per-line AI confidence`}
+    >
+      {pct}%
+    </span>
+  )
+}
+
+const CustomerMatchHint: React.FC<{
+  matchSource: string | null
+  extractedName: string | null
+  picked: boolean
+}> = ({ matchSource, extractedName, picked }) => {
+  let label = ''
+  if (matchSource === 'sender_email_alias') label = 'Auto-matched via sender_email alias'
+  else if (matchSource === 'sender_domain_alias') label = 'Auto-matched via sender_domain alias'
+  else if (matchSource === 'po_text_alias') label = 'Auto-matched via PO-text alias'
+  else if (matchSource === 'horeca_contact_email') label = "Auto-matched via HoReCa's contact_email"
+  else if (matchSource === 'ai_fuzzy_match') label = 'Auto-matched via AI fuzzy name'
+
+  return (
+    <div className="mt-1 space-y-0.5">
+      {label && (
+        <p className="text-[11px] text-emerald-700">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 align-middle" />
+          {label}
+        </p>
+      )}
+      {!picked && matchSource == null && (
+        <p className="text-[11px] text-amber-700">
+          <AlertTriangle className="inline-block w-3 h-3 mr-1 align-middle" />
+          No HoReCa matched this sender — pick one above, or{' '}
+          <a
+            href="/admin?tab=horeca"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-amber-900"
+          >
+            create a new HoReCa →
+          </a>
+        </p>
+      )}
+      {extractedName && (
+        <p className="text-[11px] text-stone-500">
+          Extracted as: <em>{extractedName}</em>
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** The delivery-address block. Two modes: pick from the HoReCa's saved
+ *  address book, or enter a new address. New addresses default to
+ *  is_default=false and are appended to the book unless the operator
+ *  unticks "Save to address book". Either way, the HoReCa's existing
+ *  default is never modified. */
+const DeliveryAddressBlock: React.FC<FormPaneProps & { readOnly: boolean; perField: Record<string, unknown> }> = (
+  props,
+) => {
+  const {
+    addresses,
+    addressesLoading,
+    addressMode,
+    setAddressMode,
+    selectedAddressId,
+    setSelectedAddressId,
+    newAddress,
+    setNewAddress,
+    saveToBook,
+    setSaveToBook,
+    horecaId,
+    useExtractedAddress,
+    detail,
+    readOnly,
+    perField,
+  } = props
+
+  const extractedShipTo = detail.extracted_po.ship_to
+  const extractedLine = extractedShipTo
+    ? [extractedShipTo.name, extractedShipTo.street, extractedShipTo.city]
+        .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+        .join(', ')
+    : null
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <span className="text-xs font-medium text-stone-600 inline-flex items-center gap-1.5">
+          <MapPin className="w-3 h-3" /> Delivery address
+          <ConfidenceDot value={readConfidence(perField, 'ship_to')} />
+        </span>
+        {!readOnly && (
+          <div className="flex gap-1 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setAddressMode('saved')}
+              className={`px-2 py-0.5 rounded ${
+                addressMode === 'saved'
+                  ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium'
+                  : 'text-stone-500 hover:bg-stone-100'
+              }`}
+            >
+              Saved
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddressMode('new')}
+              className={`px-2 py-0.5 rounded ${
+                addressMode === 'new'
+                  ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium'
+                  : 'text-stone-500 hover:bg-stone-100'
+              }`}
+            >
+              New
+            </button>
+          </div>
+        )}
+      </div>
+
+      {horecaId == null ? (
+        <p className="text-[11px] text-stone-500 italic px-2.5 py-2 rounded border border-dashed border-stone-200">
+          Pick a customer above to choose a delivery address.
+        </p>
+      ) : addressMode === 'saved' ? (
+        addressesLoading ? (
+          <p className="text-[11px] text-stone-500 px-2.5 py-2">
+            <Loader2 className="inline-block w-3 h-3 mr-1 animate-spin align-middle" />
+            Loading saved addresses…
+          </p>
+        ) : addresses.length === 0 ? (
+          <div className="rounded border border-stone-200 bg-stone-50 px-2.5 py-2 text-xs text-stone-600">
+            No saved addresses for this HoReCa. Switch to <em>New</em> to enter one.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <select
+              value={selectedAddressId ?? ''}
+              onChange={e => setSelectedAddressId(e.target.value || null)}
+              disabled={readOnly}
+              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+            >
+              <option value="">— pick a saved address —</option>
+              {addresses.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.is_default ? '★ ' : ''}
+                  {a.label ? `${a.label} — ` : ''}
+                  {[a.street, a.city, a.postcode].filter(Boolean).join(', ')}
+                </option>
+              ))}
+            </select>
+            {selectedAddressId && (
+              <AddressPreview address={addresses.find(a => a.id === selectedAddressId) ?? null} />
+            )}
+          </div>
+        )
+      ) : (
+        <div className="rounded border border-stone-200 bg-stone-50 p-2.5 space-y-2">
+          <input
+            type="text"
+            placeholder="Street *"
+            value={newAddress.street}
+            onChange={e => setNewAddress({ ...newAddress, street: e.target.value })}
+            disabled={readOnly}
+            className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="text"
+              placeholder="City"
+              value={newAddress.city}
+              onChange={e => setNewAddress({ ...newAddress, city: e.target.value })}
+              disabled={readOnly}
+              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+            />
+            <input
+              type="text"
+              placeholder="Postcode"
+              value={newAddress.postcode}
+              onChange={e => setNewAddress({ ...newAddress, postcode: e.target.value })}
+              disabled={readOnly}
+              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="text"
+              placeholder="Country"
+              value={newAddress.country}
+              onChange={e => setNewAddress({ ...newAddress, country: e.target.value })}
+              disabled={readOnly}
+              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+            />
+            <input
+              type="text"
+              placeholder="Recipient name"
+              value={newAddress.recipient_name}
+              onChange={e => setNewAddress({ ...newAddress, recipient_name: e.target.value })}
+              disabled={readOnly}
+              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-[11px] text-stone-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={saveToBook}
+              onChange={e => setSaveToBook(e.target.checked)}
+              disabled={readOnly}
+              className="rounded border-stone-300"
+            />
+            Save to this HoReCa's address book (won't change their default)
+          </label>
+        </div>
+      )}
+
+      {extractedLine && !readOnly && (
+        <button
+          type="button"
+          onClick={useExtractedAddress}
+          className="text-[11px] text-stone-500 hover:text-nexgen-blue text-left"
+          title="Click to fill the New-address form with what the email said"
+        >
+          Email said: <em>"{extractedLine}"</em>
+          <span className="ml-1 underline">use this →</span>
+        </button>
+      )}
+    </div>
+  )
+}
+
+const AddressPreview: React.FC<{ address: HorecaAddressRow | null }> = ({ address }) => {
+  if (!address) return null
+  const parts = [
+    address.recipient_name,
+    address.street,
+    [address.city, address.postcode].filter(Boolean).join(' '),
+    address.country,
+  ].filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+  return (
+    <div className="rounded border border-stone-200 bg-white px-2.5 py-2 text-xs text-stone-800">
+      <address className="not-italic leading-snug">
+        {parts.map((line, i) => (
+          <div key={i}>{line}</div>
+        ))}
+      </address>
+    </div>
+  )
+}
+
+interface ShipToSummaryProps {
+  detail: PendingPoDetailRow
+}
+
+// Read-only display of the ship-to block the AI parsed from the email.
+// The actual delivery address used on the created order is owned by the
+// matched HoReCa record — this surface lets the operator sanity-check
+// that the email's address matches the HoReCa they selected.
+const ShipToSummary: React.FC<ShipToSummaryProps> = ({ detail }) => {
+  const shipTo = detail.extracted_po.ship_to ?? null
+  const lines = shipTo
+    ? [shipTo.name, shipTo.street, shipTo.city].filter(
+        (v): v is string => typeof v === 'string' && v.trim().length > 0,
+      )
+    : []
+  return (
+    <div className="text-xs">
+      <span className="block text-stone-600 mb-0.5">Delivery address (from email)</span>
+      <div className="rounded border border-stone-200 bg-stone-50 px-2.5 py-2 text-stone-800">
+        {lines.length === 0 ? (
+          <span className="text-stone-500 italic">Not provided in the email body.</span>
+        ) : (
+          <address className="not-italic leading-snug">
+            {lines.map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
+          </address>
+        )}
       </div>
     </div>
   )

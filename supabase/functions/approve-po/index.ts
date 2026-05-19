@@ -44,11 +44,13 @@ type ApproveMode = 'auto' | 'human'
 interface ApproveRequest {
   pendingPoId: string
   mode: ApproveMode
-  // Human mode may override the AI's matched values. Each override is
-  // optional; absent fields fall back to whatever extract-po wrote.
+  // Human mode may override the AI's matched values.
   overrideHorecaId?: number
-  overrideItems?: Array<{
-    po_line_index: number
+  // When present, REPLACES extracted lines entirely. Lines with
+  // po_line_index=null are operator-added (no alias write-back). When
+  // absent, the function uses pending_pos.matched_items as-is.
+  overrideLines?: Array<{
+    po_line_index: number | null
     product_id: number
     quantity: number
     pack_size?: number | null
@@ -56,6 +58,21 @@ interface ApproveRequest {
   overrideNotes?: string | null
   overrideDeliveryDate?: string | null
   overrideDeliveryTimeSlot?: 'Morning (8am-12pm)' | 'Afternoon (12pm-4pm)' | 'Evening (4pm-8pm)' | null
+  // Per-PO shipping address snapshot. Resolution priority:
+  //   1. source_address_id present  → copy from that horeca_addresses row
+  //   2. otherwise                   → use street/city/etc. directly,
+  //      and (if save_to_horeca_address_book !== false) insert a new
+  //      horeca_addresses row tagged is_default=false.
+  // The HoReCa's default address is never modified by this path.
+  overrideDeliveryAddress?: {
+    street?: string
+    city?: string | null
+    postcode?: string | null
+    country?: string | null
+    recipient_name?: string | null
+    source_address_id?: string | null
+    save_to_horeca_address_book?: boolean
+  } | null
 }
 
 interface ApproveResult {
@@ -116,10 +133,11 @@ serve(async (req: Request) => {
       approverRole,
       overrides: {
         horecaId: body.overrideHorecaId,
-        items: body.overrideItems,
+        lines: body.overrideLines,
         notes: body.overrideNotes ?? undefined,
         deliveryDate: body.overrideDeliveryDate ?? undefined,
         deliveryTimeSlot: body.overrideDeliveryTimeSlot ?? undefined,
+        deliveryAddress: body.overrideDeliveryAddress ?? undefined,
       },
     })
 
@@ -176,8 +194,8 @@ interface RunApproveArgs {
   approverRole: 'service' | 'Admin' | 'Manager'
   overrides: {
     horecaId?: number
-    items?: Array<{
-      po_line_index: number
+    lines?: Array<{
+      po_line_index: number | null
       product_id: number
       quantity: number
       pack_size?: number | null
@@ -185,7 +203,25 @@ interface RunApproveArgs {
     notes?: string
     deliveryDate?: string
     deliveryTimeSlot?: string
+    deliveryAddress?: {
+      street?: string
+      city?: string | null
+      postcode?: string | null
+      country?: string | null
+      recipient_name?: string | null
+      source_address_id?: string | null
+      save_to_horeca_address_book?: boolean
+    }
   }
+}
+
+interface ResolvedDeliveryAddress {
+  street: string
+  city: string | null
+  postcode: string | null
+  country: string | null
+  recipient_name: string | null
+  source_address_id: string | null
 }
 
 async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
@@ -219,30 +255,56 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
   if (!effectiveHorecaId) {
     throw new EdgeFunctionError('INVALID_INPUT', 'No horeca_id available (matched or override)')
   }
-  const overrideItemsByIndex = new Map<number, NonNullable<RunApproveArgs['overrides']['items']>[number]>()
-  for (const o of args.overrides.items ?? []) overrideItemsByIndex.set(o.po_line_index, o)
 
-  const effectiveItems = pending.matched_items.map(item => {
-    const o = overrideItemsByIndex.get(item.po_line_index)
-    return {
-      po_line_index: item.po_line_index,
-      product_id: o?.product_id ?? item.product_id,
-      quantity: o?.quantity ?? item.quantity,
-      pack_size: o?.pack_size ?? item.pack_size,
-    }
-  })
-  if (effectiveItems.some(i => !i.product_id)) {
-    throw new EdgeFunctionError(
-      'INVALID_INPUT',
-      'Cannot approve while some lines are unresolved — supply overrideItems',
-    )
-  }
-  const resolvedItems = effectiveItems as Array<{
-    po_line_index: number
+  // overrideLines REPLACES the line set (supports add/delete). Operator-
+  // added lines carry po_line_index=null and are excluded from alias
+  // write-back below.
+  type ResolvedLine = {
+    po_line_index: number | null
     product_id: number
     quantity: number
     pack_size: number | null
-  }>
+  }
+  let resolvedItems: ResolvedLine[]
+  if (args.overrides.lines !== undefined) {
+    if (args.overrides.lines.length === 0) {
+      throw new EdgeFunctionError('INVALID_INPUT', 'Cannot approve an order with zero lines')
+    }
+    resolvedItems = args.overrides.lines.map(l => ({
+      po_line_index: l.po_line_index,
+      product_id: l.product_id,
+      quantity: l.quantity,
+      pack_size: l.pack_size ?? null,
+    }))
+  } else {
+    if (pending.matched_items.some(i => !i.product_id)) {
+      throw new EdgeFunctionError(
+        'INVALID_INPUT',
+        'Cannot approve while some lines are unresolved — supply overrideLines',
+      )
+    }
+    resolvedItems = pending.matched_items.map(item => ({
+      po_line_index: item.po_line_index,
+      product_id: item.product_id as number,
+      quantity: item.quantity,
+      pack_size: item.pack_size,
+    }))
+  }
+  if (resolvedItems.some(i => !Number.isFinite(i.product_id) || i.product_id <= 0)) {
+    throw new EdgeFunctionError('INVALID_INPUT', 'Every approved line must have a product_id')
+  }
+  if (resolvedItems.some(i => !Number.isFinite(i.quantity) || i.quantity <= 0)) {
+    throw new EdgeFunctionError('INVALID_INPUT', 'Every approved line must have quantity > 0')
+  }
+
+  // Resolve the per-order delivery address (per-PO snapshot, never mutates
+  // the HoReCa's default). May insert a new horeca_addresses row when the
+  // operator typed a fresh address and asked us to remember it.
+  const deliveryAddress = await resolveDeliveryAddress(
+    args.supa,
+    effectiveHorecaId,
+    args.overrides.deliveryAddress,
+  )
 
   // submittedBy: for human approvals the operator; for auto approvals
   // the admin who connected the mailbox.
@@ -367,6 +429,7 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
         ?? pending.extracted_po.requested_date
         ?? null,
       delivery_time_slot: args.overrides.deliveryTimeSlot ?? null,
+      delivery_address: deliveryAddress,
     })
   if (orderInsertError) {
     await rollbackPendingPo('orders insert')
@@ -422,10 +485,14 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
       product_id: m.product_id,
     })),
     approvedHorecaId: effectiveHorecaId,
-    approvedItems: resolvedItems.map(i => ({
-      po_line_index: i.po_line_index,
-      product_id: i.product_id,
-    })),
+    // Operator-added lines (po_line_index === null) carry no raw extracted
+    // text, so there's nothing to learn from. Skip them in the alias diff.
+    approvedItems: resolvedItems
+      .filter((i): i is ResolvedLine & { po_line_index: number } => i.po_line_index !== null)
+      .map(i => ({
+        po_line_index: i.po_line_index,
+        product_id: i.product_id,
+      })),
     fromAddress: inbound.from_address || null,
   })
 
@@ -580,4 +647,110 @@ async function persistAliases(
 
 function isUniqueViolation(error: { code?: string | null }): boolean {
   return error?.code === '23505'
+}
+
+/**
+ * Resolve the per-order shipping address snapshot.
+ *
+ * Order of preference (mirrors the request shape semantics):
+ *   1. `source_address_id` — copy fields from that horeca_addresses row
+ *      (guards against the operator picking a stale row that's since been
+ *      edited; we snapshot what's CURRENT at approval time).
+ *   2. Free-form fields supplied directly; on these, when
+ *      `save_to_horeca_address_book !== false` we also insert a new
+ *      horeca_addresses row tagged is_default=false so the operator can
+ *      pick it again next time. The new row's id is back-filled into
+ *      `source_address_id` for cross-reference.
+ *   3. No override at all → null (orders.delivery_address NULL means
+ *      "fall back to horecas.address" for display, matching legacy rows).
+ *
+ * The HoReCa's existing default is never touched by this path.
+ */
+async function resolveDeliveryAddress(
+  supa: SupabaseClient,
+  horecaId: number,
+  override: RunApproveArgs['overrides']['deliveryAddress'],
+): Promise<ResolvedDeliveryAddress | null> {
+  if (!override) return null
+
+  // 1. Picked an existing address from the HoReCa's book.
+  if (override.source_address_id) {
+    const { data, error } = await supa
+      .from('horeca_addresses')
+      .select('id, horeca_id, street, city, postcode, country, recipient_name')
+      .eq('id', override.source_address_id)
+      .maybeSingle()
+    if (error || !data) {
+      throw new EdgeFunctionError(
+        'INVALID_INPUT',
+        `Selected address ${override.source_address_id} not found`,
+      )
+    }
+    const row = data as {
+      id: string
+      horeca_id: number
+      street: string
+      city: string | null
+      postcode: string | null
+      country: string | null
+      recipient_name: string | null
+    }
+    if (row.horeca_id !== horecaId) {
+      throw new EdgeFunctionError(
+        'INVALID_INPUT',
+        'Selected address belongs to a different HoReCa',
+      )
+    }
+    return {
+      street: row.street,
+      city: row.city,
+      postcode: row.postcode,
+      country: row.country,
+      recipient_name: row.recipient_name,
+      source_address_id: row.id,
+    }
+  }
+
+  // 2. Free-form fields. street is the minimum required surface.
+  const street = (override.street ?? '').trim()
+  if (!street) {
+    throw new EdgeFunctionError(
+      'INVALID_INPUT',
+      'overrideDeliveryAddress requires either source_address_id or a non-empty street',
+    )
+  }
+
+  const fields = {
+    street,
+    city: override.city ?? null,
+    postcode: override.postcode ?? null,
+    country: override.country ?? null,
+    recipient_name: override.recipient_name ?? null,
+  }
+
+  let savedAddressId: string | null = null
+  if (override.save_to_horeca_address_book !== false) {
+    const { data: inserted, error: insertErr } = await supa
+      .from('horeca_addresses')
+      .insert({
+        horeca_id: horecaId,
+        is_default: false,           // never replaces the default
+        label: null,
+        ...fields,
+      })
+      .select('id')
+      .single()
+    if (insertErr) {
+      // Non-fatal: failing to save the address book entry should not
+      // abort the order. Log + continue without source_address_id.
+      console.warn(
+        '[approve-po] horeca_addresses save skipped:',
+        sanitizeForLog(insertErr.message),
+      )
+    } else if (inserted) {
+      savedAddressId = (inserted as { id: string }).id
+    }
+  }
+
+  return { ...fields, source_address_id: savedAddressId }
 }
