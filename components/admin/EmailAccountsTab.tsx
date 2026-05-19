@@ -97,7 +97,70 @@ const EmailAccountsTab: React.FC<EmailAccountsTabProps> = ({ addToast }) => {
     try {
       setConnecting(provider)
       const { authorizeUrl } = await startOAuth.mutateAsync(provider)
-      window.location.href = authorizeUrl
+
+      // Open the OAuth flow in a popup so the parent tab keeps its
+      // in-memory NexOrder session. Without this, the redirect chain
+      // (provider → Supabase callback → /admin/email-accounts) lands
+      // back inside this tab and the persistSession:false config in
+      // lib/supabase.ts means the operator gets the LoginPage instead
+      // of their dashboard. index.tsx detects "I'm in a popup that just
+      // finished OAuth" and posts the result back to us.
+      const popup = window.open(
+        authorizeUrl,
+        'nexorder-po-oauth',
+        'width=520,height=720,popup=yes,noopener=no',
+      )
+      if (!popup) {
+        // Popup blocked. Fall back to full-tab navigation — the operator
+        // will be re-logged-in but the OAuth round-trip still completes.
+        addToast?.(
+          'Popup was blocked — opening the connect flow in this tab instead. You will be asked to sign in again after connecting.',
+          'info',
+        )
+        window.location.href = authorizeUrl
+        return
+      }
+
+      // Listen for the success/failure message from the popup. We must
+      // origin-check every message because anything on the page can
+      // post arbitrary data here.
+      const expectedOrigin = window.location.origin
+      const handleMessage = (event: MessageEvent) => {
+        if (event.origin !== expectedOrigin) return
+        const data = event.data as
+          | { type?: string; connected?: boolean; error?: string | null; message?: string | null }
+          | null
+        if (!data || data.type !== 'nexorder-oauth-complete') return
+        cleanup()
+        if (data.connected) {
+          addToast?.('Mailbox connected. The first sync will run within a minute.', 'success')
+          accountsQuery.refetch()
+        } else if (data.error) {
+          addToast?.(`Connect failed (${data.error}): ${data.message ?? data.error}`, 'error')
+        }
+      }
+
+      // If the operator closes the popup without completing OAuth we
+      // need to release the busy spinner. Poll until the popup is gone,
+      // and also bound the wait at 5 minutes so a forgotten popup
+      // doesn't pin the interval handler forever.
+      const startedAt = Date.now()
+      const closedPoll = window.setInterval(() => {
+        if (popup.closed) {
+          cleanup()
+          return
+        }
+        if (Date.now() - startedAt > 5 * 60_000) {
+          cleanup()
+        }
+      }, 800)
+
+      function cleanup() {
+        window.removeEventListener('message', handleMessage)
+        window.clearInterval(closedPoll)
+        setConnecting(null)
+      }
+      window.addEventListener('message', handleMessage)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       addToast?.(`Could not start OAuth flow: ${message}`, 'error')
