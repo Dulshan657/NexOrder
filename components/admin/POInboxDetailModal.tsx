@@ -244,6 +244,7 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
     && addressOk
     && !approveMutation.isPending
   const detail = detailQuery.data
+  const headerMismatch = detail ? senderMismatch(detail.confidence_fields) : null
 
   const handleApprove = async () => {
     if (!detail) return
@@ -373,12 +374,12 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       >
         <Header detail={detail} onClose={onClose} />
 
-        {detail && senderMismatch(detail.confidence_fields) && (
+        {headerMismatch && (
           <div className="flex items-start gap-2 px-4 sm:px-6 py-2 bg-rose-50 border-b border-rose-200 text-rose-800 text-xs">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
             <p>
               <span className="font-semibold">Sender mismatch.</span>{' '}
-              {senderMismatch(detail.confidence_fields)?.sender ?? 'An unknown address'} is not a known
+              {headerMismatch.sender ?? 'An unknown address'} is not a known
               address for this customer. Verify the sender is genuine before approving.
             </p>
           </div>
