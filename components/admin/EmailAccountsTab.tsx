@@ -313,7 +313,21 @@ interface AccountRowProps {
 }
 
 const AccountRow: React.FC<AccountRowProps> = ({ account, onConnect, onTogglePause, onSignOut, busy }) => {
-  const status = STATUS_DOT[account.status]
+  // An active account with recent failures is still connected — it's just
+  // retrying with backoff after a transient hiccup. Show that as a distinct
+  // "Reconnecting" state so it doesn't look like the hard 'error' (needs the
+  // operator to reconnect) state.
+  const reconnecting = account.status === 'active' && account.consecutive_failures > 0
+  const status = reconnecting
+    ? {
+        label: account.consecutive_failures > 1
+          ? `Reconnecting (${account.consecutive_failures} attempts)`
+          : 'Reconnecting…',
+        dot: 'bg-amber-400 animate-pulse',
+        text: 'text-amber-600',
+      }
+    : STATUS_DOT[account.status]
+  const showLastError = (account.status === 'error' || reconnecting) && account.last_error
   return (
     <li className="py-3 flex items-center gap-4 flex-wrap">
       <div className="flex-1 min-w-0">
@@ -332,7 +346,7 @@ const AccountRow: React.FC<AccountRowProps> = ({ account, onConnect, onTogglePau
               <span>Last sync {formatRelative(account.last_sync_at)}</span>
             </>
           )}
-          {account.status === 'error' && account.last_error && (
+          {showLastError && (
             <>
               <span aria-hidden>·</span>
               <span className="text-amber-700 truncate max-w-md">{account.last_error}</span>

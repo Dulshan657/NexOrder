@@ -16,6 +16,10 @@ export interface EmailAccountRow {
   last_sync_at: string | null
   last_error: string | null
   connected_by: string | null
+  /** Back-to-back failed poll cycles; >0 with status 'active' means "reconnecting". */
+  consecutive_failures: number
+  /** Backoff gate: while in the future the account is skipped this cycle but stays active. */
+  next_retry_at: string | null
   created_at: string
   updated_at: string
 }
@@ -23,7 +27,7 @@ export interface EmailAccountRow {
 export async function listEmailAccounts(): Promise<EmailAccountRow[]> {
   const { data, error } = await supabase
     .from('email_accounts')
-    .select('id, provider, email_address, status, watermark, last_sync_at, last_error, connected_by, created_at, updated_at')
+    .select('id, provider, email_address, status, watermark, last_sync_at, last_error, connected_by, consecutive_failures, next_retry_at, created_at, updated_at')
     // Hide signed-out rows from the admin list — they remain in the DB
     // so historical inbound_messages keep their FK, but the operator
     // reconnects via the top Connect button (which upserts the same row).

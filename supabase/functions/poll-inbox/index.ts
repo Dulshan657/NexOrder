@@ -31,7 +31,9 @@ import {
   attachmentPath,
   formatLastError,
   isAuthorizedCronCall,
+  isReauthError,
   originalPath,
+  retryBackoffMs,
   storagePrefixFor,
 } from '../_shared/poInbox/pollDispatch.ts'
 import {
@@ -62,6 +64,8 @@ interface AccountRow {
   watermark: string | null
   status: 'active' | 'paused' | 'error'
   connected_by: string
+  consecutive_failures: number
+  next_retry_at: string | null
 }
 
 interface CycleResult {
@@ -97,10 +101,16 @@ serve(async (req: Request) => {
     auth: { persistSession: false },
   })
 
+  // Only poll active accounts that aren't in a backoff window. A row stays
+  // 'active' through transient failures (timeouts, 5xx, 429); next_retry_at
+  // just paces the retries. status='error' is reserved for a genuine grant
+  // revocation that needs the operator to reconnect — those are skipped here.
+  const nowIso = new Date().toISOString()
   const { data: accountsData, error: listError } = await serviceClient
     .from('email_accounts')
-    .select('id, provider, email_address, oauth_refresh_token_encrypted, watermark, status, connected_by')
+    .select('id, provider, email_address, oauth_refresh_token_encrypted, watermark, status, connected_by, consecutive_failures, next_retry_at')
     .eq('status', 'active')
+    .or(`next_retry_at.is.null,next_retry_at.lte.${nowIso}`)
   if (listError) {
     console.warn('[poll-inbox] failed to list email_accounts:', listError.message)
     return new Response(
@@ -136,8 +146,25 @@ async function processAccount(
     return await processOutlook(account, refreshToken, serviceClient, supabaseUrl, serviceKey)
   } catch (err) {
     const message = formatLastError(err)
-    console.warn(`[poll-inbox] account ${account.email_address} failed:`, message)
-    await markAccountErrored(serviceClient, account.id, message)
+    // A genuine grant revocation (invalid_grant / expired refresh token) is
+    // the ONLY non-user path that disconnects a mailbox — it truly needs the
+    // operator to reconnect. Everything else is transient: keep the account
+    // active and retry with backoff so a blip never silently signs it out.
+    if (isReauthError(err)) {
+      console.warn(`[poll-inbox] account ${account.email_address} needs re-auth:`, message)
+      await markAccountErrored(serviceClient, account.id, message)
+      return {
+        accountId: account.id,
+        emailAddress: account.email_address,
+        provider: account.provider,
+        status: 'error',
+        newMessages: 0,
+        fellBackToList: false,
+        errorMessage: message,
+      }
+    }
+    console.warn(`[poll-inbox] account ${account.email_address} transient failure:`, message)
+    await markAccountTransientFailure(serviceClient, account, message)
     return {
       accountId: account.id,
       emailAddress: account.email_address,
@@ -413,11 +440,43 @@ async function markAccountSynced(
       last_sync_at: new Date().toISOString(),
       last_error: null,
       status: 'active',
+      // A clean sync clears any transient-failure backoff state so the
+      // account returns to the normal once-a-minute cadence.
+      consecutive_failures: 0,
+      next_retry_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', accountId)
   if (error) {
     console.warn('[poll-inbox] failed to update watermark for', accountId, error.message)
+  }
+}
+
+/**
+ * Record a transient poll failure WITHOUT disconnecting the mailbox. The row
+ * stays status='active'; we bump consecutive_failures and push next_retry_at
+ * out by a capped exponential backoff so the account is retried later rather
+ * than hammered every minute. This is what keeps a connection "signed in"
+ * through provider outages, rate limits, and network blips.
+ */
+async function markAccountTransientFailure(
+  serviceClient: SupabaseClient,
+  account: AccountRow,
+  message: string,
+): Promise<void> {
+  const consecutiveFailures = account.consecutive_failures + 1
+  const nextRetryAt = new Date(Date.now() + retryBackoffMs(consecutiveFailures)).toISOString()
+  const { error } = await serviceClient
+    .from('email_accounts')
+    .update({
+      last_error: message,
+      consecutive_failures: consecutiveFailures,
+      next_retry_at: nextRetryAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', account.id)
+  if (error) {
+    console.warn('[poll-inbox] failed to record transient failure for', account.id, error.message)
   }
 }
 

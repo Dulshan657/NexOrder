@@ -6,6 +6,8 @@
 // No DB, no fetch — pure logic only. Unit-tested via vitest.
 
 import { readEnv, sanitizeForLog } from './env.ts'
+import { GmailError } from './gmail.ts'
+import { GraphError } from './graph.ts'
 
 // Slashes + ASCII control chars + DEL. Constructed via RegExp so the
 // literal control codes never appear in source text (which some editors
@@ -82,6 +84,35 @@ export function attachmentPath(prefix: string, index: number, filename: string):
   const hasSignal = cleaned && /[^_]/.test(cleaned)
   const safe = hasSignal ? cleaned : `attachment-${index}`
   return `${prefix}/${index}-${safe}`
+}
+
+/**
+ * True only when a provider explicitly told us the OAuth grant is dead and
+ * the mailbox genuinely needs re-authorization (revoked/expired refresh
+ * token). The poller treats this as a real disconnect (status='error' +
+ * Reconnect CTA). EVERY other failure — timeouts, 5xx, 429, network errors,
+ * decryption hiccups, unknown throws — returns false so the account stays
+ * active and is retried with backoff. When in doubt we keep the mailbox
+ * signed in rather than disconnecting it on a transient blip.
+ */
+export function isReauthError(err: unknown): boolean {
+  if (err instanceof GmailError || err instanceof GraphError) {
+    return err.needsReauth
+  }
+  return false
+}
+
+/**
+ * Backoff before the next poll after a transient failure. Capped exponential
+ * on the 1-minute cron cadence: 1, 2, 4, 8, 16, 32, then 60 min for every
+ * subsequent attempt. The account stays active throughout — this only paces
+ * the retries so a persistently-degraded provider isn't hammered every minute.
+ */
+export function retryBackoffMs(consecutiveFailures: number): number {
+  const BASE_MS = 60_000
+  const MAX_MS = 60 * 60_000
+  const exponent = Math.min(Math.max(consecutiveFailures - 1, 0), 6)
+  return Math.min(BASE_MS * 2 ** exponent, MAX_MS)
 }
 
 /**

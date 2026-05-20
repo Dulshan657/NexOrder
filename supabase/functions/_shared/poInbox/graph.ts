@@ -29,15 +29,50 @@ const MAX_DELTA_PAGES = 50
 
 export class GraphError extends Error {
   readonly httpStatus: number
-  constructor(message: string, httpStatus: number) {
+  /**
+   * True when the failure means the stored grant is no longer valid and the
+   * mailbox genuinely needs re-authorization (refresh token revoked, or
+   * expired after the 90-day inactivity window). The poller treats this as a
+   * real disconnect; every other failure is transient and retried with backoff.
+   */
+  readonly needsReauth: boolean
+  constructor(message: string, httpStatus: number, needsReauth = false) {
     super(message)
     this.name = 'GraphError'
     this.httpStatus = httpStatus
+    this.needsReauth = needsReauth
   }
 
   toEdgeResponseBody(): { code: 'INTERNAL'; message: string; status: number } {
     return { code: 'INTERNAL', message: `graph: ${this.message}`, status: 500 }
   }
+}
+
+// AADSTS sub-codes that mean the grant is dead and only a fresh interactive
+// sign-in can fix it: expired/revoked token, token expired due to inactivity,
+// and the generic "interaction required" family.
+const AAD_REAUTH_CODES = [70000, 700082, 700084, 50173, 50078, 54005]
+
+/**
+ * Decide whether a failed token-endpoint response means the grant is dead.
+ * Microsoft returns HTTP 400 with `error` of `invalid_grant` /
+ * `interaction_required` and an `error_codes` array of AADSTS numbers; the
+ * ones in AAD_REAUTH_CODES require the operator to reconnect. Anything else
+ * (5xx, 429, network) is transient.
+ */
+function isGraphReauthResponse(status: number, rawBody: string): boolean {
+  if (status !== 400) return false
+  let parsed: { error?: unknown; error_codes?: unknown }
+  try {
+    parsed = JSON.parse(rawBody) as { error?: unknown; error_codes?: unknown }
+  } catch {
+    return false
+  }
+  if (parsed.error === 'invalid_grant' || parsed.error === 'interaction_required') {
+    return true
+  }
+  return Array.isArray(parsed.error_codes) &&
+    parsed.error_codes.some(code => AAD_REAUTH_CODES.includes(Number(code)))
 }
 
 export interface GraphAccessTokenResult {
@@ -84,6 +119,7 @@ export async function refreshGraphAccessToken(
     throw new GraphError(
       `Token refresh failed: ${resp.status} ${sanitizeForLog(raw)}`,
       resp.status,
+      isGraphReauthResponse(resp.status, raw),
     )
   }
   let json: { access_token?: string; refresh_token?: string; expires_in?: number } = {}

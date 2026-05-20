@@ -28,15 +28,41 @@ const FETCH_TIMEOUT_MS = 15_000
 
 export class GmailError extends Error {
   readonly httpStatus: number
-  constructor(message: string, httpStatus: number) {
+  /**
+   * True when the failure means the stored grant is no longer valid and the
+   * mailbox genuinely needs re-authorization (e.g. the refresh token was
+   * revoked or expired). The poller treats this as a real disconnect; every
+   * other failure is transient and retried with backoff.
+   */
+  readonly needsReauth: boolean
+  constructor(message: string, httpStatus: number, needsReauth = false) {
     super(message)
     this.name = 'GmailError'
     this.httpStatus = httpStatus
+    this.needsReauth = needsReauth
   }
 
   toEdgeResponseBody(): { code: 'INTERNAL'; message: string; status: number } {
     return { code: 'INTERNAL', message: `gmail: ${this.message}`, status: 500 }
   }
+}
+
+/**
+ * Decide whether a failed token-endpoint response means the grant is dead.
+ * Google returns HTTP 400 with `{"error":"invalid_grant"}` when the refresh
+ * token has been revoked or expired, and `"unauthorized_client"` when the
+ * grant is no longer authorized — both require the operator to reconnect.
+ * Anything else (5xx, 429, network) is transient.
+ */
+function isGmailReauthResponse(status: number, rawBody: string): boolean {
+  if (status !== 400) return false
+  let code: unknown
+  try {
+    code = (JSON.parse(rawBody) as { error?: unknown }).error
+  } catch {
+    return false
+  }
+  return code === 'invalid_grant' || code === 'unauthorized_client'
 }
 
 export interface GmailAccessToken {
@@ -81,6 +107,7 @@ export async function refreshGmailAccessToken(
     throw new GmailError(
       `Token refresh failed: ${resp.status} ${sanitizeForLog(raw)}`,
       resp.status,
+      isGmailReauthResponse(resp.status, raw),
     )
   }
   let json: { access_token?: string; expires_in?: number } = {}
