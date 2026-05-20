@@ -33,6 +33,8 @@ import { useHorecaAddresses } from '@/hooks/queries/useHorecaAddresses'
 import { getPoDocumentUrl, senderMismatch } from '@/services/supabase/poInboxService'
 import type { ApproveDeliveryAddress } from '@/services/supabase/poInboxService'
 import { useToasts } from '@/hooks/useToasts'
+import ConfidenceRing from './ConfidenceRing'
+import { statusBadge } from './poInboxFormat'
 import ProductSearchDropdown from './ProductSearchDropdown'
 import type {
   ExtractedPoLine,
@@ -41,6 +43,9 @@ import type {
 } from '@/services/supabase/poInboxService'
 import type { HorecaAddressRow } from '@/services/supabase/horecaAddressService'
 import type { HoReCa, Product } from '../../types'
+
+const FIELD_CLASS =
+  'w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-sm transition-colors focus:outline-none focus:border-nexgen-blue focus:ring-2 focus:ring-nexgen-blue/20 disabled:bg-stone-100 disabled:text-stone-500'
 
 interface POInboxDetailModalProps {
   pendingPoId: string
@@ -363,10 +368,21 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       }}
     >
       <div
-        className="relative w-full max-w-6xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="relative w-full max-w-6xl bg-white rounded-2xl shadow-elevated overflow-hidden flex flex-col po-pop-in"
         onClick={e => e.stopPropagation()}
       >
         <Header detail={detail} onClose={onClose} />
+
+        {detail && senderMismatch(detail.confidence_fields) && (
+          <div className="flex items-start gap-2 px-4 sm:px-6 py-2 bg-rose-50 border-b border-rose-200 text-rose-800 text-xs">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+            <p>
+              <span className="font-semibold">Sender mismatch.</span>{' '}
+              {senderMismatch(detail.confidence_fields)?.sender ?? 'An unknown address'} is not a known
+              address for this customer. Verify the sender is genuine before approving.
+            </p>
+          </div>
+        )}
 
         {detailQuery.isLoading || !detail ? (
           <div className="flex-1 flex items-center justify-center text-stone-500">
@@ -472,27 +488,15 @@ export function buildEditableLines(
 
 const DIALOG_TITLE_ID = 'po-inbox-dialog-title'
 
-const STATUS_DOT_TONE: Record<string, { dot: string; text: string; label: string }> = {
-  needs_review: { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Needs review' },
-  auto_approved: { dot: 'bg-teal-500', text: 'text-teal-700', label: 'Auto-approved' },
-  approved: { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'Approved' },
-  rejected: { dot: 'bg-rose-500', text: 'text-rose-700', label: 'Rejected' },
-}
-
-function confidenceTextTone(c: number): string {
-  if (c >= 0.95) return 'text-emerald-700'
-  if (c >= 0.75) return 'text-amber-700'
-  return 'text-rose-700'
-}
-
 const Header: React.FC<{ detail: PendingPoDetailRow | undefined; onClose: () => void }> = ({
   detail,
   onClose,
 }) => {
-  const status = detail ? STATUS_DOT_TONE[detail.status] : null
+  const badge = detail ? statusBadge(detail.status) : null
   return (
-    <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-stone-200/70">
-      <div className="min-w-0">
+    <div className="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-stone-200/70">
+      {detail && <ConfidenceRing value={detail.confidence_overall} size="md" />}
+      <div className="min-w-0 flex-1">
         <h2
           id={DIALOG_TITLE_ID}
           className="font-display font-semibold text-stone-900 truncate text-base sm:text-lg tracking-tight"
@@ -500,26 +504,18 @@ const Header: React.FC<{ detail: PendingPoDetailRow | undefined; onClose: () => 
           {detail?.subject || 'Inbound PO'}
         </h2>
         {detail && (
-          <div className="mt-1 text-xs text-stone-500 flex flex-wrap items-center gap-x-3">
+          <div className="mt-1 text-xs text-stone-500 flex flex-wrap items-center gap-x-2">
             <span className="truncate">From {detail.from_address}</span>
             <span aria-hidden>·</span>
             <span>PO {detail.extracted_po.po_number ?? '(no number)'}</span>
-            <span aria-hidden>·</span>
-            <span className={`font-mono ${confidenceTextTone(detail.confidence_overall)}`}>
-              {(detail.confidence_overall * 100).toFixed(0)}%
-            </span>
-            {status && (
-              <>
-                <span aria-hidden>·</span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className={`size-1.5 rounded-full ${status.dot}`} aria-hidden />
-                  <span className={status.text}>{status.label}</span>
-                </span>
-              </>
-            )}
           </div>
         )}
       </div>
+      {badge && (
+        <span className={`shrink-0 text-[11px] font-medium rounded-full border px-2.5 py-0.5 ${badge.className}`}>
+          {badge.label}
+        </span>
+      )}
       <button
         type="button"
         onClick={onClose}
@@ -556,8 +552,10 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
   return (
     <div className="bg-stone-100 border-b md:border-b-0 md:border-r border-stone-200 flex flex-col">
       <div className="px-3 py-2 text-xs text-stone-500 border-b border-stone-200 bg-white flex items-center gap-2">
-        <FileText className="w-3 h-3" />
-        Original ({isTextBody ? 'EMAIL BODY' : format.toUpperCase()})
+        <FileText className="w-3.5 h-3.5" />
+        <span className="uppercase tracking-wide font-semibold text-stone-600">
+          Original · {isTextBody ? 'Email body' : format.toUpperCase()}
+        </span>
         {/* Guaranteed fallback: even if the inline embed is refused by a
             browser/header quirk, the operator can always open the original
             document full-screen to verify the order. Attachment formats only
@@ -710,13 +708,8 @@ const FormPane: React.FC<FormPaneProps> = props => {
     (props.detail.confidence_fields as { per_field?: Record<string, unknown> })?.per_field ?? {}
   const customerMatch =
     (props.detail.confidence_fields as { customer_match?: string })?.customer_match ?? null
-  const mismatch = senderMismatch(props.detail.confidence_fields)
 
   const extractedPo = props.detail.extracted_po
-  const matchedCustomerName =
-    props.hoReCas.find(h => h.id === props.detail.matched_horeca_id)?.name ??
-    extractedPo.customer_name_raw ??
-    'this customer'
 
   return (
     <div className="flex flex-col overflow-auto">
@@ -738,7 +731,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
             value={props.horecaId ?? ''}
             onChange={e => props.setHorecaId(e.target.value ? Number(e.target.value) : null)}
             disabled={readOnly}
-            className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm disabled:bg-stone-100"
+            className={FIELD_CLASS}
           >
             <option value="">— pick customer —</option>
             {props.hoReCas.map(h => (
@@ -752,17 +745,6 @@ const FormPane: React.FC<FormPaneProps> = props => {
             extractedName={extractedPo.customer_name_raw}
             picked={props.horecaId != null}
           />
-          {mismatch && (
-            <div className="mt-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
-              <p className="text-[11px] text-rose-800 leading-relaxed">
-                <span className="font-semibold">Sender mismatch.</span> This PO was sent from{' '}
-                <span className="font-mono">{mismatch.sender ?? 'an unknown address'}</span>, which is
-                not a known address for <span className="font-semibold">{matchedCustomerName}</span>.
-                Verify the sender is genuine before approving.
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Delivery date + slot */}
@@ -777,7 +759,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
               value={props.deliveryDate}
               onChange={e => props.setDeliveryDate(e.target.value)}
               disabled={readOnly}
-              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+              className={FIELD_CLASS}
             />
           </label>
           <label className="text-xs">
@@ -786,7 +768,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
               value={props.deliveryTimeSlot}
               onChange={e => props.setDeliveryTimeSlot(e.target.value as DeliveryTimeSlot | '')}
               disabled={readOnly}
-              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+              className={FIELD_CLASS}
             >
               <option value="">—</option>
               <option value="Morning (8am-12pm)">Morning (8am-12pm)</option>
@@ -861,7 +843,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
                         updateLine(idx, { quantity: next })
                       }}
                       disabled={readOnly}
-                      className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+                      className={FIELD_CLASS}
                     />
                   </label>
                   <label className="text-xs">
@@ -877,7 +859,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
                       }
                       disabled={readOnly}
                       placeholder={line.productId ? String(props.productById.get(line.productId)?.cartonSize ?? '') : '—'}
-                      className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+                      className={FIELD_CLASS}
                     />
                   </label>
                 </div>
@@ -903,7 +885,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
             onChange={e => props.setNotes(e.target.value)}
             disabled={readOnly}
             rows={2}
-            className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+            className={FIELD_CLASS}
           />
         </label>
       </div>
@@ -1109,7 +1091,7 @@ const DeliveryAddressBlock: React.FC<FormPaneProps & { readOnly: boolean; perFie
               value={selectedAddressId ?? ''}
               onChange={e => setSelectedAddressId(e.target.value || null)}
               disabled={readOnly}
-              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+              className={FIELD_CLASS}
             >
               <option value="">— pick a saved address —</option>
               {addresses.map(a => (
@@ -1133,7 +1115,7 @@ const DeliveryAddressBlock: React.FC<FormPaneProps & { readOnly: boolean; perFie
             value={newAddress.street}
             onChange={e => setNewAddress({ ...newAddress, street: e.target.value })}
             disabled={readOnly}
-            className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+            className={FIELD_CLASS}
           />
           <div className="grid grid-cols-2 gap-2">
             <input
@@ -1142,7 +1124,7 @@ const DeliveryAddressBlock: React.FC<FormPaneProps & { readOnly: boolean; perFie
               value={newAddress.city}
               onChange={e => setNewAddress({ ...newAddress, city: e.target.value })}
               disabled={readOnly}
-              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+              className={FIELD_CLASS}
             />
             <input
               type="text"
@@ -1150,7 +1132,7 @@ const DeliveryAddressBlock: React.FC<FormPaneProps & { readOnly: boolean; perFie
               value={newAddress.postcode}
               onChange={e => setNewAddress({ ...newAddress, postcode: e.target.value })}
               disabled={readOnly}
-              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+              className={FIELD_CLASS}
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -1160,7 +1142,7 @@ const DeliveryAddressBlock: React.FC<FormPaneProps & { readOnly: boolean; perFie
               value={newAddress.country}
               onChange={e => setNewAddress({ ...newAddress, country: e.target.value })}
               disabled={readOnly}
-              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+              className={FIELD_CLASS}
             />
             <input
               type="text"
@@ -1168,7 +1150,7 @@ const DeliveryAddressBlock: React.FC<FormPaneProps & { readOnly: boolean; perFie
               value={newAddress.recipient_name}
               onChange={e => setNewAddress({ ...newAddress, recipient_name: e.target.value })}
               disabled={readOnly}
-              className="w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm disabled:bg-stone-100"
+              className={FIELD_CLASS}
             />
           </div>
           <label className="flex items-center gap-2 text-[11px] text-stone-600 cursor-pointer">
@@ -1311,7 +1293,7 @@ const Footer: React.FC<FooterProps> = props => {
         <button
           type="button"
           onClick={() => props.setShowRejectForm(!props.showRejectForm)}
-          className="text-sm font-medium text-rose-700 hover:text-rose-800 hover:underline underline-offset-4 btn-press"
+          className="text-sm font-medium text-stone-500 hover:text-rose-700 transition-colors btn-press"
         >
           Reject
         </button>
@@ -1319,7 +1301,7 @@ const Footer: React.FC<FooterProps> = props => {
           type="button"
           onClick={props.onApprove}
           disabled={!props.canApprove}
-          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
+          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed btn-press"
           title={
             props.canApprove
               ? 'Create a real order from this PO'
