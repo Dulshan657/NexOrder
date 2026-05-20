@@ -68,6 +68,7 @@ const POInboxView: React.FC<POInboxViewProps> = ({
   }, [])
 
   useEffect(() => {
+    // Stamp the URL with the current sub-tab on first render so a refresh stays put.
     writeSubtabToUrl(subtab)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -87,6 +88,7 @@ const POInboxView: React.FC<POInboxViewProps> = ({
     } else if (connectError) {
       const message = params.get('message') ?? connectError
       addToast?.(`Connect failed (${connectError}): ${message}`, 'error')
+      // Open the popover on failure too, so the operator can retry Connect.
       setMailboxOpenNonce(n => n + 1)
     }
     const url = new URL(window.location.href)
@@ -95,7 +97,10 @@ const POInboxView: React.FC<POInboxViewProps> = ({
     url.searchParams.delete('account_id')
     url.searchParams.delete('message')
     window.history.replaceState({}, '', url.toString())
-  }, [addToast])
+    // OAuth callback params are read once on mount; addToast is stable for the
+    // life of this view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleViewSourcePo = useCallback(
     (pendingPoId: string) => {
