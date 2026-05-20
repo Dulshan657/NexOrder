@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { formatRelative } from '../components/admin/EmailAccountsTab'
+import { formatRelative } from '../components/admin/emailAccountFormat'
 
 describe('formatRelative', () => {
   const NOW = new Date('2026-05-18T12:00:00.000Z').getTime()
