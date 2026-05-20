@@ -120,3 +120,50 @@ body {
 .action-items-scroll::-webkit-scrollbar-thumb:hover {
   background: #a8a29e; /* stone-400 */
 }
+
+/* PO Inbox redesign — skeleton shimmer, list reveal, popover, badge pulse */
+@keyframes po-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.po-skeleton {
+  background: #ece9e6;
+  background-image: linear-gradient(90deg, #ece9e6 0px, #f5f3f1 200px, #ece9e6 400px);
+  background-size: 800px 100%;
+  animation: po-shimmer 1.4s linear infinite;
+  border-radius: 6px;
+}
+
+@keyframes po-row-in {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+/* --po-i is set inline (clamped index) so rows cascade in. */
+.po-row-in {
+  animation: po-row-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--po-i, 0) * 40ms);
+}
+
+@keyframes po-pop-in {
+  0%   { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.po-pop-in {
+  animation: po-pop-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: top right;
+}
+
+@keyframes po-badge-pulse {
+  0%, 100% { transform: scale(1);   opacity: 1; }
+  50%      { transform: scale(1.12); opacity: 0.85; }
+}
+.po-badge-pulse { animation: po-badge-pulse 2.2s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .po-skeleton,
+  .po-row-in,
+  .po-pop-in,
+  .po-badge-pulse {
+    animation: none !important;
+  }
+}
