@@ -5,7 +5,7 @@
 // (separate component to keep this file small).
 
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, ChevronRight, Inbox, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronRight, Inbox, Loader2, RefreshCw } from 'lucide-react'
 import { usePendingPos, usePendingPoCount } from '@/hooks/queries/usePendingPos'
 import { PO_INBOX_TABS, formatAge, sortForDisplay, statusBadge } from './poInboxFormat'
 import ConfidenceRing from './ConfidenceRing'
@@ -79,10 +79,7 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
 
       <div className="mt-2">
         {isLoading ? (
-          <div className="py-10 flex items-center justify-center text-stone-500">
-            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-            Loading…
-          </div>
+          <QueueSkeleton />
         ) : rows.length === 0 ? (
           <Empty status={activeStatus} />
         ) : (
@@ -149,17 +146,63 @@ const FilterTab: React.FC<FilterTabProps> = ({ active, onClick, title, count, ch
   </button>
 )
 
-const Empty: React.FC<{ status: PendingPoStatus }> = ({ status }) => (
-  <div className="py-16 text-center">
-    <Inbox className="w-8 h-8 mx-auto text-stone-300" />
-    <p className="mt-3 text-sm text-stone-600">No POs in this tab.</p>
-    {status === 'needs_review' && (
-      <p className="mt-1 text-xs text-stone-500">
-        Inbound emails extracted with full confidence flow straight through to Auto Approved.
-      </p>
-    )}
-  </div>
+const QueueSkeleton: React.FC = () => (
+  <ul className="divide-y divide-stone-200/70 rounded-xl border border-stone-200 overflow-hidden bg-white">
+    {Array.from({ length: 4 }).map((_, i) => (
+      <li key={i} className="flex items-center gap-4 py-3 pl-4 pr-3">
+        <div className="po-skeleton shrink-0" style={{ width: 44, height: 44, borderRadius: 999 }} />
+        <div className="flex-1">
+          <div className="po-skeleton" style={{ width: `${55 + (i % 3) * 12}%`, height: 12 }} />
+          <div className="po-skeleton mt-2" style={{ width: `${40 + (i % 2) * 10}%`, height: 9 }} />
+        </div>
+        <div className="po-skeleton shrink-0" style={{ width: 74, height: 20, borderRadius: 999 }} />
+      </li>
+    ))}
+  </ul>
 )
+
+const EMPTY_COPY: Record<PendingPoStatus, { icon: React.ReactNode; title: string; body: string; tint: string }> = {
+  needs_review: {
+    icon: <CheckCircle2 className="w-6 h-6 text-emerald-600" />,
+    title: 'Inbox zero — nothing to review',
+    body: 'High-confidence POs flow straight through to Auto Approved. Anything the AI is unsure about lands here.',
+    tint: 'bg-emerald-50',
+  },
+  auto_approved: {
+    icon: <Inbox className="w-6 h-6 text-teal-600" />,
+    title: 'No auto-approved POs yet',
+    body: 'When the AI extracts a PO with full confidence, it becomes an order automatically and shows up here.',
+    tint: 'bg-teal-50',
+  },
+  approved: {
+    icon: <CheckCircle2 className="w-6 h-6 text-emerald-600" />,
+    title: 'Nothing approved here yet',
+    body: 'POs you approve from Needs Review appear here with their created order id.',
+    tint: 'bg-emerald-50',
+  },
+  rejected: {
+    icon: <Inbox className="w-6 h-6 text-stone-400" />,
+    title: 'No rejected POs',
+    body: 'POs you reject (with a recorded reason) are kept here for the audit trail.',
+    tint: 'bg-stone-100',
+  },
+}
+
+const Empty: React.FC<{ status: PendingPoStatus }> = ({ status }) => {
+  const copy = EMPTY_COPY[status]
+  return (
+    <div className="py-16 text-center">
+      <div
+        className={`mx-auto rounded-full flex items-center justify-center ${copy.tint}`}
+        style={{ width: 52, height: 52 }}
+      >
+        {copy.icon}
+      </div>
+      <p className="mt-4 font-semibold text-stone-900">{copy.title}</p>
+      <p className="mt-1.5 mx-auto max-w-sm text-sm text-stone-500 leading-relaxed">{copy.body}</p>
+    </div>
+  )
+}
 
 interface RowProps {
   row: PendingPoSummaryRow
