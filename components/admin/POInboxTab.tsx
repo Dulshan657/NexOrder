@@ -188,7 +188,7 @@ const Row: React.FC<RowProps> = ({ row, hoReCa, index, onClick }) => {
       <button
         type="button"
         onClick={onClick}
-        className={`group w-full text-left flex items-center gap-4 py-3 pl-4 pr-3 border-l-[3px] ${railClass} transition-colors hover:bg-stone-50 focus:outline-none focus-visible:bg-stone-50`}
+        className={`group w-full text-left flex items-center gap-4 py-3 pl-4 pr-3 border-l-[3px] ${railClass} transition-colors hover:bg-stone-50 focus:outline-none focus-visible:bg-stone-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-nexgen-blue/50`}
       >
         <ConfidenceRing value={row.confidence_overall} size="sm" />
 
@@ -229,7 +229,7 @@ const Row: React.FC<RowProps> = ({ row, hoReCa, index, onClick }) => {
         </span>
 
         {/* Hover/focus affordance: chevron swaps to a Review pill. */}
-        <span className="shrink-0 w-[68px] flex justify-end" aria-hidden>
+        <span className="shrink-0 min-w-[72px] flex justify-end" aria-hidden>
           <ChevronRight className="w-4 h-4 text-stone-300 group-hover:hidden group-focus-visible:hidden" />
           <span className="hidden group-hover:inline-flex group-focus-visible:inline-flex items-center gap-1 text-xs font-semibold text-nexgen-blue border border-nexgen-blue/30 bg-white rounded-lg px-2.5 py-1">
             Review <ChevronRight className="w-3.5 h-3.5" />
