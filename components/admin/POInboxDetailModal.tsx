@@ -369,7 +369,7 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       }}
     >
       <div
-        className="relative w-full max-w-6xl bg-white rounded-2xl shadow-elevated overflow-hidden flex flex-col po-pop-in"
+        className="relative w-full max-w-6xl bg-white rounded-2xl shadow-elevated overflow-hidden flex flex-col po-modal-in"
         onClick={e => e.stopPropagation()}
       >
         <Header detail={detail} onClose={onClose} />

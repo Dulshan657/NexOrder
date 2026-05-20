@@ -152,6 +152,10 @@ body {
   animation: po-pop-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
   transform-origin: top right;
 }
+.po-modal-in {
+  animation: po-pop-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: center;
+}
 
 @keyframes po-badge-pulse {
   0%, 100% { transform: scale(1);   opacity: 1; }
@@ -163,6 +167,7 @@ body {
   .po-skeleton,
   .po-row-in,
   .po-pop-in,
+  .po-modal-in,
   .po-badge-pulse {
     animation: none !important;
   }

@@ -24,7 +24,7 @@ const POInboxHeaderBadge: React.FC<POInboxHeaderBadgeProps> = ({ onClick }) => {
     >
       <Inbox className="w-5 h-5" />
       {count > 0 && (
-        <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 min-w-[18px] h-[18px] text-[10px] font-semibold text-white leading-none">
+        <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 min-w-[18px] h-[18px] text-[10px] font-semibold text-white leading-none po-badge-pulse">
           {count > 99 ? '99+' : count}
         </span>
       )}

@@ -371,6 +371,9 @@ const AccountRow: React.FC<AccountRowProps> = ({
           {account.last_sync_at && account.status === 'active' && !reconnecting && (
             <> · synced {formatRelative(account.last_sync_at)}</>
           )}
+          {(account.status === 'error' || reconnecting) && account.last_error && (
+            <> · <span className="text-amber-700">{account.last_error}</span></>
+          )}
         </div>
       </div>
 
