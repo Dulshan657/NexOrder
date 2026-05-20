@@ -5,9 +5,10 @@
 // (separate component to keep this file small).
 
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Inbox, Loader2, RefreshCw } from 'lucide-react'
-import { usePendingPos } from '@/hooks/queries/usePendingPos'
-import { PO_INBOX_TABS, formatAge, sortForDisplay } from './poInboxFormat'
+import { AlertTriangle, ChevronRight, Inbox, Loader2, RefreshCw } from 'lucide-react'
+import { usePendingPos, usePendingPoCount } from '@/hooks/queries/usePendingPos'
+import { PO_INBOX_TABS, formatAge, sortForDisplay, statusBadge } from './poInboxFormat'
+import ConfidenceRing from './ConfidenceRing'
 import { senderMismatch } from '@/services/supabase/poInboxService'
 import type { PendingPoStatus, PendingPoSummaryRow } from '@/services/supabase/poInboxService'
 import type { HoReCa } from '../../types'
@@ -40,6 +41,7 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
   }, [presetPendingPoId])
 
   const { data, isLoading, isFetching, refetch } = usePendingPos(activeStatus)
+  const { data: needsReviewCount } = usePendingPoCount()
   const rows = useMemo(() => sortForDisplay(data ?? []), [data])
 
   const horecaById = useMemo(() => {
@@ -58,6 +60,7 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
               active={activeStatus === tab.key}
               onClick={() => setActiveStatus(tab.key as PendingPoStatus)}
               title={tab.description}
+              count={tab.key === 'needs_review' ? needsReviewCount : undefined}
             >
               {tab.label}
             </FilterTab>
@@ -83,11 +86,12 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
         ) : rows.length === 0 ? (
           <Empty status={activeStatus} />
         ) : (
-          <ul className="divide-y divide-stone-200/70">
-            {rows.map(row => (
+          <ul className="divide-y divide-stone-200/70 rounded-xl border border-stone-200 overflow-hidden bg-white">
+            {rows.map((row, i) => (
               <Row
                 key={row.id}
                 row={row}
+                index={i}
                 hoReCa={row.matched_horeca_id != null ? horecaById.get(row.matched_horeca_id) : undefined}
                 onClick={() => setOpenId(row.id)}
               />
@@ -121,21 +125,27 @@ interface FilterTabProps {
   active: boolean
   onClick: () => void
   title?: string
+  count?: number
   children: React.ReactNode
 }
 
-const FilterTab: React.FC<FilterTabProps> = ({ active, onClick, title, children }) => (
+const FilterTab: React.FC<FilterTabProps> = ({ active, onClick, title, count, children }) => (
   <button
     type="button"
     onClick={onClick}
     title={title}
-    className={`py-2.5 text-sm transition-colors border-b-2 ${
+    className={`py-2.5 text-sm transition-colors border-b-2 inline-flex items-center gap-2 ${
       active
         ? 'border-stone-900 text-stone-900 font-medium'
         : 'border-transparent text-stone-500 hover:text-stone-800'
     }`}
   >
     {children}
+    {typeof count === 'number' && count > 0 && (
+      <span className="font-mono text-[11px] rounded-full px-1.5 leading-5 bg-amber-50 text-amber-700 border border-amber-200">
+        {count > 99 ? '99+' : count}
+      </span>
+    )}
   </button>
 )
 
@@ -154,74 +164,77 @@ const Empty: React.FC<{ status: PendingPoStatus }> = ({ status }) => (
 interface RowProps {
   row: PendingPoSummaryRow
   hoReCa: HoReCa | undefined
+  index: number
   onClick: () => void
 }
 
-const STATUS_LABEL: Record<PendingPoStatus, string> = {
-  needs_review: 'needs review',
-  auto_approved: 'auto-approved',
-  approved: 'approved',
-  rejected: 'rejected',
-}
-
-const STATUS_TONE: Record<PendingPoStatus, string> = {
-  needs_review: 'text-amber-700',
-  auto_approved: 'text-teal-700',
-  approved: 'text-emerald-700',
-  rejected: 'text-rose-700',
-}
-
-function confidenceTone(c: number): string {
-  if (c >= 0.95) return 'text-emerald-700'
-  if (c >= 0.75) return 'text-amber-700'
-  return 'text-rose-700'
-}
-
-const Row: React.FC<RowProps> = ({ row, hoReCa, onClick }) => {
-  const isNeedsReview = row.status === 'needs_review'
+const Row: React.FC<RowProps> = ({ row, hoReCa, index, onClick }) => {
   const customerName = hoReCa?.name ?? (row.matched_horeca_id ? `#${row.matched_horeca_id}` : null)
   const mismatch = senderMismatch(row.confidence_fields)
+  const badge = statusBadge(row.status)
+  // Priority rail: rose when risky (mismatch or low confidence), else the
+  // status hue. Drives the eye to the rows that need a human first.
+  const risky = !!mismatch || row.confidence_overall < 0.75
+  const railClass = risky
+    ? 'border-rose-400'
+    : row.status === 'needs_review'
+      ? 'border-amber-400'
+      : 'border-transparent'
+  // Clamp the stagger so a long backlog doesn't cascade forever.
+  const revealIndex = Math.min(index, 12)
+
   return (
-    <li>
+    <li className="po-row-in" style={{ '--po-i': revealIndex } as React.CSSProperties}>
       <button
         type="button"
         onClick={onClick}
-        className={`group w-full text-left py-3 pr-4 hover:bg-stone-50 focus:outline-none focus:bg-stone-50 transition-colors border-l-2 ${
-          isNeedsReview ? 'border-amber-400 pl-4' : 'border-transparent pl-4'
-        }`}
+        className={`group w-full text-left flex items-center gap-4 py-3 pl-4 pr-3 border-l-[3px] ${railClass} transition-colors hover:bg-stone-50 focus:outline-none focus-visible:bg-stone-50`}
       >
-        <div className="flex items-baseline gap-3 flex-wrap">
-          <span className="font-medium text-stone-900 truncate">
-            {row.subject?.trim() || '(no subject)'}
-          </span>
-          {customerName ? (
-            <span className="text-sm text-stone-600">{customerName}</span>
-          ) : (
-            <span className="text-sm italic text-stone-400">unresolved</span>
-          )}
-          {row.approved_order_id && (
-            <span className="text-xs font-mono text-stone-500">{row.approved_order_id}</span>
-          )}
-          {mismatch && (
-            <span
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5"
-              title={`Sender mismatch — ${mismatch.sender ?? 'unknown'} is not a known address for this customer. Verify before approving.`}
-            >
-              <AlertTriangle className="w-3 h-3" /> sender mismatch
+        <ConfidenceRing value={row.confidence_overall} size="sm" />
+
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-stone-900 truncate">
+              {row.subject?.trim() || '(no subject)'}
             </span>
-          )}
-        </div>
-        <div className="mt-1 text-xs text-stone-500 flex flex-wrap gap-x-3">
-          <span className="truncate">{row.from_address || 'unknown sender'}</span>
-          <span aria-hidden>·</span>
-          <span>{formatAge(row.received_at)}</span>
-          <span aria-hidden>·</span>
-          <span className={`font-mono ${confidenceTone(row.confidence_overall)}`}>
-            {(row.confidence_overall * 100).toFixed(0)}%
+            {row.approved_order_id && (
+              <span className="text-xs font-mono text-stone-500">{row.approved_order_id}</span>
+            )}
+            {mismatch && (
+              <span
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5"
+                title={`Sender mismatch — ${mismatch.sender ?? 'unknown'} is not a known address for this customer. Verify before approving.`}
+              >
+                <AlertTriangle className="w-3 h-3" /> sender mismatch
+              </span>
+            )}
           </span>
-          <span aria-hidden>·</span>
-          <span className={STATUS_TONE[row.status]}>{STATUS_LABEL[row.status]}</span>
-        </div>
+          <span className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-stone-500">
+            {customerName ? (
+              <span className="truncate">{customerName}</span>
+            ) : (
+              <span className="italic text-stone-400">unresolved</span>
+            )}
+            <span aria-hidden>·</span>
+            <span className="truncate">{row.from_address || 'unknown sender'}</span>
+            <span aria-hidden>·</span>
+            <span>{formatAge(row.received_at)}</span>
+          </span>
+        </span>
+
+        <span
+          className={`shrink-0 text-[11px] font-medium rounded-full border px-2.5 py-0.5 ${badge.className}`}
+        >
+          {badge.label}
+        </span>
+
+        {/* Hover/focus affordance: chevron swaps to a Review pill. */}
+        <span className="shrink-0 w-[68px] flex justify-end" aria-hidden>
+          <ChevronRight className="w-4 h-4 text-stone-300 group-hover:hidden group-focus-visible:hidden" />
+          <span className="hidden group-hover:inline-flex group-focus-visible:inline-flex items-center gap-1 text-xs font-semibold text-nexgen-blue border border-nexgen-blue/30 bg-white rounded-lg px-2.5 py-1">
+            Review <ChevronRight className="w-3.5 h-3.5" />
+          </span>
+        </span>
       </button>
     </li>
   )
