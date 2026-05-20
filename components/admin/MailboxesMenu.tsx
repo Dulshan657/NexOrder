@@ -259,7 +259,10 @@ const MailboxesMenu: React.FC<MailboxesMenuProps> = ({ addToast, autoOpenNonce }
               <p className="mt-2 text-sm text-stone-600">No mailboxes connected yet.</p>
             </div>
           ) : (
-            <ul className="max-h-80 overflow-auto divide-y divide-stone-200/60">
+            <ul
+              className="max-h-80 overflow-auto divide-y divide-stone-200/60"
+              onClick={() => setMenuFor(null)}
+            >
               {sortedAccounts.map(account => (
                 <AccountRow
                   key={account.id}
@@ -300,7 +303,7 @@ const MailboxesMenu: React.FC<MailboxesMenuProps> = ({ addToast, autoOpenNonce }
 const MailboxSkeleton: React.FC = () => (
   <ul className="divide-y divide-stone-200/60">
     {Array.from({ length: 2 }).map((_, i) => (
-      <li key={i} className="flex items-center gap-3 px-4 py-3">
+      <li key={`mbx-skel-${i}`} className="flex items-center gap-3 px-4 py-3">
         <div className="po-skeleton" style={{ width: 8, height: 8, borderRadius: 999 }} />
         <div className="flex-1">
           <div className="po-skeleton" style={{ width: '60%', height: 11 }} />
@@ -383,7 +386,10 @@ const AccountRow: React.FC<AccountRowProps> = ({
       ) : (
         <button
           type="button"
-          onClick={onToggleMenu}
+          onClick={e => {
+            e.stopPropagation()
+            onToggleMenu()
+          }}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           aria-label={`Actions for ${account.email_address}`}
