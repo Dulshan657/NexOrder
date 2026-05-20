@@ -97,4 +97,27 @@ describe('decidePendingPoStatus', () => {
     })
     expect(result.reason).toHaveLength(3)
   })
+
+  it('routes to needs_review on sender mismatch even when all other gates pass', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      senderMismatch: true,
+    })
+    expect(result.status).toBe('needs_review')
+    expect(result.confidenceOverall).toBe(1.0)
+    expect(result.reason.some(r => /spoofing/.test(r))).toBe(true)
+  })
+
+  it('auto-approves when senderMismatch is false (default behavior unchanged)', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      senderMismatch: false,
+    })
+    expect(result.status).toBe('auto_approved')
+    expect(result.reason).toEqual([])
+  })
 })

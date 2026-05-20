@@ -53,7 +53,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
   // Lookup: orderId → invoice
   const invoicesByOrderId = useMemo(() => {
     const map = new Map<string, Invoice>();
-    for (const inv of invoices) map.set(inv.orderId, inv);
+    for (const inv of invoices ?? []) map.set(inv.orderId, inv);
     return map;
   }, [invoices]);
 

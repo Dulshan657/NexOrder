@@ -496,7 +496,12 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
     fromAddress: inbound.from_address || null,
   })
 
-  await persistAliases(args.supa, aliasDiff, args.mode === 'human' ? args.approverUserId : null)
+  await persistAliases(
+    args.supa,
+    aliasDiff,
+    args.mode === 'human' ? args.approverUserId : null,
+    args.pendingPoId,
+  )
 
   if (args.mode === 'human') {
     await logAuditEvent(args.supa, {
@@ -597,10 +602,12 @@ async function persistAliases(
   supa: SupabaseClient,
   diff: ReturnType<typeof computeAliasDiff>,
   createdByUserId: string | null,
+  pendingPoId: string,
 ): Promise<void> {
   // Bulk insert in two batches (one per table). ON CONFLICT DO NOTHING
   // via PostgREST's ignoreDuplicates option keeps the call idempotent
-  // when an alias already exists from a prior approval.
+  // when an alias already exists from a prior approval. pending_po_id
+  // stamps the originating PO so the Aliases tab can show provenance.
   if (diff.customerAliases.length > 0) {
     const rows = diff.customerAliases.map(row => ({
       source_type: row.source_type,
@@ -608,6 +615,7 @@ async function persistAliases(
       horeca_id: row.horeca_id,
       created_by: createdByUserId,
       confidence_at_creation: 1.0,
+      pending_po_id: pendingPoId,
     }))
     const { error } = await supa
       .from('po_customer_aliases')
@@ -627,6 +635,7 @@ async function persistAliases(
       product_id: row.product_id,
       created_by: createdByUserId,
       confidence_at_creation: 1.0,
+      pending_po_id: pendingPoId,
     }))
     // The product-alias table's unique constraints are partial
     // (separate indexes on (horeca_id, source_code) and on

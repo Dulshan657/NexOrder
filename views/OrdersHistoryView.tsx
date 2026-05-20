@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { UserRole, type HoReCa, type Invoice, type Order, type OrderItem, type OrderStatus, type User } from '../types';
 import OrderHistory from '../components/OrderHistory';
-import OrdersPage from '../components/OrdersPage';
+import OrderImportPage from '../components/OrderImportPage';
 
 export interface OrdersHistoryViewProps {
     orders: Order[];
@@ -68,7 +68,7 @@ const OrdersHistoryView: React.FC<OrdersHistoryViewProps> = ({
     }
 
     return (
-        <OrdersPage
+        <OrderImportPage
             orders={orders}
             hoReCas={hoReCas}
             invoices={invoices}

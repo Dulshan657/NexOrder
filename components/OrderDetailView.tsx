@@ -193,7 +193,12 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                             <div className="flex flex-wrap gap-2">
                                 <button
                                     type="button"
-                                    onClick={() => { setPaymentError(undefined); setPaymentAction('paid'); }}
+                                    onClick={() => {
+                                        // Diagnostic — remove once payment-modal flow is confirmed working live.
+                                        console.debug('[payment-action] open (OrderDetailView)', order.id, 'paid');
+                                        setPaymentError(undefined);
+                                        setPaymentAction('paid');
+                                    }}
                                     disabled={invoice?.status === 'paid'}
                                     className="px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
@@ -201,7 +206,11 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => { setPaymentError(undefined); setPaymentAction('overdue'); }}
+                                    onClick={() => {
+                                        console.debug('[payment-action] open (OrderDetailView)', order.id, 'overdue');
+                                        setPaymentError(undefined);
+                                        setPaymentAction('overdue');
+                                    }}
                                     disabled={invoice?.status === 'overdue'}
                                     className="px-3 py-1.5 text-sm font-medium rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
@@ -210,7 +219,11 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                                 {invoice && (
                                     <button
                                         type="button"
-                                        onClick={() => { setPaymentError(undefined); setPaymentAction('pending'); }}
+                                        onClick={() => {
+                                            console.debug('[payment-action] open (OrderDetailView)', order.id, 'pending');
+                                            setPaymentError(undefined);
+                                            setPaymentAction('pending');
+                                        }}
                                         disabled={invoice.status === 'pending'}
                                         className="px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                     >

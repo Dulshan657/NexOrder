@@ -1,9 +1,11 @@
-// Admin-dashboard tile showing PO Inbox health at a glance.
+// Admin tile showing PO Inbox health at a glance.
 //
-//   * Today's volume + auto-approval ratio
-//   * Backlog (POs awaiting human review across all dates)
-//   * Today's extraction cost (Admin only; Manager sees blank)
-//   * Click → jumps to /admin/po-inbox
+// Two presentation variants:
+//   * 'card' — original chunky tile used by AdminDashboard, where the tile is
+//     one of several elevated surfaces competing for attention.
+//   * 'inline' — flat horizontal KPI strip used inside POInboxView, where the
+//     tile lives in a page header and needs to feel quiet, not stack another
+//     card on top of the existing page chrome.
 
 import React from 'react'
 import { AlertTriangle, CheckCircle2, DollarSign, Inbox } from 'lucide-react'
@@ -14,12 +16,44 @@ import {
   thresholdTone,
 } from './poInboxStatsFormat'
 
+type Tone = 'default' | 'emerald' | 'amber' | 'rose'
+
 interface POInboxStatsTileProps {
   onNavigate?: () => void
+  variant?: 'card' | 'inline'
 }
 
-const POInboxStatsTile: React.FC<POInboxStatsTileProps> = ({ onNavigate }) => {
+const POInboxStatsTile: React.FC<POInboxStatsTileProps> = ({
+  onNavigate,
+  variant = 'card',
+}) => {
   const { data, isLoading } = usePoInboxStats()
+
+  const received = isLoading ? '…' : String(data?.todayCount ?? 0)
+  const autoApproved =
+    isLoading || !data ? '…' : describeRatio(data.autoApprovedRatio, data.todayAutoApproved)
+  const backlog = isLoading ? '…' : String(data?.needsReviewBacklog ?? 0)
+  const backlogTone: Tone = thresholdTone(data?.needsReviewBacklog ?? 0, [1, 5])
+  const costToday = isLoading || !data ? '…' : describeCost(data.costUsdToday)
+
+  if (variant === 'inline') {
+    return (
+      <dl className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        <InlineStat label="Received" value={received} />
+        <InlineDivider />
+        <InlineStat label="Auto-approved" value={autoApproved} tone="emerald" />
+        <InlineDivider />
+        <InlineStat label="Needs review" value={backlog} tone={backlogTone} />
+        <InlineDivider />
+        <InlineStat label="Cost today" value={costToday} />
+        {data?.costUsdSevenDayAvg != null && (
+          <span className="text-[11px] text-stone-500">
+            7-day avg {describeCost(data.costUsdSevenDayAvg)}/day
+          </span>
+        )}
+      </dl>
+    )
+  }
 
   return (
     <div className="rounded-2xl bg-white shadow-card border border-stone-200 p-5 space-y-4">
@@ -40,28 +74,20 @@ const POInboxStatsTile: React.FC<POInboxStatsTileProps> = ({ onNavigate }) => {
       </header>
 
       <div className="grid grid-cols-2 gap-3">
-        <Stat
-          label="Received"
-          value={isLoading ? '…' : String(data?.todayCount ?? 0)}
-          icon={<Inbox className="w-3 h-3" />}
-        />
-        <Stat
+        <CardStat label="Received" value={received} icon={<Inbox className="w-3 h-3" />} />
+        <CardStat
           label="Auto-approved"
-          value={isLoading || !data ? '…' : describeRatio(data.autoApprovedRatio, data.todayAutoApproved)}
+          value={autoApproved}
           tone="emerald"
           icon={<CheckCircle2 className="w-3 h-3" />}
         />
-        <Stat
+        <CardStat
           label="Needs review (all time)"
-          value={isLoading ? '…' : String(data?.needsReviewBacklog ?? 0)}
-          tone={thresholdTone(data?.needsReviewBacklog ?? 0, [1, 5])}
+          value={backlog}
+          tone={backlogTone}
           icon={<AlertTriangle className="w-3 h-3" />}
         />
-        <Stat
-          label="Cost today"
-          value={isLoading || !data ? '…' : describeCost(data.costUsdToday)}
-          icon={<DollarSign className="w-3 h-3" />}
-        />
+        <CardStat label="Cost today" value={costToday} icon={<DollarSign className="w-3 h-3" />} />
       </div>
 
       {data && data.costUsdSevenDayAvg != null && (
@@ -73,21 +99,28 @@ const POInboxStatsTile: React.FC<POInboxStatsTileProps> = ({ onNavigate }) => {
   )
 }
 
-const TONE_STYLES: Record<string, string> = {
+const TONE_STYLES: Record<Tone, string> = {
   default: 'bg-stone-50 text-stone-700 border-stone-200',
   emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   amber: 'bg-amber-50 text-amber-800 border-amber-200',
   rose: 'bg-rose-50 text-rose-700 border-rose-200',
 }
 
-interface StatProps {
+const INLINE_VALUE_TONE: Record<Tone, string> = {
+  default: 'text-stone-900',
+  emerald: 'text-emerald-700',
+  amber: 'text-amber-700',
+  rose: 'text-rose-700',
+}
+
+interface CardStatProps {
   label: string
   value: string
   icon?: React.ReactNode
-  tone?: 'default' | 'emerald' | 'amber' | 'rose'
+  tone?: Tone
 }
 
-const Stat: React.FC<StatProps> = ({ label, value, icon, tone = 'default' }) => {
+const CardStat: React.FC<CardStatProps> = ({ label, value, icon, tone = 'default' }) => {
   const className = TONE_STYLES[tone] ?? TONE_STYLES.default
   return (
     <div className={`rounded-lg border px-3 py-2 ${className}`}>
@@ -99,5 +132,22 @@ const Stat: React.FC<StatProps> = ({ label, value, icon, tone = 'default' }) => 
     </div>
   )
 }
+
+interface InlineStatProps {
+  label: string
+  value: string
+  tone?: Tone
+}
+
+const InlineStat: React.FC<InlineStatProps> = ({ label, value, tone = 'default' }) => (
+  <div className="flex items-baseline gap-2">
+    <dt className="text-[11px] uppercase tracking-wide text-stone-500">{label}</dt>
+    <dd className={`font-mono text-sm ${INLINE_VALUE_TONE[tone]}`}>{value}</dd>
+  </div>
+)
+
+const InlineDivider: React.FC = () => (
+  <span aria-hidden className="h-4 w-px bg-stone-200" />
+)
 
 export default POInboxStatsTile

@@ -183,6 +183,8 @@ interface AppShellInnerProps extends AppShellProps {
     setInitialRouteId: React.Dispatch<React.SetStateAction<string | null>>;
     selectedOrderId: string | null;
     setSelectedOrderId: React.Dispatch<React.SetStateAction<string | null>>;
+    highlightOrderId: string | null;
+    setHighlightOrderId: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const AppShellInner: React.FC<AppShellInnerProps> = ({
@@ -229,6 +231,8 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     setInitialRouteId,
     selectedOrderId,
     setSelectedOrderId,
+    highlightOrderId,
+    setHighlightOrderId,
 }) => {
     // ── Context consumption ───────────────────────────────────────────────────
     const {
@@ -555,7 +559,14 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                     <div className="flex items-center gap-2">
                         {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER) && (
                             <POInboxHeaderBadge
-                                onClick={() => setAdminView('PO Inbox')}
+                                onClick={() => {
+                                    if (typeof window !== 'undefined') {
+                                        const params = new URLSearchParams(window.location.search);
+                                        params.set('subtab', 'queue');
+                                        window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+                                    }
+                                    setAdminView('PO Inbox');
+                                }}
                             />
                         )}
                         <div className="relative">
@@ -676,6 +687,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 <ShoppingCart className="w-5 h-5 mr-3" /> Order Import
                             </button>
                             <button
+                                onClick={() => { setAdminView('PO Inbox'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'PO Inbox' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <Inbox className="w-5 h-5 mr-3" /> PO Inbox
+                            </button>
+                            <button
                                 onClick={() => { setAdminView('Accounts'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
@@ -758,24 +775,6 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Settings' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <Settings className="w-5 h-5 mr-3" /> Settings
-                            </button>
-                            <button
-                                onClick={() => { setAdminView('Email Accounts'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Email Accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <Mail className="w-5 h-5 mr-3" /> Email Accounts
-                            </button>
-                            <button
-                                onClick={() => { setAdminView('PO Inbox'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'PO Inbox' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <Inbox className="w-5 h-5 mr-3" /> PO Inbox
-                            </button>
-                            <button
-                                onClick={() => { setAdminView('PO Aliases'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'PO Aliases' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <BookOpen className="w-5 h-5 mr-3" /> PO Aliases
                             </button>
                             {isAdmin && (
                                 <button
@@ -998,6 +997,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 onSetRoutes={setRoutes}
                                 addToast={addToast}
                                 onSetAdminView={setAdminView}
+                                highlightOrderId={highlightOrderId}
+                                onClearHighlightOrderId={() => setHighlightOrderId(null)}
+                                onViewInOrderImport={(orderId) => {
+                                    setHighlightOrderId(orderId);
+                                    setAdminView('Order Import');
+                                }}
                                 appLogo={appSettings.companyLogoUrl ?? null}
                                 appSettings={appSettings}
                                 onUpdateLogo={logo => {
@@ -1286,9 +1291,18 @@ const AppShell: React.FC<AppShellProps> = props => {
     const [adminView, setAdminView] = useState<AdminTab>(() => {
         if (typeof window === 'undefined') return 'Dashboard';
         const params = new URLSearchParams(window.location.search);
-        if (params.has('connected') || params.has('connect_error')) return 'Email Accounts';
+        // After the OAuth callback, route to the consolidated PO Inbox tab
+        // and select the Mailboxes sub-tab so the operator sees their new
+        // connection in context (the previous "Email Accounts" top-level tab
+        // collapsed into POInboxView's Mailboxes sub-tab).
+        if (params.has('connected') || params.has('connect_error')) {
+            params.set('subtab', 'mailboxes');
+            window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+            return 'PO Inbox';
+        }
         return 'Dashboard';
     });
+    const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
     const [orderingTab, setOrderingTab] = useState<OrderingTabKey>('catalogue');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [searchQuery, setSearchQuery] = useState('');
@@ -1320,6 +1334,7 @@ const AppShell: React.FC<AppShellProps> = props => {
         isNotificationPanelOpen, setIsNotificationPanelOpen,
         initialRouteId, setInitialRouteId,
         selectedOrderId, setSelectedOrderId,
+        highlightOrderId, setHighlightOrderId,
     };
 
     return (

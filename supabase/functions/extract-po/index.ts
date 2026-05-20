@@ -42,10 +42,12 @@ import {
   decidePendingPoStatus,
 } from '../_shared/poInbox/statusDecision.ts'
 import {
+  backfillAliasOrigin,
   resolveCustomer,
   resolveProduct,
   type SupabaseLike,
 } from '../_shared/poInbox/aliasResolver.ts'
+import { detectSenderMismatch } from '../_shared/poInbox/senderTrust.ts'
 
 interface ExtractRequest {
   inboundMessageId: string
@@ -198,6 +200,7 @@ async function runExtraction(
     confidence: number
   }> = []
 
+  const productAliasInsertedIds: string[] = []
   if (customerResolution.horecaId !== null) {
     for (let i = 0; i < extracted.lines.length; i++) {
       const line = extracted.lines[i]
@@ -210,6 +213,7 @@ async function runExtraction(
         itemCodeRaw: line.item_code_raw,
         descriptionRaw: line.description_raw,
       })
+      if (product.aliasInsertedId) productAliasInsertedIds.push(product.aliasInsertedId)
       matchedItems.push({
         po_line_index: i,
         product_id: product.productId,
@@ -231,12 +235,24 @@ async function runExtraction(
     }
   }
 
+  // 5b. Sender / customer mismatch (anti-spoofing). Only meaningful once a
+  //     customer is resolved: does the inbound sender belong to that
+  //     customer? A mismatch forces human review and never auto-approves.
+  const senderTrust = customerResolution.horecaId !== null
+    ? await detectSenderMismatch({
+        supa: serviceClient as unknown as SupabaseLike,
+        fromAddress: message.from_address || null,
+        horecaId: customerResolution.horecaId,
+      })
+    : { flagged: false, sender: null }
+
   // 6. Decide status
   const decision = decidePendingPoStatus({
     confidence: extracted.confidence,
     customerResolved: customerResolution.horecaId !== null,
     allLinesResolved:
       matchedItems.length > 0 && matchedItems.every(m => m.product_id !== null),
+    senderMismatch: senderTrust.flagged,
   })
 
   // 7. Persist the pending_pos row
@@ -273,6 +289,15 @@ async function runExtraction(
         per_field: extracted.confidence,
         gating_reasons: decision.reason,
         customer_match: customerResolution.matchSource,
+        ...(senderTrust.flagged
+          ? {
+              sender_mismatch: {
+                flagged: true,
+                sender: senderTrust.sender,
+                horeca_id: customerResolution.horecaId,
+              },
+            }
+          : {}),
       },
       matched_horeca_id: customerResolution.horecaId,
       matched_items: matchedItems,
@@ -284,6 +309,16 @@ async function runExtraction(
     throw new Error(`pending_pos insert: ${insertError?.message ?? 'no row returned'}`)
   }
   const pendingPoId = (pending as { id: string }).id
+
+  // Backfill pending_po_id on any aliases this extraction auto-created.
+  // The resolver writes alias rows BEFORE pending_pos exists (FK would fail);
+  // origin tracing stamps the link now that pendingPoId is known.
+  await backfillAliasOrigin(
+    serviceClient as unknown as SupabaseLike,
+    pendingPoId,
+    customerResolution.aliasInsertedId ? [customerResolution.aliasInsertedId] : [],
+    productAliasInsertedIds,
+  )
 
   await updateInboundStatus(serviceClient, inboundMessageId, 'extracted')
 
@@ -422,17 +457,25 @@ async function loadDocuments(
     const mime = (blob.type ?? '').toLowerCase()
     const filename = entry.name
 
-    if (mime === 'application/pdf' && !pdf) {
+    if ((mime === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) && !pdf) {
       pdf = { bytes: new Uint8Array(await blob.arrayBuffer()), filename }
       primaryFormat = 'pdf'
       primaryFilename = filename
     } else if (
       (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-        mime === 'application/msword') &&
+        mime === 'application/msword' ||
+        filename.toLowerCase().endsWith('.docx') ||
+        filename.toLowerCase().endsWith('.doc')) &&
       !docxText
     ) {
+      // Mammoth's options.buffer is forwarded to JSZip.loadAsync, which
+      // accepts Buffer | Uint8Array | ArrayBuffer. Passing a Uint8Array
+      // sidesteps Deno's spotty Node-Buffer polyfill. Filename-extension
+      // fallback above also guards against providers that strip the
+      // Content-Type metadata.
       try {
-        const result = await mammoth.extractRawText({ buffer: Buffer.from(await blob.arrayBuffer()) })
+        const bytes = new Uint8Array(await blob.arrayBuffer())
+        const result = await mammoth.extractRawText({ buffer: bytes })
         docxText = result.value
         if (primaryFormat === 'text') {
           primaryFormat = 'docx'
@@ -441,7 +484,7 @@ async function loadDocuments(
       } catch (err) {
         console.warn(`[extract-po] mammoth failed on ${filename}:`, sanitizeForLog(err instanceof Error ? err.message : String(err)))
       }
-    } else if (mime.startsWith('image/') && !image && !pdf) {
+    } else if ((mime.startsWith('image/') || /\.(jpe?g|png|webp|heic)$/i.test(filename)) && !image && !pdf) {
       image = {
         bytes: new Uint8Array(await blob.arrayBuffer()),
         mimeType: mime,
@@ -513,23 +556,24 @@ async function extractPoFields(params: {
   docs: LoadedDocuments
 }): Promise<ExtractedPo> {
   const userParts: Array<{
-    type: 'text' | 'image_url' | 'input_file'
+    type: 'text' | 'image_url' | 'file'
     text?: string
     image_url?: { url: string }
-    file_id?: string
+    file?: { filename: string; file_data: string }
   }> = []
 
   if (params.docs.pdf) {
-    // OpenAI's chat completions accept PDF as an inline data URL since 2025.
+    // OpenAI Chat Completions accepts inline PDFs via a `file` content
+    // part with a data URL. The previous `input_file` shape belongs to
+    // the newer Responses API and is rejected here (HTTP 400).
     const b64 = bytesToBase64(params.docs.pdf.bytes)
     userParts.push({ type: 'text', text: 'The purchase order is in the attached PDF.' })
     userParts.push({
-      // file_data via input_file is the supported shape in the latest models.
-      type: 'input_file' as const,
-      // We use image_url-style data URI here because OpenAI's input_file
-      // PDF support is currently rolled out incrementally; falling back to
-      // the chat completions image-url path is the broadly compatible call.
-      image_url: { url: `data:application/pdf;base64,${b64}` },
+      type: 'file' as const,
+      file: {
+        filename: params.docs.primaryFilename ?? 'purchase-order.pdf',
+        file_data: `data:application/pdf;base64,${b64}`,
+      },
     })
   } else if (params.docs.image) {
     const b64 = bytesToBase64(params.docs.image.bytes)

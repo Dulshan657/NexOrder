@@ -1,32 +1,56 @@
-// POAliasesTab — read-only view of the alias tables that drive
+// POAliasesTab — viewer + light editor for the alias tables that drive
 // deterministic customer / product matching in the PO Inbox pipeline.
 //
-// Aliases are written automatically:
-//   * extract-po inserts them when AI fuzzy match is ≥0.9 confidence
-//   * approve-po inserts them when an operator approves a PO
-//
-// MVP scope: this tab is read-only. Manual edit / delete are deferred
-// to Phase 2 (they need a mutate-po-alias Edge Function plus a small UI
-// for the (rare) case where a wrong alias gets stuck). Today operators
-// can override the AI on individual POs from the inbox modal.
+// Aliases are auto-populated by extract-po (>= 0.9 AI confidence) and
+// approve-po (operator approval write-back). This tab exposes the same
+// table with Edit / Delete row actions and a "+ New alias" button so a
+// wrong learned alias can be fixed in-app instead of via SQL. Every
+// mutation routes through the mutate-po-alias Edge Function and lands in
+// audit_events.
 
-import React, { useMemo, useState } from 'react'
-import { BookOpen, Loader2, Search } from 'lucide-react'
+import React, { lazy, Suspense, useMemo, useState } from 'react'
+import { Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { useCustomerAliases, useProductAliases } from '@/hooks/queries/usePendingPos'
-import type { CustomerAliasRow, ProductAliasRow } from '@/services/supabase/poInboxService'
+import {
+  useDeleteCustomerAlias,
+  useDeleteProductAlias,
+} from '@/hooks/queries/usePoAliasMutations'
+import type {
+  CustomerAliasRow,
+  ProductAliasRow,
+} from '@/services/supabase/poInboxService'
 import type { HoReCa, Product } from '../../types'
+import type { AliasModalMode } from './POAliasEditModal'
+
+const POAliasEditModal = lazy(() => import('./POAliasEditModal'))
 
 interface POAliasesTabProps {
   hoReCas: HoReCa[]
   products: Product[]
+  addToast?: (message: string, type: 'success' | 'error' | 'info') => void
+  /**
+   * Click handler for the "View source PO" link in the Origin column.
+   * Receives the pending_po_id, switches to the Queue sub-tab, and primes
+   * the detail modal with that PO.
+   */
+  onViewSourcePo?: (pendingPoId: string) => void
 }
 
-const POAliasesTab: React.FC<POAliasesTabProps> = ({ hoReCas, products }) => {
+const POAliasesTab: React.FC<POAliasesTabProps> = ({
+  hoReCas,
+  products,
+  addToast,
+  onViewSourcePo,
+}) => {
   const [active, setActive] = useState<'customer' | 'product'>('customer')
   const [query, setQuery] = useState<string>('')
+  const [modalMode, setModalMode] = useState<AliasModalMode | null>(null)
 
   const customerQuery = useCustomerAliases()
   const productQuery = useProductAliases()
+
+  const deleteCustomer = useDeleteCustomerAlias()
+  const deleteProduct = useDeleteProductAlias()
 
   const horecaById = useMemo(() => {
     const m = new Map<number, HoReCa>()
@@ -40,47 +64,91 @@ const POAliasesTab: React.FC<POAliasesTabProps> = ({ hoReCas, products }) => {
     return m
   }, [products])
 
-  return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-5">
-      <header className="flex items-center gap-3">
-        <BookOpen className="w-5 h-5 text-stone-700" />
-        <div>
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">PO Aliases</h1>
-          <p className="text-sm text-stone-500">
-            Deterministic sender / item mappings the PO Inbox uses to match emails to customers
-            and products. Rows are added automatically when operators approve POs.
-          </p>
-        </div>
-      </header>
+  function handleNew(): void {
+    setModalMode({ kind: active, action: 'create' })
+  }
 
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex gap-2">
-          <TabButton active={active === 'customer'} onClick={() => setActive('customer')}>
-            Customer aliases ({customerQuery.data?.length ?? 0})
-          </TabButton>
-          <TabButton active={active === 'product'} onClick={() => setActive('product')}>
-            Product aliases ({productQuery.data?.length ?? 0})
-          </TabButton>
-        </div>
-        <label className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+  function handleEditCustomer(row: CustomerAliasRow): void {
+    setModalMode({ kind: 'customer', action: 'edit', initial: row })
+  }
+
+  function handleEditProduct(row: ProductAliasRow): void {
+    setModalMode({ kind: 'product', action: 'edit', initial: row })
+  }
+
+  async function handleDeleteCustomer(row: CustomerAliasRow): Promise<void> {
+    if (!window.confirm(`Delete alias for "${row.source_value}"?`)) return
+    try {
+      await deleteCustomer.mutateAsync(row.id)
+      addToast?.('Alias deleted.', 'success')
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      addToast?.(`Delete failed: ${message}`, 'error')
+    }
+  }
+
+  async function handleDeleteProduct(row: ProductAliasRow): Promise<void> {
+    const label = row.source_code || row.source_description || row.id
+    if (!window.confirm(`Delete alias for "${label}"?`)) return
+    try {
+      await deleteProduct.mutateAsync(row.id)
+      addToast?.('Alias deleted.', 'success')
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      addToast?.(`Delete failed: ${message}`, 'error')
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 border-b border-stone-200/70">
+        <nav className="flex items-center gap-6 -mb-px" aria-label="Alias kind">
+          <ToggleTab active={active === 'customer'} onClick={() => setActive('customer')}>
+            Customer
+            <span className="ml-2 font-mono text-stone-400">
+              {customerQuery.data?.length ?? 0}
+            </span>
+          </ToggleTab>
+          <ToggleTab active={active === 'product'} onClick={() => setActive('product')}>
+            Product
+            <span className="ml-2 font-mono text-stone-400">
+              {productQuery.data?.length ?? 0}
+            </span>
+          </ToggleTab>
+        </nav>
+        <button
+          type="button"
+          onClick={handleNew}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-nexgen-blue hover:text-nexgen-blue/80 btn-press pb-2"
+        >
+          <Plus className="w-4 h-4" />
+          New {active === 'customer' ? 'customer' : 'product'} alias
+        </button>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <label className="relative w-full max-w-sm">
+          <Search className="absolute left-1 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
           <input
             type="search"
             placeholder="Filter…"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            className="w-full rounded-lg border border-stone-300 bg-white pl-8 pr-2 py-1.5 text-sm"
+            className="w-full bg-transparent pl-7 pr-2 py-1 text-sm border-b border-stone-200 focus:outline-none focus:border-stone-500 placeholder:text-stone-400"
           />
         </label>
       </div>
 
-      <section className="rounded-xl border border-stone-200 bg-white shadow-card overflow-hidden">
+      <div className="mt-2">
         {active === 'customer' ? (
           <CustomerAliasTable
             rows={customerQuery.data ?? []}
             horecaById={horecaById}
             isLoading={customerQuery.isLoading}
             query={query}
+            onEdit={handleEditCustomer}
+            onDelete={handleDeleteCustomer}
+            onViewSourcePo={onViewSourcePo}
           />
         ) : (
           <ProductAliasTable
@@ -89,14 +157,29 @@ const POAliasesTab: React.FC<POAliasesTabProps> = ({ hoReCas, products }) => {
             productById={productById}
             isLoading={productQuery.isLoading}
             query={query}
+            onEdit={handleEditProduct}
+            onDelete={handleDeleteProduct}
+            onViewSourcePo={onViewSourcePo}
           />
         )}
-      </section>
+      </div>
+
+      {modalMode && (
+        <Suspense fallback={null}>
+          <POAliasEditModal
+            mode={modalMode}
+            hoReCas={hoReCas}
+            products={products}
+            onClose={() => setModalMode(null)}
+            onSaved={() => addToast?.('Alias saved.', 'success')}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }
 
-const TabButton: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({
+const ToggleTab: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({
   active,
   onClick,
   children,
@@ -104,10 +187,10 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
   <button
     type="button"
     onClick={onClick}
-    className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${
+    className={`py-2.5 text-sm transition-colors border-b-2 ${
       active
-        ? 'bg-nexgen-blue text-white'
-        : 'bg-white text-stone-700 ring-1 ring-inset ring-stone-200 hover:bg-stone-50'
+        ? 'border-stone-900 text-stone-900 font-medium'
+        : 'border-transparent text-stone-500 hover:text-stone-800'
     }`}
   >
     {children}
@@ -119,9 +202,20 @@ interface CustomerAliasTableProps {
   horecaById: Map<number, HoReCa>
   isLoading: boolean
   query: string
+  onEdit: (row: CustomerAliasRow) => void
+  onDelete: (row: CustomerAliasRow) => void
+  onViewSourcePo?: (pendingPoId: string) => void
 }
 
-const CustomerAliasTable: React.FC<CustomerAliasTableProps> = ({ rows, horecaById, isLoading, query }) => {
+const CustomerAliasTable: React.FC<CustomerAliasTableProps> = ({
+  rows,
+  horecaById,
+  isLoading,
+  query,
+  onEdit,
+  onDelete,
+  onViewSourcePo,
+}) => {
   const filtered = useMemo(() => filterCustomerAliases(rows, horecaById, query), [rows, horecaById, query])
   if (isLoading) {
     return (
@@ -136,23 +230,32 @@ const CustomerAliasTable: React.FC<CustomerAliasTableProps> = ({ rows, horecaByI
   }
   return (
     <table className="w-full text-sm">
-      <thead className="bg-stone-50 text-stone-600 text-left">
-        <tr>
-          <Th>Source type</Th>
-          <Th>Source value</Th>
-          <Th>Customer</Th>
+      <thead className="text-left">
+        <tr className="border-b border-stone-300/70 text-stone-500">
           <Th>Source</Th>
-          <Th>Created</Th>
+          <Th>Customer</Th>
+          <Th>Provenance</Th>
+          <Th className="w-20 text-right">{/* Actions, label hidden */}</Th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-stone-200">
+      <tbody className="divide-y divide-stone-200/70">
         {filtered.map(row => (
-          <tr key={row.id} className="hover:bg-stone-50">
-            <Td className="font-mono text-xs">{row.source_type}</Td>
-            <Td className="truncate max-w-xs">{row.source_value}</Td>
+          <tr key={row.id} className="group hover:bg-stone-50">
+            <Td>
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-[11px] uppercase text-stone-500">
+                  {row.source_type.replace('_', ' ')}
+                </span>
+              </div>
+              <div className="truncate max-w-[18rem] text-stone-900">{row.source_value}</div>
+            </Td>
             <Td>{horecaById.get(row.horeca_id)?.name ?? `#${row.horeca_id}`}</Td>
-            <Td>{row.created_by ? 'Operator' : 'AI'}</Td>
-            <Td className="text-stone-500">{new Date(row.created_at).toLocaleDateString()}</Td>
+            <Td>
+              <ProvenanceCell row={row} onViewSourcePo={onViewSourcePo} />
+            </Td>
+            <Td className="text-right">
+              <RowActions onEdit={() => onEdit(row)} onDelete={() => onDelete(row)} />
+            </Td>
           </tr>
         ))}
       </tbody>
@@ -166,6 +269,9 @@ interface ProductAliasTableProps {
   productById: Map<number, Product>
   isLoading: boolean
   query: string
+  onEdit: (row: ProductAliasRow) => void
+  onDelete: (row: ProductAliasRow) => void
+  onViewSourcePo?: (pendingPoId: string) => void
 }
 
 const ProductAliasTable: React.FC<ProductAliasTableProps> = ({
@@ -174,6 +280,9 @@ const ProductAliasTable: React.FC<ProductAliasTableProps> = ({
   productById,
   isLoading,
   query,
+  onEdit,
+  onDelete,
+  onViewSourcePo,
 }) => {
   const filtered = useMemo(
     () => filterProductAliases(rows, horecaById, productById, query),
@@ -192,35 +301,50 @@ const ProductAliasTable: React.FC<ProductAliasTableProps> = ({
   }
   return (
     <table className="w-full text-sm">
-      <thead className="bg-stone-50 text-stone-600 text-left">
-        <tr>
+      <thead className="text-left">
+        <tr className="border-b border-stone-300/70 text-stone-500">
           <Th>Customer</Th>
-          <Th>Customer code</Th>
-          <Th>Customer description</Th>
+          <Th>Maps from</Th>
           <Th>Product</Th>
-          <Th>Source</Th>
-          <Th>Created</Th>
+          <Th>Provenance</Th>
+          <Th className="w-20 text-right">{/* Actions */}</Th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-stone-200">
+      <tbody className="divide-y divide-stone-200/70">
         {filtered.map(row => {
           const product = productById.get(row.product_id)
           return (
-            <tr key={row.id} className="hover:bg-stone-50">
+            <tr key={row.id} className="group hover:bg-stone-50">
               <Td>{horecaById.get(row.horeca_id)?.name ?? `#${row.horeca_id}`}</Td>
-              <Td className="font-mono text-xs">{row.source_code ?? '—'}</Td>
-              <Td className="truncate max-w-xs">{row.source_description ?? '—'}</Td>
               <Td>
-                {product ? (
-                  <span>
-                    <span className="font-mono text-xs">{product.sku}</span> · {product.name}
-                  </span>
-                ) : (
-                  `#${row.product_id}`
+                {row.source_code && (
+                  <div className="font-mono text-xs text-stone-700">{row.source_code}</div>
+                )}
+                {row.source_description && (
+                  <div className="truncate max-w-[16rem] text-stone-900">
+                    {row.source_description}
+                  </div>
+                )}
+                {!row.source_code && !row.source_description && (
+                  <span className="text-stone-400">—</span>
                 )}
               </Td>
-              <Td>{row.created_by ? 'Operator' : 'AI'}</Td>
-              <Td className="text-stone-500">{new Date(row.created_at).toLocaleDateString()}</Td>
+              <Td>
+                {product ? (
+                  <>
+                    <div className="font-mono text-xs text-stone-500">{product.sku}</div>
+                    <div className="text-stone-900">{product.name}</div>
+                  </>
+                ) : (
+                  <span className="text-stone-400">#{row.product_id}</span>
+                )}
+              </Td>
+              <Td>
+                <ProvenanceCell row={row} onViewSourcePo={onViewSourcePo} />
+              </Td>
+              <Td className="text-right">
+                <RowActions onEdit={() => onEdit(row)} onDelete={() => onDelete(row)} />
+              </Td>
             </tr>
           )
         })}
@@ -229,16 +353,91 @@ const ProductAliasTable: React.FC<ProductAliasTableProps> = ({
   )
 }
 
-const Th: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <th className="px-3 py-2 text-[11px] font-medium uppercase tracking-wide">{children}</th>
+interface ProvenanceCellProps {
+  row: {
+    created_by: string | null
+    created_at: string
+    pending_po_id: string | null
+    origin_sender_email: string | null
+    origin_received_at: string | null
+  }
+  onViewSourcePo?: (pendingPoId: string) => void
+}
+
+// Single cell merging the old Source (Operator/AI) + Origin (sender +
+// received) + Created (date) columns. Clickable when the row knows its
+// originating pending_pos.
+const ProvenanceCell: React.FC<ProvenanceCellProps> = ({ row, onViewSourcePo }) => {
+  const isOperator = !!row.created_by
+  const author = isOperator ? 'Operator' : 'AI'
+  const authorTone = isOperator ? 'text-stone-700' : 'text-stone-500'
+  const dateText = new Date(row.created_at).toLocaleDateString()
+
+  if (row.pending_po_id && row.origin_sender_email) {
+    return (
+      <button
+        type="button"
+        onClick={() => onViewSourcePo?.(row.pending_po_id!)}
+        className="text-left max-w-[18rem] group/origin"
+        disabled={!onViewSourcePo}
+        title="View source PO"
+      >
+        <div className="text-xs text-stone-500">
+          <span className={authorTone}>{author}</span>
+          <span aria-hidden> · </span>
+          <span>{dateText}</span>
+        </div>
+        <div className="text-sm text-stone-800 truncate group-hover/origin:text-nexgen-blue group-hover/origin:underline underline-offset-4">
+          {row.origin_sender_email}
+        </div>
+      </button>
+    )
+  }
+  return (
+    <div className="text-xs text-stone-500">
+      <span className={authorTone}>{author}</span>
+      <span aria-hidden> · </span>
+      <span>{dateText}</span>
+    </div>
+  )
+}
+
+// Row actions only appear when the row is hovered or focus-within keeps them
+// reachable via keyboard. Reduces visual chatter at rest.
+const RowActions: React.FC<{ onEdit: () => void; onDelete: () => void }> = ({ onEdit, onDelete }) => (
+  <span className="inline-flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+    <button
+      type="button"
+      onClick={onEdit}
+      className="rounded p-1 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+      aria-label="Edit alias"
+      title="Edit"
+    >
+      <Pencil className="w-4 h-4" />
+    </button>
+    <button
+      type="button"
+      onClick={onDelete}
+      className="rounded p-1 text-stone-500 hover:bg-rose-50 hover:text-rose-700"
+      aria-label="Delete alias"
+      title="Delete"
+    >
+      <Trash2 className="w-4 h-4" />
+    </button>
+  </span>
+)
+
+const Th: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
+  <th className={`px-3 py-2 text-[11px] font-medium uppercase tracking-wide ${className}`}>{children}</th>
 )
 const Td: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-  <td className={`px-3 py-2 align-top ${className}`}>{children}</td>
+  <td className={`px-3 py-3 align-top ${className}`}>{children}</td>
 )
 
 const EmptyAliases: React.FC = () => (
-  <div className="p-10 text-center text-sm text-stone-500">
-    No aliases yet. Approve a PO from the PO Inbox to teach the system.
+  <div className="py-16 text-center text-sm text-stone-500">
+    No aliases yet. Approve a PO from the PO Inbox to teach the system — or create one manually
+    above.
   </div>
 )
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { InvoiceStatus } from '../types';
 import { X } from 'lucide-react';
 
@@ -37,6 +38,9 @@ const PaymentActionModal: React.FC<PaymentActionModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Diagnostic — remove once payment-modal flow is confirmed working live.
+  console.debug('[payment-action] modal mount', orderId, targetStatus);
+
   const config = ACTION_LABELS[targetStatus];
   const trimmed = reason.trim();
   const reasonInvalid = reasonRequired && (trimmed.length < 5 || trimmed.length > 500);
@@ -48,7 +52,7 @@ const PaymentActionModal: React.FC<PaymentActionModalProps> = ({
     onConfirm(reasonRequired ? trimmed : trimmed || undefined);
   };
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex justify-center items-center p-4"
       role="dialog"
@@ -128,7 +132,8 @@ const PaymentActionModal: React.FC<PaymentActionModalProps> = ({
           </button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body,
   );
 };
 

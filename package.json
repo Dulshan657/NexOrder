@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "deploy": "node scripts/deploy.mjs"
+    "deploy": "node scripts/deploy.mjs",
+    "po-fixtures": "node tests/fixtures/po-samples/generate.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.19.0",
@@ -28,6 +29,8 @@
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "@vitest/coverage-v8": "^4.1.4",
+    "docx": "^9.6.1",
+    "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
     "tailwindcss": "^4.2.2",
     "tsx": "^4.21.0",

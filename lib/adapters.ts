@@ -196,7 +196,7 @@ export function toOrder(
     role: 'Admin' as const,
   } as User
 
-  const items: OrderItem[] = (row.order_items ?? []).map(oi => {
+  const items: OrderItem[] = (Array.isArray(row.order_items) ? row.order_items : []).map(oi => {
     const product = products.find(p => p.id === oi.product_id)
     return {
       ...(product ?? {
@@ -226,11 +226,19 @@ export function toOrder(
     orderDate: row.order_date,
     notes: row.notes ?? undefined,
     status: row.status as OrderStatus,
-    statusHistory: (row.status_history ?? []) as unknown as StatusHistoryEntry[],
+    // Json columns: status_history is constrained to 'array' by migration
+    // 00016, but applied_promotions has no such CHECK. Cast is a runtime
+    // no-op, so guard with Array.isArray to stop a non-array JSON value
+    // from reaching consumers that iterate it.
+    statusHistory: Array.isArray(row.status_history)
+      ? (row.status_history as unknown as StatusHistoryEntry[])
+      : [],
     deliveryDate: row.delivery_date ?? undefined,
     deliveryTimeSlot: (row.delivery_time_slot as DeliveryTimeSlot) ?? undefined,
     verification: (row.verification as unknown as OrderVerification) ?? undefined,
-    appliedPromotions: (row.applied_promotions as unknown as AppliedPromotion[]) ?? undefined,
+    appliedPromotions: Array.isArray(row.applied_promotions)
+      ? (row.applied_promotions as unknown as AppliedPromotion[])
+      : undefined,
   }
 }
 

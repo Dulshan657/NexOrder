@@ -15,6 +15,7 @@ export interface PendingPoSummaryRow {
   inbound_message_id: string
   matched_horeca_id: number | null
   confidence_overall: number
+  confidence_fields: Record<string, unknown>
   approved_order_id: string | null
   reviewed_at: string | null
   created_at: string
@@ -28,8 +29,22 @@ export interface PendingPoSummaryRow {
 export interface PendingPoDetailRow extends PendingPoSummaryRow {
   extracted_po: ExtractedPoShape
   matched_items: MatchedItem[]
-  confidence_fields: Record<string, unknown>
   rejection_reason: string | null
+}
+
+/**
+ * Sender / customer mismatch flag (written by extract-po into
+ * confidence_fields.sender_mismatch when an inbound sender isn't a trusted
+ * address for the resolved customer). Returns the flag payload when set,
+ * else null. Drives the modal warning banner and the queue flag badge.
+ */
+export function senderMismatch(
+  confidenceFields: Record<string, unknown> | undefined | null,
+): { sender: string | null } | null {
+  const sm = (confidenceFields as { sender_mismatch?: { flagged?: boolean; sender?: string | null } } | undefined)
+    ?.sender_mismatch
+  if (!sm || sm.flagged !== true) return null
+  return { sender: sm.sender ?? null }
 }
 
 export interface MatchedItem {
@@ -69,7 +84,7 @@ export interface ExtractedPoShape {
 
 const SUMMARY_SELECT = `
   id, status, inbound_message_id, matched_horeca_id, confidence_overall,
-  approved_order_id, reviewed_at, created_at,
+  confidence_fields, approved_order_id, reviewed_at, created_at,
   inbound_messages:inbound_message_id (
     from_address, subject, received_at, storage_path_prefix
   )
@@ -112,6 +127,7 @@ function flattenSummary(row: SummaryRow): PendingPoSummaryRow {
     inbound_message_id: row.inbound_message_id,
     matched_horeca_id: row.matched_horeca_id,
     confidence_overall: Number(row.confidence_overall),
+    confidence_fields: row.confidence_fields ?? {},
     approved_order_id: row.approved_order_id,
     reviewed_at: row.reviewed_at,
     created_at: row.created_at,
@@ -277,6 +293,9 @@ export interface CustomerAliasRow {
   confidence_at_creation: number | null
   created_by: string | null
   created_at: string
+  pending_po_id: string | null
+  origin_sender_email: string | null
+  origin_received_at: string | null
 }
 
 export interface ProductAliasRow {
@@ -289,26 +308,58 @@ export interface ProductAliasRow {
   confidence_at_creation: number | null
   created_by: string | null
   created_at: string
+  pending_po_id: string | null
+  origin_sender_email: string | null
+  origin_received_at: string | null
 }
+
+// PostgREST resource-embed shape returned by the alias JOIN below. The
+// embed walks po_*_aliases.pending_po_id -> pending_pos -> inbound_messages
+// and surfaces just the two origin fields the UI needs.
+interface AliasJoinShape {
+  pending_pos: {
+    inbound_messages: {
+      from_address: string | null
+      received_at: string | null
+    } | null
+  } | null
+}
+
+function flattenAliasOrigin<T extends Record<string, unknown>>(
+  row: T & Partial<AliasJoinShape>,
+): T & { origin_sender_email: string | null; origin_received_at: string | null } {
+  const inbound = row.pending_pos?.inbound_messages ?? null
+  const { pending_pos: _pending, ...rest } = row
+  return {
+    ...(rest as T),
+    origin_sender_email: inbound?.from_address ?? null,
+    origin_received_at: inbound?.received_at ?? null,
+  }
+}
+
+const ALIAS_SELECT_WITH_ORIGIN =
+  '*, pending_pos!pending_po_id(inbound_messages!inbound_message_id(from_address, received_at))'
 
 export async function listCustomerAliases(): Promise<CustomerAliasRow[]> {
   const { data, error } = await supabase
     .from('po_customer_aliases')
-    .select('*')
+    .select(ALIAS_SELECT_WITH_ORIGIN)
     .order('created_at', { ascending: false })
     .limit(1000)
   if (error) throw new Error(`listCustomerAliases: ${error.message}`)
-  return (data ?? []) as unknown as CustomerAliasRow[]
+  return ((data ?? []) as unknown as Array<Record<string, unknown> & Partial<AliasJoinShape>>)
+    .map(flattenAliasOrigin) as unknown as CustomerAliasRow[]
 }
 
 export async function listProductAliases(): Promise<ProductAliasRow[]> {
   const { data, error } = await supabase
     .from('po_product_aliases')
-    .select('*')
+    .select(ALIAS_SELECT_WITH_ORIGIN)
     .order('created_at', { ascending: false })
     .limit(1000)
   if (error) throw new Error(`listProductAliases: ${error.message}`)
-  return (data ?? []) as unknown as ProductAliasRow[]
+  return ((data ?? []) as unknown as Array<Record<string, unknown> & Partial<AliasJoinShape>>)
+    .map(flattenAliasOrigin) as unknown as ProductAliasRow[]
 }
 
 // supabase.functions.invoke only surfaces HTTP errors via its `error`

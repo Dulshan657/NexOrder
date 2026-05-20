@@ -14,6 +14,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
+  ExternalLink,
   FileText,
   Loader2,
   MapPin,
@@ -28,9 +30,9 @@ import {
 } from '@/hooks/queries/usePendingPos'
 import { useProducts } from '@/hooks/queries/useProducts'
 import { useHorecaAddresses } from '@/hooks/queries/useHorecaAddresses'
-import { getPoDocumentUrl } from '@/services/supabase/poInboxService'
+import { getPoDocumentUrl, senderMismatch } from '@/services/supabase/poInboxService'
 import type { ApproveDeliveryAddress } from '@/services/supabase/poInboxService'
-import { confidenceBadgeStyle, statusBadge } from './poInboxFormat'
+import { useToasts } from '@/hooks/useToasts'
 import ProductSearchDropdown from './ProductSearchDropdown'
 import type {
   ExtractedPoLine,
@@ -45,6 +47,12 @@ interface POInboxDetailModalProps {
   hoReCas: HoReCa[]
   onClose: () => void
   addToast?: (message: string, type: 'success' | 'error' | 'info') => void
+  /**
+   * If provided, the success toast after Approve gets a "View in Order Import"
+   * action button that calls this with the new order id. Wired by POInboxView
+   * via the AppShell deep-link state.
+   */
+  onViewInOrderImport?: (orderId: string) => void
 }
 
 type DeliveryTimeSlot = 'Morning (8am-12pm)' | 'Afternoon (12pm-4pm)' | 'Evening (4pm-8pm)'
@@ -84,10 +92,12 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
   hoReCas,
   onClose,
   addToast,
+  onViewInOrderImport,
 }) => {
   const detailQuery = usePendingPoDetail(pendingPoId)
   const approveMutation = useApprovePo()
   const rejectMutation = useRejectPo()
+  const toastsContext = useToasts()
 
   // Edit form state — initialized from the loaded row.
   const [horecaId, setHorecaId] = useState<number | null>(null)
@@ -270,7 +280,18 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
         },
       })
       const orderRef = result.orderId ?? '(no order id)'
-      addToast?.(`PO approved — order ${orderRef} created.`, 'success')
+      const orderId = result.orderId ?? null
+      if (orderId && onViewInOrderImport) {
+        // Action toast: stays visible longer (see useToasts.tsx) so the
+        // operator can click through to the freshly-created order.
+        toastsContext.addToast(
+          `PO approved — order ${orderRef} created.`,
+          'success',
+          { label: 'View in Order Import', onClick: () => onViewInOrderImport(orderId) },
+        )
+      } else {
+        addToast?.(`PO approved — order ${orderRef} created.`, 'success')
+      }
       onClose()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -451,47 +472,65 @@ export function buildEditableLines(
 
 const DIALOG_TITLE_ID = 'po-inbox-dialog-title'
 
+const STATUS_DOT_TONE: Record<string, { dot: string; text: string; label: string }> = {
+  needs_review: { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Needs review' },
+  auto_approved: { dot: 'bg-teal-500', text: 'text-teal-700', label: 'Auto-approved' },
+  approved: { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'Approved' },
+  rejected: { dot: 'bg-rose-500', text: 'text-rose-700', label: 'Rejected' },
+}
+
+function confidenceTextTone(c: number): string {
+  if (c >= 0.95) return 'text-emerald-700'
+  if (c >= 0.75) return 'text-amber-700'
+  return 'text-rose-700'
+}
+
 const Header: React.FC<{ detail: PendingPoDetailRow | undefined; onClose: () => void }> = ({
   detail,
   onClose,
-}) => (
-  <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-stone-200 bg-stone-50">
-    <div className="min-w-0">
-      <div className="flex items-center gap-2 flex-wrap">
-        <h2 id={DIALOG_TITLE_ID} className="font-display font-semibold text-stone-900 truncate">
+}) => {
+  const status = detail ? STATUS_DOT_TONE[detail.status] : null
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-stone-200/70">
+      <div className="min-w-0">
+        <h2
+          id={DIALOG_TITLE_ID}
+          className="font-display font-semibold text-stone-900 truncate text-base sm:text-lg tracking-tight"
+        >
           {detail?.subject || 'Inbound PO'}
         </h2>
         {detail && (
-          <>
-            <span
-              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadge(detail.status).className}`}
-            >
-              {statusBadge(detail.status).label}
+          <div className="mt-1 text-xs text-stone-500 flex flex-wrap items-center gap-x-3">
+            <span className="truncate">From {detail.from_address}</span>
+            <span aria-hidden>·</span>
+            <span>PO {detail.extracted_po.po_number ?? '(no number)'}</span>
+            <span aria-hidden>·</span>
+            <span className={`font-mono ${confidenceTextTone(detail.confidence_overall)}`}>
+              {(detail.confidence_overall * 100).toFixed(0)}%
             </span>
-            <span
-              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${confidenceBadgeStyle(detail.confidence_overall)}`}
-            >
-              {(detail.confidence_overall * 100).toFixed(0)}% confidence
-            </span>
-          </>
+            {status && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className={`size-1.5 rounded-full ${status.dot}`} aria-hidden />
+                  <span className={status.text}>{status.label}</span>
+                </span>
+              </>
+            )}
+          </div>
         )}
       </div>
-      {detail && (
-        <p className="text-xs text-stone-500 mt-0.5 truncate">
-          From {detail.from_address} · PO {detail.extracted_po.po_number ?? '(no number)'}
-        </p>
-      )}
+      <button
+        type="button"
+        onClick={onClose}
+        className="p-1.5 rounded-md hover:bg-stone-100 text-stone-500 hover:text-stone-800"
+        aria-label="Close"
+      >
+        <X className="w-5 h-5" />
+      </button>
     </div>
-    <button
-      type="button"
-      onClick={onClose}
-      className="p-1.5 rounded-lg hover:bg-stone-200 text-stone-700"
-      aria-label="Close"
-    >
-      <X className="w-5 h-5" />
-    </button>
-  </div>
-)
+  )
+}
 
 interface DocumentPaneProps {
   url: string | null
@@ -519,6 +558,20 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
       <div className="px-3 py-2 text-xs text-stone-500 border-b border-stone-200 bg-white flex items-center gap-2">
         <FileText className="w-3 h-3" />
         Original ({isTextBody ? 'EMAIL BODY' : format.toUpperCase()})
+        {/* Guaranteed fallback: even if the inline embed is refused by a
+            browser/header quirk, the operator can always open the original
+            document full-screen to verify the order. Attachment formats only
+            (text-body POs have no attachment URL). */}
+        {!isTextBody && url && (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-auto inline-flex items-center gap-1 font-medium text-stone-600 hover:text-stone-900 btn-press"
+          >
+            <ExternalLink className="w-3 h-3" /> Open in new tab
+          </a>
+        )}
       </div>
       <div className="flex-1 overflow-auto">
         {isTextBody ? (
@@ -561,15 +614,21 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
             <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading document…
           </div>
         ) : format === 'pdf' ? (
-          // sandbox="allow-same-origin" is the minimum required for the
-          // browser's built-in PDF viewer to render. Scripts, forms,
-          // popups, and top-navigation are all blocked. The signed URL
-          // points at content that originated from an inbound email,
-          // which we MUST treat as attacker-controlled.
+          // Chromium's built-in PDF viewer is an internal extension whose
+          // scripts must run to paint the viewer — "allow-same-origin" alone
+          // renders a blank/grey pane. The signed URL is cross-origin
+          // (supabase.co), so the framed document cannot reach the parent
+          // (vercel.app) even with both sandbox tokens; the "escape sandbox"
+          // caveat only applies to SAME-origin framed content. This does not
+          // run attacker-controlled JS embedded in the PDF — Chrome's PDFium
+          // viewer does not execute PDF-embedded scripts by default.
+          // Forms, popups, and top-navigation beyond the viewer stay blocked.
+          // The "Open in new tab" link above is the fallback if any browser
+          // still refuses to embed the document.
           <iframe
             src={url}
             title="PO document"
-            sandbox="allow-same-origin"
+            sandbox="allow-scripts allow-same-origin"
             referrerPolicy="no-referrer"
             className="w-full h-full min-h-[60vh] bg-white"
           />
@@ -581,14 +640,26 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
             className="w-full h-auto bg-white"
           />
         ) : (
-          // DOCX / other — no scripts at all.
-          <iframe
-            src={url}
-            title="PO document"
-            sandbox=""
-            referrerPolicy="no-referrer"
-            className="w-full h-full min-h-[60vh] bg-white"
-          />
+          // DOCX / other binary formats: browsers can't render these inline
+          // (and a sandboxed iframe blocks the download fallback), so offer
+          // an explicit open/download instead of a blank pane. The parsed
+          // fields on the right reflect the extracted content.
+          <div className="p-6 flex flex-col items-center justify-center text-center gap-4 min-h-[40vh]">
+            <FileText className="w-10 h-10 text-stone-400" />
+            <div className="text-sm text-stone-600 max-w-xs">
+              {format.toUpperCase()} documents can't be previewed in the browser.
+              Open the original to read it; the parsed fields on the right
+              reflect its content.
+            </div>
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-stone-900 rounded-md btn-press hover:bg-stone-800"
+            >
+              <Download className="w-4 h-4" /> Open original
+            </a>
+          </div>
         )}
       </div>
     </div>
@@ -639,8 +710,13 @@ const FormPane: React.FC<FormPaneProps> = props => {
     (props.detail.confidence_fields as { per_field?: Record<string, unknown> })?.per_field ?? {}
   const customerMatch =
     (props.detail.confidence_fields as { customer_match?: string })?.customer_match ?? null
+  const mismatch = senderMismatch(props.detail.confidence_fields)
 
   const extractedPo = props.detail.extracted_po
+  const matchedCustomerName =
+    props.hoReCas.find(h => h.id === props.detail.matched_horeca_id)?.name ??
+    extractedPo.customer_name_raw ??
+    'this customer'
 
   return (
     <div className="flex flex-col overflow-auto">
@@ -676,6 +752,17 @@ const FormPane: React.FC<FormPaneProps> = props => {
             extractedName={extractedPo.customer_name_raw}
             picked={props.horecaId != null}
           />
+          {mismatch && (
+            <div className="mt-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
+              <p className="text-[11px] text-rose-800 leading-relaxed">
+                <span className="font-semibold">Sender mismatch.</span> This PO was sent from{' '}
+                <span className="font-mono">{mismatch.sender ?? 'an unknown address'}</span>, which is
+                not a known address for <span className="font-semibold">{matchedCustomerName}</span>.
+                Verify the sender is genuine before approving.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Delivery date + slot */}
@@ -714,15 +801,15 @@ const FormPane: React.FC<FormPaneProps> = props => {
 
         {/* Line items — picker, qty, pack, confidence, delete */}
         <fieldset>
-          <legend className="text-xs font-medium text-stone-600 mb-1 flex items-center gap-2">
+          <legend className="text-xs font-medium text-stone-600 mb-2 flex items-center gap-2">
             <span>Line items</span>
-            <span className="text-stone-400 font-normal">({props.lines.length})</span>
+            <span className="text-stone-400 font-normal font-mono">{props.lines.length}</span>
           </legend>
-          <ul className="space-y-2">
+          <ul className="divide-y divide-stone-200/70 border-y border-stone-200/70">
             {props.lines.map((line, idx) => (
               <li
                 key={`${idx}-${line.po_line_index ?? 'new'}`}
-                className="rounded-lg border border-stone-200 bg-stone-50 p-3 space-y-2"
+                className="py-3 space-y-2"
               >
                 <div className="flex items-center justify-between gap-2 text-[11px]">
                   <div className="text-stone-500 truncate min-w-0">
@@ -801,7 +888,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
             <button
               type="button"
               onClick={props.onAddLine}
-              className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-stone-300 bg-white px-3 py-2 text-xs text-stone-600 hover:border-nexgen-blue hover:text-nexgen-blue transition-colors"
+              className="mt-2 inline-flex items-center gap-1.5 text-xs text-stone-600 hover:text-nexgen-blue transition-colors btn-press"
             >
               <Plus className="w-3.5 h-3.5" />
               Add line
@@ -840,15 +927,15 @@ const POHeaderChips: React.FC<{
   requestedDate: string | null
 }> = ({ poNumber, orderDate, requestedDate }) => {
   const Chip: React.FC<{ label: string; value: string | null }> = ({ label, value }) => (
-    <div className="flex flex-col rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5">
+    <div className="flex flex-col">
       <span className="text-[10px] uppercase tracking-wide text-stone-500">{label}</span>
-      <span className="text-xs font-medium text-stone-800 truncate">
+      <span className="text-xs font-medium text-stone-900 truncate">
         {value && value.trim().length > 0 ? value : <span className="text-stone-400 italic">—</span>}
       </span>
     </div>
   )
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-3 gap-4 pb-3 border-b border-stone-200/70">
       <Chip label="PO #" value={poNumber} />
       <Chip label="Order date" value={orderDate} />
       <Chip label="Requested" value={requestedDate} />
@@ -1183,7 +1270,7 @@ const Footer: React.FC<FooterProps> = props => {
 
   if (isResolved) {
     return (
-      <div className="px-4 sm:px-6 py-3 border-t border-stone-200 bg-stone-50 text-xs text-stone-500 flex items-center gap-2">
+      <div className="px-4 sm:px-6 py-3 border-t border-stone-200/70 text-xs text-stone-500 flex items-center gap-2">
         {props.detail.status === 'rejected' ? (
           <span>
             Rejected{props.detail.reviewed_at ? ` ${new Date(props.detail.reviewed_at).toLocaleString()}` : ''}
@@ -1199,7 +1286,7 @@ const Footer: React.FC<FooterProps> = props => {
   }
 
   return (
-    <div className="px-4 sm:px-6 py-3 border-t border-stone-200 bg-stone-50 space-y-2">
+    <div className="px-4 sm:px-6 py-3 border-t border-stone-200/70 space-y-2">
       {props.showRejectForm && (
         <div className="flex items-center gap-2">
           <input
@@ -1214,17 +1301,17 @@ const Footer: React.FC<FooterProps> = props => {
             type="button"
             onClick={props.onReject}
             disabled={props.rejecting || props.rejectionReason.trim().length < 3}
-            className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-500 disabled:opacity-60 btn-press"
+            className="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-500 disabled:opacity-60 btn-press"
           >
             {props.rejecting ? 'Rejecting…' : 'Confirm reject'}
           </button>
         </div>
       )}
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-3">
         <button
           type="button"
           onClick={() => props.setShowRejectForm(!props.showRejectForm)}
-          className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50 btn-press"
+          className="text-sm font-medium text-rose-700 hover:text-rose-800 hover:underline underline-offset-4 btn-press"
         >
           Reject
         </button>
@@ -1232,7 +1319,7 @@ const Footer: React.FC<FooterProps> = props => {
           type="button"
           onClick={props.onApprove}
           disabled={!props.canApprove}
-          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
+          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
           title={
             props.canApprove
               ? 'Create a real order from this PO'

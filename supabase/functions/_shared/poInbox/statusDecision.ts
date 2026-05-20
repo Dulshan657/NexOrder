@@ -16,6 +16,12 @@ export interface StatusDecisionInput {
   customerResolved: boolean
   /** Did every extracted line resolve to a product_id? */
   allLinesResolved: boolean
+  /**
+   * True when the customer was resolved but the inbound sender is not a
+   * trusted address for that customer (possible spoofing). Forces human
+   * review regardless of confidence. Defaults to false.
+   */
+  senderMismatch?: boolean
 }
 
 export interface StatusDecisionResult {
@@ -59,6 +65,7 @@ export function decidePendingPoStatus(input: StatusDecisionInput): StatusDecisio
   }
   if (!input.customerResolved) reasons.push('customer not resolved')
   if (!input.allLinesResolved) reasons.push('one or more lines failed to resolve to a product')
+  if (input.senderMismatch) reasons.push('sender does not match customer (possible spoofing)')
 
   return {
     status: reasons.length === 0 ? 'auto_approved' : 'needs_review',

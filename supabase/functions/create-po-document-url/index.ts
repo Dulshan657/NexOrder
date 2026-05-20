@@ -74,9 +74,9 @@ serve(async (req: Request) => {
       }
     }
 
-    // Use the CALLER's JWT (not service role) for the load so RLS is the
-    // authority on which rows they can see. Admin/Manager SELECT is the
-    // policy on pending_pos + inbound_messages.
+    // Use the CALLER's JWT (not service role) for the authorization load so
+    // RLS is the authority on which rows they can see. Admin/Manager SELECT
+    // is the policy on pending_pos + inbound_messages.
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const userClient = createClient(supabaseUrl, anonKey, {
@@ -84,14 +84,15 @@ serve(async (req: Request) => {
       auth: { persistSession: false },
     })
 
-    const path = await resolvePath(userClient, body)
-
-    // Storage signed-URL creation requires service-role (storage policies
-    // permit signed-URL issuance only via service_role in our setup).
+    // Storage listing + signed-URL creation require service-role (storage
+    // policies permit both only via service_role in our setup).
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const serviceClient = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false },
     })
+
+    const path = await resolvePath(userClient, serviceClient, body)
+
     const { data, error } = await serviceClient.storage
       .from(ARCHIVE_BUCKET)
       .createSignedUrl(path, SIGNED_URL_TTL_SECONDS)
@@ -115,11 +116,12 @@ serve(async (req: Request) => {
 
 async function resolvePath(
   userClient: SupabaseClient,
+  serviceClient: SupabaseClient,
   body: SignUrlRequest,
 ): Promise<string> {
   const { data, error } = await userClient
     .from('pending_pos')
-    .select('id, inbound_messages:inbound_message_id(storage_path_prefix), extracted_po')
+    .select('id, inbound_messages:inbound_message_id(storage_path_prefix)')
     .eq('id', body.pendingPoId)
     .maybeSingle()
   if (error) {
@@ -134,7 +136,6 @@ async function resolvePath(
   // PostgREST shapes and an array of one in older ones.
   const row = data as {
     inbound_messages: { storage_path_prefix: string } | Array<{ storage_path_prefix: string }>
-    extracted_po: { source?: { original_filename?: string | null } } | null
   }
   const joined = Array.isArray(row.inbound_messages)
     ? row.inbound_messages[0]
@@ -151,21 +152,26 @@ async function resolvePath(
     return `${inBucketPrefix}/original.json`
   }
 
-  const filename = sanitizeFilename(
-    row.extracted_po?.source?.original_filename ?? `attachment-${body.attachmentIndex}`,
-  )
-  return `${inBucketPrefix}/${body.attachmentIndex}-${filename}`
-}
-
-function sanitizeFilename(filename: string): string {
-  // Mirror poll-inbox's attachmentPath helper so the resolved storage
-  // key matches the one used at write time. Strip control chars,
-  // path separators, and parent-dir traversals.
-  return filename
-    .replace(/\\/g, '/')
-    .replace(/\.\.+/g, '_')
-    .replace(new RegExp('[/\\u0000-\\u001F\\u007F]', 'g'), '_')
-    .replace(/^\.+/, '_')
-    .slice(0, 200)
-    .trim() || 'attachment'
+  // Attachments: resolve by LISTING the prefix and picking by index rather
+  // than reconstructing the filename. The write-time name went through
+  // poll-inbox's attachmentPath sanitizer with an `{index}-` prefix, and
+  // extract-po records that already-prefixed object name back into
+  // extracted_po.source.original_filename — so any client-side or
+  // reader-side filename reconstruction would mismatch (e.g. double the
+  // `{index}-` prefix). Listing the bucket is ground truth and mirrors how
+  // extract-po itself selects the primary document.
+  const { data: listing, error: listError } = await serviceClient.storage
+    .from(ARCHIVE_BUCKET)
+    .list(inBucketPrefix)
+  if (listError) {
+    throw new EdgeFunctionError('INTERNAL', `storage list: ${listError.message}`)
+  }
+  const attachments = (listing ?? [])
+    .filter(entry => entry.name && entry.name !== 'original.json')
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const entry = attachments[body.attachmentIndex as number]
+  if (!entry) {
+    throw new EdgeFunctionError('NOT_FOUND', `no attachment at index ${body.attachmentIndex}`)
+  }
+  return `${inBucketPrefix}/${entry.name}`
 }

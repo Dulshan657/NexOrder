@@ -1,9 +1,9 @@
 import React, { createContext, useState, useContext, useCallback } from 'react';
-import type { Toast, ToastType } from '../types';
+import type { Toast, ToastAction, ToastType } from '../types';
 
 interface ToastContextType {
   toasts: Toast[];
-  addToast: (message: string, type: ToastType) => void;
+  addToast: (message: string, type: ToastType, action?: ToastAction) => void;
   removeToast: (id: number) => void;
 }
 
@@ -16,10 +16,13 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts(currentToasts => currentToasts.filter(toast => toast.id !== id));
   }, []);
 
-  const addToast = useCallback((message: string, type: ToastType) => {
-    const id = Date.now();
-    setToasts(currentToasts => [...currentToasts, { id, message, type }]);
-    setTimeout(() => removeToast(id), 5000); // Auto-dismiss after 5 seconds
+  const addToast = useCallback((message: string, type: ToastType, action?: ToastAction) => {
+    const id = Date.now() + Math.random(); // tolerate sub-millisecond bursts
+    setToasts(currentToasts => [...currentToasts, { id, message, type, action }]);
+    // Toasts with an action button stay around longer — operators need time
+    // to read AND click.
+    const dismissAfter = action ? 8000 : 5000;
+    setTimeout(() => removeToast(id), dismissAfter);
   }, [removeToast]);
 
   return (

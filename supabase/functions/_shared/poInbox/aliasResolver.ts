@@ -61,12 +61,21 @@ export interface SupabaseSelectBuilder<TRow> {
   ): Promise<TResolved>
 }
 export interface SupabaseInsertBuilder {
-  select(): Promise<{ data: unknown; error: { message?: string } | null }>
+  select(): Promise<{
+    data: Array<{ id?: string }> | null
+    error: { message?: string } | null
+  }>
+}
+export interface SupabaseUpdateBuilder {
+  eq(column: string, value: string | number): Promise<{
+    error: { message?: string } | null
+  }>
 }
 export interface SupabaseLike {
   from(table: string): {
     select(cols: string): SupabaseSelectBuilder<unknown>
     insert(row: Record<string, unknown>): SupabaseInsertBuilder
+    update(row: Record<string, unknown>): SupabaseUpdateBuilder
   }
 }
 
@@ -96,8 +105,12 @@ export interface CustomerResolution {
   horecaId: number | null
   confidence: number       // 1.0 for deterministic hits, model-reported for AI
   matchSource: AliasMatchSource | null
-  /** True when this call wrote a new alias row. */
-  aliasWritten: boolean
+  /**
+   * UUID of the alias row this call inserted (AI auto-create at >= threshold),
+   * or null if no row was written. extract-po uses these IDs to backfill
+   * `pending_po_id` on the alias row once the pending_pos row exists.
+   */
+  aliasInsertedId: string | null
 }
 
 export interface ProductResolution {
@@ -105,7 +118,7 @@ export interface ProductResolution {
   defaultPackSize: number | null
   confidence: number
   matchSource: AliasMatchSource | null
-  aliasWritten: boolean
+  aliasInsertedId: string | null
 }
 
 // ----------------------------------------------------------------------
@@ -187,12 +200,12 @@ export async function resolveCustomer(
       horecaId: ai.matchedHorecaId,
       confidence: ai.confidence,
       matchSource: ai.matchedHorecaId !== null ? 'ai_fuzzy_match' : null,
-      aliasWritten: false,
+      aliasInsertedId: null,
     }
   }
 
   // High-confidence AI match → write alias for next time.
-  const aliasWritten = await writeCustomerAlias(supa, {
+  const aliasInsertedId = await writeCustomerAlias(supa, {
     source_type: 'po_text',
     source_value: normName,
     horeca_id: ai.matchedHorecaId,
@@ -205,7 +218,7 @@ export async function resolveCustomer(
     horecaId: ai.matchedHorecaId,
     confidence: ai.confidence,
     matchSource: 'ai_fuzzy_match',
-    aliasWritten,
+    aliasInsertedId,
   }
 }
 
@@ -217,12 +230,12 @@ function deterministic(
     horecaId,
     confidence: 1.0,
     matchSource: source,
-    aliasWritten: false,
+    aliasInsertedId: null,
   }
 }
 
 function missing(): CustomerResolution {
-  return { horecaId: null, confidence: 0, matchSource: null, aliasWritten: false }
+  return { horecaId: null, confidence: 0, matchSource: null, aliasInsertedId: null }
 }
 
 function deriveDomain(fromAddress: string | null): string | null {
@@ -295,15 +308,16 @@ async function writeCustomerAlias(
     confidence_at_creation: number
     created_by: string | null
   },
-): Promise<boolean> {
-  const { error } = await supa.from('po_customer_aliases').insert(row).select()
+): Promise<string | null> {
+  const { data, error } = await supa.from('po_customer_aliases').insert(row).select()
   if (error) {
     // Likely a race with another extraction that already wrote the same alias.
     // The unique constraint enforces idempotency; we don't surface it.
     console.warn('[aliasResolver] customer alias insert skipped:', error.message)
-    return false
+    return null
   }
-  return true
+  const inserted = Array.isArray(data) ? data[0] : null
+  return inserted?.id ?? null
 }
 
 interface AiCustomerPick {
@@ -444,12 +458,12 @@ export async function resolveProduct(
       defaultPackSize: null,
       confidence: ai.confidence,
       matchSource: ai.matchedProductId !== null ? 'ai_fuzzy_match' : null,
-      aliasWritten: false,
+      aliasInsertedId: null,
     }
   }
 
   // High-confidence AI match → write the alias for this customer.
-  const aliasWritten = await writeProductAlias(supa, {
+  const aliasInsertedId = await writeProductAlias(supa, {
     horeca_id: input.horecaId,
     source_code: code || null,
     source_description: desc || null,
@@ -464,7 +478,7 @@ export async function resolveProduct(
     defaultPackSize: ai.defaultPackSize,
     confidence: ai.confidence,
     matchSource: 'ai_fuzzy_match',
-    aliasWritten,
+    aliasInsertedId,
   }
 }
 
@@ -477,7 +491,7 @@ function deterministicProduct(
     defaultPackSize: row.default_pack_size,
     confidence: 1.0,
     matchSource: source,
-    aliasWritten: false,
+    aliasInsertedId: null,
   }
 }
 
@@ -487,7 +501,7 @@ function missingProduct(): ProductResolution {
     defaultPackSize: null,
     confidence: 0,
     matchSource: null,
-    aliasWritten: false,
+    aliasInsertedId: null,
   }
 }
 
@@ -548,6 +562,48 @@ async function fetchProductCatalog(supa: SupabaseLike): Promise<ProductRow[]> {
   return result.data ?? []
 }
 
+/**
+ * Backfill pending_po_id on alias rows that were auto-inserted during this
+ * extraction. The resolver writes alias rows BEFORE the pending_pos row
+ * exists (the FK would otherwise fail), so extract-po calls this immediately
+ * after persisting the pending_pos row to stamp the origin link. Failures
+ * are logged-but-swallowed: a missing origin link is cosmetic only, the
+ * alias itself still functions for future lookups.
+ */
+export async function backfillAliasOrigin(
+  supa: SupabaseLike,
+  pendingPoId: string,
+  customerAliasIds: ReadonlyArray<string>,
+  productAliasIds: ReadonlyArray<string>,
+): Promise<void> {
+  for (const id of customerAliasIds) {
+    if (!id) continue
+    const { error } = await supa
+      .from('po_customer_aliases')
+      .update({ pending_po_id: pendingPoId })
+      .eq('id', id)
+    if (error) {
+      console.warn(
+        '[aliasResolver] customer alias origin backfill failed:',
+        error.message,
+      )
+    }
+  }
+  for (const id of productAliasIds) {
+    if (!id) continue
+    const { error } = await supa
+      .from('po_product_aliases')
+      .update({ pending_po_id: pendingPoId })
+      .eq('id', id)
+    if (error) {
+      console.warn(
+        '[aliasResolver] product alias origin backfill failed:',
+        error.message,
+      )
+    }
+  }
+}
+
 async function writeProductAlias(
   supa: SupabaseLike,
   row: {
@@ -559,13 +615,14 @@ async function writeProductAlias(
     confidence_at_creation: number
     created_by: string | null
   },
-): Promise<boolean> {
-  const { error } = await supa.from('po_product_aliases').insert(row).select()
+): Promise<string | null> {
+  const { data, error } = await supa.from('po_product_aliases').insert(row).select()
   if (error) {
     console.warn('[aliasResolver] product alias insert skipped:', error.message)
-    return false
+    return null
   }
-  return true
+  const inserted = Array.isArray(data) ? data[0] : null
+  return inserted?.id ?? null
 }
 
 interface AiProductPick {

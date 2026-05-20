@@ -42,11 +42,13 @@ export type ExtractionPurpose =
   | 'product_match'
 
 export interface ChatMessagePart {
-  type: 'text' | 'image_url' | 'input_file'
+  type: 'text' | 'image_url' | 'file'
   text?: string
   image_url?: { url: string }
-  // OpenAI Files API attachment reference (used for PDF/DOCX uploads).
-  file_id?: string
+  // Inline PDF (or other supported document) sent via the Chat Completions
+  // API. `file_data` is a data URL (data:<mime>;base64,<b64>); `filename`
+  // is required by the API even though the content is inline.
+  file?: { filename: string; file_data: string }
 }
 
 export interface ChatMessage {

@@ -1,8 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from './database.types'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+// Trim to defeat trailing whitespace / newlines that creep in from
+// Vercel's `.env.production.local` (values like "...Bg\n" inside double
+// quotes get expanded by dotenv to a real LF, which then URL-encodes as
+// %0A on the realtime WebSocket apikey and breaks every handshake).
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim()
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? '').trim()
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY environment variables')

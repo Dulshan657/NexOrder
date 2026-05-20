@@ -47,6 +47,18 @@ const ToastMessage: React.FC<{ toast: import('../types').Toast; onRemove: (id: n
             <div className={`flex-shrink-0 ${colors.icon}`}>{ICONS[toast.type]}</div>
             <div className="ml-3 w-0 flex-1 pt-0.5">
                 <p className={`text-sm font-medium ${colors.text}`}>{toast.message}</p>
+                {toast.action && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            toast.action?.onClick();
+                            onRemove(toast.id);
+                        }}
+                        className={`mt-1.5 text-xs font-semibold underline underline-offset-2 ${colors.text} hover:opacity-80`}
+                    >
+                        {toast.action.label}
+                    </button>
+                )}
             </div>
             <div className="ml-4 flex-shrink-0 flex">
                 <button onClick={() => onRemove(toast.id)} className="inline-flex rounded-md p-1 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-500 hover:bg-black/5 transition-colors">

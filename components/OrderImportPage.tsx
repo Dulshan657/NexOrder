@@ -8,6 +8,9 @@ import PaymentStatusBadge, {
   type PaymentDisplayState,
 } from './PaymentStatusBadge';
 import PaymentActionModal from './PaymentActionModal';
+import OrderSourceBadge from './OrderSourceBadge';
+import { getOrderSource, type OrderSourceKey } from '../lib/orderSource';
+import StockAssignmentModal from './StockAssignmentModal';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
 import { useToasts } from '../hooks/useToasts';
 import { ORDER_STATUS_SEQUENCE, ORDER_STATUS_LABELS } from '../constants';
@@ -23,13 +26,14 @@ import {
   ChevronRight,
   ArrowUpDown,
   MoreVertical,
+  Sparkles,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface OrdersPageProps {
+interface OrderImportPageProps {
   orders: Order[];
   hoReCas: HoReCa[];
   invoices: Invoice[];
@@ -39,12 +43,27 @@ interface OrdersPageProps {
   onViewDetail: (orderId: string) => void;
   onUpdateStatus: (orderId: string, newStatus: OrderStatus, note?: string) => void;
   onBack: () => void;
+  /** Order id to scroll into view and flash with a brief emerald ring. */
+  highlightOrderId?: string | null;
+  onClearHighlightOrderId?: () => void;
 }
 
 type ActiveTab = 'received' | 'process' | 'confirmed';
 type SortColumn = 'date' | 'total' | 'status' | 'horeca' | 'payment';
 type SortDirection = 'asc' | 'desc';
 type PaymentFilterValue = 'all' | PaymentDisplayState;
+type SourceFilterValue = 'all' | OrderSourceKey;
+
+const SOURCE_FILTER_OPTIONS: ReadonlyArray<{ value: SourceFilterValue; label: string }> = [
+  { value: 'all', label: 'All Sources' },
+  { value: 'email_inbound', label: 'Email PO' },
+  { value: 'customer_web', label: 'Customer Web' },
+  { value: 'rep_field', label: 'Field Rep' },
+  { value: 'rep_office', label: 'Office Rep' },
+  { value: 'walk_in', label: 'Walk-in' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'manager', label: 'Manager' },
+];
 
 const PAYMENT_SORT_RANK: Record<PaymentDisplayState, number> = {
   overdue: 0,
@@ -155,7 +174,7 @@ function SortHeader({ column, label, align = 'left', sortColumn, sortDirection, 
 // Main component
 // ---------------------------------------------------------------------------
 
-const OrdersPage: React.FC<OrdersPageProps> = ({
+const OrderImportPage: React.FC<OrderImportPageProps> = ({
   orders,
   hoReCas,
   invoices,
@@ -165,6 +184,8 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
   onViewDetail,
   onUpdateStatus,
   onBack,
+  highlightOrderId = null,
+  onClearHighlightOrderId,
 }) => {
   // Tab
   const [activeTab, setActiveTab] = useState<ActiveTab>('received');
@@ -175,6 +196,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [filterPaymentStatus, setFilterPaymentStatus] = useState<PaymentFilterValue>('all');
+  const [filterSource, setFilterSource] = useState<SourceFilterValue>('all');
 
   // Sort
   const [sortColumn, setSortColumn] = useState<SortColumn>('date');
@@ -194,6 +216,9 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
   const [paymentAction, setPaymentAction] = useState<{ orderId: string; targetStatus: InvoiceStatus } | null>(null);
   const [paymentError, setPaymentError] = useState<string | undefined>(undefined);
 
+  // Stock-assignment modal: which Receiving order is staff currently processing.
+  const [processingOrder, setProcessingOrder] = useState<Order | null>(null);
+
   const isAdminOrManager = canAdvanceStatus(currentUser);
   const isCustomer = currentUser.role === UserRole.CUSTOMER;
   const isManager = currentUser.role === UserRole.MANAGER;
@@ -204,7 +229,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
   // orderId → Invoice lookup
   const invoicesByOrderId = useMemo(() => {
     const map = new Map<string, Invoice>();
-    for (const inv of invoices) map.set(inv.orderId, inv);
+    for (const inv of invoices ?? []) map.set(inv.orderId, inv);
     return map;
   }, [invoices]);
 
@@ -276,9 +301,12 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
         filterPaymentStatus === 'all' ||
         getPaymentDisplayState(invoicesByOrderId.get(order.id)) === filterPaymentStatus;
 
-      return searchMatch && hoReCaMatch && startMatch && endMatch && paymentMatch;
+      const sourceMatch =
+        filterSource === 'all' || getOrderSource(order).key === filterSource;
+
+      return searchMatch && hoReCaMatch && startMatch && endMatch && paymentMatch && sourceMatch;
     });
-  }, [tabOrders, searchQuery, filterHoReCaId, filterStartDate, filterEndDate, filterPaymentStatus, invoicesByOrderId]);
+  }, [tabOrders, searchQuery, filterHoReCaId, filterStartDate, filterEndDate, filterPaymentStatus, filterSource, invoicesByOrderId]);
 
   // ---------------------------------------------------------------------------
   // Sort
@@ -341,7 +369,25 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
   useEffect(() => {
     setCurrentPage(1);
     setSelectedIds(new Set());
-  }, [searchQuery, filterHoReCaId, filterStartDate, filterEndDate, filterPaymentStatus, activeTab]);
+  }, [searchQuery, filterHoReCaId, filterStartDate, filterEndDate, filterPaymentStatus, filterSource, activeTab]);
+
+  // Highlight + scroll-into-view the deep-linked order, then auto-clear.
+  // Auto-clear after 3s matches the visual fade duration of the emerald ring.
+  const highlightTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!highlightOrderId) return;
+    const row = document.getElementById(`order-row-${highlightOrderId}`);
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = window.setTimeout(() => {
+      onClearHighlightOrderId?.();
+    }, 3000);
+    return () => {
+      if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+    };
+  }, [highlightOrderId, onClearHighlightOrderId]);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -364,6 +410,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
     setActiveTab(tab);
     setSearchQuery('');
     setFilterHoReCaId('all');
+    setFilterSource('all');
     setFilterStartDate('');
     setFilterEndDate('');
     setFilterPaymentStatus('all');
@@ -438,6 +485,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
     setFilterStartDate('');
     setFilterEndDate('');
     setFilterPaymentStatus('all');
+    setFilterSource('all');
   }, []);
 
   const hasActiveFilters =
@@ -445,6 +493,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
     filterHoReCaId !== 'all' ||
     filterStartDate !== '' ||
     filterEndDate !== '' ||
+    filterSource !== 'all' ||
     filterPaymentStatus !== 'all';
 
   // ---------------------------------------------------------------------------
@@ -452,6 +501,8 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
   // ---------------------------------------------------------------------------
 
   const openPaymentAction = useCallback((orderId: string, targetStatus: InvoiceStatus) => {
+    // Diagnostic — remove once payment-modal flow is confirmed working live.
+    console.debug('[payment-action] open (OrderImportPage)', orderId, targetStatus);
     setPaymentMenuOrderId(null);
     setPaymentError(undefined);
     setPaymentAction({ orderId, targetStatus });
@@ -490,7 +541,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900 tracking-tight">
-          Orders
+          Order Import
         </h1>
         {!isCustomer && (
           <button
@@ -504,7 +555,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
 
       {/* Tabs */}
       <div className="border-b border-stone-200">
-        <nav className="-mb-px flex gap-0" aria-label="Order workflow tabs">
+        <nav className="-mb-px flex justify-center gap-0" aria-label="Order workflow tabs">
           {ALL_TABS.map((tab) => {
             const isActive = activeTab === tab;
             const count = tabCounts[tab];
@@ -604,6 +655,25 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
               className={INPUT_CLASSES}
             >
               {PAYMENT_FILTER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="source-filter"
+              className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
+            >
+              Source
+            </label>
+            <select
+              id="source-filter"
+              value={filterSource}
+              onChange={(e) => setFilterSource(e.target.value as SourceFilterValue)}
+              className={INPUT_CLASSES}
+            >
+              {SOURCE_FILTER_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
@@ -805,13 +875,17 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
                   const nextStatus = getNextStatus(order);
                   const itemCount = order.items.reduce((acc, i) => acc + i.quantity, 0);
 
+                  const isHighlighted = highlightOrderId === order.id;
                   return (
                     <React.Fragment key={order.id}>
                       <tr
+                        id={`order-row-${order.id}`}
                         className={`transition-colors ${
-                          isSelected
-                            ? 'bg-blue-50/60'
-                            : 'hover:bg-stone-50'
+                          isHighlighted
+                            ? 'bg-emerald-50 ring-2 ring-emerald-400/70 ring-inset animate-pulse'
+                            : isSelected
+                              ? 'bg-blue-50/60'
+                              : 'hover:bg-stone-50'
                         }`}
                       >
                         {/* Checkbox */}
@@ -842,8 +916,11 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
                         </td>
 
                         {/* HoReCa */}
-                        <td className="px-4 py-3 align-middle text-stone-700 max-w-[200px] truncate">
-                          {order.hoReCa.name}
+                        <td className="px-4 py-3 align-middle text-stone-700 max-w-[220px]">
+                          <div className="flex flex-col gap-1 min-w-0">
+                            <span className="truncate">{order.hoReCa.name}</span>
+                            <OrderSourceBadge order={order} />
+                          </div>
                         </td>
 
                         {/* Items count */}
@@ -938,16 +1015,29 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
                               <Eye className="w-4 h-4" />
                             </button>
 
-                            {/* Advance status */}
-                            {isAdminOrManager && nextStatus && (
+                            {/* Process (Receiving tab, processing-status orders) replaces the
+                                generic Advance button so staff explicitly assign warehouse stock. */}
+                            {isAdminOrManager && activeTab === 'received' && order.status === 'processing' ? (
                               <button
-                                onClick={() => handleAdvanceStatus(order)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-stone-300 text-stone-700 bg-white hover:bg-stone-50 hover:border-stone-400 transition-colors cursor-pointer whitespace-nowrap"
-                                title={`Advance to ${ORDER_STATUS_LABELS[nextStatus]}`}
-                                aria-label={`Mark order ${order.id} as ${ORDER_STATUS_LABELS[nextStatus]}`}
+                                onClick={() => setProcessingOrder(order)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer whitespace-nowrap"
+                                title="Assign warehouse stock and confirm"
+                                aria-label={`Process order ${order.id}`}
                               >
-                                {ORDER_STATUS_LABELS[nextStatus]}
+                                <Sparkles className="w-3.5 h-3.5" />
+                                Process
                               </button>
+                            ) : (
+                              isAdminOrManager && nextStatus && (
+                                <button
+                                  onClick={() => handleAdvanceStatus(order)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-stone-300 text-stone-700 bg-white hover:bg-stone-50 hover:border-stone-400 transition-colors cursor-pointer whitespace-nowrap"
+                                  title={`Advance to ${ORDER_STATUS_LABELS[nextStatus]}`}
+                                  aria-label={`Mark order ${order.id} as ${ORDER_STATUS_LABELS[nextStatus]}`}
+                                >
+                                  {ORDER_STATUS_LABELS[nextStatus]}
+                                </button>
+                              )
                             )}
 
                             {/* Reorder */}
@@ -1110,8 +1200,20 @@ const OrdersPage: React.FC<OrdersPageProps> = ({
           onCancel={closePaymentAction}
         />
       )}
+
+      {/* Stock assignment modal (Admin/Manager, Receiving tab) */}
+      <StockAssignmentModal
+        order={processingOrder}
+        onCancel={() => setProcessingOrder(null)}
+        onConfirm={(note) => {
+          if (!processingOrder) return;
+          onUpdateStatus(processingOrder.id, 'confirmed', note);
+          setProcessingOrder(null);
+          addToast('Order processed and confirmed', 'success');
+        }}
+      />
     </div>
   );
 };
 
-export default OrdersPage;
+export default OrderImportPage;

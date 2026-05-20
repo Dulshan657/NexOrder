@@ -38,6 +38,9 @@ const customerRows: CustomerAliasRow[] = [
     confidence_at_creation: 1,
     created_by: null,
     created_at: '2026-05-18T10:00:00Z',
+    pending_po_id: null,
+    origin_sender_email: null,
+    origin_received_at: null,
   },
   {
     id: 'a2',
@@ -47,6 +50,9 @@ const customerRows: CustomerAliasRow[] = [
     confidence_at_creation: 0.95,
     created_by: 'user-1',
     created_at: '2026-05-18T10:30:00Z',
+    pending_po_id: null,
+    origin_sender_email: null,
+    origin_received_at: null,
   },
 ]
 
@@ -89,6 +95,9 @@ const productRows: ProductAliasRow[] = [
     confidence_at_creation: 1,
     created_by: null,
     created_at: '2026-05-18T10:00:00Z',
+    pending_po_id: null,
+    origin_sender_email: null,
+    origin_received_at: null,
   },
   {
     id: 'p2',
@@ -100,6 +109,9 @@ const productRows: ProductAliasRow[] = [
     confidence_at_creation: 0.95,
     created_by: 'user-1',
     created_at: '2026-05-18T10:30:00Z',
+    pending_po_id: null,
+    origin_sender_email: null,
+    origin_received_at: null,
   },
 ]
 
