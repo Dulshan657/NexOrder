@@ -31,3 +31,6 @@ coverage
 
 # Supabase CLI artifacts (project link metadata)
 supabase/.temp/
+
+# Superpowers brainstorming session artifacts (mockups, server state)
+.superpowers/
