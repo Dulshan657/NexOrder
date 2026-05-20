@@ -38,19 +38,15 @@ const POInboxStatsTile: React.FC<POInboxStatsTileProps> = ({
 
   if (variant === 'inline') {
     return (
-      <dl className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-        <InlineStat label="Received" value={received} />
-        <InlineDivider />
-        <InlineStat label="Auto-approved" value={autoApproved} tone="emerald" />
-        <InlineDivider />
-        <InlineStat label="Needs review" value={backlog} tone={backlogTone} />
-        <InlineDivider />
-        <InlineStat label="Cost today" value={costToday} />
-        {data?.costUsdSevenDayAvg != null && (
-          <span className="text-[11px] text-stone-500">
-            7-day avg {describeCost(data.costUsdSevenDayAvg)}/day
-          </span>
-        )}
+      <dl className="inline-flex items-stretch rounded-xl border border-stone-200 bg-white overflow-hidden divide-x divide-stone-200/70">
+        <RibbonStat label="Received" value={received} />
+        <RibbonStat label="Auto-approved" value={autoApproved} tone="emerald" />
+        <RibbonStat label="Needs review" value={backlog} tone={backlogTone} emphasise />
+        <RibbonStat
+          label="Cost today"
+          value={costToday}
+          sub={data?.costUsdSevenDayAvg != null ? `7d ${describeCost(data.costUsdSevenDayAvg)}/d` : undefined}
+        />
       </dl>
     )
   }
@@ -133,21 +129,28 @@ const CardStat: React.FC<CardStatProps> = ({ label, value, icon, tone = 'default
   )
 }
 
-interface InlineStatProps {
+interface RibbonStatProps {
   label: string
   value: string
   tone?: Tone
+  sub?: string
+  emphasise?: boolean
 }
 
-const InlineStat: React.FC<InlineStatProps> = ({ label, value, tone = 'default' }) => (
-  <div className="flex items-baseline gap-2">
-    <dt className="text-[11px] uppercase tracking-wide text-stone-500">{label}</dt>
-    <dd className={`font-mono text-sm ${INLINE_VALUE_TONE[tone]}`}>{value}</dd>
+const RibbonStat: React.FC<RibbonStatProps> = ({ label, value, tone = 'default', sub, emphasise }) => (
+  <div className={`px-4 py-2 text-right ${emphasise ? 'bg-amber-50' : ''}`}>
+    <dt
+      className={`text-[10px] uppercase tracking-wide ${
+        emphasise ? 'text-amber-700' : 'text-stone-400'
+      }`}
+    >
+      {label}
+    </dt>
+    <dd className={`font-mono text-base leading-tight ${INLINE_VALUE_TONE[tone]} ${emphasise ? 'font-bold' : 'font-semibold'}`}>
+      {value}
+    </dd>
+    {sub && <div className="text-[10px] font-mono text-stone-400 leading-tight">{sub}</div>}
   </div>
-)
-
-const InlineDivider: React.FC = () => (
-  <span aria-hidden className="h-4 w-px bg-stone-200" />
 )
 
 export default POInboxStatsTile
