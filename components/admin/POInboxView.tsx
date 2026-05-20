@@ -1,31 +1,28 @@
 // POInboxView — single parent for the consolidated PO Inbox admin tab.
 //
-// Replaces three separate top-level admin tabs (Email Accounts, PO Inbox,
-// PO Aliases) with one tab + three sub-tabs. URL-persists the active
-// sub-tab via `?subtab=` so deep-links and browser back/forward work.
+// Two sub-tabs (Queue, Aliases) + a Mailboxes button/popover in the nav.
+// URL-persists the active sub-tab via `?subtab=` so deep-links and browser
+// back/forward work. Owns the post-OAuth-callback handling (it's always
+// mounted while the PO Inbox tab is open) and opens the Mailboxes popover
+// when a connection completes.
 
 import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { LoadingSkeleton } from '../Skeleton'
 import POInboxStatsTile from './POInboxStatsTile'
-import MailboxHealthBanner from './MailboxHealthBanner'
+import MailboxesMenu from './MailboxesMenu'
 import type { HoReCa, Product } from '../../types'
 
-const EmailAccountsTab = lazy(() => import('./EmailAccountsTab'))
 const POInboxTab = lazy(() => import('./POInboxTab'))
 const POAliasesTab = lazy(() => import('./POAliasesTab'))
 
-export type POInboxSubTab = 'queue' | 'mailboxes' | 'aliases'
+export type POInboxSubTab = 'queue' | 'aliases'
 
-const VALID_SUBTABS: ReadonlyArray<POInboxSubTab> = ['queue', 'mailboxes', 'aliases']
+const VALID_SUBTABS: ReadonlyArray<POInboxSubTab> = ['queue', 'aliases']
 
 interface POInboxViewProps {
   hoReCas: HoReCa[]
   products: Product[]
   addToast?: (message: string, type: 'success' | 'error' | 'info') => void
-  /**
-   * Handler from AppShell to deep-link an approved PO into Order Import.
-   * Forwarded to POInboxDetailModal via POInboxTab.
-   */
   onViewInOrderImport?: (orderId: string) => void
 }
 
@@ -35,6 +32,7 @@ function readInitialSubtab(): POInboxSubTab {
   if (raw && (VALID_SUBTABS as ReadonlyArray<string>).includes(raw)) {
     return raw as POInboxSubTab
   }
+  // Legacy or unknown values (e.g. the removed 'mailboxes') fall back to Queue.
   return 'queue'
 }
 
@@ -53,13 +51,14 @@ const POInboxView: React.FC<POInboxViewProps> = ({
 }) => {
   const [subtab, setSubtab] = useState<POInboxSubTab>(readInitialSubtab)
   const [presetPendingPoId, setPresetPendingPoId] = useState<string | null>(null)
+  // Bumped to ask MailboxesMenu to open its popover (after an OAuth callback).
+  const [mailboxOpenNonce, setMailboxOpenNonce] = useState(0)
 
   const switchSubtab = useCallback((next: POInboxSubTab) => {
     setSubtab(next)
     writeSubtabToUrl(next)
   }, [])
 
-  // Browser back/forward should sync the sub-tab.
   useEffect(() => {
     function onPopState() {
       setSubtab(readInitialSubtab())
@@ -68,12 +67,35 @@ const POInboxView: React.FC<POInboxViewProps> = ({
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
-  // First render: stamp the URL with the current sub-tab so refresh stays here.
   useEffect(() => {
     writeSubtabToUrl(subtab)
-    // intentionally only on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Post-OAuth callback: surface the result, open the Mailboxes popover, then
+  // strip the params so a refresh doesn't repeat the toast. Lifted here from
+  // the former EmailAccountsTab so it fires even though the popover isn't
+  // mounted at page load.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const connected = params.get('connected')
+    const connectError = params.get('connect_error')
+    if (!connected && !connectError) return
+    if (connected === '1') {
+      addToast?.('Mailbox connected. The first sync will run within a minute.', 'success')
+      setMailboxOpenNonce(n => n + 1)
+    } else if (connectError) {
+      const message = params.get('message') ?? connectError
+      addToast?.(`Connect failed (${connectError}): ${message}`, 'error')
+      setMailboxOpenNonce(n => n + 1)
+    }
+    const url = new URL(window.location.href)
+    url.searchParams.delete('connected')
+    url.searchParams.delete('connect_error')
+    url.searchParams.delete('account_id')
+    url.searchParams.delete('message')
+    window.history.replaceState({}, '', url.toString())
+  }, [addToast])
 
   const handleViewSourcePo = useCallback(
     (pendingPoId: string) => {
@@ -83,8 +105,6 @@ const POInboxView: React.FC<POInboxViewProps> = ({
     [switchSubtab],
   )
 
-  // Once the Queue sub-tab has consumed the preset, clear it so the next
-  // visit doesn't accidentally re-open the modal.
   useEffect(() => {
     if (subtab !== 'queue' && presetPendingPoId) {
       setPresetPendingPoId(null)
@@ -94,30 +114,33 @@ const POInboxView: React.FC<POInboxViewProps> = ({
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <header>
-        <h1 className="text-2xl font-display font-semibold tracking-tight text-stone-900">
-          PO Inbox
-        </h1>
-        <div className="mt-3">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-display font-semibold tracking-tight text-stone-900">
+              PO Inbox
+            </h1>
+            <p className="mt-1 text-sm text-stone-500">
+              Inbound purchase orders extracted from email, ready to review.
+            </p>
+          </div>
           <POInboxStatsTile variant="inline" />
         </div>
 
         <nav
-          className="mt-6 flex items-center gap-6 border-b border-stone-200/70"
+          className="mt-6 flex items-center justify-between gap-4 border-b border-stone-200/70"
           aria-label="PO Inbox sub-navigation"
         >
-          <SubtabButton active={subtab === 'queue'} onClick={() => switchSubtab('queue')}>
-            Queue
-          </SubtabButton>
-          <SubtabButton active={subtab === 'mailboxes'} onClick={() => switchSubtab('mailboxes')}>
-            Mailboxes
-          </SubtabButton>
-          <SubtabButton active={subtab === 'aliases'} onClick={() => switchSubtab('aliases')}>
-            Aliases
-          </SubtabButton>
+          <div className="flex items-center gap-6">
+            <SubtabButton active={subtab === 'queue'} onClick={() => switchSubtab('queue')}>
+              Queue
+            </SubtabButton>
+            <SubtabButton active={subtab === 'aliases'} onClick={() => switchSubtab('aliases')}>
+              Aliases
+            </SubtabButton>
+          </div>
+          <MailboxesMenu addToast={addToast} autoOpenNonce={mailboxOpenNonce} />
         </nav>
       </header>
-
-      <MailboxHealthBanner onGoToMailboxes={() => switchSubtab('mailboxes')} />
 
       <main className="mt-6">
         <Suspense fallback={<LoadingSkeleton />}>
@@ -129,7 +152,6 @@ const POInboxView: React.FC<POInboxViewProps> = ({
               onViewInOrderImport={onViewInOrderImport}
             />
           )}
-          {subtab === 'mailboxes' && <EmailAccountsTab addToast={addToast} />}
           {subtab === 'aliases' && (
             <POAliasesTab
               hoReCas={hoReCas}
@@ -150,9 +172,6 @@ interface SubtabButtonProps {
   children: React.ReactNode
 }
 
-// Underline tab — text + 2px bottom border on active. The border sits flush
-// with the parent nav's `border-b`, so the active item visually "pierces"
-// the divider.
 const SubtabButton: React.FC<SubtabButtonProps> = ({ active, onClick, children }) => (
   <button
     type="button"
