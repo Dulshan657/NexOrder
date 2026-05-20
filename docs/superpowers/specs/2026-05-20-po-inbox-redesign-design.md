@@ -2,8 +2,11 @@
 
 **Date:** 2026-05-20
 **Status:** Approved (design phase)
-**Scope:** Visual redesign of the admin PO Inbox. Behaviour-neutral — no data
-contracts, query keys, mutations, props, or routing change.
+**Scope:** Visual redesign of the admin PO Inbox. Behaviour-neutral on the data
+layer — no query keys, mutations, Edge Functions, or service logic change. The
+one **structural** change: the Mailboxes sub-tab is replaced by a header
+button + popover (§4.7), which removes `'mailboxes'` from the sub-tab set and
+moves the post-OAuth landing behaviour.
 
 ---
 
@@ -35,7 +38,16 @@ The following MUST NOT change. They are load-bearing and out of scope:
 - `poInboxFormat.ts` pure helpers' **signatures** (`PO_INBOX_TABS`, `formatAge`,
   `sortForDisplay`, `statusBadge`, `confidenceBadgeStyle`) — their existing
   vitest suite must stay green. New formatting helpers may be *added*.
-- URL sub-tab persistence (`?subtab=`) in `POInboxView`.
+- Email-account data layer: `services/supabase/emailAccountsService.ts`, the
+  hooks (`useEmailAccounts`, `useStartOAuthFlow`, `usePauseEmailAccount`,
+  `useDisconnectEmailAccount`), the OAuth Edge Functions, and the popup
+  connect/complete handshake logic (window name `nexorder-po-oauth`,
+  BroadcastChannel + postMessage + popup-closed poll). These move location
+  (§4.7) but their behaviour is preserved verbatim.
+
+URL sub-tab persistence (`?subtab=`) is **retained** for the remaining tabs
+(`queue`, `aliases`) but the `'mailboxes'` value is removed; a stale
+`?subtab=mailboxes` deep-link falls back to `queue` (§4.7).
 
 ## 3. Design system (reuse, do not invent)
 
@@ -149,8 +161,19 @@ headline, and a one-line explanation:
   heavier weight) since it's the actionable number. **Cost today** keeps a muted
   `7d $X/d` sub-line. Still flat (no elevated card) — it lives in page chrome.
   The `card` variant (used by `AdminDashboard`) is left as-is.
-- **Sub-tabs / nav**: unchanged underline pattern (already clean and consistent).
-- `MailboxHealthBanner`: minor consistency only (radii/spacing) — keep behaviour.
+- **Sub-tabs / nav**: keep the underline pattern, now just **Queue / Aliases**.
+  The nav row gains a right-aligned **Mailboxes button** (§4.7).
+- **`MailboxHealthBanner` is removed** — its job (surfacing paused/errored
+  mailboxes) folds into the Mailboxes button's health dot/tint (§4.7).
+- **OAuth-callback handling lifts here.** `POInboxView` is always mounted while
+  the PO Inbox tab is open, so it owns: reading `?connected=1` / `?connect_error`
+  from the URL, toasting the result, stripping the params, and **auto-opening
+  the Mailboxes popover** so the operator sees their new connection. This
+  replaces the mount-effect that lived in `EmailAccountsTab` and the
+  `?subtab=mailboxes` redirect in `AppShell` (§4.8).
+- **Sub-tab type:** `POInboxSubTab` becomes `'queue' | 'aliases'`;
+  `VALID_SUBTABS` drops `'mailboxes'`; `readInitialSubtab()` maps an unknown or
+  legacy `'mailboxes'` value to `'queue'`.
 
 ### 4.5 `POInboxDetailModal` — polish only (§2 logic untouched)
 
@@ -177,6 +200,63 @@ headline, and a one-line explanation:
 Optional consistency only: keep the bell/Inbox + amber count. A subtle CSS pulse
 on the badge when `count > 0` (reduced-motion aware). No interface change.
 
+### 4.7 `MailboxesMenu` (new) — button + popover
+
+Replaces the Mailboxes sub-tab. A new `components/admin/MailboxesMenu.tsx` owns
+the button + popover and absorbs the connect / pause / sign-out logic that lives
+in `EmailAccountsTab` today — reusing the **unchanged** hooks
+(`useEmailAccounts`, `useStartOAuthFlow`, `usePauseEmailAccount`,
+`useDisconnectEmailAccount`).
+
+**Button** (right of the sub-tab nav): `Mail` icon + "Mailboxes" + a mono
+connected count + a **health indicator** derived from account statuses:
+- all `active` → emerald dot, quiet.
+- any `paused` (none errored) → stone dot.
+- any `error` → amber dot **and** an amber tint + short "Reconnect" affordance,
+  so a down mailbox (no POs flowing in) gets more weight than a 7px dot.
+
+**Popover** (anchored, right-aligned, ~380px; `rounded-xl` `.shadow-elevated`
+`border-stone-200`): a header ("Connected mailboxes" + count), then the account
+list sorted **errored-first** (reuse the existing sort). Each row: status dot +
+email + `provider · last sync` (or `· last_error` when errored/reconnecting),
+and either an inline **Reconnect** (errored) or a **⋯ kebab** menu
+(Pause/Resume + Sign out). Footer: **Connect Gmail / Connect Outlook**. Loading
+→ skeleton rows (reuse the shimmer); empty → composed "No mailboxes connected"
+with the two connect buttons.
+
+**Open/close**: discrete `useState` boolean (this is allowed — it's UI toggle
+state, not continuous animation). Click-outside + Escape close it; entrance is a
+short CSS fade/scale (reduced-motion aware). The popover stays mounted while a
+connect popup is in flight (the user opened it to click Connect), so the
+existing BroadcastChannel/postMessage completion path is unaffected.
+`MailboxesMenu` accepts an `autoOpenNonce?: number` prop; `POInboxView` bumps it
+when it detects an OAuth callback (§4.4), and a `useEffect` on the nonce opens
+the popover — so the parent triggers the open without owning the day-to-day
+toggle state.
+
+**Sign-out confirmation** stays a centered modal — reuse the existing
+`SignOutConfirmDialog` (extract it from `EmailAccountsTab` into `MailboxesMenu`
+or a small sibling; behaviour identical).
+
+**Responsive**: below `sm`, the popover becomes a near-full-width sheet
+(`fixed inset-x-2`, capped height, internal scroll) instead of a 380px anchored
+panel, per the mobile-collapse rule.
+
+**`formatRelative`** moves out of `EmailAccountsTab` into a small
+`components/admin/emailAccountFormat.ts` (or is replaced by the equivalent
+`poInboxFormat.formatAge`); the one consumer test import is updated (§5, §8).
+
+### 4.8 `AppShell` — post-OAuth routing
+
+`AppShell`'s `adminView` initializer (≈ lines 1291–1304) currently routes to the
+PO Inbox tab **and** sets `?subtab=mailboxes` after an OAuth callback. Change it
+to route to PO Inbox with `subtab=queue` (or default) and leave the
+`?connected` / `?connect_error` params in place so `POInboxView` (§4.4) toasts
+the result and auto-opens the popover. The `POInboxHeaderBadge` onClick
+(`subtab=queue` → PO Inbox) is unaffected. The comment in `index.tsx` that
+references `EmailAccountsTab::handleConnect` is updated to point at
+`MailboxesMenu`.
+
 ## 5. Files touched
 
 | File | Change |
@@ -184,12 +264,18 @@ on the badge when `count > 0` (reduced-motion aware). No interface change.
 | `components/admin/POInboxTab.tsx` | Triage Rail row, count tab, skeleton, empty states, staggered reveal |
 | `components/admin/POInboxDetailModal.tsx` | Header band, mismatch band, input/focus styling, doc toolbar, footer, entrance — **logic untouched** |
 | `components/admin/POInboxStatsTile.tsx` | `inline` variant → KPI ribbon (card variant unchanged) |
-| `components/admin/POInboxView.tsx` | Title description; spacing |
+| `components/admin/POInboxView.tsx` | Title description; nav → Queue/Aliases + Mailboxes button; remove health banner; lift OAuth `?connected` handling + popover auto-open; sub-tab type |
 | `components/admin/poInboxFormat.ts` | **Add** `confidenceBand(c)` (+ test); existing helpers unchanged |
 | `components/admin/ConfidenceRing.tsx` | **New** shared meter-ring component |
-| `components/admin/MailboxHealthBanner.tsx` | Minor spacing/radii consistency |
+| `components/admin/MailboxesMenu.tsx` | **New** — button + popover; absorbs connect/pause/sign-out logic from `EmailAccountsTab` (hooks unchanged) |
+| `components/admin/emailAccountFormat.ts` | **New** — `formatRelative` extracted out of `EmailAccountsTab` |
+| `components/admin/EmailAccountsTab.tsx` | **Removed** — logic relocated to `MailboxesMenu`; lazy import dropped from `POInboxView` |
+| `components/admin/MailboxHealthBanner.tsx` | **Removed** — folded into the Mailboxes button health dot |
 | `components/admin/POInboxHeaderBadge.tsx` | Optional pulse |
-| `index.css` | New keyframes/utilities: `.po-skeleton` shimmer, list reveal, badge pulse; all `prefers-reduced-motion` gated |
+| `components/AppShell.tsx` | Post-OAuth routing no longer sets `subtab=mailboxes` (§4.8) |
+| `index.tsx` | Comment ref `EmailAccountsTab` → `MailboxesMenu` |
+| `__tests__/emailAccountsTab.test.ts` | Update `formatRelative` import path (move only — no behaviour change) |
+| `index.css` | New keyframes/utilities: `.po-skeleton` shimmer, list reveal, badge pulse, popover entrance; all `prefers-reduced-motion` gated |
 
 New file kept small and single-purpose per repo convention (many small files).
 
@@ -213,6 +299,10 @@ service) and are out of scope here to keep the change behaviour-neutral.
 - All entrance/perpetual motion disabled under `prefers-reduced-motion`.
 - Modal keeps `role="dialog"`, `aria-modal`, labelled title, Escape-to-close
   (unchanged).
+- Mailboxes button is a real `<button>` with `aria-expanded` / `aria-haspopup`;
+  the popover closes on Escape and click-outside and returns focus to the
+  button. The health dot has a text label (`title` / sr-only) so status isn't
+  colour-only. The kebab menu items are focusable buttons.
 
 ## 8. Testing
 
@@ -224,6 +314,11 @@ service) and are out of scope here to keep the change behaviour-neutral.
 - **Manual:** verify each Queue status tab (incl. empty + loading), a
   needs_review PO with and without sender mismatch, the modal for text-body / PDF
   / image / DOCX sources, and a resolved (approved/rejected) read-only PO.
+- **Mailboxes (manual):** open the popover; verify the health dot/tint for
+  all-active / paused / errored mixes; connect via popup (success + popup-blocked
+  full-tab redirect → confirm the toast fires and the popover auto-opens);
+  pause/resume; sign out (Gmail + Outlook confirm copy). Keep
+  `emailAccountsTab.test.ts` green after the `formatRelative` import move.
 
 ## 9. Risks
 
@@ -232,3 +327,10 @@ service) and are out of scope here to keep the change behaviour-neutral.
 - **Conic-gradient ring** rendering: well-supported in all evergreen browsers;
   acceptable for an internal admin tool.
 - **Stagger on large lists**: clamp the delay index so the cascade stays snappy.
+- **OAuth callback path** is the highest-risk part of the Mailboxes move: the
+  popup-blocked full-tab redirect must still surface its result. Mitigated by
+  lifting the `?connected` handling to the always-mounted `POInboxView` (§4.4)
+  and updating `AppShell` routing (§4.8) — both must land together or a connect
+  result could be dropped.
+- **Popover positioning**: anchored panel must flip/clamp within the viewport
+  and degrade to a full-width sheet under `sm` to avoid horizontal overflow.
