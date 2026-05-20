@@ -1291,12 +1291,12 @@ const AppShell: React.FC<AppShellProps> = props => {
     const [adminView, setAdminView] = useState<AdminTab>(() => {
         if (typeof window === 'undefined') return 'Dashboard';
         const params = new URLSearchParams(window.location.search);
-        // After the OAuth callback, route to the consolidated PO Inbox tab
-        // and select the Mailboxes sub-tab so the operator sees their new
-        // connection in context (the previous "Email Accounts" top-level tab
-        // collapsed into POInboxView's Mailboxes sub-tab).
+        // After the OAuth callback, route to the consolidated PO Inbox tab.
+        // POInboxView reads the ?connected / ?connect_error params, toasts the
+        // result, and opens the Mailboxes popover so the operator sees their
+        // new connection in context.
         if (params.has('connected') || params.has('connect_error')) {
-            params.set('subtab', 'mailboxes');
+            params.set('subtab', 'queue');
             window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
             return 'PO Inbox';
         }

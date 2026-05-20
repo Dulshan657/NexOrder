@@ -40,7 +40,7 @@ const oauthConnectError = oauthParams?.get('connect_error');
 // window.name survives the cross-origin redirect chain within the popup
 // and is the cleanest discriminator between "I'm the popup" vs "I'm the
 // main tab returning from the popup-blocked fallback". The parent sets
-// it to NEXORDER_OAUTH_POPUP_NAME in EmailAccountsTab::handleConnect.
+// it to NEXORDER_OAUTH_POPUP_NAME in MailboxesMenu::handleConnect.
 const isOAuthPopup = (typeof window !== 'undefined') && window.name === 'nexorder-po-oauth';
 const isOAuthPopupCompletion = isOAuthPopup && !!(oauthConnected || oauthConnectError);
 
