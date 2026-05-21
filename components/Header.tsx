@@ -1,5 +1,6 @@
 import React from 'react';
 import { User } from '../types';
+import OptimizedImage from './OptimizedImage';
 
 interface HeaderProps {
     currentUser: User;
@@ -28,10 +29,11 @@ const Header: React.FC<HeaderProps> = ({ currentUser, onOpenProfile, logoUrl, on
                     <p className="text-xs text-stone-500 uppercase tracking-wider mt-0.5">{currentUser.role}</p>
                 </div>
                 <button onClick={onOpenProfile} className="focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-600 rounded-full transition-transform hover:scale-105">
-                    <img 
-                        src={currentUser.avatarUrl || `https://i.pravatar.cc/150?u=${currentUser.id}`} 
-                        alt="User Avatar" 
-                        className="h-10 w-10 rounded-full border border-stone-200 object-cover"
+                    <OptimizedImage
+                        src={currentUser.avatarUrl || `https://i.pravatar.cc/150?u=${currentUser.id}`}
+                        alt="User avatar"
+                        className="h-10 w-10 rounded-full border border-stone-200"
+                        transformWidth={96}
                     />
                 </button>
            </div>

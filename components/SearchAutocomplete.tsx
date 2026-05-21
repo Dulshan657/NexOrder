@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import type { Product } from '../types';
 import { Search, Clock, X } from 'lucide-react';
+import OptimizedImage from './OptimizedImage';
 
 interface SearchAutocompleteProps {
   searchQuery: string;
@@ -84,7 +85,7 @@ const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                   className="w-full text-left px-3 py-2 text-sm text-stone-700 hover:bg-stone-50 transition-colors flex items-center gap-3"
                 >
                   {p.imageUrl && (
-                    <img src={p.imageUrl} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+                    <OptimizedImage src={p.imageUrl} alt="" className="w-8 h-8 rounded-lg flex-shrink-0" transformWidth={96} />
                   )}
                   <div className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{p.name}</span>

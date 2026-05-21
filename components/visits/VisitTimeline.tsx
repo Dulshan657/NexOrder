@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Visit, HoReCa } from '../../types';
 import { ChevronDown, ChevronUp, MapPin } from 'lucide-react';
+import OptimizedImage from '../OptimizedImage';
 
 interface VisitTimelineProps {
   visits: Visit[];
@@ -126,7 +127,7 @@ const VisitTimeline: React.FC<VisitTimelineProps> = ({ visits, hoReCas, onClickH
                         {visit.photos && visit.photos.length > 0 && (
                           <div className="flex gap-2 pt-1">
                             {visit.photos.slice(0, 3).map((p, i) => (
-                              <img key={i} src={p} alt="" className="w-12 h-12 rounded-lg object-cover border border-stone-200" />
+                              <OptimizedImage key={i} src={p} alt="" className="w-12 h-12 rounded-lg border border-stone-200" transformWidth={96} />
                             ))}
                             {visit.photos.length > 3 && (
                               <span className="w-12 h-12 rounded-lg bg-stone-100 flex items-center justify-center text-xs text-stone-500 font-medium">

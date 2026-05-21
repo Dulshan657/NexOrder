@@ -4,6 +4,7 @@ import { UserRole } from '../types';
 import { DollarSign, ShoppingBag, BarChart3, Wallet, AlertTriangle, CreditCard, Users, Package, Target, Download, TrendingUp } from 'lucide-react';
 import KPICard from './dashboard/KPICard';
 import ActionItemsBoard from './ActionItemsBoard';
+import OptimizedImage from './OptimizedImage';
 import type { ActionItemColumn, ActionItem } from './ActionItemsBoard';
 import TimePeriodToggle from './dashboard/TimePeriodToggle';
 import ExpandableSection from './dashboard/ExpandableSection';
@@ -342,7 +343,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {topReps.map((rep, i) => (
                   <li key={i} className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      {rep.avatarUrl && <img src={rep.avatarUrl} alt={rep.name} className="h-7 w-7 rounded-full border border-stone-200" />}
+                      {rep.avatarUrl && <OptimizedImage src={rep.avatarUrl} alt={rep.name} className="h-7 w-7 rounded-full border border-stone-200" transformWidth={128} />}
                       <span className="text-sm text-stone-700">{rep.name}</span>
                     </div>
                     <span className="text-sm font-semibold text-nexgen-blue">{rep.value}</span>

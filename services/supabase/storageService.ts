@@ -1,6 +1,11 @@
 import { supabase } from '@/lib/supabase';
 
-export type StorageBucket = 'company-assets' | 'visit-photos' | 'signatures';
+export type StorageBucket =
+    | 'company-assets'
+    | 'visit-photos'
+    | 'signatures'
+    | 'product-images'
+    | 'avatars';
 
 /**
  * Upload a Blob/File to a Supabase Storage bucket and return the public URL.
@@ -36,6 +41,16 @@ export function dataUrlToBlob(dataUrl: string): Blob {
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     return new Blob([bytes], { type: mime });
+}
+
+/**
+ * True when a URL points at an object in the given bucket. Use this to guard
+ * deletes so we never try to remove an external CDN URL or a legacy data URL
+ * that merely happens to be stored in the same column.
+ */
+export function isBucketUrl(bucket: StorageBucket, publicUrl: string | null | undefined): boolean {
+    if (!publicUrl) return false;
+    return publicUrl.includes(`/storage/v1/object/public/${bucket}/`);
 }
 
 /**

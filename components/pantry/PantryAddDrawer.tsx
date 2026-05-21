@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Product, HoReCa, PantryItem, Category } from '../../types';
 import { resolveHoReCaPrice } from '../../pricing';
 import { Search, X, Plus, Check, ImageOff } from 'lucide-react';
+import OptimizedImage from '../OptimizedImage';
 
 interface PantryAddDrawerProps {
     open: boolean;
@@ -209,13 +210,17 @@ const PantryAddDrawer: React.FC<PantryAddDrawerProps> = ({
                                                 }`}
                                             >
                                                 <div className="w-10 h-10 rounded-md overflow-hidden bg-stone-100 ring-1 ring-stone-200/70 flex-shrink-0">
-                                                    {product.imageUrl ? (
-                                                        <img src={product.imageUrl} alt="" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <div className="w-full h-full flex items-center justify-center text-stone-300">
-                                                            <ImageOff className="w-3.5 h-3.5" aria-hidden />
-                                                        </div>
-                                                    )}
+                                                    <OptimizedImage
+                                                        src={product.imageUrl}
+                                                        alt=""
+                                                        className="w-full h-full"
+                                                        transformWidth={96}
+                                                        fallback={
+                                                            <div className="w-full h-full flex items-center justify-center text-stone-300">
+                                                                <ImageOff className="w-3.5 h-3.5" aria-hidden />
+                                                            </div>
+                                                        }
+                                                    />
                                                 </div>
                                                 <div className="min-w-0 flex-1">
                                                     <p className="text-sm font-medium text-stone-900 truncate">{product.name}</p>

@@ -163,12 +163,26 @@ body {
 }
 .po-badge-pulse { animation: po-badge-pulse 2.2s ease-in-out infinite; }
 
+/* Image loading — shimmer skeleton behind <OptimizedImage> until the bitmap
+   paints, then the image fades in (opacity transition lives on the <img>). */
+@keyframes img-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.img-skeleton {
+  background: #ece9e6;
+  background-image: linear-gradient(90deg, #ece9e6 0px, #f5f3f1 200px, #ece9e6 400px);
+  background-size: 800px 100%;
+  animation: img-shimmer 1.4s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .po-skeleton,
   .po-row-in,
   .po-pop-in,
   .po-modal-in,
-  .po-badge-pulse {
+  .po-badge-pulse,
+  .img-skeleton {
     animation: none !important;
   }
 }

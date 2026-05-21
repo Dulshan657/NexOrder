@@ -4,6 +4,7 @@ import { UserRole } from '../types';
 import { CATEGORIES } from '../constants';
 import { Target, DollarSign, ShoppingBag, Users } from 'lucide-react';
 import SalesTargetModal from './SalesTargetModal';
+import OptimizedImage from './OptimizedImage';
 
 // Helper function to format date for input fields
 const formatDateForInput = (date: Date) => {
@@ -140,7 +141,7 @@ const TopPerformersList: React.FC<{ title: string, data: { name: string; value: 
                 {data.map((item, index) => (
                     <li key={index} className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            {item.avatarUrl && <img src={item.avatarUrl} alt={item.name} className="h-9 w-9 rounded-full border border-stone-200"/>}
+                            {item.avatarUrl && <OptimizedImage src={item.avatarUrl} alt={item.name} className="h-9 w-9 rounded-full border border-stone-200" transformWidth={128} />}
                             <span className="font-medium text-stone-700 text-sm">{item.name}</span>
                         </div>
                         <span className="font-bold text-stone-800 text-sm">{item.value}</span>
@@ -540,7 +541,7 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ allOrders, products, ho
                                     <div key={teamUser.id} className="border border-stone-100 rounded-xl p-4 bg-stone-50/30">
                                         <div className="flex items-center gap-3 mb-3">
                                             {teamUser.avatarUrl ? (
-                                                <img src={teamUser.avatarUrl} alt="" className="w-8 h-8 rounded-full" />
+                                                <OptimizedImage src={teamUser.avatarUrl} alt="" className="w-8 h-8 rounded-full" transformWidth={128} />
                                             ) : (
                                                 <div className="w-8 h-8 rounded-full bg-stone-200 flex items-center justify-center text-stone-500 text-sm font-medium">
                                                     {teamUser.name.charAt(0)}

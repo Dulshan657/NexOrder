@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
 import { ChevronUp, ChevronDown } from 'lucide-react';
+import OptimizedImage from './OptimizedImage';
 
 interface UserSelectorProps {
   users: User[];
@@ -18,7 +19,7 @@ const UserSelector: React.FC<UserSelectorProps> = ({ users, currentUser, onSelec
         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-stone-100 transition-colors cursor-pointer"
       >
         {currentUser.avatarUrl ? (
-          <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-8 h-8 rounded-xl flex-shrink-0" />
+          <OptimizedImage src={currentUser.avatarUrl} alt={currentUser.name} className="w-8 h-8 rounded-xl flex-shrink-0" transformWidth={128} />
         ) : (
           <div className="w-8 h-8 rounded-xl bg-nexgen-blue flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
             {currentUser.name.charAt(0)}
@@ -49,7 +50,7 @@ const UserSelector: React.FC<UserSelectorProps> = ({ users, currentUser, onSelec
               }`}
             >
               {user.avatarUrl ? (
-                <img src={user.avatarUrl} alt={user.name} className="w-6 h-6 rounded-xl flex-shrink-0" />
+                <OptimizedImage src={user.avatarUrl} alt={user.name} className="w-6 h-6 rounded-xl flex-shrink-0" transformWidth={96} />
               ) : (
                 <div className="w-6 h-6 rounded-xl bg-stone-200 flex items-center justify-center text-xs font-semibold text-stone-600 flex-shrink-0">
                   {user.name.charAt(0)}

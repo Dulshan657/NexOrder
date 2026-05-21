@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Loader2 } from 'lucide-react';
 import { User, UserRole } from '../types';
+import { useToasts } from '../hooks/useToasts';
+import { compressImage } from '../lib/imageCompression';
+import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/supabase/storageService';
+import OptimizedImage from './OptimizedImage';
 
 interface UserFormProps {
     userToEdit: User | null;
@@ -15,6 +20,8 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
         avatarUrl: '',
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const { addToast } = useToasts();
+    const [isUploading, setIsUploading] = useState(false);
 
     useEffect(() => {
         if (userToEdit) {
@@ -39,14 +46,29 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Compress + resize to WebP, upload to Storage, store the public URL —
+    // instead of persisting a base64 data URL in profiles.avatar_url.
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setFormData(prev => ({ ...prev, avatarUrl: reader.result as string }));
-            };
-            reader.readAsDataURL(file);
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            addToast('Please choose an image file.', 'error');
+            return;
+        }
+        const previous = formData.avatarUrl;
+        setIsUploading(true);
+        try {
+            const compressed = await compressImage(file, { maxWidthOrHeight: 256, quality: 0.8 });
+            const url = await uploadToBucket('avatars', compressed, { prefix: 'avatars' });
+            setFormData(prev => ({ ...prev, avatarUrl: url }));
+            if (isBucketUrl('avatars', previous)) {
+                void deleteFromBucketByUrl('avatars', previous);
+            }
+        } catch {
+            addToast('Avatar upload failed. Please try again.', 'error');
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
@@ -91,17 +113,25 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
                         <div>
                             <label className="block text-sm font-medium text-stone-700 mb-1.5">Avatar</label>
                             <div className="flex items-center space-x-4">
-                                <img 
-                                    src={formData.avatarUrl || `https://i.pravatar.cc/150?u=${userToEdit?.id ?? 'new-user'}`} 
-                                    alt="Avatar Preview" 
-                                    className="h-16 w-16 rounded-full object-cover bg-stone-100 border border-stone-200 shadow-sm"
-                                />
+                                {isUploading ? (
+                                    <div className="h-16 w-16 rounded-full bg-stone-100 border border-stone-200 shadow-sm flex items-center justify-center">
+                                        <Loader2 className="h-5 w-5 text-stone-400 animate-spin" />
+                                    </div>
+                                ) : (
+                                    <OptimizedImage
+                                        src={formData.avatarUrl || `https://i.pravatar.cc/150?u=${userToEdit?.id ?? 'new-user'}`}
+                                        alt="Avatar preview"
+                                        className="h-16 w-16 rounded-full bg-stone-100 border border-stone-200 shadow-sm"
+                                        transformWidth={128}
+                                    />
+                                )}
                                 <button
                                     type="button"
                                     onClick={() => fileInputRef.current?.click()}
-                                    className="bg-white py-2 px-4 border border-stone-300 rounded-lg shadow-sm text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors"
+                                    disabled={isUploading}
+                                    className="bg-white py-2 px-4 border border-stone-300 rounded-lg shadow-sm text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
-                                    Upload Image
+                                    {isUploading ? 'Uploading…' : 'Upload Image'}
                                 </button>
                                 <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
                             </div>
@@ -124,7 +154,7 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
                         <button type="button" onClick={onClose} className="bg-white py-2.5 px-4 border border-stone-300 rounded-lg shadow-sm text-sm font-medium text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors">
                             Cancel
                         </button>
-                        <button type="submit" className="inline-flex justify-center py-2.5 px-5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-stone-900 hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors">
+                        <button type="submit" disabled={isUploading} className="inline-flex justify-center py-2.5 px-5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-stone-900 hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                             Save User
                         </button>
                     </div>

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Order, Product, HoReCa, OrderItem } from '../types';
 import { RotateCcw, ShoppingCart, Trash2, AlertTriangle, UserRound, Package } from 'lucide-react';
 import { resolveHoReCaPrice } from '../pricing';
+import OptimizedImage from './OptimizedImage';
 
 interface ReorderTabProps {
     lastOrder: Order | null;
@@ -243,13 +244,17 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
                             <div className="flex gap-4">
                                 {/* Product Image */}
                                 <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden bg-stone-100 flex-shrink-0">
-                                    {item.imageUrl ? (
-                                        <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-stone-300">
-                                            <Package className="w-6 h-6" />
-                                        </div>
-                                    )}
+                                    <OptimizedImage
+                                        src={item.imageUrl}
+                                        alt={item.name}
+                                        className="w-full h-full"
+                                        transformWidth={128}
+                                        fallback={
+                                            <div className="w-full h-full flex items-center justify-center text-stone-300">
+                                                <Package className="w-6 h-6" />
+                                            </div>
+                                        }
+                                    />
                                 </div>
 
                                 {/* Info */}

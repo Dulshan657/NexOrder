@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import type { Product, HoReCa } from '../../types';
 import { resolveHoReCaPrice } from '../../pricing';
 import { ArrowRightLeft, AlertTriangle, ImageOff, X } from 'lucide-react';
+import OptimizedImage from '../OptimizedImage';
 
 interface PantrySubstitutePopoverProps {
     target: Product;
@@ -80,13 +81,17 @@ const PantrySubstitutePopover: React.FC<PantrySubstitutePopoverProps> = ({
                             <li key={s.id}>
                                 <div className="flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50">
                                     <div className="w-9 h-9 rounded-md overflow-hidden bg-stone-100 ring-1 ring-stone-200/70 flex-shrink-0">
-                                        {s.imageUrl ? (
-                                            <img src={s.imageUrl} alt="" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-stone-300">
-                                                <ImageOff className="w-3 h-3" aria-hidden />
-                                            </div>
-                                        )}
+                                        <OptimizedImage
+                                            src={s.imageUrl}
+                                            alt=""
+                                            className="w-full h-full"
+                                            transformWidth={96}
+                                            fallback={
+                                                <div className="w-full h-full flex items-center justify-center text-stone-300">
+                                                    <ImageOff className="w-3 h-3" aria-hidden />
+                                                </div>
+                                            }
+                                        />
                                     </div>
                                     <div className="min-w-0 flex-1">
                                         <p className="text-sm font-medium text-stone-900 truncate">{s.name}</p>

@@ -2,6 +2,7 @@ import React from 'react';
 import type { Product, HoReCa, OrderingHint, Promotion, User, PromoBadgeType } from '../types';
 import { Heart, RotateCcw, Clock } from 'lucide-react';
 import { resolveHoReCaPrice, resolvePromotionPrice, getAllApplicablePromotions } from '../pricing';
+import OptimizedImage from './OptimizedImage';
 
 interface ProductCardProps {
   product: Product;
@@ -63,9 +64,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddItem, selectedH
   return (
     <div className={`group bg-white rounded-xl shadow-card border border-stone-200/60 overflow-hidden flex flex-col transition-all duration-300 ${isOutOfStock ? 'opacity-60' : 'hover:shadow-card-hover hover:border-stone-300'}`}>
       <div className="relative aspect-[4/3] overflow-hidden bg-stone-100">
-        {product.imageUrl ? (
-            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-        ) : (
+        <OptimizedImage
+          src={product.imageUrl}
+          alt={product.name}
+          className="w-full h-full"
+          imgClassName="object-cover transition-transform duration-700 group-hover:scale-105"
+          transformWidth={600}
+          fallback={
             <div className="w-full h-full flex items-center justify-center">
                 <div className="text-center text-stone-400">
                     <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
@@ -73,7 +78,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddItem, selectedH
                     </svg>
                 </div>
             </div>
-        )}
+          }
+        />
         <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm text-stone-800 text-xs font-medium px-2.5 py-1 rounded-full shadow-sm">{product.category}</span>
         {promoBadge && (
           <span className={`absolute top-3 right-3 text-[10px] font-bold px-2 py-1 rounded-full shadow-sm z-[5] ${PROMO_BADGE_STYLES[promoBadge]} ${isPantryItem ? 'right-14' : ''}`}>

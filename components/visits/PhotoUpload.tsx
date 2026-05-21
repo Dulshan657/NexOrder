@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Camera, X, Image, Loader2 } from 'lucide-react';
 import { uploadToBucket, deleteFromBucketByUrl } from '../../services/supabase/storageService';
 import { useToasts } from '../../hooks/useToasts';
+import OptimizedImage from '../OptimizedImage';
 
 interface PhotoUploadProps {
   photos: string[];
@@ -59,7 +60,7 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ photos, onPhotosChange, maxPh
       <div className="flex flex-wrap gap-2">
         {photos.map((photo, index) => (
           <div key={photo} className="relative w-20 h-20 rounded-lg overflow-hidden border border-stone-200">
-            <img src={photo} alt={`Visit photo ${index + 1}`} className="w-full h-full object-cover" />
+            <OptimizedImage src={photo} alt={`Visit photo ${index + 1}`} className="w-full h-full" transformWidth={160} />
             <button
               onClick={() => handleRemove(index)}
               className="absolute top-0.5 right-0.5 p-0.5 bg-red-500 text-white rounded-full hover:bg-red-600"

@@ -1,7 +1,12 @@
 // FIX: Implement the ProductForm component.
 import React, { useState, useEffect, useRef } from 'react';
+import { Loader2 } from 'lucide-react';
 import type { Product, Category, Supplier } from '../types';
 import { CATEGORIES } from '../constants';
+import { useToasts } from '../hooks/useToasts';
+import { compressImage } from '../lib/imageCompression';
+import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/supabase/storageService';
+import OptimizedImage from './OptimizedImage';
 
 interface ProductFormProps {
     productToEdit: Product | null;
@@ -26,6 +31,8 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
         heightCm: '',
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const { addToast } = useToasts();
+    const [isUploading, setIsUploading] = useState(false);
 
     useEffect(() => {
         if (productToEdit) {
@@ -51,15 +58,39 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Compress + resize to WebP in the browser, then upload to Storage and
+    // store the public URL — instead of stuffing a base64 data URL into the DB.
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file && file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setFormData(prev => ({ ...prev, imageUrl: reader.result as string }));
-            };
-            reader.readAsDataURL(file);
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            addToast('Please choose an image file.', 'error');
+            return;
         }
+        const previous = formData.imageUrl;
+        setIsUploading(true);
+        try {
+            const compressed = await compressImage(file, { maxWidthOrHeight: 1024, quality: 0.8 });
+            const url = await uploadToBucket('product-images', compressed, { prefix: 'products' });
+            setFormData(prev => ({ ...prev, imageUrl: url }));
+            // Clean up the file we just replaced (only if it lived in our bucket).
+            if (isBucketUrl('product-images', previous)) {
+                void deleteFromBucketByUrl('product-images', previous);
+            }
+        } catch {
+            addToast('Image upload failed. Please try again.', 'error');
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleRemoveImage = () => {
+        const current = formData.imageUrl;
+        if (isBucketUrl('product-images', current)) {
+            void deleteFromBucketByUrl('product-images', current);
+        }
+        setFormData(prev => ({ ...prev, imageUrl: '' }));
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -171,8 +202,10 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                         <label className="block text-sm font-medium text-stone-700 mb-2">Product Image</label>
                         <div className="flex items-center gap-5">
                             <div className="w-24 h-24 bg-stone-50 rounded-lg flex items-center justify-center border border-stone-200 overflow-hidden shadow-sm">
-                                {formData.imageUrl ? (
-                                    <img src={formData.imageUrl} alt="Product Preview" className="w-full h-full object-cover" />
+                                {isUploading ? (
+                                    <Loader2 className="h-6 w-6 text-stone-400 animate-spin" />
+                                ) : formData.imageUrl ? (
+                                    <OptimizedImage src={formData.imageUrl} alt="Product preview" className="w-full h-full" transformWidth={192} />
                                 ) : (
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-stone-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -190,14 +223,15 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                                 <button
                                     type="button"
                                     onClick={() => fileInputRef.current?.click()}
-                                    className="bg-white py-2 px-4 border border-stone-300 rounded-lg shadow-sm text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors"
+                                    disabled={isUploading}
+                                    className="bg-white py-2 px-4 border border-stone-300 rounded-lg shadow-sm text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
-                                    Upload Image
+                                    {isUploading ? 'Uploading…' : 'Upload Image'}
                                 </button>
-                                {formData.imageUrl && (
+                                {formData.imageUrl && !isUploading && (
                                     <button
                                         type="button"
-                                        onClick={() => setFormData(prev => ({ ...prev, imageUrl: '' }))}
+                                        onClick={handleRemoveImage}
                                         className="text-sm font-medium text-red-600 hover:text-red-800 self-start transition-colors"
                                     >
                                         Remove Image
@@ -212,7 +246,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                         <button type="button" onClick={onClose} className="bg-white py-2.5 px-4 border border-stone-300 rounded-lg shadow-sm text-sm font-medium text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors">
                             Cancel
                         </button>
-                        <button type="submit" className="inline-flex justify-center py-2.5 px-5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-stone-900 hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors">
+                        <button type="submit" disabled={isUploading} className="inline-flex justify-center py-2.5 px-5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-stone-900 hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                             Save Product
                         </button>
                     </div>

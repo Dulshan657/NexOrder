@@ -5,6 +5,7 @@ import { resolveHoReCaPrice } from '../../pricing';
 import type { PantryFrequencyEntry } from '../../hooks/usePantryFrequency';
 import { daysUntil } from '../../hooks/usePantryFrequency';
 import PantrySubstitutePopover from './PantrySubstitutePopover';
+import OptimizedImage from '../OptimizedImage';
 
 interface PantryRowProps {
     pantryItem: PantryItem;
@@ -137,13 +138,17 @@ const PantryRow: React.FC<PantryRowProps> = ({
 
             {/* Col 2: thumbnail */}
             <div className="w-11 h-11 rounded-lg overflow-hidden bg-stone-100 ring-1 ring-stone-200/70 flex-shrink-0">
-                {product.imageUrl ? (
-                    <img src={product.imageUrl} alt="" className="w-full h-full object-cover" />
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center text-stone-300">
-                        <ImageOff className="w-4 h-4" aria-hidden />
-                    </div>
-                )}
+                <OptimizedImage
+                    src={product.imageUrl}
+                    alt=""
+                    className="w-full h-full"
+                    transformWidth={96}
+                    fallback={
+                        <div className="w-full h-full flex items-center justify-center text-stone-300">
+                            <ImageOff className="w-4 h-4" aria-hidden />
+                        </div>
+                    }
+                />
             </div>
 
             {/* Col 3: identity stack */}

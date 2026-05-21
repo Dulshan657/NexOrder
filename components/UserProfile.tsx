@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { User } from '../types';
+import OptimizedImage from './OptimizedImage';
 
 interface UserProfileProps {
     user: User;
@@ -38,10 +39,11 @@ const UserProfile: React.FC<UserProfileProps> = ({ user, onSave, onClose }) => {
                             <h2 className="text-2xl font-display font-bold text-stone-900">My Profile</h2>
                             <p className="text-sm text-stone-500 mt-1">Update your personal information.</p>
                         </div>
-                        <img 
-                            src={user.avatarUrl || `https://i.pravatar.cc/150?u=${user.id}`} 
-                            alt="User Avatar"
+                        <OptimizedImage
+                            src={user.avatarUrl || `https://i.pravatar.cc/150?u=${user.id}`}
+                            alt="User avatar"
                             className="h-16 w-16 rounded-full border-2 border-white shadow-md ring-2 ring-stone-100"
+                            transformWidth={128}
                         />
                     </div>
                     
