@@ -38,6 +38,7 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { computeAliasDiff } from '../_shared/poInbox/aliasDiff.ts'
 import { sanitizeForLog } from '../_shared/poInbox/env.ts'
 import { isServiceRoleBearer } from '../_shared/poInbox/dispatch.ts'
+import { findStockShortages } from '../_shared/poInbox/stockCheck.ts'
 
 type ApproveMode = 'auto' | 'human'
 
@@ -324,19 +325,21 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
   // case. A concurrent place-order via another channel could still
   // overcommit by a few units between this read and the orders insert;
   // Phase 2 will wrap both in a Postgres function.
-  const totalsByProduct = new Map<number, number>()
-  for (const item of resolvedItems) {
-    const requested = item.quantity * (item.pack_size ?? 1)
-    totalsByProduct.set(item.product_id, (totalsByProduct.get(item.product_id) ?? 0) + requested)
-  }
-  for (const [pid, qty] of totalsByProduct) {
-    const product = products.get(pid)!
-    if (product.inventory < qty) {
-      throw new EdgeFunctionError(
-        'CONFLICT',
-        `Insufficient stock for ${product.name}: ${product.inventory} available, ${qty} requested`,
-      )
-    }
+  //
+  // Inventory is counted in selling units — the same unit as `quantity`.
+  // pack_size is descriptive metadata (carton size) and must NOT scale the
+  // requested amount, mirroring place-order which checks and decrements
+  // inventory by quantity alone. See _shared/poInbox/stockCheck.ts.
+  const shortages = findStockShortages(
+    resolvedItems.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+    products,
+  )
+  if (shortages.length > 0) {
+    const s = shortages[0]
+    throw new EdgeFunctionError(
+      'CONFLICT',
+      `Insufficient stock for ${s.name}: ${s.available} available, ${s.requested} requested`,
+    )
   }
 
   // Compute totals (no horeca_pricing, no promotions — MVP scope note above).
