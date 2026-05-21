@@ -259,6 +259,9 @@ export interface GraphAttachmentRef {
   mimeType: string
   size: number
   contentBytesBase64: string  // Graph returns attachment bytes inline as base64
+  /** True for inline body parts (signatures/logos). Kept but deprioritized
+   *  downstream so a real attachment always wins. */
+  inline: boolean
 }
 
 export interface GraphMessageEnvelope {
@@ -329,7 +332,8 @@ export async function getGraphMessage(
 
   const attachments: GraphAttachmentRef[] = []
   for (const a of msg.attachments ?? []) {
-    if (a.isInline) continue
+    // Keep inline parts (signatures/logos) but tag them — extract-po
+    // deprioritizes them so a real attachment always wins.
     if (!a.id || !a.name || !a.contentBytes) continue
     const mime = (a.contentType ?? '').toLowerCase()
     if (!MIME_TYPES_WE_PROCESS.has(mime)) continue
@@ -339,6 +343,7 @@ export async function getGraphMessage(
       mimeType: mime,
       size: a.size ?? 0,
       contentBytesBase64: a.contentBytes,
+      inline: a.isInline === true,
     })
   }
 

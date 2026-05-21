@@ -131,6 +131,9 @@ export interface GmailAttachmentRef {
   mimeType: string
   size: number
   attachmentId: string
+  /** True for cid-referenced body parts (signatures/logos). Kept but
+   *  deprioritized downstream so a real attachment always wins. */
+  inline: boolean
 }
 
 // MIME types extract-po knows how to send to OpenAI. Anything outside
@@ -147,9 +150,24 @@ export const MIME_TYPES_WE_PROCESS = new Set([
 ])
 
 /**
- * Flatten the message tree and return refs to every attachment whose
- * MIME type is one we know how to extract from. Inline images and
- * signatures are filtered out (filename empty or MIME type unknown).
+ * Decide whether a Gmail part is an inline body part (e.g. a signature or
+ * logo embedded via `<img src="cid:…">`) rather than a genuine attachment.
+ * Inline when `Content-Disposition` starts with `inline`, or a `Content-ID`
+ * is present and the disposition isn't explicitly `attachment`.
+ */
+export function gmailPartIsInline(part: GmailPart): boolean {
+  const disposition = getGmailHeader(part.headers, 'Content-Disposition').trim().toLowerCase()
+  if (disposition.startsWith('inline')) return true
+  if (disposition.startsWith('attachment')) return false
+  const contentId = getGmailHeader(part.headers, 'Content-ID').trim()
+  return contentId.length > 0
+}
+
+/**
+ * Flatten the message tree and return refs to every part whose MIME type is
+ * one we know how to extract from. Inline images (signatures/logos) are KEPT
+ * but tagged `inline: true` so extract-po can deprioritize them — a real
+ * attachment always wins, and an inline image is used only as a last resort.
  */
 export function listGmailAttachments(root: GmailPart | null | undefined): GmailAttachmentRef[] {
   if (!root) return []
@@ -166,6 +184,7 @@ export function listGmailAttachments(root: GmailPart | null | undefined): GmailA
         mimeType,
         size: part.body?.size ?? 0,
         attachmentId,
+        inline: gmailPartIsInline(part),
       })
     }
     for (const child of part.parts ?? []) walk(child)

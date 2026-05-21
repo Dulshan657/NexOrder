@@ -7,6 +7,7 @@ import {
   decodeGmailBase64Text,
   extractGmailBodies,
   listGmailAttachments,
+  gmailPartIsInline,
   getGmailHeader,
   type GmailPart,
 } from '../supabase/functions/_shared/poInbox/mime'
@@ -213,6 +214,67 @@ describe('listGmailAttachments', () => {
   it('returns empty array on null tree', () => {
     expect(listGmailAttachments(null)).toEqual([])
     expect(listGmailAttachments(undefined)).toEqual([])
+  })
+
+  it('keeps an inline signature image but tags it inline=true, real attachment inline=false', () => {
+    const root: GmailPart = {
+      mimeType: 'multipart/mixed',
+      parts: [
+        {
+          partId: '2',
+          mimeType: 'image/png',
+          filename: 'image001.png',
+          headers: [
+            { name: 'Content-Disposition', value: 'inline; filename="image001.png"' },
+            { name: 'Content-ID', value: '<image001@01D9.ABC>' },
+          ],
+          body: { size: 4096, attachmentId: 'ATT-sig' },
+        },
+        {
+          partId: '3',
+          mimeType: 'application/pdf',
+          filename: 'PO_999.pdf',
+          headers: [{ name: 'Content-Disposition', value: 'attachment; filename="PO_999.pdf"' }],
+          body: { size: 200000, attachmentId: 'ATT-pdf' },
+        },
+      ],
+    }
+    const refs = listGmailAttachments(root)
+    expect(refs.map(r => r.filename)).toEqual(['image001.png', 'PO_999.pdf'])
+    expect(refs.map(r => r.inline)).toEqual([true, false])
+  })
+})
+
+describe('gmailPartIsInline', () => {
+  const part = (headers: Array<{ name: string; value: string }>): GmailPart => ({
+    mimeType: 'image/png',
+    filename: 'x.png',
+    headers,
+    body: { attachmentId: 'a' },
+  })
+
+  it('is true when Content-Disposition is inline', () => {
+    expect(gmailPartIsInline(part([{ name: 'Content-Disposition', value: 'inline; filename="x.png"' }]))).toBe(true)
+  })
+
+  it('is true when a Content-ID is present and disposition is not attachment', () => {
+    expect(gmailPartIsInline(part([{ name: 'Content-ID', value: '<x@host>' }]))).toBe(true)
+  })
+
+  it('is false for an explicit attachment disposition even if a Content-ID exists', () => {
+    expect(
+      gmailPartIsInline(
+        part([
+          { name: 'Content-Disposition', value: 'attachment; filename="x.png"' },
+          { name: 'Content-ID', value: '<x@host>' },
+        ]),
+      ),
+    ).toBe(false)
+  })
+
+  it('is false when there are no disposition/content-id headers', () => {
+    expect(gmailPartIsInline(part([]))).toBe(false)
+    expect(gmailPartIsInline({ mimeType: 'application/pdf', filename: 'a.pdf', body: {} })).toBe(false)
   })
 })
 

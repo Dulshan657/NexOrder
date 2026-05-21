@@ -32,7 +32,11 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 interface SignUrlRequest {
   pendingPoId: string
   kind: 'original' | 'attachment'
-  /** Required when kind='attachment'. */
+  /** Resolve the attachment by its stored object name (e.g. "1-order.pdf").
+   *  Preferred — points the viewer at the actual chosen PO document rather
+   *  than a positional guess. */
+  attachmentName?: string
+  /** Legacy positional fallback when no attachmentName is supplied. */
   attachmentIndex?: number
 }
 
@@ -48,7 +52,7 @@ serve(async (req: Request) => {
 
   try {
     const ctx = await requireAuth(req, { allowedRoles: ['Admin', 'Manager'] })
-    const rl = checkRateLimit(`create-po-document-url:${ctx.userId}`, {
+    const rl = await checkRateLimit(`create-po-document-url:${ctx.userId}`, {
       windowMs: 60_000,
       max: 120,
     })
@@ -69,8 +73,13 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError('INVALID_INPUT', "kind must be 'original' or 'attachment'")
     }
     if (body.kind === 'attachment') {
-      if (!Number.isInteger(body.attachmentIndex) || (body.attachmentIndex as number) < 0) {
-        throw new EdgeFunctionError('INVALID_INPUT', 'attachmentIndex (non-negative integer) required')
+      const hasName = typeof body.attachmentName === 'string' && body.attachmentName.length > 0
+      const hasIndex = Number.isInteger(body.attachmentIndex) && (body.attachmentIndex as number) >= 0
+      if (!hasName && !hasIndex) {
+        throw new EdgeFunctionError(
+          'INVALID_INPUT',
+          'attachmentName (string) or attachmentIndex (non-negative integer) required',
+        )
       }
     }
 
@@ -169,6 +178,17 @@ async function resolvePath(
   const attachments = (listing ?? [])
     .filter(entry => entry.name && entry.name !== 'original.json')
     .sort((a, b) => a.name.localeCompare(b.name))
+
+  // Preferred: resolve by exact stored name (bound to this row's prefix, so
+  // still no arbitrary-path access). Falls back to positional index.
+  if (typeof body.attachmentName === 'string' && body.attachmentName.length > 0) {
+    const match = attachments.find(entry => entry.name === body.attachmentName)
+    if (!match) {
+      throw new EdgeFunctionError('NOT_FOUND', `no attachment named ${body.attachmentName}`)
+    }
+    return `${inBucketPrefix}/${match.name}`
+  }
+
   const entry = attachments[body.attachmentIndex as number]
   if (!entry) {
     throw new EdgeFunctionError('NOT_FOUND', `no attachment at index ${body.attachmentIndex}`)

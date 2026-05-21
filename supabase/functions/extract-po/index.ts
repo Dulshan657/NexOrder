@@ -48,6 +48,7 @@ import {
   type SupabaseLike,
 } from '../_shared/poInbox/aliasResolver.ts'
 import { detectSenderMismatch } from '../_shared/poInbox/senderTrust.ts'
+import { selectAttachments, type AttachmentMeta } from '../_shared/poInbox/attachmentSelect.ts'
 
 interface ExtractRequest {
   inboundMessageId: string
@@ -399,7 +400,16 @@ interface LoadedDocuments {
 interface ArchiveEnvelope {
   bodyText?: string | null
   bodyHtml?: string | null
-  attachments?: Array<{ filename: string; mimeType: string }>
+  // poll-inbox writes a manifest of stored attachments (storedName + inline +
+  // size). Older archives may carry only the provider refs (no storedName);
+  // loadDocuments falls back to listing storage in that case.
+  attachments?: Array<{
+    storedName?: string
+    filename?: string
+    mimeType?: string
+    size?: number
+    inline?: boolean
+  }>
 }
 
 async function loadDocuments(
@@ -424,79 +434,99 @@ async function loadDocuments(
     envelope = {}
   }
 
-  // Pick the first PDF, the first DOCX, or the first image as the
-  // primary document.  If multiple of the same type are present, the
-  // operator can re-extract from the UI; v1 takes the first.
+  // Build the attachment manifest. Prefer the persisted manifest written by
+  // poll-inbox (carries storedName + inline + size); fall back to listing
+  // storage for older archives that predate the manifest. In the fallback,
+  // inline is unknown but the signature heuristic (filename/size/gif) still
+  // demotes most signatures — which is what lets reprocessing fix old rows.
+  const manifest = await buildAttachmentManifest(serviceClient, prefix, envelope)
+
+  // Choose the primary document with a deliberate precedence — a real
+  // attachment always beats an inline signature/logo image (see
+  // _shared/poInbox/attachmentSelect.ts).
+  const sel = selectAttachments(manifest)
+
+  const download = async (storedName: string): Promise<Blob | null> => {
+    const { data: blob, error: blobError } = await serviceClient.storage
+      .from(ARCHIVE_BUCKET)
+      .download(`${prefix}/${storedName}`)
+    if (blobError || !blob) {
+      console.warn(`[extract-po] could not download ${prefix}/${storedName}:`, blobError?.message)
+      return null
+    }
+    return blob
+  }
+
   let pdf: LoadedDocuments['pdf'] = null
   let image: LoadedDocuments['image'] = null
   let docxText: string | null = null
   let primaryFormat: LoadedDocuments['primaryFormat'] = 'text'
   let primaryFilename: string | null = null
 
-  // The archive sub-directory holds the original + numbered attachments.
-  const { data: listing, error: listError } = await serviceClient.storage
-    .from(ARCHIVE_BUCKET)
-    .list(prefix)
-  if (listError) {
-    throw new Error(`storage list ${prefix}: ${listError.message}`)
+  if (sel.pdf) {
+    const blob = await download(sel.pdf.storedName)
+    if (blob) {
+      pdf = { bytes: new Uint8Array(await blob.arrayBuffer()), filename: sel.pdf.storedName }
+      primaryFormat = 'pdf'
+      primaryFilename = sel.pdf.storedName
+    }
   }
 
-  const attachmentEntries = (listing ?? [])
-    .filter(entry => entry.name && entry.name !== 'original.json')
-    .sort((a, b) => a.name.localeCompare(b.name))
-
-  for (const entry of attachmentEntries) {
-    const path = `${prefix}/${entry.name}`
-    const { data: blob, error: blobError } = await serviceClient.storage
-      .from(ARCHIVE_BUCKET)
-      .download(path)
-    if (blobError || !blob) {
-      console.warn(`[extract-po] could not download ${path}:`, blobError?.message)
-      continue
-    }
-    const mime = (blob.type ?? '').toLowerCase()
-    const filename = entry.name
-
-    if ((mime === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) && !pdf) {
-      pdf = { bytes: new Uint8Array(await blob.arrayBuffer()), filename }
-      primaryFormat = 'pdf'
-      primaryFilename = filename
-    } else if (
-      (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-        mime === 'application/msword' ||
-        filename.toLowerCase().endsWith('.docx') ||
-        filename.toLowerCase().endsWith('.doc')) &&
-      !docxText
-    ) {
-      // Mammoth's options.buffer is forwarded to JSZip.loadAsync, which
-      // accepts Buffer | Uint8Array | ArrayBuffer. Passing a Uint8Array
-      // sidesteps Deno's spotty Node-Buffer polyfill. Filename-extension
-      // fallback above also guards against providers that strip the
-      // Content-Type metadata.
+  if (sel.docx) {
+    const blob = await download(sel.docx.storedName)
+    if (blob) {
+      // Mammoth's options.buffer is forwarded to JSZip.loadAsync (accepts
+      // Uint8Array), sidestepping Deno's spotty Node-Buffer polyfill.
       try {
         const bytes = new Uint8Array(await blob.arrayBuffer())
         const result = await mammoth.extractRawText({ buffer: bytes })
         docxText = result.value
         if (primaryFormat === 'text') {
           primaryFormat = 'docx'
-          primaryFilename = filename
+          primaryFilename = sel.docx.storedName
         }
       } catch (err) {
-        console.warn(`[extract-po] mammoth failed on ${filename}:`, sanitizeForLog(err instanceof Error ? err.message : String(err)))
+        console.warn(
+          `[extract-po] mammoth failed on ${sel.docx.storedName}:`,
+          sanitizeForLog(err instanceof Error ? err.message : String(err)),
+        )
       }
-    } else if ((mime.startsWith('image/') || /\.(jpe?g|png|webp|heic)$/i.test(filename)) && !image && !pdf) {
+    }
+  }
+
+  // A genuine (non-signature) image is the primary only when there's no PDF.
+  if (sel.image && !pdf) {
+    const blob = await download(sel.image.storedName)
+    if (blob) {
       image = {
         bytes: new Uint8Array(await blob.arrayBuffer()),
-        mimeType: mime,
-        filename,
+        mimeType: (blob.type || sel.image.mimeType || '').toLowerCase(),
+        filename: sel.image.storedName,
       }
-      primaryFormat = 'image'
-      primaryFilename = filename
+      if (primaryFormat === 'text' || primaryFormat === 'docx') {
+        primaryFormat = 'image'
+        primaryFilename = sel.image.storedName
+      }
     }
   }
 
   const bodyText = envelope.bodyText ?? null
   const combinedText = [docxText, bodyText].filter(Boolean).join('\n\n').trim() || null
+
+  // Last resort: an email that is ONLY a signature/inline image (no real
+  // attachment and no text) still needs *something* to extract from.
+  if (!pdf && !image && !combinedText && sel.weakImage) {
+    const blob = await download(sel.weakImage.storedName)
+    if (blob) {
+      image = {
+        bytes: new Uint8Array(await blob.arrayBuffer()),
+        mimeType: (blob.type || sel.weakImage.mimeType || '').toLowerCase(),
+        filename: sel.weakImage.storedName,
+      }
+      primaryFormat = 'image'
+      primaryFilename = sel.weakImage.storedName
+    }
+  }
 
   return {
     bodyText: combinedText,
@@ -505,6 +535,52 @@ async function loadDocuments(
     primaryFormat,
     primaryFilename,
   }
+}
+
+/**
+ * Resolve the stored-attachment manifest for a message. Uses the manifest
+ * persisted in original.json when present (storedName + inline + size), else
+ * lists the storage prefix (older archives — inline unknown, classification
+ * falls back to filename/size/mime heuristics).
+ */
+async function buildAttachmentManifest(
+  serviceClient: SupabaseClient,
+  prefix: string,
+  envelope: ArchiveEnvelope,
+): Promise<AttachmentMeta[]> {
+  const persisted = Array.isArray(envelope.attachments) ? envelope.attachments : []
+  const hasManifest = persisted.length > 0 && persisted.every(a => typeof a?.storedName === 'string')
+  if (hasManifest) {
+    return persisted
+      .map(a => ({
+        storedName: a.storedName as string,
+        filename: a.filename ?? (a.storedName as string),
+        mimeType: a.mimeType ?? '',
+        size: typeof a.size === 'number' ? a.size : 0,
+        inline: a.inline === true,
+      }))
+      .sort((x, y) => x.storedName.localeCompare(y.storedName))
+  }
+
+  const { data: listing, error: listError } = await serviceClient.storage
+    .from(ARCHIVE_BUCKET)
+    .list(prefix)
+  if (listError) {
+    throw new Error(`storage list ${prefix}: ${listError.message}`)
+  }
+  return (listing ?? [])
+    .filter(entry => entry.name && entry.name !== 'original.json')
+    .map(entry => {
+      const meta = (entry.metadata ?? {}) as { size?: number; mimetype?: string }
+      return {
+        storedName: entry.name,
+        filename: entry.name,
+        mimeType: (meta.mimetype ?? '').toLowerCase(),
+        size: typeof meta.size === 'number' ? meta.size : 0,
+        inline: false,
+      }
+    })
+    .sort((x, y) => x.storedName.localeCompare(y.storedName))
 }
 
 async function classifyIsPurchaseOrder(params: {

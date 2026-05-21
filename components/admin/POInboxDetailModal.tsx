@@ -211,9 +211,13 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       }
     }
 
+    // Point the viewer at the document extract-po actually chose (its stored
+    // name lives in source.original_filename) rather than the positional
+    // attachment #0 — which is often the inline signature image.
     getPoDocumentUrl({
       pendingPoId: detailQuery.data.id,
       kind: 'attachment',
+      attachmentName: detailQuery.data.extracted_po.source?.original_filename ?? undefined,
       attachmentIndex: 0,
     })
       .then(r => {

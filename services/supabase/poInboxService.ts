@@ -287,6 +287,9 @@ export interface SignedUrlResult {
 export interface PoDocumentRef {
   pendingPoId: string
   kind: 'original' | 'attachment'
+  /** Stored object name of the document to view (preferred — points at the
+   *  actual chosen PO doc rather than a positional guess). */
+  attachmentName?: string
   attachmentIndex?: number
 }
 

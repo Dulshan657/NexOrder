@@ -290,6 +290,10 @@ interface AttachmentToUpload {
   filename: string
   mimeType: string
   bytes: Uint8Array
+  /** Carried into the archive manifest so extract-po can deprioritize
+   *  inline signature/logo images. */
+  inline: boolean
+  size: number
 }
 
 async function downloadGmailAttachments(
@@ -300,7 +304,13 @@ async function downloadGmailAttachments(
   for (const ref of envelope.attachments) {
     try {
       const bytes = await getGmailAttachmentBytes(accessToken, envelope.id, ref.attachmentId)
-      out.push({ filename: ref.filename, mimeType: ref.mimeType, bytes })
+      out.push({
+        filename: ref.filename,
+        mimeType: ref.mimeType,
+        bytes,
+        inline: ref.inline,
+        size: ref.size || bytes.length,
+      })
     } catch (err) {
       console.warn(
         `[poll-inbox] attachment download failed for ${envelope.id}/${ref.filename}:`,
@@ -313,11 +323,16 @@ async function downloadGmailAttachments(
 
 function extractGraphAttachments(envelope: GraphMessageEnvelope): AttachmentToUpload[] {
   // Graph returns the content inline as base64; decode and forward.
-  return envelope.attachments.map(a => ({
-    filename: a.filename,
-    mimeType: a.mimeType,
-    bytes: base64ToBytes(a.contentBytesBase64),
-  }))
+  return envelope.attachments.map(a => {
+    const bytes = base64ToBytes(a.contentBytesBase64)
+    return {
+      filename: a.filename,
+      mimeType: a.mimeType,
+      bytes,
+      inline: a.inline,
+      size: a.size || bytes.length,
+    }
+  })
 }
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -356,23 +371,39 @@ async function persistInboundMessage(
     return { inserted: false, inboundMessageId: (existing as { id: string }).id }
   }
 
-  // 2) Upload original payload + attachments before inserting the row, so
+  // 2) Upload attachments + original payload before inserting the row, so
   //    a Storage failure doesn't leave us with a DB pointer to nothing.
-  //    We persist the *parsed* envelope (bodyText/bodyHtml/attachments) —
-  //    extract-po reads those fields. rawPayload is nested inside for
-  //    forensic re-parsing if MIME logic changes later.
-  await uploadJson(serviceClient, originalPath(prefix), envelope)
+  //    Attachments are uploaded FIRST so we can record each one's stored
+  //    object name + inline flag + size into the archived manifest, which
+  //    extract-po uses to deprioritize inline signature/logo images.
   const attachments = await loadAttachments()
+  const manifest: Array<{
+    storedName: string
+    filename: string
+    mimeType: string
+    size: number
+    inline: boolean
+  }> = []
   let i = 0
   for (const att of attachments) {
-    await uploadBinary(
-      serviceClient,
-      attachmentPath(prefix, i, att.filename),
-      att.bytes,
-      att.mimeType,
-    )
+    const fullPath = attachmentPath(prefix, i, att.filename)
+    await uploadBinary(serviceClient, fullPath, att.bytes, att.mimeType)
+    // storedName is the in-bucket object name (the segment after the prefix),
+    // matching what extract-po / create-po-document-url see when listing.
+    manifest.push({
+      storedName: fullPath.slice(prefix.length + 1),
+      filename: att.filename,
+      mimeType: att.mimeType,
+      size: att.size,
+      inline: att.inline,
+    })
     i++
   }
+
+  // We persist the *parsed* envelope (bodyText/bodyHtml) plus the attachment
+  // manifest (overriding the provider refs with stored-name/inline metadata).
+  // rawPayload stays nested for forensic re-parsing if MIME logic changes.
+  await uploadJson(serviceClient, originalPath(prefix), { ...envelope, attachments: manifest })
 
   // 3) Insert the row. If a race already wrote it (e.g., two cron ticks
   //    overlapped) the UNIQUE constraint rejects us; treat that as
