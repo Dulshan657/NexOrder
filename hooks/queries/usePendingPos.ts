@@ -20,11 +20,12 @@ const COUNT_KEY = ['pending_pos', 'count_needs_review'] as const
 const ALIAS_LIST_KEY_CUSTOMER = ['po_aliases', 'customer'] as const
 const ALIAS_LIST_KEY_PRODUCT = ['po_aliases', 'product'] as const
 
-export function usePendingPos(status?: PendingPoStatus) {
+export function usePendingPos(status?: PendingPoStatus, options?: { enabled?: boolean }) {
   return useQuery<PendingPoSummaryRow[]>({
     queryKey: LIST_KEY(status),
     queryFn: () => listPendingPos(status),
     staleTime: 30_000,
+    enabled: options?.enabled ?? true,
   })
 }
 

@@ -76,9 +76,7 @@ import OrderConfirmation from './OrderConfirmation';
 import OrdersHistoryView from '../views/OrdersHistoryView';
 import RepDashboardView from '../views/RepDashboardView';
 import ShopView from '../views/ShopView';
-import NotificationBell from './NotificationBell';
-import POInboxHeaderBadge from './admin/POInboxHeaderBadge';
-import NotificationPanel from './NotificationPanel';
+import NotificationCenter from './NotificationCenter';
 import ProfileMenu from './auth/ProfileMenu';
 import HoReCaListView from './HoReCaListView';
 import AccountsAgingTable from './AccountsAgingTable';
@@ -171,8 +169,6 @@ interface AppShellInnerProps extends AppShellProps {
     setIsSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
     isProfileOpen: boolean;
     setIsProfileOpen: React.Dispatch<React.SetStateAction<boolean>>;
-    isNotificationPanelOpen: boolean;
-    setIsNotificationPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
     initialRouteId: string | null;
     setInitialRouteId: React.Dispatch<React.SetStateAction<string | null>>;
     selectedOrderId: string | null;
@@ -218,8 +214,6 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     setIsSidebarOpen,
     isProfileOpen,
     setIsProfileOpen,
-    isNotificationPanelOpen,
-    setIsNotificationPanelOpen,
     initialRouteId,
     setInitialRouteId,
     selectedOrderId,
@@ -303,14 +297,11 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const isAdmin = currentUser.role === UserRole.ADMIN;
 
     // ── Derived notification state ────────────────────────────────────────────
+    // Role-filtered notifications; NotificationCenter derives the unread count
+    // (and merges in the PO-inbox count) for the combined badge.
     const userNotifications = useMemo(
         () => notifications.filter(n => !n.targetRoles || n.targetRoles.includes(currentUser.role)),
         [notifications, currentUser.role],
-    );
-
-    const unreadNotificationCount = useMemo(
-        () => userNotifications.filter(n => !n.read).length,
-        [userNotifications],
     );
 
     // ── Derived order/selection state ─────────────────────────────────────────
@@ -548,32 +539,21 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                         <img src="/assets/Nex-Order-no-bg-logo.png" alt="Nex Order" className="h-16 object-contain" />
                     </div>
                     <div className="flex items-center gap-2">
-                        {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER) && (
-                            <POInboxHeaderBadge
-                                onClick={() => {
-                                    if (typeof window !== 'undefined') {
-                                        const params = new URLSearchParams(window.location.search);
-                                        params.set('subtab', 'queue');
-                                        window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
-                                    }
-                                    setAdminView('PO Inbox');
-                                }}
-                            />
-                        )}
-                        <div className="relative">
-                            <NotificationBell
-                                unreadCount={unreadNotificationCount}
-                                onClick={() => setIsNotificationPanelOpen(!isNotificationPanelOpen)}
-                            />
-                            {isNotificationPanelOpen && (
-                                <NotificationPanel
-                                    notifications={userNotifications}
-                                    onMarkRead={handleMarkNotificationRead}
-                                    onMarkAllRead={handleMarkAllNotificationsRead}
-                                    onClose={() => setIsNotificationPanelOpen(false)}
-                                />
-                            )}
-                        </div>
+                        <NotificationCenter
+                            notifications={userNotifications}
+                            onMarkRead={handleMarkNotificationRead}
+                            onMarkAllRead={handleMarkAllNotificationsRead}
+                            isAdminOrManager={isAdminOrManager}
+                            onOpenPoInbox={() => {
+                                if (typeof window !== 'undefined') {
+                                    const params = new URLSearchParams(window.location.search);
+                                    params.set('subtab', 'queue');
+                                    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+                                }
+                                setAdminView('PO Inbox');
+                                setIsSidebarOpen(false);
+                            }}
+                        />
                         <button
                             onClick={() => setIsSidebarOpen(false)}
                             className="md:hidden text-stone-400 hover:text-stone-700 cursor-pointer"
@@ -1268,7 +1248,6 @@ const AppShell: React.FC<AppShellProps> = props => {
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
-    const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
     const [initialRouteId, setInitialRouteId] = useState<string | null>(null);
     const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
@@ -1289,7 +1268,6 @@ const AppShell: React.FC<AppShellProps> = props => {
         isCartOpen, setIsCartOpen,
         isSidebarOpen, setIsSidebarOpen,
         isProfileOpen, setIsProfileOpen,
-        isNotificationPanelOpen, setIsNotificationPanelOpen,
         initialRouteId, setInitialRouteId,
         selectedOrderId, setSelectedOrderId,
         highlightOrderId, setHighlightOrderId,
