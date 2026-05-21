@@ -7,6 +7,7 @@ import {
   updateOrderStatus,
 } from '@/services/supabase/orderService'
 import type { OrderFilters, PlaceOrderInput, PlaceOrderResult } from '@/services/supabase/orderService'
+import type { OrderStatus } from '@/types'
 import { productKeys } from './useProducts'
 
 export const orderKeys = {
@@ -59,7 +60,7 @@ export function useUpdateOrderStatus() {
       note,
     }: {
       id: string
-      status: 'processing' | 'confirmed' | 'packed' | 'shipped' | 'delivered'
+      status: OrderStatus
       note?: string
     }) => updateOrderStatus(id, status, note),
     onSuccess: () => {

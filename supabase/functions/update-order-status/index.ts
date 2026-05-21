@@ -9,13 +9,14 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { corsHeadersFor } from '../_shared/cors.ts'
 
-type OrderStatus = 'processing' | 'confirmed' | 'packed' | 'shipped' | 'delivered'
+type OrderStatus = 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
 
 const STATUS_ORDER: OrderStatus[] = [
   'processing',
-  'confirmed',
+  'processed',
+  'picked',
   'packed',
-  'shipped',
+  'dispatched',
   'delivered',
 ]
 

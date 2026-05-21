@@ -91,7 +91,7 @@ export interface OrderItem extends Product {
     packSize?: number; // undefined for single unit, cartonSize for a carton
 }
 
-export type OrderStatus = 'processing' | 'confirmed' | 'packed' | 'shipped' | 'delivered';
+export type OrderStatus = 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered';
 
 export interface StatusHistoryEntry {
     status: OrderStatus;

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { Order, Category, Product, HoReCa, User, Invoice, SalesTarget } from '../types';
 import { UserRole } from '../types';
-import { CATEGORIES } from '../constants';
+import { CATEGORIES, ORDER_STATUS_SEQUENCE, ORDER_STATUS_LABELS } from '../constants';
 import { Target, DollarSign, ShoppingBag, Users } from 'lucide-react';
 import SalesTargetModal from './SalesTargetModal';
 import OptimizedImage from './OptimizedImage';
@@ -335,13 +335,13 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ allOrders, products, ho
                         <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-sm">
                             <h3 className="font-bold text-stone-900 mb-3">Orders by Status</h3>
                             <div className="space-y-2">
-                                {(['processing', 'confirmed', 'packed', 'shipped', 'delivered'] as const).map(status => {
+                                {ORDER_STATUS_SEQUENCE.map(status => {
                                     const count = filteredOrders.filter(o => o.status === status).length;
                                     const pct = totalOrders > 0 ? (count / totalOrders) * 100 : 0;
-                                    const colors: Record<string, string> = { processing: 'bg-blue-500', confirmed: 'bg-amber-500', packed: 'bg-purple-500', shipped: 'bg-cyan-500', delivered: 'bg-emerald-500' };
+                                    const colors: Record<string, string> = { processing: 'bg-blue-500', processed: 'bg-amber-500', picked: 'bg-indigo-500', packed: 'bg-purple-500', dispatched: 'bg-cyan-500', delivered: 'bg-emerald-500' };
                                     return (
                                         <div key={status} className="flex items-center gap-3">
-                                            <span className="text-xs text-stone-500 w-20 capitalize">{status}</span>
+                                            <span className="text-xs text-stone-500 w-20">{ORDER_STATUS_LABELS[status]}</span>
                                             <div className="flex-1 bg-stone-100 rounded-full h-2"><div className={`h-2 rounded-full ${colors[status]}`} style={{ width: `${pct}%` }} /></div>
                                             <span className="text-xs font-semibold text-stone-700 w-8 text-right">{count}</span>
                                         </div>

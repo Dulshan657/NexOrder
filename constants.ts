@@ -289,7 +289,7 @@ const d = (daysAgo: number, hour: number = 10): string => {
 const DEMO_SIGNATURE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAA8CAYAAADc0VAlAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAGklEQVR4nO3BAQEAAACCIP+vbkhAAQAAAADvBhIQAAH0dVYnAAAAAElFTkSuQmCC';
 
 const mkHistory = (status: OrderStatus, orderDate: string): import('./types').StatusHistoryEntry[] => {
-  const seq: OrderStatus[] = ['processing', 'confirmed', 'packed', 'shipped', 'delivered'];
+  const seq: OrderStatus[] = ['processing', 'processed', 'picked', 'packed', 'dispatched', 'delivered'];
   const idx = seq.indexOf(status);
   const base = new Date(orderDate).getTime();
   return seq.slice(0, idx + 1).map((s, i) => ({
@@ -313,8 +313,8 @@ export const ALL_ORDERS: Order[] = [
     verification: { method: 'signature', signatureDataUrl: DEMO_SIGNATURE, timestamp: d(1, 9) } as OrderVerification,
   },
   {
-    id: 'ORD-1002', hoReCa: HORECAS[3], submittedBy: USERS[2], orderDate: d(2, 14), status: 'confirmed' as OrderStatus,
-    statusHistory: mkHistory('confirmed', d(2, 14)),
+    id: 'ORD-1002', hoReCa: HORECAS[3], submittedBy: USERS[2], orderDate: d(2, 14), status: 'processed' as OrderStatus,
+    statusHistory: mkHistory('processed', d(2, 14)),
     deliveryDate: '2026-04-01', deliveryTimeSlot: 'Afternoon (12pm-4pm)' as DeliveryTimeSlot,
     items: [
       { ...PRODUCTS[56], quantity: 4, price: 3.00 },  // Light Soy Sauce
@@ -337,8 +337,8 @@ export const ALL_ORDERS: Order[] = [
     verification: { method: 'signature', signatureDataUrl: DEMO_SIGNATURE, timestamp: d(3, 11) } as OrderVerification,
   },
   {
-    id: 'ORD-1004', hoReCa: HORECAS[1], submittedBy: USERS[2], orderDate: d(4, 16), status: 'shipped' as OrderStatus,
-    statusHistory: mkHistory('shipped', d(4, 16)),
+    id: 'ORD-1004', hoReCa: HORECAS[1], submittedBy: USERS[2], orderDate: d(4, 16), status: 'dispatched' as OrderStatus,
+    statusHistory: mkHistory('dispatched', d(4, 16)),
     deliveryDate: '2026-03-28', deliveryTimeSlot: 'Evening (4pm-8pm)' as DeliveryTimeSlot,
     items: [
       { ...PRODUCTS[79], quantity: 5, packSize: 12, price: 3.50 * 12 * 0.95 }, // Rice Noodles cartons
@@ -699,21 +699,23 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
     processing: 'Processing',
-    confirmed: 'Confirmed',
+    processed: 'Processed',
+    picked: 'Picked',
     packed: 'Packed',
-    shipped: 'Shipped',
+    dispatched: 'Dispatched',
     delivered: 'Delivered',
 };
 
 export const ORDER_STATUS_COLORS: Record<OrderStatus, { bg: string; text: string; border: string }> = {
     processing: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-    confirmed: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+    processed: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+    picked: { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
     packed: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
-    shipped: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' },
+    dispatched: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' },
     delivered: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
 };
 
-export const ORDER_STATUS_SEQUENCE: OrderStatus[] = ['processing', 'confirmed', 'packed', 'shipped', 'delivered'];
+export const ORDER_STATUS_SEQUENCE: OrderStatus[] = ['processing', 'processed', 'picked', 'packed', 'dispatched', 'delivered'];
 
 export const DELIVERY_TIME_SLOTS: DeliveryTimeSlot[] = [
     'Morning (8am-12pm)',

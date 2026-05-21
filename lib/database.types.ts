@@ -230,7 +230,7 @@ export type Database = {
           total: number
           order_date: string
           notes: string | null
-          status: 'processing' | 'confirmed' | 'packed' | 'shipped' | 'delivered'
+          status: 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
           status_history: Json
           delivery_date: string | null
           delivery_time_slot: 'Morning (8am-12pm)' | 'Afternoon (12pm-4pm)' | 'Evening (4pm-8pm)' | null
@@ -245,7 +245,7 @@ export type Database = {
           total: number
           order_date: string
           notes?: string | null
-          status: 'processing' | 'confirmed' | 'packed' | 'shipped' | 'delivered'
+          status: 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
           status_history: Json
           delivery_date?: string | null
           delivery_time_slot?: 'Morning (8am-12pm)' | 'Afternoon (12pm-4pm)' | 'Evening (4pm-8pm)' | null
@@ -260,7 +260,7 @@ export type Database = {
           total?: number
           order_date?: string
           notes?: string | null
-          status?: 'processing' | 'confirmed' | 'packed' | 'shipped' | 'delivered'
+          status?: 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
           status_history?: Json
           delivery_date?: string | null
           delivery_time_slot?: 'Morning (8am-12pm)' | 'Afternoon (12pm-4pm)' | 'Evening (4pm-8pm)' | null

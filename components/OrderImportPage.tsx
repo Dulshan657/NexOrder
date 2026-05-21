@@ -48,7 +48,7 @@ interface OrderImportPageProps {
   onClearHighlightOrderId?: () => void;
 }
 
-type ActiveTab = 'received' | 'process' | 'confirmed';
+type ActiveTab = 'received' | 'inProgress' | 'completed';
 type SortColumn = 'date' | 'total' | 'status' | 'horeca' | 'payment';
 type SortDirection = 'asc' | 'desc';
 type PaymentFilterValue = 'all' | PaymentDisplayState;
@@ -87,18 +87,18 @@ const PAYMENT_FILTER_OPTIONS: ReadonlyArray<{ value: PaymentFilterValue; label: 
 const ITEMS_PER_PAGE = 20;
 
 const TAB_STATUSES: Record<ActiveTab, OrderStatus[]> = {
-  received: ['processing', 'confirmed'],
-  process: ['packed', 'shipped'],
-  confirmed: ['delivered'],
+  received: ['processing', 'processed'],
+  inProgress: ['picked', 'packed'],
+  completed: ['dispatched', 'delivered'],
 };
 
 const TAB_LABELS: Record<ActiveTab, string> = {
   received: 'Received',
-  process: 'Process',
-  confirmed: 'Confirmed',
+  inProgress: 'In Progress',
+  completed: 'Completed',
 };
 
-const ALL_TABS: ActiveTab[] = ['received', 'process', 'confirmed'];
+const ALL_TABS: ActiveTab[] = ['received', 'inProgress', 'completed'];
 
 const INPUT_CLASSES =
   'block w-full rounded-lg border-0 bg-stone-50 py-2.5 px-3 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm transition-all hover:ring-stone-300';
@@ -259,11 +259,10 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   // ---------------------------------------------------------------------------
 
   const tabCounts = useMemo<Record<ActiveTab, number>>(() => {
-    return {
-      received: orders.filter((o) => TAB_STATUSES.received.includes(o.status)).length,
-      process: orders.filter((o) => TAB_STATUSES.process.includes(o.status)).length,
-      confirmed: orders.filter((o) => TAB_STATUSES.confirmed.includes(o.status)).length,
-    };
+    return ALL_TABS.reduce((acc, tab) => {
+      acc[tab] = orders.filter((o) => TAB_STATUSES[tab].includes(o.status)).length;
+      return acc;
+    }, {} as Record<ActiveTab, number>);
   }, [orders]);
 
   // ---------------------------------------------------------------------------
@@ -1207,9 +1206,9 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
         onCancel={() => setProcessingOrder(null)}
         onConfirm={(note) => {
           if (!processingOrder) return;
-          onUpdateStatus(processingOrder.id, 'confirmed', note);
+          onUpdateStatus(processingOrder.id, 'processed', note);
           setProcessingOrder(null);
-          addToast('Order processed and confirmed', 'success');
+          addToast('Order processed', 'success');
         }}
       />
     </div>
