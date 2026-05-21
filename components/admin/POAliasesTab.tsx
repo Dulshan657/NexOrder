@@ -8,8 +8,9 @@
 // mutation routes through the mutate-po-alias Edge Function and lands in
 // audit_events.
 
-import React, { lazy, Suspense, useMemo, useState } from 'react'
+import React, { Suspense, useMemo, useState } from 'react'
 import { Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { lazyWithRetry } from '../../lib/lazyWithRetry'
 import { useCustomerAliases, useProductAliases } from '@/hooks/queries/usePendingPos'
 import {
   useDeleteCustomerAlias,
@@ -22,7 +23,7 @@ import type {
 import type { HoReCa, Product } from '../../types'
 import type { AliasModalMode } from './POAliasEditModal'
 
-const POAliasEditModal = lazy(() => import('./POAliasEditModal'))
+const POAliasEditModal = lazyWithRetry(() => import('./POAliasEditModal'))
 
 interface POAliasesTabProps {
   hoReCas: HoReCa[]

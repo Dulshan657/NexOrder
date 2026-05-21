@@ -1,7 +1,8 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense } from 'react';
 import { UserRole, User, Product, HoReCa, Supplier, PurchaseOrder, Order, AppSettings, Invoice, OrderStatus, SalesTarget, Promotion, Visit, ScheduledVisit } from '../types';
 import { LoadingSkeleton } from './Skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
 import ProductAdmin from './ProductAdmin';
 import HoReCaListView from './HoReCaListView';
 import UserAdmin from './UserAdmin';
@@ -12,14 +13,15 @@ import OrderImportPage from './OrderImportPage';
 import WalkInReviewTab from './admin/WalkInReviewTab';
 
 // Heavy admin views — lazy-loaded so rep/customer paths don't pull them in.
-const AdminDashboard = lazy(() => import('./AdminDashboard'));
-const PurchaseOrderAdmin = lazy(() => import('./PurchaseOrderAdmin'));
-const PromotionAdmin = lazy(() => import('./PromotionAdmin'));
-const HoReCaInsightsPanel = lazy(() => import('./HoReCaInsightsPanel'));
-const ScheduledVisitsAdmin = lazy(() => import('./admin/ScheduledVisitsAdmin'));
-const StockView = lazy(() => import('./StockView'));
-const AuditLogTab = lazy(() => import('./admin/AuditLogTab'));
-const POInboxView = lazy(() => import('./admin/POInboxView'));
+// lazyWithRetry recovers from stale chunk hashes after a redeploy.
+const AdminDashboard = lazyWithRetry(() => import('./AdminDashboard'));
+const PurchaseOrderAdmin = lazyWithRetry(() => import('./PurchaseOrderAdmin'));
+const PromotionAdmin = lazyWithRetry(() => import('./PromotionAdmin'));
+const HoReCaInsightsPanel = lazyWithRetry(() => import('./HoReCaInsightsPanel'));
+const ScheduledVisitsAdmin = lazyWithRetry(() => import('./admin/ScheduledVisitsAdmin'));
+const StockView = lazyWithRetry(() => import('./StockView'));
+const AuditLogTab = lazyWithRetry(() => import('./admin/AuditLogTab'));
+const POInboxView = lazyWithRetry(() => import('./admin/POInboxView'));
 
 interface AdminViewProps {
     currentUser: User;

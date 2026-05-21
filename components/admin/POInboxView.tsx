@@ -6,14 +6,15 @@
 // mounted while the PO Inbox tab is open) and opens the Mailboxes popover
 // when a connection completes.
 
-import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useState } from 'react'
 import { LoadingSkeleton } from '../Skeleton'
+import { lazyWithRetry } from '../../lib/lazyWithRetry'
 import POInboxStatsTile from './POInboxStatsTile'
 import MailboxesMenu from './MailboxesMenu'
 import type { HoReCa, Product } from '../../types'
 
-const POInboxTab = lazy(() => import('./POInboxTab'))
-const POAliasesTab = lazy(() => import('./POAliasesTab'))
+const POInboxTab = lazyWithRetry(() => import('./POInboxTab'))
+const POAliasesTab = lazyWithRetry(() => import('./POAliasesTab'))
 
 export type POInboxSubTab = 'queue' | 'aliases'
 

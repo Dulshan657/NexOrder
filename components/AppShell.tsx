@@ -12,7 +12,6 @@
  */
 import React, {
     Suspense,
-    lazy,
     useState,
     useMemo,
     useCallback,
@@ -90,16 +89,18 @@ import HoReCaListView from './HoReCaListView';
 import AccountsAgingTable from './AccountsAgingTable';
 import { LoadingSkeleton } from './Skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
 
 // Lazy-loaded heavy chunks. The rep + customer hot paths (Shop, OrderHistory)
 // don't render any of these on initial load, so keeping them out of the main
-// bundle drops first-load JS substantially.
-const AdminView = lazy(() => import('./AdminView'));
-const OrderDetailView = lazy(() => import('./OrderDetailView'));
-const OrderVerificationModal = lazy(() => import('./OrderVerificationModal'));
-const BundleSelectModal = lazy(() => import('./BundleSelectModal'));
-const StockView = lazy(() => import('./StockView'));
-const ScheduledVisitsView = lazy(() => import('./scheduled-visits/ScheduledVisitsView'));
+// bundle drops first-load JS substantially. lazyWithRetry recovers from stale
+// chunk hashes after a redeploy (see lib/lazyWithRetry.ts).
+const AdminView = lazyWithRetry(() => import('./AdminView'));
+const OrderDetailView = lazyWithRetry(() => import('./OrderDetailView'));
+const OrderVerificationModal = lazyWithRetry(() => import('./OrderVerificationModal'));
+const BundleSelectModal = lazyWithRetry(() => import('./BundleSelectModal'));
+const StockView = lazyWithRetry(() => import('./StockView'));
+const ScheduledVisitsView = lazyWithRetry(() => import('./scheduled-visits/ScheduledVisitsView'));
 
 import { inviteUser } from '../services/supabase/inviteUserService';
 import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit, fromAppSettings } from '../lib/adapters';

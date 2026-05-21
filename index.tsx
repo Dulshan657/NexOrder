@@ -9,6 +9,7 @@ import { queryClient } from './lib/queryClient';
 import ToastContainer from './components/ToastContainer';
 import { ErrorBoundary, FullPageErrorFallback } from './components/ErrorBoundary';
 import { installGlobalErrorHandlers } from './lib/errorReporter';
+import { registerChunkErrorReload } from './lib/lazyWithRetry';
 import ResetPasswordView, { isRecoveryUrl } from './components/auth/ResetPasswordView';
 
 // Popup OAuth completion handshake.
@@ -103,6 +104,11 @@ if (isOAuthPopupCompletion) {
 }
 
 installGlobalErrorHandlers();
+
+// Recover from "Failed to fetch dynamically imported module" — a stale tab on
+// an old deploy whose content-hashed chunks were purged by a newer build. One
+// guarded reload pulls a fresh index.html with the current chunk hashes.
+registerChunkErrorReload();
 
 // Top-level switch: when arriving via a Supabase password recovery link
 // (URL hash contains type=recovery), render the dedicated reset view

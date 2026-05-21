@@ -4,8 +4,9 @@
 // new rows in without a refresh. Clicking a row opens the detail modal
 // (separate component to keep this file small).
 
-import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import React, { Suspense, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronRight, Inbox, Loader2, RefreshCw } from 'lucide-react'
+import { lazyWithRetry } from '../../lib/lazyWithRetry'
 import { usePendingPos, usePendingPoCount } from '@/hooks/queries/usePendingPos'
 import { PO_INBOX_TABS, formatAge, sortForDisplay, statusBadge } from './poInboxFormat'
 import ConfidenceRing from './ConfidenceRing'
@@ -13,7 +14,7 @@ import { senderMismatch } from '@/services/supabase/poInboxService'
 import type { PendingPoStatus, PendingPoSummaryRow } from '@/services/supabase/poInboxService'
 import type { HoReCa } from '../../types'
 
-const POInboxDetailModal = lazy(() => import('./POInboxDetailModal'))
+const POInboxDetailModal = lazyWithRetry(() => import('./POInboxDetailModal'))
 
 interface POInboxTabProps {
   hoReCas: HoReCa[]
