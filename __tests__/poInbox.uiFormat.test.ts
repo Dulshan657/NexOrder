@@ -19,6 +19,7 @@ const baseRow = (overrides: Partial<PendingPoSummaryRow> = {}): PendingPoSummary
   status: 'needs_review',
   inbound_message_id: 'msg-1',
   matched_horeca_id: null,
+  matched_items: [],
   confidence_overall: 0.5,
   confidence_fields: {},
   approved_order_id: null,

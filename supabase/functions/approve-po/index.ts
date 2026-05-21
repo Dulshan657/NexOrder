@@ -86,6 +86,9 @@ interface ApproveResult {
   // order is still created (approve-po does not decrement stock); the
   // operator handles the shortfall via backorder/restock.
   stockWarnings?: StockShortage[]
+  // Auto mode only: set when an unattended auto-approval was declined because
+  // a line is short on stock. No order is created; the PO stays needs_review.
+  autoApprovalDeclined?: boolean
 }
 
 serve(async (req: Request) => {
@@ -337,6 +340,19 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
     resolvedItems.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
     products,
   )
+
+  // Auto-approval guard: unattended approval must NOT create an order that
+  // can't be fulfilled. If any line is short, decline and leave the PO in
+  // needs_review so a human reviews it (human approval still proceeds with an
+  // advisory warning). No claim and no order have been written yet — auto
+  // mode has no deliveryAddress override, so resolveDeliveryAddress was a
+  // no-op above.
+  if (args.mode === 'auto' && stockWarnings.length > 0) {
+    console.warn(
+      `[approve-po] auto-approval declined for ${args.pendingPoId}: ${stockWarnings.length} line(s) short on stock — left for human review`,
+    )
+    return { ok: true, autoApprovalDeclined: true, stockWarnings }
+  }
 
   // Compute totals (no horeca_pricing, no promotions — MVP scope note above).
   let total = 0

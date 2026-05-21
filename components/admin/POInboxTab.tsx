@@ -8,11 +8,14 @@ import React, { Suspense, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronRight, Inbox, Loader2, RefreshCw } from 'lucide-react'
 import { lazyWithRetry } from '../../lib/lazyWithRetry'
 import { usePendingPos, usePendingPoCount } from '@/hooks/queries/usePendingPos'
+import { useProducts } from '@/hooks/queries/useProducts'
+import { useSettings } from '@/hooks/queries/useSettings'
 import { PO_INBOX_TABS, formatAge, sortForDisplay, statusBadge } from './poInboxFormat'
+import { computePoIssues } from './poInboxIssues'
 import ConfidenceRing from './ConfidenceRing'
 import { senderMismatch } from '@/services/supabase/poInboxService'
 import type { PendingPoStatus, PendingPoSummaryRow } from '@/services/supabase/poInboxService'
-import type { HoReCa } from '../../types'
+import type { HoReCa, Product } from '../../types'
 
 const POInboxDetailModal = lazyWithRetry(() => import('./POInboxDetailModal'))
 
@@ -44,6 +47,18 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
   const { data, isLoading, isFetching, refetch } = usePendingPos(activeStatus)
   const { data: needsReviewCount } = usePendingPoCount()
   const rows = useMemo(() => sortForDisplay(data ?? []), [data])
+
+  // Products + low-stock threshold drive the per-row stock issue pill. Both
+  // queries are cached app-wide, so this adds no extra network cost here.
+  const { data: productsData } = useProducts()
+  const products: Product[] = productsData ?? []
+  const { data: settings } = useSettings()
+  const lowThreshold = settings?.low_stock_threshold ?? 10
+  const productById = useMemo(() => {
+    const m = new Map<number, Product>()
+    for (const p of products) m.set(p.id, p)
+    return m
+  }, [products])
 
   const horecaById = useMemo(() => {
     const m = new Map<number, HoReCa>()
@@ -91,6 +106,8 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
                 row={row}
                 index={i}
                 hoReCa={row.matched_horeca_id != null ? horecaById.get(row.matched_horeca_id) : undefined}
+                productById={productById}
+                lowThreshold={lowThreshold}
                 onClick={() => setOpenId(row.id)}
               />
             ))}
@@ -209,13 +226,31 @@ interface RowProps {
   row: PendingPoSummaryRow
   hoReCa: HoReCa | undefined
   index: number
+  productById: Map<number, Product>
+  lowThreshold: number
   onClick: () => void
 }
 
-const Row: React.FC<RowProps> = ({ row, hoReCa, index, onClick }) => {
+const Row: React.FC<RowProps> = ({ row, hoReCa, index, productById, lowThreshold, onClick }) => {
   const customerName = hoReCa?.name ?? (row.matched_horeca_id ? `#${row.matched_horeca_id}` : null)
   const mismatch = senderMismatch(row.confidence_fields)
   const badge = statusBadge(row.status)
+  // Non-sender issues (stock / unresolved lines / no customer) for rows still
+  // awaiting review. Sender mismatch keeps its own pill below, so it's excluded
+  // here (senderMismatch: null) to avoid a duplicate badge.
+  const extraIssues =
+    row.status === 'needs_review'
+      ? computePoIssues({
+          hasCustomer: row.matched_horeca_id != null,
+          senderMismatch: null,
+          lines: (row.matched_items ?? []).map(it => ({
+            resolved: it.product_id != null,
+            inventory: it.product_id != null ? productById.get(it.product_id)?.inventory ?? null : null,
+            ordered: it.quantity,
+          })),
+          lowThreshold,
+        })
+      : []
   // Priority rail: rose when risky (mismatch or low confidence), else the
   // status hue. Drives the eye to the rows that need a human first.
   const risky = !!mismatch || row.confidence_overall < 0.75
@@ -234,7 +269,7 @@ const Row: React.FC<RowProps> = ({ row, hoReCa, index, onClick }) => {
         onClick={onClick}
         className={`group w-full text-left flex items-center gap-4 py-3 pl-4 pr-3 border-l-[3px] ${railClass} transition-colors hover:bg-stone-50 focus:outline-none focus-visible:bg-stone-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-nexgen-blue/50`}
       >
-        <ConfidenceRing value={row.confidence_overall} size="sm" />
+        <ConfidenceRing value={row.confidence_overall} size="sm" caption="AI" />
 
         <span className="flex-1 min-w-0">
           <span className="flex items-center gap-2 flex-wrap">
@@ -252,6 +287,15 @@ const Row: React.FC<RowProps> = ({ row, hoReCa, index, onClick }) => {
                 <AlertTriangle className="w-3 h-3" /> sender mismatch
               </span>
             )}
+            {extraIssues.map(issue => (
+              <span
+                key={issue.kind}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5"
+                title={issue.detail}
+              >
+                <AlertTriangle className="w-3 h-3" /> {issue.label.toLowerCase()}
+              </span>
+            ))}
           </span>
           <span className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-stone-500">
             {customerName ? (

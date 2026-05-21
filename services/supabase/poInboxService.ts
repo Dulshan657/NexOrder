@@ -15,6 +15,8 @@ export interface PendingPoSummaryRow {
   status: PendingPoStatus
   inbound_message_id: string
   matched_horeca_id: number | null
+  /** Resolved line items — used by the queue to flag stock / unresolved issues. */
+  matched_items: MatchedItem[]
   confidence_overall: number
   confidence_fields: Record<string, unknown>
   approved_order_id: string | null
@@ -84,8 +86,9 @@ export interface ExtractedPoShape {
 }
 
 const SUMMARY_SELECT = `
-  id, status, inbound_message_id, matched_horeca_id, confidence_overall,
-  confidence_fields, approved_order_id, reviewed_at, created_at,
+  id, status, inbound_message_id, matched_horeca_id, matched_items,
+  confidence_overall, confidence_fields, approved_order_id, reviewed_at,
+  created_at,
   inbound_messages:inbound_message_id (
     from_address, subject, received_at, storage_path_prefix
   )
@@ -127,6 +130,7 @@ function flattenSummary(row: SummaryRow): PendingPoSummaryRow {
     status: row.status,
     inbound_message_id: row.inbound_message_id,
     matched_horeca_id: row.matched_horeca_id,
+    matched_items: row.matched_items ?? [],
     confidence_overall: Number(row.confidence_overall),
     confidence_fields: row.confidence_fields ?? {},
     approved_order_id: row.approved_order_id,

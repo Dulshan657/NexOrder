@@ -32,6 +32,7 @@ import { useProducts } from '@/hooks/queries/useProducts'
 import { useHorecaAddresses } from '@/hooks/queries/useHorecaAddresses'
 import { useSettings } from '@/hooks/queries/useSettings'
 import { lineStockStatus, type LineStockStatus } from './poInboxStock'
+import { computePoIssues } from './poInboxIssues'
 import { getPoDocumentUrl, senderMismatch } from '@/services/supabase/poInboxService'
 import type { ApproveDeliveryAddress } from '@/services/supabase/poInboxService'
 import { useToasts } from '@/hooks/useToasts'
@@ -246,7 +247,25 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
     && addressOk
     && !approveMutation.isPending
   const detail = detailQuery.data
-  const headerMismatch = detail ? senderMismatch(detail.confidence_fields) : null
+
+  // Consolidated PO issues banner (stock / unresolved lines / no customer /
+  // sender mismatch), computed from the live form state so it updates as the
+  // operator edits. Mirrors the queue-row pills.
+  const { data: settings } = useSettings()
+  const issueLowThreshold = settings?.low_stock_threshold ?? 10
+  const poIssues = useMemo(() => {
+    if (!detail) return []
+    return computePoIssues({
+      hasCustomer: horecaId != null,
+      senderMismatch: senderMismatch(detail.confidence_fields),
+      lines: lines.map(l => ({
+        resolved: l.productId != null,
+        inventory: l.productId != null ? productById.get(l.productId)?.inventory ?? null : null,
+        ordered: l.quantity,
+      })),
+      lowThreshold: issueLowThreshold,
+    })
+  }, [detail, horecaId, lines, productById, issueLowThreshold])
 
   const handleApprove = async () => {
     if (!detail) return
@@ -380,14 +399,25 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       >
         <Header detail={detail} onClose={onClose} />
 
-        {headerMismatch && (
-          <div className="flex items-start gap-2 px-4 sm:px-6 py-2 bg-rose-50 border-b border-rose-200 text-rose-800 text-xs">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
-            <p>
-              <span className="font-semibold">Sender mismatch.</span>{' '}
-              {headerMismatch.sender ?? 'An unknown address'} is not a known
-              address for this customer. Verify the sender is genuine before approving.
-            </p>
+        {poIssues.length > 0 && (
+          <div className="border-b border-stone-200/70">
+            {poIssues.map(issue => (
+              <div
+                key={issue.kind}
+                className={`flex items-start gap-2 px-4 sm:px-6 py-2 text-xs ${
+                  issue.severity === 'error' ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-800'
+                }`}
+              >
+                <AlertTriangle
+                  className={`w-4 h-4 shrink-0 mt-0.5 ${
+                    issue.severity === 'error' ? 'text-rose-600' : 'text-amber-600'
+                  }`}
+                />
+                <p>
+                  <span className="font-semibold">{issue.label}.</span> {issue.detail}
+                </p>
+              </div>
+            ))}
           </div>
         )}
 
@@ -502,7 +532,7 @@ const Header: React.FC<{ detail: PendingPoDetailRow | undefined; onClose: () => 
   const badge = detail ? statusBadge(detail.status) : null
   return (
     <div className="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-stone-200/70">
-      {detail && <ConfidenceRing value={detail.confidence_overall} size="md" />}
+      {detail && <ConfidenceRing value={detail.confidence_overall} size="md" caption="AI confidence" />}
       <div className="min-w-0 flex-1">
         <h2
           id={DIALOG_TITLE_ID}
@@ -950,14 +980,18 @@ const POHeaderChips: React.FC<{
  *  this field. */
 const ConfidenceDot: React.FC<{ value: number | null }> = ({ value }) => {
   if (value == null) return null
+  const pct = Math.round(value * 100)
   const tone =
     value < 0.5 ? 'bg-rose-400' : value < 0.85 ? 'bg-amber-400' : 'bg-emerald-400'
+  // Dot + inline label so the meaning of the % is visible without hovering.
   return (
     <span
-      className={`inline-block w-2 h-2 rounded-full ${tone}`}
-      title={`AI confidence ${(value * 100).toFixed(0)}%`}
-      aria-label={`AI confidence ${(value * 100).toFixed(0)}%`}
-    />
+      className="inline-flex items-center gap-1 text-[10px] text-stone-400 font-medium"
+      aria-label={`AI confidence ${pct}%`}
+    >
+      <span className={`inline-block w-2 h-2 rounded-full ${tone}`} />
+      AI {pct}%
+    </span>
   )
 }
 
@@ -995,9 +1029,9 @@ const LineConfidenceBadge: React.FC<{ value: number | null }> = ({ value }) => {
   return (
     <span
       className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
-      title={`Per-line AI confidence`}
+      title="AI match confidence for this line"
     >
-      {pct}%
+      AI {pct}%
     </span>
   )
 }
