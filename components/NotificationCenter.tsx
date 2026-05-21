@@ -75,7 +75,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
         <div className="relative" ref={rootRef}>
             <NotificationBell unreadCount={combinedCount} onClick={() => setOpen(o => !o)} />
             {open && (
-                <div className="absolute top-full right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] bg-white/90 backdrop-blur-xl rounded-xl border border-stone-200 shadow-xl overflow-hidden max-h-[440px] flex flex-col z-50">
+                <div className="absolute top-full left-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] bg-white/90 backdrop-blur-xl rounded-xl border border-stone-200 shadow-xl overflow-hidden max-h-[440px] flex flex-col z-50">
                     {/* Header */}
                     <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200 flex-shrink-0">
                         <h3 className="text-sm font-semibold text-stone-900">Notifications</h3>
