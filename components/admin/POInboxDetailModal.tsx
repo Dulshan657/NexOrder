@@ -30,6 +30,8 @@ import {
 } from '@/hooks/queries/usePendingPos'
 import { useProducts } from '@/hooks/queries/useProducts'
 import { useHorecaAddresses } from '@/hooks/queries/useHorecaAddresses'
+import { useSettings } from '@/hooks/queries/useSettings'
+import { lineStockStatus, type LineStockStatus } from './poInboxStock'
 import { getPoDocumentUrl, senderMismatch } from '@/services/supabase/poInboxService'
 import type { ApproveDeliveryAddress } from '@/services/supabase/poInboxService'
 import { useToasts } from '@/hooks/useToasts'
@@ -287,16 +289,20 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       })
       const orderRef = result.orderId ?? '(no order id)'
       const orderId = result.orderId ?? null
+      const warnCount = result.stockWarnings?.length ?? 0
+      const successMsg =
+        warnCount > 0
+          ? `PO approved — order ${orderRef} created. ${warnCount} item${warnCount > 1 ? 's' : ''} below stock — flag for backorder.`
+          : `PO approved — order ${orderRef} created.`
       if (orderId && onViewInOrderImport) {
         // Action toast: stays visible longer (see useToasts.tsx) so the
         // operator can click through to the freshly-created order.
-        toastsContext.addToast(
-          `PO approved — order ${orderRef} created.`,
-          'success',
-          { label: 'View in Order Import', onClick: () => onViewInOrderImport(orderId) },
-        )
+        toastsContext.addToast(successMsg, 'success', {
+          label: 'View in Order Import',
+          onClick: () => onViewInOrderImport(orderId),
+        })
       } else {
-        addToast?.(`PO approved — order ${orderRef} created.`, 'success')
+        addToast?.(successMsg, 'success')
       }
       onClose()
     } catch (err) {
@@ -703,6 +709,11 @@ const FormPane: React.FC<FormPaneProps> = props => {
 
   const readOnly = props.detail.status !== 'needs_review'
 
+  // Low-stock threshold mirrors the app-wide setting (StockView / ProductCard),
+  // default 10. Drives the per-line out-of-stock / low-stock badges below.
+  const { data: settings } = useSettings()
+  const lowThreshold = settings?.low_stock_threshold ?? 10
+
   // Per-field confidence from extract-po (Record<string, unknown> on the
   // row — narrow with a helper before reading).
   const perField: Record<string, unknown> =
@@ -789,7 +800,13 @@ const FormPane: React.FC<FormPaneProps> = props => {
             <span className="text-stone-400 font-normal font-mono">{props.lines.length}</span>
           </legend>
           <ul className="divide-y divide-stone-200/70 border-y border-stone-200/70">
-            {props.lines.map((line, idx) => (
+            {props.lines.map((line, idx) => {
+              const stockProduct =
+                line.productId != null ? props.productById.get(line.productId) : undefined
+              const stock = stockProduct
+                ? lineStockStatus(stockProduct.inventory, line.quantity, lowThreshold)
+                : null
+              return (
               <li
                 key={`${idx}-${line.po_line_index ?? 'new'}`}
                 className="py-3 space-y-2"
@@ -806,6 +823,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
                     )}
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {stock && <LineStockBadge status={stock} />}
                     <LineConfidenceBadge value={line.confidence} />
                     {!readOnly && (
                       <button
@@ -865,7 +883,8 @@ const FormPane: React.FC<FormPaneProps> = props => {
                   </label>
                 </div>
               </li>
-            ))}
+              )
+            })}
           </ul>
           {!readOnly && (
             <button
@@ -939,6 +958,28 @@ const ConfidenceDot: React.FC<{ value: number | null }> = ({ value }) => {
       title={`AI confidence ${(value * 100).toFixed(0)}%`}
       aria-label={`AI confidence ${(value * 100).toFixed(0)}%`}
     />
+  )
+}
+
+/** Per-line inventory warning shown next to the confidence badge. Only renders
+ *  for problem states (out / insufficient / low) so a healthy line stays clean.
+ *  Approval is never blocked by stock; this is purely advisory. */
+const LineStockBadge: React.FC<{ status: LineStockStatus }> = ({ status }) => {
+  if (status.kind === 'ok') return null
+  const cfg =
+    status.kind === 'out_of_stock'
+      ? { cls: 'bg-rose-50 border-rose-200 text-rose-700', label: 'Out of stock' }
+      : status.kind === 'insufficient'
+        ? { cls: 'bg-rose-50 border-rose-200 text-rose-700', label: `Only ${status.available} in stock` }
+        : { cls: 'bg-amber-50 border-amber-200 text-amber-700', label: `Low stock (${status.available})` }
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${cfg.cls}`}
+      title={`${status.available} in stock · ${status.ordered} ordered`}
+    >
+      <AlertTriangle className="w-3 h-3" />
+      {cfg.label}
+    </span>
   )
 }
 

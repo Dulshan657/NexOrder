@@ -38,7 +38,7 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { computeAliasDiff } from '../_shared/poInbox/aliasDiff.ts'
 import { sanitizeForLog } from '../_shared/poInbox/env.ts'
 import { isServiceRoleBearer } from '../_shared/poInbox/dispatch.ts'
-import { findStockShortages } from '../_shared/poInbox/stockCheck.ts'
+import { findStockShortages, type StockShortage } from '../_shared/poInbox/stockCheck.ts'
 
 type ApproveMode = 'auto' | 'human'
 
@@ -82,6 +82,10 @@ interface ApproveResult {
   status?: 'approved' | 'auto_approved'
   aliasesWritten?: number
   alreadyApproved?: boolean
+  // Non-fatal: lines whose ordered quantity exceeds current inventory. The
+  // order is still created (approve-po does not decrement stock); the
+  // operator handles the shortfall via backorder/restock.
+  stockWarnings?: StockShortage[]
 }
 
 serve(async (req: Request) => {
@@ -320,27 +324,19 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
     }
   }
 
-  // Read-time stock check. Not race-free without an RPC transaction,
-  // but catches the obvious "PO for 1000 units of an item we have 5 of"
-  // case. A concurrent place-order via another channel could still
-  // overcommit by a few units between this read and the orders insert;
-  // Phase 2 will wrap both in a Postgres function.
+  // Read-time stock check — ADVISORY ONLY, never blocks. Inbound POs are
+  // customer-originated (the order already exists) and approve-po does not
+  // decrement inventory, so a short line must not stop order creation; we
+  // surface it as a warning the operator resolves via backorder/restock.
   //
   // Inventory is counted in selling units — the same unit as `quantity`.
   // pack_size is descriptive metadata (carton size) and must NOT scale the
-  // requested amount, mirroring place-order which checks and decrements
-  // inventory by quantity alone. See _shared/poInbox/stockCheck.ts.
-  const shortages = findStockShortages(
+  // requested amount, mirroring place-order which checks/decrements by
+  // quantity alone. See _shared/poInbox/stockCheck.ts.
+  const stockWarnings = findStockShortages(
     resolvedItems.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
     products,
   )
-  if (shortages.length > 0) {
-    const s = shortages[0]
-    throw new EdgeFunctionError(
-      'CONFLICT',
-      `Insufficient stock for ${s.name}: ${s.available} available, ${s.requested} requested`,
-    )
-  }
 
   // Compute totals (no horeca_pricing, no promotions — MVP scope note above).
   let total = 0
@@ -518,6 +514,7 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
         inbound_message_id: pending.inbound_message_id,
         horeca_id: effectiveHorecaId,
         total,
+        ...(stockWarnings.length > 0 ? { stock_shortfall: stockWarnings } : {}),
       },
     })
   }
@@ -527,6 +524,7 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
     orderId,
     status: intendedStatus,
     aliasesWritten: aliasDiff.customerAliases.length + aliasDiff.productAliases.length,
+    ...(stockWarnings.length > 0 ? { stockWarnings } : {}),
   }
 }
 

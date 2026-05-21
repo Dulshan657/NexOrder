@@ -6,6 +6,7 @@
 // create-po-document-url which returns a short-lived signed URL.
 
 import { supabase } from '@/lib/supabase'
+import { extractFunctionErrorMessage } from '@/lib/functionError'
 
 export type PendingPoStatus = 'needs_review' | 'approved' | 'rejected' | 'auto_approved'
 
@@ -228,12 +229,21 @@ export interface ApproveOverrides {
   deliveryAddress?: ApproveDeliveryAddress | null
 }
 
+export interface PoStockWarning {
+  product_id: number
+  name: string
+  available: number
+  requested: number
+}
+
 export interface ApprovePoResponse {
   ok: true
   orderId?: string | null
   status?: 'approved' | 'auto_approved'
   aliasesWritten?: number
   alreadyApproved?: boolean
+  /** Lines whose ordered quantity exceeded inventory. Order still created. */
+  stockWarnings?: PoStockWarning[]
 }
 
 export async function approvePo(
@@ -252,7 +262,7 @@ export async function approvePo(
       overrideDeliveryAddress: overrides.deliveryAddress,
     },
   })
-  if (error) throw new Error(`approvePo: ${error.message}`)
+  if (error) throw new Error(await extractFunctionErrorMessage(error, 'Approve failed'))
   throwOnStructuredError(data, 'approve-po failed')
   return data as ApprovePoResponse
 }
@@ -261,7 +271,7 @@ export async function rejectPo(pendingPoId: string, rejectionReason: string): Pr
   const { data, error } = await supabase.functions.invoke('reject-po', {
     body: { pendingPoId, rejectionReason },
   })
-  if (error) throw new Error(`rejectPo: ${error.message}`)
+  if (error) throw new Error(await extractFunctionErrorMessage(error, 'Reject failed'))
   throwOnStructuredError(data, 'reject-po failed')
 }
 
@@ -280,7 +290,7 @@ export async function getPoDocumentUrl(ref: PoDocumentRef): Promise<SignedUrlRes
   const { data, error } = await supabase.functions.invoke('create-po-document-url', {
     body: ref,
   })
-  if (error) throw new Error(`getPoDocumentUrl: ${error.message}`)
+  if (error) throw new Error(await extractFunctionErrorMessage(error, 'Could not load document'))
   throwOnStructuredError(data, 'create-po-document-url failed')
   return data as SignedUrlResult
 }
