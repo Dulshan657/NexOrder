@@ -207,7 +207,7 @@ const ScheduledVisitTrackingMap: React.FC<RouteTrackingMapProps> = ({ routes, ho
             const initial = rep?.name?.charAt(0) ?? '?';
             const color = REP_COLORS[i % REP_COLORS.length];
             return (
-              <Marker key={`rep-${pos.userId}`} position={[pos.lat, pos.lng]} icon={repIcon(initial, color)}>
+              <Marker key={`rep-${pos.scheduledVisitId ?? `${pos.userId}-${i}`}`} position={[pos.lat, pos.lng]} icon={repIcon(initial, color)}>
                 <Popup>
                   <strong>{rep?.name ?? 'Unknown'}</strong><br />
                   En route · Stop {(pos.currentStopIndex ?? 0) + 1}
