@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { UserRole, User, Product, HoReCa, Supplier, PurchaseOrder, Order, AppSettings, Invoice, OrderStatus, SalesTarget, Promotion, Visit, ScheduledVisit } from '../types';
+import { UserRole, User, Product, HoReCa, Supplier, Order, AppSettings, Invoice, OrderStatus, SalesTarget, Promotion, Visit, ScheduledVisit } from '../types';
 import { LoadingSkeleton } from './Skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
@@ -15,7 +15,6 @@ import WalkInReviewTab from './admin/WalkInReviewTab';
 // Heavy admin views — lazy-loaded so rep/customer paths don't pull them in.
 // lazyWithRetry recovers from stale chunk hashes after a redeploy.
 const AdminDashboard = lazyWithRetry(() => import('./AdminDashboard'));
-const PurchaseOrderAdmin = lazyWithRetry(() => import('./PurchaseOrderAdmin'));
 const PromotionAdmin = lazyWithRetry(() => import('./PromotionAdmin'));
 const HoReCaInsightsPanel = lazyWithRetry(() => import('./HoReCaInsightsPanel'));
 const ScheduledVisitsAdmin = lazyWithRetry(() => import('./admin/ScheduledVisitsAdmin'));
@@ -29,7 +28,6 @@ interface AdminViewProps {
     hoReCas: HoReCa[];
     users: User[];
     suppliers: Supplier[];
-    purchaseOrders: PurchaseOrder[];
     allOrders: Order[];
     appLogo: string | null;
     appSettings: AppSettings;
@@ -47,8 +45,6 @@ interface AdminViewProps {
     onAddSupplier: (supplier: Omit<Supplier, 'id'>) => void;
     onUpdateSupplier: (supplier: Supplier) => void;
     onDeleteSupplier: (supplierId: number) => void;
-    onAddPurchaseOrder: (po: Omit<PurchaseOrder, 'id'>) => void;
-    onUpdatePurchaseOrder: (po: PurchaseOrder) => void;
     invoices: Invoice[];
     salesTargets?: SalesTarget[];
     onUpdateSalesTargets?: (targets: SalesTarget[]) => void;
@@ -73,7 +69,7 @@ interface AdminViewProps {
     onViewInOrderImport?: (orderId: string) => void;
 }
 
-export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Order Import' | 'Promotions' | 'Accounts' | 'Stock' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'Purchase Orders' | 'PO Inbox' | 'Settings' | 'Audit Log';
+export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Order Import' | 'Promotions' | 'Accounts' | 'Stock' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'PO Inbox' | 'Settings' | 'Audit Log';
 
 const AdminView: React.FC<AdminViewProps> = (props) => {
     const isDashboard = props.activeTab === 'Dashboard';
@@ -100,7 +96,6 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 )}
                 {props.activeTab === 'Users' && props.currentUser.role === UserRole.ADMIN && <UserAdmin users={props.users} onAddUser={props.onAddUser} onUpdateUser={props.onUpdateUser} onDeleteUser={props.onDeleteUser} />}
                 {props.activeTab === 'Suppliers' && props.currentUser.role === UserRole.ADMIN && <SupplierAdmin suppliers={props.suppliers} onAddSupplier={props.onAddSupplier} onUpdateSupplier={props.onUpdateSupplier} onDeleteSupplier={props.onDeleteSupplier} />}
-                {props.activeTab === 'Purchase Orders' && props.currentUser.role === UserRole.ADMIN && <PurchaseOrderAdmin purchaseOrders={props.purchaseOrders} suppliers={props.suppliers} products={props.products} currentUser={props.currentUser} onAddPurchaseOrder={props.onAddPurchaseOrder} onUpdatePurchaseOrder={props.onUpdatePurchaseOrder} />}
                 {props.activeTab === 'Settings' && props.currentUser.role === UserRole.ADMIN && (
                     <SettingsPanel
                         settings={props.appSettings}

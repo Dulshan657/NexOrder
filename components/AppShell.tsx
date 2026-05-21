@@ -27,7 +27,6 @@ import {
     type OrderStatus,
     type Product,
     type Promotion,
-    type PurchaseOrder,
     type SalesTarget,
     type ScheduledVisit,
     type Supplier,
@@ -63,10 +62,6 @@ import {
     useUpdateSupplier,
     useDeleteSupplier,
 } from '../hooks/queries/useSuppliers';
-import {
-    useCreatePurchaseOrder,
-    useUpdatePurchaseOrder,
-} from '../hooks/queries/usePurchaseOrders';
 import {
     useCreatePromotion,
     useUpdatePromotion,
@@ -117,7 +112,6 @@ import {
     X,
     Users as UsersIcon,
     Package,
-    FileText,
     Settings,
     Truck,
     Wallet,
@@ -143,7 +137,6 @@ export interface AppShellProps {
     allOrders: Order[];
     invoices: Invoice[];
     suppliers: Supplier[];
-    purchaseOrders: PurchaseOrder[];
     promotions: Promotion[];
     salesTargets: SalesTarget[];
     routes: ScheduledVisit[];
@@ -197,7 +190,6 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     allOrders,
     invoices,
     suppliers,
-    purchaseOrders,
     promotions,
     salesTargets,
     routes,
@@ -299,8 +291,6 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const createSupplierMutation = useCreateSupplier();
     const updateSupplierMutation = useUpdateSupplier();
     const deleteSupplierMutation = useDeleteSupplier();
-    const createPurchaseOrderMutation = useCreatePurchaseOrder();
-    const updatePurchaseOrderMutation = useUpdatePurchaseOrder();
     const createPromotionMutation = useCreatePromotion();
     const updatePromotionMutation = useUpdatePromotion();
     const deletePromotionMutation = useDeletePromotion();
@@ -766,12 +756,6 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 <Truck className="w-5 h-5 mr-3" /> Suppliers
                             </button>
                             <button
-                                onClick={() => { setAdminView('Purchase Orders'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Purchase Orders' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <FileText className="w-5 h-5 mr-3" /> Purchase Orders
-                            </button>
-                            <button
                                 onClick={() => { setAdminView('Settings'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Settings' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
@@ -865,7 +849,6 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 hoReCas={hoReCas}
                                 users={users}
                                 suppliers={suppliers}
-                                purchaseOrders={purchaseOrders}
                                 allOrders={allOrders}
                                 onAddProduct={p => {
                                     createProductMutation.mutate(fromProduct(p) as any, {
@@ -938,32 +921,6 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 onDeleteSupplier={id => {
                                     deleteSupplierMutation.mutate(id, {
                                         onSuccess: () => addToast('Supplier deleted', 'success'),
-                                        onError: err => addToast(`Error: ${err.message}`, 'error'),
-                                    });
-                                }}
-                                onAddPurchaseOrder={po => {
-                                    createPurchaseOrderMutation.mutate({
-                                        po: {
-                                            supplier_id: po.supplier.id,
-                                            submitted_by: currentUserUuid,
-                                            total: po.total,
-                                            order_date: po.orderDate,
-                                            status: po.status,
-                                        },
-                                        items: po.items.map(i => ({
-                                            product_id: i.productId,
-                                            product_name: i.productName,
-                                            quantity: i.quantity,
-                                            cost: i.cost,
-                                        })),
-                                    } as any, {
-                                        onSuccess: () => addToast('PO created', 'success'),
-                                        onError: err => addToast(`Error: ${err.message}`, 'error'),
-                                    });
-                                }}
-                                onUpdatePurchaseOrder={po => {
-                                    updatePurchaseOrderMutation.mutate({ id: po.id, updates: { status: po.status } as any }, {
-                                        onSuccess: () => addToast('PO updated', 'success'),
                                         onError: err => addToast(`Error: ${err.message}`, 'error'),
                                     });
                                 }}

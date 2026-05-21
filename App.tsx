@@ -14,7 +14,6 @@ import { useHoReCas } from './hooks/queries/useHoReCas';
 import { useOrders, usePlaceOrder } from './hooks/queries/useOrders';
 import { useInvoices } from './hooks/queries/useInvoices';
 import { useSuppliers } from './hooks/queries/useSuppliers';
-import { usePurchaseOrders } from './hooks/queries/usePurchaseOrders';
 import { usePromotions } from './hooks/queries/usePromotions';
 import { useScheduledVisits } from './hooks/queries/useScheduledVisits';
 import { useVisits } from './hooks/queries/useVisits';
@@ -28,7 +27,7 @@ import { setUserIdMap } from './lib/userIdMap';
 
 // ── Adapters ──────────────────────────────────────────────────────────────────
 import {
-    toProduct, toHoReCa, toOrder, toInvoice, toSupplier, toPurchaseOrder,
+    toProduct, toHoReCa, toOrder, toInvoice, toSupplier,
     toPromotion, toScheduledVisit, toVisit, toSalesTarget, toAppSettings, toNotification,
 } from './lib/adapters';
 
@@ -68,7 +67,6 @@ const App: React.FC = () => {
     const { data: rawOrders = [] } = useOrders();
     const { data: rawInvoices = [] } = useInvoices();
     const { data: rawSuppliers = [] } = useSuppliers();
-    const { data: rawPurchaseOrders = [] } = usePurchaseOrders();
     const { data: rawPromotions = [] } = usePromotions();
     const { data: rawRoutes = [] } = useScheduledVisits();
     const { data: rawVisits = [] } = useVisits();
@@ -143,12 +141,6 @@ const App: React.FC = () => {
         [rawOrders, hoReCas, users, products],
     );
 
-    // Purchase orders embed supplier and user objects
-    const purchaseOrders = useMemo(
-        () => rawPurchaseOrders.map(po => toPurchaseOrder(po, suppliers, users)),
-        [rawPurchaseOrders, suppliers, users],
-    );
-
     // ── Mutation hooks ────────────────────────────────────────────────────────
     const placeOrderMutation = usePlaceOrder();
 
@@ -161,7 +153,6 @@ const App: React.FC = () => {
             allOrders={allOrders}
             invoices={invoices}
             suppliers={suppliers}
-            purchaseOrders={purchaseOrders}
             promotions={promotions}
             salesTargets={salesTargets}
             routes={routes}
