@@ -173,7 +173,7 @@ export async function runCallback(
   // and a single user should hit them at most once per flow, so a
   // generous 30 / min / IP is plenty for legitimate traffic.
   const ip = clientIp(req)
-  const rl = checkRateLimit(`oauth-cb:${handlers.provider}:${ip}`, {
+  const rl = await checkRateLimit(`oauth-cb:${handlers.provider}:${ip}`, {
     windowMs: 60_000,
     max: 30,
   })

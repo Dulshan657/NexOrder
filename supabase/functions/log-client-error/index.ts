@@ -46,7 +46,7 @@ serve(async (req: Request) => {
   // a malicious site could otherwise spam the table. 30 req/min is enough
   // for a frontend that genuinely dedups by stack signature.
   const ip = clientIp(req)
-  const rl = checkRateLimit(`log-client-error:${ip}`, { windowMs: 60_000, max: 30 })
+  const rl = await checkRateLimit(`log-client-error:${ip}`, { windowMs: 60_000, max: 30 })
   if (!rl.ok) {
     return errorResponse('TOO_MANY_REQUESTS', 'Rate limit exceeded', undefined, 429, req)
   }

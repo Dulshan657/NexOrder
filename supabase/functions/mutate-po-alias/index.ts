@@ -170,7 +170,7 @@ serve(async (req: Request) => {
   try {
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
-    const rl = checkRateLimit(`mutate-po-alias:${auth.userId}`, {
+    const rl = await checkRateLimit(`mutate-po-alias:${auth.userId}`, {
       windowMs: 60_000,
       max: 60,
     })

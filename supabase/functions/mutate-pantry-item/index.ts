@@ -94,7 +94,7 @@ serve(async (req: Request) => {
     // Rate limit per user — pantry edits can be rapid (drag-resort, bulk
     // toggles) so 60 req/min is generous; meaningful guard against script
     // abuse from a compromised session.
-    const rl = checkRateLimit(`mutate-pantry-item:${auth.userId}`, { windowMs: 60_000, max: 60 })
+    const rl = await checkRateLimit(`mutate-pantry-item:${auth.userId}`, { windowMs: 60_000, max: 60 })
     if (!rl.ok) {
       throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')
     }

@@ -68,7 +68,7 @@ serve(async (req: Request) => {
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
     // Per-user rate limit: 30/min/user. Matches other admin mutate functions.
-    const rl = checkRateLimit(`mutate-invoice-status:${auth.userId}`, {
+    const rl = await checkRateLimit(`mutate-invoice-status:${auth.userId}`, {
       windowMs: 60_000,
       max: 30,
     })

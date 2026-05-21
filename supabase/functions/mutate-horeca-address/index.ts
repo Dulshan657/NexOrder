@@ -79,7 +79,7 @@ serve(async (req: Request) => {
   try {
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
-    const rl = checkRateLimit(`mutate-horeca-address:${auth.userId}`, {
+    const rl = await checkRateLimit(`mutate-horeca-address:${auth.userId}`, {
       windowMs: 60_000,
       max: 60,
     })

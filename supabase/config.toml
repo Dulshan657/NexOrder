@@ -18,6 +18,12 @@
 #                           service-role bearer; also serves human-approval
 #                           calls with a user JWT — both checks live in the
 #                           function body
+# - send-email            — invoked Function->Function from place-order with the
+#                           service-role bearer (sb_secret_*, non-JWT), so the
+#                           gateway would 401 it; rate-limited per IP in-function
+# - log-client-error      — accepts pre-auth/anonymous crash reports that carry
+#                           only the publishable key (sb_publishable_*, non-JWT),
+#                           so the gateway would 401 them; rate-limited per IP
 #
 # All other functions keep the default verify_jwt = true so callers must
 # supply a valid Supabase auth JWT.
@@ -35,4 +41,10 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.approve-po]
+verify_jwt = false
+
+[functions.send-email]
+verify_jwt = false
+
+[functions.log-client-error]
 verify_jwt = false

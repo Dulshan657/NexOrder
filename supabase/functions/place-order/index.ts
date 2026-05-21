@@ -249,7 +249,7 @@ serve(async (req: Request) => {
   // Rate limit per authenticated user. 10 orders/min is well above any
   // realistic interactive pace and tight enough to slow down a hijacked
   // session firing through a script.
-  const rl = checkRateLimit(`place-order:${profile.id}`, { windowMs: 60_000, max: 10 })
+  const rl = await checkRateLimit(`place-order:${profile.id}`, { windowMs: 60_000, max: 10 })
   if (!rl.ok) {
     return errorResponse('TOO_MANY_REQUESTS', 'Rate limit exceeded — too many orders in a short period', 429)
   }

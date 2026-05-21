@@ -125,7 +125,7 @@ serve(async (req: Request) => {
       approverRole = 'service'
     } else {
       const ctx = await requireAuth(req, { allowedRoles: ['Admin', 'Manager'] })
-      const rl = checkRateLimit(`approve-po:${ctx.userId}`, { windowMs: 60_000, max: 30 })
+      const rl = await checkRateLimit(`approve-po:${ctx.userId}`, { windowMs: 60_000, max: 30 })
       if (!rl.ok) {
         return errorResponse('TOO_MANY_REQUESTS', 'Slow down on approvals', undefined, 429, req)
       }

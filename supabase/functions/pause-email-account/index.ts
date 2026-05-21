@@ -38,7 +38,7 @@ serve(async (req: Request) => {
   try {
     const ctx = await requireAuth(req, { allowedRoles: ['Admin', 'Manager'] })
 
-    const rl = checkRateLimit(`pause-email-account:${ctx.userId}`, {
+    const rl = await checkRateLimit(`pause-email-account:${ctx.userId}`, {
       windowMs: 60_000,
       max: 30,
     })

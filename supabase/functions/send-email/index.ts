@@ -67,7 +67,7 @@ serve(async (req: Request) => {
   // browser too. 20 req/min per IP is generous for the legitimate path
   // (one order = one email) and tight enough to throttle abuse.
   const ip = clientIp(req)
-  const rl = checkRateLimit(`send-email:${ip}`, { windowMs: 60_000, max: 20 })
+  const rl = await checkRateLimit(`send-email:${ip}`, { windowMs: 60_000, max: 20 })
   if (!rl.ok) {
     return errorResponse('TOO_MANY_REQUESTS', 'Rate limit exceeded', undefined, 429, req)
   }

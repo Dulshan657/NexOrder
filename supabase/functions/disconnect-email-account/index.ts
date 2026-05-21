@@ -46,7 +46,7 @@ serve(async (req: Request) => {
   try {
     const ctx = await requireAuth(req, { allowedRoles: ['Admin', 'Manager'] })
 
-    const rl = checkRateLimit(`disconnect-email-account:${ctx.userId}`, {
+    const rl = await checkRateLimit(`disconnect-email-account:${ctx.userId}`, {
       windowMs: 60_000,
       max: 30,
     })

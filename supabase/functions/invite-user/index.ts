@@ -126,7 +126,7 @@ serve(async (req: Request) => {
 
   // Rate limit per admin: invitations are a privileged email action and
   // shouldn't bulk-fire. 5/min is plenty for legitimate onboarding bursts.
-  const rl = checkRateLimit(`invite-user:${caller.id}`, { windowMs: 60_000, max: 5 })
+  const rl = await checkRateLimit(`invite-user:${caller.id}`, { windowMs: 60_000, max: 5 })
   if (!rl.ok) {
     return errorResponse('TOO_MANY_REQUESTS', 'Rate limit exceeded — slow down on invites', 429)
   }
