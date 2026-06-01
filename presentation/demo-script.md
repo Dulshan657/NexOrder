@@ -1,8 +1,9 @@
 # Nex Order — Live Demo Script
 
-A storytelling walkthrough on `nexorder.vercel.app`. Three acts, ~15–20 minutes
+A storytelling walkthrough on `nexorder.vercel.app`. Four acts, ~18–24 minutes
 total. One continuous narrative: a customer orders, a field rep tops it up,
-the back office watches it all happen in realtime.
+the back office watches it all happen in realtime — and an emailed purchase
+order turns itself into an order with no app login at all.
 
 All seeded accounts use password **`Password123!`**.
 
@@ -25,6 +26,17 @@ All seeded accounts use password **`Password123!`**.
    Buy 2 Get 1 Red Curry, Grand Hotel VIP 10%, XO Sauce 40% clearance).
 6. Pre-test the **signature canvas** on the demo machine — trackpad signing
    takes a moment to warm up.
+7. **Stage the inbound PO for Act 4** (Window C, PO Inbox tab):
+   - Confirm a demo mailbox is connected under **PO Inbox → Mailboxes** (Gmail
+     or Outlook, via OAuth). If none is connected, connect one now — or plan to
+     run Act 4 from the slide instead (see recovery notes).
+   - From any account, email that mailbox a short **purchase order** (a one-line
+     PDF or plain text), e.g. *"PO from The Spice Room: 6 × Coconut Milk 400ml,
+     4 × Thai Red Curry Paste 195g — deliver Friday."*
+   - Send it **~10 minutes before** you start so `poll-inbox` + `extract-po`
+     have run and the PO is sitting in the **Needs Review** queue.
+   - For a cron-proof demo, pre-stage a `pending_pos` row directly (no PO Inbox
+     seed data ships today — ask the team for the snippet).
 
 > **Stage layout tip:** Put Window A on the left, B in the middle, C on the
 > right. As you talk, your gaze and the audience's gaze move left-to-right
@@ -185,7 +197,67 @@ All seeded accounts use password **`Password123!`**.
 
 ### Closing line
 
-> "Three roles, one continuous flow, every action accounted for. That's
+> "Three roles, one continuous flow, every action accounted for. But there's a
+> fourth way orders arrive that never needed an app at all — let me show you
+> the inbox."
+
+---
+
+## ACT 4 — "A purchase order arrives by email — and lands itself"
+
+**~4 minutes • Window C • Admin login • PO Inbox tab**
+
+> Persona: still **Alice**, admin / operations lead.
+> Story beat: the customer who will never learn an app just emailed a PO. The
+> AI read it; Alice approves it in one click and it becomes a real order.
+
+### Scene-setter (spoken, ~20s)
+
+> "Not every customer wants an app — plenty just email a purchase order, often
+> a PDF. The Spice Room is one of them. While we were talking, their order
+> landed in Alice's inbox. Nobody keyed it in. Watch what happened to it."
+
+### On screen
+
+1. **Open the PO Inbox tab → Needs Review queue.**
+   > "Every emailed PO the AI extracted, triaged for her. The coloured ring is
+   > the AI's confidence; the riskiest ones sort to the top. There's the Spice
+   > Room PO that just arrived."
+
+2. **Point at the Auto-approved count in the stats ribbon.**
+   > "The clean, high-confidence, in-stock ones already auto-approved into
+   > orders with zero clicks — Alice never saw them. She only works the
+   > exceptions. This is a short queue, not her whole inbox."
+
+3. **Open the Spice Room PO → detail modal.**
+   > "Sender matched to The Spice Room from an alias the system *learned* on a
+   > past approval. Each line matched to a product — '6 × Coconut Milk', '4 ×
+   > Thai Red Curry Paste'. Any flag she needs — sender mismatch, short stock,
+   > an unmatched line — is called out right here. She never approves blind."
+
+4. **(If a flag is present)** Resolve it — pick the customer/product, or read
+   the short-stock warning.
+   > "A short-stock line *warns* but doesn't block — the customer already placed
+   > the order, so we fulfil via backorder. An unmatched line she maps once, and
+   > the system remembers that mapping forever."
+
+5. **Click "Approve & create order".**
+   > **WOW MOMENT.** "One click. That email is now a real order — `ORD-IN-…` —
+   > in the exact orders list we were just looking at."
+
+6. **Switch back to the Orders list (still Window C).**
+   > "There it is, top of the list, pushed in by realtime. Same status pipeline,
+   > same fulfilment, same audit as Maya's and Charlie's orders. The email
+   > channel finally lives in one place with all the others."
+
+7. **(Optional, if time)** Switch to the **Audit Log** → filter today.
+   > "And the approval is logged — actor, the source PO, the order it created.
+   > Email-in is now as accountable as every other channel."
+
+### Closing line
+
+> "Three intake channels on screen, plus an inbox that turns emails into orders
+> on its own. One pipeline, every channel, every action accounted for. That's
 > Nex Order. Let's go back to the deck for next steps."
 
 ---
@@ -200,6 +272,8 @@ All seeded accounts use password **`Password123!`**.
 | **Signature canvas misbehaves** | Switch verification to "Manager Override". | "Verification method is per-role. Manager override is itself audit-logged, so we're never bypassing accountability." |
 | **App is slow / loading spinner** | Open a fallback screenshot of the screen you wanted. | "Screenshots from a recent run, while the live app catches up." |
 | **Whole site down** | Switch to a Loom of a recorded run. | "I'll walk you through a recording — the live app is having a moment. We'll resume after the demo." |
+| **PO extraction hasn't fired in Act 4** | Refresh the PO Inbox queue; if still empty, open a pre-staged PO or just point at the Auto-approved count. | "Extraction runs on a polling cron — on conference Wi-Fi it can lag a minute. Here's one that already came through." |
+| **No mailbox connected for Act 4** | Skip the live click; tell Act 4 from Slide 5 instead. | "I'll show this one from the deck — it needs a mailbox I haven't wired on this demo tenant." |
 
 ---
 
@@ -209,7 +283,9 @@ All seeded accounts use password **`Password123!`**.
   > Telesales is a first-class channel. Office reps can place orders for any
   > customer through the same Shop view. The customer never has to log in.
   > Many of our customers run 80% telesales today and let self-serve grow
-  > organically.
+  > organically. And for buyers who'd rather just email a PO, **PO Inbox** reads
+  > the email or PDF, matches it, and turns it into an order with zero app
+  > adoption — you saw it in Act 4.
 
 - **"How do you handle our existing pricing complexity?"**
   > Tiers are configurable. Per-customer overrides exist. Promotions are
@@ -241,15 +317,17 @@ All seeded accounts use password **`Password123!`**.
 
 | Section | Target | Hard cap |
 |---|---|---|
-| Slide deck (5 slides) | 8 min | 10 min |
+| Slide deck (6 slides) | 9 min | 11 min |
 | Act 1 — Maya | 5 min | 6 min |
 | Act 2 — Charlie | 6 min | 7 min |
 | Act 3 — Alice | 5 min | 6 min |
+| Act 4 — Inbox PO | 4 min | 5 min |
 | Q&A | 5 min | open |
-| **Total** | **29 min** | **— ** |
+| **Total** | **34 min** | **— ** |
 
 If you're tight on time, **drop Act 3 step 6 (route change-request approval)**
-first. It's the optional callback to Act 2.
+first — it's the optional callback to Act 2. Next, Act 4 compresses well: keep
+steps 1, 3, and 5 (queue → open the PO → approve) and drop the audit-log step.
 
 ---
 

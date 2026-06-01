@@ -153,7 +153,7 @@ def build_slide_1(prs: Presentation) -> None:
     add_paragraph(tf, "Live demo: nexorder.vercel.app",
                   size_pt=12, color=ACCENT, bold=True)
 
-    add_footer(slide, "Nex Order   •   Pitch deck   •   Page 1 of 5")
+    add_footer(slide, "Nex Order   •   Pitch deck   •   Page 1 of 6")
 
     add_speaker_notes(slide,
         "Open with positioning. Nex Order is a generic B2B order-management "
@@ -237,7 +237,7 @@ def build_slide_2(prs: Presentation) -> None:
                   "We unify them.",
                   size_pt=14, bold=True, color=INK, space_after=0)
 
-    add_footer(slide, "Nex Order   •   The problem   •   Page 2 of 5")
+    add_footer(slide, "Nex Order   •   The problem   •   Page 2 of 6")
 
     add_speaker_notes(slide,
         "Use a call-and-response framing here. Ask the audience: 'Whichever "
@@ -293,12 +293,13 @@ def build_slide_3(prs: Presentation) -> None:
         ("Customer self-serve", "Shop view on phone or web"),
         ("Office sales rep", "Telesales — call-reference verification"),
         ("Field sales rep", "On-site — customer signature"),
-        ("Roadmap: Email / WhatsApp / EDI", "External channels, same gate"),
+        ("Email PO Inbox  ·  LIVE",
+         "AI extracts emailed POs → review → order. WhatsApp / EDI next."),
     ]
     box_h = Emu((int(col_h) - int(Inches(0.3)) * 3) // 4)
     for i, (title, sub) in enumerate(intake_items):
         top = col_top + Emu(i * (int(box_h) + int(Inches(0.1))))
-        is_future = i == 3
+        is_future = False
         box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
                                      left_intake, top, col_w_intake, box_h)
         set_solid_fill(box, WHITE if not is_future else SOFT_BG)
@@ -387,15 +388,17 @@ def build_slide_3(prs: Presentation) -> None:
                   "Every action logged.",
                   size_pt=12, bold=True, color=INK, align=PP_ALIGN.CENTER)
 
-    add_footer(slide, "Nex Order   •   Process flow   •   Page 3 of 5")
+    add_footer(slide, "Nex Order   •   Process flow   •   Page 3 of 6")
 
     add_speaker_notes(slide,
         "Walk this slide left to right. Spend 30 seconds per intake channel: "
         "self-serve is the customer's phone or laptop; telesales is the "
         "office rep keying it in with a call-reference number; field reps "
-        "capture a customer signature on a tablet; the dashed box is the "
-        "roadmap — email-in, WhatsApp, EDI — all designed to enter the same "
-        "gate. The middle column is the architectural moat. Every intake "
+        "capture a customer signature on a tablet; the fourth box is now "
+        "LIVE — emailed purchase orders are read by AI, reviewed, and turned "
+        "into real orders (full detail on the next slide); WhatsApp and EDI "
+        "are the remaining roadmap. The middle column is the architectural "
+        "moat. Every intake "
         "channel hits the same Edge Function. That means pricing, promos, "
         "stock checks, and audit are guaranteed identical. The right column "
         "is what happens next — a deterministic pipeline that ops teams "
@@ -420,6 +423,10 @@ def build_slide_4(prs: Presentation) -> None:
 
     # 2 rows × 3 columns capability grid
     capabilities = [
+        ("AI PO Inbox",
+         "Emailed & PDF purchase orders read by AI, matched to customer and "
+         "products, and turned into real orders — clean ones auto-approve, "
+         "the rest get a quick human check."),
         ("Pantry intelligence",
          "Per-customer reorder list, frequency-weighted suggestions, "
          "automatic out-of-stock substitutes."),
@@ -429,12 +436,10 @@ def build_slide_4(prs: Presentation) -> None:
         ("Routes & scheduled visits",
          "Field reps follow a planned route with stops, change requests, "
          "and on-site signature capture."),
-        ("Realtime cross-role visibility",
-         "Postgres LISTEN/NOTIFY + TanStack Query invalidation. "
-         "Every role sees new orders without refresh."),
-        ("Role-based access + audit log",
-         "Five roles, RLS-locked tables. Every privileged write recorded "
-         "with before/after diff."),
+        ("Realtime, role-gated & audited",
+         "Five RLS-locked roles. Postgres realtime pushes new orders to every "
+         "screen without refresh; every privileged write logged with "
+         "before/after diff."),
         ("Stock, invoicing & accounting",
          "Live inventory, aging report, credit-limit checks, "
          "low-stock alerts."),
@@ -481,11 +486,11 @@ def build_slide_4(prs: Presentation) -> None:
     # Tech footer line
     tb, tf = add_textbox(slide, Inches(0.6), Inches(6.7), Inches(12.1), Inches(0.4))
     add_paragraph(tf,
-                  "13 Edge Functions   •   5 roles   •   Postgres + RLS   •   "
+                  "26 Edge Functions   •   5 roles   •   Postgres + RLS   •   "
                   "React 19 / TypeScript / Tailwind   •   Vercel + Supabase",
                   size_pt=10, color=MUTED, align=PP_ALIGN.CENTER)
 
-    add_footer(slide, "Nex Order   •   Capabilities   •   Page 4 of 5")
+    add_footer(slide, "Nex Order   •   Capabilities   •   Page 4 of 6")
 
     add_speaker_notes(slide,
         "Don't read the grid. Pick three to spotlight — the ones that match "
@@ -498,10 +503,126 @@ def build_slide_4(prs: Presentation) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Slide 5 — Live demo + next steps
+# Slide 5 — PO Inbox (AI email-to-order)
 # ---------------------------------------------------------------------------
 
-def build_slide_5(prs: Presentation) -> None:
+def build_slide_5_po_inbox(prs: Presentation) -> None:
+    slide = add_blank_slide(prs)
+
+    add_accent_bar(slide, left=Inches(0.6), top=Inches(0.6))
+    tb, tf = add_textbox(slide, Inches(0.6), Inches(0.78), Inches(6), Inches(0.35))
+    add_paragraph(tf, "AI PO INBOX", size_pt=11, bold=True, color=ACCENT,
+                  font=FONT_DISPLAY)
+
+    tb, tf = add_textbox(slide, Inches(0.6), Inches(1.2), Inches(12.1), Inches(0.7))
+    add_paragraph(tf, "Your buyers already email their orders.",
+                  size_pt=30, bold=True, color=INK, font=FONT_DISPLAY)
+
+    tb, tf = add_textbox(slide, Inches(0.6), Inches(1.95), Inches(12.1), Inches(0.95))
+    add_paragraph(tf,
+                  "Most B2B buyers will never learn an app — they send a PO by "
+                  "email or PDF. PO Inbox reads it, matches it to the right "
+                  "customer and products, and drops a clean order into your back "
+                  "office. No behaviour change asked of the customer.",
+                  size_pt=15, color=MUTED, space_after=0)
+
+    # Four-stage pipeline — echoes Slide 3's left-to-right flow on purpose:
+    # this IS the email channel that was 'roadmap' on Slide 3, now shipping.
+    stages = [
+        ("STEP 1", "Email or PDF lands",
+         "A connected Gmail or Outlook mailbox is polled automatically. The "
+         "buyer emails the way they always have — no portal, no login."),
+        ("STEP 2", "AI reads & matches",
+         "Parses the PDF and body, ignores signatures and clutter. Matches "
+         "sender → customer and free-text items → your catalog — learning "
+         "aliases on every approval."),
+        ("STEP 3", "Auto-approve or review",
+         "Clean, high-confidence, in-stock POs auto-approve. The rest surface "
+         "with a confidence score and clear flags — sender mismatch, short "
+         "stock, unresolved line — for a quick human check."),
+        ("STEP 4", "A real order, in your books",
+         "Approve and it becomes an ORD-IN order in the same orders list — "
+         "same status pipeline, realtime feed, and audit log as every other "
+         "channel."),
+    ]
+
+    pipe_top = Inches(3.05)
+    pipe_h = Inches(3.05)
+    margin = Inches(0.6)
+    gap = Inches(0.3)
+    cols = 4
+    total_w = int(SLIDE_WIDTH) - int(margin) * 2 - int(gap) * (cols - 1)
+    card_w = Emu(total_w // cols)
+
+    for i, (step, title, body) in enumerate(stages):
+        left = margin + Emu(i * (int(card_w) + int(gap)))
+        is_dest = i == cols - 1
+
+        card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
+                                      left, pipe_top, card_w, pipe_h)
+        set_solid_fill(card, INK if is_dest else WHITE)
+        set_line(card, ACCENT, 1.25)
+        card.adjustments[0] = 0.06
+
+        accent = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE,
+                                        left + Inches(0.25), pipe_top + Inches(0.25),
+                                        Inches(0.4), Inches(0.06))
+        set_solid_fill(accent, ACCENT)
+        set_line(accent, None)
+
+        tb, tf = add_textbox(slide,
+                             left + Inches(0.25), pipe_top + Inches(0.45),
+                             card_w - Inches(0.5), pipe_h - Inches(0.65))
+        add_paragraph(tf, step, size_pt=10, bold=True, color=ACCENT,
+                      font=FONT_DISPLAY, space_after=6)
+        add_paragraph(tf, title, size_pt=14, bold=True,
+                      color=WHITE if is_dest else INK,
+                      font=FONT_DISPLAY, space_after=8)
+        add_paragraph(tf, body, size_pt=10,
+                      color=HAIRLINE if is_dest else MUTED, space_after=0)
+
+    # Connector lines threaded through the gaps between cards.
+    arrow_y = pipe_top + Emu(int(pipe_h) // 2)
+    for i in range(cols - 1):
+        x_start = margin + Emu(i * (int(card_w) + int(gap))) + card_w
+        x_end = margin + Emu((i + 1) * (int(card_w) + int(gap)))
+        line = slide.shapes.add_connector(1, x_start, arrow_y, x_end, arrow_y)
+        line.line.color.rgb = ACCENT
+        line.line.width = Pt(1.5)
+
+    # Trust strip
+    tb, tf = add_textbox(slide, Inches(0.6), Inches(6.45), Inches(12.1), Inches(0.4))
+    add_paragraph(tf,
+                  "OAuth mailboxes (Gmail / Outlook)   •   Confidence-scored AI "
+                  "extraction   •   Admin / Manager-gated   •   Every approval "
+                  "audited",
+                  size_pt=10, color=MUTED, align=PP_ALIGN.CENTER)
+
+    add_footer(slide, "Nex Order   •   PO Inbox   •   Page 5 of 6")
+
+    add_speaker_notes(slide,
+        "This slide answers the objection you always get: 'our customers won't "
+        "learn an app.' They don't have to. Most B2B buyers still send a "
+        "purchase order by email or PDF — so we meet them there. Walk the four "
+        "stages left to right: a connected mailbox is polled; the AI reads the "
+        "PDF and body, ignores the email signature, and matches the sender to a "
+        "customer and the free-text lines to your products — and it LEARNS, so "
+        "the same buyer's next PO is a known quantity. Clean, confident, "
+        "in-stock orders auto-approve with zero clicks; anything uncertain or "
+        "short on stock is held with a confidence score and clear flags for a "
+        "human. Approve, and it's a real order in the same list, realtime feed, "
+        "and audit log as every other channel. One honest nuance for technical "
+        "buyers: inbound POs land as orders for review — tier pricing and "
+        "promotions are applied by ops at that point, not yet auto-resolved "
+        "like the live cart. Bridge to the demo: 'Let me show you one land and "
+        "get approved.'")
+
+
+# ---------------------------------------------------------------------------
+# Slide 6 — Live demo + next steps
+# ---------------------------------------------------------------------------
+
+def build_slide_6(prs: Presentation) -> None:
     slide = add_blank_slide(prs)
 
     add_accent_bar(slide, left=Inches(0.6), top=Inches(0.6))
@@ -583,7 +704,7 @@ def build_slide_5(prs: Presentation) -> None:
                   "nexorder.vercel.app   •   contact: hello@nexorder.app",
                   size_pt=11, bold=True, color=ACCENT, align=PP_ALIGN.CENTER)
 
-    add_footer(slide, "Nex Order   •   Live demo   •   Page 5 of 5")
+    add_footer(slide, "Nex Order   •   Live demo   •   Page 6 of 6")
 
     add_speaker_notes(slide,
         "Brief slide — under 30 seconds. Set expectations: three acts, one "
@@ -600,7 +721,8 @@ def main() -> None:
     build_slide_2(prs)
     build_slide_3(prs)
     build_slide_4(prs)
-    build_slide_5(prs)
+    build_slide_5_po_inbox(prs)
+    build_slide_6(prs)
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     prs.save(OUTPUT_PATH)
