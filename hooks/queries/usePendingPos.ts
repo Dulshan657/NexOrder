@@ -14,16 +14,21 @@ import {
   rejectPo,
 } from '@/services/supabase/poInboxService'
 
-const LIST_KEY = (status?: PendingPoStatus) => ['pending_pos', 'list', status ?? 'all'] as const
+const LIST_KEY = (status?: PendingPoStatus, archived?: boolean) =>
+  ['pending_pos', 'list', archived ? 'archive' : 'active', status ?? 'all'] as const
 const DETAIL_KEY = (id: string) => ['pending_pos', 'detail', id] as const
 const COUNT_KEY = ['pending_pos', 'count_needs_review'] as const
 const ALIAS_LIST_KEY_CUSTOMER = ['po_aliases', 'customer'] as const
 const ALIAS_LIST_KEY_PRODUCT = ['po_aliases', 'product'] as const
 
-export function usePendingPos(status?: PendingPoStatus, options?: { enabled?: boolean }) {
+export function usePendingPos(
+  status?: PendingPoStatus,
+  options?: { enabled?: boolean; archived?: boolean },
+) {
+  const archived = options?.archived ?? false
   return useQuery<PendingPoSummaryRow[]>({
-    queryKey: LIST_KEY(status),
-    queryFn: () => listPendingPos(status),
+    queryKey: LIST_KEY(status, archived),
+    queryFn: () => listPendingPos(status, { archived }),
     staleTime: 30_000,
     enabled: options?.enabled ?? true,
   })

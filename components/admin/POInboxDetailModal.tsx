@@ -37,7 +37,7 @@ import { getPoDocumentUrl, senderMismatch } from '@/services/supabase/poInboxSer
 import type { ApproveDeliveryAddress } from '@/services/supabase/poInboxService'
 import { useToasts } from '@/hooks/useToasts'
 import ConfidenceRing from './ConfidenceRing'
-import { statusBadge } from './poInboxFormat'
+import { confidenceReasoning, statusBadge } from './poInboxFormat'
 import ProductSearchDropdown from './ProductSearchDropdown'
 import type {
   ExtractedPoLine,
@@ -536,7 +536,14 @@ const Header: React.FC<{ detail: PendingPoDetailRow | undefined; onClose: () => 
   const badge = detail ? statusBadge(detail.status) : null
   return (
     <div className="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-stone-200/70">
-      {detail && <ConfidenceRing value={detail.confidence_overall} size="md" caption="AI confidence" />}
+      {detail && (
+        <ConfidenceRing
+          value={detail.confidence_overall}
+          size="md"
+          caption="AI match confidence"
+          tooltip={confidenceReasoning(detail.confidence_overall, detail.confidence_fields)}
+        />
+      )}
       <div className="min-w-0 flex-1">
         <h2
           id={DIALOG_TITLE_ID}

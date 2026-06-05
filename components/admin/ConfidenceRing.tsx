@@ -13,6 +13,9 @@ interface ConfidenceRingProps {
   /** Optional visible label under the ring explaining what the % means
    *  (so the meaning isn't hidden behind a hover tooltip). */
   caption?: string
+  /** Optional hover tooltip explaining the rating (per-field breakdown +
+   *  gating reasons). Falls back to a plain "AI confidence X%" when omitted. */
+  tooltip?: string
 }
 
 const DIMENSIONS = {
@@ -20,15 +23,15 @@ const DIMENSIONS = {
   md: { outer: 48, inner: 37, font: 'text-xs' },
 } as const
 
-const ConfidenceRing: React.FC<ConfidenceRingProps> = ({ value, size = 'sm', caption }) => {
+const ConfidenceRing: React.FC<ConfidenceRingProps> = ({ value, size = 'sm', caption, tooltip }) => {
   const band = confidenceBand(value)
   const pct = Math.round(value * 100)
   const dim = DIMENSIONS[size]
   const ring = (
     <div
       role="img"
-      aria-label={`AI confidence ${pct}%`}
-      title={`AI confidence ${pct}%`}
+      aria-label={`AI match confidence ${pct}%`}
+      title={tooltip ?? `AI match confidence ${pct}%`}
       className="shrink-0 rounded-full flex items-center justify-center"
       style={{
         width: dim.outer,
@@ -49,7 +52,7 @@ const ConfidenceRing: React.FC<ConfidenceRingProps> = ({ value, size = 'sm', cap
   return (
     <div className="shrink-0 flex flex-col items-center gap-0.5">
       {ring}
-      <span className="text-[9px] uppercase tracking-wide text-stone-400 font-medium leading-none">
+      <span className="text-[9px] uppercase tracking-wide text-stone-400 font-medium leading-tight text-center max-w-[3.5rem]">
         {caption}
       </span>
     </div>

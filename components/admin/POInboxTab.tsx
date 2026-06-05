@@ -10,10 +10,10 @@ import { lazyWithRetry } from '../../lib/lazyWithRetry'
 import { usePendingPos, usePendingPoCount } from '@/hooks/queries/usePendingPos'
 import { useProducts } from '@/hooks/queries/useProducts'
 import { useSettings } from '@/hooks/queries/useSettings'
-import { PO_INBOX_TABS, formatAge, sortForDisplay, statusBadge } from './poInboxFormat'
+import { PO_INBOX_TABS, confidenceReasoning, formatAge, sortForDisplay, statusBadge } from './poInboxFormat'
 import { computePoIssues } from './poInboxIssues'
 import ConfidenceRing from './ConfidenceRing'
-import { senderMismatch } from '@/services/supabase/poInboxService'
+import { ARCHIVE_AFTER_DAYS, senderMismatch } from '@/services/supabase/poInboxService'
 import type { PendingPoStatus, PendingPoSummaryRow } from '@/services/supabase/poInboxService'
 import type { HoReCa, Product } from '../../types'
 
@@ -29,22 +29,31 @@ interface POInboxTabProps {
    */
   presetPendingPoId?: string | null
   onViewInOrderImport?: (orderId: string) => void
+  /** Archive view: only resolved POs older than the 30-day cutoff. */
+  archived?: boolean
 }
+
+// Archive shows the resolved statuses only (needs_review never archives).
+const ARCHIVE_TABS = PO_INBOX_TABS.filter(t => t.key !== 'needs_review')
 
 const POInboxTab: React.FC<POInboxTabProps> = ({
   hoReCas,
   addToast,
   presetPendingPoId,
   onViewInOrderImport,
+  archived = false,
 }) => {
-  const [activeStatus, setActiveStatus] = useState<PendingPoStatus>('needs_review')
+  const tabs = archived ? ARCHIVE_TABS : PO_INBOX_TABS
+  const [activeStatus, setActiveStatus] = useState<PendingPoStatus>(
+    archived ? 'auto_approved' : 'needs_review',
+  )
   const [openId, setOpenId] = useState<string | null>(presetPendingPoId ?? null)
 
   useEffect(() => {
     if (presetPendingPoId) setOpenId(presetPendingPoId)
   }, [presetPendingPoId])
 
-  const { data, isLoading, isFetching, refetch } = usePendingPos(activeStatus)
+  const { data, isLoading, isFetching, refetch } = usePendingPos(activeStatus, { archived })
   const { data: needsReviewCount } = usePendingPoCount()
   const rows = useMemo(() => sortForDisplay(data ?? []), [data])
 
@@ -70,7 +79,7 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
     <div>
       <div className="flex items-center justify-between gap-3 border-b border-stone-200/70">
         <nav className="flex items-center gap-6 -mb-px" aria-label="PO status filter">
-          {PO_INBOX_TABS.map(tab => (
+          {tabs.map(tab => (
             <FilterTab
               key={tab.key}
               active={activeStatus === tab.key}
@@ -97,7 +106,7 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
         {isLoading ? (
           <QueueSkeleton />
         ) : rows.length === 0 ? (
-          <Empty status={activeStatus} />
+          <Empty status={activeStatus} archived={archived} />
         ) : (
           <ul className="divide-y divide-stone-200/70 rounded-xl border border-stone-200 overflow-hidden bg-white">
             {rows.map((row, i) => (
@@ -206,8 +215,15 @@ const EMPTY_COPY: Record<PendingPoStatus, { icon: React.ReactNode; title: string
   },
 }
 
-const Empty: React.FC<{ status: PendingPoStatus }> = ({ status }) => {
-  const copy = EMPTY_COPY[status]
+const ARCHIVE_EMPTY = {
+  icon: <Inbox className="w-6 h-6 text-stone-400" />,
+  title: 'Nothing archived yet',
+  body: `Resolved POs move here automatically ${ARCHIVE_AFTER_DAYS} days after they're approved, auto-approved, or rejected.`,
+  tint: 'bg-stone-100',
+}
+
+const Empty: React.FC<{ status: PendingPoStatus; archived?: boolean }> = ({ status, archived }) => {
+  const copy = archived ? ARCHIVE_EMPTY : EMPTY_COPY[status]
   return (
     <div className="py-16 text-center">
       <div
@@ -269,7 +285,12 @@ const Row: React.FC<RowProps> = ({ row, hoReCa, index, productById, lowThreshold
         onClick={onClick}
         className={`group w-full text-left flex items-center gap-4 py-3 pl-4 pr-3 border-l-[3px] ${railClass} transition-colors hover:bg-stone-50 focus:outline-none focus-visible:bg-stone-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-nexgen-blue/50`}
       >
-        <ConfidenceRing value={row.confidence_overall} size="sm" caption="AI" />
+        <ConfidenceRing
+          value={row.confidence_overall}
+          size="sm"
+          caption="AI match confidence"
+          tooltip={confidenceReasoning(row.confidence_overall, row.confidence_fields)}
+        />
 
         <span className="flex-1 min-w-0">
           <span className="flex items-center gap-2 flex-wrap">

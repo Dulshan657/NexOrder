@@ -16,9 +16,9 @@ import type { HoReCa, Product } from '../../types'
 const POInboxTab = lazyWithRetry(() => import('./POInboxTab'))
 const POAliasesTab = lazyWithRetry(() => import('./POAliasesTab'))
 
-export type POInboxSubTab = 'queue' | 'aliases'
+export type POInboxSubTab = 'queue' | 'archive' | 'aliases'
 
-const VALID_SUBTABS: ReadonlyArray<POInboxSubTab> = ['queue', 'aliases']
+const VALID_SUBTABS: ReadonlyArray<POInboxSubTab> = ['queue', 'archive', 'aliases']
 
 interface POInboxViewProps {
   hoReCas: HoReCa[]
@@ -140,6 +140,9 @@ const POInboxView: React.FC<POInboxViewProps> = ({
             <SubtabButton active={subtab === 'queue'} onClick={() => switchSubtab('queue')}>
               Queue
             </SubtabButton>
+            <SubtabButton active={subtab === 'archive'} onClick={() => switchSubtab('archive')}>
+              Archive
+            </SubtabButton>
             <SubtabButton active={subtab === 'aliases'} onClick={() => switchSubtab('aliases')}>
               Aliases
             </SubtabButton>
@@ -155,6 +158,14 @@ const POInboxView: React.FC<POInboxViewProps> = ({
               hoReCas={hoReCas}
               addToast={addToast}
               presetPendingPoId={presetPendingPoId}
+              onViewInOrderImport={onViewInOrderImport}
+            />
+          )}
+          {subtab === 'archive' && (
+            <POInboxTab
+              archived
+              hoReCas={hoReCas}
+              addToast={addToast}
               onViewInOrderImport={onViewInOrderImport}
             />
           )}

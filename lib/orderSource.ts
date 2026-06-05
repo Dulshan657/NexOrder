@@ -57,3 +57,24 @@ export function getOrderSource(order: Order): OrderSource {
       return { key: 'customer_web', label: 'Customer Web', tone: 'blue' };
   }
 }
+
+export interface InboundApproval {
+  /** True when auto-approved (no human reviewer) — show "Auto-approved (system)". */
+  auto: boolean;
+  /** Approver's name for human approvals; null when auto-approved. */
+  name: string | null;
+}
+
+/**
+ * Approval descriptor for a PO-Inbox order, or null when the order did not
+ * originate from the PO Inbox. For human approvals `submittedBy` IS the
+ * approver (see approve-po: submitted_by = approverUserId in human mode), so no
+ * separate reviewer lookup is needed; auto approvals deliberately drop the name
+ * because submittedBy then points at the mailbox owner, not an approver.
+ */
+export function getInboundApproval(order: Order): InboundApproval | null {
+  if (!order.inboundMessageId) return null;
+  return order.autoApproved
+    ? { auto: true, name: null }
+    : { auto: false, name: order.submittedBy?.name ?? null };
+}

@@ -137,3 +137,54 @@ export function confidenceBand(confidence: number): ConfidenceBand {
   }
   return { key: 'low', ringColor: '#f43f5e', trackColor: RING_TRACK, textClass: 'text-rose-700' }
 }
+
+// Short, human-readable labels for the per-field extraction confidences.
+const CONFIDENCE_FIELD_LABELS: Record<string, string> = {
+  po_number: 'PO #',
+  customer_name_raw: 'Customer',
+  order_date: 'Order date',
+  requested_date: 'Req. date',
+  ship_to: 'Ship-to',
+  lines: 'Lines',
+}
+
+const pct = (n: unknown): string => `${Math.round((typeof n === 'number' && Number.isFinite(n) ? n : 0) * 100)}%`
+
+/**
+ * Concise hover-reasoning for the confidence ring. The overall score is the
+ * MINIMUM of the per-field extraction confidences, so it skews to 0% / 100%;
+ * this explains why — the weakest field(s) that drag it down, plus the gating
+ * reasons for needs_review. Pure + tiny so it can be a `title` tooltip.
+ *
+ * Reads `pending_pos.confidence_fields` (`per_field`, `gating_reasons`).
+ */
+export function confidenceReasoning(
+  confidenceOverall: number,
+  fields: Record<string, unknown> | null | undefined,
+): string {
+  const lines: string[] = [`AI match confidence ${pct(confidenceOverall)}`]
+
+  const per = fields?.per_field
+  if (per && typeof per === 'object') {
+    const entries = Object.entries(CONFIDENCE_FIELD_LABELS).filter(
+      ([key]) => typeof (per as Record<string, unknown>)[key] === 'number',
+    )
+    if (entries.length > 0) {
+      const min = Math.min(...entries.map(([key]) => (per as Record<string, number>)[key]))
+      // Only call out the weak fields when something is dragging the score down.
+      if (min < 1) {
+        const weakest = entries
+          .filter(([key]) => (per as Record<string, number>)[key] === min)
+          .map(([key, label]) => `${label} ${pct((per as Record<string, number>)[key])}`)
+        lines.push(`Lowest: ${weakest.join(', ')}`)
+      }
+    }
+  }
+
+  const reasons = fields?.gating_reasons
+  if (Array.isArray(reasons) && reasons.length > 0) {
+    lines.push(reasons.join('; '))
+  }
+
+  return lines.join('\n')
+}

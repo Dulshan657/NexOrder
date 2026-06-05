@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Order } from '../types';
-import { getOrderSource, type OrderSourceTone } from '../lib/orderSource';
+import { getOrderSource, getInboundApproval, type OrderSourceTone } from '../lib/orderSource';
 
 interface OrderSourceBadgeProps {
   order: Order;
@@ -20,13 +20,23 @@ const OrderSourceBadge: React.FC<OrderSourceBadgeProps> = ({ order }) => {
   const source = getOrderSource(order);
   const classes = TONE_CLASSES[source.tone];
 
+  // For PO-Inbox orders, append who approved on the same badge:
+  // "Email PO · Auto-approved" or "Email PO · Jane Smith". The approver is
+  // rendered in normal case so a person's name stays readable next to the
+  // uppercased source label.
+  const approval = getInboundApproval(order);
+  const approver = approval ? (approval.auto ? 'Auto-approved' : approval.name) : null;
+
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${classes}`}
-      title={`Source: ${source.label}`}
+      title={approver ? `Source: ${source.label} — Approved by ${approver}` : `Source: ${source.label}`}
     >
       <span className={`w-1 h-1 rounded-full ${classes.split(' ')[1].replace('text-', 'bg-')}`} />
       {source.label}
+      {approver && (
+        <span className="font-medium normal-case opacity-80">· {approver}</span>
+      )}
     </span>
   );
 };

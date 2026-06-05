@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getOrderSource } from '../lib/orderSource';
+import { getOrderSource, getInboundApproval } from '../lib/orderSource';
 import type { Order } from '../types';
 import { UserRole } from '../types';
 import { mkHoReCa, mkUser } from './fixtures';
@@ -59,5 +59,37 @@ describe('getOrderSource', () => {
       });
       expect(getOrderSource(order).key).toBe('customer_web');
     });
+  });
+});
+
+describe('getInboundApproval', () => {
+  it('returns null for a non-inbound order', () => {
+    expect(getInboundApproval(mkOrder())).toBeNull();
+  });
+
+  it('returns the approver name for a human-approved inbound order', () => {
+    const order = mkOrder({
+      inboundMessageId: '11111111-1111-1111-1111-111111111111',
+      autoApproved: false,
+      submittedBy: mkUser({ name: 'Jane Smith', role: UserRole.ADMIN }),
+    });
+    expect(getInboundApproval(order)).toEqual({ auto: false, name: 'Jane Smith' });
+  });
+
+  it('drops the name (mailbox owner) for an auto-approved inbound order', () => {
+    const order = mkOrder({
+      inboundMessageId: '22222222-2222-2222-2222-222222222222',
+      autoApproved: true,
+      submittedBy: mkUser({ name: 'Mailbox Owner', role: UserRole.ADMIN }),
+    });
+    expect(getInboundApproval(order)).toEqual({ auto: true, name: null });
+  });
+
+  it('treats a missing autoApproved flag as a human approval', () => {
+    const order = mkOrder({
+      inboundMessageId: '33333333-3333-3333-3333-333333333333',
+      submittedBy: mkUser({ name: 'Sam Operator', role: UserRole.MANAGER }),
+    });
+    expect(getInboundApproval(order)).toEqual({ auto: false, name: 'Sam Operator' });
   });
 });

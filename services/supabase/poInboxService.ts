@@ -7,6 +7,7 @@
 
 import { supabase } from '@/lib/supabase'
 import { extractFunctionErrorMessage } from '@/lib/functionError'
+import { ARCHIVABLE_STATUSES, archiveCutoffIso } from './poArchive'
 
 export type PendingPoStatus = 'needs_review' | 'approved' | 'rejected' | 'auto_approved'
 
@@ -143,7 +144,21 @@ function flattenSummary(row: SummaryRow): PendingPoSummaryRow {
   }
 }
 
-export async function listPendingPos(status?: PendingPoStatus): Promise<PendingPoSummaryRow[]> {
+// Archive-cutoff logic lives in ./poArchive (client-free, unit-tested).
+export { ARCHIVE_AFTER_DAYS } from './poArchive'
+
+/**
+ * List pending POs for the Queue (default) or the Archive.
+ * - Active Queue (`archived` falsy): resolved rows older than the cutoff are
+ *   hidden (they've moved to the Archive); `needs_review` is never filtered.
+ * - Archive (`archived: true`): only resolved rows older than the cutoff.
+ * Resolution time is `pending_pos.updated_at` — set by the status-change UPDATE
+ * (reviewed_at is null for auto-approvals, so updated_at is the universal clock).
+ */
+export async function listPendingPos(
+  status?: PendingPoStatus,
+  opts?: { archived?: boolean },
+): Promise<PendingPoSummaryRow[]> {
   let query = supabase
     .from('pending_pos')
     .select(SUMMARY_SELECT)
@@ -151,6 +166,13 @@ export async function listPendingPos(status?: PendingPoStatus): Promise<PendingP
     .limit(200)
   if (status) {
     query = query.eq('status', status)
+  }
+  const cutoff = archiveCutoffIso()
+  if (opts?.archived) {
+    if (!status) query = query.in('status', ARCHIVABLE_STATUSES)
+    query = query.lt('updated_at', cutoff)
+  } else if (status && ARCHIVABLE_STATUSES.includes(status)) {
+    query = query.gte('updated_at', cutoff)
   }
   const { data, error } = await query
   if (error) throw new Error(`listPendingPos: ${error.message}`)
