@@ -10,8 +10,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
     "deploy": "node scripts/deploy.mjs",
-    "po-fixtures": "node tests/fixtures/po-samples/generate.mjs"
+    "po-fixtures": "node tests/fixtures/po-samples/generate.mjs",
+    "po-inject": "node tests/fixtures/po-samples/inject.mjs",
+    "po-demo-seed": "node tests/fixtures/po-samples/demo-seed.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.19.0",
@@ -25,6 +28,7 @@
     "react-leaflet": "^5.0.0"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^1.0.0",
     "@tailwindcss/vite": "^4.2.2",
     "@types/leaflet": "^1.9.21",
     "@types/node": "^22.14.0",

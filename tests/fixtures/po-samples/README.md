@@ -6,9 +6,72 @@ Sample purchase orders for end-to-end testing of the **PO Inbox** pipeline:
 poll-inbox  →  extract-po  →  pending_pos  →  (admin approves)  →  orders
 ```
 
-Send the samples below from your own email client to a connected mailbox and
-watch the queue, mailboxes, and aliases sub-tabs at https://nexorder.vercel.app
-under **PO Inbox**.
+There are two ways to test:
+
+- **Fast path — `npm run po-inject`** (below): injects a fabricated edge-case
+  set straight into the pipeline and runs the real server-side AI analysis. No
+  mailbox/OAuth required. Best for exercising the *analysis* across edge cases.
+- **Manual path** (further down): send the on-disk sample files from your own
+  email client to a connected mailbox. Best for testing polling + OAuth too.
+
+**Live demo?** See **[DEMO.md](./DEMO.md)** — a curated 5-email pack (2 auto-approve,
+2 needs-review, 1 rejected, across PDF/Word/image/text) with ready-to-send copy and an
+operator runbook. Dry-run it with `npm run po-inject -- --demo`.
+
+---
+
+## Fast path: inject without a mailbox (`npm run po-inject`)
+
+`tests/fixtures/po-samples/inject.mjs` recreates exactly what `poll-inbox`
+would have written — it uploads `original.json` + attachments to the
+`po-archive` Storage bucket and inserts an `inbound_messages` row (service-role,
+the same way the Edge Functions write) — then calls `extract-po` so the real
+classify → extract → resolve → decide pipeline runs. Review the results in the
+app under **PO Inbox → Queue**.
+
+```bash
+npm run po-inject            # inject the edge-case set + run extract-po, print outcomes
+npm run po-inject -- --clean # remove everything the injector created (reversible)
+```
+
+**Prerequisites:** `NexOrder/.env.local` with `VITE_SUPABASE_URL` +
+`SUPABASE_SERVICE_ROLE_KEY`; `extract-po` deployed with `OPENAI_API_KEY` set;
+the database seeded (so the HoReCas exist).
+
+**What it seeds (and reverses on `--clean`):** sets `contact_email` on The Grand
+Hotel / Lotus Garden / The Spice Room + a trusted `sender_email` alias for Grand
+Hotel — so deterministic-match, sender-trust, and spoofing cases all fire. A
+paused dummy `email_accounts` row (`po-inbox-test@nexorder.local`) holds the
+injected messages; `poll-inbox` ignores it (status = paused).
+
+### Edge-case set
+
+| Key | Shape | What it exercises |
+|-----|-------|-------------------|
+| `grandhotel-autoapprove` | PDF, exact AYM SKUs, trusted sender | deterministic customer + product, decision **auto_approved** |
+| `grandhotel-footer-png` | PDF **+ inline PNG logo footer** | footer image demoted, PDF wins |
+| `lotusgarden-multiline` | PDF, customer codes + free text | per-line AI fuzzy matching |
+| `spiceroom-docx` | DOCX, free-text descriptions | DOCX text path, description matching |
+| `textbody-cafe` | plain-text email body, no attachment | body-text extraction |
+| `image-po-vision` | **canvas PNG scan + inline GIF signature** | GPT-4o **vision**; GIF signature demoted; AI customer match |
+| `spoofed-grandhotel` | Grand Hotel PDF from an untrusted gmail | **sender_mismatch** flag |
+| `unknown-customer` | PDF from a company not in the catalog | customer unresolved |
+| `unknown-products` | Grand Hotel PDF, items not in the catalog | products unresolved |
+| `not-a-po` | plain-text newsletter | classifier → **skipped_not_po** |
+
+The console summary prints, per message, the **decision** (the `extract-po`
+outcome) and the persisted **status** + matched customer + lines-resolved +
+sender-mismatch flag. For the footer-image samples, open the detail modal and
+confirm `source.original_filename` is the PDF/scan — not the logo/signature.
+
+> **Known issue surfaced by this harness:** `extract-po` correctly *decides*
+> `auto_approved`, but `approve-po` (auto mode) currently fails to create the
+> order — it stamps `pending_pos.approved_order_id` in its atomic claim *before*
+> inserting the `orders` row, violating the non-deferrable
+> `pending_pos_approved_order_id_fkey`. So auto-approve rows stay
+> `needs_review` in the queue. Auto-approval is also (by design) declined when a
+> matched line is short on stock (e.g. AYM-CUR-002 has zero seed inventory).
+> Both are downstream of the analysis, which behaves correctly.
 
 ---
 
@@ -43,8 +106,11 @@ migration `00020_po_realtime_and_cron.sql`).
 ```
 po-samples/
 ├── README.md          ← this file
-├── generate.mjs       ← regenerates the PDFs / DOCX (npm run po-fixtures)
-├── text/              ← plain-text email-body POs (send as the email body)
+├── specs.mjs          ← PO document specs (shared by generator + injector)
+├── render.mjs         ← renderers: PDF / DOCX / image PNG + footer-image bytes
+├── generate.mjs       ← writes sample files to disk (npm run po-fixtures)
+├── inject.mjs         ← injects + runs extract-po (npm run po-inject)
+├── text/              ← plain-text email-body POs (manual-send path)
 │   ├── 01-acme-foods-tomato-sauce.txt
 │   ├── 02-big-grocer-multi-line.txt
 │   ├── 03-small-cafe-handwritten-feel.txt
@@ -52,8 +118,10 @@ po-samples/
 ├── pdf/               ← attach to the email
 │   ├── 05-grand-hotel-auto-approve.pdf
 │   └── 06-lotus-garden-multi-line.pdf
-└── docx/              ← attach to the email
-    └── 07-spice-room-bulk-order.docx
+├── docx/              ← attach to the email
+│   └── 07-spice-room-bulk-order.docx
+└── image/             ← scanned-style image PO (vision path)
+    └── 08-harbour-view-cafe.png
 ```
 
 To rebuild the PDFs and DOCX after editing `generate.mjs`:
@@ -153,17 +221,17 @@ auto-resolve.
 
 ## Adding more samples
 
-1. Edit `generate.mjs`, add a new entry to the `samples` array:
-   ```js
-   {
-     kind: 'pdf', // or 'docx'
-     filename: '08-your-sample.pdf',
-     spec: { company: '...', poNumber: '...', lines: [ ... ], notes: '...' },
-   }
-   ```
-2. Run `npm run po-fixtures` — the new file appears in the matching subdir.
-3. Add a row to the **Sample inventory** table above with the expected
-   outcome and the suggested email subject/body.
+1. Add the PO content to `specs.mjs` as a new exported spec
+   (`{ company, tagline, addressLines, poNumber, orderDate, requestedDate,
+   buyer, shipTo, notes, lines: [{ code, name, qty, uom, pack }] }`).
+2. For the on-disk file: add an entry to the `samples` array in `generate.mjs`
+   (`{ kind: 'pdf' | 'docx' | 'image', filename, spec }`) and run
+   `npm run po-fixtures`.
+3. For the inject harness: add a message to the `MESSAGES` array in
+   `inject.mjs` (envelope + `attachments: [{ role:'doc'|'sig', kind, spec?, filename }]`)
+   and run `npm run po-inject`.
+4. Add a row to the **Sample inventory** table (manual path) and/or the
+   **Edge-case set** table (inject path) with the expected outcome.
 
 ### Anonymization
 
