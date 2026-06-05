@@ -8,7 +8,9 @@ type ProductUpdate = Database['public']['Tables']['products']['Update']
 export async function getProducts() {
   const { data, error } = await supabase
     .from('products')
-    .select('*, suppliers(name)')
+    // products now has two FKs to suppliers (supplier_id + preferred_supplier_id),
+    // so the embed must pin the relationship or PostgREST errors with PGRST201.
+    .select('*, suppliers!products_supplier_id_fkey(name)')
     .order('name')
   if (error) throw error
   return data
@@ -17,7 +19,7 @@ export async function getProducts() {
 export async function getProductById(id: number) {
   const { data, error } = await supabase
     .from('products')
-    .select('*, suppliers(name)')
+    .select('*, suppliers!products_supplier_id_fkey(name)')
     .eq('id', id)
     .single()
   if (error) throw error

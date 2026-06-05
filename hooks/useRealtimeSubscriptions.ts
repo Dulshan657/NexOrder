@@ -34,6 +34,8 @@ export function useRealtimeSubscriptions(arg: UseRealtimeSubscriptionsOptions | 
   const userId = typeof arg === 'string' ? arg : arg?.userId ?? null
   const role = typeof arg === 'string' ? null : arg?.role ?? null
   const isPoOperator = role === UserRole.ADMIN || role === UserRole.MANAGER
+  const isInventoryOps =
+    role === UserRole.ADMIN || role === UserRole.MANAGER || role === UserRole.WAREHOUSE
 
   useEffect(() => {
     if (!userId) return
@@ -116,4 +118,47 @@ export function useRealtimeSubscriptions(arg: UseRealtimeSubscriptionsOptions | 
       void supabase.removeChannel(channel)
     }
   }, [userId, isPoOperator, qc])
+
+  // Inventory & Dispatch channel — balances, pick progress, generated docs.
+  // Ops roles only (Admin/Manager/Warehouse); reps/customers never subscribe.
+  // A balance change also refreshes products, since products.inventory is the
+  // on-hand cache the shop/stock surfaces read.
+  useEffect(() => {
+    if (!userId || !isInventoryOps) return
+
+    const invalidateBalances = () => {
+      qc.invalidateQueries({ queryKey: ['inventory_balances'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+    }
+    const invalidatePickProgress = () => {
+      qc.invalidateQueries({ queryKey: ['pick_progress'] })
+      qc.invalidateQueries({ queryKey: ['orders'] })
+    }
+    const invalidateOrderDocuments = () => {
+      qc.invalidateQueries({ queryKey: ['order_documents'] })
+    }
+
+    const channel = supabase
+      .channel(`inventory-realtime-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'inventory_balances' },
+        invalidateBalances,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pick_progress' },
+        invalidatePickProgress,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'order_documents' },
+        invalidateOrderDocuments,
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [userId, isInventoryOps, qc])
 }

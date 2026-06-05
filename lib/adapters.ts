@@ -13,6 +13,8 @@ import type {
   OrderVerification, AppliedPromotion, ScheduledVisitStop, ScheduledVisitChangeRequest,
   RecurrenceRule, BogoConfig, BundleConfig, PromotionScope,
   PromotionTargeting, OrderStatus, DeliveryTimeSlot, PurchaseOrderItem,
+  InventoryLocation, Batch, InventoryBalance, InventoryMovement,
+  OrderDocument, PickProgress,
 } from '@/types'
 import type { Database } from './database.types'
 import { numericIdToUuid, uuidToNumericId } from './userIdMap'
@@ -36,6 +38,12 @@ type PurchaseOrderItemRow = Database['public']['Tables']['purchase_order_items']
 type HoReCaPricingRow = Database['public']['Tables']['horeca_pricing']['Row']
 type PaymentMethodRow = Database['public']['Tables']['horeca_payment_methods']['Row']
 type ProfileRow = Database['public']['Tables']['profiles']['Row']
+type LocationRow = Database['public']['Tables']['locations']['Row']
+type BatchRow = Database['public']['Tables']['batches']['Row']
+type InventoryBalanceRow = Database['public']['Tables']['inventory_balances']['Row']
+type InventoryMovementRow = Database['public']['Tables']['inventory_movements']['Row']
+type OrderDocumentRow = Database['public']['Tables']['order_documents']['Row']
+type PickProgressRow = Database['public']['Tables']['pick_progress']['Row']
 
 // ── Product ───────────────────────────────────────────────────────
 
@@ -58,6 +66,12 @@ export function toProduct(row: ProductRow & { suppliers?: { name: string } | nul
     lengthCm: row.length_cm != null ? Number(row.length_cm) : undefined,
     widthCm: row.width_cm != null ? Number(row.width_cm) : undefined,
     heightCm: row.height_cm != null ? Number(row.height_cm) : undefined,
+    reorderPoint: row.reorder_point ?? undefined,
+    safetyStock: row.safety_stock ?? undefined,
+    leadTimeDays: row.lead_time_days ?? undefined,
+    preferredSupplierId: row.preferred_supplier_id ?? undefined,
+    isActive: row.is_active ?? undefined,
+    barcode: row.barcode ?? undefined,
   }
 }
 
@@ -79,6 +93,12 @@ export function fromProduct(p: Partial<Product>): Record<string, unknown> {
   if (p.lengthCm !== undefined) row.length_cm = p.lengthCm
   if (p.widthCm !== undefined) row.width_cm = p.widthCm
   if (p.heightCm !== undefined) row.height_cm = p.heightCm
+  if (p.reorderPoint !== undefined) row.reorder_point = p.reorderPoint
+  if (p.safetyStock !== undefined) row.safety_stock = p.safetyStock
+  if (p.leadTimeDays !== undefined) row.lead_time_days = p.leadTimeDays
+  if (p.preferredSupplierId !== undefined) row.preferred_supplier_id = p.preferredSupplierId
+  if (p.isActive !== undefined) row.is_active = p.isActive
+  if (p.barcode !== undefined) row.barcode = p.barcode
   return row
 }
 
@@ -177,12 +197,21 @@ export function toUser(row: ProfileRow): User {
 
 // ── Order ─────────────────────────────────────────────────────────
 
+// The orders read query reverse-embeds the source pending_pos via
+// approved_order_id; PostgREST returns it as a 0-or-1 element array (empty for
+// non-inbound orders, or when RLS hides pending_pos from non-admins).
+type PendingPoEmbed = { inbound_message_id: string | null; status: string }
+
 export function toOrder(
-  row: OrderRow & { order_items?: OrderItemRow[] | null },
+  row: OrderRow & {
+    order_items?: OrderItemRow[] | null
+    pending_pos?: PendingPoEmbed[] | PendingPoEmbed | null
+  },
   hoReCas: HoReCa[],
   users: User[],
   products: Product[],
 ): Order {
+  const pendingPo = Array.isArray(row.pending_pos) ? row.pending_pos[0] : row.pending_pos
   const hoReCa = hoReCas.find(h => h.id === row.horeca_id) ?? {
     id: row.horeca_id,
     name: 'Unknown',
@@ -239,6 +268,8 @@ export function toOrder(
     appliedPromotions: Array.isArray(row.applied_promotions)
       ? (row.applied_promotions as unknown as AppliedPromotion[])
       : undefined,
+    inboundMessageId: pendingPo?.inbound_message_id ?? undefined,
+    autoApproved: pendingPo ? pendingPo.status === 'auto_approved' : undefined,
   }
 }
 
@@ -486,5 +517,86 @@ export function toPantryItem(row: PantryRow): PantryItem {
     productId: row.product_id,
     preferredPackSize: row.preferred_pack_size ?? undefined,
     defaultQuantity: row.default_quantity,
+  }
+}
+
+// ── Inventory & Dispatch (mig 00027) ──────────────────────────────
+
+export function toInventoryLocation(row: LocationRow): InventoryLocation {
+  return {
+    id: row.id,
+    parentId: row.parent_id ?? undefined,
+    kind: row.kind,
+    code: row.code,
+    name: row.name,
+    lat: row.lat != null ? Number(row.lat) : undefined,
+    lng: row.lng != null ? Number(row.lng) : undefined,
+    materializedPath: row.materialized_path,
+    isActive: row.is_active,
+  }
+}
+
+export function toBatch(row: BatchRow): Batch {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    lotCode: row.lot_code,
+    expiryDate: row.expiry_date ?? undefined,
+    barcode: row.barcode ?? undefined,
+    supplierId: row.supplier_id ?? undefined,
+    receivedAt: row.received_at,
+  }
+}
+
+export function toInventoryBalance(row: InventoryBalanceRow): InventoryBalance {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    locationId: row.location_id,
+    batchId: row.batch_id ?? undefined,
+    onHand: Number(row.on_hand),
+    allocated: Number(row.allocated),
+    available: Number(row.available),
+    updatedAt: row.updated_at,
+  }
+}
+
+export function toInventoryMovement(row: InventoryMovementRow): InventoryMovement {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    locationId: row.location_id,
+    batchId: row.batch_id ?? undefined,
+    qtyDelta: Number(row.qty_delta),
+    movementType: row.movement_type,
+    refType: row.ref_type ?? undefined,
+    refId: row.ref_id ?? undefined,
+    actorId: row.actor_id ?? undefined,
+    reason: row.reason ?? undefined,
+    createdAt: row.created_at,
+  }
+}
+
+export function toOrderDocument(row: OrderDocumentRow): OrderDocument {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    docType: row.doc_type,
+    storagePath: row.storage_path,
+    generatedBy: row.generated_by ?? undefined,
+    generatedAt: row.generated_at,
+  }
+}
+
+export function toPickProgress(row: PickProgressRow): PickProgress {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    orderItemId: row.order_item_id,
+    locationId: row.location_id,
+    batchId: row.batch_id ?? undefined,
+    pickedQty: row.picked_qty,
+    pickedBy: row.picked_by ?? undefined,
+    pickedAt: row.picked_at,
   }
 }

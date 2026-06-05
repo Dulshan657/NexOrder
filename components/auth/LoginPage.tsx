@@ -20,6 +20,7 @@ const DEMO_ACCOUNTS: readonly DemoAccount[] = [
   { role: 'Manager', email: 'bob@nexorder.com.au' },
   { role: 'Field Rep', email: 'charlie@nexorder.com.au' },
   { role: 'Office Rep', email: 'emma@nexorder.com.au' },
+  { role: 'Warehouse', email: 'warehouse@nexorder.com.au' },
   { role: 'Customer · Seaside Bistro', email: 'david@seasidebistro.com' },
   { role: 'Customer · Lotus Garden', email: 'mei@lotusgarden.com.au' },
 ]

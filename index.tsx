@@ -7,6 +7,7 @@ import { AuthProvider } from './components/auth/AuthProvider';
 import AuthGate from './components/auth/AuthGate';
 import { queryClient } from './lib/queryClient';
 import ToastContainer from './components/ToastContainer';
+import { DocumentViewerProvider } from './context/DocumentViewerContext';
 import { ErrorBoundary, FullPageErrorFallback } from './components/ErrorBoundary';
 import { installGlobalErrorHandlers } from './lib/errorReporter';
 import { registerChunkErrorReload } from './lib/lazyWithRetry';
@@ -145,8 +146,10 @@ if (!isOAuthPopupCompletion) {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <ToastProvider>
-              <Root />
-              <ToastContainer />
+              <DocumentViewerProvider>
+                <Root />
+                <ToastContainer />
+              </DocumentViewerProvider>
             </ToastProvider>
           </AuthProvider>
         </QueryClientProvider>

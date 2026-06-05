@@ -1,0 +1,74 @@
+// generate-dispatch-advice Edge Function
+//
+// Renders a DISPATCH ADVICE PDF (lists each line with ordered vs shipped/picked
+// quantity + delivery details), stores it in the private order-documents
+// bucket, records it in order_documents, and returns a short-lived signed URL.
+// Manual: the operator triggers it once packing is verified. Requires the order
+// to have reached at least 'picked'. Admin / Manager / Warehouse.
+
+// deno-lint-ignore-file no-explicit-any
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
+import { z } from 'https://esm.sh/zod@3.23.8'
+import { requireAuth, type UserRole } from '../_shared/auth.ts'
+import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
+import { logAuditEvent } from '../_shared/audit.ts'
+import { corsHeadersFor } from '../_shared/cors.ts'
+import { loadOrderForDoc, buildOrderDocPdf, uploadAndRecordDoc } from '../_shared/orderDocuments.ts'
+
+const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
+const inputSchema = z.object({ orderId: z.string().min(1) })
+const PICKED_OR_LATER = new Set(['picked', 'packed', 'dispatched', 'delivered'])
+
+serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req)
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  try {
+    const auth = await requireAuth(req, { allowedRoles: ALLOWED })
+
+    const body = await req.json().catch(() => {
+      throw new EdgeFunctionError('INVALID_INPUT', 'Request body must be valid JSON')
+    })
+    const parsed = inputSchema.safeParse(body)
+    if (!parsed.success) {
+      throw new EdgeFunctionError('INVALID_INPUT', 'orderId required', parsed.error.flatten())
+    }
+
+    const admin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      { auth: { persistSession: false } },
+    )
+
+    const data = await loadOrderForDoc(admin, parsed.data.orderId)
+    if (!PICKED_OR_LATER.has(data.status)) {
+      throw new EdgeFunctionError(
+        'CONFLICT',
+        `Dispatch advice needs the order to be picked first (current status: ${data.status})`,
+      )
+    }
+
+    const bytes = await buildOrderDocPdf('dispatch_advice', data)
+    const { storagePath, signedUrl } = await uploadAndRecordDoc(
+      admin, parsed.data.orderId, 'dispatch_advice', bytes, auth.userId, Date.now(),
+    )
+
+    await logAuditEvent(admin, {
+      actorId: auth.userId,
+      actorRole: auth.role,
+      action: 'create',
+      resource: 'order_document',
+      resourceId: parsed.data.orderId,
+      after: { doc_type: 'dispatch_advice', storage_path: storagePath },
+    })
+
+    return new Response(
+      JSON.stringify({ ok: true, storagePath, signedUrl }),
+      { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
+  } catch (e) {
+    if (isEdgeFunctionError(e)) return e.toResponse(req)
+    return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error', undefined, undefined, req)
+  }
+})

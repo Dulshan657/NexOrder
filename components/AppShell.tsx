@@ -93,6 +93,7 @@ const OrderDetailView = lazyWithRetry(() => import('./OrderDetailView'));
 const OrderVerificationModal = lazyWithRetry(() => import('./OrderVerificationModal'));
 const BundleSelectModal = lazyWithRetry(() => import('./BundleSelectModal'));
 const StockView = lazyWithRetry(() => import('./StockView'));
+const ReceiveStockView = lazyWithRetry(() => import('./inventory/ReceiveStockView'));
 const ScheduledVisitsView = lazyWithRetry(() => import('./scheduled-visits/ScheduledVisitsView'));
 
 import { inviteUser } from '../services/supabase/inviteUserService';
@@ -122,6 +123,9 @@ import {
     Mail,
     Inbox,
     BookOpen,
+    PackagePlus,
+    ClipboardCheck,
+    FileText,
 } from 'lucide-react';
 import type { AppNotification } from '../types';
 
@@ -295,6 +299,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const isHoReCaUser = currentUser.role === UserRole.CUSTOMER;
     const isAdminOrManager = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
     const isAdmin = currentUser.role === UserRole.ADMIN;
+    const isWarehouse = currentUser.role === UserRole.WAREHOUSE;
 
     // ── Derived notification state ────────────────────────────────────────────
     // Role-filtered notifications; NotificationCenter derives the unread count
@@ -624,7 +629,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
 
                             {showStockTab && (
                                 <>
-                                    <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Catalogue</p>
+                                    <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
                                     <button
                                         onClick={() => { setView('stock'); setIsSidebarOpen(false); }}
                                         className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'stock' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
@@ -708,7 +713,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 )}
                             </button>
 
-                            <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Catalogue</p>
+                            <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
                             <button
                                 onClick={() => { setAdminView('Products'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Products' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
@@ -720,6 +725,24 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Stock' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <Warehouse className="w-5 h-5 mr-3" /> Stock
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Receiving'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Receiving' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <PackagePlus className="w-5 h-5 mr-3" /> Receive Stock
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Pick Queue'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Pick Queue' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <ClipboardCheck className="w-5 h-5 mr-3" /> Pick Queue
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Documents'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Documents' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <FileText className="w-5 h-5 mr-3" /> Documents
                             </button>
 
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">System</p>
@@ -749,6 +772,35 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     <ScrollText className="w-5 h-5 mr-3" /> Audit Log
                                 </button>
                             )}
+                        </>
+                    )}
+                    {isWarehouse && (
+                        <>
+                            <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
+                            <button
+                                onClick={() => { setAdminView('Pick Queue'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Pick Queue' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <ClipboardCheck className="w-5 h-5 mr-3" /> Pick Queue
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Receiving'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Receiving' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <PackagePlus className="w-5 h-5 mr-3" /> Receive Stock
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Stock'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Stock' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <Warehouse className="w-5 h-5 mr-3" /> Stock
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Documents'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Documents' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <FileText className="w-5 h-5 mr-3" /> Documents
+                            </button>
                         </>
                     )}
                 </nav>
@@ -819,7 +871,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 onUpdatePantryItem={handleUpdatePantryItem}
                             />
                         )}
-                        {isAdminOrManager && adminView !== 'Shop' && (
+                        {(isAdminOrManager || isWarehouse) && adminView !== 'Shop' && (
                             <ErrorBoundary label="Admin view">
                             <Suspense fallback={<LoadingSkeleton />}>
                             <AdminView
@@ -1227,6 +1279,8 @@ const AppShell: React.FC<AppShellProps> = props => {
         'ordering' | 'orders' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits'
     >(currentUser.role === UserRole.CUSTOMER ? 'ordering' : 'dashboard');
     const [adminView, setAdminView] = useState<AdminTab>(() => {
+        // The Warehouse role has no Dashboard — land it on its pick queue.
+        if (currentUser.role === UserRole.WAREHOUSE) return 'Pick Queue';
         if (typeof window === 'undefined') return 'Dashboard';
         const params = new URLSearchParams(window.location.search);
         // After the OAuth callback, route to the consolidated PO Inbox tab.

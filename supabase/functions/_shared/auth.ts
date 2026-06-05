@@ -16,6 +16,7 @@ export type UserRole =
   | 'Field Sales Rep'
   | 'Office Sales Rep'
   | 'Restaurant/Hotel Customer'
+  | 'Warehouse'
 
 export interface AuthProfile {
   id: string

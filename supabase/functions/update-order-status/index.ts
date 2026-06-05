@@ -98,8 +98,16 @@ serve(async (req: Request) => {
     return errorResponse('NO_PROFILE', 'Profile not found for user', 403)
   }
 
-  if (profile.role !== 'Admin' && profile.role !== 'Manager') {
-    return errorResponse('FORBIDDEN', 'Only Admin and Manager can change order status', 403)
+  // Admin/Manager can drive any forward transition. Warehouse staff operate the
+  // back half of fulfillment (pick → pack → dispatch → deliver) but cannot
+  // process/approve orders.
+  const isAdminManager = profile.role === 'Admin' || profile.role === 'Manager'
+  const WAREHOUSE_STATUSES: OrderStatus[] = ['picked', 'packed', 'dispatched', 'delivered']
+  if (!isAdminManager && profile.role !== 'Warehouse') {
+    return errorResponse('FORBIDDEN', 'Not permitted to change order status', 403)
+  }
+  if (!isAdminManager && !WAREHOUSE_STATUSES.includes(body.status)) {
+    return errorResponse('FORBIDDEN', 'Warehouse role can only set picked/packed/dispatched/delivered', 403)
   }
 
   // Load existing order
@@ -110,6 +118,22 @@ serve(async (req: Request) => {
     .single()
   if (orderError || !order) {
     return errorResponse('ORDER_NOT_FOUND', `Order ${body.orderId} not found`, 404)
+  }
+
+  // Gate dispatch on all lines being fully picked — never ship an order whose
+  // goods haven't physically left the shelf.
+  if (body.status === 'dispatched') {
+    const { data: lines } = await serviceClient
+      .from('order_items')
+      .select('id, quantity, pick_progress(picked_qty)')
+      .eq('order_id', body.orderId)
+    const shortLine = ((lines ?? []) as any[]).find((l) => {
+      const picked = (l.pick_progress ?? []).reduce((s: number, p: any) => s + Number(p.picked_qty), 0)
+      return picked < Number(l.quantity)
+    })
+    if (shortLine) {
+      return errorResponse('NOT_FULLY_PICKED', 'Cannot dispatch — one or more lines are not fully picked', 422)
+    }
   }
 
   const currentStatus = (order as { status: OrderStatus }).status

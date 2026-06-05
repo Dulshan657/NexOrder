@@ -10,10 +10,17 @@ export interface OrderFilters {
   status?: OrderStatus
 }
 
+// Reverse-embed the source pending_pos (linked via approved_order_id) so the UI
+// can tag PO-Inbox orders and show who approved them. pending_pos has
+// GRANT SELECT to authenticated with Admin/Manager-only RLS, so non-admins get
+// an empty embed (no error) — their orders are never inbound anyway.
+const ORDER_SELECT =
+  '*, horecas(name), order_items(*), pending_pos!pending_pos_approved_order_id_fkey(inbound_message_id, status)'
+
 export async function getOrders(filters: OrderFilters = {}) {
   let query = supabase
     .from('orders')
-    .select('*, horecas(name), order_items(*)')
+    .select(ORDER_SELECT)
     .order('order_date', { ascending: false })
 
   if (filters.horecaId !== undefined) {
@@ -34,7 +41,7 @@ export async function getOrders(filters: OrderFilters = {}) {
 export async function getOrderById(id: string) {
   const { data, error } = await supabase
     .from('orders')
-    .select('*, horecas(name), order_items(*)')
+    .select(ORDER_SELECT)
     .eq('id', id)
     .single()
   if (error) throw error
@@ -44,7 +51,7 @@ export async function getOrderById(id: string) {
 export async function getOrdersByHoReCa(horecaId: number) {
   const { data, error } = await supabase
     .from('orders')
-    .select('*, horecas(name), order_items(*)')
+    .select(ORDER_SELECT)
     .eq('horeca_id', horecaId)
     .order('order_date', { ascending: false })
   if (error) throw error
@@ -54,7 +61,7 @@ export async function getOrdersByHoReCa(horecaId: number) {
 export async function getOrdersByUser(userId: string) {
   const { data, error } = await supabase
     .from('orders')
-    .select('*, horecas(name), order_items(*)')
+    .select(ORDER_SELECT)
     .eq('submitted_by', userId)
     .order('order_date', { ascending: false })
   if (error) throw error

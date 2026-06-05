@@ -6,6 +6,8 @@ import StatusBadge from './StatusBadge';
 import StatusTimeline from './StatusTimeline';
 import PaymentStatusBadge from './PaymentStatusBadge';
 import PaymentActionModal from './PaymentActionModal';
+import OrderSourceBadge from './OrderSourceBadge';
+import { getInboundApproval } from '../lib/orderSource';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
 import { useToasts } from '../hooks/useToasts';
 import { X, Package, Truck, Calendar, FileText } from 'lucide-react';
@@ -67,6 +69,7 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                         </p>
                     </div>
                     <div className="flex items-center gap-3">
+                        <OrderSourceBadge order={order} />
                         <StatusBadge status={order.status} size="md" />
                         <PaymentStatusBadge invoice={invoice} />
                         <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition-colors cursor-pointer">
@@ -93,8 +96,25 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                             <p className="text-sm font-semibold text-emerald-700 mt-1">${order.total.toFixed(2)}</p>
                         </div>
                         <div className="bg-stone-50 rounded-lg p-3">
-                            <p className="text-xs text-stone-500 uppercase tracking-wider">Submitted By</p>
-                            <p className="text-sm font-semibold text-stone-900 mt-1">{order.submittedBy.name}</p>
+                            {(() => {
+                                const approval = getInboundApproval(order);
+                                if (approval) {
+                                    return (
+                                        <>
+                                            <p className="text-xs text-stone-500 uppercase tracking-wider">Approved By</p>
+                                            <p className="text-sm font-semibold text-stone-900 mt-1">
+                                                {approval.auto ? 'Auto-approved (system)' : (approval.name ?? 'Unknown')}
+                                            </p>
+                                        </>
+                                    );
+                                }
+                                return (
+                                    <>
+                                        <p className="text-xs text-stone-500 uppercase tracking-wider">Submitted By</p>
+                                        <p className="text-sm font-semibold text-stone-900 mt-1">{order.submittedBy.name}</p>
+                                    </>
+                                );
+                            })()}
                         </div>
                         <div className="bg-stone-50 rounded-lg p-3">
                             <p className="text-xs text-stone-500 uppercase tracking-wider">Items</p>

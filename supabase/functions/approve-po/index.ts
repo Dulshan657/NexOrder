@@ -39,6 +39,7 @@ import { computeAliasDiff } from '../_shared/poInbox/aliasDiff.ts'
 import { sanitizeForLog } from '../_shared/poInbox/env.ts'
 import { isServiceRoleBearer } from '../_shared/poInbox/dispatch.ts'
 import { findStockShortages, type StockShortage } from '../_shared/poInbox/stockCheck.ts'
+import { buildOrderItems } from '../_shared/poInbox/orderTotals.ts'
 
 type ApproveMode = 'auto' | 'human'
 
@@ -355,29 +356,82 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
   }
 
   // Compute totals (no horeca_pricing, no promotions — MVP scope note above).
-  let total = 0
-  const orderItems = resolvedItems.map(item => {
-    const product = products.get(item.product_id)!
-    const lineTotal = product.price * item.quantity * (item.pack_size ?? 1)
-    total += lineTotal
-    return {
-      product_id: item.product_id,
-      quantity: item.quantity,
-      pack_size: item.pack_size,
-      unit_price: product.price,
-      product_name: product.name,
-      product_sku: product.sku,
-    }
-  })
+  // pack_size is carton metadata and must NOT scale the line total; see
+  // _shared/poInbox/orderTotals.ts.
+  const { items: orderItems, total } = buildOrderItems(resolvedItems, products)
 
   const settings = await loadAppSettings(args.supa)
   const orderId = makeOrderId(settings.order_id_prefix)
 
-  // ─── Atomic claim ────────────────────────────────────────────────
-  // Before doing the orders insert, claim the pending_pos row by an
-  // UPDATE gated on its current status. If a concurrent caller already
-  // approved/rejected this PO, the UPDATE matches zero rows and we
-  // abort before creating an orphan order.
+  // ─── Order creation (BEFORE the claim) ───────────────────────────
+  // The order must exist before we stamp pending_pos.approved_order_id: the
+  // FK pending_pos_approved_order_id_fkey is checked immediately (it is not
+  // deferrable, and supabase-js issues each statement in its own implicit
+  // transaction), so claiming first would violate it. We insert the order +
+  // items first; the gated claim below is what prevents double-approval, and
+  // a lost claim race deletes the order we optimistically created.
+  const { error: orderInsertError } = await args.supa
+    .from('orders')
+    .insert({
+      id: orderId,
+      horeca_id: effectiveHorecaId,
+      submitted_by: submittedBy,
+      total,
+      order_date: new Date().toISOString(),
+      notes: args.overrides.notes ?? null,
+      status: 'processing',
+      // jsonb array (CHECK orders_status_history_is_array) — pass the array
+      // directly, NOT JSON.stringify'd, matching place-order / update-order-status.
+      status_history: [
+        { status: 'processing', timestamp: new Date().toISOString(), actor: submittedBy },
+      ],
+      delivery_date: args.overrides.deliveryDate
+        ?? pending.extracted_po.requested_date
+        ?? null,
+      delivery_time_slot: args.overrides.deliveryTimeSlot ?? null,
+      delivery_address: deliveryAddress,
+    })
+  if (orderInsertError) {
+    // Nothing to clean up — the claim hasn't run yet.
+    throw new EdgeFunctionError('INTERNAL', `orders insert: ${orderInsertError.message}`)
+  }
+
+  // Best-effort removal of the order we just created. Used when a later step
+  // fails or the claim race is lost, so we never leave an orphan order. If the
+  // delete itself fails, surface via audit for manual cleanup.
+  const deleteOrder = async (reason: string) => {
+    await args.supa.from('order_items').delete().eq('order_id', orderId)
+    const { error: deleteError } = await args.supa.from('orders').delete().eq('id', orderId)
+    if (deleteError) {
+      console.warn(
+        '[approve-po] CRITICAL: orphan order',
+        orderId,
+        `— ${reason}; cleanup delete failed:`,
+        sanitizeForLog(deleteError.message),
+      )
+      await logAuditEvent(args.supa, {
+        actorId: args.approverUserId || submittedBy,
+        actorRole: args.approverRole,
+        action: 'create',
+        resource: 'order',
+        resourceId: orderId,
+        reason: `orphan: ${reason}; cleanup delete failed`,
+        metadata: { delete_error: deleteError.message, pending_po_id: args.pendingPoId },
+      })
+    }
+  }
+
+  const itemRowsToInsert = orderItems.map(item => ({ ...item, order_id: orderId }))
+  const { error: itemsInsertError } = await args.supa.from('order_items').insert(itemRowsToInsert)
+  if (itemsInsertError) {
+    await deleteOrder('order_items insert failed')
+    throw new EdgeFunctionError('INTERNAL', `order_items insert: ${itemsInsertError.message}`)
+  }
+
+  // ─── Atomic claim (AFTER the order exists) ───────────────────────
+  // Gated on status='needs_review' so a concurrent approve/reject can't
+  // double-process. The order now exists, so stamping approved_order_id
+  // satisfies both the FK and chk_pending_pos_approved_has_order.
   const intendedStatus: 'approved' | 'auto_approved' =
     args.mode === 'human' ? 'approved' : 'auto_approved'
   const claimUpdate: Record<string, unknown> = {
@@ -397,91 +451,44 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
     .select('id')
     .maybeSingle()
   if (claimError) {
+    await deleteOrder('pending_pos claim errored')
     throw new EdgeFunctionError('INTERNAL', `pending_pos claim failed: ${claimError.message}`)
   }
   if (!claimed) {
-    // Lost the race — another caller approved/rejected this PO between
-    // our load and our claim.
+    // Lost the race — another caller approved/rejected this PO between our
+    // load and our claim. Drop the order we optimistically created.
+    await deleteOrder('claim race lost')
     return { ok: true, alreadyApproved: true, orderId: null }
   }
 
-  // ─── Order creation ──────────────────────────────────────────────
-  // If anything fails from here on we must roll back the pending_pos
-  // claim or we'll have a pending_pos pointing at a missing order.
-  const rollbackPendingPo = async (reason: string) => {
-    const { error: rbError } = await args.supa
-      .from('pending_pos')
-      .update({
-        status: 'needs_review',
-        approved_order_id: null,
-        reviewed_by: null,
-        reviewed_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', args.pendingPoId)
-    if (rbError) {
-      console.warn(
-        `[approve-po] pending_pos rollback failed (${reason}):`,
-        sanitizeForLog(rbError.message),
-      )
-    }
-  }
-
-  const { error: orderInsertError } = await args.supa
-    .from('orders')
-    .insert({
-      id: orderId,
-      horeca_id: effectiveHorecaId,
-      submitted_by: submittedBy,
-      total,
-      order_date: new Date().toISOString(),
-      notes: args.overrides.notes ?? null,
-      status: 'processing',
-      status_history: JSON.stringify([
-        { status: 'processing', changedAt: new Date().toISOString(), changedBy: submittedBy },
-      ]),
-      delivery_date: args.overrides.deliveryDate
-        ?? pending.extracted_po.requested_date
-        ?? null,
-      delivery_time_slot: args.overrides.deliveryTimeSlot ?? null,
-      delivery_address: deliveryAddress,
+  // Reserve stock for the approved order (reserve-on-placement model). Done
+  // AFTER the winning claim so a lost race never leaks a reservation. Partial
+  // is allowed: auto mode already declined short stock, but human mode may
+  // knowingly approve a short PO — there we reserve what's on hand and
+  // backorder the rest. Reservation failure is non-fatal (the order is already
+  // approved); we log and let the operator resolve via restock/backorder,
+  // mirroring approve-po's advisory stock posture.
+  {
+    const reserveItems = Object.values(
+      resolvedItems.reduce((acc: Record<number, { product_id: number; quantity: number }>, i) => {
+        acc[i.product_id] = acc[i.product_id]
+          ? { product_id: i.product_id, quantity: acc[i.product_id].quantity + i.quantity }
+          : { product_id: i.product_id, quantity: i.quantity }
+        return acc
+      }, {}),
+    )
+    const { error: reserveError } = await args.supa.rpc('inv_reserve_order', {
+      p_order_id: orderId,
+      p_items: reserveItems,
+      p_actor: submittedBy,
+      p_allow_partial: true,
     })
-  if (orderInsertError) {
-    await rollbackPendingPo('orders insert')
-    throw new EdgeFunctionError('INTERNAL', `orders insert: ${orderInsertError.message}`)
-  }
-
-  const itemRowsToInsert = orderItems.map(item => ({ ...item, order_id: orderId }))
-  const { error: itemsInsertError } = await args.supa.from('order_items').insert(itemRowsToInsert)
-  if (itemsInsertError) {
-    // Best-effort cleanup so we don't leave a totals-mismatched order.
-    // If THIS delete fails, the orders row is orphaned — surface via
-    // audit so operators can clean up. Phase 2's RPC wraps both inserts
-    // in a transaction so this branch becomes unreachable.
-    const { error: deleteError } = await args.supa.from('orders').delete().eq('id', orderId)
-    if (deleteError) {
+    if (reserveError) {
       console.warn(
-        '[approve-po] CRITICAL: orphan order',
-        orderId,
-        '— items insert failed AND cleanup delete failed:',
-        sanitizeForLog(deleteError.message),
+        `[approve-po] stock reservation incomplete for ${orderId}:`,
+        sanitizeForLog(reserveError.message),
       )
-      await logAuditEvent(args.supa, {
-        actorId: args.approverUserId || submittedBy,
-        actorRole: args.approverRole,
-        action: 'create',
-        resource: 'order',
-        resourceId: orderId,
-        reason: 'orphan: order_items insert failed and rollback delete failed',
-        metadata: {
-          items_error: itemsInsertError.message,
-          delete_error: deleteError.message,
-          pending_po_id: args.pendingPoId,
-        },
-      })
     }
-    await rollbackPendingPo('order_items insert')
-    throw new EdgeFunctionError('INTERNAL', `order_items insert: ${itemsInsertError.message}`)
   }
 
   // Compute + write alias diff. Failures are non-fatal — the order

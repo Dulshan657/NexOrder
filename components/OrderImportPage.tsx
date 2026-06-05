@@ -9,9 +9,14 @@ import PaymentStatusBadge, {
 } from './PaymentStatusBadge';
 import PaymentActionModal from './PaymentActionModal';
 import OrderSourceBadge from './OrderSourceBadge';
-import { getOrderSource, type OrderSourceKey } from '../lib/orderSource';
+import { getOrderSource, getInboundApproval, type OrderSourceKey } from '../lib/orderSource';
 import StockAssignmentModal from './StockAssignmentModal';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
+import { useGeneratePickSlip } from '../hooks/queries/usePickQueue';
+import { useOrderDocuments, useOrderDocumentUrl } from '../hooks/queries/useOrderDocuments';
+import type { OrderDocumentView } from '../services/supabase/orderDocumentService';
+import { useDocumentViewer } from '../context/DocumentViewerContext';
+import type { OrderDocumentType } from '../types';
 import { useToasts } from '../hooks/useToasts';
 import { ORDER_STATUS_SEQUENCE, ORDER_STATUS_LABELS } from '../constants';
 import { downloadCsv } from '../lib/csvExport';
@@ -27,6 +32,9 @@ import {
   ArrowUpDown,
   MoreVertical,
   Sparkles,
+  FileText,
+  ExternalLink,
+  Truck,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -225,6 +233,28 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
 
   const updateInvoiceStatus = useUpdateInvoiceStatus();
   const { addToast } = useToasts();
+  const generatePickSlip = useGeneratePickSlip();
+
+  // Generated pick slips / dispatch advices, fetched ONCE for the page (ops
+  // only — gated so reps/customers never fire an RLS-rejected query) and grouped
+  // by order id so each expanded row can show its documents without a per-row hook.
+  const orderDocuments = useOrderDocuments(undefined, isAdminOrManager);
+  const getDocUrl = useOrderDocumentUrl();
+  const { previewDocument } = useDocumentViewer();
+  const docsByOrder = useMemo(() => {
+    const map = new Map<string, OrderDocumentView[]>();
+    for (const d of orderDocuments.data ?? []) {
+      const arr = map.get(d.doc.orderId) ?? [];
+      arr.push(d);
+      map.set(d.doc.orderId, arr);
+    }
+    return map;
+  }, [orderDocuments.data]);
+
+  const openOrderDoc = (id: number, orderId: string, docType: OrderDocumentType) => {
+    const label = docType === 'dispatch_advice' ? 'Dispatch advice' : 'Pick slip';
+    previewDocument(() => getDocUrl.mutateAsync(id), `${orderId} · ${label}`, `${orderId}-${docType}.pdf`);
+  };
 
   // orderId → Invoice lookup
   const invoicesByOrderId = useMemo(() => {
@@ -590,142 +620,149 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-5 rounded-xl border border-stone-200/60 shadow-sm">
+      <div className="bg-white rounded-xl border border-stone-200/60 shadow-card overflow-hidden">
 
-        {/* Search */}
-        <div className="mb-4 relative">
-          <label htmlFor="orders-search" className="sr-only">
-            Search by Order ID or HoReCa Name
-          </label>
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-            <Search className="h-4 w-4 text-stone-400" />
+        {/* Zone 1 — command bar: search + result count + actions */}
+        <div className="p-5 flex flex-col lg:flex-row lg:items-center gap-3">
+          <div className="relative flex-1">
+            <label htmlFor="orders-search" className="sr-only">
+              Search by Order ID or HoReCa Name
+            </label>
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+              <Search className="h-4 w-4 text-stone-400" />
+            </div>
+            <input
+              type="text"
+              id="orders-search"
+              className="block w-full rounded-lg border-0 bg-stone-50 py-3 pl-11 pr-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm transition-all hover:ring-stone-300"
+              placeholder="Search by Order ID or HoReCa name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
-          <input
-            type="text"
-            id="orders-search"
-            className="block w-full rounded-lg border-0 bg-stone-50 py-3 pl-11 pr-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm transition-all hover:ring-stone-300"
-            placeholder="Search by Order ID or HoReCa name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={resetFilters}
+              disabled={!hasActiveFilters}
+              className="flex-1 lg:flex-none lg:w-32 whitespace-nowrap flex items-center justify-center bg-white text-stone-700 border border-stone-300 rounded-lg py-2 px-3 text-sm font-medium hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed btn-press"
+            >
+              Reset
+            </button>
+
+            <button
+              onClick={handleExportAll}
+              disabled={sortedOrders.length === 0}
+              className="flex-1 lg:flex-none lg:w-32 whitespace-nowrap flex items-center justify-center gap-1.5 bg-white text-stone-700 border border-stone-300 rounded-lg py-2 px-3 text-sm font-medium hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed btn-press"
+            >
+              <Download className="w-4 h-4" />
+              Export CSV
+            </button>
+          </div>
         </div>
 
-        {/* Filter row */}
-        <div
-          className={`grid grid-cols-1 sm:grid-cols-2 ${
-            !isCustomer ? 'lg:grid-cols-6' : 'lg:grid-cols-5'
-          } gap-4 items-end`}
-        >
-          {!isCustomer && (
+        {/* Zone 2 — filter tray */}
+        <div className="border-t border-stone-200/60 bg-stone-50/40 px-5 py-4">
+          <div
+            className={`grid grid-cols-1 sm:grid-cols-2 ${
+              !isCustomer ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
+            } gap-4 items-end`}
+          >
+            {!isCustomer && (
+              <div>
+                <label
+                  htmlFor="horeca-filter"
+                  className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
+                >
+                  HoReCa
+                </label>
+                <select
+                  id="horeca-filter"
+                  value={filterHoReCaId}
+                  onChange={(e) => setFilterHoReCaId(e.target.value)}
+                  className={INPUT_CLASSES}
+                >
+                  <option value="all">All HoReCa</option>
+                  {hoReCas.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label
-                htmlFor="horeca-filter"
+                htmlFor="payment-filter"
                 className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
               >
-                HoReCa
+                Payment
               </label>
               <select
-                id="horeca-filter"
-                value={filterHoReCaId}
-                onChange={(e) => setFilterHoReCaId(e.target.value)}
+                id="payment-filter"
+                value={filterPaymentStatus}
+                onChange={(e) => setFilterPaymentStatus(e.target.value as PaymentFilterValue)}
                 className={INPUT_CLASSES}
               >
-                <option value="all">All HoReCa</option>
-                {hoReCas.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
+                {PAYMENT_FILTER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
-          )}
 
-          <div>
-            <label
-              htmlFor="payment-filter"
-              className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
-            >
-              Payment
-            </label>
-            <select
-              id="payment-filter"
-              value={filterPaymentStatus}
-              onChange={(e) => setFilterPaymentStatus(e.target.value as PaymentFilterValue)}
-              className={INPUT_CLASSES}
-            >
-              {PAYMENT_FILTER_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+            <div>
+              <label
+                htmlFor="source-filter"
+                className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
+              >
+                Source
+              </label>
+              <select
+                id="source-filter"
+                value={filterSource}
+                onChange={(e) => setFilterSource(e.target.value as SourceFilterValue)}
+                className={INPUT_CLASSES}
+              >
+                {SOURCE_FILTER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label
+                htmlFor="start-date"
+                className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
+              >
+                Start Date
+              </label>
+              <input
+                type="date"
+                id="start-date"
+                value={filterStartDate}
+                onChange={(e) => setFilterStartDate(e.target.value)}
+                className={INPUT_CLASSES}
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="end-date"
+                className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
+              >
+                End Date
+              </label>
+              <input
+                type="date"
+                id="end-date"
+                value={filterEndDate}
+                onChange={(e) => setFilterEndDate(e.target.value)}
+                className={INPUT_CLASSES}
+              />
+            </div>
           </div>
-
-          <div>
-            <label
-              htmlFor="source-filter"
-              className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
-            >
-              Source
-            </label>
-            <select
-              id="source-filter"
-              value={filterSource}
-              onChange={(e) => setFilterSource(e.target.value as SourceFilterValue)}
-              className={INPUT_CLASSES}
-            >
-              {SOURCE_FILTER_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label
-              htmlFor="start-date"
-              className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
-            >
-              Start Date
-            </label>
-            <input
-              type="date"
-              id="start-date"
-              value={filterStartDate}
-              onChange={(e) => setFilterStartDate(e.target.value)}
-              className={INPUT_CLASSES}
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="end-date"
-              className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
-            >
-              End Date
-            </label>
-            <input
-              type="date"
-              id="end-date"
-              value={filterEndDate}
-              onChange={(e) => setFilterEndDate(e.target.value)}
-              className={INPUT_CLASSES}
-            />
-          </div>
-
-          <button
-            onClick={resetFilters}
-            disabled={!hasActiveFilters}
-            className="w-full bg-white text-stone-700 border border-stone-300 rounded-lg py-2.5 px-4 text-sm font-medium hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Reset Filters
-          </button>
-
-          <button
-            onClick={handleExportAll}
-            disabled={sortedOrders.length === 0}
-            className="w-full flex items-center justify-center gap-2 bg-white text-stone-700 border border-stone-300 rounded-lg py-2.5 px-4 text-sm font-medium hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Download className="w-4 h-4" />
-            Export CSV
-          </button>
         </div>
       </div>
 
@@ -1059,6 +1096,18 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                             colSpan={9}
                             className="px-4 pb-4 pt-0 bg-stone-50/60 border-t-0"
                           >
+                            {(() => {
+                              const approval = getInboundApproval(order);
+                              if (!approval) return null;
+                              return (
+                                <div className="ml-6 mt-2 mb-2 flex items-center gap-1.5 text-xs text-teal-700">
+                                  <span className="font-semibold">
+                                    {approval.auto ? 'Auto-approved (system)' : `Approved by ${approval.name ?? 'Unknown'}`}
+                                  </span>
+                                  <span className="text-stone-400">· via PO Inbox</span>
+                                </div>
+                              );
+                            })()}
                             <div className="ml-6 mt-2 rounded-lg border border-stone-200 bg-white overflow-hidden">
                               <table className="w-full text-xs">
                                 <thead>
@@ -1108,6 +1157,35 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                                 </tfoot>
                               </table>
                             </div>
+
+                            {/* Generated documents for this order (pick slip / dispatch advice) */}
+                            {(() => {
+                              const docs = docsByOrder.get(order.id) ?? [];
+                              if (docs.length === 0) return null;
+                              return (
+                                <div className="ml-6 mt-3 flex flex-wrap items-center gap-2">
+                                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-stone-500">
+                                    <FileText className="w-3.5 h-3.5" /> Documents:
+                                  </span>
+                                  {docs.map(({ doc }) => {
+                                    const isDispatch = doc.docType === 'dispatch_advice';
+                                    return (
+                                      <button
+                                        key={doc.id}
+                                        onClick={() => openOrderDoc(doc.id, doc.orderId, doc.docType)}
+                                        disabled={getDocUrl.isPending}
+                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium btn-press disabled:opacity-50 ${isDispatch ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-nexgen-blue/10 text-nexgen-blue hover:bg-nexgen-blue/20'}`}
+                                        title="Open document"
+                                      >
+                                        {isDispatch ? <Truck className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
+                                        {isDispatch ? 'Dispatch advice' : 'Pick slip'}
+                                        <ExternalLink className="w-3 h-3 opacity-60" />
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
                           </td>
                         </tr>
                       )}
@@ -1206,9 +1284,17 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
         onCancel={() => setProcessingOrder(null)}
         onConfirm={(note) => {
           if (!processingOrder) return;
-          onUpdateStatus(processingOrder.id, 'processed', note);
+          const processedId = processingOrder.id;
+          onUpdateStatus(processedId, 'processed', note);
           setProcessingOrder(null);
           addToast('Order processed', 'success');
+          // Auto-generate the pick slip so the warehouse can start picking
+          // immediately. Fire-and-forget — failure is non-fatal (it can be
+          // regenerated from the Pick Queue).
+          generatePickSlip.mutate(processedId, {
+            onSuccess: () => addToast('Pick slip generated', 'success'),
+            onError: () => addToast('Order processed, but pick slip generation failed — retry from the Pick Queue', 'error'),
+          });
         }}
       />
     </div>

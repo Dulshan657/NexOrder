@@ -5,6 +5,7 @@ export enum UserRole {
     FIELD_REP = 'Field Sales Rep',
     OFFICE_REP = 'Office Sales Rep',
     CUSTOMER = 'Restaurant/Hotel Customer',
+    WAREHOUSE = 'Warehouse',
 }
 
 export type OrderVerificationMethod = 'signature' | 'call_reference' | 'choose';
@@ -56,6 +57,99 @@ export interface Product {
     lengthCm?: number;          // unit dimensions for auto-calculation
     widthCm?: number;
     heightCm?: number;
+    // Inventory & replenishment (mig 00027). `inventory` above is the on-hand
+    // cache (= SUM of inventory_balances.on_hand); these drive restock logic.
+    reorderPoint?: number;
+    safetyStock?: number;
+    leadTimeDays?: number;
+    preferredSupplierId?: number;
+    isActive?: boolean;
+    barcode?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Inventory & Dispatch (mig 00027)
+// ---------------------------------------------------------------------------
+
+export type LocationKind = 'WAREHOUSE' | 'ZONE' | 'BIN' | 'SHELF';
+
+export interface InventoryLocation {
+    id: number;
+    parentId?: number;
+    kind: LocationKind;
+    code: string;
+    name: string;
+    lat?: number;
+    lng?: number;
+    materializedPath: string;
+    isActive: boolean;
+}
+
+export interface Batch {
+    id: number;
+    productId: number;
+    lotCode: string;
+    expiryDate?: string;
+    barcode?: string;
+    supplierId?: number;
+    receivedAt: string;
+}
+
+export interface InventoryBalance {
+    id: number;
+    productId: number;
+    locationId: number;
+    batchId?: number;
+    onHand: number;
+    allocated: number;
+    available: number; // generated: onHand - allocated
+    updatedAt: string;
+}
+
+export type MovementType =
+    | 'receipt'
+    | 'allocate'
+    | 'deallocate'
+    | 'pick'
+    | 'adjustment'
+    | 'stocktake_variance'
+    | 'transfer_out'
+    | 'transfer_in';
+
+export interface InventoryMovement {
+    id: number;
+    productId: number;
+    locationId: number;
+    batchId?: number;
+    qtyDelta: number;
+    movementType: MovementType;
+    refType?: string;
+    refId?: string;
+    actorId?: string;
+    reason?: string;
+    createdAt: string;
+}
+
+export type OrderDocumentType = 'pick_slip' | 'dispatch_advice';
+
+export interface OrderDocument {
+    id: number;
+    orderId: string;
+    docType: OrderDocumentType;
+    storagePath: string;
+    generatedBy?: string;
+    generatedAt: string;
+}
+
+export interface PickProgress {
+    id: number;
+    orderId: string;
+    orderItemId: number;
+    locationId: number;
+    batchId?: number;
+    pickedQty: number;
+    pickedBy?: string;
+    pickedAt: string;
 }
 
 export interface PaymentMethod {
@@ -119,6 +213,11 @@ export interface Order {
     // Drives the "Email PO" source badge. Joined via pending_pos.approved_order_id;
     // see lib/orderSource.ts and the approve-po Edge Function (Stream F).
     inboundMessageId?: string;
+    // True when the source PO was auto-approved (no human reviewer). Lets the UI
+    // show "Auto-approved (system)" instead of attributing it to the mailbox owner
+    // (submittedBy is the connecting admin for auto approvals). Set alongside
+    // inboundMessageId from pending_pos.status === 'auto_approved'.
+    autoApproved?: boolean;
 }
 
 export type InvoiceStatus = 'pending' | 'paid' | 'overdue';

@@ -11,7 +11,7 @@ export type Database = {
           id: string
           name: string
           email: string
-          role: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer'
+          role: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer' | 'Warehouse'
           avatar_url: string | null
           horeca_id: number | null
           created_at: string
@@ -20,7 +20,7 @@ export type Database = {
           id: string
           name: string
           email: string
-          role: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer'
+          role: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer' | 'Warehouse'
           avatar_url?: string | null
           horeca_id?: number | null
           created_at?: string
@@ -29,7 +29,7 @@ export type Database = {
           id?: string
           name?: string
           email?: string
-          role?: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer'
+          role?: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer' | 'Warehouse'
           avatar_url?: string | null
           horeca_id?: number | null
           created_at?: string
@@ -82,6 +82,12 @@ export type Database = {
           length_cm: number | null
           width_cm: number | null
           height_cm: number | null
+          reorder_point: number | null
+          safety_stock: number | null
+          lead_time_days: number | null
+          preferred_supplier_id: number | null
+          is_active: boolean
+          barcode: string | null
           created_at: string
         }
         Insert: {
@@ -102,6 +108,12 @@ export type Database = {
           length_cm?: number | null
           width_cm?: number | null
           height_cm?: number | null
+          reorder_point?: number | null
+          safety_stock?: number | null
+          lead_time_days?: number | null
+          preferred_supplier_id?: number | null
+          is_active?: boolean
+          barcode?: string | null
           created_at?: string
         }
         Update: {
@@ -122,6 +134,12 @@ export type Database = {
           length_cm?: number | null
           width_cm?: number | null
           height_cm?: number | null
+          reorder_point?: number | null
+          safety_stock?: number | null
+          lead_time_days?: number | null
+          preferred_supplier_id?: number | null
+          is_active?: boolean
+          barcode?: string | null
           created_at?: string
         }
         Relationships: []
@@ -699,9 +717,235 @@ export type Database = {
         }
         Relationships: []
       }
+      locations: {
+        Row: {
+          id: number
+          parent_id: number | null
+          kind: 'WAREHOUSE' | 'ZONE' | 'BIN' | 'SHELF'
+          code: string
+          name: string
+          lat: number | null
+          lng: number | null
+          materialized_path: string
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          parent_id?: number | null
+          kind: 'WAREHOUSE' | 'ZONE' | 'BIN' | 'SHELF'
+          code: string
+          name: string
+          lat?: number | null
+          lng?: number | null
+          materialized_path: string
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          parent_id?: number | null
+          kind?: 'WAREHOUSE' | 'ZONE' | 'BIN' | 'SHELF'
+          code?: string
+          name?: string
+          lat?: number | null
+          lng?: number | null
+          materialized_path?: string
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      batches: {
+        Row: {
+          id: number
+          product_id: number
+          lot_code: string
+          expiry_date: string | null
+          barcode: string | null
+          supplier_id: number | null
+          received_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          product_id: number
+          lot_code: string
+          expiry_date?: string | null
+          barcode?: string | null
+          supplier_id?: number | null
+          received_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          product_id?: number
+          lot_code?: string
+          expiry_date?: string | null
+          barcode?: string | null
+          supplier_id?: number | null
+          received_at?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      inventory_balances: {
+        Row: {
+          id: number
+          product_id: number
+          location_id: number
+          batch_id: number | null
+          on_hand: number
+          allocated: number
+          available: number
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          product_id: number
+          location_id: number
+          batch_id?: number | null
+          on_hand?: number
+          allocated?: number
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          product_id?: number
+          location_id?: number
+          batch_id?: number | null
+          on_hand?: number
+          allocated?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      inventory_movements: {
+        Row: {
+          id: number
+          product_id: number
+          location_id: number
+          batch_id: number | null
+          qty_delta: number
+          movement_type: 'receipt' | 'allocate' | 'deallocate' | 'pick' | 'adjustment' | 'stocktake_variance' | 'transfer_out' | 'transfer_in'
+          ref_type: string | null
+          ref_id: string | null
+          actor_id: string | null
+          reason: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          product_id: number
+          location_id: number
+          batch_id?: number | null
+          qty_delta: number
+          movement_type: 'receipt' | 'allocate' | 'deallocate' | 'pick' | 'adjustment' | 'stocktake_variance' | 'transfer_out' | 'transfer_in'
+          ref_type?: string | null
+          ref_id?: string | null
+          actor_id?: string | null
+          reason?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          product_id?: number
+          location_id?: number
+          batch_id?: number | null
+          qty_delta?: number
+          movement_type?: 'receipt' | 'allocate' | 'deallocate' | 'pick' | 'adjustment' | 'stocktake_variance' | 'transfer_out' | 'transfer_in'
+          ref_type?: string | null
+          ref_id?: string | null
+          actor_id?: string | null
+          reason?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      order_documents: {
+        Row: {
+          id: number
+          order_id: string
+          doc_type: 'pick_slip' | 'dispatch_advice'
+          storage_path: string
+          generated_by: string | null
+          generated_at: string
+        }
+        Insert: {
+          id?: number
+          order_id: string
+          doc_type: 'pick_slip' | 'dispatch_advice'
+          storage_path: string
+          generated_by?: string | null
+          generated_at?: string
+        }
+        Update: {
+          id?: number
+          order_id?: string
+          doc_type?: 'pick_slip' | 'dispatch_advice'
+          storage_path?: string
+          generated_by?: string | null
+          generated_at?: string
+        }
+        Relationships: []
+      }
+      pick_progress: {
+        Row: {
+          id: number
+          order_id: string
+          order_item_id: number
+          location_id: number
+          batch_id: number | null
+          picked_qty: number
+          picked_by: string | null
+          picked_at: string
+        }
+        Insert: {
+          id?: number
+          order_id: string
+          order_item_id: number
+          location_id: number
+          batch_id?: number | null
+          picked_qty: number
+          picked_by?: string | null
+          picked_at?: string
+        }
+        Update: {
+          id?: number
+          order_id?: string
+          order_item_id?: number
+          location_id?: number
+          batch_id?: number | null
+          picked_qty?: number
+          picked_by?: string | null
+          picked_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: Record<string, never>
-    Functions: Record<string, never>
+    Functions: {
+      inv_default_location: {
+        Args: Record<string, never>
+        Returns: number
+      }
+      inv_reserve_order: {
+        Args: { p_order_id: string; p_items: Json; p_actor?: string; p_allow_partial?: boolean }
+        Returns: undefined
+      }
+      inv_release_reservation: {
+        Args: { p_order_id: string; p_actor?: string }
+        Returns: undefined
+      }
+      inv_pick_order_line: {
+        Args: { p_order_item_id: number; p_picked_qty: number; p_actor?: string }
+        Returns: Json
+      }
+      inv_receive_stock: {
+        Args: { p_lines: Json; p_actor?: string }
+        Returns: Json
+      }
+    }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>
   }

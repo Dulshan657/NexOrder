@@ -156,29 +156,6 @@ async function getOutstandingBalance(serviceClient: SupabaseClient, hoReCaId: nu
   return (data ?? []).reduce((sum: number, row: any) => sum + Number(row.amount ?? 0), 0)
 }
 
-async function decrementInventory(
-  serviceClient: SupabaseClient,
-  productMap: Map<number, Product & { name: string; sku: string }>,
-  items: ResolvedItem[],
-): Promise<void> {
-  // No transactions in supabase-js. Best-effort: decrement each row guarded by
-  // the previously-read inventory level. If any decrement underflows we abort
-  // and let the caller decide; FAILS LOUD rather than over-selling.
-  for (const item of items) {
-    const product = productMap.get(item.productId)!
-    const newInventory = product.inventory - item.quantity
-    if (newInventory < 0) {
-      throw new Error(`INSUFFICIENT_STOCK:${item.productId}`)
-    }
-    const { error } = await serviceClient
-      .from('products')
-      .update({ inventory: newInventory })
-      .eq('id', item.productId)
-      .eq('inventory', product.inventory) // optimistic lock
-    if (error) throw error
-  }
-}
-
 serve(async (req: Request) => {
   const corsHeaders = corsHeadersFor(req)
   const jsonResponse = (body: unknown, status = 200): Response =>
@@ -369,15 +346,29 @@ serve(async (req: Request) => {
     return errorResponse('DB_ITEMS_INSERT_FAILED', itemsError.message, 500)
   }
 
-  // Decrement inventory (after order persisted; on failure, mark order cancelled)
-  try {
-    await decrementInventory(serviceClient, productMap, resolvedItems)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'inventory decrement failed'
-    // Rollback the order/items so we don't have a phantom order against unchanged stock
+  // Reserve stock atomically (after order persisted). The inv_reserve_order RPC
+  // raises `allocated` across FIFO balance rows in one transaction; available
+  // drops but on_hand stays put until the goods are physically picked
+  // (reserve-on-placement model). On any failure we roll back the order/items
+  // so we never leave a phantom order against unreserved stock.
+  const reserveItems = [...totalsByProduct.entries()].map(([productId, quantity]) => ({
+    product_id: productId,
+    quantity,
+  }))
+  const { error: reserveError } = await serviceClient.rpc('inv_reserve_order', {
+    p_order_id: orderId,
+    p_items: reserveItems,
+    p_actor: profile.id,
+  })
+  if (reserveError) {
     await serviceClient.from('order_items').delete().eq('order_id', orderId)
     await serviceClient.from('orders').delete().eq('id', orderId)
-    return errorResponse('STOCK_RACE', msg, 409)
+    const insufficient = reserveError.message.includes('INSUFFICIENT_STOCK')
+    return errorResponse(
+      insufficient ? 'INSUFFICIENT_STOCK' : 'STOCK_RACE',
+      insufficient ? 'Stock changed — one or more items are no longer available' : reserveError.message,
+      409,
+    )
   }
 
   // Invoice (pending, due in 30d)
