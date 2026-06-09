@@ -12,7 +12,7 @@ import OrderSourceBadge from './OrderSourceBadge';
 import { getOrderSource, getInboundApproval, type OrderSourceKey } from '../lib/orderSource';
 import StockAssignmentModal from './StockAssignmentModal';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
-import { useGeneratePickSlip } from '../hooks/queries/usePickQueue';
+import { useGeneratePickSlip, useGenerateDispatchAdvice } from '../hooks/queries/usePickQueue';
 import { useOrderDocuments, useOrderDocumentUrl } from '../hooks/queries/useOrderDocuments';
 import type { OrderDocumentView } from '../services/supabase/orderDocumentService';
 import { useDocumentViewer } from '../context/DocumentViewerContext';
@@ -234,6 +234,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   const updateInvoiceStatus = useUpdateInvoiceStatus();
   const { addToast } = useToasts();
   const generatePickSlip = useGeneratePickSlip();
+  const generateDispatchAdvice = useGenerateDispatchAdvice();
 
   // Generated pick slips / dispatch advices, fetched ONCE for the page (ops
   // only — gated so reps/customers never fire an RLS-rejected query) and grouped
@@ -254,6 +255,16 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   const openOrderDoc = (id: number, orderId: string, docType: OrderDocumentType) => {
     const label = docType === 'dispatch_advice' ? 'Dispatch advice' : 'Pick slip';
     previewDocument(() => getDocUrl.mutateAsync(id), `${orderId} · ${label}`, `${orderId}-${docType}.pdf`);
+  };
+
+  // Recovery for dispatched orders that have no dispatch advice (dispatched
+  // before auto-generation existed, or a failed auto-gen). The hook invalidates
+  // the documents query on success so the new doc appears without a refresh.
+  const handleGenerateDispatchAdvice = (orderId: string) => {
+    generateDispatchAdvice.mutate(orderId, {
+      onSuccess: () => addToast('Dispatch advice generated', 'success'),
+      onError: (err) => addToast(err instanceof Error ? err.message : 'Failed to generate dispatch advice', 'error'),
+    });
   };
 
   // orderId → Invoice lookup
@@ -1162,7 +1173,10 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                             {/* Generated documents for this order (pick slip / dispatch advice) */}
                             {(() => {
                               const docs = docsByOrder.get(order.id) ?? [];
-                              if (docs.length === 0) return null;
+                              const hasDispatchAdvice = docs.some(({ doc }) => doc.docType === 'dispatch_advice');
+                              const isDispatchedOrLater = order.status === 'dispatched' || order.status === 'delivered';
+                              const needsAdvice = isAdminOrManager && isDispatchedOrLater && !hasDispatchAdvice;
+                              if (docs.length === 0 && !needsAdvice) return null;
                               return (
                                 <div className="ml-6 mt-3 flex flex-wrap items-center gap-2">
                                   <span className="inline-flex items-center gap-1 text-xs font-semibold text-stone-500">
@@ -1184,6 +1198,16 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                                       </button>
                                     );
                                   })}
+                                  {needsAdvice && (
+                                    <button
+                                      onClick={() => handleGenerateDispatchAdvice(order.id)}
+                                      disabled={generateDispatchAdvice.isPending}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium btn-press disabled:opacity-50 border border-dashed border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                      title="No dispatch advice exists for this order — generate one"
+                                    >
+                                      <Truck className="w-3 h-3" /> Generate dispatch advice
+                                    </button>
+                                  )}
                                 </div>
                               );
                             })()}

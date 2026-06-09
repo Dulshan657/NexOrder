@@ -10,6 +10,7 @@ import type { OrderFilters, PlaceOrderInput, PlaceOrderResult } from '@/services
 import type { OrderStatus } from '@/types'
 import { productKeys } from './useProducts'
 import { pickKeys } from './usePickQueue'
+import { orderDocumentKeys } from './useOrderDocuments'
 
 export const orderKeys = {
   all: ['orders'] as const,
@@ -64,11 +65,16 @@ export function useUpdateOrderStatus() {
       status: OrderStatus
       note?: string
     }) => updateOrderStatus(id, status, note),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: orderKeys.all })
       // Processing an order (status → processed) makes it pickable — surface it
       // in the Pick Queue immediately instead of waiting for staleTime.
       qc.invalidateQueries({ queryKey: pickKeys.queue })
+      // Dispatching auto-generates the dispatch advice server-side — refresh the
+      // documents list so it appears without waiting for staleTime.
+      if (variables.status === 'dispatched') {
+        qc.invalidateQueries({ queryKey: orderDocumentKeys.all })
+      }
     },
   })
 }

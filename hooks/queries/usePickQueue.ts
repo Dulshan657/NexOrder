@@ -40,9 +40,14 @@ export function useUpdateOrderStatus() {
   return useMutation({
     mutationFn: ({ orderId, status, note }: { orderId: string; status: OrderStatus; note?: string }) =>
       updateOrderStatus(orderId, status, note),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: pickKeys.queue })
       qc.invalidateQueries({ queryKey: ['orders'] })
+      // Dispatching auto-generates the dispatch advice server-side — refresh the
+      // documents list so it appears without waiting for staleTime.
+      if (variables.status === 'dispatched') {
+        qc.invalidateQueries({ queryKey: orderDocumentKeys.all })
+      }
     },
   })
 }

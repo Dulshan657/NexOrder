@@ -8,6 +8,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { corsHeadersFor } from '../_shared/cors.ts'
+import { loadOrderForDoc, buildOrderDocPdf, uploadAndRecordDoc } from '../_shared/orderDocuments.ts'
 
 type OrderStatus = 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
 
@@ -173,6 +174,35 @@ serve(async (req: Request) => {
     .single()
   if (updateError) {
     return errorResponse('DB_UPDATE_FAILED', updateError.message, 500)
+  }
+
+  // On dispatch, auto-generate the dispatch advice so one always exists — the
+  // operator can dispatch from either the Pick Workspace or the Order Import
+  // advance button, and the order leaves the pick queue immediately after, so
+  // we can't rely on a manual click. Best-effort: a document failure must never
+  // roll back the status change (the Completed-tab fallback button can recover).
+  if (newStatus === 'dispatched') {
+    try {
+      const { data: existingDocs } = await serviceClient
+        .from('order_documents')
+        .select('id')
+        .eq('order_id', body.orderId)
+        .eq('doc_type', 'dispatch_advice')
+        .limit(1)
+      // Dedup: skip if the operator already generated one manually.
+      if (!existingDocs || existingDocs.length === 0) {
+        const docData = await loadOrderForDoc(serviceClient, body.orderId)
+        const bytes = await buildOrderDocPdf('dispatch_advice', docData)
+        await uploadAndRecordDoc(
+          serviceClient, body.orderId, 'dispatch_advice', bytes, profile.id, Date.now(),
+        )
+      }
+    } catch (docError) {
+      console.error(
+        `[update-order-status] dispatch advice auto-generation failed for ${body.orderId}:`,
+        docError instanceof Error ? docError.message : docError,
+      )
+    }
   }
 
   return jsonResponse({ order: updated })
