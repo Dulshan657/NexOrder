@@ -10,6 +10,7 @@ import TimePeriodToggle from './dashboard/TimePeriodToggle';
 import ExpandableSection from './dashboard/ExpandableSection';
 import SalesLineChart from './charts/SalesLineChart';
 import POInboxStatsTile from './admin/POInboxStatsTile';
+import InventoryDispatchSection from './admin/InventoryDispatchSection';
 import HorizontalBarChart from './charts/HorizontalBarChart';
 import SalesTargetModal from './SalesTargetModal';
 import SegmentBadge from './SegmentBadge';
@@ -328,6 +329,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <POInboxStatsTile onNavigate={onNavigateTab ? () => onNavigateTab('PO Inbox') : undefined} />
         </div>
       </div>
+
+      {/* C2. Inventory & Dispatch visualisations */}
+      <InventoryDispatchSection
+        allOrders={allOrders}
+        products={products}
+        lowStockThreshold={lowStockThreshold}
+        onNavigateTab={onNavigateTab}
+      />
 
       {/* D. Sales Trend + Team Performance */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
