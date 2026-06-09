@@ -46,6 +46,7 @@ import type {
 } from '@/services/supabase/poInboxService'
 import type { HorecaAddressRow } from '@/services/supabase/horecaAddressService'
 import type { HoReCa, Product } from '../../types'
+import { toProduct } from '@/lib/adapters'
 
 const FIELD_CLASS =
   'w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-sm transition-colors focus:outline-none focus:border-nexgen-blue focus:ring-2 focus:ring-nexgen-blue/20 disabled:bg-stone-100 disabled:text-stone-500'
@@ -131,7 +132,10 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
   const [bodyLoading, setBodyLoading] = useState(false)
 
   const productsQuery = useProducts()
-  const products: Product[] = productsQuery.data ?? []
+  const products: Product[] = useMemo(
+    () => (productsQuery.data ?? []).map(toProduct),
+    [productsQuery.data],
+  )
 
   // Address book for the currently-selected HoReCa. Refetches when the
   // operator switches HoReCa via the customer picker.

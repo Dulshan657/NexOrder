@@ -1,6 +1,11 @@
 /**
  * Frontend-only mock warehouse layer for the Order Import → Receiving flow.
  *
+ * RESERVED FOR V2 — multi-warehouse allocation is disabled for v1, which
+ * assumes ONE warehouse (see lib/singleWarehouse.ts). This module is kept on
+ * disk (and still unit-tested) so a future release can re-enable the
+ * multi-warehouse UI, but it is no longer wired into the v1 Order-Import UI.
+ *
  * Replace this module with a real WMS adapter when one is wired up. The shape
  * of WAREHOUSES and the `getMockStockByWarehouse` helper is the contract the
  * allocator and the StockAssignmentModal depend on.

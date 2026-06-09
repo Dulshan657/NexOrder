@@ -16,6 +16,7 @@ import ConfidenceRing from './ConfidenceRing'
 import { ARCHIVE_AFTER_DAYS, senderMismatch } from '@/services/supabase/poInboxService'
 import type { PendingPoStatus, PendingPoSummaryRow } from '@/services/supabase/poInboxService'
 import type { HoReCa, Product } from '../../types'
+import { toProduct } from '@/lib/adapters'
 
 const POInboxDetailModal = lazyWithRetry(() => import('./POInboxDetailModal'))
 
@@ -60,7 +61,7 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
   // Products + low-stock threshold drive the per-row stock issue pill. Both
   // queries are cached app-wide, so this adds no extra network cost here.
   const { data: productsData } = useProducts()
-  const products: Product[] = productsData ?? []
+  const products: Product[] = useMemo(() => (productsData ?? []).map(toProduct), [productsData])
   const { data: settings } = useSettings()
   const lowThreshold = settings?.low_stock_threshold ?? 10
   const productById = useMemo(() => {

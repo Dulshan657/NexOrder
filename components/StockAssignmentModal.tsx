@@ -2,19 +2,32 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Wand2, AlertTriangle, CheckCircle2, MapPin } from 'lucide-react';
 import type { Order } from '../types';
+// --- V2: multi-warehouse allocation (disabled for v1) -----------------------
+// The mock multi-warehouse layer and distance-based allocator are preserved on
+// disk (lib/mockWarehouses.ts, lib/stockAllocator.ts) for a future release but
+// are no longer wired into the v1 Order-Import UI. v1 assumes ONE warehouse.
+// import {
+//   WAREHOUSES,
+//   getMockStockByWarehouse,
+//   type Warehouse,
+// } from '../lib/mockWarehouses';
+// import {
+//   allocateOrder,
+//   buildAllocationNote,
+//   deriveHoReCaCoords,
+// } from '../lib/stockAllocator';
+// --- end V2 -----------------------------------------------------------------
 import {
-  WAREHOUSES,
-  getMockStockByWarehouse,
-  type Warehouse,
-} from '../lib/mockWarehouses';
-import {
-  allocateOrder,
-  buildAllocationNote,
-  deriveHoReCaCoords,
   isLineBalanced,
+  lineKeyFor,
   totalAssigned,
   type AllocatedLine,
 } from '../lib/stockAllocator';
+import {
+  MAIN_WAREHOUSE,
+  buildSingleWarehouseLines,
+  buildSingleWarehouseNote,
+} from '../lib/singleWarehouse';
 
 export interface StockAssignmentModalProps {
   order: Order | null;
@@ -22,18 +35,20 @@ export interface StockAssignmentModalProps {
   onCancel: () => void;
 }
 
-/**
- * Build the productId → warehouseId → qty map from the order's line-item
- * inventory snapshots, deterministic and pure.
- */
-function buildStockLookup(order: Order): Record<number, Record<string, number>> {
-  const map: Record<number, Record<string, number>> = {};
-  for (const item of order.items) {
-    if (map[item.id]) continue;
-    map[item.id] = getMockStockByWarehouse(item.id, item.inventory ?? 0);
-  }
-  return map;
-}
+// --- V2: multi-warehouse allocation (disabled for v1) -----------------------
+// /**
+//  * Build the productId → warehouseId → qty map from the order's line-item
+//  * inventory snapshots, deterministic and pure.
+//  */
+// function buildStockLookup(order: Order): Record<number, Record<string, number>> {
+//   const map: Record<number, Record<string, number>> = {};
+//   for (const item of order.items) {
+//     if (map[item.id]) continue;
+//     map[item.id] = getMockStockByWarehouse(item.id, item.inventory ?? 0);
+//   }
+//   return map;
+// }
+// --- end V2 -----------------------------------------------------------------
 
 const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
   order,
@@ -41,20 +56,21 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
   onCancel,
 }) => {
   // Hooks must run unconditionally — gate on order at the bottom.
-  const stockLookup = useMemo(
-    () => (order ? buildStockLookup(order) : {}),
-    [order],
-  );
+  // v1: on-hand per line is the product's full cached inventory at the single
+  // Main Warehouse. The map keeps the per-line ceiling for manual edits.
+  const onHandByLineKey = useMemo<Record<string, number>>(() => {
+    const map: Record<string, number> = {};
+    if (!order) return map;
+    for (const item of order.items) {
+      map[lineKeyFor(item)] = Math.max(0, Math.floor(item.inventory ?? 0));
+    }
+    return map;
+  }, [order]);
 
   const optimized = useMemo<AllocatedLine[]>(() => {
     if (!order) return [];
-    return allocateOrder({
-      items: order.items,
-      warehouses: WAREHOUSES,
-      stockByWarehouse: stockLookup,
-      hoReCaCoords: deriveHoReCaCoords(order),
-    });
-  }, [order, stockLookup]);
+    return buildSingleWarehouseLines(order);
+  }, [order]);
 
   const [lines, setLines] = useState<AllocatedLine[]>(optimized);
 
@@ -74,7 +90,6 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
 
   if (!order) return null;
 
-  const horecaCoords = deriveHoReCaCoords(order);
   const allBalanced = lines.every(isLineBalanced);
   const anyShort = lines.some((l) => l.shortBy > 0);
 
@@ -86,9 +101,9 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
     setLines((prev) =>
       prev.map((line) => {
         if (line.lineKey !== lineKey) return line;
-        const stockForWh =
-          stockLookup[line.productId]?.[warehouseId] ?? 0;
-        const clamped = Math.max(0, Math.min(stockForWh, Math.floor(nextQty || 0)));
+        // v1: a line draws only from the Main Warehouse, capped at its on-hand.
+        const onHand = onHandByLineKey[lineKey] ?? 0;
+        const clamped = Math.max(0, Math.min(onHand, Math.floor(nextQty || 0)));
 
         const existing = line.allocations.find((a) => a.warehouseId === warehouseId);
         const nextAllocations = existing
@@ -112,7 +127,7 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
   const handleConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     if (!allBalanced) return;
-    const note = buildAllocationNote(lines, WAREHOUSES);
+    const note = buildSingleWarehouseNote(lines);
     onConfirm(note);
   };
 
@@ -139,11 +154,13 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
             <p className="text-sm text-stone-500 mt-0.5 flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5" />
               {order.hoReCa.name}
+              {/* --- V2: multi-warehouse origin notice (disabled for v1) ---
               {!horecaCoords && (
                 <span className="ml-2 text-amber-700 text-xs font-medium">
                   No location on file — using {WAREHOUSES[0].name} as origin
                 </span>
               )}
+              --- end V2 --- */}
             </p>
           </div>
           <button
@@ -159,7 +176,7 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
         {/* Toolbar */}
         <div className="flex items-center justify-between px-6 py-3 bg-stone-50 border-b border-stone-200 text-xs text-stone-600">
           <span>
-            Auto-assigned from the closest warehouse with stock. Adjust per line if needed.
+            Stock assigned from the {MAIN_WAREHOUSE.name}. Adjust per line if needed.
           </span>
           <button
             type="button"
@@ -167,7 +184,7 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-medium text-blue-700 hover:bg-blue-50 cursor-pointer"
           >
             <Wand2 className="w-3.5 h-3.5" />
-            Reset to optimized
+            Reset
           </button>
         </div>
 
@@ -176,7 +193,10 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
           {lines.map((line) => {
             const assigned = totalAssigned(line);
             const balanced = isLineBalanced(line);
-            const stockForProduct = stockLookup[line.productId] ?? {};
+            const onHand = onHandByLineKey[line.lineKey] ?? 0;
+            const current =
+              line.allocations.find((a) => a.warehouseId === MAIN_WAREHOUSE.id)?.qty ?? 0;
+            const noStock = onHand === 0;
 
             return (
               <div
@@ -218,17 +238,48 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
                   </div>
                 </div>
 
+                {/* v1: single Main Warehouse row per line. */}
+                <label
+                  className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 ${
+                    noStock
+                      ? 'border-stone-200 bg-stone-50 text-stone-400'
+                      : 'border-stone-200 bg-white'
+                  }`}
+                >
+                  <span className="flex flex-col min-w-0">
+                    <span className="text-xs font-medium text-stone-700 truncate">
+                      {MAIN_WAREHOUSE.name}
+                    </span>
+                    <span className="text-[10px] text-stone-400 tabular-nums">
+                      on hand: {onHand}
+                    </span>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={onHand}
+                    value={current}
+                    onChange={(e) =>
+                      updateAllocation(line.lineKey, MAIN_WAREHOUSE.id, Number(e.target.value))
+                    }
+                    disabled={noStock}
+                    className="w-16 rounded-md border border-stone-200 bg-white px-2 py-1 text-sm text-right tabular-nums focus:ring-2 focus:ring-blue-600 focus:outline-none disabled:bg-stone-100 disabled:cursor-not-allowed"
+                    aria-label={`Quantity from ${MAIN_WAREHOUSE.name} for ${line.productName}`}
+                  />
+                </label>
+
+                {/* --- V2: multi-warehouse grid (disabled for v1) -----------
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {WAREHOUSES.map((wh: Warehouse) => {
-                    const onHand = stockForProduct[wh.id] ?? 0;
-                    const current =
+                    const whOnHand = stockForProduct[wh.id] ?? 0;
+                    const whCurrent =
                       line.allocations.find((a) => a.warehouseId === wh.id)?.qty ?? 0;
-                    const noStock = onHand === 0;
+                    const whNoStock = whOnHand === 0;
                     return (
                       <label
                         key={wh.id}
                         className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 ${
-                          noStock
+                          whNoStock
                             ? 'border-stone-200 bg-stone-50 text-stone-400'
                             : 'border-stone-200 bg-white'
                         }`}
@@ -238,18 +289,18 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
                             {wh.name}
                           </span>
                           <span className="text-[10px] text-stone-400 tabular-nums">
-                            on hand: {onHand}
+                            on hand: {whOnHand}
                           </span>
                         </span>
                         <input
                           type="number"
                           min={0}
-                          max={onHand}
-                          value={current}
+                          max={whOnHand}
+                          value={whCurrent}
                           onChange={(e) =>
                             updateAllocation(line.lineKey, wh.id, Number(e.target.value))
                           }
-                          disabled={noStock}
+                          disabled={whNoStock}
                           className="w-16 rounded-md border border-stone-200 bg-white px-2 py-1 text-sm text-right tabular-nums focus:ring-2 focus:ring-blue-600 focus:outline-none disabled:bg-stone-100 disabled:cursor-not-allowed"
                           aria-label={`Quantity from ${wh.name} for ${line.productName}`}
                         />
@@ -257,6 +308,7 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({
                     );
                   })}
                 </div>
+                --- end V2 --------------------------------------------------- */}
               </div>
             );
           })}

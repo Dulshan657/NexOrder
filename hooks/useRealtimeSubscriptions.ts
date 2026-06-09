@@ -42,6 +42,9 @@ export function useRealtimeSubscriptions(arg: UseRealtimeSubscriptionsOptions | 
 
     const invalidateOrders = () => {
       qc.invalidateQueries({ queryKey: ['orders'] })
+      // An order status change (e.g. → processed) can add/remove it from the
+      // warehouse Pick Queue — keep that list in sync across clients too.
+      qc.invalidateQueries({ queryKey: ['pick_queue'] })
     }
     const invalidateNotifications = () => {
       qc.invalidateQueries({ queryKey: ['notifications'] })

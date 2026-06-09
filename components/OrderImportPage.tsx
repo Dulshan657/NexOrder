@@ -1052,12 +1052,13 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                             </button>
 
                             {/* Process (Receiving tab, processing-status orders) replaces the
-                                generic Advance button so staff explicitly assign warehouse stock. */}
+                                generic Advance button so staff confirm warehouse stock before
+                                the order moves on. v1 assumes a single warehouse. */}
                             {isAdminOrManager && activeTab === 'received' && order.status === 'processing' ? (
                               <button
                                 onClick={() => setProcessingOrder(order)}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer whitespace-nowrap"
-                                title="Assign warehouse stock and confirm"
+                                title="Confirm stock and process"
                                 aria-label={`Process order ${order.id}`}
                               >
                                 <Sparkles className="w-3.5 h-3.5" />

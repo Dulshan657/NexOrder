@@ -125,6 +125,7 @@ import {
     BookOpen,
     PackagePlus,
     ClipboardCheck,
+    Send,
     FileText,
 } from 'lucide-react';
 import type { AppNotification } from '../types';
@@ -739,6 +740,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 <ClipboardCheck className="w-5 h-5 mr-3" /> Pick Queue
                             </button>
                             <button
+                                onClick={() => { setAdminView('Dispatched'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Dispatched' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <Send className="w-5 h-5 mr-3" /> Dispatched
+                            </button>
+                            <button
                                 onClick={() => { setAdminView('Documents'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Documents' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
@@ -782,6 +789,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Pick Queue' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <ClipboardCheck className="w-5 h-5 mr-3" /> Pick Queue
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Dispatched'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Dispatched' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <Send className="w-5 h-5 mr-3" /> Dispatched
                             </button>
                             <button
                                 onClick={() => { setAdminView('Receiving'); setIsSidebarOpen(false); }}

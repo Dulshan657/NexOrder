@@ -5,6 +5,11 @@ type ProductRow = Database['public']['Tables']['products']['Row']
 type ProductInsert = Database['public']['Tables']['products']['Insert']
 type ProductUpdate = Database['public']['Tables']['products']['Update']
 
+// The pinned-FK embed (suppliers!..fkey) can't be inferred from the generated
+// types (empty Relationships[]), so PostgREST types it as SelectQueryError.
+// Re-assert the real runtime shape that the `toProduct` adapter expects.
+type ProductRowWithSupplier = ProductRow & { suppliers: { name: string } | null }
+
 export async function getProducts() {
   const { data, error } = await supabase
     .from('products')
@@ -13,7 +18,7 @@ export async function getProducts() {
     .select('*, suppliers!products_supplier_id_fkey(name)')
     .order('name')
   if (error) throw error
-  return data
+  return (data ?? []) as unknown as ProductRowWithSupplier[]
 }
 
 export async function getProductById(id: number) {
@@ -23,7 +28,7 @@ export async function getProductById(id: number) {
     .eq('id', id)
     .single()
   if (error) throw error
-  return data
+  return data as unknown as ProductRowWithSupplier
 }
 
 export async function createProduct(product: ProductInsert): Promise<ProductRow> {

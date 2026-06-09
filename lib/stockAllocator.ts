@@ -1,3 +1,13 @@
+/**
+ * Distance-based multi-warehouse allocator.
+ *
+ * RESERVED FOR V2 — `allocateOrder` / `buildAllocationNote` / `deriveHoReCaCoords`
+ * are not wired into the v1 Order-Import UI, which assumes ONE warehouse
+ * (see lib/singleWarehouse.ts). The shared, warehouse-agnostic helpers
+ * (`lineKeyFor`, `isLineBalanced`, `totalAssigned`) and the `AllocatedLine` /
+ * `LineAllocation` types are still used by the single-warehouse flow. Kept on
+ * disk and unit-tested so a future release can re-enable multi-warehouse.
+ */
 import type { Order, OrderItem } from '../types';
 import type { Warehouse } from './mockWarehouses';
 

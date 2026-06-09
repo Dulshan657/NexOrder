@@ -9,6 +9,7 @@ import {
 import type { OrderFilters, PlaceOrderInput, PlaceOrderResult } from '@/services/supabase/orderService'
 import type { OrderStatus } from '@/types'
 import { productKeys } from './useProducts'
+import { pickKeys } from './usePickQueue'
 
 export const orderKeys = {
   all: ['orders'] as const,
@@ -65,6 +66,9 @@ export function useUpdateOrderStatus() {
     }) => updateOrderStatus(id, status, note),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: orderKeys.all })
+      // Processing an order (status → processed) makes it pickable — surface it
+      // in the Pick Queue immediately instead of waiting for staleTime.
+      qc.invalidateQueries({ queryKey: pickKeys.queue })
     },
   })
 }

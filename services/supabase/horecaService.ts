@@ -4,6 +4,16 @@ import type { Database } from '@/lib/database.types'
 type HoReCaRow = Database['public']['Tables']['horecas']['Row']
 type HoReCaInsert = Database['public']['Tables']['horecas']['Insert']
 type HoReCaUpdate = Database['public']['Tables']['horecas']['Update']
+type HoReCaPricingRow = Database['public']['Tables']['horeca_pricing']['Row']
+type PaymentMethodRow = Database['public']['Tables']['horeca_payment_methods']['Row']
+
+// Embedded child rows can't be inferred from the generated types (empty
+// Relationships[]) so PostgREST types them as SelectQueryError. Re-assert the
+// real runtime shape that the `toHoReCa` adapter expects.
+type HoReCaRowWithJoins = HoReCaRow & {
+  horeca_pricing: HoReCaPricingRow[] | null
+  horeca_payment_methods: PaymentMethodRow[] | null
+}
 
 export async function getHoReCas() {
   const { data, error } = await supabase
@@ -11,7 +21,7 @@ export async function getHoReCas() {
     .select('*, horeca_pricing(*), horeca_payment_methods(*)')
     .order('name')
   if (error) throw error
-  return data
+  return (data ?? []) as unknown as HoReCaRowWithJoins[]
 }
 
 export async function getHoReCaById(id: number) {
@@ -21,7 +31,7 @@ export async function getHoReCaById(id: number) {
     .eq('id', id)
     .single()
   if (error) throw error
-  return data
+  return data as unknown as HoReCaRowWithJoins
 }
 
 export async function createHoReCa(horeca: HoReCaInsert, reason?: string): Promise<HoReCaRow> {
