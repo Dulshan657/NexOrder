@@ -12,7 +12,8 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import {
   applyCartPromotions,
-  resolveUnitPrice,
+  resolveLineUnitPrice,
+  lineBaseUnits,
   type Product,
   type HoReCa,
   type Promotion,
@@ -143,6 +144,7 @@ async function loadAppSettings(serviceClient: SupabaseClient) {
     order_id_prefix: string
     minimum_order_value: number | null
     default_credit_limit: number | null
+    carton_discount_percent: number | null
   } | null
 }
 
@@ -254,10 +256,14 @@ serve(async (req: Request) => {
     else aggregated.set(key, { ...it })
   }
 
-  // Stock check
+  // Stock check. Inventory (products.inventory / on_hand) is in BASE units, but a
+  // carton line carries quantity = number of cartons + packSize = units per carton.
+  // Convert to base units (quantity × packSize) so the check — and the reservation
+  // below, which reuses totalsByProduct — operate in the same unit as stock.
   const totalsByProduct = new Map<number, number>()
   for (const it of aggregated.values()) {
-    totalsByProduct.set(it.productId, (totalsByProduct.get(it.productId) ?? 0) + it.quantity)
+    const baseUnits = lineBaseUnits(it.quantity, it.packSize)
+    totalsByProduct.set(it.productId, (totalsByProduct.get(it.productId) ?? 0) + baseUnits)
   }
   for (const [pid, qty] of totalsByProduct) {
     const product = productMap.get(pid)!
@@ -266,14 +272,20 @@ serve(async (req: Request) => {
     }
   }
 
-  // Resolve prices
+  // Resolve prices. App settings are needed here (not just below) because the
+  // carton discount feeds into per-line pricing, so load them before the loop.
   const promotions = await loadActivePromotions(serviceClient)
+  const settings = await loadAppSettings(serviceClient)
+  const cartonDiscountPercent = Number(settings?.carton_discount_percent ?? 5)
   const userContext: UserContext = { id: 0, role: profile.role } // numeric id only used by 'rep' targeting; safe to leave 0 for now
 
   const resolvedItems: ResolvedItem[] = []
   for (const it of aggregated.values()) {
     const product = productMap.get(it.productId)!
-    const { unitPrice, appliedPromotionId } = resolveUnitPrice(product, hoReCa, userContext, promotions)
+    // Carton lines price the whole carton; single-unit lines price per unit.
+    const { unitPrice, appliedPromotionId } = resolveLineUnitPrice(
+      product, hoReCa, userContext, promotions, it.packSize ?? null, cartonDiscountPercent,
+    )
     resolvedItems.push({
       productId: it.productId,
       quantity: it.quantity,
@@ -292,7 +304,6 @@ serve(async (req: Request) => {
   const total = Math.round((subtotal - cartDiscount) * 100) / 100
 
   // Minimum order value
-  const settings = await loadAppSettings(serviceClient)
   const minOrderValue = Number(settings?.minimum_order_value ?? 0)
   if (minOrderValue > 0 && total < minOrderValue) {
     return errorResponse('BELOW_MINIMUM', `Order total $${total} is below minimum $${minOrderValue}`, 422)

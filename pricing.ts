@@ -21,6 +21,18 @@ export function resolveHoReCaPrice(product: Product, customer?: HoReCa | null): 
     return product.price;
 }
 
+/**
+ * Price of a full carton: per-unit price × carton size × (1 − carton discount),
+ * rounded to cents. Mirrors the server's resolveLineUnitPrice for carton lines
+ * (supabase/functions/_shared/pricing.ts) so the cart total the customer sees
+ * matches the authoritative total computed at order placement. Use this at every
+ * carton-price site instead of inlining the formula (which left the value
+ * unrounded and drifted from the server by up to a cent).
+ */
+export function cartonPrice(unitPrice: number, cartonSize: number, cartonDiscountPercent: number): number {
+    return Math.round(unitPrice * cartonSize * (1 - cartonDiscountPercent / 100) * 100) / 100;
+}
+
 // --- Promotion Pricing ---
 
 export function isPromotionActive(promo: Promotion, now: Date = new Date()): boolean {

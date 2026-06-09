@@ -42,7 +42,10 @@ describe('buildOrderItems', () => {
     expect(total).toBe(50)
   })
 
-  it('preserves pack_size on each row as metadata while excluding it from the total', () => {
+  it('writes pack_size = NULL on each row (quantity is already selling units) and excludes it from the total', () => {
+    // PO-inbox quantity is the selling-unit count, so order_items rows store
+    // pack_size = NULL. This keeps the pack-aware inventory RPCs (mig 00035) at
+    // factor 1 for PO lines so they are not over-depleted by the carton size.
     const lines: PricedLine[] = [{ product_id: 1, quantity: 3, pack_size: 24 }]
     const map = products({ id: 1, name: 'Carton Line', sku: 'SKU-C', price: 2 })
 
@@ -51,7 +54,7 @@ describe('buildOrderItems', () => {
       {
         product_id: 1,
         quantity: 3,
-        pack_size: 24,
+        pack_size: null,
         unit_price: 2,
         product_name: 'Carton Line',
         product_sku: 'SKU-C',

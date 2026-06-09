@@ -15,7 +15,7 @@ import {
 } from '../types';
 import { applyCartPromotions } from '../services/promotionService';
 import { getHoReCaOutstanding } from '../services/accountingService';
-import { isPromotionActive } from '../pricing';
+import { isPromotionActive, cartonPrice as calcCartonPrice } from '../pricing';
 import type { usePlaceOrder } from '../hooks/queries/useOrders';
 
 type OrderErrors = { hoReCa?: string; emptyOrder?: string; api?: string };
@@ -108,7 +108,7 @@ export function OrderProvider({
     }, [hoReCas, selectedHoReCaId, currentUser]);
 
     const total = useMemo(
-        () => orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
+        () => Math.round(orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0) * 100) / 100,
         [orderItems],
     );
 
@@ -147,7 +147,7 @@ export function OrderProvider({
                 const packSize = isCarton ? buyProduct.cartonSize : undefined;
                 const unit = isCarton ? `Carton (x${buyProduct.cartonSize})` : buyProduct.unit;
                 const price = isCarton
-                    ? buyProduct.price * buyProduct.cartonSize * (1 - appSettings.cartonDiscountPercent / 100)
+                    ? calcCartonPrice(buyProduct.price, buyProduct.cartonSize, appSettings.cartonDiscountPercent)
                     : buyProduct.price;
                 handleAddItem(buyProduct, { packSize, price, unit }, promo.bogoConfig.buyQuantity);
                 addToast(`Promo applied: ${promo.name}. Free items will be added automatically.`, 'success');
@@ -346,7 +346,7 @@ export function OrderProvider({
                 let price = currentPrice;
                 let unit = currentProduct.unit;
                 if (item.packSize === currentProduct.cartonSize) {
-                    price = currentPrice * currentProduct.cartonSize * (1 - appSettings.cartonDiscountPercent / 100);
+                    price = calcCartonPrice(currentPrice, currentProduct.cartonSize, appSettings.cartonDiscountPercent);
                     unit = `carton of ${currentProduct.cartonSize}`;
                 }
                 validItems.push({ ...currentProduct, quantity: item.quantity, price, packSize: item.packSize, unit });

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { Promotion, Product } from '../types';
 import { X, Package2 } from 'lucide-react';
+import { cartonPrice as calcCartonPrice } from '../pricing';
 
 interface BundleSelectModalProps {
     promotion: Promotion;
@@ -33,7 +34,7 @@ const BundleSelectModal: React.FC<BundleSelectModalProps> = ({ promotion, produc
                 const packSize = isCarton ? product.cartonSize : undefined;
                 const unit = isCarton ? `Carton (x${product.cartonSize})` : product.unit;
                 const price = isCarton
-                    ? product.price * product.cartonSize * (1 - cartonDiscountPercent / 100)
+                    ? calcCartonPrice(product.price, product.cartonSize, cartonDiscountPercent)
                     : product.price;
                 return { product, quantity: qty, packSize, price, unit };
             })

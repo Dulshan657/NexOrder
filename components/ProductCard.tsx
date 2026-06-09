@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Product, HoReCa, OrderingHint, Promotion, User, PromoBadgeType } from '../types';
 import { Heart, RotateCcw, Clock } from 'lucide-react';
-import { resolveHoReCaPrice, resolvePromotionPrice, getAllApplicablePromotions } from '../pricing';
+import { resolveHoReCaPrice, resolvePromotionPrice, getAllApplicablePromotions, cartonPrice as calcCartonPrice } from '../pricing';
 import OptimizedImage from './OptimizedImage';
 
 interface ProductCardProps {
@@ -58,8 +58,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddItem, selectedH
   const allApplicable = promotions.length > 0 ? getAllApplicablePromotions(product, selectedHoReCa, currentUser ?? null, promotions) : [];
   const bogoPromo = allApplicable.find(p => p.type === 'bogo' && p.bogoConfig);
 
-  // Carton pricing: configurable discount for ordering a full carton
-  const cartonPrice = unitPrice * product.cartonSize * (1 - cartonDiscountPercent / 100);
+  // Carton pricing: configurable discount for ordering a full carton.
+  // Rounded (via calcCartonPrice) to match the server's per-line carton price.
+  const cartonPrice = calcCartonPrice(unitPrice, product.cartonSize, cartonDiscountPercent);
 
   return (
     <div className={`group bg-white rounded-xl shadow-card border border-stone-200/60 overflow-hidden flex flex-col transition-all duration-300 ${isOutOfStock ? 'opacity-60' : 'hover:shadow-card-hover hover:border-stone-300'}`}>

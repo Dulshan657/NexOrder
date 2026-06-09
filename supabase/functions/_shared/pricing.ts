@@ -193,6 +193,42 @@ export function resolveUnitPrice(
   }
 }
 
+/**
+ * Per-LINE unit price. For carton lines (packSize > 1) this returns the price of
+ * the whole carton, mirroring the client's components/ProductCard.tsx formula:
+ *   cartonPrice = unitPrice × cartonSize × (1 − cartonDiscountPercent/100)
+ * For single-unit lines it is identical to resolveUnitPrice. Keeping the carton
+ * math here (not just per-unit) is what makes the persisted order/invoice total
+ * match the figure the customer sees at checkout.
+ */
+export function resolveLineUnitPrice(
+  product: Product,
+  customer: HoReCa | null,
+  user: UserContext | null,
+  promotions: Promotion[],
+  packSize: number | null,
+  cartonDiscountPercent: number,
+  now: Date = new Date(),
+): { unitPrice: number; appliedPromotionId: string | null } {
+  const { unitPrice: perUnit, appliedPromotionId } = resolveUnitPrice(product, customer, user, promotions, now)
+  const isCarton = packSize != null && packSize > 1
+  const lineUnit = isCarton
+    ? Math.round(perUnit * packSize * (1 - cartonDiscountPercent / 100) * 100) / 100
+    : perUnit
+  return { unitPrice: lineUnit, appliedPromotionId }
+}
+
+/**
+ * Physical BASE units for an order line under the canonical unit model:
+ *   base = quantity × COALESCE(pack_size, 1)
+ * `quantity` is in LINE units (cartons for a carton line); `pack_size` is the
+ * pack factor (units per carton, NULL/1 = single units). Inventory reservation,
+ * stock checks, and the ledger all operate in base units. See mig 00035.
+ */
+export function lineBaseUnits(quantity: number, packSize: number | null | undefined): number {
+  return quantity * (packSize ?? 1)
+}
+
 export function applyCartPromotions(
   resolvedItems: ResolvedItem[],
   promotions: Promotion[],
