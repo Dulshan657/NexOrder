@@ -544,6 +544,8 @@ export function toInventoryLocation(row: LocationRow): InventoryLocation {
     contact: row.contact ?? undefined,
     hours: row.hours ?? undefined,
     notes: row.notes ?? undefined,
+    capacitySlots: row.capacity_slots != null ? Number(row.capacity_slots) : undefined,
+    slotKind: row.slot_kind ?? undefined,
   }
 }
 

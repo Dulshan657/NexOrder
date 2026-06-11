@@ -93,6 +93,9 @@ export interface InventoryLocation {
     contact?: string;
     hours?: string;
     notes?: string;
+    // Racked bin config (mig 00039; on ZONE/BIN/SHELF nodes).
+    capacitySlots?: number;
+    slotKind?: 'pallet' | 'carton';
 }
 
 /**

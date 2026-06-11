@@ -91,6 +91,7 @@ export type Database = {
           preferred_supplier_id: number | null
           is_active: boolean
           barcode: string | null
+          size_factor: number
           created_at: string
         }
         Insert: {
@@ -117,6 +118,7 @@ export type Database = {
           preferred_supplier_id?: number | null
           is_active?: boolean
           barcode?: string | null
+          size_factor?: number
           created_at?: string
         }
         Update: {
@@ -143,6 +145,7 @@ export type Database = {
           preferred_supplier_id?: number | null
           is_active?: boolean
           barcode?: string | null
+          size_factor?: number
           created_at?: string
         }
         Relationships: []
@@ -737,6 +740,8 @@ export type Database = {
           contact: string | null
           hours: string | null
           notes: string | null
+          capacity_slots: number | null
+          slot_kind: 'pallet' | 'carton' | null
         }
         Insert: {
           id?: number
@@ -754,6 +759,8 @@ export type Database = {
           contact?: string | null
           hours?: string | null
           notes?: string | null
+          capacity_slots?: number | null
+          slot_kind?: 'pallet' | 'carton' | null
         }
         Update: {
           id?: number
@@ -771,6 +778,32 @@ export type Database = {
           contact?: string | null
           hours?: string | null
           notes?: string | null
+          capacity_slots?: number | null
+          slot_kind?: 'pallet' | 'carton' | null
+        }
+        Relationships: []
+      }
+      product_home_bins: {
+        Row: {
+          id: number
+          product_id: number
+          warehouse_id: number
+          bin_id: number
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          product_id: number
+          warehouse_id: number
+          bin_id: number
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          product_id?: number
+          warehouse_id?: number
+          bin_id?: number
+          created_at?: string
         }
         Relationships: []
       }

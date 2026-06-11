@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ArrowRight, Repeat } from 'lucide-react';
-import type { Product } from '../../types';
+import type { Product, Warehouse } from '../../types';
 import { useWarehouses, useTransferStock } from '../../hooks/queries/useWarehouses';
+import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
 
 interface TransferStockModalProps {
   products: Product[];
@@ -12,40 +13,73 @@ interface TransferStockModalProps {
 const fieldCls =
   'w-full px-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30';
 
-/** Move available stock between warehouses (DC -> DC). Backed by the
- * transfer-stock Edge Function / inv_transfer_stock RPC (moves only unreserved
- * stock, FIFO across batches, preserving lot/expiry). */
+/** Pick a warehouse and (for racked warehouses) optionally a specific bin. The
+ * effective location id is the bin when chosen, otherwise the warehouse root. */
+const LocationPicker: React.FC<{
+  label: string;
+  warehouses: Warehouse[];
+  warehouseId: number | '';
+  binId: number | '';
+  onWarehouse: (id: number | '') => void;
+  onBin: (id: number | '') => void;
+}> = ({ label, warehouses, warehouseId, binId, onWarehouse, onBin }) => {
+  const selected = warehouses.find((w) => w.id === warehouseId);
+  const racked = selected?.locationType === 'racked';
+  const { data: bins } = useWarehouseLocations(racked ? (warehouseId as number) : null);
+  const leafBins = (bins ?? []).filter((b) => b.isActive);
+
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-stone-600 mb-1">{label}</label>
+      <select className={fieldCls} value={warehouseId} onChange={(e) => { onWarehouse(e.target.value === '' ? '' : Number(e.target.value)); onBin(''); }}>
+        <option value="">…</option>
+        {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+      </select>
+      {racked && leafBins.length > 0 && (
+        <select className={`${fieldCls} mt-1.5`} value={binId} onChange={(e) => onBin(e.target.value === '' ? '' : Number(e.target.value))}>
+          <option value="">Warehouse root (unsorted)</option>
+          {leafBins.map((b) => <option key={b.id} value={b.id}>{b.code} · {b.name}</option>)}
+        </select>
+      )}
+    </div>
+  );
+};
+
 const TransferStockModal: React.FC<TransferStockModalProps> = ({ products, onClose }) => {
   const { data: warehouses } = useWarehouses();
   const transfer = useTransferStock();
-
   const activeWarehouses = useMemo(() => (warehouses ?? []).filter((w) => w.isActive), [warehouses]);
 
   const [productId, setProductId] = useState<number | ''>('');
-  const [fromId, setFromId] = useState<number | ''>('');
-  const [toId, setToId] = useState<number | ''>('');
+  const [fromWh, setFromWh] = useState<number | ''>('');
+  const [fromBin, setFromBin] = useState<number | ''>('');
+  const [toWh, setToWh] = useState<number | ''>('');
+  const [toBin, setToBin] = useState<number | ''>('');
   const [qty, setQty] = useState('');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
+  const fromLoc = fromBin !== '' ? fromBin : fromWh;
+  const toLoc = toBin !== '' ? toBin : toWh;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     const q = Number(qty);
-    if (!productId || !fromId || !toId || !q || q <= 0) {
-      setError('Pick a product, both warehouses, and a positive quantity.');
+    if (!productId || !fromLoc || !toLoc || !q || q <= 0) {
+      setError('Pick a product, both locations, and a positive quantity.');
       return;
     }
-    if (fromId === toId) {
+    if (fromLoc === toLoc) {
       setError('Source and destination must differ.');
       return;
     }
     try {
       await transfer.mutateAsync({
         productId: Number(productId),
-        fromLocationId: Number(fromId),
-        toLocationId: Number(toId),
+        fromLocationId: Number(fromLoc),
+        toLocationId: Number(toLoc),
         qty: q,
         reason: reason.trim() || undefined,
       });
@@ -62,7 +96,7 @@ const TransferStockModal: React.FC<TransferStockModalProps> = ({ products, onClo
         <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-nexgen-blue/10"><Repeat className="w-4 h-4 text-nexgen-blue" /></div>
-            <h2 className="text-base font-display font-bold text-stone-900">Transfer Stock</h2>
+            <h2 className="text-base font-display font-bold text-stone-900">Transfer / Put-away</h2>
           </div>
           <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-stone-100" aria-label="Close"><X className="w-4 h-4 text-stone-500" /></button>
         </div>
@@ -76,22 +110,10 @@ const TransferStockModal: React.FC<TransferStockModalProps> = ({ products, onClo
             </select>
           </div>
 
-          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
-            <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">From</label>
-              <select className={fieldCls} value={fromId} onChange={(e) => setFromId(e.target.value === '' ? '' : Number(e.target.value))}>
-                <option value="">…</option>
-                {activeWarehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-            </div>
-            <ArrowRight className="w-4 h-4 text-stone-400 mb-2.5" />
-            <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">To</label>
-              <select className={fieldCls} value={toId} onChange={(e) => setToId(e.target.value === '' ? '' : Number(e.target.value))}>
-                <option value="">…</option>
-                {activeWarehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-            </div>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
+            <LocationPicker label="From" warehouses={activeWarehouses} warehouseId={fromWh} binId={fromBin} onWarehouse={setFromWh} onBin={setFromBin} />
+            <ArrowRight className="w-4 h-4 text-stone-400 mt-7" />
+            <LocationPicker label="To" warehouses={activeWarehouses} warehouseId={toWh} binId={toBin} onWarehouse={setToWh} onBin={setToBin} />
           </div>
 
           <div>
@@ -100,7 +122,7 @@ const TransferStockModal: React.FC<TransferStockModalProps> = ({ products, onClo
           </div>
           <div>
             <label className="block text-xs font-semibold text-stone-600 mb-1">Reason (optional)</label>
-            <input className={fieldCls} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Rebalancing" />
+            <input className={fieldCls} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Rebalancing / put-away" />
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}

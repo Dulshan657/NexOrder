@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Warehouse as WarehouseIcon, Plus, Pencil, Power, MapPin } from 'lucide-react';
+import { Warehouse as WarehouseIcon, Plus, Pencil, Power, MapPin, Boxes } from 'lucide-react';
 import { useWarehouses, useDeactivateWarehouse } from '../../hooks/queries/useWarehouses';
 import WarehouseForm from './WarehouseForm';
+import WarehouseTreeEditor from './WarehouseTreeEditor';
 import type { Warehouse } from '../../types';
 
 /** Admin warehouse management — create / edit / deactivate any number of
@@ -12,6 +13,7 @@ const WarehousesSettingsSection: React.FC = () => {
   const deactivate = useDeactivateWarehouse();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Warehouse | null>(null);
+  const [treeFor, setTreeFor] = useState<Warehouse | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const openCreate = () => { setEditing(null); setFormOpen(true); };
@@ -86,6 +88,11 @@ const WarehousesSettingsSection: React.FC = () => {
                   {w.address ? ` · ${w.address}` : ''}
                 </p>
               </div>
+              {w.locationType === 'racked' && (
+                <button onClick={() => setTreeFor(w)} className="p-2 rounded-lg hover:bg-violet-50 btn-press" aria-label={`Storage layout for ${w.name}`} title="Storage layout">
+                  <Boxes className="w-4 h-4 text-violet-600" />
+                </button>
+              )}
               <button onClick={() => openEdit(w)} className="p-2 rounded-lg hover:bg-stone-100 btn-press" aria-label={`Edit ${w.name}`}>
                 <Pencil className="w-4 h-4 text-stone-500" />
               </button>
@@ -105,6 +112,7 @@ const WarehousesSettingsSection: React.FC = () => {
       )}
 
       {formOpen && <WarehouseForm warehouse={editing} onClose={() => setFormOpen(false)} />}
+      {treeFor && <WarehouseTreeEditor warehouse={treeFor} onClose={() => setTreeFor(null)} />}
     </section>
   );
 };
