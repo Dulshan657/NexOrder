@@ -17,6 +17,8 @@ export interface PickQueueOrder {
   horecaName: string
   horecaAddress: string
   lines: PickQueueLine[]
+  /** Warehouses this order is fulfilled from (for per-site scoping). */
+  fulfilmentWarehouseIds: number[]
 }
 
 export interface GenerateDocResult {
@@ -29,7 +31,7 @@ export async function getPickQueue(): Promise<PickQueueOrder[]> {
   const { data, error } = await supabase
     .from('orders')
     .select(
-      'id, status, order_date, delivery_date, horecas(name, address), ' +
+      'id, status, order_date, delivery_date, horecas(name, address), order_fulfillments(location_id), ' +
       'order_items(id, product_id, product_name, product_sku, quantity, pick_progress(picked_qty))',
     )
     .in('status', ['processed', 'picked', 'packed'])
@@ -43,6 +45,7 @@ export async function getPickQueue(): Promise<PickQueueOrder[]> {
     deliveryDate: o.delivery_date ?? null,
     horecaName: o.horecas?.name ?? '—',
     horecaAddress: o.horecas?.address ?? '',
+    fulfilmentWarehouseIds: ((o.order_fulfillments ?? []) as any[]).map((f) => f.location_id),
     lines: (o.order_items ?? []).map((it: any) => ({
       orderItemId: it.id,
       productId: it.product_id,

@@ -93,7 +93,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
                 {props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} />}
                 {props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} />}
-                {props.activeTab === 'Pick Queue' && <PickQueueView />}
+                {props.activeTab === 'Pick Queue' && <PickQueueView currentUser={props.currentUser} />}
                 {props.activeTab === 'Dispatched' && <DispatchedOrdersView orders={props.allOrders} onViewDetail={props.onViewOrderDetail} />}
                 {props.activeTab === 'Documents' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <DocumentsView />}
                 {props.activeTab === 'Scheduled Visits' && props.routes && props.onSetRoutes && props.addToast && (

@@ -3,6 +3,8 @@ import { usePickQueue } from '../../hooks/queries/usePickQueue';
 import type { PickQueueOrder } from '../../services/supabase/pickService';
 import PickWorkspaceModal from './PickWorkspaceModal';
 import { ClipboardCheck, PackageCheck, Clock, ChevronRight } from 'lucide-react';
+import type { User } from '../../types';
+import { UserRole } from '../../types';
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
   processed: { label: 'Ready to pick', cls: 'bg-nexgen-blue/10 text-nexgen-blue' },
@@ -42,12 +44,21 @@ const OrderRow: React.FC<{ order: PickQueueOrder; onOpen: () => void }> = ({ ord
   );
 };
 
-const PickQueueView: React.FC = () => {
+interface PickQueueViewProps {
+  currentUser?: User;
+}
+
+const PickQueueView: React.FC<PickQueueViewProps> = ({ currentUser }) => {
   const { data: orders, isLoading, isError } = usePickQueue();
   const [tab, setTab] = useState<'all' | 'processed' | 'picked' | 'packed'>('all');
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
 
-  const filtered = (orders ?? []).filter((o) => tab === 'all' || o.status === tab);
+  // Warehouse staff see only orders fulfilled (in part) from their own site.
+  const homeId = currentUser?.role === UserRole.WAREHOUSE ? currentUser.homeWarehouseId : undefined;
+  const scoped = homeId != null
+    ? (orders ?? []).filter((o) => o.fulfilmentWarehouseIds.length === 0 || o.fulfilmentWarehouseIds.includes(homeId))
+    : (orders ?? []);
+  const filtered = scoped.filter((o) => tab === 'all' || o.status === tab);
 
   return (
     <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
