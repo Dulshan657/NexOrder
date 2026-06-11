@@ -40,8 +40,33 @@ import { sanitizeForLog } from '../_shared/poInbox/env.ts'
 import { isServiceRoleBearer } from '../_shared/poInbox/dispatch.ts'
 import { findStockShortages, type StockShortage } from '../_shared/poInbox/stockCheck.ts'
 import { buildOrderItems } from '../_shared/poInbox/orderTotals.ts'
+import { orderedWarehousesFor } from '../_shared/warehouseRouting.ts'
 
 type ApproveMode = 'auto' | 'human'
+
+/**
+ * Closest-first warehouse preference for an inbound-PO order, from the matched
+ * HoReCa's coordinates. The inv_reserve_order RPC splits each line across sites
+ * nearest-first; falls back to the default warehouse when coords are missing.
+ */
+async function resolveLocationPref(supa: SupabaseClient, horecaId: number): Promise<number[]> {
+  const { data: hc } = await supa.from('horecas').select('lat, lng').eq('id', horecaId).maybeSingle()
+  const lat = (hc as any)?.lat
+  const lng = (hc as any)?.lng
+  const coords = typeof lat === 'number' && typeof lng === 'number' ? { lat: Number(lat), lng: Number(lng) } : null
+  const { data } = await supa
+    .from('locations')
+    .select('id, lat, lng, is_active, location_type')
+    .eq('kind', 'WAREHOUSE')
+  const warehouses = ((data ?? []) as any[]).map((w) => ({
+    id: w.id as number,
+    lat: w.lat != null ? Number(w.lat) : null,
+    lng: w.lng != null ? Number(w.lng) : null,
+    isActive: !!w.is_active,
+    locationType: (w.location_type ?? 'bulk') as 'bulk' | 'racked',
+  }))
+  return orderedWarehousesFor(coords, warehouses)
+}
 
 interface ApproveRequest {
   pendingPoId: string
@@ -477,9 +502,11 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
         return acc
       }, {}),
     )
+    const locationPref = await resolveLocationPref(args.supa, effectiveHorecaId)
     const { error: reserveError } = await args.supa.rpc('inv_reserve_order', {
       p_order_id: orderId,
       p_items: reserveItems,
+      p_location_pref: locationPref.length > 0 ? locationPref : null,
       p_actor: submittedBy,
       p_allow_partial: true,
     })

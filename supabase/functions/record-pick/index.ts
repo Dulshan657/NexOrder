@@ -1,9 +1,12 @@
 // record-pick Edge Function
 //
 // A warehouse worker (or Admin/Manager) confirms picking a quantity of one
-// order line. Delegates the atomic decrement (on_hand-- and allocated-- across
-// FIFO batches, plus the pick_progress row) to the inv_pick_order_line RPC.
-// When every line of the order is fully picked, advances the order to 'picked'.
+// order line AT A SPECIFIC WAREHOUSE. Delegates the atomic decrement (on_hand--
+// and allocated-- across FIFO batches at that location, plus the pick_progress
+// row) to the inv_pick_order_line RPC. When the warehouse's portion of the order
+// is fully picked, advances that order_fulfillments row to 'picked' and
+// recomputes the derived orders.status. Legacy orders (no fulfilments) keep the
+// order-level "advance to picked when fully picked" behaviour.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -14,12 +17,14 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
+import { isLocationFullyPicked, recomputeOrderStatus } from '../_shared/fulfillment.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
 const inputSchema = z.object({
   orderItemId: z.number().int().positive(),
   pickedQty: z.number().positive(),
+  locationId: z.number().int().positive().optional(),
 })
 
 serve(async (req: Request) => {
@@ -49,22 +54,39 @@ serve(async (req: Request) => {
       { auth: { persistSession: false } },
     )
 
+    // Resolve the warehouse this pick happens at: explicit > the picker's home
+    // warehouse > the default warehouse. Warehouse staff may only pick at their
+    // own site.
+    let locationId = parsed.data.locationId ?? auth.profile.home_warehouse_id ?? null
+    if (auth.role === 'Warehouse' && parsed.data.locationId && parsed.data.locationId !== auth.profile.home_warehouse_id) {
+      throw new EdgeFunctionError('FORBIDDEN', 'You can only pick at your own warehouse')
+    }
+    if (locationId == null) {
+      const { data: def } = await admin
+        .from('locations')
+        .select('id')
+        .eq('kind', 'WAREHOUSE')
+        .eq('is_active', true)
+        .order('id')
+        .limit(1)
+        .maybeSingle()
+      locationId = (def as any)?.id ?? null
+    }
+
     const { data: pickResult, error: rpcError } = await admin.rpc('inv_pick_order_line', {
       p_order_item_id: orderItemId,
       p_picked_qty: pickedQty,
+      p_location_id: locationId,
       p_actor: auth.userId,
     })
     if (rpcError) {
       const msg = rpcError.message ?? 'pick failed'
-      // OVER_PICK (line exceeds ordered qty) / INSUFFICIENT_STOCK (not enough
-      // physical on_hand to pick) bubble up as P0001 — both are 409 conflicts.
       const conflict = /OVER_PICK|INSUFFICIENT_STOCK/.test(msg)
       throw new EdgeFunctionError(conflict ? 'CONFLICT' : 'INTERNAL', `pick failed: ${msg}`)
     }
 
     const result = pickResult as { line_fully_picked: boolean; order_fully_picked: boolean }
 
-    // Resolve the parent order for status advance + audit.
     const { data: itemRow } = await admin
       .from('order_items')
       .select('order_id')
@@ -72,26 +94,46 @@ serve(async (req: Request) => {
       .single()
     const orderId = (itemRow as { order_id: string } | null)?.order_id ?? null
 
-    // When the whole order is picked, advance it to 'picked' (forward-only).
-    if (result.order_fully_picked && orderId) {
-      const { data: order } = await admin
-        .from('orders')
-        .select('status, status_history')
-        .eq('id', orderId)
-        .single()
-      const current = (order as any)?.status as string | undefined
-      if (current === 'processed') {
-        const history = Array.isArray((order as any)?.status_history) ? (order as any).status_history : []
-        await admin
+    if (orderId) {
+      const nowIso = new Date().toISOString()
+      // Fulfilment model: advance this warehouse's fulfilment to 'picked' once its
+      // portion is fully picked, then recompute the derived order status.
+      const { data: ful } = await admin
+        .from('order_fulfillments')
+        .select('id, status, status_history')
+        .eq('order_id', orderId)
+        .eq('location_id', locationId)
+        .maybeSingle()
+
+      if (ful) {
+        if ((ful as any).status === 'processed' && (await isLocationFullyPicked(admin, orderId, locationId!))) {
+          const hist = Array.isArray((ful as any).status_history) ? (ful as any).status_history : []
+          await admin
+            .from('order_fulfillments')
+            .update({
+              status: 'picked',
+              status_history: [...hist, { status: 'picked', timestamp: nowIso, actor: auth.userId, note: 'All lines picked at this warehouse' }],
+            })
+            .eq('id', (ful as any).id)
+        }
+        await recomputeOrderStatus(admin, orderId, auth.userId, nowIso)
+      } else if (result.order_fully_picked) {
+        // Legacy order (no fulfilments): advance the order to 'picked'.
+        const { data: order } = await admin
           .from('orders')
-          .update({
-            status: 'picked',
-            status_history: [
-              ...history,
-              { status: 'picked', timestamp: new Date().toISOString(), actor: auth.userId, note: 'All lines picked' },
-            ],
-          })
+          .select('status, status_history')
           .eq('id', orderId)
+          .single()
+        if ((order as any)?.status === 'processed') {
+          const history = Array.isArray((order as any)?.status_history) ? (order as any).status_history : []
+          await admin
+            .from('orders')
+            .update({
+              status: 'picked',
+              status_history: [...history, { status: 'picked', timestamp: nowIso, actor: auth.userId, note: 'All lines picked' }],
+            })
+            .eq('id', orderId)
+        }
       }
     }
 
@@ -101,13 +143,13 @@ serve(async (req: Request) => {
       action: 'update',
       resource: 'pick_progress',
       resourceId: orderId,
-      after: { orderItemId, pickedQty, ...result },
+      after: { orderItemId, pickedQty, locationId, ...result },
     })
 
-    return new Response(
-      JSON.stringify({ ok: true, ...result }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    )
+    return new Response(JSON.stringify({ ok: true, locationId, ...result }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   } catch (e) {
     if (isEdgeFunctionError(e)) return e.toResponse(req)
     return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error', undefined, undefined, req)

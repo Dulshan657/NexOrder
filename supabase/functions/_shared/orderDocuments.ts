@@ -35,7 +35,11 @@ export interface OrderDocData {
 
 // ── Data loading ──────────────────────────────────────────────────
 
-export async function loadOrderForDoc(admin: SupabaseClient, orderId: string): Promise<OrderDocData> {
+export async function loadOrderForDoc(
+  admin: SupabaseClient,
+  orderId: string,
+  locationId?: number | null,
+): Promise<OrderDocData> {
   const { data: order, error: orderError } = await admin
     .from('orders')
     .select('id, status, order_date, delivery_date, horeca_id, horecas(name, address)')
@@ -54,10 +58,14 @@ export async function loadOrderForDoc(admin: SupabaseClient, orderId: string): P
   if (itemsError) throw new EdgeFunctionError('INTERNAL', itemsError.message)
 
   // Picked quantities per line (for dispatch advice + pick-progress display).
-  const { data: picks } = await admin
+  // When locationId is given (a per-warehouse dispatch advice), restrict to that
+  // site's picks so the document shows only that warehouse's shipped portion.
+  let picksQuery = admin
     .from('pick_progress')
     .select('order_item_id, picked_qty, location_id, batch_id, locations(code), batches(lot_code)')
     .eq('order_id', orderId)
+  if (locationId != null) picksQuery = picksQuery.eq('location_id', locationId)
+  const { data: picks } = await picksQuery
   const pickByItem = new Map<number, { picked: number; location: string | null; batch: string | null }>()
   for (const p of (picks ?? []) as any[]) {
     const prev = pickByItem.get(p.order_item_id) ?? { picked: 0, location: null, batch: null }
@@ -78,17 +86,20 @@ export async function loadOrderForDoc(admin: SupabaseClient, orderId: string): P
     .maybeSingle()
   const defaultLoc = (wh as any)?.code ?? 'MAIN'
 
-  const lines: DocLine[] = ((items ?? []) as any[]).map((it) => {
-    const pk = pickByItem.get(it.id)
-    return {
-      productName: it.product_name,
-      productSku: it.product_sku,
-      ordered: Number(it.quantity),
-      picked: pk?.picked ?? 0,
-      location: pk?.location ?? defaultLoc,
-      batch: pk?.batch ?? null,
-    }
-  })
+  const lines: DocLine[] = ((items ?? []) as any[])
+    // For a per-warehouse dispatch advice, drop lines this site didn't pick.
+    .filter((it) => locationId == null || pickByItem.has(it.id))
+    .map((it) => {
+      const pk = pickByItem.get(it.id)
+      return {
+        productName: it.product_name,
+        productSku: it.product_sku,
+        ordered: Number(it.quantity),
+        picked: pk?.picked ?? 0,
+        location: pk?.location ?? defaultLoc,
+        batch: pk?.batch ?? null,
+      }
+    })
 
   return {
     orderId: o.id,
@@ -191,9 +202,11 @@ export async function uploadAndRecordDoc(
   bytes: Uint8Array,
   actorId: string,
   stampMs: number,
+  locationId?: number | null,
 ): Promise<{ storagePath: string; signedUrl: string | null }> {
   const slug = kind === 'pick_slip' ? 'pick-slip' : 'dispatch-advice'
-  const storagePath = `${orderId}/${slug}-${stampMs}.pdf`
+  const locSuffix = locationId != null ? `-w${locationId}` : ''
+  const storagePath = `${orderId}/${slug}${locSuffix}-${stampMs}.pdf`
 
   const { error: uploadError } = await admin.storage
     .from(BUCKET)
@@ -205,6 +218,7 @@ export async function uploadAndRecordDoc(
     doc_type: kind,
     storage_path: storagePath,
     generated_by: actorId,
+    location_id: locationId ?? null,
   })
   if (insertError) throw new EdgeFunctionError('INTERNAL', `record failed: ${insertError.message}`)
 

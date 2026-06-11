@@ -43,6 +43,9 @@ const receiptHeaderSchema = z.object({
   reference: z.string().min(1).max(200).optional(),
   received_date: isoDate.optional(),
   received_by: z.string().uuid().optional(),
+  // Warehouse to receive into (mig 00038). Defaults to the actor's home warehouse,
+  // then the system default. Warehouse-role staff may only receive at their site.
+  location_id: z.number().int().positive().optional(),
 })
 
 const inputSchema = z.object({
@@ -120,10 +123,18 @@ serve(async (req: Request) => {
     // fly so it still rolls up in the supplier master (and reports).
     const supplierId = await resolveHeaderSupplier(admin, receipt)
 
+    // Resolve the destination warehouse: explicit > actor's home warehouse >
+    // (null → RPC default). Warehouse staff may only receive at their own site.
+    const locationId = receipt?.location_id ?? auth.profile.home_warehouse_id ?? null
+    if (auth.role === 'Warehouse' && receipt?.location_id && receipt.location_id !== auth.profile.home_warehouse_id) {
+      throw new EdgeFunctionError('FORBIDDEN', 'You can only receive stock at your own warehouse')
+    }
+
     const { data: result, error: rpcError } = await admin.rpc('inv_receive_stock', {
       p_lines: lines,
       p_actor: auth.userId,
       p_receipt: {
+        location_id: locationId,
         supplier_id: supplierId,
         reference: receipt?.reference ?? null,
         received_date: receipt?.received_date ?? null,
