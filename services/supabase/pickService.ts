@@ -54,10 +54,14 @@ export async function getPickQueue(): Promise<PickQueueOrder[]> {
   }))
 }
 
-export async function recordPick(orderItemId: number, pickedQty: number): Promise<{ line_fully_picked: boolean; order_fully_picked: boolean }> {
+export async function recordPick(
+  orderItemId: number,
+  pickedQty: number,
+  locationId?: number,
+): Promise<{ line_fully_picked: boolean; order_fully_picked: boolean }> {
   const { data, error } = await supabase.functions.invoke<{ ok: true; line_fully_picked: boolean; order_fully_picked: boolean }>(
     'record-pick',
-    { body: { orderItemId, pickedQty } },
+    { body: { orderItemId, pickedQty, ...(locationId != null ? { locationId } : {}) } },
   )
   if (error) throw error
   return data!

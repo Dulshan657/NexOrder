@@ -19,6 +19,7 @@ export interface ProductBatchBalance {
   batchId: number | null
   lotCode: string | null
   expiryDate: string | null
+  locationId: number
   locationCode: string | null
   locationName: string | null
   onHand: number
@@ -29,7 +30,7 @@ export interface ProductBatchBalance {
 export async function getBalancesByProduct(productId: number): Promise<ProductBatchBalance[]> {
   const { data, error } = await supabase
     .from('inventory_balances')
-    .select('id, batch_id, on_hand, allocated, available, batches(lot_code, expiry_date), locations(code, name)')
+    .select('id, location_id, batch_id, on_hand, allocated, available, batches(lot_code, expiry_date), locations(code, name)')
     .eq('product_id', productId)
     .order('id')
   if (error) throw error
@@ -38,6 +39,7 @@ export async function getBalancesByProduct(productId: number): Promise<ProductBa
     batchId: r.batch_id ?? null,
     lotCode: r.batches?.lot_code ?? null,
     expiryDate: r.batches?.expiry_date ?? null,
+    locationId: Number(r.location_id),
     locationCode: r.locations?.code ?? null,
     locationName: r.locations?.name ?? null,
     onHand: Number(r.on_hand),

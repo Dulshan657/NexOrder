@@ -23,8 +23,8 @@ export function usePickQueue() {
 export function useRecordPick() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ orderItemId, pickedQty }: { orderItemId: number; pickedQty: number }) =>
-      recordPick(orderItemId, pickedQty),
+    mutationFn: ({ orderItemId, pickedQty, locationId }: { orderItemId: number; pickedQty: number; locationId?: number }) =>
+      recordPick(orderItemId, pickedQty, locationId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: pickKeys.queue })
       qc.invalidateQueries({ queryKey: ['orders'] })

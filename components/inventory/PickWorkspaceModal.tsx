@@ -30,22 +30,38 @@ const PickLineRow: React.FC<{ line: PickQueueLine; canPick: boolean }> = ({ line
   const remaining = Math.max(line.quantity - line.picked, 0);
   const done = remaining === 0;
 
-  // FIFO suggestion: physical stock (on_hand > 0), earliest expiry first.
+  // Directed FIFO suggestion: prefer a location that holds this line's RESERVED
+  // stock (allocated > 0), then earliest expiry. For racked warehouses this is a
+  // specific bin; for bulk it's the warehouse root. The pick is recorded at that
+  // location so racked picks decrement the right bin.
   const suggestion = useMemo(() => {
     const avail = (balances ?? []).filter((b) => b.onHand > 0);
     if (avail.length === 0) return null;
     return [...avail].sort((a, b) => {
+      // Reserved bins first.
+      if ((b.allocated > 0 ? 1 : 0) !== (a.allocated > 0 ? 1 : 0)) {
+        return (b.allocated > 0 ? 1 : 0) - (a.allocated > 0 ? 1 : 0);
+      }
       const ax = a.expiryDate ? Date.parse(a.expiryDate) : Number.POSITIVE_INFINITY;
       const bx = b.expiryDate ? Date.parse(b.expiryDate) : Number.POSITIVE_INFINITY;
       return ax - bx;
     })[0];
   }, [balances]);
 
+  // Pick from the suggested location, capped at what that location physically
+  // holds (multi-bin lines take more than one click, each draining a bin).
+  const pickQty = suggestion ? Math.min(remaining, Math.floor(suggestion.onHand)) : remaining;
+
   const pickAll = async () => {
     if (done || remaining <= 0) return;
+    const qty = pickQty > 0 ? pickQty : remaining;
     try {
-      await recordPick.mutateAsync({ orderItemId: line.orderItemId, pickedQty: remaining });
-      addToast(`Picked ${remaining} × ${line.productName}`, 'success');
+      await recordPick.mutateAsync({
+        orderItemId: line.orderItemId,
+        pickedQty: qty,
+        locationId: suggestion?.locationId,
+      });
+      addToast(`Picked ${qty} × ${line.productName}`, 'success');
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Failed to record pick', 'error');
     }
@@ -78,7 +94,7 @@ const PickLineRow: React.FC<{ line: PickQueueLine; canPick: boolean }> = ({ line
             disabled={!canPick || recordPick.isPending}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-nexgen-blue text-white text-xs font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <PackageCheck className="w-3.5 h-3.5" /> Pick {remaining}
+            <PackageCheck className="w-3.5 h-3.5" /> Pick {pickQty > 0 ? pickQty : remaining}
           </button>
         )}
       </div>
