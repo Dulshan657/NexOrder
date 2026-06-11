@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import type { Product, User, Category } from '../types';
 import { UserRole } from '../types';
-import { Package, AlertCircle, CheckCircle2, Search, X, TrendingDown, ChevronRight, ChevronDown, MapPin } from 'lucide-react';
+import { Package, AlertCircle, CheckCircle2, Search, X, TrendingDown, ChevronRight, ChevronDown, MapPin, Repeat } from 'lucide-react';
 import { CATEGORIES } from '../constants';
 import { useInventoryBalances, useBalancesByProduct } from '../hooks/queries/useInventoryBalances';
+import TransferStockModal from './admin/TransferStockModal';
 
 interface StockViewProps {
   products: Product[];
@@ -115,6 +116,8 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser }) => {
 
   const isCustomer = currentUser.role === UserRole.CUSTOMER;
   const isOps = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER || currentUser.role === UserRole.WAREHOUSE;
+  const isAdminManager = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
+  const [transferOpen, setTransferOpen] = useState(false);
 
   // Ledger is the source of truth for staff; customers see the products cache.
   const { data: balances, isLoading: balancesLoading } = useInventoryBalances();
@@ -186,7 +189,17 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser }) => {
               : `${products.length} products · live from the inventory ledger`}
           </p>
         </div>
+        {isAdminManager && (
+          <button
+            onClick={() => setTransferOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-nexgen-blue text-white hover:bg-nexgen-blue/90 btn-press self-start"
+          >
+            <Repeat className="w-4 h-4" /> Transfer stock
+          </button>
+        )}
       </div>
+
+      {transferOpen && <TransferStockModal products={products} onClose={() => setTransferOpen(false)} />}
 
       {/* KPI Summary — staff only */}
       {!isCustomer && (
