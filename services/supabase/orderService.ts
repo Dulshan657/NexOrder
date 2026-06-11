@@ -15,7 +15,7 @@ export interface OrderFilters {
 // GRANT SELECT to authenticated with Admin/Manager-only RLS, so non-admins get
 // an empty embed (no error) — their orders are never inbound anyway.
 const ORDER_SELECT =
-  '*, horecas(name), order_items(*), pending_pos!pending_pos_approved_order_id_fkey(inbound_message_id, status)'
+  '*, horecas(name), order_items(*), pending_pos!pending_pos_approved_order_id_fkey(inbound_message_id, status), order_fulfillments(*, locations(name))'
 
 export async function getOrders(filters: OrderFilters = {}) {
   let query = supabase

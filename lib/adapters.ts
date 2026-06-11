@@ -208,6 +208,7 @@ export function toOrder(
   row: OrderRow & {
     order_items?: OrderItemRow[] | null
     pending_pos?: PendingPoEmbed[] | PendingPoEmbed | null
+    order_fulfillments?: (OrderFulfillmentRow & { locations?: { name: string } | null })[] | null
   },
   hoReCas: HoReCa[],
   users: User[],
@@ -272,6 +273,9 @@ export function toOrder(
       : undefined,
     inboundMessageId: pendingPo?.inbound_message_id ?? undefined,
     autoApproved: pendingPo ? pendingPo.status === 'auto_approved' : undefined,
+    fulfillments: Array.isArray(row.order_fulfillments)
+      ? row.order_fulfillments.map(toOrderFulfillment)
+      : undefined,
   }
 }
 

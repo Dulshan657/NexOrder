@@ -7,6 +7,7 @@ import StatusTimeline from './StatusTimeline';
 import PaymentStatusBadge from './PaymentStatusBadge';
 import PaymentActionModal from './PaymentActionModal';
 import OrderSourceBadge from './OrderSourceBadge';
+import OrderFulfillmentsPanel from './OrderFulfillmentsPanel';
 import { getInboundApproval } from '../lib/orderSource';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
 import { useToasts } from '../hooks/useToasts';
@@ -142,6 +143,18 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                         <h3 className="text-sm font-semibold text-stone-700 uppercase tracking-wider mb-3">Order Status</h3>
                         <StatusTimeline statusHistory={order.statusHistory} currentStatus={order.status} />
                     </div>
+
+                    {/* Per-warehouse fulfilments (multi-warehouse orders) */}
+                    <OrderFulfillmentsPanel
+                        order={order}
+                        canAdvanceAll={isAdmin}
+                        homeWarehouseId={currentUser.homeWarehouseId}
+                        onAdvance={
+                            onUpdateStatus
+                                ? (orderId, nextS, locationId) => onUpdateStatus(orderId, nextS, undefined, { locationId })
+                                : undefined
+                        }
+                    />
 
                     {/* Admin status update */}
                     {isAdmin && nextStatus && onUpdateStatus && (
