@@ -22,6 +22,8 @@ export interface AuthProfile {
   id: string
   role: UserRole
   horeca_id: number | null
+  /** Warehouse-role staff are scoped to this site (mig 00036); null for others. */
+  home_warehouse_id: number | null
 }
 
 export interface AuthContext {
@@ -76,7 +78,7 @@ export async function requireAuth(
   const userId = authUser.user.id
   const { data: profileRow, error: profileError } = await userClient
     .from('profiles')
-    .select('id, role, horeca_id')
+    .select('id, role, horeca_id, home_warehouse_id')
     .eq('id', userId)
     .single()
 

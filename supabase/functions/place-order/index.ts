@@ -20,6 +20,7 @@ import {
   type ResolvedItem,
   type UserContext,
 } from '../_shared/pricing.ts'
+import { orderedWarehousesFor } from '../_shared/warehouseRouting.ts'
 
 interface PlaceOrderItem {
   productId: number
@@ -58,10 +59,10 @@ async function loadProfile(userClient: SupabaseClient, userId: string) {
   return data as { id: string; role: string; horeca_id: number | null }
 }
 
-async function loadHoReCa(serviceClient: SupabaseClient, hoReCaId: number): Promise<HoReCa & { credit_limit: number; name: string }> {
+async function loadHoReCa(serviceClient: SupabaseClient, hoReCaId: number): Promise<HoReCa & { credit_limit: number; name: string; lat?: number; lng?: number }> {
   const { data, error } = await serviceClient
     .from('horecas')
-    .select('id, name, discount_percent, credit_limit, tier, horeca_pricing(product_id, custom_price)')
+    .select('id, name, discount_percent, credit_limit, tier, lat, lng, horeca_pricing(product_id, custom_price)')
     .eq('id', hoReCaId)
     .single()
   if (error || !data) throw new Error('HoReCa not found')
@@ -72,6 +73,8 @@ async function loadHoReCa(serviceClient: SupabaseClient, hoReCaId: number): Prom
     discount_percent: number | null
     credit_limit: number | null
     tier: string | null
+    lat: number | null
+    lng: number | null
     horeca_pricing: Array<{ product_id: number; custom_price: number }> | null
   }
 
@@ -86,8 +89,33 @@ async function loadHoReCa(serviceClient: SupabaseClient, hoReCaId: number): Prom
     credit_limit: Number(row.credit_limit ?? 0),
     discountPercent: row.discount_percent ?? undefined,
     tier: (row.tier as HoReCa['tier']) ?? null,
+    lat: row.lat != null ? Number(row.lat) : undefined,
+    lng: row.lng != null ? Number(row.lng) : undefined,
     pricing,
   }
+}
+
+/**
+ * Closest-first warehouse preference for this order's destination. Reads active
+ * WAREHOUSE locations and orders them by distance from the HoReCa's coordinates;
+ * the inv_reserve_order RPC walks this list, splitting a line across sites.
+ */
+async function loadLocationPref(
+  serviceClient: SupabaseClient,
+  coords: { lat: number; lng: number } | null,
+): Promise<number[]> {
+  const { data } = await serviceClient
+    .from('locations')
+    .select('id, lat, lng, is_active, location_type, kind')
+    .eq('kind', 'WAREHOUSE')
+  const warehouses = ((data ?? []) as Array<any>).map((w) => ({
+    id: w.id as number,
+    lat: w.lat != null ? Number(w.lat) : null,
+    lng: w.lng != null ? Number(w.lng) : null,
+    isActive: !!w.is_active,
+    locationType: (w.location_type ?? 'bulk') as 'bulk' | 'racked',
+  }))
+  return orderedWarehousesFor(coords, warehouses)
 }
 
 async function loadProducts(serviceClient: SupabaseClient, productIds: number[]): Promise<Map<number, Product & { name: string; sku: string }>> {
@@ -366,9 +394,18 @@ serve(async (req: Request) => {
     product_id: productId,
     quantity,
   }))
+  // Closest-first warehouse preference from the customer's coordinates; the RPC
+  // splits each line across sites nearest-first. Falls back to the default
+  // warehouse when the HoReCa has no coordinates or only one warehouse exists.
+  const coords =
+    typeof hoReCa.lat === 'number' && typeof hoReCa.lng === 'number'
+      ? { lat: hoReCa.lat, lng: hoReCa.lng }
+      : null
+  const locationPref = await loadLocationPref(serviceClient, coords)
   const { error: reserveError } = await serviceClient.rpc('inv_reserve_order', {
     p_order_id: orderId,
     p_items: reserveItems,
+    p_location_pref: locationPref.length > 0 ? locationPref : null,
     p_actor: profile.id,
   })
   if (reserveError) {
