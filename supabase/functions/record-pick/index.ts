@@ -96,17 +96,22 @@ serve(async (req: Request) => {
 
     if (orderId) {
       const nowIso = new Date().toISOString()
+      // A pick may land on a bin (racked); the fulfilment is keyed by the bin's
+      // root warehouse. Resolve it (mig 00040) so we advance the right fulfilment.
+      const { data: rootData } = await admin.rpc('inv_root_warehouse', { p_location_id: locationId })
+      const warehouseId = (typeof rootData === 'number' ? rootData : null) ?? locationId!
+
       // Fulfilment model: advance this warehouse's fulfilment to 'picked' once its
       // portion is fully picked, then recompute the derived order status.
       const { data: ful } = await admin
         .from('order_fulfillments')
         .select('id, status, status_history')
         .eq('order_id', orderId)
-        .eq('location_id', locationId)
+        .eq('location_id', warehouseId)
         .maybeSingle()
 
       if (ful) {
-        if ((ful as any).status === 'processed' && (await isLocationFullyPicked(admin, orderId, locationId!))) {
+        if ((ful as any).status === 'processed' && (await isLocationFullyPicked(admin, orderId, warehouseId))) {
           const hist = Array.isArray((ful as any).status_history) ? (ful as any).status_history : []
           await admin
             .from('order_fulfillments')

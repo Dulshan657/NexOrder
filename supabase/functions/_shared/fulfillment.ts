@@ -18,16 +18,18 @@ export const FULFILLMENT_LADDER: FulfillmentStatus[] = [
   'delivered',
 ]
 
-/** Distinct warehouse ids that hold (or held) a reservation for this order. */
+/**
+ * Distinct ROOT WAREHOUSE ids that hold (or held) a reservation for this order.
+ * Resolves allocation bins back to their warehouse (mig 00040), so a racked
+ * warehouse — whose allocations land on bins — still yields one fulfilment.
+ */
 export async function fulfillmentLocations(admin: SupabaseClient, orderId: string): Promise<number[]> {
-  const { data } = await admin
-    .from('inventory_movements')
-    .select('location_id')
-    .eq('ref_type', 'order')
-    .eq('ref_id', orderId)
-    .eq('movement_type', 'allocate')
+  const { data, error } = await admin.rpc('inv_order_fulfilment_warehouses', { p_order_id: orderId })
+  if (error || !data) return []
   const set = new Set<number>()
-  for (const m of (data ?? []) as any[]) set.add(m.location_id)
+  for (const r of data as any[]) {
+    if (r.warehouse_id != null) set.add(r.warehouse_id)
+  }
   return [...set]
 }
 
@@ -57,44 +59,23 @@ export async function ensureFulfillments(
 }
 
 /**
- * Is the given warehouse's portion of the order fully picked? Compares the base
- * units reserved at that location (allocate − deallocate movements) against the
- * base units picked there (pick_progress LINE units × pack_size). A site with
- * nothing reserved is vacuously complete.
+ * Is the given WAREHOUSE's portion of the order fully picked? Compares base units
+ * reserved at that warehouse (allocate − deallocate, resolved bin→warehouse)
+ * against base units picked there. Delegated to inv_warehouse_pick_complete
+ * (mig 00040) so the bin→warehouse resolution is consistent. A site with nothing
+ * reserved is vacuously complete.
  */
 export async function isLocationFullyPicked(
   admin: SupabaseClient,
   orderId: string,
-  locationId: number,
+  warehouseId: number,
 ): Promise<boolean> {
-  const { data: moves } = await admin
-    .from('inventory_movements')
-    .select('product_id, qty_delta, movement_type')
-    .eq('ref_type', 'order')
-    .eq('ref_id', orderId)
-    .eq('location_id', locationId)
-    .in('movement_type', ['allocate', 'deallocate'])
-  const reserved = new Map<number, number>()
-  for (const m of (moves ?? []) as any[]) {
-    reserved.set(m.product_id, (reserved.get(m.product_id) ?? 0) + Number(m.qty_delta))
-  }
-
-  const { data: picks } = await admin
-    .from('pick_progress')
-    .select('picked_qty, order_items!inner(product_id, pack_size)')
-    .eq('order_id', orderId)
-    .eq('location_id', locationId)
-  const picked = new Map<number, number>()
-  for (const p of (picks ?? []) as any[]) {
-    const pid = p.order_items.product_id as number
-    const factor = Number(p.order_items.pack_size ?? 1)
-    picked.set(pid, (picked.get(pid) ?? 0) + Number(p.picked_qty) * factor)
-  }
-
-  for (const [pid, r] of reserved) {
-    if (r > 1e-9 && (picked.get(pid) ?? 0) < r - 1e-9) return false
-  }
-  return true
+  const { data, error } = await admin.rpc('inv_warehouse_pick_complete', {
+    p_order_id: orderId,
+    p_warehouse_id: warehouseId,
+  })
+  if (error) return false
+  return data === true
 }
 
 /**

@@ -39,9 +39,13 @@ export function haversineKm(a: Coords, b: Coords): number {
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-/** A warehouse can receive order allocations only if active and not racked. */
+/**
+ * A warehouse can receive order allocations if it is active. Racked warehouses
+ * participate too (mig 00040): reservation draws across their bins, and a site
+ * with no stock simply contributes nothing and the split moves to the next.
+ */
 export function isRoutable(w: RoutableWarehouse): boolean {
-  return w.isActive && w.locationType !== 'racked';
+  return w.isActive;
 }
 
 function hasCoords(w: RoutableWarehouse): boolean {

@@ -56,9 +56,9 @@ describe('orderedWarehousesFor', () => {
     expect(orderedWarehousesFor(SYD, list)).not.toContain(4);
   });
 
-  it('excludes racked warehouses (not routable until directed ops exist)', () => {
+  it('includes racked warehouses in routing (directed ops draw across their bins)', () => {
     const list = [...warehouses, wh({ id: 5, lat: SYD.lat, lng: SYD.lng, locationType: 'racked' })];
-    expect(orderedWarehousesFor(SYD, list)).not.toContain(5);
+    expect(orderedWarehousesFor(SYD, list)).toContain(5);
   });
 
   it('sinks warehouses without coordinates to the end (id-ascending among them)', () => {
@@ -85,10 +85,10 @@ describe('orderedWarehousesFor', () => {
 });
 
 describe('isRoutable', () => {
-  it('is true only for active, non-racked warehouses', () => {
+  it('is true for any active warehouse (bulk or racked)', () => {
     expect(isRoutable(wh({ id: 1 }))).toBe(true);
     expect(isRoutable(wh({ id: 1, isActive: false }))).toBe(false);
-    expect(isRoutable(wh({ id: 1, locationType: 'racked' }))).toBe(false);
+    expect(isRoutable(wh({ id: 1, locationType: 'racked' }))).toBe(true);
   });
 });
 

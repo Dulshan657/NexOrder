@@ -32,7 +32,7 @@ export function haversineKm(a: Coords, b: Coords): number {
 }
 
 export function isRoutable(w: RoutableWarehouse): boolean {
-  return w.isActive && w.locationType !== 'racked';
+  return w.isActive;
 }
 
 function hasCoords(w: RoutableWarehouse): boolean {
