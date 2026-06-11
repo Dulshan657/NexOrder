@@ -3,6 +3,7 @@ import type { AppSettings, HoReCa, Product } from '../types';
 import { Building2, FileText, Package, CreditCard, DollarSign, AlertTriangle, Tags, Loader2 } from 'lucide-react';
 import { uploadToBucket, deleteFromBucketByUrl } from '../services/supabase/storageService';
 import { useToasts } from '../hooks/useToasts';
+import WarehousesSettingsSection from './admin/WarehousesSettingsSection';
 
 interface SettingsPanelProps {
     settings: AppSettings;
@@ -380,6 +381,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, appLogo, hoReCa
                         {/* This is informational only — reads from threshold */}
                     </div>
                 </section>
+
+                {/* Warehouses */}
+                <WarehousesSettingsSection />
 
                 {/* Credit Limits */}
                 <section className="bg-stone-50 p-6 rounded-xl border border-stone-200">
