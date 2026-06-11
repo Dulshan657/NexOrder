@@ -940,9 +940,10 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     inviteUser({
                                         email: u.email,
                                         name: u.name,
-                                        role: u.role as 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer',
+                                        role: u.role as 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer' | 'Warehouse',
                                         hoReCaId: u.hoReCaId ?? null,
                                         avatarUrl: u.avatarUrl ?? null,
+                                        homeWarehouseId: u.homeWarehouseId ?? null,
                                     })
                                         .then(() => {
                                             addToast(`Invite sent to ${u.email}`, 'success');

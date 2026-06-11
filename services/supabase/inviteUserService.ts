@@ -6,6 +6,7 @@ export type InviteRole =
   | 'Field Sales Rep'
   | 'Office Sales Rep'
   | 'Restaurant/Hotel Customer'
+  | 'Warehouse'
 
 export interface InviteUserInput {
   email: string
@@ -13,6 +14,7 @@ export interface InviteUserInput {
   role: InviteRole
   hoReCaId?: number | null
   avatarUrl?: string | null
+  homeWarehouseId?: number | null
 }
 
 export interface InviteUserResult {

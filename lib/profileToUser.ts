@@ -23,6 +23,7 @@ export function profileToUser(p: Profile): User {
     role: p.role as User['role'],
     avatarUrl: p.avatar_url ?? undefined,
     hoReCaId: p.horeca_id ?? undefined,
+    homeWarehouseId: p.home_warehouse_id ?? undefined,
   };
 }
 

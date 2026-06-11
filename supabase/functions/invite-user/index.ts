@@ -20,6 +20,7 @@ type Role =
   | 'Field Sales Rep'
   | 'Office Sales Rep'
   | 'Restaurant/Hotel Customer'
+  | 'Warehouse'
 
 const VALID_ROLES: Role[] = [
   'Admin',
@@ -27,6 +28,7 @@ const VALID_ROLES: Role[] = [
   'Field Sales Rep',
   'Office Sales Rep',
   'Restaurant/Hotel Customer',
+  'Warehouse',
 ]
 
 interface InviteUserRequest {
@@ -35,6 +37,7 @@ interface InviteUserRequest {
   role: Role
   hoReCaId?: number | null
   avatarUrl?: string | null
+  homeWarehouseId?: number | null
 }
 
 interface InviteUserResponse {
@@ -108,6 +111,10 @@ serve(async (req: Request) => {
   if (role !== 'Restaurant/Hotel Customer' && hoReCaId != null) {
     return errorResponse('HORECA_NOT_ALLOWED', 'Only customer role may set hoReCaId')
   }
+  const homeWarehouseId = body.homeWarehouseId ?? null
+  if (homeWarehouseId != null && role !== 'Warehouse') {
+    return errorResponse('HOME_WAREHOUSE_NOT_ALLOWED', 'Only the Warehouse role may set a home warehouse')
+  }
 
   // Caller authorisation
   const { data: authUser } = await userClient.auth.getUser()
@@ -143,6 +150,19 @@ serve(async (req: Request) => {
     }
   }
 
+  // Verify the named home warehouse exists and is a WAREHOUSE-kind location.
+  if (homeWarehouseId != null) {
+    const { data: wh, error: whError } = await serviceClient
+      .from('locations')
+      .select('id, kind')
+      .eq('id', homeWarehouseId)
+      .eq('kind', 'WAREHOUSE')
+      .single()
+    if (whError || !wh) {
+      return errorResponse('WAREHOUSE_NOT_FOUND', `Warehouse ${homeWarehouseId} not found`, 404)
+    }
+  }
+
   // Send invite. Supabase creates the auth.users row immediately and the
   // on_auth_user_created trigger inserts a profile from raw_user_meta_data.
   const { data: invite, error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(email, {
@@ -163,6 +183,7 @@ serve(async (req: Request) => {
   // never accidentally overwrite an admin's role with stale metadata.
   const profileUpdate: Record<string, unknown> = {}
   if (hoReCaId != null) profileUpdate.horeca_id = hoReCaId
+  if (homeWarehouseId != null) profileUpdate.home_warehouse_id = homeWarehouseId
   if (body.avatarUrl) profileUpdate.avatar_url = body.avatarUrl
 
   if (Object.keys(profileUpdate).length > 0) {

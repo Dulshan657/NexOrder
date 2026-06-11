@@ -5,6 +5,7 @@ import { useToasts } from '../hooks/useToasts';
 import { compressImage } from '../lib/imageCompression';
 import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/supabase/storageService';
 import OptimizedImage from './OptimizedImage';
+import { useWarehouses } from '../hooks/queries/useWarehouses';
 
 interface UserFormProps {
     userToEdit: User | null;
@@ -19,9 +20,11 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
         role: UserRole.FIELD_REP, // Default role for new users
         avatarUrl: '',
     });
+    const [homeWarehouseId, setHomeWarehouseId] = useState<number | ''>('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { addToast } = useToasts();
     const [isUploading, setIsUploading] = useState(false);
+    const { data: warehouses } = useWarehouses();
 
     useEffect(() => {
         if (userToEdit) {
@@ -31,6 +34,7 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
                 role: userToEdit.role,
                 avatarUrl: userToEdit.avatarUrl || '',
             });
+            setHomeWarehouseId(userToEdit.homeWarehouseId ?? '');
         } else {
              setFormData({
                 name: '',
@@ -38,6 +42,7 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
                 role: UserRole.FIELD_REP,
                 avatarUrl: '',
             });
+            setHomeWarehouseId('');
         }
     }, [userToEdit]);
 
@@ -84,6 +89,8 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
             email: formData.email,
             role: formData.role,
             avatarUrl: formData.avatarUrl,
+            homeWarehouseId:
+                formData.role === UserRole.WAREHOUSE && homeWarehouseId !== '' ? Number(homeWarehouseId) : undefined,
         };
 
         if (userToEdit) {
@@ -148,6 +155,23 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
                                 ))}
                             </select>
                         </div>
+                        {formData.role === UserRole.WAREHOUSE && (
+                            <div>
+                                <label htmlFor="homeWarehouse" className="block text-sm font-medium text-stone-700 mb-1.5">Home warehouse</label>
+                                <select
+                                    id="homeWarehouse"
+                                    value={homeWarehouseId}
+                                    onChange={(e) => setHomeWarehouseId(e.target.value === '' ? '' : Number(e.target.value))}
+                                    className={inputClasses}
+                                >
+                                    <option value="">Select a warehouse…</option>
+                                    {(warehouses ?? []).filter(w => w.isActive).map(w => (
+                                        <option key={w.id} value={w.id}>{w.name}</option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-stone-400 mt-1">Pickers/receivers only see and act on their own site's work.</p>
+                            </div>
+                        )}
                     </div>
 
                     <div className="mt-8 flex justify-end space-x-3 pt-4 border-t border-stone-100">
