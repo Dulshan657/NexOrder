@@ -60,11 +60,15 @@ export function useUpdateOrderStatus() {
       id,
       status,
       note,
+      locationId,
+      locationPref,
     }: {
       id: string
       status: OrderStatus
       note?: string
-    }) => updateOrderStatus(id, status, note),
+      locationId?: number
+      locationPref?: number[]
+    }) => updateOrderStatus(id, status, note, { locationId, locationPref }),
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: orderKeys.all })
       // Processing an order (status → processed) makes it pickable — surface it

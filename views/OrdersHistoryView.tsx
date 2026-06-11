@@ -12,7 +12,7 @@ export interface OrdersHistoryViewProps {
     onReorderItems: (items: OrderItem[], mode: 'replace' | 'merge') => void;
     onResetOrder: () => void;
     onSelectOrder: (id: string | null) => void;
-    onUpdateStatus?: (orderId: string, newStatus: OrderStatus, note?: string) => void;
+    onUpdateStatus?: (orderId: string, newStatus: OrderStatus, note?: string, opts?: { locationId?: number; locationPref?: number[] }) => void;
     onNavigateToShop: () => void;
     onNavigateBack: () => void;
 }

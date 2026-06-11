@@ -99,13 +99,27 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
   return data
 }
 
+export interface UpdateOrderStatusOpts {
+  /** Per-warehouse advance: which fulfilment site this transition applies to. */
+  locationId?: number
+  /** processing->processed override: closest-first warehouse preference to re-route. */
+  locationPref?: number[]
+}
+
 export async function updateOrderStatus(
   id: string,
   status: OrderStatus,
-  note?: string
+  note?: string,
+  opts?: UpdateOrderStatusOpts,
 ) {
   const { data, error } = await supabase.functions.invoke<{ order: OrderRow }>('update-order-status', {
-    body: { orderId: id, status, note },
+    body: {
+      orderId: id,
+      status,
+      note,
+      ...(opts?.locationId != null ? { locationId: opts.locationId } : {}),
+      ...(opts?.locationPref ? { locationPref: opts.locationPref } : {}),
+    },
   })
   if (error) {
     const ctx = (error as { context?: { error?: { code?: string; message?: string } } }).context

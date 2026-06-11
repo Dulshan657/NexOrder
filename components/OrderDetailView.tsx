@@ -16,7 +16,7 @@ interface OrderDetailViewProps {
     order: Order;
     currentUser: User;
     invoice?: Invoice;
-    onUpdateStatus?: (orderId: string, newStatus: OrderStatus, note?: string) => void;
+    onUpdateStatus?: (orderId: string, newStatus: OrderStatus, note?: string, opts?: { locationId?: number; locationPref?: number[] }) => void;
     onClose: () => void;
 }
 

@@ -398,9 +398,14 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
 
     // ── Non-cart handlers ─────────────────────────────────────────────────────
     const handleUpdateOrderStatus = useCallback(
-        (orderId: string, newStatus: OrderStatus, note?: string) => {
+        (
+            orderId: string,
+            newStatus: OrderStatus,
+            note?: string,
+            opts?: { locationId?: number; locationPref?: number[] },
+        ) => {
             updateOrderStatusMutation.mutate(
-                { id: orderId, status: newStatus, note },
+                { id: orderId, status: newStatus, note, locationId: opts?.locationId, locationPref: opts?.locationPref },
                 {
                     onSuccess: () => addToast(`Order ${orderId} updated to ${newStatus}.`, 'success'),
                     onError: err => addToast(`Error updating order: ${err.message}`, 'error'),

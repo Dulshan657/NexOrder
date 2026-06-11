@@ -49,7 +49,7 @@ interface OrderImportPageProps {
   onReorder: (order: Order) => void;
   onBulkReorder?: (orders: Order[]) => void;
   onViewDetail: (orderId: string) => void;
-  onUpdateStatus: (orderId: string, newStatus: OrderStatus, note?: string) => void;
+  onUpdateStatus: (orderId: string, newStatus: OrderStatus, note?: string, opts?: { locationId?: number; locationPref?: number[] }) => void;
   onBack: () => void;
   /** Order id to scroll into view and flash with a brief emerald ring. */
   highlightOrderId?: string | null;
@@ -1307,10 +1307,10 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
       <StockAssignmentModal
         order={processingOrder}
         onCancel={() => setProcessingOrder(null)}
-        onConfirm={(note) => {
+        onConfirm={({ note, locationPref }) => {
           if (!processingOrder) return;
           const processedId = processingOrder.id;
-          onUpdateStatus(processedId, 'processed', note);
+          onUpdateStatus(processedId, 'processed', note, locationPref ? { locationPref } : undefined);
           setProcessingOrder(null);
           addToast('Order processed', 'success');
           // Auto-generate the pick slip so the warehouse can start picking
