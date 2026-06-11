@@ -96,7 +96,7 @@ const StockView = lazyWithRetry(() => import('./StockView'));
 const ReceiveStockView = lazyWithRetry(() => import('./inventory/ReceiveStockView'));
 const ScheduledVisitsView = lazyWithRetry(() => import('./scheduled-visits/ScheduledVisitsView'));
 
-import { inviteUser } from '../services/supabase/inviteUserService';
+import { inviteUser, updateUserProfile } from '../services/supabase/inviteUserService';
 import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit, fromAppSettings } from '../lib/adapters';
 import { numericIdToUuid } from '../lib/userIdMap';
 import type { SortOption } from './ShopTopBar';
@@ -951,8 +951,20 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         })
                                         .catch(err => addToast(`Invite failed: ${err.message}`, 'error'));
                                 }}
-                                onUpdateUser={() => {
-                                    addToast('User editing not yet supported via the secure path.', 'info');
+                                onUpdateUser={u => {
+                                    updateUserProfile({
+                                        email: u.email,
+                                        name: u.name,
+                                        avatarUrl: u.avatarUrl ?? null,
+                                        role: u.role as 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer' | 'Warehouse',
+                                        hoReCaId: u.hoReCaId ?? null,
+                                        homeWarehouseId: u.homeWarehouseId ?? null,
+                                    })
+                                        .then(() => {
+                                            addToast(`Updated ${u.name}`, 'success');
+                                            queryClient.invalidateQueries({ queryKey: ['profiles'] });
+                                        })
+                                        .catch(err => addToast(`Update failed: ${err.message}`, 'error'));
                                 }}
                                 onDeleteUser={() => {
                                     addToast('User deletion not yet supported via the secure path.', 'info');
