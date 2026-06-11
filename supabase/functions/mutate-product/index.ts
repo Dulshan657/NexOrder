@@ -54,6 +54,8 @@ const productBodySchema = z.object({
   length_cm: z.number().min(0).nullable().optional(),
   width_cm: z.number().min(0).nullable().optional(),
   height_cm: z.number().min(0).nullable().optional(),
+  // Racked WMS: capacity slots a single base unit consumes (mig 00039).
+  size_factor: z.number().positive().optional(),
   // inventory intentionally excluded
 })
 

@@ -73,6 +73,7 @@ export function toProduct(row: ProductRow & { suppliers?: { name: string } | nul
     preferredSupplierId: row.preferred_supplier_id ?? undefined,
     isActive: row.is_active ?? undefined,
     barcode: row.barcode ?? undefined,
+    sizeFactor: row.size_factor != null ? Number(row.size_factor) : undefined,
   }
 }
 
@@ -100,6 +101,7 @@ export function fromProduct(p: Partial<Product>): Record<string, unknown> {
   if (p.preferredSupplierId !== undefined) row.preferred_supplier_id = p.preferredSupplierId
   if (p.isActive !== undefined) row.is_active = p.isActive
   if (p.barcode !== undefined) row.barcode = p.barcode
+  if (p.sizeFactor !== undefined) row.size_factor = p.sizeFactor
   return row
 }
 

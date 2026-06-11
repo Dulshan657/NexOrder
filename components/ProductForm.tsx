@@ -29,6 +29,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
         lengthCm: '',
         widthCm: '',
         heightCm: '',
+        sizeFactor: '1',
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { addToast } = useToasts();
@@ -49,6 +50,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                 lengthCm: productToEdit.lengthCm != null ? String(productToEdit.lengthCm) : '',
                 widthCm: productToEdit.widthCm != null ? String(productToEdit.widthCm) : '',
                 heightCm: productToEdit.heightCm != null ? String(productToEdit.heightCm) : '',
+                sizeFactor: productToEdit.sizeFactor != null ? String(productToEdit.sizeFactor) : '1',
             });
         }
     }, [productToEdit]);
@@ -116,6 +118,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
             lengthCm: formData.lengthCm ? parseFloat(formData.lengthCm) : undefined,
             widthCm: formData.widthCm ? parseFloat(formData.widthCm) : undefined,
             heightCm: formData.heightCm ? parseFloat(formData.heightCm) : undefined,
+            sizeFactor: formData.sizeFactor ? parseFloat(formData.sizeFactor) : undefined,
         };
 
         if (productToEdit) {
@@ -196,6 +199,11 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                                 Calculated: {(parseFloat(formData.lengthCm) * parseFloat(formData.widthCm) * parseFloat(formData.heightCm) / 1_000_000).toFixed(6)} m³ per unit
                             </p>
                         )}
+                        <div className="mt-3">
+                            <label htmlFor="sizeFactor" className="block text-xs font-medium text-stone-500 mb-1">Slots per unit (racked capacity)</label>
+                            <input type="number" name="sizeFactor" id="sizeFactor" value={formData.sizeFactor} onChange={handleChange} step="0.0001" min="0" placeholder="1" className={inputClasses} />
+                            <p className="text-[11px] text-stone-400 mt-1">Pallet/carton slots one base unit consumes — drives bin capacity warnings in racked warehouses.</p>
+                        </div>
                     </div>
 
                     <div>

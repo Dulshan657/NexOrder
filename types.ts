@@ -66,6 +66,8 @@ export interface Product {
     preferredSupplierId?: number;
     isActive?: boolean;
     barcode?: string;
+    // Racked WMS: capacity slots a single base unit consumes (mig 00039).
+    sizeFactor?: number;
 }
 
 // ---------------------------------------------------------------------------
