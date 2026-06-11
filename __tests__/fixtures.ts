@@ -9,6 +9,7 @@ export const mkProduct = (overrides: Partial<Product> = {}): Product => ({
     price: 4,
     category: 'Meal Pastes',
     inventory: 100,
+    available: 100,
     unit: 'jar',
     cartonSize: 6,
     supplierId: 1,

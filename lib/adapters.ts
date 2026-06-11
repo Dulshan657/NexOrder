@@ -57,6 +57,9 @@ export function toProduct(row: ProductRow & { suppliers?: { name: string } | nul
     price: Number(row.price),
     category: row.category as Product['category'],
     inventory: row.inventory,
+    // Reservable stock cache (mig 00041). Fall back to on-hand if a row is read
+    // before the column exists, so the shop never shows undefined stock.
+    available: Number((row as { available?: number }).available ?? row.inventory),
     imageUrl: row.image_url ?? undefined,
     unit: row.unit,
     cartonSize: row.carton_size,

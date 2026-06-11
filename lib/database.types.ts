@@ -75,6 +75,7 @@ export type Database = {
           price: number
           category: 'Coconut' | 'Meal Pastes' | 'Asian Sauces' | 'Soy Sauces' | 'Chilli Sauces' | 'Condiments' | 'Noodles' | 'Fish' | 'Satay Sauces' | 'Desserts' | 'Ready Meal Sauces' | 'Other'
           inventory: number
+          available: number
           image_url: string | null
           unit: string
           carton_size: number
@@ -102,6 +103,7 @@ export type Database = {
           price: number
           category: 'Coconut' | 'Meal Pastes' | 'Asian Sauces' | 'Soy Sauces' | 'Chilli Sauces' | 'Condiments' | 'Noodles' | 'Fish' | 'Satay Sauces' | 'Desserts' | 'Ready Meal Sauces' | 'Other'
           inventory: number
+          available?: number
           image_url?: string | null
           unit: string
           carton_size: number
@@ -129,6 +131,7 @@ export type Database = {
           price?: number
           category?: 'Coconut' | 'Meal Pastes' | 'Asian Sauces' | 'Soy Sauces' | 'Chilli Sauces' | 'Condiments' | 'Noodles' | 'Fish' | 'Satay Sauces' | 'Desserts' | 'Ready Meal Sauces' | 'Other'
           inventory?: number
+          available?: number
           image_url?: string | null
           unit?: string
           carton_size?: number

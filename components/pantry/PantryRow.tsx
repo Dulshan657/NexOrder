@@ -75,8 +75,8 @@ const PantryRow: React.FC<PantryRowProps> = ({
     }, [pantryItem.defaultQuantity]);
 
     const unitPrice = resolveHoReCaPrice(product, selectedHoReCa);
-    const isOutOfStock = product.inventory <= 0;
-    const isLowStock = !isOutOfStock && product.inventory < 10;
+    const isOutOfStock = product.available <= 0;
+    const isLowStock = !isOutOfStock && product.available < 10;
     const isCarton = pantryItem.preferredPackSize === product.cartonSize;
     const discountMultiplier = 1 - cartonDiscountPercent / 100;
     const displayPrice = isCarton ? unitPrice * product.cartonSize * discountMultiplier : unitPrice;
@@ -196,7 +196,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
                     )}
                     {isLowStock && (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-100">
-                            <span className="font-mono tabular-nums">{product.inventory}</span> left
+                            <span className="font-mono tabular-nums">{product.available}</span> left
                         </span>
                     )}
                 </div>

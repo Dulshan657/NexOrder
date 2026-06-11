@@ -338,7 +338,7 @@ export function OrderProvider({
 
             for (const item of order.items) {
                 const currentProduct = products.find(p => p.id === item.id);
-                if (!currentProduct || currentProduct.inventory <= 0) {
+                if (!currentProduct || currentProduct.available <= 0) {
                     skippedItems.push(item.name);
                     continue;
                 }

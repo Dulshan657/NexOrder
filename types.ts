@@ -46,7 +46,8 @@ export interface Product {
     description: string;
     price: number;
     category: Category;
-    inventory: number;
+    inventory: number; // on-hand cache (SUM of inventory_balances.on_hand) — physical stock
+    available: number; // reservable cache (SUM of inventory_balances.available = on_hand − allocated)
     imageUrl?: string;
     unit: string; // e.g., 'jar', 'bottle', 'can', 'packet'
     cartonSize: number; // units per carton, e.g., 6 or 12

@@ -24,6 +24,7 @@ const mkProduct = (id: number, sku: string, name: string): Product => ({
   price: 0,
   category: 'Other',
   inventory: 0,
+  available: 0,
   unit: 'unit',
   cartonSize: 1,
   supplierId: 1,

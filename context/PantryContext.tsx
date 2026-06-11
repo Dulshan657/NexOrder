@@ -139,7 +139,7 @@ export function PantryProvider({ children, products, allOrders, appSettings, add
         let total = 0;
         for (const pantryItem of currentPantryItems) {
             const product = products.find(p => p.id === pantryItem.productId);
-            if (!product || product.inventory <= 0) continue;
+            if (!product || product.available <= 0) continue;
             const unitPrice = resolveHoReCaPrice(product, selectedHoReCa);
             if (pantryItem.preferredPackSize === product.cartonSize) {
                 total +=

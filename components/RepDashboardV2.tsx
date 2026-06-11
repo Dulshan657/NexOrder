@@ -133,7 +133,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
     // Products the rep frequently sells that are low/out of stock
     const repProductIds = new Set<number>();
     myOrders.forEach(o => o.items.forEach(item => repProductIds.add(item.id)));
-    return products.filter(p => repProductIds.has(p.id) && p.inventory <= 10);
+    return products.filter(p => repProductIds.has(p.id) && p.available <= 10);
   }, [myOrders, products]);
 
   const actionColumns = useMemo((): ActionItemColumn[] => {
@@ -167,8 +167,8 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
     const stockItems: ActionItem[] = lowStockProducts.map(p => ({
       id: `stock-${p.id}`,
       title: p.name,
-      subtitle: p.inventory <= 0 ? 'Out of stock' : `${p.inventory} left`,
-      badge: p.inventory <= 0 ? { label: 'Out', color: 'bg-red-50 text-red-700 border-red-200' } : undefined,
+      subtitle: p.available <= 0 ? 'Out of stock' : `${p.available} left`,
+      badge: p.available <= 0 ? { label: 'Out', color: 'bg-red-50 text-red-700 border-red-200' } : undefined,
     }));
 
     return [

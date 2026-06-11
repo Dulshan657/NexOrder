@@ -144,7 +144,7 @@ const PantryList: React.FC<PantryListProps> = ({
         let oos = 0;
         let due = 0;
         for (const entry of resolvedItems) {
-            if (entry.product.inventory <= 0) {
+            if (entry.product.available <= 0) {
                 oos += 1;
                 continue;
             }
@@ -160,7 +160,7 @@ const PantryList: React.FC<PantryListProps> = ({
     const visibleItems = useMemo(() => {
         const q = filterQuery.trim().toLowerCase();
         return resolvedItems.filter(entry => {
-            if (activeChip === 'oos' && entry.product.inventory > 0) return false;
+            if (activeChip === 'oos' && entry.product.available > 0) return false;
             if (activeChip === 'due' && !frequency[entry.product.id]?.dueSoon) return false;
             if (activeChip === 'savings' && !(entry.pantryItem.preferredPackSize === entry.product.cartonSize && cartonDiscountPercent > 0)) return false;
             if (!q) return true;
@@ -214,7 +214,7 @@ const PantryList: React.FC<PantryListProps> = ({
         return orderedKeys.map(category => {
             const entries = buckets.get(category) ?? [];
             const groupTotal = entries.reduce((sum, e) => {
-                if (e.product.inventory <= 0) return sum;
+                if (e.product.available <= 0) return sum;
                 return sum + lineMath(e).lineTotal;
             }, 0);
             return { category, entries, groupTotal };
@@ -222,7 +222,7 @@ const PantryList: React.FC<PantryListProps> = ({
     }, [sortedItems, categories, lineMath]);
 
     const inStockCountAll = useMemo(
-        () => resolvedItems.filter(e => e.product.inventory > 0).length,
+        () => resolvedItems.filter(e => e.product.available > 0).length,
         [resolvedItems],
     );
 
@@ -253,7 +253,7 @@ const PantryList: React.FC<PantryListProps> = ({
 
     const handleAddGroup = useCallback((groupEntries: ResolvedItem[]) => {
         const items = groupEntries
-            .filter(e => e.product.inventory > 0)
+            .filter(e => e.product.available > 0)
             .map(e => e.pantryItem);
         if (items.length > 0) onAddSelectedToOrder(items);
     }, [onAddSelectedToOrder]);
@@ -308,7 +308,7 @@ const PantryList: React.FC<PantryListProps> = ({
     const onAddFocused = useCallback((productId: number) => {
         const pi = pantryItemById.get(productId);
         const p = productById.get(productId);
-        if (!pi || !p || p.inventory <= 0) return;
+        if (!pi || !p || p.available <= 0) return;
         onAddToOrder(pi);
     }, [pantryItemById, productById, onAddToOrder]);
 
@@ -336,7 +336,7 @@ const PantryList: React.FC<PantryListProps> = ({
         const items = ids
             .map(id => pantryItemById.get(id))
             .filter((p): p is PantryItem => !!p)
-            .filter(p => (productById.get(p.productId)?.inventory ?? 0) > 0);
+            .filter(p => (productById.get(p.productId)?.available ?? 0) > 0);
         if (items.length > 0) onAddSelectedToOrder(items);
     }, [pantryItemById, productById, onAddSelectedToOrder]);
 

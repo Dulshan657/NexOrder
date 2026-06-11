@@ -42,7 +42,9 @@ const PROMO_BADGE_STYLES: Record<PromoBadgeType, string> = {
 };
 
 const ProductCard: React.FC<ProductCardProps> = ({ product, onAddItem, selectedHoReCa, onTogglePantry, isPantryItem, cartonDiscountPercent = 5, lowStockThreshold = 10, hints = [], promotions = [], currentUser }) => {
-  const isOutOfStock = product.inventory <= 0;
+  // Reservable stock (on-hand − allocated), not physical on-hand — this is what
+  // the order can actually reserve, so the shop badges/gates must use it.
+  const isOutOfStock = product.available <= 0;
 
   // Use promotion-aware pricing if promotions are available
   const priceRes = promotions.length > 0
@@ -168,7 +170,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddItem, selectedH
                      </>
                  )}
              </div>
-            {getStockBadge(product.inventory, lowStockThreshold)}
+            {getStockBadge(product.available, lowStockThreshold)}
           </div>
           {bogoPromo && bogoPromo.bogoConfig && (
             <p className="text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-2 py-1 mb-2 text-center">

@@ -199,7 +199,7 @@ const PantryAddDrawer: React.FC<PantryAddDrawerProps> = ({
                             <ul>
                                 {items.map(product => {
                                     const inPantry = pantryProductIds.has(product.id);
-                                    const oos = product.inventory <= 0;
+                                    const oos = product.available <= 0;
                                     const price = resolveHoReCaPrice(product, selectedHoReCa);
                                     const justAdded = pulse === product.id;
                                     return (

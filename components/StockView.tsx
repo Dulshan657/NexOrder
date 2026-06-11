@@ -134,7 +134,9 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser }) => {
   }, [balances]);
 
   const aggOf = (p: Product): Agg => aggByProduct.get(p.id) ?? { onHand: 0, allocated: 0, available: 0 };
-  const qtyOf = (p: Product): number => (isCustomer ? p.inventory : aggOf(p).available);
+  // Customers can't read the ledger (balances RLS is staff-only), so they get
+  // the products.available cache; staff get the live aggregated ledger available.
+  const qtyOf = (p: Product): number => (isCustomer ? p.available : aggOf(p).available);
 
   const metrics = useMemo(() => {
     const total = products.length;

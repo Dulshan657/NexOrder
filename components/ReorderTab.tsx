@@ -41,8 +41,8 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
     const resolvedItems = useMemo(() => {
         return editedItems.map(item => {
             const currentProduct = products.find(p => p.id === item.id);
-            const isAvailable = !!currentProduct && currentProduct.inventory > 0;
-            const isLowStock = !!currentProduct && currentProduct.inventory > 0 && currentProduct.inventory < 10;
+            const isAvailable = !!currentProduct && currentProduct.available > 0;
+            const isLowStock = !!currentProduct && currentProduct.available > 0 && currentProduct.available < 10;
 
             // Recalculate price with current pricing
             let currentPrice = item.price;

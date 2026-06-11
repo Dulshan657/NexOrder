@@ -26,7 +26,10 @@ export const SUPPLIERS: Supplier[] = [
 const IMG = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_IMAGE_CDN_URL)
   || 'https://ayam.com/images/com_hikashop/upload/thumbnails/263x263f';
 
-export const PRODUCTS: Product[] = [
+// Seed literals omit `available` (demo data is not allocation-aware); it
+// defaults to on-hand below. Real product data comes from Supabase via the
+// adapter, which sets `available` from the products.available cache (mig 00041).
+const PRODUCTS_SEED: Omit<Product, 'available'>[] = [
   // ===== COCONUT (22 products) =====
   // Regular
   { id: 1, sku: 'AYM-COC-001', name: 'Coconut Milk 140ml', description: '100% natural coconut milk, perfect for curries, soups, and desserts.', price: 2.50, category: 'Coconut', inventory: 120, unit: 'can', cartonSize: 12, dietaryLabels: ['GF', 'VEGAN'], imageUrl: `${IMG}/9311627603729-1.png`, supplierId: 1 },
@@ -171,6 +174,8 @@ export const PRODUCTS: Product[] = [
   { id: 113, sku: 'AYM-OTH-005', name: 'Creamed Corn 425g', description: 'Smooth and creamy corn, great for soups and sides.', price: 2.00, category: 'Other', inventory: 55, unit: 'can', cartonSize: 12, dietaryLabels: ['GF', 'VEGAN'], imageUrl: `${IMG}/dc6daae2eeffd1a1872e4d9ba2a5878acbd9b47e.png`, supplierId: 2 },
   { id: 114, sku: 'AYM-OTH-006', name: 'Baked Beans in Tomato Sauce 425g', description: 'Classic baked beans in rich tomato sauce.', price: 2.00, category: 'Other', inventory: 50, unit: 'can', cartonSize: 12, dietaryLabels: [], imageUrl: `${IMG}/baked-beans-in-tomato-sauce-425g-1.png`, supplierId: 2 },
 ];
+
+export const PRODUCTS: Product[] = PRODUCTS_SEED.map(p => ({ ...p, available: p.inventory }));
 
 // Assign realistic volume data (m³) to products based on size extracted from name/unit
 const sizeMatch = (name: string): number | null => {

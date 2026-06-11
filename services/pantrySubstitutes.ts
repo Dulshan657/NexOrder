@@ -20,7 +20,7 @@ export function getSubstitutes(
         if (product.id === target.id) continue;
         if (excludeIds.has(product.id)) continue;
         if (product.category !== target.category) continue;
-        if (product.inventory <= 0) continue;
+        if (product.available <= 0) continue;
 
         const freq = frequency[product.id];
         const count90d = freq?.count90d ?? 0;
