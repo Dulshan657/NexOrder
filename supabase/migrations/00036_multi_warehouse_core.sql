@@ -334,67 +334,10 @@ BEGIN
 END;
 $$;
 
--- ---------------------------------------------------------------------------
--- 5d. inv_receive_stock — goods receipt into a specific location
--- ---------------------------------------------------------------------------
-DROP FUNCTION IF EXISTS public.inv_receive_stock(JSONB, UUID);
-CREATE OR REPLACE FUNCTION public.inv_receive_stock(
-    p_lines       JSONB,
-    p_location_id INT  DEFAULT NULL,
-    p_actor       UUID DEFAULT NULL
-)
-RETURNS JSONB
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_loc       INT := COALESCE(p_location_id, public.inv_default_location());
-    v_line      JSONB;
-    v_pid       INT;
-    v_qty       NUMERIC;
-    v_lot       TEXT;
-    v_batch_id  INT;
-    v_count     INT := 0;
-BEGIN
-    IF v_loc IS NULL THEN
-        RAISE EXCEPTION 'NO_WAREHOUSE: no active warehouse configured' USING ERRCODE = 'P0001';
-    END IF;
-
-    FOR v_line IN SELECT * FROM jsonb_array_elements(p_lines)
-    LOOP
-        v_pid := (v_line->>'product_id')::INT;
-        v_qty := (v_line->>'quantity')::NUMERIC;
-        v_lot := NULLIF(v_line->>'lot_code', '');
-        v_batch_id := NULL;
-
-        IF v_qty <= 0 THEN
-            RAISE EXCEPTION 'INVALID_QTY: receive quantity must be positive' USING ERRCODE = 'P0001';
-        END IF;
-
-        IF v_lot IS NOT NULL THEN
-            INSERT INTO public.batches (product_id, lot_code, expiry_date, barcode, supplier_id)
-            VALUES (
-                v_pid, v_lot,
-                NULLIF(v_line->>'expiry_date','')::DATE,
-                NULLIF(v_line->>'barcode',''),
-                NULLIF(v_line->>'supplier_id','')::INT
-            )
-            ON CONFLICT (product_id, lot_code) DO UPDATE
-                SET expiry_date = COALESCE(EXCLUDED.expiry_date, public.batches.expiry_date),
-                    barcode     = COALESCE(EXCLUDED.barcode, public.batches.barcode)
-            RETURNING id INTO v_batch_id;
-        END IF;
-
-        PERFORM public.inv_apply_leg(
-            v_pid, v_loc, v_batch_id, v_qty, 0,
-            'receipt', p_actor, 'purchase_order', NULLIF(v_line->>'po_id',''), NULL);
-        v_count := v_count + 1;
-    END LOOP;
-
-    RETURN jsonb_build_object('lines_received', v_count, 'location_id', v_loc);
-END;
-$$;
+-- NOTE: receiving (inv_receive_stock) is made warehouse-aware in migration
+-- 00038_receive_stock_location.sql, which generalises the goods-receipt version
+-- from 00037 (it reads location_id from the p_receipt header). It is NOT touched
+-- here to avoid creating a competing overload with 00037's (jsonb,uuid,jsonb).
 
 -- ---------------------------------------------------------------------------
 -- 5e. inv_transfer_stock — move available stock location -> location
@@ -464,13 +407,11 @@ $$;
 REVOKE ALL ON FUNCTION public.inv_reserve_order(TEXT,JSONB,INT[],UUID,BOOLEAN) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.inv_release_reservation(TEXT,INT,UUID)           FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.inv_pick_order_line(INT,NUMERIC,INT,UUID)        FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.inv_receive_stock(JSONB,INT,UUID)                FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.inv_transfer_stock(INT,INT,INT,NUMERIC,UUID,TEXT) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.inv_reserve_order(TEXT,JSONB,INT[],UUID,BOOLEAN) TO service_role;
 GRANT EXECUTE ON FUNCTION public.inv_release_reservation(TEXT,INT,UUID)           TO service_role;
 GRANT EXECUTE ON FUNCTION public.inv_pick_order_line(INT,NUMERIC,INT,UUID)        TO service_role;
-GRANT EXECUTE ON FUNCTION public.inv_receive_stock(JSONB,INT,UUID)                TO service_role;
 GRANT EXECUTE ON FUNCTION public.inv_transfer_stock(INT,INT,INT,NUMERIC,UUID,TEXT) TO service_role;
 
 COMMIT;
