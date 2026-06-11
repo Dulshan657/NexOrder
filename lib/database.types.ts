@@ -15,6 +15,7 @@ export type Database = {
           avatar_url: string | null
           horeca_id: number | null
           created_at: string
+          home_warehouse_id: number | null
         }
         Insert: {
           id: string
@@ -24,6 +25,7 @@ export type Database = {
           avatar_url?: string | null
           horeca_id?: number | null
           created_at?: string
+          home_warehouse_id?: number | null
         }
         Update: {
           id?: string
@@ -33,6 +35,7 @@ export type Database = {
           avatar_url?: string | null
           horeca_id?: number | null
           created_at?: string
+          home_warehouse_id?: number | null
         }
         Relationships: []
       }
@@ -729,6 +732,11 @@ export type Database = {
           materialized_path: string
           is_active: boolean
           created_at: string
+          location_type: 'bulk' | 'racked' | null
+          address: string | null
+          contact: string | null
+          hours: string | null
+          notes: string | null
         }
         Insert: {
           id?: number
@@ -741,6 +749,11 @@ export type Database = {
           materialized_path: string
           is_active?: boolean
           created_at?: string
+          location_type?: 'bulk' | 'racked' | null
+          address?: string | null
+          contact?: string | null
+          hours?: string | null
+          notes?: string | null
         }
         Update: {
           id?: number
@@ -753,6 +766,11 @@ export type Database = {
           materialized_path?: string
           is_active?: boolean
           created_at?: string
+          location_type?: 'bulk' | 'racked' | null
+          address?: string | null
+          contact?: string | null
+          hours?: string | null
+          notes?: string | null
         }
         Relationships: []
       }
@@ -906,6 +924,7 @@ export type Database = {
           storage_path: string
           generated_by: string | null
           generated_at: string
+          location_id: number | null
         }
         Insert: {
           id?: number
@@ -914,6 +933,7 @@ export type Database = {
           storage_path: string
           generated_by?: string | null
           generated_at?: string
+          location_id?: number | null
         }
         Update: {
           id?: number
@@ -922,6 +942,34 @@ export type Database = {
           storage_path?: string
           generated_by?: string | null
           generated_at?: string
+          location_id?: number | null
+        }
+        Relationships: []
+      }
+      order_fulfillments: {
+        Row: {
+          id: number
+          order_id: string
+          location_id: number
+          status: 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
+          status_history: Json
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          order_id: string
+          location_id: number
+          status?: 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
+          status_history?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          order_id?: string
+          location_id?: number
+          status?: 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
+          status_history?: Json
+          created_at?: string
         }
         Relationships: []
       }

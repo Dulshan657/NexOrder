@@ -14,7 +14,7 @@ import type {
   RecurrenceRule, BogoConfig, BundleConfig, PromotionScope,
   PromotionTargeting, OrderStatus, DeliveryTimeSlot, PurchaseOrderItem,
   InventoryLocation, Batch, InventoryBalance, InventoryMovement,
-  OrderDocument, PickProgress,
+  OrderDocument, PickProgress, Warehouse, OrderFulfillment,
 } from '@/types'
 import type { Database } from './database.types'
 import { numericIdToUuid, uuidToNumericId } from './userIdMap'
@@ -44,6 +44,7 @@ type InventoryBalanceRow = Database['public']['Tables']['inventory_balances']['R
 type InventoryMovementRow = Database['public']['Tables']['inventory_movements']['Row']
 type OrderDocumentRow = Database['public']['Tables']['order_documents']['Row']
 type PickProgressRow = Database['public']['Tables']['pick_progress']['Row']
+type OrderFulfillmentRow = Database['public']['Tables']['order_fulfillments']['Row']
 
 // ── Product ───────────────────────────────────────────────────────
 
@@ -192,6 +193,7 @@ export function toUser(row: ProfileRow): User {
     role: row.role as User['role'],
     avatarUrl: row.avatar_url ?? undefined,
     hoReCaId: row.horeca_id ?? undefined,
+    homeWarehouseId: row.home_warehouse_id ?? undefined,
   }
 }
 
@@ -533,6 +535,44 @@ export function toInventoryLocation(row: LocationRow): InventoryLocation {
     lng: row.lng != null ? Number(row.lng) : undefined,
     materializedPath: row.materialized_path,
     isActive: row.is_active,
+    locationType: row.location_type ?? undefined,
+    address: row.address ?? undefined,
+    contact: row.contact ?? undefined,
+    hours: row.hours ?? undefined,
+    notes: row.notes ?? undefined,
+  }
+}
+
+/** Narrow a WAREHOUSE-kind location row to the warehouse-management view-type. */
+export function toWarehouse(row: LocationRow): Warehouse {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    locationType: (row.location_type ?? 'bulk'),
+    lat: row.lat != null ? Number(row.lat) : undefined,
+    lng: row.lng != null ? Number(row.lng) : undefined,
+    address: row.address ?? undefined,
+    contact: row.contact ?? undefined,
+    hours: row.hours ?? undefined,
+    notes: row.notes ?? undefined,
+    isActive: row.is_active,
+  }
+}
+
+export function toOrderFulfillment(
+  row: OrderFulfillmentRow & { locations?: { name: string } | null },
+): OrderFulfillment {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    locationId: row.location_id,
+    warehouseName: row.locations?.name ?? undefined,
+    status: row.status,
+    statusHistory: Array.isArray(row.status_history)
+      ? (row.status_history as unknown as StatusHistoryEntry[])
+      : [],
+    createdAt: row.created_at,
   }
 }
 

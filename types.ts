@@ -36,6 +36,7 @@ export interface User {
     role: UserRole;
     avatarUrl?: string;
     hoReCaId?: number; // Link user to a HoReCa entity
+    homeWarehouseId?: number; // Warehouse role: the site this user picks/receives at (mig 00036)
 }
 
 export interface Product {
@@ -73,6 +74,9 @@ export interface Product {
 
 export type LocationKind = 'WAREHOUSE' | 'ZONE' | 'BIN' | 'SHELF';
 
+/** Storage model of a WAREHOUSE-kind location (mig 00036). */
+export type WarehouseType = 'bulk' | 'racked';
+
 export interface InventoryLocation {
     id: number;
     parentId?: number;
@@ -83,6 +87,44 @@ export interface InventoryLocation {
     lng?: number;
     materializedPath: string;
     isActive: boolean;
+    // Warehouse-level config (mig 00036; meaningful only on WAREHOUSE rows).
+    locationType?: WarehouseType;
+    address?: string;
+    contact?: string;
+    hours?: string;
+    notes?: string;
+}
+
+/**
+ * A WAREHOUSE-kind location surfaced for warehouse management / routing. Same
+ * row as InventoryLocation, narrowed to the fields the warehouse admin + the
+ * closest-first allocator care about.
+ */
+export interface Warehouse {
+    id: number;
+    code: string;
+    name: string;
+    locationType: WarehouseType;
+    lat?: number;
+    lng?: number;
+    address?: string;
+    contact?: string;
+    hours?: string;
+    notes?: string;
+    isActive: boolean;
+}
+
+/** Per-warehouse slice of an order (mig 00036). */
+export type FulfillmentStatus = 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered';
+
+export interface OrderFulfillment {
+    id: number;
+    orderId: string;
+    locationId: number;
+    warehouseName?: string;
+    status: FulfillmentStatus;
+    statusHistory: StatusHistoryEntry[];
+    createdAt: string;
 }
 
 export interface Batch {
@@ -218,6 +260,10 @@ export interface Order {
     // (submittedBy is the connecting admin for auto approvals). Set alongside
     // inboundMessageId from pending_pos.status === 'auto_approved'.
     autoApproved?: boolean;
+    // Per-warehouse fulfilment slices (mig 00036). `status` above is the derived
+    // rollup (least-advanced fulfilment); these expose the per-site detail so the
+    // UI can show "WH1 dispatched · WH2 picking". Empty/absent for legacy orders.
+    fulfillments?: OrderFulfillment[];
 }
 
 export type InvoiceStatus = 'pending' | 'paid' | 'overdue';
