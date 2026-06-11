@@ -284,19 +284,49 @@ serve(async (req: Request) => {
     else aggregated.set(key, { ...it })
   }
 
-  // Stock check. Inventory (products.inventory / on_hand) is in BASE units, but a
-  // carton line carries quantity = number of cartons + packSize = units per carton.
-  // Convert to base units (quantity × packSize) so the check — and the reservation
-  // below, which reuses totalsByProduct — operate in the same unit as stock.
+  // Stock check. Inventory is in BASE units, but a carton line carries
+  // quantity = number of cartons + packSize = units per carton. Convert to base
+  // units (quantity × packSize) so the check — and the reservation below, which
+  // reuses totalsByProduct — operate in the same unit as stock.
   const totalsByProduct = new Map<number, number>()
   for (const it of aggregated.values()) {
     const baseUnits = lineBaseUnits(it.quantity, it.packSize)
     totalsByProduct.set(it.productId, (totalsByProduct.get(it.productId) ?? 0) + baseUnits)
   }
+
+  // Closest-first warehouse preference from the customer's coordinates; the RPC
+  // splits each line across sites nearest-first. Computed here (before the stock
+  // check) because availability must be scoped to the same warehouses the RPC
+  // will draw from. Falls back to the default warehouse when the HoReCa has no
+  // coordinates or only one warehouse exists.
+  const coords =
+    typeof hoReCa.lat === 'number' && typeof hoReCa.lng === 'number'
+      ? { lat: hoReCa.lat, lng: hoReCa.lng }
+      : null
+  const locationPref = await loadLocationPref(serviceClient, coords)
+
+  // Check against AVAILABLE (on_hand − allocated) from inventory_balances, NOT
+  // products.inventory (the on_hand cache). The reservation RPC reserves against
+  // available, so checking on_hand here would let an order pass the pre-check and
+  // then fail reservation with a misleading "Stock changed" race error when the
+  // shortfall was really stock already allocated to other open orders. Scope to
+  // the preferred warehouses so it matches exactly what the RPC will reserve.
+  const pids = [...totalsByProduct.keys()]
+  let balQuery = serviceClient
+    .from('inventory_balances')
+    .select('product_id, available')
+    .in('product_id', pids)
+  if (locationPref.length > 0) balQuery = balQuery.in('location_id', locationPref)
+  const { data: balRows } = await balQuery
+  const availByProduct = new Map<number, number>()
+  for (const r of (balRows ?? []) as Array<{ product_id: number; available: number }>) {
+    availByProduct.set(r.product_id, (availByProduct.get(r.product_id) ?? 0) + Number(r.available))
+  }
   for (const [pid, qty] of totalsByProduct) {
-    const product = productMap.get(pid)!
-    if (product.inventory < qty) {
-      return errorResponse('INSUFFICIENT_STOCK', `${product.inventory} of "${product.name}" available, ${qty} requested`, 409)
+    const avail = availByProduct.get(pid) ?? 0
+    if (avail < qty) {
+      const product = productMap.get(pid)!
+      return errorResponse('INSUFFICIENT_STOCK', `${avail} of "${product.name}" available, ${qty} requested`, 409)
     }
   }
 
@@ -394,14 +424,8 @@ serve(async (req: Request) => {
     product_id: productId,
     quantity,
   }))
-  // Closest-first warehouse preference from the customer's coordinates; the RPC
-  // splits each line across sites nearest-first. Falls back to the default
-  // warehouse when the HoReCa has no coordinates or only one warehouse exists.
-  const coords =
-    typeof hoReCa.lat === 'number' && typeof hoReCa.lng === 'number'
-      ? { lat: hoReCa.lat, lng: hoReCa.lng }
-      : null
-  const locationPref = await loadLocationPref(serviceClient, coords)
+  // coords + locationPref were computed above (the stock pre-check is scoped to
+  // these same warehouses). The RPC splits each line across sites nearest-first.
   const { error: reserveError } = await serviceClient.rpc('inv_reserve_order', {
     p_order_id: orderId,
     p_items: reserveItems,

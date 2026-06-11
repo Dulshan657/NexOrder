@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { extractFunctionErrorMessage } from '@/lib/functionError'
 import type { Database } from '@/lib/database.types'
 
 type OrderRow = Database['public']['Tables']['orders']['Row']
@@ -90,10 +91,11 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     body: input,
   })
   if (error) {
-    // Edge Function errors come back with status + parsed body in error.context
-    const ctx = (error as { context?: { error?: { code?: string; message?: string } } }).context
-    const msg = ctx?.error?.message ?? error.message ?? 'Order placement failed'
-    throw new Error(msg)
+    // FunctionsHttpError leaves the structured `{ error: { code, message } }`
+    // body on the raw Response at `.context`; extract it so the user sees the
+    // real reason (e.g. "19 of \"Coconut Milk 400ml\" available, 25 requested")
+    // instead of the generic "Edge Function returned a non-2xx status code".
+    throw new Error(await extractFunctionErrorMessage(error, 'Order placement failed'))
   }
   if (!data) throw new Error('Order placement returned no data')
   return data
