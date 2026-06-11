@@ -48,6 +48,20 @@ export async function getBalancesByProduct(productId: number): Promise<ProductBa
   }))
 }
 
+/** Capacity slots currently used at a location = Σ(on_hand × product.size_factor). */
+export async function getBinFillSlots(locationId: number): Promise<number> {
+  const { data, error } = await supabase
+    .from('inventory_balances')
+    .select('on_hand, products(size_factor)')
+    .eq('location_id', locationId)
+    .gt('on_hand', 0)
+  if (error) throw error
+  return ((data ?? []) as any[]).reduce(
+    (s, r) => s + Number(r.on_hand) * Number(r.products?.size_factor ?? 1),
+    0,
+  )
+}
+
 export async function getLocations() {
   const { data, error } = await supabase
     .from('locations')

@@ -1,9 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ArrowRight, Repeat } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { X, ArrowRight, Repeat, AlertTriangle } from 'lucide-react';
 import type { Product, Warehouse } from '../../types';
 import { useWarehouses, useTransferStock } from '../../hooks/queries/useWarehouses';
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
+import { useProductHomeBins } from '../../hooks/queries/useProductHomeBins';
+import { getBinFillSlots } from '../../services/supabase/inventoryService';
 
 interface TransferStockModalProps {
   products: Product[];
@@ -62,6 +65,31 @@ const TransferStockModal: React.FC<TransferStockModalProps> = ({ products, onClo
 
   const fromLoc = fromBin !== '' ? fromBin : fromWh;
   const toLoc = toBin !== '' ? toBin : toWh;
+
+  // Directed put-away: default the destination bin to the product's home bin for
+  // the chosen racked warehouse.
+  const { data: homeBins } = useProductHomeBins(productId === '' ? null : Number(productId));
+  const toWhObj = activeWarehouses.find((w) => w.id === toWh);
+  const { data: toBins } = useWarehouseLocations(toWhObj?.locationType === 'racked' ? (toWh as number) : null);
+  useEffect(() => {
+    if (productId !== '' && toWhObj?.locationType === 'racked' && homeBins && toBin === '') {
+      const hb = homeBins.find((h) => h.warehouseId === toWh);
+      if (hb) setToBin(hb.binId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId, toWh, homeBins]);
+
+  // Soft capacity warning: bin fill (Σ on_hand × size_factor) + incoming vs capacity.
+  const { data: destFill } = useQuery({
+    queryKey: ['bin-fill', toBin],
+    queryFn: () => getBinFillSlots(Number(toBin)),
+    enabled: toBin !== '',
+  });
+  const product = products.find((p) => p.id === Number(productId));
+  const destBin = (toBins ?? []).find((b) => b.id === toBin);
+  const incomingSlots = product && qty ? Number(qty) * (product.sizeFactor ?? 1) : 0;
+  const overCapacity =
+    destBin?.capacitySlots != null && destFill != null && destFill + incomingSlots > destBin.capacitySlots;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,6 +153,16 @@ const TransferStockModal: React.FC<TransferStockModalProps> = ({ products, onClo
             <input className={fieldCls} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Rebalancing / put-away" />
           </div>
 
+          {overCapacity && (
+            <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                This put-away (~{incomingSlots.toLocaleString()} slots) would exceed the bin's capacity of{' '}
+                {destBin?.capacitySlots?.toLocaleString()} (currently ~{Math.round(destFill ?? 0).toLocaleString()} used).
+                You can still proceed.
+              </span>
+            </div>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           {done && <p className="text-sm text-emerald-600">Transfer complete.</p>}
         </div>
