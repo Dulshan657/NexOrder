@@ -64,13 +64,14 @@ export interface RecentReceipt {
   qty: number
   lotCode: string | null
   expiryDate: string | null
+  supplierName: string | null
   createdAt: string
 }
 
 export async function getRecentReceipts(limit = 10): Promise<RecentReceipt[]> {
   const { data, error } = await supabase
     .from('inventory_movements')
-    .select('id, qty_delta, created_at, product_id, products(name, sku), batches(lot_code, expiry_date)')
+    .select('id, qty_delta, created_at, product_id, products(name, sku), batches(lot_code, expiry_date), suppliers(name)')
     .eq('movement_type', 'receipt')
     .order('created_at', { ascending: false })
     .limit(limit)
@@ -83,6 +84,7 @@ export async function getRecentReceipts(limit = 10): Promise<RecentReceipt[]> {
     qty: Number(r.qty_delta),
     lotCode: r.batches?.lot_code ?? null,
     expiryDate: r.batches?.expiry_date ?? null,
+    supplierName: r.suppliers?.name ?? null,
     createdAt: r.created_at,
   }))
 }

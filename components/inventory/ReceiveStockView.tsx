@@ -1,10 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Product, User } from '../../types';
 import { useReceiveStock } from '../../hooks/queries/useReceiveStock';
 import { useRecentReceipts } from '../../hooks/queries/useInventoryBalances';
-import type { ReceiptLine } from '../../services/supabase/receivingService';
+import { useSuppliers } from '../../hooks/queries/useSuppliers';
+import { useProfiles } from '../../hooks/queries/useProfiles';
+import type { ReceiptHeader, ReceiptLine } from '../../services/supabase/receivingService';
 import { useToasts } from '../../hooks/useToasts';
-import { PackagePlus, Plus, Trash2, Search, X, Boxes, History, Clock } from 'lucide-react';
+import {
+  PackagePlus, Plus, Trash2, Search, X, Boxes, History, Clock,
+  Truck, FileText, CalendarDays, UserRound, Check, ChevronDown,
+} from 'lucide-react';
 
 /** Compact relative-time label ("just now", "3h ago", "2d ago"). */
 const relativeTime = (iso: string): string => {
@@ -56,6 +61,11 @@ const RecentReceiptsPanel: React.FC = () => {
                   {r.lotCode ? ` · lot ${r.lotCode}` : ''}
                   {r.expiryDate ? ` · exp ${r.expiryDate}` : ''}
                 </p>
+                {r.supplierName && (
+                  <p className="text-xs text-stone-500 flex items-center gap-1 mt-0.5">
+                    <Truck className="w-3 h-3 text-stone-400" /> {r.supplierName}
+                  </p>
+                )}
               </div>
               <span className="font-mono text-sm text-emerald-600 shrink-0">+{r.qty}</span>
               <span className="flex items-center gap-1 text-xs text-stone-400 shrink-0 w-20 justify-end">
@@ -64,6 +74,104 @@ const RecentReceiptsPanel: React.FC = () => {
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+};
+
+interface SupplierOption {
+  id: number;
+  name: string;
+}
+
+interface SupplierComboboxProps {
+  suppliers: SupplierOption[];
+  /** Currently selected supplier id (existing pick), or null for free-text/none. */
+  valueId: number | null;
+  /** Text shown in the field — an existing name or a free-text name. */
+  valueName: string;
+  onPickExisting: (supplier: SupplierOption) => void;
+  /** User committed a name not in the list (create-on-the-fly). */
+  onPickNew: (name: string) => void;
+  onChangeText: (name: string) => void;
+}
+
+/**
+ * Searchable supplier picker that also lets the operator type a supplier that
+ * isn't in the list yet ("Create …"). A delivery always comes from one supplier,
+ * so this is the required header field for a goods receipt.
+ */
+const SupplierCombobox: React.FC<SupplierComboboxProps> = ({
+  suppliers, valueId, valueName, onPickExisting, onPickNew, onChangeText,
+}) => {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  const query = valueName.trim().toLowerCase();
+  const matches = useMemo(() => {
+    if (!query) return suppliers.slice(0, 8);
+    return suppliers.filter((s) => s.name.toLowerCase().includes(query)).slice(0, 8);
+  }, [suppliers, query]);
+
+  const exactExists = useMemo(
+    () => suppliers.some((s) => s.name.trim().toLowerCase() === query),
+    [suppliers, query],
+  );
+  const showCreate = query.length > 0 && !exactExists;
+
+  return (
+    <div className="relative" ref={boxRef}>
+      <div className="relative">
+        <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+        <input
+          type="text"
+          value={valueName}
+          onChange={(e) => { onChangeText(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder="Search or type a supplier…"
+          aria-label="Supplier"
+          className="w-full pl-10 pr-9 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+        />
+        {valueId != null ? (
+          <Check className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
+        ) : (
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+        )}
+      </div>
+      {open && (matches.length > 0 || showCreate) && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-card overflow-hidden">
+          {matches.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => { onPickExisting(s); setOpen(false); }}
+              className="flex items-center justify-between w-full px-4 py-2.5 text-left hover:bg-stone-50 btn-press"
+            >
+              <span className="text-sm text-stone-800">{s.name}</span>
+              {valueId === s.id && <Check className="w-4 h-4 text-emerald-500" />}
+            </button>
+          ))}
+          {showCreate && (
+            <button
+              type="button"
+              onClick={() => { onPickNew(valueName.trim()); setOpen(false); }}
+              className="flex items-center gap-2 w-full px-4 py-2.5 text-left border-t border-stone-100 hover:bg-stone-50 btn-press"
+            >
+              <Plus className="w-4 h-4 text-nexgen-blue" />
+              <span className="text-sm text-stone-700">
+                Create “<span className="font-medium">{valueName.trim()}</span>”
+              </span>
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -81,6 +189,7 @@ interface DraftLine {
   lotCode: string;
   expiryDate: string;
   barcode: string;
+  supplierId: number | null; // per-line override; null = use the header supplier
 }
 
 let draftSeq = 0;
@@ -91,12 +200,39 @@ const newDraft = (): DraftLine => ({
   lotCode: '',
   expiryDate: '',
   barcode: '',
+  supplierId: null,
 });
 
-const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products }) => {
+const todayIso = (): string => new Date().toISOString().slice(0, 10);
+
+const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUser }) => {
   const { addToast } = useToasts();
   const receive = useReceiveStock();
+  const { data: supplierRows } = useSuppliers();
+  const { data: profiles } = useProfiles();
 
+  const suppliers = useMemo<SupplierOption[]>(
+    () => (supplierRows ?? []).map((s) => ({ id: s.id, name: s.name })),
+    [supplierRows],
+  );
+
+  // ── Receipt header ─────────────────────────────────────────────────────────
+  const [supplierId, setSupplierId] = useState<number | null>(null);
+  const [supplierName, setSupplierName] = useState('');
+  const [reference, setReference] = useState('');
+  const [receivedDate, setReceivedDate] = useState(todayIso());
+  const [receivedBy, setReceivedBy] = useState('');
+
+  // Default "received by" to the signed-in user (matched by email → profile id).
+  useEffect(() => {
+    if (receivedBy || !profiles) return;
+    const me = profiles.find(
+      (p) => (p.email ?? '').toLowerCase() === (currentUser.email ?? '').toLowerCase(),
+    );
+    if (me) setReceivedBy(me.id);
+  }, [profiles, currentUser.email, receivedBy]);
+
+  // ── Receipt lines ──────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
   const [picked, setPicked] = useState<DraftLine[]>([]);
 
@@ -136,19 +272,34 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products }) => {
     [picked],
   );
 
+  const hasSupplier = supplierId != null || supplierName.trim() !== '';
+  const canSubmit = hasSupplier && validLines.length > 0 && !receive.isPending;
+
   const submit = async () => {
-    if (validLines.length === 0) return;
+    if (!hasSupplier || validLines.length === 0) return;
+    const header: ReceiptHeader = {
+      ...(supplierId != null
+        ? { supplier_id: supplierId }
+        : { supplier_name: supplierName.trim() }),
+      ...(reference.trim() ? { reference: reference.trim() } : {}),
+      ...(receivedDate ? { received_date: receivedDate } : {}),
+      ...(receivedBy ? { received_by: receivedBy } : {}),
+    };
     const lines: ReceiptLine[] = validLines.map(l => ({
       product_id: l.productId as number,
       quantity: Number(l.quantity),
       ...(l.lotCode.trim() ? { lot_code: l.lotCode.trim() } : {}),
       ...(l.expiryDate ? { expiry_date: l.expiryDate } : {}),
       ...(l.barcode.trim() ? { barcode: l.barcode.trim() } : {}),
+      ...(l.supplierId != null ? { supplier_id: l.supplierId } : {}),
     }));
     try {
-      const result = await receive.mutateAsync(lines);
+      const result = await receive.mutateAsync({ header, lines });
       addToast(`Received ${result.lines_received} line${result.lines_received === 1 ? '' : 's'} into stock`, 'success');
       setPicked([]);
+      setReference('');
+      setSupplierId(null);
+      setSupplierName('');
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Failed to receive stock', 'error');
     }
@@ -164,8 +315,74 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products }) => {
         <div>
           <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Receive Stock</h1>
           <p className="text-xs text-stone-500 mt-0.5">
-            Record goods arriving into the Main Warehouse. Add a lot code &amp; expiry to track batches.
+            Record goods arriving into the Main Warehouse. Choose the supplier, then add what arrived.
           </p>
+        </div>
+      </div>
+
+      {/* Receipt header — who supplied this delivery */}
+      <div className="glass-card rounded-xl p-4 sm:p-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="lg:col-span-2">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
+              Supplier <span className="text-red-500">*</span>
+            </label>
+            <SupplierCombobox
+              suppliers={suppliers}
+              valueId={supplierId}
+              valueName={supplierName}
+              onChangeText={(name) => { setSupplierName(name); setSupplierId(null); }}
+              onPickExisting={(s) => { setSupplierId(s.id); setSupplierName(s.name); }}
+              onPickNew={(name) => { setSupplierId(null); setSupplierName(name); }}
+            />
+            {supplierId == null && supplierName.trim() !== '' && (
+              <p className="text-xs text-stone-400 mt-1">New supplier — will be added to your supplier list.</p>
+            )}
+          </div>
+
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
+              <FileText className="w-3.5 h-3.5 text-stone-400" /> Reference
+            </label>
+            <input
+              type="text"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              placeholder="Invoice / docket / PO no."
+              className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 lg:col-span-1 lg:grid-cols-1 lg:gap-4">
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
+                <CalendarDays className="w-3.5 h-3.5 text-stone-400" /> Received
+              </label>
+              <input
+                type="date"
+                value={receivedDate}
+                max={todayIso()}
+                onChange={(e) => setReceivedDate(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 max-w-xs">
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
+            <UserRound className="w-3.5 h-3.5 text-stone-400" /> Received by
+          </label>
+          <select
+            value={receivedBy}
+            onChange={(e) => setReceivedBy(e.target.value)}
+            className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+          >
+            <option value="">—</option>
+            {(profiles ?? []).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -208,8 +425,8 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products }) => {
           </div>
           <p className="text-sm font-medium text-stone-700">Start a goods receipt</p>
           <p className="text-xs text-stone-400 mt-1 max-w-sm mx-auto">
-            Search a product above to add a line, set the received quantity (and an optional lot code &amp; expiry),
-            then receive it into the Main Warehouse. No purchase order needed.
+            Pick the supplier above, then search a product to add a line, set the received quantity
+            (and an optional lot code &amp; expiry), and receive it into the Main Warehouse.
           </p>
         </div>
       ) : (
@@ -223,6 +440,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products }) => {
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Lot code</th>
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Expiry</th>
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Barcode</th>
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-44">Supplier</th>
                   <th scope="col" className="px-4 py-3 w-10"></th>
                 </tr>
               </thead>
@@ -272,6 +490,23 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products }) => {
                           placeholder="optional"
                         />
                       </td>
+                      <td className="px-4 py-3">
+                        <select
+                          value={line.supplierId ?? ''}
+                          onChange={e =>
+                            updateLine(line.key, {
+                              supplierId: e.target.value ? Number(e.target.value) : null,
+                            })
+                          }
+                          aria-label="Line supplier override"
+                          className="w-full px-2 py-1.5 text-sm bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+                        >
+                          <option value="">Use header supplier</option>
+                          {suppliers.map((s) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <button
                           onClick={() => removeLine(line.key)}
@@ -296,16 +531,21 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products }) => {
             >
               <Plus className="w-4 h-4" /> Add blank line
             </button>
-            <button
-              onClick={submit}
-              disabled={validLines.length === 0 || receive.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-nexgen-blue text-white text-sm font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <PackagePlus className="w-4 h-4" />
-              {receive.isPending
-                ? 'Receiving…'
-                : `Receive ${validLines.length} line${validLines.length === 1 ? '' : 's'}`}
-            </button>
+            <div className="flex items-center gap-3">
+              {!hasSupplier && validLines.length > 0 && (
+                <span className="text-xs text-amber-600">Choose a supplier to receive</span>
+              )}
+              <button
+                onClick={submit}
+                disabled={!canSubmit}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-nexgen-blue text-white text-sm font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <PackagePlus className="w-4 h-4" />
+                {receive.isPending
+                  ? 'Receiving…'
+                  : `Receive ${validLines.length} line${validLines.length === 1 ? '' : 's'}`}
+              </button>
+            </div>
           </div>
         </div>
       )}

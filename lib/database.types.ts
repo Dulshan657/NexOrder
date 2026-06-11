@@ -832,6 +832,7 @@ export type Database = {
           ref_id: string | null
           actor_id: string | null
           reason: string | null
+          supplier_id: number | null
           created_at: string
         }
         Insert: {
@@ -845,6 +846,7 @@ export type Database = {
           ref_id?: string | null
           actor_id?: string | null
           reason?: string | null
+          supplier_id?: number | null
           created_at?: string
         }
         Update: {
@@ -858,6 +860,40 @@ export type Database = {
           ref_id?: string | null
           actor_id?: string | null
           reason?: string | null
+          supplier_id?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      goods_receipts: {
+        Row: {
+          id: number
+          location_id: number
+          supplier_id: number | null
+          reference: string | null
+          received_date: string
+          received_by: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          location_id: number
+          supplier_id?: number | null
+          reference?: string | null
+          received_date?: string
+          received_by?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          location_id?: number
+          supplier_id?: number | null
+          reference?: string | null
+          received_date?: string
+          received_by?: string | null
+          created_by?: string | null
           created_at?: string
         }
         Relationships: []

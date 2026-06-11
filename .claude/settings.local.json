@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm run:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(ls -la \"C:\\\\Users\\\\dulsh\\\\OneDrive\\\\Documents\\\\Projects\\\\OrderSystem\\\\NexOrder\\\\\" | head -20)",
+      "Bash(xargs ls -la)"
     ]
   }
 }
