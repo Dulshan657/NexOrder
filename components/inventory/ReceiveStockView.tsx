@@ -3,7 +3,6 @@ import type { Product, User } from '../../types';
 import { useReceiveStock } from '../../hooks/queries/useReceiveStock';
 import { useRecentReceipts } from '../../hooks/queries/useInventoryBalances';
 import { useSuppliers } from '../../hooks/queries/useSuppliers';
-import { useProfiles } from '../../hooks/queries/useProfiles';
 import type { ReceiptHeader, ReceiptLine } from '../../services/supabase/receivingService';
 import { useToasts } from '../../hooks/useToasts';
 import {
@@ -209,7 +208,6 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   const { addToast } = useToasts();
   const receive = useReceiveStock();
   const { data: supplierRows } = useSuppliers();
-  const { data: profiles } = useProfiles();
 
   const suppliers = useMemo<SupplierOption[]>(
     () => (supplierRows ?? []).map((s) => ({ id: s.id, name: s.name })),
@@ -221,16 +219,8 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   const [supplierName, setSupplierName] = useState('');
   const [reference, setReference] = useState('');
   const [receivedDate, setReceivedDate] = useState(todayIso());
-  const [receivedBy, setReceivedBy] = useState('');
-
-  // Default "received by" to the signed-in user (matched by email → profile id).
-  useEffect(() => {
-    if (receivedBy || !profiles) return;
-    const me = profiles.find(
-      (p) => (p.email ?? '').toLowerCase() === (currentUser.email ?? '').toLowerCase(),
-    );
-    if (me) setReceivedBy(me.id);
-  }, [profiles, currentUser.email, receivedBy]);
+  // "Received by" is always the signed-in user — the server stamps received_by
+  // with the actor when the client omits it.
 
   // ── Receipt lines ──────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
@@ -283,7 +273,6 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
         : { supplier_name: supplierName.trim() }),
       ...(reference.trim() ? { reference: reference.trim() } : {}),
       ...(receivedDate ? { received_date: receivedDate } : {}),
-      ...(receivedBy ? { received_by: receivedBy } : {}),
     };
     const lines: ReceiptLine[] = validLines.map(l => ({
       product_id: l.productId as number,
@@ -373,16 +362,9 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
           <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
             <UserRound className="w-3.5 h-3.5 text-stone-400" /> Received by
           </label>
-          <select
-            value={receivedBy}
-            onChange={(e) => setReceivedBy(e.target.value)}
-            className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
-          >
-            <option value="">—</option>
-            {(profiles ?? []).map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+          <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700">
+            {currentUser.name}
+          </div>
         </div>
       </div>
 
