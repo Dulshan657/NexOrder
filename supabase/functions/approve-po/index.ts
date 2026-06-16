@@ -204,7 +204,11 @@ interface PendingPoRow {
   extracted_po: {
     customer_name_raw?: string | null
     requested_date?: string | null
-    lines?: Array<{ item_code_raw?: string | null; description_raw?: string | null }>
+    lines?: Array<{
+      item_code_raw?: string | null
+      description_raw?: string | null
+      unit_price?: number | null
+    }>
   }
   approved_order_id: string | null
 }
@@ -298,6 +302,16 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
     product_id: number
     quantity: number
     pack_size: number | null
+    extracted_unit_price: number | null
+  }
+  // Per-unit prices the extractor read off the document, indexed by the
+  // extracted line's array position (== matched_items.po_line_index). Used as a
+  // price fallback in buildOrderItems when a product has no catalog price.
+  const extractedLines = pending.extracted_po.lines ?? []
+  const extractedPriceFor = (poLineIndex: number | null): number | null => {
+    if (poLineIndex === null) return null
+    const raw = extractedLines[poLineIndex]?.unit_price
+    return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : null
   }
   let resolvedItems: ResolvedLine[]
   if (args.overrides.lines !== undefined) {
@@ -309,6 +323,7 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
       product_id: l.product_id,
       quantity: l.quantity,
       pack_size: l.pack_size ?? null,
+      extracted_unit_price: extractedPriceFor(l.po_line_index),
     }))
   } else {
     if (pending.matched_items.some(i => !i.product_id)) {
@@ -322,6 +337,7 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
       product_id: item.product_id as number,
       quantity: item.quantity,
       pack_size: item.pack_size,
+      extracted_unit_price: extractedPriceFor(item.po_line_index),
     }))
   }
   if (resolvedItems.some(i => !Number.isFinite(i.product_id) || i.product_id <= 0)) {

@@ -14,7 +14,8 @@
     "deploy": "node scripts/deploy.mjs",
     "po-fixtures": "node tests/fixtures/po-samples/generate.mjs",
     "po-inject": "node tests/fixtures/po-samples/inject.mjs",
-    "po-demo-seed": "node tests/fixtures/po-samples/demo-seed.mjs"
+    "po-demo-seed": "node tests/fixtures/po-samples/demo-seed.mjs",
+    "po-sydney-seed": "node tests/fixtures/po-samples/sydney-tools-seed.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.19.0",

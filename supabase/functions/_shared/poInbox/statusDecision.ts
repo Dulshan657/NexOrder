@@ -33,14 +33,18 @@ export interface StatusDecisionResult {
 /**
  * Compute the pending_po status and overall confidence from the
  * extractor output + alias-resolver result. We compute
- *   confidenceOverall = min(po_number, customer_name_raw, order_date,
- *                            requested_date, ship_to, lines)
- * so any single low-confidence field drags the overall down.
+ *   confidenceOverall = min(po_number, customer_name_raw, order_date, lines)
+ * — the ESSENTIAL fields needed to act on an order. `requested_date` and
+ * `ship_to` are advisory (many legitimate POs omit a requested-delivery
+ * date or print only a billing address), so they are deliberately excluded
+ * from the hard floor: an absent advisory field must not block an otherwise
+ * confident, fully-resolved PO from auto-approving.
  *
  * Auto-approval requires all three:
- *   * confidenceOverall >= 0.95
+ *   * confidenceOverall >= 0.95 (over essential fields)
  *   * customer was resolved
  *   * every line resolved to a product
+ * and must not be flagged for sender mismatch.
  *
  * The `reason` array captures every check that failed (or, on success,
  * the empty array). It's logged + persisted to confidence_fields for
@@ -52,8 +56,6 @@ export function decidePendingPoStatus(input: StatusDecisionInput): StatusDecisio
     safeNumber(c.po_number),
     safeNumber(c.customer_name_raw),
     safeNumber(c.order_date),
-    safeNumber(c.requested_date),
-    safeNumber(c.ship_to),
     safeNumber(c.lines),
   )
 

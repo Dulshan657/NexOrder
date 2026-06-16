@@ -18,8 +18,8 @@
 // Credentials come from NexOrder/.env.local (VITE_SUPABASE_URL /
 // SUPABASE_SERVICE_ROLE_KEY) or the environment.
 
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
+import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
 
@@ -242,6 +242,52 @@ const DEMO_MESSAGES = [
 ]
 
 // ----------------------------------------------------------------------------
+// File mode (`--files <dir>`) — push REAL PDF files from disk through the same
+// upload → inbound_messages → extract-po pipeline (no mailbox). Used to rehearse
+// the live demo against the actual customer POs and as an on-stage backup.
+// The Sydney Tools PO (#3380598) is sent from the seeded trusted sender so it
+// auto-approves (run `npm run po-sydney-seed` first); the rest land in review.
+// ----------------------------------------------------------------------------
+const FILE_SYDNEY_SENDER = (process.env.SYDNEY_TOOLS_SENDER || 'orders@sydneytools.com.au')
+  .trim()
+  .toLowerCase()
+const FILE_VIEWER_SENDER = 'viewer@po-demo.example'
+
+function isSydneyToolsHero(filename) {
+  return /3380598|sydney/i.test(filename)
+}
+
+function fileKey(filename) {
+  const slug = basename(filename)
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return `file-${slug || 'po'}`
+}
+
+/** Build injector messages from every PDF in a directory. */
+function buildFileMessages(dir) {
+  const pdfs = readdirSync(dir).filter(f => /\.pdf$/i.test(f))
+  if (pdfs.length === 0) throw new Error(`no PDF files found in ${dir}`)
+  return pdfs.map(filename => {
+    const bytes = new Uint8Array(readFileSync(resolve(dir, filename)))
+    const hero = isSydneyToolsHero(filename)
+    return {
+      key: fileKey(filename),
+      fromAddress: hero ? FILE_SYDNEY_SENDER : FILE_VIEWER_SENDER,
+      fromName: hero ? 'Sydney Tools' : 'PO Demo Sender',
+      subject: basename(filename).replace(/\.[a-z0-9]+$/i, ''),
+      bodyText: `Please process the attached purchase order (${basename(filename)}).`,
+      attachments: [{ role: 'doc', kind: 'pdf', filename: basename(filename), bytes }],
+      expect: hero
+        ? 'auto_approved — seeded Sydney Tools hero'
+        : 'needs_review — extraction showcase (no matching catalog data)',
+    }
+  })
+}
+
+// ----------------------------------------------------------------------------
 // Env + client
 // ----------------------------------------------------------------------------
 function loadEnv() {
@@ -445,7 +491,8 @@ async function injectMessage(accountId, msg, receivedAt) {
 
   for (let i = 0; i < msg.attachments.length; i++) {
     const att = msg.attachments[i]
-    const bytes = await renderAttachmentBytes(att)
+    // File mode supplies real bytes directly; the edge-case set renders synthetic specs.
+    const bytes = att.bytes ?? (await renderAttachmentBytes(att))
     const storedName = `${i}-${att.filename}`
     const { error } = await supa.storage
       .from(ARCHIVE_BUCKET)
@@ -612,11 +659,78 @@ async function clean() {
 }
 
 // ----------------------------------------------------------------------------
+// File mode runner — inject real PDFs from a directory
+// ----------------------------------------------------------------------------
+async function runFiles(dir, isClean) {
+  const messages = buildFileMessages(dir)
+  const adminId = await getAdminProfileId()
+  const accountId = await ensureTestAccount(adminId)
+
+  // purgeMessages clears all DB rows for the test account; also drop file-key
+  // storage prefixes (purgeMessages only knows the synthetic sample keys).
+  console.log('Cleaning any prior injection…')
+  await purgeMessages(accountId)
+  for (const m of messages) await removePrefix(accountId, m.key)
+
+  if (isClean) {
+    console.log(`Cleaned: injected file POs + storage for ${messages.length} file(s).`)
+    return
+  }
+
+  const allHorecas = (await supa.from('horecas').select('id, name')).data ?? []
+
+  const decisions = new Map()
+  const baseTime = Date.now()
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    const receivedAt = new Date(baseTime - i * 5 * 60_000).toISOString()
+    process.stdout.write(`Injecting ${msg.key} … `)
+    try {
+      const inboundId = await injectMessage(accountId, msg, receivedAt)
+      const res = await runExtract(inboundId)
+      let out = {}
+      try {
+        out = JSON.parse(res.body)
+      } catch {
+        /* non-JSON body */
+      }
+      const kind = out.kind ?? null
+      let label = res.ok ? kind ?? 'ok' : `HTTP ${res.status}`
+      if (res.ok && kind === 'auto_approved' && out.pendingPoId) {
+        const ap = await approveAuto(out.pendingPoId)
+        label = `auto_approved → ${ap}`
+      }
+      decisions.set(msg.key, label)
+      console.log(res.ok ? `decision=${label}` : `extract-po HTTP ${res.status}: ${res.body.slice(0, 200)}`)
+    } catch (err) {
+      decisions.set(msg.key, 'ERROR')
+      console.log(`ERROR: ${err.message}`)
+    }
+  }
+
+  await new Promise(r => setTimeout(r, 8000))
+  await printSummary(accountId, allHorecas, decisions, messages)
+}
+
+// ----------------------------------------------------------------------------
 // Main
 // ----------------------------------------------------------------------------
 async function main() {
   const isClean = process.argv.includes('--clean')
   const isDemo = process.argv.includes('--demo')
+  const filesFlagIdx = process.argv.indexOf('--files')
+  const isFiles = filesFlagIdx !== -1
+  const filesDir = isFiles ? process.argv[filesFlagIdx + 1] : null
+
+  if (isFiles) {
+    if (!filesDir) {
+      console.error('Usage: npm run po-inject -- --files "<dir of PO PDFs>" [--clean]')
+      process.exit(1)
+    }
+    await runFiles(resolve(filesDir), isClean)
+    return
+  }
+
   const messages = isDemo ? DEMO_MESSAGES : MESSAGES
 
   if (isClean) {

@@ -66,6 +66,7 @@ export interface ExtractedPoLine {
   quantity: number
   uom: string | null
   pack_size_raw: number | null
+  unit_price: number | null
   notes: string | null
 }
 

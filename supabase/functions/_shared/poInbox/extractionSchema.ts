@@ -84,6 +84,11 @@ export const EXTRACT_PO_SCHEMA = {
           quantity: { type: 'number', minimum: 0 },
           uom: { type: ['string', 'null'], maxLength: 32 },
           pack_size_raw: { type: ['integer', 'null'], minimum: 1 },
+          unit_price: {
+            type: ['number', 'null'],
+            minimum: 0,
+            description: 'Per-unit price/cost printed for the line (ex-GST if both shown); null if absent.',
+          },
           notes: { type: ['string', 'null'], maxLength: MAX_NOTES_CHARS },
         },
         required: [
@@ -93,6 +98,7 @@ export const EXTRACT_PO_SCHEMA = {
           'quantity',
           'uom',
           'pack_size_raw',
+          'unit_price',
           'notes',
         ],
       },
@@ -151,6 +157,7 @@ export interface ExtractedLine {
   quantity: number
   uom: string | null
   pack_size_raw: number | null
+  unit_price: number | null
   notes: string | null
 }
 
@@ -189,12 +196,19 @@ Rules:
   "SKU-12"). description_raw is the free-text product name.
 * pack_size_raw is the customer's specified pack size when it's clearly
   stated (e.g., "case of 12"); otherwise null.
+* unit_price is the per-unit price/cost printed for the line. If both
+  ex-GST and inc-GST prices are shown, use the ex-GST figure. Do not
+  divide an extended/line total by quantity — only report a price the
+  document states per unit. Null when no per-unit price is printed.
 * Dates: ISO yyyy-mm-dd. Resolve ambiguous formats by preferring the
   newer date in the document (PO date is usually printed before
   requested-delivery date).
 * confidence values are 0..1 estimates of how certain you are that each
   field was extracted correctly. 1.0 only when the field is unambiguously
   present and machine-readable. Lower for handwritten text, poor OCR,
-  partial information, or unclear formatting.
+  partial information, or unclear formatting. When a field is legitimately
+  ABSENT from the document, set it null and keep its confidence HIGH — you
+  are certain it is absent. Do not lower confidence merely because a field
+  is null.
 * Output strictly matches the JSON schema. No prose, no markdown.
 `.trim()

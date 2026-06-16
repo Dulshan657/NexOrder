@@ -51,6 +51,11 @@ import { toProduct } from '@/lib/adapters'
 const FIELD_CLASS =
   'w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-sm transition-colors focus:outline-none focus:border-nexgen-blue focus:ring-2 focus:ring-nexgen-blue/20 disabled:bg-stone-100 disabled:text-stone-500'
 
+/** Format a number as AUD currency for display of extracted PO prices. */
+function formatMoney(value: number): string {
+  return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value)
+}
+
 interface POInboxDetailModalProps {
   pendingPoId: string
   hoReCas: HoReCa[]
@@ -76,6 +81,8 @@ interface EditableLine {
   rawDescription: string | null
   rawQuantity: number
   rawUom: string | null
+  /** Per-unit price the extractor read off the document (display only). null when absent. */
+  unitPrice: number | null
   /** Per-line confidence from extract-po's matched_items (only set for AI lines). */
   confidence: number | null
 }
@@ -350,6 +357,7 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
         rawDescription: null,
         rawQuantity: 1,
         rawUom: null,
+        unitPrice: null,
         confidence: null,
       },
     ])
@@ -526,6 +534,7 @@ export function buildEditableLines(
       rawDescription: line.description_raw,
       rawQuantity: line.quantity,
       rawUom: line.uom,
+      unitPrice: typeof line.unit_price === 'number' ? line.unit_price : null,
       confidence: typeof match?.confidence === 'number' ? match.confidence : null,
     }
   })
@@ -840,9 +849,22 @@ const FormPane: React.FC<FormPaneProps> = props => {
 
         {/* Line items — picker, qty, pack, confidence, delete */}
         <fieldset>
-          <legend className="text-xs font-medium text-stone-600 mb-2 flex items-center gap-2">
+          <legend className="text-xs font-medium text-stone-600 mb-2 flex items-center gap-2 w-full">
             <span>Line items</span>
             <span className="text-stone-400 font-normal font-mono">{props.lines.length}</span>
+            {(() => {
+              // Extracted PO total: sum of (unit_price × qty) over lines that
+              // carry an extracted unit price. Display-only — the created order
+              // is priced from the catalog (with extracted price as fallback).
+              const priced = props.lines.filter(l => typeof l.unitPrice === 'number')
+              if (priced.length === 0) return null
+              const total = priced.reduce((sum, l) => sum + (l.unitPrice ?? 0) * l.quantity, 0)
+              return (
+                <span className="ml-auto font-normal text-stone-500">
+                  PO total <span className="font-mono text-stone-700">{formatMoney(total)}</span>
+                </span>
+              )
+            })()}
           </legend>
           <ul className="divide-y divide-stone-200/70 border-y border-stone-200/70">
             {props.lines.map((line, idx) => {
@@ -868,6 +890,14 @@ const FormPane: React.FC<FormPaneProps> = props => {
                     )}
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {typeof line.unitPrice === 'number' && (
+                      <span
+                        className="font-mono text-stone-600"
+                        title={`Extracted price · line total ${formatMoney(line.unitPrice * line.quantity)}`}
+                      >
+                        {formatMoney(line.unitPrice)} ea
+                      </span>
+                    )}
                     {stock && <LineStockBadge status={stock} />}
                     <LineConfidenceBadge value={line.confidence} />
                     {!readOnly && (

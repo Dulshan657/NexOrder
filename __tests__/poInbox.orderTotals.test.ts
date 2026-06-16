@@ -76,4 +76,39 @@ describe('buildOrderItems', () => {
     const { total } = buildOrderItems(lines, map)
     expect(total).toBe(2.5 + 12)
   })
+
+  it('falls back to the extracted unit_price when the catalog price is missing', () => {
+    // A freshly-seeded product with no catalog price (0) should bill at the
+    // price the extractor read off the PO document.
+    const lines: PricedLine[] = [
+      { product_id: 1, quantity: 2, pack_size: null, extracted_unit_price: 64.1 },
+    ]
+    const map = products({ id: 1, name: 'KNIPEX Pliers', sku: 'TOOL-1', price: 0 })
+
+    const { items, total } = buildOrderItems(lines, map)
+    expect(items[0].unit_price).toBe(64.1)
+    expect(total).toBe(128.2)
+  })
+
+  it('keeps the catalog price authoritative even when an extracted price is present', () => {
+    const lines: PricedLine[] = [
+      { product_id: 1, quantity: 2, pack_size: null, extracted_unit_price: 99 },
+    ]
+    const map = products({ id: 1, name: 'Catalog Item', sku: 'SKU-1', price: 10 })
+
+    const { items, total } = buildOrderItems(lines, map)
+    expect(items[0].unit_price).toBe(10)
+    expect(total).toBe(20)
+  })
+
+  it('prices a line at 0 when neither a catalog nor an extracted price exists', () => {
+    const lines: PricedLine[] = [
+      { product_id: 1, quantity: 3, pack_size: null, extracted_unit_price: null },
+    ]
+    const map = products({ id: 1, name: 'Unpriced', sku: 'SKU-0', price: 0 })
+
+    const { items, total } = buildOrderItems(lines, map)
+    expect(items[0].unit_price).toBe(0)
+    expect(total).toBe(0)
+  })
 })

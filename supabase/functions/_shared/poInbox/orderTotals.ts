@@ -18,6 +18,13 @@ export interface PricedLine {
   product_id: number
   quantity: number
   pack_size: number | null
+  /**
+   * Per-unit price extracted from the PO document, if any. Used only as a
+   * FALLBACK when the matched product has no catalog price (price null/0) —
+   * e.g. a freshly-seeded demo product. When the catalog price is present it
+   * always wins, so existing pricing behaviour is unchanged.
+   */
+  extracted_unit_price?: number | null
 }
 
 export interface PricedProduct {
@@ -37,12 +44,17 @@ export interface OrderItemRow {
 
 /**
  * Build the order_items rows and the order total for a set of resolved lines.
- * Each line total is `product.price * quantity` — quantity is the selling-unit
+ * Each line total is `unitPrice * quantity` — quantity is the selling-unit
  * count and never scaled by pack_size. order_items rows are written with
  * pack_size = NULL so the pack-aware inventory RPCs (mig 00035) keep their
  * factor at 1 for PO-inbox lines (see file header). Every line's product MUST be
  * present in `products` (the caller validates missing-product as INVALID_INPUT
  * before this runs).
+ *
+ * unitPrice = the product's catalog price, falling back to the line's
+ * `extracted_unit_price` only when the catalog price is missing (null/0). This
+ * keeps catalog pricing authoritative while letting an order still carry a
+ * sensible price for products that have no catalog price yet.
  */
 export function buildOrderItems(
   lines: PricedLine[],
@@ -51,12 +63,18 @@ export function buildOrderItems(
   let total = 0
   const items = lines.map(line => {
     const product = products.get(line.product_id)!
-    total += product.price * line.quantity
+    const catalogPrice = Number.isFinite(product.price) && product.price > 0 ? product.price : 0
+    const fallback =
+      typeof line.extracted_unit_price === 'number' && line.extracted_unit_price > 0
+        ? line.extracted_unit_price
+        : 0
+    const unitPrice = catalogPrice > 0 ? catalogPrice : fallback
+    total += unitPrice * line.quantity
     return {
       product_id: line.product_id,
       quantity: line.quantity,
       pack_size: null,
-      unit_price: product.price,
+      unit_price: unitPrice,
       product_name: product.name,
       product_sku: product.sku,
     }

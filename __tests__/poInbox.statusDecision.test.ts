@@ -58,13 +58,28 @@ describe('decidePendingPoStatus', () => {
     expect(result.reason[0]).toMatch(/confidence_overall=0\.80/)
   })
 
-  it('confidenceOverall is the minimum of per-field confidences', () => {
+  it('confidenceOverall is the minimum of the ESSENTIAL per-field confidences', () => {
+    // requested_date is advisory and excluded from the floor, so the lowest
+    // essential field (po_number) wins — not the lower requested_date.
     const result = decidePendingPoStatus({
       confidence: { ...fullConfidence, po_number: 0.6, requested_date: 0.4 },
       customerResolved: true,
       allLinesResolved: true,
     })
-    expect(result.confidenceOverall).toBe(0.4)
+    expect(result.confidenceOverall).toBe(0.6)
+  })
+
+  it('auto-approves when only advisory fields (requested_date, ship_to) are low', () => {
+    // The Sydney Tools case: a clean PO with no requested-delivery date.
+    // Essentials are all high; advisory fields must not block auto-approval.
+    const result = decidePendingPoStatus({
+      confidence: { ...fullConfidence, requested_date: 0, ship_to: 0.2 },
+      customerResolved: true,
+      allLinesResolved: true,
+    })
+    expect(result.status).toBe('auto_approved')
+    expect(result.confidenceOverall).toBe(1.0)
+    expect(result.reason).toEqual([])
   })
 
   it('clamps non-finite or out-of-range per-field values to 0', () => {

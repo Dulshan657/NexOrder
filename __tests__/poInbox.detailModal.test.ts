@@ -5,8 +5,8 @@ import { buildEditableLines } from '../components/admin/POInboxDetailModal'
 describe('buildEditableLines', () => {
   it('overlays matched_items onto extracted_lines by po_line_index', () => {
     const lines = [
-      { line_no: 1, item_code_raw: '402', description_raw: 'Tomato Sauce', quantity: 12, uom: 'Pallet', pack_size_raw: null, notes: null },
-      { line_no: 2, item_code_raw: '500', description_raw: 'Chilli Sauce', quantity: 6, uom: 'Case', pack_size_raw: 12, notes: null },
+      { line_no: 1, item_code_raw: '402', description_raw: 'Tomato Sauce', quantity: 12, uom: 'Pallet', pack_size_raw: null, unit_price: 3.5, notes: null },
+      { line_no: 2, item_code_raw: '500', description_raw: 'Chilli Sauce', quantity: 6, uom: 'Case', pack_size_raw: 12, unit_price: null, notes: null },
     ]
     const matched = [
       { po_line_index: 0, product_id: 11, quantity: 12, pack_size: 1, confidence: 1.0 },
@@ -19,11 +19,13 @@ describe('buildEditableLines', () => {
     expect(out[0].rawDescription).toBe('Tomato Sauce')
     expect(out[1].productId).toBeNull()
     expect(out[1].packSize).toBe(12)
+    expect(out[0].unitPrice).toBe(3.5)
+    expect(out[1].unitPrice).toBeNull()
   })
 
   it('falls back to raw pack_size when matched_items has no pack_size', () => {
     const lines = [
-      { line_no: 1, item_code_raw: 'X', description_raw: 'Y', quantity: 1, uom: null, pack_size_raw: 24, notes: null },
+      { line_no: 1, item_code_raw: 'X', description_raw: 'Y', quantity: 1, uom: null, pack_size_raw: 24, unit_price: null, notes: null },
     ]
     const matched = [{ po_line_index: 0, product_id: 5, quantity: 1, pack_size: null, confidence: 1 }]
     const out = buildEditableLines(lines, matched)
@@ -32,7 +34,7 @@ describe('buildEditableLines', () => {
 
   it('handles missing matched_items entry (no AI match for that line)', () => {
     const lines = [
-      { line_no: 1, item_code_raw: 'X', description_raw: 'Y', quantity: 7, uom: null, pack_size_raw: null, notes: null },
+      { line_no: 1, item_code_raw: 'X', description_raw: 'Y', quantity: 7, uom: null, pack_size_raw: null, unit_price: null, notes: null },
     ]
     const out = buildEditableLines(lines, [])
     expect(out).toHaveLength(1)
@@ -42,8 +44,8 @@ describe('buildEditableLines', () => {
 
   it('preserves po_line_index identity (not array position)', () => {
     const lines = [
-      { line_no: 1, item_code_raw: 'a', description_raw: null, quantity: 1, uom: null, pack_size_raw: null, notes: null },
-      { line_no: 2, item_code_raw: 'b', description_raw: null, quantity: 2, uom: null, pack_size_raw: null, notes: null },
+      { line_no: 1, item_code_raw: 'a', description_raw: null, quantity: 1, uom: null, pack_size_raw: null, unit_price: null, notes: null },
+      { line_no: 2, item_code_raw: 'b', description_raw: null, quantity: 2, uom: null, pack_size_raw: null, unit_price: null, notes: null },
     ]
     const matched = [{ po_line_index: 1, product_id: 99, quantity: 2, pack_size: null, confidence: 1 }]
     const out = buildEditableLines(lines, matched)
