@@ -103,7 +103,7 @@ demo inbox and watch them get read in real time. The **food pack above stays as 
 |------|-------|------|---------|----------------|
 | PO 3380598.PDF | Sydney Tools | 3380598 | **auto_approved** (after seed) | clean 10-line PO sails through |
 | 0084248794 .pdf | CNH Industrial | 0084248794 | needs_review | 3rd-party ship-to, no prices |
-| 11_900319…PDF | Repco | S486051891 | needs_review | single line, price captured |
+| 11_900319…PDF | Repco | S486051891 | **auto_approved** (after seed) | single line (TAF123), price captured |
 | MERCH STOCK.pdf | "Aces" (email) | ACE.RE.MERCH | needs_review | informal email, missing fields |
 | PABS.pdf | Pabs Discount | — | needs_review | **no PO #**, pickup not delivery |
 | PURCHASE ORDER 1113756.pdf | Adrad | 1113756 | needs_review | UOM = PACK, has requested date |
@@ -113,7 +113,19 @@ demo inbox and watch them get read in real time. The **food pack above stays as 
 All needs-review POs land with full extraction + per-field confidence and clear "no customer / unresolved
 lines / missing PO#" flags. Prices now appear per line and as a "PO total" in the detail modal.
 
-## The auto-approve hero — Sydney Tools (#3380598)
+## The Tridon demo persona
+
+For the **Tridon** demo, NexOrder is operated _as Tridon_ (the supplier): the login
+`tridon@nexorder.demo` / `Password123!` (Admin) leads the sidebar with **PO Inbox → Order Import →
+Shop** and wears Tridon's logo (special-cased in `lib/demoAccounts.ts` + `components/AppShell.tsx`).
+Create it with `npm run po-tridon-account`, or set up the whole demo (account + both auto-approve
+heroes) in one go:
+
+```
+npm run seed:tridon-demo   # = po-tridon-account && po-sydney-seed && po-repco-seed
+```
+
+## The auto-approve heroes — Sydney Tools (#3380598) + Repco (#S486051891)
 
 Genuine auto-approval needs a matching customer + products in the catalog. We seed exactly that for the
 Sydney Tools PO:
@@ -130,16 +142,22 @@ Sydney Tools PO:
    it appears under **Auto-Approved** with an order id within ~60s.
 3. **Reset afterwards:** `npm run po-sydney-seed -- --clean`.
 
+**Repco (#S486051891)** works the same way: `npm run po-repco-seed` creates HoReCa "Repco", trusts its
+sender, and seeds the single line product `TAF123` (Tridon Air Flow Meter) with stock + alias. Sender
+defaults to `orders@repco.com.au` (override with `REPCO_SENDER="you@gmail.com"`); it must differ from the
+Grand Hotel and Sydney Tools senders. Email `11_900319_…pdf` from that sender → Auto-Approved. Reset with
+`npm run po-repco-seed -- --clean`.
+
 > Auto-approve also relies on a gate tweak: a legitimately-absent `requested_date` no longer blocks
 > auto-approval (only `po_number`, `customer_name_raw`, `order_date`, `lines` form the confidence floor).
 
 ## Rehearse / backup (no mailbox)
 
-`npm run po-inject -- --files "../../../FW_ Tridon and B2BE catchup - 20.05.2024"` pushes all 8 real PDFs
+`npm run po-inject -- --files "tridon/FW_ Tridon and B2BE catchup - 20.05.2024"` pushes all 8 real PDFs
 straight through `extract-po` and prints an outcome table — run it **before the meeting** to confirm every
-PO extracts and that Sydney Tools auto-approves (seed first), and as an **instant on-stage fallback** if
-live email lags. Clean up with the same command plus `--clean`.
+PO extracts and that **both Sydney Tools and Repco auto-approve** (seed first), and as an **instant
+on-stage fallback** if live email lags. Clean up with the same command plus `--clean`.
 
-> Pass the folder path you actually have; from the repo root it's
-> `"FW_ Tridon and B2BE catchup - 20.05.2024"`. The script auto-detects the Sydney Tools file
-> (`3380598`) and sends it from the trusted sender so it auto-approves; the rest use a generic sender.
+> The script auto-detects the two hero files (Sydney Tools `3380598`, Repco `S486051891`/`900319`) and
+> sends each from its seeded trusted sender so they auto-approve; the rest use a generic sender and land
+> in review.

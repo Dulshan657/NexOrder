@@ -67,6 +67,7 @@ import {
     useUpdatePromotion,
     useDeletePromotion,
 } from '../hooks/queries/usePromotions';
+import { isTridonDemoUser } from '../lib/demoAccounts';
 
 import { type AdminTab } from './AdminView';
 import UserProfile from './UserProfile';
@@ -301,6 +302,10 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const isAdminOrManager = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
     const isAdmin = currentUser.role === UserRole.ADMIN;
     const isWarehouse = currentUser.role === UserRole.WAREHOUSE;
+    // Tridon PO-Inbox demo persona: an Admin login with a bespoke sidebar order
+    // (PO Inbox → Order Import → Shop pinned first) and Tridon branding. Scoped
+    // to this one account; no other user's experience changes.
+    const isTridonDemo = isTridonDemoUser(currentUser);
 
     // ── Derived notification state ────────────────────────────────────────────
     // Role-filtered notifications; NotificationCenter derives the unread count
@@ -532,6 +537,35 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
         );
     }
 
+    // ── Admin nav buttons that the Tridon demo reorders ──────────────────────
+    // Extracted so the pinned ordering (PO Inbox → Order Import → Shop) and the
+    // default ordering share one definition. Only one of the two positions
+    // renders for a given user, so reusing the element is safe.
+    const adminShopNavButton = (
+        <button
+            onClick={() => { setAdminView('Shop'); setIsSidebarOpen(false); }}
+            className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Shop' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+        >
+            <ShoppingBag className="w-5 h-5 mr-3" /> Shop
+        </button>
+    );
+    const adminOrderImportNavButton = (
+        <button
+            onClick={() => { setAdminView('Order Import'); setIsSidebarOpen(false); }}
+            className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Order Import' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+        >
+            <ShoppingCart className="w-5 h-5 mr-3" /> Order Import
+        </button>
+    );
+    const adminPoInboxNavButton = (
+        <button
+            onClick={() => { setAdminView('PO Inbox'); setIsSidebarOpen(false); }}
+            className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'PO Inbox' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+        >
+            <Inbox className="w-5 h-5 mr-3" /> PO Inbox
+        </button>
+    );
+
     // ── Render ────────────────────────────────────────────────────────────────
     return (
         <div className="flex h-screen bg-white font-sans overflow-hidden">
@@ -547,7 +581,11 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
             <aside className={`fixed md:static inset-y-0 left-0 z-50 w-52 bg-white/80 backdrop-blur-md text-stone-600 border-r border-stone-200/50 flex flex-col transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
                 <div className="h-[73px] flex items-center justify-between px-6 bg-white/80 border-b border-stone-200">
                     <div className="flex items-center">
-                        <img src="/assets/Nex-Order-no-bg-logo.png" alt="Nex Order" className="h-16 object-contain" />
+                        <img
+                            src={isTridonDemo ? '/assets/tridon-logo.png' : '/assets/Nex-Order-no-bg-logo.png'}
+                            alt={isTridonDemo ? 'Tridon' : 'Nex Order'}
+                            className="h-16 object-contain"
+                        />
                     </div>
                     <div className="flex items-center gap-2">
                         <NotificationCenter
@@ -648,6 +686,15 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                     )}
                     {isAdminOrManager && (
                         <>
+                            {/* Tridon demo: lead with the PO-Inbox story, then fall through
+                                to the normal admin nav (those three omitted below). */}
+                            {isTridonDemo && (
+                                <>
+                                    {adminPoInboxNavButton}
+                                    {adminOrderImportNavButton}
+                                    {adminShopNavButton}
+                                </>
+                            )}
                             <button
                                 onClick={() => { setAdminView('Dashboard'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Dashboard' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
@@ -656,24 +703,9 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             </button>
 
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Sales & Orders</p>
-                            <button
-                                onClick={() => { setAdminView('Shop'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Shop' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <ShoppingBag className="w-5 h-5 mr-3" /> Shop
-                            </button>
-                            <button
-                                onClick={() => { setAdminView('Order Import'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Order Import' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <ShoppingCart className="w-5 h-5 mr-3" /> Order Import
-                            </button>
-                            <button
-                                onClick={() => { setAdminView('PO Inbox'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'PO Inbox' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <Inbox className="w-5 h-5 mr-3" /> PO Inbox
-                            </button>
+                            {!isTridonDemo && adminShopNavButton}
+                            {!isTridonDemo && adminOrderImportNavButton}
+                            {!isTridonDemo && adminPoInboxNavButton}
                             <button
                                 onClick={() => { setAdminView('Accounts'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}

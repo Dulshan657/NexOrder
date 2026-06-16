@@ -15,7 +15,10 @@
     "po-fixtures": "node tests/fixtures/po-samples/generate.mjs",
     "po-inject": "node tests/fixtures/po-samples/inject.mjs",
     "po-demo-seed": "node tests/fixtures/po-samples/demo-seed.mjs",
-    "po-sydney-seed": "node tests/fixtures/po-samples/sydney-tools-seed.mjs"
+    "po-sydney-seed": "node tests/fixtures/po-samples/sydney-tools-seed.mjs",
+    "po-repco-seed": "node tests/fixtures/po-samples/repco-seed.mjs",
+    "po-tridon-account": "node tests/fixtures/po-samples/tridon-demo-seed.mjs",
+    "seed:tridon-demo": "npm run po-tridon-account && npm run po-sydney-seed && npm run po-repco-seed"
   },
   "dependencies": {
     "@google/genai": "^1.19.0",

@@ -245,16 +245,29 @@ const DEMO_MESSAGES = [
 // File mode (`--files <dir>`) — push REAL PDF files from disk through the same
 // upload → inbound_messages → extract-po pipeline (no mailbox). Used to rehearse
 // the live demo against the actual customer POs and as an on-stage backup.
-// The Sydney Tools PO (#3380598) is sent from the seeded trusted sender so it
-// auto-approves (run `npm run po-sydney-seed` first); the rest land in review.
+// The seeded heroes (Sydney Tools #3380598, Repco #S486051891) are sent from
+// their seeded trusted senders so they auto-approve (run `npm run seed:tridon-demo`
+// or the individual seeds first); the rest land in review.
 // ----------------------------------------------------------------------------
-const FILE_SYDNEY_SENDER = (process.env.SYDNEY_TOOLS_SENDER || 'orders@sydneytools.com.au')
-  .trim()
-  .toLowerCase()
 const FILE_VIEWER_SENDER = 'viewer@po-demo.example'
 
-function isSydneyToolsHero(filename) {
-  return /3380598|sydney/i.test(filename)
+// Each hero maps a filename pattern → the trusted sender its seed registered.
+// Keep the sender defaults in sync with sydney-tools-seed.mjs / repco-seed.mjs.
+const FILE_HEROES = [
+  {
+    name: 'Sydney Tools',
+    pattern: /3380598|sydney/i,
+    sender: (process.env.SYDNEY_TOOLS_SENDER || 'orders@sydneytools.com.au').trim().toLowerCase(),
+  },
+  {
+    name: 'Repco',
+    pattern: /s486051891|900319|repco/i,
+    sender: (process.env.REPCO_SENDER || 'orders@repco.com.au').trim().toLowerCase(),
+  },
+]
+
+function heroFor(filename) {
+  return FILE_HEROES.find(h => h.pattern.test(filename)) ?? null
 }
 
 function fileKey(filename) {
@@ -272,16 +285,16 @@ function buildFileMessages(dir) {
   if (pdfs.length === 0) throw new Error(`no PDF files found in ${dir}`)
   return pdfs.map(filename => {
     const bytes = new Uint8Array(readFileSync(resolve(dir, filename)))
-    const hero = isSydneyToolsHero(filename)
+    const hero = heroFor(filename)
     return {
       key: fileKey(filename),
-      fromAddress: hero ? FILE_SYDNEY_SENDER : FILE_VIEWER_SENDER,
-      fromName: hero ? 'Sydney Tools' : 'PO Demo Sender',
+      fromAddress: hero ? hero.sender : FILE_VIEWER_SENDER,
+      fromName: hero ? hero.name : 'PO Demo Sender',
       subject: basename(filename).replace(/\.[a-z0-9]+$/i, ''),
       bodyText: `Please process the attached purchase order (${basename(filename)}).`,
       attachments: [{ role: 'doc', kind: 'pdf', filename: basename(filename), bytes }],
       expect: hero
-        ? 'auto_approved — seeded Sydney Tools hero'
+        ? `auto_approved — seeded ${hero.name} hero`
         : 'needs_review — extraction showcase (no matching catalog data)',
     }
   })
