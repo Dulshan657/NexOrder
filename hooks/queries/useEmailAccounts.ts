@@ -5,6 +5,7 @@ import {
   type EmailAccountRow,
   listEmailAccounts,
   pauseEmailAccount,
+  retryEmailAccount,
   startOAuthFlow,
 } from '@/services/supabase/emailAccountsService'
 
@@ -37,6 +38,14 @@ export function useDisconnectEmailAccount() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (emailAccountId: string) => disconnectEmailAccount(emailAccountId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+
+export function useRetryEmailAccount() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (emailAccountId: string) => retryEmailAccount(emailAccountId),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   })
 }

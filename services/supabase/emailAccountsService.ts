@@ -102,3 +102,30 @@ export async function disconnectEmailAccount(
   throwOnStructuredError(data, 'disconnect-email-account failed')
   return data as DisconnectEmailAccountResponse
 }
+
+/** Result of an on-demand "Retry now" poll of a single mailbox. */
+export type RetryOutcome = 'synced' | 'still_failing' | 'needs_reconnect'
+
+export interface RetryEmailAccountResponse {
+  outcome: RetryOutcome
+  /** New messages stored this poll (only meaningful when outcome === 'synced'). */
+  newMessages: number
+  /** The persisted last_error when the retry didn't succeed; null on success. */
+  lastError: string | null
+}
+
+/**
+ * Force an immediate poll of a transiently-failing ("Reconnecting…") mailbox,
+ * bypassing the backoff timer. Returns the outcome so the UI can report it
+ * inline. Errored/paused accounts are rejected server-side.
+ */
+export async function retryEmailAccount(
+  emailAccountId: string,
+): Promise<RetryEmailAccountResponse> {
+  const { data, error } = await supabase.functions.invoke('retry-email-account', {
+    body: { emailAccountId },
+  })
+  if (error) throw new Error(`retryEmailAccount: ${error.message}`)
+  throwOnStructuredError(data, 'retry-email-account failed')
+  return data as RetryEmailAccountResponse
+}

@@ -65,6 +65,32 @@ function isGmailReauthResponse(status: number, rawBody: string): boolean {
   return code === 'invalid_grant' || code === 'unauthorized_client'
 }
 
+/**
+ * A 403 with "insufficient authentication scopes" / "Insufficient Permission"
+ * means the stored grant is missing the gmail.readonly scope — e.g. the user
+ * didn't tick "View your email messages and settings" on Google's consent
+ * screen, or the mailbox was connected before that scope was requested.
+ * Retrying never fixes this; only reconnecting with the scope granted does, so
+ * we treat it like a reauth failure (status='error' + Reconnect CTA) rather
+ * than retrying with backoff forever.
+ */
+export function isGmailScopeError(status: number, rawBody: string): boolean {
+  return status === 403 && rawBody.toLowerCase().includes('insufficient')
+}
+
+/**
+ * Build a GmailError from a failed API response, reading the body once and
+ * classifying insufficient-scope 403s as needing reconnect.
+ */
+async function gmailApiError(label: string, resp: Response): Promise<GmailError> {
+  const body = await resp.text()
+  return new GmailError(
+    `${label} failed: ${resp.status} ${sanitizeForLog(body)}`,
+    resp.status,
+    isGmailScopeError(resp.status, body),
+  )
+}
+
 export interface GmailAccessToken {
   accessToken: string
   expiresInSeconds: number
@@ -198,10 +224,7 @@ async function walkHistory(
       return { ok: false, messages: [], finalHistoryId: null }
     }
     if (!resp.ok) {
-      throw new GmailError(
-        `history.list failed: ${resp.status} ${sanitizeForLog(await resp.text())}`,
-        resp.status,
-      )
+      throw await gmailApiError('history.list', resp)
     }
     const body = (await resp.json()) as HistoryListResponse
     for (const entry of body.history ?? []) {
@@ -233,10 +256,7 @@ async function walkFullList(accessToken: string): Promise<NewMessageRef[]> {
     if (pageToken) params.pageToken = pageToken
     const resp = await authedGet(accessToken, '/messages', params)
     if (!resp.ok) {
-      throw new GmailError(
-        `messages.list failed: ${resp.status} ${sanitizeForLog(await resp.text())}`,
-        resp.status,
-      )
+      throw await gmailApiError('messages.list', resp)
     }
     const body = (await resp.json()) as MessageListResponse
     for (const m of body.messages ?? []) {
@@ -289,10 +309,7 @@ export async function listNewGmailMessages(
 async function fetchProfile(accessToken: string): Promise<ProfileResponse> {
   const resp = await authedGet(accessToken, '/profile')
   if (!resp.ok) {
-    throw new GmailError(
-      `profile.get failed: ${resp.status} ${sanitizeForLog(await resp.text())}`,
-      resp.status,
-    )
+    throw await gmailApiError('profile.get', resp)
   }
   return (await resp.json()) as ProfileResponse
 }
@@ -322,10 +339,7 @@ export async function getGmailMessage(
     format: 'full',
   })
   if (!resp.ok) {
-    throw new GmailError(
-      `messages.get failed: ${resp.status} ${sanitizeForLog(await resp.text())}`,
-      resp.status,
-    )
+    throw await gmailApiError('messages.get', resp)
   }
   const json = (await resp.json()) as {
     id?: string
@@ -373,10 +387,7 @@ export async function getGmailAttachmentBytes(
     `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
   )
   if (!resp.ok) {
-    throw new GmailError(
-      `attachments.get failed: ${resp.status} ${sanitizeForLog(await resp.text())}`,
-      resp.status,
-    )
+    throw await gmailApiError('attachments.get', resp)
   }
   const json = (await resp.json()) as { data?: string }
   if (!json.data) {

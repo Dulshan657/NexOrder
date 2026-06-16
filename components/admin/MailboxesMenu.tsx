@@ -19,6 +19,7 @@ import {
   useDisconnectEmailAccount,
   useEmailAccounts,
   usePauseEmailAccount,
+  useRetryEmailAccount,
   useStartOAuthFlow,
 } from '@/hooks/queries/useEmailAccounts'
 import type {
@@ -57,6 +58,7 @@ const MailboxesMenu: React.FC<MailboxesMenuProps> = ({ addToast, autoOpenNonce }
   const startOAuth = useStartOAuthFlow()
   const pauseMutation = usePauseEmailAccount()
   const disconnectMutation = useDisconnectEmailAccount()
+  const retryMutation = useRetryEmailAccount()
 
   const [open, setOpen] = useState(false)
   const [connecting, setConnecting] = useState<EmailAccountProvider | null>(null)
@@ -191,6 +193,34 @@ const MailboxesMenu: React.FC<MailboxesMenuProps> = ({ addToast, autoOpenNonce }
     }
   }
 
+  async function handleRetryNow(account: EmailAccountRow) {
+    setMenuFor(null)
+    try {
+      const result = await retryMutation.mutateAsync(account.id)
+      if (result.outcome === 'synced') {
+        addToast?.(
+          result.newMessages > 0
+            ? `${account.email_address} synced — ${result.newMessages} new message${result.newMessages === 1 ? '' : 's'}.`
+            : `${account.email_address} synced — no new messages.`,
+          'success',
+        )
+      } else if (result.outcome === 'needs_reconnect') {
+        addToast?.(
+          `${account.email_address} needs reconnecting — use Reconnect to sign in again.`,
+          'info',
+        )
+      } else {
+        addToast?.(
+          `${account.email_address} still failing${result.lastError ? `: ${result.lastError}` : ''}. We'll keep retrying automatically.`,
+          'error',
+        )
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      addToast?.(`Retry failed: ${message}`, 'error')
+    }
+  }
+
   async function handleSignOutConfirm(account: EmailAccountRow): Promise<void> {
     try {
       const result = await disconnectMutation.mutateAsync(account.id)
@@ -271,11 +301,13 @@ const MailboxesMenu: React.FC<MailboxesMenuProps> = ({ addToast, autoOpenNonce }
                   onToggleMenu={() => setMenuFor(id => (id === account.id ? null : account.id))}
                   onConnect={handleConnect}
                   onTogglePause={handlePauseToggle}
+                  onRetry={handleRetryNow}
                   onSignOut={a => {
                     setMenuFor(null)
                     setSignOutTarget(a)
                   }}
                   busy={pauseMutation.isPending}
+                  retrying={retryMutation.isPending && retryMutation.variables === account.id}
                 />
               ))}
             </ul>
@@ -339,8 +371,10 @@ interface AccountRowProps {
   onToggleMenu: () => void
   onConnect: (p: EmailAccountProvider) => void
   onTogglePause: (account: EmailAccountRow) => void
+  onRetry: (account: EmailAccountRow) => void
   onSignOut: (account: EmailAccountRow) => void
   busy: boolean
+  retrying: boolean
 }
 
 const AccountRow: React.FC<AccountRowProps> = ({
@@ -349,8 +383,10 @@ const AccountRow: React.FC<AccountRowProps> = ({
   onToggleMenu,
   onConnect,
   onTogglePause,
+  onRetry,
   onSignOut,
   busy,
+  retrying,
 }) => {
   const reconnecting = account.status === 'active' && account.consecutive_failures > 0
   const status = reconnecting
@@ -387,19 +423,35 @@ const AccountRow: React.FC<AccountRowProps> = ({
           Reconnect
         </button>
       ) : (
-        <button
-          type="button"
-          onClick={e => {
-            e.stopPropagation()
-            onToggleMenu()
-          }}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          aria-label={`Actions for ${account.email_address}`}
-          className="shrink-0 p-1 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 btn-press"
-        >
-          <MoreHorizontal className="w-4 h-4" />
-        </button>
+        <>
+          {reconnecting && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                onRetry(account)
+              }}
+              disabled={retrying}
+              className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-amber-800 border border-amber-200 bg-amber-50 hover:bg-amber-100 rounded-lg disabled:opacity-60 disabled:cursor-not-allowed btn-press"
+            >
+              {retrying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {retrying ? 'Retrying…' : 'Retry now'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={e => {
+              e.stopPropagation()
+              onToggleMenu()
+            }}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label={`Actions for ${account.email_address}`}
+            className="shrink-0 p-1 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 btn-press"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+        </>
       )}
 
       {menuOpen && account.status !== 'error' && (
