@@ -316,10 +316,34 @@ export interface PoDocumentRef {
   attachmentIndex?: number
 }
 
-export async function getPoDocumentUrl(ref: PoDocumentRef): Promise<SignedUrlResult> {
-  const { data, error } = await supabase.functions.invoke('create-po-document-url', {
-    body: ref,
+/** Document-fetch timeout. supabase.functions.invoke does not always honour the
+ *  client-level fetch timeout, and a hung invoke would leave the modal's
+ *  document pane stuck on "Loading document…" forever. Bound it here so the
+ *  caller's catch-path always fires. */
+const DOCUMENT_REQUEST_TIMEOUT_MS = 15_000
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms)
+    promise.then(
+      value => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      err => {
+        clearTimeout(timer)
+        reject(err)
+      },
+    )
   })
+}
+
+export async function getPoDocumentUrl(ref: PoDocumentRef): Promise<SignedUrlResult> {
+  const { data, error } = await withTimeout(
+    supabase.functions.invoke('create-po-document-url', { body: ref }),
+    DOCUMENT_REQUEST_TIMEOUT_MS,
+    'Document request',
+  )
   if (error) throw new Error(await extractFunctionErrorMessage(error, 'Could not load document'))
   throwOnStructuredError(data, 'create-po-document-url failed')
   return data as SignedUrlResult

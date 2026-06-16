@@ -22,9 +22,26 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // detectSessionInUrl is also off: the password-recovery hash is
 // parsed manually in index.tsx so we keep tight control over which
 // auth events kick off a session restore.
+// A hung request (stale JWT, dropped connection, the supabase-js pre-request
+// session step not resolving) used to spin forever — there was no ceiling on
+// the fetch, so TanStack Query's isFetching/isLoading never cleared and the UI
+// (e.g. the PO Inbox refresh icon + queue skeleton) stayed stuck. Bound every
+// REST request to a hard timeout so it rejects instead of hanging; the query
+// layer can then surface an error and offer a retry. A caller-supplied
+// AbortSignal (TanStack Query cancellation) takes precedence. The realtime
+// WebSocket does not route through this fetch, so it is unaffected.
+const REQUEST_TIMEOUT_MS = 20_000
+
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   global: {
-    fetch: (input, init) => fetch(input, init),
+    fetch: (input, init) => {
+      if (init?.signal) return fetch(input, init)
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+      return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+        clearTimeout(timer),
+      )
+    },
   },
   auth: {
     persistSession: false,

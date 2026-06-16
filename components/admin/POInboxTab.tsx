@@ -54,7 +54,19 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
     if (presetPendingPoId) setOpenId(presetPendingPoId)
   }, [presetPendingPoId])
 
-  const { data, isLoading, isFetching, refetch } = usePendingPos(activeStatus, { archived })
+  const { data, isLoading, isError, error, refetch } = usePendingPos(activeStatus, { archived })
+  // Spinner reflects an explicit user-initiated refresh, not every background
+  // refetch (isFetching would keep the icon spinning on realtime invalidations
+  // and slow refetches, reading as "stuck").
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      await refetch()
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
   const { data: needsReviewCount } = usePendingPoCount()
   const rows = useMemo(() => sortForDisplay(data ?? []), [data])
 
@@ -94,18 +106,21 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
         </nav>
         <button
           type="button"
-          onClick={() => refetch()}
-          className="text-stone-500 hover:text-stone-800 p-1.5 rounded-md hover:bg-stone-100 btn-press"
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="text-stone-500 hover:text-stone-800 p-1.5 rounded-md hover:bg-stone-100 btn-press disabled:opacity-60"
           aria-label="Refresh"
           title="Refresh"
         >
-          {isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          {isRefreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
         </button>
       </div>
 
       <div className="mt-2">
         {isLoading ? (
           <QueueSkeleton />
+        ) : isError ? (
+          <LoadError error={error} onRetry={handleRefresh} retrying={isRefreshing} />
         ) : rows.length === 0 ? (
           <Empty status={activeStatus} archived={archived} />
         ) : (
@@ -188,6 +203,37 @@ const QueueSkeleton: React.FC = () => (
     ))}
   </ul>
 )
+
+interface LoadErrorProps {
+  error: unknown
+  onRetry: () => void
+  retrying: boolean
+}
+
+const LoadError: React.FC<LoadErrorProps> = ({ error, onRetry, retrying }) => {
+  const message = error instanceof Error ? error.message : 'Could not load the queue.'
+  return (
+    <div className="py-16 text-center">
+      <div
+        className="mx-auto rounded-full flex items-center justify-center bg-rose-50"
+        style={{ width: 52, height: 52 }}
+      >
+        <AlertTriangle className="w-6 h-6 text-rose-600" />
+      </div>
+      <p className="mt-4 font-semibold text-stone-900">Couldn’t load this list</p>
+      <p className="mt-1.5 mx-auto max-w-sm text-sm text-stone-500 leading-relaxed">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        disabled={retrying}
+        className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-nexgen-blue border border-nexgen-blue/30 bg-white rounded-lg px-3.5 py-1.5 btn-press disabled:opacity-60"
+      >
+        {retrying ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+        Retry
+      </button>
+    </div>
+  )
+}
 
 const EMPTY_COPY: Record<PendingPoStatus, { icon: React.ReactNode; title: string; body: string; tint: string }> = {
   needs_review: {

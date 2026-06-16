@@ -20,6 +20,7 @@ import {
   Loader2,
   MapPin,
   Plus,
+  RefreshCw,
   Trash2,
   X,
 } from 'lucide-react'
@@ -134,9 +135,13 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
 
   const [docUrl, setDocUrl] = useState<string | null>(null)
   const [docError, setDocError] = useState<string | null>(null)
+  const [docLoading, setDocLoading] = useState(false)
   const [bodyText, setBodyText] = useState<string | null>(null)
   const [bodyHtml, setBodyHtml] = useState<string | null>(null)
   const [bodyLoading, setBodyLoading] = useState(false)
+  // Bumped by the document pane's Retry button to re-run the fetch effect.
+  const [docNonce, setDocNonce] = useState(0)
+  const retryDocument = () => setDocNonce(n => n + 1)
 
   const productsQuery = useProducts()
   const products: Product[] = useMemo(
@@ -187,10 +192,17 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
   //   bodyText / bodyHtml so the operator can read the source email.
   // Attachment POs: fetch the binary attachment as a signed URL for an
   //   iframe / img preview.
+  // Document fetch. Keyed on the stable identity + source fields it actually
+  // reads (NOT the whole detailQuery.data object) so a background refetch of
+  // the same row doesn't cancel an in-flight signed-URL fetch and strand the
+  // pane on "Loading document…". `docNonce` lets the Retry button re-run it.
+  const detailId = detailQuery.data?.id
+  const sourceFormat = detailQuery.data?.extracted_po.source?.format
+  const sourceFilename = detailQuery.data?.extracted_po.source?.original_filename
   useEffect(() => {
-    if (!detailQuery.data) return
-    const format = detailQuery.data.extracted_po.source?.format ?? 'text'
-    const isTextBody = format === 'text' || !detailQuery.data.extracted_po.source?.original_filename
+    if (!detailId) return
+    const format = sourceFormat ?? 'text'
+    const isTextBody = format === 'text' || !sourceFilename
     let cancelled = false
 
     if (isTextBody) {
@@ -198,9 +210,10 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       setDocError(null)
       setBodyText(null)
       setBodyHtml(null)
-      getPoDocumentUrl({ pendingPoId: detailQuery.data.id, kind: 'original' })
+      getPoDocumentUrl({ pendingPoId: detailId, kind: 'original' })
         .then(async r => {
-          const resp = await fetch(r.signedUrl)
+          // Bound the envelope read too, so a hung CDN fetch can't strand the pane.
+          const resp = await fetch(r.signedUrl, { signal: AbortSignal.timeout(15_000) })
           if (!resp.ok) throw new Error(`fetch envelope: ${resp.status}`)
           // original.json is the parsed envelope: { bodyText, bodyHtml, ... }
           const envelope = (await resp.json()) as {
@@ -225,10 +238,13 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
     // Point the viewer at the document extract-po actually chose (its stored
     // name lives in source.original_filename) rather than the positional
     // attachment #0 — which is often the inline signature image.
+    setDocLoading(true)
+    setDocError(null)
+    setDocUrl(null)
     getPoDocumentUrl({
-      pendingPoId: detailQuery.data.id,
+      pendingPoId: detailId,
       kind: 'attachment',
-      attachmentName: detailQuery.data.extracted_po.source?.original_filename ?? undefined,
+      attachmentName: sourceFilename ?? undefined,
       attachmentIndex: 0,
     })
       .then(r => {
@@ -237,10 +253,13 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       .catch(err => {
         if (!cancelled) setDocError(err instanceof Error ? err.message : String(err))
       })
+      .finally(() => {
+        if (!cancelled) setDocLoading(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [detailQuery.data])
+  }, [detailId, sourceFormat, sourceFilename, docNonce])
 
   const productById = useMemo(() => {
     const m = new Map<number, Product>()
@@ -451,6 +470,8 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
               bodyText={bodyText}
               bodyHtml={bodyHtml}
               bodyLoading={bodyLoading}
+              docLoading={docLoading}
+              onRetry={retryDocument}
             />
             <FormPane
               detail={detail}
@@ -596,6 +617,8 @@ interface DocumentPaneProps {
   bodyText: string | null
   bodyHtml: string | null
   bodyLoading: boolean
+  docLoading: boolean
+  onRetry: () => void
 }
 
 const DocumentPane: React.FC<DocumentPaneProps> = ({
@@ -605,6 +628,8 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
   bodyText,
   bodyHtml,
   bodyLoading,
+  docLoading,
+  onRetry,
 }) => {
   const format = detail.extracted_po.source?.format ?? 'text'
   const isTextBody = format === 'text' || !detail.extracted_po.source?.original_filename
@@ -665,10 +690,19 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
             />
           )
         ) : error ? (
-          <div className="p-6 text-sm text-rose-700 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" /> {error}
+          <div className="p-6 flex flex-col items-start gap-3">
+            <div className="text-sm text-rose-700 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" /> {error}
+            </div>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-2 text-sm font-semibold text-nexgen-blue border border-nexgen-blue/30 bg-white rounded-lg px-3.5 py-1.5 btn-press"
+            >
+              <RefreshCw className="w-4 h-4" /> Retry
+            </button>
           </div>
-        ) : !url ? (
+        ) : docLoading || !url ? (
           <div className="p-6 flex items-center justify-center text-stone-500">
             <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading document…
           </div>
