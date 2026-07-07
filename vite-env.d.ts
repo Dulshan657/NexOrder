@@ -12,3 +12,7 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+// Build-time constants injected by vite.config.ts `define` (B-2 monitoring).
+declare const __APP_VERSION__: string
+declare const __BUILD_TIME__: string
