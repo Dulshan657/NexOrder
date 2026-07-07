@@ -1,0 +1,21 @@
+# Dependabot — weekly dependency scanning.
+#
+# npm: minor/patch updates are grouped into a single PR to keep noise down;
+# majors get individual PRs. github-actions keeps the CI action pins fresh.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
