@@ -26,6 +26,7 @@ const DispatchedOrdersView = lazyWithRetry(() => import('./inventory/DispatchedO
 const DocumentsView = lazyWithRetry(() => import('./inventory/DocumentsView'));
 const WarehousePage = lazyWithRetry(() => import('./inventory/warehouse/WarehousePage'));
 const AuditLogTab = lazyWithRetry(() => import('./admin/AuditLogTab'));
+const SystemHealthTab = lazyWithRetry(() => import('./admin/SystemHealthTab'));
 const POInboxView = lazyWithRetry(() => import('./admin/POInboxView'));
 
 interface AdminViewProps {
@@ -75,7 +76,7 @@ interface AdminViewProps {
     onViewInOrderImport?: (orderId: string) => void;
 }
 
-export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Order Import' | 'Promotions' | 'Accounts' | 'Stock' | 'Receiving' | 'Putaway' | 'Pick Queue' | 'Dispatched' | 'Documents' | 'Warehouse' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'PO Inbox' | 'Settings' | 'Audit Log';
+export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Order Import' | 'Promotions' | 'Accounts' | 'Stock' | 'Receiving' | 'Putaway' | 'Pick Queue' | 'Dispatched' | 'Documents' | 'Warehouse' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'PO Inbox' | 'Settings' | 'Audit Log' | 'System Health';
 
 const AdminView: React.FC<AdminViewProps> = (props) => {
     const isDashboard = props.activeTab === 'Dashboard';
@@ -140,6 +141,9 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 )}
                 {props.activeTab === 'Audit Log' && props.currentUser.role === UserRole.ADMIN && (
                     <AuditLogTab users={props.users} />
+                )}
+                {props.activeTab === 'System Health' && props.currentUser.role === UserRole.ADMIN && (
+                    <SystemHealthTab />
                 )}
             </div>
             </Suspense>

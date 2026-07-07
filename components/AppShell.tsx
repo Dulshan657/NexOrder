@@ -121,6 +121,7 @@ import {
     Warehouse,
     UserPlus,
     ScrollText,
+    Activity,
     Mail,
     Inbox,
     BookOpen,
@@ -828,6 +829,14 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Audit Log' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                 >
                                     <ScrollText className="w-5 h-5 mr-3" /> Audit Log
+                                </button>
+                            )}
+                            {isAdmin && (
+                                <button
+                                    onClick={() => { setAdminView('System Health'); setIsSidebarOpen(false); }}
+                                    className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'System Health' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                >
+                                    <Activity className="w-5 h-5 mr-3" /> System Health
                                 </button>
                             )}
                         </>
