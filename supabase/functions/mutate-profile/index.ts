@@ -12,6 +12,7 @@ import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supa
 import { z } from 'https://esm.sh/zod@3.23.8'
 import { requireAuth } from '../_shared/auth.ts'
 import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
+import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 
@@ -34,6 +35,18 @@ serve(async (req: Request) => {
 
   try {
     const auth = await requireAuth(req, { allowedRoles: ['Admin'] })
+
+    // Per-user rate limit: 30/min/user. Matches other admin mutate functions.
+    const rl = await checkRateLimit(`mutate-profile:${auth.userId}`, {
+      windowMs: 60_000,
+      max: 30,
+    })
+    if (!rl.ok) {
+      throw new EdgeFunctionError(
+        'TOO_MANY_REQUESTS',
+        `Rate limit exceeded; try again in ${Math.ceil(rl.resetMs / 1000)}s`,
+      )
+    }
     const body = await req.json().catch(() => {
       throw new EdgeFunctionError('INVALID_INPUT', 'Request body must be valid JSON')
     })

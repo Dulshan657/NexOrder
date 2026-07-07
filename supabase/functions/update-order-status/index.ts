@@ -20,6 +20,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { corsHeadersFor } from '../_shared/cors.ts'
+import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { loadOrderForDoc, buildOrderDocPdf, uploadAndRecordDoc } from '../_shared/orderDocuments.ts'
 import {
   FULFILLMENT_LADDER,
@@ -111,6 +112,20 @@ serve(async (req: Request) => {
 
   const { data: authUser } = await userClient.auth.getUser()
   if (!authUser?.user) return errorResponse('UNAUTHORIZED', 'Invalid session', 401)
+
+  // Per-user rate limit: 60/min/user — higher than the mutate functions
+  // because bulk status flows advance many orders in quick succession.
+  const rl = await checkRateLimit(`update-order-status:${authUser.user.id}`, {
+    windowMs: 60_000,
+    max: 60,
+  })
+  if (!rl.ok) {
+    return errorResponse(
+      'TOO_MANY_REQUESTS',
+      `Rate limit exceeded; try again in ${Math.ceil(rl.resetMs / 1000)}s`,
+      429,
+    )
+  }
 
   let profile: { id: string; role: string; home_warehouse_id: number | null }
   try {
