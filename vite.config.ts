@@ -9,8 +9,12 @@ import tailwindcss from '@tailwindcss/vite';
 // VERCEL_GIT_COMMIT_SHA covers git-integration builds; local dev falls back to
 // `git rev-parse` and finally 'dev'.
 function resolveCommitSha(): string {
-    const fromEnv = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT_SHA;
-    if (fromEnv) return fromEnv;
+    // NOTE: Vercel populates system env vars as EMPTY STRINGS on CLI deploys
+    // (no git metadata), so empty must be treated as absent — `??` alone would
+    // let VERCEL_GIT_COMMIT_SHA='' mask the GIT_COMMIT_SHA build-env.
+    const fromEnv = [process.env.VERCEL_GIT_COMMIT_SHA, process.env.GIT_COMMIT_SHA]
+        .find((v) => typeof v === 'string' && v.trim() !== '');
+    if (fromEnv) return fromEnv.trim();
     try {
         return execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
             .toString()
