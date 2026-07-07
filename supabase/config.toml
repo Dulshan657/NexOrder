@@ -24,6 +24,9 @@
 # - log-client-error      — accepts pre-auth/anonymous crash reports that carry
 #                           only the publishable key (sb_publishable_*, non-JWT),
 #                           so the gateway would 401 them; rate-limited per IP
+# - health                — pg_cron sends HEALTH_CRON_TOKEN (constant-time
+#                           compared); unauthenticated GET is a minimal
+#                           liveness probe, rate-limited per IP
 #
 # All other functions keep the default verify_jwt = true so callers must
 # supply a valid Supabase auth JWT.
@@ -47,4 +50,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.log-client-error]
+verify_jwt = false
+
+[functions.health]
 verify_jwt = false

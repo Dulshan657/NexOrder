@@ -621,7 +621,7 @@ export interface Invoice {
     createdDate: string;
 }
 
-export type NotificationType = 'low_stock' | 'order_status' | 'invoice' | 'system' | 'route_assigned' | 'route_completed' | 'change_request' | 'change_approved' | 'change_rejected';
+export type NotificationType = 'low_stock' | 'order_status' | 'invoice' | 'system' | 'system_alert' | 'route_assigned' | 'route_completed' | 'change_request' | 'change_approved' | 'change_rejected';
 
 export interface AppNotification {
     id: string;

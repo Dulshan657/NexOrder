@@ -45,6 +45,11 @@ const inputSchema = z.discriminatedUnion('template', [
     template: z.literal('user_invitation'),
     userId: z.string().uuid(),
   }),
+  z.object({
+    template: z.literal('system_alert'),
+    status: z.enum(['ok', 'degraded', 'down']),
+    message: z.string().min(1).max(2000),
+  }),
 ])
 
 type Input = z.infer<typeof inputSchema>
@@ -155,6 +160,8 @@ async function renderTemplate(admin: ReturnType<typeof createClient>, input: Inp
       return renderInvoiceIssued(admin, input.invoiceId)
     case 'user_invitation':
       return renderUserInvitation(admin, input.userId)
+    case 'system_alert':
+      return renderSystemAlert(input.status, input.message)
   }
 }
 
@@ -250,6 +257,29 @@ async function renderUserInvitation(admin: any, userId: string): Promise<Rendere
   })
 
   return { to: email, subject, html }
+}
+
+function renderSystemAlert(status: 'ok' | 'degraded' | 'down', message: string): RenderedEmail | null {
+  // Recipient comes from the ALERT_EMAIL secret. Unset => no-op (same
+  // self-disable philosophy as RESEND_API_KEY).
+  const to = Deno.env.get('ALERT_EMAIL')
+  if (!to) return null
+
+  const appUrl = Deno.env.get('APP_URL') ?? DEFAULT_APP_URL
+  const subject = `[Nex Order] System ${status === 'ok' ? 'recovered' : status}`
+
+  const html = layout({
+    title: status === 'ok' ? 'System recovered' : `System ${status}`,
+    intro: message,
+    rows: [
+      ['Status', status],
+      ['Checked', new Date().toISOString()],
+    ],
+    cta: { label: 'Open System Health', href: appUrl },
+    footer: 'Automated alert from the health-check cron. Transitions only — no repeats while the state persists.',
+  })
+
+  return { to, subject, html }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
