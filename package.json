@@ -29,7 +29,6 @@
     "demo:wie:reset": "node wie-demo/reset.mjs"
   },
   "dependencies": {
-    "@google/genai": "^1.19.0",
     "@supabase/supabase-js": "^2.103.0",
     "@tanstack/react-query": "^5.99.0",
     "browser-image-compression": "^2.0.2",
