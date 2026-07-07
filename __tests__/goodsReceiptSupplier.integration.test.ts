@@ -30,11 +30,14 @@ async function firstProfileId(client: pg.Client): Promise<string> {
 }
 
 async function seedSupplier(client: pg.Client, label: string): Promise<number> {
+  // Unique email per seed — suppliers.email has a UNIQUE constraint, so empty
+  // strings collide with each other and with existing rows.
+  const token = uniq();
   const res = await client.query<{ id: number }>(
     `INSERT INTO public.suppliers (id, name, contact_person, email, phone)
-     VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM public.suppliers), $1, '', '', '')
+     VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM public.suppliers), $1, '', $2, '')
      RETURNING id`,
-    [`Sentinel Supplier ${label} ${uniq()}`],
+    [`Sentinel Supplier ${label} ${token}`, `sentinel-${token}@test.local`],
   );
   return res.rows[0].id;
 }

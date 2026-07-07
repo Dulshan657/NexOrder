@@ -27,7 +27,7 @@ export interface CallVerification {
 
 export type OrderVerification = SignatureVerification | CallVerification;
 
-export type Category = 'Coconut' | 'Meal Pastes' | 'Asian Sauces' | 'Soy Sauces' | 'Chilli Sauces' | 'Condiments' | 'Noodles' | 'Fish' | 'Satay Sauces' | 'Desserts' | 'Ready Meal Sauces' | 'Other';
+export type Category = 'Coconut' | 'Meal Pastes' | 'Asian Sauces' | 'Soy Sauces' | 'Chilli Sauces' | 'Condiments' | 'Noodles' | 'Fish' | 'Satay Sauces' | 'Desserts' | 'Ready Meal Sauces' | 'Plant-Based' | 'Other';
 
 export interface User {
     id: number;
@@ -52,6 +52,7 @@ export interface Product {
     unit: string; // e.g., 'jar', 'bottle', 'can', 'packet'
     cartonSize: number; // units per carton, e.g., 6 or 12
     dietaryLabels?: string[]; // e.g., ['GF', 'VEGAN']
+    featured?: boolean; // pinned to the top of the shop (demo/hero products, mig 00043)
     supplierId: number;
     // Volume / cubic meters
     cubicMetersUnit?: number;   // m³ per single unit (direct override)
@@ -75,7 +76,7 @@ export interface Product {
 // Inventory & Dispatch (mig 00027)
 // ---------------------------------------------------------------------------
 
-export type LocationKind = 'WAREHOUSE' | 'ZONE' | 'BIN' | 'SHELF';
+export type LocationKind = 'WAREHOUSE' | 'ZONE' | 'AISLE' | 'RACK' | 'BAY' | 'SHELF' | 'BIN' | 'STAGING';
 
 /** Storage model of a WAREHOUSE-kind location (mig 00036). */
 export type WarehouseType = 'bulk' | 'racked';
@@ -99,6 +100,46 @@ export interface InventoryLocation {
     // Racked bin config (mig 00039; on ZONE/BIN/SHELF nodes).
     capacitySlots?: number;
     slotKind?: 'pallet' | 'carton';
+    // WIE zone semantics (mig 00047; on ZONE nodes).
+    zoneProfileId?: number;
+    // Physical storage-unit type (mig 00056; on rack/BIN nodes).
+    storageTypeId?: number;
+}
+
+/** What one "slot" of a storage type counts. 'each'/'uncounted' don't map onto
+ *  the engine's pallet/carton slot_kind. */
+export type SlotUnit = 'pallet' | 'carton' | 'each' | 'uncounted';
+
+/** A user-managed physical storage-unit type (mig 00056) — Pallet Rack, Shelving,
+ *  Bulk Floor, Cold Room, …. Supplies default capacity/slot behaviour when a rack
+ *  is placed; the engine still reads slot_kind/capacity_slots directly. */
+export interface StorageType {
+    id: number;
+    code: string;
+    name: string;
+    defaultCapacitySlots?: number;
+    slotUnit: SlotUnit;
+    attributes: Record<string, unknown>;
+    isActive: boolean;
+    sortOrder: number;
+}
+
+// The 8 seeded types keep autocomplete; custom operator-defined types (mig 00057
+// dropped the CHECK) are accepted as free text via the `(string & {})` member.
+export type ZoneType =
+    | 'fast_moving' | 'slow_moving' | 'hazardous' | 'cold'
+    | 'bulk' | 'returns' | 'quarantine' | 'overflow'
+    | (string & {});
+
+/** Operational semantics for a ZONE location (WIE Phase 2). */
+export interface ZoneProfile {
+    id: number;
+    name: string;
+    zoneType: ZoneType;
+    priorityWeight: number;
+    allowedCategories?: string[];
+    maxUtilizationPct?: number;
+    isActive: boolean;
 }
 
 /**
@@ -111,6 +152,9 @@ export interface Warehouse {
     code: string;
     name: string;
     locationType: WarehouseType;
+    /** The published layout serving this warehouse (mig 00045). Null until a layout
+     *  is published; nulled again on archive — a lightweight "is racked+published" flag. */
+    activeLayoutId?: number;
     lat?: number;
     lng?: number;
     address?: string;
@@ -205,6 +249,297 @@ export interface PaymentMethod {
     type: 'Credit Card' | 'Bank Transfer' | 'On Account';
     details: string; // e.g., "Visa ending in 1234" or "Net 30 Terms"
     isDefault: boolean;
+}
+
+// ── Warehouse Intelligence Engine (WIE) ──────────────────────────────────────
+
+export type LayoutStatus = 'draft' | 'published' | 'archived';
+export type LayoutObjectType = 'wall' | 'dock' | 'walkway' | 'obstacle' | 'label' | 'lift';
+
+/** A versioned warehouse layout (spatial digital twin). One published per warehouse. */
+export interface WarehouseLayout {
+    id: number;
+    warehouseId: number;
+    name: string;
+    status: LayoutStatus;
+    version: number;
+    clonedFrom?: number;
+    gridWidth: number;
+    gridHeight: number;
+    cellSizeM: number;
+    floorCount: number;
+    publishedAt?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+/** Geometry of a storage location (bin/rack/zone) within a layout. */
+export interface LayoutPlacement {
+    id: number;
+    layoutId: number;
+    locationId: number;
+    floor: number;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    rotation: 0 | 90 | 180 | 270;
+    graphNodeId?: number;
+    accessOffsetM?: number;
+}
+
+/** A non-storage grid object (wall/dock/walkway/obstacle/label) within a layout. */
+export interface LayoutObject {
+    id: number;
+    layoutId: number;
+    objectType: LayoutObjectType;
+    floor: number;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    meta: Record<string, unknown>;
+    stagingLocationId?: number;
+}
+
+// ── WIE rules, SKU attributes, compatibility (Phase 3) ───────────────────────
+
+export type WieRuleType = 'putaway' | 'picking' | 'slotting';
+export type WieEnforcement = 'hard' | 'soft';
+export type WieRuleOp = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'exists';
+
+export interface WieRuleCondition {
+    subject: 'product' | 'bin' | 'zone';
+    attr: string;
+    op: WieRuleOp;
+    value?: unknown;
+}
+
+export interface WieRuleAction {
+    effect: 'require' | 'forbid' | 'boost' | 'penalty';
+    target?: { scope: 'bin' | 'zone'; attr: string; op: WieRuleOp; value?: unknown };
+    delta?: number;
+}
+
+export interface WieRuleDefinition {
+    conditions: WieRuleCondition[];
+    conditionLogic?: 'and' | 'or';
+    action: WieRuleAction;
+}
+
+export interface WieRule {
+    id: number;
+    warehouseId?: number;
+    name: string;
+    ruleType: WieRuleType;
+    enforcement: WieEnforcement;
+    priority: number;
+    definition: WieRuleDefinition;
+    isActive: boolean;
+}
+
+export type ShelfLifePolicy = 'FEFO' | 'FIFO';
+
+export interface ProductWmsAttributes {
+    productId: number;
+    hazardClass?: string;
+    tempMin?: number;
+    tempMax?: number;
+    shelfLifePolicy?: ShelfLifePolicy;
+    stackable?: boolean;
+    handlingType?: string;
+    weightKg?: number;
+    volumeL?: number;
+    dims?: Record<string, unknown>;
+    custom: Record<string, unknown>;
+}
+
+export type CompatibilityLevel = 'forbidden' | 'restricted' | 'allowed';
+
+export interface CategoryCompatibility {
+    categoryA: string;
+    categoryB: string;
+    level: CompatibilityLevel;
+    note?: string;
+}
+
+// ── WIE velocity, scoring weights, re-slotting (Phase 4) ─────────────────────
+
+export interface WieScoringWeights {
+    travelDistance: number;
+    capacityFit: number;
+    grouping: number;
+    zonePreference: number;
+    congestion: number;
+    velocityMatch: number;
+}
+
+export interface WieScoringProfile {
+    warehouseId: number;
+    weights: WieScoringWeights;
+}
+
+export type VelocityClass = 'A' | 'B' | 'C';
+
+export interface WieProductVelocity {
+    warehouseId: number;
+    productId: number;
+    picks7d: number;
+    picks30d: number;
+    picks90d: number;
+    qty30d: number;
+    velocityClass?: VelocityClass;
+}
+
+/** Recent pick traffic at a single walkway/graph node — feeds the congestion overlay. */
+export interface WieLocationTraffic {
+    layoutId: number;
+    graphNodeId: number;
+    pickVisits30d: number;
+}
+
+export type SlottingStatus = 'suggested' | 'accepted' | 'rejected' | 'expired';
+
+export interface SlottingSuggestion {
+    id: number;
+    warehouseId: number;
+    productId: number;
+    fromLocationId: number;
+    toLocationId: number;
+    qty: number;
+    expectedGainM: number;
+    reason: Record<string, unknown>;
+    status: SlottingStatus;
+    createdAt: string;
+    decidedAt?: string;
+}
+
+// ── WIE reporting (Phase 7) ──────────────────────────────────────────────────
+
+export interface WarehouseReport {
+    putaway: Record<string, number>;
+    slotting: Record<string, number>;
+    velocity: Record<string, number>;
+    binCount: number;
+    emptyBins: number;
+    utilizationPct: number | null;
+    congestion: Array<{ node: number; visits: number }>;
+    latestSimulation: {
+        id: number;
+        kpis: SimulationKpis;
+        diff: SimulationKpiDiff | null;
+        params: { days: number; orderCount: number };
+        createdAt: string;
+    } | null;
+}
+
+// ── WIE analytical simulation (Phase 6) ──────────────────────────────────────
+
+export interface SimulationKpis {
+    orderCount: number;
+    totalTravelM: number;
+    avgTravelPerOrderM: number;
+    utilizationPct: number | null;
+    binsUsed: number;
+    binsTotal: number;
+    congestionByNode: Array<{ graphNodeId: number; visits: number }>;
+    unreachableStops: number;
+}
+
+export interface SimulationKpiDiff {
+    totalTravelDeltaM: number;
+    travelDeltaPct: number | null;
+    avgTravelDeltaM: number;
+    utilizationDeltaPct: number | null;
+    /** True when the target leaves more bins unreachable than the baseline, so its
+     *  lower travel is partly an artefact of not serving them (not apples-to-apples). */
+    coverageWarning?: boolean;
+}
+
+export interface SimulationResult {
+    simulationId: number;
+    params: { days: number; orderCount: number };
+    kpis: SimulationKpis;
+    baselineKpis: SimulationKpis | null;
+    diff: SimulationKpiDiff | null;
+}
+
+// ── WIE pick routing (Phase 5) ───────────────────────────────────────────────
+
+export interface PickRouteStop {
+    sequence: number;
+    locationId: number;
+    code: string | null;
+    productId: number | null;
+    orderItemId: number | null;
+    orderId: string | null;
+    qtyBase: number;
+    legDistanceM: number;
+}
+
+export interface PickRoute {
+    stops: PickRouteStop[];
+    totalDistanceM: number;
+    unreachableCount: number;
+}
+
+export type ScoringFactorName =
+    | 'travel_distance'
+    | 'capacity_fit'
+    | 'grouping'
+    | 'zone_preference'
+    | 'congestion'
+    | 'velocity_match';
+
+export interface FactorBreakdown {
+    factor: ScoringFactorName;
+    weight: number;
+    rawValue: number;
+    normalized: number;
+    weighted: number;
+    detail: string;
+}
+
+export interface RuleTrigger {
+    ruleId: number;
+    name: string;
+    effect: 'boost' | 'penalty';
+    delta: number;
+}
+
+export interface CandidateBreakdown {
+    locationId: number;
+    locationCode: string;
+    totalScore: number;
+    factors: FactorBreakdown[];
+    ruleTriggers: RuleTrigger[];
+}
+
+export interface HardFilterReason {
+    ruleId: number | null;
+    code: string;
+    label: string;
+    rejectedCount: number;
+    sample: Array<{ locationId: number; code: string; reason: string }>;
+}
+
+export interface PutawayExplanation {
+    engineVersion: string;
+    layoutId: number;
+    candidatesConsidered: number;
+    hardFilters: HardFilterReason[];
+    winner: CandidateBreakdown | null;
+    alternatives: CandidateBreakdown[];
+}
+
+/** Engine recommendation for one received line (as returned by recommend-putaway). */
+export interface PutawayLineRecommendation {
+    recommendationId: number;
+    productId: number;
+    quantity: number;
+    recommendedLocationId: number | null;
+    alternatives: CandidateBreakdown[];
+    explanation: PutawayExplanation;
 }
 
 export interface HoReCa {
@@ -363,6 +698,10 @@ export interface AppSettings {
     currency: string;
     showStockToHoReCa: boolean;
     companyLogoUrl?: string | null;
+    // PO-Inbox auto-approval policy toggles (mig 00044). All default true.
+    poAutoApproveEnabled: boolean;
+    poAutoApproveBlockOnShortStock: boolean;
+    poAutoApproveBlockOnSenderMismatch: boolean;
 }
 
 export interface PantryItem {

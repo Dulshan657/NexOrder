@@ -1,0 +1,88 @@
+-- 00042_tenant_scoping.sql
+-- Lightweight per-account tenancy for the Tridon demo persona.
+--
+-- The app is single-tenant (AYAM Asian food). We introduce a `tenant` tag so a
+-- demo account (tridon@nexorder.demo) sees only its own world (automotive parts,
+-- automotive customers, automotive POs/orders) and normal AYAM users see only
+-- food. Enforcement is read-side (queries filter by the caller's tenant) — NOT
+-- RLS — which is acceptable for a single-Admin demo persona.
+--
+-- Root tables carry `tenant` directly (set by seeds / mutations). The two tables
+-- written by Edge Functions (orders, pending_pos) and invoices derive `tenant`
+-- via BEFORE INSERT triggers, so no Deno function changes are needed:
+--   * orders / invoices  ← horecas.tenant      (via NEW.horeca_id)
+--   * pending_pos        ← email_accounts.tenant(via NEW.inbound_message_id →
+--                            inbound_messages.email_account_id)
+-- Deriving pending_pos.tenant from the MAILBOX (not the matched customer) keeps
+-- unresolved POs (matched_horeca_id IS NULL) in the right tenant's inbox.
+--
+-- Triggers fire for service_role too (service_role bypasses RLS, not triggers),
+-- so seeds must tag parents (suppliers/horecas/email_accounts) BEFORE inserting
+-- their orders/pending_pos.
+
+BEGIN;
+
+-- ── Columns (default 'ayam' backfills every existing row) ──────────────────────
+ALTER TABLE public.products       ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'ayam';
+ALTER TABLE public.horecas        ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'ayam';
+ALTER TABLE public.suppliers      ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'ayam';
+ALTER TABLE public.promotions     ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'ayam';
+ALTER TABLE public.email_accounts ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'ayam';
+ALTER TABLE public.orders         ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'ayam';
+ALTER TABLE public.pending_pos    ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'ayam';
+ALTER TABLE public.invoices       ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'ayam';
+
+-- ── Indexes (composite with the existing hot filter where relevant) ────────────
+CREATE INDEX IF NOT EXISTS idx_products_tenant       ON public.products(tenant);
+CREATE INDEX IF NOT EXISTS idx_horecas_tenant        ON public.horecas(tenant);
+CREATE INDEX IF NOT EXISTS idx_suppliers_tenant      ON public.suppliers(tenant);
+CREATE INDEX IF NOT EXISTS idx_promotions_tenant     ON public.promotions(tenant);
+CREATE INDEX IF NOT EXISTS idx_email_accounts_tenant ON public.email_accounts(tenant);
+CREATE INDEX IF NOT EXISTS idx_orders_tenant         ON public.orders(tenant, order_date DESC);
+CREATE INDEX IF NOT EXISTS idx_pending_pos_tenant    ON public.pending_pos(tenant, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_invoices_tenant       ON public.invoices(tenant);
+
+-- ── Derive tenant for orders + invoices from their HoReCa ──────────────────────
+CREATE OR REPLACE FUNCTION public.set_tenant_from_horeca()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  -- Only auto-derive when the caller left the default; an explicit non-default
+  -- value (e.g. a service-role backfill) stays authoritative.
+  IF NEW.tenant IS NULL OR NEW.tenant = 'ayam' THEN
+    SELECT h.tenant INTO NEW.tenant FROM public.horecas h WHERE h.id = NEW.horeca_id;
+    IF NEW.tenant IS NULL THEN NEW.tenant := 'ayam'; END IF;
+  END IF;
+  RETURN NEW;
+END; $$;
+
+DROP TRIGGER IF EXISTS trg_orders_set_tenant ON public.orders;
+CREATE TRIGGER trg_orders_set_tenant
+  BEFORE INSERT ON public.orders
+  FOR EACH ROW EXECUTE FUNCTION public.set_tenant_from_horeca();
+
+DROP TRIGGER IF EXISTS trg_invoices_set_tenant ON public.invoices;
+CREATE TRIGGER trg_invoices_set_tenant
+  BEFORE INSERT ON public.invoices
+  FOR EACH ROW EXECUTE FUNCTION public.set_tenant_from_horeca();
+
+-- ── Derive tenant for pending_pos from the receiving MAILBOX ───────────────────
+CREATE OR REPLACE FUNCTION public.set_pending_po_tenant()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE v_tenant TEXT;
+BEGIN
+  IF NEW.tenant IS NULL OR NEW.tenant = 'ayam' THEN
+    SELECT ea.tenant INTO v_tenant
+    FROM public.inbound_messages im
+    JOIN public.email_accounts ea ON ea.id = im.email_account_id
+    WHERE im.id = NEW.inbound_message_id;
+    NEW.tenant := COALESCE(v_tenant, 'ayam');
+  END IF;
+  RETURN NEW;
+END; $$;
+
+DROP TRIGGER IF EXISTS trg_pending_pos_set_tenant ON public.pending_pos;
+CREATE TRIGGER trg_pending_pos_set_tenant
+  BEFORE INSERT ON public.pending_pos
+  FOR EACH ROW EXECUTE FUNCTION public.set_pending_po_tenant();
+
+COMMIT;

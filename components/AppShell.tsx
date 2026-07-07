@@ -67,7 +67,7 @@ import {
     useUpdatePromotion,
     useDeletePromotion,
 } from '../hooks/queries/usePromotions';
-import { isTridonDemoUser } from '../lib/demoAccounts';
+import { getDemoPersona } from '../lib/demoAccounts';
 
 import { type AdminTab } from './AdminView';
 import UserProfile from './UserProfile';
@@ -125,9 +125,11 @@ import {
     Inbox,
     BookOpen,
     PackagePlus,
+    PackageOpen,
     ClipboardCheck,
     Send,
     FileText,
+    LayoutGrid,
 } from 'lucide-react';
 import type { AppNotification } from '../types';
 
@@ -302,10 +304,10 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const isAdminOrManager = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
     const isAdmin = currentUser.role === UserRole.ADMIN;
     const isWarehouse = currentUser.role === UserRole.WAREHOUSE;
-    // Tridon PO-Inbox demo persona: an Admin login with a bespoke sidebar order
-    // (PO Inbox → Order Import → Shop pinned first) and Tridon branding. Scoped
-    // to this one account; no other user's experience changes.
-    const isTridonDemo = isTridonDemoUser(currentUser);
+    // PO-Inbox demo persona (Tridon, V2food, …): an Admin login with a bespoke
+    // sidebar order (PO Inbox → Order Import pinned first) and client branding.
+    // Scoped to the one account; `null` for every normal user.
+    const demoPersona = getDemoPersona(currentUser);
 
     // ── Derived notification state ────────────────────────────────────────────
     // Role-filtered notifications; NotificationCenter derives the unread count
@@ -582,8 +584,8 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                 <div className="h-[73px] flex items-center justify-between px-6 bg-white/80 border-b border-stone-200">
                     <div className="flex items-center">
                         <img
-                            src={isTridonDemo ? '/assets/tridon-logo.png' : '/assets/Nex-Order-no-bg-logo.png'}
-                            alt={isTridonDemo ? 'Tridon' : 'Nex Order'}
+                            src={demoPersona?.logoSrc ?? '/assets/Nex-Order-no-bg-logo.png'}
+                            alt={demoPersona?.displayName ?? 'Nex Order'}
                             className="h-16 object-contain"
                         />
                     </div>
@@ -686,13 +688,13 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                     )}
                     {isAdminOrManager && (
                         <>
-                            {/* Tridon demo: lead with the PO-Inbox story, then fall through
-                                to the normal admin nav (those three omitted below). */}
-                            {isTridonDemo && (
+                            {/* Demo persona: lead with the PO-Inbox story, then fall through
+                                to the normal admin nav (PO Inbox / Order Import omitted below
+                                to avoid duplicates; Shop hidden too when the persona opts out). */}
+                            {demoPersona?.leadWithPoInbox && (
                                 <>
                                     {adminPoInboxNavButton}
                                     {adminOrderImportNavButton}
-                                    {adminShopNavButton}
                                 </>
                             )}
                             <button
@@ -703,9 +705,9 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             </button>
 
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Sales & Orders</p>
-                            {!isTridonDemo && adminShopNavButton}
-                            {!isTridonDemo && adminOrderImportNavButton}
-                            {!isTridonDemo && adminPoInboxNavButton}
+                            {!demoPersona?.hideShop && adminShopNavButton}
+                            {!demoPersona?.leadWithPoInbox && adminOrderImportNavButton}
+                            {!demoPersona?.leadWithPoInbox && adminPoInboxNavButton}
                             <button
                                 onClick={() => { setAdminView('Accounts'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
@@ -771,6 +773,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 <PackagePlus className="w-5 h-5 mr-3" /> Receive Stock
                             </button>
                             <button
+                                onClick={() => { setAdminView('Putaway'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Putaway' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <PackageOpen className="w-5 h-5 mr-3" /> Putaway
+                            </button>
+                            <button
                                 onClick={() => { setAdminView('Pick Queue'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Pick Queue' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
@@ -787,6 +795,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Documents' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <FileText className="w-5 h-5 mr-3" /> Documents
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Warehouse'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Warehouse' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <LayoutGrid className="w-5 h-5 mr-3" /> Warehouse
                             </button>
 
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">System</p>
@@ -840,6 +854,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 <PackagePlus className="w-5 h-5 mr-3" /> Receive Stock
                             </button>
                             <button
+                                onClick={() => { setAdminView('Putaway'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Putaway' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <PackageOpen className="w-5 h-5 mr-3" /> Putaway
+                            </button>
+                            <button
                                 onClick={() => { setAdminView('Stock'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Stock' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
@@ -850,6 +870,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Documents' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <FileText className="w-5 h-5 mr-3" /> Documents
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Warehouse'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Warehouse' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <LayoutGrid className="w-5 h-5 mr-3" /> Warehouse
                             </button>
                         </>
                     )}
@@ -1344,6 +1370,10 @@ const AppShell: React.FC<AppShellProps> = props => {
     const [adminView, setAdminView] = useState<AdminTab>(() => {
         // The Warehouse role has no Dashboard — land it on its pick queue.
         if (currentUser.role === UserRole.WAREHOUSE) return 'Pick Queue';
+        // PO-Inbox demo personas open straight on their landing tab (their sidebar
+        // already leads with PO Inbox); other Admins still start on the Dashboard.
+        const persona = getDemoPersona(currentUser);
+        if (persona) return persona.landingView;
         if (typeof window === 'undefined') return 'Dashboard';
         const params = new URLSearchParams(window.location.search);
         // After the OAuth callback, route to the consolidated PO Inbox tab.

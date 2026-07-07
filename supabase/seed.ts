@@ -81,6 +81,7 @@ async function seedProducts() {
     unit: p.unit,
     carton_size: p.cartonSize,
     dietary_labels: p.dietaryLabels ?? [],
+    featured: p.featured ?? false,
     supplier_id: p.supplierId,
     cubic_meters_unit: p.cubicMetersUnit ?? null,
     cubic_meters_carton: p.cubicMetersCarton ?? null,

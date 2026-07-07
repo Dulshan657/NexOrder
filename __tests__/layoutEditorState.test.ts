@@ -1,0 +1,93 @@
+import { describe, it, expect } from 'vitest'
+import {
+  initialEditorState,
+  layoutEditorReducer,
+  type EditorState,
+} from '../components/admin/layout/useLayoutEditorState'
+
+function withTool(tool: EditorState['tool']): EditorState {
+  return layoutEditorReducer(initialEditorState(), { type: 'set_tool', tool })
+}
+
+describe('layoutEditorReducer', () => {
+  it('paints a walkway object at a cell', () => {
+    const s = layoutEditorReducer(withTool('walkway'), { type: 'paint_cell', x: 2, y: 3 })
+    expect(s.objects).toHaveLength(1)
+    expect(s.objects[0]).toMatchObject({ objectType: 'walkway', x: 2, y: 3 })
+    expect(s.dirty).toBe(true)
+  })
+
+  it('does not stack two objects in the same cell', () => {
+    let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 1, y: 1 })
+    s = layoutEditorReducer({ ...s, tool: 'dock' }, { type: 'paint_cell', x: 1, y: 1 })
+    expect(s.objects).toHaveLength(1)
+    expect(s.objects[0].objectType).toBe('dock')
+  })
+
+  it('places a bin and selects it', () => {
+    const s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 4, y: 5 })
+    expect(s.placements).toHaveLength(1)
+    expect(s.placements[0]).toMatchObject({ kind: 'BIN', x: 4, y: 5 })
+    expect(s.selectedRef).toBe(s.placements[0].clientRef)
+  })
+
+  it('will not place two bins in the same cell', () => {
+    let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 4, y: 5 })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 4, y: 5 })
+    expect(s.placements).toHaveLength(1)
+  })
+
+  it('erases both objects and placements at a cell', () => {
+    let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 4, y: 5 })
+    s = layoutEditorReducer({ ...s, tool: 'walkway' }, { type: 'paint_cell', x: 6, y: 6 })
+    s = layoutEditorReducer({ ...s, tool: 'erase' }, { type: 'paint_cell', x: 4, y: 5 })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 6, y: 6 })
+    expect(s.placements).toHaveLength(0)
+    expect(s.objects).toHaveLength(0)
+  })
+
+  it('updates a placement from the inspector', () => {
+    let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 4, y: 5 })
+    const ref = s.placements[0].clientRef
+    s = layoutEditorReducer(s, { type: 'update_placement', ref, patch: { code: 'A-01', capacitySlots: 20 } })
+    expect(s.placements[0]).toMatchObject({ code: 'A-01', capacitySlots: 20 })
+  })
+
+  it('generates a block of bins, skipping occupied cells and tagging a zone', () => {
+    let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 }) // occupy one cell
+    s = layoutEditorReducer(s, { type: 'generate_bins', startX: 0, startY: 0, cols: 2, rows: 2, capacitySlots: 5, zoneProfileId: 3 })
+    // 2×2 block minus the already-occupied (0,0) = 3 new bins.
+    expect(s.placements).toHaveLength(4)
+    const generated = s.placements.filter((p) => p.zoneProfileId === 3)
+    expect(generated).toHaveLength(3)
+    expect(generated.every((p) => p.capacitySlots === 5)).toBe(true)
+  })
+
+  it('carries the storage type id onto generated bins', () => {
+    const s = layoutEditorReducer(initialEditorState(), {
+      type: 'generate_bins', startX: 0, startY: 0, cols: 2, rows: 1, capacitySlots: 8, slotKind: 'carton', storageTypeId: 12,
+    })
+    expect(s.placements).toHaveLength(2)
+    expect(s.placements.every((p) => p.storageTypeId === 12)).toBe(true)
+  })
+
+  it('marks new bins with their assigned location ids after save', () => {
+    let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 4, y: 5 })
+    const ref = s.placements[0].clientRef
+    s = layoutEditorReducer(s, { type: 'mark_saved', refMap: [{ client_ref: ref, location_id: 99 }] })
+    expect(s.placements[0].locationId).toBe(99)
+    expect(s.dirty).toBe(false)
+  })
+
+  it('hydrates from server rows and is not dirty', () => {
+    const s = layoutEditorReducer(initialEditorState(), {
+      type: 'load',
+      placements: [{ id: 1, layoutId: 1, locationId: 7, floor: 0, x: 2, y: 2, w: 1, h: 1, rotation: 0 }],
+      objects: [{ id: 1, layoutId: 1, objectType: 'dock', floor: 0, x: 0, y: 0, w: 1, h: 1, meta: {} }],
+      codeByLocation: { 7: { code: 'A-07', name: 'Bin 7', kind: 'BIN' } },
+    })
+    expect(s.placements[0]).toMatchObject({ locationId: 7, code: 'A-07' })
+    expect(s.objects[0].objectType).toBe('dock')
+    expect(s.dirty).toBe(false)
+  })
+})

@@ -40,6 +40,7 @@ export type ExtractionPurpose =
   | 'extract_image'
   | 'customer_match'
   | 'product_match'
+  | 'extract_floorplan'
 
 export interface ChatMessagePart {
   type: 'text' | 'image_url' | 'file'

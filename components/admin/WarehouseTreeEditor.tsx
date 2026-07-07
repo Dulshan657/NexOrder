@@ -8,7 +8,9 @@ import {
 } from '../../hooks/queries/useWarehouseLocations';
 import type { InventoryLocation, LocationKind, Warehouse } from '../../types';
 
-type NodeKind = Exclude<LocationKind, 'WAREHOUSE'>;
+// The classic tree editor only manages these three kinds; the WIE designer owns
+// the richer hierarchy (AISLE/RACK/BAY/STAGING).
+type NodeKind = 'ZONE' | 'BIN' | 'SHELF';
 
 interface WarehouseTreeEditorProps {
   warehouse: Warehouse;

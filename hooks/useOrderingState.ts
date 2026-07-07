@@ -111,6 +111,11 @@ export function useOrderingState(input: OrderingStateInput): OrderingState {
             result = [...result].sort((a, b) => (freq.get(b.id) ?? 0) - (freq.get(a.id) ?? 0));
         }
 
+        // Pin featured products (demo/hero items, mig 00043) to the top of every
+        // view. Array.sort is stable, so the chosen sortOption order is preserved
+        // within the featured and non-featured groups.
+        result = [...result].sort((a, b) => Number(!!b.featured) - Number(!!a.featured));
+
         return result;
     }, [products, selectedCategory, searchQuery, selectedHoReCa, currentUser, promotions, sortOption, allOrders]);
 

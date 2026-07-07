@@ -21,8 +21,10 @@ const ScheduledVisitsAdmin = lazyWithRetry(() => import('./admin/ScheduledVisits
 const StockView = lazyWithRetry(() => import('./StockView'));
 const ReceiveStockView = lazyWithRetry(() => import('./inventory/ReceiveStockView'));
 const PickQueueView = lazyWithRetry(() => import('./inventory/PickQueueView'));
+const PutawayQueuePage = lazyWithRetry(() => import('./inventory/PutawayQueuePage'));
 const DispatchedOrdersView = lazyWithRetry(() => import('./inventory/DispatchedOrdersView'));
 const DocumentsView = lazyWithRetry(() => import('./inventory/DocumentsView'));
+const WarehousePage = lazyWithRetry(() => import('./inventory/warehouse/WarehousePage'));
 const AuditLogTab = lazyWithRetry(() => import('./admin/AuditLogTab'));
 const POInboxView = lazyWithRetry(() => import('./admin/POInboxView'));
 
@@ -73,10 +75,21 @@ interface AdminViewProps {
     onViewInOrderImport?: (orderId: string) => void;
 }
 
-export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Order Import' | 'Promotions' | 'Accounts' | 'Stock' | 'Receiving' | 'Pick Queue' | 'Dispatched' | 'Documents' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'PO Inbox' | 'Settings' | 'Audit Log';
+export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Order Import' | 'Promotions' | 'Accounts' | 'Stock' | 'Receiving' | 'Putaway' | 'Pick Queue' | 'Dispatched' | 'Documents' | 'Warehouse' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'PO Inbox' | 'Settings' | 'Audit Log';
 
 const AdminView: React.FC<AdminViewProps> = (props) => {
     const isDashboard = props.activeTab === 'Dashboard';
+    // Jump from the Warehouse viewer's empty-state CTA into the Layout Designer:
+    // deep-link the warehouse via ?designer= (and ?import= for the floor-plan flow),
+    // then switch to Settings where WarehousesSettingsSection auto-opens it.
+    const openDesigner = (warehouseId: number, opts?: { import?: boolean }) => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('designer', String(warehouseId));
+        if (opts?.import) url.searchParams.set('import', '1');
+        else url.searchParams.delete('import');
+        window.history.replaceState({}, '', url.toString());
+        props.onSetAdminView?.('Settings');
+    };
     return (
         <div>
             <ErrorBoundary label={`Admin · ${props.activeTab}`}>
@@ -93,9 +106,11 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
                 {props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} />}
                 {props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} />}
+                {props.activeTab === 'Putaway' && <PutawayQueuePage currentUser={props.currentUser} />}
                 {props.activeTab === 'Pick Queue' && <PickQueueView currentUser={props.currentUser} />}
                 {props.activeTab === 'Dispatched' && <DispatchedOrdersView orders={props.allOrders} onViewDetail={props.onViewOrderDetail} />}
                 {props.activeTab === 'Documents' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <DocumentsView />}
+                {props.activeTab === 'Warehouse' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <WarehousePage currentUser={props.currentUser} onOpenDesigner={openDesigner} />}
                 {props.activeTab === 'Scheduled Visits' && props.routes && props.onSetRoutes && props.addToast && (
                     <ScheduledVisitsAdmin routes={props.routes} users={props.users} hoReCas={props.hoReCas} visits={props.visits ?? []} currentUser={props.currentUser} onSetRoutes={props.onSetRoutes} addToast={props.addToast} />
                 )}

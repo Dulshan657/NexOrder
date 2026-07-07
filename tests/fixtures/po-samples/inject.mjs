@@ -264,6 +264,14 @@ const FILE_HEROES = [
     pattern: /s486051891|900319|repco/i,
     sender: (process.env.REPCO_SENDER || 'orders@repco.com.au').trim().toLowerCase(),
   },
+  {
+    // V2food demo — both Young & Jacksons POs are emailed from the same trusted
+    // sender (see young-jacksons-seed.mjs). The auto PO auto-approves; the review
+    // PO resolves the customer but parks on its one unmapped line.
+    name: 'Young & Jacksons',
+    pattern: /young|jackson|yj-2026/i,
+    sender: (process.env.YJ_SENDER || 'dulshanb@nexgeninnovations.com.au').trim().toLowerCase(),
+  },
 ]
 
 function heroFor(filename) {

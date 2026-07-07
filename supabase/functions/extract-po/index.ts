@@ -54,6 +54,26 @@ interface ExtractRequest {
   inboundMessageId: string
 }
 
+/**
+ * Read the auto-approval policy toggles from the singleton app_settings row
+ * (mig 00044). Fails open to the historical always-on behaviour (both true) if
+ * the row or columns are missing.
+ */
+async function loadAutoApprovePolicy(
+  supa: SupabaseClient,
+): Promise<{ enabled: boolean; blockOnSenderMismatch: boolean }> {
+  const { data, error } = await supa
+    .from('app_settings')
+    .select('po_auto_approve_enabled, po_auto_approve_block_on_sender_mismatch')
+    .eq('id', 1)
+    .single()
+  if (error || !data) return { enabled: true, blockOnSenderMismatch: true }
+  return {
+    enabled: (data as any).po_auto_approve_enabled !== false,
+    blockOnSenderMismatch: (data as any).po_auto_approve_block_on_sender_mismatch !== false,
+  }
+}
+
 const ARCHIVE_BUCKET = 'po-archive'
 const FETCH_TIMEOUT_MS = 15_000
 
@@ -247,6 +267,10 @@ async function runExtraction(
       })
     : { flagged: false, sender: null }
 
+  // 5c. Auto-approval policy (app_settings, mig 00044). Missing row/columns ⇒
+  //     default true (historical always-on behaviour).
+  const autoApprovePolicy = await loadAutoApprovePolicy(serviceClient)
+
   // 6. Decide status
   const decision = decidePendingPoStatus({
     confidence: extracted.confidence,
@@ -254,6 +278,8 @@ async function runExtraction(
     allLinesResolved:
       matchedItems.length > 0 && matchedItems.every(m => m.product_id !== null),
     senderMismatch: senderTrust.flagged,
+    autoApproveEnabled: autoApprovePolicy.enabled,
+    blockOnSenderMismatch: autoApprovePolicy.blockOnSenderMismatch,
   })
 
   // 7. Persist the pending_pos row

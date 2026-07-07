@@ -15,6 +15,10 @@ import type {
   PromotionTargeting, OrderStatus, DeliveryTimeSlot, PurchaseOrderItem,
   InventoryLocation, Batch, InventoryBalance, InventoryMovement,
   OrderDocument, PickProgress, Warehouse, OrderFulfillment,
+  WarehouseLayout, LayoutPlacement, LayoutObject, ZoneProfile, StorageType,
+  WieRule, WieRuleDefinition, ProductWmsAttributes, CategoryCompatibility,
+  WieScoringProfile, WieScoringWeights, SlottingSuggestion,
+  WieProductVelocity, WieLocationTraffic,
 } from '@/types'
 import type { Database } from './database.types'
 import { numericIdToUuid, uuidToNumericId } from './userIdMap'
@@ -45,6 +49,18 @@ type InventoryMovementRow = Database['public']['Tables']['inventory_movements'][
 type OrderDocumentRow = Database['public']['Tables']['order_documents']['Row']
 type PickProgressRow = Database['public']['Tables']['pick_progress']['Row']
 type OrderFulfillmentRow = Database['public']['Tables']['order_fulfillments']['Row']
+type WarehouseLayoutRow = Database['public']['Tables']['warehouse_layouts']['Row']
+type LayoutPlacementRow = Database['public']['Tables']['layout_placements']['Row']
+type LayoutObjectRow = Database['public']['Tables']['layout_objects']['Row']
+type ZoneProfileRow = Database['public']['Tables']['zone_profiles']['Row']
+type StorageTypeRow = Database['public']['Tables']['storage_types']['Row']
+type WieRuleRow = Database['public']['Tables']['wie_rules']['Row']
+type ProductWmsAttributesRow = Database['public']['Tables']['product_wms_attributes']['Row']
+type CategoryCompatibilityRow = Database['public']['Tables']['category_compatibility']['Row']
+type WieScoringProfileRow = Database['public']['Tables']['wie_scoring_profiles']['Row']
+type SlottingSuggestionRow = Database['public']['Tables']['wie_slotting_suggestions']['Row']
+type WieProductVelocityRow = Database['public']['Tables']['wie_product_velocity']['Row']
+type WieLocationTrafficRow = Database['public']['Tables']['wie_location_traffic']['Row']
 
 // ── Product ───────────────────────────────────────────────────────
 
@@ -64,6 +80,9 @@ export function toProduct(row: ProductRow & { suppliers?: { name: string } | nul
     unit: row.unit,
     cartonSize: row.carton_size,
     dietaryLabels: row.dietary_labels ?? undefined,
+    // Pinned-to-top flag (mig 00043). Cast defensively in case a row is read
+    // before the generated types include the column.
+    featured: (row as { featured?: boolean }).featured ?? false,
     supplierId: row.supplier_id,
     cubicMetersUnit: row.cubic_meters_unit != null ? Number(row.cubic_meters_unit) : undefined,
     cubicMetersCarton: row.cubic_meters_carton != null ? Number(row.cubic_meters_carton) : undefined,
@@ -92,6 +111,7 @@ export function fromProduct(p: Partial<Product>): Record<string, unknown> {
   if (p.unit !== undefined) row.unit = p.unit
   if (p.cartonSize !== undefined) row.carton_size = p.cartonSize
   if (p.dietaryLabels !== undefined) row.dietary_labels = p.dietaryLabels
+  if (p.featured !== undefined) row.featured = p.featured
   if (p.supplierId !== undefined) row.supplier_id = p.supplierId
   if (p.cubicMetersUnit !== undefined) row.cubic_meters_unit = p.cubicMetersUnit
   if (p.cubicMetersCarton !== undefined) row.cubic_meters_carton = p.cubicMetersCarton
@@ -487,6 +507,12 @@ export function toAppSettings(row: SettingsRow): AppSettings {
     currency: row.currency,
     showStockToHoReCa: row.show_stock_to_horeca,
     companyLogoUrl: row.company_logo_url,
+    // Auto-approval policy (mig 00044). Default true if a row predates the columns.
+    poAutoApproveEnabled: (row as { po_auto_approve_enabled?: boolean }).po_auto_approve_enabled ?? true,
+    poAutoApproveBlockOnShortStock:
+      (row as { po_auto_approve_block_on_short_stock?: boolean }).po_auto_approve_block_on_short_stock ?? true,
+    poAutoApproveBlockOnSenderMismatch:
+      (row as { po_auto_approve_block_on_sender_mismatch?: boolean }).po_auto_approve_block_on_sender_mismatch ?? true,
   }
 }
 
@@ -504,6 +530,11 @@ export function fromAppSettings(s: Partial<AppSettings>): Record<string, unknown
   if (s.currency !== undefined) row.currency = s.currency
   if (s.showStockToHoReCa !== undefined) row.show_stock_to_horeca = s.showStockToHoReCa
   if (s.companyLogoUrl !== undefined) row.company_logo_url = s.companyLogoUrl
+  if (s.poAutoApproveEnabled !== undefined) row.po_auto_approve_enabled = s.poAutoApproveEnabled
+  if (s.poAutoApproveBlockOnShortStock !== undefined)
+    row.po_auto_approve_block_on_short_stock = s.poAutoApproveBlockOnShortStock
+  if (s.poAutoApproveBlockOnSenderMismatch !== undefined)
+    row.po_auto_approve_block_on_sender_mismatch = s.poAutoApproveBlockOnSenderMismatch
   return row
 }
 
@@ -551,6 +582,8 @@ export function toInventoryLocation(row: LocationRow): InventoryLocation {
     notes: row.notes ?? undefined,
     capacitySlots: row.capacity_slots != null ? Number(row.capacity_slots) : undefined,
     slotKind: row.slot_kind ?? undefined,
+    zoneProfileId: row.zone_profile_id ?? undefined,
+    storageTypeId: row.storage_type_id ?? undefined,
   }
 }
 
@@ -561,6 +594,7 @@ export function toWarehouse(row: LocationRow): Warehouse {
     code: row.code,
     name: row.name,
     locationType: (row.location_type ?? 'bulk'),
+    activeLayoutId: row.active_layout_id ?? undefined,
     lat: row.lat != null ? Number(row.lat) : undefined,
     lng: row.lng != null ? Number(row.lng) : undefined,
     address: row.address ?? undefined,
@@ -649,5 +683,159 @@ export function toPickProgress(row: PickProgressRow): PickProgress {
     pickedQty: row.picked_qty,
     pickedBy: row.picked_by ?? undefined,
     pickedAt: row.picked_at,
+  }
+}
+
+export function toWarehouseLayout(row: WarehouseLayoutRow): WarehouseLayout {
+  return {
+    id: row.id,
+    warehouseId: row.warehouse_id,
+    name: row.name,
+    status: row.status,
+    version: row.version,
+    clonedFrom: row.cloned_from ?? undefined,
+    gridWidth: row.grid_width,
+    gridHeight: row.grid_height,
+    cellSizeM: Number(row.cell_size_m),
+    floorCount: row.floor_count,
+    publishedAt: row.published_at ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function toLayoutPlacement(row: LayoutPlacementRow): LayoutPlacement {
+  return {
+    id: row.id,
+    layoutId: row.layout_id,
+    locationId: row.location_id,
+    floor: row.floor,
+    x: row.x,
+    y: row.y,
+    w: row.w,
+    h: row.h,
+    rotation: row.rotation as LayoutPlacement['rotation'],
+    graphNodeId: row.graph_node_id ?? undefined,
+    accessOffsetM: row.access_offset_m != null ? Number(row.access_offset_m) : undefined,
+  }
+}
+
+export function toWieRule(row: WieRuleRow): WieRule {
+  return {
+    id: row.id,
+    warehouseId: row.warehouse_id ?? undefined,
+    name: row.name,
+    ruleType: row.rule_type,
+    enforcement: row.enforcement,
+    priority: row.priority,
+    definition: row.definition as unknown as WieRuleDefinition,
+    isActive: row.is_active,
+  }
+}
+
+export function toProductWmsAttributes(row: ProductWmsAttributesRow): ProductWmsAttributes {
+  return {
+    productId: row.product_id,
+    hazardClass: row.hazard_class ?? undefined,
+    tempMin: row.temp_min != null ? Number(row.temp_min) : undefined,
+    tempMax: row.temp_max != null ? Number(row.temp_max) : undefined,
+    shelfLifePolicy: row.shelf_life_policy ?? undefined,
+    stackable: row.stackable ?? undefined,
+    handlingType: row.handling_type ?? undefined,
+    weightKg: row.weight_kg != null ? Number(row.weight_kg) : undefined,
+    volumeL: row.volume_l != null ? Number(row.volume_l) : undefined,
+    dims: (row.dims as Record<string, unknown>) ?? undefined,
+    custom: (row.custom as Record<string, unknown>) ?? {},
+  }
+}
+
+export function toWieScoringProfile(row: WieScoringProfileRow): WieScoringProfile {
+  return { warehouseId: row.warehouse_id, weights: row.weights as unknown as WieScoringWeights }
+}
+
+export function toSlottingSuggestion(row: SlottingSuggestionRow): SlottingSuggestion {
+  return {
+    id: row.id,
+    warehouseId: row.warehouse_id,
+    productId: row.product_id,
+    fromLocationId: row.from_location_id,
+    toLocationId: row.to_location_id,
+    qty: Number(row.qty),
+    expectedGainM: Number(row.expected_gain_m),
+    reason: (row.reason as Record<string, unknown>) ?? {},
+    status: row.status,
+    createdAt: row.created_at,
+    decidedAt: row.decided_at ?? undefined,
+  }
+}
+
+export function toWieProductVelocity(row: WieProductVelocityRow): WieProductVelocity {
+  return {
+    warehouseId: row.warehouse_id,
+    productId: row.product_id,
+    picks7d: Number(row.picks_7d),
+    picks30d: Number(row.picks_30d),
+    picks90d: Number(row.picks_90d),
+    qty30d: Number(row.qty_30d),
+    velocityClass: row.velocity_class ?? undefined,
+  }
+}
+
+export function toWieLocationTraffic(row: WieLocationTrafficRow): WieLocationTraffic {
+  return {
+    layoutId: row.layout_id,
+    graphNodeId: row.graph_node_id,
+    pickVisits30d: Number(row.pick_visits_30d),
+  }
+}
+
+export function toCategoryCompatibility(row: CategoryCompatibilityRow): CategoryCompatibility {
+  return {
+    categoryA: row.category_a,
+    categoryB: row.category_b,
+    level: row.level,
+    note: row.note ?? undefined,
+  }
+}
+
+export function toZoneProfile(row: ZoneProfileRow): ZoneProfile {
+  return {
+    id: row.id,
+    name: row.name,
+    zoneType: row.zone_type,
+    priorityWeight: Number(row.priority_weight),
+    allowedCategories: Array.isArray(row.allowed_categories)
+      ? (row.allowed_categories as unknown as string[])
+      : undefined,
+    maxUtilizationPct: row.max_utilization_pct != null ? Number(row.max_utilization_pct) : undefined,
+    isActive: row.is_active,
+  }
+}
+
+export function toStorageType(row: StorageTypeRow): StorageType {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    defaultCapacitySlots: row.default_capacity_slots != null ? Number(row.default_capacity_slots) : undefined,
+    slotUnit: row.slot_unit,
+    attributes: (row.attributes as Record<string, unknown>) ?? {},
+    isActive: row.is_active,
+    sortOrder: row.sort_order,
+  }
+}
+
+export function toLayoutObject(row: LayoutObjectRow): LayoutObject {
+  return {
+    id: row.id,
+    layoutId: row.layout_id,
+    objectType: row.object_type,
+    floor: row.floor,
+    x: row.x,
+    y: row.y,
+    w: row.w,
+    h: row.h,
+    meta: (row.meta as Record<string, unknown>) ?? {},
+    stagingLocationId: row.staging_location_id ?? undefined,
   }
 }

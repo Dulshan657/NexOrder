@@ -19,9 +19,20 @@ export interface StatusDecisionInput {
   /**
    * True when the customer was resolved but the inbound sender is not a
    * trusted address for that customer (possible spoofing). Forces human
-   * review regardless of confidence. Defaults to false.
+   * review regardless of confidence (unless blockOnSenderMismatch is off).
+   * Defaults to false.
    */
   senderMismatch?: boolean
+  /**
+   * Master auto-approval switch (app_settings.po_auto_approve_enabled).
+   * When false, every PO is routed to review. Defaults to true.
+   */
+  autoApproveEnabled?: boolean
+  /**
+   * Whether a sender mismatch blocks auto-approval
+   * (app_settings.po_auto_approve_block_on_sender_mismatch). Defaults to true.
+   */
+  blockOnSenderMismatch?: boolean
 }
 
 export interface StatusDecisionResult {
@@ -59,7 +70,13 @@ export function decidePendingPoStatus(input: StatusDecisionInput): StatusDecisio
     safeNumber(c.lines),
   )
 
+  // Policy toggles (app_settings, mig 00044). Absent ⇒ default true, preserving
+  // the historical always-on behaviour.
+  const autoApproveEnabled = input.autoApproveEnabled !== false
+  const blockOnSenderMismatch = input.blockOnSenderMismatch !== false
+
   const reasons: string[] = []
+  if (!autoApproveEnabled) reasons.push('auto-approval disabled in settings')
   if (confidenceOverall < AUTO_APPROVE_CONFIDENCE_THRESHOLD) {
     reasons.push(
       `confidence_overall=${confidenceOverall.toFixed(2)} below threshold ${AUTO_APPROVE_CONFIDENCE_THRESHOLD}`,
@@ -67,7 +84,9 @@ export function decidePendingPoStatus(input: StatusDecisionInput): StatusDecisio
   }
   if (!input.customerResolved) reasons.push('customer not resolved')
   if (!input.allLinesResolved) reasons.push('one or more lines failed to resolve to a product')
-  if (input.senderMismatch) reasons.push('sender does not match customer (possible spoofing)')
+  if (input.senderMismatch && blockOnSenderMismatch) {
+    reasons.push('sender does not match customer (possible spoofing)')
+  }
 
   return {
     status: reasons.length === 0 ? 'auto_approved' : 'needs_review',

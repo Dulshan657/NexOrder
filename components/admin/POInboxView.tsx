@@ -11,6 +11,7 @@ import { LoadingSkeleton } from '../Skeleton'
 import { lazyWithRetry } from '../../lib/lazyWithRetry'
 import POInboxStatsTile from './POInboxStatsTile'
 import MailboxesMenu from './MailboxesMenu'
+import AutoApprovalMenu from './AutoApprovalMenu'
 import type { HoReCa, Product } from '../../types'
 
 const POInboxTab = lazyWithRetry(() => import('./POInboxTab'))
@@ -147,7 +148,10 @@ const POInboxView: React.FC<POInboxViewProps> = ({
               Aliases
             </SubtabButton>
           </div>
-          <MailboxesMenu addToast={addToast} autoOpenNonce={mailboxOpenNonce} />
+          <div className="flex items-center gap-2">
+            <AutoApprovalMenu addToast={addToast} />
+            <MailboxesMenu addToast={addToast} autoOpenNonce={mailboxOpenNonce} />
+          </div>
         </nav>
       </header>
 

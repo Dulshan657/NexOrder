@@ -135,4 +135,50 @@ describe('decidePendingPoStatus', () => {
     expect(result.status).toBe('auto_approved')
     expect(result.reason).toEqual([])
   })
+
+  // ── Policy toggles (app_settings, mig 00044) ──────────────────────────────
+  it('routes everything to needs_review when the master switch is off', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      autoApproveEnabled: false,
+    })
+    expect(result.status).toBe('needs_review')
+    expect(result.reason).toContain('auto-approval disabled in settings')
+  })
+
+  it('still auto-approves a clean PO when the master switch is explicitly true', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      autoApproveEnabled: true,
+    })
+    expect(result.status).toBe('auto_approved')
+    expect(result.reason).toEqual([])
+  })
+
+  it('does NOT block on sender mismatch when blockOnSenderMismatch is off', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      senderMismatch: true,
+      blockOnSenderMismatch: false,
+    })
+    expect(result.status).toBe('auto_approved')
+    expect(result.reason.some(r => /spoofing/.test(r))).toBe(false)
+  })
+
+  it('still blocks on sender mismatch by default (toggle absent)', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      senderMismatch: true,
+    })
+    expect(result.status).toBe('needs_review')
+    expect(result.reason.some(r => /spoofing/.test(r))).toBe(true)
+  })
 })

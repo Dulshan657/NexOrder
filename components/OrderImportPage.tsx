@@ -10,6 +10,7 @@ import PaymentStatusBadge, {
 import PaymentActionModal from './PaymentActionModal';
 import OrderSourceBadge from './OrderSourceBadge';
 import { getOrderSource, getInboundApproval, type OrderSourceKey } from '../lib/orderSource';
+import { getDemoPersona } from '../lib/demoAccounts';
 import StockAssignmentModal from './StockAssignmentModal';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
 import { useGeneratePickSlip, useGenerateDispatchAdvice } from '../hooks/queries/usePickQueue';
@@ -125,7 +126,8 @@ function canAdvanceStatus(user: User): boolean {
   return user.role === UserRole.ADMIN || user.role === UserRole.MANAGER;
 }
 
-const ORDERS_CSV_HEADERS = ['Order ID', 'HoReCa', 'Date', 'Status', 'Payment', 'Items', 'Total'];
+const ordersCsvHeaders = (customerLabel: string): string[] =>
+  ['Order ID', customerLabel, 'Date', 'Status', 'Payment', 'Items', 'Total'];
 
 function ordersToCsvRows(
   ordersToExport: Order[],
@@ -195,6 +197,11 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   highlightOrderId = null,
   onClearHighlightOrderId,
 }) => {
+  // Demo persona: relabel "HoReCa" → the client's word and hide pre-seeded orders.
+  const demoPersona = getDemoPersona(currentUser);
+  const customerLabel = demoPersona?.customerLabelSingular ?? 'HoReCa';
+  const customerLabelPlural = demoPersona?.customerLabelPlural ?? 'HoReCa';
+
   // Tab
   const [activeTab, setActiveTab] = useState<ActiveTab>('received');
 
@@ -205,6 +212,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   const [filterEndDate, setFilterEndDate] = useState('');
   const [filterPaymentStatus, setFilterPaymentStatus] = useState<PaymentFilterValue>('all');
   const [filterSource, setFilterSource] = useState<SourceFilterValue>('all');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   // Sort
   const [sortColumn, setSortColumn] = useState<SortColumn>('date');
@@ -296,23 +304,33 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   }, [paymentMenuOrderId]);
 
   // ---------------------------------------------------------------------------
+  // Visible orders — for a demo persona, hide pre-seeded orders (placed on/before
+  // the cutoff) so the screen starts clean; live-approved POs (later orderDate) show.
+  // ---------------------------------------------------------------------------
+
+  const visibleOrders = useMemo(() => {
+    if (!demoPersona) return orders;
+    return orders.filter((o) => o.orderDate > demoPersona.orderImportCutoffIso);
+  }, [orders, demoPersona]);
+
+  // ---------------------------------------------------------------------------
   // Tab counts — unfiltered, show totals across all orders for each tab group
   // ---------------------------------------------------------------------------
 
   const tabCounts = useMemo<Record<ActiveTab, number>>(() => {
     return ALL_TABS.reduce((acc, tab) => {
-      acc[tab] = orders.filter((o) => TAB_STATUSES[tab].includes(o.status)).length;
+      acc[tab] = visibleOrders.filter((o) => TAB_STATUSES[tab].includes(o.status)).length;
       return acc;
     }, {} as Record<ActiveTab, number>);
-  }, [orders]);
+  }, [visibleOrders]);
 
   // ---------------------------------------------------------------------------
   // Orders for the active tab (pre-filter by status)
   // ---------------------------------------------------------------------------
 
   const tabOrders = useMemo(
-    () => orders.filter((o) => TAB_STATUSES[activeTab].includes(o.status)),
-    [orders, activeTab],
+    () => visibleOrders.filter((o) => TAB_STATUSES[activeTab].includes(o.status)),
+    [visibleOrders, activeTab],
   );
 
   // ---------------------------------------------------------------------------
@@ -491,13 +509,13 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   }, []);
 
   const handleExportAll = useCallback(() => {
-    downloadCsv(ORDERS_CSV_HEADERS, ordersToCsvRows(sortedOrders, invoicesByOrderId), `orders-${activeTab}-export.csv`);
-  }, [sortedOrders, activeTab, invoicesByOrderId]);
+    downloadCsv(ordersCsvHeaders(customerLabel), ordersToCsvRows(sortedOrders, invoicesByOrderId), `orders-${activeTab}-export.csv`);
+  }, [sortedOrders, activeTab, invoicesByOrderId, customerLabel]);
 
   const handleExportSelected = useCallback(() => {
     const selected = sortedOrders.filter((o) => selectedIds.has(o.id));
-    downloadCsv(ORDERS_CSV_HEADERS, ordersToCsvRows(selected, invoicesByOrderId), `orders-${activeTab}-selected-export.csv`);
-  }, [sortedOrders, selectedIds, activeTab, invoicesByOrderId]);
+    downloadCsv(ordersCsvHeaders(customerLabel), ordersToCsvRows(selected, invoicesByOrderId), `orders-${activeTab}-selected-export.csv`);
+  }, [sortedOrders, selectedIds, activeTab, invoicesByOrderId, customerLabel]);
 
   const handleBulkReorder = useCallback(() => {
     const selected = sortedOrders.filter((o) => selectedIds.has(o.id));
@@ -528,13 +546,16 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
     setFilterSource('all');
   }, []);
 
-  const hasActiveFilters =
-    searchQuery !== '' ||
-    filterHoReCaId !== 'all' ||
-    filterStartDate !== '' ||
-    filterEndDate !== '' ||
-    filterSource !== 'all' ||
-    filterPaymentStatus !== 'all';
+  // Active filters living in the collapsible "advanced" tray (everything except
+  // the always-visible search box).
+  const activeAdvancedFilterCount =
+    (filterHoReCaId !== 'all' ? 1 : 0) +
+    (filterStartDate !== '' ? 1 : 0) +
+    (filterEndDate !== '' ? 1 : 0) +
+    (filterSource !== 'all' ? 1 : 0) +
+    (filterPaymentStatus !== 'all' ? 1 : 0);
+
+  const hasActiveFilters = searchQuery !== '' || activeAdvancedFilterCount > 0;
 
   // ---------------------------------------------------------------------------
   // Payment-status mutation handlers
@@ -637,7 +658,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
         <div className="p-5 flex flex-col lg:flex-row lg:items-center gap-3">
           <div className="relative flex-1">
             <label htmlFor="orders-search" className="sr-only">
-              Search by Order ID or HoReCa Name
+              {`Search by Order ID or ${customerLabel} Name`}
             </label>
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
               <Search className="h-4 w-4 text-stone-400" />
@@ -646,7 +667,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
               type="text"
               id="orders-search"
               className="block w-full rounded-lg border-0 bg-stone-50 py-3 pl-11 pr-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm transition-all hover:ring-stone-300"
-              placeholder="Search by Order ID or HoReCa name..."
+              placeholder={`Search by Order ID or ${customerLabel.toLowerCase()} name...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -654,6 +675,25 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
 
           {/* Actions */}
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowAdvancedFilters((prev) => !prev)}
+              aria-expanded={showAdvancedFilters}
+              aria-controls="orders-advanced-filters"
+              className="flex-1 lg:flex-none lg:w-32 whitespace-nowrap flex items-center justify-center gap-1.5 bg-white text-stone-700 border border-stone-300 rounded-lg py-2 px-3 text-sm font-medium hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors cursor-pointer btn-press"
+            >
+              Filters
+              {activeAdvancedFilterCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-semibold">
+                  {activeAdvancedFilterCount}
+                </span>
+              )}
+              {showAdvancedFilters ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </button>
+
             <button
               onClick={resetFilters}
               disabled={!hasActiveFilters}
@@ -673,8 +713,9 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
           </div>
         </div>
 
-        {/* Zone 2 — filter tray */}
-        <div className="border-t border-stone-200/60 bg-stone-50/40 px-5 py-4">
+        {/* Zone 2 — filter tray (collapsible advanced filters) */}
+        {showAdvancedFilters && (
+        <div id="orders-advanced-filters" className="border-t border-stone-200/60 bg-stone-50/40 px-5 py-4">
           <div
             className={`grid grid-cols-1 sm:grid-cols-2 ${
               !isCustomer ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
@@ -686,7 +727,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                   htmlFor="horeca-filter"
                   className="block text-xs font-medium text-stone-600 mb-1.5 uppercase tracking-wide"
                 >
-                  HoReCa
+                  {customerLabel}
                 </label>
                 <select
                   id="horeca-filter"
@@ -694,7 +735,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                   onChange={(e) => setFilterHoReCaId(e.target.value)}
                   className={INPUT_CLASSES}
                 >
-                  <option value="all">All HoReCa</option>
+                  <option value="all">{`All ${customerLabelPlural}`}</option>
                   {hoReCas.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -775,6 +816,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
             </div>
           </div>
         </div>
+        )}
       </div>
 
       {/* Bulk action bar */}
@@ -803,7 +845,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
       )}
 
       {/* Table / Empty states */}
-      {orders.length === 0 ? (
+      {visibleOrders.length === 0 ? (
         <div className="text-center py-20 px-4 bg-white rounded-xl border border-stone-200/60 border-dashed shadow-sm">
           <h3 className="text-lg font-display font-semibold text-stone-800">No Orders Yet</h3>
           <p className="text-stone-500 mt-2 text-sm">
@@ -860,7 +902,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                   {/* HoReCa sortable */}
                   <SortHeader
                     column="horeca"
-                    label="HoReCa"
+                    label={customerLabel}
                     sortColumn={sortColumn}
                     sortDirection={sortDirection}
                     onSort={handleSort}
@@ -1068,7 +1110,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                             {isAdminOrManager && activeTab === 'received' && order.status === 'processing' ? (
                               <button
                                 onClick={() => setProcessingOrder(order)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer whitespace-nowrap"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-800 text-white hover:bg-blue-900 transition-colors cursor-pointer whitespace-nowrap"
                                 title="Confirm stock and process"
                                 aria-label={`Process order ${order.id}`}
                               >

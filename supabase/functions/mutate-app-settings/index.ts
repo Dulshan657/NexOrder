@@ -25,6 +25,10 @@ const settingsDataSchema = z.object({
   currency: z.string().min(1).optional(),
   show_stock_to_horeca: z.boolean().optional(),
   company_logo_url: z.string().url().nullable().optional(),
+  // PO-Inbox auto-approval policy toggles (mig 00044).
+  po_auto_approve_enabled: z.boolean().optional(),
+  po_auto_approve_block_on_short_stock: z.boolean().optional(),
+  po_auto_approve_block_on_sender_mismatch: z.boolean().optional(),
   // Business-rule validated numerics
   minimum_order_value: z.number().min(0).optional(),
   default_credit_limit: z.number().min(0).optional(),

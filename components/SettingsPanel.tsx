@@ -4,6 +4,8 @@ import { Building2, FileText, Package, CreditCard, DollarSign, AlertTriangle, Ta
 import { uploadToBucket, deleteFromBucketByUrl } from '../services/supabase/storageService';
 import { useToasts } from '../hooks/useToasts';
 import WarehousesSettingsSection from './admin/WarehousesSettingsSection';
+import StorageTypesSection from './admin/StorageTypesSection';
+import ZoneProfilesSection from './admin/ZoneProfilesSection';
 
 interface SettingsPanelProps {
     settings: AppSettings;
@@ -384,6 +386,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, appLogo, hoReCa
 
                 {/* Warehouses */}
                 <WarehousesSettingsSection />
+
+                {/* Storage types */}
+                <StorageTypesSection />
+
+                {/* Zone profiles */}
+                <ZoneProfilesSection />
 
                 {/* Credit Limits */}
                 <section className="bg-stone-50 p-6 rounded-xl border border-stone-200">

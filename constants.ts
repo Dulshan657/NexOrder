@@ -12,7 +12,7 @@ export const USERS: User[] = [
 ];
 
 export const CATEGORIES: readonly Category[] = [
-  'Coconut', 'Meal Pastes', 'Asian Sauces', 'Soy Sauces', 'Chilli Sauces',
+  'Plant-Based', 'Coconut', 'Meal Pastes', 'Asian Sauces', 'Soy Sauces', 'Chilli Sauces',
   'Condiments', 'Noodles', 'Fish', 'Satay Sauces', 'Desserts',
   'Ready Meal Sauces', 'Other'
 ];
@@ -21,7 +21,12 @@ export const SUPPLIERS: Supplier[] = [
   { id: 1, name: 'AYAM Brand Malaysia', contactPerson: 'Ahmad Razak', email: 'sales@ayam.com.my', phone: '+60-3-7785-1234' },
   { id: 2, name: 'AYAM Australia Distribution', contactPerson: 'Sarah Mitchell', email: 'distribution@ayam.com.au', phone: '+61-2-9876-5432' },
   { id: 3, name: 'AYAM Organic Supply', contactPerson: 'Lisa Chen', email: 'organic@ayam.com.au', phone: '+61-3-8765-4321' },
+  // V2food — plant-based range for the V2food client demo (featured at the top of the shop).
+  { id: 4, name: 'v2food', contactPerson: 'Foodservice Team', email: 'foodservice@v2food.com', phone: '+61-2-8520-0000' },
 ];
+
+// V2food product photography (their live foodservice CDN).
+const V2 = 'https://cdn.prod.website-files.com/67886572ee5d279b0cc8aab7';
 
 const IMG = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_IMAGE_CDN_URL)
   || 'https://ayam.com/images/com_hikashop/upload/thumbnails/263x263f';
@@ -173,6 +178,15 @@ const PRODUCTS_SEED: Omit<Product, 'available'>[] = [
   { id: 112, sku: 'AYM-OTH-004', name: 'Sweet Corn Kernel 425g', description: 'Whole kernel sweet corn, ready to use.', price: 2.00, category: 'Other', inventory: 60, unit: 'can', cartonSize: 12, dietaryLabels: ['GF', 'VEGAN'], imageUrl: `${IMG}/13d4a0427ee342cf1cc6cde511d26666178314d8.png`, supplierId: 2 },
   { id: 113, sku: 'AYM-OTH-005', name: 'Creamed Corn 425g', description: 'Smooth and creamy corn, great for soups and sides.', price: 2.00, category: 'Other', inventory: 55, unit: 'can', cartonSize: 12, dietaryLabels: ['GF', 'VEGAN'], imageUrl: `${IMG}/dc6daae2eeffd1a1872e4d9ba2a5878acbd9b47e.png`, supplierId: 2 },
   { id: 114, sku: 'AYM-OTH-006', name: 'Baked Beans in Tomato Sauce 425g', description: 'Classic baked beans in rich tomato sauce.', price: 2.00, category: 'Other', inventory: 50, unit: 'can', cartonSize: 12, dietaryLabels: [], imageUrl: `${IMG}/baked-beans-in-tomato-sauce-425g-1.png`, supplierId: 2 },
+
+  // ===== V2FOOD PLANT-BASED (V2food client demo) =====
+  // `featured: true` pins these to the top of the shop. SKUs double as the codes
+  // printed on the Young & Jacksons demo POs (po_product_aliases.source_code).
+  { id: 200, sku: 'V2F-MINCE-001', name: 'v2food Plant-Based Mince 1kg', description: 'Plant-based mince — versatile high-protein meat alternative for bolognese, tacos, and pies.', price: 12.50, category: 'Plant-Based', inventory: 90, unit: 'pack', cartonSize: 6, dietaryLabels: ['VEGAN'], featured: true, imageUrl: `${V2}/681ab841bb919774d4e6e309_image-v2mince-spaghetti-bolognese-1200px.jpg`, supplierId: 4 },
+  { id: 201, sku: 'V2F-BURG-001', name: 'v2food Plant-Based Burger Patties 1.13kg (10pk)', description: 'Juicy plant-based burger patties — chargrill or pan-fry for a classic pub burger.', price: 24.00, category: 'Plant-Based', inventory: 70, unit: 'box', cartonSize: 4, dietaryLabels: ['VEGAN'], featured: true, imageUrl: `${V2}/681abaa747c603ee5ccb4787_v2burger%20in%20build.jpg`, supplierId: 4 },
+  { id: 202, sku: 'V2F-SCHN-001', name: 'v2food Plant-Based Schnitzel 1kg', description: 'Crumbed plant-based schnitzel — crisp coating, oven or fry, ideal for parmas and salads.', price: 18.00, category: 'Plant-Based', inventory: 60, unit: 'pack', cartonSize: 6, dietaryLabels: ['VEGAN'], featured: true, imageUrl: `${V2}/681ab964a044554efcf12b6a_schnitzel%20garden%20salad%20from%20above.jpg`, supplierId: 4 },
+  { id: 203, sku: 'V2F-TEND-001', name: 'v2food Plant-Based Chicken-Style Tenders 1kg', description: 'Golden plant-based tenders — share plates, wraps, and bar snacks.', price: 16.50, category: 'Plant-Based', inventory: 65, unit: 'pack', cartonSize: 6, dietaryLabels: ['VEGAN'], featured: true, imageUrl: `${V2}/681ab8cb9e3f914397e0bcf0_nuggets%20from%20above%20white%20crop.jpg`, supplierId: 4 },
+  { id: 204, sku: 'V2F-PIES-001', name: 'v2food Plant-Based Party Pies 1kg (12pk)', description: 'Plant-based party pies — crowd-pleasing finger food for functions and the front bar.', price: 14.00, category: 'Plant-Based', inventory: 80, unit: 'pack', cartonSize: 6, dietaryLabels: ['VEGAN'], featured: true, imageUrl: `${V2}/681aa8d57f9f9e7e4bcd3c95_V2_Party%20Pies_1.png`, supplierId: 4 },
 ];
 
 export const PRODUCTS: Product[] = PRODUCTS_SEED.map(p => ({ ...p, available: p.inventory }));
@@ -700,6 +714,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     lowStockThreshold: 10,
     currency: 'AUD',
     showStockToHoReCa: false,
+    poAutoApproveEnabled: true,
+    poAutoApproveBlockOnShortStock: true,
+    poAutoApproveBlockOnSenderMismatch: true,
 };
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {

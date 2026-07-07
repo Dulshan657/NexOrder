@@ -1,8 +1,13 @@
-import React, { useState } from 'react';
-import { Warehouse as WarehouseIcon, Plus, Pencil, Power, MapPin, Boxes } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Warehouse as WarehouseIcon, Plus, Pencil, Power, MapPin, Boxes, LayoutGrid, Gauge, X } from 'lucide-react';
 import { useWarehouses, useDeactivateWarehouse } from '../../hooks/queries/useWarehouses';
 import WarehouseForm from './WarehouseForm';
 import WarehouseTreeEditor from './WarehouseTreeEditor';
+import { LayoutDesignerView } from './layout/LayoutDesignerView';
+import { WarehouseIntelligenceRulesView } from './rules/WarehouseIntelligenceRulesView';
+import { ScoringWeightsSection } from './ScoringWeightsSection';
+import { SlottingSuggestionsView } from './SlottingSuggestionsView';
+import { WarehouseIntelligenceReport } from './WarehouseIntelligenceReport';
 import type { Warehouse } from '../../types';
 
 /** Admin warehouse management — create / edit / deactivate any number of
@@ -14,10 +19,35 @@ const WarehousesSettingsSection: React.FC = () => {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Warehouse | null>(null);
   const [treeFor, setTreeFor] = useState<Warehouse | null>(null);
+  const [designerFor, setDesignerFor] = useState<Warehouse | null>(null);
+  const [designerAutoImport, setDesignerAutoImport] = useState(false);
+  const [optimizeFor, setOptimizeFor] = useState<Warehouse | null>(null);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const openCreate = () => { setEditing(null); setFormOpen(true); };
   const openEdit = (w: Warehouse) => { setEditing(w); setFormOpen(true); };
+
+  // Deep-link from the Warehouse viewer's empty-state CTA: ?designer=<id> opens
+  // that warehouse's Layout Designer once the list loads. Runs once, then strips
+  // the param so closing the modal doesn't reopen it. ?import=1 is consumed by
+  // the designer itself (auto-opens the floor-plan import modal).
+  const designerDeepLinkDone = useRef(false);
+  useEffect(() => {
+    if (designerDeepLinkDone.current || !warehouses) return;
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('designer');
+    if (!id) return;
+    const match = warehouses.find((w) => String(w.id) === id);
+    if (!match) return;
+    designerDeepLinkDone.current = true;
+    setDesignerAutoImport(params.get('import') === '1');
+    setDesignerFor(match);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('designer');
+    url.searchParams.delete('import');
+    window.history.replaceState({}, '', url.toString());
+  }, [warehouses]);
 
   const handleDeactivate = async (w: Warehouse) => {
     setActionError(null);
@@ -39,12 +69,20 @@ const WarehousesSettingsSection: React.FC = () => {
           <WarehouseIcon className="w-5 h-5 text-nexgen-blue" />
           <h3 className="text-base font-display font-bold text-stone-900">Warehouses</h3>
         </div>
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-nexgen-blue text-white hover:bg-nexgen-blue/90 btn-press"
-        >
-          <Plus className="w-4 h-4" /> Add warehouse
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setRulesOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border border-stone-200 text-stone-700 hover:bg-stone-100 btn-press"
+          >
+            <LayoutGrid className="w-4 h-4 text-emerald-600" /> Optimizer rules
+          </button>
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-nexgen-blue text-white hover:bg-nexgen-blue/90 btn-press"
+          >
+            <Plus className="w-4 h-4" /> Add warehouse
+          </button>
+        </div>
       </div>
       <p className="text-xs text-stone-500 mb-4">
         Distribution centres stock is held at. Orders auto-allocate from the warehouse closest to the
@@ -88,8 +126,14 @@ const WarehousesSettingsSection: React.FC = () => {
                   {w.address ? ` · ${w.address}` : ''}
                 </p>
               </div>
+              <button onClick={() => { setDesignerAutoImport(false); setDesignerFor(w); }} className="p-2 rounded-lg hover:bg-emerald-50 btn-press" aria-label={`Layout designer for ${w.name}`} title="Layout designer">
+                <LayoutGrid className="w-4 h-4 text-emerald-600" />
+              </button>
+              <button onClick={() => setOptimizeFor(w)} className="p-2 rounded-lg hover:bg-emerald-50 btn-press" aria-label={`Optimization for ${w.name}`} title="Optimization">
+                <Gauge className="w-4 h-4 text-emerald-600" />
+              </button>
               {w.locationType === 'racked' && (
-                <button onClick={() => setTreeFor(w)} className="p-2 rounded-lg hover:bg-violet-50 btn-press" aria-label={`Storage layout for ${w.name}`} title="Storage layout">
+                <button onClick={() => setTreeFor(w)} className="p-2 rounded-lg hover:bg-violet-50 btn-press" aria-label={`Storage layout for ${w.name}`} title="Storage tree">
                   <Boxes className="w-4 h-4 text-violet-600" />
                 </button>
               )}
@@ -113,6 +157,54 @@ const WarehousesSettingsSection: React.FC = () => {
 
       {formOpen && <WarehouseForm warehouse={editing} onClose={() => setFormOpen(false)} />}
       {treeFor && <WarehouseTreeEditor warehouse={treeFor} onClose={() => setTreeFor(null)} />}
+      {designerFor && (
+        <div key={designerFor.id} className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setDesignerFor(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-stone-700">Warehouse Intelligence — Layout Designer</h3>
+              <button onClick={() => setDesignerFor(null)} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close designer">
+                <X className="w-4 h-4 text-stone-500" />
+              </button>
+            </div>
+            <LayoutDesignerView warehouse={designerFor} autoOpenImport={designerAutoImport} />
+          </div>
+        </div>
+      )}
+      {optimizeFor && (
+        <div key={optimizeFor.id} className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setOptimizeFor(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-stone-700">Warehouse Intelligence — Optimization · {optimizeFor.name}</h3>
+              <button onClick={() => setOptimizeFor(null)} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close optimization">
+                <X className="w-4 h-4 text-stone-500" />
+              </button>
+            </div>
+            <div className="space-y-6">
+              <ScoringWeightsSection warehouse={optimizeFor} />
+              <div className="border-t border-stone-100" />
+              <SlottingSuggestionsView warehouse={optimizeFor} />
+              <div className="border-t border-stone-100" />
+              <div>
+                <h4 className="mb-3 text-sm font-semibold text-stone-700">Analytics</h4>
+                <WarehouseIntelligenceReport warehouseId={optimizeFor.id} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {rulesOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setRulesOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-stone-700">Warehouse Intelligence — Optimizer Rules</h3>
+              <button onClick={() => setRulesOpen(false)} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close">
+                <X className="w-4 h-4 text-stone-500" />
+              </button>
+            </div>
+            <WarehouseIntelligenceRulesView />
+          </div>
+        </div>
+      )}
     </section>
   );
 };

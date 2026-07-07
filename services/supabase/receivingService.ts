@@ -24,6 +24,8 @@ export interface ReceiptHeader {
 export interface ReceiveStockResult {
   lines_received: number
   receipt_id?: number
+  /** Destination warehouse the stock landed in (mig 00038) — drives putaway. */
+  location_id?: number
 }
 
 // Records a goods receipt (stock IN) via the receive-stock Edge Function, which

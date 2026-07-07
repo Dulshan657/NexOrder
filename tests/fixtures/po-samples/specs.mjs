@@ -5,6 +5,13 @@
 // Product references use real seeded AYM catalog names/SKUs (see constants.ts)
 // so the resolver's deterministic + fuzzy paths have something to match.
 
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+// Real Young & Jacksons logo (fetched from their site) — drawn on the PO letterhead.
+const YJ_LOGO = resolve(HERE, 'young-jacksons-logo.png')
+
 /** Exact AYM SKUs + a real customer → high-confidence auto-approve path. */
 export const GRAND_HOTEL = {
   company: 'THE GRAND HOTEL',
@@ -177,6 +184,54 @@ export const CAFE_DEMO_IMAGE = {
     { code: '', name: 'Coconut Milk 400ml', qty: 12, uom: 'cans', pack: '1 carton (12)' },
     { code: '', name: 'Light Soy Sauce 210ml', qty: 6, uom: 'bottles', pack: '1 carton (6)' },
     { code: '', name: 'House-made Chilli Oil 1L', qty: 4, uom: 'bottles', pack: '1 carton (4)' },
+  ],
+}
+
+// ============================================================================
+// V2food client demo — Young & Jacksons (Melbourne pub) orders V2food plant-
+// based products. Both POs are emailed from the trusted sender
+// (dulshanb@nexgeninnovations.com.au, registered by young-jacksons-seed.mjs);
+// line codes are V2food SKUs aliased to the catalog (see constants.ts).
+// ============================================================================
+
+const YOUNG_JACKSONS_BASE = {
+  company: 'YOUNG & JACKSONS',
+  tagline: 'Established 1861 · Cnr Swanston & Flinders St, Melbourne',
+  addressLines: ['Corner Swanston & Flinders Streets', 'Melbourne VIC 3000', 'orders@youngandjacksons.com.au'],
+  buyer: 'Jordan Pike · Bar & Kitchen Manager',
+  shipTo: ['Young & Jacksons', 'Cnr Swanston & Flinders St', 'Melbourne VIC 3000'],
+  logoPath: YJ_LOGO,
+}
+
+/** Auto-approve — every line is a V2food SKU aliased + in stock → clears the gate. */
+export const YOUNG_JACKSONS_AUTO = {
+  ...YOUNG_JACKSONS_BASE,
+  poNumber: 'YJ-2026-0617',
+  orderDate: '2026-06-17',
+  requestedDate: '2026-06-20',
+  notes: 'Weekly plant-based order for the kitchen. Deliver to the Flinders St loading dock between 7–10am.',
+  lines: [
+    { code: 'V2F-MINCE-001', name: 'v2food Plant-Based Mince 1kg', qty: 6, uom: 'packs', pack: '1 carton (6)' },
+    { code: 'V2F-BURG-001', name: 'v2food Plant-Based Burger Patties 1.13kg', qty: 4, uom: 'boxes', pack: '1 carton (4)' },
+    { code: 'V2F-SCHN-001', name: 'v2food Plant-Based Schnitzel 1kg', qty: 6, uom: 'packs', pack: '1 carton (6)' },
+  ],
+}
+
+/** Needs-review — everything matches a catalog SKU and the trusted sender resolves
+ *  the customer, BUT the party-pie line over-orders (200 vs ~60 on hand). approve-po
+ *  declines the auto-approval on the stock shortfall and leaves the PO in review with
+ *  the "Short on stock" banner. (Party Pies / Tenders are absent from the auto PO, so
+ *  the two POs stay independent.) */
+export const YOUNG_JACKSONS_REVIEW = {
+  ...YOUNG_JACKSONS_BASE,
+  poNumber: 'YJ-2026-0618',
+  orderDate: '2026-06-17',
+  requestedDate: '2026-06-24',
+  notes: 'Large function this weekend — note the party-pie volume. Please confirm availability before dispatch.',
+  lines: [
+    { code: 'V2F-PIES-001', name: 'v2food Plant-Based Party Pies 1kg', qty: 200, uom: 'packs', pack: 'bulk — function order' },
+    { code: 'V2F-MINCE-001', name: 'v2food Plant-Based Mince 1kg', qty: 6, uom: 'packs', pack: '1 carton (6)' },
+    { code: 'V2F-TEND-001', name: 'v2food Plant-Based Chicken-Style Tenders 1kg', qty: 6, uom: 'packs', pack: '1 carton (6)' },
   ],
 }
 

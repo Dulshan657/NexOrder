@@ -28,6 +28,8 @@ import {
   GRAND_HOTEL_DEMO_DOCX,
   CAFE_DEMO_IMAGE,
   ZENITH_UNKNOWN,
+  YOUNG_JACKSONS_AUTO,
+  YOUNG_JACKSONS_REVIEW,
 } from './specs.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -42,6 +44,9 @@ const samples = [
   { kind: 'docx', subdir: 'demo', filename: '02-grand-hotel-auto.docx', spec: GRAND_HOTEL_DEMO_DOCX },
   { kind: 'image', subdir: 'demo', filename: '03-cafe-scan-review.png', spec: CAFE_DEMO_IMAGE },
   { kind: 'pdf', subdir: 'demo', filename: '04-zenith-unknown-review.pdf', spec: ZENITH_UNKNOWN },
+  // V2food client demo — Young & Jacksons POs (email these from the trusted sender).
+  { kind: 'pdf', subdir: 'demo-pos', filename: 'young-jacksons-auto.pdf', spec: YOUNG_JACKSONS_AUTO },
+  { kind: 'pdf', subdir: 'demo-pos', filename: 'young-jacksons-review.pdf', spec: YOUNG_JACKSONS_REVIEW },
 ]
 
 const SUBDIR = { pdf: 'pdf', docx: 'docx', image: 'image' }

@@ -192,7 +192,7 @@ describe.skipIf(!hasDbCreds())('inventory balancing (live RPCs, rollback-isolate
       await receiveTwoLots(client, productId);
       const { orderId } = await seedOrder(client, refs, productId, 120);
 
-      await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, NULL, false)', [
+      await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, NULL::int[], NULL::uuid, false)', [
         orderId,
         JSON.stringify([{ product_id: productId, quantity: 120 }]),
       ]);
@@ -222,7 +222,7 @@ describe.skipIf(!hasDbCreds())('inventory balancing (live RPCs, rollback-isolate
 
       await expectRaise(
         client,
-        'SELECT public.inv_reserve_order($1, $2::jsonb, NULL, false)',
+        'SELECT public.inv_reserve_order($1, $2::jsonb, NULL::int[], NULL::uuid, false)',
         [orderId, JSON.stringify([{ product_id: productId, quantity: 200 }])],
         /INSUFFICIENT_STOCK/,
       );
@@ -242,7 +242,7 @@ describe.skipIf(!hasDbCreds())('inventory balancing (live RPCs, rollback-isolate
       await receiveTwoLots(client, productId); // 150 available
       const { orderId } = await seedOrder(client, refs, productId, 200);
 
-      await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, NULL, true)', [
+      await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, NULL::int[], NULL::uuid, true)', [
         orderId,
         JSON.stringify([{ product_id: productId, quantity: 200 }]),
       ]);
@@ -262,7 +262,7 @@ describe.skipIf(!hasDbCreds())('inventory balancing (live RPCs, rollback-isolate
       const productId = await seedProduct(client, refs);
       await receiveTwoLots(client, productId);
       const { orderId, orderItemId } = await seedOrder(client, refs, productId, 120);
-      await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, NULL, false)', [
+      await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, NULL::int[], NULL::uuid, false)', [
         orderId,
         JSON.stringify([{ product_id: productId, quantity: 120 }]),
       ]);
@@ -298,7 +298,7 @@ describe.skipIf(!hasDbCreds())('inventory balancing (live RPCs, rollback-isolate
       const productId = await seedProduct(client, refs);
       await receiveTwoLots(client, productId);
       const { orderId, orderItemId } = await seedOrder(client, refs, productId, 120);
-      await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, NULL, false)', [
+      await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, NULL::int[], NULL::uuid, false)', [
         orderId,
         JSON.stringify([{ product_id: productId, quantity: 120 }]),
       ]);
@@ -325,7 +325,7 @@ describe.skipIf(!hasDbCreds())('inventory balancing (live RPCs, rollback-isolate
       const productId = await seedProduct(client, refs);
       await receiveTwoLots(client, productId);
       const { orderId } = await seedOrder(client, refs, productId, 120);
-      await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, NULL, false)', [
+      await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, NULL::int[], NULL::uuid, false)', [
         orderId,
         JSON.stringify([{ product_id: productId, quantity: 120 }]),
       ]);

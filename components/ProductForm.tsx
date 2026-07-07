@@ -8,6 +8,7 @@ import { compressImage } from '../lib/imageCompression';
 import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/supabase/storageService';
 import OptimizedImage from './OptimizedImage';
 import ProductHomeBinsSection from './admin/ProductHomeBinsSection';
+import ProductWmsAttributesSection from './admin/ProductWmsAttributesSection';
 
 interface ProductFormProps {
     productToEdit: Product | null;
@@ -206,6 +207,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                             <p className="text-[11px] text-stone-400 mt-1">Pallet/carton slots one base unit consumes — drives bin capacity warnings in racked warehouses.</p>
                         </div>
                         {productToEdit && <ProductHomeBinsSection productId={productToEdit.id} />}
+                        {productToEdit && <ProductWmsAttributesSection productId={productToEdit.id} />}
                     </div>
 
                     <div>

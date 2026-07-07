@@ -62,6 +62,58 @@ export async function getBinFillSlots(locationId: number): Promise<number> {
   )
 }
 
+/** One stock row per (bin, product, batch) under a warehouse, with the product's
+ * name + size_factor so the viewer can compute fill without the full product list.
+ * Scoped by the warehouse's materialized_path subtree. */
+export interface WarehouseBinBalance {
+  locationId: number
+  productId: number
+  productName: string | null
+  sizeFactor: number
+  onHand: number
+  allocated: number
+}
+
+/** Escape LIKE metacharacters so a code containing `_`/`%` can't widen a subtree
+ * match into a sibling warehouse (e.g. path `WH_1` matching `WHX1/...`). */
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`)
+}
+
+export async function getBalancesByWarehouse(warehouseId: number): Promise<WarehouseBinBalance[]> {
+  const { data: wh, error: whErr } = await supabase
+    .from('locations')
+    .select('materialized_path')
+    .eq('id', warehouseId)
+    .single()
+  if (whErr) throw whErr
+  const path = (wh as { materialized_path: string | null } | null)?.materialized_path
+  if (!path) return []
+
+  // The warehouse root itself PLUS every descendant. Bulk warehouses and racked
+  // staging keep stock on the root location, so it must be included.
+  const { data: locRows, error: locErr } = await supabase
+    .from('locations')
+    .select('id')
+    .like('materialized_path', `${escapeLike(path)}/%`)
+  if (locErr) throw locErr
+  const locationIds = [warehouseId, ...((locRows ?? []) as { id: number }[]).map((l) => l.id)]
+
+  const { data, error } = await supabase
+    .from('inventory_balances')
+    .select('location_id, product_id, on_hand, allocated, products(name, size_factor)')
+    .in('location_id', locationIds)
+  if (error) throw error
+  return ((data ?? []) as any[]).map((r) => ({
+    locationId: Number(r.location_id),
+    productId: Number(r.product_id),
+    productName: r.products?.name ?? null,
+    sizeFactor: Number(r.products?.size_factor ?? 1),
+    onHand: Number(r.on_hand),
+    allocated: Number(r.allocated),
+  }))
+}
+
 export async function getLocations() {
   const { data, error } = await supabase
     .from('locations')

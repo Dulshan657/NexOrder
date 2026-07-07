@@ -693,6 +693,9 @@ export type Database = {
           currency: string
           show_stock_to_horeca: boolean
           company_logo_url: string | null
+          po_auto_approve_enabled: boolean
+          po_auto_approve_block_on_short_stock: boolean
+          po_auto_approve_block_on_sender_mismatch: boolean
         }
         Insert: {
           id?: number
@@ -708,6 +711,9 @@ export type Database = {
           currency: string
           show_stock_to_horeca: boolean
           company_logo_url: string | null
+          po_auto_approve_enabled?: boolean
+          po_auto_approve_block_on_short_stock?: boolean
+          po_auto_approve_block_on_sender_mismatch?: boolean
         }
         Update: {
           id?: number
@@ -723,6 +729,9 @@ export type Database = {
           currency?: string
           show_stock_to_horeca?: boolean
           company_logo_url?: string | null
+          po_auto_approve_enabled?: boolean
+          po_auto_approve_block_on_short_stock?: boolean
+          po_auto_approve_block_on_sender_mismatch?: boolean
         }
         Relationships: []
       }
@@ -730,7 +739,7 @@ export type Database = {
         Row: {
           id: number
           parent_id: number | null
-          kind: 'WAREHOUSE' | 'ZONE' | 'BIN' | 'SHELF'
+          kind: 'WAREHOUSE' | 'ZONE' | 'AISLE' | 'RACK' | 'BAY' | 'SHELF' | 'BIN' | 'STAGING'
           code: string
           name: string
           lat: number | null
@@ -745,11 +754,15 @@ export type Database = {
           notes: string | null
           capacity_slots: number | null
           slot_kind: 'pallet' | 'carton' | null
+          active_layout_id: number | null
+          created_in_layout_id: number | null
+          zone_profile_id: number | null
+          storage_type_id: number | null
         }
         Insert: {
           id?: number
           parent_id?: number | null
-          kind: 'WAREHOUSE' | 'ZONE' | 'BIN' | 'SHELF'
+          kind: 'WAREHOUSE' | 'ZONE' | 'AISLE' | 'RACK' | 'BAY' | 'SHELF' | 'BIN' | 'STAGING'
           code: string
           name: string
           lat?: number | null
@@ -764,11 +777,15 @@ export type Database = {
           notes?: string | null
           capacity_slots?: number | null
           slot_kind?: 'pallet' | 'carton' | null
+          active_layout_id?: number | null
+          created_in_layout_id?: number | null
+          zone_profile_id?: number | null
+          storage_type_id?: number | null
         }
         Update: {
           id?: number
           parent_id?: number | null
-          kind?: 'WAREHOUSE' | 'ZONE' | 'BIN' | 'SHELF'
+          kind?: 'WAREHOUSE' | 'ZONE' | 'AISLE' | 'RACK' | 'BAY' | 'SHELF' | 'BIN' | 'STAGING'
           code?: string
           name?: string
           lat?: number | null
@@ -783,6 +800,46 @@ export type Database = {
           notes?: string | null
           capacity_slots?: number | null
           slot_kind?: 'pallet' | 'carton' | null
+          active_layout_id?: number | null
+          created_in_layout_id?: number | null
+          zone_profile_id?: number | null
+          storage_type_id?: number | null
+        }
+        Relationships: []
+      }
+      storage_types: {
+        Row: {
+          id: number
+          code: string
+          name: string
+          default_capacity_slots: number | null
+          slot_unit: 'pallet' | 'carton' | 'each' | 'uncounted'
+          attributes: Json
+          is_active: boolean
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          code: string
+          name: string
+          default_capacity_slots?: number | null
+          slot_unit?: 'pallet' | 'carton' | 'each' | 'uncounted'
+          attributes?: Json
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          code?: string
+          name?: string
+          default_capacity_slots?: number | null
+          slot_unit?: 'pallet' | 'carton' | 'each' | 'uncounted'
+          attributes?: Json
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
         }
         Relationships: []
       }
@@ -1039,6 +1096,465 @@ export type Database = {
           picked_qty?: number
           picked_by?: string | null
           picked_at?: string
+        }
+        Relationships: []
+      }
+      warehouse_layouts: {
+        Row: {
+          id: number
+          warehouse_id: number
+          name: string
+          status: 'draft' | 'published' | 'archived'
+          version: number
+          cloned_from: number | null
+          grid_width: number
+          grid_height: number
+          cell_size_m: number
+          floor_count: number
+          published_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          warehouse_id: number
+          name: string
+          status?: 'draft' | 'published' | 'archived'
+          version?: number
+          cloned_from?: number | null
+          grid_width?: number
+          grid_height?: number
+          cell_size_m?: number
+          floor_count?: number
+          published_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          name?: string
+          status?: 'draft' | 'published' | 'archived'
+          grid_width?: number
+          grid_height?: number
+          cell_size_m?: number
+          floor_count?: number
+          published_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      layout_placements: {
+        Row: {
+          id: number
+          layout_id: number
+          location_id: number
+          floor: number
+          x: number
+          y: number
+          w: number
+          h: number
+          rotation: number
+          graph_node_id: number | null
+          access_offset_m: number | null
+        }
+        Insert: {
+          id?: number
+          layout_id: number
+          location_id: number
+          floor?: number
+          x: number
+          y: number
+          w?: number
+          h?: number
+          rotation?: number
+          graph_node_id?: number | null
+          access_offset_m?: number | null
+        }
+        Update: {
+          floor?: number
+          x?: number
+          y?: number
+          w?: number
+          h?: number
+          rotation?: number
+          graph_node_id?: number | null
+          access_offset_m?: number | null
+        }
+        Relationships: []
+      }
+      layout_objects: {
+        Row: {
+          id: number
+          layout_id: number
+          object_type: 'wall' | 'dock' | 'walkway' | 'obstacle' | 'label' | 'lift'
+          floor: number
+          x: number
+          y: number
+          w: number
+          h: number
+          meta: Json
+          staging_location_id: number | null
+        }
+        Insert: {
+          id?: number
+          layout_id: number
+          object_type: 'wall' | 'dock' | 'walkway' | 'obstacle' | 'label' | 'lift'
+          floor?: number
+          x: number
+          y: number
+          w?: number
+          h?: number
+          meta?: Json
+          staging_location_id?: number | null
+        }
+        Update: {
+          object_type?: 'wall' | 'dock' | 'walkway' | 'obstacle' | 'label' | 'lift'
+          floor?: number
+          x?: number
+          y?: number
+          w?: number
+          h?: number
+          meta?: Json
+          staging_location_id?: number | null
+        }
+        Relationships: []
+      }
+      layout_graph_nodes: {
+        Row: {
+          id: number
+          layout_id: number
+          floor: number
+          x: number
+          y: number
+          node_type: 'walk' | 'junction' | 'dock' | 'lift'
+        }
+        Insert: {
+          id?: number
+          layout_id: number
+          floor?: number
+          x: number
+          y: number
+          node_type?: 'walk' | 'junction' | 'dock' | 'lift'
+        }
+        Update: {
+          node_type?: 'walk' | 'junction' | 'dock' | 'lift'
+        }
+        Relationships: []
+      }
+      layout_graph_edges: {
+        Row: {
+          id: number
+          layout_id: number
+          from_node: number
+          to_node: number
+          weight_m: number
+          bidirectional: boolean
+        }
+        Insert: {
+          id?: number
+          layout_id: number
+          from_node: number
+          to_node: number
+          weight_m: number
+          bidirectional?: boolean
+        }
+        Update: {
+          weight_m?: number
+          bidirectional?: boolean
+        }
+        Relationships: []
+      }
+      layout_travel_distances: {
+        Row: {
+          layout_id: number
+          from_node_id: number
+          to_node_id: number
+          distance_m: number
+        }
+        Insert: {
+          layout_id: number
+          from_node_id: number
+          to_node_id: number
+          distance_m: number
+        }
+        Update: {
+          distance_m?: number
+        }
+        Relationships: []
+      }
+      wie_rules: {
+        Row: {
+          id: number
+          warehouse_id: number | null
+          name: string
+          rule_type: 'putaway' | 'picking' | 'slotting'
+          enforcement: 'hard' | 'soft'
+          priority: number
+          definition: Json
+          is_active: boolean
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          warehouse_id?: number | null
+          name: string
+          rule_type: 'putaway' | 'picking' | 'slotting'
+          enforcement: 'hard' | 'soft'
+          priority?: number
+          definition: Json
+          is_active?: boolean
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          name?: string
+          enforcement?: 'hard' | 'soft'
+          priority?: number
+          definition?: Json
+          is_active?: boolean
+        }
+        Relationships: []
+      }
+      zone_profiles: {
+        Row: {
+          id: number
+          name: string
+          zone_type: string
+          priority_weight: number
+          allowed_categories: Json | null
+          max_utilization_pct: number | null
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          name: string
+          zone_type: string
+          priority_weight?: number
+          allowed_categories?: Json | null
+          max_utilization_pct?: number | null
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          name?: string
+          zone_type?: string
+          priority_weight?: number
+          allowed_categories?: Json | null
+          max_utilization_pct?: number | null
+          is_active?: boolean
+        }
+        Relationships: []
+      }
+      wie_product_velocity: {
+        Row: {
+          warehouse_id: number
+          product_id: number
+          picks_7d: number
+          picks_30d: number
+          picks_90d: number
+          qty_30d: number
+          velocity_class: 'A' | 'B' | 'C' | null
+          computed_at: string
+        }
+        Insert: {
+          warehouse_id: number
+          product_id: number
+          picks_7d?: number
+          picks_30d?: number
+          picks_90d?: number
+          qty_30d?: number
+          velocity_class?: 'A' | 'B' | 'C' | null
+          computed_at?: string
+        }
+        Update: {
+          velocity_class?: 'A' | 'B' | 'C' | null
+        }
+        Relationships: []
+      }
+      wie_location_traffic: {
+        Row: {
+          layout_id: number
+          graph_node_id: number
+          pick_visits_30d: number
+          computed_at: string
+        }
+        Insert: {
+          layout_id: number
+          graph_node_id: number
+          pick_visits_30d?: number
+          computed_at?: string
+        }
+        Update: {
+          pick_visits_30d?: number
+        }
+        Relationships: []
+      }
+      wie_scoring_profiles: {
+        Row: {
+          warehouse_id: number
+          weights: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          warehouse_id: number
+          weights: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          weights?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      wie_slotting_suggestions: {
+        Row: {
+          id: number
+          warehouse_id: number
+          product_id: number
+          from_location_id: number
+          to_location_id: number
+          qty: number
+          expected_gain_m: number
+          reason: Json
+          status: 'suggested' | 'accepted' | 'rejected' | 'expired'
+          actor_id: string | null
+          created_at: string
+          decided_at: string | null
+        }
+        Insert: {
+          id?: number
+          warehouse_id: number
+          product_id: number
+          from_location_id: number
+          to_location_id: number
+          qty: number
+          expected_gain_m?: number
+          reason?: Json
+          status?: 'suggested' | 'accepted' | 'rejected' | 'expired'
+          actor_id?: string | null
+          created_at?: string
+          decided_at?: string | null
+        }
+        Update: {
+          status?: 'suggested' | 'accepted' | 'rejected' | 'expired'
+          actor_id?: string | null
+          decided_at?: string | null
+        }
+        Relationships: []
+      }
+      product_wms_attributes: {
+        Row: {
+          product_id: number
+          hazard_class: string | null
+          temp_min: number | null
+          temp_max: number | null
+          shelf_life_policy: 'FEFO' | 'FIFO' | null
+          stackable: boolean | null
+          handling_type: string | null
+          weight_kg: number | null
+          volume_l: number | null
+          dims: Json | null
+          custom: Json
+          updated_at: string
+        }
+        Insert: {
+          product_id: number
+          hazard_class?: string | null
+          temp_min?: number | null
+          temp_max?: number | null
+          shelf_life_policy?: 'FEFO' | 'FIFO' | null
+          stackable?: boolean | null
+          handling_type?: string | null
+          weight_kg?: number | null
+          volume_l?: number | null
+          dims?: Json | null
+          custom?: Json
+          updated_at?: string
+        }
+        Update: {
+          hazard_class?: string | null
+          temp_min?: number | null
+          temp_max?: number | null
+          shelf_life_policy?: 'FEFO' | 'FIFO' | null
+          stackable?: boolean | null
+          handling_type?: string | null
+          weight_kg?: number | null
+          volume_l?: number | null
+          dims?: Json | null
+          custom?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      category_compatibility: {
+        Row: {
+          category_a: string
+          category_b: string
+          level: 'forbidden' | 'restricted' | 'allowed'
+          note: string | null
+          updated_at: string
+        }
+        Insert: {
+          category_a: string
+          category_b: string
+          level: 'forbidden' | 'restricted' | 'allowed'
+          note?: string | null
+          updated_at?: string
+        }
+        Update: {
+          level?: 'forbidden' | 'restricted' | 'allowed'
+          note?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      wie_putaway_recommendations: {
+        Row: {
+          id: number
+          warehouse_id: number
+          layout_id: number
+          product_id: number
+          quantity: number
+          goods_receipt_id: number | null
+          recommended_location_id: number | null
+          alternatives: Json
+          explanation: Json
+          engine_version: string
+          status: 'suggested' | 'accepted' | 'overridden' | 'expired'
+          chosen_location_id: number | null
+          actor_id: string | null
+          created_at: string
+          decided_at: string | null
+        }
+        Insert: {
+          id?: number
+          warehouse_id: number
+          layout_id: number
+          product_id: number
+          quantity: number
+          goods_receipt_id?: number | null
+          recommended_location_id?: number | null
+          alternatives?: Json
+          explanation: Json
+          engine_version: string
+          status?: 'suggested' | 'accepted' | 'overridden' | 'expired'
+          chosen_location_id?: number | null
+          actor_id?: string | null
+          created_at?: string
+          decided_at?: string | null
+        }
+        Update: {
+          status?: 'suggested' | 'accepted' | 'overridden' | 'expired'
+          chosen_location_id?: number | null
+          actor_id?: string | null
+          decided_at?: string | null
         }
         Relationships: []
       }

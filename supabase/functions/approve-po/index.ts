@@ -383,13 +383,22 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
     products,
   )
 
-  // Auto-approval guard: unattended approval must NOT create an order that
-  // can't be fulfilled. If any line is short, decline and leave the PO in
-  // needs_review so a human reviews it (human approval still proceeds with an
-  // advisory warning). No claim and no order have been written yet — auto
-  // mode has no deliveryAddress override, so resolveDeliveryAddress was a
-  // no-op above.
-  if (args.mode === 'auto' && stockWarnings.length > 0) {
+  // Settings (incl. the auto-approval policy toggles, mig 00044). Loaded before
+  // the stock guard so the guard can honour `po_auto_approve_block_on_short_stock`.
+  const settings = await loadAppSettings(args.supa)
+
+  // Auto-approval guard: when the admin policy says to hold short orders (the
+  // default), unattended approval must NOT create an order that can't be
+  // fulfilled — decline and leave the PO in needs_review so a human reviews it
+  // (human approval still proceeds with an advisory warning). If the admin has
+  // turned the policy off, a short auto PO is approved anyway. No claim and no
+  // order have been written yet — auto mode has no deliveryAddress override, so
+  // resolveDeliveryAddress was a no-op above.
+  if (
+    args.mode === 'auto' &&
+    stockWarnings.length > 0 &&
+    settings.po_auto_approve_block_on_short_stock !== false
+  ) {
     console.warn(
       `[approve-po] auto-approval declined for ${args.pendingPoId}: ${stockWarnings.length} line(s) short on stock — left for human review`,
     )
@@ -401,7 +410,6 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
   // _shared/poInbox/orderTotals.ts.
   const { items: orderItems, total } = buildOrderItems(resolvedItems, products)
 
-  const settings = await loadAppSettings(args.supa)
   const orderId = makeOrderId(settings.order_id_prefix)
 
   // ─── Order creation (BEFORE the claim) ───────────────────────────
@@ -635,14 +643,21 @@ async function loadEmailAccount(supa: SupabaseClient, id: string): Promise<Email
   return data as EmailAccountRow
 }
 
-async function loadAppSettings(supa: SupabaseClient): Promise<{ order_id_prefix: string }> {
+async function loadAppSettings(
+  supa: SupabaseClient,
+): Promise<{ order_id_prefix: string; po_auto_approve_block_on_short_stock: boolean }> {
   const { data, error } = await supa
     .from('app_settings')
-    .select('order_id_prefix')
+    .select('order_id_prefix, po_auto_approve_block_on_short_stock')
     .eq('id', 1)
     .single()
-  if (error || !data) return { order_id_prefix: 'ORD' }
-  return data as { order_id_prefix: string }
+  // Fail open to the historical behaviour: default prefix + always block short stock.
+  if (error || !data) return { order_id_prefix: 'ORD', po_auto_approve_block_on_short_stock: true }
+  const row = data as { order_id_prefix: string; po_auto_approve_block_on_short_stock?: boolean }
+  return {
+    order_id_prefix: row.order_id_prefix,
+    po_auto_approve_block_on_short_stock: row.po_auto_approve_block_on_short_stock !== false,
+  }
 }
 
 async function loadProducts(

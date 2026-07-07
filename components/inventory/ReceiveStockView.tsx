@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { Product, User } from '../../types';
+import type { Product, User, PutawayLineRecommendation } from '../../types';
 import { useReceiveStock } from '../../hooks/queries/useReceiveStock';
 import { useRecentReceipts } from '../../hooks/queries/useInventoryBalances';
 import { useSuppliers } from '../../hooks/queries/useSuppliers';
+import { useRecommendPutaway } from '../../hooks/queries/usePutawayRecommendation';
 import type { ReceiptHeader, ReceiptLine } from '../../services/supabase/receivingService';
 import { useToasts } from '../../hooks/useToasts';
+import { PutawayPanel } from './PutawayPanel';
 import {
   PackagePlus, Plus, Trash2, Search, X, Boxes, History, Clock,
   Truck, FileText, CalendarDays, UserRound, Check, ChevronDown,
@@ -207,7 +209,11 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
 const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUser }) => {
   const { addToast } = useToasts();
   const receive = useReceiveStock();
+  const recommend = useRecommendPutaway();
   const { data: supplierRows } = useSuppliers();
+
+  // Engine putaway recommendations for the most recent receipt (layout warehouses).
+  const [putaway, setPutaway] = useState<{ warehouseId: number; recommendations: PutawayLineRecommendation[] } | null>(null);
 
   const suppliers = useMemo<SupplierOption[]>(
     () => (supplierRows ?? []).map((s) => ({ id: s.id, name: s.name })),
@@ -289,6 +295,26 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       setReference('');
       setSupplierId(null);
       setSupplierName('');
+
+      // If the destination warehouse has a published layout, fetch putaway
+      // recommendations so the operator can slot the stock into bins.
+      setPutaway(null);
+      if (result.location_id) {
+        try {
+          const putawayLines = lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity }));
+          const res = await recommend.mutateAsync({
+            warehouseId: result.location_id,
+            lines: putawayLines,
+            goodsReceiptId: result.receipt_id,
+          });
+          if (res.mode === 'engine' && res.recommendations.length > 0) {
+            setPutaway({ warehouseId: result.location_id, recommendations: res.recommendations });
+          }
+        } catch {
+          // Putaway is advisory — a failure here must not break receiving.
+          addToast('Stock received, but putaway suggestions could not be loaded.', 'info');
+        }
+      }
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Failed to receive stock', 'error');
     }
@@ -530,6 +556,15 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
             </div>
           </div>
         </div>
+      )}
+
+      {/* Putaway recommendations — appears after receiving into a layout warehouse */}
+      {putaway && (
+        <PutawayPanel
+          warehouseId={putaway.warehouseId}
+          recommendations={putaway.recommendations}
+          productNameById={new Map(products.map((p) => [p.id, p.name]))}
+        />
       )}
 
       {/* Recent receipts — gives the screen context and an audit trail */}

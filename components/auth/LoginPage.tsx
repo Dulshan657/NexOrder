@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { ArrowRight, Check } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { getBrandByKey } from '@/lib/demoAccounts'
 import ForgotPasswordDialog from './ForgotPasswordDialog'
 
 function getErrorMessage(error: unknown): string {
@@ -31,6 +32,17 @@ const CAPABILITIES: readonly string[] = [
   'POs, stock, invoicing on one ledger',
 ]
 
+// Login renders before auth, so the brand can't key on the user — it's selected
+// by the `?brand=<key>` query param (e.g. `/?brand=v2food`). Falls back to the
+// neutral Nex Order brand when the param is absent or unknown.
+const DEFAULT_BRAND = { logoSrc: '/assets/Nex-Order-no-bg-logo.png', displayName: 'Nex Order' }
+
+function resolveBrand(): { logoSrc: string; displayName: string } {
+  if (typeof window === 'undefined') return DEFAULT_BRAND
+  const key = new URLSearchParams(window.location.search).get('brand')
+  return getBrandByKey(key) ?? DEFAULT_BRAND
+}
+
 export default function LoginPage() {
   const { signIn } = useAuth()
   const [email, setEmail] = useState('')
@@ -38,6 +50,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [forgotOpen, setForgotOpen] = useState(false)
+  const brand = resolveBrand()
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -86,8 +99,8 @@ export default function LoginPage() {
         <header className="relative z-10 flex items-center">
           <div className="rounded-lg bg-white p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
             <img
-              src="/assets/Nex-Order-no-bg-logo.png"
-              alt="Nex Order"
+              src={brand.logoSrc}
+              alt={brand.displayName}
               className="h-9 w-auto object-contain"
             />
           </div>
@@ -120,8 +133,8 @@ export default function LoginPage() {
       <main className="flex flex-col px-6 py-10 sm:px-10 lg:px-16 xl:px-24">
         <div className="flex items-center justify-between lg:hidden">
           <img
-            src="/assets/Nex-Order-no-bg-logo.png"
-            alt="Nex Order"
+            src={brand.logoSrc}
+            alt={brand.displayName}
             className="h-9 w-auto object-contain"
           />
           <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-stone-500">

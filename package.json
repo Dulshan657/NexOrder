@@ -18,7 +18,15 @@
     "po-sydney-seed": "node tests/fixtures/po-samples/sydney-tools-seed.mjs",
     "po-repco-seed": "node tests/fixtures/po-samples/repco-seed.mjs",
     "po-tridon-account": "node tests/fixtures/po-samples/tridon-demo-seed.mjs",
-    "seed:tridon-demo": "npm run po-tridon-account && npm run po-sydney-seed && npm run po-repco-seed"
+    "seed:tridon-demo": "npm run po-tridon-account && npm run po-sydney-seed && npm run po-repco-seed",
+    "po-v2food-account": "node tests/fixtures/po-samples/v2food-demo-seed.mjs",
+    "po-yj-seed": "node tests/fixtures/po-samples/young-jacksons-seed.mjs",
+    "seed:v2food-demo": "npm run po-v2food-account && npm run po-yj-seed",
+    "demo:tridon:seed": "node tridon-demo/seed.mjs",
+    "demo:tridon:reset": "node tridon-demo/reset.mjs",
+    "demo:tridon:pdfs": "node tridon-demo/generate.mjs",
+    "demo:wie:seed": "node wie-demo/seed.mjs",
+    "demo:wie:reset": "node wie-demo/reset.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.19.0",

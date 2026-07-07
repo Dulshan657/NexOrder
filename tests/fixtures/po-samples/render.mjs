@@ -5,6 +5,7 @@
 // upload bytes straight to Storage without a disk round-trip; generate.mjs
 // writes the same bytes to files.
 
+import { readFileSync } from 'node:fs'
 import PDFDocument from 'pdfkit'
 import {
   AlignmentType,
@@ -33,6 +34,16 @@ export function renderPdf(spec) {
     doc.on('data', c => chunks.push(c))
     doc.on('end', () => resolveDone(new Uint8Array(Buffer.concat(chunks))))
     doc.on('error', rejectDone)
+
+    // Optional letterhead logo, drawn top-right (real client branding). Fit into
+    // a 90×80 box so it never collides with the company name at the left.
+    if (spec.logoPath) {
+      try {
+        doc.image(readFileSync(spec.logoPath), 455, 40, { fit: [90, 80], align: 'right' })
+      } catch {
+        /* missing/unreadable logo — fall back to text-only letterhead */
+      }
+    }
 
     // Letterhead
     doc.font('Helvetica-Bold').fontSize(18).text(spec.company, { align: 'left' })

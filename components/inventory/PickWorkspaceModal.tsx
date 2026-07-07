@@ -8,7 +8,9 @@ import {
 } from '../../hooks/queries/usePickQueue';
 import { useBalancesByProduct } from '../../hooks/queries/useInventoryBalances';
 import { useToasts } from '../../hooks/useToasts';
+import { useAuth } from '../../hooks/useAuth';
 import { useDocumentViewer } from '../../context/DocumentViewerContext';
+import { PickRoutePanel } from './PickRoutePanel';
 import type { PickQueueLine } from '../../services/supabase/pickService';
 import {
   X, Check, PackageCheck, FileText, Truck, MapPin, Box, PackageCheck as PackIcon,
@@ -109,6 +111,8 @@ interface PickWorkspaceModalProps {
 
 const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClose }) => {
   const { addToast } = useToasts();
+  const { profile } = useAuth();
+  const homeWarehouseId = profile?.home_warehouse_id ?? null;
   // Read the order LIVE from the shared pick-queue cache so progress updates as
   // picks land (useRecordPick invalidates ['pick_queue']).
   const { data: orders } = usePickQueue();
@@ -206,10 +210,22 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
         </div>
 
         {/* Lines */}
-        <div className="px-5 py-2 overflow-y-auto flex-1 divide-y divide-stone-100">
+        <div className="px-5 py-2 overflow-y-auto flex-1">
+          {/* Additive advisory: engine-suggested bin-walk order for this order's
+              fulfilment warehouse (renders nothing for non-layout sites). */}
+          <PickRoutePanel
+            warehouseId={
+              homeWarehouseId != null && order.fulfilmentWarehouseIds.includes(homeWarehouseId)
+                ? homeWarehouseId
+                : (order.fulfilmentWarehouseIds[0] ?? null)
+            }
+            orderIds={[order.orderId]}
+          />
+          <div className="divide-y divide-stone-100">
           {order.lines.map((line) => (
             <PickLineRow key={line.orderItemId} line={line} canPick={canPick} />
           ))}
+          </div>
         </div>
 
         {/* Footer actions */}
