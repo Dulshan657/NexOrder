@@ -24,6 +24,10 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
 const categoryEnum = z.enum([
+  // Keep in sync with types.ts `Category` and constants.ts `CATEGORIES`.
+  // 'Plant-Based' (v2food demo, mig 00043) was added client-side but not here,
+  // which rejected every product created with the form's default category.
+  'Plant-Based',
   'Coconut',
   'Meal Pastes',
   'Asian Sauces',
