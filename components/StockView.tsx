@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import type { Product, User, Category } from '../types';
 import { UserRole } from '../types';
-import { Package, AlertCircle, CheckCircle2, Search, X, TrendingDown, ChevronRight, ChevronDown, MapPin, Repeat } from 'lucide-react';
+import { Package, AlertCircle, CheckCircle2, Search, X, TrendingDown, ChevronRight, ChevronDown, MapPin, Repeat, SlidersHorizontal } from 'lucide-react';
 import { CATEGORIES } from '../constants';
 import { useInventoryBalances, useBalancesByProduct } from '../hooks/queries/useInventoryBalances';
+import type { ProductBatchBalance } from '../services/supabase/inventoryService';
 import TransferStockModal from './admin/TransferStockModal';
+import AdjustStockModal from './admin/AdjustStockModal';
 
 interface StockViewProps {
   products: Product[];
@@ -21,10 +23,14 @@ const getStockStatus = (qty: number) => {
   return 'in_stock' as const;
 };
 
-/** Ops-only expandable row: aggregate on top, lazy per-batch detail on expand. */
-const OpsStockRow: React.FC<{ product: Product; agg: Agg; maxQty: number }> = ({ product, agg, maxQty }) => {
+/** Ops-only expandable row: aggregate on top, lazy per-batch detail on expand.
+ * `canAdjust` (Admin/Manager only for now — see StockView's isAdminManager)
+ * shows a per-batch "Adjust" action that opens AdjustStockModal for that exact
+ * (product, location, batch) slot. */
+const OpsStockRow: React.FC<{ product: Product; agg: Agg; maxQty: number; canAdjust: boolean }> = ({ product, agg, maxQty, canAdjust }) => {
   const [expanded, setExpanded] = useState(false);
   const { data: batches, isLoading } = useBalancesByProduct(expanded ? product.id : null);
+  const [adjustTarget, setAdjustTarget] = useState<ProductBatchBalance | null>(null);
   const status = getStockStatus(agg.available);
   const fillPercent = Math.min((agg.available / maxQty) * 100, 100);
   const barColor = status === 'out_of_stock' ? 'bg-red-400' : status === 'low_stock' ? 'bg-amber-400' : 'bg-emerald-400';
@@ -74,6 +80,7 @@ const OpsStockRow: React.FC<{ product: Product; agg: Agg; maxQty: number }> = ({
                       <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">On hand</th>
                       <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Allocated</th>
                       <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Available</th>
+                      {canAdjust && <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">&nbsp;</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
@@ -89,6 +96,17 @@ const OpsStockRow: React.FC<{ product: Product; agg: Agg; maxQty: number }> = ({
                         <td className="px-3 py-2 text-right font-mono text-stone-700 tabular-nums">{b.onHand}</td>
                         <td className="px-3 py-2 text-right font-mono text-stone-500 tabular-nums">{b.allocated}</td>
                         <td className="px-3 py-2 text-right font-mono font-semibold text-stone-900 tabular-nums">{b.available}</td>
+                        {canAdjust && (
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setAdjustTarget(b); }}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-nexgen-blue hover:bg-nexgen-blue/10 btn-press"
+                            >
+                              <SlidersHorizontal className="w-3 h-3" /> Adjust
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -97,6 +115,16 @@ const OpsStockRow: React.FC<{ product: Product; agg: Agg; maxQty: number }> = ({
             )}
           </td>
         </tr>
+      )}
+      {adjustTarget && (
+        <AdjustStockModal
+          product={product}
+          locationId={adjustTarget.locationId}
+          locationLabel={`${adjustTarget.locationCode ?? 'MAIN'} · ${adjustTarget.lotCode ? `lot ${adjustTarget.lotCode}` : 'untracked'}`}
+          batchId={adjustTarget.batchId}
+          currentOnHand={adjustTarget.onHand}
+          onClose={() => setAdjustTarget(null)}
+        />
       )}
     </>
   );
@@ -326,7 +354,7 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser }) => {
               </thead>
               <tbody>
                 {filteredProducts.map((product) => (
-                  <OpsStockRow key={product.id} product={product} agg={aggOf(product)} maxQty={maxQty} />
+                  <OpsStockRow key={product.id} product={product} agg={aggOf(product)} maxQty={maxQty} canAdjust={isAdminManager} />
                 ))}
               </tbody>
             </table>
