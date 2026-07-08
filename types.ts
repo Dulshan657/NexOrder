@@ -410,6 +410,10 @@ export interface SlottingSuggestion {
     expectedGainM: number;
     reason: Record<string, unknown>;
     status: SlottingStatus;
+    /** 'reoptimize' = travel-only batch pass; 'reslot' = pre-publish relocation plan. */
+    origin: 'reoptimize' | 'reslot';
+    /** Groups every move from one publish's relocation plan (reslot origin only). */
+    planBatch?: string;
     createdAt: string;
     decidedAt?: string;
 }

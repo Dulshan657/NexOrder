@@ -53,6 +53,7 @@ export function SlottingSuggestionsView({ warehouse, productNameById }: Slotting
   const binCode = (id: number) => codeById.get(id) ?? `#${id}`
 
   const suggestions = suggestionsQuery.data ?? []
+  const reslotCount = suggestions.filter((s) => s.origin === 'reslot').length
 
   return (
     <div className="space-y-4">
@@ -71,6 +72,13 @@ export function SlottingSuggestionsView({ warehouse, productNameById }: Slotting
         </button>
       </div>
 
+      {reslotCount > 0 && (
+        <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+          <span className="font-semibold">Layout relocation in progress</span> — {reslotCount} move{reslotCount === 1 ? '' : 's'} pending
+          from a recent layout publish. Accept each to physically relocate its stock into the new bins.
+        </div>
+      )}
+
       {suggestionsQuery.isLoading ? (
         <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-12 rounded-lg bg-stone-100 animate-pulse" />)}</div>
       ) : suggestions.length === 0 ? (
@@ -82,7 +90,12 @@ export function SlottingSuggestionsView({ warehouse, productNameById }: Slotting
           {suggestions.map((s) => (
             <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium text-stone-800 truncate">{productName(s.productId)}</p>
+                <p className="text-xs font-medium text-stone-800 truncate">
+                  {productName(s.productId)}
+                  {s.origin === 'reslot' && (
+                    <span className="ml-1.5 rounded bg-sky-100 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-sky-700">Relocation</span>
+                  )}
+                </p>
                 <p className="text-[11px] text-stone-500 flex items-center gap-1 mt-0.5">
                   <span className="font-mono">{binCode(s.fromLocationId)}</span>
                   <ArrowRight className="w-3 h-3 text-stone-400" />

@@ -21,14 +21,19 @@ import {
   usePublishLayout,
 } from '@/hooks/queries/useLayouts'
 import { useRunSimulation } from '@/hooks/queries/useSimulation'
+import { useWarehouseStockSummary } from '@/hooks/queries/useWarehouseStockSummary'
+import { useCommitReslotPlan } from '@/hooks/queries/useReslotPlan'
 import { useToasts } from '@/hooks/useToasts'
 import type { PublishRejection, SaveObjectInput, SavePlacementInput } from '@/services/supabase/layoutService'
+import type { CommitMove } from '@/services/supabase/reslotService'
 import type { SimulationResult, Warehouse } from '@/types'
 import { LayoutCanvas } from './LayoutCanvas'
 import { LayoutToolbar } from './LayoutToolbar'
 import { LayoutLegend } from './LayoutLegend'
 import { PlacementInspector } from './PlacementInspector'
 import { PublishChecklist } from './PublishChecklist'
+import { CapacityAdvisor } from './CapacityAdvisor'
+import { ReslotPlannerModal } from './ReslotPlannerModal'
 import { RackWizard } from './RackWizard'
 import { FloorPlanImportModal } from './FloorPlanImportModal'
 import { SimulationResultCard } from './SimulationResultCard'
@@ -51,6 +56,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const [importOpen, setImportOpen] = useState(autoOpenImport)
   const [floorCountInput, setFloorCountInput] = useState(1)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [reslotOpen, setReslotOpen] = useState(false)
   const detailQuery = useLayoutDetail(selectedLayoutId)
 
   const [state, dispatch] = useLayoutEditorState(warehouse.code)
@@ -67,6 +73,8 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const saveGeometry = useSaveGeometry(selectedLayoutId ?? 0)
   const publishLayout = usePublishLayout(warehouse.id)
   const runSimulation = useRunSimulation()
+  const stockSummary = useWarehouseStockSummary(warehouse.id)
+  const commitReslot = useCommitReslotPlan(warehouse.id)
 
   const codeByLocation = useMemo(() => {
     const map: Record<number, { code: string; name: string; kind: never; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; storageTypeId?: number }> = {}
@@ -150,6 +158,14 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     }
   }
 
+  // Publish the draft; returns true on success. Renders rejections on failure.
+  const doPublish = async (): Promise<boolean> => {
+    const result = await publishLayout.mutateAsync(selectedLayoutId as number)
+    if (result.ok) return true
+    setRejections(result.rejections ?? [])
+    return false
+  }
+
   const handlePublish = async () => {
     if (!selectedLayoutId) return
     setRejections(null)
@@ -158,13 +174,36 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
       // validates the geometry the operator actually drew. The server reads the
       // persisted rows, so ordering (save → publish) is what matters.
       if (state.dirty) await persistGeometry()
-      const result = await publishLayout.mutateAsync(selectedLayoutId)
-      if (result.ok) {
+      // If the warehouse already holds stock, gate publish behind the re-slot
+      // planner so existing stock gets an optimal home in the new layout.
+      if (stockSummary.hasStock) {
+        setReslotOpen(true)
+        return
+      }
+      if (await doPublish()) {
         setNotice('Published — this warehouse now uses rack-level putaway.')
         setSelectedLayoutId(null)
-      } else {
-        setRejections(result.rejections ?? [])
       }
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Failed to publish', 'error')
+    }
+  }
+
+  // Operator approved the re-slot plan: publish, then write the relocation worklist.
+  const handleReslotApprove = async (moves: CommitMove[]) => {
+    if (!selectedLayoutId) return
+    setRejections(null)
+    try {
+      const published = await doPublish()
+      if (!published) { setReslotOpen(false); return }
+      if (moves.length > 0) {
+        const { created } = await commitReslot.mutateAsync({ layoutId: selectedLayoutId, moves })
+        setNotice(`Published — ${created} relocation move${created === 1 ? '' : 's'} added to the Slotting queue.`)
+      } else {
+        setNotice('Published — this warehouse now uses rack-level putaway.')
+      }
+      setReslotOpen(false)
+      setSelectedLayoutId(null)
     } catch (error) {
       addToast(error instanceof Error ? error.message : 'Failed to publish', 'error')
     }
@@ -327,6 +366,15 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} highlightRefs={isDraft ? highlightRefs : undefined} />
             <div className="space-y-3">
               {isDraft && <PublishChecklist readiness={readiness} />}
+              {isDraft && (
+                <CapacityAdvisor
+                  requiredSlots={stockSummary.requiredSlots}
+                  providedSlots={state.placements.reduce((s, p) => s + (p.capacitySlots ?? 0), 0)}
+                  binCount={state.placements.length}
+                  hasStock={stockSummary.hasStock}
+                  loading={stockSummary.isLoading}
+                />
+              )}
               <PlacementInspector placement={selectedPlacement} dispatch={dispatch} zoneProfiles={zoneProfilesQuery.data ?? []} storageTypes={storageTypesQuery.data ?? []} />
             </div>
           </div>
@@ -362,6 +410,16 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             setSimulation(null)
             setNotice('Draft created from your floor plan — review the racks, then Publish.')
           }}
+        />
+      )}
+
+      {reslotOpen && selectedLayoutId && (
+        <ReslotPlannerModal
+          warehouse={warehouse}
+          layoutId={selectedLayoutId}
+          publishing={publishLayout.isPending || commitReslot.isPending}
+          onCancel={() => setReslotOpen(false)}
+          onApprove={handleReslotApprove}
         />
       )}
     </div>

@@ -764,6 +764,8 @@ export function toSlottingSuggestion(row: SlottingSuggestionRow): SlottingSugges
     expectedGainM: Number(row.expected_gain_m),
     reason: (row.reason as Record<string, unknown>) ?? {},
     status: row.status,
+    origin: (row as { origin?: 'reoptimize' | 'reslot' }).origin ?? 'reoptimize',
+    planBatch: (row as { plan_batch?: string }).plan_batch ?? undefined,
     createdAt: row.created_at,
     decidedAt: row.decided_at ?? undefined,
   }
