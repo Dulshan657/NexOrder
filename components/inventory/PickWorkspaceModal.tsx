@@ -6,12 +6,12 @@ import {
   useGeneratePickSlip,
   useGenerateDispatchAdvice,
 } from '../../hooks/queries/usePickQueue';
-import { useBalancesByProduct } from '../../hooks/queries/useInventoryBalances';
+import { useOrderPickTasks } from '../../hooks/queries/useOrderPickTasks';
 import { useToasts } from '../../hooks/useToasts';
 import { useAuth } from '../../hooks/useAuth';
 import { useDocumentViewer } from '../../context/DocumentViewerContext';
 import { PickRoutePanel } from './PickRoutePanel';
-import type { PickQueueLine } from '../../services/supabase/pickService';
+import type { PickQueueLine, PickTask } from '../../services/supabase/pickService';
 import {
   X, Check, PackageCheck, FileText, Truck, MapPin, Box, PackageCheck as PackIcon,
 } from 'lucide-react';
@@ -23,83 +23,119 @@ const statusBadge: Record<string, { label: string; cls: string }> = {
   dispatched: { label: 'Dispatched', cls: 'bg-stone-200 text-stone-700' },
 };
 
-/** One pickable line. Its own component so the per-product balance hook is
- *  legal (not called inside a parent loop) and the FIFO hint loads lazily. */
-const PickLineRow: React.FC<{ line: PickQueueLine; canPick: boolean }> = ({ line, canPick }) => {
+/** One directed, per-bin pick task. Its own component so each bin's
+ *  useRecordPick() mutation is independent — a hoisted single mutation would
+ *  disable every bin's button in the line while any one of them is pending,
+ *  and would let a fast double-click on the SAME bin fire twice. */
+const PickTaskRow: React.FC<{ orderId: string; task: PickTask; disabled: boolean }> = ({ orderId, task, disabled }) => {
   const { addToast } = useToasts();
   const recordPick = useRecordPick();
-  const { data: balances } = useBalancesByProduct(line.productId);
-  const remaining = Math.max(line.quantity - line.picked, 0);
-  const done = remaining === 0;
 
-  // Directed FIFO suggestion: prefer a location that holds this line's RESERVED
-  // stock (allocated > 0), then earliest expiry. For racked warehouses this is a
-  // specific bin; for bulk it's the warehouse root. The pick is recorded at that
-  // location so racked picks decrement the right bin.
-  const suggestion = useMemo(() => {
-    const avail = (balances ?? []).filter((b) => b.onHand > 0);
-    if (avail.length === 0) return null;
-    return [...avail].sort((a, b) => {
-      // Reserved bins first.
-      if ((b.allocated > 0 ? 1 : 0) !== (a.allocated > 0 ? 1 : 0)) {
-        return (b.allocated > 0 ? 1 : 0) - (a.allocated > 0 ? 1 : 0);
-      }
-      const ax = a.expiryDate ? Date.parse(a.expiryDate) : Number.POSITIVE_INFINITY;
-      const bx = b.expiryDate ? Date.parse(b.expiryDate) : Number.POSITIVE_INFINITY;
-      return ax - bx;
-    })[0];
-  }, [balances]);
-
-  // Pick from the suggested location, capped at what that location physically
-  // holds (multi-bin lines take more than one click, each draining a bin).
-  const pickQty = suggestion ? Math.min(remaining, Math.floor(suggestion.onHand)) : remaining;
-
-  const pickAll = async () => {
-    if (done || remaining <= 0) return;
-    const qty = pickQty > 0 ? pickQty : remaining;
+  const pick = async () => {
+    if (recordPick.isPending || task.remaining <= 0) return; // per-task double-submit guard
     try {
       await recordPick.mutateAsync({
-        orderItemId: line.orderItemId,
-        pickedQty: qty,
-        locationId: suggestion?.locationId,
+        orderId,
+        orderItemId: task.orderItemId,
+        pickedQty: task.remaining,
+        locationId: task.locationId,
       });
-      addToast(`Picked ${qty} × ${line.productName}`, 'success');
+      addToast(`Picked ${task.remaining} × ${task.code}`, 'success');
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Failed to record pick', 'error');
     }
   };
 
   return (
-    <div className="flex items-center gap-3 py-3">
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-stone-800 truncate">{line.productName}</p>
-        <p className="text-xs text-stone-400 font-mono">{line.productSku}</p>
-        <p className="flex items-center gap-1 text-xs text-stone-400 mt-1">
-          <MapPin className="w-3 h-3" />
-          {suggestion
-            ? `${suggestion.locationCode ?? 'MAIN'} · ${suggestion.lotCode ? `lot ${suggestion.lotCode}` : 'untracked'}${suggestion.expiryDate ? ` · exp ${suggestion.expiryDate}` : ''}`
-            : 'no stock on hand'}
-        </p>
+    <div className="flex items-center gap-3 py-1.5 pl-5">
+      <MapPin className="w-3 h-3 text-stone-400 shrink-0" />
+      <span className="flex-1 min-w-0 text-xs text-stone-500 truncate">{task.code}</span>
+      <span className="font-mono text-xs text-stone-400 shrink-0">{task.pickedQty}/{task.allocatedQty}</span>
+      <button
+        onClick={pick}
+        disabled={disabled || recordPick.isPending || task.remaining <= 0}
+        title={disabled ? 'Not your home warehouse' : undefined}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-nexgen-blue text-white text-xs font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+      >
+        <PackageCheck className="w-3 h-3" /> Pick {task.remaining}
+      </button>
+    </div>
+  );
+};
+
+interface PickLineRowProps {
+  line: PickQueueLine;
+  orderId: string;
+  tasks: PickTask[];
+  tasksLoading: boolean;
+  canPick: boolean;
+  homeWarehouseId: number | null;
+  isWarehouseRole: boolean;
+}
+
+/** One order line, grouped line → warehouse → bin: each allocated bin is its
+ *  own directed pick task (PickTaskRow) so the operator is told exactly where
+ *  to pick and the recorded pick decrements that exact bin. */
+const PickLineRow: React.FC<PickLineRowProps> = ({
+  line, orderId, tasks, tasksLoading, canPick, homeWarehouseId, isWarehouseRole,
+}) => {
+  const remaining = Math.max(line.quantity - line.picked, 0);
+  const done = remaining === 0;
+
+  const byWarehouse = useMemo(() => {
+    const groups = new Map<number, { warehouseCode: string; tasks: PickTask[] }>();
+    for (const t of tasks) {
+      const g = groups.get(t.warehouseId) ?? { warehouseCode: t.warehouseCode, tasks: [] };
+      g.tasks.push(t);
+      groups.set(t.warehouseId, g);
+    }
+    return [...groups.entries()].sort((a, b) => a[0] - b[0]);
+  }, [tasks]);
+
+  return (
+    <div className="py-3">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-stone-800 truncate">{line.productName}</p>
+          <p className="text-xs text-stone-400 font-mono">{line.productSku}</p>
+        </div>
+        <div className="text-right shrink-0 w-20">
+          <span className="font-mono text-sm text-stone-900">{line.picked}</span>
+          <span className="font-mono text-sm text-stone-400">/{line.quantity}</span>
+        </div>
+        <div className="shrink-0 w-28 text-right">
+          {done && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700">
+              <Check className="w-3 h-3" /> Picked
+            </span>
+          )}
+        </div>
       </div>
-      <div className="text-right shrink-0 w-20">
-        <span className="font-mono text-sm text-stone-900">{line.picked}</span>
-        <span className="font-mono text-sm text-stone-400">/{line.quantity}</span>
-      </div>
-      <div className="shrink-0 w-28 text-right">
-        {done ? (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700">
-            <Check className="w-3 h-3" /> Picked
-          </span>
+      {!done && (
+        tasksLoading ? (
+          <p className="pl-5 pt-1 text-xs text-stone-400">loading pick tasks…</p>
+        ) : byWarehouse.length === 0 ? (
+          <p className="pl-5 pt-1 text-xs text-amber-600">No allocated bin for this line yet.</p>
         ) : (
-          <button
-            onClick={pickAll}
-            disabled={!canPick || recordPick.isPending}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-nexgen-blue text-white text-xs font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <PackageCheck className="w-3.5 h-3.5" /> Pick {pickQty > 0 ? pickQty : remaining}
-          </button>
-        )}
-      </div>
+          <div className="mt-1">
+            {byWarehouse.map(([warehouseId, group]) => (
+              <div key={warehouseId}>
+                {byWarehouse.length > 1 && (
+                  <p className="pl-5 text-[11px] font-medium text-stone-400 uppercase tracking-wide">{group.warehouseCode}</p>
+                )}
+                {group.tasks.map((t) => (
+                  <PickTaskRow
+                    key={t.locationId}
+                    orderId={orderId}
+                    task={t}
+                    disabled={!canPick || (isWarehouseRole && warehouseId !== homeWarehouseId)}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        )
+      )}
     </div>
   );
 };
@@ -113,10 +149,23 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
   const { addToast } = useToasts();
   const { profile } = useAuth();
   const homeWarehouseId = profile?.home_warehouse_id ?? null;
+  const isWarehouseRole = profile?.role === 'Warehouse';
   // Read the order LIVE from the shared pick-queue cache so progress updates as
   // picks land (useRecordPick invalidates ['pick_queue']).
   const { data: orders } = usePickQueue();
   const order = (orders ?? []).find((o) => o.orderId === orderId) ?? null;
+  // Directed, per-bin pick tasks — the same allocation the route and the pick
+  // slip read, so the panel names the exact bin the recorded pick decrements.
+  const { data: pickTasks, isLoading: tasksLoading } = useOrderPickTasks(orderId);
+  const tasksByLine = useMemo(() => {
+    const map = new Map<number, PickTask[]>();
+    for (const t of pickTasks ?? []) {
+      const list = map.get(t.orderItemId);
+      if (list) list.push(t);
+      else map.set(t.orderItemId, [t]);
+    }
+    return map;
+  }, [pickTasks]);
 
   const updateStatus = useUpdateOrderStatus();
   const pickSlip = useGeneratePickSlip();
@@ -223,7 +272,16 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
           />
           <div className="divide-y divide-stone-100">
           {order.lines.map((line) => (
-            <PickLineRow key={line.orderItemId} line={line} canPick={canPick} />
+            <PickLineRow
+              key={line.orderItemId}
+              line={line}
+              orderId={order.orderId}
+              tasks={tasksByLine.get(line.orderItemId) ?? []}
+              tasksLoading={tasksLoading}
+              canPick={canPick}
+              homeWarehouseId={homeWarehouseId}
+              isWarehouseRole={isWarehouseRole}
+            />
           ))}
           </div>
         </div>

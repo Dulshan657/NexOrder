@@ -4,10 +4,13 @@ import {
   recordPick,
   generatePickSlip,
   generateDispatchAdvice,
+  type PickQueueOrder,
+  type PickTask,
 } from '@/services/supabase/pickService'
 import { updateOrderStatus } from '@/services/supabase/orderService'
 import type { OrderStatus } from '@/types'
 import { orderDocumentKeys } from './useOrderDocuments'
+import { pickTaskKeys } from './useOrderPickTasks'
 
 export const pickKeys = {
   queue: ['pick_queue'] as const,
@@ -20,16 +23,55 @@ export function usePickQueue() {
   })
 }
 
+interface RecordPickVariables {
+  /** Needed to target the right ['pick-tasks', orderId] / queue-line cache
+   *  entries surgically — record-pick itself is scoped by orderItemId alone. */
+  orderId: string
+  orderItemId: number
+  pickedQty: number
+  locationId?: number
+}
+
 export function useRecordPick() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ orderItemId, pickedQty, locationId }: { orderItemId: number; pickedQty: number; locationId?: number }) =>
+    mutationFn: ({ orderItemId, pickedQty, locationId }: RecordPickVariables) =>
       recordPick(orderItemId, pickedQty, locationId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: pickKeys.queue })
-      qc.invalidateQueries({ queryKey: ['orders'] })
-      qc.invalidateQueries({ queryKey: ['inventory_balances'] })
-      qc.invalidateQueries({ queryKey: ['products'] })
+    // Directed picking hits one bin at a time (one task, one Pick button) —
+    // a broad invalidation here refetches every row's data and re-renders the
+    // whole pick workspace, which drops fast clicks. Patch the two caches that
+    // actually changed instead, and only fall back to a real refetch when the
+    // pick moved the line or the order across a status boundary.
+    onSuccess: (result, { orderId, orderItemId, pickedQty, locationId }) => {
+      if (locationId != null) {
+        qc.setQueryData<PickTask[]>(pickTaskKeys.forOrder(orderId), (tasks) =>
+          (tasks ?? [])
+            .map((t) =>
+              t.orderItemId === orderItemId && t.locationId === locationId
+                ? { ...t, pickedQty: t.pickedQty + pickedQty, remaining: Math.max(t.remaining - pickedQty, 0) }
+                : t,
+            )
+            .filter((t) => t.remaining > 0),
+        )
+      }
+
+      qc.setQueryData<PickQueueOrder[]>(pickKeys.queue, (orders) =>
+        (orders ?? []).map((o) =>
+          o.orderId !== orderId
+            ? o
+            : {
+                ...o,
+                lines: o.lines.map((l) =>
+                  l.orderItemId === orderItemId ? { ...l, picked: l.picked + pickedQty } : l,
+                ),
+              },
+        ),
+      )
+
+      if (result.line_fully_picked || result.order_fully_picked) {
+        qc.invalidateQueries({ queryKey: pickKeys.queue })
+        qc.invalidateQueries({ queryKey: ['orders'] })
+      }
     },
   })
 }

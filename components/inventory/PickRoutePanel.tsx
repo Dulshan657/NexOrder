@@ -14,8 +14,20 @@ interface PickRoutePanelProps {
 export function PickRoutePanel({ warehouseId, orderIds }: PickRoutePanelProps) {
   const { data, isLoading } = usePickRoute(warehouseId, orderIds)
 
+  // Reserve the loaded card's footprint while the route computes so the Pick
+  // buttons below never reflow mid-click (ONBOARDING-AUDIT: the panel used to
+  // swap a one-line placeholder for a tall card, shifting fast clicks).
   if (isLoading) {
-    return <p className="text-xs text-stone-400 py-2">computing route…</p>
+    return (
+      <div className="my-2 p-3 rounded-lg bg-stone-50 border border-stone-100 text-xs min-h-[84px] animate-pulse">
+        <div className="flex items-center justify-between mb-2">
+          <div className="h-3 w-32 rounded bg-stone-200" />
+          <div className="h-3 w-10 rounded bg-stone-200" />
+        </div>
+        <div className="h-3 w-full rounded bg-stone-200 mb-1.5" />
+        <div className="h-3 w-2/3 rounded bg-stone-200" />
+      </div>
+    )
   }
 
   // Legacy warehouses (no layout) show nothing. But a route with only off-route

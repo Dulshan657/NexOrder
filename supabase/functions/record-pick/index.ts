@@ -56,10 +56,19 @@ serve(async (req: Request) => {
 
     // Resolve the warehouse this pick happens at: explicit > the picker's home
     // warehouse > the default warehouse. Warehouse staff may only pick at their
-    // own site.
+    // own site — but a directed pick's locationId is a BIN (racked warehouses),
+    // never equal to the warehouse id itself, so the guard must resolve the
+    // bin's ROOT warehouse (mig 00040) before comparing to home_warehouse_id.
+    // Comparing the raw bin id directly (as before) 403'd every racked pick.
     let locationId = parsed.data.locationId ?? auth.profile.home_warehouse_id ?? null
-    if (auth.role === 'Warehouse' && parsed.data.locationId && parsed.data.locationId !== auth.profile.home_warehouse_id) {
-      throw new EdgeFunctionError('FORBIDDEN', 'You can only pick at your own warehouse')
+    if (auth.role === 'Warehouse' && parsed.data.locationId) {
+      const { data: rootData } = await admin.rpc('inv_root_warehouse', {
+        p_location_id: parsed.data.locationId,
+      })
+      const pickWarehouseId = typeof rootData === 'number' ? rootData : parsed.data.locationId
+      if (pickWarehouseId !== auth.profile.home_warehouse_id) {
+        throw new EdgeFunctionError('FORBIDDEN', 'You can only pick at your own warehouse')
+      }
     }
     if (locationId == null) {
       const { data: def } = await admin

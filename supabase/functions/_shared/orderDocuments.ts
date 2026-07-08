@@ -76,7 +76,8 @@ export async function loadOrderForDoc(
     })
   }
 
-  // Default warehouse code for the FIFO pick-from suggestion on the pick slip.
+  // Default warehouse code — the no-allocation last resort for the pick-from
+  // suggestion (kept only for orders/lines with nothing reserved yet).
   const { data: wh } = await admin
     .from('locations')
     .select('code')
@@ -86,19 +87,65 @@ export async function loadOrderForDoc(
     .maybeSingle()
   const defaultLoc = (wh as any)?.code ?? 'MAIN'
 
+  // Un-picked lines source "Pick from" from the SAME allocation netting the
+  // route (recommend-pick-route) and the pick-task panel (order-pick-tasks)
+  // read, instead of guessing "the first warehouse" — so the pick slip names
+  // the bin(s) the operator will actually be directed to. Only fetched when at
+  // least one un-picked line will reach that branch below (dispatch-advice
+  // calls only reach here once every line is already picked, so this stays a
+  // no-op for that path).
+  const willNeedAlloc = ((items ?? []) as any[]).some(
+    (it) => locationId == null && !pickByItem.has(it.id),
+  )
+  const allocBinsByProduct = new Map<number, Array<{ code: string; qtyBase: number }>>()
+  if (willNeedAlloc) {
+    const { data: allocRows } = await admin.rpc('wie_order_alloc_bins', { p_order_id: orderId })
+    for (const r of (allocRows ?? []) as any[]) {
+      const list = allocBinsByProduct.get(r.product_id) ?? []
+      list.push({ code: r.code, qtyBase: Number(r.qty_base) || 0 })
+      allocBinsByProduct.set(r.product_id, list)
+    }
+  }
+
   const lines: DocLine[] = ((items ?? []) as any[])
     // For a per-warehouse dispatch advice, drop lines this site didn't pick.
     .filter((it) => locationId == null || pickByItem.has(it.id))
-    .map((it) => {
+    .flatMap((it): DocLine[] => {
       const pk = pickByItem.get(it.id)
-      return {
-        productName: it.product_name,
-        productSku: it.product_sku,
-        ordered: Number(it.quantity),
-        picked: pk?.picked ?? 0,
-        location: pk?.location ?? defaultLoc,
-        batch: pk?.batch ?? null,
+      if (pk) {
+        return [{
+          productName: it.product_name,
+          productSku: it.product_sku,
+          ordered: Number(it.quantity),
+          picked: pk.picked,
+          location: pk.location ?? defaultLoc,
+          batch: pk.batch,
+        }]
       }
+
+      const bins = allocBinsByProduct.get(it.product_id) ?? []
+      if (bins.length === 0) {
+        return [{
+          productName: it.product_name,
+          productSku: it.product_sku,
+          ordered: Number(it.quantity),
+          picked: 0,
+          location: defaultLoc,
+          batch: null,
+        }]
+      }
+
+      // One row per allocated bin — SKU/name/ordered-qty on the first row only
+      // (buildOrderDocPdf loops data.lines and prints every row, so a second
+      // "ordered" value here would double the pick-slip's unit total).
+      return bins.map((bin, i) => ({
+        productName: i === 0 ? it.product_name : '',
+        productSku: i === 0 ? it.product_sku : '',
+        ordered: i === 0 ? Number(it.quantity) : 0,
+        picked: 0,
+        location: `${bin.code} (${bin.qtyBase})`,
+        batch: null,
+      }))
     })
 
   return {

@@ -26,6 +26,21 @@ export interface GenerateDocResult {
   signedUrl: string | null
 }
 
+/** One directed, per-bin pick task — the actionable unit the pick workspace
+ *  renders and records picks against (see order-pick-tasks Edge Function). */
+export interface PickTask {
+  orderItemId: number
+  productId: number
+  warehouseId: number
+  warehouseCode: string
+  locationId: number
+  code: string
+  graphNodeId: number | null
+  allocatedQty: number
+  pickedQty: number
+  remaining: number
+}
+
 // Orders that the warehouse acts on: processed (ready to pick), picked, packed.
 export async function getPickQueue(): Promise<PickQueueOrder[]> {
   const { data, error } = await supabase
@@ -68,6 +83,18 @@ export async function recordPick(
   )
   if (error) throw error
   return data!
+}
+
+// Directed per-bin pick tasks for one order — the same allocation netting the
+// route and the pick slip use, split into per-line-per-bin tasks with a
+// remaining qty (see order-pick-tasks Edge Function / _shared/wie/pickTasks.ts).
+export async function getOrderPickTasks(orderId: string): Promise<PickTask[]> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; tasks: PickTask[] }>(
+    'order-pick-tasks',
+    { body: { orderId } },
+  )
+  if (error) throw error
+  return data?.tasks ?? []
 }
 
 export async function generatePickSlip(orderId: string): Promise<GenerateDocResult> {
