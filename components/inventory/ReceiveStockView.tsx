@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Product, User, PutawayLineRecommendation } from '../../types';
+import { UserRole } from '../../types';
 import { useReceiveStock } from '../../hooks/queries/useReceiveStock';
 import { useRecentReceipts } from '../../hooks/queries/useInventoryBalances';
 import { useSuppliers } from '../../hooks/queries/useSuppliers';
-import { useRecommendPutaway } from '../../hooks/queries/usePutawayRecommendation';
+import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import type { ReceiptHeader, ReceiptLine } from '../../services/supabase/receivingService';
 import { useToasts } from '../../hooks/useToasts';
 import { PutawayPanel } from './PutawayPanel';
 import {
   PackagePlus, Plus, Trash2, Search, X, Boxes, History, Clock,
-  Truck, FileText, CalendarDays, UserRound, Check, ChevronDown,
+  Truck, FileText, CalendarDays, UserRound, Check, ChevronDown, Warehouse,
 } from 'lucide-react';
 
 /** Compact relative-time label ("just now", "3h ago", "2d ago"). */
@@ -206,11 +207,28 @@ const newDraft = (): DraftLine => ({
 
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
+/**
+ * Default destination warehouse for a goods receipt: the user's home site when
+ * it is active, otherwise the first active warehouse, else null (no active
+ * site — the server routes to the system default). Unlike the layout viewer's
+ * resolver, receiving does not care whether a site is racked or published.
+ */
+export function resolveReceiveDestination(
+  activeWarehouses: readonly { id: number }[],
+  homeWarehouseId: number | undefined,
+): number | null {
+  if (activeWarehouses.length === 0) return null;
+  if (homeWarehouseId != null && activeWarehouses.some((w) => w.id === homeWarehouseId)) {
+    return homeWarehouseId;
+  }
+  return activeWarehouses[0].id;
+}
+
 const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUser }) => {
   const { addToast } = useToasts();
   const receive = useReceiveStock();
-  const recommend = useRecommendPutaway();
   const { data: supplierRows } = useSuppliers();
+  const { data: warehouseRows } = useWarehouses();
 
   // Engine putaway recommendations for the most recent receipt (layout warehouses).
   const [putaway, setPutaway] = useState<{ warehouseId: number; recommendations: PutawayLineRecommendation[] } | null>(null);
@@ -220,13 +238,46 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
     [supplierRows],
   );
 
+  // Destination warehouses — only active sites can receive stock.
+  const activeWarehouses = useMemo(
+    () => (warehouseRows ?? []).filter((w) => w.isActive),
+    [warehouseRows],
+  );
+  // Warehouse-role staff are pinned to their home site server-side. We never send
+  // a location_id for them — the server defaults to their home_warehouse_id — and
+  // show a read-only label instead of a picker (any other destination is rejected).
+  const isLocked = currentUser.role === UserRole.WAREHOUSE;
+
   // ── Receipt header ─────────────────────────────────────────────────────────
   const [supplierId, setSupplierId] = useState<number | null>(null);
   const [supplierName, setSupplierName] = useState('');
   const [reference, setReference] = useState('');
   const [receivedDate, setReceivedDate] = useState(todayIso());
+  // Destination warehouse the goods land in. Defaults to the user's home site
+  // (server applies the same fallback when omitted); null until warehouses load.
+  const [destinationId, setDestinationId] = useState<number | null>(null);
   // "Received by" is always the signed-in user — the server stamps received_by
   // with the actor when the client omits it.
+
+  // Seed the destination once the warehouse list arrives (prefer the home site,
+  // else the first active site) and re-resolve if the chosen site later drops out
+  // of the active list (e.g. deactivated in another tab). Locked users don't pick.
+  useEffect(() => {
+    if (isLocked || activeWarehouses.length === 0) return;
+    const stillValid = destinationId != null && activeWarehouses.some((w) => w.id === destinationId);
+    if (stillValid) return;
+    setDestinationId(resolveReceiveDestination(activeWarehouses, currentUser.homeWarehouseId));
+  }, [activeWarehouses, currentUser.homeWarehouseId, destinationId, isLocked]);
+
+  const homeName = useMemo(
+    () => activeWarehouses.find((w) => w.id === currentUser.homeWarehouseId)?.name,
+    [activeWarehouses, currentUser.homeWarehouseId],
+  );
+  // Where the stock will actually land: the home site for locked users (server
+  // routes there), otherwise the operator's selection.
+  const destName = isLocked
+    ? homeName
+    : activeWarehouses.find((w) => w.id === destinationId)?.name;
 
   // ── Receipt lines ──────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
@@ -269,16 +320,22 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   );
 
   const hasSupplier = supplierId != null || supplierName.trim() !== '';
-  const canSubmit = hasSupplier && validLines.length > 0 && !receive.isPending;
+  // Locked users always have a server-derived destination (their home site); for
+  // everyone else a destination must be resolved unless no site is active (then
+  // the server routes to the default site).
+  const hasDestination = isLocked || destinationId != null || activeWarehouses.length === 0;
+  const canSubmit = hasSupplier && hasDestination && validLines.length > 0 && !receive.isPending;
 
   const submit = async () => {
-    if (!hasSupplier || validLines.length === 0) return;
+    if (!hasSupplier || !hasDestination || validLines.length === 0) return;
     const header: ReceiptHeader = {
       ...(supplierId != null
         ? { supplier_id: supplierId }
         : { supplier_name: supplierName.trim() }),
       ...(reference.trim() ? { reference: reference.trim() } : {}),
       ...(receivedDate ? { received_date: receivedDate } : {}),
+      // Locked users omit location_id so the server routes to their home site.
+      ...(!isLocked && destinationId != null ? { location_id: destinationId } : {}),
     };
     const lines: ReceiptLine[] = validLines.map(l => ({
       product_id: l.productId as number,
@@ -296,24 +353,12 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       setSupplierId(null);
       setSupplierName('');
 
-      // If the destination warehouse has a published layout, fetch putaway
-      // recommendations so the operator can slot the stock into bins.
+      // Putaway tasks are generated server-side by receive-stock (so the CSV
+      // importer and every other arrival path get them too). Render the panel
+      // straight from the receipt's response — no extra round-trip.
       setPutaway(null);
-      if (result.location_id) {
-        try {
-          const putawayLines = lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity }));
-          const res = await recommend.mutateAsync({
-            warehouseId: result.location_id,
-            lines: putawayLines,
-            goodsReceiptId: result.receipt_id,
-          });
-          if (res.mode === 'engine' && res.recommendations.length > 0) {
-            setPutaway({ warehouseId: result.location_id, recommendations: res.recommendations });
-          }
-        } catch {
-          // Putaway is advisory — a failure here must not break receiving.
-          addToast('Stock received, but putaway suggestions could not be loaded.', 'info');
-        }
+      if (result.location_id && result.putaway?.mode === 'engine' && result.putaway.recommendations.length > 0) {
+        setPutaway({ warehouseId: result.location_id, recommendations: result.putaway.recommendations });
       }
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Failed to receive stock', 'error');
@@ -330,14 +375,14 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
         <div>
           <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Receive Stock</h1>
           <p className="text-xs text-stone-500 mt-0.5">
-            Record goods arriving into the Main Warehouse. Choose the supplier, then add what arrived.
+            Record goods arriving into {destName ?? 'the selected warehouse'}. Choose the supplier, then add what arrived.
           </p>
         </div>
       </div>
 
       {/* Receipt header — who supplied this delivery */}
       <div className="glass-card rounded-xl p-4 sm:p-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="lg:col-span-2">
             <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
               Supplier <span className="text-red-500">*</span>
@@ -366,6 +411,39 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               placeholder="Invoice / docket / PO no."
               className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
             />
+          </div>
+
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
+              <Warehouse className="w-3.5 h-3.5 text-stone-400" /> Destination
+            </label>
+            {isLocked ? (
+              <>
+                <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700">
+                  {homeName ?? 'Your site'}
+                </div>
+                <p className="text-xs text-stone-400 mt-1">You can only receive at your site.</p>
+              </>
+            ) : activeWarehouses.length === 0 ? (
+              <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-500">
+                No active warehouse — stock lands at the default site.
+              </div>
+            ) : activeWarehouses.length === 1 ? (
+              <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700">
+                {activeWarehouses[0].name}
+              </div>
+            ) : (
+              <select
+                value={destinationId ?? ''}
+                onChange={(e) => setDestinationId(e.target.value === '' ? null : Number(e.target.value))}
+                aria-label="Destination warehouse"
+                className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+              >
+                {activeWarehouses.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3 lg:col-span-1 lg:grid-cols-1 lg:gap-4">
@@ -434,7 +512,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
           <p className="text-sm font-medium text-stone-700">Start a goods receipt</p>
           <p className="text-xs text-stone-400 mt-1 max-w-sm mx-auto">
             Pick the supplier above, then search a product to add a line, set the received quantity
-            (and an optional lot code &amp; expiry), and receive it into the Main Warehouse.
+            (and an optional lot code &amp; expiry), and receive it into {destName ?? 'the selected warehouse'}.
           </p>
         </div>
       ) : (

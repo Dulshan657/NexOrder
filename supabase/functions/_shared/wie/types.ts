@@ -268,3 +268,23 @@ export interface PutawayRecommendation {
   alternatives: CandidateBreakdown[]
   explanation: PutawayExplanation
 }
+
+/** One portion of a putaway plan: a quantity destined for a single bin, or the
+ *  residual (locationId null) that no eligible bin could hold. A large line spans
+ *  several allocations; a line that fits one bin yields exactly one. */
+export interface PutawayAllocation {
+  /** Target bin, or null for the residual left at root for manual placement. */
+  locationId: number | null
+  /** Quantity, in BASE units, going to this bin (or left unplaced). */
+  quantity: number
+  alternatives: CandidateBreakdown[]
+  explanation: PutawayExplanation
+  /** True only for the residual portion no bin had capacity for. */
+  needsManualPlacement: boolean
+}
+
+/** A multi-bin putaway plan — the quantities in `allocations` sum to the
+ *  requested quantity (placed portions + any residual). */
+export interface PutawayPlan {
+  allocations: PutawayAllocation[]
+}

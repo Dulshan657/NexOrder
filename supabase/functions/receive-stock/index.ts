@@ -18,6 +18,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
+import { generatePutawayTasks, type GeneratePutawayResult } from '../_shared/putawayTasks.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
@@ -157,8 +158,27 @@ serve(async (req: Request) => {
       metadata: { result },
     })
 
+    // Generate putaway tasks server-side. This is what makes putaway work for
+    // EVERY receipt path — the receiving screen AND the CSV opening-stock import
+    // both land here. Putaway is advisory: a failure must never fail the receipt,
+    // and non-racked/unpublished warehouses simply no-op (mode 'legacy').
+    let putaway: GeneratePutawayResult | null = null
+    const destLocationId = (result as any)?.location_id as number | undefined
+    if (destLocationId) {
+      try {
+        putaway = await generatePutawayTasks(admin, {
+          warehouseId: destLocationId,
+          lines: lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
+          actorId: auth.userId,
+          goodsReceiptId: (result as any)?.receipt_id as number | undefined,
+        })
+      } catch (_e) {
+        putaway = null
+      }
+    }
+
     return new Response(
-      JSON.stringify({ ok: true, result }),
+      JSON.stringify({ ok: true, result, putaway }),
       { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   } catch (e) {

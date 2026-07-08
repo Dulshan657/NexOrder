@@ -23,6 +23,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
+import { generatePutawayTasks } from '../_shared/putawayTasks.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
@@ -155,6 +156,23 @@ serve(async (req: Request) => {
       reason,
       metadata: { locationId, batchId: batchId ?? null, mode, movementType: effectiveMovementType, qtyDelta: effectiveDelta },
     })
+
+    // Found stock: a positive adjustment that lands on a racked warehouse ROOT
+    // needs putting away, same as a receipt. generatePutawayTasks self-skips when
+    // locationId is a specific bin or a non-racked warehouse (mode 'legacy'), so a
+    // bin-targeted adjustment — already placed — produces no task. Advisory: never
+    // fail the adjustment on a putaway error.
+    if (effectiveDelta > 0) {
+      try {
+        await generatePutawayTasks(admin, {
+          warehouseId: locationId,
+          lines: [{ product_id: productId, quantity: effectiveDelta }],
+          actorId: auth.userId,
+        })
+      } catch (_e) {
+        // Advisory — swallow.
+      }
+    }
 
     return new Response(
       JSON.stringify({ ok: true, result }),

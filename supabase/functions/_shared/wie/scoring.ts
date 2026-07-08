@@ -42,6 +42,16 @@ export interface FilterResult {
   softByLocation: Map<number, RuleTrigger[]>
 }
 
+export interface FilterOptions {
+  /** How capacity/weight limits gate a bin.
+   *  - 'reject' (default): a bin that can't hold the WHOLE quantity is removed —
+   *    the single-bin recommendation path (recommendPutaway).
+   *  - 'fill': keep bins that have ANY headroom so the planner can split a line
+   *    across several. Slot/weight become fill constraints applied downstream
+   *    (planPutaway), not hard rejects. All other eligibility gates still apply. */
+  capacityMode?: 'reject' | 'fill'
+}
+
 interface RejectionAccumulator {
   ruleId: number | null
   code: string
@@ -51,7 +61,8 @@ interface RejectionAccumulator {
 }
 
 /** Stage 1 — filter invalid locations, capturing structured rejection reasons. */
-export function filterCandidates(request: PutawayRequest): FilterResult {
+export function filterCandidates(request: PutawayRequest, options: FilterOptions = {}): FilterResult {
+  const capacityMode = options.capacityMode ?? 'reject'
   const need = requiredSlots(request)
   const needWeight = requiredWeight(request)
   const valid: CandidateBin[] = []
@@ -86,8 +97,10 @@ export function filterCandidates(request: PutawayRequest): FilterResult {
       continue
     }
 
-    // Built-in: over soft capacity.
-    if (bin.capacitySlots !== null && bin.usedSlots + need > bin.capacitySlots + 1e-6) {
+    // Built-in: over soft capacity. In 'fill' mode a partially-full bin is kept
+    // (the planner fills it up to its headroom and spills the rest elsewhere);
+    // a bin with zero headroom gets no allocation downstream, so it's harmless.
+    if (capacityMode === 'reject' && bin.capacitySlots !== null && bin.usedSlots + need > bin.capacitySlots + 1e-6) {
       const headroom = Math.max(0, bin.capacitySlots - bin.usedSlots)
       reject('capacity', null, 'capacity', 'Not enough capacity', bin,
         `needs ${need.toFixed(2)} slots, ${headroom.toFixed(2)} free`)
@@ -96,8 +109,9 @@ export function filterCandidates(request: PutawayRequest): FilterResult {
 
     // Built-in: over weight capacity (fails OPEN when either limit or SKU weight
     // is unknown). Enforced only where both the bin has a limit AND the SKU has a
-    // weight on file (product_wms_attributes.weight_kg).
-    if (bin.weightCapacityKg !== null && needWeight !== null && bin.usedWeightKg + needWeight > bin.weightCapacityKg + 1e-6) {
+    // weight on file (product_wms_attributes.weight_kg). Relaxed in 'fill' mode
+    // for the same reason as slot capacity above.
+    if (capacityMode === 'reject' && bin.weightCapacityKg !== null && needWeight !== null && bin.usedWeightKg + needWeight > bin.weightCapacityKg + 1e-6) {
       const wHeadroom = Math.max(0, bin.weightCapacityKg - bin.usedWeightKg)
       reject('weight', null, 'weight', 'Over weight limit', bin,
         `needs ${needWeight.toFixed(1)} kg, ${wHeadroom.toFixed(1)} kg free`)

@@ -15,6 +15,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
+import { generatePutawayTasks } from '../_shared/putawayTasks.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -81,6 +82,20 @@ serve(async (req: Request) => {
       after: { productId, fromLocationId, toLocationId, qty, reason: reason ?? null },
       metadata: { result },
     })
+
+    // A transfer INTO a racked warehouse root (e.g. DC→DC) leaves stock at
+    // staging and needs putting away. generatePutawayTasks self-skips when
+    // toLocationId is a specific bin (within-warehouse re-slotting) or a non-
+    // racked warehouse. Advisory: never fail the transfer on a putaway error.
+    try {
+      await generatePutawayTasks(admin, {
+        warehouseId: toLocationId,
+        lines: [{ product_id: productId, quantity: qty }],
+        actorId: auth.userId,
+      })
+    } catch (_e) {
+      // Advisory — swallow.
+    }
 
     return new Response(JSON.stringify({ ok: true, result }), {
       status: 200,
