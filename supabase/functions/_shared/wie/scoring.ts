@@ -30,6 +30,11 @@ function requiredSlots(request: PutawayRequest): number {
   return request.quantity * request.sku.sizeFactor
 }
 
+/** Weight this putaway adds, kg; null when the SKU has no weight on file. */
+function requiredWeight(request: PutawayRequest): number | null {
+  return request.sku.weightKg === null ? null : request.quantity * request.sku.weightKg
+}
+
 export interface FilterResult {
   valid: CandidateBin[]
   hardFilters: HardFilterReason[]
@@ -48,6 +53,7 @@ interface RejectionAccumulator {
 /** Stage 1 — filter invalid locations, capturing structured rejection reasons. */
 export function filterCandidates(request: PutawayRequest): FilterResult {
   const need = requiredSlots(request)
+  const needWeight = requiredWeight(request)
   const valid: CandidateBin[] = []
   const softByLocation = new Map<number, RuleTrigger[]>()
   const rejections = new Map<string, RejectionAccumulator>()
@@ -85,6 +91,16 @@ export function filterCandidates(request: PutawayRequest): FilterResult {
       const headroom = Math.max(0, bin.capacitySlots - bin.usedSlots)
       reject('capacity', null, 'capacity', 'Not enough capacity', bin,
         `needs ${need.toFixed(2)} slots, ${headroom.toFixed(2)} free`)
+      continue
+    }
+
+    // Built-in: over weight capacity (fails OPEN when either limit or SKU weight
+    // is unknown). Enforced only where both the bin has a limit AND the SKU has a
+    // weight on file (product_wms_attributes.weight_kg).
+    if (bin.weightCapacityKg !== null && needWeight !== null && bin.usedWeightKg + needWeight > bin.weightCapacityKg + 1e-6) {
+      const wHeadroom = Math.max(0, bin.weightCapacityKg - bin.usedWeightKg)
+      reject('weight', null, 'weight', 'Over weight limit', bin,
+        `needs ${needWeight.toFixed(1)} kg, ${wHeadroom.toFixed(1)} kg free`)
       continue
     }
 

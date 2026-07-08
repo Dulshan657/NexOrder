@@ -3,12 +3,18 @@ import { planReslot, type ReslotDemand } from '../../supabase/functions/_shared/
 import { DEFAULT_WEIGHTS } from '../../supabase/functions/_shared/wie/types'
 import type { CandidateBin, SkuProfile } from '../../supabase/functions/_shared/wie/types'
 
-function bin(locationId: number, code: string, opts: { capacity?: number | null; used?: number; dist?: number } = {}): CandidateBin {
+function bin(
+  locationId: number,
+  code: string,
+  opts: { capacity?: number | null; used?: number; dist?: number; weightCap?: number | null; usedWeight?: number } = {},
+): CandidateBin {
   return {
     locationId, code,
     zoneId: null, zoneTag: null,
     capacitySlots: opts.capacity === undefined ? null : opts.capacity,
     usedSlots: opts.used ?? 0,
+    weightCapacityKg: opts.weightCap === undefined ? null : opts.weightCap,
+    usedWeightKg: opts.usedWeight ?? 0,
     graphNodeId: 1,
     accessOffsetM: 0,
     hasSameProduct: false,
@@ -18,10 +24,10 @@ function bin(locationId: number, code: string, opts: { capacity?: number | null;
   }
 }
 
-function sku(productId: number, opts: { sizeFactor?: number; velocity?: 'A' | 'B' | 'C' } = {}): SkuProfile {
+function sku(productId: number, opts: { sizeFactor?: number; velocity?: 'A' | 'B' | 'C'; weightKg?: number } = {}): SkuProfile {
   return {
     productId, code: `P${productId}`, name: `Product ${productId}`,
-    sizeFactor: opts.sizeFactor ?? 1, category: null,
+    sizeFactor: opts.sizeFactor ?? 1, weightKg: opts.weightKg ?? null, category: null,
     hazardClass: null, tempMin: null, tempMax: null, handlingType: null, stackable: null,
     velocityClass: opts.velocity ?? null,
   }
@@ -97,6 +103,31 @@ describe('planReslot', () => {
     expect(plan.moves.reduce((s, m) => s + m.qty, 0)).toBe(1000)
     expect(plan.overflow).toHaveLength(0)
     expect(plan.hasUncapped).toBe(true)
+  })
+
+  it('splits by weight when a bin hits its weight limit before its slot limit', () => {
+    // 100 slots but only 30 kg; each unit is 10 kg → only 3 fit by weight.
+    const demands: ReslotDemand[] = [{ sku: sku(1, { weightKg: 10 }), sources: [{ locationId: 99, qty: 10 }] }]
+    const plan = planReslot({
+      demands,
+      candidates: [bin(10, 'HEAVY', { capacity: 100, weightCap: 30, dist: 5 }), bin(11, 'LIGHT', { capacity: 100, weightCap: 1000, dist: 8 })],
+      rules: [], compatibility: [], weights: W,
+    })
+    const byBin = Object.fromEntries(plan.moves.map((m) => [m.toLocationId, m.qty]))
+    expect(byBin[10]).toBe(3) // 3 × 10 kg = 30 kg fills the weight-limited bin
+    expect(byBin[11]).toBe(7) // remainder spills to the high-weight bin
+    expect(plan.overflow).toHaveLength(0)
+  })
+
+  it('ignores weight when the SKU has no weight on file (fails open)', () => {
+    const demands: ReslotDemand[] = [{ sku: sku(1), sources: [{ locationId: 99, qty: 10 }] }]
+    const plan = planReslot({
+      demands,
+      candidates: [bin(10, 'N1', { capacity: 100, weightCap: 5, dist: 5 })], // tiny weight cap, but SKU weight null
+      rules: [], compatibility: [], weights: W,
+    })
+    expect(plan.moves.reduce((s, m) => s + m.qty, 0)).toBe(10) // all placed; weight not enforced
+    expect(plan.overflow).toHaveLength(0)
   })
 
   it('accounts for pack size in slot demand (sizeFactor)', () => {

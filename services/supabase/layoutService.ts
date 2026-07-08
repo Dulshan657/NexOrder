@@ -90,6 +90,7 @@ export interface SavePlacementInput {
     name: string
     capacity_slots?: number
     slot_kind?: 'pallet' | 'carton'
+    weight_capacity_kg?: number
     zone_profile_id?: number
     storage_type_id?: number
   }

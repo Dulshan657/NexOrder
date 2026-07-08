@@ -12,20 +12,31 @@ import type { LucideIcon } from 'lucide-react'
 import type { EditorTool } from './useLayoutEditorState'
 import { STORAGE_UNIT } from './labels'
 
+// Structural (non-storage) tools. Storage FORMS are rendered dynamically from the
+// catalogue between these and Erase, so every drawable form gets its own tool.
 const TOOLS: Array<{ tool: EditorTool; label: string; icon: LucideIcon }> = [
   { tool: 'select', label: 'Select', icon: MousePointer2 },
   { tool: 'walkway', label: 'Walkway', icon: Footprints },
   { tool: 'wall', label: 'Wall', icon: BrickWall },
   { tool: 'dock', label: 'Dock', icon: DoorOpen },
   { tool: 'lift', label: 'Lift', icon: ArrowUpDown },
-  { tool: 'rack', label: STORAGE_UNIT.singular, icon: Boxes },
-  { tool: 'erase', label: 'Erase', icon: Eraser },
 ]
+
+/** A drawable storage form shown as its own paint tool. */
+export interface ToolbarForm {
+  id: number
+  name: string
+  color?: string
+}
 
 interface LayoutToolbarProps {
   isDraft: boolean
   tool: EditorTool
   onSelectTool: (t: EditorTool) => void
+  /** Drawable storage forms (mig 00061); each becomes a coloured paint tool. */
+  forms: ToolbarForm[]
+  activeFormId?: number | null
+  onSelectForm: (id: number) => void
   onGenerate: () => void
   floorCount: number
   floor: number
@@ -47,7 +58,7 @@ const actionBtn =
   'inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50 btn-press'
 
 export function LayoutToolbar({
-  isDraft, tool, onSelectTool, onGenerate, floorCount, floor, onSetFloor,
+  isDraft, tool, onSelectTool, forms, activeFormId, onSelectForm, onGenerate, floorCount, floor, onSetFloor,
   dirty, saving, publishing, simulating, onSave, onPublish, onClone, onSimulate, onArchive, onImport,
 }: LayoutToolbarProps) {
   return (
@@ -73,6 +84,52 @@ export function LayoutToolbar({
               </button>
             )
           })}
+
+          {/* Storage forms — one coloured tool per drawable form. */}
+          {forms.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => onSelectTool('rack')}
+              aria-pressed={tool === 'rack'}
+              title={STORAGE_UNIT.singular}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors btn-press ${
+                tool === 'rack' ? 'bg-white text-emerald-700 shadow-sm ring-1 ring-emerald-500/40' : 'text-stone-600 hover:bg-white/70'
+              }`}
+            >
+              <Boxes className="h-4 w-4" strokeWidth={2} /> {STORAGE_UNIT.singular}
+            </button>
+          ) : (
+            forms.map((f) => {
+              const active = tool === 'rack' && activeFormId === f.id
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => onSelectForm(f.id)}
+                  aria-pressed={active}
+                  title={f.name}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors btn-press ${
+                    active ? 'bg-white text-emerald-700 shadow-sm ring-1 ring-emerald-500/40' : 'text-stone-600 hover:bg-white/70'
+                  }`}
+                >
+                  <span className="h-3 w-3 rounded-sm border border-black/10" style={{ backgroundColor: f.color ?? '#94a3b8' }} />
+                  {f.name}
+                </button>
+              )
+            })
+          )}
+
+          <button
+            type="button"
+            onClick={() => onSelectTool('erase')}
+            aria-pressed={tool === 'erase'}
+            title="Erase"
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors btn-press ${
+              tool === 'erase' ? 'bg-white text-emerald-700 shadow-sm ring-1 ring-emerald-500/40' : 'text-stone-600 hover:bg-white/70'
+            }`}
+          >
+            <Eraser className="h-4 w-4" strokeWidth={2} /> Erase
+          </button>
         </div>
       )}
 

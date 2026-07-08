@@ -47,6 +47,8 @@ function toCandidateBin(r: any): CandidateBin {
     zoneTag: r.zone_tag ?? null,
     capacitySlots: r.capacity_slots != null ? Number(r.capacity_slots) : null,
     usedSlots: Number(r.used_slots) || 0,
+    weightCapacityKg: r.weight_capacity_kg != null ? Number(r.weight_capacity_kg) : null,
+    usedWeightKg: Number(r.used_weight_kg) || 0,
     graphNodeId: r.graph_node_id ?? null,
     accessOffsetM: Number(r.access_offset_m) || 0,
     hasSameProduct: !!r.has_same_product,
@@ -135,10 +137,12 @@ serve(async (req: Request) => {
       const { data: p } = await admin.from('products').select('id, sku, name, size_factor, category').eq('id', productId).single()
       if (!p) return null
       const { data: attrs } = await admin.from('product_wms_attributes')
-        .select('hazard_class, temp_min, temp_max, handling_type, stackable').eq('product_id', productId).maybeSingle()
+        .select('hazard_class, temp_min, temp_max, handling_type, stackable, weight_kg').eq('product_id', productId).maybeSingle()
       const sku: SkuProfile = {
         productId, code: (p as any).sku, name: (p as any).name,
-        sizeFactor: Number((p as any).size_factor) || 1, category: (p as any).category ?? null,
+        sizeFactor: Number((p as any).size_factor) || 1,
+        weightKg: (attrs as any)?.weight_kg != null ? Number((attrs as any).weight_kg) : null,
+        category: (p as any).category ?? null,
         hazardClass: (attrs as any)?.hazard_class ?? null,
         tempMin: (attrs as any)?.temp_min != null ? Number((attrs as any).temp_min) : null,
         tempMax: (attrs as any)?.temp_max != null ? Number((attrs as any).temp_max) : null,

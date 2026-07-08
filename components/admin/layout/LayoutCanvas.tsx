@@ -21,9 +21,11 @@ interface LayoutCanvasProps {
   gridHeight: number
   /** clientRefs of bins to flag as problems (e.g. unreachable from a dock). */
   highlightRefs?: ReadonlySet<string>
+  /** storage_type_id → palette colour, so each form draws in its own colour. */
+  formColorById?: ReadonlyMap<number, string>
 }
 
-export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlightRefs }: LayoutCanvasProps) {
+export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlightRefs, formColorById }: LayoutCanvasProps) {
   const [zoom, setZoom] = useState(1)
   const painting = useRef(false)
   const cell = BASE_CELL * zoom
@@ -86,12 +88,16 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
           {floorPlacements.map((p: EditorPlacement) => {
             const selected = p.clientRef === state.selectedRef
             const problem = highlightRefs?.has(p.clientRef) ?? false
+            // Colour by storage form when known; draft (unsaved) bins render lighter.
+            const formColor = p.storageTypeId != null ? formColorById?.get(p.storageTypeId) : undefined
+            const fill = problem ? PLACEMENT_FILL.problemFill : (formColor ?? (p.locationId ? PLACEMENT_FILL.existing : PLACEMENT_FILL.draft))
+            const stroke = problem ? PLACEMENT_FILL.problemStroke : selected ? PLACEMENT_FILL.selectedStroke : (formColor ?? PLACEMENT_FILL.stroke)
             return (
               <g key={p.clientRef} pointerEvents="none">
                 <rect
                   x={p.x * cell + 1} y={p.y * cell + 1} width={p.w * cell - 2} height={p.h * cell - 2}
-                  fill={problem ? PLACEMENT_FILL.problemFill : p.locationId ? PLACEMENT_FILL.existing : PLACEMENT_FILL.draft}
-                  stroke={problem ? PLACEMENT_FILL.problemStroke : selected ? PLACEMENT_FILL.selectedStroke : PLACEMENT_FILL.stroke}
+                  fill={fill} fillOpacity={p.locationId || problem ? 1 : 0.6}
+                  stroke={stroke}
                   strokeWidth={problem || selected ? 3 : 1.5} rx={3}
                 />
                 {cell >= 22 && (

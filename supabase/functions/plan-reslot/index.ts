@@ -26,7 +26,7 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { buildWalkGraph, computeAnchorDistances, snapPlacementToNode } from '../_shared/wie/graph.ts'
 import { buildWalkableCells } from '../_shared/wie/publishReadiness.ts'
-import { planReslot, type ReslotDemand } from '../_shared/wie/reslot.ts'
+import { planReslot, warehouseStockScope, type ReslotDemand } from '../_shared/wie/reslot.ts'
 import { DEFAULT_WEIGHTS } from '../_shared/wie/types.ts'
 import type { CandidateBin, CompatibilityRule, RuleDefinition, ScoringWeights, SkuProfile } from '../_shared/wie/types.ts'
 
@@ -98,7 +98,7 @@ serve(async (req: Request) => {
     // ── Candidate bin metadata (capacity, zone, code) ────────────────────────
     const { data: binRows } = candidateLocIds.length
       ? await admin.from('locations')
-          .select('id, code, capacity_slots, zone_profile_id')
+          .select('id, code, capacity_slots, weight_capacity_kg, zone_profile_id')
           .in('id', candidateLocIds)
       : { data: [] as any[] }
     const binById = new Map<number, any>()
@@ -118,7 +118,10 @@ serve(async (req: Request) => {
     const { data: descRows } = path
       ? await admin.from('locations').select('id').like('materialized_path', `${path}/%`)
       : { data: [] as any[] }
-    const descIds = ((descRows ?? []) as any[]).map((d) => d.id as number)
+    // Include the warehouse root: bulk / not-yet-racked stock sits ON the root
+    // location, so a strict-descendant scan drops it and the planner would report
+    // nothing to move. Mirrors the client gate's [warehouseId, ...descendants].
+    const descIds = warehouseStockScope(warehouseId, ((descRows ?? []) as any[]).map((d) => d.id as number))
 
     const { data: balRows } = descIds.length
       ? await admin.from('inventory_balances')
@@ -128,16 +131,35 @@ serve(async (req: Request) => {
       : { data: [] as any[] }
     const balances = (balRows ?? []) as any[]
 
+    // Bulk-load per-SKU WMS attributes (incl. weight) for every product in stock —
+    // used both to enrich demand SKUs and to compute kept-bin weight fill. One
+    // query instead of N per-product round-trips.
+    const stockProductIds = [...new Set(balances.map((b) => b.product_id as number))]
+    const { data: attrRows } = stockProductIds.length
+      ? await admin.from('product_wms_attributes')
+          .select('product_id, weight_kg, hazard_class, temp_min, temp_max, handling_type, stackable')
+          .in('product_id', stockProductIds)
+      : { data: [] as any[] }
+    const attrByProduct = new Map<number, any>()
+    const weightByProduct = new Map<number, number>()
+    for (const a of (attrRows ?? []) as any[]) {
+      attrByProduct.set(a.product_id, a)
+      if (a.weight_kg != null) weightByProduct.set(a.product_id, Number(a.weight_kg))
+    }
+
     const candidateSet = new Set(candidateLocIds)
 
-    // Current fill + occupants of the KEPT (candidate) bins — stock that stays.
+    // Current fill (slots + weight) + occupants of the KEPT (candidate) bins.
     const usedByBin = new Map<number, number>()
+    const usedWeightByBin = new Map<number, number>()
     const occByBin = new Map<number, Set<string>>()
     const productsInBin = new Map<number, Set<number>>()
     for (const b of balances) {
       if (!candidateSet.has(b.location_id)) continue
       const sizeFactor = Number(b.products?.size_factor) || 1
       usedByBin.set(b.location_id, (usedByBin.get(b.location_id) ?? 0) + Number(b.on_hand) * sizeFactor)
+      const w = weightByProduct.get(b.product_id) ?? 0
+      usedWeightByBin.set(b.location_id, (usedWeightByBin.get(b.location_id) ?? 0) + Number(b.on_hand) * w)
       const cat = b.products?.category
       if (cat) { const s = occByBin.get(b.location_id) ?? new Set(); s.add(cat); occByBin.set(b.location_id, s) }
       const ps = productsInBin.get(b.location_id) ?? new Set<number>(); ps.add(b.product_id); productsInBin.set(b.location_id, ps)
@@ -152,7 +174,8 @@ serve(async (req: Request) => {
       const alloc = Number(b.allocated) || 0
       const sku: SkuProfile = {
         productId: b.product_id, code: b.products?.sku ?? String(b.product_id), name: b.products?.name ?? `#${b.product_id}`,
-        sizeFactor: Number(b.products?.size_factor) || 1, category: b.products?.category ?? null,
+        sizeFactor: Number(b.products?.size_factor) || 1, weightKg: weightByProduct.get(b.product_id) ?? null,
+        category: b.products?.category ?? null,
         hazardClass: null, tempMin: null, tempMax: null, handlingType: null, stackable: null, velocityClass: null,
       }
       if (avail > 0) {
@@ -165,17 +188,16 @@ serve(async (req: Request) => {
       }
     }
 
-    // Enrich each demand's SKU with WMS attrs + velocity (rules/scoring inputs).
+    // Enrich each demand's SKU with the prefetched WMS attrs + velocity.
     for (const [productId, demand] of demandByProduct) {
-      const { data: attrs } = await admin.from('product_wms_attributes')
-        .select('hazard_class, temp_min, temp_max, handling_type, stackable').eq('product_id', productId).maybeSingle()
+      const attrs = attrByProduct.get(productId)
       const { data: velRow } = await admin.from('wie_product_velocity')
         .select('velocity_class').eq('warehouse_id', warehouseId).eq('product_id', productId).maybeSingle()
-      demand.sku.hazardClass = (attrs as any)?.hazard_class ?? null
-      demand.sku.tempMin = (attrs as any)?.temp_min != null ? Number((attrs as any).temp_min) : null
-      demand.sku.tempMax = (attrs as any)?.temp_max != null ? Number((attrs as any).temp_max) : null
-      demand.sku.handlingType = (attrs as any)?.handling_type ?? null
-      demand.sku.stackable = (attrs as any)?.stackable ?? null
+      demand.sku.hazardClass = attrs?.hazard_class ?? null
+      demand.sku.tempMin = attrs?.temp_min != null ? Number(attrs.temp_min) : null
+      demand.sku.tempMax = attrs?.temp_max != null ? Number(attrs.temp_max) : null
+      demand.sku.handlingType = attrs?.handling_type ?? null
+      demand.sku.stackable = attrs?.stackable ?? null
       demand.sku.velocityClass = (velRow as any)?.velocity_class ?? null
     }
 
@@ -192,6 +214,8 @@ serve(async (req: Request) => {
           zoneTag: zone?.zone_type ?? null,
           capacitySlots: bin?.capacity_slots != null ? Number(bin.capacity_slots) : null,
           usedSlots: usedByBin.get(locId) ?? 0,
+          weightCapacityKg: bin?.weight_capacity_kg != null ? Number(bin.weight_capacity_kg) : null,
+          usedWeightKg: usedWeightByBin.get(locId) ?? 0,
           graphNodeId: snap?.nodeId ?? null,
           accessOffsetM: snap?.offset ?? 0,
           hasSameProduct: productsInBin.get(locId)?.has(productId) ?? false,

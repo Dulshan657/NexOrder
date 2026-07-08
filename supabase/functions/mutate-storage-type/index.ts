@@ -20,6 +20,19 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const SLOT_UNITS = ['pallet', 'carton', 'each', 'uncounted'] as const
 
+// Storage-forms capacity fields (mig 00061): structured capacity, dims, weight,
+// palette colour, drawable flag. All nullable/optional and additive.
+const formFields = {
+  levels: z.number().int().nonnegative().nullable().optional(),
+  positions_per_level: z.number().int().nonnegative().nullable().optional(),
+  weight_capacity_kg: z.number().nonnegative().nullable().optional(),
+  length_cm: z.number().nonnegative().nullable().optional(),
+  width_cm: z.number().nonnegative().nullable().optional(),
+  height_cm: z.number().nonnegative().nullable().optional(),
+  color: z.string().max(32).nullable().optional(),
+  is_drawable: z.boolean().optional(),
+}
+
 const createSchema = z.object({
   code: z.string().min(1).max(32),
   name: z.string().min(1).max(120),
@@ -27,6 +40,7 @@ const createSchema = z.object({
   slot_unit: z.enum(SLOT_UNITS).default('pallet'),
   attributes: z.record(z.unknown()).optional(),
   sort_order: z.number().int().min(0).max(10000).optional(),
+  ...formFields,
 })
 
 // Update touches everything except the stable `code` key.
@@ -37,11 +51,19 @@ const updateSchema = z.object({
   attributes: z.record(z.unknown()).optional(),
   sort_order: z.number().int().min(0).max(10000).optional(),
   is_active: z.boolean().optional(),
+  ...formFields,
 }).refine((d) => Object.keys(d).length > 0, { message: 'At least one field must be provided for update' })
 
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: createSchema }),
-  z.object({ action: z.literal('update'), id: z.number().int().positive(), data: updateSchema }),
+  // apply_to_existing: retro-apply the form's capacity/weight to every existing
+  // location of this type (the "Apply to all units" choice on the save prompt).
+  z.object({
+    action: z.literal('update'),
+    id: z.number().int().positive(),
+    data: updateSchema,
+    apply_to_existing: z.boolean().optional(),
+  }),
   z.object({ action: z.literal('deactivate'), id: z.number().int().positive() }),
 ])
 
@@ -78,6 +100,14 @@ serve(async (req: Request) => {
         slot_unit: input.data.slot_unit,
         attributes: input.data.attributes ?? {},
         sort_order: input.data.sort_order ?? 100,
+        levels: input.data.levels ?? null,
+        positions_per_level: input.data.positions_per_level ?? null,
+        weight_capacity_kg: input.data.weight_capacity_kg ?? null,
+        length_cm: input.data.length_cm ?? null,
+        width_cm: input.data.width_cm ?? null,
+        height_cm: input.data.height_cm ?? null,
+        color: input.data.color ?? null,
+        is_drawable: input.data.is_drawable ?? true,
       }
       if (!row.code) throw new EdgeFunctionError('INVALID_INPUT', 'Code must contain a letter or digit')
 
@@ -113,7 +143,30 @@ serve(async (req: Request) => {
       resourceId: String(input.id), before: existing as Record<string, unknown>, after: updated as Record<string, unknown>,
       metadata: input.action === 'deactivate' ? { deactivated: true } : undefined,
     })
-    return new Response(JSON.stringify({ ok: true, storage_type: updated }), {
+
+    // Retro-apply: push this form's capacity/weight onto every existing unit of
+    // the type (the operator chose "Apply to all units" on the save prompt).
+    let appliedCount = 0
+    if (input.action === 'update' && input.apply_to_existing) {
+      const u = updated as Record<string, unknown>
+      const { data: affected, error: applyErr } = await admin
+        .from('locations')
+        .update({ capacity_slots: u.default_capacity_slots ?? null, weight_capacity_kg: u.weight_capacity_kg ?? null })
+        .eq('storage_type_id', input.id)
+        .select('id')
+      if (applyErr) throw new EdgeFunctionError('INTERNAL', `Applied the type but failed to update its units: ${applyErr.message}`)
+      appliedCount = (affected ?? []).length
+      if (appliedCount > 0) {
+        await logAuditEvent(admin, {
+          actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
+          resourceId: String(input.id),
+          after: { capacity_slots: u.default_capacity_slots ?? null, weight_capacity_kg: u.weight_capacity_kg ?? null } as Record<string, unknown>,
+          metadata: { source: 'storage_type_retro_apply', storage_type_id: input.id, units_updated: appliedCount },
+        })
+      }
+    }
+
+    return new Response(JSON.stringify({ ok: true, storage_type: updated, applied_to_units: appliedCount }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (e) {

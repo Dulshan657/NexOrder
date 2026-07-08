@@ -100,6 +100,8 @@ export interface InventoryLocation {
     // Racked bin config (mig 00039; on ZONE/BIN/SHELF nodes).
     capacitySlots?: number;
     slotKind?: 'pallet' | 'carton';
+    /** Per-unit weight limit, kg (mig 00061; inherited from the storage form). */
+    weightCapacityKg?: number;
     // WIE zone semantics (mig 00047; on ZONE nodes).
     zoneProfileId?: number;
     // Physical storage-unit type (mig 00056; on rack/BIN nodes).
@@ -122,6 +124,19 @@ export interface StorageType {
     attributes: Record<string, unknown>;
     isActive: boolean;
     sortOrder: number;
+    // Storage-forms capacity model (mig 00061). Structured capacity: when both
+    // levels & positionsPerLevel are set, slots = levels × positionsPerLevel.
+    levels?: number;
+    positionsPerLevel?: number;
+    /** Max weight this form can hold, kg (undefined = no limit). Enforced in putaway. */
+    weightCapacityKg?: number;
+    lengthCm?: number;
+    widthCm?: number;
+    heightCm?: number;
+    /** Hex fill for the Layout Designer palette. */
+    color?: string;
+    /** Whether this form appears as a drawable tool in the Layout Designer. */
+    isDrawable: boolean;
 }
 
 // The 8 seeded types keep autocomplete; custom operator-defined types (mig 00057

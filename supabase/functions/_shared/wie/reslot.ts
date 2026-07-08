@@ -81,6 +81,17 @@ export interface ReslotPlan {
 
 const EPS = 1e-9
 
+/**
+ * The location-id scope the re-slot planner scans for existing stock: the
+ * warehouse ROOT plus all its descendant bins. Bulk / not-yet-racked warehouses
+ * keep stock on the root location itself (`location_id === warehouseId`), so the
+ * root MUST be included or that stock is silently dropped. Mirrors the client's
+ * getBalancesByWarehouse `[warehouseId, ...descendants]`. De-duplicated.
+ */
+export function warehouseStockScope(warehouseId: number, descendantIds: number[]): number[] {
+  return [...new Set([warehouseId, ...descendantIds])]
+}
+
 function totalQty(d: ReslotDemand): number {
   return d.sources.reduce((s, x) => s + x.qty, 0)
 }
@@ -96,9 +107,14 @@ function velocityRank(sku: SkuProfile): number {
 export function planReslot(input: ReslotPlanInput): ReslotPlan {
   const { candidates, rules, compatibility, weights } = input
 
-  // Live per-bin fill, seeded from stock that stays in kept bins. Mutated as we go.
+  // Live per-bin fill (slots + weight), seeded from stock that stays in kept
+  // bins. Both are mutated as we allocate so later SKUs see the reduced headroom.
   const used = new Map<number, number>()
-  for (const c of candidates) used.set(c.locationId, c.usedSlots)
+  const usedWeight = new Map<number, number>()
+  for (const c of candidates) {
+    used.set(c.locationId, c.usedSlots)
+    usedWeight.set(c.locationId, c.usedWeightKg)
+  }
 
   const ordered = [...input.demands].sort(
     (a, b) => velocityRank(a.sku) - velocityRank(b.sku) || totalQty(b) - totalQty(a),
@@ -110,12 +126,17 @@ export function planReslot(input: ReslotPlanInput): ReslotPlan {
 
   for (const demand of ordered) {
     const sizeFactor = demand.sku.sizeFactor || 1
+    const skuWeight = demand.sku.weightKg // null ⇒ no weight constraint
     let remaining = totalQty(demand)
     requiredSlots += remaining * sizeFactor
     if (remaining <= 0) continue
 
-    // Candidate snapshot with current fill applied.
-    const live = candidates.map((c) => ({ ...c, usedSlots: used.get(c.locationId) ?? c.usedSlots }))
+    // Candidate snapshot with current fill (slots + weight) applied.
+    const live = candidates.map((c) => ({
+      ...c,
+      usedSlots: used.get(c.locationId) ?? c.usedSlots,
+      usedWeightKg: usedWeight.get(c.locationId) ?? c.usedWeightKg,
+    }))
 
     // Filter with a nominal single-unit need so bins with ANY headroom survive
     // (the engine's capacity gate would otherwise reject a bin that can hold part
@@ -133,11 +154,17 @@ export function planReslot(input: ReslotPlanInput): ReslotPlan {
       if (!bin) continue
       const cur = used.get(bin.locationId) ?? bin.usedSlots
       const headroomSlots = bin.capacitySlots === null ? Infinity : bin.capacitySlots - cur
-      const binQty = headroomSlots === Infinity ? remaining : Math.floor(headroomSlots / sizeFactor + EPS)
-      const take = Math.min(remaining, binQty)
+      const qtyBySlots = headroomSlots === Infinity ? remaining : Math.floor(headroomSlots / sizeFactor + EPS)
+      // Weight-limited units: how many fit under the remaining weight headroom.
+      const curW = usedWeight.get(bin.locationId) ?? bin.usedWeightKg
+      const qtyByWeight = bin.weightCapacityKg === null || skuWeight === null || skuWeight <= 0
+        ? remaining
+        : Math.floor((bin.weightCapacityKg - curW) / skuWeight + EPS)
+      const take = Math.min(remaining, qtyBySlots, qtyByWeight)
       if (take <= 0) continue
       allocations.push({ bin, take, breakdown })
       used.set(bin.locationId, cur + take * sizeFactor)
+      usedWeight.set(bin.locationId, curW + take * (skuWeight ?? 0))
       remaining -= take
     }
 

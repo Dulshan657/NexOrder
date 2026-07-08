@@ -63,6 +63,9 @@ export interface SkuProfile {
   name: string
   /** Slots consumed per base unit (products.size_factor). */
   sizeFactor: number
+  /** Weight per base unit in kg (product_wms_attributes.weight_kg); null when
+   *  unset — the weight gate then fails open for this SKU. */
+  weightKg: number | null
   category: string | null
   // Phase-3 attributes (from product_wms_attributes); null when unset.
   hazardClass: string | null
@@ -89,6 +92,10 @@ export interface CandidateBin {
   capacitySlots: number | null
   /** Current fill in slots: Σ(on_hand × size_factor) already in this bin. */
   usedSlots: number
+  /** Weight limit in kg (locations.weight_capacity_kg); null = no limit. */
+  weightCapacityKg: number | null
+  /** Current weight in this bin, kg: Σ(on_hand × weight_kg) already stored. */
+  usedWeightKg: number
   graphNodeId: number | null
   /** Perpendicular distance from the walkway node into the bin, plus a shelf
    *  height penalty — added to skeleton distance for the effective travel cost. */

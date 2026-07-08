@@ -77,15 +77,41 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const commitReslot = useCommitReslotPlan(warehouse.id)
 
   const codeByLocation = useMemo(() => {
-    const map: Record<number, { code: string; name: string; kind: never; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; storageTypeId?: number }> = {}
+    const map: Record<number, { code: string; name: string; kind: never; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number }> = {}
     for (const l of locationsQuery.data ?? []) {
       map[l.id] = {
         code: l.code, name: l.name, kind: l.kind as never,
-        capacitySlots: l.capacitySlots, slotKind: l.slotKind, storageTypeId: l.storageTypeId,
+        capacitySlots: l.capacitySlots, slotKind: l.slotKind, weightCapacityKg: l.weightCapacityKg, storageTypeId: l.storageTypeId,
       }
     }
     return map
   }, [locationsQuery.data])
+
+  // Drawable storage forms → coloured palette tools + a colour lookup so both
+  // draft and existing bins render in their form's colour on the canvas.
+  const drawableForms = useMemo(
+    () => (storageTypesQuery.data ?? []).filter((t) => t.isDrawable),
+    [storageTypesQuery.data],
+  )
+  const formColorById = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const t of storageTypesQuery.data ?? []) if (t.color) m.set(t.id, t.color)
+    return m
+  }, [storageTypesQuery.data])
+  const handleSelectForm = (id: number) => {
+    const t = (storageTypesQuery.data ?? []).find((s) => s.id === id)
+    if (!t) return
+    dispatch({
+      type: 'set_storage_form',
+      form: {
+        storageTypeId: t.id,
+        label: t.name,
+        capacitySlots: t.defaultCapacitySlots,
+        slotKind: t.slotUnit === 'pallet' ? 'pallet' : t.slotUnit === 'carton' ? 'carton' : undefined,
+        weightCapacityKg: t.weightCapacityKg,
+      },
+    })
+  }
 
   // Hydrate the editor once per selected layout — NOT on every refetch, so a
   // background invalidation can't wipe the operator's unsaved canvas edits. Wait
@@ -137,8 +163,8 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
       location_id: p.locationId,
       new_bin: p.locationId ? undefined : {
         parent_id: warehouse.id, kind: p.kind, code: p.code, name: p.name,
-        capacity_slots: p.capacitySlots, slot_kind: p.slotKind, zone_profile_id: p.zoneProfileId,
-        storage_type_id: p.storageTypeId,
+        capacity_slots: p.capacitySlots, slot_kind: p.slotKind, weight_capacity_kg: p.weightCapacityKg,
+        zone_profile_id: p.zoneProfileId, storage_type_id: p.storageTypeId,
       },
       floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h, rotation: p.rotation,
     }))
@@ -346,6 +372,9 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             isDraft={!!isDraft}
             tool={state.tool}
             onSelectTool={(t) => dispatch({ type: 'set_tool', tool: t })}
+            forms={drawableForms.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
+            activeFormId={state.activeForm?.storageTypeId ?? null}
+            onSelectForm={handleSelectForm}
             onGenerate={() => setWizardOpen(true)}
             floorCount={selectedLayout.floorCount}
             floor={state.floor}
@@ -363,7 +392,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
           />
 
           <div className="grid grid-cols-[1fr_240px] gap-3">
-            <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} highlightRefs={isDraft ? highlightRefs : undefined} />
+            <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} highlightRefs={isDraft ? highlightRefs : undefined} formColorById={formColorById} />
             <div className="space-y-3">
               {isDraft && <PublishChecklist readiness={readiness} />}
               {isDraft && (
@@ -378,7 +407,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
               <PlacementInspector placement={selectedPlacement} dispatch={dispatch} zoneProfiles={zoneProfilesQuery.data ?? []} storageTypes={storageTypesQuery.data ?? []} />
             </div>
           </div>
-          <LayoutLegend />
+          <LayoutLegend forms={drawableForms.map((t) => ({ id: t.id, name: t.name, color: t.color }))} />
           {isDraft && state.dirty && <p className="text-[11px] text-amber-600">Unsaved changes — Publish saves them for you automatically.</p>}
 
           {simulation && (

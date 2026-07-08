@@ -28,8 +28,14 @@ export function useCreateStorageType() {
 export function useUpdateStorageType() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: Partial<StorageTypeInput> }) => updateStorageType(id, patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: storageTypeKeys.all }),
+    mutationFn: ({ id, patch, applyToExisting }: { id: number; patch: Partial<StorageTypeInput>; applyToExisting?: boolean }) =>
+      updateStorageType(id, patch, applyToExisting ?? false),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: storageTypeKeys.all })
+      // Retro-apply may have changed location capacities → refresh warehouse reads.
+      qc.invalidateQueries({ queryKey: ['warehouse-locations'] })
+      qc.invalidateQueries({ queryKey: ['inventory_balances'] })
+    },
   })
 }
 

@@ -754,6 +754,7 @@ export type Database = {
           notes: string | null
           capacity_slots: number | null
           slot_kind: 'pallet' | 'carton' | null
+          weight_capacity_kg: number | null
           active_layout_id: number | null
           created_in_layout_id: number | null
           zone_profile_id: number | null
@@ -777,6 +778,7 @@ export type Database = {
           notes?: string | null
           capacity_slots?: number | null
           slot_kind?: 'pallet' | 'carton' | null
+          weight_capacity_kg?: number | null
           active_layout_id?: number | null
           created_in_layout_id?: number | null
           zone_profile_id?: number | null
@@ -800,6 +802,7 @@ export type Database = {
           notes?: string | null
           capacity_slots?: number | null
           slot_kind?: 'pallet' | 'carton' | null
+          weight_capacity_kg?: number | null
           active_layout_id?: number | null
           created_in_layout_id?: number | null
           zone_profile_id?: number | null
@@ -818,6 +821,14 @@ export type Database = {
           is_active: boolean
           sort_order: number
           created_at: string
+          levels: number | null
+          positions_per_level: number | null
+          weight_capacity_kg: number | null
+          length_cm: number | null
+          width_cm: number | null
+          height_cm: number | null
+          color: string | null
+          is_drawable: boolean
         }
         Insert: {
           id?: number
@@ -829,6 +840,14 @@ export type Database = {
           is_active?: boolean
           sort_order?: number
           created_at?: string
+          levels?: number | null
+          positions_per_level?: number | null
+          weight_capacity_kg?: number | null
+          length_cm?: number | null
+          width_cm?: number | null
+          height_cm?: number | null
+          color?: string | null
+          is_drawable?: boolean
         }
         Update: {
           id?: number
@@ -840,6 +859,14 @@ export type Database = {
           is_active?: boolean
           sort_order?: number
           created_at?: string
+          levels?: number | null
+          positions_per_level?: number | null
+          weight_capacity_kg?: number | null
+          length_cm?: number | null
+          width_cm?: number | null
+          height_cm?: number | null
+          color?: string | null
+          is_drawable?: boolean
         }
         Relationships: []
       }

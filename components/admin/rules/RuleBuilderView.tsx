@@ -62,7 +62,7 @@ function coerce(v: string): unknown {
 
 function sampleSku(category: string, hazard: string): SkuProfile {
   return {
-    productId: 0, code: 'TEST', name: 'Test', sizeFactor: 1,
+    productId: 0, code: 'TEST', name: 'Test', sizeFactor: 1, weightKg: null,
     category: category || null, hazardClass: hazard || null, tempMin: null, tempMax: null,
     handlingType: null, stackable: null, velocityClass: null,
   }
@@ -71,7 +71,7 @@ function sampleSku(category: string, hazard: string): SkuProfile {
 function sampleBin(zoneTag: string, hasSame: boolean): CandidateBin {
   return {
     locationId: 0, code: 'TEST-BIN', zoneId: null, zoneTag: zoneTag || null, capacitySlots: 100,
-    usedSlots: 0, graphNodeId: 0, accessOffsetM: 0, hasSameProduct: hasSame, distanceFromDockM: 10,
+    usedSlots: 0, weightCapacityKg: null, usedWeightKg: 0, graphNodeId: 0, accessOffsetM: 0, hasSameProduct: hasSame, distanceFromDockM: 10,
     zoneType: zoneTag || null, zonePriorityWeight: 0.5, zoneAllowedCategories: null, zoneMaxUtilizationPct: null,
     occupantCategories: [], pickVisits30d: 0,
   }

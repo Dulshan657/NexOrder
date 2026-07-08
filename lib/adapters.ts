@@ -582,6 +582,7 @@ export function toInventoryLocation(row: LocationRow): InventoryLocation {
     notes: row.notes ?? undefined,
     capacitySlots: row.capacity_slots != null ? Number(row.capacity_slots) : undefined,
     slotKind: row.slot_kind ?? undefined,
+    weightCapacityKg: row.weight_capacity_kg != null ? Number(row.weight_capacity_kg) : undefined,
     zoneProfileId: row.zone_profile_id ?? undefined,
     storageTypeId: row.storage_type_id ?? undefined,
   }
@@ -824,6 +825,14 @@ export function toStorageType(row: StorageTypeRow): StorageType {
     attributes: (row.attributes as Record<string, unknown>) ?? {},
     isActive: row.is_active,
     sortOrder: row.sort_order,
+    levels: row.levels ?? undefined,
+    positionsPerLevel: row.positions_per_level ?? undefined,
+    weightCapacityKg: row.weight_capacity_kg != null ? Number(row.weight_capacity_kg) : undefined,
+    lengthCm: row.length_cm != null ? Number(row.length_cm) : undefined,
+    widthCm: row.width_cm != null ? Number(row.width_cm) : undefined,
+    heightCm: row.height_cm != null ? Number(row.height_cm) : undefined,
+    color: row.color ?? undefined,
+    isDrawable: row.is_drawable,
   }
 }
 

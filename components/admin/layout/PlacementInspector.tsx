@@ -36,6 +36,7 @@ export function PlacementInspector({ placement, dispatch, zoneProfiles, storageT
       storageTypeId: id,
       capacitySlots: st?.defaultCapacitySlots,
       slotKind: st && (st.slotUnit === 'pallet' || st.slotUnit === 'carton') ? st.slotUnit : undefined,
+      weightCapacityKg: st?.weightCapacityKg,
     })
   }
   // Existing bins own their metadata in the locations table; the designer only
@@ -124,6 +125,17 @@ export function PlacementInspector({ placement, dispatch, zoneProfiles, storageT
             <option value="pallet">pallet</option>
             <option value="carton">carton</option>
           </select>
+        </label>
+        <label className="block text-xs text-stone-500 col-span-2">
+          Weight limit (kg)
+          <input
+            type="number" min={0}
+            className="mt-1 w-full text-xs border border-stone-200 rounded px-2 py-1 disabled:bg-stone-50 disabled:text-stone-400"
+            value={placement.weightCapacityKg ?? ''}
+            disabled={isExisting}
+            placeholder="no limit"
+            onChange={(e) => patch({ weightCapacityKg: e.target.value === '' ? undefined : Number(e.target.value) })}
+          />
         </label>
       </div>
 

@@ -21,6 +21,29 @@ export interface StorageTypeInput {
   slotUnit: SlotUnit
   attributes?: Record<string, unknown>
   sortOrder?: number
+  // Storage-forms capacity model (mig 00061).
+  levels?: number | null
+  positionsPerLevel?: number | null
+  weightCapacityKg?: number | null
+  lengthCm?: number | null
+  widthCm?: number | null
+  heightCm?: number | null
+  color?: string | null
+  isDrawable?: boolean
+}
+
+/** Map camelCase form fields → the snake_case columns the edge fn expects. */
+function toFormColumns(input: Partial<StorageTypeInput>): Record<string, unknown> {
+  const data: Record<string, unknown> = {}
+  if (input.levels !== undefined) data.levels = input.levels
+  if (input.positionsPerLevel !== undefined) data.positions_per_level = input.positionsPerLevel
+  if (input.weightCapacityKg !== undefined) data.weight_capacity_kg = input.weightCapacityKg
+  if (input.lengthCm !== undefined) data.length_cm = input.lengthCm
+  if (input.widthCm !== undefined) data.width_cm = input.widthCm
+  if (input.heightCm !== undefined) data.height_cm = input.heightCm
+  if (input.color !== undefined) data.color = input.color
+  if (input.isDrawable !== undefined) data.is_drawable = input.isDrawable
+  return data
 }
 
 export async function createStorageType(input: StorageTypeInput): Promise<StorageType> {
@@ -34,6 +57,7 @@ export async function createStorageType(input: StorageTypeInput): Promise<Storag
         slot_unit: input.slotUnit,
         attributes: input.attributes ?? {},
         sort_order: input.sortOrder,
+        ...toFormColumns(input),
       },
     },
   })
@@ -41,18 +65,24 @@ export async function createStorageType(input: StorageTypeInput): Promise<Storag
   return toStorageType((data as any).storage_type)
 }
 
-export async function updateStorageType(id: number, patch: Partial<StorageTypeInput>): Promise<StorageType> {
+export async function updateStorageType(
+  id: number,
+  patch: Partial<StorageTypeInput>,
+  applyToExisting = false,
+): Promise<{ storageType: StorageType; appliedToUnits: number }> {
   const data: Record<string, unknown> = {}
   if (patch.name !== undefined) data.name = patch.name
   if (patch.defaultCapacitySlots !== undefined) data.default_capacity_slots = patch.defaultCapacitySlots
   if (patch.slotUnit !== undefined) data.slot_unit = patch.slotUnit
   if (patch.attributes !== undefined) data.attributes = patch.attributes
   if (patch.sortOrder !== undefined) data.sort_order = patch.sortOrder
-  const { data: res, error } = await supabase.functions.invoke<{ ok: true; storage_type: unknown }>('mutate-storage-type', {
-    body: { action: 'update', id, data },
-  })
+  Object.assign(data, toFormColumns(patch))
+  const { data: res, error } = await supabase.functions.invoke<{ ok: true; storage_type: unknown; applied_to_units?: number }>(
+    'mutate-storage-type',
+    { body: { action: 'update', id, data, apply_to_existing: applyToExisting } },
+  )
   if (error) throw error
-  return toStorageType((res as any).storage_type)
+  return { storageType: toStorageType((res as any).storage_type), appliedToUnits: (res as any).applied_to_units ?? 0 }
 }
 
 export async function deactivateStorageType(id: number): Promise<StorageType> {

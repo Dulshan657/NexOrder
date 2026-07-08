@@ -123,9 +123,10 @@ serve(async (req: Request) => {
         .select('id, sku, name, size_factor, category').eq('id', line.product_id).single()
       if (pErr || !product) throw new EdgeFunctionError('NOT_FOUND', `Product ${line.product_id} not found`)
 
-      // Optional WMS attributes (Phase 3) — hazard/temp/handling feed the rules.
+      // Optional WMS attributes (Phase 3) — hazard/temp/handling feed the rules;
+      // weight_kg (mig 00061) feeds the weight gate.
       const { data: attrs } = await admin.from('product_wms_attributes')
-        .select('hazard_class, temp_min, temp_max, handling_type, stackable')
+        .select('hazard_class, temp_min, temp_max, handling_type, stackable, weight_kg')
         .eq('product_id', line.product_id).maybeSingle()
 
       // ABC pick-velocity class for this SKU at this warehouse (Phase 4);
@@ -139,6 +140,7 @@ serve(async (req: Request) => {
         code: (product as any).sku,
         name: (product as any).name,
         sizeFactor: Number((product as any).size_factor) || 1,
+        weightKg: (attrs as any)?.weight_kg != null ? Number((attrs as any).weight_kg) : null,
         category: (product as any).category ?? null,
         hazardClass: (attrs as any)?.hazard_class ?? null,
         tempMin: (attrs as any)?.temp_min != null ? Number((attrs as any).temp_min) : null,
@@ -160,6 +162,8 @@ serve(async (req: Request) => {
         zoneTag: r.zone_tag ?? null,
         capacitySlots: r.capacity_slots != null ? Number(r.capacity_slots) : null,
         usedSlots: Number(r.used_slots) || 0,
+        weightCapacityKg: r.weight_capacity_kg != null ? Number(r.weight_capacity_kg) : null,
+        usedWeightKg: Number(r.used_weight_kg) || 0,
         graphNodeId: r.graph_node_id ?? null,
         accessOffsetM: Number(r.access_offset_m) || 0,
         hasSameProduct: !!r.has_same_product,

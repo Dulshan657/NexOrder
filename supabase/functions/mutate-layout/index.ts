@@ -41,6 +41,8 @@ const newBinSchema = z.object({
   name: z.string().min(1).max(120),
   capacity_slots: z.number().nonnegative().optional(),
   slot_kind: z.enum(['pallet', 'carton']).optional(),
+  // Per-unit weight limit, kg (mig 00061); inherited from the storage form when omitted.
+  weight_capacity_kg: z.number().nonnegative().optional(),
   // When set, the bin is parented under (creating if needed) the warehouse's ZONE
   // location for this profile, so it inherits the zone's semantics.
   zone_profile_id: z.number().int().positive().optional(),
@@ -330,14 +332,18 @@ serve(async (req: Request) => {
     // Storage-type defaults: when a new bin names a storage_type_id but omits
     // capacity/slot, inherit them from the type. Only pallet/carton map onto
     // slot_kind (its CHECK); each/uncounted leave it NULL.
-    const storageTypeCache = new Map<number, { defaultCapacitySlots: number | null; slotUnit: string }>()
+    const storageTypeCache = new Map<number, { defaultCapacitySlots: number | null; slotUnit: string; weightCapacityKg: number | null }>()
     const resolveStorageDefaults = async (id: number) => {
       const cached = storageTypeCache.get(id)
       if (cached) return cached
       const { data, error } = await admin.from('storage_types')
-        .select('default_capacity_slots, slot_unit').eq('id', id).single()
+        .select('default_capacity_slots, slot_unit, weight_capacity_kg').eq('id', id).single()
       if (error || !data) throw new EdgeFunctionError('INVALID_INPUT', `Unknown storage type ${id}`)
-      const st = { defaultCapacitySlots: (data as any).default_capacity_slots ?? null, slotUnit: (data as any).slot_unit as string }
+      const st = {
+        defaultCapacitySlots: (data as any).default_capacity_slots ?? null,
+        slotUnit: (data as any).slot_unit as string,
+        weightCapacityKg: (data as any).weight_capacity_kg ?? null,
+      }
       storageTypeCache.set(id, st)
       return st
     }
@@ -351,13 +357,15 @@ serve(async (req: Request) => {
       }
       const nb = p.new_bin!
 
-      // Resolve effective capacity/slot from the storage type when omitted.
+      // Resolve effective capacity/slot/weight from the storage type when omitted.
       let capacitySlots: number | null = nb.capacity_slots ?? null
       let slotKind: string | null = nb.slot_kind ?? null
+      let weightCapacityKg: number | null = nb.weight_capacity_kg ?? null
       if (nb.storage_type_id) {
         const st = await resolveStorageDefaults(nb.storage_type_id)
         if (capacitySlots == null) capacitySlots = st.defaultCapacitySlots
         if (slotKind == null && (st.slotUnit === 'pallet' || st.slotUnit === 'carton')) slotKind = st.slotUnit
+        if (weightCapacityKg == null) weightCapacityKg = st.weightCapacityKg
       }
       // Resolve the bin's parent: a zone (if assigned) else the given parent.
       let parentId = nb.parent_id
@@ -378,7 +386,8 @@ serve(async (req: Request) => {
       const { data: created, error: cErr } = await admin.from('locations').insert({
         parent_id: parentId, kind: nb.kind, code: nb.code, name: nb.name,
         materialized_path: `${parentPath}/${nb.code}`,
-        capacity_slots: capacitySlots, slot_kind: slotKind, storage_type_id: nb.storage_type_id ?? null,
+        capacity_slots: capacitySlots, slot_kind: slotKind, weight_capacity_kg: weightCapacityKg,
+        storage_type_id: nb.storage_type_id ?? null,
         is_active: false, created_in_layout_id: layout.id,
       } as any).select('id').single()
       if (cErr || !created) {
@@ -392,7 +401,8 @@ serve(async (req: Request) => {
             await admin.from('locations').update({
               parent_id: parentId, kind: nb.kind, name: nb.name,
               materialized_path: `${parentPath}/${nb.code}`,
-              capacity_slots: capacitySlots, slot_kind: slotKind, storage_type_id: nb.storage_type_id ?? null,
+              capacity_slots: capacitySlots, slot_kind: slotKind, weight_capacity_kg: weightCapacityKg,
+              storage_type_id: nb.storage_type_id ?? null,
             } as any).eq('id', (prior as any).id)
             refToLocation.set(p.client_ref, (prior as any).id)
             continue

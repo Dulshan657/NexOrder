@@ -13,6 +13,14 @@ describe('toStorageType', () => {
     is_active: true,
     sort_order: 10,
     created_at: '2026-07-01T00:00:00Z',
+    levels: null,
+    positions_per_level: null,
+    weight_capacity_kg: null,
+    length_cm: null,
+    width_cm: null,
+    height_cm: null,
+    color: null,
+    is_drawable: true,
   }
 
   it('maps snake_case → camelCase and coerces the numeric capacity', () => {
@@ -25,6 +33,14 @@ describe('toStorageType', () => {
       attributes: { is_cold: false },
       isActive: true,
       sortOrder: 10,
+      levels: undefined,
+      positionsPerLevel: undefined,
+      weightCapacityKg: undefined,
+      lengthCm: undefined,
+      widthCm: undefined,
+      heightCm: undefined,
+      color: undefined,
+      isDrawable: true,
     })
   })
 
@@ -37,5 +53,29 @@ describe('toStorageType', () => {
   it('defaults attributes to an empty object when null', () => {
     const t = toStorageType({ ...row, attributes: null as unknown as Record<string, never> })
     expect(t.attributes).toEqual({})
+  })
+
+  it('maps the storage-forms capacity fields (levels × positions, weight, dims, color)', () => {
+    const t = toStorageType({
+      ...row,
+      levels: 5,
+      positions_per_level: 2,
+      weight_capacity_kg: 1000,
+      length_cm: 270,
+      width_cm: 110,
+      height_cm: 600,
+      color: '#10b981',
+      is_drawable: false,
+    })
+    expect(t).toMatchObject({
+      levels: 5,
+      positionsPerLevel: 2,
+      weightCapacityKg: 1000,
+      lengthCm: 270,
+      widthCm: 110,
+      heightCm: 600,
+      color: '#10b981',
+      isDrawable: false,
+    })
   })
 })

@@ -23,6 +23,7 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
   const [rows, setRows] = useState(3)
   const [capacity, setCapacity] = useState(10)
   const [slotKind, setSlotKind] = useState<'pallet' | 'carton'>('pallet')
+  const [weightCap, setWeightCap] = useState<number | ''>('')
   const [zoneProfileId, setZoneProfileId] = useState<number | ''>('')
   const [storageTypeId, setStorageTypeId] = useState<number | ''>('')
 
@@ -38,6 +39,7 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
     if (st) {
       if (st.defaultCapacitySlots != null) setCapacity(st.defaultCapacitySlots)
       if (st.slotUnit === 'pallet' || st.slotUnit === 'carton') setSlotKind(st.slotUnit)
+      setWeightCap(st.weightCapacityKg ?? '')
     }
   }
 
@@ -47,6 +49,7 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
       startX, startY, cols, rows,
       capacitySlots: capacity,
       slotKind,
+      weightCapacityKg: weightCap === '' ? undefined : weightCap,
       zoneProfileId: zoneProfileId === '' ? undefined : zoneProfileId,
       storageTypeId: storageTypeId === '' ? undefined : storageTypeId,
     })
@@ -100,6 +103,16 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
               <option value="pallet">pallet</option>
               <option value="carton">carton</option>
             </select>
+          </label>
+          <label className="block text-xs text-stone-500">
+            Weight limit (kg)
+            <input
+              type="number" min={0}
+              className="mt-1 w-full text-xs border border-stone-200 rounded px-2 py-1"
+              value={weightCap}
+              placeholder="no limit"
+              onChange={(e) => setWeightCap(e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0))}
+            />
           </label>
         </div>
 

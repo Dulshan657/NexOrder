@@ -10,7 +10,18 @@
 import { useReducer } from 'react'
 import type { LayoutObject, LayoutObjectType, LayoutPlacement } from '@/types'
 
+// 'rack' is the generic storage-paint tool; WHICH form it draws is carried by
+// `activeForm` (mig 00061 storage forms), so every drawable form shares one tool.
 export type EditorTool = 'select' | 'walkway' | 'wall' | 'dock' | 'lift' | 'rack' | 'erase'
+
+/** The storage form the 'rack' tool currently paints (from the forms catalogue). */
+export interface ActiveStorageForm {
+  storageTypeId?: number
+  label: string
+  capacitySlots?: number
+  slotKind?: 'pallet' | 'carton'
+  weightCapacityKg?: number
+}
 
 export interface EditorPlacement {
   clientRef: string
@@ -27,6 +38,8 @@ export interface EditorPlacement {
   name: string
   capacitySlots?: number
   slotKind?: 'pallet' | 'carton'
+  /** Per-unit weight limit, kg (mig 00061; inherited from the storage form). */
+  weightCapacityKg?: number
   /** Zone profile this bin belongs to (WIE Phase 2); undefined = no zone. */
   zoneProfileId?: number
   /** Physical storage-unit type (mig 00056); supplies default capacity/slot. */
@@ -54,21 +67,24 @@ export interface EditorState {
   /** Prefix for auto-generated bin codes so they stay globally unique
    *  (locations.code is UNIQUE across all warehouses). */
   codePrefix: string
+  /** The storage form the 'rack' tool paints; null = generic bin (10 pallet). */
+  activeForm: ActiveStorageForm | null
 }
 
 export type EditorAction =
   | { type: 'set_tool'; tool: EditorTool }
+  | { type: 'set_storage_form'; form: ActiveStorageForm }
   | { type: 'set_floor'; floor: number }
   | { type: 'paint_cell'; x: number; y: number }
   | { type: 'select'; ref: string | null }
   | { type: 'update_placement'; ref: string; patch: Partial<Omit<EditorPlacement, 'clientRef'>> }
   | { type: 'delete_selected' }
-  | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; zoneProfileId?: number; storageTypeId?: number }
-  | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; storageTypeId?: number }> }
+  | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number }
+  | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number }> }
   | { type: 'mark_saved'; refMap: Array<{ client_ref: string; location_id: number }> }
 
 export function initialEditorState(codePrefix = 'W'): EditorState {
-  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, dirty: false, seq: 1, codePrefix }
+  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, dirty: false, seq: 1, codePrefix, activeForm: null }
 }
 
 const OBJECT_TOOLS: Partial<Record<EditorTool, LayoutObjectType>> = {
@@ -90,6 +106,10 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
   switch (action.type) {
     case 'set_tool':
       return { ...state, tool: action.tool }
+
+    case 'set_storage_form':
+      // Selecting a form activates the storage-paint tool bound to that form.
+      return { ...state, tool: 'rack', activeForm: action.form, selectedRef: null }
 
     case 'set_floor':
       return { ...state, floor: action.floor, selectedRef: null }
@@ -124,9 +144,12 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
       if (state.tool === 'rack') {
         if (placementAt(state, x, y)) return state // already a bin here
         const ref = `p${state.seq}`
+        const f = state.activeForm
         const placement: EditorPlacement = {
           clientRef: ref, floor: state.floor, x, y, w: 1, h: 1, rotation: 0,
-          kind: 'BIN', code: `${state.codePrefix}-B-${x}-${y}`, name: `Bin ${x},${y}`, capacitySlots: 10, slotKind: 'pallet',
+          kind: 'BIN', code: `${state.codePrefix}-B-${x}-${y}`, name: `Bin ${x},${y}`,
+          capacitySlots: f?.capacitySlots ?? 10, slotKind: f?.slotKind ?? 'pallet',
+          weightCapacityKg: f?.weightCapacityKg, storageTypeId: f?.storageTypeId,
         }
         return { ...state, placements: [...state.placements, placement], selectedRef: ref, seq: state.seq + 1, dirty: true }
       }
@@ -169,6 +192,7 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
             clientRef: `p${seq++}`, floor: state.floor, x, y, w: 1, h: 1, rotation: 0,
             kind: 'BIN', code: `${state.codePrefix}-B-${x}-${y}`, name: `Bin ${x},${y}`,
             capacitySlots: action.capacitySlots ?? 10, slotKind: action.slotKind ?? 'pallet',
+            weightCapacityKg: action.weightCapacityKg,
             zoneProfileId: action.zoneProfileId, storageTypeId: action.storageTypeId,
           })
         }
@@ -185,7 +209,7 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
           clientRef: `p${seq++}`, locationId: p.locationId, floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h,
           rotation: p.rotation, kind: meta?.kind ?? 'BIN', code: meta?.code ?? `L${p.locationId}`,
           name: meta?.name ?? `Bin ${p.locationId}`, capacitySlots: meta?.capacitySlots, slotKind: meta?.slotKind,
-          storageTypeId: meta?.storageTypeId,
+          weightCapacityKg: meta?.weightCapacityKg, storageTypeId: meta?.storageTypeId,
         }
       })
       const objects: EditorObject[] = action.objects.map((o) => ({
