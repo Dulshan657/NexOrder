@@ -26,6 +26,7 @@ import {
   FULFILLMENT_LADDER,
   fulfillmentLocations,
   ensureFulfillments,
+  pruneFulfillments,
   isLocationFullyPicked,
   recomputeOrderStatus,
 } from '../_shared/fulfillment.ts'
@@ -198,9 +199,10 @@ serve(async (req: Request) => {
       if (reErr) return errorResponse('REALLOCATE_FAILED', reErr.message, 409)
     }
 
-    // Fulfilment sites = warehouses holding a reservation; fall back to the
+    // Fulfilment sites = warehouses holding a NET reservation; fall back to the
     // default warehouse so there is always something to pick.
-    let locs = await fulfillmentLocations(serviceClient, body.orderId)
+    const reservedLocs = await fulfillmentLocations(serviceClient, body.orderId)
+    let locs = reservedLocs
     if (locs.length === 0) {
       const { data: def } = await serviceClient
         .from('locations')
@@ -213,6 +215,15 @@ serve(async (req: Request) => {
       if ((def as any)?.id) locs = [(def as any).id]
     }
     await ensureFulfillments(serviceClient, body.orderId, locs, profile.id, nowIso)
+
+    // On an operator re-route, prune the origin warehouse's now-stockless
+    // 'processed' fulfilment so the rollup doesn't freeze the order at
+    // 'processed'. Guard on real reservations existing (reservedLocs non-empty)
+    // so a total-reservation-failure fallback to the default warehouse never
+    // deletes a legitimate row.
+    if (Array.isArray(body.locationPref) && body.locationPref.length > 0 && reservedLocs.length > 0) {
+      await pruneFulfillments(serviceClient, body.orderId, reservedLocs)
+    }
 
     const history = Array.isArray((order as any).status_history) ? (order as any).status_history : []
     const { data: updated, error: updErr } = await serviceClient

@@ -59,6 +59,28 @@ export async function ensureFulfillments(
 }
 
 /**
+ * Delete unadvanced ('processed') fulfilment rows whose warehouse is no longer in
+ * keepLocationIds. Used after an operator re-route: the origin warehouse, now
+ * net-zero reserved, would otherwise leave a phantom 'processed' fulfilment that
+ * freezes the order's rollup at 'processed' forever. Only 'processed' rows are
+ * removed — a picked/packed/dispatched row represents real physical work and is
+ * preserved. No-op when keepLocationIds is empty (never strip an order to zero).
+ */
+export async function pruneFulfillments(
+  admin: SupabaseClient,
+  orderId: string,
+  keepLocationIds: number[],
+): Promise<void> {
+  if (keepLocationIds.length === 0) return
+  await admin
+    .from('order_fulfillments')
+    .delete()
+    .eq('order_id', orderId)
+    .eq('status', 'processed')
+    .not('location_id', 'in', `(${keepLocationIds.join(',')})`)
+}
+
+/**
  * Is the given WAREHOUSE's portion of the order fully picked? Compares base units
  * reserved at that warehouse (allocate − deallocate, resolved bin→warehouse)
  * against base units picked there. Delegated to inv_warehouse_pick_complete
