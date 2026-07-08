@@ -26,6 +26,9 @@ export const PLACEMENT_FILL = {
   stroke: '#10b981',
   selectedStroke: '#059669',
   highlightStroke: '#0ea5e9',
+  /** Unreachable bin (no walkway route from a dock) — flagged on the publish checklist. */
+  problemStroke: '#ef4444',
+  problemFill: '#fecaca',
   labelText: '#065f46',
 } as const
 

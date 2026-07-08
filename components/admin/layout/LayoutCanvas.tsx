@@ -19,9 +19,11 @@ interface LayoutCanvasProps {
   dispatch: Dispatch<EditorAction>
   gridWidth: number
   gridHeight: number
+  /** clientRefs of bins to flag as problems (e.g. unreachable from a dock). */
+  highlightRefs?: ReadonlySet<string>
 }
 
-export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight }: LayoutCanvasProps) {
+export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlightRefs }: LayoutCanvasProps) {
   const [zoom, setZoom] = useState(1)
   const painting = useRef(false)
   const cell = BASE_CELL * zoom
@@ -83,13 +85,14 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight }: LayoutC
           {/* Storage bins */}
           {floorPlacements.map((p: EditorPlacement) => {
             const selected = p.clientRef === state.selectedRef
+            const problem = highlightRefs?.has(p.clientRef) ?? false
             return (
               <g key={p.clientRef} pointerEvents="none">
                 <rect
                   x={p.x * cell + 1} y={p.y * cell + 1} width={p.w * cell - 2} height={p.h * cell - 2}
-                  fill={p.locationId ? PLACEMENT_FILL.existing : PLACEMENT_FILL.draft}
-                  stroke={selected ? PLACEMENT_FILL.selectedStroke : PLACEMENT_FILL.stroke}
-                  strokeWidth={selected ? 3 : 1.5} rx={3}
+                  fill={problem ? PLACEMENT_FILL.problemFill : p.locationId ? PLACEMENT_FILL.existing : PLACEMENT_FILL.draft}
+                  stroke={problem ? PLACEMENT_FILL.problemStroke : selected ? PLACEMENT_FILL.selectedStroke : PLACEMENT_FILL.stroke}
+                  strokeWidth={problem || selected ? 3 : 1.5} rx={3}
                 />
                 {cell >= 22 && (
                   <text

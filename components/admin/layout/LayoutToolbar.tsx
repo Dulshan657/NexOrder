@@ -123,10 +123,11 @@ export function LayoutToolbar({
             <button
               type="button"
               onClick={onPublish}
-              disabled={publishing || dirty}
+              disabled={publishing || saving}
+              title={dirty ? 'Saves your changes, then publishes' : 'Publish this layout'}
               className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-50 btn-press"
             >
-              <Upload className="h-4 w-4" strokeWidth={2} /> Publish
+              <Upload className="h-4 w-4" strokeWidth={2} /> {publishing ? 'Publishing…' : dirty ? 'Save & Publish' : 'Publish'}
             </button>
           </>
         )}

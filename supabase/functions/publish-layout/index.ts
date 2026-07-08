@@ -22,7 +22,12 @@ import {
   computeAnchorDistances,
   snapPlacementToNode,
 } from '../_shared/wie/graph.ts'
-import type { WalkCell } from '../_shared/wie/types.ts'
+import {
+  buildWalkableCells,
+  evaluatePublishReadiness,
+  type ReadinessObject,
+  type ReadinessPlacement,
+} from '../_shared/wie/publishReadiness.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 
@@ -66,86 +71,48 @@ serve(async (req: Request) => {
     const { data: objects } = await admin.from('layout_objects').select('*').eq('layout_id', layout_id)
     const { data: placements } = await admin.from('layout_placements').select('*').eq('layout_id', layout_id)
 
-    const rejections: Rejection[] = []
+    // ── Validate via the shared readiness module (same checks the designer's
+    //    live checklist runs, off the same messages) ──────────────────────────
+    const readinessObjects: ReadinessObject[] = ((objects ?? []) as any[]).map((o) => ({
+      objectType: o.object_type, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+    }))
+    const readinessPlacements: ReadinessPlacement[] = ((placements ?? []) as any[]).map((p) => ({
+      id: String(p.location_id), floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h,
+    }))
 
-    // ── Build walkable cells from walkway + dock objects ─────────────────────
-    const cellMap = new Map<string, WalkCell>()
-    const addCell = (floor: number, x: number, y: number, isDock: boolean, isLift: boolean): void => {
-      const key = `${floor}:${x}:${y}`
-      const existing = cellMap.get(key)
-      if (existing) { existing.isDock = existing.isDock || isDock; existing.isLift = existing.isLift || isLift }
-      else cellMap.set(key, { x, y, floor, isDock, isLift })
-    }
-    let hasDock = false
-    for (const o of (objects ?? []) as any[]) {
-      // walkway / dock / lift are all walkable; lift cells also connect floors.
-      if (o.object_type !== 'walkway' && o.object_type !== 'dock' && o.object_type !== 'lift') continue
-      const isDock = o.object_type === 'dock'
-      const isLift = o.object_type === 'lift'
-      if (isDock) hasDock = true
-      for (let dy = 0; dy < o.h; dy++) {
-        for (let dx = 0; dx < o.w; dx++) addCell(o.floor, o.x + dx, o.y + dy, isDock, isLift)
-      }
-    }
-
-    // Walls and storage footprints are NOT walkable — subtract them so routes
-    // can't pass through a rack or a wall even if a walkway was painted over them.
-    const removeCell = (floor: number, x: number, y: number): void => { cellMap.delete(`${floor}:${x}:${y}`) }
-    for (const o of (objects ?? []) as any[]) {
-      if (o.object_type !== 'wall') continue
-      for (let dy = 0; dy < o.h; dy++) {
-        for (let dx = 0; dx < o.w; dx++) removeCell(o.floor, o.x + dx, o.y + dy)
-      }
-    }
-    for (const p of (placements ?? []) as any[]) {
-      for (let dy = 0; dy < p.h; dy++) {
-        for (let dx = 0; dx < p.w; dx++) removeCell(p.floor, p.x + dx, p.y + dy)
-      }
-    }
-
-    if (!hasDock) rejections.push({ code: 'no_dock', message: 'Add at least one dock — putaway routes start from a dock.' })
-    if (cellMap.size === 0) {
-      rejections.push({ code: 'no_walkways', message: 'Draw walkways connecting docks to your storage.' })
-    }
-    if (!placements || placements.length === 0) {
-      rejections.push({ code: 'no_bins', message: 'Place at least one storage bin before publishing.' })
-    }
-
-    if (rejections.length > 0) {
+    const readiness = evaluatePublishReadiness({
+      objects: readinessObjects, placements: readinessPlacements, cellSizeM: cellSize,
+    })
+    if (!readiness.ready) {
+      const rejections: Rejection[] = readiness.checks
+        .filter((c) => c.status === 'fail')
+        .map((c) => ({
+          code: c.code,
+          message: c.message,
+          ...(c.code === 'unreachable_bins' ? { locationIds: readiness.unreachableIds.map(Number) } : {}),
+        }))
       return new Response(JSON.stringify({ ok: false, rejections }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // ── Build graph + anchors (dock nodes) ───────────────────────────────────
-    const cells = [...cellMap.values()]
+    // ── Build graph + anchors + snaps for the atomic commit ──────────────────
+    // Readiness passed, so every placement snaps to a dock-reachable node. Rebuild
+    // the skeleton from the same shared cell set the check used.
+    const { cells } = buildWalkableCells(readinessObjects, readinessPlacements)
     const graph = buildWalkGraph(cells, cellSize)
     const anchorIds = graph.nodes.filter((n) => n.nodeType === 'dock').map((n) => n.id)
-
-    // ── Snap placements + reachability check ─────────────────────────────────
     const distanceRows = computeAnchorDistances(graph, anchorIds)
-    const reachable = new Set(distanceRows.map((r) => r.toNodeId))
 
     const snaps: Array<{ location_id: number; node_local_id: number; access_offset_m: number }> = []
-    const unreachable: number[] = []
     for (const p of placements as any[]) {
       const snap = snapPlacementToNode(
         { locationId: p.location_id, floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h },
         graph.nodes,
         cellSize,
       )
-      if (snap.graphNodeId === null || !reachable.has(snap.graphNodeId)) {
-        unreachable.push(p.location_id)
-        continue
-      }
-      snaps.push({ location_id: p.location_id, node_local_id: snap.graphNodeId, access_offset_m: snap.accessOffsetM })
-    }
-    if (unreachable.length > 0) {
-      rejections.push({
-        code: 'unreachable_bins',
-        message: `${unreachable.length} bin(s) have no walkway route from a dock. Connect them and republish.`,
-        locationIds: unreachable,
-      })
+      // graphNodeId is non-null: reachability was already validated above.
+      snaps.push({ location_id: p.location_id, node_local_id: snap.graphNodeId!, access_offset_m: snap.accessOffsetM })
     }
 
     // Phase 1 does NOT auto-retire bins on publish: deactivating "unplaced" active
@@ -154,12 +121,6 @@ serve(async (req: Request) => {
     // draft-created bin already deletes it (mutate-layout GC). Bin retirement with
     // proper UX is a Phase 2 concern; the RPC still guards stock-in-removed-bin.
     const toDeactivate: number[] = []
-
-    if (rejections.length > 0) {
-      return new Response(JSON.stringify({ ok: false, rejections }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
 
     // ── Payloads for the atomic publish RPC ──────────────────────────────────
     const nodePayload = graph.nodes.map((n) => ({ local_id: n.id, floor: n.floor, x: n.x, y: n.y, node_type: n.nodeType }))

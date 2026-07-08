@@ -5,7 +5,8 @@
 // archived layouts can be deleted outright to keep the list clean.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Trash2, Check, X, ImageUp } from 'lucide-react'
+import { Plus, Trash2, Check, X, ImageUp, Copy } from 'lucide-react'
+import { evaluatePublishReadiness } from '@/supabase/functions/_shared/wie/publishReadiness'
 import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
 import { useZoneProfiles } from '@/hooks/queries/useZoneProfiles'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
@@ -27,6 +28,7 @@ import { LayoutCanvas } from './LayoutCanvas'
 import { LayoutToolbar } from './LayoutToolbar'
 import { LayoutLegend } from './LayoutLegend'
 import { PlacementInspector } from './PlacementInspector'
+import { PublishChecklist } from './PublishChecklist'
 import { RackWizard } from './RackWizard'
 import { FloorPlanImportModal } from './FloorPlanImportModal'
 import { SimulationResultCard } from './SimulationResultCard'
@@ -97,6 +99,20 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const isDraft = selectedLayout?.status === 'draft'
   const selectedPlacement = state.placements.find((p) => p.clientRef === state.selectedRef) ?? null
 
+  // Live publish readiness — same pure checks the server runs, keyed by clientRef
+  // so unreachable bins map straight back to canvas highlights. Reachability is a
+  // connectivity property, so exact cell size doesn't change pass/fail.
+  const readiness = useMemo(
+    () =>
+      evaluatePublishReadiness({
+        objects: state.objects.map((o) => ({ objectType: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h })),
+        placements: state.placements.map((p) => ({ id: p.clientRef, floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h })),
+        cellSizeM: selectedLayout?.cellSizeM ?? 1,
+      }),
+    [state.objects, state.placements, selectedLayout?.cellSizeM],
+  )
+  const highlightRefs = useMemo(() => new Set(readiness.unreachableIds), [readiness])
+
   const handleCreate = async () => {
     const floorCount = Math.min(10, Math.max(1, Math.round(floorCountInput) || 1))
     const layout = await createLayout.mutateAsync({ warehouse_id: warehouse.id, name: `Layout ${new Date().getFullYear()}`, floor_count: floorCount })
@@ -104,7 +120,9 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     setNotice(`Draft created — draw walkways, a dock, and ${STORAGE_UNIT.lowerPlural}, then Publish.`)
   }
 
-  const handleSave = async () => {
+  // Persist the current canvas geometry and reconcile client refs → real location
+  // ids. Shared by explicit Save and by the one-click Save & Publish path.
+  const persistGeometry = async () => {
     if (!selectedLayoutId) return
     const placements: SavePlacementInput[] = state.placements.map((p) => ({
       client_ref: p.clientRef,
@@ -121,18 +139,34 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     }))
     const result = await saveGeometry.mutateAsync({ placements, objects })
     dispatch({ type: 'mark_saved', refMap: result.ref_map })
-    setNotice('Saved.')
+  }
+
+  const handleSave = async () => {
+    try {
+      await persistGeometry()
+      setNotice('Saved.')
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Failed to save', 'error')
+    }
   }
 
   const handlePublish = async () => {
     if (!selectedLayoutId) return
     setRejections(null)
-    const result = await publishLayout.mutateAsync(selectedLayoutId)
-    if (result.ok) {
-      setNotice('Published — this warehouse now uses rack-level putaway.')
-      setSelectedLayoutId(null)
-    } else {
-      setRejections(result.rejections ?? [])
+    try {
+      // One-click Save & Publish: flush any unsaved edits first so the server
+      // validates the geometry the operator actually drew. The server reads the
+      // persisted rows, so ordering (save → publish) is what matters.
+      if (state.dirty) await persistGeometry()
+      const result = await publishLayout.mutateAsync(selectedLayoutId)
+      if (result.ok) {
+        setNotice('Published — this warehouse now uses rack-level putaway.')
+        setSelectedLayoutId(null)
+      } else {
+        setRejections(result.rejections ?? [])
+      }
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Failed to publish', 'error')
     }
   }
 
@@ -254,9 +288,19 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
       {selectedLayout && (
         <div className="space-y-3">
           {!isDraft && (
-            <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
-              This layout is {selectedLayout.status} and read-only. Clone it to make changes.
-            </p>
+            <div className="flex items-center justify-between gap-3 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
+              <p className="text-xs text-stone-500">
+                This layout is {selectedLayout.status} and read-only. Clone it to make changes.
+              </p>
+              <button
+                type="button"
+                onClick={() => cloneLayout.mutate({ layoutId: selectedLayout.id, name: `${selectedLayout.name} copy` })}
+                disabled={cloneLayout.isPending}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-50 btn-press"
+              >
+                <Copy className="h-4 w-4" strokeWidth={2} /> Clone to edit
+              </button>
+            </div>
           )}
 
           <LayoutToolbar
@@ -280,11 +324,14 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
           />
 
           <div className="grid grid-cols-[1fr_240px] gap-3">
-            <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} />
-            <PlacementInspector placement={selectedPlacement} dispatch={dispatch} zoneProfiles={zoneProfilesQuery.data ?? []} storageTypes={storageTypesQuery.data ?? []} />
+            <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} highlightRefs={isDraft ? highlightRefs : undefined} />
+            <div className="space-y-3">
+              {isDraft && <PublishChecklist readiness={readiness} />}
+              <PlacementInspector placement={selectedPlacement} dispatch={dispatch} zoneProfiles={zoneProfilesQuery.data ?? []} storageTypes={storageTypesQuery.data ?? []} />
+            </div>
           </div>
           <LayoutLegend />
-          {state.dirty && <p className="text-[11px] text-amber-600">Unsaved changes — save before publishing.</p>}
+          {isDraft && state.dirty && <p className="text-[11px] text-amber-600">Unsaved changes — Publish saves them for you automatically.</p>}
 
           {simulation && (
             <div className="max-w-md">
