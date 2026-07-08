@@ -107,7 +107,10 @@ export function fromProduct(p: Partial<Product>): Record<string, unknown> {
   if (p.price !== undefined) row.price = p.price
   if (p.category !== undefined) row.category = p.category
   if (p.inventory !== undefined) row.inventory = p.inventory
-  if (p.imageUrl !== undefined) row.image_url = p.imageUrl
+  // Empty string means "no image" client-side, but the server schema requires
+  // image_url to be a valid URL or null (never ''). Map '' -> null so clearing
+  // an image on update actually clears it instead of failing INVALID_INPUT.
+  if (p.imageUrl !== undefined) row.image_url = p.imageUrl === '' ? null : p.imageUrl
   if (p.unit !== undefined) row.unit = p.unit
   if (p.cartonSize !== undefined) row.carton_size = p.cartonSize
   if (p.dietaryLabels !== undefined) row.dietary_labels = p.dietaryLabels

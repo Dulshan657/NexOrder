@@ -7,7 +7,6 @@ import ProductAdmin from './ProductAdmin';
 import HoReCaListView from './HoReCaListView';
 import UserAdmin from './UserAdmin';
 import SupplierAdmin from './SupplierAdmin';
-import SettingsPanel from './SettingsPanel';
 import AccountsAgingTable from './AccountsAgingTable';
 import OrderImportPage from './OrderImportPage';
 import WalkInReviewTab from './admin/WalkInReviewTab';
@@ -28,6 +27,7 @@ const WarehousePage = lazyWithRetry(() => import('./inventory/warehouse/Warehous
 const AuditLogTab = lazyWithRetry(() => import('./admin/AuditLogTab'));
 const SystemHealthTab = lazyWithRetry(() => import('./admin/SystemHealthTab'));
 const POInboxView = lazyWithRetry(() => import('./admin/POInboxView'));
+const SettingsView = lazyWithRetry(() => import('./admin/settings/SettingsView'));
 
 interface AdminViewProps {
     currentUser: User;
@@ -36,12 +36,9 @@ interface AdminViewProps {
     users: User[];
     suppliers: Supplier[];
     allOrders: Order[];
-    appLogo: string | null;
     appSettings: AppSettings;
-    onUpdateLogo: (logo: string | null) => void;
-    onSaveSettings: (settings: AppSettings) => void;
-    onAddProduct: (product: Omit<Product, 'id' | 'inventory'>) => void;
-    onUpdateProduct: (product: Product) => void;
+    onAddProduct: (product: Omit<Product, 'id' | 'inventory'>) => Promise<void>;
+    onUpdateProduct: (product: Product) => Promise<void>;
     onDeleteProduct: (productId: number) => void;
     onAddHoReCa: (customer: Omit<HoReCa, 'id'>, reason?: string) => void;
     onUpdateHoReCa: (customer: HoReCa, reason?: string) => void;
@@ -111,7 +108,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {props.activeTab === 'Pick Queue' && <PickQueueView currentUser={props.currentUser} />}
                 {props.activeTab === 'Dispatched' && <DispatchedOrdersView orders={props.allOrders} onViewDetail={props.onViewOrderDetail} />}
                 {props.activeTab === 'Documents' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <DocumentsView />}
-                {props.activeTab === 'Warehouse' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <WarehousePage currentUser={props.currentUser} onOpenDesigner={openDesigner} />}
+                {props.activeTab === 'Warehouse' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <WarehousePage currentUser={props.currentUser} onOpenDesigner={props.currentUser.role === UserRole.ADMIN ? openDesigner : undefined} />}
                 {props.activeTab === 'Scheduled Visits' && props.routes && props.onSetRoutes && props.addToast && (
                     <ScheduledVisitsAdmin routes={props.routes} users={props.users} hoReCas={props.hoReCas} visits={props.visits ?? []} currentUser={props.currentUser} onSetRoutes={props.onSetRoutes} addToast={props.addToast} />
                 )}
@@ -121,13 +118,9 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {props.activeTab === 'Users' && props.currentUser.role === UserRole.ADMIN && <UserAdmin users={props.users} onAddUser={props.onAddUser} onUpdateUser={props.onUpdateUser} onDeleteUser={props.onDeleteUser} />}
                 {props.activeTab === 'Suppliers' && props.currentUser.role === UserRole.ADMIN && <SupplierAdmin suppliers={props.suppliers} onAddSupplier={props.onAddSupplier} onUpdateSupplier={props.onUpdateSupplier} onDeleteSupplier={props.onDeleteSupplier} />}
                 {props.activeTab === 'Settings' && props.currentUser.role === UserRole.ADMIN && (
-                    <SettingsPanel
-                        settings={props.appSettings}
-                        appLogo={props.appLogo}
+                    <SettingsView
                         hoReCas={props.hoReCas}
                         products={props.products}
-                        onSaveSettings={props.onSaveSettings}
-                        onUpdateLogo={props.onUpdateLogo}
                         onUpdateHoReCa={props.onUpdateHoReCa}
                     />
                 )}

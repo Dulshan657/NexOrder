@@ -8,8 +8,8 @@ import OptimizedImage from './OptimizedImage';
 interface ProductAdminProps {
     products: Product[];
     suppliers: Supplier[];
-    onAddProduct: (product: Omit<Product, 'id' | 'inventory'>) => void;
-    onUpdateProduct: (product: Product) => void;
+    onAddProduct: (product: Omit<Product, 'id' | 'inventory'>) => Promise<void>;
+    onUpdateProduct: (product: Product) => Promise<void>;
     onDeleteProduct: (productId: number) => void;
 }
 
@@ -30,13 +30,20 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
         setIsFormOpen(true);
     };
 
-    const handleSaveProduct = (productData: Product | Omit<Product, 'id' | 'inventory'>) => {
-        if ('id' in productData) {
-            onUpdateProduct(productData);
-        } else {
-            onAddProduct(productData);
+    const handleSaveProduct = async (productData: Product | Omit<Product, 'id' | 'inventory'>) => {
+        try {
+            if ('id' in productData) {
+                await onUpdateProduct(productData);
+            } else {
+                await onAddProduct(productData);
+            }
+            // Only close on success — on failure the toast (raised by the caller)
+            // explains why, and the operator can fix the form without re-entering data.
+            setIsFormOpen(false);
+        } catch {
+            // Swallow: the caller is responsible for surfacing the error (toast).
+            // Keep the modal open so the operator's input isn't lost.
         }
-        setIsFormOpen(false);
     };
     
     const confirmDelete = () => {

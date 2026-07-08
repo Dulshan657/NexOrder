@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { extractFunctionErrorMessage } from '@/lib/functionError'
 import type { Database } from '@/lib/database.types'
 
 type ProductRow = Database['public']['Tables']['products']['Row']
@@ -36,7 +37,7 @@ export async function createProduct(product: ProductInsert): Promise<ProductRow>
     'mutate-product',
     { body: { action: 'create', data: product } },
   )
-  if (error) throw error
+  if (error) throw new Error(await extractFunctionErrorMessage(error, 'Failed to create product'))
   return data!.product
 }
 
@@ -45,7 +46,7 @@ export async function updateProduct(id: number, updates: ProductUpdate): Promise
     'mutate-product',
     { body: { action: 'update', id, data: updates } },
   )
-  if (error) throw error
+  if (error) throw new Error(await extractFunctionErrorMessage(error, 'Failed to update product'))
   return data!.product
 }
 
@@ -54,5 +55,5 @@ export async function deleteProduct(id: number): Promise<void> {
     'mutate-product',
     { body: { action: 'delete', id } },
   )
-  if (error) throw error
+  if (error) throw new Error(await extractFunctionErrorMessage(error, 'Failed to delete product'))
 }

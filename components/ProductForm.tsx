@@ -6,6 +6,7 @@ import { CATEGORIES } from '../constants';
 import { useToasts } from '../hooks/useToasts';
 import { compressImage } from '../lib/imageCompression';
 import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/supabase/storageService';
+import { buildProductPayload } from '../lib/productFormPayload';
 import OptimizedImage from './OptimizedImage';
 import ProductHomeBinsSection from './admin/ProductHomeBinsSection';
 import ProductWmsAttributesSection from './admin/ProductWmsAttributesSection';
@@ -13,12 +14,13 @@ import ProductWmsAttributesSection from './admin/ProductWmsAttributesSection';
 interface ProductFormProps {
     productToEdit: Product | null;
     suppliers: Supplier[];
-    onSave: (productData: Product | Omit<Product, 'id' | 'inventory'>) => void;
+    onSave: (productData: Product | Omit<Product, 'id' | 'inventory'>) => void | Promise<void>;
     onClose: () => void;
 }
 
 const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onSave, onClose }) => {
     const [formData, setFormData] = useState({
+        sku: '',
         name: '',
         description: '',
         price: '',
@@ -26,6 +28,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
         unit: 'each',
         imageUrl: '',
         supplierId: suppliers.length > 0 ? String(suppliers[0].id) : '',
+        cartonSize: '1',
         cubicMetersUnit: '',
         cubicMetersCarton: '',
         lengthCm: '',
@@ -36,10 +39,12 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { addToast } = useToasts();
     const [isUploading, setIsUploading] = useState(false);
+    const [formError, setFormError] = useState<string | null>(null);
 
     useEffect(() => {
         if (productToEdit) {
             setFormData({
+                sku: productToEdit.sku ?? '',
                 name: productToEdit.name,
                 description: productToEdit.description,
                 price: String(productToEdit.price),
@@ -47,6 +52,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                 unit: productToEdit.unit,
                 imageUrl: productToEdit.imageUrl || '',
                 supplierId: String(productToEdit.supplierId),
+                cartonSize: productToEdit.cartonSize != null ? String(productToEdit.cartonSize) : '1',
                 cubicMetersUnit: productToEdit.cubicMetersUnit != null ? String(productToEdit.cubicMetersUnit) : '',
                 cubicMetersCarton: productToEdit.cubicMetersCarton != null ? String(productToEdit.cubicMetersCarton) : '',
                 lengthCm: productToEdit.lengthCm != null ? String(productToEdit.lengthCm) : '',
@@ -99,34 +105,21 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        const price = parseFloat(formData.price);
-        const supplierId = parseInt(formData.supplierId, 10);
+        setFormError(null);
 
-        if (!formData.name || !formData.description || isNaN(price) || price < 0 || isNaN(supplierId)) {
-            alert('Please fill all fields correctly.');
+        const result = buildProductPayload(formData, { isEdit: !!productToEdit });
+        // NOTE: `result.ok === false` (not `!result.ok`) — this tsconfig doesn't set
+        // strictNullChecks, under which `!result.ok` fails to narrow the discriminated
+        // union's else-shaped check and TS reports `.error` as missing.
+        if (result.ok === false) {
+            setFormError(result.error);
             return;
         }
 
-        const productData: Record<string, unknown> = {
-            name: formData.name,
-            description: formData.description,
-            price,
-            category: formData.category,
-            unit: formData.unit,
-            imageUrl: formData.imageUrl,
-            supplierId,
-            cubicMetersUnit: formData.cubicMetersUnit ? parseFloat(formData.cubicMetersUnit) : undefined,
-            cubicMetersCarton: formData.cubicMetersCarton ? parseFloat(formData.cubicMetersCarton) : undefined,
-            lengthCm: formData.lengthCm ? parseFloat(formData.lengthCm) : undefined,
-            widthCm: formData.widthCm ? parseFloat(formData.widthCm) : undefined,
-            heightCm: formData.heightCm ? parseFloat(formData.heightCm) : undefined,
-            sizeFactor: formData.sizeFactor ? parseFloat(formData.sizeFactor) : undefined,
-        };
-
         if (productToEdit) {
-            onSave({ ...productToEdit, ...productData });
+            onSave({ ...productToEdit, ...result.data } as Product);
         } else {
-            onSave(productData);
+            onSave(result.data as Omit<Product, 'id' | 'inventory'>);
         }
     };
 
@@ -137,9 +130,18 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg max-h-full overflow-y-auto border border-stone-200">
                 <form onSubmit={handleSubmit} className="space-y-5">
                     <h2 className="text-2xl font-display font-bold text-stone-900 border-b border-stone-100 pb-3">{productToEdit ? 'Edit Product' : 'Add New Product'}</h2>
+                    {formError && (
+                        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2.5">
+                            {formError}
+                        </div>
+                    )}
                     <div>
                         <label htmlFor="name" className="block text-sm font-medium text-stone-700 mb-1.5">Product Name</label>
                         <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required className={inputClasses} />
+                    </div>
+                    <div>
+                        <label htmlFor="sku" className="block text-sm font-medium text-stone-700 mb-1.5">SKU</label>
+                        <input type="text" name="sku" id="sku" value={formData.sku} onChange={handleChange} required placeholder="e.g., AYM-COC-003 (uppercase recommended)" className={inputClasses} />
                     </div>
                     <div>
                         <label htmlFor="description" className="block text-sm font-medium text-stone-700 mb-1.5">Description</label>
@@ -154,6 +156,11 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                             <label htmlFor="unit" className="block text-sm font-medium text-stone-700 mb-1.5">Unit</label>
                             <input type="text" name="unit" id="unit" value={formData.unit} onChange={handleChange} required placeholder="e.g., each, box, license" className={inputClasses} />
                         </div>
+                    </div>
+                    <div>
+                        <label htmlFor="cartonSize" className="block text-sm font-medium text-stone-700 mb-1.5">Carton size (units per carton)</label>
+                        <input type="number" name="cartonSize" id="cartonSize" value={formData.cartonSize} onChange={handleChange} required step="1" min="1" className={inputClasses} />
+                        <p className="text-[11px] text-stone-400 mt-1">How many sellable units come in one carton — used for carton ordering & stock math.</p>
                     </div>
                      <div>
                         <label htmlFor="category" className="block text-sm font-medium text-stone-700 mb-1.5">Category</label>
