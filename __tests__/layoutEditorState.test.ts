@@ -79,6 +79,37 @@ describe('layoutEditorReducer', () => {
     expect(s.dirty).toBe(false)
   })
 
+  it('applies auto-connect results, replacing objects with fresh clientRefs and keeping placements/selection', () => {
+    // Seed some existing objects/placements/selection so we can assert they
+    // survive (placements) or get fresh refs (objects) after apply_auto_connect.
+    let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 0, y: 0 })
+    s = layoutEditorReducer({ ...s, tool: 'rack' }, { type: 'paint_cell', x: 4, y: 5 })
+    const placementRef = s.placements[0].clientRef
+    const priorObjectRefs = s.objects.map((o) => o.clientRef)
+
+    s = layoutEditorReducer(s, {
+      type: 'apply_auto_connect',
+      objects: [
+        { objectType: 'dock', floor: 0, x: 0, y: 0, w: 1, h: 1 },
+        { objectType: 'walkway', floor: 0, x: 1, y: 0, w: 1, h: 1 },
+        { objectType: 'walkway', floor: 0, x: 2, y: 0, w: 1, h: 1 },
+      ],
+    })
+
+    expect(s.objects).toHaveLength(3)
+    expect(s.objects.map((o) => o.objectType)).toEqual(['dock', 'walkway', 'walkway'])
+    // Every object got a brand-new clientRef, with no collisions between them
+    // or with any ref that existed before the replacement.
+    const newRefs = s.objects.map((o) => o.clientRef)
+    expect(new Set(newRefs).size).toBe(newRefs.length)
+    expect(newRefs.some((ref) => priorObjectRefs.includes(ref))).toBe(false)
+    // Placements and selection are untouched — auto-connect only rewrites objects.
+    expect(s.placements).toHaveLength(1)
+    expect(s.placements[0].clientRef).toBe(placementRef)
+    expect(s.selectedRef).toBe(placementRef)
+    expect(s.dirty).toBe(true)
+  })
+
   it('hydrates from server rows and is not dirty', () => {
     const s = layoutEditorReducer(initialEditorState(), {
       type: 'load',

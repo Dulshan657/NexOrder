@@ -21,7 +21,9 @@ import {
   FLOORPLAN_SYSTEM_PROMPT,
   normalizeFloorplan,
   type FloorplanExtraction,
+  type NormalizedObject,
 } from '../_shared/floorplan/extractionSchema.ts'
+import { autoConnectLayout, type ConnectObject, type ConnectPlacement } from '../_shared/wie/autoConnect.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const BUCKET = 'floorplan-scans'
@@ -119,6 +121,46 @@ serve(async (req: Request) => {
     const confidence = typeof result.data.confidence === 'number' ? result.data.confidence : 0
     const needsReview = confidence < REVIEW_THRESHOLD || draft.rackCount === 0
 
+    // Auto-connect: carve docks free of overlapping walls and thread 1×1
+    // walkway cells to every rack that would otherwise be an orphaned island,
+    // so a plausible draft arrives publish-ready instead of failing the
+    // designer's unreachable-bins gate on first load.
+    const connectObjects: ConnectObject[] = draft.objects.map((o) => ({
+      objectType: o.object_type,
+      floor: o.floor,
+      x: o.x,
+      y: o.y,
+      w: o.w,
+      h: o.h,
+      meta: o.meta,
+    }))
+    const connectPlacements: ConnectPlacement[] = draft.placements.map((p) => ({
+      id: p.client_ref,
+      floor: p.floor,
+      x: p.x,
+      y: p.y,
+      w: p.w,
+      h: p.h,
+    }))
+    const repair = autoConnectLayout({
+      objects: connectObjects,
+      placements: connectPlacements,
+      gridWidth: draft.gridWidth,
+      gridHeight: draft.gridHeight,
+      floors: draft.floors,
+    })
+    // ConnectObject is structurally identical to NormalizedObject bar the
+    // objectType/object_type field name — adapt back, preserving meta.
+    const repairedObjects: NormalizedObject[] = repair.objects.map((o) => ({
+      object_type: o.objectType as NormalizedObject['object_type'],
+      floor: o.floor,
+      x: o.x,
+      y: o.y,
+      w: o.w,
+      h: o.h,
+      ...(o.meta ? { meta: o.meta } : {}),
+    }))
+
     await admin.from('floorplan_imports')
       .update({ status: 'succeeded', confidence, needs_review: needsReview } as any).eq('id', importId)
 
@@ -130,9 +172,16 @@ serve(async (req: Request) => {
         gridHeight: draft.gridHeight,
         floors: draft.floors,
         placements: draft.placements,
-        objects: draft.objects,
+        objects: repairedObjects,
       },
-      counts: { racks: draft.rackCount, objects: draft.objectCount, zones: draft.zoneCount },
+      counts: {
+        racks: draft.rackCount,
+        objects: draft.objectCount,
+        zones: draft.zoneCount,
+        addedWalkways: repair.addedWalkwayCells.length,
+        removedWallCells: repair.removedWallCells.length,
+        unreachable: repair.stillUnreachable.length,
+      },
       confidence,
       needsReview,
       notes: result.data.notes ?? '',

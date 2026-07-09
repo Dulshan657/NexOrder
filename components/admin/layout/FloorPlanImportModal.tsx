@@ -2,13 +2,16 @@
 // → we create an editable DRAFT layout the operator reviews before publishing.
 // Nothing auto-publishes; the draft opens in the designer on success.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, UploadCloud, Loader2, CheckCircle2, Circle, AlertTriangle, Sparkles } from 'lucide-react'
 import type { Warehouse } from '@/types'
 import { useQueryClient } from '@tanstack/react-query'
 import { createLayout, saveGeometry } from '@/services/supabase/layoutService'
 import { layoutKeys } from '@/hooks/queries/useLayouts'
 import { useFloorplanImport, type ImportPhase } from '@/hooks/queries/useFloorplanImport'
+import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
+import { applyDefaultStorageForm } from '@/lib/floorplanImportDefaults'
+import { capacityModeOf, deriveCapacitySlots } from '@/lib/storageFormCapacity'
 
 interface FloorPlanImportModalProps {
   warehouse: Warehouse
@@ -50,14 +53,28 @@ async function edgeErrorMessage(err: unknown, fallback: string): Promise<string>
   return err instanceof Error && err.message ? err.message : fallback
 }
 
+/** Short capacity hint for a storage-form <option> label, e.g. "24 slots" / "uncapped". */
+function formCapacityHint(form: { levels?: number; positionsPerLevel?: number; defaultCapacitySlots?: number }): string {
+  const slots = deriveCapacitySlots({
+    mode: capacityModeOf(form),
+    levels: form.levels,
+    positionsPerLevel: form.positionsPerLevel,
+    flatSlots: form.defaultCapacitySlots,
+  })
+  return slots != null ? `${slots} slots` : 'uncapped'
+}
+
 export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: FloorPlanImportModalProps) {
   const qc = useQueryClient()
   const { phase, result, error, run, reset } = useFloorplanImport(warehouse.id)
+  const { data: storageForms } = useStorageTypes()
+  const forms = storageForms ?? []
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [selectedFormId, setSelectedFormId] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   // Hard guard against a double-fired create: the imported rack codes are
   // deterministic, so two concurrent create-draft calls race on the same
@@ -71,6 +88,23 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
     setPreviewUrl(url)
     return () => URL.revokeObjectURL(url)
   }, [file])
+
+  // Default the storage-form selector to the first drawable active form (a
+  // sensible generic default), falling back to the first active form, or no
+  // default at all if none exist. Only runs once the forms have loaded and the
+  // operator hasn't already picked one.
+  useEffect(() => {
+    if (selectedFormId !== null || forms.length === 0) return
+    const drawable = forms.find((f) => f.isDrawable)
+    setSelectedFormId(drawable?.id ?? forms[0]?.id ?? null)
+  }, [forms, selectedFormId])
+
+  const matchStats = useMemo(() => {
+    const placements = result?.draft.placements ?? []
+    const total = placements.length
+    const matched = placements.filter((p) => p.new_bin?.storage_type_id != null).length
+    return { total, matched, unmatched: total - matched }
+  }, [result])
 
   const pickFile = (f: File | null) => {
     if (!f || !f.type.startsWith('image/')) return
@@ -97,11 +131,14 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
       // Scope every imported rack code to THIS layout so re-creating from the same
       // extraction (or a racing attempt) never collides with a prior draft's
       // locations — layout ids are globally unique, `locations.code` is UNIQUE.
-      const placements = result.draft.placements.map((p) =>
+      const suffixed = result.draft.placements.map((p) =>
         p.new_bin
           ? { ...p, new_bin: { ...p.new_bin, code: `${p.new_bin.code}-L${layout.id}` } }
           : p,
       )
+      // Backfill the operator-picked default storage form onto any rack the AI
+      // couldn't match (matched racks keep their matched form).
+      const placements = applyDefaultStorageForm(suffixed, selectedFormId)
       await saveGeometry(layout.id, placements, result.draft.objects)
       qc.invalidateQueries({ queryKey: layoutKeys.byWarehouse(warehouse.id) })
       onDraftCreated(layout.id)
@@ -231,7 +268,36 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
                 </span>
               )}
             </div>
+            {!!result.counts.addedWalkways && (
+              <div className="flex items-center gap-2 text-[11px] text-emerald-700">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                Auto-connected {result.counts.addedWalkways} walkway cell{result.counts.addedWalkways === 1 ? '' : 's'} so every rack is reachable.
+              </div>
+            )}
+            {!!result.counts.unreachable && (
+              <div className="flex items-center gap-2 text-[11px] text-amber-600">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {result.counts.unreachable} rack{result.counts.unreachable === 1 ? '' : 's'} still need{result.counts.unreachable === 1 ? 's' : ''} a walkway or lift — fix in the designer.
+              </div>
+            )}
             {result.notes && <p className="rounded-lg bg-stone-50 px-3 py-2 text-[11px] text-stone-500">{result.notes}</p>}
+            {matchStats.unmatched > 0 && (
+              <div className="space-y-1.5 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
+                <p className="text-xs text-stone-600">
+                  {matchStats.matched} of {matchStats.total} racks matched a storage form. Unmatched racks will use:
+                </p>
+                <select
+                  className="w-full rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-xs text-stone-700"
+                  value={selectedFormId ?? ''}
+                  onChange={(e) => setSelectedFormId(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">No default (uncapped)</option>
+                  {forms.map((f) => (
+                    <option key={f.id} value={f.id}>{f.name} ({formCapacityHint(f)})</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {creating && (
               <div className="flex items-center gap-2 rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600">
                 <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> Building draft layout…

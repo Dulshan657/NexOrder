@@ -36,7 +36,17 @@ export interface FloorplanDraft {
 export interface FloorplanExtractResult {
   importId: string
   draft: FloorplanDraft
-  counts: { racks: number; objects: number; zones: number }
+  counts: {
+    racks: number
+    objects: number
+    zones: number
+    /** Walkway cells the server auto-added so every rack reaches a dock. Optional: absent on an older deployed function. */
+    addedWalkways?: number
+    /** Wall cells carved out where a dock overlapped a wall. Optional: absent on an older deployed function. */
+    removedWallCells?: number
+    /** Racks still unreachable after auto-connect (needs a manual walkway/lift). Optional: absent on an older deployed function. */
+    unreachable?: number
+  }
   confidence: number
   needsReview: boolean
   notes: string

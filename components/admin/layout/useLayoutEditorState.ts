@@ -82,6 +82,7 @@ export type EditorAction =
   | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number }
   | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number }> }
   | { type: 'mark_saved'; refMap: Array<{ client_ref: string; location_id: number }> }
+  | { type: 'apply_auto_connect'; objects: Array<Pick<EditorObject, 'objectType' | 'floor' | 'x' | 'y' | 'w' | 'h'>> }
 
 export function initialEditorState(codePrefix = 'W'): EditorState {
   return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, dirty: false, seq: 1, codePrefix, activeForm: null }
@@ -225,6 +226,17 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         placements: state.placements.map((p) => (byRef.has(p.clientRef) ? { ...p, locationId: byRef.get(p.clientRef) } : p)),
         dirty: false,
       }
+    }
+
+    case 'apply_auto_connect': {
+      // Wholesale replace of the object list (walls carved under docks + new
+      // walkway cells), same as 'load': every object gets a fresh clientRef.
+      // Placements and selection are untouched — auto-connect never moves bins.
+      let seq = state.seq
+      const objects: EditorObject[] = action.objects.map((o) => ({
+        clientRef: `o${seq++}`, objectType: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+      }))
+      return { ...state, objects, seq, dirty: true }
     }
 
     default:

@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Trash2, Check, X, ImageUp, Copy } from 'lucide-react'
 import { evaluatePublishReadiness } from '@/supabase/functions/_shared/wie/publishReadiness'
+import { autoConnectLayout } from '@/supabase/functions/_shared/wie/autoConnect'
 import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
 import { useZoneProfiles } from '@/hooks/queries/useZoneProfiles'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
@@ -26,7 +27,7 @@ import { useCommitReslotPlan } from '@/hooks/queries/useReslotPlan'
 import { useToasts } from '@/hooks/useToasts'
 import type { PublishRejection, SaveObjectInput, SavePlacementInput } from '@/services/supabase/layoutService'
 import type { CommitMove } from '@/services/supabase/reslotService'
-import type { SimulationResult, Warehouse } from '@/types'
+import type { LayoutObjectType, SimulationResult, Warehouse } from '@/types'
 import { LayoutCanvas } from './LayoutCanvas'
 import { LayoutToolbar } from './LayoutToolbar'
 import { LayoutLegend } from './LayoutLegend'
@@ -146,6 +147,48 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     [state.objects, state.placements, selectedLayout?.cellSizeM],
   )
   const highlightRefs = useMemo(() => new Set(readiness.unreachableIds), [readiness])
+  const canAutoConnect = !!isDraft && readiness.unreachableIds.length > 0
+
+  // Repair unreachable bins in one click: carve docks out of overlapping walls
+  // and route new 1×1 walkway cells from the reachable network to every
+  // stranded bin. Uses the exact same objects/placements→ConnectObject/
+  // ConnectPlacement mapping as the readiness memo above so `stillUnreachable`
+  // lines up with `readiness.unreachableIds`.
+  const handleAutoConnect = () => {
+    if (!selectedLayout) return
+    const result = autoConnectLayout({
+      objects: state.objects.map((o) => ({ objectType: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h })),
+      placements: state.placements.map((p) => ({ id: p.clientRef, floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h })),
+      gridWidth: selectedLayout.gridWidth,
+      gridHeight: selectedLayout.gridHeight,
+      floors: selectedLayout.floorCount,
+    })
+
+    if (!result.changed) {
+      addToast('Nothing to auto-connect — layout is already fully routed.', 'info')
+      return
+    }
+
+    dispatch({
+      type: 'apply_auto_connect',
+      objects: result.objects.map((o) => ({
+        objectType: o.objectType as LayoutObjectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+      })),
+    })
+
+    const parts = [
+      `Added ${result.addedWalkwayCells.length} walkway cell${result.addedWalkwayCells.length === 1 ? '' : 's'}.`,
+    ]
+    if (result.removedWallCells.length > 0) {
+      parts.push(`Opened ${result.removedWallCells.length} wall cell${result.removedWallCells.length === 1 ? '' : 's'} under a dock.`)
+    }
+    if (result.stillUnreachable.length > 0) {
+      parts.push(
+        `${result.stillUnreachable.length} bin${result.stillUnreachable.length === 1 ? '' : 's'} still unreachable — it's fully enclosed or on a floor with no lift; add a walkway or lift by hand.`,
+      )
+    }
+    addToast(parts.join(' '), result.stillUnreachable.length > 0 ? 'info' : 'success')
+  }
 
   const handleCreate = async () => {
     const floorCount = Math.min(10, Math.max(1, Math.round(floorCountInput) || 1))
@@ -394,7 +437,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
           <div className="grid grid-cols-[1fr_240px] gap-3">
             <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} highlightRefs={isDraft ? highlightRefs : undefined} formColorById={formColorById} />
             <div className="space-y-3">
-              {isDraft && <PublishChecklist readiness={readiness} />}
+              {isDraft && <PublishChecklist readiness={readiness} onAutoConnect={canAutoConnect ? handleAutoConnect : undefined} />}
               {isDraft && (
                 <CapacityAdvisor
                   requiredSlots={stockSummary.requiredSlots}
