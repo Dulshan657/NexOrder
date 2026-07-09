@@ -9,6 +9,7 @@
 
 import React, { useMemo, useState } from 'react'
 import { Boxes, Plus, Pencil, Power, X, Snowflake, PencilRuler } from 'lucide-react'
+import { Button, Modal } from '../../ui'
 import {
   useStorageTypes,
   useCreateStorageType,
@@ -82,6 +83,7 @@ const StorageFormsView: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   // Holds the resolved patch while the retro-apply choice is pending (edit only).
   const [pendingApply, setPendingApply] = useState<{ patch: Record<string, unknown>; id: number } | null>(null)
+  const [applyError, setApplyError] = useState<string | null>(null)
 
   const openCreate = () => { setEditing(null); setForm(emptyForm); setError(null); setFormOpen(true) }
   const openEdit = (t: StorageType) => { setEditing(t); setForm(toForm(t)); setError(null); setFormOpen(true) }
@@ -120,12 +122,30 @@ const StorageFormsView: React.FC = () => {
     const { appliedToUnits } = await updateType.mutateAsync({ id, patch, applyToExisting })
     setFormOpen(false)
     setPendingApply(null)
+    setApplyError(null)
     addToast(
       applyToExisting && appliedToUnits > 0
         ? `Saved — capacity applied to ${appliedToUnits} existing unit${appliedToUnits === 1 ? '' : 's'}.`
         : 'Storage form saved.',
       'success',
     )
+  }
+
+  const closeApplyPrompt = () => {
+    setPendingApply(null)
+    setApplyError(null)
+  }
+
+  /** Retro-apply confirm: surface failures on the prompt itself, and keep it open so
+   *  the operator can retry or pick the other option. */
+  const runApply = async (applyToExisting: boolean) => {
+    if (!pendingApply) return
+    setApplyError(null)
+    try {
+      await commitUpdate(pendingApply.id, pendingApply.patch, applyToExisting)
+    } catch (err) {
+      setApplyError(err instanceof Error ? err.message : 'Failed to save storage form.')
+    }
   }
 
   const save = async () => {
@@ -363,35 +383,39 @@ const StorageFormsView: React.FC = () => {
         </div>
       )}
 
-      {/* Retro-apply prompt ("ask each time") */}
-      {pendingApply && (
-        <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={() => setPendingApply(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-stone-800">Apply capacity to existing units?</h3>
-            <p className="text-xs text-stone-500">
-              You changed this form's capacity or weight limit. Apply it to every unit of this form already placed in
-              published layouts, or only to units drawn from now on?
-            </p>
-            <div className="flex flex-col gap-2 pt-1">
-              <button
-                className="text-sm px-3 py-2 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-50"
-                disabled={updateType.isPending}
-                onClick={() => commitUpdate(pendingApply.id, pendingApply.patch, true).catch((e) => setError(e instanceof Error ? e.message : 'Failed'))}
-              >
-                Apply to all existing units
-              </button>
-              <button
-                className="text-sm px-3 py-2 border border-stone-200 rounded-lg btn-press disabled:opacity-50"
-                disabled={updateType.isPending}
-                onClick={() => commitUpdate(pendingApply.id, pendingApply.patch, false).catch((e) => setError(e instanceof Error ? e.message : 'Failed'))}
-              >
-                New units only
-              </button>
-              <button className="text-xs text-stone-500 hover:text-stone-700 mt-1" onClick={() => setPendingApply(null)}>Cancel</button>
-            </div>
-          </div>
+      {/* Retro-apply prompt ("ask each time") — three outcomes, so a Modal. */}
+      <Modal
+        open={pendingApply !== null}
+        onClose={closeApplyPrompt}
+        size="sm"
+        title="Apply capacity to existing units?"
+      >
+        <p className="text-xs text-stone-500">
+          You changed this form's capacity or weight limit. Apply it to every unit of this form already placed in
+          published layouts, or only to units drawn from now on?
+        </p>
+
+        {/* This prompt owns its error. It used to write to the form modal's `error`,
+            which renders underneath this overlay — so a failed apply left the prompt
+            open over an error nobody could see. */}
+        {applyError && (
+          <p className="text-xs text-red-600 mt-3" role="alert">
+            {applyError}
+          </p>
+        )}
+
+        <div className="flex flex-col gap-2 pt-4">
+          <Button loading={updateType.isPending} onClick={() => runApply(true)}>
+            Apply to all existing units
+          </Button>
+          <Button variant="secondary" disabled={updateType.isPending} onClick={() => runApply(false)}>
+            New units only
+          </Button>
+          <Button variant="ghost" size="sm" disabled={updateType.isPending} onClick={closeApplyPrompt}>
+            Cancel
+          </Button>
         </div>
-      )}
+      </Modal>
     </section>
   )
 }

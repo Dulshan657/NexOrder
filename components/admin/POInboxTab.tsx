@@ -6,6 +6,7 @@
 
 import React, { Suspense, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronRight, Inbox, Loader2, RefreshCw } from 'lucide-react'
+import { LoadingOverlay } from '../ui'
 import { lazyWithRetry } from '../../lib/lazyWithRetry'
 import { usePendingPos, usePendingPoCount } from '@/hooks/queries/usePendingPos'
 import { useProducts } from '@/hooks/queries/useProducts'
@@ -141,13 +142,7 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
       </div>
 
       {openId && (
-        <Suspense
-          fallback={
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60">
-              <Loader2 className="w-6 h-6 animate-spin text-white" />
-            </div>
-          }
-        >
+        <Suspense fallback={<LoadingOverlay label="Loading purchase order…" />}>
           <POInboxDetailModal
             pendingPoId={openId}
             hoReCas={hoReCas}

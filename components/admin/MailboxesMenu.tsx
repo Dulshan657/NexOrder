@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   ChevronDown,
 } from 'lucide-react'
+import { ConfirmDialog } from '../ui'
 import {
   useDisconnectEmailAccount,
   useEmailAccounts,
@@ -494,67 +495,39 @@ interface SignOutConfirmDialogProps {
 const SignOutConfirmDialog: React.FC<SignOutConfirmDialogProps> = ({ account, submitting, onCancel, onConfirm }) => {
   const isGmail = account.provider === 'gmail'
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="signout-dialog-title"
-      onClick={onCancel}
-      onKeyDown={e => {
-        if (e.key === 'Escape' && !submitting) onCancel()
-      }}
-    >
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="px-5 py-4 border-b border-stone-200">
-          <h3 id="signout-dialog-title" className="font-display font-semibold text-stone-900">
-            Sign out of {account.email_address}?
-          </h3>
-        </div>
-        <div className="px-5 py-4 space-y-2 text-sm text-stone-700">
-          {isGmail ? (
-            <p>
-              We'll revoke this app's access at Google and clear the stored token. Existing purchase orders from this
-              mailbox stay in your audit history.
+    <ConfirmDialog
+      open
+      title={`Sign out of ${account.email_address}?`}
+      confirmLabel="Sign out"
+      tone="danger"
+      busy={submitting}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+      message={
+        isGmail ? (
+          <p>
+            We'll revoke this app's access at Google and clear the stored token. Existing purchase orders from this
+            mailbox stay in your audit history.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <p>We'll clear the stored token so this mailbox stops syncing immediately.</p>
+            <p className="text-stone-500">
+              Microsoft doesn't support automatic revoke — to fully remove access at Microsoft, visit{' '}
+              <a
+                href="https://account.live.com/consent/Manage"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-stone-900"
+              >
+                account.live.com/consent/Manage
+              </a>{' '}
+              after signing out here.
             </p>
-          ) : (
-            <>
-              <p>We'll clear the stored token so this mailbox stops syncing immediately.</p>
-              <p className="text-stone-600">
-                Microsoft doesn't support automatic revoke — to fully remove access at Microsoft, visit{' '}
-                <a
-                  href="https://account.live.com/consent/Manage"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline hover:text-stone-900"
-                >
-                  account.live.com/consent/Manage
-                </a>{' '}
-                after signing out here.
-              </p>
-            </>
-          )}
-        </div>
-        <div className="px-5 py-3 border-t border-stone-200 bg-stone-50 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={submitting}
-            className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-200 rounded-md disabled:opacity-60 btn-press"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={submitting}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-md disabled:opacity-60 btn-press"
-          >
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            Sign out
-          </button>
-        </div>
-      </div>
-    </div>
+          </div>
+        )
+      }
+    />
   )
 }
 

@@ -39,6 +39,10 @@ export function ConfirmDialog({
     <Overlay
       open={open}
       onRequestClose={onCancel}
+      // While the confirmed action is in flight there is nothing safe to cancel:
+      // block Escape and backdrop dismissal, matching the disabled Cancel button.
+      dismissOnBackdrop={!busy}
+      dismissOnEsc={!busy}
       containerClassName="flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm ui-backdrop-in"
     >
       <div

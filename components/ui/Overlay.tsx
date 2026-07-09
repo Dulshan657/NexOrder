@@ -22,6 +22,9 @@ export interface OverlayProps {
   containerClassName: string
   dismissOnBackdrop?: boolean
   dismissOnEsc?: boolean
+  /** Off for transient overlays (e.g. a Suspense spinner) that hold nothing to focus
+   *  and would otherwise yank focus away and back as they mount and unmount. */
+  trapFocus?: boolean
   /** Fires once the entrance animation settles. Used to re-measure embedded widgets. */
   onEntered?: () => void
   children: ReactNode
@@ -33,6 +36,7 @@ export function Overlay({
   containerClassName,
   dismissOnBackdrop = true,
   dismissOnEsc = true,
+  trapFocus = true,
   onEntered,
   children,
 }: OverlayProps) {
@@ -40,7 +44,7 @@ export function Overlay({
   const { z, isTopmost } = useModalStack(open)
 
   useScrollLock(open)
-  useFocusTrap(containerRef, open)
+  useFocusTrap(containerRef, open && trapFocus)
 
   // Escape is handled by the topmost overlay only, so a nested confirm closes
   // itself rather than the form that spawned it.

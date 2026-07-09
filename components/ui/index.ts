@@ -4,6 +4,7 @@
 export { Modal, type ModalProps, type ModalSize, type OverlayApi } from './Modal'
 export { Sheet, type SheetProps, type SheetWidth } from './Sheet'
 export { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog'
+export { LoadingOverlay, type LoadingOverlayProps } from './LoadingOverlay'
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button'
 export {
   Field,

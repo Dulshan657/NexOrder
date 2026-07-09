@@ -3,6 +3,7 @@ import type { Order, Product, HoReCa, OrderItem } from '../types';
 import { RotateCcw, ShoppingCart, Trash2, AlertTriangle, UserRound, Package } from 'lucide-react';
 import { resolveHoReCaPrice } from '../pricing';
 import OptimizedImage from './OptimizedImage';
+import { Button, Modal } from './ui';
 
 interface ReorderTabProps {
     lastOrder: Order | null;
@@ -151,35 +152,33 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
 
     return (
         <div className="space-y-4">
-            {/* Merge/Replace Prompt */}
-            {showMergePrompt && (
-                <div className="fixed inset-0 bg-stone-900/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
-                        <h3 className="text-lg font-display font-semibold text-stone-900 mb-2">Cart has items</h3>
-                        <p className="text-sm text-stone-500 mb-5">Your current order already has items. How would you like to add the reorder items?</p>
-                        <div className="space-y-2">
-                            <button
-                                onClick={() => handleMergeChoice('merge')}
-                                className="w-full py-2.5 px-4 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors cursor-pointer"
-                            >
-                                Add to existing order
-                            </button>
-                            <button
-                                onClick={() => handleMergeChoice('replace')}
-                                className="w-full py-2.5 px-4 bg-stone-100 text-stone-700 font-medium rounded-lg hover:bg-stone-200 transition-colors cursor-pointer"
-                            >
-                                Replace current order
-                            </button>
-                            <button
-                                onClick={() => { setShowMergePrompt(null); setPendingItems([]); }}
-                                className="w-full py-2 text-sm text-stone-500 hover:text-stone-700 transition-colors cursor-pointer"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
+            {/* Merge/Replace Prompt — three outcomes, so a Modal rather than a ConfirmDialog. */}
+            <Modal
+                open={showMergePrompt !== null}
+                onClose={() => { setShowMergePrompt(null); setPendingItems([]); }}
+                size="sm"
+                title="Cart has items"
+            >
+                <p className="text-sm text-stone-500 mb-5">
+                    Your current order already has items. How would you like to add the reorder items?
+                </p>
+                <div className="space-y-2">
+                    <Button className="w-full" onClick={() => handleMergeChoice('merge')}>
+                        Add to existing order
+                    </Button>
+                    <Button variant="secondary" className="w-full" onClick={() => handleMergeChoice('replace')}>
+                        Replace current order
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => { setShowMergePrompt(null); setPendingItems([]); }}
+                    >
+                        Cancel
+                    </Button>
                 </div>
-            )}
+            </Modal>
 
             {/* Header */}
             <div className="bg-white rounded-xl border border-stone-200 p-4">
