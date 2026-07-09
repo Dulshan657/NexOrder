@@ -32,6 +32,9 @@ interface PanState {
   lastY: number
   startX: number
   startY: number
+  /** Whether setPointerCapture was actually taken for this pointer session —
+   *  only true once the drag threshold is crossed (see onPointerMove). */
+  captured: boolean
 }
 
 export interface UseMapViewportArgs {
@@ -130,9 +133,11 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
     const el = containerRef.current
     if (!el || !gesturesEnabled) return
     const onWheel = (e: WheelEvent) => {
-      // The listener is bound to the container itself, so receiving the event
-      // already means the pointer is over the map — safe to prevent the page
-      // scroll without affecting scroll anywhere else.
+      // Require Ctrl/⌘ so plain scroll always passes through to the page (the
+      // map no longer traps the wheel just because the cursor is over it).
+      // Trackpad pinch-to-zoom also reports ctrlKey:true, which we want to
+      // intercept, so this doubles as the pinch gesture.
+      if (!(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
       const rect = el.getBoundingClientRect()
       const cx = e.clientX - rect.left
@@ -145,16 +150,20 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
   }, [gesturesEnabled])
 
   // ── Drag to pan (Pointer Events) ─────────────────────────────────────────
+  // Capture is taken lazily (see onPointerMove) rather than here: capturing on
+  // every pointerdown routes the trailing `click` to the container instead of
+  // the element under the cursor (Pointer Events spec), so a bin's onClick
+  // never fired. A clean click now never captures at all.
   const onPointerDown = useCallback((e: PointerEvent<HTMLElement>) => {
     if (!gesturesEnabled) return
     if (e.pointerType === 'mouse' && e.button !== 0) return
-    e.currentTarget.setPointerCapture(e.pointerId)
     panStateRef.current = {
       pointerId: e.pointerId,
       lastX: e.clientX,
       lastY: e.clientY,
       startX: e.clientX,
       startY: e.clientY,
+      captured: false,
     }
     movedRef.current = false
     setIsPanning(true)
@@ -167,8 +176,13 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
     const dy = e.clientY - pan.lastY
     pan.lastX = e.clientX
     pan.lastY = e.clientY
-    if (Math.hypot(e.clientX - pan.startX, e.clientY - pan.startY) > DRAG_THRESHOLD_PX) {
+    if (!pan.captured && Math.hypot(e.clientX - pan.startX, e.clientY - pan.startY) > DRAG_THRESHOLD_PX) {
       movedRef.current = true
+      // Take capture now, the first time this session crosses the drag
+      // threshold, so a real drag keeps receiving pointermove even if the
+      // cursor leaves the container mid-drag.
+      e.currentTarget.setPointerCapture(e.pointerId)
+      pan.captured = true
     }
     setViewport((vp) => panBy(vp, dx, dy))
   }, [])
@@ -176,7 +190,7 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
   const endPan = useCallback((e: PointerEvent<HTMLElement>) => {
     const pan = panStateRef.current
     if (pan && pan.pointerId === e.pointerId) {
-      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      if (pan.captured && e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId)
       }
       panStateRef.current = null

@@ -1,19 +1,16 @@
-// The racked (published-layout) workspace: a full-bleed pan/zoom map with
-// KPI/overlay/tree/bin-detail/test-bench panels floating over it. Owns all
-// interactive state (selection, floor, overlay, dry-run results) — moved
-// unchanged from the former inline `RackedWarehouseView` in WarehousePage.tsx,
-// just recomposed around MapStage + FloatingPanel instead of a fixed
-// grid-and-rail layout.
+// The racked (published-layout) workspace: a tall pan/zoom map with an
+// overlay-controls strip and a tree/bin-detail/test-bench panel row stacked
+// below it in normal document flow. Owns all interactive state (selection,
+// floor, overlay, dry-run results) — moved unchanged from the former inline
+// `RackedWarehouseView` in WarehousePage.tsx.
 //
-// Responsive contract: below `md` every floating element renders `static`
-// (FloatingPanel's own contract, mirrored here for the plain KPI/overlay
-// wrappers), so this collapses into a single scrollable column in this exact
-// DOM order: KPI -> overlays -> a fixed-aspect map card -> bin detail -> tree
-// -> Ask-engine. At `md+` the map fills the whole stage (`md:flex-1`) and
-// every other panel becomes `md:absolute`, floating over it inside this
-// component's `relative isolate` stacking context — the one and only
-// stacking context on this page (z-0 scene, z-10 panels, z-20 active
-// panel/pill/MapControls).
+// Responsive contract: single column at every width. Below `md` the map
+// keeps a fixed `aspect-[4/3]` box and gestures are disabled (tap-to-select
+// only); at `md+` the map is a tall `h-[65vh]` block. The panel row below it
+// is `lg:grid-cols-[...]` (asymmetric: tree | bin detail | ask-engine) and
+// collapses to one stacked column below `lg`. Nothing floats over the map
+// except MapControls and the hint pill, both inside MapStage's own stacking
+// context — this component no longer needs one of its own.
 
 import { useMemo, useState } from 'react'
 import type { InventoryLocation, LayoutPlacement } from '@/types'
@@ -23,7 +20,6 @@ import type { PutawayResponse } from '@/services/supabase/putawayService'
 import { useWarehouseViewerModel } from './useWarehouseViewerModel'
 import { MapStage } from './MapStage'
 import { FloatingPanel } from './FloatingPanel'
-import { KpiStrip } from './KpiStrip'
 import { WarehouseTreePanel } from './WarehouseTreePanel'
 import { BinDetailPanel } from './BinDetailPanel'
 import { OverlayControls } from './OverlayControls'
@@ -128,16 +124,13 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
     </g>
   )
 
-  // Skeleton mirrors the loaded shape (full-bleed map slot) so the tab doesn't
+  // Skeleton mirrors the loaded shape (a tall map slot) so the tab doesn't
   // reflow when the layout lands — this is the first frame of every demo.
   if (isLoading || !detail) {
     return (
-      <div
-        aria-busy="true"
-        className="relative isolate flex flex-col gap-3 md:h-full md:min-h-0 md:overflow-hidden"
-      >
+      <div aria-busy="true" className="flex flex-col gap-4">
         <span className="sr-only">Loading warehouse layout…</span>
-        <div className="aspect-[4/3] w-full md:aspect-auto md:flex-1 md:min-h-0">
+        <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65vh] md:min-h-[420px]">
           <div className="wh-shimmer h-full w-full rounded-lg" />
         </div>
       </div>
@@ -145,26 +138,14 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
   }
 
   return (
-    <div className="relative isolate flex flex-col gap-3 md:h-full md:min-h-0 md:overflow-hidden">
+    <div className="flex flex-col gap-4">
       {/* The tree (not the map) is the keyboard/AT selection path — this
           announces what just got selected, from either surface. */}
       <div aria-live="polite" className="sr-only">
         {selectedLocation ? `Selected ${selectedLocation.kind.toLowerCase()} ${selectedLocation.code}` : ''}
       </div>
 
-      <div className="md:absolute md:left-4 md:top-4 md:z-10">
-        <KpiStrip warehouseId={warehouseId} />
-      </div>
-
-      <FloatingPanel
-        id="wh-overlays"
-        title="Overlays"
-        className="md:absolute md:left-1/2 md:top-4 md:z-10 md:w-auto md:-translate-x-1/2"
-      >
-        <OverlayControls overlay={overlay} onChange={setOverlay} />
-      </FloatingPanel>
-
-      <div className="aspect-[4/3] w-full md:aspect-auto md:flex-1 md:min-h-0">
+      <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65vh] md:min-h-[420px]">
         <MapStage
           layout={detail.layout}
           placements={detail.placements}
@@ -180,62 +161,58 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
         />
       </div>
 
-      <FloatingPanel
-        id="wh-bin-detail"
-        title="Bin detail"
-        className="md:absolute md:right-4 md:top-4 md:bottom-20 md:z-10 md:w-80"
-      >
-        <BinDetailPanel
-          location={selectedLocation}
-          contents={selectedLocationId != null ? model.binContents.get(selectedLocationId) ?? [] : []}
-          fillPct={selectedLocationId != null ? model.binFillPct.get(selectedLocationId) : undefined}
-          placement={selectedPlacement}
-          nodeVisits={nodeVisits}
-          zoneName={zoneName}
-        />
-        {/* Slotting's suggested moves live here rather than as a 5th floating
-            panel: they're overlay-driven context about what's currently on the
-            map, same as the selected bin's contents, so they share the right
-            rail's scroll area instead of adding more floating chrome that
-            could crowd the tree/KPI panels at narrower desktop widths. */}
-        {overlay === 'slotting' && model.slotting.length > 0 && (
-          <div className="mt-3 rounded-lg border border-stone-200 bg-white/60 p-2 text-xs">
-            <p className="mb-1 font-semibold text-stone-700">Suggested moves</p>
-            <ul className="space-y-0.5 text-stone-500">
-              {model.slotting.map((s) => (
-                <li key={s.id} className="font-mono">
-                  #{s.productId}: {model.locationsById.get(s.fromLocationId)?.code ?? s.fromLocationId} →{' '}
-                  {model.locationsById.get(s.toLocationId)?.code ?? s.toLocationId}
-                  <span className="ml-1 text-emerald-600">−{Math.round(s.expectedGainM)}m</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </FloatingPanel>
+      <div className="glass-card rounded-xl p-3">
+        <OverlayControls overlay={overlay} onChange={setOverlay} />
+      </div>
 
-      <FloatingPanel
-        id="wh-tree"
-        title="Locations"
-        className="md:absolute md:left-4 md:top-20 md:bottom-4 md:z-10 md:w-72"
-      >
-        <WarehouseTreePanel
-          tree={model.tree}
-          binContents={model.binContents}
-          binFillPct={model.binFillPct}
-          selectedLocationId={selectedLocationId}
-          onSelect={selectLocation}
-        />
-      </FloatingPanel>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)]">
+        <FloatingPanel id="wh-tree" title="Locations" className="max-h-[70vh]">
+          <WarehouseTreePanel
+            tree={model.tree}
+            binContents={model.binContents}
+            binFillPct={model.binFillPct}
+            selectedLocationId={selectedLocationId}
+            onSelect={selectLocation}
+          />
+        </FloatingPanel>
 
-      <AskEnginePanel
-        className="md:absolute md:bottom-4 md:right-4 md:z-20"
-        warehouseId={warehouseId}
-        layoutId={layoutId}
-        onPutawayResult={setPutawayResult}
-        routeOrderIds={routeOrderIds}
-        onRouteOrderIdsChange={setRouteOrderIds}
-      />
+        <FloatingPanel id="wh-bin-detail" title="Bin detail" className="max-h-[70vh]">
+          <BinDetailPanel
+            location={selectedLocation}
+            contents={selectedLocationId != null ? model.binContents.get(selectedLocationId) ?? [] : []}
+            fillPct={selectedLocationId != null ? model.binFillPct.get(selectedLocationId) : undefined}
+            placement={selectedPlacement}
+            nodeVisits={nodeVisits}
+            zoneName={zoneName}
+          />
+          {/* Slotting's suggested moves live here rather than as a separate
+              panel: they're overlay-driven context about what's currently on
+              the map, same as the selected bin's contents. */}
+          {overlay === 'slotting' && model.slotting.length > 0 && (
+            <div className="mt-3 rounded-lg border border-stone-200 bg-white/60 p-2 text-xs">
+              <p className="mb-1 font-semibold text-stone-700">Suggested moves</p>
+              <ul className="space-y-0.5 text-stone-500">
+                {model.slotting.map((s) => (
+                  <li key={s.id} className="font-mono">
+                    #{s.productId}: {model.locationsById.get(s.fromLocationId)?.code ?? s.fromLocationId} →{' '}
+                    {model.locationsById.get(s.toLocationId)?.code ?? s.toLocationId}
+                    <span className="ml-1 text-emerald-600">−{Math.round(s.expectedGainM)}m</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </FloatingPanel>
+
+        <AskEnginePanel
+          className="max-h-[70vh]"
+          warehouseId={warehouseId}
+          layoutId={layoutId}
+          onPutawayResult={setPutawayResult}
+          routeOrderIds={routeOrderIds}
+          onRouteOrderIdsChange={setRouteOrderIds}
+        />
+      </div>
     </div>
   )
 }

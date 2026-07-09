@@ -2,17 +2,13 @@
 // Intelligence Engine. Admin/Manager staff have no home warehouse, so this page
 // owns its own warehouse picker (mirrors PutawayQueuePage); Warehouse staff
 // default to their home site. Racked (layout-published) warehouses render the
-// immersive pan/zoom map (RackedWorkspace); bulk / unpublished warehouses fall
-// back to a plain stock list. Nothing here ever mutates inventory.
+// tall pan/zoom map (RackedWorkspace); bulk / unpublished warehouses fall back
+// to a plain stock list. Nothing here ever mutates inventory.
 //
-// Height contract (fixes the map overflowing past one viewport): THIS
-// component's root — not the workspace below it — owns `md:h-screen`. The
-// header (title + picker) is `shrink-0`; the content slot beneath it is
-// `md:flex-1 md:min-h-0`, so RackedWorkspace only ever needs to fill that slot
-// with `h-full` rather than measuring or re-claiming the viewport itself.
-// `main` (AppShell.tsx) is already exactly 100vh with its own
-// `overflow-y-auto`, so this never double-counts a page-level scrollbar with
-// the workspace's internal one.
+// Normal document flow — no viewport-height juggling here. `main`
+// (AppShell.tsx) already owns the page-level `overflow-y-auto`; RackedWorkspace
+// sizes its own map block (`h-[65vh]`) rather than requiring this page to
+// clamp itself to `100vh`.
 
 import React, { useMemo, useState } from 'react'
 import { LayoutGrid } from 'lucide-react'
@@ -21,6 +17,7 @@ import { useWarehouses } from '@/hooks/queries/useWarehouses'
 import { useLayouts } from '@/hooks/queries/useLayouts'
 import { RackedWorkspace } from './RackedWorkspace'
 import { WarehouseEmptyState } from './WarehouseEmptyState'
+import { KpiStrip } from './KpiStrip'
 
 interface WarehousePageProps {
   currentUser: User
@@ -98,11 +95,14 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
   const isRacked = selectedWarehouse?.locationType === 'racked' && publishedLayout != null
 
   return (
-    <div className="bg-white md:flex md:h-screen md:flex-col md:overflow-hidden">
-      <div className="px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8 flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <h1 className="flex items-center gap-2 text-base font-semibold text-stone-900">
-          <LayoutGrid className="h-5 w-5 text-nexgen-blue" /> Warehouse
-        </h1>
+    <div className="bg-white">
+      <div className="px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="flex items-center gap-2 text-base font-semibold text-stone-900">
+            <LayoutGrid className="h-5 w-5 text-nexgen-blue" /> Warehouse
+          </h1>
+          {effectiveWarehouseId != null && isRacked && <KpiStrip warehouseId={effectiveWarehouseId} />}
+        </div>
         <label className="inline-flex items-center gap-2 text-sm text-stone-600">
           <span className="font-medium">Warehouse</span>
           <select
@@ -120,7 +120,7 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
         </label>
       </div>
 
-      <div className="px-4 sm:px-6 lg:px-8 py-6 md:flex-1 md:min-h-0 md:overflow-y-auto">
+      <div className="px-4 sm:px-6 lg:px-8 py-6">
         {selectedWarehouse == null || effectiveWarehouseId == null ? (
           <div className="glass-card rounded-xl p-10 text-center">
             <LayoutGrid className="w-9 h-9 text-stone-300 mx-auto mb-3" />
@@ -130,7 +130,7 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
         ) : isRacked ? (
           // Keyed wrapper: remount the whole workspace on warehouse/layout change
           // so floor/selection/overlay/dry-run state can't leak across sites.
-          <div key={`${effectiveWarehouseId}:${publishedLayout!.id}`} className="md:h-full md:min-h-0">
+          <div key={`${effectiveWarehouseId}:${publishedLayout!.id}`}>
             <RackedWorkspace warehouseId={effectiveWarehouseId} layoutId={publishedLayout!.id} />
           </div>
         ) : (

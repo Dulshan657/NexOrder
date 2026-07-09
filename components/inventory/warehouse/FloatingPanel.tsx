@@ -1,15 +1,9 @@
-// Generic collapsible shell for every panel that floats over the Warehouse
-// map: KPI/overlay chrome uses plain positioned wrappers, but anything with
-// meaningful body content (overlays, tree, bin detail) uses this so collapse
-// behavior, the `.map-panel` surface, and the a11y contract stay consistent.
-//
-// Positioning is entirely up to the caller via `className` — e.g.
-// `md:absolute md:top-4 md:left-4 md:bottom-4 md:w-72`. Below `md` this
-// renders as a normal static block (no `md:` classes apply), so panels stack
-// in document flow; at `md+` the caller's `md:absolute` (plus top/bottom or
-// top/left anchoring) takes it out of flow and floats it over the map. This
-// means panel height at `md+` comes from CSS anchoring (top+bottom), not a
-// magic max-height number.
+// Generic collapsible shell for panels in the row below the Warehouse map
+// (Locations tree, Bin detail): anything with meaningful body content uses
+// this so collapse behavior, the `.glass-card` surface, and the a11y contract
+// stay consistent — the panels no longer float over the map (see
+// RackedWorkspace), so this now just supplies sizing/scroll classes via
+// `className`, e.g. `max-h-[70vh]`.
 //
 // Collapse uses the grid-rows trick (0fr -> 1fr) so it animates without a
 // hardcoded max-height; the collapsed body carries `hidden` (not just an
@@ -24,7 +18,7 @@ export interface FloatingPanelProps {
   title: string
   icon?: ReactNode
   defaultOpen?: boolean
-  /** Positioning + sizing classes, e.g. "md:absolute md:top-4 md:right-4 md:bottom-4 md:w-80". */
+  /** Sizing/layout classes, e.g. "max-h-[70vh]" so a long tree scrolls internally instead of running the page long. */
   className?: string
   /** Extra classes on the scrollable body (padding overrides, etc). */
   bodyClassName?: string
@@ -44,7 +38,7 @@ export function FloatingPanel({
   const bodyId = `${id}-body`
 
   return (
-    <div className={`map-panel flex flex-col ${className}`}>
+    <div className={`glass-card flex flex-col rounded-xl ${className}`}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
