@@ -180,9 +180,22 @@ export interface NormalizeOptions {
   zoneProfileByType?: Record<string, number>
   /** matcher token (lowercased) → storage_types.id */
   storageTypeByToken?: Record<string, number>
+  /**
+   * Per-import discriminator (e.g. the floorplan_imports UUID) folded into rack
+   * codes so an imported layout never collides with an existing warehouse's
+   * `-B-x-y` locations (or a previous import). `locations.code` is globally
+   * UNIQUE, so without this every import into a racked warehouse 23505s. Empty
+   * → the legacy `${warehouseCode}-B-${x}-${y}` codes (back-compat).
+   */
+  codeSlug?: string
   maxGridWidth?: number
   maxGridHeight?: number
   maxFloors?: number
+}
+
+/** Sanitize a raw discriminator into a short alphanumeric code segment. */
+function toCodeSlug(raw: string | undefined): string {
+  return (raw ?? '').replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase()
 }
 
 const clampInt = (v: number, lo: number, hi: number): number => {
@@ -248,6 +261,10 @@ export function normalizeFloorplan(raw: FloorplanExtraction, opts: NormalizeOpti
   }
 
   // Racks → placements, deduped per (floor,x,y), warehouse-prefixed codes.
+  // The per-import slug keeps codes unique against existing/other-import racks
+  // (locations.code is globally UNIQUE); empty slug preserves legacy codes.
+  const slug = toCodeSlug(opts.codeSlug)
+  const slugSeg = slug ? `${slug}-` : ''
   const placements: NormalizedPlacement[] = []
   const seen = new Set<string>()
   let seq = 1
@@ -263,7 +280,7 @@ export function normalizeFloorplan(raw: FloorplanExtraction, opts: NormalizeOpti
       new_bin: {
         parent_id: opts.warehouseId,
         kind: 'BIN',
-        code: `${opts.warehouseCode}-B-${x}-${y}${floor > 0 ? `-F${floor}` : ''}`,
+        code: `${opts.warehouseCode}-B-${slugSeg}${x}-${y}${floor > 0 ? `-F${floor}` : ''}`,
         name: `Rack ${x},${y}`,
         zone_profile_id: zoneProfileAt(x, y, floor),
         storage_type_id: matchStorageType(r.storageTypeHint ?? '', stByToken),

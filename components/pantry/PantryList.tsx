@@ -20,6 +20,7 @@ export interface PantryListProps {
     allOrders: Order[];
     currentCart: OrderItem[];
     cartonDiscountPercent: number;
+    lowStockThreshold: number;
     onAddToOrder: (pantryItem: PantryItem) => void;
     onAddAllToOrder: () => void;
     onAddSelectedToOrder: (items: PantryItem[]) => void;
@@ -67,6 +68,7 @@ const PantryList: React.FC<PantryListProps> = ({
     allOrders,
     currentCart,
     cartonDiscountPercent,
+    lowStockThreshold,
     onAddToOrder,
     onAddAllToOrder,
     onAddSelectedToOrder,
@@ -490,6 +492,7 @@ const PantryList: React.FC<PantryListProps> = ({
                                             product={entry.product}
                                             selectedHoReCa={selectedHoReCa}
                                             cartonDiscountPercent={cartonDiscountPercent}
+                                            lowStockThreshold={lowStockThreshold}
                                             frequency={frequency[productId]}
                                             inCartQty={cartQtyByProduct[productId] ?? 0}
                                             isSelected={selectedIds.has(entry.pantryItem.productId)}

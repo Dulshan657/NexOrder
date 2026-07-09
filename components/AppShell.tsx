@@ -46,7 +46,6 @@ import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
 import { useMarkNotificationRead, useMarkAllNotificationsRead } from '../hooks/queries/useNotifications';
 import { useUpdateScheduledVisit, useCreateScheduledVisit } from '../hooks/queries/useScheduledVisits';
 import { useCreateVisit } from '../hooks/queries/useVisits';
-import { useUpdateSettings } from '../hooks/queries/useSettings';
 import {
     useCreateProduct,
     useUpdateProduct,
@@ -98,7 +97,7 @@ const ReceiveStockView = lazyWithRetry(() => import('./inventory/ReceiveStockVie
 const ScheduledVisitsView = lazyWithRetry(() => import('./scheduled-visits/ScheduledVisitsView'));
 
 import { inviteUser, updateUserProfile } from '../services/supabase/inviteUserService';
-import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit, fromAppSettings } from '../lib/adapters';
+import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit } from '../lib/adapters';
 import { numericIdToUuid } from '../lib/userIdMap';
 import type { SortOption } from './ShopTopBar';
 import type { OrderingTabKey } from './OrderingTabBar';
@@ -283,7 +282,6 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const updateRouteMutation = useUpdateScheduledVisit();
     const createRouteMutation = useCreateScheduledVisit();
     const createVisitMutation = useCreateVisit();
-    const updateSettingsMutation = useUpdateSettings();
 
     const createProductMutation = useCreateProduct();
     const updateProductMutation = useUpdateProduct();
@@ -817,12 +815,14 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             >
                                 <Truck className="w-5 h-5 mr-3" /> Suppliers
                             </button>
-                            <button
-                                onClick={() => { setAdminView('Settings'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Settings' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <Settings className="w-5 h-5 mr-3" /> Settings
-                            </button>
+                            {isAdmin && (
+                                <button
+                                    onClick={() => { setAdminView('Settings'); setIsSidebarOpen(false); }}
+                                    className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Settings' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                >
+                                    <Settings className="w-5 h-5 mr-3" /> Settings
+                                </button>
+                            )}
                             {isAdmin && (
                                 <button
                                     onClick={() => { setAdminView('Audit Log'); setIsSidebarOpen(false); }}
@@ -967,17 +967,23 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 users={users}
                                 suppliers={suppliers}
                                 allOrders={allOrders}
-                                onAddProduct={p => {
-                                    createProductMutation.mutate(fromProduct(p) as any, {
-                                        onSuccess: () => addToast('Product added!', 'success'),
-                                        onError: err => addToast(`Error: ${err.message}`, 'error'),
-                                    });
+                                onAddProduct={async p => {
+                                    try {
+                                        await createProductMutation.mutateAsync(fromProduct(p) as any);
+                                        addToast('Product added!', 'success');
+                                    } catch (err) {
+                                        addToast(`Error: ${(err as Error).message}`, 'error');
+                                        throw err;
+                                    }
                                 }}
-                                onUpdateProduct={p => {
-                                    updateProductMutation.mutate({ id: p.id, updates: fromProduct(p) as any }, {
-                                        onSuccess: () => addToast('Product updated!', 'success'),
-                                        onError: err => addToast(`Error: ${err.message}`, 'error'),
-                                    });
+                                onUpdateProduct={async p => {
+                                    try {
+                                        await updateProductMutation.mutateAsync({ id: p.id, updates: fromProduct(p) as any });
+                                        addToast('Product updated!', 'success');
+                                    } catch (err) {
+                                        addToast(`Error: ${(err as Error).message}`, 'error');
+                                        throw err;
+                                    }
                                 }}
                                 onDeleteProduct={id => {
                                     deleteProductMutation.mutate(id, {
@@ -1091,19 +1097,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     setHighlightOrderId(orderId);
                                     setAdminView('Order Import');
                                 }}
-                                appLogo={appSettings.companyLogoUrl ?? null}
                                 appSettings={appSettings}
-                                onUpdateLogo={logo => {
-                                    updateSettingsMutation.mutate(fromAppSettings({ companyLogoUrl: logo }) as any, {
-                                        onError: err => addToast(`Error saving logo: ${err.message}`, 'error'),
-                                    });
-                                }}
-                                onSaveSettings={s => {
-                                    updateSettingsMutation.mutate(fromAppSettings(s) as any, {
-                                        onSuccess: () => addToast('Settings saved!', 'success'),
-                                        onError: err => addToast(`Error saving settings: ${err.message}`, 'error'),
-                                    });
-                                }}
                             />
                             </Suspense>
                             </ErrorBoundary>

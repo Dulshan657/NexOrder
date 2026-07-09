@@ -6,12 +6,14 @@ import type { PantryFrequencyEntry } from '../../hooks/usePantryFrequency';
 import { daysUntil } from '../../hooks/usePantryFrequency';
 import PantrySubstitutePopover from './PantrySubstitutePopover';
 import OptimizedImage from '../OptimizedImage';
+import { classifyStock, lowStockThresholdFor } from '../../lib/stockStatus';
 
 interface PantryRowProps {
     pantryItem: PantryItem;
     product: Product;
     selectedHoReCa: HoReCa | null;
     cartonDiscountPercent: number;
+    lowStockThreshold: number;
     frequency: PantryFrequencyEntry | undefined;
     inCartQty: number;
     isSelected: boolean;
@@ -44,6 +46,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
     product,
     selectedHoReCa,
     cartonDiscountPercent,
+    lowStockThreshold,
     frequency,
     inCartQty,
     isSelected,
@@ -76,7 +79,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
 
     const unitPrice = resolveHoReCaPrice(product, selectedHoReCa);
     const isOutOfStock = product.available <= 0;
-    const isLowStock = !isOutOfStock && product.available < 10;
+    const isLowStock = classifyStock(product.available, lowStockThresholdFor(product, lowStockThreshold)) === 'low_stock';
     const isCarton = pantryItem.preferredPackSize === product.cartonSize;
     const discountMultiplier = 1 - cartonDiscountPercent / 100;
     const displayPrice = isCarton ? unitPrice * product.cartonSize * discountMultiplier : unitPrice;

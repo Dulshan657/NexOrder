@@ -24,8 +24,11 @@ export function useUpdateSettings() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (updates: SettingsUpdate) => updateSettings(updates),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: settingsKeys.all })
+    onSuccess: (row) => {
+      // The edge function returns the authoritative updated row — seed the
+      // cache with it directly so consumers never see a stale window between
+      // the mutation settling and a refetch landing.
+      qc.setQueryData(settingsKeys.all, row)
     },
   })
 }

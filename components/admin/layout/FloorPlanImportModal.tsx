@@ -3,7 +3,7 @@
 // Nothing auto-publishes; the draft opens in the designer on success.
 
 import { useEffect, useRef, useState } from 'react'
-import { X, UploadCloud, Loader2, CheckCircle2, AlertTriangle, Sparkles } from 'lucide-react'
+import { X, UploadCloud, Loader2, CheckCircle2, Circle, AlertTriangle, Sparkles } from 'lucide-react'
 import type { Warehouse } from '@/types'
 import { useQueryClient } from '@tanstack/react-query'
 import { createLayout, saveGeometry } from '@/services/supabase/layoutService'
@@ -25,6 +25,31 @@ const PHASE_LABEL: Record<ImportPhase, string> = {
   error: 'Something went wrong',
 }
 
+// The visible progress steps, in order. The AI read is the long pole, so it
+// carries an ETA hint to reassure the operator the process isn't stuck.
+const STEPS: ReadonlyArray<{ key: ImportPhase; label: string; hint?: string }> = [
+  { key: 'compressing', label: 'Preparing image' },
+  { key: 'uploading', label: 'Uploading' },
+  { key: 'extracting', label: 'Reading the plan with AI', hint: 'This can take up to a minute.' },
+]
+const PHASE_ORDER: ImportPhase[] = ['idle', 'compressing', 'uploading', 'extracting', 'done', 'error']
+
+// supabase.functions.invoke flattens a non-2xx into a FunctionsHttpError whose
+// .message is generic ("… non-2xx status code"). The real message lives in the
+// response body ({ error: { code, message } }) hanging off .context — dig it out
+// so the operator sees e.g. the CONFLICT reason instead of a bare status.
+async function edgeErrorMessage(err: unknown, fallback: string): Promise<string> {
+  const ctx = (err as { context?: unknown })?.context
+  if (ctx instanceof Response) {
+    try {
+      const body = await ctx.clone().json()
+      const message = body?.error?.message
+      if (typeof message === 'string' && message.trim()) return message
+    } catch { /* body wasn't JSON — fall through */ }
+  }
+  return err instanceof Error && err.message ? err.message : fallback
+}
+
 export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: FloorPlanImportModalProps) {
   const qc = useQueryClient()
   const { phase, result, error, run, reset } = useFloorplanImport(warehouse.id)
@@ -34,6 +59,11 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Hard guard against a double-fired create: the imported rack codes are
+  // deterministic, so two concurrent create-draft calls race on the same
+  // location codes and the loser 23505s ("… already exists"). `creating` state
+  // disables the button, but a fast second click can land before React re-renders.
+  const creatingRef = useRef(false)
 
   useEffect(() => {
     if (!file) { setPreviewUrl(null); return }
@@ -52,7 +82,8 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
   const busy = phase === 'compressing' || phase === 'uploading' || phase === 'extracting'
 
   const createDraft = async () => {
-    if (!result) return
+    if (!result || creatingRef.current) return
+    creatingRef.current = true
     setCreating(true)
     setCreateError(null)
     try {
@@ -63,12 +94,21 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
         grid_height: result.draft.gridHeight,
         floor_count: result.draft.floors,
       })
-      await saveGeometry(layout.id, result.draft.placements, result.draft.objects)
+      // Scope every imported rack code to THIS layout so re-creating from the same
+      // extraction (or a racing attempt) never collides with a prior draft's
+      // locations — layout ids are globally unique, `locations.code` is UNIQUE.
+      const placements = result.draft.placements.map((p) =>
+        p.new_bin
+          ? { ...p, new_bin: { ...p.new_bin, code: `${p.new_bin.code}-L${layout.id}` } }
+          : p,
+      )
+      await saveGeometry(layout.id, placements, result.draft.objects)
       qc.invalidateQueries({ queryKey: layoutKeys.byWarehouse(warehouse.id) })
       onDraftCreated(layout.id)
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : 'Failed to create the draft layout')
+      setCreateError(await edgeErrorMessage(e, 'Failed to create the draft layout'))
     } finally {
+      creatingRef.current = false
       setCreating(false)
     }
   }
@@ -121,11 +161,38 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
           </div>
         )}
 
-        {/* Progress */}
+        {/* Progress stepper — makes a long AI read read as progress, not a hang */}
         {busy && (
-          <div className="flex items-center gap-2 rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600">
-            <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> {PHASE_LABEL[phase]}
-          </div>
+          <ol className="space-y-2 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
+            {STEPS.map((step) => {
+              const stepIdx = PHASE_ORDER.indexOf(step.key)
+              const currentIdx = PHASE_ORDER.indexOf(phase)
+              const state = stepIdx < currentIdx ? 'done' : stepIdx === currentIdx ? 'active' : 'pending'
+              return (
+                <li key={step.key} className="flex items-start gap-2.5">
+                  <span className="mt-0.5 shrink-0">
+                    {state === 'done' ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    ) : state === 'active' ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+                    ) : (
+                      <Circle className="h-4 w-4 text-stone-300" />
+                    )}
+                  </span>
+                  <div className="min-w-0">
+                    <p className={`text-xs font-medium ${
+                      state === 'pending' ? 'text-stone-400' : 'text-stone-700'
+                    }`}>
+                      {step.label}
+                    </p>
+                    {state === 'active' && step.hint && (
+                      <p className="text-[11px] text-stone-400">{step.hint}</p>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ol>
         )}
 
         {error && (
@@ -165,6 +232,11 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
               )}
             </div>
             {result.notes && <p className="rounded-lg bg-stone-50 px-3 py-2 text-[11px] text-stone-500">{result.notes}</p>}
+            {creating && (
+              <div className="flex items-center gap-2 rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600">
+                <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> Building draft layout…
+              </div>
+            )}
             {createError && <p className="text-xs text-red-600">{createError}</p>}
           </div>
         )}

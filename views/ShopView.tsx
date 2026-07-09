@@ -245,6 +245,7 @@ const ShopView: React.FC<ShopViewProps> = ({
                             allOrders={allOrders}
                             currentCart={orderItems}
                             cartonDiscountPercent={appSettings.cartonDiscountPercent}
+                            lowStockThreshold={appSettings.lowStockThreshold}
                             onAddToOrder={onAddPantryItemToOrder}
                             onAddAllToOrder={onAddAllPantryToOrder}
                             onAddSelectedToOrder={onAddSelectedPantryToOrder}

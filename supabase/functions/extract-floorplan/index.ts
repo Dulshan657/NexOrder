@@ -111,6 +111,9 @@ serve(async (req: Request) => {
       warehouseCode,
       zoneProfileByType,
       storageTypeByToken,
+      // Fold this import's id into rack codes so they can't collide with the
+      // warehouse's existing (published) `-B-x-y` racks or a prior import.
+      codeSlug: importId,
     })
 
     const confidence = typeof result.data.confidence === 'number' ? result.data.confidence : 0

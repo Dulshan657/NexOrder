@@ -13,43 +13,16 @@ import React, { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Loader2, ShieldCheck } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useSettings, useUpdateSettings } from '@/hooks/queries/useSettings'
+import {
+  TOGGLES,
+  policyValue,
+  type PolicyKey,
+  type PolicyToggle,
+} from './settings/autoApprovalPolicy'
 
 interface AutoApprovalMenuProps {
   addToast?: (message: string, type: 'success' | 'error' | 'info') => void
 }
-
-type PolicyKey =
-  | 'po_auto_approve_enabled'
-  | 'po_auto_approve_block_on_short_stock'
-  | 'po_auto_approve_block_on_sender_mismatch'
-
-interface PolicyToggle {
-  key: PolicyKey
-  label: string
-  help: string
-  /** Sub-policies only matter while the master switch is on. */
-  sub?: boolean
-}
-
-const TOGGLES: readonly PolicyToggle[] = [
-  {
-    key: 'po_auto_approve_enabled',
-    label: 'Auto-approve matching orders',
-    help: 'Trusted sender, all items matched and high confidence → approved automatically.',
-  },
-  {
-    key: 'po_auto_approve_block_on_short_stock',
-    label: 'Hold for review when stock is short',
-    help: "A PO that can't be fully filled from current inventory waits for a human.",
-    sub: true,
-  },
-  {
-    key: 'po_auto_approve_block_on_sender_mismatch',
-    label: 'Hold for review on possible sender spoofing',
-    help: 'A PO whose sender is not a known address for the customer waits for a human.',
-    sub: true,
-  },
-]
 
 const AutoApprovalMenu: React.FC<AutoApprovalMenuProps> = ({ addToast }) => {
   const { isAdmin } = useAuth()
@@ -82,7 +55,7 @@ const AutoApprovalMenu: React.FC<AutoApprovalMenuProps> = ({ addToast }) => {
   const settings = settingsQuery.data
   // Absent column ⇒ default on (matches the server's fail-open behaviour).
   const valueOf = (key: PolicyKey): boolean =>
-    (settings as Record<string, unknown> | undefined)?.[key] !== false
+    policyValue(settings as Record<string, unknown> | undefined, key)
   const masterOn = valueOf('po_auto_approve_enabled')
 
   async function toggle(t: PolicyToggle) {

@@ -96,8 +96,8 @@ const PAYMENT_FILTER_OPTIONS: ReadonlyArray<{ value: PaymentFilterValue; label: 
 const ITEMS_PER_PAGE = 20;
 
 const TAB_STATUSES: Record<ActiveTab, OrderStatus[]> = {
-  received: ['processing', 'processed'],
-  inProgress: ['picked', 'packed'],
+  received: ['processing'],
+  inProgress: ['processed', 'picked', 'packed'],
   completed: ['dispatched', 'delivered'],
 };
 

@@ -1,0 +1,372 @@
+// Bulk opening-stock importer: CSV → editable preview grid → receive-stock,
+// chunked at 200 lines/receipt (the Edge Function's per-call cap). Structurally
+// cloned from FloorPlanImportModal, same as ProductImportModal.
+//
+// receive-stock is atomic per invoke — a chunk either fully lands or throws.
+// So unlike the product importer (which reports per-row outcomes), a failed
+// chunk here is reported as a whole row-range, and its rows stay in the grid
+// so the operator can just hit Import again to retry only what's left.
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { X, PackagePlus, Download, Loader2, CheckCircle2, AlertTriangle, Warehouse as WarehouseIcon } from 'lucide-react';
+import type { Product } from '@/types';
+import { downloadCsv } from '@/lib/csvExport';
+import { validateStockRow, type StockImportContext, type StockRowResult, type StockImportLine } from '@/lib/stockImportRow';
+import { useWarehouses } from '@/hooks/queries/useWarehouses';
+import { useReceiveStock } from '@/hooks/queries/useReceiveStock';
+import { SelectInput } from '@/components/admin/settings/primitives';
+import {
+  MAX_IMPORT_ROWS,
+  parseFileToRecords,
+  stripRowId,
+  ImportDropzone,
+  ImportErrorBanner,
+  ImportResultStatGrid,
+} from '@/components/admin/import/csvImportShared';
+import { StockPreviewRow, type StockRowProductInfo } from '@/components/admin/import/StockPreviewRow';
+
+interface StockImportModalProps {
+  products: Product[];
+  onClose: () => void;
+  addToast?: (message: string, type: 'success' | 'error' | 'info') => void;
+}
+
+type ValidStockRow = Extract<StockRowResult, { ok: true }>;
+
+const CHUNK_SIZE = 200;
+const TEMPLATE_HEADERS = ['sku', 'quantity', 'lot_code', 'expiry_date', 'barcode'];
+
+const todayIso = (): string => new Date().toISOString().slice(0, 10);
+
+interface ChunkFailure {
+  firstRow: number;
+  lastRow: number;
+  message: string;
+}
+
+interface StockImportOutcome {
+  received: number;
+  failed: number;
+  total: number;
+}
+
+export function StockImportModal({ products, onClose, addToast }: StockImportModalProps) {
+  const { data: warehouseRows } = useWarehouses();
+  const receiveStock = useReceiveStock();
+
+  const activeWarehouses = useMemo(() => (warehouseRows ?? []).filter((w) => w.isActive), [warehouseRows]);
+
+  const [warehouseId, setWarehouseId] = useState<number | null>(null);
+  const [receivedDate, setReceivedDate] = useState<string>('');
+
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [records, setRecords] = useState<Record<string, string>[] | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [rowCapError, setRowCapError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [chunkFailures, setChunkFailures] = useState<ChunkFailure[]>([]);
+  const [importOutcome, setImportOutcome] = useState<StockImportOutcome | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const creatingRef = useRef(false);
+
+  const ctx = useMemo<StockImportContext>(() => ({
+    productIdBySku: new Map(products.map((p) => [p.sku.trim(), p.id])),
+  }), [products]);
+
+  const productMaps = useMemo(() => {
+    const bySkuExact = new Map<string, Product>();
+    const bySkuLower = new Map<string, Product>();
+    for (const p of products) {
+      const trimmed = p.sku.trim();
+      bySkuExact.set(trimmed, p);
+      bySkuLower.set(trimmed.toLowerCase(), p);
+    }
+    return { bySkuExact, bySkuLower };
+  }, [products]);
+
+  const resolveProduct = useCallback((sku: string): StockRowProductInfo | undefined => {
+    const trimmed = sku.trim();
+    const p = productMaps.bySkuExact.get(trimmed) ?? productMaps.bySkuLower.get(trimmed.toLowerCase());
+    return p ? { name: p.name, cartonSize: p.cartonSize, currentOnHand: p.inventory } : undefined;
+  }, [productMaps]);
+
+  const resetOutcome = () => {
+    setChunkFailures([]);
+    setImportOutcome(null);
+    setImportError(null);
+  };
+
+  const handleFile = async (file: File) => {
+    setParseError(null);
+    setRowCapError(null);
+    setWarnings([]);
+    resetOutcome();
+    try {
+      const parsed = await parseFileToRecords(file);
+      if (parsed.records.length === 0) {
+        setParseError('That file has no data rows.');
+        return;
+      }
+      if (parsed.records.length > MAX_IMPORT_ROWS) {
+        setRowCapError(
+          `This file has ${parsed.records.length} rows, which exceeds the ${MAX_IMPORT_ROWS}-row import limit. ` +
+          'Split it into smaller files and import them separately.',
+        );
+        return;
+      }
+      setFileName(parsed.fileName);
+      setRecords(parsed.records);
+      setWarnings(parsed.warnings);
+    } catch (err) {
+      setParseError(err instanceof Error ? err.message : 'Could not parse this file as CSV.');
+    }
+  };
+
+  const updateRecord = useCallback((index: number, patch: Record<string, string>) => {
+    setRecords((prev) => (prev ? prev.map((r, i) => (i === index ? { ...r, ...patch } : r)) : prev));
+  }, []);
+
+  const summary = useMemo(() => {
+    if (!records) return null;
+    let valid = 0;
+    let invalid = 0;
+    for (const rec of records) {
+      if (validateStockRow(stripRowId(rec), ctx).ok) valid++;
+      else invalid++;
+    }
+    return { valid, invalid };
+  }, [records, ctx]);
+
+  const handleDownloadTemplate = () => {
+    const sampleSku = products[0]?.sku ?? 'AYM-EXAMPLE-001';
+    downloadCsv(TEMPLATE_HEADERS, [[sampleSku, '24', '', '', '']], 'opening-stock-template.csv');
+  };
+
+  const handleImport = async () => {
+    if (!records || warehouseId == null || creatingRef.current) return;
+    creatingRef.current = true;
+    setSubmitting(true);
+    setImportError(null);
+    try {
+      const entries = records
+        .map((rec, idx) => ({ idx, result: validateStockRow(stripRowId(rec), ctx) }))
+        .filter((e): e is { idx: number; result: ValidStockRow } => e.result.ok === true);
+
+      if (entries.length === 0) {
+        setImportError('No valid rows to import — fix the highlighted errors first.');
+        return;
+      }
+
+      const baseReference = `Opening stock import ${fileName ?? 'file'} ${todayIso()}`;
+      const chunks: Array<typeof entries> = [];
+      for (let i = 0; i < entries.length; i += CHUNK_SIZE) chunks.push(entries.slice(i, i + CHUNK_SIZE));
+
+      const succeededIdx = new Set<number>();
+      const failures: ChunkFailure[] = [];
+      let receivedLines = 0;
+
+      for (let c = 0; c < chunks.length; c++) {
+        const chunk = chunks[c];
+        const lines: StockImportLine[] = chunk.map((e) => e.result.line);
+        const reference = chunks.length > 1 ? `${baseReference} (chunk ${c + 1}/${chunks.length})` : baseReference;
+        try {
+          await receiveStock.mutateAsync({
+            header: {
+              supplier_name: 'Opening Balance',
+              reference,
+              location_id: warehouseId,
+              ...(receivedDate ? { received_date: receivedDate } : {}),
+            },
+            lines,
+          });
+          chunk.forEach((e) => succeededIdx.add(e.idx));
+          receivedLines += chunk.length;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to receive this batch of stock.';
+          failures.push({ firstRow: chunk[0].idx + 1, lastRow: chunk[chunk.length - 1].idx + 1, message });
+        }
+      }
+
+      setRecords((prev) => (prev ? prev.filter((_, i) => !succeededIdx.has(i)) : prev));
+      setChunkFailures(failures);
+      const failedRows = entries.length - receivedLines;
+      setImportOutcome({ received: receivedLines, failed: failedRows, total: entries.length });
+      if (receivedLines > 0) {
+        addToast?.(`Received ${receivedLines} line${receivedLines === 1 ? '' : 's'} into stock`, 'success');
+      }
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Opening-stock import failed.');
+    } finally {
+      creatingRef.current = false;
+      setSubmitting(false);
+    }
+  };
+
+  const canImport = !!summary && summary.valid > 0 && warehouseId != null && !submitting;
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl w-full max-w-5xl p-5 space-y-4 max-h-[90vh] overflow-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-700">
+            <PackagePlus className="h-4 w-4 text-emerald-600" /> Bulk import opening stock
+          </h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close">
+            <X className="h-4 w-4 text-stone-500" />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-stone-500">
+            Upload a CSV of opening balances (quantities are <strong>base units</strong>, not cartons). Receiving is
+            additive, so re-running the same file twice will double the stock.
+          </p>
+          <button
+            type="button"
+            onClick={handleDownloadTemplate}
+            className="inline-flex items-center gap-1.5 shrink-0 text-xs font-medium text-nexgen-blue hover:underline"
+          >
+            <Download className="h-3.5 w-3.5" /> Download template
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg bg-stone-50 border border-stone-200 p-3">
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
+              <WarehouseIcon className="w-3.5 h-3.5 text-stone-400" /> Destination warehouse <span className="text-red-500">*</span>
+            </label>
+            <SelectInput
+              value={warehouseId ?? ''}
+              onChange={(e) => setWarehouseId(e.target.value === '' ? null : Number(e.target.value))}
+              aria-label="Destination warehouse"
+            >
+              <option value="">Select a warehouse…</option>
+              {activeWarehouses.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </SelectInput>
+            {activeWarehouses.length === 0 && (
+              <p className="text-xs text-amber-600 mt-1">No active warehouse found — create one in Settings first.</p>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-stone-600 mb-1.5">Received date (optional)</label>
+            <input
+              type="date"
+              value={receivedDate}
+              max={todayIso()}
+              onChange={(e) => setReceivedDate(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-nexgen-blue/40 focus:border-nexgen-blue"
+            />
+            <p className="text-xs text-stone-400 mt-1">Leave blank to backdate opening balances to today.</p>
+          </div>
+        </div>
+
+        {!records && (
+          <ImportDropzone onFile={handleFile} hint="Drop a CSV here, or click to choose" />
+        )}
+
+        {parseError && <ImportErrorBanner message={parseError} />}
+        {rowCapError && <ImportErrorBanner message={rowCapError} />}
+        {warnings.length > 0 && (
+          <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>{warnings.map((w) => <p key={w}>{w}</p>)}</div>
+          </div>
+        )}
+
+        {records && summary && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <p className="text-stone-500">
+                {fileName} · {records.length} row{records.length === 1 ? '' : 's'}
+              </p>
+              <p>
+                <span className="text-emerald-600 font-semibold">{summary.valid} valid</span>
+                {' / '}
+                <span className={summary.invalid > 0 ? 'text-red-600 font-semibold' : 'text-stone-400'}>
+                  {summary.invalid} error{summary.invalid === 1 ? '' : 's'}
+                </span>
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-stone-200 overflow-x-auto max-h-[45vh] overflow-y-auto">
+              <table className="min-w-full text-sm">
+                <thead className="sticky top-0 bg-stone-50 z-10">
+                  <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-stone-500">
+                    <th className="px-2 py-2 w-8"></th>
+                    <th className="px-2 py-2">SKU</th>
+                    <th className="px-2 py-2">Product</th>
+                    <th className="px-2 py-2">Qty (base units)</th>
+                    <th className="px-2 py-2">Current on-hand</th>
+                    <th className="px-2 py-2">Carton size</th>
+                    <th className="px-2 py-2">Lot code</th>
+                    <th className="px-2 py-2">Expiry</th>
+                    <th className="px-2 py-2">Barcode</th>
+                    <th className="px-2 py-2">Error</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {records.map((rec, i) => (
+                    <StockPreviewRow
+                      key={rec.__rowId ?? i}
+                      index={i}
+                      record={rec}
+                      ctx={ctx}
+                      resolveProduct={resolveProduct}
+                      onChange={updateRecord}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {importError && <ImportErrorBanner message={importError} />}
+
+        {chunkFailures.length > 0 && (
+          <div className="space-y-1.5">
+            {chunkFailures.map((f) => (
+              <ImportErrorBanner
+                key={`${f.firstRow}-${f.lastRow}`}
+                message={`Rows ${f.firstRow}–${f.lastRow} did not import: ${f.message}`}
+              />
+            ))}
+          </div>
+        )}
+
+        {importOutcome && (
+          <ImportResultStatGrid
+            items={[
+              { label: 'Received', value: importOutcome.received, tone: 'success' },
+              { label: 'Failed', value: importOutcome.failed, tone: importOutcome.failed > 0 ? 'error' : 'default' },
+              { label: 'Total', value: importOutcome.total },
+            ]}
+          />
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button className="text-sm px-3 py-1.5 border border-stone-200 rounded-lg btn-press" onClick={onClose}>
+            {records ? 'Close' : 'Cancel'}
+          </button>
+          {records && (
+            <button
+              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-50"
+              onClick={handleImport}
+              disabled={!canImport}
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              {submitting ? 'Receiving…' : `Import ${summary?.valid ?? 0} row${summary?.valid === 1 ? '' : 's'}`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default StockImportModal;

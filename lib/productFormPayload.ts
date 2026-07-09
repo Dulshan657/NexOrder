@@ -37,13 +37,17 @@ export type BuildProductPayloadResult =
 export interface BuildProductPayloadOptions {
   /** True when editing an existing product (vs. creating a new one). */
   isEdit?: boolean
+  /** False for import paths where a catalog legitimately has no description
+   * yet (the server treats it as optional/nullable). Defaults to true to
+   * preserve the product form's existing required-field behavior. */
+  requireDescription?: boolean
 }
 
 export function buildProductPayload(
   formData: ProductFormData,
   options: BuildProductPayloadOptions = {},
 ): BuildProductPayloadResult {
-  const { isEdit = false } = options
+  const { isEdit = false, requireDescription = true } = options
 
   const sku = formData.sku.trim()
   const name = formData.name.trim()
@@ -54,7 +58,7 @@ export function buildProductPayload(
 
   if (!sku) return { ok: false, error: 'SKU is required.' }
   if (!name) return { ok: false, error: 'Product name is required.' }
-  if (!description) return { ok: false, error: 'Description is required.' }
+  if (requireDescription && !description) return { ok: false, error: 'Description is required.' }
   if (isNaN(price) || price < 0) return { ok: false, error: 'Price must be a valid, non-negative number.' }
   if (isNaN(supplierId)) return { ok: false, error: 'Please select a supplier.' }
   if (isNaN(cartonSize) || cartonSize < 1) {
@@ -64,7 +68,6 @@ export function buildProductPayload(
   const data: ProductPayload = {
     sku,
     name,
-    description: formData.description,
     price,
     category: formData.category,
     unit: formData.unit,
@@ -76,6 +79,14 @@ export function buildProductPayload(
     widthCm: formData.widthCm ? parseFloat(formData.widthCm) : undefined,
     heightCm: formData.heightCm ? parseFloat(formData.heightCm) : undefined,
     sizeFactor: formData.sizeFactor ? parseFloat(formData.sizeFactor) : undefined,
+  }
+
+  // Blank description: omitted entirely rather than sent as ''. When
+  // `requireDescription` is true this only happens if isNaN/empty checks
+  // above already returned an error, so this is unreachable there — but it
+  // matters for the `requireDescription: false` (import) path.
+  if (description) {
+    data.description = formData.description
   }
 
   const imageUrl = formData.imageUrl.trim()

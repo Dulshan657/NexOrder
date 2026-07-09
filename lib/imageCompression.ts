@@ -30,7 +30,14 @@ export function buildCompressionOptions(opts: CompressOptions): ResolvedCompress
     maxWidthOrHeight: opts.maxWidthOrHeight,
     initialQuality: opts.quality ?? 0.8,
     fileType: opts.fileType ?? 'image/webp',
-    useWebWorker: true,
+    // Main-thread, NOT a web worker: in worker mode browser-image-compression
+    // re-loads its own code via importScripts() from the jsdelivr CDN, which our
+    // CSP (`script-src 'self'`) flags — and when that CDN load stalls the library
+    // has no internal timeout, so compression hangs forever (the floorplan import
+    // froze before it could even create an import row). Main-thread mode uses the
+    // bundled, self-hosted module: no CDN, no CSP violation, no hang. The brief
+    // main-thread cost is fine for one-off admin image uploads.
+    useWebWorker: false,
   };
 }
 

@@ -1,9 +1,11 @@
 // FIX: Implement the ProductAdmin component.
 import React, { useState, useMemo } from 'react';
+import { FileUp } from 'lucide-react';
 import type { Product, Supplier } from '../types';
 import ProductForm from './ProductForm';
 import ConfirmationDialog from './ConfirmationDialog';
 import OptimizedImage from './OptimizedImage';
+import ProductImportModal from './admin/ProductImportModal';
 
 interface ProductAdminProps {
     products: Product[];
@@ -11,12 +13,14 @@ interface ProductAdminProps {
     onAddProduct: (product: Omit<Product, 'id' | 'inventory'>) => Promise<void>;
     onUpdateProduct: (product: Product) => Promise<void>;
     onDeleteProduct: (productId: number) => void;
+    addToast?: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
-const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddProduct, onUpdateProduct, onDeleteProduct }) => {
+const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddProduct, onUpdateProduct, onDeleteProduct, addToast }) => {
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
     const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+    const [isImportOpen, setIsImportOpen] = useState(false);
 
     const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.id, s.name] as const)), [suppliers]);
 
@@ -63,12 +67,20 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
         <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">Manage Products</h2>
-                <button
-                    onClick={handleOpenFormForNew}
-                    className="bg-stone-900 text-white font-medium py-2 px-4 rounded-lg hover:bg-stone-800 transition-colors shadow-sm"
-                >
-                    Add New Product
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setIsImportOpen(true)}
+                        className="inline-flex items-center gap-1.5 border border-stone-300 text-stone-700 font-medium py-2 px-4 rounded-lg hover:bg-stone-50 transition-colors btn-press"
+                    >
+                        <FileUp className="w-4 h-4" /> Import
+                    </button>
+                    <button
+                        onClick={handleOpenFormForNew}
+                        className="bg-stone-900 text-white font-medium py-2 px-4 rounded-lg hover:bg-stone-800 transition-colors shadow-sm btn-press"
+                    >
+                        Add New Product
+                    </button>
+                </div>
             </div>
             <div className="overflow-x-auto border border-stone-200 rounded-xl shadow-sm">
                 <table className="min-w-full divide-y divide-stone-200">
@@ -152,6 +164,14 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
                 onConfirm={confirmDelete}
                 onCancel={() => setProductToDelete(null)}
             />
+
+            {isImportOpen && (
+                <ProductImportModal
+                    suppliers={suppliers}
+                    addToast={addToast}
+                    onClose={() => setIsImportOpen(false)}
+                />
+            )}
         </div>
     );
 };

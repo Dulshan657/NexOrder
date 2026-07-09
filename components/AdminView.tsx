@@ -94,7 +94,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
             <Suspense fallback={<LoadingSkeleton />}>
             <div>
                 {isDashboard && <AdminDashboard allOrders={props.allOrders} products={props.products} hoReCas={props.hoReCas} users={props.users} lowStockThreshold={props.appSettings.lowStockThreshold} invoices={props.invoices} salesTargets={props.salesTargets} onUpdateSalesTargets={props.onUpdateSalesTargets} currentUser={props.currentUser} promotions={props.promotions} visits={props.visits} routes={props.routes} onNavigateTab={props.onSetAdminView ? (tab: string) => props.onSetAdminView!(tab as AdminTab) : undefined} />}
-                {props.activeTab === 'Products' && <ProductAdmin products={props.products} suppliers={props.suppliers} onAddProduct={props.onAddProduct} onUpdateProduct={props.onUpdateProduct} onDeleteProduct={props.onDeleteProduct} />}
+                {props.activeTab === 'Products' && <ProductAdmin products={props.products} suppliers={props.suppliers} onAddProduct={props.onAddProduct} onUpdateProduct={props.onUpdateProduct} onDeleteProduct={props.onDeleteProduct} addToast={props.addToast} />}
                 {props.activeTab === 'HoReCa' && <HoReCaListView hoReCas={props.hoReCas} orders={props.allOrders} invoices={props.invoices} currentUser={props.currentUser} visits={props.visits} onAddHoReCa={props.onAddHoReCa} onUpdateHoReCa={props.onUpdateHoReCa} onDeleteHoReCa={props.onDeleteHoReCa} />}
                 {props.activeTab === 'HoReCa Insights' && <HoReCaInsightsPanel allOrders={props.allOrders} hoReCas={props.hoReCas} products={props.products} />}
                 {props.activeTab === 'Order Import' && <OrderImportPage orders={props.allOrders} invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} onReorder={props.onReorder} onViewDetail={props.onViewOrderDetail} onUpdateStatus={props.onUpdateOrderStatus} onBack={() => {}} highlightOrderId={props.highlightOrderId ?? null} onClearHighlightOrderId={props.onClearHighlightOrderId} />}
@@ -102,7 +102,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                     <PromotionAdmin promotions={props.promotions} products={props.products} hoReCas={props.hoReCas} users={props.users} onAdd={props.onAddPromotion} onUpdate={props.onUpdatePromotion} onDelete={props.onDeletePromotion} />
                 )}
                 {props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
-                {props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} />}
+                {props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} addToast={props.addToast} />}
                 {props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} />}
                 {props.activeTab === 'Putaway' && <PutawayQueuePage currentUser={props.currentUser} />}
                 {props.activeTab === 'Pick Queue' && <PickQueueView currentUser={props.currentUser} />}

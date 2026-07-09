@@ -3,12 +3,14 @@ import { describe, it, expect } from 'vitest';
 import { buildCompressionOptions } from '../lib/imageCompression';
 
 describe('buildCompressionOptions', () => {
-  it('defaults to WebP at quality 0.8 using a web worker', () => {
+  it('defaults to WebP at quality 0.8 on the main thread (no CDN worker)', () => {
     expect(buildCompressionOptions({ maxWidthOrHeight: 1024 })).toEqual({
       maxWidthOrHeight: 1024,
       initialQuality: 0.8,
       fileType: 'image/webp',
-      useWebWorker: true,
+      // Must stay false — worker mode loads the lib from a CDN, which CSP blocks
+      // and which hangs the compression when the CDN stalls (see imageCompression.ts).
+      useWebWorker: false,
     });
   });
 

@@ -26,12 +26,33 @@ describe('normalizeFloorplan', () => {
     expect(d.floors).toBe(10)
   })
 
-  it('emits warehouse-prefixed rack codes and 1×1 placements', () => {
+  it('emits warehouse-prefixed rack codes and 1×1 placements (no slug → legacy code)', () => {
     const d = normalizeFloorplan(extraction({ racks: [{ code: 'A', x: 3, y: 4, floor: 0, storageTypeHint: '' }] }), opts)
     expect(d.placements).toHaveLength(1)
     expect(d.placements[0].new_bin.code).toBe('WH5-B-3-4')
     expect(d.placements[0].new_bin.parent_id).toBe(5)
     expect(d.placements[0]).toMatchObject({ x: 3, y: 4, w: 1, h: 1, rotation: 0 })
+  })
+
+  it('folds a per-import slug into rack codes (unique against existing racks)', () => {
+    const d = normalizeFloorplan(
+      extraction({ racks: [{ code: 'A', x: 3, y: 4, floor: 0, storageTypeHint: '' }] }),
+      { ...opts, codeSlug: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
+    )
+    // First 8 alphanumerics of the UUID, lowercased, as a code segment.
+    expect(d.placements[0].new_bin.code).toBe('WH5-B-a1b2c3d4-3-4')
+  })
+
+  it('gives different imports disjoint code sets for the same cells', () => {
+    const racks = [
+      { code: 'A', x: 1, y: 1, floor: 0, storageTypeHint: '' },
+      { code: 'B', x: 2, y: 3, floor: 0, storageTypeHint: '' },
+    ]
+    const a = normalizeFloorplan(extraction({ racks }), { ...opts, codeSlug: 'import-aaaa' })
+    const b = normalizeFloorplan(extraction({ racks }), { ...opts, codeSlug: 'import-bbbb' })
+    const codesA = a.placements.map((p) => p.new_bin.code)
+    const codesB = b.placements.map((p) => p.new_bin.code)
+    expect(codesA.some((c) => codesB.includes(c))).toBe(false)
   })
 
   it('dedupes racks sharing a cell and clamps out-of-bounds coords', () => {

@@ -20,6 +20,13 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
+import {
+  bulkCreateProducts,
+  remapBulkResults,
+  type BulkCreateResult,
+  type BulkProductRow,
+  type RawBulkRow,
+} from '../_shared/productBulk.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -75,6 +82,24 @@ const productCreateBodySchema = productBodySchema.extend({
   supplier_id: z.number().int().positive(),
 })
 
+// One row of a bulk-create batch. Same create-shape as productCreateBodySchema,
+// except supplier_id becomes optional and a free-text supplier_name is allowed
+// instead (resolved/created server-side, see resolveSupplierByName). Exactly
+// one of the two must be present per row.
+const bulkProductRow = productCreateBodySchema
+  .omit({ supplier_id: true })
+  .extend({
+    supplier_id: z.number().int().positive().optional(),
+    supplier_name: z.string().min(1).max(200).optional(),
+  })
+  .refine(
+    row => (row.supplier_id !== undefined) !== (row.supplier_name !== undefined),
+    {
+      message: 'Exactly one of supplier_id or supplier_name must be provided',
+      path: ['supplier_id'],
+    },
+  )
+
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: productCreateBodySchema }),
   z.object({
@@ -83,7 +108,27 @@ const inputSchema = z.discriminatedUnion('action', [
     data: productBodySchema,
   }),
   z.object({ action: z.literal('delete'), id: z.number().int().positive() }),
+  z.object({
+    action: z.literal('bulk-create'),
+    // Deliberately LOOSE at this level: each element is only checked for
+    // being an object, not validated against `bulkProductRow` yet. If it
+    // were `z.array(bulkProductRow)` here, a single bad row (e.g. a typo'd
+    // price) would fail the WHOLE top-level `safeParse`, throwing away up
+    // to 99 otherwise-valid rows before the partial-success machinery below
+    // ever runs. `bulkProductRow` is applied PER ROW in the handler instead.
+    data: z.array(z.record(z.string(), z.unknown())).min(1).max(100),
+  }),
 ])
+
+// Extract the first validation message for a rejected bulk-create row from
+// zod's flattened error shape — form-level errors (from the `.refine`) take
+// priority since they're the more specific "which combination of fields is
+// wrong" message; otherwise the first field-level message.
+function firstZodIssueMessage(error: z.ZodError): string {
+  const flat = error.flatten()
+  const fieldMessage = Object.values(flat.fieldErrors).flat()[0]
+  return flat.formErrors[0] ?? fieldMessage ?? 'Invalid row'
+}
 
 // Strip the inventory field from any incoming data object to prevent callers
 // from modifying stock levels through this function.
@@ -310,6 +355,67 @@ serve(async (req: Request) => {
 
       return new Response(
         JSON.stringify({ ok: true }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    // ---- BULK-CREATE ----
+    if (input.action === 'bulk-create') {
+      // Per-row zod validation (S3/partial-success): one bad row must not
+      // sink the other 99. `input.data` is only loosely typed at this point
+      // (see the discriminated-union schema above) — apply `bulkProductRow`
+      // to each row individually, preserving its ORIGINAL index so a mix of
+      // valid/invalid rows still comes back fully index-aligned to what the
+      // operator submitted.
+      const rawRows = input.data as Array<Record<string, unknown>>
+      const invalidResults: BulkCreateResult[] = []
+      const validRows: RawBulkRow[] = []
+
+      rawRows.forEach((row, originalIndex) => {
+        const rowParsed = bulkProductRow.safeParse(row)
+        if (!rowParsed.success) {
+          invalidResults.push({
+            index: originalIndex,
+            ok: false,
+            sku: String(row.sku ?? ''),
+            error: firstZodIssueMessage(rowParsed.error),
+            code: 'INVALID_INPUT',
+          })
+        } else {
+          validRows.push({ originalIndex, data: rowParsed.data as BulkProductRow })
+        }
+      })
+
+      const validResults = await bulkCreateProducts(admin, validRows.map(v => v.data))
+      const results = remapBulkResults(invalidResults, validRows, validResults)
+
+      const created = results.filter(r => r.ok).length
+      const failed = results.length - created
+
+      // One summary audit event for the whole invoke — never one per row, and
+      // never the full row bodies (could be 100 rows of PII/pricing data).
+      await logAuditEvent(admin, {
+        actorId: auth.userId,
+        actorRole: auth.role,
+        action: 'create',
+        resource: 'product',
+        metadata: {
+          bulkAction: 'bulk-create',
+          created,
+          failed,
+          skus: results.map(r => r.sku),
+        },
+      })
+
+      // Always 200: a FunctionsHttpError on any non-2xx status makes
+      // supabase.functions.invoke() throw and discard the response body,
+      // which would lose the per-row results for a batch that partially
+      // succeeded. Row-level failures live inside `results` instead (S3).
+      return new Response(
+        JSON.stringify({ ok: true, results }),
         {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
