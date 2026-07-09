@@ -2,8 +2,11 @@ import { describe, it, expect } from 'vitest'
 
 import {
   occupancyFill,
+  occupancyBucket,
+  occupancyPill,
   velocityFill,
   congestionFill,
+  DEFAULT_BIN_FILL,
 } from '../components/inventory/warehouse/warehouseOverlays'
 
 describe('occupancyFill buckets', () => {
@@ -24,6 +27,49 @@ describe('occupancyFill buckets', () => {
   it('respects bucket boundaries (0.5 and 0.8 belong to the higher band)', () => {
     expect(occupancyFill(0.5)).toBe('#fcd34d')
     expect(occupancyFill(0.8)).toBe('#fb923c')
+  })
+})
+
+describe('occupancyBucket boundaries', () => {
+  it('none for null/undefined', () => {
+    expect(occupancyBucket(null)).toBe('none')
+    expect(occupancyBucket(undefined)).toBe('none')
+  })
+  it('empty at and below 0', () => {
+    expect(occupancyBucket(0)).toBe('empty')
+  })
+  it('low for [0, 0.5)', () => {
+    expect(occupancyBucket(0.49)).toBe('low')
+  })
+  it('mid starts at 0.5, runs to (0.8)', () => {
+    expect(occupancyBucket(0.5)).toBe('mid')
+    expect(occupancyBucket(0.79)).toBe('mid')
+  })
+  it('high starts at 0.8, runs to (1)', () => {
+    expect(occupancyBucket(0.8)).toBe('high')
+    expect(occupancyBucket(0.99)).toBe('high')
+  })
+  it('full at and above 1', () => {
+    expect(occupancyBucket(1.0)).toBe('full')
+    expect(occupancyBucket(1.5)).toBe('full')
+  })
+})
+
+describe('occupancyPill', () => {
+  it('maps buckets to tailwind classes matching the tree pill', () => {
+    expect(occupancyPill(null)).toBe('bg-stone-100 text-stone-500')
+    expect(occupancyPill(0)).toBe('bg-stone-100 text-stone-400')
+    expect(occupancyPill(0.3)).toBe('bg-emerald-100 text-emerald-700')
+    expect(occupancyPill(0.6)).toBe('bg-amber-100 text-amber-700')
+    expect(occupancyPill(0.9)).toBe('bg-orange-100 text-orange-700')
+    expect(occupancyPill(1)).toBe('bg-red-100 text-red-700')
+  })
+})
+
+describe('DEFAULT_BIN_FILL vs occupancyFill', () => {
+  it('the map default fill is never byte-identical to an occupancy overlay color (regression guard)', () => {
+    expect(DEFAULT_BIN_FILL).not.toBe(occupancyFill(0.3))
+    expect(DEFAULT_BIN_FILL).toBe('#e7e5e4')
   })
 })
 

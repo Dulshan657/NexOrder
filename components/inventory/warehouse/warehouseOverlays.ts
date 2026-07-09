@@ -1,6 +1,13 @@
 // Pure overlay helpers for the Warehouse grid: map a bin's data to a fill color,
 // plus legend definitions. No React, no I/O — unit-tested in isolation so the
 // color logic stays honest.
+//
+// This file is the single source of truth for occupancy color: the bucket
+// table below drives both the map fill (occupancyFill) and the tree pill
+// (occupancyPill), so the two views can never disagree. The neutral "no data"
+// fill also lives here as DEFAULT_BIN_FILL/STROKE — the map's default bin
+// appearance, deliberately distinct from every overlay bucket color (see the
+// `DEFAULT_BIN_FILL !== occupancyFill(...)` guard test).
 
 import type { VelocityClass } from '@/types'
 
@@ -13,26 +20,60 @@ export interface LegendEntry {
 
 const NEUTRAL = '#e7e5e4' // stone-200
 
+/** Default (no overlay active) bin fill/stroke on the map — neutral stone,
+ *  intentionally distinct from every occupancy bucket color below. */
+export const DEFAULT_BIN_FILL = '#e7e5e4' // stone-200
+export const DEFAULT_BIN_STROKE = '#a8a29e' // stone-400
+
 // ── Occupancy ────────────────────────────────────────────────────────────────
 // fill = used slots / capacity. null = bin has no capacity configured.
 
-export function occupancyFill(pct: number | null | undefined): string {
-  if (pct == null) return NEUTRAL
-  if (pct <= 0) return '#ffffff'
-  if (pct < 0.5) return '#6ee7b7' // emerald-300
-  if (pct < 0.8) return '#fcd34d' // amber-300
-  if (pct < 1) return '#fb923c' // orange-400
-  return '#ef4444' // red-500 (at/over capacity)
+export type OccupancyBucket = 'none' | 'empty' | 'low' | 'mid' | 'high' | 'full'
+
+interface OccupancyBucketInfo {
+  fill: string
+  pill: string
+  label: string
 }
 
-export const OCCUPANCY_LEGEND: LegendEntry[] = [
-  { color: '#ffffff', label: 'Empty' },
-  { color: '#6ee7b7', label: '<50%' },
-  { color: '#fcd34d', label: '50–80%' },
-  { color: '#fb923c', label: '80–100%' },
-  { color: '#ef4444', label: 'Full / over' },
-  { color: NEUTRAL, label: 'No capacity' },
-]
+// Single source of truth: bucket → {map fill, tree pill classes, legend label}.
+// occupancyFill/occupancyPill/OCCUPANCY_LEGEND all derive from this table so
+// they can never drift apart.
+const OCCUPANCY_BUCKETS: Record<OccupancyBucket, OccupancyBucketInfo> = {
+  none: { fill: NEUTRAL, pill: 'bg-stone-100 text-stone-500', label: 'No capacity' },
+  empty: { fill: '#ffffff', pill: 'bg-stone-100 text-stone-400', label: 'Empty' },
+  low: { fill: '#6ee7b7', pill: 'bg-emerald-100 text-emerald-700', label: '<50%' }, // emerald-300
+  mid: { fill: '#fcd34d', pill: 'bg-amber-100 text-amber-700', label: '50–80%' }, // amber-300
+  high: { fill: '#fb923c', pill: 'bg-orange-100 text-orange-700', label: '80–100%' }, // orange-400
+  full: { fill: '#ef4444', pill: 'bg-red-100 text-red-700', label: 'Full / over' }, // red-500 (at/over capacity)
+}
+
+/** Bucket boundaries: none(null) empty(<=0) low(<0.5) mid(<0.8) high(<1) full(>=1). */
+export function occupancyBucket(pct?: number | null): OccupancyBucket {
+  if (pct == null) return 'none'
+  if (pct <= 0) return 'empty'
+  if (pct < 0.5) return 'low'
+  if (pct < 0.8) return 'mid'
+  if (pct < 1) return 'high'
+  return 'full'
+}
+
+export function occupancyFill(pct: number | null | undefined): string {
+  return OCCUPANCY_BUCKETS[occupancyBucket(pct)].fill
+}
+
+/** Tailwind bg/text classes for the tree's fill pill — same bucket table as the map fill. */
+export function occupancyPill(pct?: number | null): string {
+  return OCCUPANCY_BUCKETS[occupancyBucket(pct)].pill
+}
+
+// Reading order for the legend: emptiest → fullest, "no capacity" last.
+const OCCUPANCY_LEGEND_ORDER: OccupancyBucket[] = ['empty', 'low', 'mid', 'high', 'full', 'none']
+
+export const OCCUPANCY_LEGEND: LegendEntry[] = OCCUPANCY_LEGEND_ORDER.map((bucket) => ({
+  color: OCCUPANCY_BUCKETS[bucket].fill,
+  label: OCCUPANCY_BUCKETS[bucket].label,
+}))
 
 // ── Velocity (ABC) ───────────────────────────────────────────────────────────
 

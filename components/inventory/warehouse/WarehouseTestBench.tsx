@@ -93,7 +93,7 @@ function PutawayTest({ warehouseId, onResult }: { warehouseId: number; onResult:
       )}
       {rec && (rec.recommendedLocationId != null
         ? <PutawayExplanationCard explanation={rec.explanation} />
-        : <p className="rounded bg-stone-50 px-2 py-1.5 text-stone-500">No eligible rack for this product.</p>)}
+        : <p className="rounded bg-stone-50 px-2 py-1.5 text-stone-500">No eligible bin for this product.</p>)}
     </div>
   )
 }
@@ -164,7 +164,7 @@ function SimulateTest({ layoutId }: { layoutId: number }) {
         </button>
       </div>
       {sim.isError && <p className="text-red-600">Simulation failed. Try again.</p>}
-      {result && <SimulationResultCard result={result} />}
+      {result && <SimulationResultCard result={result} variant="flat" />}
     </div>
   )
 }

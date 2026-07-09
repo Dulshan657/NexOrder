@@ -3,8 +3,9 @@
 // overlay only summarizes). Read-only.
 
 import { PackageSearch } from 'lucide-react'
-import type { InventoryLocation, LayoutPlacement, VelocityClass } from '@/types'
+import type { InventoryLocation, LayoutPlacement } from '@/types'
 import type { BinContentRow } from './useWarehouseViewerModel'
+import { StockTable } from './StockTable'
 
 interface BinDetailPanelProps {
   location: InventoryLocation | null
@@ -13,12 +14,6 @@ interface BinDetailPanelProps {
   placement?: LayoutPlacement
   nodeVisits?: number
   zoneName?: string
-}
-
-const CLASS_TONE: Record<VelocityClass, string> = {
-  A: 'bg-rose-100 text-rose-700',
-  B: 'bg-amber-100 text-amber-700',
-  C: 'bg-sky-100 text-sky-700',
 }
 
 export function BinDetailPanel({
@@ -33,7 +28,7 @@ export function BinDetailPanel({
     return (
       <div className="glass-card rounded-xl p-6 text-center">
         <PackageSearch className="mx-auto mb-2 h-7 w-7 text-stone-300" />
-        <p className="text-xs text-stone-500">Select a rack on the map or tree to see its contents.</p>
+        <p className="text-xs text-stone-500">Select a bin on the map or tree to see its contents.</p>
       </div>
     )
   }
@@ -85,40 +80,7 @@ export function BinDetailPanel({
       </dl>
 
       {isBin && (
-        contents.length === 0 ? (
-          <p className="rounded-lg bg-stone-50 py-3 text-center text-xs text-stone-400">Empty rack</p>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-stone-100">
-            <table className="w-full text-xs">
-              <thead className="bg-stone-50 text-[10px] uppercase tracking-wide text-stone-400">
-                <tr>
-                  <th className="px-2 py-1.5 text-left font-semibold">Product</th>
-                  <th className="px-2 py-1.5 text-right font-semibold">On hand</th>
-                  <th className="px-2 py-1.5 text-right font-semibold">Alloc</th>
-                  <th className="px-2 py-1.5 text-center font-semibold">ABC</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {contents.map((r) => (
-                  <tr key={r.productId}>
-                    <td className="px-2 py-1.5 text-stone-700">{r.productName ?? `#${r.productId}`}</td>
-                    <td className="px-2 py-1.5 text-right font-mono text-stone-700">{r.onHand}</td>
-                    <td className="px-2 py-1.5 text-right font-mono text-stone-400">{r.allocated}</td>
-                    <td className="px-2 py-1.5 text-center">
-                      {r.velocityClass ? (
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${CLASS_TONE[r.velocityClass]}`}>
-                          {r.velocityClass}
-                        </span>
-                      ) : (
-                        <span className="text-stone-300">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )
+        <StockTable rows={contents} showAbc showAllocated emptyLabel="Empty bin" />
       )}
     </div>
   )

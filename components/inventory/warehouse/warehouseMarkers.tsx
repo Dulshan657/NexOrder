@@ -88,7 +88,8 @@ export function routePath(
         return (
           <g key={`leg${pt.stop.sequence}`}>
             <line x1={prev.cx * cell} y1={prev.cy * cell} x2={pt.cx * cell} y2={pt.cy * cell}
-              stroke={EMERALD} strokeWidth={2} strokeDasharray="5 3" />
+              stroke={EMERALD} strokeWidth={2} pathLength={1} className="wh-route-leg"
+              style={{ animationDelay: `${pt.stop.sequence * 120}ms` }} />
             <text x={((prev.cx + pt.cx) / 2) * cell} y={((prev.cy + pt.cy) / 2) * cell - 3}
               textAnchor="middle" fontSize={8} fill="#047857" fontFamily="monospace">
               +{pt.stop.legDistanceM.toFixed(1)}m
@@ -130,10 +131,13 @@ export function putawayMarkers(
     const c = placementCenter(target)
     parts.push(
       <g key="target" pointerEvents="none">
-        <circle cx={c.cx * cell} cy={c.cy * cell} r={9} fill="none" stroke={BLUE} strokeWidth={2.5}>
-          <animate attributeName="r" values="9;14;9" dur="1.4s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="1;0.3;1" dur="1.4s" repeatCount="indefinite" />
-        </circle>
+        {/* CSS pulse (wh-pulse in index.css) replaces the old SMIL <animate>
+            elements — SMIL is deprecated and can't respect
+            prefers-reduced-motion. Only the ring pulses; the center dot
+            stays fixed as an anchor. */}
+        <g className="wh-pulse">
+          <circle cx={c.cx * cell} cy={c.cy * cell} r={9} fill="none" stroke={BLUE} strokeWidth={2.5} />
+        </g>
         <circle cx={c.cx * cell} cy={c.cy * cell} r={3} fill={BLUE} />
       </g>,
     )

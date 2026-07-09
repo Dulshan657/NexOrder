@@ -49,6 +49,19 @@ body {
   .btn-press {
     @apply transition-all duration-150 active:scale-[0.98] active:brightness-95;
   }
+  /* Floating panels over the Warehouse map: .glass-card (bg-white/70) is nearly
+   * invisible over a light map, so panels use a more opaque surface. Shadow
+   * value is byte-identical to .shadow-elevated so the two stay consistent. */
+  .map-panel {
+    @apply bg-white/90 backdrop-blur-md border border-stone-200/80 rounded-xl;
+    box-shadow: 0 8px 24px rgba(120,113,108,0.12), 0 2px 8px rgba(120,113,108,0.06);
+  }
+  /* Pill variant for compact floating chrome (KPI chips, the Ask-engine
+   * collapsed button). Shadow value is byte-identical to .shadow-card-hover. */
+  .map-panel-pill {
+    @apply bg-white/90 backdrop-blur-md border border-stone-200/80 rounded-full;
+    box-shadow: 0 4px 12px rgba(120,113,108,0.1), 0 2px 4px rgba(120,113,108,0.06);
+  }
 }
 
 /* Icon click animations */
@@ -176,13 +189,102 @@ body {
   animation: img-shimmer 1.4s linear infinite;
 }
 
+/* Warehouse map — motion (Warehouse Tab Redesign, step 7). Namespaced `.wh-*`.
+   Every rule here is disabled in the prefers-reduced-motion block below. */
+
+/* 7a: bin staggered load-in. --wh-i is set inline per bin (index clamped to
+   ~40) so a 189-bin floor still reveals in <=320ms total. transform-box:
+   fill-box is required on the SVG <rect> or the scale animates from the SVG
+   document origin (0,0) instead of the shape's own center, flinging it
+   across the canvas. */
+@keyframes wh-bin-in {
+  from { opacity: 0; transform: scale(.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.wh-bin-in {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wh-bin-in .3s cubic-bezier(.16,1,.3,1) both;
+  animation-delay: calc(var(--wh-i, 0) * 8ms);
+}
+
+/* 7b: bin hover + selection feedback. */
+.wh-bin {
+  transition: fill .15s ease, stroke .15s ease;
+}
+.wh-bin:hover {
+  filter: brightness(.97);
+}
+
+/* 7c: pick-route legs draw themselves on, sequenced by the stop's order.
+   pathLength=1 on each <line> normalizes stroke-dasharray/-offset to 0..1
+   regardless of the leg's actual pixel length. */
+@keyframes wh-draw {
+  to { stroke-dashoffset: 0; }
+}
+.wh-route-leg {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: wh-draw .6s ease forwards;
+}
+
+/* 7d: putaway target pulse — CSS replacement for the old SMIL <animate>
+   elements, which are deprecated and cannot respect prefers-reduced-motion.
+   Animates transform + opacity only; CSS can't animate the SVG `r` attribute
+   reliably cross-browser. */
+@keyframes wh-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.5); opacity: .35; }
+}
+.wh-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wh-pulse 1.4s ease-in-out infinite;
+}
+
+/* 7e: "Ask the engine" pill -> panel expand. */
+@keyframes wh-panel-in {
+  from { opacity: 0; transform: translateY(6px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.wh-panel-in {
+  transform-origin: bottom right;
+  animation: wh-panel-in .18s cubic-bezier(.16,1,.3,1) both;
+}
+
+/* Step 8: skeleton shimmer for Warehouse loading states (bulk stock list). */
+@keyframes wh-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.wh-shimmer {
+  background: #ece9e6;
+  background-image: linear-gradient(90deg, #ece9e6 0px, #f5f3f1 200px, #ece9e6 400px);
+  background-size: 800px 100%;
+  animation: wh-shimmer 1.4s linear infinite;
+  border-radius: 6px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .po-skeleton,
   .po-row-in,
   .po-pop-in,
   .po-modal-in,
   .po-badge-pulse,
-  .img-skeleton {
+  .img-skeleton,
+  .wh-bin-in,
+  .wh-bin,
+  .wh-route-leg,
+  .wh-pulse,
+  .wh-panel-in,
+  .wh-shimmer {
     animation: none !important;
+    transition: none !important;
+  }
+  /* .wh-route-leg sets stroke-dashoffset:1 outside the keyframes (so the leg
+     starts hidden pre-animation) — with the animation itself disabled that
+     offset must be neutralized too, or the leg stays permanently invisible. */
+  .wh-route-leg {
+    stroke-dashoffset: 0 !important;
   }
 }

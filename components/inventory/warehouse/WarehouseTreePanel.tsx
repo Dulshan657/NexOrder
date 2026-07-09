@@ -8,6 +8,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { ChevronRight, ChevronDown } from 'lucide-react'
 import type { InventoryLocation } from '@/types'
 import type { LocationTreeNode, BinContentRow } from './useWarehouseViewerModel'
+import { occupancyPill } from './warehouseOverlays'
 
 interface WarehouseTreePanelProps {
   tree: LocationTreeNode[]
@@ -15,15 +16,6 @@ interface WarehouseTreePanelProps {
   binFillPct: Map<number, number | null>
   selectedLocationId: number | null
   onSelect: (location: InventoryLocation) => void
-}
-
-function fillTone(pct: number | null | undefined): string {
-  if (pct == null) return 'bg-stone-100 text-stone-500'
-  if (pct >= 1) return 'bg-red-100 text-red-700'
-  if (pct >= 0.8) return 'bg-orange-100 text-orange-700'
-  if (pct >= 0.5) return 'bg-amber-100 text-amber-700'
-  if (pct > 0) return 'bg-emerald-100 text-emerald-700'
-  return 'bg-stone-100 text-stone-400'
 }
 
 export function WarehouseTreePanel({
@@ -118,7 +110,7 @@ export function WarehouseTreePanel({
           {isBin && (
             <span className="ml-auto flex items-center gap-1 shrink-0">
               {count ? <span className="text-[10px] text-stone-400">{count} SKU</span> : null}
-              <span className={`rounded px-1 py-0.5 text-[10px] font-semibold ${fillTone(pct)}`}>
+              <span className={`rounded px-1 py-0.5 text-[10px] font-semibold ${occupancyPill(pct)}`}>
                 {pct == null ? '—' : `${Math.round(pct * 100)}%`}
               </span>
             </span>
@@ -133,5 +125,5 @@ export function WarehouseTreePanel({
     return <p className="p-4 text-xs text-stone-400">No storage locations defined for this warehouse.</p>
   }
 
-  return <div className="overflow-auto py-1" style={{ maxHeight: 560 }}>{tree.map((n) => renderNode(n, 0))}</div>
+  return <div className="py-1">{tree.map((n) => renderNode(n, 0))}</div>
 }

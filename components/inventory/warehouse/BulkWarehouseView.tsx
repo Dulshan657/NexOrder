@@ -4,6 +4,7 @@
 
 import { Info } from 'lucide-react'
 import { useWarehouseViewerModel } from './useWarehouseViewerModel'
+import { StockTable } from './StockTable'
 
 interface BulkWarehouseViewProps {
   warehouseId: number
@@ -40,7 +41,22 @@ export function BulkWarehouseView({ warehouseId, reason }: BulkWarehouseViewProp
       </div>
 
       {model.isLoading ? (
-        <p className="p-4 text-xs text-stone-400">Loading stock…</p>
+        <div className="space-y-3">
+          <span className="sr-only">Loading stock…</span>
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} aria-hidden="true" className="glass-card rounded-xl p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <div className="wh-shimmer h-3 w-14" />
+                <div className="wh-shimmer h-3 w-28" />
+              </div>
+              <div className="space-y-1.5">
+                {Array.from({ length: 3 }, (_, j) => (
+                  <div key={j} className="wh-shimmer h-6 w-full" />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : locationsWithStock.length === 0 ? (
         <p className="glass-card rounded-xl p-8 text-center text-xs text-stone-400">No stock recorded at this warehouse.</p>
       ) : (
@@ -51,24 +67,7 @@ export function BulkWarehouseView({ warehouseId, reason }: BulkWarehouseViewProp
                 <span className="font-mono text-xs font-semibold text-stone-900">{loc.code}</span>
                 <span className="text-xs text-stone-500">{loc.name}</span>
               </div>
-              <table className="w-full text-xs">
-                <thead className="text-[10px] uppercase tracking-wide text-stone-400">
-                  <tr>
-                    <th className="py-1 text-left font-semibold">Product</th>
-                    <th className="py-1 text-right font-semibold">On hand</th>
-                    <th className="py-1 text-right font-semibold">Allocated</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  {loc.rows.map((r) => (
-                    <tr key={r.productId}>
-                      <td className="py-1 text-stone-700">{r.productName ?? `#${r.productId}`}</td>
-                      <td className="py-1 text-right font-mono text-stone-700">{r.onHand}</td>
-                      <td className="py-1 text-right font-mono text-stone-400">{r.allocated}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <StockTable rows={loc.rows} showAllocated />
             </div>
           ))}
         </div>

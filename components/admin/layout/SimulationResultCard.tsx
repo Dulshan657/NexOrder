@@ -52,13 +52,26 @@ function TravelDelta({ diff }: { diff: SimulationKpiDiff }) {
   )
 }
 
-export function SimulationResultCard({ result }: { result: SimulationResult }) {
+interface SimulationResultCardProps {
+  result: SimulationResult
+  /** 'card' (default) keeps today's bordered/shadowed shell — used by the Layout
+   *  Designer. 'flat' drops the border/bg/shadow for when this already sits
+   *  inside another panel (e.g. the Warehouse test bench), so it isn't a
+   *  card-in-card. */
+  variant?: 'card' | 'flat'
+}
+
+export function SimulationResultCard({ result, variant = 'card' }: SimulationResultCardProps) {
   const { params, kpis, diff } = result
   const util = kpis.utilizationPct != null ? `${(kpis.utilizationPct * 100).toFixed(0)}%` : '—'
   const congested = kpis.congestionByNode.slice(0, 5)
+  const shellClass =
+    variant === 'flat'
+      ? 'space-y-3 text-xs'
+      : 'space-y-3 text-xs rounded-lg border border-stone-200 bg-white p-3 shadow-card'
 
   return (
-    <div className="space-y-3 text-xs rounded-lg border border-stone-200 bg-white p-3 shadow-card">
+    <div className={shellClass}>
       <p className="text-sm font-semibold text-stone-800">
         What-if simulation
         <span className="ml-1 font-normal text-stone-500">
