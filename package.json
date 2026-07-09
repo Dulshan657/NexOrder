@@ -26,7 +26,9 @@
     "demo:tridon:reset": "node tridon-demo/reset.mjs",
     "demo:tridon:pdfs": "node tridon-demo/generate.mjs",
     "demo:wie:seed": "node wie-demo/seed.mjs",
-    "demo:wie:reset": "node wie-demo/reset.mjs"
+    "demo:wie:reset": "node wie-demo/reset.mjs",
+    "warehouse:main:seed": "tsx warehouse-main/seed.mjs",
+    "warehouse:main:reset": "tsx warehouse-main/reset.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
