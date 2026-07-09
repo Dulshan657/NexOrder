@@ -19,6 +19,7 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { generatePutawayTasks, type GeneratePutawayResult } from '../_shared/putawayTasks.ts'
+import { resolveReceiveDestination } from '../_shared/receiveDestination.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
@@ -125,11 +126,25 @@ serve(async (req: Request) => {
     const supplierId = await resolveHeaderSupplier(admin, receipt)
 
     // Resolve the destination warehouse: explicit > actor's home warehouse >
-    // (null → RPC default). Warehouse staff may only receive at their own site.
-    const locationId = receipt?.location_id ?? auth.profile.home_warehouse_id ?? null
-    if (auth.role === 'Warehouse' && receipt?.location_id && receipt.location_id !== auth.profile.home_warehouse_id) {
-      throw new EdgeFunctionError('FORBIDDEN', 'You can only receive stock at your own warehouse')
+    // (null → RPC default, only when a single warehouse is active). Warehouse
+    // staff with an assigned home site may only receive there; with no home
+    // site (home_warehouse_id NULL — true for every profile today) they are
+    // unrestricted, same as Admin/Manager. A null destination is rejected
+    // outright once more than one warehouse is active, so a receipt can never
+    // silently fall through to inv_default_location()'s lowest-id warehouse.
+    const { count: activeWarehouseCount, error: warehouseCountError } = await admin
+      .from('locations')
+      .select('id', { count: 'exact', head: true })
+      .eq('kind', 'WAREHOUSE')
+      .eq('is_active', true)
+    if (warehouseCountError) {
+      throw new EdgeFunctionError('INTERNAL', `warehouse lookup failed: ${warehouseCountError.message}`)
     }
+    const locationId = resolveReceiveDestination(
+      receipt?.location_id,
+      { role: auth.role, homeWarehouseId: auth.profile.home_warehouse_id },
+      activeWarehouseCount ?? 0,
+    )
 
     const { data: result, error: rpcError } = await admin.rpc('inv_receive_stock', {
       p_lines: lines,

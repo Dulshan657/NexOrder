@@ -10,7 +10,7 @@ import { useToasts } from '../../hooks/useToasts';
 import { PutawayPanel } from './PutawayPanel';
 import {
   PackagePlus, Plus, Trash2, Search, X, Boxes, History, Clock,
-  Truck, FileText, CalendarDays, UserRound, Check, ChevronDown, Warehouse,
+  Truck, FileText, CalendarDays, UserRound, Check, ChevronDown, Warehouse, ArrowRight,
 } from 'lucide-react';
 
 /** Compact relative-time label ("just now", "3h ago", "2d ago"). */
@@ -182,6 +182,10 @@ const SupplierCombobox: React.FC<SupplierComboboxProps> = ({
 interface ReceiveStockViewProps {
   products: Product[];
   currentUser: User;
+  /** Navigate to the Putaway tab pre-selected to a warehouse — wired to the
+   *  post-receipt "Go to putaway" CTA. Undefined when the host doesn't support
+   *  cross-tab navigation (keeps this view mountable standalone/in tests). */
+  onOpenPutaway?: (warehouseId: number) => void;
 }
 
 interface DraftLine {
@@ -224,7 +228,7 @@ export function resolveReceiveDestination(
   return activeWarehouses[0].id;
 }
 
-const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUser }) => {
+const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUser, onOpenPutaway }) => {
   const { addToast } = useToasts();
   const receive = useReceiveStock();
   const { data: supplierRows } = useSuppliers();
@@ -243,10 +247,14 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
     () => (warehouseRows ?? []).filter((w) => w.isActive),
     [warehouseRows],
   );
-  // Warehouse-role staff are pinned to their home site server-side. We never send
-  // a location_id for them — the server defaults to their home_warehouse_id — and
-  // show a read-only label instead of a picker (any other destination is rejected).
-  const isLocked = currentUser.role === UserRole.WAREHOUSE;
+  // Warehouse-role staff with an assigned home site are pinned to it server-side.
+  // We never send a location_id for them — the server defaults to their
+  // home_warehouse_id — and show a read-only label instead of a picker (any other
+  // destination is rejected). Warehouse staff with NO home site assigned
+  // (home_warehouse_id NULL — true for every profile until one is set in Users
+  // admin) get the same editable picker as an Admin, and location_id IS sent,
+  // otherwise they would have no way to choose a destination at all.
+  const isLocked = currentUser.role === UserRole.WAREHOUSE && currentUser.homeWarehouseId != null;
 
   // ── Receipt header ─────────────────────────────────────────────────────────
   const [supplierId, setSupplierId] = useState<number | null>(null);
@@ -638,11 +646,23 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
 
       {/* Putaway recommendations — appears after receiving into a layout warehouse */}
       {putaway && (
-        <PutawayPanel
-          warehouseId={putaway.warehouseId}
-          recommendations={putaway.recommendations}
-          productNameById={new Map(products.map((p) => [p.id, p.name]))}
-        />
+        <div className="space-y-3">
+          {onOpenPutaway && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => onOpenPutaway(putaway.warehouseId)}
+                className="inline-flex items-center gap-1.5 text-sm px-3 py-2 bg-nexgen-blue text-white font-medium rounded-lg btn-press"
+              >
+                Go to putaway <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          <PutawayPanel
+            warehouseId={putaway.warehouseId}
+            recommendations={putaway.recommendations}
+            productNameById={new Map(products.map((p) => [p.id, p.name]))}
+          />
+        </div>
       )}
 
       {/* Recent receipts — gives the screen context and an audit trail */}

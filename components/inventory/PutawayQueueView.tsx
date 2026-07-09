@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getPendingPutaways } from '../../services/supabase/putawayQueueService';
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
 import { useDecidePutaway } from '../../hooks/queries/usePutawayRecommendation';
+import { putawayKeys } from '../../hooks/queries/putawayKeys';
 import { useToasts } from '../../hooks/useToasts';
 import { PutawayExplanationCard } from './PutawayExplanationCard';
 
@@ -19,9 +20,14 @@ interface PutawayQueueViewProps {
 
 const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId, productNameById }) => {
   const queueQuery = useQuery({
-    queryKey: ['putaway-queue', warehouseId],
+    queryKey: putawayKeys.byWarehouse(warehouseId),
     queryFn: () => getPendingPutaways(warehouseId),
     enabled: warehouseId != null,
+    // This screen must never show a stale cache after a receipt lands new
+    // recommendations — always treat data as stale and re-read on mount
+    // (switching tabs back into Putaway, or a fresh warehouse selection).
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
   const locationsQuery = useWarehouseLocations(warehouseId);
   const decide = useDecidePutaway();
@@ -38,8 +44,9 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId, produc
 
   const accept = async (id: number) => {
     try {
+      // useDecidePutaway's onSuccess invalidates putawayKeys.all, which
+      // refetches this (active) query automatically — no manual refetch needed.
       await decide.mutateAsync({ recommendationId: id, decision: 'accept' });
-      await queueQuery.refetch();
     } catch (e) {
       addToast(e instanceof Error ? e.message : 'Failed to put away', 'error');
     }

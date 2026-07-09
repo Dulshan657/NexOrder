@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { adjustStock } from '@/services/supabase/adjustStockService'
 import type { AdjustStockPayload } from '@/lib/stockAdjustment'
 import { inventoryKeys } from './useInventoryBalances'
+import { putawayKeys } from './putawayKeys'
 
 export function useAdjustStock() {
   const qc = useQueryClient()
@@ -15,6 +16,10 @@ export function useAdjustStock() {
       qc.invalidateQueries({ queryKey: inventoryKeys.balances })
       qc.invalidateQueries({ queryKey: inventoryKeys.byProduct(result.productId) })
       qc.invalidateQueries({ queryKey: ['products'] })
+      // adjust-stock also generates putaway tasks server-side (an upward
+      // adjustment at a racked warehouse's root is stock that needs a bin).
+      qc.invalidateQueries({ queryKey: putawayKeys.all })
+      qc.invalidateQueries({ queryKey: putawayKeys.counts })
     },
   })
 }

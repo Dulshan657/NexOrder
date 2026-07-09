@@ -6,6 +6,7 @@ import {
   type PutawayResponse,
   type DecidePutawayInput,
 } from '@/services/supabase/putawayService'
+import { putawayKeys } from './putawayKeys'
 
 /** Request engine putaway recommendations for a set of received lines.
  *  Pass dryRun for a read-only preview that never persists a queue task. */
@@ -23,6 +24,10 @@ export function useDecidePutaway() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['inventory-balances'] })
       qc.invalidateQueries({ queryKey: ['inventoryBalances'] })
+      // The decided row leaves 'suggested' — refresh the queue + counts so the
+      // accepted/overridden row disappears without a manual refetch.
+      qc.invalidateQueries({ queryKey: putawayKeys.all })
+      qc.invalidateQueries({ queryKey: putawayKeys.counts })
     },
   })
 }

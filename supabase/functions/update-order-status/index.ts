@@ -28,6 +28,7 @@ import {
   ensureFulfillments,
   pruneFulfillments,
   isLocationFullyPicked,
+  releaseResidualOnDispatch,
   recomputeOrderStatus,
 } from '../_shared/fulfillment.ts'
 
@@ -291,6 +292,11 @@ serve(async (req: Request) => {
       })
       .eq('id', ful.id)
     if (fErr) return errorResponse('DB_UPDATE_FAILED', fErr.message, 500)
+
+    // On dispatch, release any residual reservation this warehouse still holds
+    // for the order — a no-op for a correctly-picked fulfilment. The dispatch is
+    // already persisted, so a failed release logs rather than failing the request.
+    await releaseResidualOnDispatch(serviceClient, body.orderId, locationId as number, profile.id, body.status)
 
     // Recompute the derived order status from all fulfilments.
     await recomputeOrderStatus(serviceClient, body.orderId, profile.id, nowIso)

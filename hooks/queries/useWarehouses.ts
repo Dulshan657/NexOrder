@@ -9,6 +9,7 @@ import {
   type WarehouseUpdateInput,
   type TransferStockInput,
 } from '@/services/supabase/warehouseService'
+import { putawayKeys } from './putawayKeys'
 
 export const warehouseKeys = {
   all: ['warehouses'] as const,
@@ -55,6 +56,10 @@ export function useTransferStock() {
       qc.invalidateQueries({ queryKey: ['inventory'] })
       qc.invalidateQueries({ queryKey: ['products'] })
       qc.invalidateQueries({ queryKey: warehouseKeys.all })
+      // transfer-stock also generates putaway tasks server-side at the
+      // destination when it's a racked warehouse's root.
+      qc.invalidateQueries({ queryKey: putawayKeys.all })
+      qc.invalidateQueries({ queryKey: putawayKeys.counts })
     },
   })
 }

@@ -6,6 +6,7 @@ import {
 } from '@/services/supabase/receivingService'
 import { inventoryKeys } from './useInventoryBalances'
 import { supplierKeys } from './useSuppliers'
+import { putawayKeys } from './putawayKeys'
 
 export function useReceiveStock() {
   const qc = useQueryClient()
@@ -19,6 +20,11 @@ export function useReceiveStock() {
       qc.invalidateQueries({ queryKey: ['products'] })
       // A free-text supplier may have been created on the fly.
       qc.invalidateQueries({ queryKey: supplierKeys.all })
+      // receive-stock generates putaway tasks server-side for layout warehouses —
+      // without this the queue (and its nav badge / picker counts) served a stale
+      // cache forever, since nothing else invalidated ['putaway-queue', ...].
+      qc.invalidateQueries({ queryKey: putawayKeys.all })
+      qc.invalidateQueries({ queryKey: putawayKeys.counts })
     },
   })
 }

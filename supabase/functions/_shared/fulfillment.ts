@@ -101,6 +101,41 @@ export async function isLocationFullyPicked(
 }
 
 /**
+ * On a dispatch transition, release any residual reservation this warehouse
+ * still holds for the order — deallocates only the un-picked remainder via
+ * inv_release_reservation (mig 00036). A no-op for every other status. A
+ * correctly-picked fulfilment has nothing left to release: the RPC nets
+ * ordered-vs-picked internally and only deallocates what's actually left, so
+ * calling it unconditionally on dispatch is always safe. This is what stops a
+ * short-picked-then-dispatched fulfilment from leaving `allocated` units
+ * stranded at this location, unreachable to `inv_transfer_stock` (which moves
+ * available stock only) and therefore un-puttable-away forever.
+ *
+ * Dispatch has already been persisted by the time we get here, so a failure
+ * must not fail the request — but it must not vanish either: a silent failure
+ * here is exactly how stock gets stranded. Log and continue.
+ */
+export async function releaseResidualOnDispatch(
+  admin: SupabaseClient,
+  orderId: string,
+  locationId: number,
+  actorId: string | null,
+  status: FulfillmentStatus,
+): Promise<void> {
+  if (status !== 'dispatched') return
+  const { error } = await admin.rpc('inv_release_reservation', {
+    p_order_id: orderId,
+    p_location_id: locationId,
+    p_actor: actorId,
+  })
+  if (error) {
+    console.error(
+      `inv_release_reservation failed for order ${orderId} at location ${locationId}: ${error.message}`,
+    )
+  }
+}
+
+/**
  * Recompute orders.status as the rollup of its fulfilment statuses and persist
  * it if changed. No-op (returns null) for legacy orders with no fulfilments.
  */

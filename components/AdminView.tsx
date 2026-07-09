@@ -88,6 +88,15 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
         window.history.replaceState({}, '', url.toString());
         props.onSetAdminView?.('Settings');
     };
+    // Post-receipt "Go to putaway" deep-link: pre-select the receipt's
+    // server-resolved destination warehouse via ?wh= (PutawayQueuePage reads
+    // this the same way the Warehouse viewer does) before switching tabs.
+    const openPutaway = (warehouseId: number) => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('wh', String(warehouseId));
+        window.history.replaceState({}, '', url.toString());
+        props.onSetAdminView?.('Putaway');
+    };
     return (
         <div>
             <ErrorBoundary label={`Admin · ${props.activeTab}`}>
@@ -103,7 +112,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 )}
                 {props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
                 {props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} addToast={props.addToast} />}
-                {props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} />}
+                {props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} onOpenPutaway={openPutaway} />}
                 {props.activeTab === 'Putaway' && <PutawayQueuePage currentUser={props.currentUser} />}
                 {props.activeTab === 'Pick Queue' && <PickQueueView currentUser={props.currentUser} />}
                 {props.activeTab === 'Dispatched' && <DispatchedOrdersView orders={props.allOrders} onViewDetail={props.onViewOrderDetail} />}
