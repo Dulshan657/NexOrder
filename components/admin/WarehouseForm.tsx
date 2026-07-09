@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { X, MapPin, Warehouse as WarehouseIcon } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { MapPin, Warehouse as WarehouseIcon } from 'lucide-react';
 import WarehouseMapPicker from './WarehouseMapPicker';
+import { Button, Field, Input, Modal, NumberInput, Textarea } from '../ui';
 import { useCreateWarehouse, useUpdateWarehouse } from '../../hooks/queries/useWarehouses';
 import type { Warehouse, WarehouseType } from '../../types';
 
@@ -9,61 +10,72 @@ interface WarehouseFormProps {
   onClose: () => void;
 }
 
-const inputCls =
-  'w-full px-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue';
+interface FormState {
+  code: string;
+  name: string;
+  locationType: WarehouseType;
+  lat?: number;
+  lng?: number;
+  address: string;
+  contact: string;
+  hours: string;
+  notes: string;
+}
+
+const toFormState = (warehouse: Warehouse | null): FormState => ({
+  code: warehouse?.code ?? '',
+  name: warehouse?.name ?? '',
+  locationType: warehouse?.locationType ?? 'bulk',
+  lat: warehouse?.lat,
+  lng: warehouse?.lng,
+  address: warehouse?.address ?? '',
+  contact: warehouse?.contact ?? '',
+  hours: warehouse?.hours ?? '',
+  notes: warehouse?.notes ?? '',
+});
+
+const trimmedOrUndefined = (value: string): string | undefined => value.trim() || undefined;
 
 const WarehouseForm: React.FC<WarehouseFormProps> = ({ warehouse, onClose }) => {
   const isEdit = warehouse !== null;
   const create = useCreateWarehouse();
   const update = useUpdateWarehouse();
 
-  const [code, setCode] = useState(warehouse?.code ?? '');
-  const [name, setName] = useState(warehouse?.name ?? '');
-  const [locationType, setLocationType] = useState<WarehouseType>(warehouse?.locationType ?? 'bulk');
-  const [lat, setLat] = useState<number | undefined>(warehouse?.lat);
-  const [lng, setLng] = useState<number | undefined>(warehouse?.lng);
-  const [address, setAddress] = useState(warehouse?.address ?? '');
-  const [contact, setContact] = useState(warehouse?.contact ?? '');
-  const [hours, setHours] = useState(warehouse?.hours ?? '');
-  const [notes, setNotes] = useState(warehouse?.notes ?? '');
+  const [initial] = useState(() => toFormState(warehouse));
+  const [form, setForm] = useState<FormState>(initial);
   const [error, setError] = useState<string | null>(null);
 
   const saving = create.isPending || update.isPending;
+  const isDirty = useMemo(
+    () => (Object.keys(initial) as (keyof FormState)[]).some((key) => form[key] !== initial[key]),
+    [form, initial],
+  );
+
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+    setForm((current) => ({ ...current, [key]: value }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!name.trim() || (!isEdit && !code.trim())) {
+    if (!form.name.trim() || (!isEdit && !form.code.trim())) {
       setError('Code and name are required.');
       return;
     }
+    const fields = {
+      name: form.name.trim(),
+      location_type: form.locationType,
+      lat: form.lat,
+      lng: form.lng,
+      address: trimmedOrUndefined(form.address),
+      contact: trimmedOrUndefined(form.contact),
+      hours: trimmedOrUndefined(form.hours),
+      notes: trimmedOrUndefined(form.notes),
+    };
     try {
       if (isEdit) {
-        await update.mutateAsync({
-          id: warehouse!.id,
-          updates: {
-            name: name.trim(),
-            location_type: locationType,
-            lat,
-            lng,
-            address: address.trim() || undefined,
-            contact: contact.trim() || undefined,
-            hours: hours.trim() || undefined,
-            notes: notes.trim() || undefined,
-          },
-        });
+        await update.mutateAsync({ id: warehouse!.id, updates: fields });
       } else {
-        await create.mutateAsync({
-          code: code.trim(),
-          name: name.trim(),
-          location_type: locationType,
-          lat,
-          lng,
-          address: address.trim() || undefined,
-          contact: contact.trim() || undefined,
-          hours: hours.trim() || undefined,
-          notes: notes.trim() || undefined,
-        });
+        await create.mutateAsync({ code: form.code.trim(), ...fields });
       }
       onClose();
     } catch (err) {
@@ -72,127 +84,130 @@ const WarehouseForm: React.FC<WarehouseFormProps> = ({ warehouse, onClose }) => 
   };
 
   return (
-    <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex justify-center items-start sm:items-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg border border-stone-200 my-8">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-nexgen-blue/10">
-              <WarehouseIcon className="w-4 h-4 text-nexgen-blue" />
-            </div>
-            <h2 className="text-base font-display font-bold text-stone-900">
-              {isEdit ? `Edit ${warehouse!.name}` : 'New Warehouse'}
-            </h2>
-          </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close">
-            <X className="w-4 h-4 text-stone-500" />
-          </button>
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      dirty={isDirty}
+      onSubmit={handleSubmit}
+      icon={<WarehouseIcon className="w-4 h-4 text-nexgen-blue" />}
+      title={isEdit ? `Edit ${warehouse!.name}` : 'New Warehouse'}
+      footer={({ requestClose }) => (
+        <>
+          <Button variant="ghost" onClick={requestClose}>
+            Cancel
+          </Button>
+          <Button type="submit" loading={saving}>
+            {isEdit ? 'Save changes' : 'Create warehouse'}
+          </Button>
+        </>
+      )}
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Code" htmlFor="wh-code">
+            <Input
+              id="wh-code"
+              value={form.code}
+              onChange={(e) => set('code', e.target.value.toUpperCase())}
+              disabled={isEdit}
+              placeholder="SYD"
+              maxLength={32}
+            />
+          </Field>
+          <Field label="Name" htmlFor="wh-name">
+            <Input
+              id="wh-name"
+              value={form.name}
+              onChange={(e) => set('name', e.target.value)}
+              placeholder="Sydney DC"
+            />
+          </Field>
         </div>
 
-        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Code</label>
-              <input
-                className={inputCls}
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
-                disabled={isEdit}
-                placeholder="SYD"
-                maxLength={32}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Name</label>
-              <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Sydney DC" />
-            </div>
+        <Field
+          label="Storage type"
+          helper={
+            form.locationType === 'bulk'
+              ? 'Stock held in unorganised piles, depleted FIFO.'
+              : 'Stock tracked in named bins, slotted by the optimiser.'
+          }
+        >
+          <div className="grid grid-cols-2 gap-2">
+            {(['bulk', 'racked'] as WarehouseType[]).map((type) => (
+              <button
+                type="button"
+                key={type}
+                aria-pressed={form.locationType === type}
+                onClick={() => set('locationType', type)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors btn-press ${
+                  form.locationType === type
+                    ? 'bg-nexgen-blue text-white border-nexgen-blue'
+                    : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
+                }`}
+              >
+                {type === 'bulk' ? 'Bulk (piles, FIFO)' : 'Racked (bins/WMS)'}
+              </button>
+            ))}
           </div>
+        </Field>
 
-          <div>
-            <label className="block text-xs font-semibold text-stone-600 mb-1">Storage type</label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['bulk', 'racked'] as WarehouseType[]).map((t) => (
-                <button
-                  type="button"
-                  key={t}
-                  onClick={() => setLocationType(t)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors btn-press ${
-                    locationType === t
-                      ? 'bg-nexgen-blue text-white border-nexgen-blue'
-                      : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
-                  }`}
-                >
-                  {t === 'bulk' ? 'Bulk (piles, FIFO)' : 'Racked (bins/WMS)'}
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] text-stone-400 mt-1">
-              {locationType === 'bulk'
-                ? 'Stock held in unorganised piles, depleted FIFO.'
-                : 'Stock tracked in named bins (racked WMS features roll out in a later phase).'}
-            </p>
+        <Field label="Location">
+          <p className="flex items-center gap-1 text-xs text-stone-400 mb-2">
+            <MapPin className="w-3.5 h-3.5" /> Click the map to set coordinates
+          </p>
+          <WarehouseMapPicker
+            lat={form.lat}
+            lng={form.lng}
+            onChange={(lat, lng) => setForm((current) => ({ ...current, lat, lng }))}
+          />
+          <div className="grid grid-cols-2 gap-3 mt-2">
+            <NumberInput
+              step="0.000001"
+              aria-label="Latitude"
+              value={form.lat ?? ''}
+              onChange={(e) => set('lat', e.target.value === '' ? undefined : Number(e.target.value))}
+              placeholder="Latitude"
+            />
+            <NumberInput
+              step="0.000001"
+              aria-label="Longitude"
+              value={form.lng ?? ''}
+              onChange={(e) => set('lng', e.target.value === '' ? undefined : Number(e.target.value))}
+              placeholder="Longitude"
+            />
           </div>
+        </Field>
 
-          <div>
-            <label className="block text-xs font-semibold text-stone-600 mb-1 flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5" /> Location (click the map to set)
-            </label>
-            <WarehouseMapPicker lat={lat} lng={lng} onChange={(la, ln) => { setLat(la); setLng(ln); }} />
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              <input
-                className={inputCls}
-                type="number"
-                step="0.000001"
-                value={lat ?? ''}
-                onChange={(e) => setLat(e.target.value === '' ? undefined : Number(e.target.value))}
-                placeholder="Latitude"
-              />
-              <input
-                className={inputCls}
-                type="number"
-                step="0.000001"
-                value={lng ?? ''}
-                onChange={(e) => setLng(e.target.value === '' ? undefined : Number(e.target.value))}
-                placeholder="Longitude"
-              />
-            </div>
-          </div>
+        <Field label="Address" htmlFor="wh-address">
+          <Input id="wh-address" value={form.address} onChange={(e) => set('address', e.target.value)} />
+        </Field>
 
-          <div>
-            <label className="block text-xs font-semibold text-stone-600 mb-1">Address</label>
-            <input className={inputCls} value={address} onChange={(e) => setAddress(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Contact</label>
-              <input className={inputCls} value={contact} onChange={(e) => setContact(e.target.value)} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-stone-600 mb-1">Hours</label>
-              <input className={inputCls} value={hours} onChange={(e) => setHours(e.target.value)} placeholder="Mon–Fri 7–4" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-stone-600 mb-1">Notes</label>
-            <textarea className={inputCls} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Contact" htmlFor="wh-contact">
+            <Input id="wh-contact" value={form.contact} onChange={(e) => set('contact', e.target.value)} />
+          </Field>
+          <Field label="Hours" htmlFor="wh-hours">
+            <Input
+              id="wh-hours"
+              value={form.hours}
+              onChange={(e) => set('hours', e.target.value)}
+              placeholder="Mon–Fri 7–4"
+            />
+          </Field>
+        </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+        <Field label="Notes" htmlFor="wh-notes">
+          <Textarea id="wh-notes" rows={2} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
+        </Field>
 
-          <div className="flex justify-end gap-3 pt-2 border-t border-stone-100">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-stone-600 hover:bg-stone-100 btn-press">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 rounded-lg text-sm font-semibold bg-nexgen-blue text-white hover:bg-nexgen-blue/90 btn-press disabled:opacity-60"
-            >
-              {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create warehouse'}
-            </button>
-          </div>
-        </form>
+        {error && (
+          <p className="text-sm text-red-600" role="alert">
+            {error}
+          </p>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 };
 

@@ -192,6 +192,26 @@ describe('Modal — dirty guard', () => {
     expect(screen.getByRole('alertdialog')).toBeTruthy()
   })
 
+  it('routes a function-form footer Cancel through the guard', () => {
+    // A footer is supplied by the caller, so a Cancel wired straight to `onClose`
+    // would skip the guard entirely. The `requestClose` handle prevents that.
+    const onClose = vi.fn()
+    render(
+      <Modal
+        open
+        onClose={onClose}
+        title="T"
+        dirty
+        footer={({ requestClose }) => <button onClick={requestClose}>Cancel</button>}
+      >
+        <p>body</p>
+      </Modal>,
+    )
+    fireEvent.click(screen.getByText('Cancel'))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('alertdialog')).toBeTruthy()
+  })
+
   it('closes outright when the form is clean', () => {
     const onClose = vi.fn()
     render(

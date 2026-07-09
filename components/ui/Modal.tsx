@@ -18,6 +18,12 @@ const SIZE: Record<ModalSize, string> = {
   full: 'max-w-6xl',
 }
 
+/** Passed to a function-form `footer` so a Cancel button dismisses through the dirty
+ *  guard rather than bypassing it by calling `onClose` directly. */
+export interface OverlayApi {
+  requestClose: () => void
+}
+
 export interface ModalProps {
   open: boolean
   onClose: () => void
@@ -26,7 +32,7 @@ export interface ModalProps {
   description?: ReactNode
   size?: ModalSize
   /** Rendered in the sticky footer, so action buttons never scroll out of reach. */
-  footer?: ReactNode
+  footer?: ReactNode | ((api: OverlayApi) => ReactNode)
   /** When set the panel element becomes a <form>. Do not also wrap <Modal> in a form. */
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void
   /** Unsaved edits: dismissing prompts to discard rather than closing outright. */
@@ -73,7 +79,7 @@ export function Modal({
       title={title}
       icon={icon}
       description={description}
-      footer={footer}
+      footer={typeof footer === 'function' ? footer({ requestClose: guard.requestClose }) : footer}
       bodyClassName={bodyClassName}
       onRequestClose={guard.requestClose}
     >

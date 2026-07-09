@@ -24,7 +24,6 @@
     "components/admin/ProductImportModal.tsx",
     "components/admin/StockImportModal.tsx",
     "components/admin/TransferStockModal.tsx",
-    "components/admin/WarehouseForm.tsx",
     "components/admin/WarehouseTreeEditor.tsx",
     "components/admin/WarehousesSettingsSection.tsx",
     "components/admin/ZoneProfilesSection.tsx",

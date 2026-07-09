@@ -2,6 +2,7 @@ import { useId, type FormEvent, type ReactNode } from 'react'
 import { Overlay } from './Overlay'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DialogChrome, useDismissGuard } from './chrome'
+import type { OverlayApi } from './Modal'
 
 // Right-hand slide-in panel; a bottom sheet on mobile. Same header/body/footer column
 // as Modal, so it inherits the same overflow guarantee — and because it is pinned to
@@ -25,7 +26,7 @@ export interface SheetProps {
   width?: SheetWidth
   /** How the sheet presents below `sm`. */
   mobile?: 'bottom' | 'full'
-  footer?: ReactNode
+  footer?: ReactNode | ((api: OverlayApi) => ReactNode)
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void
   dirty?: boolean
   discardConfirm?: { title?: string; message?: string; confirmLabel?: string }
@@ -72,7 +73,7 @@ export function Sheet({
       title={title}
       icon={icon}
       description={description}
-      footer={footer}
+      footer={typeof footer === 'function' ? footer({ requestClose: guard.requestClose }) : footer}
       bodyClassName={bodyClassName}
       onRequestClose={guard.requestClose}
     >

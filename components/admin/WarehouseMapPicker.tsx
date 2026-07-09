@@ -1,5 +1,5 @@
-import React from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import React, { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
 const pinIcon = L.divIcon({
@@ -19,6 +19,19 @@ const ClickHandler: React.FC<{ onPick: (lat: number, lng: number) => void }> = (
       onPick(Number(e.latlng.lat.toFixed(6)), Number(e.latlng.lng.toFixed(6)));
     },
   });
+  return null;
+};
+
+/** Leaflet measures its container once, at mount. Inside a modal the panel is still
+ *  animating (and in a sheet, still zero-width), so tiles lay out against the wrong
+ *  size and render grey. Re-measure whenever the container resizes. */
+const AutoResize: React.FC = () => {
+  const map = useMap();
+  useEffect(() => {
+    const observer = new ResizeObserver(() => map.invalidateSize());
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
+  }, [map]);
   return null;
 };
 
@@ -42,6 +55,7 @@ const WarehouseMapPicker: React.FC<WarehouseMapPickerProps> = ({ lat, lng, onCha
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        <AutoResize />
         <ClickHandler onPick={onChange} />
         {hasCoords && <Marker position={[lat as number, lng as number]} icon={pinIcon} />}
       </MapContainer>
