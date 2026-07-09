@@ -1,9 +1,20 @@
-// Shared form primitives for the Settings tabs. One place for the input class
-// string, section/field layout, toggle switch, sub-tab button, and per-tab
-// SaveBar so tabs stay small and visually consistent.
+// Settings-specific layout: section headings, the sub-tab button, and the per-tab
+// SaveBar.
+//
+// The field primitives now live in `components/ui` so modals share them; they are
+// re-exported here under their original names so existing importers are untouched.
 
 import React, { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
+
+export {
+  Field as SettingsField,
+  Input as TextInput,
+  NumberInput,
+  Select as SelectInput,
+  Toggle,
+} from '../../ui'
+export type { FieldProps as SettingsFieldProps, ToggleProps } from '../../ui'
 
 // ── Section / field layout ────────────────────────────────────────
 
@@ -37,112 +48,6 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
     </div>
     <div className="space-y-4">{children}</div>
   </section>
-)
-
-interface SettingsFieldProps {
-  label: string
-  htmlFor?: string
-  helper?: string
-  error?: string
-  children: React.ReactNode
-}
-
-/** Label above the control, helper or error text below. */
-export const SettingsField: React.FC<SettingsFieldProps> = ({
-  label,
-  htmlFor,
-  helper,
-  error,
-  children,
-}) => (
-  <div>
-    <label htmlFor={htmlFor} className="block text-sm font-medium text-stone-700 mb-1">
-      {label}
-    </label>
-    {children}
-    {error ? (
-      <p className="text-xs text-red-600 mt-1" role="alert">
-        {error}
-      </p>
-    ) : helper ? (
-      <p className="text-xs text-stone-400 mt-1">{helper}</p>
-    ) : null}
-  </div>
-)
-
-// ── Inputs ────────────────────────────────────────────────────────
-
-const inputClass = (invalid?: boolean, dense?: boolean) =>
-  `w-full ${dense ? 'px-2.5 py-1.5 rounded-md' : 'px-3 py-2 rounded-lg'} border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-nexgen-blue/40 focus:border-nexgen-blue ${
-    invalid ? 'border-red-300' : 'border-stone-300'
-  }`
-
-/** `dense` = compact table-cell variant. Constrain width by wrapping in a
- *  fixed-width container (inputs are always `w-full`). */
-type InputExtras = { invalid?: boolean; dense?: boolean }
-
-export const TextInput: React.FC<React.InputHTMLAttributes<HTMLInputElement> & InputExtras> = ({
-  invalid,
-  dense,
-  className,
-  ...rest
-}) => <input type="text" {...rest} className={`${inputClass(invalid, dense)} ${className ?? ''}`} />
-
-export const NumberInput: React.FC<React.InputHTMLAttributes<HTMLInputElement> & InputExtras> = ({
-  invalid,
-  dense,
-  className,
-  ...rest
-}) => <input type="number" {...rest} className={`${inputClass(invalid, dense)} ${className ?? ''}`} />
-
-export const SelectInput: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & InputExtras> = ({
-  invalid,
-  dense,
-  className,
-  children,
-  ...rest
-}) => (
-  <select {...rest} className={`${inputClass(invalid, dense)} ${className ?? ''}`}>
-    {children}
-  </select>
-)
-
-// ── Toggle ────────────────────────────────────────────────────────
-
-interface ToggleProps {
-  checked: boolean
-  onChange: (next: boolean) => void
-  disabled?: boolean
-  label: string
-  description?: string
-}
-
-/** Accessible switch: real button with role="switch", nexgen-blue on-state. */
-export const Toggle: React.FC<ToggleProps> = ({ checked, onChange, disabled, label, description }) => (
-  <div className={`flex items-start gap-3 ${disabled ? 'opacity-50' : ''}`}>
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex shrink-0 mt-0.5 w-9 h-5 rounded-full transition-colors btn-press focus:outline-none focus:ring-2 focus:ring-nexgen-blue/40 ${
-        checked ? 'bg-nexgen-blue' : 'bg-stone-300'
-      } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-    >
-      <span
-        aria-hidden="true"
-        className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-          checked ? 'translate-x-4' : 'translate-x-0'
-        }`}
-      />
-    </button>
-    <div className="min-w-0">
-      <span className="block text-sm font-medium text-stone-700">{label}</span>
-      {description && <span className="block text-xs text-stone-400 leading-snug">{description}</span>}
-    </div>
-  </div>
 )
 
 // ── Sub-tab button (moved verbatim from POInboxView) ──────────────

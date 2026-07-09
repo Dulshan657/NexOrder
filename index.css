@@ -265,6 +265,49 @@ body {
   border-radius: 6px;
 }
 
+/* Overlay primitives (components/ui). The backdrop fades in; centered modals reuse
+   .po-modal-in; sheets slide up on mobile and in from the right on desktop. */
+@keyframes ui-backdrop-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes ui-sheet-in-right {
+  0%   { transform: translateX(100%); }
+  100% { transform: translateX(0); }
+}
+@keyframes ui-sheet-in-bottom {
+  0%   { transform: translateY(100%); }
+  100% { transform: translateY(0); }
+}
+
+.ui-backdrop-in { animation: ui-backdrop-in 0.16s ease-out both; }
+
+/* Radius and slide direction flip at the `sm` breakpoint. Kept in CSS rather than
+   Tailwind: a `sm:` variant cannot target a plain class, and `sm:rounded-none`
+   fighting `sm:rounded-l-2xl` is shorthand-vs-longhand roulette. */
+.ui-sheet-panel {
+  max-height: 92vh;
+  border-top-left-radius: 1rem;
+  border-top-right-radius: 1rem;
+  animation: ui-sheet-in-bottom 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.ui-sheet-panel--full {
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+}
+@media (min-width: 640px) {
+  .ui-sheet-panel,
+  .ui-sheet-panel--full {
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+    border-top-left-radius: 1rem;
+    border-bottom-left-radius: 1rem;
+    animation-name: ui-sheet-in-right;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .po-skeleton,
   .po-row-in,
@@ -277,7 +320,10 @@ body {
   .wh-route-leg,
   .wh-pulse,
   .wh-panel-in,
-  .wh-shimmer {
+  .wh-shimmer,
+  .ui-backdrop-in,
+  .ui-sheet-panel,
+  .ui-sheet-panel--full {
     animation: none !important;
     transition: none !important;
   }

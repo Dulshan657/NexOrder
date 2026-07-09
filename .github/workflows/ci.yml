@@ -32,6 +32,9 @@ jobs:
       - name: Dependency audit (prod, high+)
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Overlay guard (no raw `fixed inset-0` outside components/ui)
+        run: node scripts/check-overlays.mjs
+
       - name: Type check
         run: npx tsc --noEmit
 

@@ -901,7 +901,10 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                 >
                     <Menu className="w-5 h-5" />
                 </button>
-                <main className="flex-1 overflow-y-auto">
+                {/* The app's real vertical scroller: the shell root and this column are
+                    both `h-screen overflow-hidden`, so `document.body` never scrolls.
+                    `useScrollLock` (components/ui) freezes this element when a modal opens. */}
+                <main data-scroll-container className="flex-1 overflow-y-auto">
                     <div>
                         {isAdminOrManager && adminView === 'Shop' && (
                             <ShopView
