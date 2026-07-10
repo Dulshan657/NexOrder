@@ -30,15 +30,17 @@ const PHASE_LABEL: Record<ImportPhase, string> = {
   compressing: 'Preparing image…',
   uploading: 'Uploading…',
   extracting: 'Reading the floor plan…',
+  refining: 'Comparing the draft against your plan…',
   done: 'Extraction complete',
   error: 'Something went wrong',
 }
 
 // The visible progress steps, in order. The AI read is the long pole, so it
 // carries an ETA hint to reassure the operator the process isn't stuck — high
-// fidelity runs two sequential vision passes, so its hint sets a longer bar.
+// fidelity runs two sequential vision passes (plus an automatic reconcile
+// round), so its hint sets a longer bar and gets an extra step.
 function stepsFor(fidelity: FloorplanFidelity): ReadonlyArray<{ key: ImportPhase; label: string; hint?: string }> {
-  return [
+  const steps: Array<{ key: ImportPhase; label: string; hint?: string }> = [
     { key: 'compressing', label: 'Preparing image' },
     { key: 'uploading', label: 'Uploading' },
     {
@@ -47,8 +49,12 @@ function stepsFor(fidelity: FloorplanFidelity): ReadonlyArray<{ key: ImportPhase
       hint: fidelity === 'high' ? 'High fidelity can take up to ~2 minutes.' : 'This can take up to a minute.',
     },
   ]
+  if (fidelity === 'high') {
+    steps.push({ key: 'refining', label: 'Double-checking placement', hint: 'Comparing the draft against your plan.' })
+  }
+  return steps
 }
-const PHASE_ORDER: ImportPhase[] = ['idle', 'compressing', 'uploading', 'extracting', 'done', 'error']
+const PHASE_ORDER: ImportPhase[] = ['idle', 'compressing', 'uploading', 'extracting', 'refining', 'done', 'error']
 
 const FIDELITY_OPTIONS: ReadonlyArray<{ value: FloorplanFidelity; label: string; hint: string }> = [
   { value: 'standard', label: 'Standard', hint: 'Single AI pass' },
@@ -204,7 +210,7 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
   const setPalletAreaChoice = (code: string, choice: PalletAreaChoiceState) =>
     setPalletAreaChoices((prev) => ({ ...prev, [code]: choice }))
 
-  const busy = phase === 'compressing' || phase === 'uploading' || phase === 'extracting'
+  const busy = phase === 'compressing' || phase === 'uploading' || phase === 'extracting' || phase === 'refining'
 
   const createDraft = async () => {
     if (!result || creatingRef.current) return

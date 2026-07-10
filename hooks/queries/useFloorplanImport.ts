@@ -5,15 +5,26 @@
 
 import { useCallback, useState } from 'react'
 import { compressImage } from '@/lib/imageCompression'
+import { computeGridDims, drawGridOverlay, renderDraftToBlob } from '@/lib/floorplanGridOverlay'
 import {
   requestUploadUrl,
+  requestReconcileUploadUrl,
   uploadFloorplan,
   extractFloorplan,
   type FloorplanExtractResult,
   type FloorplanFidelity,
 } from '@/services/supabase/floorplanService'
 
-export type ImportPhase = 'idle' | 'compressing' | 'uploading' | 'extracting' | 'done' | 'error'
+export type ImportPhase =
+  | 'idle'
+  | 'compressing'
+  | 'uploading'
+  | 'extracting'
+  /** High fidelity only: the client renders the pass-1/2 draft back to an
+   *  image and asks the server to compare it against the source scan. */
+  | 'refining'
+  | 'done'
+  | 'error'
 
 interface UseFloorplanImport {
   phase: ImportPhase
@@ -44,12 +55,52 @@ export function useFloorplanImport(warehouseId: number): UseFloorplanImport {
       // edge generous so the model can still read them, but re-encode to a small WebP.
       const compressed = await compressImage(file, { maxWidthOrHeight: 2000, quality: 0.85 })
 
+      // Pin the grid to the image's own aspect ratio (the model no longer
+      // freely guesses proportions), then draw the labeled red coordinate
+      // overlay onto the compressed image. The AI only ever sees the
+      // OVERLAID copy — the modal's clean preview reads from the original
+      // `File` separately (see `previewUrl` in FloorPlanImportModal).
+      const bitmap = await createImageBitmap(compressed)
+      const grid = computeGridDims(bitmap.width, bitmap.height)
+      bitmap.close?.()
+      const overlaid = await drawGridOverlay(compressed, grid.gridWidth, grid.gridHeight)
+
       setPhase('uploading')
       const target = await requestUploadUrl(warehouseId, 'image/webp')
-      await uploadFloorplan(target, compressed)
+      await uploadFloorplan(target, overlaid)
 
       setPhase('extracting')
-      const extracted = await extractFloorplan(target.importId, fidelity)
+      let extracted = await extractFloorplan(target.importId, {
+        fidelity,
+        grid: { width: grid.gridWidth, height: grid.gridHeight },
+      })
+
+      // High fidelity only: render the draft back to an image (same
+      // coordinate system as the source overlay) and ask the server to
+      // reconcile it against the source scan + the raw extraction JSON. A
+      // hiccup here should never sink the whole import — fall back to the
+      // pass-1/2 result and just log it.
+      if (fidelity === 'high' && extracted.extraction) {
+        try {
+          setPhase('refining')
+          const renderBlob = await renderDraftToBlob({
+            objects: extracted.draft.objects,
+            placements: extracted.draft.placements,
+            gridWidth: extracted.draft.gridWidth,
+            gridHeight: extracted.draft.gridHeight,
+          })
+          const reconcileTarget = await requestReconcileUploadUrl(target.importId)
+          await uploadFloorplan(reconcileTarget, renderBlob)
+          extracted = await extractFloorplan(target.importId, {
+            fidelity: 'high',
+            grid: { width: grid.gridWidth, height: grid.gridHeight },
+            reconcile: { renderPath: reconcileTarget.path, extraction: extracted.extraction },
+          })
+        } catch (refineError) {
+          console.warn('Floor-plan reconcile pass failed; keeping the pre-refinement draft', refineError)
+        }
+      }
+
       setResult(extracted)
       setPhase('done')
     } catch (e) {

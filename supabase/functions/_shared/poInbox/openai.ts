@@ -45,7 +45,10 @@ export type ExtractionPurpose =
 export interface ChatMessagePart {
   type: 'text' | 'image_url' | 'file'
   text?: string
-  image_url?: { url: string }
+  // `detail` is additive (optional) — existing callers (extract-po) that omit
+  // it are unaffected; extract-floorplan sets 'high' on every image part so
+  // the ~2000px floorplan scan isn't downsampled to low-res tiles.
+  image_url?: { url: string; detail?: 'low' | 'high' | 'auto' }
   // Inline PDF (or other supported document) sent via the Chat Completions
   // API. `file_data` is a data URL (data:<mime>;base64,<b64>); `filename`
   // is required by the API even though the content is inline.

@@ -1,10 +1,15 @@
 // create-floorplan-upload-url Edge Function
 //
-// Admin-only. Two modes:
-//   { warehouseId, mimeType }  → creates a floorplan_imports job row and returns
-//                                a signed UPLOAD url for the private
-//                                floorplan-scans bucket (client PUTs the image).
-//   { importId, kind:'preview' } → short-lived signed READ url for the modal.
+// Admin-only. Three modes:
+//   { warehouseId, mimeType }     → creates a floorplan_imports job row and
+//                                   returns a signed UPLOAD url for the
+//                                   private floorplan-scans bucket (client
+//                                   PUTs the image).
+//   { importId, kind:'preview' }   → short-lived signed READ url for the modal.
+//   { importId, kind:'reconcile' } → signed UPLOAD url (same shape as the
+//                                    warehouseId branch) at a deterministic
+//                                    path, for the client-rendered draft image
+//                                    used by extract-floorplan's reconcile pass.
 //
 // The bucket is private; all access is via these service-role signed URLs.
 
@@ -30,6 +35,7 @@ const EXT_BY_MIME: Record<string, string> = {
 const inputSchema = z.union([
   z.object({ warehouseId: z.number().int().positive(), mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp']) }),
   z.object({ importId: z.string().uuid(), kind: z.literal('preview') }),
+  z.object({ importId: z.string().uuid(), kind: z.literal('reconcile') }),
 ])
 
 serve(async (req: Request) => {
@@ -53,7 +59,7 @@ serve(async (req: Request) => {
     })
 
     // ── preview: signed read URL for an existing import ──────────────────────
-    if ('importId' in input) {
+    if ('importId' in input && input.kind === 'preview') {
       const { data: row, error } = await admin.from('floorplan_imports')
         .select('storage_path').eq('id', input.importId).single()
       if (error || !row) throw new EdgeFunctionError('NOT_FOUND', 'Import not found')
@@ -62,6 +68,25 @@ serve(async (req: Request) => {
       if (sErr || !signed?.signedUrl) throw new EdgeFunctionError('NOT_FOUND', `signed URL: ${sErr?.message ?? 'none'}`)
       return new Response(JSON.stringify({ signedUrl: signed.signedUrl, expiresInSeconds: READ_TTL_SECONDS }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── reconcile: signed UPLOAD url for the client-rendered draft, at a
+    // deterministic path mirroring the new-import convention below (same
+    // bucket, `<warehouseId>/<importId>-reconcile.webp`). Response shape
+    // mirrors the new-import branch (signed upload URL + storage path), NOT
+    // the preview branch (signed read URL) — the client PUTs a render here,
+    // it doesn't read one back. ──────────────────────────────────────────────
+    if ('importId' in input && input.kind === 'reconcile') {
+      const { data: row, error } = await admin.from('floorplan_imports')
+        .select('warehouse_id').eq('id', input.importId).single()
+      if (error || !row) throw new EdgeFunctionError('NOT_FOUND', 'Import not found')
+      const warehouseId = (row as any).warehouse_id as number
+      const path = `${warehouseId}/${input.importId}-reconcile.webp`
+      const { data: signed, error: sErr } = await admin.storage.from(BUCKET).createSignedUploadUrl(path)
+      if (sErr || !signed) throw new EdgeFunctionError('INTERNAL', `upload URL: ${sErr?.message ?? 'none'}`)
+      return new Response(JSON.stringify({ importId: input.importId, path, token: signed.token, bucket: BUCKET }), {
+        status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 

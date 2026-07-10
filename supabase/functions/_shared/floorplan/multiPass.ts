@@ -13,21 +13,18 @@
 // mergeExtractions folds the two responses into one FloorplanExtraction — the
 // same shape a single standard-fidelity pass produces — so normalizeFloorplan
 // doesn't need to know or care how many model calls produced it.
+//
+// A pass-3 reconciliation step (re-checking the merged draft against the
+// source image) is handled separately: it's client-driven (the client
+// renders the draft and uploads it) and lives in extract-floorplan/index.ts's
+// `reconcile` request branch + extractionSchema.ts's `floorplanReconcilePrompt`,
+// not here. An earlier server-only stub for this (`HIGH_FIDELITY_RECONCILE`)
+// shipped disabled and has been removed now that the client-driven version
+// is wired up.
 
 import type { FloorplanExtraction } from './extractionSchema.ts'
 
 export type FidelityMode = 'standard' | 'high'
-
-/**
- * Pass-3 reconciliation (a follow-up vision call that would re-check pass 2's
- * rackRows/palletAreas against pass 1's fixed structure for placement
- * conflicts) is designed but deliberately NOT wired up — it roughly doubles
- * the already-expensive high-fidelity cost/latency for a marginal accuracy
- * gain that normalizeFloorplan's blockedCellKeys drop already covers for the
- * common case (a rack/pallet cell landing on a wall/conveyor/obstacle).
- * Ships disabled; flip this on only after measuring real-world need.
- */
-export const HIGH_FIDELITY_RECONCILE = false
 
 /**
  * Merge a structure pass (grid/objects/zones authoritative) with a detail

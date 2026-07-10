@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest'
 
 import {
   normalizeFloorplan,
+  resolveObjectOverlaps,
   MAX_GRID_WIDTH,
   MAX_GRID_HEIGHT,
   type FloorplanExtraction,
+  type NormalizedObject,
 } from '../supabase/functions/_shared/floorplan/extractionSchema'
 
 function extraction(partial: Partial<FloorplanExtraction>): FloorplanExtraction {
@@ -245,5 +247,145 @@ describe('normalizeFloorplan', () => {
     expect(d.objectCount).toBe(1) // the wall, not the label
     const label = d.objects.find((o) => o.object_type === 'label')
     expect(label?.meta).toMatchObject({ name: 'Bulk', zoneType: 'bulk' })
+  })
+})
+
+describe('resolveObjectOverlaps', () => {
+  it('keeps the dock intact and clips the wall around it (dock beats wall)', () => {
+    const objects: NormalizedObject[] = [
+      { object_type: 'wall', floor: 0, x: 0, y: 0, w: 10, h: 1 },
+      { object_type: 'dock', floor: 0, x: 3, y: 0, w: 2, h: 1 },
+    ]
+    const resolved = resolveObjectOverlaps(objects)
+
+    const dock = resolved.find((o) => o.object_type === 'dock')
+    expect(dock).toEqual({ object_type: 'dock', floor: 0, x: 3, y: 0, w: 2, h: 1 })
+
+    const wallCells = resolved
+      .filter((o) => o.object_type === 'wall')
+      .flatMap((o) => Array.from({ length: o.w }, (_, i) => o.x + i))
+    expect(wallCells.sort((a, b) => a - b)).toEqual([0, 1, 2, 5, 6, 7, 8, 9])
+    // Neither wall fragment overlaps the dock's cells.
+    expect(wallCells).not.toContain(3)
+    expect(wallCells).not.toContain(4)
+  })
+
+  it('clips a conveyor against an overlapping wall (wall outranks conveyor)', () => {
+    const objects: NormalizedObject[] = [
+      { object_type: 'wall', floor: 0, x: 0, y: 0, w: 4, h: 1 },
+      { object_type: 'conveyor', floor: 0, x: 2, y: 0, w: 4, h: 1 },
+    ]
+    const resolved = resolveObjectOverlaps(objects)
+
+    const wall = resolved.find((o) => o.object_type === 'wall')
+    expect(wall).toEqual({ object_type: 'wall', floor: 0, x: 0, y: 0, w: 4, h: 1 })
+
+    const conveyor = resolved.find((o) => o.object_type === 'conveyor')
+    expect(conveyor).toEqual({ object_type: 'conveyor', floor: 0, x: 4, y: 0, w: 2, h: 1 })
+  })
+
+  it('rebuilds a partial-overlap survivor set into non-overlapping fragments that exactly cover the surviving cells', () => {
+    const objects: NormalizedObject[] = [
+      { object_type: 'obstacle', floor: 0, x: 0, y: 0, w: 4, h: 4, meta: { name: 'Office block' } },
+      { object_type: 'dock', floor: 0, x: 2, y: 2, w: 2, h: 2 }, // carves the bottom-right 2x2 corner out of the obstacle
+    ]
+    const resolved = resolveObjectOverlaps(objects)
+
+    const dock = resolved.find((o) => o.object_type === 'dock')
+    expect(dock).toEqual({ object_type: 'dock', floor: 0, x: 2, y: 2, w: 2, h: 2 })
+
+    const fragments = resolved.filter((o) => o.object_type === 'obstacle')
+    const coveredCells = new Set<string>()
+    for (const f of fragments) {
+      for (let dy = 0; dy < f.h; dy++) {
+        for (let dx = 0; dx < f.w; dx++) {
+          const key = `${f.x + dx},${f.y + dy}`
+          expect(coveredCells.has(key)).toBe(false) // fragments never overlap each other
+          coveredCells.add(key)
+        }
+      }
+    }
+    // 4x4 (16 cells) minus the 2x2 dock corner (4 cells) = 12 surviving cells.
+    expect(coveredCells.size).toBe(12)
+    for (const key of coveredCells) {
+      const [x, y] = key.split(',').map(Number)
+      expect(x >= 2 && x < 4 && y >= 2 && y < 4).toBe(false) // none inside the dock's footprint
+    }
+  })
+
+  it('keeps meta only on the largest fragment when an object is split', () => {
+    const objects: NormalizedObject[] = [
+      { object_type: 'staging', floor: 0, x: 0, y: 0, w: 10, h: 1, meta: { name: 'Shipping & Receiving' } },
+      { object_type: 'dock', floor: 0, x: 3, y: 0, w: 1, h: 1 },
+    ]
+    const resolved = resolveObjectOverlaps(objects)
+
+    const stagingFragments = resolved.filter((o) => o.object_type === 'staging')
+    expect(stagingFragments).toHaveLength(2) // split around the dock cell at x=3: [0,1,2] and [4..9]
+
+    const withMeta = stagingFragments.filter((f) => f.meta)
+    expect(withMeta).toHaveLength(1)
+    expect(withMeta[0].meta).toEqual({ name: 'Shipping & Receiving' })
+    expect(withMeta[0]).toMatchObject({ x: 4, w: 6 }) // the larger fragment (w=6 vs w=3)
+  })
+
+  it('drops an object with zero surviving cells (fully covered by a higher-priority object)', () => {
+    const objects: NormalizedObject[] = [
+      { object_type: 'walkway', floor: 0, x: 1, y: 1, w: 2, h: 2 },
+      { object_type: 'wall', floor: 0, x: 0, y: 0, w: 5, h: 5 }, // fully covers the walkway
+    ]
+    const resolved = resolveObjectOverlaps(objects)
+
+    expect(resolved.some((o) => o.object_type === 'walkway')).toBe(false)
+    expect(resolved.filter((o) => o.object_type === 'wall')).toHaveLength(1)
+  })
+
+  it('dedupes two overlapping objects of the same type, keeping the earlier one', () => {
+    const objects: NormalizedObject[] = [
+      { object_type: 'wall', floor: 0, x: 0, y: 0, w: 5, h: 1 },
+      { object_type: 'wall', floor: 0, x: 0, y: 0, w: 5, h: 1 }, // exact duplicate
+    ]
+    const resolved = resolveObjectOverlaps(objects)
+
+    expect(resolved).toHaveLength(1)
+    expect(resolved[0]).toEqual({ object_type: 'wall', floor: 0, x: 0, y: 0, w: 5, h: 1 })
+  })
+
+  it('passes label objects through untouched and excludes them from rasterization', () => {
+    const objects: NormalizedObject[] = [
+      { object_type: 'label', floor: 0, x: 0, y: 0, w: 5, h: 5, meta: { code: 'Z1', name: 'Bulk', zoneType: 'bulk' } },
+      { object_type: 'wall', floor: 0, x: 2, y: 2, w: 2, h: 2 },
+    ]
+    const resolved = resolveObjectOverlaps(objects)
+
+    const label = resolved.find((o) => o.object_type === 'label')
+    expect(label).toEqual(objects[0])
+    // The label never contests cells — the wall keeps its full footprint.
+    const wall = resolved.find((o) => o.object_type === 'wall')
+    expect(wall).toEqual(objects[1])
+  })
+
+  it('integration: normalizeFloorplan cleans an overlapping conveyor+wall extraction so bin placement avoids both', () => {
+    const d = normalizeFloorplan(
+      extraction({
+        objects: [
+          { type: 'conveyor', name: '', x: 0, y: 0, w: 6, h: 1, floor: 0 },
+          { type: 'wall', name: '', x: 2, y: 0, w: 6, h: 1, floor: 0 }, // overlaps the conveyor
+        ],
+        rackRows: [{ code: 'R1', x: 0, y: 0, w: 8, h: 1, floor: 0, bayCount: 8, storageTypeHint: '' }],
+      }),
+      opts,
+    )
+
+    // Wall (higher priority) keeps its full footprint x=2..7; the conveyor is
+    // clipped down to the remaining x=0..1.
+    const wall = d.objects.find((o) => o.object_type === 'wall')
+    const conveyorFragments = d.objects.filter((o) => o.object_type === 'conveyor')
+    expect(wall).toMatchObject({ x: 2, w: 6 })
+    expect(conveyorFragments).toEqual([{ object_type: 'conveyor', floor: 0, x: 0, y: 0, w: 2, h: 1 }])
+
+    // The union of wall+conveyor now covers x=0..7 — every rackRow bay in
+    // that span is blocked, so no bins land on top of either.
+    expect(d.placements).toHaveLength(0)
   })
 })

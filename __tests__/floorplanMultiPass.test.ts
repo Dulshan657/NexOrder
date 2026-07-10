@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { mergeExtractions, HIGH_FIDELITY_RECONCILE } from '../supabase/functions/_shared/floorplan/multiPass'
+import { mergeExtractions } from '../supabase/functions/_shared/floorplan/multiPass'
 import type { FloorplanExtraction } from '../supabase/functions/_shared/floorplan/extractionSchema'
 
 function extraction(partial: Partial<FloorplanExtraction>): FloorplanExtraction {
@@ -72,9 +72,5 @@ describe('mergeExtractions', () => {
     expect(mergeExtractions(extraction({ notes: '' }), extraction({ notes: 'only detail note' })).notes).toBe('only detail note')
     expect(mergeExtractions(extraction({ notes: '' }), extraction({ notes: '' })).notes).toBe('')
     expect(mergeExtractions(extraction({ notes: '  ' }), extraction({ notes: 'x' })).notes).toBe('x')
-  })
-
-  it('ships pass-3 reconciliation disabled', () => {
-    expect(HIGH_FIDELITY_RECONCILE).toBe(false)
   })
 })

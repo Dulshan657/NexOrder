@@ -191,9 +191,36 @@ export const FLOORPLAN_SCHEMA = {
   },
 } as const
 
-export const FLOORPLAN_SYSTEM_PROMPT = `You convert a photo or scan of a warehouse floor plan into a structured grid layout.
+/** Aspect-fit grid dims computed client-side from the source image (see
+ *  `lib/floorplanGridOverlay.ts` `computeGridDims`) and pinned into the
+ *  prompt so the model's coordinate space matches the image instead of being
+ *  freely (and inconsistently) chosen per pass. */
+export interface PinnedGridDims {
+  width: number
+  height: number
+}
 
-Read the plan and return a coordinate grid where (0,0) is the top-left. Choose gridWidth (10–${MAX_GRID_WIDTH}) and gridHeight (10–${MAX_GRID_HEIGHT}) that roughly preserve the plan's proportions — prefer a larger, finer grid over a coarse one (aim for ~1 cell ≈ 1 metre) so rack rows and pallet blocks aren't lost to rounding. Use integer cell coordinates.
+/** Every pass — pinned or not — gets this: the uploaded image carries a
+ *  labeled coordinate-grid overlay (drawn client-side; see
+ *  `lib/floorplanGridOverlay.ts` `drawGridOverlay`) so the model can read
+ *  positions off the labels instead of estimating proportions by eye. */
+const GRID_OVERLAY_SENTENCE = `The image has a RED coordinate grid overlay drawn on it: thin lines every 5 cells, heavier lines every 10 cells, with cell-coordinate labels along all four edges. Read every rectangle's x/y/w/h directly off these labels — do not estimate proportions by eye.`
+
+function gridDimsSentence(pinned?: PinnedGridDims): string {
+  if (pinned) {
+    return `The grid is EXACTLY ${pinned.width} columns x ${pinned.height} rows — echo gridWidth=${pinned.width}, gridHeight=${pinned.height} and place all coordinates within it. It matches the image's aspect ratio.`
+  }
+  return `Choose gridWidth (10–${MAX_GRID_WIDTH}) and gridHeight (10–${MAX_GRID_HEIGHT}) that roughly preserve the plan's proportions — prefer a larger, finer grid over a coarse one (aim for ~1 cell ≈ 1 metre) so rack rows and pallet blocks aren't lost to rounding. Use integer cell coordinates.`
+}
+
+/** Builds the single-pass / pass-1 system prompt. Pass `pinned` (the
+ *  client-computed aspect-fit grid) to lock gridWidth/gridHeight instead of
+ *  letting the model choose freely; omit for old-client / free-choice
+ *  compat — `FLOORPLAN_SYSTEM_PROMPT` below is exactly `buildFloorplanSystemPrompt()`. */
+export function buildFloorplanSystemPrompt(pinned?: PinnedGridDims): string {
+  return `You convert a photo or scan of a warehouse floor plan into a structured grid layout.
+
+Read the plan and return a coordinate grid where (0,0) is the top-left. ${gridDimsSentence(pinned)} ${GRID_OVERLAY_SENTENCE}
 
 - objects: the fixed structure, each a rectangle of cells (w×h ≥ 1). Give every object a "name" when it identifies something specific; use "" otherwise.
   - Trace outer WALLS, the loading DOCK(s), main WALKWAY aisles, and any LIFT/elevator.
@@ -206,22 +233,49 @@ Read the plan and return a coordinate grid where (0,0) is the top-left. Choose g
 - Never extract movable objects: trucks, cars, forklifts, people, loose pallets, dollies. They aren't part of the fixed layout.
 
 Prefer completeness but do not invent detail that isn't visible. Set confidence honestly (lower if the image is blurry or partial). Keep everything inside the grid bounds.`
+}
+
+/** Unpinned variant — back-compat for callers/tests referencing the old
+ *  constant name directly, and for old-client requests with no computed grid. */
+export const FLOORPLAN_SYSTEM_PROMPT = buildFloorplanSystemPrompt()
 
 // ── Multi-pass (high fidelity) prompts ──────────────────────────────────────
 // Pass 1 locks the fixed structure (grid/objects/zones); pass 2 is given the
 // pinned dimensions and focuses purely on rack rows / pallet areas. See
 // _shared/floorplan/multiPass.ts for how the two responses are merged.
 
-export const FLOORPLAN_STRUCTURE_PROMPT = `${FLOORPLAN_SYSTEM_PROMPT}
+export function buildFloorplanStructurePrompt(pinned?: PinnedGridDims): string {
+  return `${buildFloorplanSystemPrompt(pinned)}
 
 This is PASS 1 of a two-pass extraction. Focus entirely on gridWidth, gridHeight, floors, objects, and zones — get the fixed structure right. Return rackRows and palletAreas as EMPTY arrays; a second pass will fill them in against your grid dimensions, which are final once you set them here.`
+}
+
+export const FLOORPLAN_STRUCTURE_PROMPT = buildFloorplanStructurePrompt()
 
 /** Pass 2: dimensions are already fixed by pass 1 — extract only rackRows and
- *  palletAreas against them. */
+ *  palletAreas against them. Always pinned (pass 2 must match pass 1's
+ *  final grid, chosen or echoed). */
 export function floorplanDetailPrompt(gridWidth: number, gridHeight: number): string {
-  return `${FLOORPLAN_SYSTEM_PROMPT}
+  return `${buildFloorplanSystemPrompt({ width: gridWidth, height: gridHeight })}
 
 This is PASS 2 of a two-pass extraction. The grid is already fixed at gridWidth=${gridWidth}, gridHeight=${gridHeight} — echo these exact values back and do not change them. A summary of the fixed structure (walls, conveyors, and other cells that already exist) is included in the user message; do not place a rackRow or palletArea on top of those cells. Return objects and zones as EMPTY arrays (pass 1 already captured them) and focus only on rackRows and palletAreas.`
+}
+
+/** Reconcile ("render-and-correct") pass: the client renders the current
+ *  draft back onto the same labeled grid and uploads it; this prompt shows
+ *  the model both images side by side (source scan + rendered draft) plus
+ *  the current extraction JSON, and asks for the FULL corrected extraction
+ *  (not a diff — keeps the response_format contract identical to every other
+ *  pass, and keeps the adopt/reject confidence guard in
+ *  extract-floorplan/index.ts simple). Color legend values are hardcoded
+ *  here deliberately — this module must stay pure/importable from Deno, so
+ *  it cannot import `components/admin/layout/layoutPalette.ts`. */
+export function floorplanReconcilePrompt(gridWidth: number, gridHeight: number): string {
+  return `You are correcting a warehouse floor-plan extraction. IMAGE 1 is the source plan with the red labeled coordinate grid. IMAGE 2 is a rendering of the CURRENT extraction on the same grid (same coordinates, same labels). The current extraction JSON is included in the user message. Compare the two images: find rectangles that are misplaced, missing, wrongly sized, wrongly typed, or spurious, and return the FULL corrected extraction (same JSON schema, gridWidth=${gridWidth}, gridHeight=${gridHeight} unchanged). Move/resize elements so image 2 would match image 1. Do not invent structures not visible in image 1.
+
+Object-type color legend for reading IMAGE 2: walkway = light blue (#bae6fd), wall = dark (#44403c), dock = amber (#fbbf24), obstacle = grey (#a8a29e), label = pale (#e7e5e4), lift = violet (#c4b5fd), conveyor = orange with hatching (#fdba74), staging = teal (#99f6e4), storage bins = green squares.
+
+${GRID_OVERLAY_SENTENCE}`
 }
 
 // ── Normalised draft (matches mutate-layout save_geometry) ──────────────────
@@ -330,6 +384,170 @@ function cellKey(floor: number, x: number, y: number): string {
   return `${floor}:${x}:${y}`
 }
 
+// ── Overlap resolution ───────────────────────────────────────────────────────
+// Objects arrive from the model with zero coordination between rectangles —
+// overlapping walls/conveyors/docks near the same corner render stacked in
+// the designer (the v2.1 "top-left mess" bug). Rasterize to cells in a fixed
+// priority order and rebuild each object from its surviving cells so every
+// cell has exactly one owner before bin placement (blockedCellKeys) ever runs.
+
+const OVERLAP_PRIORITY: Record<Exclude<NormalizedObjectType, 'label'>, number> = {
+  dock: 0,
+  lift: 1,
+  wall: 2,
+  conveyor: 3,
+  staging: 4,
+  obstacle: 5,
+  walkway: 6,
+}
+
+interface OverlapRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** Greedy rect decomposition of a cell set: merge contiguous x-runs per row
+ *  into horizontal strips, then merge vertically-adjacent strips that share
+ *  the same x/w into taller rects. Not minimal-rect-count optimal, but
+ *  deterministic and cheap — good enough for de-overlap fragments. */
+function decomposeCellsToRects(cells: ReadonlyArray<{ x: number; y: number }>): OverlapRect[] {
+  const byRow = new Map<number, number[]>()
+  for (const c of cells) {
+    const xs = byRow.get(c.y) ?? []
+    xs.push(c.x)
+    byRow.set(c.y, xs)
+  }
+
+  const strips: OverlapRect[] = []
+  for (const y of [...byRow.keys()].sort((a, b) => a - b)) {
+    const xs = [...(byRow.get(y) ?? [])].sort((a, b) => a - b)
+    let runStart = xs[0]
+    let runEnd = xs[0]
+    for (let i = 1; i < xs.length; i++) {
+      if (xs[i] === runEnd + 1) {
+        runEnd = xs[i]
+      } else {
+        strips.push({ x: runStart, y, w: runEnd - runStart + 1, h: 1 })
+        runStart = xs[i]
+        runEnd = xs[i]
+      }
+    }
+    strips.push({ x: runStart, y, w: runEnd - runStart + 1, h: 1 })
+  }
+
+  const used = new Array(strips.length).fill(false)
+  const merged: OverlapRect[] = []
+  for (let i = 0; i < strips.length; i++) {
+    if (used[i]) continue
+    let cur = { ...strips[i] }
+    used[i] = true
+    let grew = true
+    while (grew) {
+      grew = false
+      for (let j = 0; j < strips.length; j++) {
+        if (used[j]) continue
+        const s = strips[j]
+        if (s.x === cur.x && s.w === cur.w && s.y === cur.y + cur.h) {
+          cur = { ...cur, h: cur.h + s.h }
+          used[j] = true
+          grew = true
+        }
+      }
+    }
+    merged.push(cur)
+  }
+  return merged
+}
+
+/**
+ * Resolve overlapping structural objects so every grid cell has exactly one
+ * owner. Priority (highest wins): dock > lift > wall > conveyor > staging >
+ * obstacle > walkway — dock beats wall so `autoConnectLayout`'s dock-over-wall
+ * carve still has a dock to carve toward. `label` objects (zone annotations)
+ * are exempt: passed through untouched and excluded from rasterization
+ * entirely — they're a non-blocking overlay, not physical structure.
+ *
+ * Rebuild rule per object: all cells survive → kept as-is; no cells survive →
+ * dropped; some cells survive → greedy rect-decomposed into 1+ fragments
+ * (`decomposeCellsToRects`), with `meta` kept only on the largest fragment so
+ * a name/label isn't duplicated across pieces. Ties in priority are broken by
+ * earlier array index (first one wins the contested cells).
+ */
+export function resolveObjectOverlaps(objects: NormalizedObject[]): NormalizedObject[] {
+  const priorityOf = (t: NormalizedObjectType): number =>
+    t === 'label' ? Number.MAX_SAFE_INTEGER : OVERLAP_PRIORITY[t]
+
+  const rasterIndices = objects
+    .map((_, index) => index)
+    .filter((index) => objects[index].object_type !== 'label')
+
+  const ordered = [...rasterIndices].sort((a, b) => {
+    const pa = priorityOf(objects[a].object_type)
+    const pb = priorityOf(objects[b].object_type)
+    return pa !== pb ? pa - pb : a - b
+  })
+
+  const cellOwner = new Map<string, number>()
+  for (const index of ordered) {
+    const o = objects[index]
+    for (let dy = 0; dy < o.h; dy++) {
+      for (let dx = 0; dx < o.w; dx++) {
+        const key = cellKey(o.floor, o.x + dx, o.y + dy)
+        if (!cellOwner.has(key)) cellOwner.set(key, index)
+      }
+    }
+  }
+
+  const fragmentsByIndex = new Map<number, NormalizedObject[]>()
+  for (const index of rasterIndices) {
+    const o = objects[index]
+    const survivingCells: Array<{ x: number; y: number }> = []
+    let totalCells = 0
+    for (let dy = 0; dy < o.h; dy++) {
+      for (let dx = 0; dx < o.w; dx++) {
+        totalCells++
+        const key = cellKey(o.floor, o.x + dx, o.y + dy)
+        if (cellOwner.get(key) === index) survivingCells.push({ x: o.x + dx, y: o.y + dy })
+      }
+    }
+    if (survivingCells.length === 0) {
+      fragmentsByIndex.set(index, [])
+    } else if (survivingCells.length === totalCells) {
+      fragmentsByIndex.set(index, [o])
+    } else {
+      const rects = decomposeCellsToRects(survivingCells)
+      let largest = 0
+      for (let i = 1; i < rects.length; i++) {
+        if (rects[i].w * rects[i].h > rects[largest].w * rects[largest].h) largest = i
+      }
+      fragmentsByIndex.set(
+        index,
+        rects.map((r, i) => ({
+          object_type: o.object_type,
+          floor: o.floor,
+          x: r.x,
+          y: r.y,
+          w: r.w,
+          h: r.h,
+          ...(i === largest && o.meta ? { meta: o.meta } : {}),
+        })),
+      )
+    }
+  }
+
+  const result: NormalizedObject[] = []
+  objects.forEach((o, index) => {
+    if (o.object_type === 'label') {
+      result.push(o)
+      return
+    }
+    result.push(...(fragmentsByIndex.get(index) ?? []))
+  })
+  return result
+}
+
 /**
  * Turn raw model output into a save_geometry-ready draft: clamp to the grid,
  * drop out-of-bounds/duplicate/blocked bins, map zones to `label` objects, and
@@ -382,11 +600,16 @@ export function normalizeFloorplan(raw: FloorplanExtraction, opts: NormalizeOpti
     return undefined
   }
 
+  // De-overlap BEFORE blockedCellKeys is built, so bin placement (and
+  // autoConnect, downstream in extract-floorplan) consumes the cleaned,
+  // non-stacked set of structural rectangles.
+  const resolvedObjects = resolveObjectOverlaps(objects)
+
   // Blocked cells: nothing storable may land on a wall, conveyor, or obstacle
   // footprint. This also resolves multi-pass conflicts (structure wins per
   // cell over whatever the detail pass guessed there).
   const blockedCellKeys = new Set<string>()
-  for (const o of objects) {
+  for (const o of resolvedObjects) {
     if (o.object_type !== 'wall' && o.object_type !== 'conveyor' && o.object_type !== 'obstacle') continue
     for (let dy = 0; dy < o.h; dy++) {
       for (let dx = 0; dx < o.w; dx++) blockedCellKeys.add(cellKey(o.floor, o.x + dx, o.y + dy))
@@ -506,10 +729,10 @@ export function normalizeFloorplan(raw: FloorplanExtraction, opts: NormalizeOpti
     gridHeight: gh,
     floors,
     placements,
-    objects,
+    objects: resolvedObjects,
     palletAreas,
     rackCount: placements.length,
-    objectCount: objects.filter((o) => o.object_type !== 'label').length,
+    objectCount: resolvedObjects.filter((o) => o.object_type !== 'label').length,
     zoneCount: zoneRects.length,
     palletAreaCount: palletAreas.length,
   }
