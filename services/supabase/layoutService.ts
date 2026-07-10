@@ -111,6 +111,9 @@ export interface SaveObjectInput {
   h: number
   meta?: Record<string, unknown>
   staging_location_id?: number
+  /** Ask the server to find-or-create a STAGING location and link it to this
+   *  object (and, per the dock-backfill rule, to any dock lacking one). */
+  new_staging?: { code: string; name: string }
 }
 
 export interface SaveGeometryResult {

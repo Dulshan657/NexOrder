@@ -16,6 +16,10 @@ export const OBJECT_FILL: Record<LayoutObjectType, string> = {
   obstacle: '#a8a29e',
   label: '#e7e5e4',
   lift: '#c4b5fd',
+  conveyor: '#fdba74',
+  // Distinct from the seeded "Staging Area" storage form (#a855f7, mig 00061) —
+  // this is a walkable floor object, not a storage unit.
+  staging: '#99f6e4',
 }
 
 /** Storage-rack fills + strokes. `existing` = persisted (has a location id);
@@ -50,4 +54,8 @@ export const LEGEND_ITEMS: LegendItem[] = [
   { key: 'wall', label: 'Wall', shape: 'rect', fill: OBJECT_FILL.wall },
   { key: 'dock', label: 'Dock', shape: 'rect', fill: OBJECT_FILL.dock },
   { key: 'lift', label: 'Lift', shape: 'rect', fill: OBJECT_FILL.lift },
+  { key: 'conveyor', label: 'Conveyor', shape: 'rect', fill: OBJECT_FILL.conveyor },
+  { key: 'staging', label: 'Staging floor', shape: 'rect', fill: OBJECT_FILL.staging },
+  { key: 'obstacle', label: 'Obstacle', shape: 'rect', fill: OBJECT_FILL.obstacle },
+  { key: 'label', label: 'Label', shape: 'rect', fill: OBJECT_FILL.label },
 ]

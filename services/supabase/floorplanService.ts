@@ -25,13 +25,30 @@ export async function uploadFloorplan(target: UploadTarget, file: Blob): Promise
   if (error) throw error
 }
 
+/** A pallet-storage floor block returned by the server, with pre-generated
+ *  1×1 bins per free cell. NOT part of `draft.placements` — the import modal
+ *  decides per area (storable vs visual-only) before appending anything. */
+export interface FloorplanPalletAreaDraft {
+  code: string
+  floor: number
+  x: number
+  y: number
+  w: number
+  h: number
+  placements: SavePlacementInput[]
+}
+
 export interface FloorplanDraft {
   gridWidth: number
   gridHeight: number
   floors: number
   placements: SavePlacementInput[]
   objects: SaveObjectInput[]
+  /** Optional: absent on an older deployed function. */
+  palletAreas?: FloorplanPalletAreaDraft[]
 }
+
+export type FloorplanFidelity = 'standard' | 'high'
 
 export interface FloorplanExtractResult {
   importId: string
@@ -40,6 +57,8 @@ export interface FloorplanExtractResult {
     racks: number
     objects: number
     zones: number
+    /** Optional: absent on an older deployed function. */
+    palletAreas?: number
     /** Walkway cells the server auto-added so every rack reaches a dock. Optional: absent on an older deployed function. */
     addedWalkways?: number
     /** Wall cells carved out where a dock overlapped a wall. Optional: absent on an older deployed function. */
@@ -50,12 +69,17 @@ export interface FloorplanExtractResult {
   confidence: number
   needsReview: boolean
   notes: string
+  /** Optional: absent on an older deployed function (which was always standard). */
+  fidelity?: FloorplanFidelity
 }
 
-/** Run OpenAI vision over the uploaded image and get a normalized draft back. */
-export async function extractFloorplan(importId: string): Promise<FloorplanExtractResult> {
+/** Run OpenAI vision over the uploaded image and get a normalized draft back.
+ *  `fidelity` defaults to 'standard' (single pass) server-side when omitted;
+ *  'high' runs a two-pass extraction (~3–4x the cost/latency) for finer rack
+ *  row / pallet area detail. */
+export async function extractFloorplan(importId: string, fidelity?: FloorplanFidelity): Promise<FloorplanExtractResult> {
   const { data, error } = await supabase.functions.invoke<FloorplanExtractResult>('extract-floorplan', {
-    body: { importId },
+    body: { importId, ...(fidelity ? { fidelity } : {}) },
   })
   if (error) throw error
   return data as FloorplanExtractResult

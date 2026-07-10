@@ -269,7 +269,7 @@ export interface PaymentMethod {
 // ── Warehouse Intelligence Engine (WIE) ──────────────────────────────────────
 
 export type LayoutStatus = 'draft' | 'published' | 'archived';
-export type LayoutObjectType = 'wall' | 'dock' | 'walkway' | 'obstacle' | 'label' | 'lift';
+export type LayoutObjectType = 'wall' | 'dock' | 'walkway' | 'obstacle' | 'label' | 'lift' | 'conveyor' | 'staging';
 
 /** A versioned warehouse layout (spatial digital twin). One published per warehouse. */
 export interface WarehouseLayout {

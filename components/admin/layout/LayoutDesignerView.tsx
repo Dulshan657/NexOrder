@@ -32,6 +32,7 @@ import { LayoutCanvas } from './LayoutCanvas'
 import { LayoutToolbar } from './LayoutToolbar'
 import { LayoutLegend } from './LayoutLegend'
 import { PlacementInspector } from './PlacementInspector'
+import { ObjectInspector } from './ObjectInspector'
 import { PublishChecklist } from './PublishChecklist'
 import { CapacityAdvisor } from './CapacityAdvisor'
 import { ReslotPlannerModal } from './ReslotPlannerModal'
@@ -88,6 +89,13 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     return map
   }, [locationsQuery.data])
 
+  // locationId → code, for the object inspector's "linked staging location" line.
+  const locationCodeById = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const l of locationsQuery.data ?? []) map.set(l.id, l.code)
+    return map
+  }, [locationsQuery.data])
+
   // Drawable storage forms → coloured palette tools + a colour lookup so both
   // draft and existing bins render in their form's colour on the canvas.
   const drawableForms = useMemo(
@@ -133,6 +141,9 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const selectedLayout = layouts.find((l) => l.id === selectedLayoutId) ?? null
   const isDraft = selectedLayout?.status === 'draft'
   const selectedPlacement = state.placements.find((p) => p.clientRef === state.selectedRef) ?? null
+  // A selection is either a placement (rack) or a structural object
+  // (obstacle/staging/label/…) — never both, since clientRefs don't collide.
+  const selectedObject = !selectedPlacement ? state.objects.find((o) => o.clientRef === state.selectedRef) ?? null : null
 
   // Live publish readiness — same pure checks the server runs, keyed by clientRef
   // so unreachable bins map straight back to canvas highlights. Reachability is a
@@ -157,7 +168,10 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const handleAutoConnect = () => {
     if (!selectedLayout) return
     const result = autoConnectLayout({
-      objects: state.objects.map((o) => ({ objectType: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h })),
+      objects: state.objects.map((o) => ({
+        objectType: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+        meta: o.meta, stagingLocationId: o.stagingLocationId,
+      })),
       placements: state.placements.map((p) => ({ id: p.clientRef, floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h })),
       gridWidth: selectedLayout.gridWidth,
       gridHeight: selectedLayout.gridHeight,
@@ -173,6 +187,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
       type: 'apply_auto_connect',
       objects: result.objects.map((o) => ({
         objectType: o.objectType as LayoutObjectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+        meta: o.meta, stagingLocationId: (o as { stagingLocationId?: number }).stagingLocationId,
       })),
     })
 
@@ -201,6 +216,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   // ids. Shared by explicit Save and by the one-click Save & Publish path.
   const persistGeometry = async () => {
     if (!selectedLayoutId) return
+    const layoutId = selectedLayoutId
     const placements: SavePlacementInput[] = state.placements.map((p) => ({
       client_ref: p.clientRef,
       location_id: p.locationId,
@@ -211,8 +227,18 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
       },
       floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h, rotation: p.rotation,
     }))
+    // A hand-drawn "Staging floor" object has no stagingLocationId until the
+    // server find-or-creates one — mirrors FloorPlanImportModal.createDraft's
+    // new_staging wiring. Every unlinked staging object shares the SAME code
+    // (single-S&R assumption: the server dedupes by code and adopts on re-save,
+    // so a second save re-sending new_staging for an already-linked object is
+    // harmless).
     const objects: SaveObjectInput[] = state.objects.map((o) => ({
       object_type: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+      meta: o.meta, staging_location_id: o.stagingLocationId,
+      new_staging: o.objectType === 'staging' && !o.stagingLocationId
+        ? { code: `${warehouse.code}-STG-L${layoutId}`, name: (o.meta?.name as string) || 'Staging' }
+        : undefined,
     }))
     const result = await saveGeometry.mutateAsync({ placements, objects })
     dispatch({ type: 'mark_saved', refMap: result.ref_map })
@@ -447,7 +473,9 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
                   loading={stockSummary.isLoading}
                 />
               )}
-              <PlacementInspector placement={selectedPlacement} dispatch={dispatch} zoneProfiles={zoneProfilesQuery.data ?? []} storageTypes={storageTypesQuery.data ?? []} />
+              {selectedObject
+                ? <ObjectInspector object={selectedObject} dispatch={dispatch} locationCodeById={locationCodeById} />
+                : <PlacementInspector placement={selectedPlacement} dispatch={dispatch} zoneProfiles={zoneProfilesQuery.data ?? []} storageTypes={storageTypesQuery.data ?? []} />}
             </div>
           </div>
           <LayoutLegend forms={drawableForms.map((t) => ({ id: t.id, name: t.name, color: t.color }))} />

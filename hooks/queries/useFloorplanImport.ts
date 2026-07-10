@@ -10,6 +10,7 @@ import {
   uploadFloorplan,
   extractFloorplan,
   type FloorplanExtractResult,
+  type FloorplanFidelity,
 } from '@/services/supabase/floorplanService'
 
 export type ImportPhase = 'idle' | 'compressing' | 'uploading' | 'extracting' | 'done' | 'error'
@@ -18,7 +19,8 @@ interface UseFloorplanImport {
   phase: ImportPhase
   result: FloorplanExtractResult | null
   error: string | null
-  run: (file: File) => Promise<void>
+  /** `fidelity` defaults to 'standard' server-side when omitted. */
+  run: (file: File, fidelity?: FloorplanFidelity) => Promise<void>
   reset: () => void
 }
 
@@ -33,7 +35,7 @@ export function useFloorplanImport(warehouseId: number): UseFloorplanImport {
     setError(null)
   }, [])
 
-  const run = useCallback(async (file: File) => {
+  const run = useCallback(async (file: File, fidelity?: FloorplanFidelity) => {
     setError(null)
     setResult(null)
     try {
@@ -47,7 +49,7 @@ export function useFloorplanImport(warehouseId: number): UseFloorplanImport {
       await uploadFloorplan(target, compressed)
 
       setPhase('extracting')
-      const extracted = await extractFloorplan(target.importId)
+      const extracted = await extractFloorplan(target.importId, fidelity)
       setResult(extracted)
       setPhase('done')
     } catch (e) {

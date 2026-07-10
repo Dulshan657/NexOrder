@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { autoConnectLayout } from '../../supabase/functions/_shared/wie/autoConnect'
-import type { AutoConnectInput, ConnectObject } from '../../supabase/functions/_shared/wie/autoConnect'
+import type { AutoConnectInput, ConnectObject, ConnectPlacement } from '../../supabase/functions/_shared/wie/autoConnect'
 import { evaluatePublishReadiness } from '../../supabase/functions/_shared/wie/publishReadiness'
 
 function sortedCells(cells: ReadonlyArray<{ floor: number; x: number; y: number }>) {
@@ -197,6 +197,154 @@ describe('autoConnectLayout', () => {
 
       const readiness = evaluatePublishReadiness({ objects: result.objects, placements: input.placements, cellSizeM: 1 })
       expect(readiness.unreachableIds).toEqual(['bin-f2'])
+    })
+  })
+
+  describe('conveyor / staging semantics', () => {
+    it('a room sealed by a conveyor ring stays unreachable — BFS never crosses it', () => {
+      // Same shape as the wall-sealed-room case below, but the ring is
+      // conveyor instead of wall — proves the BFS treats conveyor as
+      // equally blocking. The isolated interior walkway stub (mirroring a
+      // stray AI-imported aisle cell) is what makes the bin's nearest-node
+      // snap land inside the sealed room instead of trivially on the dock.
+      const objects: ConnectObject[] = [
+        { objectType: 'dock', floor: 0, x: 0, y: 0, w: 1, h: 1 },
+        { objectType: 'conveyor', floor: 0, x: 4, y: 4, w: 5, h: 1 }, // top ring
+        { objectType: 'conveyor', floor: 0, x: 4, y: 8, w: 5, h: 1 }, // bottom ring
+        { objectType: 'conveyor', floor: 0, x: 4, y: 5, w: 1, h: 3 }, // left ring
+        { objectType: 'conveyor', floor: 0, x: 8, y: 5, w: 1, h: 3 }, // right ring
+        { objectType: 'walkway', floor: 0, x: 5, y: 5, w: 1, h: 1 }, // isolated interior stub
+      ]
+      const input: AutoConnectInput = {
+        objects,
+        placements: [{ id: 'enclosed-bin', floor: 0, x: 6, y: 6, w: 1, h: 1 }],
+        gridWidth: 12,
+        gridHeight: 12,
+        floors: 1,
+      }
+
+      const result = autoConnectLayout(input)
+
+      expect(result.addedWalkwayCells).toEqual([])
+      expect(result.stillUnreachable).toEqual(['enclosed-bin'])
+    })
+
+    it('connects a bin adjacent to a staging strip with no repair needed (staging is already walkable)', () => {
+      const objects: ConnectObject[] = [
+        { objectType: 'dock', floor: 0, x: 0, y: 0, w: 1, h: 1 },
+        { objectType: 'staging', floor: 0, x: 1, y: 0, w: 4, h: 1 }, // cells (1,0)-(4,0), touching the dock
+      ]
+      const input: AutoConnectInput = {
+        objects,
+        placements: [{ id: 'bin', floor: 0, x: 5, y: 0, w: 1, h: 1 }], // adjacent to the staging strip's far end
+        gridWidth: 10,
+        gridHeight: 10,
+        floors: 1,
+      }
+
+      const result = autoConnectLayout(input)
+
+      expect(result.changed).toBe(false)
+      expect(result.addedWalkwayCells).toEqual([])
+      const readiness = evaluatePublishReadiness({ objects: result.objects, placements: input.placements, cellSizeM: 1 })
+      expect(readiness.ready).toBe(true)
+    })
+
+    it('routes through a disconnected staging island for free once reached (zero-cost network)', () => {
+      const objects: ConnectObject[] = [
+        { objectType: 'dock', floor: 0, x: 0, y: 0, w: 1, h: 1 },
+        { objectType: 'staging', floor: 0, x: 3, y: 0, w: 4, h: 1 }, // island: cells (3,0)-(6,0), not yet touching the dock
+      ]
+      const input: AutoConnectInput = {
+        objects,
+        placements: [{ id: 'bin', floor: 0, x: 7, y: 0, w: 1, h: 1 }], // adjacent to the far end of the island
+        gridWidth: 10,
+        gridHeight: 10,
+        floors: 1,
+      }
+
+      const result = autoConnectLayout(input)
+
+      // Only the 2-cell gap between the dock and the staging island becomes a
+      // new walkway object; the 4 staging cells cost nothing to traverse once
+      // reached and are never re-emitted as new walkway objects.
+      expect(sortedCells(result.addedWalkwayCells)).toEqual(
+        sortedCells([
+          { floor: 0, x: 1, y: 0 },
+          { floor: 0, x: 2, y: 0 },
+        ]),
+      )
+      const readiness = evaluatePublishReadiness({ objects: result.objects, placements: input.placements, cellSizeM: 1 })
+      expect(readiness.ready).toBe(true)
+    })
+
+    it("preserves an object's meta and stagingLocationId untouched when no repair is needed", () => {
+      const objects: ConnectObject[] = [
+        { objectType: 'dock', floor: 0, x: 0, y: 0, w: 1, h: 1 },
+        { objectType: 'walkway', floor: 0, x: 1, y: 0, w: 1, h: 1 },
+        {
+          objectType: 'staging',
+          floor: 0,
+          x: 5,
+          y: 5,
+          w: 1,
+          h: 1,
+          meta: { name: 'Shipping & Receiving' },
+          stagingLocationId: 42,
+        },
+      ]
+      const input: AutoConnectInput = {
+        objects,
+        placements: [{ id: 'bin', floor: 0, x: 2, y: 0, w: 1, h: 1 }],
+        gridWidth: 10,
+        gridHeight: 10,
+        floors: 1,
+      }
+
+      const result = autoConnectLayout(input)
+
+      expect(result.changed).toBe(false)
+      const staging = result.objects.find((o) => o.objectType === 'staging')
+      expect(staging?.meta).toEqual({ name: 'Shipping & Receiving' })
+      expect(staging?.stagingLocationId).toBe(42)
+    })
+  })
+
+  describe('perf smoke', () => {
+    it('completes quickly on a 120×80 grid with ~200 scattered placements', { timeout: 30_000 }, () => {
+      const gridWidth = 120
+      const gridHeight = 80
+      const objects: ConnectObject[] = [{ objectType: 'dock', floor: 0, x: 0, y: 0, w: 1, h: 1 }]
+
+      // Small deterministic PRNG (no external dep) so the fixture is stable
+      // across runs while still scattering placements across the grid.
+      let seed = 42
+      const rand = (): number => {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff
+        return seed / 0x7fffffff
+      }
+
+      const placements: ConnectPlacement[] = []
+      for (let i = 0; i < 200; i++) {
+        const x = 2 + Math.floor(rand() * (gridWidth - 4))
+        const y = Math.floor(rand() * gridHeight)
+        placements.push({ id: `bin-${i}`, floor: 0, x, y, w: 1, h: 1 })
+      }
+
+      const input: AutoConnectInput = { objects, placements, gridWidth, gridHeight, floors: 1 }
+
+      const start = Date.now()
+      const result = autoConnectLayout(input)
+      const elapsedMs = Date.now() - start
+
+      // The algorithm re-runs a full-grid BFS per unconnected round (by
+      // design — see the module header), so wall-clock scales with grid area
+      // × placement count. At the raised 120×80 cap this genuinely takes a
+      // few seconds; the bound below is a smoke test against a catastrophic
+      // (e.g. quadratic-in-grid-area-per-placement) regression, not a tight
+      // SLA — generous for slower CI runners.
+      expect(elapsedMs).toBeLessThan(15_000)
+      expect(result.objects.length).toBeGreaterThan(0)
     })
   })
 

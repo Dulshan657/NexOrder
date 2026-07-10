@@ -126,7 +126,13 @@ serve(async (req: Request) => {
     const nodePayload = graph.nodes.map((n) => ({ local_id: n.id, floor: n.floor, x: n.x, y: n.y, node_type: n.nodeType }))
     const edgePayload = graph.edges.map((e) => ({ from_local: e.fromNode, to_local: e.toNode, weight_m: e.weightM, bidirectional: e.bidirectional }))
     const distancePayload = distanceRows.map((r) => ({ from_local: r.fromNodeId, to_local: r.toNodeId, distance_m: r.distanceM }))
-    const toActivate = (placements as any[]).map((p) => p.location_id)
+    // A draft-created staging location isn't a placement (it's linked via
+    // layout_objects.staging_location_id), so it needs its own activation entry
+    // or it would stay inactive forever after publish.
+    const stagingLocationIds = [
+      ...new Set(((objects ?? []) as any[]).map((o) => o.staging_location_id).filter((id): id is number => id != null)),
+    ]
+    const toActivate = [...(placements as any[]).map((p) => p.location_id), ...stagingLocationIds]
 
     const { data: result, error: rpcErr } = await admin.rpc('wie_publish_layout_tx', {
       p_layout_id: layout_id,

@@ -24,7 +24,7 @@
 // v1 scope: a bin on a floor with no reachable lift cell is left in
 // `stillUnreachable` — the operator adds a lift manually. New walkways are
 // emitted as 1×1 cells; merging them into rects is a possible future
-// optimization. Grids are small (≤60×40 × ≤10 floors) so a per-bin re-BFS is
+// optimization. Grids are small (≤120×80 × ≤10 floors) so a per-bin re-BFS is
 // cheap.
 
 import { buildWalkGraph, dijkstra } from './graph.ts'
@@ -45,8 +45,13 @@ function cellKey(floor: number, x: number, y: number): string {
   return `${floor}:${x}:${y}`
 }
 
-/** A layout object in grid coordinates, with an opaque passthrough `meta` bag
- *  (labels, colors, etc.) that this module never inspects or mutates. */
+/** A layout object in grid coordinates, with opaque passthrough fields (`meta`
+ *  bag, `stagingLocationId`) that this module never inspects or mutates — it
+ *  only ever reads `objectType`/`floor`/`x`/`y`/`w`/`h`. Walls are the one
+ *  object type this module reconstructs (carving under docks); every other
+ *  object type is passed through by reference, so these fields survive
+ *  untouched automatically. Walls never carry a `stagingLocationId` in
+ *  practice, so the carve path only needs to preserve `meta`. */
 export interface ConnectObject {
   objectType: string
   floor: number
@@ -55,6 +60,7 @@ export interface ConnectObject {
   w: number
   h: number
   meta?: Record<string, unknown>
+  stagingLocationId?: number
 }
 
 /** A storage footprint keyed by a caller-chosen stable id. */
@@ -143,8 +149,12 @@ function buildCellSets(objects: ConnectObject[]): CellSets {
   for (const o of objects) {
     let target: Set<string> | null = null
     if (o.objectType === 'wall') target = wallCellKeys
-    else if (o.objectType === 'obstacle') target = obstacleCellKeys
-    else if (o.objectType === 'walkway') target = walkwayCellKeys
+    // A conveyor belt blocks a walking route exactly like an obstacle — the
+    // BFS below must never cross it.
+    else if (o.objectType === 'obstacle' || o.objectType === 'conveyor') target = obstacleCellKeys
+    // Staging (the Shipping & Receiving floor) is walkable, zero-cost ground —
+    // treated the same as an existing walkway for routing purposes.
+    else if (o.objectType === 'walkway' || o.objectType === 'staging') target = walkwayCellKeys
     if (target === null) continue
     for (const c of cellsOfRect(o.x, o.y, o.w, o.h)) target.add(cellKey(o.floor, c.x, c.y))
   }

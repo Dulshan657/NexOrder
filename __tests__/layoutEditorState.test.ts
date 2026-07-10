@@ -121,4 +121,57 @@ describe('layoutEditorReducer', () => {
     expect(s.objects[0].objectType).toBe('dock')
     expect(s.dirty).toBe(false)
   })
+
+  it.each([
+    ['conveyor', 'conveyor'],
+    ['staging', 'staging'],
+    ['obstacle', 'obstacle'],
+    ['label', 'label'],
+  ] as const)('paints a %s object at a cell', (tool, objectType) => {
+    const s = layoutEditorReducer(withTool(tool), { type: 'paint_cell', x: 3, y: 3 })
+    expect(s.objects).toHaveLength(1)
+    expect(s.objects[0]).toMatchObject({ objectType, x: 3, y: 3 })
+    expect(s.dirty).toBe(true)
+  })
+
+  it('round-trips meta and stagingLocationId through load', () => {
+    const s = layoutEditorReducer(initialEditorState(), {
+      type: 'load',
+      placements: [],
+      objects: [
+        { id: 1, layoutId: 1, objectType: 'staging', floor: 0, x: 1, y: 1, w: 2, h: 2, meta: { name: 'Shipping & Receiving' }, stagingLocationId: 42 },
+      ],
+      codeByLocation: {},
+    })
+    expect(s.objects[0]).toMatchObject({ objectType: 'staging', meta: { name: 'Shipping & Receiving' }, stagingLocationId: 42 })
+    expect(s.dirty).toBe(false)
+  })
+
+  it('patches an object\'s meta immutably via update_object', () => {
+    const s0 = layoutEditorReducer(withTool('obstacle'), { type: 'paint_cell', x: 0, y: 0 })
+    const ref = s0.objects[0].clientRef
+    const s1 = layoutEditorReducer(s0, { type: 'update_object', ref, patch: { meta: { name: 'Office block' } } })
+    expect(s1).not.toBe(s0)
+    expect(s1.objects).not.toBe(s0.objects)
+    expect(s1.objects[0]).not.toBe(s0.objects[0])
+    expect(s1.objects[0].meta).toEqual({ name: 'Office block' })
+    expect(s0.objects[0].meta).toBeUndefined()
+    expect(s1.dirty).toBe(true)
+  })
+
+  it('select tool falls back to selecting an object when no placement is hit', () => {
+    let s = layoutEditorReducer(withTool('obstacle'), { type: 'paint_cell', x: 5, y: 5 })
+    const objectRef = s.objects[0].clientRef
+    s = layoutEditorReducer({ ...s, tool: 'select' }, { type: 'paint_cell', x: 5, y: 5 })
+    expect(s.selectedRef).toBe(objectRef)
+  })
+
+  it('delete_selected removes a selected object by clientRef', () => {
+    let s = layoutEditorReducer(withTool('label'), { type: 'paint_cell', x: 7, y: 7 })
+    const objectRef = s.objects[0].clientRef
+    s = layoutEditorReducer({ ...s, tool: 'select', selectedRef: objectRef }, { type: 'delete_selected' })
+    expect(s.objects).toHaveLength(0)
+    expect(s.selectedRef).toBeNull()
+    expect(s.dirty).toBe(true)
+  })
 })

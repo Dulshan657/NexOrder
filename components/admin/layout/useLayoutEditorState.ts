@@ -12,7 +12,8 @@ import type { LayoutObject, LayoutObjectType, LayoutPlacement } from '@/types'
 
 // 'rack' is the generic storage-paint tool; WHICH form it draws is carried by
 // `activeForm` (mig 00061 storage forms), so every drawable form shares one tool.
-export type EditorTool = 'select' | 'walkway' | 'wall' | 'dock' | 'lift' | 'rack' | 'erase'
+export type EditorTool =
+  | 'select' | 'walkway' | 'wall' | 'dock' | 'lift' | 'conveyor' | 'staging' | 'obstacle' | 'label' | 'rack' | 'erase'
 
 /** The storage form the 'rack' tool currently paints (from the forms catalogue). */
 export interface ActiveStorageForm {
@@ -54,6 +55,10 @@ export interface EditorObject {
   y: number
   w: number
   h: number
+  /** Free-form metadata (currently just a display `name` for obstacle/staging/label). */
+  meta?: Record<string, unknown>
+  /** STAGING location this object is linked to (staging objects only). */
+  stagingLocationId?: number
 }
 
 export interface EditorState {
@@ -78,11 +83,12 @@ export type EditorAction =
   | { type: 'paint_cell'; x: number; y: number }
   | { type: 'select'; ref: string | null }
   | { type: 'update_placement'; ref: string; patch: Partial<Omit<EditorPlacement, 'clientRef'>> }
+  | { type: 'update_object'; ref: string; patch: { meta?: Record<string, unknown> } }
   | { type: 'delete_selected' }
   | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number }
   | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number }> }
   | { type: 'mark_saved'; refMap: Array<{ client_ref: string; location_id: number }> }
-  | { type: 'apply_auto_connect'; objects: Array<Pick<EditorObject, 'objectType' | 'floor' | 'x' | 'y' | 'w' | 'h'>> }
+  | { type: 'apply_auto_connect'; objects: Array<Pick<EditorObject, 'objectType' | 'floor' | 'x' | 'y' | 'w' | 'h'> & Partial<Pick<EditorObject, 'meta' | 'stagingLocationId'>>> }
 
 export function initialEditorState(codePrefix = 'W'): EditorState {
   return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, dirty: false, seq: 1, codePrefix, activeForm: null }
@@ -93,6 +99,10 @@ const OBJECT_TOOLS: Partial<Record<EditorTool, LayoutObjectType>> = {
   wall: 'wall',
   dock: 'dock',
   lift: 'lift',
+  conveyor: 'conveyor',
+  staging: 'staging',
+  obstacle: 'obstacle',
+  label: 'label',
 }
 
 function objectAt(state: EditorState, x: number, y: number): EditorObject | undefined {
@@ -155,9 +165,13 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         return { ...state, placements: [...state.placements, placement], selectedRef: ref, seq: state.seq + 1, dirty: true }
       }
 
-      // select tool: clicking a bin selects it.
+      // select tool: clicking a bin selects it; otherwise fall back to whatever
+      // structural object (wall/dock/obstacle/staging/label/…) occupies the cell,
+      // so those become selectable too.
       const hit = placementAt(state, x, y)
-      return { ...state, selectedRef: hit?.clientRef ?? null }
+      if (hit) return { ...state, selectedRef: hit.clientRef }
+      const objHit = objectAt(state, x, y)
+      return { ...state, selectedRef: objHit?.clientRef ?? null }
     }
 
     case 'update_placement':
@@ -167,11 +181,19 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         dirty: true,
       }
 
+    case 'update_object':
+      return {
+        ...state,
+        objects: state.objects.map((o) => (o.clientRef === action.ref ? { ...o, ...action.patch } : o)),
+        dirty: true,
+      }
+
     case 'delete_selected': {
       if (!state.selectedRef) return state
       return {
         ...state,
         placements: state.placements.filter((p) => p.clientRef !== state.selectedRef),
+        objects: state.objects.filter((o) => o.clientRef !== state.selectedRef),
         selectedRef: null,
         dirty: true,
       }
@@ -215,6 +237,9 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
       })
       const objects: EditorObject[] = action.objects.map((o) => ({
         clientRef: `o${seq++}`, objectType: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+        // Round-trip meta/staging link — previously dropped here, which silently
+        // lost imported zone-label names on the next manual save.
+        meta: o.meta, stagingLocationId: o.stagingLocationId,
       }))
       return { ...state, placements, objects, selectedRef: null, dirty: false, seq }
     }
@@ -235,6 +260,7 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
       let seq = state.seq
       const objects: EditorObject[] = action.objects.map((o) => ({
         clientRef: `o${seq++}`, objectType: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+        meta: o.meta, stagingLocationId: o.stagingLocationId,
       }))
       return { ...state, objects, seq, dirty: true }
     }

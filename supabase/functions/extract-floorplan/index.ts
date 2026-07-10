@@ -14,15 +14,19 @@ import { requireAuth, type UserRole } from '../_shared/auth.ts'
 import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
-import { extractStructured, type AuditWriter, type ChatMessage } from '../_shared/poInbox/openai.ts'
+import { extractStructured, type AuditWriter } from '../_shared/poInbox/openai.ts'
 import { bytesToBase64 } from '../_shared/base64.ts'
 import {
   FLOORPLAN_SCHEMA,
   FLOORPLAN_SYSTEM_PROMPT,
+  FLOORPLAN_STRUCTURE_PROMPT,
+  floorplanDetailPrompt,
   normalizeFloorplan,
   type FloorplanExtraction,
+  type FloorplanObject,
   type NormalizedObject,
 } from '../_shared/floorplan/extractionSchema.ts'
+import { mergeExtractions, HIGH_FIDELITY_RECONCILE, type FidelityMode } from '../_shared/floorplan/multiPass.ts'
 import { autoConnectLayout, type ConnectObject, type ConnectPlacement } from '../_shared/wie/autoConnect.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
@@ -31,7 +35,26 @@ const REVIEW_THRESHOLD = 0.7
 
 const MIME_BY_EXT: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' }
 
-const inputSchema = z.object({ importId: z.string().uuid() })
+const inputSchema = z.object({
+  importId: z.string().uuid(),
+  fidelity: z.enum(['standard', 'high']).default('standard'),
+})
+
+/** Compact text summary of pass-1's fixed wall/conveyor cells, handed to pass
+ *  2 in the user message so the detail pass doesn't place a rackRow/palletArea
+ *  on top of them (normalizeFloorplan's blockedCellKeys would drop it anyway,
+ *  but steering the model away from the conflict in the first place gives a
+ *  better draft). Capped so the prompt can't blow out on a very busy plan. */
+const STRUCTURE_SUMMARY_MAX_LINES = 200
+function summarizeFixedStructure(objects: FloorplanObject[]): string {
+  const fixed = objects.filter((o) => o.type === 'wall' || o.type === 'conveyor')
+  if (fixed.length === 0) return 'No fixed structure detected in pass 1.'
+  const lines = fixed
+    .slice(0, STRUCTURE_SUMMARY_MAX_LINES)
+    .map((o) => `${o.type} floor=${o.floor} x=${o.x} y=${o.y} w=${o.w} h=${o.h}`)
+  const truncated = fixed.length > STRUCTURE_SUMMARY_MAX_LINES ? ` (+${fixed.length - STRUCTURE_SUMMARY_MAX_LINES} more)` : ''
+  return `Fixed structure occupies these cells — do not place a rackRow or palletArea there:\n${lines.join('\n')}${truncated}`
+}
 
 serve(async (req: Request) => {
   const corsHeaders = corsHeadersFor(req)
@@ -53,6 +76,7 @@ serve(async (req: Request) => {
     const parsed = inputSchema.safeParse(body)
     if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
     importId = parsed.data.importId
+    const fidelity: FidelityMode = parsed.data.fidelity
 
     const { data: job, error: jobErr } = await admin.from('floorplan_imports')
       .select('id, warehouse_id, storage_path, status').eq('id', importId).single()
@@ -87,28 +111,64 @@ serve(async (req: Request) => {
       storageTypeByToken[String(s.code).toLowerCase().replace(/_/g, ' ')] = s.id
     }
 
-    const messages: ChatMessage[] = [
-      { role: 'system', content: FLOORPLAN_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'The warehouse floor plan is the attached image. Extract the grid layout.' },
-          { type: 'image_url', image_url: { url: dataUrl } },
+    const runPass = (systemPrompt: string, userText: string) =>
+      extractStructured<FloorplanExtraction>({
+        audit: admin as unknown as AuditWriter,
+        inboundMessageId: null,
+        edgeFunction: 'extract-floorplan',
+        // Reused for every pass (standard, structure, detail) so all rows
+        // land in the same audit bucket — cheap to tell apart later via
+        // model/latency, and it keeps the audit schema untouched.
+        purpose: 'extract_floorplan',
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userText },
+              { type: 'image_url', image_url: { url: dataUrl } },
+            ],
+          },
         ],
-      },
-    ]
+        jsonSchema: { name: 'floorplan', schema: FLOORPLAN_SCHEMA, strict: true },
+      })
 
-    const result = await extractStructured<FloorplanExtraction>({
-      audit: admin as unknown as AuditWriter,
-      inboundMessageId: null,
-      edgeFunction: 'extract-floorplan',
-      purpose: 'extract_floorplan',
-      model: 'gpt-4o',
-      messages,
-      jsonSchema: { name: 'floorplan', schema: FLOORPLAN_SCHEMA, strict: true },
-    })
+    // High fidelity runs two SEQUENTIAL gpt-4o vision calls (structure, then
+    // detail) — call it ~2x the latency and cost of standard, run serially
+    // because pass 2 needs pass 1's pinned grid dimensions. This is a real
+    // wall-clock risk on Edge Functions' request timeout; if that becomes a
+    // problem in practice, split this into two client-initiated requests
+    // (persist pass 1 on floorplan_imports, let the client kick off pass 2)
+    // rather than raising the function timeout.
+    let extraction: FloorplanExtraction
+    let combinedConfidence: number
+    if (fidelity === 'high') {
+      const structureResult = await runPass(
+        FLOORPLAN_STRUCTURE_PROMPT,
+        'The warehouse floor plan is the attached image. Extract the fixed structure (pass 1 of 2).',
+      )
+      const structureConfidence = typeof structureResult.data.confidence === 'number' ? structureResult.data.confidence : 0
+      const detailResult = await runPass(
+        floorplanDetailPrompt(structureResult.data.gridWidth, structureResult.data.gridHeight),
+        `The warehouse floor plan is the attached image. Extract rackRows and palletAreas only (pass 2 of 2).\n\n${summarizeFixedStructure(structureResult.data.objects ?? [])}`,
+      )
+      // Pass-3 reconciliation would go here, guarded by HIGH_FIDELITY_RECONCILE
+      // (see _shared/floorplan/multiPass.ts) — ships disabled.
+      if (HIGH_FIDELITY_RECONCILE) {
+        // Not implemented: a follow-up vision call re-checking pass 2's
+        // rackRows/palletAreas against pass 1's fixed structure.
+      }
+      extraction = mergeExtractions(structureResult.data, detailResult.data)
+      const detailConfidence = typeof detailResult.data.confidence === 'number' ? detailResult.data.confidence : 0
+      combinedConfidence = Math.min(structureConfidence, detailConfidence)
+    } else {
+      const result = await runPass(FLOORPLAN_SYSTEM_PROMPT, 'The warehouse floor plan is the attached image. Extract the grid layout.')
+      extraction = result.data
+      combinedConfidence = typeof result.data.confidence === 'number' ? result.data.confidence : 0
+    }
 
-    const draft = normalizeFloorplan(result.data, {
+    const draft = normalizeFloorplan(extraction, {
       warehouseId: (job as any).warehouse_id,
       warehouseCode,
       zoneProfileByType,
@@ -118,7 +178,7 @@ serve(async (req: Request) => {
       codeSlug: importId,
     })
 
-    const confidence = typeof result.data.confidence === 'number' ? result.data.confidence : 0
+    const confidence = combinedConfidence
     const needsReview = confidence < REVIEW_THRESHOLD || draft.rackCount === 0
 
     // Auto-connect: carve docks free of overlapping walls and thread 1×1
@@ -173,18 +233,21 @@ serve(async (req: Request) => {
         floors: draft.floors,
         placements: draft.placements,
         objects: repairedObjects,
+        palletAreas: draft.palletAreas,
       },
       counts: {
         racks: draft.rackCount,
         objects: draft.objectCount,
         zones: draft.zoneCount,
+        palletAreas: draft.palletAreaCount,
         addedWalkways: repair.addedWalkwayCells.length,
         removedWallCells: repair.removedWallCells.length,
         unreachable: repair.stillUnreachable.length,
       },
       confidence,
       needsReview,
-      notes: result.data.notes ?? '',
+      notes: extraction.notes ?? '',
+      fidelity,
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Unknown error'

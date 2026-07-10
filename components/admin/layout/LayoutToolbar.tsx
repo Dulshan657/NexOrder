@@ -7,6 +7,7 @@
 import {
   MousePointer2, Footprints, BrickWall, DoorOpen, ArrowUpDown, Boxes, Eraser,
   Grid3x3, Copy, PlayCircle, Save, Upload, Archive, ImageUp,
+  Waypoints, PackageOpen, Ban, Tag,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { EditorTool } from './useLayoutEditorState'
@@ -20,6 +21,10 @@ const TOOLS: Array<{ tool: EditorTool; label: string; icon: LucideIcon }> = [
   { tool: 'wall', label: 'Wall', icon: BrickWall },
   { tool: 'dock', label: 'Dock', icon: DoorOpen },
   { tool: 'lift', label: 'Lift', icon: ArrowUpDown },
+  { tool: 'conveyor', label: 'Conveyor', icon: Waypoints },
+  { tool: 'staging', label: 'Staging floor', icon: PackageOpen },
+  { tool: 'obstacle', label: 'Obstacle', icon: Ban },
+  { tool: 'label', label: 'Label', icon: Tag },
 ]
 
 /** A drawable storage form shown as its own paint tool. */

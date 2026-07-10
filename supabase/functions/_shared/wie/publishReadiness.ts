@@ -109,8 +109,10 @@ export function buildWalkableCells(objects: ReadinessObject[], placements: Readi
     else cellMap.set(key, { x, y, floor, isDock, isLift })
   }
   let hasDock = false
+  // 'staging' (the Shipping & Receiving floor) is a plain walkable cell — not a
+  // dock and not a lift, just like a walkway.
   for (const o of objects) {
-    if (o.objectType !== 'walkway' && o.objectType !== 'dock' && o.objectType !== 'lift') continue
+    if (o.objectType !== 'walkway' && o.objectType !== 'dock' && o.objectType !== 'lift' && o.objectType !== 'staging') continue
     const isDock = o.objectType === 'dock'
     const isLift = o.objectType === 'lift'
     if (isDock) hasDock = true
@@ -119,11 +121,13 @@ export function buildWalkableCells(objects: ReadinessObject[], placements: Readi
     }
   }
 
-  // Walls and storage footprints are NOT walkable — subtract them so routes can't
-  // pass through a rack or wall even if a walkway was painted over them.
+  // Walls, conveyors and storage footprints are NOT walkable — subtract them so
+  // routes can't pass through a rack, wall or conveyor belt even if a walkway
+  // was painted over them. (`obstacle` is blocking by omission: it's never
+  // added to the walkable set above, so it needs no subtraction here.)
   const removeCell = (floor: number, x: number, y: number): void => { cellMap.delete(cellKey(floor, x, y)) }
   for (const o of objects) {
-    if (o.objectType !== 'wall') continue
+    if (o.objectType !== 'wall' && o.objectType !== 'conveyor') continue
     for (let dy = 0; dy < o.h; dy++) {
       for (let dx = 0; dx < o.w; dx++) removeCell(o.floor, o.x + dx, o.y + dy)
     }

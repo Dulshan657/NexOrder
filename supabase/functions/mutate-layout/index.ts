@@ -66,7 +66,7 @@ const placementSchema = z.object({
 })
 
 const objectSchema = z.object({
-  object_type: z.enum(['wall', 'dock', 'walkway', 'obstacle', 'label', 'lift']),
+  object_type: z.enum(['wall', 'dock', 'walkway', 'obstacle', 'label', 'lift', 'conveyor', 'staging']),
   floor: z.number().int().nonnegative().default(0),
   x: z.number().int().nonnegative(),
   y: z.number().int().nonnegative(),
@@ -74,6 +74,12 @@ const objectSchema = z.object({
   h: z.number().int().positive().default(1),
   meta: z.record(z.unknown()).optional(),
   staging_location_id: z.number().int().positive().optional(),
+  // Present on a 'staging' object when its STAGING location doesn't exist yet;
+  // save_geometry find-or-creates it and fills in staging_location_id.
+  new_staging: z.object({
+    code: z.string().min(1).max(48),
+    name: z.string().min(1).max(120),
+  }).optional(),
 })
 
 const inputSchema = z.discriminatedUnion('action', [
@@ -262,6 +268,13 @@ serve(async (req: Request) => {
         if (bal && bal.length > 0) continue
         const { data: elsewhere } = await admin.from('layout_placements').select('id').eq('location_id', loc.id).limit(1)
         if (elsewhere && elsewhere.length > 0) continue
+        // This layout's own layout_objects rows were already deleted above (the
+        // FK-safe teardown loop), so any remaining staging_location_id reference
+        // here belongs to ANOTHER layout (e.g. clone_layout copied the link) —
+        // skip explicitly instead of letting the FK silently fail the delete.
+        const { data: stagingElsewhere } = await admin.from('layout_objects')
+          .select('id').eq('staging_location_id', loc.id).limit(1)
+        if (stagingElsewhere && stagingElsewhere.length > 0) continue
         await admin.from('locations').delete().eq('id', loc.id)
       }
 
@@ -281,6 +294,15 @@ serve(async (req: Request) => {
     // ── save_geometry ────────────────────────────────────────────────────────
     const layout = await getLayout(admin, input.layout_id)
     requireDraft(layout)
+
+    // new_staging only makes sense on a 'staging' object — the schema alone
+    // can't express a cross-field constraint like this, so guard it explicitly
+    // before any writes happen.
+    for (const o of input.objects) {
+      if (o.new_staging && o.object_type !== 'staging') {
+        throw new EdgeFunctionError('INVALID_INPUT', "new_staging is only valid on a 'staging' object")
+      }
+    }
 
     const { data: whRow, error: whErr } = await admin.from('locations')
       .select('materialized_path, code').eq('id', layout.warehouse_id).single()
@@ -433,29 +455,93 @@ serve(async (req: Request) => {
       const { error } = await admin.from('layout_placements').insert(placementRows as any)
       if (error) throw new EdgeFunctionError('INTERNAL', `Failed to save placements: ${error.message}`)
     }
-    const objectRows = input.objects.map((o) => ({
-      layout_id: layout.id, object_type: o.object_type, floor: o.floor,
-      x: o.x, y: o.y, w: o.w, h: o.h, meta: o.meta ?? {}, staging_location_id: o.staging_location_id ?? null,
-    }))
+    // ── Resolve new_staging objects → STAGING locations ──────────────────────
+    // A floor-plan import (or manual draw) tags at most one distinct 'staging'
+    // object with new_staging: { code, name } per save. Dedupe by code, then
+    // find-or-create a STAGING location per code, reusing the same 23505
+    // adopt-or-conflict pattern as new_bin above.
+    const stagingByCode = new Map<string, { code: string; name: string }>()
+    for (const o of input.objects) {
+      if (o.new_staging) stagingByCode.set(o.new_staging.code, o.new_staging)
+    }
+    const stagingCodeToLocation = new Map<string, number>()
+    for (const [code, ns] of stagingByCode) {
+      const { data: created, error: sErr } = await admin.from('locations').insert({
+        parent_id: layout.warehouse_id, kind: 'STAGING', code, name: ns.name,
+        materialized_path: `${whPath}/${code}`, is_active: false, created_in_layout_id: layout.id,
+      } as any).select('id').single()
+      if (created && !sErr) {
+        stagingCodeToLocation.set(code, (created as any).id)
+        continue
+      }
+      if (sErr?.code === '23505') {
+        const { data: prior } = await admin.from('locations')
+          .select('id, kind, created_in_layout_id, is_active, materialized_path').eq('code', code).maybeSingle()
+        const inThisWarehouse = !!prior && ((prior as any).materialized_path as string).startsWith(`${whPath}/`)
+        // Adopt only a STAGING location in this warehouse that some layout
+        // created (never a hand-made or foreign-warehouse location); otherwise
+        // the code genuinely collides and we must error.
+        if (prior && (prior as any).kind === 'STAGING' && (prior as any).created_in_layout_id !== null && inThisWarehouse) {
+          if (!(prior as any).is_active) {
+            await admin.from('locations').update({ name: ns.name } as any).eq('id', (prior as any).id)
+          }
+          stagingCodeToLocation.set(code, (prior as any).id)
+          continue
+        }
+        throw new EdgeFunctionError('CONFLICT', `Location code "${code}" already exists`)
+      }
+      throw new EdgeFunctionError('INTERNAL', sErr?.message ?? 'Failed to create staging location')
+    }
+    // Single-S&R assumption: distinct staging locations resolved this save.
+    const resolvedStagingIds = new Set(stagingCodeToLocation.values())
+    const singleStagingId = resolvedStagingIds.size === 1 ? [...resolvedStagingIds][0] : null
+
+    const objectRows = input.objects.map((o) => {
+      const explicitStagingId = o.new_staging
+        ? stagingCodeToLocation.get(o.new_staging.code) ?? null
+        : (o.staging_location_id ?? null)
+      // Dock backfill: if exactly one staging location was resolved in this
+      // save, wire it to every dock lacking an explicit link. Most warehouses
+      // have a single Shipping & Receiving staging area, so this saves the
+      // operator from manually linking every dock; multi-staging layouts must
+      // wire dock -> staging links by hand via the object inspector.
+      const stagingLocationId = explicitStagingId ?? (
+        o.object_type === 'dock' && singleStagingId !== null ? singleStagingId : null
+      )
+      return {
+        layout_id: layout.id, object_type: o.object_type, floor: o.floor,
+        x: o.x, y: o.y, w: o.w, h: o.h, meta: o.meta ?? {}, staging_location_id: stagingLocationId,
+      }
+    })
     if (objectRows.length > 0) {
       const { error } = await admin.from('layout_objects').insert(objectRows as any)
       if (error) throw new EdgeFunctionError('INTERNAL', `Failed to save objects: ${error.message}`)
     }
 
-    // Garbage-collect draft-created bins no longer placed (and never stocked).
-    // Skip any bin still referenced by a placement in ANOTHER layout (e.g. a clone
-    // copied it) — deleting the location would cascade-delete that layout's
-    // placement too.
+    // Garbage-collect draft-created bins/staging locations no longer referenced
+    // (and never stocked). Keep-set = placed bin ids ∪ this save's resolved
+    // staging_location_ids (a staging location isn't a placement, so it needs
+    // its own keep entry). Also skip any bin still referenced by a placement,
+    // or any staging location still referenced by an object's
+    // staging_location_id, in ANOTHER layout (e.g. clone_layout copied the
+    // link) — deleting it would cascade-delete that layout's reference too.
     const placedIds = new Set(refToLocation.values())
+    const stagingIdsThisSave = new Set(
+      objectRows.map((o) => o.staging_location_id).filter((id): id is number => id !== null),
+    )
+    const keepIds = new Set<number>([...placedIds, ...stagingIdsThisSave])
     const { data: orphans } = await admin.from('locations')
       .select('id').eq('created_in_layout_id', layout.id).eq('is_active', false)
     for (const o of (orphans ?? []) as any[]) {
-      if (placedIds.has(o.id)) continue
+      if (keepIds.has(o.id)) continue
       const { data: bal } = await admin.from('inventory_balances').select('id').eq('location_id', o.id).limit(1)
       if (bal && bal.length > 0) continue
       const { data: elsewhere } = await admin.from('layout_placements')
         .select('id').eq('location_id', o.id).neq('layout_id', layout.id).limit(1)
       if (elsewhere && elsewhere.length > 0) continue
+      const { data: stagingElsewhere } = await admin.from('layout_objects')
+        .select('id').eq('staging_location_id', o.id).neq('layout_id', layout.id).limit(1)
+      if (stagingElsewhere && stagingElsewhere.length > 0) continue
       await admin.from('locations').delete().eq('id', o.id)
     }
 

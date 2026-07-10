@@ -29,6 +29,24 @@ describe('buildWalkableCells', () => {
     expect(cells).toHaveLength(1)
     expect(cells[0]).toMatchObject({ x: 0, y: 0, isDock: true })
   })
+
+  it('treats staging as a plain walkable cell — not a dock, not a lift', () => {
+    const { cells, hasDock } = buildWalkableCells([obj('staging', 5, 5)], [])
+    expect(cells).toHaveLength(1)
+    expect(cells[0]).toMatchObject({ x: 5, y: 5, isDock: false, isLift: false })
+    expect(hasDock).toBe(false)
+  })
+
+  it('subtracts a conveyor cell from a walkway painted over it', () => {
+    const objects = [obj('walkway', 3, 3), obj('conveyor', 3, 3)]
+    const { cells } = buildWalkableCells(objects, [])
+    expect(cells).toHaveLength(0)
+  })
+
+  it('a bare conveyor cell (no walkway underneath) is never walkable on its own', () => {
+    const { cells } = buildWalkableCells([obj('conveyor', 1, 1)], [])
+    expect(cells).toHaveLength(0)
+  })
 })
 
 describe('evaluatePublishReadiness', () => {
