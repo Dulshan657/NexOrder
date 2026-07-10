@@ -114,6 +114,51 @@ export async function getBalancesByWarehouse(warehouseId: number): Promise<Wareh
   }))
 }
 
+/** One row per product with ANY balance row in a warehouse's subtree (root +
+ * descendants), via the `inv_product_stock_by_warehouse` RPC. A product with a
+ * zero-quantity row IS returned (onHand 0); a product with NO row is ABSENT —
+ * that distinction is load-bearing for the Products "not stocked here" badge,
+ * so callers must never default an absent product to 0. */
+export interface ProductStockRow {
+  productId: number
+  onHand: number
+  allocated: number
+  available: number
+}
+
+// `inv_product_stock_by_warehouse` lives in the DB but isn't in the generated
+// database.types.ts Functions map (which we don't own here), so the typed
+// client would reject the name. Narrow the rpc call to just what we need
+// instead of reaching for `any` (mirrors warehouseReportService.ts).
+type ProductStockByWarehouseRpcRow = {
+  product_id: number
+  on_hand: number | string
+  allocated: number | string
+  available: number | string
+}
+type ProductStockByWarehouseRpc = (
+  fn: 'inv_product_stock_by_warehouse',
+  args: { p_warehouse_id: number },
+) => Promise<{ data: ProductStockByWarehouseRpcRow[] | null; error: { message: string } | null }>
+
+export async function getProductStockByWarehouse(warehouseId: number): Promise<ProductStockRow[]> {
+  // `supabase.rpc` is a class method that reads `this.rest` internally —
+  // assigning it to a local const without `.bind` detaches it from its
+  // receiver, so `this` is undefined and the call throws a TypeError
+  // ("Cannot read properties of undefined (reading 'rest')") before any
+  // request is sent. Must stay bound.
+  const rpc = supabase.rpc.bind(supabase) as unknown as ProductStockByWarehouseRpc
+  const { data, error } = await rpc('inv_product_stock_by_warehouse', { p_warehouse_id: warehouseId })
+  if (error) throw new Error(error.message)
+  // NUMERIC columns surface as strings over the wire (e.g. "120.000") — coerce.
+  return (data ?? []).map((r) => ({
+    productId: Number(r.product_id),
+    onHand: Number(r.on_hand),
+    allocated: Number(r.allocated),
+    available: Number(r.available),
+  }))
+}
+
 export async function getLocations() {
   const { data, error } = await supabase
     .from('locations')

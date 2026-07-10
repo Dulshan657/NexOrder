@@ -4,10 +4,11 @@
 // and the ?wh= deep link so a post-receipt "Go to putaway" CTA (ReceiveStockView
 // -> AdminView -> here) and a page refresh both land on the right warehouse.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { PackageOpen } from 'lucide-react';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import { usePendingPutawayCounts } from '../../hooks/queries/usePendingPutawayCounts';
+import { useWarehouseScope } from '../../context/WarehouseScopeContext';
 import { resolvePutawayWarehouse } from './putawayWarehouse';
 import { UserRole, type User } from '../../types';
 import PutawayQueueView from './PutawayQueueView';
@@ -20,20 +21,6 @@ interface PutawayQueuePageProps {
 // the table the counts come from — asking for anyone else just errors.
 const CAN_VIEW_PUTAWAY_COUNTS = new Set<UserRole>([UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE]);
 
-function readInitialWarehouse(): number | null {
-  if (typeof window === 'undefined') return null;
-  const v = new URLSearchParams(window.location.search).get('wh');
-  return v && /^\d+$/.test(v) ? Number(v) : null;
-}
-
-function writeWarehouseToUrl(id: number | null): void {
-  if (typeof window === 'undefined') return;
-  const url = new URL(window.location.href);
-  if (id != null) url.searchParams.set('wh', String(id));
-  else url.searchParams.delete('wh');
-  window.history.replaceState({}, '', url.toString());
-}
-
 const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
   const { data: warehouses } = useWarehouses();
   const activeWarehouses = useMemo(
@@ -44,37 +31,59 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
   const countsEnabled = CAN_VIEW_PUTAWAY_COUNTS.has(currentUser.role);
   const { data: counts } = usePendingPutawayCounts(countsEnabled);
 
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState<number | null>(() => readInitialWarehouse());
-  // Guards the auto-select effect below so it only ever adopts a default ONCE.
-  // A ?wh= deep link already seeded selectedWarehouseId above; an explicit user
-  // pick (via pickWarehouse) must never be overridden once counts finish loading.
-  const autoSelected = useRef(selectedWarehouseId != null);
+  // Shares the app-wide warehouse scope with Stock/Products/Dashboard/Warehouse
+  // (see WarehouseScopeContext). Same rule as WarehousePage: merely opening this
+  // tab must not clobber a shared 'all' scope for those other tabs, so under
+  // 'all' we only *display* a local default (resolvePutawayWarehouse — prefers
+  // a site with actual pending work); we never call setScope for it. Picking a
+  // site via the selector below DOES write back — that's intended.
+  const { scope, setScope } = useWarehouseScope();
 
+  // Wait for counts to settle before computing the "has pending work" default
+  // — otherwise every load would show the first active warehouse before the
+  // count that should have won even arrives.
+  const countsReady = !countsEnabled || counts !== undefined;
+  const localFallback = useMemo(
+    () =>
+      countsReady
+        ? resolvePutawayWarehouse({
+            deepLinkId: null,
+            homeWarehouseId: currentUser.homeWarehouseId,
+            counts: counts ?? {},
+            activeWarehouses,
+          })
+        : null,
+    [countsReady, counts, activeWarehouses, currentUser.homeWarehouseId],
+  );
+
+  const effectiveWarehouseId = scope !== 'all' ? scope : localFallback;
+
+  // A post-receipt "Go to putaway" CTA (ReceiveStockView -> AdminView ->
+  // openPutaway) sets `?wh=<id>` then switches tabs. The scope provider only
+  // reads `?wh=` at its own init, so a fresh page load honours the link, but an
+  // in-session tab switch wouldn't. Adopt a valid deep link into the shared
+  // scope exactly once, but only while scope is still 'all' — an explicit site
+  // already in the shared scope must never be overridden by a stale link.
+  const deepLinkAdopted = useRef(false);
   useEffect(() => {
-    if (autoSelected.current) return;
-    if (activeWarehouses.length === 0) return;
-    // Wait for counts to settle before adopting the "has pending work" default
-    // — otherwise every load races to the first active warehouse before the
-    // count that should have won even arrives.
-    if (countsEnabled && counts === undefined) return;
-
-    const resolved = resolvePutawayWarehouse({
-      deepLinkId: readInitialWarehouse(),
-      homeWarehouseId: currentUser.homeWarehouseId,
-      counts: counts ?? {},
-      activeWarehouses,
-    });
-    autoSelected.current = true;
-    if (resolved != null) {
-      setSelectedWarehouseId(resolved);
-      writeWarehouseToUrl(resolved);
+    if (deepLinkAdopted.current) return;
+    if (scope !== 'all') {
+      deepLinkAdopted.current = true;
+      return;
     }
-  }, [activeWarehouses, counts, countsEnabled, currentUser.homeWarehouseId]);
+    if (activeWarehouses.length === 0) return;
+    if (typeof window === 'undefined') return;
+
+    const raw = new URLSearchParams(window.location.search).get('wh');
+    const deepLinkId = raw && /^\d+$/.test(raw) ? Number(raw) : null;
+    if (deepLinkId != null && activeWarehouses.some((w) => w.id === deepLinkId)) {
+      deepLinkAdopted.current = true;
+      setScope(deepLinkId);
+    }
+  }, [scope, activeWarehouses, setScope]);
 
   const pickWarehouse = (id: number | null) => {
-    autoSelected.current = true;
-    setSelectedWarehouseId(id);
-    writeWarehouseToUrl(id);
+    if (id != null) setScope(id);
   };
 
   const optionLabel = (w: { id: number; name: string; code: string }): string => {
@@ -90,7 +99,7 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
         <label className="inline-flex items-center gap-2 text-sm text-stone-600">
           <span className="font-medium">Warehouse</span>
           <select
-            value={selectedWarehouseId ?? ''}
+            value={effectiveWarehouseId ?? ''}
             onChange={(e) => pickWarehouse(e.target.value ? Number(e.target.value) : null)}
             className="text-sm rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
           >
@@ -104,8 +113,8 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
         </label>
       </div>
 
-      {selectedWarehouseId != null ? (
-        <PutawayQueueView warehouseId={selectedWarehouseId} />
+      {effectiveWarehouseId != null ? (
+        <PutawayQueueView warehouseId={effectiveWarehouseId} />
       ) : (
         <div className="px-4 sm:px-6 lg:px-8 py-16">
           <div className="glass-card rounded-xl p-10 text-center">

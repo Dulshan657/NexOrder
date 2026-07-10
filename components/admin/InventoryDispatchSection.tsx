@@ -6,6 +6,8 @@ import {
   computeDispatchFunnel,
   type DispatchWindow,
 } from '@/services/inventoryDashboardService';
+import { useWarehouseScope } from '@/context/WarehouseScopeContext';
+import { useProductStockByWarehouse } from '@/hooks/queries/useInventoryBalances';
 import StockHealthDonut from '@/components/charts/StockHealthDonut';
 import DispatchFunnelChart from '@/components/charts/DispatchFunnelChart';
 
@@ -26,9 +28,30 @@ function InventoryDispatchSection({
 }: InventoryDispatchSectionProps) {
   const [window, setWindow] = useState<DispatchWindow>(30);
 
+  // The donut follows the shared warehouse scope (set from Stock/Products/
+  // Warehouse) so it always reflects the site the user is currently focused
+  // on — hence the "Showing: <site>" chip below telling them so.
+  const { scope, scopeLabel } = useWarehouseScope();
+  const { data: stockByWarehouse } = useProductStockByWarehouse(scope === 'all' ? null : scope);
+
+  const onHandBySite = useMemo(() => {
+    const map = new Map<number, number>();
+    (stockByWarehouse ?? []).forEach((row) => map.set(row.productId, row.onHand));
+    return map;
+  }, [stockByWarehouse]);
+
+  // Absent from `onHandBySite` -> 0 is correct HERE: a product not stocked at
+  // the scoped site genuinely has 0 on hand for health-bucketing purposes.
+  // Pass nothing under 'all' so global behaviour stays byte-identical to today
+  // (computeStockHealth's own default, `p => p.inventory`).
+  const onHandOf = useMemo(
+    () => (scope === 'all' ? undefined : (product: Product) => onHandBySite.get(product.id) ?? 0),
+    [scope, onHandBySite],
+  );
+
   const stockHealth = useMemo(
-    () => computeStockHealth(products, lowStockThreshold),
-    [products, lowStockThreshold],
+    () => computeStockHealth(products, lowStockThreshold, onHandOf),
+    [products, lowStockThreshold, onHandOf],
   );
 
   const dispatchFunnel = useMemo(
@@ -46,13 +69,18 @@ function InventoryDispatchSection({
           className={`glass-card rounded-xl p-5 ${onNavigateTab ? 'cursor-pointer transition-shadow hover:shadow-card' : ''}`}
           onClick={onNavigateTab ? () => onNavigateTab('Stock') : undefined}
         >
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex items-center justify-between gap-2">
             <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-900">
               <Boxes className="h-4 w-4 text-emerald-600" /> Stock Health
             </h3>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">
-              Current
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-medium text-stone-500">
+                Showing: {scopeLabel}
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+                Current
+              </span>
+            </div>
           </div>
           <StockHealthDonut data={stockHealth} />
         </div>

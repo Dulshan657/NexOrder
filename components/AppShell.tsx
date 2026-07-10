@@ -37,6 +37,7 @@ import {
 import type { QueryClient } from '@tanstack/react-query';
 import { OrderProvider } from '../context/OrderContext';
 import { PantryProvider } from '../context/PantryContext';
+import { WarehouseScopeProvider } from '../context/WarehouseScopeContext';
 import { useOrderContext } from '../context/OrderContext';
 import { usePantryContext } from '../context/PantryContext';
 import { useOrderingState } from '../hooks/useOrderingState';
@@ -1447,29 +1448,31 @@ const AppShell: React.FC<AppShellProps> = props => {
     };
 
     return (
-        <OrderProvider
-            currentUser={currentUser}
-            products={products}
-            hoReCas={hoReCas}
-            promotions={promotions}
-            invoices={invoices}
-            appSettings={appSettings}
-            addToast={addToast}
-            placeOrderMutation={placeOrderMutation}
-            onResetView={onResetView}
-        >
-            <PantryProvider
+        <WarehouseScopeProvider currentUser={currentUser}>
+            <OrderProvider
+                currentUser={currentUser}
                 products={products}
-                allOrders={allOrders}
+                hoReCas={hoReCas}
+                promotions={promotions}
+                invoices={invoices}
                 appSettings={appSettings}
                 addToast={addToast}
+                placeOrderMutation={placeOrderMutation}
+                onResetView={onResetView}
             >
-                <AppShellInner
-                    {...props}
-                    {...navState}
-                />
-            </PantryProvider>
-        </OrderProvider>
+                <PantryProvider
+                    products={products}
+                    allOrders={allOrders}
+                    appSettings={appSettings}
+                    addToast={addToast}
+                >
+                    <AppShellInner
+                        {...props}
+                        {...navState}
+                    />
+                </PantryProvider>
+            </OrderProvider>
+        </WarehouseScopeProvider>
     );
 };
 

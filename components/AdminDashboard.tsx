@@ -145,24 +145,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onClick: onNavigateTab ? () => onNavigateTab('Accounts') : undefined,
     }));
 
+    // Stock counts here (products.inventory) and the days-to-stockout
+    // projection (getDaysToStockout) are both company-wide: sales velocity has
+    // no warehouse dimension, so this data is never scoped to a single site.
+    // Label plainly rather than quietly scoping just the numerator, which
+    // would produce a plausible-looking but wrong days-to-stockout number.
     const stockItems: ActionItem[] = [
       ...alerts.outOfStock.map(p => ({
         id: `stock-out-${p.id}`,
         title: p.name,
-        subtitle: 'Out of stock',
+        subtitle: 'Out of stock — all sites',
         badge: { label: 'Out', color: 'bg-red-50 text-red-700 border-red-200' },
         onClick: onNavigateTab ? () => onNavigateTab('Products') : undefined,
       })),
       ...alerts.stockoutData.map(s => ({
         id: `stock-risk-${s.productId}`,
         title: s.productName,
-        subtitle: `${s.currentStock} left · ${s.daysRemaining ?? '?'}d`,
+        subtitle: `${s.currentStock} left (all sites) · ${s.daysRemaining ?? '?'}d`,
         onClick: onNavigateTab ? () => onNavigateTab('Products') : undefined,
       })),
       ...alerts.lowStock.map(p => ({
         id: `stock-low-${p.id}`,
         title: p.name,
-        subtitle: `${p.inventory} left`,
+        subtitle: `${p.inventory} left (all sites)`,
         onClick: onNavigateTab ? () => onNavigateTab('Products') : undefined,
       })),
     ];
@@ -181,7 +186,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return [
       { id: 'overdue', label: 'Overdue Payments', icon: CreditCard, severity: 'critical' as const,
         items: overdueItems, onViewAll: onNavigateTab ? () => onNavigateTab('Accounts') : undefined },
-      { id: 'stock', label: 'Low / Out of Stock', icon: Package, severity: 'warning' as const,
+      { id: 'stock', label: 'Low / Out of Stock (All Sites)', icon: Package, severity: 'warning' as const,
         items: stockItems, onViewAll: onNavigateTab ? () => onNavigateTab('Products') : undefined },
       { id: 'at-risk', label: 'At-Risk Customers', icon: AlertTriangle, severity: 'warning' as const,
         items: riskItems, onViewAll: onNavigateTab ? () => onNavigateTab('HoReCa Insights') : undefined },

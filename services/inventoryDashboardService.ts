@@ -1,4 +1,5 @@
 import type { Order, OrderStatus, Product } from '@/types';
+import { classifyStock, lowStockThresholdFor } from '@/lib/stockStatus';
 
 // Pure derivations for the Admin Dashboard "Inventory & Dispatch" section.
 // No DB calls — these operate on data already cached in the dashboard (products,
@@ -12,15 +13,21 @@ export interface StockHealth {
 }
 
 /**
- * Classify active products into in-stock / low-stock / out-of-stock buckets from
- * their on-hand cache (`inventory`). A product is "low" when its on-hand falls to
- * or below its per-product `reorderPoint`, falling back to the dashboard-wide
+ * Classify active products into in-stock / low-stock / out-of-stock buckets.
+ * Delegates to the canonical `classifyStock` / `lowStockThresholdFor` in
+ * `lib/stockStatus.ts`: a product is "low" when its on-hand falls to or below
+ * its per-product `reorderPoint`, falling back to the dashboard-wide
  * `lowStockThreshold` when no reorder point is configured. Inactive products
  * (`isActive === false`) are excluded.
+ *
+ * `onHandOf` defaults to the global on-hand cache (`product.inventory`) so
+ * every existing caller is unaffected; pass a scoped lookup (e.g. per-warehouse
+ * on-hand) to bucket the same product set against a single site instead.
  */
 export function computeStockHealth(
   products: readonly Product[],
   lowStockThreshold: number,
+  onHandOf: (product: Product) => number = (product) => product.inventory,
 ): StockHealth {
   let inStock = 0;
   let lowStock = 0;
@@ -29,17 +36,19 @@ export function computeStockHealth(
   for (const product of products) {
     if (product.isActive === false) continue;
 
-    const onHand = product.inventory;
-    if (onHand <= 0) {
-      outOfStock += 1;
-      continue;
-    }
+    const onHand = onHandOf(product);
+    const threshold = lowStockThresholdFor(product, lowStockThreshold);
 
-    const threshold = product.reorderPoint ?? lowStockThreshold;
-    if (onHand <= threshold) {
-      lowStock += 1;
-    } else {
-      inStock += 1;
+    switch (classifyStock(onHand, threshold)) {
+      case 'out_of_stock':
+        outOfStock += 1;
+        break;
+      case 'low_stock':
+        lowStock += 1;
+        break;
+      case 'in_stock':
+        inStock += 1;
+        break;
     }
   }
 

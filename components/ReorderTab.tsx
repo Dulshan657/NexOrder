@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import type { Order, Product, HoReCa, OrderItem } from '../types';
 import { RotateCcw, ShoppingCart, Trash2, AlertTriangle, UserRound, Package } from 'lucide-react';
 import { resolveHoReCaPrice } from '../pricing';
+import { classifyStock, lowStockThresholdFor } from '../lib/stockStatus';
+import { useSettings } from '../hooks/queries/useSettings';
 import OptimizedImage from './OptimizedImage';
 import { Button, Modal } from './ui';
 
@@ -30,6 +32,11 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
     const [showMergePrompt, setShowMergePrompt] = useState<'replace' | 'merge' | null>(null);
     const [pendingItems, setPendingItems] = useState<OrderItem[]>([]);
 
+    // Data source stays global (products.available) — this is a customer/rep
+    // facing surface, not warehouse-scoped. Only the threshold is configurable.
+    const { data: settings } = useSettings();
+    const globalThreshold = settings?.low_stock_threshold ?? 10;
+
     // Reset edited items when lastOrder changes
     const lastOrderId = lastOrder?.id;
     const [trackedOrderId, setTrackedOrderId] = useState(lastOrderId);
@@ -43,7 +50,8 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
         return editedItems.map(item => {
             const currentProduct = products.find(p => p.id === item.id);
             const isAvailable = !!currentProduct && currentProduct.available > 0;
-            const isLowStock = !!currentProduct && currentProduct.available > 0 && currentProduct.available < 10;
+            const isLowStock = !!currentProduct
+                && classifyStock(currentProduct.available, lowStockThresholdFor(currentProduct, globalThreshold)) === 'low_stock';
 
             // Recalculate price with current pricing
             let currentPrice = item.price;
@@ -64,7 +72,7 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
                 currentProduct,
             };
         });
-    }, [editedItems, products, selectedHoReCa, cartonDiscountPercent]);
+    }, [editedItems, products, selectedHoReCa, cartonDiscountPercent, globalThreshold]);
 
     const activeItems = resolvedItems.filter(i => !i.removed);
     const reorderTotal = activeItems.reduce((sum, item) => sum + item.currentPrice * item.quantity, 0);

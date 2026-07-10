@@ -4,8 +4,12 @@ import { FileUp } from 'lucide-react';
 import type { Product, Supplier } from '../types';
 import ProductForm from './ProductForm';
 import ConfirmationDialog from './ConfirmationDialog';
-import OptimizedImage from './OptimizedImage';
 import ProductImportModal from './admin/ProductImportModal';
+import ProductAdminRow from './admin/ProductAdminRow';
+import { WarehousePicker } from './inventory/WarehousePicker';
+import { useWarehouseScope } from '../context/WarehouseScopeContext';
+import { useProductStockByWarehouse } from '../hooks/queries/useInventoryBalances';
+import { useSettings } from '../hooks/queries/useSettings';
 
 interface ProductAdminProps {
     products: Product[];
@@ -21,8 +25,20 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
     const [productToDelete, setProductToDelete] = useState<Product | null>(null);
     const [isImportOpen, setIsImportOpen] = useState(false);
+    const [hideNotStockedHere, setHideNotStockedHere] = useState(false);
+
+    const { scope } = useWarehouseScope();
+    const { data: siteStock } = useProductStockByWarehouse(scope === 'all' ? null : scope);
+    const onHandBySite = useMemo(() => new Map(siteStock?.map(r => [r.productId, r.onHand]) ?? []), [siteStock]);
+    const { data: settings } = useSettings();
+    const globalThreshold = settings?.low_stock_threshold ?? 10;
 
     const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.id, s.name] as const)), [suppliers]);
+
+    const visibleProducts = useMemo(() => {
+        if (scope === 'all' || !hideNotStockedHere) return products;
+        return products.filter(p => onHandBySite.has(p.id));
+    }, [products, scope, hideNotStockedHere, onHandBySite]);
 
     const handleOpenFormForEdit = (product: Product) => {
         setProductToEdit(product);
@@ -57,17 +73,23 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
         }
     };
     
-    const getInventoryClass = (inventory: number) => {
-        if (inventory <= 0) return 'text-red-600 font-semibold';
-        if (inventory < 10) return 'text-amber-600 font-bold';
-        return 'text-stone-500';
-    }
-
     return (
         <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                 <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">Manage Products</h2>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    <WarehousePicker />
+                    {scope !== 'all' && (
+                        <label className="inline-flex items-center gap-1.5 text-sm text-stone-600 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={hideNotStockedHere}
+                                onChange={(e) => setHideNotStockedHere(e.target.checked)}
+                                className="rounded border-stone-300 text-nexgen-blue focus:ring-nexgen-blue/30"
+                            />
+                            Hide not stocked here
+                        </label>
+                    )}
                     <button
                         onClick={() => setIsImportOpen(true)}
                         className="inline-flex items-center gap-1.5 border border-stone-300 text-stone-700 font-medium py-2 px-4 rounded-lg hover:bg-stone-50 transition-colors btn-press"
@@ -97,52 +119,17 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-stone-200">
-                        {products.map((product) => (
-                            <tr key={product.id} className={product.inventory > 0 && product.inventory < 10 ? 'bg-amber-50/50' : 'hover:bg-stone-50 transition-colors'}>
-                                <td className="px-6 py-4">
-                                    <div className="w-12 h-12 bg-stone-100 rounded-lg flex items-center justify-center border border-stone-200 overflow-hidden">
-                                        <OptimizedImage
-                                            src={product.imageUrl}
-                                            alt={product.name}
-                                            className="w-full h-full"
-                                            transformWidth={96}
-                                            fallback={
-                                                <div className="w-full h-full flex items-center justify-center">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-stone-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                    </svg>
-                                                </div>
-                                            }
-                                        />
-                                    </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-stone-900">{product.name}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">{supplierMap.get(product.supplierId) || 'N/A'}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">{product.category}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">${product.price.toFixed(2)}</td>
-                                <td className={`px-6 py-4 whitespace-nowrap text-sm ${getInventoryClass(product.inventory)}`}>
-                                    {product.inventory}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-xs text-stone-500">
-                                    {product.cubicMetersUnit != null && (
-                                        <div>
-                                            <span className="font-medium text-stone-700">{product.cubicMetersUnit.toFixed(4)}</span>
-                                            <span className="text-stone-400"> /unit</span>
-                                        </div>
-                                    )}
-                                    {product.cubicMetersCarton != null && (
-                                        <div>
-                                            <span className="font-medium text-stone-700">{product.cubicMetersCarton.toFixed(4)}</span>
-                                            <span className="text-stone-400"> /ctn</span>
-                                        </div>
-                                    )}
-                                    {product.cubicMetersUnit == null && product.cubicMetersCarton == null && '—'}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
-                                    <button onClick={() => handleOpenFormForEdit(product)} className="text-emerald-600 hover:text-emerald-900 transition-colors">Edit</button>
-                                    <button onClick={() => setProductToDelete(product)} className="text-red-600 hover:text-red-900 transition-colors">Delete</button>
-                                </td>
-                            </tr>
+                        {visibleProducts.map((product) => (
+                            <ProductAdminRow
+                                key={product.id}
+                                product={product}
+                                supplierName={supplierMap.get(product.supplierId) || 'N/A'}
+                                scope={scope}
+                                siteOnHand={onHandBySite.get(product.id)}
+                                globalThreshold={globalThreshold}
+                                onEdit={handleOpenFormForEdit}
+                                onDelete={setProductToDelete}
+                            />
                         ))}
                     </tbody>
                 </table>

@@ -1,14 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import type { Product, User, Category } from '../types';
 import { UserRole } from '../types';
-import { Package, AlertCircle, CheckCircle2, Search, X, TrendingDown, ChevronRight, ChevronDown, MapPin, Repeat, SlidersHorizontal, FileUp } from 'lucide-react';
+import { Package, AlertCircle, CheckCircle2, Search, X, Repeat, FileUp } from 'lucide-react';
 import { CATEGORIES } from '../constants';
-import { useInventoryBalances, useBalancesByProduct } from '../hooks/queries/useInventoryBalances';
 import { useSettings } from '../hooks/queries/useSettings';
-import { classifyStock, lowStockThresholdFor, type StockStatus } from '../lib/stockStatus';
-import type { ProductBatchBalance } from '../services/supabase/inventoryService';
+import { classifyStock, lowStockThresholdFor } from '../lib/stockStatus';
+import { useWarehouseScope } from '../context/WarehouseScopeContext';
+import { WarehousePicker } from './inventory/WarehousePicker';
+import { useScopedStock } from '../hooks/useScopedStock';
+import { OpsStockRow, StatusPill } from './stock/OpsStockRow';
+import { StockKpiTiles } from './stock/StockKpiTiles';
 import TransferStockModal from './admin/TransferStockModal';
-import AdjustStockModal from './admin/AdjustStockModal';
 import StockImportModal from './admin/StockImportModal';
 
 interface StockViewProps {
@@ -18,122 +20,6 @@ interface StockViewProps {
 }
 
 type StockFilter = 'all' | 'in_stock' | 'low_stock' | 'out_of_stock';
-
-interface Agg { onHand: number; allocated: number; available: number }
-
-/** Ops-only expandable row: aggregate on top, lazy per-batch detail on expand.
- * `canAdjust` (Admin/Manager only for now — see StockView's isAdminManager)
- * shows a per-batch "Adjust" action that opens AdjustStockModal for that exact
- * (product, location, batch) slot. `globalThreshold` is the app-wide low-stock
- * fallback; the row prefers the product's own `reorderPoint`. */
-const OpsStockRow: React.FC<{ product: Product; agg: Agg; maxQty: number; canAdjust: boolean; globalThreshold: number }> = ({ product, agg, maxQty, canAdjust, globalThreshold }) => {
-  const [expanded, setExpanded] = useState(false);
-  const { data: batches, isLoading } = useBalancesByProduct(expanded ? product.id : null);
-  const [adjustTarget, setAdjustTarget] = useState<ProductBatchBalance | null>(null);
-  const status = classifyStock(agg.available, lowStockThresholdFor(product, globalThreshold));
-  const fillPercent = Math.min((agg.available / maxQty) * 100, 100);
-  const barColor = status === 'out_of_stock' ? 'bg-red-400' : status === 'low_stock' ? 'bg-amber-400' : 'bg-emerald-400';
-
-  return (
-    <>
-      <tr className="border-b border-stone-100 transition-colors hover:bg-stone-50/50 cursor-pointer" onClick={() => setExpanded((v) => !v)}>
-        <td className="px-5 py-3.5">
-          <div className="flex items-center gap-2">
-            {expanded ? <ChevronDown className="w-4 h-4 text-stone-400" /> : <ChevronRight className="w-4 h-4 text-stone-400" />}
-            <div>
-              <p className="text-sm font-medium text-stone-900">{product.name}</p>
-              <p className="text-xs text-stone-400 font-mono">{product.sku}</p>
-            </div>
-          </div>
-        </td>
-        <td className="px-5 py-3.5 text-right font-mono text-sm text-stone-900 tabular-nums">{agg.onHand}</td>
-        <td className="px-5 py-3.5 text-right font-mono text-sm text-stone-500 tabular-nums">{agg.allocated}</td>
-        <td className="px-5 py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="flex-1 bg-stone-100 rounded-full h-2 overflow-hidden min-w-[80px]">
-              <div className={`h-2 rounded-full ${barColor} transition-all duration-300`} style={{ width: `${fillPercent}%` }} />
-            </div>
-            <span className="font-mono text-sm font-semibold text-stone-900 tabular-nums w-12 text-right">{agg.available}</span>
-          </div>
-        </td>
-        <td className="px-5 py-3.5 text-right">
-          <StatusPill status={status} />
-        </td>
-      </tr>
-      {expanded && (
-        <tr className="bg-stone-50/60">
-          <td colSpan={5} className="px-5 py-3">
-            {isLoading ? (
-              <div className="space-y-2">
-                {[0, 1].map((i) => <div key={i} className="h-4 rounded bg-stone-100 animate-pulse" />)}
-              </div>
-            ) : !batches || batches.length === 0 ? (
-              <p className="text-xs text-stone-400 px-2 py-1">No batch records for this product.</p>
-            ) : (
-              <div className="rounded-lg border border-stone-200 bg-white overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-stone-100 bg-stone-50 text-stone-500">
-                      <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Location · Lot</th>
-                      <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Expiry</th>
-                      <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">On hand</th>
-                      <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Allocated</th>
-                      <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Available</th>
-                      {canAdjust && <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">&nbsp;</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {batches.map((b) => (
-                      <tr key={b.balanceId}>
-                        <td className="px-3 py-2 text-stone-700">
-                          <span className="inline-flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-stone-400" />
-                            {b.locationCode ?? 'MAIN'} · {b.lotCode ? `lot ${b.lotCode}` : 'untracked'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-stone-500">{b.expiryDate ?? '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono text-stone-700 tabular-nums">{b.onHand}</td>
-                        <td className="px-3 py-2 text-right font-mono text-stone-500 tabular-nums">{b.allocated}</td>
-                        <td className="px-3 py-2 text-right font-mono font-semibold text-stone-900 tabular-nums">{b.available}</td>
-                        {canAdjust && (
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setAdjustTarget(b); }}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-nexgen-blue hover:bg-nexgen-blue/10 btn-press"
-                            >
-                              <SlidersHorizontal className="w-3 h-3" /> Adjust
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </td>
-        </tr>
-      )}
-      {adjustTarget && (
-        <AdjustStockModal
-          product={product}
-          locationId={adjustTarget.locationId}
-          locationLabel={`${adjustTarget.locationCode ?? 'MAIN'} · ${adjustTarget.lotCode ? `lot ${adjustTarget.lotCode}` : 'untracked'}`}
-          batchId={adjustTarget.batchId}
-          currentOnHand={adjustTarget.onHand}
-          onClose={() => setAdjustTarget(null)}
-        />
-      )}
-    </>
-  );
-};
-
-const StatusPill: React.FC<{ status: StockStatus }> = ({ status }) => {
-  if (status === 'in_stock') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700"><CheckCircle2 className="w-3 h-3" /> In Stock</span>;
-  if (status === 'low_stock') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700"><AlertCircle className="w-3 h-3" /> Low Stock</span>;
-  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700"><AlertCircle className="w-3 h-3" /> Out of Stock</span>;
-};
 
 const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -147,24 +33,20 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
   const [transferOpen, setTransferOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
-  // Ledger is the source of truth for staff; customers see the products cache.
-  const { data: balances, isLoading: balancesLoading } = useInventoryBalances();
+  // Only the ops branch (Admin/Manager/Warehouse) scopes to a warehouse — the
+  // rep and customer branches must keep reading the global aggregate exactly
+  // as they do today.
+  const { scope } = useWarehouseScope();
+  const effectiveScope = isOps ? scope : 'all';
+
+  // Ledger (scoped or global) is the source of truth for staff; customers see
+  // the products cache.
+  const { aggByProduct, isLoading: balancesLoading } = useScopedStock(effectiveScope);
   // Global low-stock fallback; each product may override via its reorderPoint.
   const { data: settings } = useSettings();
   const globalThreshold = settings?.low_stock_threshold ?? 10;
-  const aggByProduct = useMemo(() => {
-    const m = new Map<number, Agg>();
-    for (const b of balances ?? []) {
-      const cur = m.get(b.productId) ?? { onHand: 0, allocated: 0, available: 0 };
-      cur.onHand += b.onHand;
-      cur.allocated += b.allocated;
-      cur.available += b.available;
-      m.set(b.productId, cur);
-    }
-    return m;
-  }, [balances]);
 
-  const aggOf = (p: Product): Agg => aggByProduct.get(p.id) ?? { onHand: 0, allocated: 0, available: 0 };
+  const aggOf = (p: Product) => aggByProduct.get(p.id) ?? { onHand: 0, allocated: 0, available: 0 };
   // Customers can't read the ledger (balances RLS is staff-only), so they get
   // the products.available cache; staff get the live aggregated ledger available.
   const qtyOf = (p: Product): number => (isCustomer ? p.available : aggOf(p).available);
@@ -222,20 +104,25 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
               : `${products.length} products · live from the inventory ledger`}
           </p>
         </div>
-        {isAdminManager && (
+        {isOps && (
           <div className="flex items-center gap-2 self-start">
-            <button
-              onClick={() => setImportOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold border border-stone-300 text-stone-700 hover:bg-stone-50 btn-press"
-            >
-              <FileUp className="w-4 h-4" /> Import stock
-            </button>
-            <button
-              onClick={() => setTransferOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-nexgen-blue text-white hover:bg-nexgen-blue/90 btn-press"
-            >
-              <Repeat className="w-4 h-4" /> Transfer stock
-            </button>
+            <WarehousePicker />
+            {isAdminManager && (
+              <>
+                <button
+                  onClick={() => setImportOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold border border-stone-300 text-stone-700 hover:bg-stone-50 btn-press"
+                >
+                  <FileUp className="w-4 h-4" /> Import stock
+                </button>
+                <button
+                  onClick={() => setTransferOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-nexgen-blue text-white hover:bg-nexgen-blue/90 btn-press"
+                >
+                  <Repeat className="w-4 h-4" /> Transfer stock
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -246,26 +133,7 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
       )}
 
       {/* KPI Summary — staff only */}
-      {!isCustomer && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="glass-card gradient-card rounded-xl p-3 flex items-center gap-3">
-            <div className="p-1.5 rounded-lg bg-nexgen-blue/10"><Package className="w-4 h-4 text-nexgen-blue" /></div>
-            <div><p className="text-lg font-bold text-stone-900 leading-tight">{metrics.total}</p><p className="text-xs text-stone-500 font-medium">Total Products</p></div>
-          </div>
-          <div className="glass-card gradient-card rounded-xl p-3 flex items-center gap-3">
-            <div className="p-1.5 rounded-lg bg-emerald-50"><CheckCircle2 className="w-4 h-4 text-emerald-600" /></div>
-            <div><p className="text-lg font-bold text-stone-900 leading-tight">{metrics.inStock}</p><p className="text-xs text-stone-500 font-medium">In Stock</p></div>
-          </div>
-          <div className="glass-card gradient-card rounded-xl p-3 flex items-center gap-3">
-            <div className="p-1.5 rounded-lg bg-amber-50"><AlertCircle className="w-4 h-4 text-amber-600" /></div>
-            <div><p className="text-lg font-bold text-stone-900 leading-tight">{metrics.lowStock}</p><p className="text-xs text-stone-500 font-medium">Low Stock</p></div>
-          </div>
-          <div className="glass-card gradient-card rounded-xl p-3 flex items-center gap-3">
-            <div className="p-1.5 rounded-lg bg-red-50"><TrendingDown className="w-4 h-4 text-red-600" /></div>
-            <div><p className="text-lg font-bold text-stone-900 leading-tight">{metrics.outOfStock}</p><p className="text-xs text-stone-500 font-medium">Out of Stock</p></div>
-          </div>
-        </div>
-      )}
+      {!isCustomer && <StockKpiTiles metrics={metrics} />}
 
       {/* Filters Bar */}
       <div className="space-y-3">
@@ -368,7 +236,7 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
               </thead>
               <tbody>
                 {filteredProducts.map((product) => (
-                  <OpsStockRow key={product.id} product={product} agg={aggOf(product)} maxQty={maxQty} canAdjust={isAdminManager} globalThreshold={globalThreshold} />
+                  <OpsStockRow key={product.id} product={product} agg={aggOf(product)} maxQty={maxQty} canAdjust={isAdminManager} globalThreshold={globalThreshold} scope={effectiveScope} />
                 ))}
               </tbody>
             </table>

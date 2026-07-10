@@ -16,7 +16,12 @@ type WarehouseReportRpc = (
  * bin utilization, top congested nodes, and the latest simulation KPIs.
  */
 export async function getWarehouseReport(warehouseId: number): Promise<WarehouseReport> {
-  const rpc = (supabase.rpc as unknown as WarehouseReportRpc)
+  // `supabase.rpc` is a class method that reads `this.rest` internally —
+  // assigning it to a local const without `.bind` detaches it from its
+  // receiver, so `this` is undefined and the call throws a TypeError
+  // ("Cannot read properties of undefined (reading 'rest')") before any
+  // request is sent. Must stay bound.
+  const rpc = supabase.rpc.bind(supabase) as unknown as WarehouseReportRpc
   const { data, error } = await rpc('wie_warehouse_report', { p_warehouse_id: warehouseId })
   if (error) throw new Error(error.message)
   if (!data) throw new Error('Warehouse report returned no data')

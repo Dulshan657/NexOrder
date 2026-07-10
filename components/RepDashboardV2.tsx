@@ -17,6 +17,8 @@ import { getTodaysScheduledVisits } from '../services/scheduledVisitService';
 import { getHoReCaOutstanding } from '../services/accountingService';
 import { getVisitCompletionRate } from '../services/repProductivityService';
 import { computeTargetProjection } from '../services/targetProjectionService';
+import { classifyStock, lowStockThresholdFor } from '../lib/stockStatus';
+import { useSettings } from '../hooks/queries/useSettings';
 
 interface RepDashboardV2Props {
   currentUser: User;
@@ -44,6 +46,11 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
   const [showVisitModal, setShowVisitModal] = useState(false);
   const [visitHoReCaId, setVisitHoReCaId] = useState<number | null>(null);
   const [expandedStop, setExpandedStop] = useState<number | null>(null);
+
+  // Data source stays global (products.available) — this is a rep-facing
+  // surface, not warehouse-scoped. Only the threshold is configurable.
+  const { data: settings } = useSettings();
+  const globalThreshold = settings?.low_stock_threshold ?? 10;
 
   const myOrders = useMemo(() => orders.filter(o => o.submittedBy.id === currentUser.id), [orders, currentUser.id]);
 
@@ -133,8 +140,11 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
     // Products the rep frequently sells that are low/out of stock
     const repProductIds = new Set<number>();
     myOrders.forEach(o => o.items.forEach(item => repProductIds.add(item.id)));
-    return products.filter(p => repProductIds.has(p.id) && p.available <= 10);
-  }, [myOrders, products]);
+    return products.filter(p =>
+      repProductIds.has(p.id)
+      && classifyStock(p.available, lowStockThresholdFor(p, globalThreshold)) !== 'in_stock',
+    );
+  }, [myOrders, products, globalThreshold]);
 
   const actionColumns = useMemo((): ActionItemColumn[] => {
     const reorderItems: ActionItem[] = reorderPredictions.map(p => ({

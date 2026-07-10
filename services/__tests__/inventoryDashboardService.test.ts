@@ -81,6 +81,54 @@ describe('computeStockHealth', () => {
     );
     expect(result).toEqual({ inStock: 1, lowStock: 1, outOfStock: 1, total: 3 });
   });
+
+  it('classifies inventory <= 0 as out-of-stock (boundary preserved after refactor)', () => {
+    const result = computeStockHealth([makeProduct({ inventory: 0 }), makeProduct({ inventory: -1 })], 10);
+    expect(result.outOfStock).toBe(2);
+  });
+
+  it('classifies inventory == threshold as low stock (inclusive boundary preserved)', () => {
+    const result = computeStockHealth([makeProduct({ inventory: 10, reorderPoint: undefined })], 10);
+    expect(result.lowStock).toBe(1);
+    expect(result.inStock).toBe(0);
+  });
+
+  it('per-product reorderPoint still wins over the global threshold after the refactor', () => {
+    // Global threshold (2) would call this in-stock; the product's own reorderPoint (8) makes it low.
+    const result = computeStockHealth([makeProduct({ inventory: 5, reorderPoint: 8 })], 2);
+    expect(result.lowStock).toBe(1);
+    expect(result.inStock).toBe(0);
+  });
+
+  it('an injected onHandOf buckets the same product set differently than the global default', () => {
+    const products = [
+      makeProduct({ id: 1, inventory: 50 }), // globally in-stock
+      makeProduct({ id: 2, inventory: 0 }), // globally out-of-stock
+    ];
+
+    const globalResult = computeStockHealth(products, 10);
+    expect(globalResult).toEqual({ inStock: 1, lowStock: 0, outOfStock: 1, total: 2 });
+
+    // Scoped view: product 1 has none at this site, product 2 has plenty.
+    const scopedOnHand = new Map<number, number>([
+      [1, 0],
+      [2, 50],
+    ]);
+    const scopedResult = computeStockHealth(products, 10, (p) => scopedOnHand.get(p.id) ?? 0);
+    expect(scopedResult).toEqual({ inStock: 1, lowStock: 0, outOfStock: 1, total: 2 });
+    // Same total buckets, but the membership flipped: product 1 is now out, product 2 is now in.
+    expect(computeStockHealth([products[0]], 10, (p) => scopedOnHand.get(p.id) ?? 0).outOfStock).toBe(1);
+    expect(computeStockHealth([products[1]], 10, (p) => scopedOnHand.get(p.id) ?? 0).inStock).toBe(1);
+  });
+
+  it('still excludes inactive products when onHandOf is injected', () => {
+    const result = computeStockHealth(
+      [makeProduct({ id: 1, inventory: 999, isActive: false })],
+      10,
+      () => 999,
+    );
+    expect(result.total).toBe(0);
+  });
 });
 
 describe('computeDispatchFunnel', () => {

@@ -10,11 +10,13 @@
 // sizes its own map block (`h-[65vh]`) rather than requiring this page to
 // clamp itself to `100vh`.
 
-import React, { useMemo, useState } from 'react'
+import React, { useMemo } from 'react'
 import { LayoutGrid } from 'lucide-react'
 import type { User, Warehouse } from '@/types'
 import { useWarehouses } from '@/hooks/queries/useWarehouses'
 import { useLayouts } from '@/hooks/queries/useLayouts'
+import { useWarehouseScope } from '@/context/WarehouseScopeContext'
+import { WarehousePicker } from '@/components/inventory/WarehousePicker'
 import { RackedWorkspace } from './RackedWorkspace'
 import { WarehouseEmptyState } from './WarehouseEmptyState'
 import { KpiStrip } from './KpiStrip'
@@ -54,36 +56,21 @@ export function resolveDefaultWarehouse(
   return active[0]?.id ?? null
 }
 
-// Deep-link the selected warehouse via ?wh= so a refresh / shared link reopens it.
-function readInitialWarehouse(): number | null {
-  if (typeof window === 'undefined') return null
-  const v = new URLSearchParams(window.location.search).get('wh')
-  return v && /^\d+$/.test(v) ? Number(v) : null
-}
-
-function writeWarehouseToUrl(id: number | null): void {
-  if (typeof window === 'undefined') return
-  const url = new URL(window.location.href)
-  if (id != null) url.searchParams.set('wh', String(id))
-  else url.searchParams.delete('wh')
-  window.history.replaceState({}, '', url.toString())
-}
-
 const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesigner }) => {
   const { data: warehouses } = useWarehouses()
   const activeWarehouses = useMemo(() => (warehouses ?? []).filter((w) => w.isActive), [warehouses])
 
-  // selectedWarehouseId = the user's explicit pick (null until they choose or a
-  // ?wh= deep link seeds it). The effective id falls back to the smart default,
-  // which prefers a racked+published site so we land on the grid, not the list.
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState<number | null>(() => readInitialWarehouse())
+  // The Warehouse/Putaway tabs share one app-wide warehouse scope (see
+  // WarehouseScopeContext) so Stock/Products/Dashboard filters stay in sync
+  // with whatever site this tab is showing. But merely opening this tab must
+  // NOT clobber a shared 'all' scope for those other tabs — so when scope is
+  // 'all' we only *display* a smart local default (preferring a racked+
+  // published site so we land on the grid, not the list); we never call
+  // setScope for it. Explicitly picking a site via the selector below DOES
+  // write back to the shared scope — that's intended.
+  const { scope } = useWarehouseScope()
   const effectiveWarehouseId =
-    selectedWarehouseId ?? resolveDefaultWarehouse(warehouses ?? [], readInitialWarehouse(), currentUser.homeWarehouseId)
-
-  const pickWarehouse = (id: number | null) => {
-    setSelectedWarehouseId(id)
-    writeWarehouseToUrl(id)
-  }
+    scope !== 'all' ? scope : resolveDefaultWarehouse(warehouses ?? [], null, currentUser.homeWarehouseId)
 
   const selectedWarehouse = useMemo(
     () => activeWarehouses.find((w) => w.id === effectiveWarehouseId) ?? null,
@@ -105,18 +92,7 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
         </div>
         <label className="inline-flex items-center gap-2 text-sm text-stone-600">
           <span className="font-medium">Warehouse</span>
-          <select
-            value={effectiveWarehouseId ?? ''}
-            onChange={(e) => pickWarehouse(e.target.value ? Number(e.target.value) : null)}
-            className="text-sm rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
-          >
-            <option value="">Select a warehouse…</option>
-            {activeWarehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name} ({w.code})
-              </option>
-            ))}
-          </select>
+          <WarehousePicker showAllOption={false} effectiveId={effectiveWarehouseId ?? undefined} />
         </label>
       </div>
 

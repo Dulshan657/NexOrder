@@ -10,6 +10,7 @@ import {
   type TransferStockInput,
 } from '@/services/supabase/warehouseService'
 import { putawayKeys } from './putawayKeys'
+import { inventoryKeys } from './useInventoryBalances'
 
 export const warehouseKeys = {
   all: ['warehouses'] as const,
@@ -54,6 +55,12 @@ export function useTransferStock() {
     onSuccess: () => {
       // Balances + product caches shift on both sides of the move.
       qc.invalidateQueries({ queryKey: ['inventory'] })
+      // The line above is a latent no-op: TanStack Query matches keys by
+      // element-wise array prefix, and 'inventory' !== 'inventory_balances',
+      // so it has never matched useInventoryBalances/useProductStockByWarehouse.
+      // Without this, transfers only refreshed balances via the realtime
+      // channel. Keep the line above too, in case something else relies on it.
+      qc.invalidateQueries({ queryKey: inventoryKeys.balances })
       qc.invalidateQueries({ queryKey: ['products'] })
       qc.invalidateQueries({ queryKey: warehouseKeys.all })
       // transfer-stock also generates putaway tasks server-side at the
