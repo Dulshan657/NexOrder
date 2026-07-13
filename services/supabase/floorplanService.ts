@@ -114,6 +114,12 @@ export async function extractFloorplan(
   opts?: FloorplanExtractOptions,
 ): Promise<FloorplanExtractResult> {
   const { fidelity, grid, reconcile } = opts ?? {}
+  // High fidelity runs 2–3 sequential gpt-4o vision passes (and reconcile a
+  // further one), which routinely exceeds the global 20s fetch ceiling in
+  // lib/supabase.ts. Pass an explicit per-invoke timeout: functions-js attaches
+  // its own AbortSignal, which (by design) bypasses that 20s ceiling and enforces
+  // the correct longer bound instead.
+  const timeout = fidelity === 'high' ? 180_000 : 90_000
   const { data, error } = await supabase.functions.invoke<FloorplanExtractResult>('extract-floorplan', {
     body: {
       importId,
@@ -121,6 +127,7 @@ export async function extractFloorplan(
       ...(grid ? { gridWidth: grid.width, gridHeight: grid.height } : {}),
       ...(reconcile ? { reconcile } : {}),
     },
+    timeout,
   })
   if (error) throw error
   return data as FloorplanExtractResult

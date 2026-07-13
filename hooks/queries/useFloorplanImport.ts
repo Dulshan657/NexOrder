@@ -5,6 +5,7 @@
 
 import { useCallback, useState } from 'react'
 import { compressImage } from '@/lib/imageCompression'
+import { withTimeout } from '@/lib/withTimeout'
 import { computeGridDims, drawGridOverlay, renderDraftToBlob } from '@/lib/floorplanGridOverlay'
 import {
   requestUploadUrl,
@@ -25,6 +26,14 @@ export type ImportPhase =
   | 'refining'
   | 'done'
   | 'error'
+
+// Wall-clock bounds so a stalled call surfaces an error + retry instead of an
+// endless "Uploading…". These sit ABOVE supabase-js's own fetch handling — they
+// also catch a stall in the pre-fetch token step, which the global 20s fetch
+// ceiling (lib/supabase.ts) cannot reach. (Extraction is bounded separately, by
+// the per-invoke `timeout` in floorplanService — it legitimately runs for minutes.)
+const UPLOAD_URL_TIMEOUT_MS = 25_000
+const UPLOAD_PUT_TIMEOUT_MS = 45_000
 
 interface UseFloorplanImport {
   phase: ImportPhase
@@ -66,8 +75,16 @@ export function useFloorplanImport(warehouseId: number): UseFloorplanImport {
       const overlaid = await drawGridOverlay(compressed, grid.gridWidth, grid.gridHeight)
 
       setPhase('uploading')
-      const target = await requestUploadUrl(warehouseId, 'image/webp')
-      await uploadFloorplan(target, overlaid)
+      const target = await withTimeout(
+        requestUploadUrl(warehouseId, 'image/webp'),
+        UPLOAD_URL_TIMEOUT_MS,
+        'Preparing the upload took too long — check your connection and try again.',
+      )
+      await withTimeout(
+        uploadFloorplan(target, overlaid),
+        UPLOAD_PUT_TIMEOUT_MS,
+        'Uploading the image timed out — check your connection and try again.',
+      )
 
       setPhase('extracting')
       let extracted = await extractFloorplan(target.importId, {
@@ -89,8 +106,16 @@ export function useFloorplanImport(warehouseId: number): UseFloorplanImport {
             gridWidth: extracted.draft.gridWidth,
             gridHeight: extracted.draft.gridHeight,
           })
-          const reconcileTarget = await requestReconcileUploadUrl(target.importId)
-          await uploadFloorplan(reconcileTarget, renderBlob)
+          const reconcileTarget = await withTimeout(
+            requestReconcileUploadUrl(target.importId),
+            UPLOAD_URL_TIMEOUT_MS,
+            'Preparing the refinement upload took too long.',
+          )
+          await withTimeout(
+            uploadFloorplan(reconcileTarget, renderBlob),
+            UPLOAD_PUT_TIMEOUT_MS,
+            'Uploading the refinement render timed out.',
+          )
           extracted = await extractFloorplan(target.importId, {
             fidelity: 'high',
             grid: { width: grid.gridWidth, height: grid.gridHeight },
