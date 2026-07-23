@@ -1,20 +1,52 @@
 import { supabase } from '@/lib/supabase'
-import type { PutawayExplanation } from '@/types'
+import { toProduct } from '@/lib/adapters'
+import type { Product, PutawayExplanation } from '@/types'
 
-/** Lightweight view of a pending putaway recommendation for the queue UI. */
+/** The goods receipt a queued line arrived on, when it was created by a receipt
+ *  (adjustments and transfer-ins have none). */
+export interface PutawayReceiptRef {
+  id: number
+  reference: string | null
+  receivedDate: string | null
+  supplierName: string | null
+}
+
+/** A pending putaway recommendation, enriched enough for the queue UI to name
+ *  what's on the dock without the caller passing the product catalogue in.
+ *  `product` is null only if the join failed or the product was hard-deleted —
+ *  the UI falls back to `Product #<id>` for that case. */
 export interface PendingPutawayRow {
   id: number
   productId: number
   quantity: number
   recommendedLocationId: number | null
   explanation: PutawayExplanation
+  createdAt: string
+  product: Product | null
+  receipt: PutawayReceiptRef | null
+}
+
+// products is readable by every authenticated user; goods_receipts is readable
+// by Admin/Manager/Warehouse (goods_receipts_select_ops, mig 00037) — exactly
+// the roles that can open the Putaway tab, so this join never trips RLS here.
+const QUEUE_SELECT =
+  '*, products(*, product_uoms(*)), goods_receipts(id, reference, received_date, suppliers(name))'
+
+function toReceiptRef(row: any): PutawayReceiptRef | null {
+  if (!row) return null
+  return {
+    id: row.id,
+    reference: row.reference ?? null,
+    receivedDate: row.received_date ?? null,
+    supplierName: row.suppliers?.name ?? null,
+  }
 }
 
 /** Pending (status 'suggested') putaway recommendations for a warehouse, newest first. */
 export async function getPendingPutaways(warehouseId: number): Promise<PendingPutawayRow[]> {
   const { data, error } = await supabase
     .from('wie_putaway_recommendations')
-    .select('*')
+    .select(QUEUE_SELECT)
     .eq('warehouse_id', warehouseId)
     .eq('status', 'suggested')
     .order('created_at', { ascending: false })
@@ -22,9 +54,12 @@ export async function getPendingPutaways(warehouseId: number): Promise<PendingPu
   return (data ?? []).map((row: any) => ({
     id: row.id,
     productId: row.product_id,
-    quantity: row.quantity,
+    quantity: Number(row.quantity),
     recommendedLocationId: row.recommended_location_id ?? null,
     explanation: row.explanation as PutawayExplanation,
+    createdAt: row.created_at,
+    product: row.products ? toProduct(row.products) : null,
+    receipt: toReceiptRef(row.goods_receipts),
   }))
 }
 

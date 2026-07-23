@@ -1,0 +1,126 @@
+// One line in the putaway queue: what it is, how much, where it came from, and
+// where the engine wants it. Replaces a row that said only "Product #42".
+
+import React from 'react'
+import { Check, HelpCircle, MapPin, Package, RefreshCw } from 'lucide-react'
+import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
+import { formatRelative } from '@/components/admin/emailAccountFormat'
+import { PutawayExplanationCard } from '../PutawayExplanationCard'
+import { describeQuantity } from './putawayFormat'
+
+interface PutawayRowProps {
+  row: PendingPutawayRow
+  binCode: string | null
+  expanded: boolean
+  busy: boolean
+  onToggleExplanation: () => void
+  onAccept: () => void
+  onChooseBin: () => void
+  onRerun: () => void
+}
+
+// React.FC deliberately: this repo has no @types/react, so a plainly-typed
+// function component's JSX attributes are exactly its props — and `key`, which
+// the queue must pass when it maps rows, would be rejected. React.FC resolves to
+// `any` here and lets the special prop through.
+export const PutawayRow: React.FC<PutawayRowProps> = ({
+  row,
+  binCode,
+  expanded,
+  busy,
+  onToggleExplanation,
+  onAccept,
+  onChooseBin,
+  onRerun,
+}) => {
+  const { product, receipt } = row
+  const name = product?.name ?? `Product #${row.productId}`
+  const qty = describeQuantity(row.quantity, product)
+
+  const receiptBits = [receipt?.supplierName, receipt?.reference].filter(Boolean) as string[]
+
+  return (
+    <div className="px-4 py-3">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        {/* Identity */}
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          {product?.imageUrl ? (
+            <img
+              src={product.imageUrl}
+              alt=""
+              className="w-10 h-10 rounded-lg object-cover bg-stone-100 shrink-0"
+            />
+          ) : (
+            <div className="w-10 h-10 rounded-lg bg-stone-100 flex items-center justify-center shrink-0">
+              <Package className="w-4 h-4 text-stone-400" />
+            </div>
+          )}
+
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-stone-800 truncate">{name}</p>
+            <p className="text-xs text-stone-400 flex flex-wrap items-center gap-x-1.5">
+              {product?.sku && <span className="font-mono">{product.sku}</span>}
+              <span className="text-stone-700 tabular-nums">{qty.primary}</span>
+              {qty.secondary && <span className="text-stone-400">· {qty.secondary}</span>}
+            </p>
+            <p className="text-[11px] text-stone-400 mt-0.5 truncate">
+              {receiptBits.length > 0 ? receiptBits.join(' · ') : 'Not from a delivery'}
+              <span className="text-stone-300"> · waiting {formatRelative(row.createdAt)}</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Destination + actions */}
+        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+          <p className="text-xs">
+            {binCode ? (
+              <span className="font-mono text-emerald-600">{binCode}</span>
+            ) : (
+              <span className="text-amber-600">No eligible bin</span>
+            )}
+          </p>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onToggleExplanation}
+              className="p-1.5 rounded-lg hover:bg-stone-100 btn-press"
+              aria-label={`Why this bin for ${name}?`}
+            >
+              <HelpCircle className="w-4 h-4 text-stone-400" />
+            </button>
+            <button
+              onClick={onRerun}
+              disabled={busy}
+              className="p-1.5 rounded-lg hover:bg-stone-100 btn-press disabled:opacity-40"
+              aria-label={`Re-run the recommendation for ${name}`}
+              title="Ask the engine again"
+            >
+              <RefreshCw className="w-4 h-4 text-stone-400" />
+            </button>
+            <button
+              onClick={onChooseBin}
+              disabled={busy}
+              className="inline-flex items-center gap-1 text-xs px-2.5 py-1 border border-stone-200 text-stone-600 rounded-lg btn-press disabled:opacity-40"
+            >
+              <MapPin className="w-3.5 h-3.5" /> Choose bin
+            </button>
+            <button
+              onClick={onAccept}
+              disabled={!row.recommendedLocationId || busy}
+              className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-40"
+            >
+              <Check className="w-3.5 h-3.5" /> Accept
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="mt-3 pl-1">
+          <PutawayExplanationCard explanation={row.explanation} />
+        </div>
+      )}
+    </div>
+  )
+}
+

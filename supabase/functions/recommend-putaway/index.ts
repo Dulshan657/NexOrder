@@ -28,6 +28,10 @@ const inputSchema = z.object({
   // persist a wie_putaway_recommendations row, so nothing leaks into the
   // operational Putaway queue and no stock can ever be moved from it.
   dry_run: z.boolean().optional(),
+  // Re-run: the pending recommendation these new lines replace. It is expired
+  // as part of the same request so a re-run can never leave two live rows
+  // competing to move the same stock off the dock.
+  replaces_recommendation_id: z.number().int().positive().optional(),
   lines: z.array(z.object({
     product_id: z.number().int().positive(),
     quantity: z.number().positive(),
@@ -48,7 +52,10 @@ serve(async (req: Request) => {
     })
     const parsed = inputSchema.safeParse(body)
     if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
-    const { warehouse_id, goods_receipt_id, dry_run, lines } = parsed.data
+    const { warehouse_id, goods_receipt_id, dry_run, lines, replaces_recommendation_id } = parsed.data
+    if (replaces_recommendation_id !== undefined && dry_run) {
+      throw new EdgeFunctionError('INVALID_INPUT', 'A dry run cannot replace a recommendation')
+    }
 
     if (auth.role === 'Warehouse' && auth.profile.home_warehouse_id !== warehouse_id) {
       throw new EdgeFunctionError('FORBIDDEN', 'You can only put away stock at your own warehouse')
@@ -57,6 +64,23 @@ serve(async (req: Request) => {
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
       auth: { persistSession: false },
     })
+
+    // Expire the row being replaced BEFORE generating, so the queue is never
+    // briefly showing both. If generation then fails we put it back — the same
+    // compensating pattern decide-putaway used before mig 00071 folded its two
+    // steps into one transaction.
+    if (replaces_recommendation_id !== undefined) {
+      const { data: claimed, error: claimErr } = await admin.from('wie_putaway_recommendations')
+        .update({ status: 'expired', decided_at: new Date().toISOString(), actor_id: auth.userId })
+        .eq('id', replaces_recommendation_id)
+        .eq('warehouse_id', warehouse_id)
+        .eq('status', 'suggested')
+        .select('id').maybeSingle()
+      if (claimErr) throw new EdgeFunctionError('INTERNAL', `re-run claim failed: ${claimErr.message}`)
+      if (!claimed) {
+        throw new EdgeFunctionError('CONFLICT', 'That recommendation is no longer pending — refresh the queue')
+      }
+    }
 
     let result
     try {
@@ -68,10 +92,24 @@ serve(async (req: Request) => {
         dryRun: dry_run,
       })
     } catch (e) {
+      if (replaces_recommendation_id !== undefined) {
+        await admin.from('wie_putaway_recommendations')
+          .update({ status: 'suggested', decided_at: null })
+          .eq('id', replaces_recommendation_id)
+      }
       throw new EdgeFunctionError('INTERNAL', e instanceof Error ? e.message : 'putaway generation failed')
     }
 
     if (result.mode === 'legacy') {
+      // No published layout (it was archived since the row was created). Legacy
+      // mode persists nothing, so expiring the old row would silently drop work
+      // off the queue — put it back and say why.
+      if (replaces_recommendation_id !== undefined) {
+        await admin.from('wie_putaway_recommendations')
+          .update({ status: 'suggested', decided_at: null })
+          .eq('id', replaces_recommendation_id)
+        throw new EdgeFunctionError('CONFLICT', 'This warehouse has no published layout — nothing to re-run against')
+      }
       return new Response(JSON.stringify({ ok: true, mode: 'legacy' }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })

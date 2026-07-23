@@ -2,11 +2,16 @@
 //
 // Close out a putaway recommendation: accept the suggested bin or override to
 // another, then move the received stock from the warehouse ROOT (un-put-away
-// staging) into the chosen bin via the existing inv_transfer_stock RPC. The
-// recommendation row is marked accepted/overridden for the audit trail. Re-
-// evaluation (picking a fresh recommendation that excludes a bin) is done by
-// simply calling recommend-putaway again, so this function stays focused on the
-// commit step.
+// staging) into the chosen bin. The recommendation row is marked
+// accepted/overridden for the audit trail. Re-evaluation (picking a fresh
+// recommendation that excludes a bin) is done by calling recommend-putaway with
+// `replaces_recommendation_id`, so this function stays focused on the commit step.
+//
+// An optional `quantity` puts away PART of a line (a pallet that physically
+// split across two bays): the decided portion becomes its own audit row and the
+// remainder stays in the queue. The claim, the split and the stock move all
+// happen inside wie_decide_putaway_tx (mig 00071) so a failed transfer rolls the
+// decision back instead of needing a compensating write from here.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -24,9 +29,31 @@ const inputSchema = z.object({
   recommendation_id: z.number().int().positive(),
   decision: z.enum(['accept', 'override']),
   chosen_location_id: z.number().int().positive().optional(),
+  // Partial putaway. Omitted = the whole remaining quantity.
+  quantity: z.number().positive().optional(),
 }).refine((d) => d.decision !== 'override' || d.chosen_location_id !== undefined, {
   message: 'override requires chosen_location_id',
 })
+
+// wie_decide_putaway_tx raises P0001 with a `CODE: message` prefix. Map the ones
+// the operator can act on so the UI shows "already decided" rather than a 500.
+const PG_ERROR_CODES: ReadonlyArray<['NOT_FOUND' | 'CONFLICT' | 'INVALID_INPUT', string]> = [
+  ['NOT_FOUND', 'NOT_FOUND:'],
+  ['CONFLICT', 'CONFLICT:'],
+  ['INVALID_INPUT', 'INVALID_QTY:'],
+  ['INVALID_INPUT', 'INVALID_INPUT:'],
+  ['INVALID_INPUT', 'INVALID_DECISION:'],
+  ['CONFLICT', 'INSUFFICIENT_STOCK:'],
+]
+
+function rpcError(message: string): EdgeFunctionError {
+  for (const [code, prefix] of PG_ERROR_CODES) {
+    if (message.includes(prefix)) {
+      return new EdgeFunctionError(code, message.slice(message.indexOf(prefix) + prefix.length).trim())
+    }
+  }
+  return new EdgeFunctionError('INTERNAL', `putaway failed: ${message}`)
+}
 
 serve(async (req: Request) => {
   const corsHeaders = corsHeadersFor(req)
@@ -42,7 +69,7 @@ serve(async (req: Request) => {
     })
     const parsed = inputSchema.safeParse(body)
     if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
-    const { recommendation_id, decision, chosen_location_id } = parsed.data
+    const { recommendation_id, decision, chosen_location_id, quantity } = parsed.data
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
       auth: { persistSession: false },
@@ -63,6 +90,16 @@ serve(async (req: Request) => {
     const chosen = decision === 'accept' ? ((rec as any).recommended_location_id as number | null) : chosen_location_id!
     if (chosen == null) {
       throw new EdgeFunctionError('INVALID_INPUT', 'No recommended bin to accept — choose a bin instead')
+    }
+
+    // Fail fast with a legible message; wie_decide_putaway_tx re-checks this
+    // under its row lock, which is what actually makes it safe.
+    const remaining = Number((rec as any).quantity)
+    if (quantity !== undefined && quantity > remaining) {
+      throw new EdgeFunctionError(
+        'INVALID_INPUT',
+        `Only ${remaining} left on this recommendation — can't put away ${quantity}`,
+      )
     }
 
     // The chosen bin must be active and belong to this warehouse.
@@ -87,44 +124,51 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError('CONFLICT', 'The layout changed since this recommendation — re-run it')
     }
 
-    // Claim the recommendation BEFORE moving stock so concurrent accepts can't
-    // double-transfer. The status guard makes the claim atomic; only the winner
-    // proceeds to the (irreversible) move.
-    const { data: claimed, error: claimErr } = await admin.from('wie_putaway_recommendations').update({
-      status: decision === 'accept' ? 'accepted' : 'overridden',
-      chosen_location_id: chosen,
-      decided_at: new Date().toISOString(),
-      actor_id: auth.userId,
-    }).eq('id', recommendation_id).eq('status', 'suggested').select().single()
-    if (claimErr || !claimed) {
-      throw new EdgeFunctionError('CONFLICT', 'Recommendation already decided')
+    // Claim + (optional) split + stock move, all in ONE transaction (mig 00071).
+    // The function's SELECT … FOR UPDATE is what stops two operators
+    // double-transferring the same recommendation, and a failed move rolls the
+    // decision back with it — nothing to compensate for from out here.
+    const { data: result, error: txErr } = await admin.rpc('wie_decide_putaway_tx', {
+      p_rec_id: recommendation_id,
+      p_decision: decision,
+      p_chosen: chosen,
+      p_qty: quantity ?? null,
+      p_actor: auth.userId,
+    })
+    if (txErr) throw rpcError(txErr.message)
+
+    const decided = result as {
+      decided_id: number
+      remainder_id: number | null
+      remainder_qty: number
+      moved: unknown
     }
 
-    // Move stock from the warehouse root (staging) into the chosen bin. If the
-    // move fails, release the claim so the operator can retry.
-    const { data: moved, error: mErr } = await admin.rpc('inv_transfer_stock', {
-      p_product_id: (rec as any).product_id,
-      p_from_loc: warehouseId,
-      p_to_loc: chosen,
-      p_qty: (rec as any).quantity,
-      p_actor: auth.userId,
-      p_reason: `putaway:${decision}`,
-    })
-    if (mErr) {
-      await admin.from('wie_putaway_recommendations').update({
-        status: 'suggested', chosen_location_id: null, decided_at: null,
-      }).eq('id', recommendation_id)
-      throw new EdgeFunctionError('INTERNAL', `putaway move failed: ${mErr.message}`)
-    }
-    const updated = claimed
+    // Read the decided row back for the audit trail. With a partial putaway
+    // that's the NEW copy, not the row the operator clicked.
+    const { data: updated } = await admin.from('wie_putaway_recommendations')
+      .select('*').eq('id', decided.decided_id).single()
 
     await logAuditEvent(admin, {
       actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'wie_putaway_recommendations',
-      resourceId: String(recommendation_id), after: updated as Record<string, unknown>,
-      metadata: { decision, chosen_location_id: chosen, moved },
+      resourceId: String(decided.decided_id), after: (updated ?? {}) as Record<string, unknown>,
+      metadata: {
+        decision,
+        chosen_location_id: chosen,
+        quantity: quantity ?? remaining,
+        remainder_qty: decided.remainder_qty,
+        source_recommendation_id: recommendation_id,
+        moved: decided.moved,
+      },
     })
 
-    return new Response(JSON.stringify({ ok: true, moved, recommendation: updated }), {
+    return new Response(JSON.stringify({
+      ok: true,
+      moved: decided.moved,
+      recommendation: updated,
+      remainder_id: decided.remainder_id,
+      remainder_qty: decided.remainder_qty,
+    }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (e) {

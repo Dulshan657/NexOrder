@@ -18,6 +18,10 @@ export async function recommendPutaway(
   lines: PutawayLineInput[],
   goodsReceiptId?: number,
   dryRun?: boolean,
+  /** Re-run: the pending recommendation these lines replace. The server expires
+   *  it in the same request, so the queue never shows two live rows for the
+   *  same stock. */
+  replacesRecommendationId?: number,
 ): Promise<PutawayResponse> {
   const { data, error } = await supabase.functions.invoke<{
     ok: true
@@ -25,7 +29,13 @@ export async function recommendPutaway(
     layout_id?: number
     recommendations?: PutawayLineRecommendation[]
   }>('recommend-putaway', {
-    body: { warehouse_id: warehouseId, lines, goods_receipt_id: goodsReceiptId, dry_run: dryRun },
+    body: {
+      warehouse_id: warehouseId,
+      lines,
+      goods_receipt_id: goodsReceiptId,
+      dry_run: dryRun,
+      replaces_recommendation_id: replacesRecommendationId,
+    },
   })
   if (error) throw error
   if (!data || data.mode === 'legacy') return { mode: 'legacy' }
@@ -36,15 +46,28 @@ export interface DecidePutawayInput {
   recommendationId: number
   decision: 'accept' | 'override'
   chosenLocationId?: number
+  /** Base units to put away. Omitted = the whole remaining quantity; anything
+   *  less leaves the remainder queued (mig 00071). */
+  quantity?: number
 }
 
-export async function decidePutaway(input: DecidePutawayInput): Promise<void> {
-  const { error } = await supabase.functions.invoke('decide-putaway', {
+export interface DecidePutawayResult {
+  /** Base units still queued on the original recommendation after a partial. */
+  remainderQty: number
+}
+
+export async function decidePutaway(input: DecidePutawayInput): Promise<DecidePutawayResult> {
+  const { data, error } = await supabase.functions.invoke<{
+    ok: true
+    remainder_qty?: number
+  }>('decide-putaway', {
     body: {
       recommendation_id: input.recommendationId,
       decision: input.decision,
       chosen_location_id: input.chosenLocationId,
+      quantity: input.quantity,
     },
   })
   if (error) throw error
+  return { remainderQty: Number(data?.remainder_qty ?? 0) }
 }
