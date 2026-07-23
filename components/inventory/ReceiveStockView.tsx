@@ -8,6 +8,7 @@ import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import type { ReceiptHeader, ReceiptLine } from '../../services/supabase/receivingService';
 import { useToasts } from '../../hooks/useToasts';
 import { receivableUoms, deriveDefaultUoms, baseUom } from '../../lib/uom';
+import { productsForSupplier, supplierSkuFor, matchesProductQuery } from '../../lib/productSuppliers';
 import { PutawayPanel } from './PutawayPanel';
 import {
   PackagePlus, Plus, Trash2, Search, X, Boxes, History, Clock,
@@ -197,7 +198,6 @@ interface DraftLine {
   lotCode: string;
   expiryDate: string;
   barcode: string;
-  supplierId: number | null; // per-line override; null = use the header supplier
 }
 
 let draftSeq = 0;
@@ -209,7 +209,6 @@ const newDraft = (): DraftLine => ({
   lotCode: '',
   expiryDate: '',
   barcode: '',
-  supplierId: null,
 });
 
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
@@ -300,17 +299,39 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
     return m;
   }, [products]);
 
+  // A delivery only ever contains the delivering supplier's items, so once an
+  // EXISTING supplier is picked the picker narrows to their catalogue (mig
+  // 00070). The narrowing is soft: `showAllProducts` widens it back, because a
+  // product whose supplier link hasn't been set up yet must never block a
+  // receipt. supplierId is null both before a pick and for a typed-but-not-yet-
+  // created supplier — exactly the cases that should still show everything.
+  const [showAllProducts, setShowAllProducts] = useState(false);
+  const isFiltered = supplierId != null && !showAllProducts;
+
+  // Reset the widening whenever the supplier changes — "show all" is a
+  // per-delivery escape hatch, not a sticky preference.
+  useEffect(() => { setShowAllProducts(false); }, [supplierId]);
+
+  const supplierProducts = useMemo(
+    () => (supplierId != null ? productsForSupplier(products, supplierId) : products),
+    [products, supplierId],
+  );
+
+  const searchPool = isFiltered ? supplierProducts : products;
+
   const searchResults = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [];
-    return products
-      .filter(p =>
-        p.name.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q) ||
-        (p.barcode ?? '').toLowerCase().includes(q),
-      )
-      .slice(0, 8);
-  }, [products, search]);
+    return searchPool.filter(p => matchesProductQuery(p, q, supplierId)).slice(0, 8);
+  }, [searchPool, search, supplierId]);
+
+  // Only computed when the filtered search came up empty, to offer a one-click
+  // widen instead of a dead end.
+  const wouldMatchOutsideSupplier = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q || !isFiltered || searchResults.length > 0) return false;
+    return products.some(p => matchesProductQuery(p, q, supplierId));
+  }, [products, search, isFiltered, searchResults.length, supplierId]);
 
   const addProduct = (product: Product) => {
     setPicked(prev => [...prev, { ...newDraft(), productId: product.id }]);
@@ -355,7 +376,6 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       ...(l.lotCode.trim() ? { lot_code: l.lotCode.trim() } : {}),
       ...(l.expiryDate ? { expiry_date: l.expiryDate } : {}),
       ...(l.barcode.trim() ? { barcode: l.barcode.trim() } : {}),
-      ...(l.supplierId != null ? { supplier_id: l.supplierId } : {}),
     }));
     try {
       const result = await receive.mutateAsync({ header, lines });
@@ -485,33 +505,87 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       </div>
 
       {/* Product search */}
-      <div className="relative max-w-xl">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search a product by name, SKU, or barcode to add a line…"
-          className="w-full pl-10 pr-9 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
-        />
-        {search && (
-          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer">
-            <X className="w-4 h-4" />
-          </button>
+      <div className="max-w-xl space-y-1.5">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            aria-label="Search products"
+            placeholder={
+              isFiltered
+                ? `Search ${supplierName}’s products by name, SKU, or their part no.…`
+                : 'Search a product by name, SKU, or barcode to add a line…'
+            }
+            className="w-full pl-10 pr-9 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          {searchResults.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-card overflow-hidden">
+              {searchResults.map(p => {
+                const theirSku = supplierSkuFor(p, supplierId);
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => addProduct(p)}
+                    className="flex items-center justify-between gap-3 w-full px-4 py-2.5 text-left hover:bg-stone-50 btn-press"
+                  >
+                    <span className="text-sm text-stone-800 truncate">{p.name}</span>
+                    <span className="text-xs text-stone-400 font-mono shrink-0">
+                      {theirSku ? `${theirSku} · ` : ''}{p.sku}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Scope hint — which catalogue is being searched, and how to widen it. */}
+        {supplierId != null && (
+          <p className="text-xs text-stone-400">
+            {isFiltered ? (
+              <>
+                Showing {supplierProducts.length} product{supplierProducts.length === 1 ? '' : 's'} from{' '}
+                <span className="text-stone-500">{supplierName}</span>.{' '}
+                <button
+                  type="button"
+                  onClick={() => setShowAllProducts(true)}
+                  className="text-nexgen-blue hover:underline cursor-pointer"
+                >
+                  Show all products
+                </button>
+              </>
+            ) : (
+              <>
+                Showing all products.{' '}
+                <button
+                  type="button"
+                  onClick={() => setShowAllProducts(false)}
+                  className="text-nexgen-blue hover:underline cursor-pointer"
+                >
+                  Only {supplierName}’s products
+                </button>
+              </>
+            )}
+          </p>
         )}
-        {searchResults.length > 0 && (
-          <div className="absolute z-10 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-card overflow-hidden">
-            {searchResults.map(p => (
-              <button
-                key={p.id}
-                onClick={() => addProduct(p)}
-                className="flex items-center justify-between w-full px-4 py-2.5 text-left hover:bg-stone-50 btn-press"
-              >
-                <span className="text-sm text-stone-800">{p.name}</span>
-                <span className="text-xs text-stone-400 font-mono">{p.sku}</span>
-              </button>
-            ))}
-          </div>
+        {wouldMatchOutsideSupplier && (
+          <p className="text-xs text-amber-600">
+            No match in {supplierName}’s products.{' '}
+            <button
+              type="button"
+              onClick={() => setShowAllProducts(true)}
+              className="font-medium hover:underline cursor-pointer"
+            >
+              Search all products
+            </button>
+          </p>
         )}
       </div>
 
@@ -538,7 +612,6 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Lot code</th>
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Expiry</th>
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Barcode</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-44">Supplier</th>
                   <th scope="col" className="px-4 py-3 w-10"></th>
                 </tr>
               </thead>
@@ -549,7 +622,14 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                     <tr key={line.key} className="hover:bg-stone-50/50">
                       <td className="px-4 py-3">
                         <p className="text-sm font-medium text-stone-900">{product?.name ?? '—'}</p>
-                        <p className="text-xs text-stone-400 font-mono">{product?.sku}</p>
+                        <p className="text-xs text-stone-400 font-mono">
+                          {product?.sku}
+                          {/* The supplier's own part number, so the line can be
+                              ticked off against their docket. */}
+                          {product && supplierSkuFor(product, supplierId)
+                            ? ` · their ${supplierSkuFor(product, supplierId)}`
+                            : ''}
+                        </p>
                       </td>
                       <td className="px-4 py-3">
                         <input
@@ -620,23 +700,6 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                           className="w-full px-2 py-1.5 font-mono text-sm bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
                           placeholder="optional"
                         />
-                      </td>
-                      <td className="px-4 py-3">
-                        <select
-                          value={line.supplierId ?? ''}
-                          onChange={e =>
-                            updateLine(line.key, {
-                              supplierId: e.target.value ? Number(e.target.value) : null,
-                            })
-                          }
-                          aria-label="Line supplier override"
-                          className="w-full px-2 py-1.5 text-sm bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
-                        >
-                          <option value="">Use header supplier</option>
-                          {suppliers.map((s) => (
-                            <option key={s.id} value={s.id}>{s.name}</option>
-                          ))}
-                        </select>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button

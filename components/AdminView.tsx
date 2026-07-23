@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { UserRole, User, Product, HoReCa, Supplier, Order, AppSettings, Invoice, OrderStatus, SalesTarget, Promotion, Visit, ScheduledVisit } from '../types';
+import { UserRole, User, Product, ProductSupplierLink, HoReCa, Supplier, Order, AppSettings, Invoice, OrderStatus, SalesTarget, Promotion, Visit, ScheduledVisit } from '../types';
 import { LoadingSkeleton } from './Skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
@@ -40,6 +40,8 @@ interface AdminViewProps {
     onAddProduct: (product: Omit<Product, 'id' | 'inventory'>) => Promise<void>;
     onUpdateProduct: (product: Product) => Promise<void>;
     onDeleteProduct: (productId: number) => void;
+    /** Replace one product's supplier links (mig 00070) — Suppliers → Products panel. */
+    onSaveProductSupplierLinks: (productId: number, links: ProductSupplierLink[]) => Promise<void>;
     onAddHoReCa: (customer: Omit<HoReCa, 'id'>, reason?: string) => void;
     onUpdateHoReCa: (customer: HoReCa, reason?: string) => void;
     onDeleteHoReCa: (hoReCaId: number) => void;
@@ -125,7 +127,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                     <WalkInReviewTab hoReCas={props.hoReCas} users={props.users} currentUser={props.currentUser} addToast={props.addToast} />
                 )}
                 {props.activeTab === 'Users' && props.currentUser.role === UserRole.ADMIN && <UserAdmin users={props.users} onAddUser={props.onAddUser} onUpdateUser={props.onUpdateUser} onDeleteUser={props.onDeleteUser} />}
-                {props.activeTab === 'Suppliers' && props.currentUser.role === UserRole.ADMIN && <SupplierAdmin suppliers={props.suppliers} onAddSupplier={props.onAddSupplier} onUpdateSupplier={props.onUpdateSupplier} onDeleteSupplier={props.onDeleteSupplier} />}
+                {props.activeTab === 'Suppliers' && props.currentUser.role === UserRole.ADMIN && <SupplierAdmin suppliers={props.suppliers} products={props.products} onAddSupplier={props.onAddSupplier} onUpdateSupplier={props.onUpdateSupplier} onDeleteSupplier={props.onDeleteSupplier} onSaveProductSupplierLinks={props.onSaveProductSupplierLinks} />}
                 {props.activeTab === 'Settings' && props.currentUser.role === UserRole.ADMIN && (
                     <SettingsView
                         hoReCas={props.hoReCas}

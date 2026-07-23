@@ -564,6 +564,42 @@ export type Database = {
         }
         Relationships: []
       }
+      product_suppliers: {
+        Row: {
+          id: number
+          product_id: number
+          supplier_id: number
+          supplier_sku: string | null
+          cost_price: number | null
+          is_primary: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          product_id: number
+          supplier_id: number
+          supplier_sku?: string | null
+          cost_price?: number | null
+          is_primary?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          product_id?: number
+          supplier_id?: number
+          supplier_sku?: string | null
+          cost_price?: number | null
+          is_primary?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       sales_targets: {
         Row: {
           id: string
@@ -1661,6 +1697,10 @@ export type Database = {
       }
       set_product_uoms: {
         Args: { p_product_id: number; p_uoms: Json }
+        Returns: undefined
+      }
+      set_product_suppliers: {
+        Args: { p_product_id: number; p_links: Json }
         Returns: undefined
       }
     }

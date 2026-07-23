@@ -30,6 +30,9 @@ type ValidRowResult = Extract<RowResult, { ok: true }>;
 
 const TEMPLATE_HEADERS = [
   'sku', 'name', 'description', 'price', 'category', 'unit', 'supplier_name',
+  // Multi-supplier columns (mig 00070), both ';'-delimited and optional.
+  // `supplier_skus` is positional over [supplier_name, ...additional_suppliers].
+  'additional_suppliers', 'supplier_skus',
   'carton_size', 'cubic_meters_unit', 'cubic_meters_carton', 'length_cm',
   'width_cm', 'height_cm', 'size_factor', 'image_url',
 ];
@@ -115,7 +118,8 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
       const result = validateCatalogRow(stripRowId(rec), ctx);
       if (result.ok) {
         valid++;
-        if (result.supplierWillBeCreated) creatingSuppliers.add(result.supplierName);
+        // Counts every new supplier on the row, primary or additional.
+        for (const name of result.newSupplierNames) creatingSuppliers.add(name);
       } else {
         invalid++;
       }
@@ -127,7 +131,10 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
     const sampleSupplier = suppliers[0]?.name ?? 'Example Supplier';
     const sampleRow = [
       'AYM-EXAMPLE-001', 'Example Product', 'Optional description', '9.99', 'Other', 'each',
-      sampleSupplier, '12', '0.0010', '0.0120', '10', '10', '10', '1', '',
+      sampleSupplier,
+      // e.g. "Beta Foods;Gamma Trading" with part numbers lined up per supplier.
+      '', '',
+      '12', '0.0010', '0.0120', '10', '10', '10', '1', '',
     ];
     downloadCsv(TEMPLATE_HEADERS, [sampleRow], 'product-import-template.csv');
   };
@@ -198,6 +205,8 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-stone-500">
             Upload a CSV of products to create in bulk. Unknown suppliers are created automatically.
+            For an item you buy from several suppliers, list the others in <code className="font-mono">additional_suppliers</code> (separated by <code className="font-mono">;</code>)
+            and their part numbers in <code className="font-mono">supplier_skus</code>, in the same order.
           </p>
           <button
             type="button"

@@ -18,7 +18,7 @@ import type {
   WarehouseLayout, LayoutPlacement, LayoutObject, ZoneProfile, StorageType,
   WieRule, WieRuleDefinition, ProductWmsAttributes, CategoryCompatibility,
   WieScoringProfile, WieScoringWeights, SlottingSuggestion,
-  WieProductVelocity, WieLocationTraffic, ProductUom,
+  WieProductVelocity, WieLocationTraffic, ProductUom, ProductSupplierLink,
 } from '@/types'
 import { sortUoms } from './uom'
 import type { Database } from './database.types'
@@ -97,8 +97,39 @@ export function fromProductUom(u: ProductUom): Record<string, unknown> {
   }
 }
 
+type ProductSupplierRow = Database['public']['Tables']['product_suppliers']['Row']
+
+export function toProductSupplier(
+  row: ProductSupplierRow & { suppliers?: { name: string } | null },
+): ProductSupplierLink {
+  return {
+    supplierId: row.supplier_id,
+    supplierName: row.suppliers?.name ?? undefined,
+    supplierSku: row.supplier_sku ?? undefined,
+    costPrice: row.cost_price != null ? Number(row.cost_price) : undefined,
+    isPrimary: row.is_primary,
+    sortOrder: row.sort_order,
+  }
+}
+
+export function fromProductSupplier(l: ProductSupplierLink): Record<string, unknown> {
+  return {
+    supplier_id: l.supplierId,
+    // Null means "no part number" — send it explicitly so clearing one on edit
+    // actually clears it (the RPC writes EXCLUDED.supplier_sku).
+    supplier_sku: l.supplierSku ?? null,
+    cost_price: l.costPrice ?? null,
+    is_primary: l.isPrimary,
+    sort_order: l.sortOrder,
+  }
+}
+
 export function toProduct(
-  row: ProductRow & { suppliers?: { name: string } | null; product_uoms?: ProductUomRow[] | null },
+  row: ProductRow & {
+    suppliers?: { name: string } | null
+    product_uoms?: ProductUomRow[] | null
+    product_suppliers?: Array<ProductSupplierRow & { suppliers?: { name: string } | null }> | null
+  },
 ): Product {
   return {
     id: row.id,
@@ -134,7 +165,22 @@ export function toProduct(
     // Embedded UOM list (mig 00067), sorted. Absent on rows read without the
     // product_uoms(*) join — callers fall back to deriveDefaultUoms.
     uoms: row.product_uoms ? sortUoms(row.product_uoms.map(toProductUom)) : undefined,
+    // Embedded supplier links (mig 00070), primary first then by sortOrder.
+    // Absent on rows read without the product_suppliers(*) join — callers fall
+    // back to linksForProduct, which synthesises one from supplier_id.
+    suppliers: row.product_suppliers
+      ? sortSupplierLinks(row.product_suppliers.map(toProductSupplier))
+      : undefined,
   }
+}
+
+/** Primary link first, then ascending sortOrder, then supplier id (stable). */
+function sortSupplierLinks(links: ProductSupplierLink[]): ProductSupplierLink[] {
+  return [...links].sort((a, b) =>
+    Number(b.isPrimary) - Number(a.isPrimary) ||
+    a.sortOrder - b.sortOrder ||
+    a.supplierId - b.supplierId,
+  )
 }
 
 export function fromProduct(p: Partial<Product>): Record<string, unknown> {
@@ -168,6 +214,9 @@ export function fromProduct(p: Partial<Product>): Record<string, unknown> {
   if (p.sizeFactor !== undefined) row.size_factor = p.sizeFactor
   // UOM list (mig 00067) — mutate-product validates + persists via set_product_uoms.
   if (p.uoms !== undefined) row.uoms = p.uoms.map(fromProductUom)
+  // Supplier links (mig 00070) — mutate-product validates + persists via
+  // set_product_suppliers, which also syncs the supplier_id cache.
+  if (p.suppliers !== undefined) row.product_suppliers = p.suppliers.map(fromProductSupplier)
   return row
 }
 

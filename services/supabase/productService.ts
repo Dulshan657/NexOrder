@@ -10,17 +10,24 @@ type ProductUpdate = Database['public']['Tables']['products']['Update']
 // types (empty Relationships[]), so PostgREST types it as SelectQueryError.
 // Re-assert the real runtime shape that the `toProduct` adapter expects.
 type ProductUomRow = Database['public']['Tables']['product_uoms']['Row']
+type ProductSupplierRow = Database['public']['Tables']['product_suppliers']['Row']
 type ProductRowWithSupplier = ProductRow & {
   suppliers: { name: string } | null
   product_uoms: ProductUomRow[] | null
+  product_suppliers: Array<ProductSupplierRow & { suppliers: { name: string } | null }> | null
 }
+
+// products → product_suppliers has a single FK, so that embed needs no pinning;
+// the nested suppliers(name) resolves against product_suppliers.supplier_id.
+const PRODUCT_SELECT =
+  '*, suppliers!products_supplier_id_fkey(name), product_uoms(*), product_suppliers(*, suppliers(name))'
 
 export async function getProducts() {
   const { data, error } = await supabase
     .from('products')
     // products now has two FKs to suppliers (supplier_id + preferred_supplier_id),
     // so the embed must pin the relationship or PostgREST errors with PGRST201.
-    .select('*, suppliers!products_supplier_id_fkey(name), product_uoms(*)')
+    .select(PRODUCT_SELECT)
     .order('name')
   if (error) throw error
   return (data ?? []) as unknown as ProductRowWithSupplier[]
@@ -29,7 +36,7 @@ export async function getProducts() {
 export async function getProductById(id: number) {
   const { data, error } = await supabase
     .from('products')
-    .select('*, suppliers!products_supplier_id_fkey(name), product_uoms(*)')
+    .select(PRODUCT_SELECT)
     .eq('id', id)
     .single()
   if (error) throw error

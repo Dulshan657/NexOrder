@@ -28,6 +28,11 @@ import {
   type RawBulkRow,
 } from '../_shared/productBulk.ts'
 import { validateUoms, deriveDefaultUomInputs, type UomInput } from '../_shared/uomValidation.ts'
+import {
+  validateProductSuppliers,
+  deriveDefaultSupplierLinks,
+  type ProductSupplierInput,
+} from '../_shared/productSupplierValidation.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -52,9 +57,21 @@ const uomSchema = z.object({
   cubic_meters: z.number().min(0).nullable().optional(),
 })
 
+// One product↔supplier link (mig 00070). Field-level shape only; the cross-row
+// rules (at most one primary, no duplicate supplier) live in
+// validateProductSuppliers.
+const productSupplierSchema = z.object({
+  supplier_id: z.number().int().positive(),
+  supplier_sku: z.string().max(120).nullable().optional(),
+  cost_price: z.number().min(0).nullable().optional(),
+  is_primary: z.boolean().optional().default(false),
+  sort_order: z.number().int().optional().default(0),
+})
+
 // Shared body — inventory is never accepted (stripped silently)
 const productBodySchema = z.object({
   uoms: z.array(uomSchema).min(1).optional(),
+  product_suppliers: z.array(productSupplierSchema).min(1).optional(),
   sku: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
@@ -91,10 +108,15 @@ const productCreateBodySchema = productBodySchema.extend({
 // instead (resolved/created server-side, see resolveSupplierByName). Exactly
 // one of the two must be present per row.
 const bulkProductRow = productCreateBodySchema
-  .omit({ supplier_id: true })
+  .omit({ supplier_id: true, product_suppliers: true })
   .extend({
     supplier_id: z.number().int().positive().optional(),
     supplier_name: z.string().min(1).max(200).optional(),
+    // Extra suppliers by name (mig 00070) — resolved/created server-side in the
+    // same batched pass as supplier_name. Part numbers are positional over
+    // [primary, ...additional]; see buildBulkSupplierLinks.
+    additional_suppliers: z.array(z.string().min(1).max(200)).max(20).optional(),
+    supplier_skus: z.array(z.string().max(120).nullable()).max(21).optional(),
   })
   .refine(
     row => (row.supplier_id !== undefined) !== (row.supplier_name !== undefined),
@@ -135,9 +157,12 @@ function firstZodIssueMessage(error: z.ZodError): string {
 }
 
 // Strip fields that aren't `products` columns: `inventory` (managed only by the
-// stock flows) and `uoms` (its own table, written via set_product_uoms).
-function stripNonColumns<T extends Record<string, unknown>>(data: T): Omit<T, 'inventory' | 'uoms'> {
-  const { inventory: _inv, uoms: _uoms, ...rest } = data as any
+// stock flows), `uoms` (its own table, written via set_product_uoms) and
+// `product_suppliers` (likewise, via set_product_suppliers).
+function stripNonColumns<T extends Record<string, unknown>>(
+  data: T,
+): Omit<T, 'inventory' | 'uoms' | 'product_suppliers'> {
+  const { inventory: _inv, uoms: _uoms, product_suppliers: _links, ...rest } = data as any
   return rest
 }
 
@@ -167,11 +192,29 @@ async function applyProductUoms(admin: any, productId: number, uoms: UomInput[])
   if (error) throw new EdgeFunctionError('INTERNAL', `Failed to save units of measure: ${error.message}`)
 }
 
-// Re-read a product with its UOM list embedded, for the mutation response.
+// Validate then atomically replace a product's supplier links. Throws
+// INVALID_INPUT on a cross-row rule violation; the RPC also re-points
+// products.supplier_id at the primary link so the legacy column stays honest.
+async function applyProductSuppliers(
+  admin: any,
+  productId: number,
+  links: ProductSupplierInput[],
+): Promise<void> {
+  const check = validateProductSuppliers(links)
+  if (!check.ok) throw new EdgeFunctionError('INVALID_INPUT', check.error)
+  const { error } = await admin.rpc('set_product_suppliers', {
+    p_product_id: productId,
+    p_links: links,
+  })
+  if (error) throw new EdgeFunctionError('INTERNAL', `Failed to save suppliers: ${error.message}`)
+}
+
+// Re-read a product with its UOM list + supplier links embedded, for the
+// mutation response.
 async function reselectProduct(admin: any, id: number): Promise<Record<string, unknown>> {
   const { data, error } = await admin
     .from('products')
-    .select('*, product_uoms(*)')
+    .select('*, product_uoms(*), product_suppliers(*)')
     .eq('id', id)
     .single()
   if (error || !data) throw new EdgeFunctionError('INTERNAL', error?.message ?? 'Failed to re-read product')
@@ -261,6 +304,13 @@ serve(async (req: Request) => {
         await cartonDiscountPercent(admin),
       )
       await applyProductUoms(admin, productId, uoms)
+
+      // Persist the supplier links — the caller's, or a single primary link
+      // derived from the required supplier_id (keeps pre-00070 callers working).
+      const links = (incoming.product_suppliers as ProductSupplierInput[] | undefined)
+        ?? deriveDefaultSupplierLinks(Number(safeData.supplier_id))
+      await applyProductSuppliers(admin, productId, links)
+
       const product = await reselectProduct(admin, productId)
 
       await logAuditEvent(admin, {
@@ -337,6 +387,17 @@ serve(async (req: Request) => {
       // leaves the existing list untouched).
       if (incoming.uoms !== undefined) {
         await applyProductUoms(admin, input.id, incoming.uoms as UomInput[])
+      }
+
+      // Same for the supplier links — omitting `product_suppliers` leaves them
+      // untouched. This runs AFTER the column update so its supplier_id sync
+      // wins over any supplier_id the caller also sent in `data`.
+      if (incoming.product_suppliers !== undefined) {
+        await applyProductSuppliers(
+          admin,
+          input.id,
+          incoming.product_suppliers as ProductSupplierInput[],
+        )
       }
 
       const product = await reselectProduct(admin, input.id)

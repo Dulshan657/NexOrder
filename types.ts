@@ -80,6 +80,29 @@ export interface Product {
     // (isBase, factorToBase 1) always exists. Absent on rows read before the
     // migration — callers fall back to deriveDefaultUoms(unit, price, cartonSize).
     uoms?: ProductUom[];
+    // Suppliers this product can be bought from (mig 00070). Exactly one link is
+    // primary and mirrors `supplierId`. Absent on rows read without the
+    // product_suppliers join — callers fall back to `linksForProduct`, which
+    // synthesises a single primary link from `supplierId`.
+    suppliers?: ProductSupplierLink[];
+}
+
+/**
+ * One product↔supplier link (mig 00070). The same item may be bought from
+ * several suppliers, each with their own part number and cost. Exactly one link
+ * per product is `isPrimary`, and the server keeps `products.supplier_id` in
+ * step with it, so legacy single-supplier read sites keep working.
+ */
+export interface ProductSupplierLink {
+    supplierId: number;
+    /** Joined for display; absent when the row was read without the embed. */
+    supplierName?: string;
+    /** The supplier's own code for this item, as printed on their docket. */
+    supplierSku?: string;
+    /** What this supplier charges per BASE unit. */
+    costPrice?: number;
+    isPrimary: boolean;
+    sortOrder: number;
 }
 
 /**

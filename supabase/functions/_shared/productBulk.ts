@@ -16,6 +16,7 @@
 
 import { EdgeFunctionError } from './errors.ts'
 import { deriveDefaultUomInputs, type UomInput } from './uomValidation.ts'
+import type { ProductSupplierInput } from './productSupplierValidation.ts'
 
 // ---------------------------------------------------------------------
 // Minimal client surface — only the query-builder methods this helper
@@ -59,6 +60,7 @@ export interface ProductBulkSupabaseLike {
     insert(row: Record<string, unknown>): ProductBulkInsertBuilder<Record<string, unknown>>
   }
   // set_product_uoms(p_product_id, p_uoms) — seeds each created product's UOMs.
+  // set_product_suppliers(p_product_id, p_links) — seeds its supplier links.
   rpc(fn: string, args: Record<string, unknown>): Promise<{ error: ProductBulkDbError | null }>
 }
 
@@ -86,6 +88,13 @@ export interface BulkProductRow {
   size_factor?: number
   supplier_id?: number
   supplier_name?: string
+  // Extra suppliers this product can also be bought from (mig 00070), by name;
+  // resolved/created in the same batched pass as `supplier_name`. The row's
+  // primary supplier is NOT repeated here.
+  additional_suppliers?: string[]
+  // Supplier part numbers, positionally aligned with [primary, ...additional].
+  // A shorter array just leaves the trailing links without a part number.
+  supplier_skus?: Array<string | null>
   // Optional explicit UOM list; when absent, a base+carton default is derived.
   uoms?: UomInput[]
 }
@@ -167,6 +176,50 @@ export async function resolveSupplierByName(
   return (created as Record<string, unknown>).id as number
 }
 
+// Build the set_product_suppliers payload for one bulk row (mig 00070): the
+// resolved primary first, then each additional supplier in CSV order, with
+// `supplier_skus` applied positionally over that same sequence.
+//
+// Pure — takes the already-resolved id map, so it's unit-testable on its own.
+// An additional name that didn't resolve (or that duplicates the primary) is
+// skipped rather than failing the row: the product is already created, and a
+// duplicate supplier_id would trip the table's unique index.
+export function buildBulkSupplierLinks(
+  row: BulkProductRow,
+  primarySupplierId: number,
+  supplierIdByFoldedName: ReadonlyMap<string, number>,
+): ProductSupplierInput[] {
+  const skus = row.supplier_skus ?? []
+  const skuAt = (position: number): string | null => {
+    const raw = skus[position]
+    if (typeof raw !== 'string') return null
+    const trimmed = raw.trim()
+    return trimmed === '' ? null : trimmed
+  }
+
+  const links: ProductSupplierInput[] = [{
+    supplier_id: primarySupplierId,
+    supplier_sku: skuAt(0),
+    is_primary: true,
+    sort_order: 0,
+  }]
+  const seen = new Set<number>([primarySupplierId])
+
+  ;(row.additional_suppliers ?? []).forEach((name, i) => {
+    const id = supplierIdByFoldedName.get(String(name ?? '').trim().toLowerCase())
+    if (id === undefined || seen.has(id)) return
+    seen.add(id)
+    links.push({
+      supplier_id: id,
+      supplier_sku: skuAt(i + 1),
+      is_primary: false,
+      sort_order: links.length,
+    })
+  })
+
+  return links
+}
+
 // Pure(ish) — the only side effects are DB calls through the injected `admin`
 // client, so it can be exercised in tests against a fake without a network.
 // Batches supplier resolution (one lookup/create per distinct folded supplier
@@ -211,12 +264,18 @@ export async function bulkCreateProducts(
 
   // ---- Batch supplier resolution: one resolve per distinct folded name ----
   const distinctFoldedNames = new Map<string, string>() // folded -> first-seen casing
-  for (const index of candidateIndexes) {
-    const name = rows[index].supplier_name
-    if (!name) continue
+  const noteName = (name: string | undefined | null): void => {
+    if (!name) return
     const trimmed = name.trim()
+    if (!trimmed) return
     const folded = trimmed.toLowerCase()
     if (!distinctFoldedNames.has(folded)) distinctFoldedNames.set(folded, trimmed)
+  }
+  for (const index of candidateIndexes) {
+    noteName(rows[index].supplier_name)
+    // Additional suppliers (mig 00070) resolve through the SAME batched pass —
+    // one lookup/create per distinct name across the whole batch, not per row.
+    for (const extra of rows[index].additional_suppliers ?? []) noteName(extra)
   }
 
   const supplierIdByFoldedName = new Map<string, number>()
@@ -272,9 +331,16 @@ export async function bulkCreateProducts(
 
     // `row` never carries an `inventory` field — the zod schema in index.ts
     // doesn't accept one (default zod behavior strips unknown keys), so
-    // unlike create/update there's nothing to strip here. `uoms` is not a
-    // products column, so it's pulled out and written via set_product_uoms below.
-    const { supplier_name: _supplierName, uoms: _uoms, ...rest } = row
+    // unlike create/update there's nothing to strip here. `uoms` and the
+    // supplier-link fields are not products columns, so they're pulled out and
+    // written via set_product_uoms / set_product_suppliers below.
+    const {
+      supplier_name: _supplierName,
+      uoms: _uoms,
+      additional_suppliers: _additional,
+      supplier_skus: _supplierSkus,
+      ...rest
+    } = row
     const insertData = { ...rest, supplier_id: supplierId, inventory: 0 }
 
     const { data: createdRow, error: insertError } = await admin
@@ -319,12 +385,27 @@ export async function bulkCreateProducts(
       p_uoms: uoms,
     })
 
+    // Seed the product's supplier links (mig 00070). The insert above already
+    // set products.supplier_id, so a failure here leaves the product with its
+    // primary supplier intact — same non-fatal treatment as UOMs.
+    const links = buildBulkSupplierLinks(row, supplierId, supplierIdByFoldedName)
+    const { error: linkError } = await admin.rpc('set_product_suppliers', {
+      p_product_id: createdId,
+      p_links: links,
+    })
+
+    const warning = uomError
+      ? `Created, but units of measure failed: ${uomError.message}`
+      : linkError
+        ? `Created, but extra suppliers failed: ${linkError.message}`
+        : undefined
+
     results[index] = {
       index,
       ok: true,
       id: createdId,
       sku: row.sku,
-      ...(uomError ? { error: `Created, but units of measure failed: ${uomError.message}` } : {}),
+      ...(warning ? { error: warning } : {}),
     }
   }
 

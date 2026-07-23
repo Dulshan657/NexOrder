@@ -14,6 +14,8 @@ import OptimizedImage from './OptimizedImage';
 import ProductHomeBinsSection from './admin/ProductHomeBinsSection';
 import ProductWmsAttributesSection from './admin/ProductWmsAttributesSection';
 import ProductUomsSection, { type ExtraUomDraft } from './admin/ProductUomsSection';
+import ProductSuppliersSection, { type SupplierLinkDraft } from './admin/ProductSuppliersSection';
+import { assembleSupplierLinks, supplierDraftsFromProduct } from '../lib/productSupplierForm';
 
 interface ProductFormProps {
     productToEdit: Product | null;
@@ -48,6 +50,14 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
     const [formError, setFormError] = useState<string | null>(null);
     // Additional units of measure above the base (mig 00067). Base = Unit + Price.
     const [extraUoms, setExtraUoms] = useState<ExtraUomDraft[]>([]);
+    // Suppliers this product can be bought from (mig 00070). One is primary and
+    // feeds formData.supplierId, which is what the server's required column takes.
+    const [supplierLinks, setSupplierLinks] = useState<SupplierLinkDraft[]>(() => [{
+        supplierId: suppliers.length > 0 ? String(suppliers[0].id) : '',
+        supplierSku: '',
+        costPrice: '',
+        isPrimary: true,
+    }]);
 
     useEffect(() => {
         if (productToEdit) {
@@ -69,6 +79,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                 sizeFactor: productToEdit.sizeFactor != null ? String(productToEdit.sizeFactor) : '1',
             });
             setExtraUoms(extraUomsFromProduct(productToEdit));
+            setSupplierLinks(supplierDraftsFromProduct(productToEdit));
         }
     }, [productToEdit]);
 
@@ -127,7 +138,19 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
         e.preventDefault();
         setFormError(null);
 
-        const result = buildProductPayload(formData, { isEdit: !!productToEdit });
+        // Suppliers first: the primary link is what feeds the server's required
+        // supplier_id column, so it has to resolve before the payload is built.
+        const linkResult = assembleSupplierLinks(supplierLinks);
+        if (linkResult.ok === false) {
+            setFormError(linkResult.error);
+            return;
+        }
+        const primarySupplierId = linkResult.links.find(l => l.isPrimary)!.supplierId;
+
+        const result = buildProductPayload(
+            { ...formData, supplierId: String(primarySupplierId) },
+            { isEdit: !!productToEdit },
+        );
         // NOTE: `result.ok === false` (not `!result.ok`) — this tsconfig doesn't set
         // strictNullChecks, under which `!result.ok` fails to narrow the discriminated
         // union's else-shaped check and TS reports `.error` as missing.
@@ -142,7 +165,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
             setFormError(uomResult.error);
             return;
         }
-        const data = { ...result.data, uoms: uomResult.uoms };
+        const data = { ...result.data, uoms: uomResult.uoms, suppliers: linkResult.links };
 
         if (productToEdit) {
             onSave({ ...productToEdit, ...data } as Product);
@@ -225,13 +248,11 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                             className={inputClasses}
                         />
                     </div>
-                     <div>
-                        <label htmlFor="supplierId" className="block text-sm font-medium text-stone-700 mb-1.5">Supplier</label>
-                        <select name="supplierId" id="supplierId" value={formData.supplierId} onChange={handleChange} required className={inputClasses}>
-                            <option value="" disabled>Select a supplier</option>
-                            {suppliers.map(sup => <option key={sup.id} value={sup.id}>{sup.name}</option>)}
-                        </select>
-                    </div>
+                    <ProductSuppliersSection
+                        suppliers={suppliers}
+                        links={supplierLinks}
+                        onChange={setSupplierLinks}
+                    />
                     {/* Volume / Cubic Meters */}
                     <div className="bg-stone-50 rounded-lg p-4 border border-stone-200 space-y-4">
                         <h3 className="text-sm font-semibold text-stone-700">Volume (m³)</h3>

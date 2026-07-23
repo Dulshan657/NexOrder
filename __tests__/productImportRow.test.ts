@@ -215,3 +215,98 @@ describe('validateCatalogRow', () => {
     expect(result.row.description).toBe('Rich coconut cream.')
   })
 })
+
+// Multi-supplier columns (mig 00070): `additional_suppliers` and `supplier_skus`
+// are both ';'-delimited, and the part numbers are POSITIONAL over
+// [supplier_name, ...additional_suppliers].
+describe('validateCatalogRow — multiple suppliers', () => {
+  it('omits both columns entirely when neither is supplied', () => {
+    const result = validateCatalogRow(validRec, ctx())
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.row).not.toHaveProperty('additional_suppliers')
+    expect(result.row).not.toHaveProperty('supplier_skus')
+    expect(result.newSupplierNames).toEqual([])
+  })
+
+  it('splits additional suppliers and trims each name', () => {
+    const result = validateCatalogRow(
+      { ...validRec, additional_suppliers: 'V2food; Beta Foods ' },
+      ctx(),
+    )
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.row.additional_suppliers).toEqual(['V2food', 'Beta Foods'])
+  })
+
+  it('reports every supplier on the row that does not exist yet', () => {
+    // 'AYAM Brand Malaysia' and 'V2food' are in the ctx map; 'Beta Foods' isn't.
+    const result = validateCatalogRow(
+      { ...validRec, additional_suppliers: 'V2food;Beta Foods' },
+      ctx(),
+    )
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.newSupplierNames).toEqual(['Beta Foods'])
+  })
+
+  it('includes an unknown PRIMARY supplier in newSupplierNames too', () => {
+    const result = validateCatalogRow(
+      { ...validRec, supplier_name: 'Brand New Co', additional_suppliers: 'Beta Foods' },
+      ctx(),
+    )
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.newSupplierNames).toEqual(['Brand New Co', 'Beta Foods'])
+  })
+
+  it('maps part numbers positionally over [primary, ...additional]', () => {
+    const result = validateCatalogRow(
+      { ...validRec, additional_suppliers: 'V2food', supplier_skus: 'AYM-1;V2-9' },
+      ctx(),
+    )
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.row.supplier_skus).toEqual(['AYM-1', 'V2-9'])
+  })
+
+  it('preserves an empty slot rather than shifting later part numbers', () => {
+    // "A;;C" must stay aligned — collapsing it would put C on the wrong supplier.
+    const result = validateCatalogRow(
+      { ...validRec, additional_suppliers: 'V2food;Beta Foods', supplier_skus: 'AYM-1;;BF-3' },
+      ctx(),
+    )
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.row.supplier_skus).toEqual(['AYM-1', null, 'BF-3'])
+  })
+
+  it('accepts fewer part numbers than suppliers', () => {
+    const result = validateCatalogRow(
+      { ...validRec, additional_suppliers: 'V2food', supplier_skus: 'AYM-1' },
+      ctx(),
+    )
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.row.supplier_skus).toEqual(['AYM-1'])
+  })
+
+  // NOTE: `result.ok === false` (not `!result.ok`) — without strictNullChecks TS
+  // won't narrow a discriminated union through a negated boolean-property check.
+  it('rejects MORE part numbers than suppliers instead of truncating', () => {
+    const result = validateCatalogRow({ ...validRec, supplier_skus: 'AYM-1;ORPHAN' }, ctx())
+    expect(result.ok).toBe(false)
+    if (result.ok === false) expect(result.field).toBe('supplier_skus')
+  })
+
+  it('rejects a supplier listed twice on the same row', () => {
+    const result = validateCatalogRow(
+      { ...validRec, additional_suppliers: 'V2food;v2food' },
+      ctx(),
+    )
+    expect(result.ok).toBe(false)
+    if (result.ok === false) expect(result.field).toBe('additional_suppliers')
+  })
+
+  it('rejects an additional supplier that repeats the primary', () => {
+    const result = validateCatalogRow(
+      { ...validRec, additional_suppliers: 'ayam brand malaysia' },
+      ctx(),
+    )
+    expect(result.ok).toBe(false)
+    if (result.ok === false) expect(result.error).toMatch(/twice/i)
+  })
+})

@@ -26,8 +26,30 @@ export interface CatalogImportContext {
 }
 
 export type RowResult =
-  | { ok: true; row: Record<string, unknown>; supplierName: string; supplierWillBeCreated: boolean }
+  | {
+      ok: true
+      row: Record<string, unknown>
+      supplierName: string
+      supplierWillBeCreated: boolean
+      /** Every supplier on this row (primary + additional) that doesn't exist yet. */
+      newSupplierNames: string[]
+    }
   | { ok: false; error: string; field?: string }
+
+/** Multi-value CSV cells (`additional_suppliers`, `supplier_skus`) are `;`-delimited. */
+const MULTI_VALUE_SEPARATOR = ';'
+
+/**
+ * Split a `;`-delimited cell, preserving EMPTY slots — `supplier_skus` is
+ * positional over [primary, ...additional], so "AF-1;;GT-9" must keep the blank
+ * middle rather than shifting GT-9 onto the wrong supplier. Only a wholly empty
+ * cell yields no values at all.
+ */
+function splitMultiValue(raw: string | undefined): string[] {
+  const value = (raw ?? '').trim()
+  if (!value) return []
+  return value.split(MULTI_VALUE_SEPARATOR).map(part => part.trim())
+}
 
 /** Full-string numeric check — rejects prefix-parseable garbage like "1,234" or "4.5abc". */
 const STRICT_NUMBER = /^-?\d+(\.\d+)?$/
@@ -99,6 +121,41 @@ export function validateCatalogRow(rec: Record<string, string>, ctx: CatalogImpo
   const knownSupplierId = ctx.suppliersByName.get(supplierNameInput.toLowerCase())
   const supplierWillBeCreated = knownSupplierId === undefined
 
+  // Extra suppliers for the same item (mig 00070). Names are resolved/created
+  // server-side by the bulk path, exactly like the primary supplier_name.
+  const additionalSuppliers = splitMultiValue(rec.additional_suppliers).filter(n => n !== '')
+  const foldedPrimary = supplierNameInput.toLowerCase()
+  const seenSupplierNames = new Set<string>([foldedPrimary])
+  for (const extra of additionalSuppliers) {
+    const folded = extra.toLowerCase()
+    if (seenSupplierNames.has(folded)) {
+      return {
+        ok: false,
+        error: `Supplier "${extra}" is listed twice on this row.`,
+        field: 'additional_suppliers',
+      }
+    }
+    seenSupplierNames.add(folded)
+  }
+
+  // Part numbers are POSITIONAL over [primary, ...additional]. A mismatched
+  // count silently mislinks a code to the wrong supplier, so it's a row error
+  // rather than a truncation. A shorter list is fine — trailing links just
+  // have no part number.
+  const supplierSkus = splitMultiValue(rec.supplier_skus)
+  if (supplierSkus.length > additionalSuppliers.length + 1) {
+    return {
+      ok: false,
+      error: `supplier_skus has ${supplierSkus.length} values but the row only has ${additionalSuppliers.length + 1} supplier(s).`,
+      field: 'supplier_skus',
+    }
+  }
+
+  const newSupplierNames = [
+    ...(supplierWillBeCreated ? [supplierNameInput] : []),
+    ...additionalSuppliers.filter(n => !ctx.suppliersByName.has(n.toLowerCase())),
+  ]
+
   const formData: ProductFormData = {
     sku: rec.sku ?? '',
     name: rec.name ?? '',
@@ -132,6 +189,11 @@ export function validateCatalogRow(rec: Record<string, string>, ctx: CatalogImpo
     delete row.supplier_id
     row.supplier_name = supplierNameInput
   }
+  if (additionalSuppliers.length > 0) row.additional_suppliers = additionalSuppliers
+  // Empty slots become null so the server's positional mapping stays aligned.
+  if (supplierSkus.length > 0) {
+    row.supplier_skus = supplierSkus.map(s => (s === '' ? null : s))
+  }
 
-  return { ok: true, row, supplierName: supplierNameInput, supplierWillBeCreated }
+  return { ok: true, row, supplierName: supplierNameInput, supplierWillBeCreated, newSupplierNames }
 }

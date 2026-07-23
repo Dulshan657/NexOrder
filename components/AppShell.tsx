@@ -1015,6 +1015,16 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         onError: err => addToast(`Error: ${err.message}`, 'error'),
                                     });
                                 }}
+                                // Links-only update (mig 00070): no products columns in the
+                                // payload, so mutate-product skips the column UPDATE and only
+                                // runs set_product_suppliers. Errors propagate so the sheet
+                                // can show them inline and stay open.
+                                onSaveProductSupplierLinks={async (productId, links) => {
+                                    await updateProductMutation.mutateAsync({
+                                        id: productId,
+                                        updates: fromProduct({ suppliers: links }) as any,
+                                    });
+                                }}
                                 onAddHoReCa={(c, reason) => {
                                     createHoReCaMutation.mutate({ horeca: fromHoReCa(c) as any, reason }, {
                                         onSuccess: () => addToast('HoReCa added', 'success'),
