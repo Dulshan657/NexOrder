@@ -27,7 +27,13 @@ export interface CallVerification {
 
 export type OrderVerification = SignatureVerification | CallVerification;
 
-export type Category = 'Coconut' | 'Meal Pastes' | 'Asian Sauces' | 'Soy Sauces' | 'Chilli Sauces' | 'Condiments' | 'Noodles' | 'Fish' | 'Satay Sauces' | 'Desserts' | 'Ready Meal Sauces' | 'Plant-Based' | 'Other';
+/**
+ * A product category. Open-ended since mig 00069 dropped `products_category_check`
+ * — operators create categories inline from the product form. `constants.CATEGORIES`
+ * holds the built-in suggestions; `lib/productTaxonomy.ts` merges those with the
+ * categories actually in use to build every category dropdown/filter.
+ */
+export type Category = string;
 
 export interface User {
     id: number;
@@ -93,6 +99,9 @@ export interface ProductUom {
     isOrderable: boolean;   // appears in the shop dropdown
     isReceivable: boolean;  // appears in the receiving dropdown
     sortOrder: number;      // ascending factor; drives dropdown + decomposition order
+    /** m³ for ONE of this UOM (mig 00069). Null/undefined = inherit
+     * `factorToBase × product.cubicMetersUnit`; see `lib/uomVolume.ts`. */
+    cubicMeters?: number | null;
 }
 
 // ---------------------------------------------------------------------------

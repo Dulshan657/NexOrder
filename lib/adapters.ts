@@ -78,6 +78,7 @@ export function toProductUom(row: ProductUomRow): ProductUom {
     isOrderable: row.is_orderable,
     isReceivable: row.is_receivable,
     sortOrder: row.sort_order,
+    cubicMeters: row.cubic_meters != null ? Number(row.cubic_meters) : null,
   }
 }
 
@@ -90,6 +91,9 @@ export function fromProductUom(u: ProductUom): Record<string, unknown> {
     is_orderable: u.isOrderable,
     is_receivable: u.isReceivable,
     sort_order: u.sortOrder,
+    // Null means "inherit from the base unit" — send it explicitly so clearing
+    // a volume on edit actually clears it (the RPC writes EXCLUDED.cubic_meters).
+    cubic_meters: u.cubicMeters ?? null,
   }
 }
 

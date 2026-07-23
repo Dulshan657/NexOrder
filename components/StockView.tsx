@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Product, User, Category } from '../types';
 import { UserRole } from '../types';
 import { Package, AlertCircle, CheckCircle2, Search, X, Repeat, FileUp } from 'lucide-react';
-import { CATEGORIES } from '../constants';
+import { categoryOptions } from '../lib/productTaxonomy';
 import { useSettings } from '../hooks/queries/useSettings';
 import { classifyStock, lowStockThresholdFor } from '../lib/stockStatus';
 import { useWarehouseScope } from '../context/WarehouseScopeContext';
@@ -64,9 +64,11 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products, aggByProduct, isCustomer, globalThreshold]);
 
+  // Built-ins first, then any operator-created category — filtered to the ones
+  // actually present so the chip row doesn't list empty categories.
   const activeCategories = useMemo(() => {
     const cats = new Set(products.map(p => p.category));
-    return CATEGORIES.filter(c => cats.has(c));
+    return categoryOptions(products).filter(c => cats.has(c));
   }, [products]);
 
   const filteredProducts = useMemo(() => {

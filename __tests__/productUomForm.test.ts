@@ -52,6 +52,31 @@ describe('assembleProductUoms', () => {
     expect(r.ok).toBe(false)
   })
 
+  it('carries an explicit per-UOM volume through, and leaves the base row null', () => {
+    const r = assembleProductUoms('each', 3, [
+      { code: 'carton', factorToBase: '12', price: '30', cubicMeters: '0.0195', isOrderable: true, isReceivable: true },
+    ])
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.uoms[0].cubicMeters).toBeNull()
+    expect(r.uoms[1].cubicMeters).toBe(0.0195)
+  })
+
+  it('treats a blank volume as "inherit" (null), not zero', () => {
+    const r = assembleProductUoms('each', 3, [
+      { code: 'carton', factorToBase: '12', price: '30', cubicMeters: '  ', isOrderable: true, isReceivable: true },
+    ])
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.uoms[1].cubicMeters).toBeNull()
+  })
+
+  it('rejects a negative volume', () => {
+    const r = assembleProductUoms('each', 3, [
+      { code: 'carton', factorToBase: '12', price: '30', cubicMeters: '-1', isOrderable: true, isReceivable: true },
+    ])
+    expect(r.ok).toBe(false)
+  })
+
   it('defaults a blank base unit to "each"', () => {
     const r = assembleProductUoms('', 3, [])
     expect(r.ok).toBe(true)
@@ -69,8 +94,17 @@ describe('extraUomsFromProduct', () => {
     } as Product
     const drafts = extraUomsFromProduct(product)
     expect(drafts).toEqual([
-      { code: 'carton', factorToBase: '12', price: '28.5', isOrderable: true, isReceivable: true },
+      { code: 'carton', factorToBase: '12', price: '28.5', cubicMeters: '', isOrderable: true, isReceivable: true },
     ])
+  })
+
+  it('seeds an existing per-UOM volume back into the draft', () => {
+    const product = {
+      uoms: [
+        uom({ id: 2, code: 'carton', factorToBase: 12, isBase: false, price: 28.5, sortOrder: 1, cubicMeters: 0.0195 }),
+      ],
+    } as Product
+    expect(extraUomsFromProduct(product)[0].cubicMeters).toBe('0.0195')
   })
 
   it('returns empty when a product has no UOMs', () => {

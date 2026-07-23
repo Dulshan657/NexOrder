@@ -3,8 +3,8 @@
 // dropzone, progress/result areas, two-stage footer, double-submit guard).
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { X, FileUp, Download, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
-import type { Supplier } from '@/types';
-import { CATEGORIES } from '@/constants';
+import type { Product, Supplier } from '@/types';
+import { categoryOptions } from '@/lib/productTaxonomy';
 import { downloadCsv } from '@/lib/csvExport';
 import { validateCatalogRow, type CatalogImportContext, type RowResult } from '@/lib/productImportRow';
 import { useBulkCreateProducts } from '@/hooks/queries/useProducts';
@@ -20,6 +20,8 @@ import { ProductPreviewRow, type ProductServerError } from '@/components/admin/i
 
 interface ProductImportModalProps {
   suppliers: Supplier[];
+  /** The catalog, so categories operators created inline are accepted by the importer. */
+  catalog?: Product[];
   onClose: () => void;
   addToast?: (message: string, type: 'success' | 'error' | 'info') => void;
 }
@@ -38,7 +40,7 @@ interface ImportOutcomeSummary {
   total: number;
 }
 
-export function ProductImportModal({ suppliers, onClose, addToast }: ProductImportModalProps) {
+export function ProductImportModal({ suppliers, catalog, onClose, addToast }: ProductImportModalProps) {
   const bulkCreate = useBulkCreateProducts();
 
   const [fileName, setFileName] = useState<string | null>(null);
@@ -54,8 +56,10 @@ export function ProductImportModal({ suppliers, onClose, addToast }: ProductImpo
 
   const ctx = useMemo<CatalogImportContext>(() => ({
     suppliersByName: new Map(suppliers.map((s) => [s.name.trim().toLowerCase(), s.id])),
-    categories: new Set(CATEGORIES),
-  }), [suppliers]);
+    // Built-in categories plus every one already in use, so an inline-created
+    // category doesn't get rejected on the next CSV import.
+    categories: new Set(categoryOptions(catalog)),
+  }), [suppliers, catalog]);
 
   const resetOutcome = () => {
     setServerErrors(null);

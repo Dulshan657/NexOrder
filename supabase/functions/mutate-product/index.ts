@@ -31,24 +31,12 @@ import { validateUoms, deriveDefaultUomInputs, type UomInput } from '../_shared/
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
-const categoryEnum = z.enum([
-  // Keep in sync with types.ts `Category` and constants.ts `CATEGORIES`.
-  // 'Plant-Based' (v2food demo, mig 00043) was added client-side but not here,
-  // which rejected every product created with the form's default category.
-  'Plant-Based',
-  'Coconut',
-  'Meal Pastes',
-  'Asian Sauces',
-  'Soy Sauces',
-  'Chilli Sauces',
-  'Condiments',
-  'Noodles',
-  'Fish',
-  'Satay Sauces',
-  'Desserts',
-  'Ready Meal Sauces',
-  'Other',
-])
+// Categories are operator-created (mig 00069 drops products_category_check), so
+// this is a length bound rather than an enum. constants.ts `CATEGORIES` is now
+// only the built-in suggestion list the product form seeds its dropdown with.
+// (The old enum was also a footgun: 'Plant-Based' was added client-side but not
+// here, which rejected every product created with the form's default category.)
+const categorySchema = z.string().trim().min(1).max(60)
 
 // One unit of measure (mig 00067). Field-level shape only; the cross-row rules
 // (exactly one base, unique codes, …) are enforced by validateUoms.
@@ -60,6 +48,8 @@ const uomSchema = z.object({
   is_orderable: z.boolean().optional().default(true),
   is_receivable: z.boolean().optional().default(true),
   sort_order: z.number().int().optional().default(0),
+  // m³ for one of this UOM (mig 00069); null/absent = inherit from the base unit.
+  cubic_meters: z.number().min(0).nullable().optional(),
 })
 
 // Shared body — inventory is never accepted (stripped silently)
@@ -69,7 +59,7 @@ const productBodySchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   price: z.number().min(0).optional(),
-  category: categoryEnum.optional(),
+  category: categorySchema.optional(),
   image_url: z.string().url().nullable().optional(),
   unit: z.string().min(1).optional(),
   carton_size: z.number().int().min(1).optional(),
@@ -90,7 +80,7 @@ const productCreateBodySchema = productBodySchema.extend({
   sku: z.string().min(1),
   name: z.string().min(1),
   price: z.number().min(0),
-  category: categoryEnum,
+  category: categorySchema,
   unit: z.string().min(1),
   carton_size: z.number().int().min(1),
   supplier_id: z.number().int().positive(),

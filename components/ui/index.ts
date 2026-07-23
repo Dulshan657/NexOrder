@@ -19,3 +19,4 @@ export {
   type TextareaProps,
 } from './Field'
 export { Toggle, type ToggleProps } from './Toggle'
+export { default as CreatableSelect, type CreatableSelectProps } from './CreatableSelect'

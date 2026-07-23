@@ -1,13 +1,15 @@
 // FIX: Implement the ProductForm component.
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
-import type { Product, Category, Supplier } from '../types';
+import type { Product, Supplier } from '../types';
 import { CATEGORIES } from '../constants';
 import { useToasts } from '../hooks/useToasts';
 import { compressImage } from '../lib/imageCompression';
 import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/supabase/storageService';
 import { buildProductPayload } from '../lib/productFormPayload';
 import { assembleProductUoms, extraUomsFromProduct } from '../lib/productUomForm';
+import { categoryOptions, uomCodeOptions, withCurrentValue } from '../lib/productTaxonomy';
+import { CreatableSelect } from './ui';
 import OptimizedImage from './OptimizedImage';
 import ProductHomeBinsSection from './admin/ProductHomeBinsSection';
 import ProductWmsAttributesSection from './admin/ProductWmsAttributesSection';
@@ -16,11 +18,13 @@ import ProductUomsSection, { type ExtraUomDraft } from './admin/ProductUomsSecti
 interface ProductFormProps {
     productToEdit: Product | null;
     suppliers: Supplier[];
+    /** The catalog, used to seed the unit + category dropdowns with values already in use. */
+    catalog?: Product[];
     onSave: (productData: Product | Omit<Product, 'id' | 'inventory'>) => void | Promise<void>;
     onClose: () => void;
 }
 
-const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onSave, onClose }) => {
+const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, catalog, onSave, onClose }) => {
     const [formData, setFormData] = useState({
         sku: '',
         name: '',
@@ -67,6 +71,17 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
             setExtraUoms(extraUomsFromProduct(productToEdit));
         }
     }, [productToEdit]);
+
+    // Dropdown options: the built-in lists merged with whatever the catalog
+    // already uses, plus this product's own value so editing can't re-point it.
+    const unitOptions = useMemo(
+        () => withCurrentValue(uomCodeOptions(catalog), formData.unit),
+        [catalog, formData.unit],
+    );
+    const categoryChoices = useMemo(
+        () => withCurrentValue(categoryOptions(catalog), formData.category),
+        [catalog, formData.category],
+    );
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -167,12 +182,25 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                         </div>
                         <div>
                             <label htmlFor="unit" className="block text-sm font-medium text-stone-700 mb-1.5">Unit</label>
-                            <input type="text" name="unit" id="unit" value={formData.unit} onChange={handleChange} required placeholder="e.g., each, box, license" className={inputClasses} />
+                            <CreatableSelect
+                                id="unit"
+                                name="unit"
+                                value={formData.unit}
+                                onChange={unit => setFormData(prev => ({ ...prev, unit }))}
+                                options={unitOptions}
+                                required
+                                emptyLabel="Select a unit…"
+                                customLabel="Other unit…"
+                                placeholder="e.g., drum, license"
+                                className={inputClasses}
+                            />
                         </div>
                     </div>
                     <ProductUomsSection
                         baseUnitLabel={formData.unit}
                         basePrice={formData.price}
+                        baseVolume={formData.cubicMetersUnit}
+                        unitOptions={unitOptions}
                         extraUoms={extraUoms}
                         onChange={setExtraUoms}
                     />
@@ -184,9 +212,18 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                     </div>
                      <div>
                         <label htmlFor="category" className="block text-sm font-medium text-stone-700 mb-1.5">Category</label>
-                        <select name="category" id="category" value={formData.category} onChange={handleChange} required className={inputClasses}>
-                            {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                        </select>
+                        <CreatableSelect
+                            id="category"
+                            name="category"
+                            value={formData.category}
+                            onChange={category => setFormData(prev => ({ ...prev, category }))}
+                            options={categoryChoices}
+                            required
+                            emptyLabel="Select a category…"
+                            customLabel="New category…"
+                            placeholder="Name the new category"
+                            className={inputClasses}
+                        />
                     </div>
                      <div>
                         <label htmlFor="supplierId" className="block text-sm font-medium text-stone-700 mb-1.5">Supplier</label>

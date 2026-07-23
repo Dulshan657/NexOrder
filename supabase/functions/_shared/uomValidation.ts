@@ -11,6 +11,9 @@ export interface UomInput {
   is_orderable?: boolean;
   is_receivable?: boolean;
   sort_order?: number;
+  /** m³ for ONE of this UOM (mig 00069). Omitted/null = inherit
+   * factor_to_base × products.cubic_meters_unit at read time. */
+  cubic_meters?: number | null;
 }
 
 export type UomValidationResult = { ok: true } | { ok: false; error: string };
@@ -54,6 +57,13 @@ export function validateUoms(uoms: readonly UomInput[]): UomValidationResult {
     }
     if (!Number.isFinite(u.price) || u.price < 0) {
       return { ok: false, error: `Unit "${code}" must have a price of 0 or more.` };
+    }
+    // Volume is optional (null/undefined = inherit from the base unit), but a
+    // value that IS supplied must be a usable non-negative number.
+    if (u.cubic_meters !== undefined && u.cubic_meters !== null) {
+      if (!Number.isFinite(u.cubic_meters) || u.cubic_meters < 0) {
+        return { ok: false, error: `Unit "${code}" must have a volume of 0 m³ or more.` };
+      }
     }
   }
 

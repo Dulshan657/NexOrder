@@ -530,6 +530,7 @@ export type Database = {
           is_orderable: boolean
           is_receivable: boolean
           sort_order: number
+          cubic_meters: number | null
           created_at: string
           updated_at: string
         }
@@ -543,6 +544,7 @@ export type Database = {
           is_orderable?: boolean
           is_receivable?: boolean
           sort_order?: number
+          cubic_meters?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -556,6 +558,7 @@ export type Database = {
           is_orderable?: boolean
           is_receivable?: boolean
           sort_order?: number
+          cubic_meters?: number | null
           created_at?: string
           updated_at?: string
         }

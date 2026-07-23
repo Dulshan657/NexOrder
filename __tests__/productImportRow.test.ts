@@ -33,6 +33,18 @@ const validRec: Record<string, string> = {
 }
 
 describe('validateCatalogRow', () => {
+  it('accepts an operator-created category once it is in the context set', () => {
+    // Categories are open-ended since mig 00069; ProductImportModal builds this
+    // set from CATEGORIES merged with the categories already in the catalog.
+    const result = validateCatalogRow(
+      { ...validRec, category: 'frozen dumplings' },
+      ctx({ categories: new Set([...CATEGORIES, 'Frozen Dumplings']) }),
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.row.category).toBe('Frozen Dumplings')
+  })
+
   it('builds a row for a known supplier (id, no supplier_name, not created)', () => {
     const result = validateCatalogRow(validRec, ctx())
     expect(result.ok).toBe(true)

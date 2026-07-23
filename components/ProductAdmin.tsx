@@ -139,6 +139,7 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
                 <ProductForm
                     productToEdit={productToEdit}
                     suppliers={suppliers}
+                    catalog={products}
                     onSave={handleSaveProduct}
                     onClose={() => setIsFormOpen(false)}
                 />
@@ -155,6 +156,7 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
             {isImportOpen && (
                 <ProductImportModal
                     suppliers={suppliers}
+                    catalog={products}
                     addToast={addToast}
                     onClose={() => setIsImportOpen(false)}
                 />

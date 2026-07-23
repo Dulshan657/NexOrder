@@ -14,6 +14,7 @@ export function extraUomsFromProduct(product: Product | null): ExtraUomDraft[] {
             code: u.code,
             factorToBase: String(u.factorToBase),
             price: String(u.price),
+            cubicMeters: u.cubicMeters != null ? String(u.cubicMeters) : '',
             isOrderable: u.isOrderable,
             isReceivable: u.isReceivable,
         }));
@@ -35,9 +36,12 @@ export function assembleProductUoms(
     extras: ExtraUomDraft[],
 ): AssembleUomsResult {
     const baseCode = (baseUnit || 'each').trim();
+    // The base unit's volume stays on the product (`cubicMetersUnit`) — every
+    // other UOM inherits from it when its own volume is blank.
     const uoms: ProductUom[] = [{
         id: 0, productId: 0, code: baseCode, factorToBase: 1, isBase: true,
         price: round2(basePrice), isOrderable: true, isReceivable: true, sortOrder: 0,
+        cubicMeters: null,
     }];
 
     const seen = new Set<string>([baseCode.toLowerCase()]);
@@ -59,10 +63,21 @@ export function assembleProductUoms(
             return { ok: false, error: `"${code}" needs a price of 0 or more.` };
         }
 
+        // Volume is optional: blank inherits factor × the product's per-unit m³.
+        const rawVolume = (draft.cubicMeters ?? '').trim();
+        let cubicMeters: number | null = null;
+        if (rawVolume) {
+            const parsed = Number(rawVolume);
+            if (!Number.isFinite(parsed) || parsed < 0) {
+                return { ok: false, error: `"${code}" needs a volume of 0 m³ or more, or none at all.` };
+            }
+            cubicMeters = parsed;
+        }
+
         uoms.push({
             id: 0, productId: 0, code, factorToBase: factor, isBase: false,
             price: round2(price), isOrderable: draft.isOrderable, isReceivable: draft.isReceivable,
-            sortOrder: i + 1,
+            sortOrder: i + 1, cubicMeters,
         });
     }
 

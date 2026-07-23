@@ -18,6 +18,18 @@ describe('validateUoms', () => {
     expect(validateUoms([])).toMatchObject({ ok: false })
   })
 
+  it('accepts an omitted, null or zero per-UOM volume', () => {
+    expect(validateUoms([base(), pack()])).toEqual({ ok: true })
+    expect(validateUoms([base(), pack({ cubic_meters: null })])).toEqual({ ok: true })
+    expect(validateUoms([base(), pack({ cubic_meters: 0 })])).toEqual({ ok: true })
+    expect(validateUoms([base(), pack({ cubic_meters: 0.0195 })])).toEqual({ ok: true })
+  })
+
+  it('rejects a negative or non-finite per-UOM volume', () => {
+    expect(validateUoms([base(), pack({ cubic_meters: -1 })])).toMatchObject({ ok: false })
+    expect(validateUoms([base(), pack({ cubic_meters: NaN })])).toMatchObject({ ok: false })
+  })
+
   it('rejects zero base rows', () => {
     const r = validateUoms([pack()])
     expect(r.ok).toBe(false)

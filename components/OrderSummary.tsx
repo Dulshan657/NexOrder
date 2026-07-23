@@ -5,6 +5,7 @@ import DeliveryScheduler from './DeliveryScheduler';
 import OutstandingPayments from './OutstandingPayments';
 import { getHoReCaOutstanding } from '../services/accountingService';
 import { applyCartPromotions } from '../services/promotionService';
+import { totalLineVolume } from '../lib/uomVolume';
 
 interface OrderSummaryProps {
   items: OrderItem[];
@@ -310,13 +311,9 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
           <span className="tabular-nums">${adjustedTotal.toFixed(2)}</span>
         </div>
         {items.length > 0 && (() => {
-          const totalVolume = items.reduce((sum, item) => {
-            const isCarton = item.packSize != null && item.packSize > 1;
-            const vol = isCarton
-              ? (item.cubicMetersCarton ?? (item.cubicMetersUnit != null ? item.cubicMetersUnit * item.packSize! : 0))
-              : (item.cubicMetersUnit ?? 0);
-            return sum + vol * item.quantity;
-          }, 0);
+          // Each line's chosen UOM may carry its own m³ (mig 00069); otherwise
+          // it inherits factor × the per-unit volume. See lib/uomVolume.
+          const totalVolume = totalLineVolume(items);
           if (totalVolume <= 0) return null;
           return (
             <div className="flex justify-between items-center text-sm text-stone-500 mt-2">

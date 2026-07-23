@@ -12,7 +12,7 @@ import type {
     Promotion,
     User,
 } from '../types';
-import { CATEGORIES } from '../constants';
+import { categoryOptions } from '../lib/productTaxonomy';
 import { resolveHoReCaPrice } from '../pricing';
 import OrderingTabBar from '../components/OrderingTabBar';
 import type { OrderingTabKey } from '../components/OrderingTabBar';
@@ -145,6 +145,10 @@ const ShopView: React.FC<ShopViewProps> = ({
     onRemoveFromPantry,
     onUpdatePantryItem,
 }) => {
+    // Built-in categories merged with any an operator created inline, so a new
+    // category's products are reachable from the shop filter immediately.
+    const shopCategories = React.useMemo(() => categoryOptions(products), [products]);
+
     return (
         <>
             <div className={isCartOpen ? 'cart-push' : ''}>
@@ -188,7 +192,7 @@ const ShopView: React.FC<ShopViewProps> = ({
                                 />
                             )}
                             <CategoryFilter
-                                categories={CATEGORIES}
+                                categories={shopCategories}
                                 selectedCategory={selectedCategory}
                                 onSelectCategory={onSelectedCategoryChange}
                                 hasDeals={promotions.some(p => p.isActive)}
@@ -240,7 +244,7 @@ const ShopView: React.FC<ShopViewProps> = ({
                         <PantryList
                             pantryItems={currentPantryItems}
                             products={products}
-                            categories={CATEGORIES}
+                            categories={shopCategories}
                             selectedHoReCa={selectedHoReCa ?? null}
                             allOrders={allOrders}
                             currentCart={orderItems}

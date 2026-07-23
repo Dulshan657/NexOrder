@@ -11,10 +11,27 @@ export const USERS: User[] = [
   { id: 6, name: 'Mei Lin', email: 'mei@lotusgarden.com.au', role: UserRole.CUSTOMER, avatarUrl: 'https://i.pravatar.cc/150?u=6', hoReCaId: 4 },
 ];
 
+/**
+ * Built-in category suggestions. Since mig 00069 categories are open-ended
+ * (operators create them from the product form), so this is a seed list, not an
+ * allow-list — every dropdown/filter merges it with the categories actually in
+ * use via `lib/productTaxonomy.ts`.
+ */
 export const CATEGORIES: readonly Category[] = [
   'Plant-Based', 'Coconut', 'Meal Pastes', 'Asian Sauces', 'Soy Sauces', 'Chilli Sauces',
   'Condiments', 'Noodles', 'Fish', 'Satay Sauces', 'Desserts',
   'Ready Meal Sauces', 'Other'
+];
+
+/**
+ * Canonical unit-of-measure names offered by the product form's UOM pickers
+ * (mig 00067). Same deal as CATEGORIES: a suggestion list, merged with the codes
+ * already in the catalog, with an "Other…" escape hatch for anything unusual.
+ * Ordered smallest-to-largest so the dropdown reads like a pack hierarchy.
+ */
+export const UOM_CODES: readonly string[] = [
+  'each', 'unit', 'bottle', 'can', 'jar', 'packet', 'pack', 'bag', 'tray',
+  'box', 'carton', 'case', 'pallet', 'drum', 'kg', 'g', 'L', 'mL'
 ];
 
 export const SUPPLIERS: Supplier[] = [

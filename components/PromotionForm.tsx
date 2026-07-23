@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { Promotion, PromotionType, PromotionScope, PromotionTargeting, Product, HoReCa, User, Category, HoReCaTier } from '../types';
 import { X, Tag } from 'lucide-react';
-import { CATEGORIES } from '../constants';
+import { categoryOptions } from '../lib/productTaxonomy';
 
 interface PromotionFormProps {
     promotion?: Promotion;
@@ -316,7 +316,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
                             )}
                             {scopeKind === 'categories' && (
                                 <div className="flex flex-wrap gap-2">
-                                    {CATEGORIES.map(cat => (
+                                    {categoryOptions(products).map(cat => (
                                         <button key={cat} onClick={() => setScopeCategories(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat])}
                                             className={`py-1 px-3 rounded-full text-sm font-medium cursor-pointer border ${scopeCategories.includes(cat) ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-stone-200 text-stone-500 hover:bg-stone-50'}`}>
                                             {cat}
