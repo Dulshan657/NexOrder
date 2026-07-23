@@ -83,6 +83,7 @@ export interface ResolvedItem {
   productId: number
   quantity: number
   packSize: number | null
+  uomId?: number | null
   productName: string
   productSku: string
   unitPrice: number
@@ -215,6 +216,38 @@ export function resolveLineUnitPrice(
   const lineUnit = isCarton
     ? Math.round(perUnit * packSize * (1 - cartonDiscountPercent / 100) * 100) / 100
     : perUnit
+  return { unitPrice: lineUnit, appliedPromotionId }
+}
+
+/**
+ * Line unit price for an EXPLICIT-UOM line (mig 00067). Each UOM carries its own
+ * list price; this scales that price by the same ratio the base unit's list price
+ * is adjusted for this customer + best promotion, so HoReCa discounts and
+ * percentage/clearance promos still apply proportionally. The base UOM resolves
+ * to the ordinary per-unit price. When the product's list price is 0 (can't form
+ * a ratio) it falls back to per-unit × factor.
+ *
+ * The caller MUST look the UOM up from the product's own product_uoms rows by id
+ * (never trust a client-sent price) and pass it here. Kept separate from
+ * resolveLineUnitPrice so the legacy carton path (packSize-only, no UOM) is
+ * unchanged.
+ */
+export function resolveUomLineUnitPrice(
+  product: Product,
+  customer: HoReCa | null,
+  user: UserContext | null,
+  promotions: Promotion[],
+  uom: { factorToBase: number; price: number; isBase: boolean },
+  now: Date = new Date(),
+): { unitPrice: number; appliedPromotionId: string | null } {
+  const { unitPrice: perUnit, appliedPromotionId } = resolveUnitPrice(product, customer, user, promotions, now)
+  if (uom.isBase) return { unitPrice: perUnit, appliedPromotionId }
+
+  const listUnit = product.price
+  const ratio = listUnit > 0 ? perUnit / listUnit : 1
+  const lineUnit = listUnit > 0
+    ? Math.round(uom.price * ratio * 100) / 100
+    : Math.round(perUnit * uom.factorToBase * 100) / 100
   return { unitPrice: lineUnit, appliedPromotionId }
 }
 

@@ -28,7 +28,10 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expiry_date must be YYY
 
 const receiptLineSchema = z.object({
   product_id: z.number().int().positive(),
+  // Quantity in the chosen UOM (or base units when uom_id is absent). Converted
+  // to base units server-side before the RPC, which always expects base units.
   quantity: z.number().positive(),
+  uom_id: z.number().int().positive().optional(),
   lot_code: z.string().min(1).max(120).optional(),
   expiry_date: isoDate.optional(),
   barcode: z.string().min(1).max(120).optional(),
@@ -56,6 +59,41 @@ const inputSchema = z.object({
 })
 
 type ReceiptHeader = z.infer<typeof receiptHeaderSchema>
+type ReceiptLine = z.infer<typeof receiptLineSchema>
+
+// Convert each line's quantity from its chosen UOM into BASE units (the only
+// unit the inv_receive_stock RPC and the ledger understand). A line without a
+// uom_id is already in base units. Validates that the UOM belongs to the line's
+// product. Returns lines with base quantities and uom_id stripped (the RPC has
+// no UOM concept).
+async function toBaseLines(
+  admin: ReturnType<typeof createClient>,
+  lines: ReceiptLine[],
+): Promise<Array<Omit<ReceiptLine, 'uom_id'>>> {
+  const uomIds = [...new Set(lines.map(l => l.uom_id).filter((id): id is number => id != null))]
+  const factorById = new Map<number, { productId: number; factor: number }>()
+  if (uomIds.length > 0) {
+    const { data, error } = await admin
+      .from('product_uoms')
+      .select('id, product_id, factor_to_base')
+      .in('id', uomIds)
+    if (error) throw new EdgeFunctionError('INTERNAL', `UOM lookup failed: ${error.message}`)
+    for (const r of (data ?? []) as Array<any>) {
+      factorById.set(r.id, { productId: r.product_id, factor: Number(r.factor_to_base) })
+    }
+  }
+
+  return lines.map(line => {
+    const { uom_id, ...rest } = line
+    if (uom_id == null) return rest
+    const uom = factorById.get(uom_id)
+    if (!uom) throw new EdgeFunctionError('INVALID_INPUT', `Unknown unit of measure ${uom_id}`)
+    if (uom.productId !== line.product_id) {
+      throw new EdgeFunctionError('INVALID_INPUT', `Unit of measure ${uom_id} does not belong to product ${line.product_id}`)
+    }
+    return { ...rest, quantity: line.quantity * uom.factor }
+  })
+}
 
 // Resolve the receipt's supplier to an id, or throw if none was supplied.
 //  - supplier_id present  → use it.
@@ -146,8 +184,11 @@ serve(async (req: Request) => {
       activeWarehouseCount ?? 0,
     )
 
+    // Convert UOM quantities to base units (the RPC + ledger only speak base).
+    const baseLines = await toBaseLines(admin, lines)
+
     const { data: result, error: rpcError } = await admin.rpc('inv_receive_stock', {
-      p_lines: lines,
+      p_lines: baseLines,
       p_actor: auth.userId,
       p_receipt: {
         location_id: locationId,
@@ -183,7 +224,7 @@ serve(async (req: Request) => {
       try {
         putaway = await generatePutawayTasks(admin, {
           warehouseId: destLocationId,
-          lines: lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
+          lines: baseLines.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
           actorId: auth.userId,
           goodsReceiptId: (result as any)?.receipt_id as number | undefined,
         })

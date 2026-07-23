@@ -13,6 +13,7 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import {
   applyCartPromotions,
   resolveLineUnitPrice,
+  resolveUomLineUnitPrice,
   lineBaseUnits,
   type Product,
   type HoReCa,
@@ -22,10 +23,21 @@ import {
 } from '../_shared/pricing.ts'
 import { orderedWarehousesFor } from '../_shared/warehouseRouting.ts'
 
+// A product's UOM rows, trimmed to what pricing needs (mig 00067).
+interface LineUom {
+  id: number
+  factorToBase: number
+  price: number
+  isBase: boolean
+}
+
+type PricedProduct = Product & { name: string; sku: string; uoms: LineUom[] }
+
 interface PlaceOrderItem {
   productId: number
   quantity: number
   packSize?: number | null
+  uomId?: number | null
 }
 
 interface PlaceOrderRequest {
@@ -118,14 +130,14 @@ async function loadLocationPref(
   return orderedWarehousesFor(coords, warehouses)
 }
 
-async function loadProducts(serviceClient: SupabaseClient, productIds: number[]): Promise<Map<number, Product & { name: string; sku: string }>> {
+async function loadProducts(serviceClient: SupabaseClient, productIds: number[]): Promise<Map<number, PricedProduct>> {
   const { data, error } = await serviceClient
     .from('products')
-    .select('id, sku, name, price, category, inventory, carton_size')
+    .select('id, sku, name, price, category, inventory, carton_size, product_uoms(id, factor_to_base, price, is_base)')
     .in('id', productIds)
   if (error) throw error
 
-  const map = new Map<number, Product & { name: string; sku: string }>()
+  const map = new Map<number, PricedProduct>()
   for (const row of (data ?? []) as Array<any>) {
     map.set(row.id, {
       id: row.id,
@@ -135,6 +147,12 @@ async function loadProducts(serviceClient: SupabaseClient, productIds: number[])
       category: row.category,
       inventory: Number(row.inventory),
       cartonSize: row.carton_size ?? undefined,
+      uoms: ((row.product_uoms ?? []) as Array<any>).map(u => ({
+        id: u.id,
+        factorToBase: Number(u.factor_to_base),
+        price: Number(u.price),
+        isBase: u.is_base,
+      })),
     })
   }
   return map
@@ -228,6 +246,9 @@ serve(async (req: Request) => {
     if (typeof it.productId !== 'number' || typeof it.quantity !== 'number' || it.quantity <= 0 || !Number.isInteger(it.quantity)) {
       return errorResponse('INVALID_ITEM', 'Each item needs integer productId and positive integer quantity')
     }
+    if (it.uomId != null && (!Number.isInteger(it.uomId) || it.uomId <= 0)) {
+      return errorResponse('INVALID_ITEM', 'uomId must be a positive integer when provided')
+    }
   }
 
   const { data: authUser } = await userClient.auth.getUser()
@@ -275,10 +296,25 @@ serve(async (req: Request) => {
     if (!productMap.has(id)) return errorResponse('PRODUCT_NOT_FOUND', `Product ${id} not found`, 404)
   }
 
-  // Aggregate quantities so duplicates in the cart count toward stock check
+  // Normalize each line's pack factor + UOM from the product's own UOM rows
+  // (mig 00067) BEFORE aggregation/stock-check/pricing, so all three agree and a
+  // client-sent pack_size can't disagree with the authoritative factor. A UOM
+  // resolves to: base → per-unit line (packSize null); non-base → its factor. An
+  // unknown/absent uomId falls back to the legacy client packSize path.
+  const normalizedItems: PlaceOrderItem[] = body.items.map(it => {
+    const product = productMap.get(it.productId)!
+    const uom = it.uomId != null ? product.uoms.find(u => u.id === it.uomId) : undefined
+    const packSize = uom
+      ? (uom.isBase ? null : uom.factorToBase)
+      : (it.packSize ?? null)
+    return { productId: it.productId, quantity: it.quantity, packSize, uomId: uom ? uom.id : null }
+  })
+
+  // Aggregate quantities so duplicates in the cart count toward stock check.
+  // The key includes uomId so two distinct UOMs sharing a factor never merge.
   const aggregated = new Map<string, PlaceOrderItem>()
-  for (const it of body.items) {
-    const key = `${it.productId}:${it.packSize ?? ''}`
+  for (const it of normalizedItems) {
+    const key = `${it.productId}:${it.uomId ?? ''}:${it.packSize ?? ''}`
     const existing = aggregated.get(key)
     if (existing) existing.quantity += it.quantity
     else aggregated.set(key, { ...it })
@@ -340,14 +376,17 @@ serve(async (req: Request) => {
   const resolvedItems: ResolvedItem[] = []
   for (const it of aggregated.values()) {
     const product = productMap.get(it.productId)!
-    // Carton lines price the whole carton; single-unit lines price per unit.
-    const { unitPrice, appliedPromotionId } = resolveLineUnitPrice(
-      product, hoReCa, userContext, promotions, it.packSize ?? null, cartonDiscountPercent,
-    )
+    const uom = it.uomId != null ? product.uoms.find(u => u.id === it.uomId) : undefined
+    // Explicit-UOM line → use the UOM's own list price (mig 00067). Base UOM and
+    // legacy packSize-only lines → the existing carton/per-unit math.
+    const { unitPrice, appliedPromotionId } = uom && !uom.isBase
+      ? resolveUomLineUnitPrice(product, hoReCa, userContext, promotions, uom)
+      : resolveLineUnitPrice(product, hoReCa, userContext, promotions, it.packSize ?? null, cartonDiscountPercent)
     resolvedItems.push({
       productId: it.productId,
       quantity: it.quantity,
       packSize: it.packSize ?? null,
+      uomId: it.uomId ?? null,
       productName: product.name,
       productSku: product.sku,
       unitPrice,
@@ -404,6 +443,7 @@ serve(async (req: Request) => {
     product_id: i.productId,
     quantity: i.quantity,
     pack_size: i.packSize,
+    uom_id: i.uomId ?? null,
     unit_price: i.unitPrice,
     product_name: i.productName,
     product_sku: i.productSku,

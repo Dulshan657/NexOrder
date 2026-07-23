@@ -1,12 +1,13 @@
-import React from 'react';
-import type { Product, HoReCa, OrderingHint, Promotion, User, PromoBadgeType } from '../types';
-import { Heart, RotateCcw, Clock } from 'lucide-react';
-import { resolveHoReCaPrice, resolvePromotionPrice, getAllApplicablePromotions, cartonPrice as calcCartonPrice } from '../pricing';
+import React, { useMemo, useState } from 'react';
+import type { Product, HoReCa, OrderingHint, Promotion, User, PromoBadgeType, ProductUom } from '../types';
+import { Heart, RotateCcw, Clock, Plus } from 'lucide-react';
+import { resolveHoReCaPrice, resolvePromotionPrice, getAllApplicablePromotions, resolveUomLinePrice } from '../pricing';
+import { orderableUoms, deriveDefaultUoms } from '../lib/uom';
 import OptimizedImage from './OptimizedImage';
 
 interface ProductCardProps {
   product: Product;
-  onAddItem: (product: Product, options: { packSize?: number; price: number; unit: string; }) => void;
+  onAddItem: (product: Product, options: { packSize?: number; price: number; unit: string; uomId?: number }, quantity?: number) => void;
   selectedHoReCa: HoReCa | null;
   onTogglePantry?: (productId: number) => void;
   isPantryItem?: boolean;
@@ -60,9 +61,37 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddItem, selectedH
   const allApplicable = promotions.length > 0 ? getAllApplicablePromotions(product, selectedHoReCa, currentUser ?? null, promotions) : [];
   const bogoPromo = allApplicable.find(p => p.type === 'bogo' && p.bogoConfig);
 
-  // Carton pricing: configurable discount for ordering a full carton.
-  // Rounded (via calcCartonPrice) to match the server's per-line carton price.
-  const cartonPrice = calcCartonPrice(unitPrice, product.cartonSize, cartonDiscountPercent);
+  // Orderable UOMs (mig 00067): the product's own list, or a base+carton default
+  // for rows read before the UOM backfill. The dropdown drives packSize + price.
+  const uoms = useMemo(
+    () => {
+      const list = orderableUoms(product.uoms);
+      return list.length > 0 ? list : orderableUoms(deriveDefaultUoms(product.unit, product.price, product.cartonSize, cartonDiscountPercent));
+    },
+    [product.uoms, product.unit, product.price, product.cartonSize, cartonDiscountPercent],
+  );
+  const [selectedUomId, setSelectedUomId] = useState<number | null>(null);
+  const selectedUom: ProductUom | undefined =
+    uoms.find(u => u.id === selectedUomId) ?? uoms.find(u => u.isBase) ?? uoms[0];
+  const [qty, setQty] = useState(1);
+
+  const linePrice = selectedUom
+    ? resolveUomLinePrice(product, selectedUom, selectedHoReCa, currentUser ?? null, promotions)
+    : unitPrice;
+
+  const handleAdd = () => {
+    if (!selectedUom) return;
+    onAddItem(
+      product,
+      {
+        packSize: selectedUom.isBase ? undefined : selectedUom.factorToBase,
+        price: linePrice,
+        unit: selectedUom.code,
+        uomId: selectedUom.id > 0 ? selectedUom.id : undefined,
+      },
+      Math.max(1, Math.floor(qty) || 1),
+    );
+  };
 
   return (
     <div className={`group bg-white rounded-xl shadow-card border border-stone-200/60 overflow-hidden flex flex-col transition-all duration-300 ${isOutOfStock ? 'opacity-60' : 'hover:shadow-card-hover hover:border-stone-300'}`}>
@@ -177,19 +206,33 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddItem, selectedH
               Buy {bogoPromo.bogoConfig.buyQuantity}, Get {bogoPromo.bogoConfig.getQuantity} Free!
             </p>
           )}
-          {!isOutOfStock && (
-            <div className="flex gap-2 mt-3">
+          {!isOutOfStock && selectedUom && (
+            <div className="mt-3 space-y-2">
+              <div className="flex gap-2">
+                <select
+                  aria-label={`Unit of measure for ${product.name}`}
+                  value={selectedUom.id}
+                  onChange={e => setSelectedUomId(Number(e.target.value))}
+                  className="flex-1 min-w-0 rounded-lg border-0 bg-stone-50 py-2 px-2.5 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-inset focus:ring-emerald-600 text-sm"
+                >
+                  {uoms.map(u => (
+                    <option key={`${u.id}-${u.code}`} value={u.id}>
+                      {u.code}{u.isBase ? '' : ` (×${u.factorToBase})`} — ${resolveUomLinePrice(product, u, selectedHoReCa, currentUser ?? null, promotions).toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number" min="1" step="1" value={qty}
+                  onChange={e => setQty(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                  aria-label={`Quantity for ${product.name}`}
+                  className="w-16 rounded-lg border-0 bg-stone-50 py-2 px-2 text-center text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-inset focus:ring-emerald-600 text-sm tabular-nums"
+                />
+              </div>
               <button
-                onClick={() => onAddItem(product, { price: unitPrice, unit: product.unit })}
-                className="flex-1 text-center bg-stone-100 text-stone-800 font-medium py-2 px-2 rounded-lg hover:bg-stone-200 btn-press cursor-pointer text-sm border border-stone-200"
+                onClick={handleAdd}
+                className="w-full inline-flex items-center justify-center gap-1.5 bg-nexgen-blue text-white font-medium py-2 px-2 rounded-lg hover:bg-nexgen-blue-dark btn-press cursor-pointer text-sm"
               >
-                Unit <span className="text-stone-500 tabular-nums">(${unitPrice.toFixed(2)})</span>
-              </button>
-              <button
-                onClick={() => onAddItem(product, { packSize: product.cartonSize, price: cartonPrice, unit: `carton of ${product.cartonSize}` })}
-                className="flex-1 text-center bg-nexgen-blue text-white font-medium py-2 px-2 rounded-lg hover:bg-nexgen-blue-dark btn-press cursor-pointer text-sm"
-              >
-                Carton (x{product.cartonSize}) <span className="text-blue-100 tabular-nums">(${cartonPrice.toFixed(2)})</span>
+                <Plus className="h-4 w-4" /> Add <span className="text-blue-100 tabular-nums">(${(linePrice * Math.max(1, Math.floor(qty) || 1)).toFixed(2)})</span>
               </button>
             </div>
           )}

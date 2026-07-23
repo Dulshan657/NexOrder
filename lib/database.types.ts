@@ -304,6 +304,7 @@ export type Database = {
           product_id: number
           quantity: number
           pack_size: number | null
+          uom_id: number | null
           unit_price: number
           product_name: string
           product_sku: string
@@ -314,6 +315,7 @@ export type Database = {
           product_id: number
           quantity: number
           pack_size?: number | null
+          uom_id?: number | null
           unit_price: number
           product_name: string
           product_sku: string
@@ -324,6 +326,7 @@ export type Database = {
           product_id?: number
           quantity?: number
           pack_size?: number | null
+          uom_id?: number | null
           unit_price?: number
           product_name?: string
           product_sku?: string
@@ -495,6 +498,7 @@ export type Database = {
           horeca_id: number
           product_id: number
           preferred_pack_size: number | null
+          preferred_uom_id: number | null
           default_quantity: number
         }
         Insert: {
@@ -502,6 +506,7 @@ export type Database = {
           horeca_id: number
           product_id: number
           preferred_pack_size?: number | null
+          preferred_uom_id?: number | null
           default_quantity: number
         }
         Update: {
@@ -509,7 +514,50 @@ export type Database = {
           horeca_id?: number
           product_id?: number
           preferred_pack_size?: number | null
+          preferred_uom_id?: number | null
           default_quantity?: number
+        }
+        Relationships: []
+      }
+      product_uoms: {
+        Row: {
+          id: number
+          product_id: number
+          code: string
+          factor_to_base: number
+          is_base: boolean
+          price: number
+          is_orderable: boolean
+          is_receivable: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          product_id: number
+          code: string
+          factor_to_base: number
+          is_base?: boolean
+          price: number
+          is_orderable?: boolean
+          is_receivable?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          product_id?: number
+          code?: string
+          factor_to_base?: number
+          is_base?: boolean
+          price?: number
+          is_orderable?: boolean
+          is_receivable?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -1607,6 +1655,10 @@ export type Database = {
       inv_receive_stock: {
         Args: { p_lines: Json; p_actor?: string }
         Returns: Json
+      }
+      set_product_uoms: {
+        Args: { p_product_id: number; p_uoms: Json }
+        Returns: undefined
       }
     }
     Enums: Record<string, never>

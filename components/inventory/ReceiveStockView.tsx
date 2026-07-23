@@ -7,6 +7,7 @@ import { useSuppliers } from '../../hooks/queries/useSuppliers';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import type { ReceiptHeader, ReceiptLine } from '../../services/supabase/receivingService';
 import { useToasts } from '../../hooks/useToasts';
+import { receivableUoms, deriveDefaultUoms, baseUom } from '../../lib/uom';
 import { PutawayPanel } from './PutawayPanel';
 import {
   PackagePlus, Plus, Trash2, Search, X, Boxes, History, Clock,
@@ -192,6 +193,7 @@ interface DraftLine {
   key: string;
   productId: number | null;
   quantity: string;
+  uomId: number | null; // received UOM (mig 00067); null = base unit
   lotCode: string;
   expiryDate: string;
   barcode: string;
@@ -203,6 +205,7 @@ const newDraft = (): DraftLine => ({
   key: `d${draftSeq++}`,
   productId: null,
   quantity: '',
+  uomId: null,
   lotCode: '',
   expiryDate: '',
   barcode: '',
@@ -348,6 +351,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
     const lines: ReceiptLine[] = validLines.map(l => ({
       product_id: l.productId as number,
       quantity: Number(l.quantity),
+      ...(l.uomId != null ? { uom_id: l.uomId } : {}),
       ...(l.lotCode.trim() ? { lot_code: l.lotCode.trim() } : {}),
       ...(l.expiryDate ? { expiry_date: l.expiryDate } : {}),
       ...(l.barcode.trim() ? { barcode: l.barcode.trim() } : {}),
@@ -557,6 +561,39 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                           className="w-full px-2 py-1.5 text-right font-mono text-sm bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
                           placeholder="0"
                         />
+                        {product && (() => {
+                          // Receivable UOMs (mig 00067): the product's own list, or a
+                          // base+carton default. Only show the picker when there's a
+                          // choice beyond the base unit.
+                          const own = receivableUoms(product.uoms);
+                          const uoms = own.length > 0 ? own : receivableUoms(deriveDefaultUoms(product.unit, product.price, product.cartonSize));
+                          if (uoms.length <= 1) return null;
+                          const sel = uoms.find(u => u.id === line.uomId) ?? uoms.find(u => u.isBase) ?? uoms[0];
+                          const baseCode = baseUom(uoms)?.code ?? product.unit;
+                          const baseQty = (Number(line.quantity) || 0) * (sel.isBase ? 1 : sel.factorToBase);
+                          return (
+                            <div className="mt-1.5 space-y-0.5">
+                              <select
+                                aria-label={`Unit for ${product.name}`}
+                                value={sel.id}
+                                onChange={e => {
+                                  const next = uoms.find(u => u.id === Number(e.target.value));
+                                  updateLine(line.key, { uomId: next && !next.isBase ? next.id : null });
+                                }}
+                                className="w-full px-2 py-1 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+                              >
+                                {uoms.map(u => (
+                                  <option key={`${u.id}-${u.code}`} value={u.id}>
+                                    {u.code}{u.isBase ? '' : ` (×${u.factorToBase})`}
+                                  </option>
+                                ))}
+                              </select>
+                              {!sel.isBase && (
+                                <p className="text-[11px] text-stone-400 text-right tabular-nums">= {baseQty} {baseCode}</p>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3">
                         <input

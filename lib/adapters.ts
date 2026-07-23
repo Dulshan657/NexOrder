@@ -18,8 +18,9 @@ import type {
   WarehouseLayout, LayoutPlacement, LayoutObject, ZoneProfile, StorageType,
   WieRule, WieRuleDefinition, ProductWmsAttributes, CategoryCompatibility,
   WieScoringProfile, WieScoringWeights, SlottingSuggestion,
-  WieProductVelocity, WieLocationTraffic,
+  WieProductVelocity, WieLocationTraffic, ProductUom,
 } from '@/types'
+import { sortUoms } from './uom'
 import type { Database } from './database.types'
 import { numericIdToUuid, uuidToNumericId } from './userIdMap'
 
@@ -64,7 +65,37 @@ type WieLocationTrafficRow = Database['public']['Tables']['wie_location_traffic'
 
 // ── Product ───────────────────────────────────────────────────────
 
-export function toProduct(row: ProductRow & { suppliers?: { name: string } | null }): Product {
+type ProductUomRow = Database['public']['Tables']['product_uoms']['Row']
+
+export function toProductUom(row: ProductUomRow): ProductUom {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    code: row.code,
+    factorToBase: Number(row.factor_to_base),
+    isBase: row.is_base,
+    price: Number(row.price),
+    isOrderable: row.is_orderable,
+    isReceivable: row.is_receivable,
+    sortOrder: row.sort_order,
+  }
+}
+
+export function fromProductUom(u: ProductUom): Record<string, unknown> {
+  return {
+    code: u.code,
+    factor_to_base: u.factorToBase,
+    is_base: u.isBase,
+    price: u.price,
+    is_orderable: u.isOrderable,
+    is_receivable: u.isReceivable,
+    sort_order: u.sortOrder,
+  }
+}
+
+export function toProduct(
+  row: ProductRow & { suppliers?: { name: string } | null; product_uoms?: ProductUomRow[] | null },
+): Product {
   return {
     id: row.id,
     sku: row.sku,
@@ -96,6 +127,9 @@ export function toProduct(row: ProductRow & { suppliers?: { name: string } | nul
     isActive: row.is_active ?? undefined,
     barcode: row.barcode ?? undefined,
     sizeFactor: row.size_factor != null ? Number(row.size_factor) : undefined,
+    // Embedded UOM list (mig 00067), sorted. Absent on rows read without the
+    // product_uoms(*) join — callers fall back to deriveDefaultUoms.
+    uoms: row.product_uoms ? sortUoms(row.product_uoms.map(toProductUom)) : undefined,
   }
 }
 
@@ -128,6 +162,8 @@ export function fromProduct(p: Partial<Product>): Record<string, unknown> {
   if (p.isActive !== undefined) row.is_active = p.isActive
   if (p.barcode !== undefined) row.barcode = p.barcode
   if (p.sizeFactor !== undefined) row.size_factor = p.sizeFactor
+  // UOM list (mig 00067) — mutate-product validates + persists via set_product_uoms.
+  if (p.uoms !== undefined) row.uoms = p.uoms.map(fromProductUom)
   return row
 }
 

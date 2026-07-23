@@ -3,7 +3,8 @@ import type { PutawayLineRecommendation } from '@/types'
 
 export interface ReceiptLine {
   product_id: number
-  quantity: number
+  quantity: number // in the chosen UOM (or base units when uom_id is absent)
+  uom_id?: number  // received UOM (mig 00067); server converts to base units
   lot_code?: string
   expiry_date?: string
   barcode?: string

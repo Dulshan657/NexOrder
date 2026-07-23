@@ -47,7 +47,7 @@ export interface OrderContextValue {
     setErrors: (v: OrderErrors) => void;
 
     // Handlers
-    handleAddItem: (product: Product, options: { packSize?: number; price: number; unit: string }, quantity?: number) => void;
+    handleAddItem: (product: Product, options: { packSize?: number; price: number; unit: string; uomId?: number }, quantity?: number) => void;
     handleApplyPromo: (promo: Promotion) => void;
     handleBundleConfirm: (rows: Array<{ product: Product; quantity: number; packSize?: number; price: number; unit: string }>) => void;
     handleUpdateQuantity: (productId: number, newQuantity: number, packSize?: number) => void;
@@ -113,18 +113,20 @@ export function OrderProvider({
     );
 
     const handleAddItem = useCallback(
-        (product: Product, options: { packSize?: number; price: number; unit: string }, quantity: number = 1) => {
-            const { packSize, price, unit } = options;
+        (product: Product, options: { packSize?: number; price: number; unit: string; uomId?: number }, quantity: number = 1) => {
+            const { packSize, price, unit, uomId } = options;
+            // Dedup on uomId as well as packSize (mig 00067): two UOMs can share a
+            // factor but have different explicit prices, so they're distinct lines.
+            const sameLine = (item: OrderItem) =>
+                item.id === product.id && item.packSize === packSize && item.uomId === uomId;
             setOrderItems(prevItems => {
-                const existing = prevItems.find(item => item.id === product.id && item.packSize === packSize);
+                const existing = prevItems.find(sameLine);
                 if (existing) {
                     return prevItems.map(item =>
-                        item.id === product.id && item.packSize === packSize
-                            ? { ...item, quantity: item.quantity + quantity }
-                            : item,
+                        sameLine(item) ? { ...item, quantity: item.quantity + quantity } : item,
                     );
                 }
-                return [...prevItems, { ...product, quantity, price, packSize, unit }];
+                return [...prevItems, { ...product, quantity, price, packSize, unit, uomId }];
             });
             addToast(`${product.name} (${unit}) added to order.`, 'info');
         },
@@ -225,6 +227,7 @@ export function OrderProvider({
                         productId: item.id,
                         quantity: item.quantity,
                         packSize: item.packSize ?? null,
+                        uomId: item.uomId ?? null,
                     })),
                     notes: notes || null,
                     deliveryDate: deliveryDate || null,

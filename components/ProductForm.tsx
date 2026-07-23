@@ -7,9 +7,11 @@ import { useToasts } from '../hooks/useToasts';
 import { compressImage } from '../lib/imageCompression';
 import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/supabase/storageService';
 import { buildProductPayload } from '../lib/productFormPayload';
+import { assembleProductUoms, extraUomsFromProduct } from '../lib/productUomForm';
 import OptimizedImage from './OptimizedImage';
 import ProductHomeBinsSection from './admin/ProductHomeBinsSection';
 import ProductWmsAttributesSection from './admin/ProductWmsAttributesSection';
+import ProductUomsSection, { type ExtraUomDraft } from './admin/ProductUomsSection';
 
 interface ProductFormProps {
     productToEdit: Product | null;
@@ -40,6 +42,8 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
     const { addToast } = useToasts();
     const [isUploading, setIsUploading] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
+    // Additional units of measure above the base (mig 00067). Base = Unit + Price.
+    const [extraUoms, setExtraUoms] = useState<ExtraUomDraft[]>([]);
 
     useEffect(() => {
         if (productToEdit) {
@@ -60,6 +64,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                 heightCm: productToEdit.heightCm != null ? String(productToEdit.heightCm) : '',
                 sizeFactor: productToEdit.sizeFactor != null ? String(productToEdit.sizeFactor) : '1',
             });
+            setExtraUoms(extraUomsFromProduct(productToEdit));
         }
     }, [productToEdit]);
 
@@ -116,10 +121,18 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
             return;
         }
 
+        // Build the full UOM list (base from Unit+Price, plus the extra packs).
+        const uomResult = assembleProductUoms(formData.unit, parseFloat(formData.price), extraUoms);
+        if (uomResult.ok === false) {
+            setFormError(uomResult.error);
+            return;
+        }
+        const data = { ...result.data, uoms: uomResult.uoms };
+
         if (productToEdit) {
-            onSave({ ...productToEdit, ...result.data } as Product);
+            onSave({ ...productToEdit, ...data } as Product);
         } else {
-            onSave(result.data as Omit<Product, 'id' | 'inventory'>);
+            onSave(data as Omit<Product, 'id' | 'inventory'>);
         }
     };
 
@@ -157,10 +170,17 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, onS
                             <input type="text" name="unit" id="unit" value={formData.unit} onChange={handleChange} required placeholder="e.g., each, box, license" className={inputClasses} />
                         </div>
                     </div>
-                    <div>
-                        <label htmlFor="cartonSize" className="block text-sm font-medium text-stone-700 mb-1.5">Carton size (units per carton)</label>
-                        <input type="number" name="cartonSize" id="cartonSize" value={formData.cartonSize} onChange={handleChange} required step="1" min="1" className={inputClasses} />
-                        <p className="text-[11px] text-stone-400 mt-1">How many sellable units come in one carton — used for carton ordering & stock math.</p>
+                    <ProductUomsSection
+                        baseUnitLabel={formData.unit}
+                        basePrice={formData.price}
+                        extraUoms={extraUoms}
+                        onChange={setExtraUoms}
+                    />
+                    <div className="hidden">
+                        {/* Legacy carton_size input — the UOM editor is now the source of truth;
+                            the server recomputes carton_size from the UOM list. Kept (hidden) so
+                            buildProductPayload's required-field contract is unchanged. */}
+                        <input type="number" name="cartonSize" id="cartonSize" value={formData.cartonSize} onChange={handleChange} step="1" min="1" />
                     </div>
                      <div>
                         <label htmlFor="category" className="block text-sm font-medium text-stone-700 mb-1.5">Category</label>

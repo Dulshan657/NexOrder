@@ -27,6 +27,7 @@ import {
   type BulkProductRow,
   type RawBulkRow,
 } from '../_shared/productBulk.ts'
+import { validateUoms, deriveDefaultUomInputs, type UomInput } from '../_shared/uomValidation.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -49,8 +50,21 @@ const categoryEnum = z.enum([
   'Other',
 ])
 
+// One unit of measure (mig 00067). Field-level shape only; the cross-row rules
+// (exactly one base, unique codes, …) are enforced by validateUoms.
+const uomSchema = z.object({
+  code: z.string().min(1).max(60),
+  factor_to_base: z.number().int().positive(),
+  is_base: z.boolean(),
+  price: z.number().min(0),
+  is_orderable: z.boolean().optional().default(true),
+  is_receivable: z.boolean().optional().default(true),
+  sort_order: z.number().int().optional().default(0),
+})
+
 // Shared body — inventory is never accepted (stripped silently)
 const productBodySchema = z.object({
+  uoms: z.array(uomSchema).min(1).optional(),
   sku: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
@@ -130,11 +144,48 @@ function firstZodIssueMessage(error: z.ZodError): string {
   return flat.formErrors[0] ?? fieldMessage ?? 'Invalid row'
 }
 
-// Strip the inventory field from any incoming data object to prevent callers
-// from modifying stock levels through this function.
-function stripInventory<T extends Record<string, unknown>>(data: T): Omit<T, 'inventory'> {
-  const { inventory: _stripped, ...rest } = data as any
+// Strip fields that aren't `products` columns: `inventory` (managed only by the
+// stock flows) and `uoms` (its own table, written via set_product_uoms).
+function stripNonColumns<T extends Record<string, unknown>>(data: T): Omit<T, 'inventory' | 'uoms'> {
+  const { inventory: _inv, uoms: _uoms, ...rest } = data as any
   return rest
+}
+
+// Read the singleton carton-discount setting so a derived carton UOM matches the
+// backfill's pricing. Fail-open to 0 (undiscounted) — a missing setting must not
+// block product creation.
+async function cartonDiscountPercent(admin: any): Promise<number> {
+  try {
+    const { data } = await admin
+      .from('app_settings')
+      .select('carton_discount_percent')
+      .eq('id', 1)
+      .maybeSingle()
+    const v = Number(data?.carton_discount_percent)
+    return Number.isFinite(v) ? v : 0
+  } catch {
+    return 0
+  }
+}
+
+// Validate then atomically replace a product's UOM list. Throws INVALID_INPUT on
+// a cross-row rule violation (keeps the product row consistent with its UOMs).
+async function applyProductUoms(admin: any, productId: number, uoms: UomInput[]): Promise<void> {
+  const check = validateUoms(uoms)
+  if (!check.ok) throw new EdgeFunctionError('INVALID_INPUT', check.error)
+  const { error } = await admin.rpc('set_product_uoms', { p_product_id: productId, p_uoms: uoms })
+  if (error) throw new EdgeFunctionError('INTERNAL', `Failed to save units of measure: ${error.message}`)
+}
+
+// Re-read a product with its UOM list embedded, for the mutation response.
+async function reselectProduct(admin: any, id: number): Promise<Record<string, unknown>> {
+  const { data, error } = await admin
+    .from('products')
+    .select('*, product_uoms(*)')
+    .eq('id', id)
+    .single()
+  if (error || !data) throw new EdgeFunctionError('INTERNAL', error?.message ?? 'Failed to re-read product')
+  return data as Record<string, unknown>
 }
 
 serve(async (req: Request) => {
@@ -174,7 +225,8 @@ serve(async (req: Request) => {
 
     // ---- CREATE ----
     if (input.action === 'create') {
-      const safeData = stripInventory(input.data as Record<string, unknown>)
+      const incoming = input.data as Record<string, unknown>
+      const safeData = stripNonColumns(incoming)
 
       // SKU uniqueness check
       const { data: existingSku, error: skuError } = await admin
@@ -208,17 +260,30 @@ serve(async (req: Request) => {
         throw new EdgeFunctionError('INTERNAL', insertError?.message ?? 'Failed to create product')
       }
 
+      const productId = (createdRow as any).id as number
+
+      // Persist the UOM list — the caller's, or a base+carton default derived
+      // from unit/price/carton_size (keeps carton_size-only callers working).
+      const uoms = (incoming.uoms as UomInput[] | undefined) ?? deriveDefaultUomInputs(
+        String(safeData.unit ?? 'each'),
+        Number(safeData.price ?? 0),
+        Number(safeData.carton_size ?? 1),
+        await cartonDiscountPercent(admin),
+      )
+      await applyProductUoms(admin, productId, uoms)
+      const product = await reselectProduct(admin, productId)
+
       await logAuditEvent(admin, {
         actorId: auth.userId,
         actorRole: auth.role,
         action: 'create',
         resource: 'product',
-        resourceId: String((createdRow as any).id),
-        after: createdRow as Record<string, unknown>,
+        resourceId: String(productId),
+        after: product,
       })
 
       return new Response(
-        JSON.stringify({ ok: true, product: createdRow }),
+        JSON.stringify({ ok: true, product }),
         {
           status: 201,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -239,7 +304,8 @@ serve(async (req: Request) => {
       }
 
       const beforeData = existingRow as Record<string, unknown>
-      const safeData = stripInventory(input.data as Record<string, unknown>)
+      const incoming = input.data as Record<string, unknown>
+      const safeData = stripNonColumns(incoming)
 
       // If SKU is being changed, ensure uniqueness
       if (safeData.sku && safeData.sku !== (beforeData.sku as string)) {
@@ -262,16 +328,28 @@ serve(async (req: Request) => {
         }
       }
 
-      const { data: updatedRow, error: updateError } = await admin
-        .from('products')
-        .update(safeData as any)
-        .eq('id', input.id)
-        .select()
-        .single()
+      // Only touch the products row when there are actual column changes — a
+      // UOM-only update (safeData empty) must not fire an empty UPDATE.
+      if (Object.keys(safeData).length > 0) {
+        const { error: updateError } = await admin
+          .from('products')
+          .update(safeData as any)
+          .eq('id', input.id)
+          .select()
+          .single()
 
-      if (updateError || !updatedRow) {
-        throw new EdgeFunctionError('INTERNAL', updateError?.message ?? 'Failed to update product')
+        if (updateError) {
+          throw new EdgeFunctionError('INTERNAL', updateError.message ?? 'Failed to update product')
+        }
       }
+
+      // Replace the UOM list only when the caller sent one (omitting `uoms`
+      // leaves the existing list untouched).
+      if (incoming.uoms !== undefined) {
+        await applyProductUoms(admin, input.id, incoming.uoms as UomInput[])
+      }
+
+      const product = await reselectProduct(admin, input.id)
 
       await logAuditEvent(admin, {
         actorId: auth.userId,
@@ -280,11 +358,11 @@ serve(async (req: Request) => {
         resource: 'product',
         resourceId: String(input.id),
         before: beforeData,
-        after: updatedRow as Record<string, unknown>,
+        after: product,
       })
 
       return new Response(
-        JSON.stringify({ ok: true, product: updatedRow }),
+        JSON.stringify({ ok: true, product }),
         {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -389,7 +467,11 @@ serve(async (req: Request) => {
         }
       })
 
-      const validResults = await bulkCreateProducts(admin, validRows.map(v => v.data))
+      const validResults = await bulkCreateProducts(
+        admin,
+        validRows.map(v => v.data),
+        await cartonDiscountPercent(admin),
+      )
       const results = remapBulkResults(invalidResults, validRows, validResults)
 
       const created = results.filter(r => r.ok).length

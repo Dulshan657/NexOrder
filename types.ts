@@ -70,6 +70,29 @@ export interface Product {
     barcode?: string;
     // Racked WMS: capacity slots a single base unit consumes (mig 00039).
     sizeFactor?: number;
+    // N-level units of measure (mig 00067). Embedded child rows; the base UOM
+    // (isBase, factorToBase 1) always exists. Absent on rows read before the
+    // migration — callers fall back to deriveDefaultUoms(unit, price, cartonSize).
+    uoms?: ProductUom[];
+}
+
+/**
+ * One sellable/receivable unit of measure for a product (mig 00067). A higher
+ * UOM is a pure quantity multiplier: `factorToBase` base units per 1 of this
+ * UOM (base UOM = 1), with an explicit per-UOM `price`. There is exactly one
+ * base UOM per product. `pack_size` on an order/receipt line carries this
+ * factor, so the inventory ledger math (base = quantity × factor) is unchanged.
+ */
+export interface ProductUom {
+    id: number;
+    productId: number;
+    code: string;           // dropdown label: 'each', 'carton', 'pallet', …
+    factorToBase: number;   // base units per 1 of this UOM; base = 1 (integer)
+    isBase: boolean;
+    price: number;          // explicit price for ONE of this UOM
+    isOrderable: boolean;   // appears in the shop dropdown
+    isReceivable: boolean;  // appears in the receiving dropdown
+    sortOrder: number;      // ascending factor; drives dropdown + decomposition order
 }
 
 // ---------------------------------------------------------------------------
@@ -584,7 +607,8 @@ export interface HoReCa {
 
 export interface OrderItem extends Product {
     quantity: number;
-    packSize?: number; // undefined for single unit, cartonSize for a carton
+    packSize?: number; // undefined for single unit, else the chosen UOM's factorToBase
+    uomId?: number;    // chosen UOM (mig 00067); undefined/base = per-unit line
 }
 
 export type OrderStatus = 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered';
@@ -725,7 +749,8 @@ export interface AppSettings {
 
 export interface PantryItem {
     productId: number;
-    preferredPackSize: number | undefined; // undefined = single unit, cartonSize = carton
+    preferredPackSize: number | undefined; // undefined = single unit, else UOM factorToBase
+    preferredUomId?: number;               // chosen UOM (mig 00067); kept in sync with packSize
     defaultQuantity: number;
 }
 

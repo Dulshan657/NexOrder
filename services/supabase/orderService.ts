@@ -71,7 +71,7 @@ export async function getOrdersByUser(userId: string) {
 
 export interface PlaceOrderInput {
   hoReCaId: number
-  items: Array<{ productId: number; quantity: number; packSize?: number | null }>
+  items: Array<{ productId: number; quantity: number; packSize?: number | null; uomId?: number | null }>
   notes?: string | null
   deliveryDate?: string | null
   deliveryTimeSlot?: 'AM' | 'PM' | null

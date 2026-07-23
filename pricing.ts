@@ -1,4 +1,4 @@
-import type { Product, HoReCa, User, Promotion, PriceResolution, PromoBadgeType } from './types';
+import type { Product, HoReCa, User, Promotion, PriceResolution, PromoBadgeType, ProductUom } from './types';
 
 /**
  * Resolves the unit price for a product given a customer's pricing configuration.
@@ -31,6 +31,31 @@ export function resolveHoReCaPrice(product: Product, customer?: HoReCa | null): 
  */
 export function cartonPrice(unitPrice: number, cartonSize: number, cartonDiscountPercent: number): number {
     return Math.round(unitPrice * cartonSize * (1 - cartonDiscountPercent / 100) * 100) / 100;
+}
+
+/**
+ * Display price for one of an explicit UOM (mig 00067). Mirrors the server's
+ * resolveUomLineUnitPrice: the base UOM resolves to the promotion-adjusted unit
+ * price; a higher UOM's list price is scaled by the same ratio the base unit's
+ * list price is adjusted (HoReCa + promo), so the cart figure matches what the
+ * server persists at placement. Falls back to unit × factor when list price is 0.
+ */
+export function resolveUomLinePrice(
+    product: Product,
+    uom: ProductUom,
+    customer: HoReCa | null,
+    currentUser: User | null,
+    promotions: Promotion[],
+    now: Date = new Date(),
+): number {
+    const { finalPrice } = resolvePromotionPrice(product, customer, currentUser, promotions, now);
+    if (uom.isBase) return finalPrice;
+
+    const listUnit = product.price;
+    const ratio = listUnit > 0 ? finalPrice / listUnit : 1;
+    return listUnit > 0
+        ? Math.round(uom.price * ratio * 100) / 100
+        : Math.round(finalPrice * uom.factorToBase * 100) / 100;
 }
 
 // --- Promotion Pricing ---

@@ -5,6 +5,8 @@ import type { WarehouseScope } from '../../lib/warehouseScope';
 import { useBalancesByProduct, useLocations } from '../../hooks/queries/useInventoryBalances';
 import { classifyStock, lowStockThresholdFor, type StockStatus } from '../../lib/stockStatus';
 import type { ProductBatchBalance } from '../../services/supabase/inventoryService';
+import { decomposeToUoms, formatBreakdown } from '../../lib/uomDecompose';
+import { deriveDefaultUoms } from '../../lib/uom';
 import AdjustStockModal from '../admin/AdjustStockModal';
 
 export interface Agg { onHand: number; allocated: number; available: number }
@@ -74,7 +76,20 @@ export const OpsStockRow: React.FC<OpsStockRowProps> = ({ product, agg, maxQty, 
             </div>
           </div>
         </td>
-        <td className="px-5 py-3.5 text-right font-mono text-sm text-stone-900 tabular-nums">{agg.onHand}</td>
+        <td className="px-5 py-3.5 text-right font-mono text-sm text-stone-900 tabular-nums">
+          {agg.onHand}
+          {(() => {
+            // Break the base-unit on-hand into UOM tiers for a quick read
+            // (mig 00067), e.g. "1 pallet, 8 each". Only when a pack > base exists.
+            const uoms = (product.uoms && product.uoms.length > 0)
+              ? product.uoms
+              : deriveDefaultUoms(product.unit, product.price, product.cartonSize);
+            if (uoms.length <= 1 || agg.onHand <= 0) return null;
+            const breakdown = decomposeToUoms(agg.onHand, uoms);
+            if (breakdown.length <= 1) return null;
+            return <p className="text-[11px] font-sans text-stone-400 mt-0.5 normal-nums">{formatBreakdown(breakdown)}</p>;
+          })()}
+        </td>
         <td className="px-5 py-3.5 text-right font-mono text-sm text-stone-500 tabular-nums">{agg.allocated}</td>
         <td className="px-5 py-3.5">
           <div className="flex items-center gap-3">

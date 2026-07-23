@@ -15,6 +15,7 @@
 // receives already-validated `BulkProductRow` values.
 
 import { EdgeFunctionError } from './errors.ts'
+import { deriveDefaultUomInputs, type UomInput } from './uomValidation.ts'
 
 // ---------------------------------------------------------------------
 // Minimal client surface — only the query-builder methods this helper
@@ -57,6 +58,8 @@ export interface ProductBulkSupabaseLike {
     select(columns: string): ProductBulkSelectBuilder<Record<string, unknown>>
     insert(row: Record<string, unknown>): ProductBulkInsertBuilder<Record<string, unknown>>
   }
+  // set_product_uoms(p_product_id, p_uoms) — seeds each created product's UOMs.
+  rpc(fn: string, args: Record<string, unknown>): Promise<{ error: ProductBulkDbError | null }>
 }
 
 // ---------------------------------------------------------------------
@@ -83,6 +86,8 @@ export interface BulkProductRow {
   size_factor?: number
   supplier_id?: number
   supplier_name?: string
+  // Optional explicit UOM list; when absent, a base+carton default is derived.
+  uoms?: UomInput[]
 }
 
 // One row's outcome from a bulk-create invoke. Index-aligned with the input
@@ -173,6 +178,7 @@ export async function resolveSupplierByName(
 export async function bulkCreateProducts(
   admin: ProductBulkSupabaseLike,
   rows: ReadonlyArray<BulkProductRow>,
+  cartonDiscountPercent = 0,
 ): Promise<BulkCreateResult[]> {
   const results: BulkCreateResult[] = rows.map((row, index) => ({
     index,
@@ -266,8 +272,9 @@ export async function bulkCreateProducts(
 
     // `row` never carries an `inventory` field — the zod schema in index.ts
     // doesn't accept one (default zod behavior strips unknown keys), so
-    // unlike create/update there's nothing to strip here.
-    const { supplier_name: _supplierName, ...rest } = row
+    // unlike create/update there's nothing to strip here. `uoms` is not a
+    // products column, so it's pulled out and written via set_product_uoms below.
+    const { supplier_name: _supplierName, uoms: _uoms, ...rest } = row
     const insertData = { ...rest, supplier_id: supplierId, inventory: 0 }
 
     const { data: createdRow, error: insertError } = await admin
@@ -298,11 +305,26 @@ export async function bulkCreateProducts(
       continue
     }
 
+    const createdId = (createdRow as Record<string, unknown>).id as number
+
+    // Seed the product's UOMs — the row's explicit list, or a base+carton
+    // default. A UOM failure shouldn't undo a created product (there's no
+    // batch transaction), so surface it on the row but keep it marked ok:
+    // the product exists and an operator can fix its units afterward.
+    const uoms = row.uoms ?? deriveDefaultUomInputs(
+      row.unit, row.price, row.carton_size, cartonDiscountPercent,
+    )
+    const { error: uomError } = await admin.rpc('set_product_uoms', {
+      p_product_id: createdId,
+      p_uoms: uoms,
+    })
+
     results[index] = {
       index,
       ok: true,
-      id: (createdRow as Record<string, unknown>).id as number,
+      id: createdId,
       sku: row.sku,
+      ...(uomError ? { error: `Created, but units of measure failed: ${uomError.message}` } : {}),
     }
   }
 

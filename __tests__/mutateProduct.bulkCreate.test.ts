@@ -63,6 +63,7 @@ class FakeAdmin {
   private readonly productInsertErrors: Map<string, SimulatedDbError>
   readonly insertedProducts: FakeRow[] = []
   readonly insertedSuppliers: FakeRow[] = []
+  readonly rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = []
   private nextProductId = 1000
   private nextSupplierId = 500
 
@@ -85,6 +86,11 @@ class FakeAdmin {
         }),
       }),
     }
+  }
+
+  async rpc(fn: string, args: Record<string, unknown>): Promise<{ error: SimulatedDbError | null }> {
+    this.rpcCalls.push({ fn, args })
+    return { error: null }
   }
 
   private rowsFor(table: TableName): FakeRow[] {
@@ -191,6 +197,23 @@ describe('mutate-product bulk-create: bulkCreateProducts', () => {
     const supplierId = fake.insertedSuppliers[0].id
     expect(fake.insertedProducts[0].supplier_id).toBe(supplierId)
     expect(fake.insertedProducts[1].supplier_id).toBe(supplierId)
+  })
+
+  it('seeds derived base+carton UOMs for each created product (mig 00067)', async () => {
+    const fake = new FakeAdmin()
+    const rows = [makeRow({ sku: 'SKU-U', supplier_id: 1, unit: 'can', carton_size: 12, price: 10 })]
+
+    const results = await bulkCreateProducts(fake as any, rows as any, 5)
+
+    expect(results[0].ok).toBe(true)
+    const call = fake.rpcCalls.find(c => c.fn === 'set_product_uoms')
+    expect(call).toBeTruthy()
+    expect(call!.args.p_product_id).toBe(results[0].id)
+    const uoms = call!.args.p_uoms as Array<Record<string, unknown>>
+    expect(uoms).toHaveLength(2)
+    expect(uoms[0]).toMatchObject({ code: 'can', factor_to_base: 1, is_base: true, price: 10 })
+    // 10 * 12 * 0.95 = 114
+    expect(uoms[1]).toMatchObject({ code: 'carton', factor_to_base: 12, is_base: false, price: 114 })
   })
 
   it('marks a later occurrence of an intra-batch duplicate SKU as failed (S5)', async () => {
