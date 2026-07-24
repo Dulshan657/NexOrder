@@ -166,6 +166,26 @@ export function filterCandidates(request: PutawayRequest, options: FilterOptions
     sample: a.sample,
   }))
 
+  // Explainability for the rack-level role gate (mig 00072). The gate itself
+  // already ran in SQL — a role-mismatched level never reaches `request.candidates`
+  // at all, cheaper and it protects the candidate budget. But that means a bare
+  // empty result here is indistinguishable from "nothing published yet" unless we
+  // say so explicitly. When the SKU carries a role restriction AND arrived with
+  // literally nothing to score, surface why: this drives the operator's
+  // "Place anyway" override affordance instead of a dead-end empty queue.
+  const allowedRoles = request.sku.allowedLevelRoles
+  if (valid.length === 0 && request.candidates.length === 0 && allowedRoles && allowedRoles.length > 0) {
+    hardFilters.push({
+      ruleId: null,
+      code: 'level_role_mismatch',
+      label: `No ${allowedRoles.join('/')} level has room for this line`,
+      // SQL excluded these bins before they ever reached us, so there is no
+      // count/sample to report here — only that the restriction is the reason.
+      rejectedCount: 0,
+      sample: [],
+    })
+  }
+
   return { valid, hardFilters, softByLocation }
 }
 

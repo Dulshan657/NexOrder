@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { toProductWmsAttributes } from '@/lib/adapters'
-import type { ProductWmsAttributes, ShelfLifePolicy } from '@/types'
+import type { LevelRole, ProductWmsAttributes, ShelfLifePolicy } from '@/types'
 
 export async function getWmsAttributes(productId: number): Promise<ProductWmsAttributes | null> {
   const { data, error } = await supabase
@@ -22,6 +22,10 @@ export interface WmsAttributesInput {
   handling_type?: string | null
   weight_kg?: number | null
   volume_l?: number | null
+  /** Level roles this SKU may be put away into (mig 00072). null/omitted = ANY
+   *  role — which is what every existing product has, so an empty selection
+   *  must never be sent as an empty array. */
+  allowed_level_roles?: LevelRole[] | null
 }
 
 export async function saveWmsAttributes(input: WmsAttributesInput): Promise<ProductWmsAttributes> {

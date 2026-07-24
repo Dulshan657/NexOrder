@@ -8,8 +8,8 @@
 // prompts whether to retro-apply it to units already placed in published layouts.
 
 import React, { useMemo, useState } from 'react'
-import { Boxes, Plus, Pencil, Power, X, Snowflake, PencilRuler } from 'lucide-react'
-import { Button, Modal } from '../../ui'
+import { Boxes, Plus, Pencil, Power, Snowflake, PencilRuler, Layers, Trash2 } from 'lucide-react'
+import { Button, Modal, Toggle } from '../../ui'
 import {
   useStorageTypes,
   useCreateStorageType,
@@ -18,10 +18,11 @@ import {
 } from '../../../hooks/queries/useStorageTypes'
 import { useToasts } from '../../../hooks/useToasts'
 import { deriveCapacitySlots, capacityModeOf, type CapacityMode } from '../../../lib/storageFormCapacity'
-import type { SlotUnit, StorageType } from '../../../types'
+import type { LevelRole, RackLevel, SlotUnit, StorageType } from '../../../types'
 
 const SLOT_UNITS: SlotUnit[] = ['pallet', 'carton', 'each', 'uncounted']
 const PRESET_COLORS = ['#10b981', '#6366f1', '#f59e0b', '#0ea5e9', '#a855f7', '#ef4444', '#14b8a6', '#78716c']
+const LEVEL_ROLES: LevelRole[] = ['pick', 'reserve', 'bulk']
 
 interface FormState {
   code: string
@@ -39,12 +40,17 @@ interface FormState {
   isDrawable: boolean
   isCold: boolean
   sortOrder: string
+  // Rack levels (mig 00072): the STANDARD layout every rack drawn with this
+  // form inherits. Opt-in — meaningless for Bulk Floor / Staging Area.
+  hasLevels: boolean
+  levelTemplate: RackLevel[]
 }
 
 const emptyForm: FormState = {
   code: '', name: '', slotUnit: 'pallet', capacityMode: 'structured',
   levels: '', positionsPerLevel: '', flatSlots: '', weightCapacityKg: '',
   lengthCm: '', widthCm: '', heightCm: '', color: PRESET_COLORS[0], isDrawable: true, isCold: false, sortOrder: '100',
+  hasLevels: false, levelTemplate: [],
 }
 
 function toForm(t: StorageType): FormState {
@@ -65,7 +71,105 @@ function toForm(t: StorageType): FormState {
     isDrawable: t.isDrawable,
     isCold: t.attributes?.is_cold === true,
     sortOrder: String(t.sortOrder),
+    // `hasLevels`/`levelTemplate` aren't wired through the adapter yet (mig
+    // 00072 lands them on `storage_types`) — default to "no levels" until then.
+    hasLevels: t.hasLevels ?? false,
+    levelTemplate: t.levelTemplate ?? [],
   }
+}
+
+/** Renumber to a contiguous 1..N after an add/remove so `levelIndex` never
+ *  has a gap — L1 is always the bottom level. */
+function renumbered(levels: RackLevel[]): RackLevel[] {
+  return levels.map((l, i) => ({ ...l, levelIndex: i + 1 }))
+}
+
+/** Compact standard-level-template editor. A drop-in swap for the shared
+ *  `RackLevelEditor` (components/warehouse/levels/), which another agent is
+ *  building for the per-rack case — that component isn't on disk yet, so this
+ *  form-scoped editor stands in rather than shipping a broken import. */
+function LevelTemplateEditor({
+  levels,
+  onChange,
+}: {
+  levels: RackLevel[]
+  onChange: (next: RackLevel[]) => void
+}) {
+  const addLevel = () => onChange(renumbered([...levels, { levelIndex: levels.length + 1, role: 'pick' }]))
+  const removeLevel = (index: number) => onChange(renumbered(levels.filter((_, i) => i !== index)))
+  const setRole = (index: number, role: LevelRole) =>
+    onChange(levels.map((l, i) => (i === index ? { ...l, role } : l)))
+  const setCapacity = (index: number, value: string) =>
+    onChange(levels.map((l, i) => (i === index ? { ...l, capacitySlots: value === '' ? undefined : Number(value) } : l)))
+  const setWeight = (index: number, value: string) =>
+    onChange(levels.map((l, i) => (i === index ? { ...l, weightCapacityKg: value === '' ? undefined : Number(value) } : l)))
+
+  return (
+    <div className="rounded-lg border border-stone-200 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-stone-600 flex items-center gap-1.5">
+          <Layers className="w-3.5 h-3.5" /> Standard levels
+        </p>
+        <button
+          type="button"
+          onClick={addLevel}
+          className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-stone-200 text-stone-600 btn-press"
+        >
+          <Plus className="w-3.5 h-3.5" /> Add level
+        </button>
+      </div>
+      <p className="text-[11px] text-stone-500">
+        Every new rack drawn with this form starts with this layout — L1 is the bottom level. Individual racks can
+        override it afterward without changing the standard.
+      </p>
+
+      {levels.length === 0 ? (
+        <p className="text-xs text-stone-400 py-2">No levels defined yet. Add at least one.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {levels.map((level, i) => (
+            <div key={i} className="flex items-center gap-2 bg-stone-50 rounded-md px-2 py-1.5">
+              <span className="text-xs font-mono text-stone-500 w-8 shrink-0">L{level.levelIndex}</span>
+              <select
+                value={level.role}
+                onChange={(e) => setRole(i, e.target.value as LevelRole)}
+                aria-label={`Role for level ${level.levelIndex}`}
+                className="flex-1 text-xs border border-stone-200 rounded px-2 py-1 bg-white"
+              >
+                {LEVEL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+              <input
+                type="number"
+                min={0}
+                placeholder="slots"
+                value={level.capacitySlots ?? ''}
+                onChange={(e) => setCapacity(i, e.target.value)}
+                aria-label={`Capacity slots for level ${level.levelIndex}`}
+                className="w-20 text-xs border border-stone-200 rounded px-2 py-1"
+              />
+              <input
+                type="number"
+                min={0}
+                placeholder="kg"
+                value={level.weightCapacityKg ?? ''}
+                onChange={(e) => setWeight(i, e.target.value)}
+                aria-label={`Weight capacity (kg) for level ${level.levelIndex}`}
+                className="w-16 text-xs border border-stone-200 rounded px-2 py-1"
+              />
+              <button
+                type="button"
+                onClick={() => removeLevel(i)}
+                className="p-1 rounded hover:bg-red-50 btn-press shrink-0"
+                aria-label={`Remove level ${level.levelIndex}`}
+              >
+                <Trash2 className="w-3.5 h-3.5 text-red-500" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 const numOrNull = (s: string): number | null => (s.trim() === '' ? null : Number(s))
@@ -98,7 +202,17 @@ const StorageFormsView: React.FC = () => {
     [form.capacityMode, form.levels, form.positionsPerLevel, form.flatSlots],
   )
 
-  /** Build the create/update payload from the form (camelCase for the service). */
+  // Drives the Modal's discard-confirm guard: compares the live form against
+  // whatever it was seeded from (the edited type, or the blank template).
+  const isDirty = useMemo(
+    () => JSON.stringify(form) !== JSON.stringify(editing ? toForm(editing) : emptyForm),
+    [form, editing],
+  )
+
+  /** Build the create/update payload from the form (camelCase for the service).
+   *  `hasLevels`/`levelTemplate` aren't in `StorageTypeInput` yet — another
+   *  agent is extending `mutate-storage-type` to accept them (mig 00072); sent
+   *  ahead of that landing so no further frontend change is needed once it does. */
   const buildPatch = () => {
     const structured = form.capacityMode === 'structured'
     return {
@@ -115,6 +229,8 @@ const StorageFormsView: React.FC = () => {
       isDrawable: form.isDrawable,
       attributes: form.isCold ? { is_cold: true } : {},
       sortOrder: Number(form.sortOrder) || 100,
+      hasLevels: form.hasLevels,
+      levelTemplate: form.hasLevels && form.levelTemplate.length > 0 ? form.levelTemplate : null,
     }
   }
 
@@ -154,6 +270,7 @@ const StorageFormsView: React.FC = () => {
     if (!form.name.trim()) { setError('Name is required.'); return }
     const weight = numOrNull(form.weightCapacityKg)
     if (weight != null && (!Number.isFinite(weight) || weight < 0)) { setError('Weight capacity must be a non-negative number.'); return }
+    if (form.hasLevels && form.levelTemplate.length === 0) { setError('Add at least one level, or turn levels off.'); return }
 
     const patch = buildPatch()
     try {
@@ -227,6 +344,11 @@ const StorageFormsView: React.FC = () => {
                       <Snowflake className="w-3 h-3" /> Cold
                     </span>
                   )}
+                  {t.hasLevels && (
+                    <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700">
+                      <Layers className="w-3 h-3" /> {(t.levelTemplate ?? []).length || '?'} levels
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-stone-500 mt-0.5">
                   {capacityLabel(t)}
@@ -253,16 +375,27 @@ const StorageFormsView: React.FC = () => {
         </div>
       )}
 
-      {formOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setFormOpen(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-lg p-5 space-y-4 max-h-[88vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-stone-700">{editing ? `Edit ${editing.name}` : 'New storage form'}</h3>
-              <button onClick={() => setFormOpen(false)} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close">
-                <X className="w-4 h-4 text-stone-500" />
-              </button>
-            </div>
-
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        size="lg"
+        title={editing ? `Edit ${editing.name}` : 'New storage form'}
+        dirty={isDirty}
+        discardConfirm={{
+          title: 'Discard this storage form?',
+          message: 'Your unsaved changes will be lost.',
+          confirmLabel: 'Discard',
+        }}
+        footer={({ requestClose }) => (
+          <div className="flex justify-end gap-2">
+            <button className="text-sm px-3 py-1.5 border border-stone-200 rounded-lg btn-press" onClick={requestClose}>Cancel</button>
+            <button className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-50" onClick={save} disabled={saving}>
+              {saving ? 'Saving…' : editing ? 'Save changes' : 'Create form'}
+            </button>
+          </div>
+        )}
+      >
+          <div className="space-y-4">
             {error && <p className="text-xs text-red-600">{error}</p>}
 
             <div className="grid grid-cols-2 gap-3">
@@ -373,15 +506,23 @@ const StorageFormsView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2">
-              <button className="text-sm px-3 py-1.5 border border-stone-200 rounded-lg btn-press" onClick={() => setFormOpen(false)}>Cancel</button>
-              <button className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-50" onClick={save} disabled={saving}>
-                {saving ? 'Saving…' : editing ? 'Save changes' : 'Create form'}
-              </button>
+            {/* Rack levels (mig 00072) */}
+            <div className="rounded-lg border border-stone-200 p-3 space-y-3">
+              <Toggle
+                checked={form.hasLevels}
+                onChange={(next) => setForm({ ...form, hasLevels: next, levelTemplate: next ? form.levelTemplate : [] })}
+                label="This form has addressable levels"
+                description="Splits every rack drawn with this form into individually-addressable levels, each with its own pick/reserve/bulk role. Leave off for forms where levels don't apply, like Bulk Floor or Staging Area."
+              />
+              {form.hasLevels && (
+                <LevelTemplateEditor
+                  levels={form.levelTemplate}
+                  onChange={(next) => setForm({ ...form, levelTemplate: next })}
+                />
+              )}
             </div>
           </div>
-        </div>
-      )}
+      </Modal>
 
       {/* Retro-apply prompt ("ask each time") — three outcomes, so a Modal. */}
       <Modal

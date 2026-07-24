@@ -20,7 +20,15 @@
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { planPutaway } from './wie/putawayPlan.ts'
 import { DEFAULT_WEIGHTS } from './wie/types.ts'
-import type { CandidateBin, RuleDefinition, ScoringWeights, SkuProfile } from './wie/types.ts'
+import type { CandidateBin, LevelRole, RuleDefinition, ScoringWeights, SkuProfile } from './wie/types.ts'
+
+// wie_putaway_candidates is ordered by dock distance with p_limit as a hard
+// cutoff — a layout with more placements than this silently hides its
+// farthest bays from the engine. MAIN alone is 189 bays; levelled at 5
+// levels/rack that's 945 locations, so 200 (the old default) would have
+// hidden the far half of the warehouse again. See
+// memory/main-warehouse-slotting-2026-07.md.
+const CANDIDATE_LIMIT = 2000
 
 export interface PutawayLineInput {
   product_id: number
@@ -125,12 +133,18 @@ export async function generatePutawayTasks(
     if (pErr || !product) throw new Error(`Product ${line.product_id} not found`)
 
     const { data: attrs } = await admin.from('product_wms_attributes')
-      .select('hazard_class, temp_min, temp_max, handling_type, stackable, weight_kg')
+      .select('hazard_class, temp_min, temp_max, handling_type, stackable, weight_kg, allowed_level_roles')
       .eq('product_id', line.product_id).maybeSingle()
 
     const { data: velRow } = await admin.from('wie_product_velocity')
       .select('velocity_class')
       .eq('warehouse_id', warehouseId).eq('product_id', line.product_id).maybeSingle()
+
+    // NULL / no product_wms_attributes row at all = unconstrained (any level
+    // role) — this is what keeps every pre-existing SKU putting away exactly
+    // as it did before mig 00072.
+    const rawRoles = (attrs as any)?.allowed_level_roles
+    const allowedLevelRoles: LevelRole[] | null = Array.isArray(rawRoles) && rawRoles.length > 0 ? rawRoles : null
 
     const sku: SkuProfile = {
       productId: (product as any).id,
@@ -145,10 +159,11 @@ export async function generatePutawayTasks(
       handlingType: (attrs as any)?.handling_type ?? null,
       stackable: (attrs as any)?.stackable ?? null,
       velocityClass: (velRow as any)?.velocity_class ?? null,
+      allowedLevelRoles,
     }
 
     const { data: candRows, error: cErr } = await admin.rpc('wie_putaway_candidates', {
-      p_layout_id: layoutId, p_product_id: line.product_id, p_limit: 200,
+      p_layout_id: layoutId, p_product_id: line.product_id, p_limit: CANDIDATE_LIMIT, p_roles: allowedLevelRoles,
     })
     if (cErr) throw new Error(`candidate load failed: ${cErr.message}`)
 
@@ -173,6 +188,8 @@ export async function generatePutawayTasks(
         zoneMaxUtilizationPct: r.zone_max_utilization_pct != null ? Number(r.zone_max_utilization_pct) : null,
         occupantCategories: Array.isArray(r.bin_categories) ? r.bin_categories.filter((c: unknown): c is string => typeof c === 'string') : [],
         pickVisits30d: r.pick_visits_30d != null ? Number(r.pick_visits_30d) : 0,
+        levelRole: r.level_role ?? null,
+        levelIndex: r.level_index != null ? Number(r.level_index) : null,
       }
     })
 

@@ -79,6 +79,15 @@ export async function deleteLayout(layoutId: number): Promise<number> {
   return (data as any).layout_id as number
 }
 
+/** One level of a new_bin.levels array (mig 00072). */
+export interface NewBinLevelInput {
+  level_index: number
+  role: 'pick' | 'reserve' | 'bulk'
+  capacity_slots?: number
+  slot_kind?: 'pallet' | 'carton'
+  weight_capacity_kg?: number
+}
+
 /** One placement to save. Existing bins carry location_id; new bins carry new_bin. */
 export interface SavePlacementInput {
   client_ref: string
@@ -93,6 +102,11 @@ export interface SavePlacementInput {
     weight_capacity_kg?: number
     zone_profile_id?: number
     storage_type_id?: number
+    /** Per-level config (mig 00072; kind must be 'RACK' when present). When
+     *  set, save_geometry creates the RACK parent + one SHELF child + one
+     *  co-located layout_placements row per level, instead of a single flat
+     *  BIN — see ref_map's level_location_ids on the result. */
+    levels?: NewBinLevelInput[]
   }
   floor: number
   x: number
@@ -118,7 +132,16 @@ export interface SaveObjectInput {
 
 export interface SaveGeometryResult {
   layout_id: number
-  ref_map: Array<{ client_ref: string; location_id: number }>
+  ref_map: Array<{
+    client_ref: string
+    /** For a new_bin.levels rack, this is the RACK PARENT's own id — the
+     *  parent has no placement row of its own, but it's still a real
+     *  locations row the client may want to reference (e.g. selection). */
+    location_id: number
+    /** Present only when this placement's new_bin carried levels: level_index
+     *  -> the created SHELF (level) location id (mig 00072). */
+    level_location_ids?: Record<number, number>
+  }>
 }
 
 export async function saveGeometry(

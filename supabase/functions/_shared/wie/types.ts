@@ -55,6 +55,14 @@ export interface PlacementFootprint {
 
 // ── Inventory / SKU model ────────────────────────────────────────────────────
 
+/** What a rack level is used for (mig 00072). Drives the HARD putaway gate —
+ *  a SKU may only be placed on a level whose role it allows. The role filter
+ *  itself runs in SQL (wie_putaway_candidates' p_roles argument); this type
+ *  just carries the value through for explainability + UI display. `null` on
+ *  a location/CandidateBin means unconstrained — every legacy bin (and every
+ *  level with no explicit role) stays eligible for any SKU. */
+export type LevelRole = 'pick' | 'reserve' | 'bulk'
+
 /** The SKU being put away, plus the attributes the rule/scoring layers read.
  *  Phase-3 attributes (hazard/temp) are optional and null until that phase. */
 export interface SkuProfile {
@@ -76,6 +84,13 @@ export interface SkuProfile {
   /** ABC pick-velocity class for this SKU at this warehouse (Phase 4); null when
    *  no history. Drives velocity_match (A-movers near the dock, C-movers away). */
   velocityClass: 'A' | 'B' | 'C' | null
+  /** Which rack-level roles this SKU may occupy (mig 00072,
+   *  product_wms_attributes.allowed_level_roles). `null` (or an empty array) =
+   *  any role — this is also the value used when the SKU has no
+   *  product_wms_attributes row at all, so every pre-existing SKU keeps
+   *  working unchanged. Optional so pre-existing call sites/tests that build
+   *  a SkuProfile literal without it keep compiling. */
+  allowedLevelRoles?: LevelRole[] | null
 }
 
 /** A candidate storage location (bin), pre-loaded with everything the two-stage
@@ -118,6 +133,16 @@ export interface CandidateBin {
   occupantCategories: string[]
   /** Pick visits to this bin's node in the last 30 days (Phase 4 congestion). */
   pickVisits30d: number
+  /** This level's role (mig 00072); null on a RACK parent, a non-levelled bin,
+   *  or a level with no explicit role — all unconstrained. The role GATE
+   *  itself already ran in SQL before this bin ever reached the engine; this
+   *  is carried through for display/explainability only. Optional so
+   *  pre-existing call sites/tests that build a CandidateBin literal without
+   *  it keep compiling. */
+  levelRole?: LevelRole | null
+  /** 1-based level number within its rack (mig 00072); null/undefined when
+   *  this bin isn't a level. */
+  levelIndex?: number | null
 }
 
 export type CompatibilityLevel = 'forbidden' | 'restricted' | 'allowed'

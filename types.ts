@@ -161,11 +161,38 @@ export interface InventoryLocation {
     zoneProfileId?: number;
     // Physical storage-unit type (mig 00056; on rack/BIN nodes).
     storageTypeId?: number;
+    // Rack levels (mig 00072; on SHELF-kind level rows only).
+    /** This level's role. undefined on a RACK parent and on every legacy bin,
+     *  which means the putaway role gate does not constrain it. */
+    levelRole?: LevelRole;
+    /** 1-based level number within the parent rack; undefined if not a level. */
+    levelIndex?: number;
 }
 
 /** What one "slot" of a storage type counts. 'each'/'uncounted' don't map onto
  *  the engine's pallet/carton slot_kind. */
 export type SlotUnit = 'pallet' | 'carton' | 'each' | 'uncounted';
+
+/** What a rack level is used for (mig 00072). Drives the HARD putaway gate:
+ *  a SKU may only be placed on a level whose role it allows. `undefined` /
+ *  NULL on a location means "unconstrained" — every legacy bin keeps working. */
+export type LevelRole = 'pick' | 'reserve' | 'bulk';
+
+/** One addressable level of a rack. Persisted as a SHELF-kind `locations` row
+ *  (child of a RACK-kind parent) plus its own co-located `layout_placements`
+ *  row. Positions within a level are deliberately NOT modelled yet. */
+export interface RackLevel {
+    /** Present once saved; absent on a level drafted in the designer. */
+    locationId?: number;
+    /** 1-based, counting from the floor up. L1 is the bottom level. */
+    levelIndex: number;
+    role: LevelRole;
+    /** Derived as `<rack code>-L<levelIndex>` when created. */
+    code?: string;
+    capacitySlots?: number;
+    slotKind?: 'pallet' | 'carton';
+    weightCapacityKg?: number;
+}
 
 /** A user-managed physical storage-unit type (mig 00056) — Pallet Rack, Shelving,
  *  Bulk Floor, Cold Room, …. Supplies default capacity/slot behaviour when a rack
@@ -192,6 +219,12 @@ export interface StorageType {
     color?: string;
     /** Whether this form appears as a drawable tool in the Layout Designer. */
     isDrawable: boolean;
+    /** Whether racks of this form are split into addressable levels (mig 00072).
+     *  False for forms where levels are meaningless (Bulk Floor, Staging Area). */
+    hasLevels: boolean;
+    /** The STANDARD level layout every rack drawn with this form inherits.
+     *  Individual racks override it; see `RackLevel`. */
+    levelTemplate?: RackLevel[];
 }
 
 // The 8 seeded types keep autocomplete; custom operator-defined types (mig 00057
@@ -356,6 +389,11 @@ export interface LayoutPlacement {
     rotation: 0 | 90 | 180 | 270;
     graphNodeId?: number;
     accessOffsetM?: number;
+    /** Which level of its rack this placement is (mig 00072). Levels of one rack
+     *  share the same (floor, x, y); undefined = a legacy single-bin placement.
+     *  Renderers MUST group placements by (floor, x, y) and draw one rect per
+     *  group, or a levelled rack paints N overlapping cells. */
+    levelIndex?: number;
 }
 
 /** A non-storage grid object (wall/dock/walkway/obstacle/label) within a layout. */
@@ -422,6 +460,9 @@ export interface ProductWmsAttributes {
     volumeL?: number;
     dims?: Record<string, unknown>;
     custom: Record<string, unknown>;
+    /** Level roles this SKU may be put away into (mig 00072). undefined = ANY
+     *  role. An empty array is never persisted — see mutate-wms-attributes. */
+    allowedLevelRoles?: LevelRole[];
 }
 
 export type CompatibilityLevel = 'forbidden' | 'restricted' | 'allowed';

@@ -118,6 +118,10 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
         capacitySlots: t.defaultCapacitySlots,
         slotKind: t.slotUnit === 'pallet' ? 'pallet' : t.slotUnit === 'carton' ? 'carton' : undefined,
         weightCapacityKg: t.weightCapacityKg,
+        // Racks painted with this form inherit its STANDARD level layout
+        // (mig 00072); individual racks override it in the inspector. Only
+        // forms that opted into levels carry one.
+        levelTemplate: t.hasLevels ? t.levelTemplate : undefined,
       },
     })
   }
@@ -475,7 +479,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
               )}
               {selectedObject
                 ? <ObjectInspector object={selectedObject} dispatch={dispatch} locationCodeById={locationCodeById} />
-                : <PlacementInspector placement={selectedPlacement} dispatch={dispatch} zoneProfiles={zoneProfilesQuery.data ?? []} storageTypes={storageTypesQuery.data ?? []} />}
+                : <PlacementInspector placement={selectedPlacement} dispatch={dispatch} zoneProfiles={zoneProfilesQuery.data ?? []} storageTypes={storageTypesQuery.data ?? []} selectedCount={state.selectedRefs?.size ?? 0} />}
             </div>
           </div>
           <LayoutLegend forms={drawableForms.map((t) => ({ id: t.id, name: t.name, color: t.color }))} />

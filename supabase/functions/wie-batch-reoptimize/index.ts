@@ -19,14 +19,18 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { filterCandidates } from '../_shared/wie/scoring.ts'
-import type { CandidateBin, CompatibilityRule, RuleDefinition, SkuProfile } from '../_shared/wie/types.ts'
+import type { CandidateBin, CompatibilityRule, LevelRole, RuleDefinition, SkuProfile } from '../_shared/wie/types.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 const MIN_GAIN_M = 1.0
 const MAX_SUGGESTIONS = 50
 // Wide enough that a stocked bin's own row is present so we can measure its dock
 // distance even when it's far from the dock (the exact case worth re-slotting).
-const CANDIDATE_LIMIT = 1000
+// Raised alongside putawayTasks.ts's CANDIDATE_LIMIT (mig 00072): a levelled
+// MAIN is 945 locations, so this must stay above that or reslotting silently
+// stops seeing the far half of the warehouse. See
+// memory/main-warehouse-slotting-2026-07.md.
+const CANDIDATE_LIMIT = 2000
 
 const inputSchema = z.object({ warehouse_id: z.number().int().positive() })
 
@@ -59,6 +63,8 @@ function toCandidateBin(r: any): CandidateBin {
     zoneMaxUtilizationPct: r.zone_max_utilization_pct != null ? Number(r.zone_max_utilization_pct) : null,
     occupantCategories: Array.isArray(r.bin_categories) ? r.bin_categories.filter((c: unknown): c is string => typeof c === 'string') : [],
     pickVisits30d: r.pick_visits_30d != null ? Number(r.pick_visits_30d) : 0,
+    levelRole: r.level_role ?? null,
+    levelIndex: r.level_index != null ? Number(r.level_index) : null,
   }
 }
 
@@ -137,7 +143,11 @@ serve(async (req: Request) => {
       const { data: p } = await admin.from('products').select('id, sku, name, size_factor, category').eq('id', productId).single()
       if (!p) return null
       const { data: attrs } = await admin.from('product_wms_attributes')
-        .select('hazard_class, temp_min, temp_max, handling_type, stackable, weight_kg').eq('product_id', productId).maybeSingle()
+        .select('hazard_class, temp_min, temp_max, handling_type, stackable, weight_kg, allowed_level_roles').eq('product_id', productId).maybeSingle()
+      // NULL / no attributes row = unconstrained (any level role) — a re-slot
+      // suggestion must never violate the same hard gate putaway enforces.
+      const rawRoles = (attrs as any)?.allowed_level_roles
+      const allowedLevelRoles: LevelRole[] | null = Array.isArray(rawRoles) && rawRoles.length > 0 ? rawRoles : null
       const sku: SkuProfile = {
         productId, code: (p as any).sku, name: (p as any).name,
         sizeFactor: Number((p as any).size_factor) || 1,
@@ -149,15 +159,16 @@ serve(async (req: Request) => {
         handlingType: (attrs as any)?.handling_type ?? null,
         stackable: (attrs as any)?.stackable ?? null,
         velocityClass: null, // filtering doesn't use velocity (scoring does)
+        allowedLevelRoles,
       }
       skuCache.set(productId, sku)
       return sku
     }
 
-    const loadCands = async (productId: number): Promise<any[]> => {
+    const loadCands = async (productId: number, roles: LevelRole[] | null): Promise<any[]> => {
       if (candCache.has(productId)) return candCache.get(productId)!
       const { data, error } = await admin.rpc('wie_putaway_candidates', {
-        p_layout_id: layoutId, p_product_id: productId, p_limit: CANDIDATE_LIMIT,
+        p_layout_id: layoutId, p_product_id: productId, p_limit: CANDIDATE_LIMIT, p_roles: roles,
       })
       const rows = error ? [] : ((data ?? []) as any[])
       candCache.set(productId, rows)
@@ -173,7 +184,7 @@ serve(async (req: Request) => {
 
       const sku = await loadSku(row.productId)
       if (!sku) continue
-      const candRows = await loadCands(row.productId)
+      const candRows = await loadCands(row.productId, sku.allowedLevelRoles ?? null)
       if (candRows.length === 0) continue
 
       const currentRow = candRows.find((c) => c.location_id === row.locationId)

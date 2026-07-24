@@ -31,6 +31,11 @@ const inputSchema = z.object({
   chosen_location_id: z.number().int().positive().optional(),
   // Partial putaway. Omitted = the whole remaining quantity.
   quantity: z.number().positive().optional(),
+  // Rack-level role gate (mig 00072). The chosen bin's level_role, when set,
+  // is a HARD constraint against the SKU's allowed_level_roles — set this to
+  // cross it anyway (e.g. no compliant level had room). The crossing is
+  // recorded in audit_events, never silently allowed.
+  role_override: z.boolean().optional(),
 }).refine((d) => d.decision !== 'override' || d.chosen_location_id !== undefined, {
   message: 'override requires chosen_location_id',
 })
@@ -69,7 +74,7 @@ serve(async (req: Request) => {
     })
     const parsed = inputSchema.safeParse(body)
     if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
-    const { recommendation_id, decision, chosen_location_id, quantity } = parsed.data
+    const { recommendation_id, decision, chosen_location_id, quantity, role_override } = parsed.data
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
       auth: { persistSession: false },
@@ -104,7 +109,7 @@ serve(async (req: Request) => {
 
     // The chosen bin must be active and belong to this warehouse.
     const { data: binRow, error: binErr } = await admin.from('locations')
-      .select('id, is_active').eq('id', chosen).single()
+      .select('id, is_active, code, level_role').eq('id', chosen).single()
     if (binErr || !binRow) throw new EdgeFunctionError('NOT_FOUND', `Bin ${chosen} not found`)
     if (!(binRow as any).is_active) {
       throw new EdgeFunctionError('CONFLICT', 'That bin is no longer active — re-run the recommendation')
@@ -113,6 +118,40 @@ serve(async (req: Request) => {
     if (rootErr) throw new EdgeFunctionError('INTERNAL', `warehouse resolution failed: ${rootErr.message}`)
     if (root !== warehouseId) {
       throw new EdgeFunctionError('INVALID_INPUT', 'Chosen bin is not inside this warehouse')
+    }
+
+    // Rack-level role gate (mig 00072). Checked on BOTH accept and override —
+    // a live re-level (mutate-warehouse-location's set_levels, which doesn't
+    // require a republish) can change a level's role after a recommendation
+    // was computed, so "accept" is not automatically safe either. `null` on
+    // the bin (no level_role) or on the SKU's allowed roles (no
+    // product_wms_attributes row, or the row sets no restriction) means
+    // unconstrained — every legacy bin and every pre-existing SKU keeps
+    // working exactly as before this migration.
+    const chosenLevelRole = (binRow as any).level_role as string | null
+    let roleOverrideApplied = false
+    let allowedRolesForSku: string[] | null = null
+    let productSku: string | null = null
+    if (chosenLevelRole) {
+      const productId = (rec as any).product_id as number
+      const [{ data: productRow }, { data: attrs }] = await Promise.all([
+        admin.from('products').select('sku, name').eq('id', productId).maybeSingle(),
+        admin.from('product_wms_attributes').select('allowed_level_roles').eq('product_id', productId).maybeSingle(),
+      ])
+      productSku = (productRow as any)?.sku ?? null
+      const rawRoles = (attrs as any)?.allowed_level_roles
+      allowedRolesForSku = Array.isArray(rawRoles) && rawRoles.length > 0 ? rawRoles : null
+      const roleAllowed = !allowedRolesForSku || allowedRolesForSku.includes(chosenLevelRole)
+      if (!roleAllowed) {
+        if (!role_override) {
+          throw new EdgeFunctionError(
+            'CONFLICT',
+            `${(binRow as any).code} is a ${chosenLevelRole} level; ${productSku ?? `product ${productId}`} is only ` +
+              `allowed on ${allowedRolesForSku!.join('/')} levels. Choose a different bin, or confirm "Place anyway" to override.`,
+          )
+        }
+        roleOverrideApplied = true
+      }
     }
 
     // Guard against acting on a stale recommendation: the warehouse must still be
@@ -159,6 +198,12 @@ serve(async (req: Request) => {
         remainder_qty: decided.remainder_qty,
         source_recommendation_id: recommendation_id,
         moved: decided.moved,
+        ...(roleOverrideApplied ? {
+          role_override: true,
+          sku: productSku,
+          chosen_level_role: chosenLevelRole,
+          allowed_level_roles: allowedRolesForSku,
+        } : {}),
       },
     })
 

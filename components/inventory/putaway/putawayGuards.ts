@@ -9,10 +9,10 @@
 // Pure and IO-free — mirrors supabase/functions/_shared/wie/* so it is testable
 // without mounting anything.
 
-import type { InventoryLocation, Product, ZoneProfile } from '@/types'
+import type { InventoryLocation, LevelRole, Product, ZoneProfile } from '@/types'
 import type { WarehouseBinBalance } from '@/services/supabase/inventoryService'
 
-export type PutawayWarningCode = 'capacity' | 'zone_category' | 'weight' | 'not_storage'
+export type PutawayWarningCode = 'level_role_mismatch' | 'capacity' | 'zone_category' | 'weight' | 'not_storage'
 
 export interface PutawayWarning {
   code: PutawayWarningCode
@@ -59,11 +59,30 @@ export interface EvaluateBinInput {
   usedSlots: number
   /** Per-base-unit weight from product_wms_attributes, when on file. */
   unitWeightKg?: number | null
+  /** The SKU's `product_wms_attributes.allowed_level_roles` (mig 00072).
+   *  Empty/null/undefined = unconstrained — every existing SKU's default. */
+  allowedLevelRoles?: readonly LevelRole[] | null
+}
+
+/** True when `bin` is a rack level whose role the SKU does not allow. A bin
+ *  with no `levelRole` (a legacy non-levelled location, or a RACK/WAREHOUSE
+ *  parent) is never a mismatch — the hard rule only applies to real levels.
+ *  A SKU with no (or empty) `allowedLevelRoles` is unconstrained, per the
+ *  engine's NULL-means-any-role default. Pure so it is unit-testable and
+ *  reusable for both the confirmed-selection warning and the browse-list badge. */
+export function isLevelRoleMismatch(
+  bin: Pick<InventoryLocation, 'levelRole'> | undefined,
+  allowedLevelRoles: readonly LevelRole[] | null | undefined,
+): boolean {
+  if (!bin?.levelRole) return false
+  if (!allowedLevelRoles || allowedLevelRoles.length === 0) return false
+  return !allowedLevelRoles.includes(bin.levelRole)
 }
 
 /**
  * Advisory findings for putting `baseQty` of `product` into `bin`. Order is
- * stable (capacity, zone, weight, kind) so the UI renders deterministically.
+ * stable (level role, capacity, zone, weight, kind) so the UI renders
+ * deterministically.
  */
 export function evaluateBinWarnings({
   bin,
@@ -72,8 +91,21 @@ export function evaluateBinWarnings({
   baseQty,
   usedSlots,
   unitWeightKg,
+  allowedLevelRoles,
 }: EvaluateBinInput): PutawayWarning[] {
   const warnings: PutawayWarning[] = []
+
+  // ── Level role (the HARD putaway rule; here as an operator-facing warning
+  // because a MANUAL bin choice deliberately bypasses the engine's gate) ─────
+  if (isLevelRoleMismatch(bin, allowedLevelRoles)) {
+    const allowedLabel = (allowedLevelRoles ?? []).join(', ')
+    warnings.push({
+      code: 'level_role_mismatch',
+      message:
+        `${bin.code} is a ${bin.levelRole} level — this product is only allowed on ${allowedLabel} levels. ` +
+        `Placing it here overrides the rule and is recorded.`,
+    })
+  }
 
   // ── Capacity ──────────────────────────────────────────────────────────────
   // A bin's capacity is counted in slots, and one base unit consumes

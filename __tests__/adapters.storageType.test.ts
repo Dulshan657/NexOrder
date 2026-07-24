@@ -41,6 +41,8 @@ describe('toStorageType', () => {
       heightCm: undefined,
       color: undefined,
       isDrawable: true,
+      hasLevels: false,
+      levelTemplate: undefined,
     })
   })
 

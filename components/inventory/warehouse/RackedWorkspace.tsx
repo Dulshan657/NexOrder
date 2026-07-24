@@ -103,6 +103,27 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
   const selectedPlacement = selectedLocationId != null ? placementByLocation.get(selectedLocationId) : undefined
   const nodeVisits =
     selectedPlacement?.graphNodeId != null ? model.visitsByNode.get(selectedPlacement.graphNodeId) : undefined
+
+  // The rack a selected level (or a directly-selected rack) belongs to — used
+  // to feed RackLevelEditor its full sibling list, not just the one row the
+  // map/tree happened to select (mig 00072).
+  const selectedRackId =
+    selectedLocation?.kind === 'RACK'
+      ? selectedLocation.id
+      : selectedLocation?.kind === 'SHELF' && selectedLocation.levelIndex != null
+        ? selectedLocation.parentId ?? null
+        : null
+  const rackLevelLocations = selectedRackId != null ? model.levelsByRackId.get(selectedRackId) ?? [] : []
+  const rackFillByLevel = useMemo(() => {
+    const map = new Map<number, number>()
+    for (const loc of rackLevelLocations) {
+      if (loc.levelIndex == null) continue
+      const pct = model.binFillPct.get(loc.id)
+      if (pct != null) map.set(loc.levelIndex, pct)
+    }
+    return map
+  }, [rackLevelLocations, model.binFillPct])
+
   const zoneName = useMemo(() => {
     if (!selectedLocation) return undefined
     let cur: InventoryLocation | undefined = selectedLocation
@@ -140,9 +161,14 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
   return (
     <div className="flex flex-col gap-4">
       {/* The tree (not the map) is the keyboard/AT selection path — this
-          announces what just got selected, from either surface. */}
+          announces what just got selected, from either surface. A rack level
+          (mig 00072) gets a friendlier phrasing than its raw SHELF kind. */}
       <div aria-live="polite" className="sr-only">
-        {selectedLocation ? `Selected ${selectedLocation.kind.toLowerCase()} ${selectedLocation.code}` : ''}
+        {selectedLocation
+          ? selectedLocation.kind === 'SHELF' && selectedLocation.levelIndex != null
+            ? `Selected level ${selectedLocation.levelIndex} (${selectedLocation.code})`
+            : `Selected ${selectedLocation.kind.toLowerCase()} ${selectedLocation.code}`
+          : ''}
       </div>
 
       <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65vh] md:min-h-[420px]">
@@ -158,6 +184,7 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
           binColors={binColors}
           binBadges={binBadges}
           renderOverlay={renderMarkers}
+          locationsById={model.locationsById}
         />
       </div>
 
@@ -178,12 +205,16 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
 
         <FloatingPanel id="wh-bin-detail" title="Bin detail" className="max-h-[70vh]">
           <BinDetailPanel
+            warehouseId={warehouseId}
             location={selectedLocation}
             contents={selectedLocationId != null ? model.binContents.get(selectedLocationId) ?? [] : []}
             fillPct={selectedLocationId != null ? model.binFillPct.get(selectedLocationId) : undefined}
             placement={selectedPlacement}
             nodeVisits={nodeVisits}
             zoneName={zoneName}
+            rackLevelLocations={rackLevelLocations}
+            rackFillByLevel={rackFillByLevel}
+            onSelectLevel={setSelectedLocationId}
           />
           {/* Slotting's suggested moves live here rather than as a separate
               panel: they're overlay-driven context about what's currently on

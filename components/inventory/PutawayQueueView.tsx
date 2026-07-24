@@ -75,7 +75,7 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
     }
   };
 
-  const commitOverride = async (chosenLocationId: number, baseQty: number) => {
+  const commitOverride = async (chosenLocationId: number, baseQty: number, roleOverride = false) => {
     const target = picking;
     if (!target) return;
     try {
@@ -86,6 +86,10 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
         // Only send a quantity for a genuine partial, so a full putaway keeps
         // taking the server's "whole remaining quantity" path.
         quantity: baseQty < target.quantity ? baseQty : undefined,
+        // Operator chose a level whose role this SKU isn't allowed on (mig
+        // 00072). Only sent when true, so a normal putaway is unchanged and the
+        // server keeps enforcing the hard never-mix rule by default.
+        roleOverride: roleOverride || undefined,
       });
       setPicking(null);
       addToast(

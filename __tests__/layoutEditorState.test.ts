@@ -4,6 +4,15 @@ import {
   layoutEditorReducer,
   type EditorState,
 } from '../components/admin/layout/useLayoutEditorState'
+import type { RackLevel } from '../types'
+
+const PALLET_RACK_TEMPLATE: RackLevel[] = [
+  { levelIndex: 1, role: 'pick', capacitySlots: 2 },
+  { levelIndex: 2, role: 'pick', capacitySlots: 2 },
+  { levelIndex: 3, role: 'pick', capacitySlots: 2 },
+  { levelIndex: 4, role: 'pick', capacitySlots: 2 },
+  { levelIndex: 5, role: 'bulk', capacitySlots: 4 },
+]
 
 function withTool(tool: EditorState['tool']): EditorState {
   return layoutEditorReducer(initialEditorState(), { type: 'set_tool', tool })
@@ -173,5 +182,165 @@ describe('layoutEditorReducer', () => {
     expect(s.objects).toHaveLength(0)
     expect(s.selectedRef).toBeNull()
     expect(s.dirty).toBe(true)
+  })
+
+  describe('selectedRefs (multi-select superset of selectedRef)', () => {
+    it('starts empty', () => {
+      expect(initialEditorState().selectedRefs.size).toBe(0)
+    })
+
+    it('mirrors selectedRef as a one-element set on every plain (non-additive) selection path', () => {
+      const s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 4, y: 5 })
+      expect(s.selectedRefs).toEqual(new Set([s.selectedRef]))
+    })
+
+    it('a plain select action replaces the selection (back-compat, additive omitted)', () => {
+      let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 })
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 })
+      const [refA, refB] = s.placements.map((p) => p.clientRef)
+      s = layoutEditorReducer(s, { type: 'select', ref: refA })
+      expect(s.selectedRef).toBe(refA)
+      expect(s.selectedRefs).toEqual(new Set([refA]))
+      s = layoutEditorReducer(s, { type: 'select', ref: refB })
+      expect(s.selectedRef).toBe(refB)
+      expect(s.selectedRefs).toEqual(new Set([refB]))
+    })
+
+    it('select with additive:true toggles refs into the multi-selection without dropping the others', () => {
+      let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 })
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 })
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 2, y: 0 })
+      const [refA, refB, refC] = s.placements.map((p) => p.clientRef)
+      // Painting auto-selects the last-drawn rack; start from a clean slate.
+      s = layoutEditorReducer(s, { type: 'select', ref: null })
+
+      s = layoutEditorReducer(s, { type: 'select', ref: refA, additive: true })
+      s = layoutEditorReducer(s, { type: 'select', ref: refB, additive: true })
+      expect(s.selectedRefs).toEqual(new Set([refA, refB]))
+      expect(s.selectedRef).toBe(refB) // last toggled in
+
+      // Toggling refA again removes it, leaving refB as the sole remaining selection.
+      s = layoutEditorReducer(s, { type: 'select', ref: refA, additive: true })
+      expect(s.selectedRefs).toEqual(new Set([refB]))
+      expect(s.selectedRef).toBe(refB)
+
+      s = layoutEditorReducer(s, { type: 'select', ref: refC, additive: true })
+      expect(s.selectedRefs).toEqual(new Set([refB, refC]))
+    })
+
+    it('a plain click (non-additive) after a multi-select collapses back to one', () => {
+      let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 })
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 })
+      const [refA, refB] = s.placements.map((p) => p.clientRef)
+      s = layoutEditorReducer(s, { type: 'select', ref: refA, additive: true })
+      s = layoutEditorReducer(s, { type: 'select', ref: refB, additive: true })
+      s = layoutEditorReducer(s, { type: 'select', ref: refA }) // plain click, not additive
+      expect(s.selectedRef).toBe(refA)
+      expect(s.selectedRefs).toEqual(new Set([refA]))
+    })
+
+    it('erasing the selected placement clears it from selectedRefs too', () => {
+      let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 4, y: 5 })
+      const ref = s.selectedRef!
+      s = layoutEditorReducer({ ...s, tool: 'erase' }, { type: 'paint_cell', x: 4, y: 5 })
+      expect(s.selectedRefs.has(ref)).toBe(false)
+    })
+  })
+
+  describe('rack levels (mig 00072)', () => {
+    it('set_rack_levels updates only the targeted placement, immutably', () => {
+      let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 })
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 })
+      const [refA, refB] = s.placements.map((p) => p.clientRef)
+      const levels = [{ levelIndex: 1, role: 'pick' as const, capacitySlots: 5 }]
+
+      const s2 = layoutEditorReducer(s, { type: 'set_rack_levels', ref: refA, levels })
+      expect(s2).not.toBe(s)
+      expect(s2.placements.find((p) => p.clientRef === refA)?.levels).toEqual(levels)
+      expect(s2.placements.find((p) => p.clientRef === refB)?.levels).toBeUndefined()
+      expect(s2.dirty).toBe(true)
+      // Original state's placement is untouched.
+      expect(s.placements.find((p) => p.clientRef === refA)?.levels).toBeUndefined()
+    })
+
+    it('the rack paint tool inherits the active form\'s level template, recoded to the new rack\'s own code', () => {
+      const withForm = layoutEditorReducer(initialEditorState(), {
+        type: 'set_storage_form',
+        form: { label: 'Pallet Rack', storageTypeId: 1, capacitySlots: 10, levelTemplate: PALLET_RACK_TEMPLATE },
+      })
+      const s = layoutEditorReducer(withForm, { type: 'paint_cell', x: 4, y: 2 })
+      const placement = s.placements[0]
+      expect(placement.levels).toHaveLength(5)
+      expect(placement.levels?.map((l) => l.levelIndex)).toEqual([1, 2, 3, 4, 5])
+      expect(placement.levels?.map((l) => l.code)).toEqual([
+        `${placement.code}-L1`, `${placement.code}-L2`, `${placement.code}-L3`, `${placement.code}-L4`, `${placement.code}-L5`,
+      ])
+      expect(placement.levels?.[4].role).toBe('bulk')
+    })
+
+    it('a form with no level template leaves the new placement levels undefined', () => {
+      const withForm = layoutEditorReducer(initialEditorState(), {
+        type: 'set_storage_form',
+        form: { label: 'Bulk Floor', capacitySlots: 50 },
+      })
+      const s = layoutEditorReducer(withForm, { type: 'paint_cell', x: 0, y: 0 })
+      expect(s.placements[0].levels).toBeUndefined()
+    })
+
+    it('generate_bins inherits a level template onto every generated bin, each recoded to its own code', () => {
+      const s = layoutEditorReducer(initialEditorState(), {
+        type: 'generate_bins', startX: 0, startY: 0, cols: 2, rows: 1, levelTemplate: PALLET_RACK_TEMPLATE,
+      })
+      expect(s.placements).toHaveLength(2)
+      for (const p of s.placements) {
+        expect(p.levels).toHaveLength(5)
+        expect(p.levels?.[0].code).toBe(`${p.code}-L1`)
+      }
+      // Distinct racks never share a level code.
+      const allCodes = s.placements.flatMap((p) => p.levels?.map((l) => l.code) ?? [])
+      expect(new Set(allCodes).size).toBe(allCodes.length)
+    })
+
+    it('apply_levels_to_selection applies to the single current selection by default', () => {
+      let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 })
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 }) // now selected
+      const [refA, refB] = s.placements.map((p) => p.clientRef)
+
+      s = layoutEditorReducer(s, { type: 'apply_levels_to_selection', levels: PALLET_RACK_TEMPLATE })
+
+      const placementB = s.placements.find((p) => p.clientRef === refB)
+      const placementA = s.placements.find((p) => p.clientRef === refA)
+      expect(placementB?.levels).toHaveLength(5)
+      expect(placementA?.levels).toBeUndefined() // was not selected
+    })
+
+    it('apply_levels_to_selection applies to every multi-selected rack, each keeping its own code', () => {
+      let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 })
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 })
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 2, y: 0 })
+      const [refA, refB, refC] = s.placements.map((p) => p.clientRef)
+      // Painting auto-selects the last-drawn rack; start from a clean slate.
+      s = layoutEditorReducer(s, { type: 'select', ref: null })
+
+      s = layoutEditorReducer(s, { type: 'select', ref: refA, additive: true })
+      s = layoutEditorReducer(s, { type: 'select', ref: refB, additive: true })
+      // refC deliberately left unselected.
+
+      s = layoutEditorReducer(s, { type: 'apply_levels_to_selection', levels: PALLET_RACK_TEMPLATE })
+
+      const byRef = new Map(s.placements.map((p) => [p.clientRef, p]))
+      expect(byRef.get(refA)?.levels).toHaveLength(5)
+      expect(byRef.get(refB)?.levels).toHaveLength(5)
+      expect(byRef.get(refC)?.levels).toBeUndefined()
+      expect(byRef.get(refA)?.levels?.[0].code).toBe(`${byRef.get(refA)?.code}-L1`)
+      expect(byRef.get(refB)?.levels?.[0].code).toBe(`${byRef.get(refB)?.code}-L1`)
+    })
+
+    it('apply_levels_to_selection is a no-op when nothing is selected', () => {
+      const s0 = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 })
+      const s1 = layoutEditorReducer(s0, { type: 'select', ref: null })
+      const s2 = layoutEditorReducer(s1, { type: 'apply_levels_to_selection', levels: PALLET_RACK_TEMPLATE })
+      expect(s2).toBe(s1)
+    })
   })
 })

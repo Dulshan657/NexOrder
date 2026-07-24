@@ -19,6 +19,15 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const SLOT_UNITS = ['pallet', 'carton', 'each', 'uncounted'] as const
+const LEVEL_ROLES = ['pick', 'reserve', 'bulk'] as const
+
+// One entry of a storage form's STANDARD level layout (mig 00072) — every rack
+// drawn with this form inherits it; individual racks may override.
+const levelTemplateEntrySchema = z.object({
+  role: z.enum(LEVEL_ROLES),
+  capacity_slots: z.number().nonnegative().nullable().optional(),
+  weight_capacity_kg: z.number().nonnegative().nullable().optional(),
+})
 
 // Storage-forms capacity fields (mig 00061): structured capacity, dims, weight,
 // palette colour, drawable flag. All nullable/optional and additive.
@@ -31,6 +40,33 @@ const formFields = {
   height_cm: z.number().nonnegative().nullable().optional(),
   color: z.string().max(32).nullable().optional(),
   is_drawable: z.boolean().optional(),
+  // Rack levels (mig 00072). has_levels opts this form into addressable
+  // per-level locations; level_template is its standard layout.
+  has_levels: z.boolean().optional(),
+  level_template: z.array(levelTemplateEntrySchema).max(50).nullable().optional(),
+}
+
+/** A form with has_levels=true needs a non-empty template — this is a system
+ *  boundary (the client cannot be trusted to enforce it), and it must be
+ *  checked against the row's EFFECTIVE state, not the raw request body: an
+ *  update can patch has_levels and level_template in separate calls, so
+ *  either field alone can be absent from a given payload. */
+function validateLevelTemplate(hasLevels: unknown, template: unknown): void {
+  if (!hasLevels) return
+  if (!Array.isArray(template) || template.length === 0) {
+    throw new EdgeFunctionError('INVALID_INPUT', 'A form with levels needs at least one level in its template')
+  }
+  for (const entry of template as any[]) {
+    if (!entry || typeof entry !== 'object' || !LEVEL_ROLES.includes(entry.role)) {
+      throw new EdgeFunctionError('INVALID_INPUT', `Each level's role must be one of ${LEVEL_ROLES.join(', ')}`)
+    }
+    if (entry.capacity_slots != null && (typeof entry.capacity_slots !== 'number' || entry.capacity_slots < 0)) {
+      throw new EdgeFunctionError('INVALID_INPUT', 'Level capacity must be zero or a positive number')
+    }
+    if (entry.weight_capacity_kg != null && (typeof entry.weight_capacity_kg !== 'number' || entry.weight_capacity_kg < 0)) {
+      throw new EdgeFunctionError('INVALID_INPUT', 'Level weight capacity must be zero or a positive number')
+    }
+  }
 }
 
 const createSchema = z.object({
@@ -108,8 +144,11 @@ serve(async (req: Request) => {
         height_cm: input.data.height_cm ?? null,
         color: input.data.color ?? null,
         is_drawable: input.data.is_drawable ?? true,
+        has_levels: input.data.has_levels ?? false,
+        level_template: input.data.level_template ?? null,
       }
       if (!row.code) throw new EdgeFunctionError('INVALID_INPUT', 'Code must contain a letter or digit')
+      validateLevelTemplate(row.has_levels, row.level_template)
 
       const { data: created, error } = await admin.from('storage_types').insert(row as any).select().single()
       if (error) {
@@ -133,6 +172,15 @@ serve(async (req: Request) => {
     if (fetchErr || !existing) throw new EdgeFunctionError('NOT_FOUND', `Storage type ${input.id} not found`)
 
     const patch = input.action === 'deactivate' ? { is_active: false } : input.data
+    if (input.action === 'update') {
+      // Effective (merged) state — has_levels/level_template may each be
+      // patched independently of the other across separate update calls.
+      const effectiveHasLevels = input.data.has_levels ?? (existing as any).has_levels
+      const effectiveTemplate = input.data.level_template !== undefined
+        ? input.data.level_template
+        : (existing as any).level_template
+      validateLevelTemplate(effectiveHasLevels, effectiveTemplate)
+    }
     const { data: updated, error: updErr } = await admin
       .from('storage_types').update(patch as any).eq('id', input.id).select().single()
     if (updErr || !updated) throw new EdgeFunctionError('INTERNAL', updErr?.message ?? 'Failed to update storage type')

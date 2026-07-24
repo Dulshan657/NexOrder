@@ -24,6 +24,13 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const BIN_KINDS = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN'] as const
+const LEVEL_ROLES = ['pick', 'reserve', 'bulk'] as const
+// Small per-level travel penalty (mig 00072) so lower levels stay preferred
+// with no scoring change — the lowest level_index in a rack's template gets
+// offset 0, each level above adds one step. Must match the constant of the
+// same name in mutate-warehouse-location/index.ts (which re-levels an
+// already-published rack; this file only seeds brand-new ones).
+const ACCESS_OFFSET_STEP_M = 0.3
 
 const createLayoutSchema = z.object({
   warehouse_id: z.number().int().positive(),
@@ -32,6 +39,15 @@ const createLayoutSchema = z.object({
   grid_height: z.number().int().positive().max(200).optional(),
   cell_size_m: z.number().positive().max(100).optional(),
   floor_count: z.number().int().positive().max(50).optional(),
+})
+
+// One level of a leveled rack (mig 00072).
+const levelSchema = z.object({
+  level_index: z.number().int().positive(),
+  role: z.enum(LEVEL_ROLES),
+  capacity_slots: z.number().nonnegative().optional(),
+  slot_kind: z.enum(['pallet', 'carton']).optional(),
+  weight_capacity_kg: z.number().nonnegative().optional(),
 })
 
 const newBinSchema = z.object({
@@ -49,6 +65,14 @@ const newBinSchema = z.object({
   // Physical storage-unit type (mig 00056). Supplies capacity_slots/slot_kind
   // defaults server-side when the caller omits them.
   storage_type_id: z.number().int().positive().optional(),
+  // Rack levels (mig 00072). When present, save_geometry creates the RACK
+  // parent + one SHELF child + one co-located layout_placements row per
+  // level, instead of a single flat BIN.
+  levels: z.array(levelSchema).min(1).max(50).optional(),
+}).refine((d) => !d.levels || d.kind === 'RACK', {
+  message: 'levels is only valid when kind is RACK',
+}).refine((d) => !d.levels || new Set(d.levels.map((l) => l.level_index)).size === d.levels.length, {
+  message: 'level_index values must be unique',
 })
 
 const placementSchema = z.object({
@@ -372,6 +396,10 @@ serve(async (req: Request) => {
 
     // Create locations for brand-new bins, mapping client_ref -> location_id.
     const refToLocation = new Map<string, number>()
+    // Leveled racks (mig 00072): client_ref -> { levelIndex -> SHELF location id }.
+    // The RACK parent's own id lives in refToLocation above; it has no
+    // placement row of its own (the load-bearing decision — see the plan doc).
+    const refToLevelLocations = new Map<string, Record<number, number>>()
     for (const p of input.placements) {
       if (p.location_id !== undefined) {
         refToLocation.set(p.client_ref, p.location_id)
@@ -405,6 +433,46 @@ serve(async (req: Request) => {
       if (whPath && parentPath !== whPath && !parentPath.startsWith(`${whPath}/`)) {
         throw new EdgeFunctionError('INVALID_INPUT', 'New bins must sit inside this layout\'s warehouse')
       }
+
+      if (nb.levels && nb.levels.length > 0) {
+        // Leveled rack: one RACK parent (no placement row of its own) + one
+        // SHELF child + one co-located layout_placements row per level.
+        const { data: createdRack, error: rackErr } = await admin.from('locations').insert({
+          parent_id: parentId, kind: 'RACK', code: nb.code, name: nb.name,
+          materialized_path: `${parentPath}/${nb.code}`,
+          storage_type_id: nb.storage_type_id ?? null,
+          is_active: false, created_in_layout_id: layout.id,
+        } as any).select('id').single()
+        if (rackErr || !createdRack) {
+          if (rackErr?.code === '23505') throw new EdgeFunctionError('CONFLICT', `Location code "${nb.code}" already exists`)
+          throw new EdgeFunctionError('INTERNAL', rackErr?.message ?? 'Failed to create rack')
+        }
+        const rackId = (createdRack as any).id as number
+        refToLocation.set(p.client_ref, rackId)
+
+        const levelIds: Record<number, number> = {}
+        for (const lvl of nb.levels) {
+          const levelCode = `${nb.code}-L${lvl.level_index}`
+          const { data: createdLevel, error: lvlErr } = await admin.from('locations').insert({
+            parent_id: rackId, kind: 'SHELF', code: levelCode, name: `Level ${lvl.level_index}`,
+            materialized_path: `${parentPath}/${nb.code}/${levelCode}`,
+            level_role: lvl.role, level_index: lvl.level_index,
+            capacity_slots: lvl.capacity_slots ?? capacitySlots,
+            slot_kind: lvl.slot_kind ?? slotKind,
+            weight_capacity_kg: lvl.weight_capacity_kg ?? weightCapacityKg,
+            storage_type_id: nb.storage_type_id ?? null,
+            is_active: false, created_in_layout_id: layout.id,
+          } as any).select('id').single()
+          if (lvlErr || !createdLevel) {
+            if (lvlErr?.code === '23505') throw new EdgeFunctionError('CONFLICT', `Level code "${levelCode}" already exists`)
+            throw new EdgeFunctionError('INTERNAL', lvlErr?.message ?? `Failed to create level ${lvl.level_index}`)
+          }
+          levelIds[lvl.level_index] = (createdLevel as any).id
+        }
+        refToLevelLocations.set(p.client_ref, levelIds)
+        continue
+      }
+
       const { data: created, error: cErr } = await admin.from('locations').insert({
         parent_id: parentId, kind: nb.kind, code: nb.code, name: nb.name,
         materialized_path: `${parentPath}/${nb.code}`,
@@ -447,10 +515,31 @@ serve(async (req: Request) => {
     await admin.from('layout_placements').delete().eq('layout_id', layout.id)
     await admin.from('layout_objects').delete().eq('layout_id', layout.id)
 
-    const placementRows = input.placements.map((p) => ({
-      layout_id: layout.id, location_id: refToLocation.get(p.client_ref)!, floor: p.floor,
-      x: p.x, y: p.y, w: p.w, h: p.h, rotation: p.rotation,
-    }))
+    // One row per placement — EXCEPT a brand-new leveled rack, which fans out
+    // to one co-located row per level (the RACK parent itself gets none).
+    // Access-offset ladder: the rack's lowest level_index gets offset 0, each
+    // level above adds ACCESS_OFFSET_STEP_M, so the engine already prefers
+    // reachable/lower levels with no scoring change.
+    const placementRows: any[] = []
+    for (const p of input.placements) {
+      const levelIds = refToLevelLocations.get(p.client_ref)
+      if (levelIds) {
+        const indices = Object.keys(levelIds).map(Number).sort((a, b) => a - b)
+        const baseIndex = indices[0]
+        for (const idx of indices) {
+          placementRows.push({
+            layout_id: layout.id, location_id: levelIds[idx], floor: p.floor,
+            x: p.x, y: p.y, w: p.w, h: p.h, rotation: p.rotation,
+            level_index: idx, access_offset_m: ACCESS_OFFSET_STEP_M * (idx - baseIndex),
+          })
+        }
+        continue
+      }
+      placementRows.push({
+        layout_id: layout.id, location_id: refToLocation.get(p.client_ref)!, floor: p.floor,
+        x: p.x, y: p.y, w: p.w, h: p.h, rotation: p.rotation,
+      })
+    }
     if (placementRows.length > 0) {
       const { error } = await admin.from('layout_placements').insert(placementRows as any)
       if (error) throw new EdgeFunctionError('INTERNAL', `Failed to save placements: ${error.message}`)
@@ -526,6 +615,9 @@ serve(async (req: Request) => {
     // staging_location_id, in ANOTHER layout (e.g. clone_layout copied the
     // link) — deleting it would cascade-delete that layout's reference too.
     const placedIds = new Set(refToLocation.values())
+    for (const levelIds of refToLevelLocations.values()) {
+      for (const id of Object.values(levelIds)) placedIds.add(id)
+    }
     const stagingIdsThisSave = new Set(
       objectRows.map((o) => o.staging_location_id).filter((id): id is number => id !== null),
     )
@@ -547,7 +639,10 @@ serve(async (req: Request) => {
 
     await admin.from('warehouse_layouts').update({ updated_at: new Date().toISOString() }).eq('id', layout.id)
 
-    const refMap = [...refToLocation.entries()].map(([client_ref, location_id]) => ({ client_ref, location_id }))
+    const refMap = [...refToLocation.entries()].map(([client_ref, location_id]) => {
+      const levelIds = refToLevelLocations.get(client_ref)
+      return levelIds ? { client_ref, location_id, level_location_ids: levelIds } : { client_ref, location_id }
+    })
     return new Response(JSON.stringify({ ok: true, layout_id: layout.id, ref_map: refMap }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

@@ -18,6 +18,13 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 const NODE_KINDS = ['ZONE', 'BIN', 'SHELF'] as const
+const LEVEL_ROLES = ['pick', 'reserve', 'bulk'] as const
+// Small per-level travel penalty (mig 00072) so lower levels stay preferred
+// with no scoring change — L(lowest index) keeps its existing offset, each
+// level above adds one step. Must match the constant of the same name in
+// mutate-layout/index.ts (new racks are seeded there; this file only
+// re-levels an already-published one).
+const ACCESS_OFFSET_STEP_M = 0.3
 
 const createSchema = z.object({
   parent_id: z.number().int().positive(),
@@ -37,10 +44,29 @@ const updateSchema = z
   })
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field required' })
 
+// Re-level an already-published rack without a re-publish (mig 00072). Each
+// entry is one level; an existing level_index missing from the array is
+// REMOVED (guarded against stock below), one present but new is ADDED.
+const setLevelsSchema = z.object({
+  level_index: z.number().int().positive(),
+  role: z.enum(LEVEL_ROLES),
+  capacity_slots: z.number().nonnegative().nullable().optional(),
+  weight_capacity_kg: z.number().nonnegative().nullable().optional(),
+})
+
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: createSchema }),
   z.object({ action: z.literal('update'), id: z.number().int().positive(), data: updateSchema }),
   z.object({ action: z.literal('deactivate'), id: z.number().int().positive() }),
+  z.object({ action: z.literal('set_levels'), id: z.number().int().positive(), levels: z.array(setLevelsSchema).min(1).max(50) }),
+  // First-time conversion of a flat BIN into a levelled RACK. Separate from
+  // set_levels because it is the only action that MOVES LIVE STOCK (onto L1).
+  z.object({
+    action: z.literal('convert_to_levels'),
+    id: z.number().int().positive(),
+    layout_id: z.number().int().positive(),
+    levels: z.array(setLevelsSchema).min(1).max(50),
+  }),
 ])
 
 /** The WAREHOUSE root id for a node (walks up the tree). */
@@ -125,6 +151,193 @@ serve(async (req: Request) => {
       })
       return new Response(JSON.stringify({ ok: true, location: created }), {
         status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── convert_to_levels ────────────────────────────────────────────────────
+    // Turn a flat BIN into a levelled RACK for the first time. Everything real
+    // happens inside wie_convert_rack_to_levels_tx (mig 00072) so the location
+    // rewrite, the placement fan-out and the stock move to L1 are ONE atomic
+    // transaction — this handler only authenticates, validates and audits.
+    // The RPC itself re-checks kind='BIN' and "no level children yet" under a
+    // row lock, so a double-submit fails cleanly rather than double-converting.
+    if (input.action === 'convert_to_levels') {
+      const dupIndex = new Set(input.levels.map((l) => l.level_index))
+      if (dupIndex.size !== input.levels.length) {
+        throw new EdgeFunctionError('INVALID_INPUT', 'level_index values must be unique')
+      }
+      // The RPC takes levels as an ascending L1..Ln array, positionally.
+      const ordered = [...input.levels].sort((a, b) => a.level_index - b.level_index)
+
+      const { data: before } = await admin.from('locations')
+        .select('id, kind, code, name, capacity_slots').eq('id', input.id).maybeSingle()
+      if (!before) throw new EdgeFunctionError('NOT_FOUND', `Location ${input.id} not found`)
+
+      const { data: result, error: rpcErr } = await admin.rpc('wie_convert_rack_to_levels_tx', {
+        p_location_id: input.id,
+        p_layout_id: input.layout_id,
+        p_levels: ordered.map((l) => ({
+          role: l.role,
+          capacity_slots: l.capacity_slots ?? null,
+          weight_capacity_kg: l.weight_capacity_kg ?? null,
+        })),
+        p_actor: auth.userId,
+      })
+      if (rpcErr) {
+        // The RPC raises P0001 with an ALREADY_CONVERTED / NOT_PLACED / INVALID_*
+        // prefix; surface it verbatim so the operator sees WHY, not "failed".
+        throw new EdgeFunctionError('CONFLICT', rpcErr.message)
+      }
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
+        resourceId: String(input.id),
+        before: before as Record<string, unknown>,
+        after: result as Record<string, unknown>,
+        metadata: { convert_to_levels: true, layout_id: input.layout_id, levels: ordered.length },
+      })
+
+      return new Response(JSON.stringify({ ok: true, result }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── set_levels ───────────────────────────────────────────────────────────
+    // Re-level an already-PUBLISHED rack in place — no draft, no re-publish.
+    // Converting a plain (non-levelled) BIN into a levelled RACK for the first
+    // time is the genuinely risky step (wie_convert_rack_to_levels_tx, mig
+    // 00072) and is deliberately NOT this action's job; this only reconfigures
+    // a rack that already has levels.
+    if (input.action === 'set_levels') {
+      const dupIndex = new Set(input.levels.map((l) => l.level_index))
+      if (dupIndex.size !== input.levels.length) {
+        throw new EdgeFunctionError('INVALID_INPUT', 'level_index values must be unique')
+      }
+
+      const { data: rack, error: rackErr } = await admin.from('locations')
+        .select('id, kind, code, materialized_path, is_active')
+        .eq('id', input.id).single()
+      if (rackErr || !rack) throw new EdgeFunctionError('NOT_FOUND', `Location ${input.id} not found`)
+      if ((rack as any).kind !== 'RACK') {
+        throw new EdgeFunctionError('INVALID_INPUT', 'set_levels only applies to a RACK location')
+      }
+
+      const { data: existingRows, error: existErr } = await admin.from('locations')
+        .select('id, level_index, level_role, capacity_slots, weight_capacity_kg, code, is_active')
+        .eq('parent_id', input.id).eq('kind', 'SHELF').not('level_index', 'is', null)
+      if (existErr) throw new EdgeFunctionError('INTERNAL', existErr.message)
+      const existingLevels = (existingRows ?? []) as any[]
+      if (existingLevels.length === 0) {
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          'This rack has no levels yet — convert it to a levelled rack before re-levelling it',
+        )
+      }
+      const existingByIndex = new Map<number, any>(existingLevels.map((l) => [l.level_index as number, l]))
+      const desiredByIndex = new Map(input.levels.map((l) => [l.level_index, l]))
+
+      // Refuse to remove a level that still holds stock (mirrors the
+      // STOCK_IN_REMOVED_BIN guard style in wie_publish_layout_tx, mig 00045).
+      const toRemove = existingLevels.filter((l) => l.is_active && !desiredByIndex.has(l.level_index as number))
+      for (const lvl of toRemove) {
+        const { data: bal } = await admin.from('inventory_balances')
+          .select('id').gt('on_hand', 0).eq('location_id', lvl.id).limit(1)
+        if (bal && bal.length > 0) {
+          throw new EdgeFunctionError(
+            'CONFLICT',
+            `Level ${lvl.level_index} (${lvl.code}) still holds stock — move it out before removing this level`,
+          )
+        }
+      }
+
+      // New levels need a co-located layout_placements row so the engine can
+      // see them immediately — sourced from any sibling level's placement
+      // (every level of a rack shares the same floor/x/y by construction).
+      const root = await rootWarehouse(admin, input.id)
+      if (!root) throw new EdgeFunctionError('INVALID_INPUT', 'Rack is not inside a warehouse')
+      const { data: whRow } = await admin.from('locations').select('active_layout_id').eq('id', root.id).single()
+      const layoutId = (whRow as any)?.active_layout_id as number | null
+      if (!layoutId) {
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          'This rack is not on a published layout — edit its levels in the Layout Designer instead',
+        )
+      }
+      const { data: templateRows } = await admin.from('layout_placements')
+        .select('floor, x, y, w, h, rotation, graph_node_id, access_offset_m, level_index')
+        .eq('layout_id', layoutId).in('location_id', existingLevels.map((l) => l.id))
+        .order('level_index', { ascending: true }).limit(1)
+      const template = (templateRows ?? [])[0] as any
+
+      const added: number[] = []
+      const updated: number[] = []
+      for (const [idx, desired] of desiredByIndex) {
+        const cur = existingByIndex.get(idx)
+        if (cur) {
+          const { error } = await admin.from('locations').update({
+            level_role: desired.role,
+            capacity_slots: desired.capacity_slots ?? null,
+            weight_capacity_kg: desired.weight_capacity_kg ?? null,
+            is_active: true,
+          } as any).eq('id', cur.id)
+          if (error) throw new EdgeFunctionError('INTERNAL', `Failed to update level ${idx}: ${error.message}`)
+          updated.push(idx)
+          continue
+        }
+        const code = `${(rack as any).code}-L${idx}`
+        const { data: newLoc, error: insErr } = await admin.from('locations').insert({
+          parent_id: input.id, kind: 'SHELF', code, name: `Level ${idx}`,
+          materialized_path: `${(rack as any).materialized_path}/${code}`,
+          level_role: desired.role, level_index: idx,
+          capacity_slots: desired.capacity_slots ?? null,
+          weight_capacity_kg: desired.weight_capacity_kg ?? null,
+          is_active: true,
+        } as any).select('id').single()
+        if (insErr || !newLoc) {
+          if (insErr?.code === '23505') throw new EdgeFunctionError('CONFLICT', `Level code "${code}" already exists`)
+          throw new EdgeFunctionError('INTERNAL', insErr?.message ?? `Failed to create level ${idx}`)
+        }
+        added.push(idx)
+        if (template) {
+          const baseIdx = (template.level_index as number) ?? idx
+          const baseOffset = Number(template.access_offset_m) || 0
+          const { error: plErr } = await admin.from('layout_placements').insert({
+            layout_id: layoutId, location_id: (newLoc as any).id,
+            floor: template.floor, x: template.x, y: template.y, w: template.w, h: template.h,
+            rotation: template.rotation, graph_node_id: template.graph_node_id,
+            access_offset_m: baseOffset + ACCESS_OFFSET_STEP_M * (idx - baseIdx),
+            level_index: idx,
+          } as any)
+          if (plErr) {
+            throw new EdgeFunctionError('INTERNAL', `Level ${idx} was created but its placement failed: ${plErr.message}`)
+          }
+        }
+      }
+
+      // Deactivate (never hard-delete) removed levels — inventory_movements
+      // history and any lingering layout_placements row must stay FK-valid.
+      const removed: number[] = []
+      for (const lvl of toRemove) {
+        const { error } = await admin.from('locations').update({ is_active: false } as any).eq('id', lvl.id)
+        if (error) throw new EdgeFunctionError('INTERNAL', `Failed to remove level ${lvl.level_index}: ${error.message}`)
+        removed.push(lvl.level_index as number)
+      }
+
+      const { data: finalRows } = await admin.from('locations')
+        .select('id, level_index, level_role, capacity_slots, weight_capacity_kg, code, is_active')
+        .eq('parent_id', input.id).eq('kind', 'SHELF').not('level_index', 'is', null)
+        .order('level_index', { ascending: true })
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
+        resourceId: String(input.id),
+        before: existingLevels as unknown as Record<string, unknown>,
+        after: (finalRows ?? []) as unknown as Record<string, unknown>,
+        metadata: { set_levels: true, added, updated, removed },
+      })
+
+      return new Response(JSON.stringify({ ok: true, rack_id: input.id, levels: finalRows ?? [] }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 

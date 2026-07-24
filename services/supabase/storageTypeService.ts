@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { toStorageType } from '@/lib/adapters'
-import type { SlotUnit, StorageType } from '@/types'
+import type { RackLevel, SlotUnit, StorageType } from '@/types'
 
 /** All active storage-unit types, in display order. */
 export async function getStorageTypes(): Promise<StorageType[]> {
@@ -30,6 +30,25 @@ export interface StorageTypeInput {
   heightCm?: number | null
   color?: string | null
   isDrawable?: boolean
+  // Rack levels (mig 00072). hasLevels opts this form into addressable
+  // per-level locations; levelTemplate is its standard layout — every rack
+  // drawn with this form inherits it, individual racks may override.
+  hasLevels?: boolean
+  levelTemplate?: RackLevel[] | null
+}
+
+/** [{levelIndex, role, capacitySlots, weightCapacityKg}] -> the positionally-
+ *  ordered [{role, capacity_slots, weight_capacity_kg}] the server stores
+ *  (level_index is implicit = array position; see toRackLevelTemplate in
+ *  lib/adapters.ts for the read-side inverse). */
+function toLevelTemplateColumn(levels: RackLevel[]): Array<Record<string, unknown>> {
+  return [...levels]
+    .sort((a, b) => a.levelIndex - b.levelIndex)
+    .map((l) => ({
+      role: l.role,
+      capacity_slots: l.capacitySlots ?? null,
+      weight_capacity_kg: l.weightCapacityKg ?? null,
+    }))
 }
 
 /** Map camelCase form fields → the snake_case columns the edge fn expects. */
@@ -43,6 +62,10 @@ function toFormColumns(input: Partial<StorageTypeInput>): Record<string, unknown
   if (input.heightCm !== undefined) data.height_cm = input.heightCm
   if (input.color !== undefined) data.color = input.color
   if (input.isDrawable !== undefined) data.is_drawable = input.isDrawable
+  if (input.hasLevels !== undefined) data.has_levels = input.hasLevels
+  if (input.levelTemplate !== undefined) {
+    data.level_template = input.levelTemplate ? toLevelTemplateColumn(input.levelTemplate) : null
+  }
   return data
 }
 

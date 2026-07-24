@@ -4,10 +4,11 @@
 // library): the grid lives in an overflow-auto container and a zoom control sizes
 // the cells, so pan is native scroll and there's no viewBox math to get wrong.
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorAction, EditorObject, EditorPlacement, EditorState } from './useLayoutEditorState'
-import { BASE_CELL, OBJECT_FILL, PLACEMENT_FILL } from './layoutPalette'
+import { BASE_CELL, LEVEL_ROLE_FILL, LEVEL_ROLE_LABEL, LEVEL_ROLE_STROKE, OBJECT_FILL, PLACEMENT_FILL } from './layoutPalette'
+import type { LevelRole, RackLevel } from '@/types'
 
 // Re-exported for back-compat: existing importers (WarehouseCanvas) pulled these
 // from here before they moved to layoutPalette. New code should import from
@@ -20,6 +21,105 @@ const NAMED_OBJECT_TYPES = new Set<EditorObject['objectType']>(['obstacle', 'sta
 
 /** Minimum rendered rect width (px) before we bother drawing the name text. */
 const MIN_NAME_WIDTH = 48
+
+// ── Rack-level grouping (mig 00072) ─────────────────────────────────────────
+// Each level of a rack now gets its own placement row, co-located at the
+// rack's exact (floor, x, y), distinguished by `levelIndex`. Rendering a
+// placements array 1:1 therefore paints one overlapping rect per level — both
+// this canvas and WarehouseCanvas group by cell first and draw one rect per
+// group. See the architecture note on `LayoutPlacement.levelIndex` in types.ts.
+
+/** Minimal shape `groupPlacementsByCell` needs — satisfied by both the
+ *  designer's `EditorPlacement` and the published `LayoutPlacement`, so one
+ *  helper serves both canvases. */
+export interface PlacementCell {
+  floor: number
+  x: number
+  y: number
+  w: number
+  h: number
+  /** Which level of its rack this row is; undefined = legacy single-bin. */
+  levelIndex?: number
+}
+
+export interface PlacementGroup<T extends PlacementCell> {
+  key: string
+  floor: number
+  x: number
+  y: number
+  w: number
+  h: number
+  /** True for a lone placement with `levelIndex === undefined` — the legacy
+   *  single-bin case. Callers MUST render this exactly as before; anything
+   *  else is (or will become, once it has >1 row) a rack needing
+   *  expand-in-place. */
+  isLegacyBin: boolean
+  /** Every placement sharing this cell, ascending by levelIndex. */
+  items: T[]
+}
+
+/** Groups a placements array by `(floor, x, y)` — the co-location key every
+ *  level of a rack shares. A group of one placement with `levelIndex ===
+ *  undefined` is a legacy bin and renders exactly as it does today; this is
+ *  the regression risk the grouping exists to avoid getting wrong. */
+export function groupPlacementsByCell<T extends PlacementCell>(placements: T[]): PlacementGroup<T>[] {
+  const order: string[] = []
+  const byKey = new Map<string, T[]>()
+  for (const p of placements) {
+    const key = `${p.floor}:${p.x}:${p.y}`
+    const bucket = byKey.get(key)
+    if (bucket) bucket.push(p)
+    else {
+      byKey.set(key, [p])
+      order.push(key)
+    }
+  }
+  return order.map((key) => {
+    const items = [...(byKey.get(key) as T[])].sort((a, b) => (a.levelIndex ?? 0) - (b.levelIndex ?? 0))
+    const first = items[0]
+    return {
+      key,
+      floor: first.floor,
+      x: first.x,
+      y: first.y,
+      w: first.w,
+      h: first.h,
+      isLegacyBin: items.length === 1 && items[0].levelIndex === undefined,
+      items,
+    }
+  })
+}
+
+/** `EditorPlacement.levels` (mig 00072, owned by `useLayoutEditorState.ts`) is
+ *  the embedded per-rack level array — the shape a single draft placement
+ *  uses before it's ever split into per-level rows on the backend. */
+function embeddedLevels(p: EditorPlacement): RackLevel[] | undefined {
+  return p.levels
+}
+
+/** Resolves a group's level list (+ each level's own clientRef, when the
+ *  reducer represents levels as separate placement rows rather than one
+ *  embedded array) regardless of which of those two shapes the editor state
+ *  ends up using. Returns an empty level list for anything that isn't (yet)
+ *  a levelled rack, so callers can key expand-in-place off `levels.length`. */
+function levelDataForGroup(group: PlacementGroup<EditorPlacement>): { levels: RackLevel[]; refByIndex: Map<number, string> } {
+  const refByIndex = new Map<number, string>()
+  if (group.items.length > 1) {
+    // Each level is its own EditorPlacement row (mirrors the published model).
+    const levels = group.items.map((p, i) => {
+      const withLevelFields = p as EditorPlacement & { levelIndex?: number; levelRole?: LevelRole }
+      const levelIndex = withLevelFields.levelIndex ?? i + 1
+      refByIndex.set(levelIndex, p.clientRef)
+      const role = withLevelFields.levelRole ?? 'pick'
+      return {
+        locationId: p.locationId, levelIndex, role, code: p.code,
+        capacitySlots: p.capacitySlots, slotKind: p.slotKind, weightCapacityKg: p.weightCapacityKg,
+      } as RackLevel
+    })
+    return { levels, refByIndex }
+  }
+  return { levels: embeddedLevels(group.items[0]) ?? [], refByIndex }
+}
 
 interface LayoutCanvasProps {
   state: EditorState
@@ -82,6 +182,45 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
 
   const floorObjects = state.objects.filter((o) => o.floor === state.floor)
   const floorPlacements = state.placements.filter((p) => p.floor === state.floor)
+
+  // Group by cell (see groupPlacementsByCell above) so a levelled rack — once
+  // useLayoutEditorState represents one — paints one rect, not N overlapping
+  // ones. Today every group is a lone legacy placement (EditorPlacement has no
+  // levelIndex yet), so this is a no-op pass-through until that lands.
+  const placementGroups = useMemo(() => groupPlacementsByCell(floorPlacements), [floorPlacements])
+
+  // Per-group level data, computed only for groups that aren't a plain legacy
+  // bin (cheap: at most a handful of racks are ever levelled on screen).
+  const groupLevelData = useMemo(() => {
+    const map = new Map<string, { levels: RackLevel[]; refByIndex: Map<number, string> }>()
+    for (const g of placementGroups) {
+      if (g.isLegacyBin) continue
+      map.set(g.key, levelDataForGroup(g))
+    }
+    return map
+  }, [placementGroups])
+
+  // Selecting a rack (the existing click-to-select path — no new reducer
+  // action needed) expands it in place; selecting anything else, or nothing,
+  // collapses it. Mirrors how WarehouseCanvas derives expansion from
+  // `selectedLocationId`.
+  const expandedGroup = useMemo(() => {
+    if (!state.selectedRef) return null
+    const g = placementGroups.find((gr) => gr.items.some((p) => p.clientRef === state.selectedRef))
+    if (!g || g.isLegacyBin) return null
+    const data = groupLevelData.get(g.key)
+    return data && data.levels.length > 1 ? { group: g, ...data } : null
+  }, [placementGroups, groupLevelData, state.selectedRef])
+
+  // Which level within the exploded stack is highlighted. This is purely
+  // local/visual: EditorPlacement has no per-level clientRef in the
+  // embedded-levels case, so there's nothing further to dispatch — the real
+  // per-level selection surface is RackLevelEditor, mounted in
+  // PlacementInspector (owned by another workstream).
+  const [selectedLevelIndex, setSelectedLevelIndex] = useState<number | null>(null)
+  useEffect(() => {
+    setSelectedLevelIndex(null)
+  }, [expandedGroup?.group.key])
 
   // MANDATORY perf fix: at the 120×80 grid cap a per-cell <line> pair is only
   // ~200 nodes (cheap), but the interaction layer used to be one <rect> per
@@ -162,16 +301,22 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
             )
           })}
 
-          {/* Storage bins */}
-          {floorPlacements.map((p: EditorPlacement) => {
-            const selected = p.clientRef === state.selectedRef
-            const problem = highlightRefs?.has(p.clientRef) ?? false
+          {/* Storage bins — one rect per (floor,x,y) group, not per placement
+              row, so a levelled rack never paints overlapping cells (see
+              groupPlacementsByCell above). A legacy single-bin group renders
+              byte-identical to the original per-placement loop. */}
+          {placementGroups.map((group) => {
+            const p: EditorPlacement = group.items[0]
+            const selected = group.items.some((item) => item.clientRef === state.selectedRef)
+            const problem = group.items.some((item) => highlightRefs?.has(item.clientRef) ?? false)
             // Colour by storage form when known; draft (unsaved) bins render lighter.
             const formColor = p.storageTypeId != null ? formColorById?.get(p.storageTypeId) : undefined
             const fill = problem ? PLACEMENT_FILL.problemFill : (formColor ?? (p.locationId ? PLACEMENT_FILL.existing : PLACEMENT_FILL.draft))
             const stroke = problem ? PLACEMENT_FILL.problemStroke : selected ? PLACEMENT_FILL.selectedStroke : (formColor ?? PLACEMENT_FILL.stroke)
+            const levelData = groupLevelData.get(group.key)
+            const levelCount = levelData?.levels.length ?? 0
             return (
-              <g key={p.clientRef} pointerEvents="none">
+              <g key={group.key} pointerEvents="none">
                 <rect
                   x={p.x * cell + 1} y={p.y * cell + 1} width={p.w * cell - 2} height={p.h * cell - 2}
                   fill={fill} fillOpacity={p.locationId || problem ? 1 : 0.6}
@@ -184,6 +329,14 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
                     textAnchor="middle" fontSize={Math.min(9, cell / 3)} fill={PLACEMENT_FILL.labelText} fontFamily="monospace"
                   >
                     {p.code.slice(0, 6)}
+                  </text>
+                )}
+                {levelCount > 1 && cell >= 18 && (
+                  <text
+                    x={p.x * cell + p.w * cell - 3} y={p.y * cell + 9}
+                    textAnchor="end" fontSize={8} fill={PLACEMENT_FILL.labelText} fontFamily="monospace"
+                  >
+                    {levelCount}L
                   </text>
                 )}
               </g>
@@ -201,6 +354,72 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
             onPointerMove={onInteractionMove}
             style={{ cursor: state.tool === 'select' ? 'pointer' : 'crosshair' }}
           />
+
+          {/* Expand-in-place: selecting a rack (the existing select-tool path,
+              above) explodes its cell into an editable level stack. Drawn
+              ABOVE the interaction rect so clicks reach it; the scrim dims
+              every other cell without moving them, and clicking it collapses
+              the expansion by clearing selection. */}
+          {expandedGroup && (() => {
+            const { group, levels, refByIndex } = expandedGroup
+            const gridPxW = gridWidth * cell
+            const gridPxH = gridHeight * cell
+            const topFirst = [...levels].sort((a, b) => b.levelIndex - a.levelIndex)
+            const rowH = Math.max(cell * 1.1, 20)
+            const gap = 3
+            const stackW = Math.max(cell * 2.6, 96)
+            const stackH = topFirst.length * rowH + (topFirst.length - 1) * gap
+            const cellCenterX = group.x * cell + (group.w * cell) / 2
+            const cellCenterY = group.y * cell + (group.h * cell) / 2
+            const clamp = (v: number, max: number) => Math.min(Math.max(v, 4), Math.max(4, max - 4))
+            const stackX = clamp(cellCenterX - stackW / 2, gridPxW - stackW)
+            const stackY = clamp(cellCenterY - stackH / 2, gridPxH - stackH)
+            return (
+              <g>
+                <rect
+                  x={0} y={0} width={gridPxW} height={gridPxH}
+                  fill="rgba(28,25,23,0.45)"
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    dispatch({ type: 'select', ref: null })
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
+                {topFirst.map((level, i) => {
+                  const y = stackY + i * (rowH + gap)
+                  const levelSelected = selectedLevelIndex === level.levelIndex
+                  const ownRef = refByIndex.get(level.levelIndex)
+                  return (
+                    <g
+                      key={level.levelIndex}
+                      onPointerDown={(e) => {
+                        e.stopPropagation()
+                        setSelectedLevelIndex(level.levelIndex)
+                        if (ownRef) dispatch({ type: 'select', ref: ownRef })
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <rect
+                        x={stackX} y={y} width={stackW} height={rowH} rx={4}
+                        fill={LEVEL_ROLE_FILL[level.role]}
+                        stroke={levelSelected ? PLACEMENT_FILL.selectedStroke : LEVEL_ROLE_STROKE[level.role]}
+                        strokeWidth={levelSelected ? 2.5 : 1.5}
+                      />
+                      <text x={stackX + 6} y={y + rowH / 2 + 3} fontSize={10} fontFamily="monospace" fill="#1c1917">
+                        L{level.levelIndex} · {(level.code ?? `#${level.levelIndex}`).slice(0, 14)}
+                      </text>
+                      <text
+                        x={stackX + stackW - 6} y={y + rowH / 2 + 3}
+                        textAnchor="end" fontSize={9} fontFamily="sans-serif" fill="#44403c"
+                      >
+                        {LEVEL_ROLE_LABEL[level.role]}
+                      </text>
+                    </g>
+                  )
+                })}
+              </g>
+            )
+          })()}
         </svg>
       </div>
     </div>

@@ -3,7 +3,7 @@
 // never drift, and by LayoutLegend so the legend is always in sync with what's
 // actually drawn. Keep colours here; components import, never redefine.
 
-import type { LayoutObjectType } from '@/types'
+import type { LayoutObjectType, LevelRole } from '@/types'
 
 /** Base cell size in px; the zoom control multiplies this. */
 export const BASE_CELL = 26
@@ -59,3 +59,30 @@ export const LEGEND_ITEMS: LegendItem[] = [
   { key: 'obstacle', label: 'Obstacle', shape: 'rect', fill: OBJECT_FILL.obstacle },
   { key: 'label', label: 'Label', shape: 'rect', fill: OBJECT_FILL.label },
 ]
+
+// ── Rack levels (mig 00072) ───────────────────────────────────────────────
+// ADD-ONLY additions for the expand-in-place stack drawn by LayoutCanvas and
+// WarehouseCanvas. This file's existing exports are off-limits for restyling
+// (see the file banner + memory/warehouse-tab-immersive-map-2026-07.md) — do
+// not edit anything above this line, only append.
+
+/** Fill per rack-level role, used by the exploded level stack on both canvases. */
+export const LEVEL_ROLE_FILL: Record<LevelRole, string> = {
+  pick: '#a7f3d0',
+  reserve: '#c7d2fe',
+  bulk: '#fde68a',
+}
+
+/** Stroke per rack-level role — paired with LEVEL_ROLE_FILL. */
+export const LEVEL_ROLE_STROKE: Record<LevelRole, string> = {
+  pick: '#059669',
+  reserve: '#4f46e5',
+  bulk: '#d97706',
+}
+
+/** Short display label per rack-level role, for the exploded stack's text. */
+export const LEVEL_ROLE_LABEL: Record<LevelRole, string> = {
+  pick: 'Pick',
+  reserve: 'Reserve',
+  bulk: 'Bulk',
+}

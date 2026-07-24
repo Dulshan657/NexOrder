@@ -6,7 +6,12 @@
 // on the queue (mig 00071).
 //
 // Rule violations are shown, never enforced: the operator is standing in front
-// of the rack and the server accepts any active bin in this warehouse.
+// of the rack and the server accepts any active bin in this warehouse. One
+// rule gets special handling — a rack level's `levelRole` (mig 00072) is a
+// HARD rule at recommendation time, so choosing a mismatched level here is a
+// deliberate override: the confirm button becomes "Place anyway" and the
+// caller must forward `roleOverride` to decide-putaway as `role_override:
+// true` so the exception is audited server-side.
 
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -17,8 +22,8 @@ import { useBalancesByWarehouse } from '@/hooks/queries/useInventoryBalances'
 import { useZoneProfiles } from '@/hooks/queries/useZoneProfiles'
 import { getWmsAttributes } from '@/services/supabase/wmsAttributesService'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
-import type { InventoryLocation } from '@/types'
-import { binFillFromBalances, evaluateBinWarnings, resolveZoneProfileId } from './putawayGuards'
+import type { InventoryLocation, LevelRole, ProductWmsAttributes } from '@/types'
+import { binFillFromBalances, evaluateBinWarnings, isLevelRoleMismatch, resolveZoneProfileId } from './putawayGuards'
 import { baseUnitLabel, describeQuantity, toBaseQty, trimNumber, uomsForProduct } from './putawayFormat'
 
 interface BinPickerSheetProps {
@@ -27,8 +32,17 @@ interface BinPickerSheetProps {
   row: PendingPutawayRow
   busy?: boolean
   onClose: () => void
-  onConfirm: (chosenLocationId: number, baseQty: number) => void
+  /** `roleOverride` is true when the chosen bin is a rack level whose role this
+   *  SKU doesn't allow — the caller must forward it to decide-putaway as
+   *  `role_override: true` so the server records the exception (mig 00072). */
+  onConfirm: (chosenLocationId: number, baseQty: number, roleOverride: boolean) => void
 }
+
+// `product_wms_attributes.allowed_level_roles` (mig 00072) isn't on
+// ProductWmsAttributes / the wmsAttributesService payload yet — read it
+// defensively so this sheet works today and picks the field up for free once
+// the type/service/adapter land it. Empty/absent = unconstrained (any role).
+type WmsAttributesWithLevelRoles = ProductWmsAttributes & { allowedLevelRoles?: LevelRole[] | null }
 
 // Storage nodes stock can actually be dropped into. STAGING/WAREHOUSE are
 // reachable by typing a code, and warned about rather than hidden — an operator
@@ -49,6 +63,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
     queryFn: () => getWmsAttributes(row.productId),
     enabled: open,
   })
+  const allowedLevelRoles = (wms as WmsAttributesWithLevelRoles | null | undefined)?.allowedLevelRoles ?? null
 
   const [chosenId, setChosenId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
@@ -128,8 +143,9 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
       baseQty,
       usedSlots: fill.get(chosen.id) ?? 0,
       unitWeightKg: wms?.weightKg ?? null,
+      allowedLevelRoles,
     })
-  }, [chosen, zoneProfile, row.product, baseQty, fill, wms])
+  }, [chosen, zoneProfile, row.product, baseQty, fill, wms, allowedLevelRoles])
 
   const qtyError =
     baseQty <= 0
@@ -140,10 +156,15 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
 
   const canConfirm = chosen != null && qtyError == null && !busy
   const alternatives = row.explanation?.alternatives ?? []
+  // The row was already unplaceable when the operator opened this sheet — the
+  // engine found no compatible level for the whole queued quantity. Dismissing
+  // without picking a bin genuinely means "leave it queued", not just "cancel".
+  const isWedged = row.recommendedLocationId == null
+  const roleOverride = isLevelRoleMismatch(chosen, allowedLevelRoles)
 
   const submit = () => {
     if (!canConfirm || chosen == null) return
-    onConfirm(chosen.id, baseQty)
+    onConfirm(chosen.id, baseQty, roleOverride)
   }
 
   return (
@@ -168,20 +189,33 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
             onClick={requestClose}
             className="text-sm px-3 py-2 rounded-lg border border-stone-200 text-stone-600 btn-press"
           >
-            Cancel
+            {isWedged ? 'Leave queued' : 'Cancel'}
           </button>
           <button
             type="button"
             onClick={submit}
             disabled={!canConfirm}
-            className="inline-flex items-center gap-1.5 text-sm px-3.5 py-2 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-40"
+            className={`inline-flex items-center gap-1.5 text-sm px-3.5 py-2 text-white rounded-lg btn-press disabled:opacity-40 ${
+              roleOverride ? 'bg-amber-600' : 'bg-emerald-600'
+            }`}
           >
-            {busy ? 'Putting away…' : 'Put here'} <ArrowRight className="w-4 h-4" />
+            {busy ? 'Putting away…' : roleOverride ? 'Place anyway' : 'Put here'} <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       )}
     >
       <div className="space-y-5">
+        {/* Wedge banner: the engine found nothing compatible for this line at all. */}
+        {isWedged && row.explanation?.hardFilters?.some((h) => h.code === 'LEVEL_ROLE_MISMATCH') && (
+          <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+            <p className="text-xs">
+              {row.explanation.hardFilters.find((h) => h.code === 'LEVEL_ROLE_MISMATCH')!.label}. Pick a bin below and
+              confirm with <span className="font-medium">Place anyway</span> to override — it's recorded — or leave
+              this queued for another level to free up.
+            </p>
+          </div>
+        )}
         {/* Quantity ------------------------------------------------------- */}
         <div>
           <label className="block text-xs font-semibold text-stone-600 mb-1.5">How much</label>
@@ -294,17 +328,26 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
               matches.map((b) => {
                 const used = fill.get(b.id) ?? 0
                 const cap = b.capacitySlots
+                const mismatched = isLevelRoleMismatch(b, allowedLevelRoles)
                 return (
                   <button
                     key={b.id}
                     type="button"
                     onClick={() => { setChosenId(b.id); setCode('') }}
                     className={`w-full text-left px-3 py-2 flex items-center gap-3 btn-press ${
-                      chosenId === b.id ? 'bg-emerald-50' : 'hover:bg-stone-50'
+                      chosenId === b.id ? 'bg-emerald-50' : mismatched ? 'bg-amber-50/40 hover:bg-amber-50' : 'hover:bg-stone-50'
                     }`}
                   >
                     <span className="font-mono text-xs text-stone-700 shrink-0">{b.code}</span>
                     <span className="text-xs text-stone-400 truncate flex-1">{b.name}</span>
+                    {mismatched && (
+                      <span
+                        className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 shrink-0"
+                        title={`This SKU only allows: ${(allowedLevelRoles ?? []).join(', ')}`}
+                      >
+                        <AlertTriangle className="w-3 h-3" aria-hidden="true" /> {b.levelRole} level
+                      </span>
+                    )}
                     <span className="text-[11px] text-stone-400 tabular-nums shrink-0">
                       {cap != null && cap > 0 ? `${Math.round(used)}/${cap}` : `${Math.round(used)}`}
                     </span>
@@ -322,21 +365,32 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
 
         {/* Selection + warnings -------------------------------------------- */}
         {chosen && (
-          <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 space-y-2">
-            <p className="text-sm text-emerald-800">
+          <div
+            className={`rounded-lg border p-3 space-y-2 ${
+              roleOverride ? 'border-amber-200 bg-amber-50' : 'border-emerald-100 bg-emerald-50/60'
+            }`}
+          >
+            <p className={`text-sm ${roleOverride ? 'text-amber-800' : 'text-emerald-800'}`}>
               <span className="font-mono">{chosen.code}</span>
-              <span className="text-emerald-700/70"> · {chosen.name}</span>
+              <span className={roleOverride ? 'text-amber-700/70' : 'text-emerald-700/70'}> · {chosen.name}</span>
             </p>
             {warnings.map((w) => (
               <p key={w.code} className="flex items-start gap-1.5 text-xs text-amber-700">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
                 <span>{w.message}</span>
               </p>
             ))}
-            {warnings.length > 0 && (
-              <p className="text-[11px] text-stone-500">
-                You can still put it here — this is a warning, not a block.
+            {roleOverride ? (
+              <p className="text-[11px] font-medium text-amber-700">
+                This is the engine's hard rule, not just a warning — confirming with "Place anyway" writes an audit
+                record of the override.
               </p>
+            ) : (
+              warnings.length > 0 && (
+                <p className="text-[11px] text-stone-500">
+                  You can still put it here — this is a warning, not a block.
+                </p>
+              )
             )}
           </div>
         )}

@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import type { Dispatch } from 'react'
-import type { StorageType, ZoneProfile } from '@/types'
+import type { RackLevel, StorageType, ZoneProfile } from '@/types'
 import type { EditorAction } from './useLayoutEditorState'
 
 interface RackWizardProps {
@@ -26,13 +26,16 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
   const [weightCap, setWeightCap] = useState<number | ''>('')
   const [zoneProfileId, setZoneProfileId] = useState<number | ''>('')
   const [storageTypeId, setStorageTypeId] = useState<number | ''>('')
+  // The chosen form's standard level layout (mig 00072); every rack this
+  // wizard generates inherits it (recoded to that rack's own code).
+  const [levelTemplate, setLevelTemplate] = useState<RackLevel[] | undefined>(undefined)
 
   const fits = startX + cols <= gridWidth && startY + rows <= gridHeight
   const count = cols * rows
 
   // Selecting a storage type prefills capacity + slot kind from its defaults.
   const onStorageType = (val: string) => {
-    if (val === '') { setStorageTypeId(''); return }
+    if (val === '') { setStorageTypeId(''); setLevelTemplate(undefined); return }
     const id = Number(val)
     setStorageTypeId(id)
     const st = storageTypes.find((s) => s.id === id)
@@ -40,6 +43,9 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
       if (st.defaultCapacitySlots != null) setCapacity(st.defaultCapacitySlots)
       if (st.slotUnit === 'pallet' || st.slotUnit === 'carton') setSlotKind(st.slotUnit)
       setWeightCap(st.weightCapacityKg ?? '')
+      setLevelTemplate(st.hasLevels ? st.levelTemplate : undefined)
+    } else {
+      setLevelTemplate(undefined)
     }
   }
 
@@ -52,6 +58,7 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
       weightCapacityKg: weightCap === '' ? undefined : weightCap,
       zoneProfileId: zoneProfileId === '' ? undefined : zoneProfileId,
       storageTypeId: storageTypeId === '' ? undefined : storageTypeId,
+      levelTemplate,
     })
     onClose()
   }
@@ -129,7 +136,8 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
         </label>
 
         <p className="text-xs text-stone-400">
-          Creates up to {count} racks{fits ? '' : ' — but the block runs off the grid'}.
+          Creates up to {count} racks{fits ? '' : ' — but the block runs off the grid'}
+          {levelTemplate ? ` · ${levelTemplate.length} levels each` : ''}.
         </p>
 
         <div className="flex justify-end gap-2">

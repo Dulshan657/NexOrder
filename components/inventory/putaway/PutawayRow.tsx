@@ -2,7 +2,7 @@
 // where the engine wants it. Replaces a row that said only "Product #42".
 
 import React from 'react'
-import { Check, HelpCircle, MapPin, Package, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Check, HelpCircle, MapPin, Package, RefreshCw } from 'lucide-react'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import { formatRelative } from '@/components/admin/emailAccountFormat'
 import { PutawayExplanationCard } from '../PutawayExplanationCard'
@@ -39,6 +39,13 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
 
   const receiptBits = [receipt?.supplierName, receipt?.reference].filter(Boolean) as string[]
 
+  // When the engine found no bin at all, name WHY rather than leaving a bare
+  // "No eligible bin" — the label comes straight from the engine's hard-filter
+  // reason (e.g. LEVEL_ROLE_MISMATCH), never invented client-side copy.
+  const mismatch = !row.recommendedLocationId
+    ? row.explanation?.hardFilters?.find((h) => h.code === 'LEVEL_ROLE_MISMATCH')
+    : undefined
+
   return (
     <div className="px-4 py-3">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -72,9 +79,14 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
 
         {/* Destination + actions */}
         <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
-          <p className="text-xs">
+          <p className="text-xs max-w-[16rem] sm:max-w-[20rem]">
             {binCode ? (
               <span className="font-mono text-emerald-600">{binCode}</span>
+            ) : mismatch ? (
+              <span className="inline-flex items-start gap-1 text-amber-600">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+                <span className="truncate">{mismatch.label}</span>
+              </span>
             ) : (
               <span className="text-amber-600">No eligible bin</span>
             )}
@@ -100,7 +112,11 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
             <button
               onClick={onChooseBin}
               disabled={busy}
-              className="inline-flex items-center gap-1 text-xs px-2.5 py-1 border border-stone-200 text-stone-600 rounded-lg btn-press disabled:opacity-40"
+              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg btn-press disabled:opacity-40 ${
+                mismatch
+                  ? 'border border-amber-300 bg-amber-50 text-amber-700'
+                  : 'border border-stone-200 text-stone-600'
+              }`}
             >
               <MapPin className="w-3.5 h-3.5" /> Choose bin
             </button>

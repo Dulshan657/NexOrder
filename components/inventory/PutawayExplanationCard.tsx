@@ -2,6 +2,7 @@
 // rules that filtered candidates out. Purely presentational; the engine already
 // computed the numbers, this just makes them legible to the operator.
 
+import { AlertTriangle } from 'lucide-react'
 import type { CandidateBreakdown, PutawayExplanation } from '@/types'
 
 const FACTOR_LABEL: Record<string, string> = {
@@ -36,9 +37,32 @@ function CandidateFactors({ candidate }: { candidate: CandidateBreakdown }) {
 
 export function PutawayExplanationCard({ explanation }: { explanation: PutawayExplanation }) {
   const { winner, alternatives, hardFilters, candidatesConsidered } = explanation
+  // The hard never-mix rule (mig 00072): a SKU may only land on a level whose
+  // role it allows. When this is the reason NOTHING came back, that's the
+  // queue-wedging case the manual override exists for — surface it up front,
+  // in the engine's own words, rather than leaving it buried in the details.
+  const roleMismatch = hardFilters.find((h) => h.code === 'LEVEL_ROLE_MISMATCH')
 
   return (
     <div className="space-y-3 text-xs">
+      {roleMismatch && !winner && (
+        <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+          <div>
+            <p className="font-medium">{roleMismatch.label}</p>
+            {roleMismatch.sample.length > 0 && (
+              <p className="text-[11px] text-amber-700/80 mt-0.5">
+                e.g. {roleMismatch.sample.map((s) => s.code).join(', ')}
+              </p>
+            )}
+            <p className="text-[11px] text-amber-700/80 mt-1">
+              This is a hard rule, not a scoring preference — use "Choose bin" to place it on a mismatched level
+              anyway. The override is recorded.
+            </p>
+          </div>
+        </div>
+      )}
+
       <p className="text-stone-500">
         Considered {candidatesConsidered} bin{candidatesConsidered === 1 ? '' : 's'}.
         {winner ? ` Best score ${winner.totalScore.toFixed(2)}.` : ' No eligible bin.'}

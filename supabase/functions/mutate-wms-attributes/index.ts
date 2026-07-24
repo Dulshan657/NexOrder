@@ -29,6 +29,11 @@ const inputSchema = z.object({
   volume_l: z.number().nonnegative().nullable().optional(),
   dims: z.record(z.unknown()).nullable().optional(),
   custom: z.record(z.unknown()).optional(),
+  // Level roles this SKU may be put away into (mig 00072). NULL = ANY role,
+  // which is every existing product's behaviour — so an EMPTY array is
+  // normalised to null below rather than being stored as "no role allowed",
+  // which would make the SKU unputawayable.
+  allowed_level_roles: z.array(z.enum(['pick', 'reserve', 'bulk'])).nullable().optional(),
 }).refine(
   (d) => d.temp_min == null || d.temp_max == null || d.temp_min <= d.temp_max,
   { message: 'temp_min must be ≤ temp_max' },
@@ -62,6 +67,13 @@ serve(async (req: Request) => {
     const row: Record<string, unknown> = { product_id: input.product_id, updated_at: new Date().toISOString() }
     for (const k of ['hazard_class', 'temp_min', 'temp_max', 'shelf_life_policy', 'stackable', 'handling_type', 'weight_kg', 'volume_l', 'dims', 'custom'] as const) {
       if (k in input) row[k] = (input as any)[k] ?? null
+    }
+    // An empty selection means "any level role", NOT "no role allowed" — storing
+    // [] would hard-filter this SKU out of every candidate level and strand it
+    // in the putaway queue forever. Normalise it to null.
+    if ('allowed_level_roles' in input) {
+      const roles = input.allowed_level_roles
+      row.allowed_level_roles = roles && roles.length > 0 ? roles : null
     }
     const { data: saved, error } = await admin.from('product_wms_attributes')
       .upsert(row as any, { onConflict: 'product_id' }).select().single()

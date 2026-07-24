@@ -8,7 +8,8 @@
 // and zones come in Phase 2.
 
 import { useReducer } from 'react'
-import type { LayoutObject, LayoutObjectType, LayoutPlacement } from '@/types'
+import type { LayoutObject, LayoutObjectType, LayoutPlacement, RackLevel } from '@/types'
+import { applyTemplate } from '@/components/warehouse/levels/rackLevels'
 
 // 'rack' is the generic storage-paint tool; WHICH form it draws is carried by
 // `activeForm` (mig 00061 storage forms), so every drawable form shares one tool.
@@ -22,6 +23,9 @@ export interface ActiveStorageForm {
   capacitySlots?: number
   slotKind?: 'pallet' | 'carton'
   weightCapacityKg?: number
+  /** Standard level layout (mig 00072); a placement painted with this form
+   *  inherits these levels (recoded to the new placement's own code). */
+  levelTemplate?: RackLevel[]
 }
 
 export interface EditorPlacement {
@@ -45,6 +49,9 @@ export interface EditorPlacement {
   zoneProfileId?: number
   /** Physical storage-unit type (mig 00056); supplies default capacity/slot. */
   storageTypeId?: number
+  /** Per-instance level configuration (mig 00072); undefined = not a levelled
+   *  rack (or a levelled form whose levels haven't been customised/created yet). */
+  levels?: RackLevel[]
 }
 
 export interface EditorObject {
@@ -66,7 +73,15 @@ export interface EditorState {
   floor: number
   placements: EditorPlacement[]
   objects: EditorObject[]
+  /** Last-selected clientRef (placement or object) — unchanged contract, read by
+   *  LayoutDesignerView.tsx / LayoutCanvas.tsx exactly as before. */
   selectedRef: string | null
+  /** Superset of `selectedRef`: every currently-selected placement/object
+   *  clientRef. In the single-select case (the only case those two files drive
+   *  today) it's always `{selectedRef}` (or empty when null). Multi-select
+   *  (ctrl/shift-click on the canvas) adds more refs via `select` with
+   *  `additive: true`. */
+  selectedRefs: Set<string>
   dirty: boolean
   seq: number
   /** Prefix for auto-generated bin codes so they stay globally unique
@@ -81,17 +96,30 @@ export type EditorAction =
   | { type: 'set_storage_form'; form: ActiveStorageForm }
   | { type: 'set_floor'; floor: number }
   | { type: 'paint_cell'; x: number; y: number }
-  | { type: 'select'; ref: string | null }
+  // `additive: true` toggles `ref` into the multi-selection instead of
+  // replacing it (ctrl/shift-click on the canvas); omitted/false keeps the
+  // original single-select replace behaviour untouched.
+  | { type: 'select'; ref: string | null; additive?: boolean }
   | { type: 'update_placement'; ref: string; patch: Partial<Omit<EditorPlacement, 'clientRef'>> }
   | { type: 'update_object'; ref: string; patch: { meta?: Record<string, unknown> } }
   | { type: 'delete_selected' }
-  | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number }
+  | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number; levelTemplate?: RackLevel[] }
   | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number }> }
   | { type: 'mark_saved'; refMap: Array<{ client_ref: string; location_id: number }> }
   | { type: 'apply_auto_connect'; objects: Array<Pick<EditorObject, 'objectType' | 'floor' | 'x' | 'y' | 'w' | 'h'> & Partial<Pick<EditorObject, 'meta' | 'stagingLocationId'>>> }
+  // Rack levels (mig 00072).
+  | { type: 'set_rack_levels'; ref: string; levels: RackLevel[] }
+  | { type: 'apply_levels_to_selection'; levels: RackLevel[] }
 
 export function initialEditorState(codePrefix = 'W'): EditorState {
-  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, dirty: false, seq: 1, codePrefix, activeForm: null }
+  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, selectedRefs: new Set(), dirty: false, seq: 1, codePrefix, activeForm: null }
+}
+
+/** Single-selection helper: `selectedRefs` always mirrors `selectedRef` as its
+ *  one-element (or empty) set. Every plain-click selection path uses this so
+ *  the two fields never drift apart outside the explicit multi-select branch. */
+function singleSelect(ref: string | null): Pick<EditorState, 'selectedRef' | 'selectedRefs'> {
+  return { selectedRef: ref, selectedRefs: ref ? new Set([ref]) : new Set() }
 }
 
 const OBJECT_TOOLS: Partial<Record<EditorTool, LayoutObjectType>> = {
@@ -113,6 +141,13 @@ function placementAt(state: EditorState, x: number, y: number): EditorPlacement 
   return state.placements.find((p) => p.floor === state.floor && p.x === x && p.y === y)
 }
 
+function withoutRef(refs: Set<string>, ref: string): Set<string> {
+  if (!refs.has(ref)) return refs
+  const next = new Set(refs)
+  next.delete(ref)
+  return next
+}
+
 export function layoutEditorReducer(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
     case 'set_tool':
@@ -120,13 +155,22 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
 
     case 'set_storage_form':
       // Selecting a form activates the storage-paint tool bound to that form.
-      return { ...state, tool: 'rack', activeForm: action.form, selectedRef: null }
+      return { ...state, tool: 'rack', activeForm: action.form, ...singleSelect(null) }
 
     case 'set_floor':
-      return { ...state, floor: action.floor, selectedRef: null }
+      return { ...state, floor: action.floor, ...singleSelect(null) }
 
-    case 'select':
-      return { ...state, selectedRef: action.ref }
+    case 'select': {
+      if (!action.additive || action.ref === null) {
+        return { ...state, ...singleSelect(action.ref) }
+      }
+      const next = new Set(state.selectedRefs)
+      if (next.has(action.ref)) next.delete(action.ref)
+      else next.add(action.ref)
+      const remaining = Array.from(next)
+      const selectedRef = next.has(action.ref) ? action.ref : (remaining[remaining.length - 1] ?? null)
+      return { ...state, selectedRef, selectedRefs: next }
+    }
 
     case 'paint_cell': {
       const { x, y } = action
@@ -135,11 +179,14 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         const obj = objectAt(state, x, y)
         const place = placementAt(state, x, y)
         if (!obj && !place) return state
+        const erasedSelectedRef = place && place.clientRef === state.selectedRef
+        const selectedRefs = place ? withoutRef(state.selectedRefs, place.clientRef) : state.selectedRefs
         return {
           ...state,
           objects: state.objects.filter((o) => o !== obj),
           placements: state.placements.filter((p) => p !== place),
-          selectedRef: place && place.clientRef === state.selectedRef ? null : state.selectedRef,
+          selectedRef: erasedSelectedRef ? null : state.selectedRef,
+          selectedRefs,
           dirty: true,
         }
       }
@@ -156,22 +203,27 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         if (placementAt(state, x, y)) return state // already a bin here
         const ref = `p${state.seq}`
         const f = state.activeForm
+        const code = `${state.codePrefix}-B-${x}-${y}`
         const placement: EditorPlacement = {
           clientRef: ref, floor: state.floor, x, y, w: 1, h: 1, rotation: 0,
-          kind: 'BIN', code: `${state.codePrefix}-B-${x}-${y}`, name: `Bin ${x},${y}`,
+          kind: 'BIN', code, name: `Bin ${x},${y}`,
           capacitySlots: f?.capacitySlots ?? 10, slotKind: f?.slotKind ?? 'pallet',
           weightCapacityKg: f?.weightCapacityKg, storageTypeId: f?.storageTypeId,
+          // A form with a standard level layout hands every rack it paints that
+          // layout (recoded to this new rack's own code); a form without one
+          // leaves `levels` undefined — not every rack is levelled.
+          levels: f?.levelTemplate ? applyTemplate(f.levelTemplate, code) : undefined,
         }
-        return { ...state, placements: [...state.placements, placement], selectedRef: ref, seq: state.seq + 1, dirty: true }
+        return { ...state, placements: [...state.placements, placement], ...singleSelect(ref), seq: state.seq + 1, dirty: true }
       }
 
       // select tool: clicking a bin selects it; otherwise fall back to whatever
       // structural object (wall/dock/obstacle/staging/label/…) occupies the cell,
       // so those become selectable too.
       const hit = placementAt(state, x, y)
-      if (hit) return { ...state, selectedRef: hit.clientRef }
+      if (hit) return { ...state, ...singleSelect(hit.clientRef) }
       const objHit = objectAt(state, x, y)
-      return { ...state, selectedRef: objHit?.clientRef ?? null }
+      return { ...state, ...singleSelect(objHit?.clientRef ?? null) }
     }
 
     case 'update_placement':
@@ -194,7 +246,7 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         ...state,
         placements: state.placements.filter((p) => p.clientRef !== state.selectedRef),
         objects: state.objects.filter((o) => o.clientRef !== state.selectedRef),
-        selectedRef: null,
+        ...singleSelect(null),
         dirty: true,
       }
     }
@@ -211,12 +263,14 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
           const x = action.startX + dx
           const y = action.startY + dy
           if (occupied.has(`${x}:${y}`)) continue
+          const code = `${state.codePrefix}-B-${x}-${y}`
           added.push({
             clientRef: `p${seq++}`, floor: state.floor, x, y, w: 1, h: 1, rotation: 0,
-            kind: 'BIN', code: `${state.codePrefix}-B-${x}-${y}`, name: `Bin ${x},${y}`,
+            kind: 'BIN', code, name: `Bin ${x},${y}`,
             capacitySlots: action.capacitySlots ?? 10, slotKind: action.slotKind ?? 'pallet',
             weightCapacityKg: action.weightCapacityKg,
             zoneProfileId: action.zoneProfileId, storageTypeId: action.storageTypeId,
+            levels: action.levelTemplate ? applyTemplate(action.levelTemplate, code) : undefined,
           })
         }
       }
@@ -241,7 +295,7 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         // lost imported zone-label names on the next manual save.
         meta: o.meta, stagingLocationId: o.stagingLocationId,
       }))
-      return { ...state, placements, objects, selectedRef: null, dirty: false, seq }
+      return { ...state, placements, objects, ...singleSelect(null), dirty: false, seq }
     }
 
     case 'mark_saved': {
@@ -263,6 +317,28 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         meta: o.meta, stagingLocationId: o.stagingLocationId,
       }))
       return { ...state, objects, seq, dirty: true }
+    }
+
+    case 'set_rack_levels':
+      return {
+        ...state,
+        placements: state.placements.map((p) => (p.clientRef === action.ref ? { ...p, levels: action.levels } : p)),
+        dirty: true,
+      }
+
+    case 'apply_levels_to_selection': {
+      // selectedRefs is always a superset of selectedRef (see singleSelect), so
+      // in the single-select case this already targets just the one selection;
+      // multi-select (ctrl/shift-click) widens it to every selected rack.
+      const targets = state.selectedRefs
+      if (targets.size === 0) return state
+      return {
+        ...state,
+        // Each target keeps its OWN code — recompute per rack rather than
+        // stamping every selected rack with the same `-L<n>` codes.
+        placements: state.placements.map((p) => (targets.has(p.clientRef) ? { ...p, levels: applyTemplate(action.levels, p.code) } : p)),
+        dirty: true,
+      }
     }
 
     default:

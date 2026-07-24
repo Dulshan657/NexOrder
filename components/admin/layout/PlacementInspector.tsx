@@ -2,20 +2,29 @@
 // capacity). Mirrors the fields the classic WarehouseTreeEditor exposes, so a bin
 // drawn on the canvas carries the same metadata the inventory layer already uses.
 
+import { useState } from 'react'
 import type { Dispatch } from 'react'
 import type { StorageType, ZoneProfile } from '@/types'
 import type { EditorAction, EditorPlacement } from './useLayoutEditorState'
+import { RackLevelEditor } from '@/components/warehouse/levels/RackLevelEditor'
+import { applyTemplate } from '@/components/warehouse/levels/rackLevels'
 
 interface PlacementInspectorProps {
   placement: EditorPlacement | null
   dispatch: Dispatch<EditorAction>
   zoneProfiles: ZoneProfile[]
   storageTypes: StorageType[]
+  /** Count of racks currently selected on the canvas (multi-select). Undefined
+   *  or <= 1 hides the "apply to all N selected" affordance. The canvas owner
+   *  should wire this from `state.selectedRefs.size`. */
+  selectedCount?: number
 }
 
 const KINDS: EditorPlacement['kind'][] = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN']
 
-export function PlacementInspector({ placement, dispatch, zoneProfiles, storageTypes }: PlacementInspectorProps) {
+export function PlacementInspector({ placement, dispatch, zoneProfiles, storageTypes, selectedCount }: PlacementInspectorProps) {
+  const [selectedLevelIndex, setSelectedLevelIndex] = useState<number | null>(null)
+
   if (!placement) {
     return (
       <div className="text-xs text-stone-400 p-3 border border-dashed border-stone-200 rounded-lg">
@@ -42,7 +51,21 @@ export function PlacementInspector({ placement, dispatch, zoneProfiles, storageT
   // Existing bins own their metadata in the locations table; the designer only
   // moves/removes them. Editing code/name/capacity here would be silently
   // dropped on save, so lock those fields (edit them in the storage tree).
+  // Level configuration is the deliberate exception: it's the whole point of
+  // this feature, so it stays editable even for an already-saved rack.
   const isExisting = !!placement.locationId
+
+  const form = storageTypes.find((s) => s.id === placement.storageTypeId)
+  const levelTemplate = form?.hasLevels ? form.levelTemplate : undefined
+  // A rack that already has its own `levels` (drawn under a levelled form, or
+  // carried over from a previous session) shows those; otherwise, if the
+  // current form has a standard template, show that as the starting point.
+  const levels = placement.levels ?? (levelTemplate ? applyTemplate(levelTemplate, placement.code) : undefined)
+  const showLevels = !!levels && levels.length > 0
+  const onLevelsChange = (next: typeof levels) => {
+    if (!next) return
+    dispatch({ type: 'set_rack_levels', ref, levels: next })
+  }
 
   return (
     <div className="space-y-3 p-3 border border-stone-200 rounded-lg bg-white">
@@ -151,6 +174,27 @@ export function PlacementInspector({ placement, dispatch, zoneProfiles, storageT
             {zoneProfiles.map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
           </select>
         </label>
+      )}
+
+      {showLevels && levels && (
+        <div className="pt-2 border-t border-stone-100">
+          <RackLevelEditor
+            levels={levels}
+            template={levelTemplate}
+            selectedLevelIndex={selectedLevelIndex}
+            onSelectLevel={setSelectedLevelIndex}
+            onChange={onLevelsChange}
+          />
+          {selectedCount != null && selectedCount > 1 && (
+            <button
+              type="button"
+              className="mt-2 text-[11px] text-nexgen-blue hover:underline btn-press"
+              onClick={() => dispatch({ type: 'apply_levels_to_selection', levels })}
+            >
+              Apply this level layout to all {selectedCount} selected racks
+            </button>
+          )}
+        </div>
       )}
 
       {isExisting

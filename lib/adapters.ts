@@ -19,6 +19,7 @@ import type {
   WieRule, WieRuleDefinition, ProductWmsAttributes, CategoryCompatibility,
   WieScoringProfile, WieScoringWeights, SlottingSuggestion,
   WieProductVelocity, WieLocationTraffic, ProductUom, ProductSupplierLink,
+  LevelRole, RackLevel,
 } from '@/types'
 import { sortUoms } from './uom'
 import type { Database } from './database.types'
@@ -677,6 +678,11 @@ export function toInventoryLocation(row: LocationRow): InventoryLocation {
     weightCapacityKg: row.weight_capacity_kg != null ? Number(row.weight_capacity_kg) : undefined,
     zoneProfileId: row.zone_profile_id ?? undefined,
     storageTypeId: row.storage_type_id ?? undefined,
+    // Rack levels (mig 00072). Cast: database.types.ts is regenerated from the
+    // live schema and doesn't carry these columns until that migration is
+    // applied — same pattern as toSlottingSuggestion's origin/plan_batch below.
+    levelRole: (row as LocationRow & { level_role?: LevelRole | null }).level_role ?? undefined,
+    levelIndex: (row as LocationRow & { level_index?: number | null }).level_index ?? undefined,
   }
 }
 
@@ -810,6 +816,9 @@ export function toLayoutPlacement(row: LayoutPlacementRow): LayoutPlacement {
     rotation: row.rotation as LayoutPlacement['rotation'],
     graphNodeId: row.graph_node_id ?? undefined,
     accessOffsetM: row.access_offset_m != null ? Number(row.access_offset_m) : undefined,
+    // Rack levels (mig 00072); undefined = a legacy single-bin placement. See
+    // the LocationRow cast note in toInventoryLocation above.
+    levelIndex: (row as LayoutPlacementRow & { level_index?: number | null }).level_index ?? undefined,
   }
 }
 
@@ -839,6 +848,10 @@ export function toProductWmsAttributes(row: ProductWmsAttributesRow): ProductWms
     volumeL: row.volume_l != null ? Number(row.volume_l) : undefined,
     dims: (row.dims as Record<string, unknown>) ?? undefined,
     custom: (row.custom as Record<string, unknown>) ?? {},
+    // mig 00072; column absent from database.types.ts until the migration is
+    // applied and types regenerated — same inline-intersection cast used above.
+    allowedLevelRoles:
+      (row as ProductWmsAttributesRow & { allowed_level_roles?: LevelRole[] | null }).allowed_level_roles ?? undefined,
   }
 }
 
@@ -907,7 +920,25 @@ export function toZoneProfile(row: ZoneProfileRow): ZoneProfile {
   }
 }
 
+/** storage_types.level_template is [{role, capacity_slots, weight_capacity_kg}],
+ *  positionally ordered (mig 00072) — 1-based level_index is the array index. */
+function toRackLevelTemplate(raw: unknown): RackLevel[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  return raw.map((entry, i): RackLevel => {
+    const e = (entry ?? {}) as Record<string, unknown>
+    return {
+      levelIndex: i + 1,
+      role: e.role as LevelRole,
+      capacitySlots: e.capacity_slots != null ? Number(e.capacity_slots as number) : undefined,
+      weightCapacityKg: e.weight_capacity_kg != null ? Number(e.weight_capacity_kg as number) : undefined,
+    }
+  })
+}
+
 export function toStorageType(row: StorageTypeRow): StorageType {
+  // Rack levels (mig 00072). Cast: database.types.ts hasn't been regenerated
+  // for this migration yet — see the LocationRow cast note above.
+  const leveled = row as StorageTypeRow & { has_levels?: boolean; level_template?: unknown }
   return {
     id: row.id,
     code: row.code,
@@ -925,6 +956,8 @@ export function toStorageType(row: StorageTypeRow): StorageType {
     heightCm: row.height_cm != null ? Number(row.height_cm) : undefined,
     color: row.color ?? undefined,
     isDrawable: row.is_drawable,
+    hasLevels: leveled.has_levels ?? false,
+    levelTemplate: toRackLevelTemplate(leveled.level_template),
   }
 }
 

@@ -12,7 +12,7 @@
 // scroll-trap for a panel to worry about.
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import type { WarehouseLayout, LayoutPlacement, LayoutObject } from '@/types'
+import type { WarehouseLayout, LayoutPlacement, LayoutObject, InventoryLocation } from '@/types'
 import { WarehouseCanvas } from './WarehouseCanvas'
 import { MapControls } from './MapControls'
 import { useMapViewport } from './useMapViewport'
@@ -33,6 +33,8 @@ export interface MapStageProps {
   binColors?: Map<number, string>
   binBadges?: Map<number, string>
   renderOverlay?: (cell: number) => ReactNode
+  /** Location metadata for labelling a rack's exploded level stack (mig 00072). */
+  locationsById?: Map<number, InventoryLocation>
 }
 
 export function MapStage({
@@ -47,6 +49,7 @@ export function MapStage({
   binColors,
   binBadges,
   renderOverlay,
+  locationsById,
 }: MapStageProps) {
   const { viewport, containerRef, handlers, fit, zoomIn, zoomOut, isPanning, didDrag, gesturesEnabled } = useMapViewport({
     placements,
@@ -58,6 +61,13 @@ export function MapStage({
   const guardedSelectBin = (locationId: number) => {
     if (!didDrag()) onSelectBin(locationId)
   }
+
+  // Same guard, generalised for the rack expand/collapse interactions (not a
+  // bin selection, so they don't go through guardedSelectBin above) — a pan
+  // that ends over a rack must not toggle its expansion either.
+  const guardClick = useCallback((fn: () => void) => {
+    if (!didDrag()) fn()
+  }, [didDrag])
 
   // First-hover hint pill: appears once on the first pointer-enter of the
   // stage, then auto-dismisses after HINT_AUTO_DISMISS_MS or on the first
@@ -114,6 +124,8 @@ export function MapStage({
         binColors={binColors}
         binBadges={binBadges}
         renderOverlay={renderOverlay}
+        locationsById={locationsById}
+        guardClick={guardClick}
       />
       <MapControls
         scale={viewport.scale}

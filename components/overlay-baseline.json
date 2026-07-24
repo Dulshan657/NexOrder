@@ -26,7 +26,6 @@
     "components/admin/layout/FloorPlanImportModal.tsx",
     "components/admin/layout/RackWizard.tsx",
     "components/admin/layout/ReslotPlannerModal.tsx",
-    "components/admin/settings/StorageFormsView.tsx",
     "components/auth/ForgotPasswordDialog.tsx",
     "components/inventory/PickWorkspaceModal.tsx",
     "components/pantry/PantryAddDrawer.tsx",

@@ -49,6 +49,10 @@ export interface DecidePutawayInput {
   /** Base units to put away. Omitted = the whole remaining quantity; anything
    *  less leaves the remainder queued (mig 00071). */
   quantity?: number
+  /** Place into a level whose role this SKU isn't allowed on (mig 00072).
+   *  The hard never-mix rule can wedge the queue when every compatible level is
+   *  full; this is the operator's escape hatch, and the server audits it. */
+  roleOverride?: boolean
 }
 
 export interface DecidePutawayResult {
@@ -66,6 +70,7 @@ export async function decidePutaway(input: DecidePutawayInput): Promise<DecidePu
       decision: input.decision,
       chosen_location_id: input.chosenLocationId,
       quantity: input.quantity,
+      role_override: input.roleOverride,
     },
   })
   if (error) throw error

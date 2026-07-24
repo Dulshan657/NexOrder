@@ -5,13 +5,22 @@
 
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getWmsAttributes, saveWmsAttributes } from '@/services/supabase/wmsAttributesService'
+import { getWmsAttributes, saveWmsAttributes, type WmsAttributesInput } from '@/services/supabase/wmsAttributesService'
 import { useToasts } from '@/hooks/useToasts'
-import type { ShelfLifePolicy } from '@/types'
+import type { LevelRole, ProductWmsAttributes, ShelfLifePolicy } from '@/types'
 
 interface ProductWmsAttributesSectionProps {
   productId: number
 }
+
+const LEVEL_ROLES: LevelRole[] = ['pick', 'reserve', 'bulk']
+
+// `allowed_level_roles` (mig 00072) isn't on ProductWmsAttributes / the
+// wmsAttributesService payload yet — read/write it defensively through these
+// extensions so this section works today and picks the field up for free once
+// the type/service/adapter land it (another agent's edge-function change).
+type WmsAttributesWithLevelRoles = ProductWmsAttributes & { allowedLevelRoles?: LevelRole[] | null }
+type WmsAttributesInputWithLevelRoles = WmsAttributesInput & { allowed_level_roles?: LevelRole[] | null }
 
 export default function ProductWmsAttributesSection({ productId }: ProductWmsAttributesSectionProps) {
   const qc = useQueryClient()
@@ -32,6 +41,7 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
   const [policy, setPolicy] = useState<ShelfLifePolicy | ''>('')
   const [handling, setHandling] = useState('')
   const [stackable, setStackable] = useState<boolean | null>(null)
+  const [allowedLevelRoles, setAllowedLevelRoles] = useState<LevelRole[]>([])
 
   useEffect(() => {
     if (data) {
@@ -41,11 +51,18 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
       setPolicy(data.shelfLifePolicy ?? '')
       setHandling(data.handlingType ?? '')
       setStackable(data.stackable ?? null)
+      setAllowedLevelRoles((data as WmsAttributesWithLevelRoles).allowedLevelRoles ?? [])
     }
   }, [data])
 
+  const toggleLevelRole = (role: LevelRole) => {
+    setAllowedLevelRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role],
+    )
+  }
+
   const onSave = () => {
-    save.mutate({
+    const payload: WmsAttributesInputWithLevelRoles = {
       product_id: productId,
       hazard_class: hazard.trim() || null,
       temp_min: tempMin === '' ? null : Number(tempMin),
@@ -53,7 +70,9 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
       shelf_life_policy: policy || null,
       handling_type: handling.trim() || null,
       stackable,
-    })
+      allowed_level_roles: allowedLevelRoles.length > 0 ? allowedLevelRoles : null,
+    }
+    save.mutate(payload)
   }
 
   return (
@@ -93,6 +112,30 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
           </select>
         </label>
       </div>
+
+      {/* Allowed level roles (mig 00072) — the HARD putaway gate: this SKU may
+          only be placed on a rack level whose role is checked here. */}
+      <fieldset className="mt-3 border border-stone-200 rounded-lg p-2.5">
+        <legend className="text-xs font-medium text-stone-600 px-1">Allowed level roles</legend>
+        <div className="flex items-center gap-4">
+          {LEVEL_ROLES.map((role) => (
+            <label key={role} className="flex items-center gap-1.5 text-xs text-stone-600">
+              <input
+                type="checkbox"
+                checked={allowedLevelRoles.includes(role)}
+                onChange={() => toggleLevelRole(role)}
+              />
+              {role}
+            </label>
+          ))}
+        </div>
+        <p className="text-[11px] text-stone-400 mt-1.5">
+          {allowedLevelRoles.length === 0
+            ? 'Nothing checked = any level role is allowed. This is how every product behaves today.'
+            : `Restricted to ${allowedLevelRoles.join(', ')} levels — putaway will never place this SKU on any other role without an operator override.`}
+        </p>
+      </fieldset>
+
       <button className="mt-2 text-xs px-3 py-1.5 border border-stone-200 rounded-lg btn-press disabled:opacity-40" onClick={onSave} disabled={save.isPending}>
         {save.isPending ? 'Saving…' : 'Save attributes'}
       </button>

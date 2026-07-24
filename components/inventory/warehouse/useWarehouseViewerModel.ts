@@ -28,12 +28,18 @@ export interface LocationTreeNode {
 export interface WarehouseViewerModel {
   locationsById: Map<number, InventoryLocation>
   tree: LocationTreeNode[]
-  /** locationId → its product rows (empty array for empty bins). */
+  /** locationId → its product rows (empty array for empty bins). Populated for
+   *  both BIN-kind legacy bins and SHELF-kind rack levels (mig 00072) — see
+   *  the `isAddressableStock` guard below. */
   binContents: Map<number, BinContentRow[]>
   /** locationId → used/capacity in [0, …]; null when the bin has no capacity set. */
   binFillPct: Map<number, number | null>
   /** locationId → dominant product's ABC class (null when empty/unclassified). */
   binVelocityClass: Map<number, VelocityClass | null>
+  /** RACK location id → its level children (kind SHELF, levelIndex set),
+   *  ascending by levelIndex. Empty for a rack with no levels (or a plain
+   *  legacy BIN, which was never a RACK parent). Feeds RackLevelEditor. */
+  levelsByRackId: Map<number, InventoryLocation[]>
   /** graphNodeId → 30-day pick visits. */
   visitsByNode: Map<number, number>
   maxVisits: number
@@ -106,9 +112,22 @@ export function useWarehouseViewerModel(
     const binContents = new Map<number, BinContentRow[]>()
     const binFillPct = new Map<number, number | null>()
     const binVelocityClass = new Map<number, VelocityClass | null>()
+    const levelsByRackId = new Map<number, InventoryLocation[]>()
+
+    // A rack level (mig 00072) is a SHELF-kind row with `levelIndex` set; it
+    // holds real inventory_balances exactly like a BIN, so it's addressable
+    // stock too. A legacy BIN's behaviour is completely unchanged by this —
+    // `loc.kind === 'BIN'` is untouched, this only ADDS eligible locations.
+    const isAddressableStock = (loc: InventoryLocation) =>
+      loc.kind === 'BIN' || (loc.kind === 'SHELF' && loc.levelIndex != null)
 
     for (const loc of locations) {
-      if (loc.kind !== 'BIN') continue
+      if (loc.kind === 'SHELF' && loc.levelIndex != null && loc.parentId != null) {
+        const siblings = levelsByRackId.get(loc.parentId) ?? []
+        levelsByRackId.set(loc.parentId, [...siblings, loc])
+      }
+
+      if (!isAddressableStock(loc)) continue
       const rows = Array.from(perBinProduct.get(loc.id)?.values() ?? [])
       binContents.set(loc.id, rows)
 
@@ -122,6 +141,8 @@ export function useWarehouseViewerModel(
       for (const r of rows) if (!dominant || r.slots > dominant.slots) dominant = r
       binVelocityClass.set(loc.id, dominant?.velocityClass ?? null)
     }
+
+    for (const levels of levelsByRackId.values()) levels.sort((a, b) => (a.levelIndex ?? 0) - (b.levelIndex ?? 0))
 
     // Non-bin stock locations (warehouse root / staging) hold bulk + un-put-away
     // stock; expose their contents too so the bulk fallback view isn't empty.
@@ -142,6 +163,7 @@ export function useWarehouseViewerModel(
       binContents,
       binFillPct,
       binVelocityClass,
+      levelsByRackId,
       visitsByNode,
       maxVisits,
       slotting: slottingQ.data ?? [],
