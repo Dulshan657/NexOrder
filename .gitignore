@@ -32,5 +32,11 @@ coverage
 # Supabase CLI artifacts (project link metadata)
 supabase/.temp/
 
+# Playwright E2E artifacts
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/blob-report/
+
 # Superpowers brainstorming session artifacts (mockups, server state)
 .superpowers/

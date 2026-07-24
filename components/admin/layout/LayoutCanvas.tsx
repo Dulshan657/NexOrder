@@ -163,6 +163,17 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
   const onInteractionDown = (e: ReactPointerEvent<SVGRectElement>) => {
     const c = cellFromEvent(e)
     if (!c) return
+    // Shift/Ctrl/⌘-click with the select tool TOGGLES a rack into the
+    // multi-selection, which is what drives "apply this level layout to all N
+    // selected racks" in the inspector. Without this the reducer's additive
+    // select action is unreachable and multi-select silently does nothing.
+    if (state.tool === 'select' && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+      const hit = state.placements.find((p) => p.floor === state.floor && p.x === c.x && p.y === c.y)
+      if (hit) {
+        dispatch({ type: 'select', ref: hit.clientRef, additive: true })
+        return
+      }
+    }
     painting.current = true
     lastCell.current = c
     paint(c.x, c.y)
