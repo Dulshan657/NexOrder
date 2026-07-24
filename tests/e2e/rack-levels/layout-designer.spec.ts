@@ -12,18 +12,65 @@
 // useLayoutEditorState.ts, LayoutDesignerView.tsx): shift/ctrl/cmd-click
 // multi-select IS wired (LayoutCanvas dispatches `{type:'select', additive:
 // true}` on a modifier-click) and `selectedCount` IS threaded into
-// <PlacementInspector> from `state.selectedRefs.size`. The one bug this spec
-// catches is upstream of both of those: `LayoutDesignerView.persistGeometry`'s
-// `new_bin` payload never includes `levels` (see `SavePlacementInput.new_bin.
-// levels` in services/supabase/layoutService.ts, which IS wired server-side),
-// so a rack's level edits in this designer are pure client state — Save never
-// persists them. That's the assertion this spec expects to fail on, and it's
-// a genuine product bug, not a selector problem (see the E2E runner's report).
+// <PlacementInspector> from `state.selectedRefs.size`.
+//
+// FIXED 2026-07-24 (commit d17a2e8): `LayoutDesignerView.persistGeometry` now
+// threads `p.levels` into its `new_bin` payload and marks the bin `kind:
+// 'RACK'` when it carries levels (the server rejects `levels` unless kind is
+// RACK). CONFIRMED via a direct read of `locations` after Save (bypassing the
+// UI entirely): the override genuinely reaches the database now — a rack
+// with L5 removed persists as exactly 4 SHELF rows (L1-L4), not 5.
+//
+// FIXED 2026-07-24 (commit b847fc3), re-verified in this pass:
+//
+// 1. Reload now shows the persisted override. `useLayoutEditorState.ts`'s
+//    `load` reducer regroups co-located level rows onto their RACK parent
+//    (keyed by `parentId` off the now-widened `codeByLocation` map) and
+//    rebuilds `placement.levels[]` from them, so the Level editor reads the
+//    real 4 rows back after a Save + re-login + reload round trip instead of
+//    falling back to the form's standard 5-level template. Cross-checked
+//    against a direct `locations` read in the same session (see the E2E
+//    runner's report) — the reloaded UI count matches the DB row count.
+//
+// 2. Multi-select works again once the first rack is a real (persisted)
+//    levelled rack. `LayoutCanvas.tsx`'s expand-in-place scrim now checks
+//    `e.shiftKey || e.ctrlKey || e.metaKey` before collapsing, and on a
+//    modifier-click resolves the placement under the pointer and dispatches
+//    `{type:'select', ref: hit.clientRef, additive: true}` instead — so
+//    shift-clicking rack1 while rack0 is expanded ADDS rack1 to the
+//    selection (asserted as an exact "2 selected racks" count below) rather
+//    than collapsing rack0's expansion.
+//
+// FIXED 2026-07-24 (commit b847fc3), re-verified in this pass:
+// `mutate-layout`'s `delete_layout` GC step now sorts the draft-only
+// locations it's about to delete by `materialized_path` length descending
+// (deepest/child rows first) before deleting, so a levelled rack's SHELF
+// children are gone before its RACK parent's turn comes up — no more FK
+// violation on the self-referential `parent_id`, and the delete's `.error`
+// is now checked and surfaced instead of swallowed. A fixed start cell would
+// still only work once against the ACCUMULATED PRE-FIX orphans already
+// sitting in prod from earlier (broken) runs of this spec — see the E2E
+// runner's report for the exact before/after orphan counts — so this spec
+// keeps its randomised start cell (below) rather than assume those are gone.
 import { expect, loginAsAdmin, test } from '../fixtures/auth'
 import { existsWithin, openSettingsWarehouseSubtab } from './helpers'
 
 const TEST_WAREHOUSE_NAME = 'E2E RackLevels Test'
 const TEST_WAREHOUSE_CODE = 'E2ERACKLVL'
+
+// Randomised start cell, NOT a fixed one: `mutate-layout`'s delete_layout GC
+// now deletes deepest-first (commit b847fc3) so a normal run of this spec no
+// longer orphans its RACK parent — but ~26 orphaned RACK rows already
+// accumulated in prod from pre-fix runs (their codes are still squatted,
+// `locations.code` being globally unique), so a fixed cell would still
+// collide with one of those. 0-54 keeps 3 columns inside the default
+// 60-wide grid; 0-35 keeps 1 row inside the default 40-tall grid.
+const START_X = Math.floor(Math.random() * 55)
+const START_Y = Math.floor(Math.random() * 36)
+// Logged so a failure/flake can be correlated back to the exact locations it
+// touched via a direct DB read (see the E2E runner's report).
+// eslint-disable-next-line no-console
+console.log(`[layout-designer.spec] START_X=${START_X} START_Y=${START_Y}`)
 
 test.describe('Rack levels — Layout Designer', () => {
   test('override one rack to 4 levels; multi-select apply', async ({ adminPage: page }) => {
@@ -59,8 +106,8 @@ test.describe('Rack levels — Layout Designer', () => {
       // self-inflicted) error, not a product bug.
       await page.getByRole('button', { name: /generate racks/i }).click()
       await page.getByLabel('Storage type').selectOption({ label: 'Pallet Rack' })
-      await page.getByLabel('Start X').fill('20')
-      await page.getByLabel('Start Y').fill('20')
+      await page.getByLabel('Start X').fill(String(START_X))
+      await page.getByLabel('Start Y').fill(String(START_Y))
       await page.getByLabel('Columns').fill('3')
       await page.getByLabel('Rows').fill('1')
       await page.getByRole('button', { name: /^Generate 3$/ }).click()
@@ -72,8 +119,18 @@ test.describe('Rack levels — Layout Designer', () => {
       // transparent interaction layer sits on top and does the real hit
       // testing), so this lands exactly like a real user click would, with
       // no BASE_CELL pixel-math guessing.
-      const rack0 = page.getByTestId('rack-E2ERACKLVL-B-20-20')
-      const rack1 = page.getByTestId('rack-E2ERACKLVL-B-21-20')
+      //
+      // Regex, not an exact code: pre-save, a draft rack is ONE placement
+      // with an embedded `levels` array, so its testid is the bare rack code
+      // ("rack-E2ERACKLVL-B-<x>-<y>"). Once persistGeometry actually persists
+      // the level override (the fix verified below), Save creates a REAL
+      // RACK parent + one SHELF placement per level server-side; after
+      // reload, `groupPlacementsByCell` groups those N rows into one rack
+      // group keyed off its FIRST item, which now carries a per-level code
+      // ("rack-E2ERACKLVL-B-<x>-<y>-L1") instead of the bare one. Both forms
+      // are the same rack; match either.
+      const rack0 = page.getByTestId(new RegExp(`^rack-E2ERACKLVL-B-${START_X}-${START_Y}(-L\\d+)?$`))
+      const rack1 = page.getByTestId(new RegExp(`^rack-E2ERACKLVL-B-${START_X + 1}-${START_Y}(-L\\d+)?$`))
       // `force: true`: the rack <g> is deliberately `pointerEvents: none` (the
       // transparent interaction rect on top does the real hit-testing), so
       // Playwright's own actionability check would otherwise refuse the click
@@ -106,27 +163,46 @@ test.describe('Rack levels — Layout Designer', () => {
       await page.getByText(/^Layout \d{4}$/).first().click()
       await rack0.click({ force: true })
 
-      // KNOWN PRODUCT BUG (see file header): persistGeometry never forwards
-      // `levels` on `new_bin`, so the override never actually persisted — this
-      // rack reloads back to its form's standard 5 levels, not the 4 we saved.
-      // Soft assertion so the (unrelated) multi-select check below still runs
-      // and reports independently in the same pass.
-      await expect.soft(page.getByTestId(/^level-row-/)).toHaveCount(4)
+      // FIXED 2026-07-24 (commit b847fc3): useLayoutEditorState's `load` now
+      // regroups co-located level rows onto their RACK parent and rebuilds
+      // `placement.levels[]`, so the reloaded Level editor reads the real
+      // persisted override (4 rows) instead of falling back to the form's
+      // standard 5-level template. Hard assertion (was `expect.soft` while
+      // this was a known gap).
+      await expect(page.getByTestId(/^level-row-/)).toHaveCount(4)
 
-      // Multi-select + apply: shift-click a second rack. Both the canvas's
-      // additive-select dispatch and the selectedCount → PlacementInspector
-      // wiring are confirmed shipped.
+      // FIXED 2026-07-24 (commit b847fc3): LayoutCanvas's expand-in-place
+      // scrim now forwards a modifier-click to the additive-select path
+      // (dispatching `{type:'select', ref: hit.clientRef, additive: true}`)
+      // instead of unconditionally collapsing, so shift-clicking rack1 while
+      // rack0 is expanded ADDS rack1 to the selection rather than collapsing
+      // rack0. Assert the exact count (2), not just that the button appears,
+      // so a regression back to "collapses to 1" or "no-ops to 0" is caught.
       await rack1.click({ modifiers: ['Shift'], force: true })
-      await expect(page.getByRole('button', { name: /^Apply this level layout to all \d+ selected racks$/ })).toBeVisible({
+      await expect(page.getByRole('button', { name: 'Apply this level layout to all 2 selected racks' })).toBeVisible({
         timeout: 5_000,
       })
     } finally {
       // Best-effort cleanup: delete the draft we created so repeated runs
       // don't accumulate throwaway layouts against the fixture warehouse.
-      const deleteDraft = page.getByRole('button', { name: /^Delete Layout \d{4}$/ }).first()
+      //
+      // Scoped to the CURRENTLY SELECTED chip (`.border-emerald-500` — see
+      // LayoutDesignerView.tsx's `selected` class), not `.first()` on every
+      // "Delete Layout 2026" button — a `.first()` picks whichever draft
+      // happens to render first in the list, which is a DIFFERENT (and
+      // possibly leftover) draft the moment more than one exists. Our own
+      // draft stays selected (`selectedLayoutId`) the whole way through this
+      // test, so its chip is always the emerald one.
+      const ownChip = page.locator('div.border-emerald-500', { hasText: 'draft' })
+      const deleteDraft = ownChip.getByRole('button', { name: /^Delete Layout \d{4}$/ })
       if (await deleteDraft.count()) {
         await deleteDraft.click()
         await page.getByRole('button', { name: 'Confirm delete' }).click()
+        // The confirm button disables mid-mutation then the whole chip is
+        // removed from the DOM on success — wait for that rather than a
+        // fixed delay so a slow delete (it also GCs draft-only locations)
+        // can't race the test's own teardown.
+        await expect(ownChip).toHaveCount(0, { timeout: 10_000 })
       }
     }
   })

@@ -397,9 +397,15 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
               {deletable && !confirming && (
                 <button
                   onClick={() => setConfirmDeleteId(l.id)}
-                  className="mr-1 rounded-md p-1 text-stone-400 hover:bg-red-50 hover:text-red-600 btn-press"
+                  // Deleting a draft while its Save is still in flight is a
+                  // TOCTOU race: rows inserted after delete_layout's GC took its
+                  // snapshot survive as orphans the GC never sees. Block the
+                  // delete until the save settles rather than trying to
+                  // reconcile afterwards.
+                  disabled={saveGeometry.isPending}
+                  className="mr-1 rounded-md p-1 text-stone-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-stone-400 btn-press"
                   aria-label={`Delete ${l.name}`}
-                  title="Delete layout"
+                  title={saveGeometry.isPending ? 'Saving — wait before deleting' : 'Delete layout'}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -408,10 +414,10 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
                 <span className="mr-1 inline-flex items-center gap-0.5">
                   <button
                     onClick={() => handleDelete(l.id)}
-                    disabled={deleteLayout.isPending}
+                    disabled={deleteLayout.isPending || saveGeometry.isPending}
                     className="rounded-md p-1 text-red-600 hover:bg-red-100 disabled:opacity-50 btn-press"
                     aria-label="Confirm delete"
-                    title="Confirm delete"
+                    title={saveGeometry.isPending ? 'Saving — wait before deleting' : 'Confirm delete'}
                   >
                     <Check className="h-3.5 w-3.5" />
                   </button>
