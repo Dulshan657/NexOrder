@@ -27,7 +27,7 @@ import { useCommitReslotPlan } from '@/hooks/queries/useReslotPlan'
 import { useToasts } from '@/hooks/useToasts'
 import type { PublishRejection, SaveObjectInput, SavePlacementInput } from '@/services/supabase/layoutService'
 import type { CommitMove } from '@/services/supabase/reslotService'
-import type { LayoutObjectType, SimulationResult, Warehouse } from '@/types'
+import type { LayoutObjectType, LevelRole, SimulationResult, Warehouse } from '@/types'
 import { LayoutCanvas } from './LayoutCanvas'
 import { LayoutToolbar } from './LayoutToolbar'
 import { LayoutLegend } from './LayoutLegend'
@@ -79,11 +79,14 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const commitReslot = useCommitReslotPlan(warehouse.id)
 
   const codeByLocation = useMemo(() => {
-    const map: Record<number, { code: string; name: string; kind: never; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number }> = {}
+    const map: Record<number, { code: string; name: string; kind: never; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number }> = {}
     for (const l of locationsQuery.data ?? []) {
       map[l.id] = {
         code: l.code, name: l.name, kind: l.kind as never,
         capacitySlots: l.capacitySlots, slotKind: l.slotKind, weightCapacityKg: l.weightCapacityKg, storageTypeId: l.storageTypeId,
+        // Level metadata so the reducer's `load` can rebuild a levelled rack's
+        // embedded levels[] instead of falling back to the form standard.
+        parentId: l.parentId, levelRole: l.levelRole, levelIndex: l.levelIndex,
       }
     }
     return map

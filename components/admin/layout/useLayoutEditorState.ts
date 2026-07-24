@@ -8,7 +8,7 @@
 // and zones come in Phase 2.
 
 import { useReducer } from 'react'
-import type { LayoutObject, LayoutObjectType, LayoutPlacement, RackLevel } from '@/types'
+import type { LayoutObject, LayoutObjectType, LayoutPlacement, LevelRole, RackLevel } from '@/types'
 import { applyTemplate } from '@/components/warehouse/levels/rackLevels'
 
 // 'rack' is the generic storage-paint tool; WHICH form it draws is carried by
@@ -104,7 +104,7 @@ export type EditorAction =
   | { type: 'update_object'; ref: string; patch: { meta?: Record<string, unknown> } }
   | { type: 'delete_selected' }
   | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number; levelTemplate?: RackLevel[] }
-  | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number }> }
+  | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number }> }
   | { type: 'mark_saved'; refMap: Array<{ client_ref: string; location_id: number }> }
   | { type: 'apply_auto_connect'; objects: Array<Pick<EditorObject, 'objectType' | 'floor' | 'x' | 'y' | 'w' | 'h'> & Partial<Pick<EditorObject, 'meta' | 'stagingLocationId'>>> }
   // Rack levels (mig 00072).
@@ -280,7 +280,29 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
 
     case 'load': {
       let seq = state.seq
-      const placements: EditorPlacement[] = action.placements.map((p) => {
+      // A levelled rack (mig 00072) comes back as N co-located placement rows,
+      // one per level SHELF location; the editor models it as ONE EditorPlacement
+      // carrying an embedded `levels[]`. So collapse every level row onto its RACK
+      // parent, keyed by parentId, and map the parent once. Legacy single-bin rows
+      // (no level metadata) still map 1:1, byte-identical to before. Without this
+      // regroup, reloading a saved override showed the form's standard template,
+      // not what was actually persisted.
+      const levelRowsByRack = new Map<number, LayoutPlacement[]>()
+      const flatRows: LayoutPlacement[] = []
+      for (const p of action.placements) {
+        const meta = action.codeByLocation[p.locationId]
+        const parentId = meta?.parentId
+        const isLevelRow = meta?.levelIndex != null || p.levelIndex != null
+        if (isLevelRow && parentId != null) {
+          const bucket = levelRowsByRack.get(parentId)
+          if (bucket) bucket.push(p)
+          else levelRowsByRack.set(parentId, [p])
+        } else {
+          flatRows.push(p)
+        }
+      }
+
+      const placements: EditorPlacement[] = flatRows.map((p) => {
         const meta = action.codeByLocation[p.locationId]
         return {
           clientRef: `p${seq++}`, locationId: p.locationId, floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h,
@@ -289,6 +311,35 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
           weightCapacityKg: meta?.weightCapacityKg, storageTypeId: meta?.storageTypeId,
         }
       })
+
+      for (const [rackId, rows] of levelRowsByRack) {
+        const rackMeta = action.codeByLocation[rackId]
+        // Levels are co-located; take geometry from the lowest-level row.
+        const anchor = [...rows].sort((a, b) => {
+          const ai = action.codeByLocation[a.locationId]?.levelIndex ?? a.levelIndex ?? 0
+          const bi = action.codeByLocation[b.locationId]?.levelIndex ?? b.levelIndex ?? 0
+          return ai - bi
+        })
+        const levels: RackLevel[] = anchor.map((row) => {
+          const m = action.codeByLocation[row.locationId]
+          return {
+            locationId: row.locationId,
+            levelIndex: m?.levelIndex ?? row.levelIndex ?? 1,
+            role: m?.levelRole ?? 'pick',
+            code: m?.code,
+            capacitySlots: m?.capacitySlots,
+            slotKind: m?.slotKind,
+            weightCapacityKg: m?.weightCapacityKg,
+          }
+        })
+        const g = anchor[0]
+        placements.push({
+          clientRef: `p${seq++}`, locationId: rackId, floor: g.floor, x: g.x, y: g.y, w: g.w, h: g.h,
+          rotation: g.rotation, kind: 'RACK', code: rackMeta?.code ?? `R${rackId}`,
+          name: rackMeta?.name ?? `Rack ${rackId}`, storageTypeId: rackMeta?.storageTypeId,
+          levels,
+        })
+      }
       const objects: EditorObject[] = action.objects.map((o) => ({
         clientRef: `o${seq++}`, objectType: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
         // Round-trip meta/staging link — previously dropped here, which silently

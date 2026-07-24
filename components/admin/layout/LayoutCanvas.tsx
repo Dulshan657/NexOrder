@@ -393,6 +393,19 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
                   fill="rgba(28,25,23,0.45)"
                   onPointerDown={(e) => {
                     e.stopPropagation()
+                    // A modifier-click on the scrim is still meant to be a
+                    // multi-select of the rack UNDER the pointer — the scrim
+                    // just happens to sit over it. Without this, shift-clicking
+                    // a second rack while the first is expanded collapses the
+                    // first instead of adding the second. Plain click collapses.
+                    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                      const c = cellFromEvent(e)
+                      const hit = c && state.placements.find((p) => p.floor === state.floor && p.x === c.x && p.y === c.y)
+                      if (hit) {
+                        dispatch({ type: 'select', ref: hit.clientRef, additive: true })
+                        return
+                      }
+                    }
                     dispatch({ type: 'select', ref: null })
                   }}
                   style={{ cursor: 'pointer' }}

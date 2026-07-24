@@ -285,9 +285,18 @@ serve(async (req: Request) => {
 
       // GC the draft-only bins this layout created — skip anything stocked or still
       // placed in another layout (same rule as save_geometry's orphan sweep).
+      // DEEPEST FIRST: a levelled rack (mig 00072) is a RACK parent with SHELF
+      // children that reference it via parent_id. Deleting the parent before its
+      // children trips that self-referential FK; since the delete error used to
+      // go unchecked, the parent silently survived as an orphan squatting its
+      // globally-unique code. Ordering by materialized_path length descending
+      // deletes children before parents, and we now surface a genuine failure.
       const { data: created } = await admin.from('locations')
-        .select('id').eq('created_in_layout_id', layout.id).eq('is_active', false)
-      for (const loc of (created ?? []) as any[]) {
+        .select('id, materialized_path').eq('created_in_layout_id', layout.id).eq('is_active', false)
+      const createdDeepestFirst = [...((created ?? []) as any[])].sort(
+        (a, b) => (b.materialized_path?.length ?? 0) - (a.materialized_path?.length ?? 0),
+      )
+      for (const loc of createdDeepestFirst) {
         const { data: bal } = await admin.from('inventory_balances').select('id').eq('location_id', loc.id).limit(1)
         if (bal && bal.length > 0) continue
         const { data: elsewhere } = await admin.from('layout_placements').select('id').eq('location_id', loc.id).limit(1)
@@ -299,7 +308,12 @@ serve(async (req: Request) => {
         const { data: stagingElsewhere } = await admin.from('layout_objects')
           .select('id').eq('staging_location_id', loc.id).limit(1)
         if (stagingElsewhere && stagingElsewhere.length > 0) continue
-        await admin.from('locations').delete().eq('id', loc.id)
+        const { error: locDelErr } = await admin.from('locations').delete().eq('id', loc.id)
+        // A leftover child pointing here (deleted later in this same pass) is the
+        // one benign FK case; anything else is a real orphan bug we want to see.
+        if (locDelErr && !/foreign key/i.test(locDelErr.message)) {
+          throw new EdgeFunctionError('INTERNAL', `Failed to GC location ${loc.id}: ${locDelErr.message}`)
+        }
       }
 
       const { error: delErr } = await admin.from('warehouse_layouts').delete().eq('id', layout.id)

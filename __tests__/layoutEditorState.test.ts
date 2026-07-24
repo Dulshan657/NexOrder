@@ -131,6 +131,41 @@ describe('layoutEditorReducer', () => {
     expect(s.dirty).toBe(false)
   })
 
+  it('regroups co-located level rows into one RACK placement with levels[] on load', () => {
+    // A levelled rack (mig 00072) persists as N co-located SHELF placement rows,
+    // one per level, all sharing the rack's (floor,x,y). Load must collapse them
+    // back onto the RACK parent with an embedded levels[] — otherwise the
+    // inspector falls back to the form's standard template and the operator's
+    // saved override appears lost on reload.
+    const s = layoutEditorReducer(initialEditorState(), {
+      type: 'load',
+      placements: [
+        { id: 1, layoutId: 1, locationId: 101, floor: 0, x: 5, y: 5, w: 1, h: 1, rotation: 0, levelIndex: 1 },
+        { id: 2, layoutId: 1, locationId: 102, floor: 0, x: 5, y: 5, w: 1, h: 1, rotation: 0, levelIndex: 2 },
+        // A plain legacy bin sharing the same load must still map 1:1.
+        { id: 3, layoutId: 1, locationId: 9, floor: 0, x: 8, y: 2, w: 1, h: 1, rotation: 0 },
+      ],
+      objects: [],
+      codeByLocation: {
+        100: { code: 'A-R1', name: 'Rack 1', kind: 'RACK' as never },
+        101: { code: 'A-R1-L1', name: 'L1', kind: 'SHELF' as never, parentId: 100, levelIndex: 1, levelRole: 'pick', capacitySlots: 2 },
+        102: { code: 'A-R1-L2', name: 'L2', kind: 'SHELF' as never, parentId: 100, levelIndex: 2, levelRole: 'bulk', capacitySlots: 3 },
+        9: { code: 'A-09', name: 'Bin 9', kind: 'BIN' as never },
+      },
+    })
+    // One rack (collapsed from 2 level rows) + one legacy bin = 2 placements.
+    expect(s.placements).toHaveLength(2)
+    const rack = s.placements.find((p) => p.locationId === 100)
+    expect(rack).toMatchObject({ kind: 'RACK', code: 'A-R1', x: 5, y: 5 })
+    expect(rack?.levels).toEqual([
+      expect.objectContaining({ levelIndex: 1, role: 'pick', capacitySlots: 2, locationId: 101 }),
+      expect.objectContaining({ levelIndex: 2, role: 'bulk', capacitySlots: 3, locationId: 102 }),
+    ])
+    // Legacy bin untouched.
+    expect(s.placements.find((p) => p.locationId === 9)).toMatchObject({ kind: 'BIN', code: 'A-09' })
+    expect(s.dirty).toBe(false)
+  })
+
   it.each([
     ['conveyor', 'conveyor'],
     ['staging', 'staging'],
