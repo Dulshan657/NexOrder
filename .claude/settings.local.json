@@ -6,5 +6,9 @@
       "Bash(ls -la \"C:\\\\Users\\\\dulsh\\\\OneDrive\\\\Documents\\\\Projects\\\\OrderSystem\\\\NexOrder\\\\\" | head -20)",
       "Bash(xargs ls -la)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "supabase"
+  ],
+  "enableAllProjectMcpServers": true
 }
