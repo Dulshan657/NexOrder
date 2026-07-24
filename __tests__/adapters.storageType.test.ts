@@ -57,6 +57,51 @@ describe('toStorageType', () => {
     expect(t.attributes).toEqual({})
   })
 
+  // The seeded "Rack" form (mig 00073). level_template is POSITIONAL — array
+  // index + 1 is the level_index and L1 is the bottom level.
+  it('maps a levelled form\'s template, numbering levels bottom-first', () => {
+    const t = toStorageType({
+      ...row,
+      code: 'RACK',
+      name: 'Rack',
+      slot_unit: 'carton' as const,
+      levels: 4,
+      positions_per_level: 24,
+      default_capacity_slots: 96,
+      weight_capacity_kg: 4000,
+      color: '#14b8a6',
+      has_levels: true,
+      level_template: [
+        { role: 'pick', capacity_slots: 24, weight_capacity_kg: 1000 },
+        { role: 'pick', capacity_slots: 24, weight_capacity_kg: 1000 },
+        { role: 'reserve', capacity_slots: 24, weight_capacity_kg: 1000 },
+        { role: 'bulk', capacity_slots: 24, weight_capacity_kg: 1000 },
+      ],
+    } as never)
+
+    expect(t.hasLevels).toBe(true)
+    expect(t.levelTemplate).toEqual([
+      { levelIndex: 1, role: 'pick', capacitySlots: 24, weightCapacityKg: 1000 },
+      { levelIndex: 2, role: 'pick', capacitySlots: 24, weightCapacityKg: 1000 },
+      { levelIndex: 3, role: 'reserve', capacitySlots: 24, weightCapacityKg: 1000 },
+      { levelIndex: 4, role: 'bulk', capacitySlots: 24, weightCapacityKg: 1000 },
+    ])
+    // Σ level shares == the whole-rack figures the form advertises.
+    expect(t.levelTemplate!.reduce((s, l) => s + (l.capacitySlots ?? 0), 0)).toBe(t.defaultCapacitySlots)
+    expect(t.levelTemplate!.reduce((s, l) => s + (l.weightCapacityKg ?? 0), 0)).toBe(t.weightCapacityKg)
+  })
+
+  it('leaves a levelled entry\'s absent capacity undefined rather than inventing one', () => {
+    const t = toStorageType({
+      ...row,
+      has_levels: true,
+      level_template: [{ role: 'pick' }],
+    } as never)
+    expect(t.levelTemplate).toEqual([
+      { levelIndex: 1, role: 'pick', capacitySlots: undefined, weightCapacityKg: undefined },
+    ])
+  })
+
   it('maps the storage-forms capacity fields (levels × positions, weight, dims, color)', () => {
     const t = toStorageType({
       ...row,

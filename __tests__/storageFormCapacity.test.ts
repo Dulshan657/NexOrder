@@ -6,6 +6,12 @@ describe('deriveCapacitySlots', () => {
     expect(deriveCapacitySlots({ mode: 'structured', levels: 5, positionsPerLevel: 2 })).toBe(10)
   })
 
+  it('pins the seeded Rack form: 4 levels × 24 positions = 96 carton slots', () => {
+    // Invariant 1 of mig 00073 — the editor must derive the same figure the
+    // row stores in default_capacity_slots.
+    expect(deriveCapacitySlots({ mode: 'structured', levels: 4, positionsPerLevel: 24 })).toBe(96)
+  })
+
   it('structured: null unless BOTH levels and positions are positive', () => {
     expect(deriveCapacitySlots({ mode: 'structured', levels: 5, positionsPerLevel: 0 })).toBeNull()
     expect(deriveCapacitySlots({ mode: 'structured', levels: null, positionsPerLevel: 2 })).toBeNull()

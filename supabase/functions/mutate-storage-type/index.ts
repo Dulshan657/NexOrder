@@ -16,6 +16,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
+import { levelRetroPatches } from '../_shared/storageFormLevels.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const SLOT_UNITS = ['pallet', 'carton', 'each', 'uncounted'] as const
@@ -197,19 +198,88 @@ serve(async (req: Request) => {
     let appliedCount = 0
     if (input.action === 'update' && input.apply_to_existing) {
       const u = updated as Record<string, unknown>
-      const { data: affected, error: applyErr } = await admin
-        .from('locations')
-        .update({ capacity_slots: u.default_capacity_slots ?? null, weight_capacity_kg: u.weight_capacity_kg ?? null })
-        .eq('storage_type_id', input.id)
-        .select('id')
-      if (applyErr) throw new EdgeFunctionError('INTERNAL', `Applied the type but failed to update its units: ${applyErr.message}`)
-      appliedCount = (affected ?? []).length
+      const auditAfter: Record<string, unknown> = {}
+      const auditMeta: Record<string, unknown> = { source: 'storage_type_retro_apply', storage_type_id: input.id }
+
+      if (u.has_levels) {
+        // A LEVELLED form's whole-unit figures describe the rack, not any one
+        // level, so writing them across every location of the type would give
+        // each level the WHOLE rack's capacity (mig 00072). Levels carry this
+        // storage_type_id too — they're created with it in mutate-layout — so
+        // the update has to be split by kind.
+        //
+        // 1. RACK parents hold no stock and no capacity of their own: the
+        //    parent is a container, its levels are the places. Clear both.
+        const { data: racks, error: rackErr } = await admin
+          .from('locations')
+          .update({ capacity_slots: null, weight_capacity_kg: null })
+          .eq('storage_type_id', input.id).eq('kind', 'RACK')
+          .select('id')
+        if (rackErr) throw new EdgeFunctionError('INTERNAL', `Applied the type but failed to reset its racks: ${rackErr.message}`)
+
+        // 2. Each level gets its own share, matched positionally by level_index.
+        //    Levels beyond the template's length aren't described by the new
+        //    standard, so `levelRetroPatches` omits them and they keep whatever
+        //    per-rack override they were given.
+        const { data: levelRows, error: lvlErr } = await admin
+          .from('locations')
+          .select('level_index')
+          .eq('storage_type_id', input.id).eq('kind', 'SHELF').not('level_index', 'is', null)
+        if (lvlErr) throw new EdgeFunctionError('INTERNAL', `Applied the type but failed to read its levels: ${lvlErr.message}`)
+
+        const indices = (levelRows ?? []).map((r: any) => r.level_index as number)
+        const patches = levelRetroPatches(u.level_template, indices)
+        let levelsUpdated = 0
+        for (const patch of patches) {
+          const { data: affectedLevels, error: patchErr } = await admin
+            .from('locations')
+            .update({ capacity_slots: patch.capacitySlots, weight_capacity_kg: patch.weightCapacityKg })
+            .eq('storage_type_id', input.id).eq('kind', 'SHELF').eq('level_index', patch.levelIndex)
+            .select('id')
+          if (patchErr) {
+            throw new EdgeFunctionError('INTERNAL', `Applied the type but failed to update level ${patch.levelIndex}: ${patchErr.message}`)
+          }
+          levelsUpdated += (affectedLevels ?? []).length
+        }
+
+        // 3. Flat units of the same form — racks drawn BEFORE it gained levels
+        //    (PALLET_RACK has 18 such BINs live). They are still whole units,
+        //    so they still take the whole-unit figures, exactly as before.
+        const { data: flats, error: flatErr } = await admin
+          .from('locations')
+          .update({ capacity_slots: u.default_capacity_slots ?? null, weight_capacity_kg: u.weight_capacity_kg ?? null })
+          .eq('storage_type_id', input.id).neq('kind', 'RACK').is('level_index', null)
+          .select('id')
+        if (flatErr) throw new EdgeFunctionError('INTERNAL', `Applied the type but failed to update its unlevelled units: ${flatErr.message}`)
+
+        appliedCount = (racks ?? []).length + levelsUpdated + (flats ?? []).length
+        auditAfter.level_template = u.level_template ?? null
+        auditAfter.capacity_slots = u.default_capacity_slots ?? null
+        auditAfter.weight_capacity_kg = u.weight_capacity_kg ?? null
+        auditMeta.leveled = true
+        auditMeta.racks_reset = (racks ?? []).length
+        auditMeta.levels_updated = levelsUpdated
+        auditMeta.flat_units_updated = (flats ?? []).length
+      } else {
+        const { data: affected, error: applyErr } = await admin
+          .from('locations')
+          .update({ capacity_slots: u.default_capacity_slots ?? null, weight_capacity_kg: u.weight_capacity_kg ?? null })
+          .eq('storage_type_id', input.id)
+          .select('id')
+        if (applyErr) throw new EdgeFunctionError('INTERNAL', `Applied the type but failed to update its units: ${applyErr.message}`)
+        appliedCount = (affected ?? []).length
+        auditAfter.capacity_slots = u.default_capacity_slots ?? null
+        auditAfter.weight_capacity_kg = u.weight_capacity_kg ?? null
+        auditMeta.leveled = false
+      }
+
+      auditMeta.units_updated = appliedCount
       if (appliedCount > 0) {
         await logAuditEvent(admin, {
           actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
           resourceId: String(input.id),
-          after: { capacity_slots: u.default_capacity_slots ?? null, weight_capacity_kg: u.weight_capacity_kg ?? null } as Record<string, unknown>,
-          metadata: { source: 'storage_type_retro_apply', storage_type_id: input.id, units_updated: appliedCount },
+          after: auditAfter,
+          metadata: auditMeta,
         })
       }
     }
