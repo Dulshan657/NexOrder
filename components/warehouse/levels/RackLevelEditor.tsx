@@ -86,6 +86,7 @@ function levelRow(props: LevelRowProps) {
     <div
       key={level.levelIndex}
       role="listitem"
+      data-testid={`level-row-${level.levelIndex}`}
       onClick={onSelect}
       className="rounded-lg border p-2 space-y-2 cursor-pointer transition-colors"
       style={{
@@ -121,6 +122,7 @@ function levelRow(props: LevelRowProps) {
             value={level.role}
             disabled={readOnly}
             onChange={(e) => onSetRole(e.target.value as LevelRole)}
+            data-testid={`level-role-select-${level.levelIndex}`}
           >
             {ROLES.map((r) => (
               <option key={r} value={r}>{ROLE_LABEL[r]}</option>

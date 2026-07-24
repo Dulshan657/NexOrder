@@ -206,11 +206,11 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
     >
       <div className="space-y-5">
         {/* Wedge banner: the engine found nothing compatible for this line at all. */}
-        {isWedged && row.explanation?.hardFilters?.some((h) => h.code === 'LEVEL_ROLE_MISMATCH') && (
+        {isWedged && row.explanation?.hardFilters?.some((h) => h.code === 'level_role_mismatch') && (
           <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
             <p className="text-xs">
-              {row.explanation.hardFilters.find((h) => h.code === 'LEVEL_ROLE_MISMATCH')!.label}. Pick a bin below and
+              {row.explanation.hardFilters.find((h) => h.code === 'level_role_mismatch')!.label}. Pick a bin below and
               confirm with <span className="font-medium">Place anyway</span> to override — it's recorded — or leave
               this queued for another level to free up.
             </p>

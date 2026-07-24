@@ -41,9 +41,10 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
 
   // When the engine found no bin at all, name WHY rather than leaving a bare
   // "No eligible bin" — the label comes straight from the engine's hard-filter
-  // reason (e.g. LEVEL_ROLE_MISMATCH), never invented client-side copy.
+  // reason, never invented client-side copy. The code is lower-snake, matching
+  // what scoring.ts actually emits (`level_role_mismatch`).
   const mismatch = !row.recommendedLocationId
-    ? row.explanation?.hardFilters?.find((h) => h.code === 'LEVEL_ROLE_MISMATCH')
+    ? row.explanation?.hardFilters?.find((h) => h.code === 'level_role_mismatch')
     : undefined
 
   return (

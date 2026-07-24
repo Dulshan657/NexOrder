@@ -630,9 +630,23 @@ export interface CandidateBreakdown {
     ruleTriggers: RuleTrigger[];
 }
 
+/** The reason a bin was hard-filtered out of putaway. A CLOSED set — the engine
+ *  (supabase/functions/_shared/wie/scoring.ts) only ever emits these literals.
+ *  Kept as a union (not `string`) so a mis-cased comparison like
+ *  'LEVEL_ROLE_MISMATCH' is a compile error, not a silently-dead branch — which
+ *  is exactly how the role-mismatch banner shipped broken once. */
+export type HardFilterCode =
+    | 'unreachable'
+    | 'capacity'
+    | 'weight'
+    | 'zone_category'
+    | 'compatibility'
+    | 'rule'
+    | 'level_role_mismatch';
+
 export interface HardFilterReason {
     ruleId: number | null;
-    code: string;
+    code: HardFilterCode;
     label: string;
     rejectedCount: number;
     sample: Array<{ locationId: number; code: string; reason: string }>;

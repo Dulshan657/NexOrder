@@ -221,16 +221,30 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const persistGeometry = async () => {
     if (!selectedLayoutId) return
     const layoutId = selectedLayoutId
-    const placements: SavePlacementInput[] = state.placements.map((p) => ({
-      client_ref: p.clientRef,
-      location_id: p.locationId,
-      new_bin: p.locationId ? undefined : {
-        parent_id: warehouse.id, kind: p.kind, code: p.code, name: p.name,
-        capacity_slots: p.capacitySlots, slot_kind: p.slotKind, weight_capacity_kg: p.weightCapacityKg,
-        zone_profile_id: p.zoneProfileId, storage_type_id: p.storageTypeId,
-      },
-      floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h, rotation: p.rotation,
-    }))
+    const placements: SavePlacementInput[] = state.placements.map((p) => {
+      // A rack with a level layout persists as a RACK PARENT + one SHELF child
+      // per level (mig 00072); the server rejects `levels` unless kind is RACK.
+      // Without threading p.levels here, an operator's per-rack level override
+      // was pure client state — Save dropped it and reload showed the form's
+      // standard again. A flat bin (no levels) keeps its own kind untouched.
+      const hasLevels = !!p.levels && p.levels.length > 0
+      return {
+        client_ref: p.clientRef,
+        location_id: p.locationId,
+        new_bin: p.locationId ? undefined : {
+          parent_id: warehouse.id, kind: hasLevels ? 'RACK' : p.kind, code: p.code, name: p.name,
+          capacity_slots: p.capacitySlots, slot_kind: p.slotKind, weight_capacity_kg: p.weightCapacityKg,
+          zone_profile_id: p.zoneProfileId, storage_type_id: p.storageTypeId,
+          levels: hasLevels
+            ? p.levels!.map((l) => ({
+                level_index: l.levelIndex, role: l.role,
+                capacity_slots: l.capacitySlots ?? null, weight_capacity_kg: l.weightCapacityKg ?? null,
+              }))
+            : undefined,
+        },
+        floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h, rotation: p.rotation,
+      }
+    })
     // A hand-drawn "Staging floor" object has no stagingLocationId until the
     // server find-or-creates one — mirrors FloorPlanImportModal.createDraft's
     // new_staging wiring. Every unlinked staging object shares the SAME code

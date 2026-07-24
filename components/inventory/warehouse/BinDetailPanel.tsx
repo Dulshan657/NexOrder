@@ -253,7 +253,7 @@ export function BinDetailPanel({
       </div>
 
       {hasRackLevels && (
-        <div className="border-t border-stone-200 pt-3">
+        <div className="border-t border-stone-200 pt-3" data-testid="rack-level-panel">
           <RackLevelEditor
             levels={levels}
             fillByLevel={rackFillByLevel}
@@ -279,6 +279,7 @@ export function BinDetailPanel({
               </p>
               <button
                 type="button"
+                data-testid="split-into-levels-button"
                 onClick={startConvert}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-medium hover:bg-stone-50 btn-press"
               >
@@ -298,6 +299,7 @@ export function BinDetailPanel({
                 </button>
                 <button
                   type="button"
+                  data-testid="convert-to-levels-button"
                   onClick={() => setConfirmConvert(true)}
                   disabled={draftLevels.length === 0 || convertRack.isPending}
                   className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"

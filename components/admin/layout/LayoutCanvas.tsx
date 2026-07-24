@@ -327,7 +327,7 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
             const levelData = groupLevelData.get(group.key)
             const levelCount = levelData?.levels.length ?? 0
             return (
-              <g key={group.key} pointerEvents="none">
+              <g key={group.key} data-testid={`rack-${p.code}`} pointerEvents="none">
                 <rect
                   x={p.x * cell + 1} y={p.y * cell + 1} width={p.w * cell - 2} height={p.h * cell - 2}
                   fill={fill} fillOpacity={p.locationId || problem ? 1 : 0.6}
@@ -359,6 +359,7 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
               be 9,600 DOM nodes and made painting/dragging visibly janky; the
               cell under the pointer is derived from clientX/Y instead. */}
           <rect
+            data-testid="layout-grid-interaction"
             x={0} y={0} width={gridWidth * cell} height={gridHeight * cell}
             fill="transparent"
             onPointerDown={onInteractionDown}
@@ -403,6 +404,7 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
                   return (
                     <g
                       key={level.levelIndex}
+                      data-testid={`level-${level.code ?? level.levelIndex}`}
                       onPointerDown={(e) => {
                         e.stopPropagation()
                         setSelectedLevelIndex(level.levelIndex)

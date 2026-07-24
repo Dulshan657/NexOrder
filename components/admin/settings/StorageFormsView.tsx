@@ -134,6 +134,7 @@ function LevelTemplateEditor({
                 value={level.role}
                 onChange={(e) => setRole(i, e.target.value as LevelRole)}
                 aria-label={`Role for level ${level.levelIndex}`}
+                data-testid={`level-role-select-${level.levelIndex}`}
                 className="flex-1 text-xs border border-stone-200 rounded px-2 py-1 bg-white"
               >
                 {LEVEL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -508,12 +509,14 @@ const StorageFormsView: React.FC = () => {
 
             {/* Rack levels (mig 00072) */}
             <div className="rounded-lg border border-stone-200 p-3 space-y-3">
-              <Toggle
-                checked={form.hasLevels}
-                onChange={(next) => setForm({ ...form, hasLevels: next, levelTemplate: next ? form.levelTemplate : [] })}
-                label="This form has addressable levels"
-                description="Splits every rack drawn with this form into individually-addressable levels, each with its own pick/reserve/bulk role. Leave off for forms where levels don't apply, like Bulk Floor or Staging Area."
-              />
+              <div data-testid="has-levels-toggle">
+                <Toggle
+                  checked={form.hasLevels}
+                  onChange={(next) => setForm({ ...form, hasLevels: next, levelTemplate: next ? form.levelTemplate : [] })}
+                  label="This form has addressable levels"
+                  description="Splits every rack drawn with this form into individually-addressable levels, each with its own pick/reserve/bulk role. Leave off for forms where levels don't apply, like Bulk Floor or Staging Area."
+                />
+              </div>
               {form.hasLevels && (
                 <LevelTemplateEditor
                   levels={form.levelTemplate}

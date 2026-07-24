@@ -154,7 +154,12 @@ export function WarehouseCanvas({
             const stroke = selected ? PLACEMENT_FILL.selectedStroke : highlighted ? PLACEMENT_FILL.highlightStroke : DEFAULT_BIN_STROKE
             const badge = binBadges?.get(p.locationId)
             return (
-              <g key={group.key} onClick={() => onSelectBin(p.locationId)} style={{ cursor: 'pointer' }}>
+              <g
+                key={group.key}
+                data-testid={`rack-${p.locationId}`}
+                onClick={() => onSelectBin(p.locationId)}
+                style={{ cursor: 'pointer' }}
+              >
                 <rect
                   className="wh-bin wh-bin-in"
                   style={{ '--wh-i': Math.min(i, 40) } as CSSProperties}
@@ -187,6 +192,7 @@ export function WarehouseCanvas({
           return (
             <g
               key={group.key}
+              data-testid={`rack-${p.locationId}`}
               onClick={() => guard(() => setExpandOverride(group.key))}
               style={{ cursor: 'pointer' }}
             >
@@ -245,6 +251,7 @@ export function WarehouseCanvas({
                 return (
                   <g
                     key={lvl.locationId}
+                    data-testid={`level-${loc?.code ?? lvl.locationId}`}
                     onClick={(e) => {
                       e.stopPropagation()
                       selectLevel(lvl.locationId)

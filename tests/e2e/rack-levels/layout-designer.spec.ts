@@ -1,52 +1,40 @@
 // Rack levels — Layout Designer per-rack level override + multi-select apply.
 //
-// Depends on: migration 00072 (verified NOT yet applied to prod as of writing
-// — `has_levels`/`level_template` columns don't exist on storage_types yet),
-// PLUS the Storage Forms editor from ../storage-forms.spec.ts actually being
-// used to opt "Pallet Rack" into levels (RackWizard/PlacementInspector below
-// only show a level editor when the chosen form's `hasLevels` is true).
+// Cleared to run against prod: creates (or reuses) the permanent
+// "E2E RackLevels Test" fixture warehouse. Everything INSIDE the warehouse —
+// this spec's own draft layout and its racks — is torn down in `finally` on
+// every run; only the empty warehouse shell (and, from other specs in this
+// suite, its own separately-published fixture layout) may persist. Never
+// touches MAIN.
 //
-// Unlike the other rack-levels specs, large parts of the DESIGNER side are
-// already implemented (confirmed by reading the source, 2026-07-24):
-//   - components/warehouse/levels/RackLevelEditor.tsx (real, complete)
-//   - PlacementInspector.tsx mounts it for a selected draft rack
-//   - useLayoutEditorState.ts has `set_rack_levels` / `apply_levels_to_selection`
-// But two integration pieces are confirmed MISSING:
-//   - LayoutCanvas.tsx never dispatches `{type:'select', additive:true}` — its
-//     'select'-tool click handler always single-selects, so shift/ctrl-click
-//     multi-select has no wiring on the canvas yet.
-//   - LayoutDesignerView.tsx doesn't pass `selectedCount` to <PlacementInspector>,
-//     so the "Apply this level layout to all N selected racks" button can
-//     never appear regardless of the canvas gap above.
-// So: the single-rack override step below may start passing before the
-// multi-select step does — that's expected and it's why they're separate
-// assertions rather than one all-or-nothing test.
-import { expect, test } from '../fixtures/auth'
-import { openSettingsWarehouseSubtab } from './helpers'
+// Real UI, verified 2026-07-24 (components/warehouse/levels/RackLevelEditor.tsx,
+// components/admin/layout/PlacementInspector.tsx, LayoutCanvas.tsx,
+// useLayoutEditorState.ts, LayoutDesignerView.tsx): shift/ctrl/cmd-click
+// multi-select IS wired (LayoutCanvas dispatches `{type:'select', additive:
+// true}` on a modifier-click) and `selectedCount` IS threaded into
+// <PlacementInspector> from `state.selectedRefs.size`. The one bug this spec
+// catches is upstream of both of those: `LayoutDesignerView.persistGeometry`'s
+// `new_bin` payload never includes `levels` (see `SavePlacementInput.new_bin.
+// levels` in services/supabase/layoutService.ts, which IS wired server-side),
+// so a rack's level edits in this designer are pure client state — Save never
+// persists them. That's the assertion this spec expects to fail on, and it's
+// a genuine product bug, not a selector problem (see the E2E runner's report).
+import { expect, loginAsAdmin, test } from '../fixtures/auth'
+import { existsWithin, openSettingsWarehouseSubtab } from './helpers'
 
-// A dedicated, permanently-named fixture warehouse (mirrors the existing
-// wie-demo / tridon-demo pattern) so this suite never touches MAIN, which
-// already holds live stock and a published layout — there is no
-// delete-warehouse Edge Function, so a per-run throwaway can't be cleaned up,
-// and publishing over MAIN's routing graph is exactly the kind of
-// prod-destructive action E2E tests must avoid.
 const TEST_WAREHOUSE_NAME = 'E2E RackLevels Test'
 const TEST_WAREHOUSE_CODE = 'E2ERACKLVL'
 
-test.describe('Rack levels — Layout Designer [NOT YET SHIPPED end-to-end, depends on mig 00072 + Storage Forms editor]', () => {
-  test('override one rack to 4 levels; multi-select apply is a documented known gap', async ({ adminPage: page }) => {
-    // This spec drives many sequential steps (warehouse setup, draft
-    // creation, rack generation, a reload-and-reselect round trip) — triple
-    // the default timeout rather than race a slow CI/dev box.
+test.describe('Rack levels — Layout Designer', () => {
+  test('override one rack to 4 levels; multi-select apply', async ({ adminPage: page }) => {
+    // Many sequential steps (warehouse setup, draft creation, rack generation,
+    // a reload-and-reselect round trip) — triple the default timeout rather
+    // than race a slow CI/dev box.
     test.slow()
     await openSettingsWarehouseSubtab(page)
 
-    if (!(await page.getByText(TEST_WAREHOUSE_NAME, { exact: true }).count())) {
+    if (!(await existsWithin(page.getByText(TEST_WAREHOUSE_NAME, { exact: true })))) {
       await page.getByRole('button', { name: 'Add warehouse' }).click()
-      // Not `exact` alone — Settings' General tab ("Company Name") stays
-      // mounted-but-hidden (SettingsView keeps visited sub-tabs alive) and
-      // `getByLabel` substring-matches across the whole page by default, so
-      // an unqualified 'Name' resolves both fields in strict mode.
       await page.getByLabel('Code', { exact: true }).fill(TEST_WAREHOUSE_CODE)
       await page.getByLabel('Name', { exact: true }).fill(TEST_WAREHOUSE_NAME)
       await page.getByRole('button', { name: 'Racked (bins/WMS)' }).click()
@@ -62,44 +50,76 @@ test.describe('Rack levels — Layout Designer [NOT YET SHIPPED end-to-end, depe
 
     try {
       // Populate 3 racks via the existing RackWizard rather than hand-drawing
-      // on the SVG canvas (no per-cell test hooks exist there today).
+      // on the SVG canvas (no per-cell test hooks exist there today). Start
+      // well away from (0,0) — helpers.ensureLevelledFixtureRack (run by the
+      // putaway-roles/putaway-override/warehouse-tab-live-edit specs) already
+      // publishes a permanent rack there, and `locations.code` is globally
+      // unique (`${warehouseCode}-B-${x}-${y}`) — generating over it would
+      // collide and the save would fail server-side with a real (if
+      // self-inflicted) error, not a product bug.
       await page.getByRole('button', { name: /generate racks/i }).click()
       await page.getByLabel('Storage type').selectOption({ label: 'Pallet Rack' })
+      await page.getByLabel('Start X').fill('20')
+      await page.getByLabel('Start Y').fill('20')
       await page.getByLabel('Columns').fill('3')
       await page.getByLabel('Rows').fill('1')
       await page.getByRole('button', { name: /^Generate 3$/ }).click()
 
-      // Select the first generated rack. LayoutCanvas has no per-rack test
-      // hook, so click by grid position via the one interaction rect.
-      await page.locator('svg[aria-label="Warehouse layout grid"] rect[fill="transparent"]').click({ position: { x: 4, y: 4 } })
+      // Select the first generated rack. Each rack group carries a
+      // `data-testid="rack-<code>"` hook (LayoutCanvas.tsx) — clicking it
+      // resolves to real screen coordinates, which Playwright turns into a
+      // click at that point; the rect itself is `pointerEvents: none` (the
+      // transparent interaction layer sits on top and does the real hit
+      // testing), so this lands exactly like a real user click would, with
+      // no BASE_CELL pixel-math guessing.
+      const rack0 = page.getByTestId('rack-E2ERACKLVL-B-20-20')
+      const rack1 = page.getByTestId('rack-E2ERACKLVL-B-21-20')
+      // `force: true`: the rack <g> is deliberately `pointerEvents: none` (the
+      // transparent interaction rect on top does the real hit-testing), so
+      // Playwright's own actionability check would otherwise refuse the click
+      // as "intercepted". Skipping that check still dispatches a real mouse
+      // event at the rack's on-screen coordinates, which the browser then
+      // routes to the interaction rect underneath — exactly like a real click.
+      await rack0.click({ force: true })
       await expect(page.getByRole('heading', { name: 'Rack', exact: false })).toBeVisible()
 
-      // Real RackLevelEditor selectors (component confirmed to exist):
       const levelsHeading = page.getByRole('heading', { name: 'Levels' })
       await expect(levelsHeading).toBeVisible({ timeout: 5_000 })
-      await expect(page.getByRole('list').getByRole('listitem')).toHaveCount(5) // PALLET_RACK standard: 5 levels
+      // NOT page.getByRole('list').getByRole('listitem') — PublishChecklist's
+      // 4-item readiness checklist is also a <ul> on this same page, so an
+      // unscoped role=list query silently sums both lists' items. The
+      // data-testid added to each RackLevelEditor row (level-row-N) is exact.
+      await expect(page.getByTestId(/^level-row-/)).toHaveCount(5) // PALLET_RACK standard: 5 levels
 
       // Override: remove L5 (the bulk level) so this rack has 4, not 5.
       await page.getByRole('button', { name: 'Remove level 5' }).click()
-      await expect(page.getByRole('list').getByRole('listitem')).toHaveCount(4)
+      await expect(page.getByTestId(/^level-row-/)).toHaveCount(4)
 
       await page.getByRole('button', { name: /^save$/i }).click()
       await expect(page.getByText(/^saved\.?$/i)).toBeVisible({ timeout: 5_000 })
 
-      await page.reload()
+      // Re-login (NOT page.reload() alone — persistSession:false means a
+      // plain reload logs the session out; see storage-forms.spec.ts's note).
+      await loginAsAdmin(page)
       await openSettingsWarehouseSubtab(page)
       await page.getByRole('button', { name: `Layout designer for ${TEST_WAREHOUSE_NAME}` }).click()
       await page.getByText(/^Layout \d{4}$/).first().click()
-      await page.locator('svg[aria-label="Warehouse layout grid"] rect[fill="transparent"]').click({ position: { x: 4, y: 4 } })
-      await expect(page.getByRole('list').getByRole('listitem')).toHaveCount(4)
+      await rack0.click({ force: true })
 
-      // --- Known gap (see file header): multi-select + apply. Selecting a
-      // second rack with Shift held should add it to selectedRefs and surface
-      // "Apply this level layout to all N selected racks" — neither the
-      // canvas's additive-select dispatch nor the selectedCount prop wiring
-      // exist yet, so this is expected to fail until both land.
-      await page.locator('svg[aria-label="Warehouse layout grid"] rect[fill="transparent"]').click({ position: { x: 5, y: 4 }, modifiers: ['Shift'] })
-      await expect(page.getByRole('button', { name: /^Apply this level layout to all \d+ selected racks$/ })).toBeVisible({ timeout: 5_000 })
+      // KNOWN PRODUCT BUG (see file header): persistGeometry never forwards
+      // `levels` on `new_bin`, so the override never actually persisted — this
+      // rack reloads back to its form's standard 5 levels, not the 4 we saved.
+      // Soft assertion so the (unrelated) multi-select check below still runs
+      // and reports independently in the same pass.
+      await expect.soft(page.getByTestId(/^level-row-/)).toHaveCount(4)
+
+      // Multi-select + apply: shift-click a second rack. Both the canvas's
+      // additive-select dispatch and the selectedCount → PlacementInspector
+      // wiring are confirmed shipped.
+      await rack1.click({ modifiers: ['Shift'], force: true })
+      await expect(page.getByRole('button', { name: /^Apply this level layout to all \d+ selected racks$/ })).toBeVisible({
+        timeout: 5_000,
+      })
     } finally {
       // Best-effort cleanup: delete the draft we created so repeated runs
       // don't accumulate throwaway layouts against the fixture warehouse.

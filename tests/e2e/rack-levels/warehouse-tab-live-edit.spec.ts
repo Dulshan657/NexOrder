@@ -1,40 +1,58 @@
 // Rack levels — Warehouse tab expand-in-place + live level edit.
 //
-// Depends on: migration 00072 (not yet applied to prod) AND at least one real
-// MAIN rack having gone through `wie_convert_rack_to_levels_tx` (the plan's
-// "MAIN conversion" step). As of writing, NEITHER exists — confirmed by
-// reading source:
-//   - components/inventory/warehouse/WarehouseCanvas.tsx still renders one
-//     rect per placement 1:1; it does not group by (floor, x, y), so there is
-//     no "rack" grouping to click, let alone an exploded-levels overlay.
-//   - components/inventory/warehouse/BinDetailPanel.tsx is still read-only
-//     (per its own file header) and does not mount RackLevelEditor.
-// This spec is written against the real MAIN warehouse — read-only clicks
-// only (selecting a bin never mutates anything), so it is safe to run
-// against prod even though the assertions are expected to fail.
+// Real UI, verified 2026-07-24: `components/inventory/warehouse/
+// WarehouseCanvas.tsx` DOES group placements by (floor,x,y) and explode a
+// rack's levels on click (`groupPlacementsByCell`), and `BinDetailPanel.tsx`
+// mounts `<RackLevelEditor>` and saves a role change immediately via
+// `mutate-warehouse-location`'s `set_levels` action (`useSetRackLevels`) — no
+// publish step. Both were speculative/read-only in the original draft of this
+// spec; they're real and drivable now.
+//
+// Uses the suite's own fixture rack (helpers.ensureLevelledFixtureRack) in
+// "E2E RackLevels Test" rather than a MAIN rack — no MAIN rack has been
+// converted to levels, and this suite must never convert one that holds live
+// stock. Restores the level it edits (back to its original role) in `finally`
+// so putaway-roles.spec.ts / putaway-override.spec.ts's assumption that the
+// fixture rack is L1-4 pick + L5 bulk keeps holding for later runs.
 import { expect, test } from '../fixtures/auth'
-import { openWarehouseTab } from './helpers'
+import {
+  ensureLevelledFixtureRack,
+  FIXTURE_BIN_CODE,
+  FIXTURE_WAREHOUSE_CODE,
+  FIXTURE_WAREHOUSE_NAME,
+  openWarehouseTab,
+  selectWarehouseScope,
+} from './helpers'
 
-test.describe('Rack levels — Warehouse tab expand-in-place [NOT YET SHIPPED, depends on mig 00072 + a converted MAIN rack]', () => {
-  test('clicking a rack shows its levels, and editing one live needs no re-publish', async ({ adminPage: page }) => {
+test.describe('Rack levels — Warehouse tab expand-in-place', () => {
+  test('selecting the rack shows its levels, and editing one live needs no re-publish', async ({ adminPage: page }) => {
+    test.slow()
+    await ensureLevelledFixtureRack(page)
+
     await openWarehouseTab(page)
+    await selectWarehouseScope(page, `${FIXTURE_WAREHOUSE_NAME} (${FIXTURE_WAREHOUSE_CODE})`)
 
-    // Select any real rack via the (existing, accessible) location tree
-    // rather than raw SVG map coordinates — clicking a tree row is read-only.
-    const treeRow = page.locator('button').filter({ hasText: /^[A-Z0-9-]+/ }).first()
-    await treeRow.click({ timeout: 10_000 })
+    // Negative lookahead excludes the rack's own level rows ("...-L1".."-L5"),
+    // which also substring-match the bare rack code, so this always selects
+    // the RACK parent itself.
+    const binRow = page.getByRole('button', { name: new RegExp(`^${FIXTURE_BIN_CODE}(?!-L\\d)`) })
+    await expect(binRow).toBeVisible({ timeout: 10_000 })
+    await binRow.click()
 
-    // --- Speculative: expand-in-place. The plan calls for clicking a RACK
-    // group on the map to explode it into its levels with a translucent scrim
-    // over the rest of the grid; today the tree/map selection only ever opens
-    // the flat <BinDetailPanel>, which has no level concept at all.
     await expect(page.getByRole('heading', { name: 'Levels' })).toBeVisible({ timeout: 5_000 })
 
-    // Live edit: change a level's role in place and confirm no "Publish"
-    // action is required — BinDetailPanel would need to call the new
-    // mutate-warehouse-location `set_levels` action directly.
-    await page.getByLabel('Role').first().selectOption('reserve')
-    await expect(page.getByText(/saved/i)).toBeVisible({ timeout: 5_000 })
+    // RackLevelEditor renders top-first (L5..L1); `.last()` is L1, a 'pick'
+    // level — edited and restored here, leaving L5 (bulk) untouched since
+    // putaway-roles/putaway-override depend on it staying the fixture's one
+    // bulk level.
+    const l1Role = page.getByLabel('Role').last()
+    await expect(l1Role).toHaveValue('pick')
+
+    await l1Role.selectOption('reserve')
+    await expect(page.getByText(/level config saved/i)).toBeVisible({ timeout: 5_000 })
     await expect(page.getByRole('button', { name: /publish/i })).toHaveCount(0)
+
+    await l1Role.selectOption('pick')
+    await expect(page.getByText(/level config saved/i)).toBeVisible({ timeout: 5_000 })
   })
 })

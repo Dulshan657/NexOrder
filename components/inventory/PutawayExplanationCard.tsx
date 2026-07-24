@@ -41,7 +41,7 @@ export function PutawayExplanationCard({ explanation }: { explanation: PutawayEx
   // role it allows. When this is the reason NOTHING came back, that's the
   // queue-wedging case the manual override exists for — surface it up front,
   // in the engine's own words, rather than leaving it buried in the details.
-  const roleMismatch = hardFilters.find((h) => h.code === 'LEVEL_ROLE_MISMATCH')
+  const roleMismatch = hardFilters.find((h) => h.code === 'level_role_mismatch')
 
   return (
     <div className="space-y-3 text-xs">
