@@ -12,6 +12,22 @@
 // remainder stays in the queue. The claim, the split and the stock move all
 // happen inside wie_decide_putaway_tx (mig 00071) so a failed transfer rolls the
 // decision back instead of needing a compensating write from here.
+//
+// Since mig 00080 this function covers all THREE desk-side decisions:
+//
+//   assign_only:true  → wie_assign_putaway_tx. Decide the bin, move nothing.
+//                       The line becomes an 'assigned' task for the Walk view
+//                       and the stock stays at the dock, which is where it is.
+//                       complete-putaway moves it when someone carries it.
+//   assign_only:false → wie_decide_putaway_tx, unchanged. One step, decide and
+//                       move. This is the default, so every pre-00080 caller is
+//                       byte-for-byte unaffected, and it stays the right path
+//                       for desk/bulk work (notably the CSV opening-stock
+//                       importer, which would otherwise need someone to walk
+//                       hundreds of imaginary pallets).
+//   'unassign'        → wie_unassign_putaway_tx. Walk an assigned task back to
+//                       the queue when a run is abandoned. No stock has moved,
+//                       so it is a pure state reversal.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -27,10 +43,20 @@ const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
 const inputSchema = z.object({
   recommendation_id: z.number().int().positive(),
-  decision: z.enum(['accept', 'override']),
+  decision: z.enum(['accept', 'override', 'unassign']),
   chosen_location_id: z.number().int().positive().optional(),
   // Partial putaway. Omitted = the whole remaining quantity.
   quantity: z.number().positive().optional(),
+  // Two-stage putaway (mig 00080). True = decide the bin and move NOTHING; the
+  // line becomes an 'assigned' task and the stock stays at the dock until
+  // complete-putaway records someone physically carrying it there.
+  //
+  // Defaults FALSE, so every existing caller keeps today's one-step behaviour
+  // byte-for-byte. That is what lets this function deploy before the Walk view
+  // exists, and it is the "Place now" escape hatch desk and bulk work still
+  // need — the CSV opening-stock importer's follow-up putaway would otherwise
+  // require someone to walk 300 imaginary pallets.
+  assign_only: z.boolean().optional(),
   // Rack-level role gate (mig 00072). The chosen bin's level_role, when set,
   // is a HARD constraint against the SKU's allowed_level_roles — set this to
   // cross it anyway (e.g. no compliant level had room). The crossing is
@@ -74,7 +100,7 @@ serve(async (req: Request) => {
     })
     const parsed = inputSchema.safeParse(body)
     if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
-    const { recommendation_id, decision, chosen_location_id, quantity, role_override } = parsed.data
+    const { recommendation_id, decision, chosen_location_id, quantity, role_override, assign_only } = parsed.data
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
       auth: { persistSession: false },
@@ -83,13 +109,38 @@ serve(async (req: Request) => {
     const { data: rec, error: rErr } = await admin.from('wie_putaway_recommendations')
       .select('*').eq('id', recommendation_id).single()
     if (rErr || !rec) throw new EdgeFunctionError('NOT_FOUND', `Recommendation ${recommendation_id} not found`)
-    if ((rec as any).status !== 'suggested') {
+
+    // Unassign is the only decision that acts on an ALREADY-assigned task —
+    // it walks the state back for a run someone started and abandoned. No stock
+    // has moved at that point, so it is a pure state reversal.
+    const requiredStatus = decision === 'unassign' ? 'assigned' : 'suggested'
+    if ((rec as any).status !== requiredStatus) {
       throw new EdgeFunctionError('CONFLICT', `Recommendation already ${(rec as any).status}`)
     }
 
     const warehouseId = (rec as any).warehouse_id as number
     if (auth.role === 'Warehouse' && auth.profile.home_warehouse_id !== warehouseId) {
       throw new EdgeFunctionError('FORBIDDEN', 'You can only put away stock at your own warehouse')
+    }
+
+    if (decision === 'unassign') {
+      const { error: uErr } = await admin.rpc('wie_unassign_putaway_tx', {
+        p_rec_id: recommendation_id,
+        p_actor: auth.userId,
+      })
+      if (uErr) throw rpcError(uErr.message)
+
+      const { data: reverted } = await admin.from('wie_putaway_recommendations')
+        .select('*').eq('id', recommendation_id).single()
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'wie_putaway_recommendations',
+        resourceId: String(recommendation_id), after: (reverted ?? {}) as Record<string, unknown>,
+        metadata: { stage: 'unassign', previous_assigned_location_id: (rec as any).assigned_location_id },
+      })
+
+      return new Response(JSON.stringify({ ok: true, unassigned: true, recommendation: reverted }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     const chosen = decision === 'accept' ? ((rec as any).recommended_location_id as number | null) : chosen_location_id!
@@ -163,24 +214,38 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError('CONFLICT', 'The layout changed since this recommendation — re-run it')
     }
 
-    // Claim + (optional) split + stock move, all in ONE transaction (mig 00071).
-    // The function's SELECT … FOR UPDATE is what stops two operators
-    // double-transferring the same recommendation, and a failed move rolls the
-    // decision back with it — nothing to compensate for from out here.
-    const { data: result, error: txErr } = await admin.rpc('wie_decide_putaway_tx', {
-      p_rec_id: recommendation_id,
-      p_decision: decision,
-      p_chosen: chosen,
-      p_qty: quantity ?? null,
-      p_actor: auth.userId,
-    })
+    // Claim + (optional) split, in ONE transaction. The SELECT … FOR UPDATE is
+    // what stops two operators acting on the same recommendation, and — on the
+    // one-step path — a failed move rolls the decision back with it, so there is
+    // nothing to compensate for from out here.
+    //
+    // assign_only picks wie_assign_putaway_tx, which does everything except the
+    // transfer: the stock stays at the warehouse root, where it physically is,
+    // until someone carries it and complete-putaway records that.
+    const { data: result, error: txErr } = assign_only
+      ? await admin.rpc('wie_assign_putaway_tx', {
+        p_rec_id: recommendation_id,
+        p_chosen: chosen,
+        p_qty: quantity ?? null,
+        p_actor: auth.userId,
+      })
+      : await admin.rpc('wie_decide_putaway_tx', {
+        p_rec_id: recommendation_id,
+        p_decision: decision,
+        p_chosen: chosen,
+        p_qty: quantity ?? null,
+        p_actor: auth.userId,
+      })
     if (txErr) throw rpcError(txErr.message)
 
-    const decided = result as {
-      decided_id: number
-      remainder_id: number | null
-      remainder_qty: number
-      moved: unknown
+    const raw = result as Record<string, any>
+    const decided = {
+      // The two transactions name their surviving row differently; normalise so
+      // the audit + response shape below is identical either way.
+      decided_id: (raw.decided_id ?? raw.assigned_id) as number,
+      remainder_id: (raw.remainder_id ?? null) as number | null,
+      remainder_qty: Number(raw.remainder_qty ?? 0),
+      moved: raw.moved ?? null,
     }
 
     // Read the decided row back for the audit trail. With a partial putaway
@@ -193,6 +258,7 @@ serve(async (req: Request) => {
       resourceId: String(decided.decided_id), after: (updated ?? {}) as Record<string, unknown>,
       metadata: {
         decision,
+        stage: assign_only ? 'assign' : 'place',
         chosen_location_id: chosen,
         quantity: quantity ?? remaining,
         remainder_qty: decided.remainder_qty,

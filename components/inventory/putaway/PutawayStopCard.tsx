@@ -1,0 +1,380 @@
+// One stop on the putaway walk, confirmed by scanning.
+//
+// Two explicit steps — scan the plate, scan the bin — because they catch two
+// different errors: carrying the wrong pallet, and setting the right one down
+// in the wrong bay. Neither alone is evidence of the other.
+//
+// Validation runs through the SAME pure module the Edge Function uses
+// (_shared/putawayScanCheck), so the browser can never accept something the
+// server will reject. The server re-checks regardless — this is for instant
+// feedback in an aisle, not for security.
+//
+// The deliberate asymmetry with picking: scanning a DIFFERENT bin is not an
+// error. The walker can see that the assigned bay is full or blocked, and the
+// next one along is the right answer. The card warns, names both bins, and
+// records where it actually went.
+
+import React, { useMemo, useState } from 'react'
+import { AlertTriangle, ArrowRight, Check, MapPin, PackageCheck, Undo2, X } from 'lucide-react'
+import { ScanField } from '@/components/ui/ScanField'
+import { checkPutawayScan } from '@/supabase/functions/_shared/putawayScanCheck'
+import { useCompletePutaway, useUnassignPutaway } from '@/hooks/queries/usePutawayWalk'
+import { useToasts } from '@/hooks/useToasts'
+import { CompletePutawayError } from '@/services/supabase/putawayService'
+import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
+import { describeQuantity, trimNumber } from './putawayFormat'
+
+interface PutawayStopCardProps {
+  row: PendingPutawayRow
+  /** Code of the bin this task was assigned to. */
+  binCode: string
+  sequence: number | null
+  legDistanceM: number | null
+  reachable: boolean
+  active: boolean
+  disabled: boolean
+  onActivate: () => void
+  onDone: () => void
+}
+
+type Step = 'idle' | 'plate' | 'bin' | 'qty'
+
+// React.FC deliberately: this repo ships no @types/react, so a plainly-typed
+// component's props do not include `key`, and the walk renders these in a list.
+export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
+  row, binCode, sequence, legDistanceM, reachable, active, disabled, onActivate, onDone,
+}) => {
+  const { addToast } = useToasts()
+  const complete = useCompletePutaway()
+  const unassign = useUnassignPutaway()
+
+  const [step, setStep] = useState<Step>('idle')
+  const [plateCode, setPlateCode] = useState('')
+  const [scannedBin, setScannedBin] = useState('')
+  const [qty, setQty] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  // Set when the server refuses a level-role mismatch; the operator can force it.
+  const [roleGate, setRoleGate] = useState<string | null>(null)
+
+  const name = row.product?.name ?? `Product #${row.productId}`
+  const qtyLabel = describeQuantity(row.quantity, row.product)
+
+  const context = useMemo(
+    () => ({
+      assignedLocationCode: binCode,
+      product: {
+        id: row.productId,
+        sku: row.product?.sku ?? '',
+        name,
+        barcode: row.product?.barcode ?? null,
+      },
+      huCode: row.huCode,
+      remainingQty: row.quantity,
+    }),
+    [binCode, row.productId, row.product?.sku, row.product?.barcode, row.huCode, row.quantity, name],
+  )
+
+  const reset = () => {
+    setStep('idle')
+    setPlateCode('')
+    setScannedBin('')
+    setQty('')
+    setError(null)
+    setRoleGate(null)
+  }
+
+  const start = () => {
+    setError(null)
+    setRoleGate(null)
+    setQty(trimNumber(row.quantity))
+    // A line with no plate has nothing to scan at step one — legacy stock and
+    // the CSV opening-stock path. Go straight to the bin rather than showing a
+    // field that can only ever be skipped.
+    setStep(row.huCode ? 'plate' : 'bin')
+    onActivate()
+  }
+
+  const onPlateScan = (raw: string) => {
+    const verdict = checkPutawayScan(context, { handlingUnitCode: raw }, row.quantity)
+    if (verdict.ok === false) {
+      setError(verdict.message)
+      setPlateCode('')
+      return
+    }
+    setError(null)
+    setStep('bin')
+  }
+
+  const onBinScan = (raw: string) => {
+    const verdict = checkPutawayScan(
+      context,
+      { handlingUnitCode: plateCode || undefined, locationCode: raw },
+      row.quantity,
+    )
+    if (verdict.ok === false) {
+      setError(verdict.message)
+      setScannedBin('')
+      return
+    }
+    setError(null)
+    setStep('qty')
+  }
+
+  const placedElsewhere = useMemo(() => {
+    if (!scannedBin) return false
+    const verdict = checkPutawayScan(
+      context,
+      { handlingUnitCode: plateCode || undefined, locationCode: scannedBin },
+      row.quantity,
+    )
+    return verdict.ok === true && verdict.placedElsewhere
+  }, [context, plateCode, scannedBin, row.quantity])
+
+  const confirm = async (roleOverride = false) => {
+    const placed = Number(qty)
+    const verdict = checkPutawayScan(
+      context,
+      { handlingUnitCode: plateCode || undefined, locationCode: scannedBin },
+      placed,
+    )
+    if (verdict.ok === false) {
+      setError(verdict.message)
+      return
+    }
+    if (complete.isPending) return
+    try {
+      const result = await complete.mutateAsync({
+        recommendationId: row.id,
+        quantity: placed < row.quantity ? placed : undefined,
+        roleOverride: roleOverride || undefined,
+        // No actualLocationId: the scanned code is authoritative and the server
+        // resolves it, so a stale client-side location list can't misdirect stock.
+        scan: {
+          locationCode: scannedBin,
+          handlingUnitCode: plateCode || undefined,
+        },
+      })
+      addToast(
+        result.remainderQty > 0
+          ? `Placed in ${result.actualLocationCode} — ${trimNumber(result.remainderQty)} still to carry`
+          : result.placedElsewhere
+            ? `Placed in ${result.actualLocationCode} instead of ${binCode} — recorded`
+            : `Placed in ${result.actualLocationCode}`,
+        result.placedElsewhere ? 'info' : 'success',
+      )
+      reset()
+      onDone()
+    } catch (e) {
+      if (e instanceof CompletePutawayError && e.reason === 'level_role_mismatch') {
+        setRoleGate(e.message)
+        setError(null)
+        return
+      }
+      setError(e instanceof Error ? e.message : 'Could not record the putaway')
+    }
+  }
+
+  const putBack = async () => {
+    try {
+      await unassign.mutateAsync(row.id)
+      addToast('Back on the putaway queue', 'success')
+      reset()
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Could not unassign', 'error')
+    }
+  }
+
+  // ── Collapsed ──────────────────────────────────────────────────────────────
+  if (!active || step === 'idle') {
+    return (
+      <button
+        onClick={start}
+        disabled={disabled}
+        className="flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-stone-50/70 btn-press disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <span className="w-7 h-7 shrink-0 rounded-full bg-stone-100 text-stone-500 text-xs font-mono flex items-center justify-center">
+          {sequence ?? '·'}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm text-stone-800 truncate">{name}</span>
+          <span className="block text-xs text-stone-400">
+            <span className="tabular-nums text-stone-600">{qtyLabel.primary}</span>
+            {row.huCode && <span className="font-mono"> · {row.huCode}</span>}
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className="block font-mono text-sm text-emerald-600">{binCode}</span>
+          <span className="block text-[11px] text-stone-400 tabular-nums">
+            {reachable
+              ? legDistanceM != null ? `${Math.round(legDistanceM)}m` : ''
+              : 'off the map'}
+          </span>
+        </span>
+        <ArrowRight className="w-4 h-4 text-stone-300 shrink-0" aria-hidden="true" />
+      </button>
+    )
+  }
+
+  // ── Active ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="p-4 bg-nexgen-blue/5 border-y border-nexgen-blue/20 space-y-3">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-stone-900 truncate">{name}</p>
+          <p className="text-xs text-stone-500">
+            <span className="tabular-nums">{qtyLabel.primary}</span>
+            {qtyLabel.secondary && <span className="text-stone-400"> · {qtyLabel.secondary}</span>}
+          </p>
+        </div>
+        <button
+          onClick={reset}
+          className="p-1.5 text-stone-400 hover:text-stone-700 rounded btn-press shrink-0"
+          aria-label="Cancel this stop"
+        >
+          <X className="w-4 h-4" aria-hidden="true" />
+        </button>
+      </div>
+
+      {/* Destination, stated big — this is the whole point of the card. */}
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-white border border-stone-200">
+        <MapPin className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wide text-stone-400">Take it to</p>
+          <p className="font-mono text-lg font-bold text-stone-900 truncate">{binCode}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 text-[11px]">
+        {row.huCode && (
+          <>
+            <StepChip label="Plate" done={step !== 'plate'} active={step === 'plate'} value={plateCode} />
+            <span className="text-stone-300">→</span>
+          </>
+        )}
+        <StepChip label="Bin" done={step === 'qty'} active={step === 'bin'} value={scannedBin} />
+        <span className="text-stone-300">→</span>
+        <StepChip label="Count" done={false} active={step === 'qty'} value={step === 'qty' ? qty : ''} />
+      </div>
+
+      {step === 'plate' && (
+        <ScanField
+          label={`Scan the plate — expecting ${row.huCode}`}
+          value={plateCode}
+          onChange={setPlateCode}
+          onScan={onPlateScan}
+          placeholder={row.huCode ?? ''}
+          cameraTitle="Scan the plate label"
+          autoFocus
+          error={error ?? undefined}
+        />
+      )}
+
+      {step === 'bin' && (
+        <ScanField
+          label={`Scan the bin — expecting ${binCode}`}
+          value={scannedBin}
+          onChange={setScannedBin}
+          onScan={onBinScan}
+          placeholder={binCode}
+          cameraTitle="Scan the bin label"
+          autoFocus
+          helper="A different bay is fine — it gets recorded."
+          error={error ?? undefined}
+        />
+      )}
+
+      {step === 'qty' && (
+        <div className="space-y-3">
+          {placedElsewhere && (
+            <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+              <p className="text-xs">
+                You scanned <span className="font-mono font-medium">{scannedBin}</span>, not{' '}
+                <span className="font-mono font-medium">{binCode}</span>. That's allowed — the stock will be
+                recorded where you actually put it.
+              </p>
+            </div>
+          )}
+
+          {roleGate && (
+            <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-900">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+              <div className="text-xs space-y-2">
+                <p>{roleGate}</p>
+                <button
+                  onClick={() => confirm(true)}
+                  disabled={complete.isPending}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[44px] bg-amber-600 text-white text-sm font-medium rounded-lg btn-press disabled:opacity-50"
+                >
+                  Place anyway
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-stone-600 mb-1.5">
+              How much did you put away?
+            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                type="number"
+                min="0"
+                step="any"
+                inputMode="decimal"
+                value={qty}
+                onChange={(e) => { setQty(e.target.value); setError(null) }}
+                autoFocus
+                // 44px tall: keyed with a thumb, at a rack face, possibly gloved.
+                className="w-28 px-3 py-2 min-h-[44px] rounded-lg border border-stone-300 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+                aria-label="Quantity put away"
+              />
+              <span className="text-xs text-stone-500">of {trimNumber(row.quantity)} on this task</span>
+              <button
+                onClick={() => confirm(false)}
+                disabled={complete.isPending}
+                className="ml-auto inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] bg-emerald-600 text-white text-sm font-medium rounded-lg btn-press disabled:opacity-50"
+              >
+                <PackageCheck className="w-4 h-4" aria-hidden="true" />
+                {complete.isPending ? 'Recording…' : 'Confirm'}
+              </button>
+            </div>
+            {Number(qty) > 0 && Number(qty) < row.quantity && (
+              <p className="text-xs text-amber-600 mt-1.5">
+                {trimNumber(row.quantity - Number(qty))} stays on this task for another trip.
+              </p>
+            )}
+            {error && (
+              <p className="text-xs text-red-600 mt-1.5" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={putBack}
+        disabled={unassign.isPending}
+        className="inline-flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-800 btn-press disabled:opacity-50"
+      >
+        <Undo2 className="w-3.5 h-3.5" aria-hidden="true" />
+        Can't place this — put it back on the queue
+      </button>
+    </div>
+  )
+}
+
+const StepChip: React.FC<{ label: string; done: boolean; active: boolean; value: string }> = ({
+  label, done, active, value,
+}) => (
+  <span
+    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${
+      done ? 'bg-emerald-100 text-emerald-700' : active ? 'bg-nexgen-blue text-white' : 'bg-stone-100 text-stone-400'
+    }`}
+  >
+    {done && <Check className="w-3 h-3" aria-hidden="true" />}
+    {label}
+    {done && value && <span className="font-mono opacity-70 max-w-[90px] truncate">{value}</span>}
+  </span>
+)

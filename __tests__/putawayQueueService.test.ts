@@ -8,12 +8,21 @@ vi.mock('@/lib/supabase', () => ({
   supabase: { from },
 }))
 
-import { getPendingPutaways, getPendingPutawayCounts } from '../services/supabase/putawayQueueService'
+import {
+  getAssignedPutaways,
+  getPendingPutaways,
+  getPendingPutawayCounts,
+} from '../services/supabase/putawayQueueService'
 
-function selectEqChain(result: { data: unknown; error: unknown }) {
+// Since mig 00080 the counts read spans two statuses, so the chain terminates
+// on .in() rather than .eq() — 'assigned' work is still outstanding work.
+function selectInChain(result: { data: unknown; error: unknown }, seen: { statuses?: string[] } = {}) {
   return {
     select: (_cols: string) => ({
-      eq: (_col: string, _val: string) => Promise.resolve(result),
+      in: (_col: string, values: string[]) => {
+        seen.statuses = values
+        return Promise.resolve(result)
+      },
     }),
   }
 }
@@ -107,12 +116,51 @@ describe('getPendingPutaways', () => {
   })
 })
 
+describe('getAssignedPutaways', () => {
+  beforeEach(() => from.mockReset())
+
+  // The walk needs the destination bin, and it is NOT recommended_location_id:
+  // the desk can assign somewhere the engine never suggested.
+  it('maps the assigned bin and its timestamp onto the row', async () => {
+    from.mockReturnValue(queueChain({
+      data: [{
+        id: 7, product_id: 42, quantity: '48.000', recommended_location_id: 100,
+        explanation: {}, created_at: '2026-07-20T01:00:00Z',
+        products: null, goods_receipts: null,
+        handling_units: { id: 3, code: 'HU-000123', hu_type: 'pallet' },
+        assigned_location_id: 205, assigned_at: '2026-07-24T09:00:00Z',
+      }],
+      error: null,
+    }))
+    const [row] = await getAssignedPutaways(1)
+    expect(row.assignedLocationId).toBe(205)
+    expect(row.assignedAt).toBe('2026-07-24T09:00:00Z')
+    // The plate is what the walker scans, so it has to survive the mapping.
+    expect(row.huCode).toBe('HU-000123')
+    expect(row.huType).toBe('pallet')
+  })
+
+  it('leaves the assigned bin null for a row that has none', async () => {
+    from.mockReturnValue(queueChain({
+      data: [{
+        id: 8, product_id: 42, quantity: '1', recommended_location_id: null,
+        explanation: {}, created_at: '2026-07-20T01:00:00Z',
+        products: null, goods_receipts: null,
+      }],
+      error: null,
+    }))
+    const [row] = await getAssignedPutaways(1)
+    expect(row.assignedLocationId).toBeNull()
+    expect(row.huCode).toBeNull()
+  })
+})
+
 describe('getPendingPutawayCounts', () => {
   beforeEach(() => from.mockReset())
 
-  it('reduces suggested rows to a per-warehouse total', async () => {
+  it('reduces outstanding rows to a per-warehouse total', async () => {
     from.mockReturnValue(
-      selectEqChain({
+      selectInChain({
         data: [{ warehouse_id: 1 }, { warehouse_id: 1 }, { warehouse_id: 2 }],
         error: null,
       }),
@@ -122,18 +170,28 @@ describe('getPendingPutawayCounts', () => {
     expect(from).toHaveBeenCalledWith('wie_putaway_recommendations')
   })
 
+  it('counts assigned work as outstanding, not just suggested', async () => {
+    // A line sent to the walk is still stock sitting on the dock. Counting only
+    // 'suggested' would empty the nav badge the moment someone assigned a
+    // receipt, which reads as "nothing left to do".
+    const seen: { statuses?: string[] } = {}
+    from.mockReturnValue(selectInChain({ data: [], error: null }, seen))
+    await getPendingPutawayCounts()
+    expect(seen.statuses).toEqual(['suggested', 'assigned'])
+  })
+
   it('returns {} when there are no pending rows', async () => {
-    from.mockReturnValue(selectEqChain({ data: [], error: null }))
+    from.mockReturnValue(selectInChain({ data: [], error: null }))
     expect(await getPendingPutawayCounts()).toEqual({})
   })
 
   it('treats a null data payload the same as an empty list', async () => {
-    from.mockReturnValue(selectEqChain({ data: null, error: null }))
+    from.mockReturnValue(selectInChain({ data: null, error: null }))
     expect(await getPendingPutawayCounts()).toEqual({})
   })
 
   it('throws on a query error rather than returning a silent {}', async () => {
-    from.mockReturnValue(selectEqChain({ data: null, error: { message: 'boom' } }))
+    from.mockReturnValue(selectInChain({ data: null, error: { message: 'boom' } }))
     await expect(getPendingPutawayCounts()).rejects.toEqual({ message: 'boom' })
   })
 })

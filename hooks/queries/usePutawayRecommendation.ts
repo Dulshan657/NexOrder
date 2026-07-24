@@ -31,6 +31,9 @@ export function useDecidePutaway() {
       // its reduced quantity.
       qc.invalidateQueries({ queryKey: putawayKeys.all })
       qc.invalidateQueries({ queryKey: putawayKeys.counts })
+      // Assigning adds a stop to the walk; placing one-step removes nothing
+      // from it but costs a single cheap refetch to stay honest either way.
+      qc.invalidateQueries({ queryKey: ['putaway-route'] })
     },
   })
 }

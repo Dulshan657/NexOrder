@@ -14,6 +14,22 @@ interface MaybeHttpError {
   context?: unknown
 }
 
+/** The structured `details` an Edge Function attached to a failure, if any.
+ *
+ *  Separate from the message on purpose: callers that need to BRANCH on why a
+ *  call failed (offering "Place anyway" for a level-role refusal, say) must key
+ *  off a stable marker, never off prose that a copy edit could change. */
+export async function extractFunctionErrorDetails(error: unknown): Promise<unknown> {
+  const context = (error as MaybeHttpError | null | undefined)?.context
+  if (!(context instanceof Response)) return undefined
+  try {
+    const body = (await context.clone().json()) as { error?: { details?: unknown } } | null
+    return body?.error?.details
+  } catch {
+    return undefined
+  }
+}
+
 export async function extractFunctionErrorMessage(
   error: unknown,
   fallback: string,

@@ -32,6 +32,11 @@ export interface PendingPutawayRow {
   huId: number | null
   huType: HuType
   huCode: string | null
+  /** Where the desk sent it, once assigned (mig 00080). NULL while the line is
+   *  still `suggested`. Distinct from `recommendedLocationId` (what the engine
+   *  said) — an operator can assign somewhere else entirely. */
+  assignedLocationId: number | null
+  assignedAt: string | null
 }
 
 // products is readable by every authenticated user; goods_receipts is readable
@@ -50,16 +55,8 @@ function toReceiptRef(row: any): PutawayReceiptRef | null {
   }
 }
 
-/** Pending (status 'suggested') putaway recommendations for a warehouse, newest first. */
-export async function getPendingPutaways(warehouseId: number): Promise<PendingPutawayRow[]> {
-  const { data, error } = await supabase
-    .from('wie_putaway_recommendations')
-    .select(QUEUE_SELECT)
-    .eq('warehouse_id', warehouseId)
-    .eq('status', 'suggested')
-    .order('created_at', { ascending: false })
-  if (error) throw error
-  return (data ?? []).map((row: any) => ({
+function toQueueRow(row: any): PendingPutawayRow {
+  return {
     id: row.id,
     productId: row.product_id,
     quantity: Number(row.quantity),
@@ -71,17 +68,54 @@ export async function getPendingPutaways(warehouseId: number): Promise<PendingPu
     huId: row.handling_units?.id ?? null,
     huType: row.handling_units?.hu_type ?? null,
     huCode: row.handling_units?.code ?? null,
-  }))
+    assignedLocationId: row.assigned_location_id ?? null,
+    assignedAt: row.assigned_at ?? null,
+  }
 }
 
-/** Pending putaway recommendation count per warehouse — powers the Putaway
- *  picker's smart default + per-option labels, and the nav badge total.
+/** Pending (status 'suggested') putaway recommendations for a warehouse, newest first. */
+export async function getPendingPutaways(warehouseId: number): Promise<PendingPutawayRow[]> {
+  const { data, error } = await supabase
+    .from('wie_putaway_recommendations')
+    .select(QUEUE_SELECT)
+    .eq('warehouse_id', warehouseId)
+    .eq('status', 'suggested')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []).map(toQueueRow)
+}
+
+/** Assigned tasks — a bin has been decided but nobody has carried the stock
+ *  there yet (mig 00080). These are the stops on the Walk run, and the stock
+ *  they describe is still sitting at the warehouse root.
+ *
+ *  Oldest first, the opposite of the Assign queue: this is a work list, and the
+ *  thing that has been waiting on the dock longest should be placed first. */
+export async function getAssignedPutaways(warehouseId: number): Promise<PendingPutawayRow[]> {
+  const { data, error } = await supabase
+    .from('wie_putaway_recommendations')
+    .select(QUEUE_SELECT)
+    .eq('warehouse_id', warehouseId)
+    .eq('status', 'assigned')
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []).map(toQueueRow)
+}
+
+/** Outstanding putaway work per warehouse — powers the Putaway picker's smart
+ *  default + per-option labels, and the nav badge total.
+ *
+ *  Counts 'assigned' alongside 'suggested' (mig 00080): a line that has been
+ *  sent to the Walk run is still work nobody has done, and the stock is still
+ *  sitting on the dock. Counting only 'suggested' would make the badge empty
+ *  the moment someone assigned a receipt, which reads as "all done".
+ *
  *  PostgREST has no group-by, so this reduces the row set client-side. */
 export async function getPendingPutawayCounts(): Promise<Record<number, number>> {
   const { data, error } = await supabase
     .from('wie_putaway_recommendations')
     .select('warehouse_id')
-    .eq('status', 'suggested')
+    .in('status', ['suggested', 'assigned'])
   if (error) throw error
   const counts: Record<number, number> = {}
   for (const row of (data ?? []) as { warehouse_id: number }[]) {

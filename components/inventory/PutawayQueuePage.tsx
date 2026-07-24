@@ -4,14 +4,25 @@
 // and the ?wh= deep link so a post-receipt "Go to putaway" CTA (ReceiveStockView
 // -> AdminView -> here) and a page refresh both land on the right warehouse.
 
-import React, { useEffect, useMemo, useRef } from 'react';
-import { PackageOpen } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ClipboardList, Footprints, PackageOpen } from 'lucide-react';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import { usePendingPutawayCounts } from '../../hooks/queries/usePendingPutawayCounts';
+import { useAssignedPutaways } from '../../hooks/queries/usePutawayWalk';
 import { useWarehouseScope } from '../../context/WarehouseScopeContext';
 import { resolvePutawayWarehouse } from './putawayWarehouse';
 import { UserRole, type User } from '../../types';
 import PutawayQueueView from './PutawayQueueView';
+import PutawayWalkView from './PutawayWalkView';
+
+type Stage = 'assign' | 'walk';
+
+/** A phone in an aisle is a walker; a wide screen is someone at a desk. Just a
+ *  starting tab — either user can switch, and the choice sticks for the session. */
+function defaultStage(): Stage {
+  if (typeof window === 'undefined') return 'assign';
+  return window.matchMedia('(max-width: 767px)').matches ? 'walk' : 'assign';
+}
 
 interface PutawayQueuePageProps {
   currentUser: User;
@@ -57,6 +68,18 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
   );
 
   const effectiveWarehouseId = scope !== 'all' ? scope : localFallback;
+
+  const [stage, setStage] = useState<Stage>(defaultStage);
+  // Drives the Walk tab's badge. Cheap: the walk view reads the same query key,
+  // so opening the tab costs no second round trip.
+  const { data: assignedTasks } = useAssignedPutaways(effectiveWarehouseId);
+  const assignedCount = assignedTasks?.length ?? 0;
+  // Warehouse staff can only place stock at their own site (the same rule
+  // complete-putaway enforces server-side, mirrored here so the buttons are
+  // disabled rather than failing on tap).
+  const canPlaceHere =
+    currentUser.role !== UserRole.WAREHOUSE ||
+    currentUser.homeWarehouseId === effectiveWarehouseId;
 
   // A post-receipt "Go to putaway" CTA (ReceiveStockView -> AdminView ->
   // openPutaway) sets `?wh=<id>` then switches tabs. The scope provider only
@@ -114,7 +137,53 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
       </div>
 
       {effectiveWarehouseId != null ? (
-        <PutawayQueueView warehouseId={effectiveWarehouseId} />
+        <>
+          <div className="px-4 sm:px-6 lg:px-8 pt-4">
+            <div
+              role="tablist"
+              aria-label="Putaway stage"
+              className="inline-flex p-0.5 rounded-lg bg-stone-100 border border-stone-200"
+            >
+              {(['assign', 'walk'] as const).map((t) => (
+                <button
+                  key={t}
+                  role="tab"
+                  aria-selected={stage === t}
+                  onClick={() => setStage(t)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[40px] rounded-md text-sm btn-press ${
+                    stage === t ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-500 hover:text-stone-700'
+                  }`}
+                >
+                  {t === 'assign' ? (
+                    <><ClipboardList className="w-4 h-4" aria-hidden="true" /> Assign</>
+                  ) : (
+                    <>
+                      <Footprints className="w-4 h-4" aria-hidden="true" /> Walk
+                      {assignedCount > 0 && (
+                        <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-nexgen-blue text-white text-[10px] tabular-nums">
+                          {assignedCount}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-stone-400">
+              {stage === 'assign'
+                ? 'Decide which bin each line goes to. Nothing moves until someone carries it.'
+                : 'Carry each pallet to its bin and scan to confirm. This is when the stock moves.'}
+            </p>
+          </div>
+
+          {stage === 'assign' ? (
+            <PutawayQueueView warehouseId={effectiveWarehouseId} />
+          ) : (
+            <div className="p-4 sm:p-6 lg:p-8">
+              <PutawayWalkView warehouseId={effectiveWarehouseId} canPlace={canPlaceHere} />
+            </div>
+          )}
+        </>
       ) : (
         <div className="px-4 sm:px-6 lg:px-8 py-16">
           <div className="glass-card rounded-xl p-10 text-center">

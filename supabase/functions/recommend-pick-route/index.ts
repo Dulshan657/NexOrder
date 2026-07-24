@@ -16,8 +16,8 @@ import { requireAuth, type UserRole } from '../_shared/auth.ts'
 import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
+import { loadWalkGraph } from '../_shared/loadWalkGraph.ts'
 import { sequencePickRoute, sequenceBatchRoute, type PickStop } from '../_shared/wie/picking.ts'
-import type { GraphEdge, GraphNode, WarehouseGraph } from '../_shared/wie/types.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
@@ -50,40 +50,15 @@ serve(async (req: Request) => {
       auth: { persistSession: false },
     })
 
-    const { data: wh, error: whErr } = await admin.from('locations')
-      .select('id, kind, location_type, active_layout_id').eq('id', warehouse_id).single()
-    if (whErr || !wh || (wh as any).kind !== 'WAREHOUSE') {
-      throw new EdgeFunctionError('INVALID_INPUT', 'warehouse_id must reference a WAREHOUSE location')
-    }
-    const layoutId = (wh as any).active_layout_id as number | null
-    if ((wh as any).location_type !== 'racked' || !layoutId) {
-      return new Response(JSON.stringify({ ok: true, mode: 'legacy' }), {
+    // Shared with recommend-putaway-route, so the two can never disagree about
+    // what counts as a 'legacy' site or which node a walk starts from.
+    const graphResult = await loadWalkGraph(admin, warehouse_id)
+    if (graphResult.mode === 'legacy') {
+      return new Response(JSON.stringify({ ok: true, mode: 'legacy', note: graphResult.note }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
-
-    // Rebuild the layout's walkway graph in memory (real DB node ids).
-    const { data: nodeRows, error: nErr } = await admin.from('layout_graph_nodes')
-      .select('id, floor, x, y, node_type').eq('layout_id', layoutId).order('id')
-    if (nErr) throw new EdgeFunctionError('INTERNAL', `graph nodes load failed: ${nErr.message}`)
-    const { data: edgeRows, error: eErr } = await admin.from('layout_graph_edges')
-      .select('from_node, to_node, weight_m, bidirectional').eq('layout_id', layoutId)
-    if (eErr) throw new EdgeFunctionError('INTERNAL', `graph edges load failed: ${eErr.message}`)
-
-    const nodes: GraphNode[] = ((nodeRows ?? []) as any[]).map((n) => ({
-      id: n.id, floor: n.floor, x: n.x, y: n.y, nodeType: n.node_type,
-    }))
-    const edges: GraphEdge[] = ((edgeRows ?? []) as any[]).map((e) => ({
-      fromNode: e.from_node, toNode: e.to_node, weightM: Number(e.weight_m), bidirectional: e.bidirectional,
-    }))
-    const graph: WarehouseGraph = { nodes, edges }
-
-    const dock = nodes.find((n) => n.nodeType === 'dock')
-    if (!dock) {
-      return new Response(JSON.stringify({ ok: true, mode: 'legacy', note: 'no dock in layout' }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    const { graph, dockNodeId } = graphResult
 
     // Load each order's allocated bins as stops.
     const stopsByOrder: Record<string, PickStop[]> = {}
@@ -107,8 +82,8 @@ serve(async (req: Request) => {
     }
 
     const route = order_ids.length === 1
-      ? sequencePickRoute(graph, dock.id, stopsByOrder[order_ids[0]])
-      : sequenceBatchRoute(graph, dock.id, stopsByOrder)
+      ? sequencePickRoute(graph, dockNodeId, stopsByOrder[order_ids[0]])
+      : sequenceBatchRoute(graph, dockNodeId, stopsByOrder)
 
     const stops = route.stops.map((s) => ({
       sequence: s.sequence,

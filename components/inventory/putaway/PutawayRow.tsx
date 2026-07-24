@@ -2,7 +2,7 @@
 // where the engine wants it. Replaces a row that said only "Product #42".
 
 import React from 'react'
-import { AlertTriangle, Check, HelpCircle, MapPin, Package, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Check, Footprints, HelpCircle, MapPin, Package, RefreshCw } from 'lucide-react'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import { formatRelative } from '@/components/admin/emailAccountFormat'
 import { PutawayExplanationCard } from '../PutawayExplanationCard'
@@ -14,7 +14,10 @@ interface PutawayRowProps {
   expanded: boolean
   busy: boolean
   onToggleExplanation: () => void
-  onAccept: () => void
+  /** Send it to the Walk run. Decides the bin; moves no stock (mig 00080). */
+  onAssign: () => void
+  /** One-step: decide AND move, without a walk. For desk and bulk work. */
+  onPlaceNow: () => void
   onChooseBin: () => void
   onRerun: () => void
 }
@@ -29,7 +32,8 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
   expanded,
   busy,
   onToggleExplanation,
-  onAccept,
+  onAssign,
+  onPlaceNow,
   onChooseBin,
   onRerun,
 }) => {
@@ -121,12 +125,25 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
             >
               <MapPin className="w-3.5 h-3.5" /> Choose bin
             </button>
+            {/* "Place now" is the pre-00080 one-step path, kept for desk and
+                bulk work — notably the CSV opening-stock import, where nobody
+                is going to walk hundreds of imaginary pallets. Deliberately the
+                quieter of the two: the walk is the honest default. */}
             <button
-              onClick={onAccept}
+              onClick={onPlaceNow}
               disabled={!row.recommendedLocationId || busy}
+              title="Move the stock straight into the bin, without a walk"
+              className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600 btn-press disabled:opacity-40"
+            >
+              <Check className="w-3.5 h-3.5" /> Place now
+            </button>
+            <button
+              onClick={onAssign}
+              disabled={!row.recommendedLocationId || busy}
+              title="Send it to the walk — the stock stays on the dock until someone carries it"
               className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-40"
             >
-              <Check className="w-3.5 h-3.5" /> Accept
+              <Footprints className="w-3.5 h-3.5" /> Assign
             </button>
           </div>
         </div>

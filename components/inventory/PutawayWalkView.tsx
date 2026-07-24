@@ -1,0 +1,177 @@
+// The walk: assigned putaway tasks, in the order they should be walked.
+//
+// A "run" is derived, not stored — it is simply every task currently assigned
+// at this warehouse, sequenced by the WIE engine from the dock
+// (recommend-putaway-route → sequencePickRoute). Nobody claims a run, so two
+// people can walk at once; wie_complete_putaway_tx's row lock makes the loser
+// of a race get a clean "someone else already placed this" rather than a double
+// transfer.
+//
+// A warehouse with no published layout answers `legacy` and the tasks are
+// listed oldest-first instead. That is the correct answer for a bulk site, not
+// a degraded one — there are no aisles to optimise a walk through.
+
+import React, { useMemo, useState } from 'react';
+import { Footprints, MapPin, PackageOpen, Search } from 'lucide-react';
+import { useAssignedPutaways, usePutawayRoute } from '../../hooks/queries/usePutawayWalk';
+import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
+import { PutawayStopCard } from './putaway/PutawayStopCard';
+import { PutawayScanFinder } from './putaway/PutawayScanFinder';
+
+interface PutawayWalkViewProps {
+  warehouseId: number;
+  /** False for a Warehouse-role user looking at someone else's site. */
+  canPlace?: boolean;
+}
+
+const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace = true }) => {
+  const tasksQuery = useAssignedPutaways(warehouseId);
+  const routeQuery = usePutawayRoute(warehouseId);
+  const locationsQuery = useWarehouseLocations(warehouseId);
+
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [search, setSearch] = useState('');
+
+  const codeById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const l of locationsQuery.data ?? []) m.set(l.id, l.code);
+    return m;
+  }, [locationsQuery.data]);
+
+  const tasks = tasksQuery.data ?? [];
+
+  // Sequence + leg distance per task, when the engine could route them. Tasks
+  // the route doesn't mention (a bin missing from the published layout) still
+  // appear — the pallet exists whether or not the map knows where the bay is.
+  const routeById = useMemo(() => {
+    const m = new Map<number, { sequence: number; legDistanceM: number; reachable: boolean }>();
+    if (routeQuery.data?.mode === 'engine') {
+      for (const s of routeQuery.data.stops) {
+        m.set(s.recId, { sequence: s.sequence, legDistanceM: s.legDistanceM, reachable: s.reachable });
+      }
+    }
+    return m;
+  }, [routeQuery.data]);
+
+  const ordered = useMemo(() => {
+    const withRoute = tasks.map((row) => ({ row, stop: routeById.get(row.id) ?? null }));
+    if (routeById.size === 0) return withRoute;
+    return [...withRoute].sort((a, b) => {
+      // Unrouted stops sink to the bottom rather than jumping to the front on a
+      // missing sequence number.
+      const as = a.stop?.sequence ?? Number.MAX_SAFE_INTEGER;
+      const bs = b.stop?.sequence ?? Number.MAX_SAFE_INTEGER;
+      return as - bs;
+    });
+  }, [tasks, routeById]);
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return ordered;
+    return ordered.filter(({ row }) => {
+      const bin = row.assignedLocationId ? codeById.get(row.assignedLocationId) ?? '' : '';
+      return (
+        (row.product?.name ?? '').toLowerCase().includes(q) ||
+        (row.product?.sku ?? '').toLowerCase().includes(q) ||
+        (row.huCode ?? '').toLowerCase().includes(q) ||
+        bin.toLowerCase().includes(q)
+      );
+    });
+  }, [ordered, search, codeById]);
+
+  const totalDistance = routeQuery.data?.mode === 'engine' ? routeQuery.data.totalDistanceM : null;
+
+  return (
+    <div className="space-y-4">
+      {/* Scan a plate, SKU or bin and jump straight to its task — the reason a
+          walker has a phone in their hand at all. */}
+      {tasks.length > 0 && (
+        <PutawayScanFinder
+          rows={tasks}
+          locations={locationsQuery.data ?? []}
+          binIdOf={(row) => row.assignedLocationId}
+          onFound={(id) => { setActiveId(id); setSearch(''); }}
+          onFilter={setSearch}
+        />
+      )}
+
+      {tasks.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="flex items-center gap-2 text-sm text-stone-600">
+            <Footprints className="w-4 h-4 text-nexgen-blue" aria-hidden="true" />
+            <span className="tabular-nums font-medium">{tasks.length}</span>
+            <span className="text-stone-400">stop{tasks.length === 1 ? '' : 's'}</span>
+            {totalDistance != null && totalDistance > 0 && (
+              <>
+                <span className="text-stone-300">·</span>
+                <span className="tabular-nums">{Math.round(totalDistance)}m</span>
+              </>
+            )}
+          </div>
+          <div className="relative flex-1 min-w-0 sm:max-w-xs sm:ml-auto">
+            <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filter by product, plate or bin"
+              aria-label="Filter the walk"
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+            />
+          </div>
+        </div>
+      )}
+
+      {routeQuery.data?.mode === 'engine' && routeQuery.data.unreachableCount > 0 && (
+        <p className="text-[11px] text-amber-600 flex items-center gap-1.5">
+          <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          {routeQuery.data.unreachableCount} bin
+          {routeQuery.data.unreachableCount === 1 ? ' is' : 's are'} not placed in the current layout, so
+          {routeQuery.data.unreachableCount === 1 ? ' it' : ' they'} could not be routed — listed last.
+        </p>
+      )}
+
+      {tasksQuery.isLoading ? (
+        <div className="glass-card rounded-xl divide-y divide-stone-100">
+          {[0, 1, 2].map((i) => <div key={i} className="h-16 animate-pulse bg-stone-100/60" />)}
+        </div>
+      ) : tasksQuery.isError ? (
+        <div className="glass-card rounded-xl p-8 text-center">
+          <p className="text-sm text-red-600">Couldn't load the walk.</p>
+          <p className="text-xs text-stone-400 mt-1">Check your connection and try again.</p>
+        </div>
+      ) : tasks.length === 0 ? (
+        <div className="glass-card rounded-xl p-10 text-center">
+          <PackageOpen className="w-9 h-9 text-stone-300 mx-auto mb-3" />
+          <p className="text-sm text-stone-600">Nothing to carry</p>
+          <p className="text-xs text-stone-400 mt-1">
+            Assign lines on the Assign tab and they'll show up here as stops.
+          </p>
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="glass-card rounded-xl p-10 text-center">
+          <p className="text-sm text-stone-600">No stops match that filter</p>
+          <p className="text-xs text-stone-400 mt-1">{tasks.length} still to place.</p>
+        </div>
+      ) : (
+        <div className="glass-card rounded-xl divide-y divide-stone-100 overflow-hidden">
+          {visible.map(({ row, stop }) => (
+            <PutawayStopCard
+              key={row.id}
+              row={row}
+              binCode={row.assignedLocationId ? codeById.get(row.assignedLocationId) ?? `#${row.assignedLocationId}` : '—'}
+              sequence={stop?.sequence ?? null}
+              legDistanceM={stop?.legDistanceM ?? null}
+              reachable={stop?.reachable ?? true}
+              active={activeId === row.id}
+              disabled={!canPlace}
+              onActivate={() => setActiveId(row.id)}
+              onDone={() => setActiveId(null)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default PutawayWalkView;

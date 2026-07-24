@@ -1641,7 +1641,7 @@ export type Database = {
           alternatives: Json
           explanation: Json
           engine_version: string
-          status: 'suggested' | 'accepted' | 'overridden' | 'expired'
+          status: 'suggested' | 'assigned' | 'accepted' | 'overridden' | 'expired'
           chosen_location_id: number | null
           actor_id: string | null
           created_at: string
@@ -1658,14 +1658,14 @@ export type Database = {
           alternatives?: Json
           explanation: Json
           engine_version: string
-          status?: 'suggested' | 'accepted' | 'overridden' | 'expired'
+          status?: 'suggested' | 'assigned' | 'accepted' | 'overridden' | 'expired'
           chosen_location_id?: number | null
           actor_id?: string | null
           created_at?: string
           decided_at?: string | null
         }
         Update: {
-          status?: 'suggested' | 'accepted' | 'overridden' | 'expired'
+          status?: 'suggested' | 'assigned' | 'accepted' | 'overridden' | 'expired'
           chosen_location_id?: number | null
           actor_id?: string | null
           decided_at?: string | null
