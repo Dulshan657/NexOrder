@@ -14,13 +14,14 @@ interface StubOpts {
 function candidate(o: Partial<{
   location_id: number; code: string; capacity_slots: number | null; used_slots: number
   weight_capacity_kg: number | null; used_weight_kg: number; distance_from_dock_m: number | null
+  slot_kind: 'pallet' | 'carton' | null
 }> = {}): Record<string, unknown> {
   return {
     location_id: 1, code: 'B1', capacity_slots: 100, used_slots: 0,
     weight_capacity_kg: null, used_weight_kg: 0, graph_node_id: 1, access_offset_m: 0,
     has_same_product: false, distance_from_dock_m: 10, zone_id: null, zone_tag: null,
     zone_type: null, zone_priority_weight: null, zone_allowed_categories: null,
-    zone_max_utilization_pct: null, bin_categories: [], pick_visits_30d: 0, ...o,
+    zone_max_utilization_pct: null, bin_categories: [], pick_visits_30d: 0, slot_kind: null, ...o,
   }
 }
 
@@ -147,5 +148,72 @@ describe('generatePutawayTasks — cross-line overlay', () => {
     expect(inserted).toHaveLength(2)
     expect(inserted[0]).toMatchObject({ recommended_location_id: 7, quantity: 10 })
     expect(inserted[1]).toMatchObject({ recommended_location_id: null, quantity: 5 })
+  })
+})
+
+// ── Per-plate capacity + plate coherence (mig 00078) ─────────────────────────
+
+describe('generatePutawayTasks — unit loads', () => {
+  it('charges one position per pallet, not one per unit', async () => {
+    // A 10-position bay. Pre-00078 the first 130-unit pallet claimed 130 slots
+    // and everything after it spilled to manual placement.
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      candidates: [candidate({ location_id: 7, capacity_slots: 10, slot_kind: 'pallet' })],
+    })
+    const res = await generatePutawayTasks(admin, {
+      warehouseId: 9,
+      lines: [
+        { product_id: 1, quantity: 130, hu_type: 'pallet', hu_id: 100 },
+        { product_id: 1, quantity: 90, hu_type: 'pallet', hu_id: 101 },
+      ],
+      actorId: 'u1',
+    })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted).toHaveLength(2)
+    expect(inserted[0]).toMatchObject({ recommended_location_id: 7, quantity: 130 })
+    expect(inserted[1]).toMatchObject({ recommended_location_id: 7, quantity: 90 })
+  })
+
+  it('sends every line of a MIXED pallet to one bin, for one position total', async () => {
+    // Two bins. Without plate coherence the second line would score bin 8 (or
+    // claim a second position in bin 7); the pallet is one object, so it can't.
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      candidates: [
+        candidate({ location_id: 7, capacity_slots: 1, slot_kind: 'pallet', distance_from_dock_m: 5 }),
+        candidate({ location_id: 8, capacity_slots: 1, slot_kind: 'pallet', distance_from_dock_m: 50 }),
+      ],
+    })
+    const res = await generatePutawayTasks(admin, {
+      warehouseId: 9,
+      lines: [
+        { product_id: 1, quantity: 40, hu_type: 'pallet', hu_id: 500 },
+        { product_id: 1, quantity: 25, hu_type: 'pallet', hu_id: 500 },
+        { product_id: 1, quantity: 5, hu_type: 'pallet', hu_id: 500 },
+      ],
+      actorId: 'u1',
+    })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted).toHaveLength(3)
+    expect(inserted.map((r) => r.recommended_location_id)).toEqual([7, 7, 7])
+    expect(inserted.map((r) => r.quantity)).toEqual([40, 25, 5])
+    // The following lines say WHY they weren't scored.
+    expect((inserted[1].explanation as any).note).toContain('Follows its pallet')
+  })
+
+  it('still charges per-unit for a carton-denominated bin', async () => {
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      candidates: [candidate({ location_id: 7, capacity_slots: 10, slot_kind: 'carton' })],
+    })
+    const res = await generatePutawayTasks(admin, {
+      warehouseId: 9,
+      lines: [{ product_id: 1, quantity: 25, hu_type: 'pallet', hu_id: 100 }],
+      actorId: 'u1',
+    })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted[0]).toMatchObject({ recommended_location_id: 7, quantity: 10 })
+    expect(inserted[1]).toMatchObject({ recommended_location_id: null, quantity: 15 })
   })
 })

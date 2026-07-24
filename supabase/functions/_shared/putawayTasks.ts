@@ -20,7 +20,9 @@
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { planPutaway } from './wie/putawayPlan.ts'
 import { DEFAULT_WEIGHTS } from './wie/types.ts'
-import type { CandidateBin, LevelRole, RuleDefinition, ScoringWeights, SkuProfile } from './wie/types.ts'
+import { isUnitLoad, positionsRequired } from './wie/capacity.ts'
+import { ENGINE_VERSION } from './wie/version.ts'
+import type { CandidateBin, LevelRole, RuleDefinition, ScoringWeights, SkuProfile, SlotKind } from './wie/types.ts'
 
 // wie_putaway_candidates is ordered by dock distance with p_limit as a hard
 // cutoff — a layout with more placements than this silently hides its
@@ -37,6 +39,12 @@ export interface PutawayLineInput {
    *  level roles that suit the physical unit: a pallet belongs in bulk/reserve,
    *  a carton on a pick face. Omitted = unconstrained, exactly as before. */
   hu_type?: 'pallet' | 'carton'
+  /** WHICH plate (handling_units.id), when the caller knows it. A MIXED pallet
+   *  is several lines on ONE plate; without this they are planned independently
+   *  and can be sent to different bins, which is physically impossible and
+   *  charges the warehouse a position per line instead of per pallet (mig
+   *  00078). Omitted = plan this line on its own, exactly as before. */
+  hu_id?: number
 }
 
 /** Level roles each kind of handling unit belongs on (mig 00072 roles). */
@@ -159,6 +167,10 @@ export async function generatePutawayTasks(
   // shared bin: each line's candidates are loaded fresh from the snapshot, then
   // adjusted by what earlier lines in THIS receipt already placed.
   const overlay = new Map<number, { slots: number; weight: number }>()
+  // Where each PLATE has been sent. A mixed pallet is several lines on one
+  // handling unit; they must all follow the pallet to a single bin, and the
+  // pallet costs one position in total rather than one per line (mig 00078).
+  const plateBin = new Map<number, { locationId: number; code: string; slotKind: SlotKind }>()
   const recommendations: PutawayTaskResult[] = []
 
   for (const line of lines) {
@@ -196,6 +208,56 @@ export async function generatePutawayTasks(
       allowedLevelRoles,
     }
 
+    // ── This line rides on a plate an earlier line already placed ───────────
+    // Decided, not scored. Re-planning could send half a pallet somewhere else,
+    // and re-charging its position would make one pallet consume N. A plate in
+    // a bin that does NOT count unit loads still costs its units, so the
+    // overlay charge is skipped only for a genuine unit load.
+    const placedPlate = line.hu_id != null ? plateBin.get(line.hu_id) : undefined
+    if (placedPlate) {
+      const explanation = {
+        engineVersion: ENGINE_VERSION,
+        layoutId,
+        candidatesConsidered: 0,
+        hardFilters: [],
+        winner: null,
+        alternatives: [],
+        note: `Follows its ${line.hu_type ?? 'handling unit'} to ${placedPlate.code}, `
+          + 'where an earlier line of this receipt placed it.',
+      }
+
+      const prev = overlay.get(placedPlate.locationId) ?? { slots: 0, weight: 0 }
+      overlay.set(placedPlate.locationId, {
+        slots: prev.slots + (isUnitLoad(placedPlate.slotKind, line.hu_type)
+          ? 0
+          : line.quantity * sku.sizeFactor),
+        weight: prev.weight + line.quantity * (sku.weightKg ?? 0),
+      })
+
+      let recommendationId = 0
+      if (!dryRun) {
+        const { data: recRow, error: rErr } = await admin.from('wie_putaway_recommendations').insert({
+          warehouse_id: warehouseId, layout_id: layoutId, product_id: line.product_id, quantity: line.quantity,
+          goods_receipt_id: goodsReceiptId ?? null,
+          recommended_location_id: placedPlate.locationId,
+          handling_unit_id: line.hu_id ?? null,
+          alternatives: [], explanation,
+          engine_version: ENGINE_VERSION, actor_id: actorId,
+        } as any).select('id').single()
+        if (rErr) throw new Error(`failed to persist recommendation: ${rErr.message}`)
+        recommendationId = (recRow as any).id
+      }
+      recommendations.push({
+        recommendationId,
+        productId: line.product_id,
+        quantity: line.quantity,
+        recommendedLocationId: placedPlate.locationId,
+        alternatives: [],
+        explanation,
+      })
+      continue
+    }
+
     // Pallets are steered to bulk/reserve levels and cartons to pick faces,
     // without ever overriding the SKU's own hard role rule.
     const effectiveRoles = resolvePutawayRoles(allowedLevelRoles, line.hu_type)
@@ -213,6 +275,9 @@ export async function generatePutawayTasks(
         zoneId: r.zone_id ?? null,
         zoneTag: r.zone_tag ?? null,
         capacitySlots: r.capacity_slots != null ? Number(r.capacity_slots) : null,
+        // What capacity/fill are denominated in (mig 00078) — 'pallet' means a
+        // plate consumes one whole position rather than qty × size_factor.
+        slotKind: r.slot_kind ?? null,
         usedSlots: (Number(r.used_slots) || 0) + (pending?.slots ?? 0),
         weightCapacityKg: r.weight_capacity_kg != null ? Number(r.weight_capacity_kg) : null,
         usedWeightKg: (Number(r.used_weight_kg) || 0) + (pending?.weight ?? 0),
@@ -232,18 +297,31 @@ export async function generatePutawayTasks(
     })
 
     const plan = planPutaway({
-      layoutId, warehouseId, sku, quantity: line.quantity,
+      layoutId, warehouseId, sku, quantity: line.quantity, huType: line.hu_type,
       candidates, rules, compatibility, weights,
     })
+
+    const binByLocation = new Map(candidates.map((c) => [c.locationId, c]))
 
     for (const alloc of plan.allocations) {
       // Fold this placement into the overlay so later lines see the bin as fuller.
       if (alloc.locationId !== null) {
+        const bin = binByLocation.get(alloc.locationId)
         const prev = overlay.get(alloc.locationId) ?? { slots: 0, weight: 0 }
         overlay.set(alloc.locationId, {
-          slots: prev.slots + alloc.quantity * sku.sizeFactor,
+          // One position for a unit load, qty × size_factor otherwise — the
+          // same conversion the bin's own fill uses.
+          slots: prev.slots + positionsRequired(bin?.slotKind, alloc.quantity, sku.sizeFactor, line.hu_type),
           weight: prev.weight + alloc.quantity * (sku.weightKg ?? 0),
         })
+        // Remember where this plate went so its other lines follow it.
+        if (line.hu_id != null && !plateBin.has(line.hu_id)) {
+          plateBin.set(line.hu_id, {
+            locationId: alloc.locationId,
+            code: bin?.code ?? String(alloc.locationId),
+            slotKind: bin?.slotKind ?? null,
+          })
+        }
       }
 
       let recommendationId = 0
@@ -252,6 +330,7 @@ export async function generatePutawayTasks(
           warehouse_id: warehouseId, layout_id: layoutId, product_id: line.product_id, quantity: alloc.quantity,
           goods_receipt_id: goodsReceiptId ?? null,
           recommended_location_id: alloc.locationId,
+          handling_unit_id: line.hu_id ?? null,
           alternatives: alloc.alternatives, explanation: alloc.explanation,
           engine_version: (alloc.explanation as any).engineVersion, actor_id: actorId,
         } as any).select('id').single()

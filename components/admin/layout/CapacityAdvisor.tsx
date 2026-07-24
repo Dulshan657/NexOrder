@@ -5,19 +5,24 @@
 
 import { PackageCheck, TriangleAlert } from 'lucide-react'
 import { STORAGE_UNIT } from './labels'
+import { capacityUnitLabel } from '@/supabase/functions/_shared/wie/capacity'
+import type { SlotKind } from '@/supabase/functions/_shared/wie/capacity'
 
 interface CapacityAdvisorProps {
-  /** Σ onHand × sizeFactor of the warehouse's current stock. */
+  /** The warehouse's current stock, counted in the SAME unit as providedSlots. */
   requiredSlots: number
   /** Σ capacity_slots of the bins drawn on the canvas. */
   providedSlots: number
   /** Number of bins drawn (for the "add ~N bins" estimate). */
   binCount: number
+  /** What both figures are denominated in, so the copy names the right unit
+   *  (mig 00078). */
+  slotKind?: SlotKind
   hasStock: boolean
   loading?: boolean
 }
 
-export function CapacityAdvisor({ requiredSlots, providedSlots, binCount, hasStock, loading }: CapacityAdvisorProps) {
+export function CapacityAdvisor({ requiredSlots, providedSlots, binCount, slotKind, hasStock, loading }: CapacityAdvisorProps) {
   if (loading) {
     return <div className="h-16 rounded-xl border border-stone-200 bg-white animate-pulse" />
   }
@@ -35,6 +40,7 @@ export function CapacityAdvisor({ requiredSlots, providedSlots, binCount, hasSto
   const pct = requiredSlots > 0 ? Math.min(100, (providedSlots / requiredSlots) * 100) : 100
   const typicalBin = binCount > 0 ? providedSlots / binCount : 0
   const extraBins = deficit > 0 && typicalBin > 0 ? Math.ceil(deficit / typicalBin) : 0
+  const unit = capacityUnitLabel(slotKind)
 
   return (
     <div className={`rounded-xl border p-3 ${sufficient ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-300 bg-amber-50/60'}`}>
@@ -55,11 +61,11 @@ export function CapacityAdvisor({ requiredSlots, providedSlots, binCount, hasSto
         <div className={`h-full ${sufficient ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${pct}%` }} />
       </div>
       <p className="mt-1.5 text-[11px] text-stone-600">
-        {providedSlots.toFixed(0)} of {requiredSlots.toFixed(0)} slots needed for current stock
+        {providedSlots.toFixed(0)} of {requiredSlots.toFixed(0)} {unit} needed for current stock
       </p>
       {!sufficient && (
         <p className="mt-1 text-[11px] font-medium text-amber-800">
-          Short by {deficit.toFixed(0)} slots — add {extraBins > 0 ? `~${extraBins} more ${extraBins === 1 ? STORAGE_UNIT.lower : STORAGE_UNIT.lowerPlural}` : 'more storage'} or increase bin capacity.
+          Short by {deficit.toFixed(0)} {unit} — add {extraBins > 0 ? `~${extraBins} more ${extraBins === 1 ? STORAGE_UNIT.lower : STORAGE_UNIT.lowerPlural}` : 'more storage'} or increase bin capacity.
         </p>
       )}
     </div>

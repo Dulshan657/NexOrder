@@ -8,6 +8,8 @@ import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
 import { useBalancesByWarehouse } from '@/hooks/queries/useInventoryBalances'
 import { useProductVelocity, useLocationTraffic } from '@/hooks/queries/useWieAnalytics'
 import { useSlottingSuggestions } from '@/hooks/queries/useSlottingSuggestions'
+import { positionsUsed } from '@/supabase/functions/_shared/wie/capacity'
+import type { OccupancyRow } from '@/supabase/functions/_shared/wie/capacity'
 
 /** One product's aggregated stock in a bin (batches summed). */
 export interface BinContentRow {
@@ -84,8 +86,16 @@ export function useWarehouseViewerModel(
     for (const v of velocity) velocityByProduct.set(v.productId, v.velocityClass)
 
     // Aggregate balances → per-bin, per-product rows (summing batches).
+    // `slots` stays per-unit here: it is a per-PRODUCT display figure and what
+    // picks the bin's dominant SKU. A bin's OCCUPANCY is a different number
+    // (a pallet takes one whole position, mig 00078), so the raw rows are kept
+    // alongside and converted per bin below.
     const perBinProduct = new Map<number, Map<number, BinContentRow>>()
+    const occupancyByLocation = new Map<number, OccupancyRow[]>()
     for (const b of balances) {
+      const occ = occupancyByLocation.get(b.locationId) ?? []
+      occ.push({ onHand: b.onHand, sizeFactor: b.sizeFactor, huId: b.huId ?? null, huType: b.huType ?? null })
+      occupancyByLocation.set(b.locationId, occ)
       let byProduct = perBinProduct.get(b.locationId)
       if (!byProduct) {
         byProduct = new Map<number, BinContentRow>()
@@ -131,7 +141,7 @@ export function useWarehouseViewerModel(
       const rows = Array.from(perBinProduct.get(loc.id)?.values() ?? [])
       binContents.set(loc.id, rows)
 
-      const usedSlots = rows.reduce((s, r) => s + r.slots, 0)
+      const usedSlots = positionsUsed(loc.slotKind, occupancyByLocation.get(loc.id) ?? [])
       const cap = loc.capacitySlots
       binFillPct.set(loc.id, cap != null && cap > 0 ? usedSlots / cap : null)
 

@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { toProduct } from '@/lib/adapters'
 import type { Product, PutawayExplanation } from '@/types'
+import type { HuType } from '@/supabase/functions/_shared/wie/capacity'
 
 /** The goods receipt a queued line arrived on, when it was created by a receipt
  *  (adjustments and transfer-ins have none). */
@@ -24,13 +25,20 @@ export interface PendingPutawayRow {
   createdAt: string
   product: Product | null
   receipt: PutawayReceiptRef | null
+  /** The plate this line is on (mig 00078), when known. Drives the manual bin
+   *  picker's capacity unit — a pallet takes ONE position in a pallet bay — and
+   *  the plate badge. NULL for every pre-00078 row and for arrival paths that
+   *  don't name a plate. */
+  huId: number | null
+  huType: HuType
+  huCode: string | null
 }
 
 // products is readable by every authenticated user; goods_receipts is readable
 // by Admin/Manager/Warehouse (goods_receipts_select_ops, mig 00037) — exactly
 // the roles that can open the Putaway tab, so this join never trips RLS here.
 const QUEUE_SELECT =
-  '*, products(*, product_uoms(*)), goods_receipts(id, reference, received_date, suppliers(name))'
+  '*, products(*, product_uoms(*)), goods_receipts(id, reference, received_date, suppliers(name)), handling_units(id, code, hu_type)'
 
 function toReceiptRef(row: any): PutawayReceiptRef | null {
   if (!row) return null
@@ -60,6 +68,9 @@ export async function getPendingPutaways(warehouseId: number): Promise<PendingPu
     createdAt: row.created_at,
     product: row.products ? toProduct(row.products) : null,
     receipt: toReceiptRef(row.goods_receipts),
+    huId: row.handling_units?.id ?? null,
+    huType: row.handling_units?.hu_type ?? null,
+    huCode: row.handling_units?.code ?? null,
   }))
 }
 

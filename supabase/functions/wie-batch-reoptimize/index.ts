@@ -50,6 +50,8 @@ function toCandidateBin(r: any): CandidateBin {
     zoneId: r.zone_id ?? null,
     zoneTag: r.zone_tag ?? null,
     capacitySlots: r.capacity_slots != null ? Number(r.capacity_slots) : null,
+    // What capacity/fill are denominated in (mig 00078).
+    slotKind: r.slot_kind ?? null,
     usedSlots: Number(r.used_slots) || 0,
     weightCapacityKg: r.weight_capacity_kg != null ? Number(r.weight_capacity_kg) : null,
     usedWeightKg: Number(r.used_weight_kg) || 0,

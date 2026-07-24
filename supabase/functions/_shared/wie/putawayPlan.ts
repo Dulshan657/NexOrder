@@ -7,10 +7,16 @@
 // greedily fills the best-scored bins up to each one's slot AND weight headroom.
 // Any residual no bin can hold becomes a null-bin allocation (manual placement).
 //
+// The one exception is a UNIT LOAD — a pallet arriving into a pallet-denominated
+// bin (mig 00078). It is a single physical object occupying one whole position,
+// so it is never split: it goes entire into the best bin with a free position,
+// or entire to manual placement.
+//
 // Pure: no I/O. The caller loads candidates/rules/weights and persists the plan.
 
 import { buildExplanation } from './explain.ts'
 import { filterCandidates, scoreCandidates } from './scoring.ts'
+import { isUnitLoad } from './capacity.ts'
 import type { CandidateBin, PutawayAllocation, PutawayPlan, PutawayRequest } from './types.ts'
 
 const EPS = 1e-6
@@ -39,6 +45,29 @@ export function planPutaway(request: PutawayRequest): PutawayPlan {
     if (remaining <= EPS) break
     const bin = binById.get(cand.locationId)
     if (!bin) continue
+
+    // A UNIT LOAD is one physical object: it consumes a whole position and
+    // cannot be split across bins, so it either goes here entire or we move on
+    // to the next-best bin (and, failing every bin, to manual placement).
+    if (isUnitLoad(bin.slotKind, request.huType)) {
+      const freePositions = bin.capacitySlots === null ? Infinity : bin.capacitySlots - bin.usedSlots
+      if (freePositions + EPS < 1) continue
+      const weightOk = bin.weightCapacityKg === null || weightKg === null || weightKg <= 0 ||
+        bin.usedWeightKg + remaining * weightKg <= bin.weightCapacityKg + EPS
+      if (!weightOk) continue
+
+      allocations.push({
+        locationId: bin.locationId,
+        quantity: remaining,
+        alternatives,
+        explanation,
+        needsManualPlacement: false,
+      })
+      bin.usedSlots += 1
+      if (weightKg !== null) bin.usedWeightKg += remaining * weightKg
+      remaining = 0
+      break
+    }
 
     // Base units that fit here, bounded by BOTH slot and weight headroom.
     // A null limit (or unknown SKU weight) means "no constraint" — Infinity.

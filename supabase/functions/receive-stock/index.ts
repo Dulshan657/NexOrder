@@ -345,10 +345,20 @@ serve(async (req: Request) => {
         )
         putaway = await generatePutawayTasks(admin, {
           warehouseId: destLocationId,
+          // hu_id rides along too, so the several lines of a MIXED pallet are
+          // recognised as one physical object: they all follow it to a single
+          // bin and it consumes one position, not one per line (mig 00078).
           lines: baseLines.map((l, i) => ({
             product_id: l.product_id,
             quantity: l.quantity,
+            // Only an EXPLICITLY built plate declares its type. An auto-minted
+            // one takes createPlates' inference from the destination, which for
+            // a warehouse ROOT (slot_kind always NULL) is the 'pallet' default —
+            // meaningless, and feeding it here would both steer the line to
+            // bulk/reserve levels and claim a whole position for it. Undefined
+            // keeps the pre-00078 per-unit treatment for those lines.
             hu_type: lines[i].plate_key ? typeByKey.get(lines[i].plate_key!) : undefined,
+            hu_id: (platedLines[i] as any)?.handling_unit_id as number | undefined,
           })),
           actorId: auth.userId,
           goodsReceiptId: (result as any)?.receipt_id as number | undefined,

@@ -17,6 +17,9 @@ function row(over: Partial<PendingPutawayRow> = {}): PendingPutawayRow {
     createdAt: '2026-07-20T00:00:00Z',
     product: { id: 1, name: 'Fish Sauce', sku: 'FS-1' } as Product,
     receipt: { id: 9, reference: 'GRN-9', receivedDate: '2026-07-20', supplierName: 'Acme' },
+    huId: null,
+    huType: null,
+    huCode: null,
     ...over,
   }
 }

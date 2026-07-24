@@ -53,9 +53,9 @@ const zone = (over: Partial<ZoneProfile> = {}): ZoneProfile => ({
 describe('binFillFromBalances', () => {
   it('sums on_hand × size_factor per location', () => {
     const fill = binFillFromBalances([
-      { locationId: 10, productId: 1, productName: 'a', sizeFactor: 2, onHand: 5, allocated: 0 },
-      { locationId: 10, productId: 2, productName: 'b', sizeFactor: 1, onHand: 3, allocated: 0 },
-      { locationId: 11, productId: 1, productName: 'a', sizeFactor: 2, onHand: 1, allocated: 0 },
+      { locationId: 10, productId: 1, productName: 'a', sizeFactor: 2, onHand: 5, allocated: 0, huId: null, huType: null },
+      { locationId: 10, productId: 2, productName: 'b', sizeFactor: 1, onHand: 3, allocated: 0, huId: null, huType: null },
+      { locationId: 11, productId: 1, productName: 'a', sizeFactor: 2, onHand: 1, allocated: 0, huId: null, huType: null },
     ])
     expect(fill.get(10)).toBe(13)
     expect(fill.get(11)).toBe(2)
@@ -187,5 +187,74 @@ describe('evaluateBinWarnings', () => {
       unitWeightKg: 5,
     })
     expect(warnings.map((w) => w.code)).toEqual(['capacity', 'zone_category', 'weight', 'not_storage'])
+  })
+})
+
+// ── Per-plate capacity (mig 00078) ───────────────────────────────────────────
+// The client half of the rule: the picker's fill and its capacity warning must
+// agree with the engine, or a pallet bay the engine just called fine gets a red
+// "over capacity" banner from the manual picker.
+
+const balance = (over: Partial<Parameters<typeof binFillFromBalances>[0][number]> = {}) => ({
+  locationId: 10, productId: 1, productName: 'a', sizeFactor: 1,
+  onHand: 130, allocated: 0, huId: 7, huType: 'pallet' as const, ...over,
+})
+
+describe('binFillFromBalances — pallet bins', () => {
+  const palletBins = new Map([[10, { slotKind: 'pallet' as const }]])
+
+  it('counts one position per pallet, not one per unit', () => {
+    expect(binFillFromBalances([balance()], palletBins).get(10)).toBe(1)
+  })
+
+  it('counts a mixed-SKU pallet once', () => {
+    const fill = binFillFromBalances(
+      [balance({ productId: 1, onHand: 40 }), balance({ productId: 2, onHand: 25 })],
+      palletBins,
+    )
+    expect(fill.get(10)).toBe(1)
+  })
+
+  it('keeps per-unit maths for a carton bin', () => {
+    expect(binFillFromBalances([balance()], new Map([[10, { slotKind: 'carton' as const }]])).get(10)).toBe(130)
+  })
+
+  it('keeps per-unit maths when no location map is supplied', () => {
+    expect(binFillFromBalances([balance()]).get(10)).toBe(130)
+  })
+})
+
+describe('evaluateBinWarnings — pallet bins', () => {
+  it('does not cry over-capacity for a pallet into a bay with a free position', () => {
+    const warnings = evaluateBinWarnings({
+      bin: bin({ capacitySlots: 10, slotKind: 'pallet' }),
+      product: product(),
+      baseQty: 130,
+      usedSlots: 3,
+      huType: 'pallet',
+    })
+    expect(warnings.find((w) => w.code === 'capacity')).toBeUndefined()
+  })
+
+  it('still warns when every position is taken, and says "positions"', () => {
+    const warnings = evaluateBinWarnings({
+      bin: bin({ capacitySlots: 10, slotKind: 'pallet' }),
+      product: product(),
+      baseQty: 130,
+      usedSlots: 10,
+      huType: 'pallet',
+    })
+    expect(warnings.find((w) => w.code === 'capacity')?.message).toContain('positions')
+  })
+
+  it('keeps per-unit maths — and "slots" — for a carton bin', () => {
+    const warnings = evaluateBinWarnings({
+      bin: bin({ capacitySlots: 10, slotKind: 'carton' }),
+      product: product(),
+      baseQty: 130,
+      usedSlots: 0,
+      huType: 'pallet',
+    })
+    expect(warnings.find((w) => w.code === 'capacity')?.message).toContain('slots')
   })
 })

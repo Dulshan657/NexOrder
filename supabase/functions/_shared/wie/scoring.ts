@@ -7,6 +7,7 @@
 
 import { evaluateRules, type RuleContext } from './rules.ts'
 import { buildCompatibilityIndex, worstCompatibility } from './compat.ts'
+import { capacityUnitLabel, positionsRequired } from './capacity.ts'
 import type {
   CandidateBin,
   CandidateBreakdown,
@@ -25,9 +26,13 @@ function effectiveDistance(bin: CandidateBin): number {
   return (bin.distanceFromDockM ?? Infinity) + bin.accessOffsetM
 }
 
-/** Slots this putaway consumes. */
-function requiredSlots(request: PutawayRequest): number {
-  return request.quantity * request.sku.sizeFactor
+/** Slots this putaway consumes IN THIS BIN.
+ *
+ *  Per-candidate rather than per-request since mig 00078: the same arriving
+ *  pallet costs one whole position in a pallet-denominated bay and
+ *  quantity × size_factor on a carton shelf. See capacity.ts. */
+function requiredSlots(request: PutawayRequest, bin: CandidateBin): number {
+  return positionsRequired(bin.slotKind, request.quantity, request.sku.sizeFactor, request.huType)
 }
 
 /** Weight this putaway adds, kg; null when the SKU has no weight on file. */
@@ -63,7 +68,6 @@ interface RejectionAccumulator {
 /** Stage 1 — filter invalid locations, capturing structured rejection reasons. */
 export function filterCandidates(request: PutawayRequest, options: FilterOptions = {}): FilterResult {
   const capacityMode = options.capacityMode ?? 'reject'
-  const need = requiredSlots(request)
   const needWeight = requiredWeight(request)
   const valid: CandidateBin[] = []
   const softByLocation = new Map<number, RuleTrigger[]>()
@@ -90,6 +94,10 @@ export function filterCandidates(request: PutawayRequest, options: FilterOptions
   }
 
   for (const bin of request.candidates) {
+    // What this line costs HERE — a whole position in a pallet bay, per-unit
+    // slots anywhere else, so it has to be computed inside the loop.
+    const need = requiredSlots(request, bin)
+
     // Built-in: unreachable from any dock.
     if (bin.distanceFromDockM === null) {
       reject('unreachable', null, 'unreachable', 'No route from a receiving dock', bin,
@@ -102,8 +110,9 @@ export function filterCandidates(request: PutawayRequest, options: FilterOptions
     // a bin with zero headroom gets no allocation downstream, so it's harmless.
     if (capacityMode === 'reject' && bin.capacitySlots !== null && bin.usedSlots + need > bin.capacitySlots + 1e-6) {
       const headroom = Math.max(0, bin.capacitySlots - bin.usedSlots)
+      const unit = capacityUnitLabel(bin.slotKind)
       reject('capacity', null, 'capacity', 'Not enough capacity', bin,
-        `needs ${need.toFixed(2)} slots, ${headroom.toFixed(2)} free`)
+        `needs ${need.toFixed(2)} ${unit}, ${headroom.toFixed(2)} free`)
       continue
     }
 
@@ -194,7 +203,6 @@ export function scoreCandidates(request: PutawayRequest, filter: FilterResult): 
   const { valid, softByLocation } = filter
   if (valid.length === 0) return []
 
-  const need = requiredSlots(request)
   const w = request.weights
 
   // Distance normalization bounds across the survivor set.
@@ -211,6 +219,8 @@ export function scoreCandidates(request: PutawayRequest, filter: FilterResult): 
 
   const breakdowns = valid.map((bin): CandidateBreakdown => {
     const factors: FactorBreakdown[] = []
+    // Per-bin since 00078 — see requiredSlots.
+    const need = requiredSlots(request, bin)
 
     // Travel distance — nearer the dock is better.
     const dist = effectiveDistance(bin)
@@ -235,7 +245,7 @@ export function scoreCandidates(request: PutawayRequest, filter: FilterResult): 
       weighted: fitNorm * w.capacityFit,
       detail: headroom === null
         ? 'uncapped bin'
-        : `${need.toFixed(2)} of ${headroom.toFixed(2)} free slots used`,
+        : `${need.toFixed(2)} of ${headroom.toFixed(2)} free ${capacityUnitLabel(bin.slotKind)} used`,
     })
 
     // Grouping — consolidate with existing stock of the same SKU.

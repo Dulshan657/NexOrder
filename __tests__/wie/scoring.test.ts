@@ -247,3 +247,31 @@ describe('recommendPutaway', () => {
     expect(rec.explanation.hardFilters[0].code).toBe('unreachable')
   })
 })
+
+// ── Per-plate capacity (mig 00078) ───────────────────────────────────────────
+
+describe('filterCandidates — unit loads', () => {
+  const palletReq = (candidates: CandidateBin[], quantity: number): PutawayRequest =>
+    ({ ...request(candidates, [], quantity), huType: 'pallet' })
+
+  it('admits a pallet a 10-position bay can hold, however many units are on it', () => {
+    // Pre-00078 this was Σ 130 × size_factor = 130 slots against 10 → rejected,
+    // which is why 17 of WIE-DEMO's 36 bins read as over capacity.
+    const res = filterCandidates(palletReq([bin(1, { slotKind: 'pallet', capacitySlots: 10, usedSlots: 3 })], 130))
+    expect(res.valid).toHaveLength(1)
+    expect(res.hardFilters).toHaveLength(0)
+  })
+
+  it('still rejects a pallet when every position is taken', () => {
+    const res = filterCandidates(palletReq([bin(1, { slotKind: 'pallet', capacitySlots: 10, usedSlots: 10 })], 130))
+    expect(res.valid).toHaveLength(0)
+    expect(res.hardFilters[0].code).toBe('capacity')
+    expect(res.hardFilters[0].sample[0].reason).toContain('positions')
+  })
+
+  it('keeps per-unit maths — and per-unit wording — for a carton bin', () => {
+    const res = filterCandidates(palletReq([bin(1, { slotKind: 'carton', capacitySlots: 10, usedSlots: 0 })], 130))
+    expect(res.valid).toHaveLength(0)
+    expect(res.hardFilters[0].sample[0].reason).toContain('slots')
+  })
+})

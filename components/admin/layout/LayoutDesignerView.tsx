@@ -92,6 +92,17 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     return map
   }, [locationsQuery.data])
 
+  // Which unit the drawn bins measure capacity in. A layout of pallet bays is
+  // counted in POSITIONS (a pallet takes one, mig 00078), so the advisor must
+  // compare like with like — otherwise 36 pallets in 36 positions reads as a
+  // 430-slot shortfall. Majority wins; a mixed layout falls back to per-unit,
+  // which over-states demand and is therefore the safe side to be wrong on.
+  const palletDenominated = useMemo(() => {
+    const capped = state.placements.filter((p) => (p.capacitySlots ?? 0) > 0)
+    if (capped.length === 0) return false
+    return capped.filter((p) => p.slotKind === 'pallet').length * 2 > capped.length
+  }, [state.placements])
+
   // locationId → code, for the object inspector's "linked staging location" line.
   const locationCodeById = useMemo(() => {
     const map = new Map<number, string>()
@@ -493,9 +504,10 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
               {isDraft && <PublishChecklist readiness={readiness} onAutoConnect={canAutoConnect ? handleAutoConnect : undefined} />}
               {isDraft && (
                 <CapacityAdvisor
-                  requiredSlots={stockSummary.requiredSlots}
+                  requiredSlots={palletDenominated ? stockSummary.requiredPositions : stockSummary.requiredSlots}
                   providedSlots={state.placements.reduce((s, p) => s + (p.capacitySlots ?? 0), 0)}
                   binCount={state.placements.length}
+                  slotKind={palletDenominated ? 'pallet' : 'carton'}
                   hasStock={stockSummary.hasStock}
                   loading={stockSummary.isLoading}
                 />

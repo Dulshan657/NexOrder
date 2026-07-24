@@ -2,7 +2,7 @@
 // rules that filtered candidates out. Purely presentational; the engine already
 // computed the numbers, this just makes them legible to the operator.
 
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, PackageSearch } from 'lucide-react'
 import type { CandidateBreakdown, PutawayExplanation } from '@/types'
 
 const FACTOR_LABEL: Record<string, string> = {
@@ -36,7 +36,7 @@ function CandidateFactors({ candidate }: { candidate: CandidateBreakdown }) {
 }
 
 export function PutawayExplanationCard({ explanation }: { explanation: PutawayExplanation }) {
-  const { winner, alternatives, hardFilters, candidatesConsidered } = explanation
+  const { winner, alternatives, hardFilters, candidatesConsidered, note } = explanation
   // The hard never-mix rule (mig 00072): a SKU may only land on a level whose
   // role it allows. When this is the reason NOTHING came back, that's the
   // queue-wedging case the manual override exists for — surface it up front,
@@ -63,10 +63,20 @@ export function PutawayExplanationCard({ explanation }: { explanation: PutawayEx
         </div>
       )}
 
-      <p className="text-stone-500">
-        Considered {candidatesConsidered} bin{candidatesConsidered === 1 ? '' : 's'}.
-        {winner ? ` Best score ${winner.totalScore.toFixed(2)}.` : ' No eligible bin.'}
-      </p>
+      {/* A destination decided WITHOUT scoring — today, a line riding on a plate
+          an earlier line of the same receipt already placed (mig 00078). Saying
+          so beats showing a bare "considered 0 bins, no eligible bin". */}
+      {note ? (
+        <div className="flex items-start gap-2 p-2.5 rounded-lg bg-sky-50 border border-sky-200 text-sky-800">
+          <PackageSearch className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+          <p>{note}</p>
+        </div>
+      ) : (
+        <p className="text-stone-500">
+          Considered {candidatesConsidered} bin{candidatesConsidered === 1 ? '' : 's'}.
+          {winner ? ` Best score ${winner.totalScore.toFixed(2)}.` : ' No eligible bin.'}
+        </p>
+      )}
 
       {winner && (
         <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">

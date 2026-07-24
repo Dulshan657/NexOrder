@@ -24,6 +24,7 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { buildWalkGraph, snapPlacementToNode } from '../_shared/wie/graph.ts'
 import { simulateLayout, diffKpis, type SimBin, type SimOrder, type SimStop } from '../_shared/wie/simulate.ts'
+import { positionsUsed, type OccupancyRow, type SlotKind } from '../_shared/wie/capacity.ts'
 import type { GraphEdge, GraphNode, WalkCell, WarehouseGraph } from '../_shared/wie/types.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
@@ -57,20 +58,40 @@ interface LayoutContext {
   bins: SimBin[]
 }
 
-/** Current fill (slots) per placed bin, chunked so a big IN() list stays legal. */
-async function loadUsedSlots(admin: any, locIds: number[]): Promise<Map<number, number>> {
-  const used = new Map<number, number>()
+/** Current fill per placed bin, chunked so a big IN() list stays legal.
+ *
+ *  Denominated in each bin's own unit: a pallet in a pallet-slot bay costs one
+ *  whole position, everything else costs qty × size_factor (mig 00078). The
+ *  plate join is what lets a mixed-SKU pallet count once. */
+async function loadUsedSlots(
+  admin: any,
+  locIds: number[],
+  slotKindByLocation: Map<number, SlotKind>,
+): Promise<Map<number, number>> {
+  const rowsByLocation = new Map<number, OccupancyRow[]>()
   for (let i = 0; i < locIds.length; i += 300) {
     const chunk = locIds.slice(i, i + 300)
     const rows = await fetchAll(
       (f, t) => admin.from('inventory_balances')
-        .select('location_id, on_hand, products(size_factor)').gt('on_hand', 0).in('location_id', chunk).range(f, t),
+        .select('location_id, on_hand, handling_unit_id, products(size_factor), handling_units(hu_type)')
+        .gt('on_hand', 0).in('location_id', chunk).range(f, t),
       'inventory_balances',
     )
     for (const b of rows) {
-      const slots = Number(b.on_hand) * (Number(b.products?.size_factor) || 1)
-      used.set(b.location_id, (used.get(b.location_id) ?? 0) + slots)
+      const list = rowsByLocation.get(b.location_id) ?? []
+      list.push({
+        onHand: Number(b.on_hand),
+        sizeFactor: Number(b.products?.size_factor) || 1,
+        huId: b.handling_unit_id != null ? Number(b.handling_unit_id) : null,
+        huType: b.handling_units?.hu_type ?? null,
+      })
+      rowsByLocation.set(b.location_id, list)
     }
+  }
+
+  const used = new Map<number, number>()
+  for (const [locationId, rows] of rowsByLocation) {
+    used.set(locationId, positionsUsed(slotKindByLocation.get(locationId) ?? null, rows))
   }
   return used
 }
@@ -84,7 +105,7 @@ async function buildLayoutContext(admin: any, layoutId: number, cellSizeM: numbe
   const placementByLocation = new Map<number, { nodeId: number | null; offset: number }>()
   let graph: WarehouseGraph
   let dockNodeId: number | null
-  let binSource: Array<{ location_id: number; capacity_slots: number | null }>
+  let binSource: Array<{ location_id: number; capacity_slots: number | null; slot_kind: SlotKind }>
 
   if (nodeRows.length > 0) {
     // Published layout — use the persisted graph (real DB node ids).
@@ -98,11 +119,11 @@ async function buildLayoutContext(admin: any, layoutId: number, cellSizeM: numbe
     dockNodeId = nodes.find((n) => n.nodeType === 'dock')?.id ?? null
 
     const placeRows = await fetchAll(
-      (f, t) => admin.from('layout_placements').select('location_id, graph_node_id, access_offset_m, locations(capacity_slots)').eq('layout_id', layoutId).not('graph_node_id', 'is', null).range(f, t),
+      (f, t) => admin.from('layout_placements').select('location_id, graph_node_id, access_offset_m, locations(capacity_slots, slot_kind)').eq('layout_id', layoutId).not('graph_node_id', 'is', null).range(f, t),
       'layout_placements',
     )
     for (const p of placeRows) placementByLocation.set(p.location_id, { nodeId: p.graph_node_id ?? null, offset: Number(p.access_offset_m) || 0 })
-    binSource = placeRows.map((p) => ({ location_id: p.location_id, capacity_slots: p.locations?.capacity_slots != null ? Number(p.locations.capacity_slots) : null }))
+    binSource = placeRows.map((p) => ({ location_id: p.location_id, capacity_slots: p.locations?.capacity_slots != null ? Number(p.locations.capacity_slots) : null, slot_kind: p.locations?.slot_kind ?? null }))
   } else {
     // Draft layout — build the graph in memory from its objects + placements, the
     // same way publish-layout does, so a draft can be scored before publishing.
@@ -111,7 +132,7 @@ async function buildLayoutContext(admin: any, layoutId: number, cellSizeM: numbe
       'layout_objects',
     )
     const placeRows = await fetchAll(
-      (f, t) => admin.from('layout_placements').select('location_id, floor, x, y, w, h, locations(capacity_slots)').eq('layout_id', layoutId).range(f, t),
+      (f, t) => admin.from('layout_placements').select('location_id, floor, x, y, w, h, locations(capacity_slots, slot_kind)').eq('layout_id', layoutId).range(f, t),
       'layout_placements',
     )
 
@@ -139,10 +160,14 @@ async function buildLayoutContext(admin: any, layoutId: number, cellSizeM: numbe
       const snap = snapPlacementToNode({ locationId: p.location_id, floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h }, graph.nodes, cellSizeM)
       placementByLocation.set(p.location_id, { nodeId: snap.graphNodeId, offset: snap.accessOffsetM })
     }
-    binSource = placeRows.map((p) => ({ location_id: p.location_id, capacity_slots: p.locations?.capacity_slots != null ? Number(p.locations.capacity_slots) : null }))
+    binSource = placeRows.map((p) => ({ location_id: p.location_id, capacity_slots: p.locations?.capacity_slots != null ? Number(p.locations.capacity_slots) : null, slot_kind: p.locations?.slot_kind ?? null }))
   }
 
-  const usedByLoc = await loadUsedSlots(admin, binSource.map((b) => b.location_id))
+  const usedByLoc = await loadUsedSlots(
+    admin,
+    binSource.map((b) => b.location_id),
+    new Map(binSource.map((b) => [b.location_id, b.slot_kind])),
+  )
   const bins: SimBin[] = binSource.map((b) => ({
     locationId: b.location_id,
     graphNodeId: placementByLocation.get(b.location_id)?.nodeId ?? null,

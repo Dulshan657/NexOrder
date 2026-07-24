@@ -6,6 +6,10 @@
 // This lets the same code run inside Deno edge functions AND the Vite frontend.
 // The rule is enforced by __tests__/wie/purity.test.ts.
 
+import type { HuType, SlotKind } from './capacity.ts'
+
+export type { HuType, SlotKind }
+
 // ── Spatial primitives ───────────────────────────────────────────────────────
 
 export type GraphNodeType = 'walk' | 'junction' | 'dock' | 'lift'
@@ -105,7 +109,14 @@ export interface CandidateBin {
   zoneTag: string | null
   /** Soft capacity in slots (locations.capacity_slots); null = uncapped. */
   capacitySlots: number | null
-  /** Current fill in slots: Σ(on_hand × size_factor) already in this bin. */
+  /** What `capacitySlots`/`usedSlots` are DENOMINATED in (locations.slot_kind).
+   *  'pallet' ⇒ they count whole pallet positions and a plate consumes one of
+   *  them whatever is on it (see capacity.ts); anything else ⇒ per-unit slots.
+   *  Optional so pre-existing call sites/tests that build a CandidateBin
+   *  literal without it keep compiling (they get the per-unit behaviour). */
+  slotKind?: SlotKind
+  /** Current fill: Σ(on_hand × size_factor), or the pallet count in a
+   *  pallet-denominated bin (mig 00078). See capacity.ts `positionsUsed`. */
   usedSlots: number
   /** Weight limit in kg (locations.weight_capacity_kg); null = no limit. */
   weightCapacityKg: number | null
@@ -235,6 +246,13 @@ export interface PutawayRequest {
   sku: SkuProfile
   /** Quantity being put away, in BASE units. */
   quantity: number
+  /** The handling unit this quantity arrived on (mig 00075). It describes the
+   *  arriving LOAD, not the SKU, which is why it sits here rather than on
+   *  SkuProfile — the same product can arrive as a pallet today and loose
+   *  cartons tomorrow. A pallet going into a pallet-denominated bin consumes
+   *  one whole position and becomes INDIVISIBLE in planPutaway. Undefined =
+   *  loose/unknown, exactly the pre-00078 behaviour. */
+  huType?: HuType
   candidates: CandidateBin[]
   rules: RuleDefinition[]
   /** Global category-compatibility matrix (Phase 3); empty ⇒ no gating. */
@@ -286,6 +304,11 @@ export interface PutawayExplanation {
   hardFilters: HardFilterReason[]
   winner: CandidateBreakdown | null
   alternatives: CandidateBreakdown[]
+  /** Set when the destination was decided WITHOUT scoring, so the operator is
+   *  not shown an empty "no eligible bin" card. Today the only such case is a
+   *  line riding on a plate an earlier line of the same receipt already placed
+   *  (mig 00078) — a pallet goes to exactly one bin, so its lines follow it. */
+  note?: string
 }
 
 export interface PutawayRecommendation {

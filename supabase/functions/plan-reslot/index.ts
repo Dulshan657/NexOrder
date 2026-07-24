@@ -28,6 +28,7 @@ import { buildWalkGraph, computeAnchorDistances, snapPlacementToNode } from '../
 import { buildWalkableCells } from '../_shared/wie/publishReadiness.ts'
 import { planReslot, warehouseStockScope, type ReslotDemand } from '../_shared/wie/reslot.ts'
 import { DEFAULT_WEIGHTS } from '../_shared/wie/types.ts'
+import { positionsUsed, type OccupancyRow } from '../_shared/wie/capacity.ts'
 import type { CandidateBin, CompatibilityRule, RuleDefinition, ScoringWeights, SkuProfile } from '../_shared/wie/types.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
@@ -98,7 +99,7 @@ serve(async (req: Request) => {
     // ── Candidate bin metadata (capacity, zone, code) ────────────────────────
     const { data: binRows } = candidateLocIds.length
       ? await admin.from('locations')
-          .select('id, code, capacity_slots, weight_capacity_kg, zone_profile_id')
+          .select('id, code, capacity_slots, slot_kind, weight_capacity_kg, zone_profile_id')
           .in('id', candidateLocIds)
       : { data: [] as any[] }
     const binById = new Map<number, any>()
@@ -125,7 +126,7 @@ serve(async (req: Request) => {
 
     const { data: balRows } = descIds.length
       ? await admin.from('inventory_balances')
-          .select('product_id, location_id, on_hand, allocated, available, products(sku, name, category, size_factor)')
+          .select('product_id, location_id, on_hand, allocated, available, handling_unit_id, products(sku, name, category, size_factor), handling_units(hu_type)')
           .in('location_id', descIds)
           .gt('on_hand', 0)
       : { data: [] as any[] }
@@ -154,18 +155,36 @@ serve(async (req: Request) => {
     const usedWeightByBin = new Map<number, number>()
     const occByBin = new Map<number, Set<string>>()
     const productsInBin = new Map<number, Set<number>>()
+    // Occupancy rows per kept bin, converted with the bin's own denomination
+    // (mig 00078) once every row is in hand — a mixed pallet must count once.
+    const occupancyByBin = new Map<number, OccupancyRow[]>()
     for (const b of balances) {
       if (!candidateSet.has(b.location_id)) continue
-      const sizeFactor = Number(b.products?.size_factor) || 1
-      usedByBin.set(b.location_id, (usedByBin.get(b.location_id) ?? 0) + Number(b.on_hand) * sizeFactor)
+      const occ = occupancyByBin.get(b.location_id) ?? []
+      occ.push({
+        onHand: Number(b.on_hand),
+        sizeFactor: Number(b.products?.size_factor) || 1,
+        huId: b.handling_unit_id != null ? Number(b.handling_unit_id) : null,
+        huType: b.handling_units?.hu_type ?? null,
+      })
+      occupancyByBin.set(b.location_id, occ)
       const w = weightByProduct.get(b.product_id) ?? 0
       usedWeightByBin.set(b.location_id, (usedWeightByBin.get(b.location_id) ?? 0) + Number(b.on_hand) * w)
       const cat = b.products?.category
       if (cat) { const s = occByBin.get(b.location_id) ?? new Set(); s.add(cat); occByBin.set(b.location_id, s) }
       const ps = productsInBin.get(b.location_id) ?? new Set<number>(); ps.add(b.product_id); productsInBin.set(b.location_id, ps)
     }
+    for (const [locationId, occ] of occupancyByBin) {
+      usedByBin.set(locationId, positionsUsed(binById.get(locationId)?.slot_kind ?? null, occ))
+    }
 
     // Movable stock = AVAILABLE units in bins the new layout does NOT keep.
+    // Demand is aggregated PER PRODUCT across source bins, so plate identity is
+    // lost by design here — a reslot decants a layout, it does not carry named
+    // pallets. Its slot demand therefore stays qty × size_factor even into a
+    // pallet bay, which OVER-charges (never under-charges) against the
+    // per-plate occupancy above, so a plan can be pessimistic but never
+    // over-fills a bay.
     const demandByProduct = new Map<number, ReslotDemand>()
     const reserved: Array<{ productId: number; productCode: string; productName: string; qty: number; locationId: number }> = []
     for (const b of balances) {
@@ -213,6 +232,7 @@ serve(async (req: Request) => {
           zoneId: null,
           zoneTag: zone?.zone_type ?? null,
           capacitySlots: bin?.capacity_slots != null ? Number(bin.capacity_slots) : null,
+          slotKind: bin?.slot_kind ?? null,
           usedSlots: usedByBin.get(locId) ?? 0,
           weightCapacityKg: bin?.weight_capacity_kg != null ? Number(bin.weight_capacity_kg) : null,
           usedWeightKg: usedWeightByBin.get(locId) ?? 0,

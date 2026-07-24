@@ -11,6 +11,8 @@
 
 import type { InventoryLocation, LevelRole, Product, ZoneProfile } from '@/types'
 import type { WarehouseBinBalance } from '@/services/supabase/inventoryService'
+import { capacityUnitLabel, positionsRequired, positionsUsed } from '@/supabase/functions/_shared/wie/capacity'
+import type { HuType, OccupancyRow } from '@/supabase/functions/_shared/wie/capacity'
 
 export type PutawayWarningCode = 'level_role_mismatch' | 'capacity' | 'zone_category' | 'weight' | 'not_storage'
 
@@ -19,16 +21,33 @@ export interface PutawayWarning {
   message: string
 }
 
-/** Slots already consumed per location: Σ(on_hand × size_factor), the same
- *  arithmetic getBinFillSlots does for a single bin, over the whole warehouse in
- *  one pass so the picker can show fill for every bin without N queries. */
+/** Capacity already consumed per location — the same arithmetic getBinFillSlots
+ *  does for a single bin, over the whole warehouse in one pass so the picker can
+ *  show fill for every bin without N queries.
+ *
+ *  Each bin is counted in ITS OWN unit (mig 00078): one position per pallet
+ *  plate where `slot_kind = 'pallet'`, Σ(on_hand × size_factor) everywhere else.
+ *  That needs the bin's slot_kind, so the caller passes the location map;
+ *  omitting it degrades to the pre-00078 per-unit maths rather than throwing. */
 export function binFillFromBalances(
   balances: readonly WarehouseBinBalance[] | undefined,
+  locationsById?: ReadonlyMap<number, Pick<InventoryLocation, 'slotKind'>>,
 ): Map<number, number> {
-  const fill = new Map<number, number>()
+  const rowsByLocation = new Map<number, OccupancyRow[]>()
   for (const b of balances ?? []) {
-    const slots = Number(b.onHand) * (Number(b.sizeFactor) || 1)
-    fill.set(b.locationId, (fill.get(b.locationId) ?? 0) + slots)
+    const rows = rowsByLocation.get(b.locationId) ?? []
+    rows.push({
+      onHand: Number(b.onHand),
+      sizeFactor: Number(b.sizeFactor) || 1,
+      huId: b.huId ?? null,
+      huType: b.huType ?? null,
+    })
+    rowsByLocation.set(b.locationId, rows)
+  }
+
+  const fill = new Map<number, number>()
+  for (const [locationId, rows] of rowsByLocation) {
+    fill.set(locationId, positionsUsed(locationsById?.get(locationId)?.slotKind ?? null, rows))
   }
   return fill
 }
@@ -62,6 +81,10 @@ export interface EvaluateBinInput {
   /** The SKU's `product_wms_attributes.allowed_level_roles` (mig 00072).
    *  Empty/null/undefined = unconstrained — every existing SKU's default. */
   allowedLevelRoles?: readonly LevelRole[] | null
+  /** The handling unit being put away (mig 00075). A pallet going into a
+   *  pallet-slot bin takes ONE position whatever is on it (mig 00078);
+   *  undefined keeps the per-unit maths. */
+  huType?: HuType
 }
 
 /** True when `bin` is a rack level whose role the SKU does not allow. A bin
@@ -92,6 +115,7 @@ export function evaluateBinWarnings({
   usedSlots,
   unitWeightKg,
   allowedLevelRoles,
+  huType,
 }: EvaluateBinInput): PutawayWarning[] {
   const warnings: PutawayWarning[] = []
 
@@ -108,17 +132,19 @@ export function evaluateBinWarnings({
   }
 
   // ── Capacity ──────────────────────────────────────────────────────────────
-  // A bin's capacity is counted in slots, and one base unit consumes
-  // size_factor slots (mig 00039) — the quantity must be converted before it
-  // can be compared to capacity_slots.
-  const incomingSlots = baseQty * (product?.sizeFactor ?? 1)
+  // A bin's capacity is counted in ITS OWN unit: a pallet bay in whole pallet
+  // positions, everything else in per-unit slots where one base unit consumes
+  // size_factor of them (mig 00039). The quantity must be converted into that
+  // unit before it can be compared to capacity_slots — see mig 00078.
+  const incomingSlots = positionsRequired(bin.slotKind, baseQty, product?.sizeFactor ?? 1, huType)
   if (bin.capacitySlots != null && bin.capacitySlots > 0) {
     const after = usedSlots + incomingSlots
     if (after > bin.capacitySlots) {
+      const unit = capacityUnitLabel(bin.slotKind)
       warnings.push({
         code: 'capacity',
         message:
-          `Over capacity — ${bin.code} holds ${bin.capacitySlots} slots and this would ` +
+          `Over capacity — ${bin.code} holds ${bin.capacitySlots} ${unit} and this would ` +
           `take it to ${round(after)}.`,
       })
     }

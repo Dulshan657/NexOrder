@@ -113,3 +113,66 @@ describe('planPutaway — eligibility gates still apply', () => {
     expect(residual(plan)?.quantity).toBe(5)
   })
 })
+
+// ── Unit loads (mig 00078) ───────────────────────────────────────────────────
+// A pallet arriving into a pallet-denominated bin is ONE physical object: it
+// costs a whole position whatever is on it, and it can never be split.
+
+function palletReq(candidates: CandidateBin[], s: SkuProfile, quantity: number): PutawayRequest {
+  return { ...req(candidates, s, quantity), huType: 'pallet' }
+}
+
+const palletBin = (o: Partial<CandidateBin> = {}) => bin({ slotKind: 'pallet', capacitySlots: 10, ...o })
+
+describe('planPutaway — unit loads', () => {
+  it('costs one position however many units are on the pallet', () => {
+    // The WIE-DEMO bug: 130 units used to read as 130 slots against 10.
+    const bins = [palletBin({ locationId: 1 })]
+    const plan = planPutaway(palletReq(bins, sku(), 130))
+    expect(placed(plan)).toHaveLength(1)
+    expect(placed(plan)[0]).toMatchObject({ locationId: 1, quantity: 130 })
+    expect(residual(plan)).toBeUndefined()
+    expect(bins[0].usedSlots).toBe(1)
+  })
+
+  it('never splits a pallet across bins', () => {
+    const plan = planPutaway(palletReq([
+      palletBin({ locationId: 1, capacitySlots: 10, usedSlots: 9.5 }),
+      palletBin({ locationId: 2, distanceFromDockM: 40 }),
+    ], sku(), 200))
+    // Bin 1 has under a full free position → skipped entirely, not part-filled.
+    expect(placed(plan)).toHaveLength(1)
+    expect(placed(plan)[0]).toMatchObject({ locationId: 2, quantity: 200 })
+  })
+
+  it('goes wholly to manual placement when no bin has a free position', () => {
+    const plan = planPutaway(palletReq([
+      palletBin({ locationId: 1, capacitySlots: 10, usedSlots: 10 }),
+      palletBin({ locationId: 2, capacitySlots: 10, usedSlots: 10, distanceFromDockM: 40 }),
+    ], sku(), 200))
+    expect(placed(plan)).toHaveLength(0)
+    expect(residual(plan)).toMatchObject({ quantity: 200, needsManualPlacement: true })
+  })
+
+  it('still honours the bin weight limit', () => {
+    const plan = planPutaway(palletReq([
+      palletBin({ locationId: 1, weightCapacityKg: 50 }),
+      palletBin({ locationId: 2, weightCapacityKg: 5000, distanceFromDockM: 40 }),
+    ], sku({ weightKg: 10 }), 200))
+    expect(placed(plan)[0]).toMatchObject({ locationId: 2, quantity: 200 })
+  })
+
+  it('keeps per-unit maths for a pallet landing in a carton bin', () => {
+    // A pallet decanted onto a carton shelf is counted in cartons, so the
+    // split behaviour is exactly as before.
+    const plan = planPutaway(palletReq([bin({ slotKind: 'carton', capacitySlots: 10 })], sku(), 25))
+    expect(placed(plan).reduce((s, a) => s + a.quantity, 0)).toBe(10)
+    expect(residual(plan)?.quantity).toBe(15)
+  })
+
+  it('keeps per-unit maths for loose stock in a pallet bin', () => {
+    const plan = planPutaway(req([palletBin({ capacitySlots: 10 })], sku(), 25))
+    expect(placed(plan).reduce((s, a) => s + a.quantity, 0)).toBe(10)
+    expect(residual(plan)?.quantity).toBe(15)
+  })
+})

@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabase'
+import { positionsUsed } from '@/supabase/functions/_shared/wie/capacity'
+import type { HuType, SlotKind } from '@/supabase/functions/_shared/wie/capacity'
 
 // Read-only access to the inventory ledger surface. All writes go through the
 // inv_* RPCs invoked by Edge Functions (place-order, approve-po, receive-stock,
@@ -48,17 +50,33 @@ export async function getBalancesByProduct(productId: number): Promise<ProductBa
   }))
 }
 
-/** Capacity slots currently used at a location = Σ(on_hand × product.size_factor). */
+/** Capacity currently used at a location, in the unit its capacity_slots is
+ *  denominated in: one position per pallet plate in a pallet-slot bin,
+ *  Σ(on_hand × size_factor) everywhere else (mig 00078). Same rule the engine
+ *  and SQL apply — see _shared/wie/capacity.ts. */
 export async function getBinFillSlots(locationId: number): Promise<number> {
+  const { data: loc, error: locErr } = await supabase
+    .from('locations')
+    .select('slot_kind')
+    .eq('id', locationId)
+    .maybeSingle()
+  if (locErr) throw locErr
+
   const { data, error } = await supabase
     .from('inventory_balances')
-    .select('on_hand, products(size_factor)')
+    .select('on_hand, handling_unit_id, products(size_factor), handling_units(hu_type)')
     .eq('location_id', locationId)
     .gt('on_hand', 0)
   if (error) throw error
-  return ((data ?? []) as any[]).reduce(
-    (s, r) => s + Number(r.on_hand) * Number(r.products?.size_factor ?? 1),
-    0,
+
+  return positionsUsed(
+    (loc as { slot_kind?: SlotKind } | null)?.slot_kind ?? null,
+    ((data ?? []) as any[]).map((r) => ({
+      onHand: Number(r.on_hand),
+      sizeFactor: Number(r.products?.size_factor ?? 1),
+      huId: r.handling_unit_id != null ? Number(r.handling_unit_id) : null,
+      huType: r.handling_units?.hu_type ?? null,
+    })),
   )
 }
 
@@ -72,6 +90,10 @@ export interface WarehouseBinBalance {
   sizeFactor: number
   onHand: number
   allocated: number
+  /** The plate this quantity sits on (mig 00075); null = loose stock. Carried
+   *  so fill can be counted per PLATE in a pallet-slot bin (mig 00078). */
+  huId: number | null
+  huType: HuType
 }
 
 /** Escape LIKE metacharacters so a code containing `_`/`%` can't widen a subtree
@@ -101,7 +123,7 @@ export async function getBalancesByWarehouse(warehouseId: number): Promise<Wareh
 
   const { data, error } = await supabase
     .from('inventory_balances')
-    .select('location_id, product_id, on_hand, allocated, products(name, size_factor)')
+    .select('location_id, product_id, on_hand, allocated, handling_unit_id, products(name, size_factor), handling_units(hu_type)')
     .in('location_id', locationIds)
   if (error) throw error
   return ((data ?? []) as any[]).map((r) => ({
@@ -111,6 +133,8 @@ export async function getBalancesByWarehouse(warehouseId: number): Promise<Wareh
     sizeFactor: Number(r.products?.size_factor ?? 1),
     onHand: Number(r.on_hand),
     allocated: Number(r.allocated),
+    huId: r.handling_unit_id != null ? Number(r.handling_unit_id) : null,
+    huType: r.handling_units?.hu_type ?? null,
   }))
 }
 

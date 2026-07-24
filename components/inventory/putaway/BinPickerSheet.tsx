@@ -96,7 +96,12 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
     for (const l of locations) m.set(l.id, l)
     return m
   }, [locations])
-  const fill = useMemo(() => binFillFromBalances(balancesQuery.data), [balancesQuery.data])
+  // Each bin is counted in its own unit, so the fill needs the locations
+  // (for slot_kind) alongside the balances — see mig 00078.
+  const fill = useMemo(
+    () => binFillFromBalances(balancesQuery.data, locationsById),
+    [balancesQuery.data, locationsById],
+  )
 
   const storageBins = useMemo(
     () => locations.filter((l) => l.isActive && STORAGE_KINDS.has(l.kind)),
@@ -145,8 +150,9 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
       usedSlots: fill.get(chosen.id) ?? 0,
       unitWeightKg: wms?.weightKg ?? null,
       allowedLevelRoles,
+      huType: row.huType,
     })
-  }, [chosen, zoneProfile, row.product, baseQty, fill, wms, allowedLevelRoles])
+  }, [chosen, zoneProfile, row.product, row.huType, baseQty, fill, wms, allowedLevelRoles])
 
   const qtyError =
     baseQty <= 0

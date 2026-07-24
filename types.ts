@@ -659,6 +659,10 @@ export interface PutawayExplanation {
     hardFilters: HardFilterReason[];
     winner: CandidateBreakdown | null;
     alternatives: CandidateBreakdown[];
+    /** Set when the destination was decided WITHOUT scoring — today only a line
+     *  riding on a plate an earlier line of the same receipt already placed
+     *  (mig 00078). Mirrors _shared/wie/types.ts. */
+    note?: string;
 }
 
 /** Engine recommendation for one received line (as returned by recommend-putaway). */
