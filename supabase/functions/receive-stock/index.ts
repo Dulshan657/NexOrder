@@ -37,6 +37,16 @@ const receiptLineSchema = z.object({
   barcode: z.string().min(1).max(120).optional(),
   supplier_id: z.number().int().positive().optional(),
   po_id: z.string().min(1).max(120).optional(),
+  // Which plate (from `plates` below) this line lands on. Client-side key, not
+  // an id: plate codes are minted server-side by hu_next_code() so they cannot
+  // be guessed or spoofed by the caller.
+  plate_key: z.string().min(1).max(64).optional(),
+})
+
+// A pallet or carton the operator built at the dock (mig 00075).
+const receiptPlateSchema = z.object({
+  key: z.string().min(1).max(64),
+  hu_type: z.enum(['pallet', 'carton']),
 })
 
 // Delivery header. A supplier is required to receive stock: either an existing
@@ -56,10 +66,99 @@ const receiptHeaderSchema = z.object({
 const inputSchema = z.object({
   receipt: receiptHeaderSchema.optional(),
   lines: z.array(receiptLineSchema).min(1).max(200),
+  plates: z.array(receiptPlateSchema).max(200).optional(),
 })
 
 type ReceiptHeader = z.infer<typeof receiptHeaderSchema>
 type ReceiptLine = z.infer<typeof receiptLineSchema>
+type ReceiptPlate = z.infer<typeof receiptPlateSchema>
+
+/**
+ * Mint the handling units for this receipt and map client keys to plate ids.
+ *
+ * Every received line ends up on a plate. A line that names no plate_key gets
+ * one minted for it — which is what makes "mandatory on every receipt line"
+ * true without breaking the other callers that land here, notably the CSV
+ * opening-stock importer, which has no concept of pallets.
+ *
+ * hu_type for an auto-minted plate is inferred from the destination's
+ * locations.slot_kind, the same rule the 00076 backfill used, so the two agree.
+ */
+async function createPlates(
+  admin: ReturnType<typeof createClient>,
+  plates: ReceiptPlate[] | undefined,
+  lines: ReceiptLine[],
+  locationId: number | null,
+): Promise<{ idByKey: Map<string, number>; autoTypeUsed: string }> {
+  const idByKey = new Map<string, number>()
+
+  // Reject a line pointing at a plate that was never declared, rather than
+  // silently auto-minting one and hiding the client bug.
+  const declared = new Set((plates ?? []).map((p) => p.key))
+  for (const line of lines) {
+    if (line.plate_key && !declared.has(line.plate_key)) {
+      throw new EdgeFunctionError(
+        'INVALID_INPUT',
+        `Line references plate "${line.plate_key}", which is not in the plates list`,
+      )
+    }
+  }
+  // An unreferenced plate would become an orphan holding no stock — the exact
+  // condition mig 00076's guard treats as a failure.
+  const referenced = new Set(lines.map((l) => l.plate_key).filter(Boolean))
+  for (const plate of plates ?? []) {
+    if (!referenced.has(plate.key)) {
+      throw new EdgeFunctionError(
+        'INVALID_INPUT',
+        `Plate "${plate.key}" has no lines on it. Remove it or put something on it.`,
+      )
+    }
+  }
+
+  let autoType = 'pallet'
+  if (locationId != null) {
+    const { data: loc } = await admin
+      .from('locations')
+      .select('slot_kind')
+      .eq('id', locationId)
+      .maybeSingle()
+    if ((loc as any)?.slot_kind === 'carton') autoType = 'carton'
+  }
+
+  const toCreate: Array<{ key: string; hu_type: string }> = [
+    ...(plates ?? []).map((p) => ({ key: p.key, hu_type: p.hu_type })),
+    ...lines
+      .filter((l) => !l.plate_key)
+      .map((_l, i) => ({ key: `__auto_${i}`, hu_type: autoType })),
+  ]
+  if (toCreate.length === 0) return { idByKey, autoTypeUsed: autoType }
+
+  // `code` is deliberately not sent: the column DEFAULTs to hu_next_code()
+  // (mig 00077), so plate codes are minted by the database in one round trip
+  // and can never be supplied — or collided — by a caller.
+  const { data: created, error } = await admin
+    .from('handling_units')
+    .insert(
+      toCreate.map((p) => ({
+        hu_type: p.hu_type,
+        status: 'open',
+        warehouse_id: locationId,
+        location_id: locationId,
+      })),
+    )
+    .select('id')
+  if (error) throw new EdgeFunctionError('INTERNAL', `plate create failed: ${error.message}`)
+
+  // Postgres returns inserted rows in the order supplied, so index alignment
+  // holds; assert it rather than trusting it, because a mismatch would put
+  // stock on the wrong plate.
+  const ids = ((created ?? []) as Array<{ id: number }>).map((r) => r.id)
+  if (ids.length !== toCreate.length) {
+    throw new EdgeFunctionError('INTERNAL', 'plate create returned an unexpected row count')
+  }
+  toCreate.forEach((p, i) => idByKey.set(p.key, ids[i]))
+  return { idByKey, autoTypeUsed: autoType }
+}
 
 // Convert each line's quantity from its chosen UOM into BASE units (the only
 // unit the inv_receive_stock RPC and the ledger understand). A line without a
@@ -150,7 +249,7 @@ serve(async (req: Request) => {
     if (!parsed.success) {
       throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
     }
-    const { receipt, lines } = parsed.data
+    const { receipt, lines, plates } = parsed.data
 
     const admin = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -187,8 +286,25 @@ serve(async (req: Request) => {
     // Convert UOM quantities to base units (the RPC + ledger only speak base).
     const baseLines = await toBaseLines(admin, lines)
 
+    // Mint this receipt's plates, then stamp each line with the plate it lands
+    // on. `lines` and `baseLines` are index-aligned (toBaseLines maps 1:1 and
+    // preserves order), which is what lets the plate_key be read off the
+    // original line here.
+    const { idByKey } = await createPlates(admin, plates, lines, locationId)
+    let autoIndex = 0
+    const platedLines = baseLines.map((line, i) => {
+      const key = lines[i].plate_key ?? `__auto_${autoIndex++}`
+      const huId = idByKey.get(key)
+      if (huId == null) {
+        throw new EdgeFunctionError('INTERNAL', `no plate resolved for line ${i + 1}`)
+      }
+      // plate_key is a client-side correlation token; the RPC wants the id.
+      const { plate_key: _pk, ...rest } = line as Record<string, unknown>
+      return { ...rest, handling_unit_id: huId }
+    })
+
     const { data: result, error: rpcError } = await admin.rpc('inv_receive_stock', {
-      p_lines: baseLines,
+      p_lines: platedLines,
       p_actor: auth.userId,
       p_receipt: {
         location_id: locationId,
@@ -222,9 +338,18 @@ serve(async (req: Request) => {
     const destLocationId = (result as any)?.location_id as number | undefined
     if (destLocationId) {
       try {
+        // hu_type rides along so the engine steers pallets to bulk/reserve
+        // levels and cartons to pick faces (mig 00072 roles + 00075 plates).
+        const typeByKey = new Map<string, 'pallet' | 'carton'>(
+          (plates ?? []).map((p) => [p.key, p.hu_type]),
+        )
         putaway = await generatePutawayTasks(admin, {
           warehouseId: destLocationId,
-          lines: baseLines.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
+          lines: baseLines.map((l, i) => ({
+            product_id: l.product_id,
+            quantity: l.quantity,
+            hu_type: lines[i].plate_key ? typeByKey.get(lines[i].plate_key!) : undefined,
+          })),
           actorId: auth.userId,
           goodsReceiptId: (result as any)?.receipt_id as number | undefined,
         })

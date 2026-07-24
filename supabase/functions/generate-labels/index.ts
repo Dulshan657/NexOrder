@@ -118,7 +118,7 @@ const DEFAULT_LOCATION_KINDS = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN', 
 async function loadItems(
   admin: any,
   input: z.infer<typeof inputSchema>,
-): Promise<{ items: LabelItem[]; warehouseId: number | null }> {
+): Promise<{ items: LabelItem[]; warehouseId: number | null; markPrintedIds?: number[] }> {
   if (input.kind === 'location') {
     let query = admin
       .from('locations')
@@ -184,22 +184,37 @@ async function loadItems(
     }
   }
 
-  // handling_unit — the table lands in 00075. Fail with a clear message rather
-  // than a confusing "relation does not exist" if this is called early.
-  const { data, error } = await admin
+  // handling_unit (mig 00075). With no explicit ids this prints the BACKLOG:
+  // every plate at this site that has no physical sticker yet — which is the
+  // whole point of label_printed, since the 00076 backfill minted plates for
+  // stock nobody has ever labelled.
+  let huQuery = admin
     .from('handling_units')
-    .select('id, code, hu_type')
-    .in('id', input.ids ?? [])
+    .select('id, code, hu_type, created_at')
+    .in('status', ['open', 'stored'])
+    .order('created_at')
     .limit(MAX_LABELS + 1)
-  if (error) {
-    throw new EdgeFunctionError(
-      'INVALID_INPUT',
-      'Handling-unit labels are not available yet (pending migration 00075).',
-    )
+
+  if (input.ids?.length) {
+    huQuery = huQuery.in('id', input.ids)
+  } else {
+    huQuery = huQuery.eq('label_printed', false)
+    if (input.warehouseId != null) huQuery = huQuery.eq('warehouse_id', input.warehouseId)
   }
+
+  const { data, error } = await huQuery
+  if (error) throw new EdgeFunctionError('INTERNAL', error.message)
+
+  const rows = (data ?? []) as any[]
   return {
-    items: ((data ?? []) as any[]).map((r) => ({ code: r.code, context: r.hu_type ?? '' })),
-    warehouseId: null,
+    items: rows.map((r) => ({
+      code: r.code,
+      context: r.hu_type === 'carton' ? 'Carton' : 'Pallet',
+    })),
+    warehouseId: input.warehouseId ?? null,
+    // Printing IS the act that makes a plate labelled; flipping the flag here
+    // is what stops the backlog from reprinting the same stickers forever.
+    markPrintedIds: rows.map((r) => r.id as number),
   }
 }
 
@@ -305,7 +320,7 @@ serve(async (req: Request) => {
       { auth: { persistSession: false } },
     )
 
-    const { items, warehouseId } = await loadItems(admin, input)
+    const { items, warehouseId, markPrintedIds } = await loadItems(admin, input)
 
     if (items.length === 0) {
       throw new EdgeFunctionError('INVALID_INPUT', 'Nothing to print — that selection matched no records.')
@@ -335,6 +350,18 @@ serve(async (req: Request) => {
       generated_by: auth.userId,
     })
     if (logError) throw new EdgeFunctionError('INTERNAL', `record failed: ${logError.message}`)
+
+    // Only after the PDF is safely stored: a plate marked printed whose sheet
+    // failed to upload would silently drop out of the backlog with no sticker.
+    if (markPrintedIds?.length) {
+      const { error: markError } = await admin
+        .from('handling_units')
+        .update({ label_printed: true, updated_at: new Date().toISOString() })
+        .in('id', markPrintedIds)
+      if (markError) {
+        throw new EdgeFunctionError('INTERNAL', `could not mark plates printed: ${markError.message}`)
+      }
+    }
 
     const { data: signed } = await admin.storage
       .from(BUCKET)

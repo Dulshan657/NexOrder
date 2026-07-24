@@ -33,6 +33,40 @@ const CANDIDATE_LIMIT = 2000
 export interface PutawayLineInput {
   product_id: number
   quantity: number
+  /** The plate this quantity arrived on (mig 00075). Routes the line to the
+   *  level roles that suit the physical unit: a pallet belongs in bulk/reserve,
+   *  a carton on a pick face. Omitted = unconstrained, exactly as before. */
+  hu_type?: 'pallet' | 'carton'
+}
+
+/** Level roles each kind of handling unit belongs on (mig 00072 roles). */
+const ROLES_BY_HU_TYPE: Record<string, LevelRole[]> = {
+  pallet: ['bulk', 'reserve'],
+  carton: ['pick'],
+}
+
+/**
+ * Combine the SKU's own level-role rule with the plate's preferred roles.
+ *
+ * The SKU rule (product_wms_attributes.allowed_level_roles) is a HARD rule
+ * enforced in wie_putaway_candidates' WHERE clause; the plate type is a
+ * preference. So they are intersected — but if the intersection is EMPTY the
+ * SKU rule wins alone, because letting a plate preference empty the candidate
+ * set would wedge the queue with nowhere to put the stock, which is the failure
+ * mode mig 00072's role gate already had to grow an override for.
+ *
+ * NULL means unconstrained. Note that bins with a NULL level_role (every legacy
+ * bin) stay eligible regardless — that predicate lives in the RPC.
+ */
+export function resolvePutawayRoles(
+  skuRoles: LevelRole[] | null,
+  huType?: 'pallet' | 'carton',
+): LevelRole[] | null {
+  const plateRoles = huType ? ROLES_BY_HU_TYPE[huType] : undefined
+  if (!plateRoles) return skuRoles
+  if (!skuRoles || skuRoles.length === 0) return plateRoles
+  const intersection = skuRoles.filter((r) => plateRoles.includes(r))
+  return intersection.length > 0 ? intersection : skuRoles
 }
 
 export interface GeneratePutawayArgs {
@@ -162,8 +196,12 @@ export async function generatePutawayTasks(
       allowedLevelRoles,
     }
 
+    // Pallets are steered to bulk/reserve levels and cartons to pick faces,
+    // without ever overriding the SKU's own hard role rule.
+    const effectiveRoles = resolvePutawayRoles(allowedLevelRoles, line.hu_type)
+
     const { data: candRows, error: cErr } = await admin.rpc('wie_putaway_candidates', {
-      p_layout_id: layoutId, p_product_id: line.product_id, p_limit: CANDIDATE_LIMIT, p_roles: allowedLevelRoles,
+      p_layout_id: layoutId, p_product_id: line.product_id, p_limit: CANDIDATE_LIMIT, p_roles: effectiveRoles,
     })
     if (cErr) throw new Error(`candidate load failed: ${cErr.message}`)
 

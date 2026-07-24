@@ -122,7 +122,13 @@ const LabelPrintingSection: React.FC = () => {
           >
             <option value="location">Locations</option>
             <option value="product">Products</option>
+            <option value="handling_unit">Pallets &amp; cartons (unlabelled)</option>
           </select>
+          {kind === 'handling_unit' && (
+            <p className="text-xs text-stone-400 mt-1">
+              Prints every pallet/carton that has no sticker yet, then marks them labelled.
+            </p>
+          )}
         </div>
 
         <div>
@@ -143,7 +149,7 @@ const LabelPrintingSection: React.FC = () => {
           </select>
         </div>
 
-        {kind === 'location' && (
+        {(kind === 'location' || kind === 'handling_unit') && (
           <>
             <div>
               <label htmlFor="label-warehouse" className="block text-xs font-semibold text-stone-600 mb-1.5">
@@ -164,7 +170,7 @@ const LabelPrintingSection: React.FC = () => {
               </select>
             </div>
 
-            <div>
+            <div className={kind === 'location' ? '' : 'hidden'}>
               <label htmlFor="label-group" className="block text-xs font-semibold text-stone-600 mb-1.5">
                 Which locations
               </label>

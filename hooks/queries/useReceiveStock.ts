@@ -3,6 +3,7 @@ import {
   receiveStock,
   type ReceiptHeader,
   type ReceiptLine,
+  type ReceiptPlate,
 } from '@/services/supabase/receivingService'
 import { inventoryKeys } from './useInventoryBalances'
 import { supplierKeys } from './useSuppliers'
@@ -11,8 +12,11 @@ import { putawayKeys } from './putawayKeys'
 export function useReceiveStock() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ header, lines }: { header: ReceiptHeader; lines: ReceiptLine[] }) =>
-      receiveStock(header, lines),
+    mutationFn: ({ header, lines, plates }: {
+      header: ReceiptHeader
+      lines: ReceiptLine[]
+      plates?: ReceiptPlate[]
+    }) => receiveStock(header, lines, plates),
     onSuccess: () => {
       // Receipt raised on_hand → balances + the products.inventory cache changed.
       qc.invalidateQueries({ queryKey: inventoryKeys.balances })

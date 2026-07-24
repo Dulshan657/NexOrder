@@ -5,7 +5,7 @@ import { useReceiveStock } from '../../hooks/queries/useReceiveStock';
 import { useRecentReceipts } from '../../hooks/queries/useInventoryBalances';
 import { useSuppliers } from '../../hooks/queries/useSuppliers';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
-import type { ReceiptHeader, ReceiptLine } from '../../services/supabase/receivingService';
+import type { ReceiptHeader, ReceiptLine, ReceiptPlate } from '../../services/supabase/receivingService';
 import { useToasts } from '../../hooks/useToasts';
 import { receivableUoms, deriveDefaultUoms, baseUom } from '../../lib/uom';
 import { productsForSupplier, supplierSkuFor, matchesProductQuery } from '../../lib/productSuppliers';
@@ -198,10 +198,26 @@ interface DraftLine {
   lotCode: string;
   expiryDate: string;
   barcode: string;
+  /** The plate (mig 00075) this line lands on. Every line has one. */
+  plateKey: string;
+}
+
+/** A pallet or carton being built at the dock. The CODE is minted server-side
+ *  on receipt — this key only groups lines onto the same physical unit. */
+interface DraftPlate {
+  key: string;
+  huType: 'pallet' | 'carton';
 }
 
 let draftSeq = 0;
-const newDraft = (): DraftLine => ({
+let plateSeq = 0;
+
+const newPlate = (huType: 'pallet' | 'carton' = 'pallet'): DraftPlate => ({
+  key: `p${plateSeq++}`,
+  huType,
+});
+
+const newDraft = (plateKey: string): DraftLine => ({
   key: `d${draftSeq++}`,
   productId: null,
   quantity: '',
@@ -209,7 +225,18 @@ const newDraft = (): DraftLine => ({
   lotCode: '',
   expiryDate: '',
   barcode: '',
+  plateKey,
 });
+
+/** Display label for a plate: "Pallet 1", "Carton 3" — numbered by position so
+ *  the operator can match a row to the physical unit in front of them before
+ *  any real code exists. */
+export function plateLabel(plates: readonly DraftPlate[], key: string): string {
+  const index = plates.findIndex((p) => p.key === key);
+  if (index < 0) return 'Plate';
+  const plate = plates[index];
+  return `${plate.huType === 'carton' ? 'Carton' : 'Pallet'} ${index + 1}`;
+}
 
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
@@ -333,8 +360,21 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
     return products.some(p => matchesProductQuery(p, q, supplierId));
   }, [products, search, isFiltered, searchResults.length, supplierId]);
 
+  // ── Plates (mig 00075) ─────────────────────────────────────────────────────
+  // Every receipt line lands on a pallet or carton. The default is ONE PLATE
+  // PER LINE, which is what a delivery of loose cartons actually looks like;
+  // an operator building a mixed pallet reassigns lines onto a shared plate.
+  const [plates, setPlates] = useState<DraftPlate[]>([]);
+
+  const ensurePlate = (): { plate: DraftPlate; next: DraftPlate[] } => {
+    const plate = newPlate();
+    return { plate, next: [...plates, plate] };
+  };
+
   const addProduct = (product: Product) => {
-    setPicked(prev => [...prev, { ...newDraft(), productId: product.id }]);
+    const { plate, next } = ensurePlate();
+    setPlates(next);
+    setPicked(prev => [...prev, { ...newDraft(plate.key), productId: product.id }]);
     setSearch('');
   };
 
@@ -345,6 +385,29 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   const removeLine = (key: string) => {
     setPicked(prev => prev.filter(l => l.key !== key));
   };
+
+  const setPlateType = (plateKey: string, huType: 'pallet' | 'carton') => {
+    setPlates(prev => prev.map(p => (p.key === plateKey ? { ...p, huType } : p)));
+  };
+
+  /** Move a line onto a different plate, or onto a brand-new one. */
+  const assignPlate = (lineKey: string, target: string) => {
+    if (target === '__new') {
+      const plate = newPlate();
+      setPlates(prev => [...prev, plate]);
+      updateLine(lineKey, { plateKey: plate.key });
+      return;
+    }
+    updateLine(lineKey, { plateKey: target });
+  };
+
+  // Plates with nothing on them are dropped before submit: the server rejects
+  // an empty plate (it would be an orphan holding no stock), and a line can be
+  // removed after its plate was created.
+  const referencedPlates = useMemo(
+    () => plates.filter(p => picked.some(l => l.plateKey === p.key)),
+    [plates, picked],
+  );
 
   const validLines = useMemo(
     () => picked.filter(l => l.productId != null && Number(l.quantity) > 0),
@@ -376,11 +439,18 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       ...(l.lotCode.trim() ? { lot_code: l.lotCode.trim() } : {}),
       ...(l.expiryDate ? { expiry_date: l.expiryDate } : {}),
       ...(l.barcode.trim() ? { barcode: l.barcode.trim() } : {}),
+      plate_key: l.plateKey,
     }));
+    // Only plates carrying a VALID line: a plate whose only line was left
+    // incomplete would arrive empty and be rejected server-side.
+    const platePayload: ReceiptPlate[] = referencedPlates
+      .filter(p => validLines.some(l => l.plateKey === p.key))
+      .map(p => ({ key: p.key, hu_type: p.huType }));
     try {
-      const result = await receive.mutateAsync({ header, lines });
+      const result = await receive.mutateAsync({ header, lines, plates: platePayload });
       addToast(`Received ${result.lines_received} line${result.lines_received === 1 ? '' : 's'} into stock`, 'success');
       setPicked([]);
+      setPlates([]);
       setReference('');
       setSupplierId(null);
       setSupplierName('');
@@ -612,6 +682,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Lot code</th>
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Expiry</th>
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Barcode</th>
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-44">Pallet / carton</th>
                   <th scope="col" className="px-4 py-3 w-10"></th>
                 </tr>
               </thead>
@@ -701,6 +772,32 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                           placeholder="optional"
                         />
                       </td>
+                      <td className="px-4 py-3">
+                        {/* Which physical unit this line sits on. Defaults to a
+                            plate of its own; reassign to build a mixed pallet. */}
+                        <select
+                          aria-label={`Pallet or carton for line ${line.key}`}
+                          value={line.plateKey}
+                          onChange={e => assignPlate(line.key, e.target.value)}
+                          className="w-full px-2 py-1.5 text-sm bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+                        >
+                          {referencedPlates.map(p => (
+                            <option key={p.key} value={p.key}>
+                              {plateLabel(referencedPlates, p.key)}
+                            </option>
+                          ))}
+                          <option value="__new">+ New unit…</option>
+                        </select>
+                        <select
+                          aria-label={`Unit type for line ${line.key}`}
+                          value={plates.find(p => p.key === line.plateKey)?.huType ?? 'pallet'}
+                          onChange={e => setPlateType(line.plateKey, e.target.value as 'pallet' | 'carton')}
+                          className="mt-1.5 w-full px-2 py-1 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+                        >
+                          <option value="pallet">Pallet → bulk/reserve</option>
+                          <option value="carton">Carton → pick face</option>
+                        </select>
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <button
                           onClick={() => removeLine(line.key)}
@@ -720,7 +817,11 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
           {/* Footer actions */}
           <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-stone-200 bg-stone-50/50">
             <button
-              onClick={() => setPicked(prev => [...prev, newDraft()])}
+              onClick={() => {
+                const plate = newPlate();
+                setPlates(prev => [...prev, plate]);
+                setPicked(prev => [...prev, newDraft(plate.key)]);
+              }}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press"
             >
               <Plus className="w-4 h-4" /> Add blank line

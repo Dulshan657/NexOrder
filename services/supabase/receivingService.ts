@@ -10,6 +10,16 @@ export interface ReceiptLine {
   barcode?: string
   supplier_id?: number // per-line supplier override (defaults to the header)
   po_id?: string
+  /** Which plate in `plates` this line lands on (mig 00075). Omitted = the
+   *  server mints a plate for the line, so every receipt line ends up on one. */
+  plate_key?: string
+}
+
+/** A pallet or carton built at the dock. The CODE is minted server-side; `key`
+ *  is only a client-side token linking lines to the plate they sit on. */
+export interface ReceiptPlate {
+  key: string
+  hu_type: 'pallet' | 'carton'
 }
 
 // Delivery header — records WHICH supplier supplied the goods. Either an
@@ -50,12 +60,36 @@ export interface ReceiveStockResult {
 export async function receiveStock(
   header: ReceiptHeader,
   lines: ReceiptLine[],
+  plates?: ReceiptPlate[],
 ): Promise<ReceiveStockResult> {
   const { data, error } = await supabase.functions.invoke<{
     ok: true
     result: ReceiveStockResult
     putaway?: ReceivePutaway | null
-  }>('receive-stock', { body: { receipt: header, lines } })
+  }>('receive-stock', { body: { receipt: header, lines, ...(plates?.length ? { plates } : {}) } })
   if (error) throw error
   return { ...data!.result, putaway: data!.putaway ?? null }
+}
+
+/** Plates created by a receipt, so the operator can print their labels
+ *  immediately — an unlabelled plate is just a database claim. */
+export interface ReceiptPlateResult {
+  id: number
+  code: string
+  huType: 'pallet' | 'carton'
+}
+
+/** The plates attached to a goods receipt, newest receipt first. */
+export async function getReceiptPlates(goodsReceiptId: number): Promise<ReceiptPlateResult[]> {
+  const { data, error } = await supabase
+    .from('handling_units')
+    .select('id, code, hu_type')
+    .eq('goods_receipt_id', goodsReceiptId)
+    .order('id')
+  if (error) throw error
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    id: r.id as number,
+    code: r.code as string,
+    huType: r.hu_type as 'pallet' | 'carton',
+  }))
 }
