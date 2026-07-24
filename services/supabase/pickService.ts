@@ -5,6 +5,9 @@ export interface PickQueueLine {
   productId: number
   productName: string
   productSku: string
+  /** Supplier EAN/UPC (mig 00074), so a carton barcode scanned at the rack
+   *  validates in the browser instead of only at the server. */
+  productBarcode: string | null
   quantity: number
   picked: number
 }
@@ -47,7 +50,7 @@ export async function getPickQueue(): Promise<PickQueueOrder[]> {
     .from('orders')
     .select(
       'id, status, order_date, delivery_date, horecas(name, address), order_fulfillments(location_id), ' +
-      'order_items(id, product_id, product_name, product_sku, quantity, pick_progress(picked_qty))',
+      'order_items(id, product_id, product_name, product_sku, quantity, products(barcode), pick_progress(picked_qty))',
     )
     .in('status', ['processed', 'picked', 'packed'])
     .order('order_date', { ascending: true })
@@ -66,20 +69,42 @@ export async function getPickQueue(): Promise<PickQueueOrder[]> {
       productId: it.product_id,
       productName: it.product_name,
       productSku: it.product_sku,
+      productBarcode: it.products?.barcode ?? null,
       quantity: Number(it.quantity),
       picked: (it.pick_progress ?? []).reduce((s: number, p: any) => s + Number(p.picked_qty), 0),
     })),
   }))
 }
 
+/** Scan evidence for a confirmed pick (Phase 3). The server re-validates every
+ *  code — the browser check only exists to fail fast for the operator. */
+export interface PickScanEvidence {
+  locationCode?: string
+  productCode?: string
+  handlingUnitCode?: string
+}
+
 export async function recordPick(
   orderItemId: number,
   pickedQty: number,
   locationId?: number,
-): Promise<{ line_fully_picked: boolean; order_fully_picked: boolean }> {
-  const { data, error } = await supabase.functions.invoke<{ ok: true; line_fully_picked: boolean; order_fully_picked: boolean }>(
+  scan?: PickScanEvidence,
+): Promise<{ line_fully_picked: boolean; order_fully_picked: boolean; scanVerified?: boolean }> {
+  const { data, error } = await supabase.functions.invoke<{
+    ok: true
+    line_fully_picked: boolean
+    order_fully_picked: boolean
+    scanVerified?: boolean
+  }>(
     'record-pick',
-    { body: { orderItemId, pickedQty, ...(locationId != null ? { locationId } : {}) } },
+    {
+      body: {
+        orderItemId,
+        pickedQty,
+        ...(locationId != null ? { locationId } : {}),
+        ...(scan && (scan.locationCode || scan.productCode || scan.handlingUnitCode) ? { scan } : {}),
+      },
+    },
   )
   if (error) throw error
   return data!

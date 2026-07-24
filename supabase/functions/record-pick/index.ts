@@ -18,6 +18,7 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { isLocationFullyPicked, recomputeOrderStatus } from '../_shared/fulfillment.ts'
+import { checkPickScan } from '../_shared/pickScanCheck.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
@@ -25,6 +26,21 @@ const inputSchema = z.object({
   orderItemId: z.number().int().positive(),
   pickedQty: z.number().positive(),
   locationId: z.number().int().positive().optional(),
+  // Scan-confirmed picking (Phase 3). The client checks these too, so the
+  // operator gets instant feedback, but that check is a convenience — anything
+  // can POST here, so the server re-validates every code it is given.
+  //
+  // Optional by design: this function deploys BEFORE the UI that sends scans,
+  // and the legacy/bulk pick paths never scan. Evidence that IS supplied and
+  // does NOT match is always refused; a pick with no evidence is allowed and
+  // recorded as unverified, so the two are distinguishable in the audit trail.
+  scan: z
+    .object({
+      locationCode: z.string().max(120).optional(),
+      productCode: z.string().max(120).optional(),
+      handlingUnitCode: z.string().max(120).optional(),
+    })
+    .optional(),
 })
 
 serve(async (req: Request) => {
@@ -80,6 +96,90 @@ serve(async (req: Request) => {
         .limit(1)
         .maybeSingle()
       locationId = (def as any)?.id ?? null
+    }
+
+    // ── Scan re-validation ────────────────────────────────────────────────
+    // Runs BEFORE the RPC: a mismatch must not decrement anything.
+    let scanVerified = false
+    if (parsed.data.scan && locationId != null) {
+      const [{ data: locRow }, { data: itemForScan }] = await Promise.all([
+        admin.from('locations').select('code').eq('id', locationId).maybeSingle(),
+        admin
+          .from('order_items')
+          .select('product_id, quantity, products(sku, name, barcode)')
+          .eq('id', orderItemId)
+          .maybeSingle(),
+      ])
+      if (!locRow) throw new EdgeFunctionError('NOT_FOUND', `Location ${locationId} not found`)
+      if (!itemForScan) throw new EdgeFunctionError('NOT_FOUND', `Order line ${orderItemId} not found`)
+
+      const product = (itemForScan as any).products
+      if (!product) {
+        throw new EdgeFunctionError('INTERNAL', 'Order line has no product to verify against')
+      }
+
+      // Remaining is expressed in ORDER units, matching pickedQty (the RPC
+      // scales by pack_size internally).
+      const { data: progressRows } = await admin
+        .from('pick_progress')
+        .select('picked_qty')
+        .eq('order_item_id', orderItemId)
+      const already = ((progressRows ?? []) as Array<{ picked_qty: number }>)
+        .reduce((sum, r) => sum + Number(r.picked_qty || 0), 0)
+      const remaining = Number((itemForScan as any).quantity) - already
+
+      const verdict = checkPickScan(
+        {
+          taskLocationCode: (locRow as any).code,
+          product: {
+            id: (itemForScan as any).product_id,
+            sku: product.sku,
+            name: product.name,
+            barcode: product.barcode ?? null,
+          },
+          remainingQty: remaining,
+        },
+        parsed.data.scan,
+        pickedQty,
+      )
+      if (!verdict.ok) {
+        // CONFLICT, not INVALID_INPUT: the request was well-formed, it just
+        // does not describe the world. The UI shows `message` verbatim to an
+        // operator standing at the rack, so it names what they scanned and
+        // what was expected.
+        throw new EdgeFunctionError('CONFLICT', verdict.message, { reason: verdict.code })
+      }
+      scanVerified = verdict.verified
+
+      // A scanned plate must actually hold this product at this bin — otherwise
+      // the operator is looking at a different pallet than the one they think.
+      const huCode = parsed.data.scan.handlingUnitCode?.trim()
+      if (huCode) {
+        const { data: huRow } = await admin
+          .from('handling_units')
+          .select('id, code')
+          .ilike('code', huCode)
+          .maybeSingle()
+        if (!huRow) {
+          throw new EdgeFunctionError('CONFLICT', `No pallet or carton with code ${huCode}.`, {
+            reason: 'UNKNOWN_PLATE',
+          })
+        }
+        const { count } = await admin
+          .from('inventory_balances')
+          .select('id', { count: 'exact', head: true })
+          .eq('handling_unit_id', (huRow as any).id)
+          .eq('product_id', (itemForScan as any).product_id)
+          .eq('location_id', locationId)
+          .gt('on_hand', 0)
+        if (!count) {
+          throw new EdgeFunctionError(
+            'CONFLICT',
+            `${(huRow as any).code} does not hold any ${product.sku} at this bin.`,
+            { reason: 'PLATE_MISMATCH' },
+          )
+        }
+      }
     }
 
     const { data: pickResult, error: rpcError } = await admin.rpc('inv_pick_order_line', {
@@ -157,10 +257,24 @@ serve(async (req: Request) => {
       action: 'update',
       resource: 'pick_progress',
       resourceId: orderId,
-      after: { orderItemId, pickedQty, locationId, ...result },
+      // scan_verified is recorded here rather than on pick_progress on purpose:
+      // audit_events (mig 00012) is already the "who did what, and how it was
+      // confirmed" record, and using it avoids a third change to
+      // inv_pick_order_line's signature — every one of which risks the
+      // ambiguous-overload trap that bit 00037 and again in 00075.
+      after: {
+        orderItemId,
+        pickedQty,
+        locationId,
+        scan_verified: scanVerified,
+        scanned_location: parsed.data.scan?.locationCode ?? null,
+        scanned_product: parsed.data.scan?.productCode ?? null,
+        scanned_plate: parsed.data.scan?.handlingUnitCode ?? null,
+        ...result,
+      },
     })
 
-    return new Response(JSON.stringify({ ok: true, locationId, ...result }), {
+    return new Response(JSON.stringify({ ok: true, locationId, scanVerified, ...result }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

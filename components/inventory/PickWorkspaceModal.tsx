@@ -11,6 +11,7 @@ import { useToasts } from '../../hooks/useToasts';
 import { useAuth } from '../../hooks/useAuth';
 import { useDocumentViewer } from '../../context/DocumentViewerContext';
 import { PickRoutePanel } from './PickRoutePanel';
+import { PickTaskRow } from './pick/PickTaskRow';
 import type { PickQueueLine, PickTask } from '../../services/supabase/pickService';
 import {
   X, Check, PackageCheck, FileText, Truck, MapPin, Box, PackageCheck as PackIcon,
@@ -21,46 +22,6 @@ const statusBadge: Record<string, { label: string; cls: string }> = {
   picked: { label: 'Picked', cls: 'bg-emerald-50 text-emerald-700' },
   packed: { label: 'Packed', cls: 'bg-amber-50 text-amber-700' },
   dispatched: { label: 'Dispatched', cls: 'bg-stone-200 text-stone-700' },
-};
-
-/** One directed, per-bin pick task. Its own component so each bin's
- *  useRecordPick() mutation is independent — a hoisted single mutation would
- *  disable every bin's button in the line while any one of them is pending,
- *  and would let a fast double-click on the SAME bin fire twice. */
-const PickTaskRow: React.FC<{ orderId: string; task: PickTask; disabled: boolean }> = ({ orderId, task, disabled }) => {
-  const { addToast } = useToasts();
-  const recordPick = useRecordPick();
-
-  const pick = async () => {
-    if (recordPick.isPending || task.remaining <= 0) return; // per-task double-submit guard
-    try {
-      await recordPick.mutateAsync({
-        orderId,
-        orderItemId: task.orderItemId,
-        pickedQty: task.remaining,
-        locationId: task.locationId,
-      });
-      addToast(`Picked ${task.remaining} × ${task.code}`, 'success');
-    } catch (err) {
-      addToast(err instanceof Error ? err.message : 'Failed to record pick', 'error');
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-3 py-1.5 pl-5">
-      <MapPin className="w-3 h-3 text-stone-400 shrink-0" />
-      <span className="flex-1 min-w-0 text-xs text-stone-500 truncate">{task.code}</span>
-      <span className="font-mono text-xs text-stone-400 shrink-0">{task.pickedQty}/{task.allocatedQty}</span>
-      <button
-        onClick={pick}
-        disabled={disabled || recordPick.isPending || task.remaining <= 0}
-        title={disabled ? 'Not your home warehouse' : undefined}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-nexgen-blue text-white text-xs font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-      >
-        <PackageCheck className="w-3 h-3" /> Pick {task.remaining}
-      </button>
-    </div>
-  );
 };
 
 interface PickLineRowProps {
@@ -128,6 +89,7 @@ const PickLineRow: React.FC<PickLineRowProps> = ({
                     key={t.locationId}
                     orderId={orderId}
                     task={t}
+                    line={line}
                     disabled={!canPick || (isWarehouseRole && warehouseId !== homeWarehouseId)}
                   />
                 ))}

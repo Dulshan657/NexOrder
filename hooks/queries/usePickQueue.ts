@@ -6,6 +6,7 @@ import {
   generateDispatchAdvice,
   type PickQueueOrder,
   type PickTask,
+  type PickScanEvidence,
 } from '@/services/supabase/pickService'
 import { updateOrderStatus } from '@/services/supabase/orderService'
 import type { OrderStatus } from '@/types'
@@ -30,13 +31,15 @@ interface RecordPickVariables {
   orderItemId: number
   pickedQty: number
   locationId?: number
+  /** Scan evidence (Phase 3); re-validated server-side. */
+  scan?: PickScanEvidence
 }
 
 export function useRecordPick() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ orderItemId, pickedQty, locationId }: RecordPickVariables) =>
-      recordPick(orderItemId, pickedQty, locationId),
+    mutationFn: ({ orderItemId, pickedQty, locationId, scan }: RecordPickVariables) =>
+      recordPick(orderItemId, pickedQty, locationId, scan),
     // Directed picking hits one bin at a time (one task, one Pick button) —
     // a broad invalidation here refetches every row's data and re-renders the
     // whole pick workspace, which drops fast clicks. Patch the two caches that
