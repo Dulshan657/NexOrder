@@ -26,6 +26,13 @@ export interface ProductFormData {
   widthCm: string
   heightCm: string
   sizeFactor: string
+  /**
+   * Supplier EAN/UPC (mig 00074). Optional on the TYPE, not merely on the
+   * value: the CSV import path builds a ProductFormData literal and has no
+   * barcode column, so making this required would break that caller. Omitted
+   * leaves any existing barcode untouched; present-but-empty clears it.
+   */
+  barcode?: string
 }
 
 export type ProductPayload = Record<string, unknown>
@@ -92,6 +99,12 @@ export function buildProductPayload(
   const imageUrl = formData.imageUrl.trim()
   if (imageUrl || isEdit) {
     data.imageUrl = imageUrl
+  }
+
+  // null, never '': the column is partial-unique (mig 00074), so a second
+  // product cleared to '' would collide with the first.
+  if (formData.barcode !== undefined) {
+    data.barcode = formData.barcode.trim() || null
   }
 
   return { ok: true, data }

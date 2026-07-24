@@ -9,7 +9,7 @@ import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/
 import { buildProductPayload } from '../lib/productFormPayload';
 import { assembleProductUoms, extraUomsFromProduct } from '../lib/productUomForm';
 import { categoryOptions, uomCodeOptions, withCurrentValue } from '../lib/productTaxonomy';
-import { CreatableSelect } from './ui';
+import { CreatableSelect, ScanField } from './ui';
 import OptimizedImage from './OptimizedImage';
 import ProductHomeBinsSection from './admin/ProductHomeBinsSection';
 import ProductWmsAttributesSection from './admin/ProductWmsAttributesSection';
@@ -43,6 +43,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
         widthCm: '',
         heightCm: '',
         sizeFactor: '1',
+        barcode: '',
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { addToast } = useToasts();
@@ -77,6 +78,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                 widthCm: productToEdit.widthCm != null ? String(productToEdit.widthCm) : '',
                 heightCm: productToEdit.heightCm != null ? String(productToEdit.heightCm) : '',
                 sizeFactor: productToEdit.sizeFactor != null ? String(productToEdit.sizeFactor) : '1',
+                barcode: productToEdit.barcode ?? '',
             });
             setExtraUoms(extraUomsFromProduct(productToEdit));
             setSupplierLinks(supplierDraftsFromProduct(productToEdit));
@@ -193,6 +195,19 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                     <div>
                         <label htmlFor="sku" className="block text-sm font-medium text-stone-700 mb-1.5">SKU</label>
                         <input type="text" name="sku" id="sku" value={formData.sku} onChange={handleChange} required placeholder="e.g., AYM-COC-003 (uppercase recommended)" className={inputClasses} />
+                    </div>
+                    <div>
+                        {/* Scanning here is how the system LEARNS a supplier barcode:
+                            scan the carton once at the desk, and every later scan of
+                            that carton anywhere in the app resolves to this product. */}
+                        <ScanField
+                            label="Barcode (optional)"
+                            value={formData.barcode}
+                            onChange={(v) => setFormData(prev => ({ ...prev, barcode: v }))}
+                            placeholder="Scan the supplier's carton barcode"
+                            cameraTitle="Scan the product barcode"
+                            helper="The manufacturer's EAN/UPC. Leave blank if the carton has none — the printed QR label carries the SKU instead."
+                        />
                     </div>
                     <div>
                         <label htmlFor="description" className="block text-sm font-medium text-stone-700 mb-1.5">Description</label>

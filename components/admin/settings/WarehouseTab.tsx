@@ -6,12 +6,14 @@ import React from 'react'
 import WarehousesSettingsSection from '../WarehousesSettingsSection'
 import StorageFormsView from './StorageFormsView'
 import ZoneProfilesSection from '../ZoneProfilesSection'
+import LabelPrintingSection from '../LabelPrintingSection'
 
 const WarehouseTab: React.FC = () => (
   <div className="space-y-6">
     <WarehousesSettingsSection />
     <StorageFormsView />
     <ZoneProfilesSection />
+    <LabelPrintingSection />
   </div>
 )
 

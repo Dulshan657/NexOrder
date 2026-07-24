@@ -19,4 +19,5 @@ export {
   type TextareaProps,
 } from './Field'
 export { Toggle, type ToggleProps } from './Toggle'
+export { ScanField, type ScanFieldProps } from './ScanField'
 export { default as CreatableSelect, type CreatableSelectProps } from './CreatableSelect'

@@ -89,6 +89,11 @@ const productBodySchema = z.object({
   height_cm: z.number().min(0).nullable().optional(),
   // Racked WMS: capacity slots a single base unit consumes (mig 00039).
   size_factor: z.number().positive().optional(),
+  // Supplier EAN/UPC captured by scanning (mig 00074 made it partial-unique).
+  // Nullable so an operator can clear a barcode that was linked in error —
+  // '' would trip the unique index the moment a second product cleared theirs,
+  // so empty string is normalised to null rather than accepted.
+  barcode: z.string().trim().min(1).max(64).nullable().optional(),
   // inventory intentionally excluded
 })
 
@@ -164,6 +169,26 @@ function stripNonColumns<T extends Record<string, unknown>>(
 ): Omit<T, 'inventory' | 'uoms' | 'product_suppliers'> {
   const { inventory: _inv, uoms: _uoms, product_suppliers: _links, ...rest } = data as any
   return rest
+}
+
+/**
+ * Turn a barcode unique-violation into a message an operator can act on.
+ *
+ * mig 00074 made products.barcode partial-unique, so linking a scanned carton
+ * barcode to a second product raises a raw 23505 whose text names an index, not
+ * a product. Since barcode linking happens at a rack face from a scan, "already
+ * used by another product" has to be the message.
+ */
+function rethrowBarcodeConflict(error: { code?: string; message?: string } | null, barcode: unknown): void {
+  if (!error) return
+  const isUnique = error.code === '23505' || /duplicate key/i.test(error.message ?? '')
+  if (isUnique && /uq_products_barcode|barcode/i.test(error.message ?? '')) {
+    throw new EdgeFunctionError(
+      'CONFLICT',
+      `Barcode "${String(barcode)}" is already linked to another product.`,
+      { barcode },
+    )
+  }
 }
 
 // Read the singleton carton-discount setting so a derived carton UOM matches the
@@ -290,6 +315,7 @@ serve(async (req: Request) => {
         .single()
 
       if (insertError || !createdRow) {
+        rethrowBarcodeConflict(insertError, safeData.barcode)
         throw new EdgeFunctionError('INTERNAL', insertError?.message ?? 'Failed to create product')
       }
 
@@ -379,6 +405,7 @@ serve(async (req: Request) => {
           .single()
 
         if (updateError) {
+          rethrowBarcodeConflict(updateError, safeData.barcode)
           throw new EdgeFunctionError('INTERNAL', updateError.message ?? 'Failed to update product')
         }
       }

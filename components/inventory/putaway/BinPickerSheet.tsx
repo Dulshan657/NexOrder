@@ -15,8 +15,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, ArrowRight, MapPin, ScanLine, Search } from 'lucide-react'
+import { AlertTriangle, ArrowRight, MapPin, Search } from 'lucide-react'
 import { Sheet } from '@/components/ui/Sheet'
+import { ScanField } from '@/components/ui/ScanField'
 import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
 import { useBalancesByWarehouse } from '@/hooks/queries/useInventoryBalances'
 import { useZoneProfiles } from '@/hooks/queries/useZoneProfiles'
@@ -285,25 +286,16 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
         )}
 
         {/* Scan / type ----------------------------------------------------- */}
-        <div>
-          <label className="block text-xs font-semibold text-stone-600 mb-1.5">Scan or type a bin code</label>
-          <div className="relative">
-            <ScanLine className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
-              placeholder="e.g. A-01-02-B"
-              autoComplete="off"
-              spellCheck={false}
-              className={`${fieldCls} font-mono`}
-              aria-label="Bin code"
-            />
-          </div>
-          {typedCode && !typedMatch && (
-            <p className="text-xs text-amber-600 mt-1.5">No active location with that code in this warehouse.</p>
-          )}
-        </div>
+        {/* Camera scan, wedge-gun scan and typing all land in the same `code`
+            state; the typedMatch effect above selects the bin either way. */}
+        <ScanField
+          label="Scan or type a bin code"
+          value={code}
+          onChange={setCode}
+          placeholder="e.g. A-01-02-B"
+          cameraTitle="Scan a bin label"
+          error={typedCode && !typedMatch ? 'No active location with that code in this warehouse.' : undefined}
+        />
 
         {/* Search ---------------------------------------------------------- */}
         <div>
