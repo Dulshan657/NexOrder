@@ -14,6 +14,12 @@ const OPTIONS: { kind: OverlayKind; label: string }[] = [
 interface OverlayControlsProps {
   overlay: OverlayKind
   onChange: (overlay: OverlayKind) => void
+  /** Legend rows for what the map shows besides the active overlay — storage
+   *  forms, level roles, zone types. Supplied by the caller because only it
+   *  knows which of those are actually present in this warehouse; listing all
+   *  of them every time is noise, and `legendFor('none')` is empty, which left
+   *  the strip blank at rest even though the map was full of colour. */
+  extraEntries?: LegendEntry[]
 }
 
 function Legend({ entries }: { entries: LegendEntry[] }) {
@@ -30,7 +36,7 @@ function Legend({ entries }: { entries: LegendEntry[] }) {
   )
 }
 
-export function OverlayControls({ overlay, onChange }: OverlayControlsProps) {
+export function OverlayControls({ overlay, onChange, extraEntries = [] }: OverlayControlsProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="inline-flex flex-wrap rounded-lg border border-stone-200 bg-stone-100 p-0.5">
@@ -47,7 +53,7 @@ export function OverlayControls({ overlay, onChange }: OverlayControlsProps) {
           </button>
         ))}
       </div>
-      <Legend entries={legendFor(overlay)} />
+      <Legend entries={[...legendFor(overlay), ...extraEntries]} />
     </div>
   )
 }

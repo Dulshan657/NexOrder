@@ -9,6 +9,7 @@ import type { Dispatch, PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorAction, EditorObject, EditorPlacement, EditorState } from './useLayoutEditorState'
 import { BASE_CELL, levelRoleFill, levelRoleLabel, levelRoleStroke, OBJECT_FILL, PLACEMENT_FILL } from './layoutPalette'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
+import { labelTier, fitCode } from '@/components/inventory/warehouse/mapLabels'
 import { defaultRoleKey } from '@/lib/levelRoles'
 import type { LevelRole, RackLevel } from '@/types'
 
@@ -340,14 +341,23 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
                   stroke={stroke}
                   strokeWidth={problem || selected ? 3 : 1.5} rx={3}
                 />
-                {cell >= 22 && (
-                  <text
-                    x={p.x * cell + cell / 2} y={p.y * cell + cell / 2 + 3}
-                    textAnchor="middle" fontSize={Math.min(9, cell / 3)} fill={PLACEMENT_FILL.labelText} fontFamily="monospace"
-                  >
-                    {p.code.slice(0, 6)}
-                  </text>
-                )}
+                {/* `cell` here already IS screen px per cell (the designer scales
+                    its cell rather than the scene), so labelTier reads directly.
+                    fitCode replaces a hardcoded 6-character clip: warehouse codes
+                    share a prefix, so it keeps the discriminating tail and fits
+                    the width actually available. See mapLabels.ts. */}
+                {labelTier(cell) !== 'none' && (() => {
+                  const fontSize = Math.min(9, cell / 3)
+                  const code = fitCode(p.code, p.w * cell - 4, fontSize)
+                  return code ? (
+                    <text
+                      x={p.x * cell + cell / 2} y={p.y * cell + cell / 2 + 3}
+                      textAnchor="middle" fontSize={fontSize} fill={PLACEMENT_FILL.labelText} fontFamily="monospace"
+                    >
+                      {code}
+                    </text>
+                  ) : null
+                })()}
                 {levelCount > 1 && cell >= 18 && (
                   <text
                     x={p.x * cell + p.w * cell - 3} y={p.y * cell + 9}

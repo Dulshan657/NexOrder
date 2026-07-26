@@ -13,11 +13,15 @@
 // context — this component no longer needs one of its own.
 
 import { useMemo, useState } from 'react'
-import type { InventoryLocation, LayoutPlacement } from '@/types'
+import type { InventoryLocation, LayoutPlacement, VelocityClass } from '@/types'
 import { useLayoutDetail } from '@/hooks/queries/useLayouts'
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
+import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
+import { useZoneProfiles } from '@/hooks/queries/useZoneProfiles'
 import type { PutawayResponse } from '@/services/supabase/putawayService'
 import { useWarehouseViewerModel } from './useWarehouseViewerModel'
+import { zoneRegions as computeZoneRegions } from './zoneRegions'
+import type { BinInfo } from './WarehouseCanvas'
 import { MapStage } from './MapStage'
 import { FloatingPanel } from './FloatingPanel'
 import { WarehouseTreePanel } from './WarehouseTreePanel'
@@ -25,7 +29,10 @@ import { BinDetailPanel } from './BinDetailPanel'
 import { OverlayControls } from './OverlayControls'
 import { AskEnginePanel } from './AskEnginePanel'
 import { slottingArrows, routePath, putawayMarkers } from './warehouseMarkers'
-import { occupancyFill, velocityFill, congestionFill, type OverlayKind } from './warehouseOverlays'
+import { occupancyFill, velocityFill, congestionFill, type OverlayKind, type LegendEntry } from './warehouseOverlays'
+import { zoneTint, zoneTypeLabel } from './zoneTints'
+import { roleLabel, sortedRoles } from '@/lib/levelRoles'
+import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 
 export interface RackedWorkspaceProps {
   warehouseId: number
@@ -35,6 +42,9 @@ export interface RackedWorkspaceProps {
 export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps) {
   const { data: detail, isLoading } = useLayoutDetail(layoutId)
   const model = useWarehouseViewerModel(warehouseId, layoutId)
+  const { data: storageTypes = [] } = useStorageTypes()
+  const { data: zoneProfiles = [] } = useZoneProfiles()
+  const { data: levelRoles = [] } = useLevelRoles()
 
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null)
   const [floor, setFloor] = useState(0)
@@ -79,6 +89,147 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
     }
     return map
   }, [overlay, placements, model.binContents])
+
+  // ── Map labelling data ─────────────────────────────────────────────────────
+  // All of this is a reshape of queries already in memory (locations, storage
+  // types, the viewer model) — the map used to receive only a flat colour per
+  // bin, so it could not draw a code, a capacity or a form.
+
+  const formColorById = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const st of storageTypes) if (st.color) map.set(st.id, st.color)
+    return map
+  }, [storageTypes])
+
+  const zoneTypeByProfileId = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const zp of zoneProfiles) map.set(zp.id, zp.zoneType)
+    return map
+  }, [zoneProfiles])
+
+  /** Per-location display record for on-map labels, spines and the hover card.
+   *  Covers RACK parents too: a rack owns no stock itself, but it owns the code
+   *  the map labels the cell with, and its capacity is the sum of its levels'. */
+  const binInfo = useMemo(() => {
+    const map = new Map<number, BinInfo>()
+    for (const loc of model.locationsById.values()) {
+      const contents = model.binContents.get(loc.id) ?? []
+      // Dominant SKU by slots occupied — the same rule the tree and the detail
+      // panel use to pick a bin's headline product.
+      let top: (typeof contents)[number] | null = null
+      for (const row of contents) if (!top || row.slots > top.slots) top = row
+
+      let capacitySlots = loc.capacitySlots
+      if (loc.kind === 'RACK') {
+        const levels = model.levelsByRackId.get(loc.id) ?? []
+        const summed = levels.reduce((acc, lv) => acc + (lv.capacitySlots ?? 0), 0)
+        capacitySlots = summed > 0 ? summed : undefined
+      }
+
+      map.set(loc.id, {
+        code: loc.code,
+        capacitySlots,
+        slotKind: loc.slotKind,
+        contentsCount: contents.length,
+        topSku: top?.productName ?? undefined,
+        formColor: loc.storageTypeId != null ? formColorById.get(loc.storageTypeId) : undefined,
+      })
+    }
+    return map
+  }, [model.locationsById, model.binContents, model.levelsByRackId, formColorById])
+
+  /** Overlay colour for a whole rack, for the zoomed-out case where the cell is
+   *  too small to draw a per-level spine.
+   *
+   *  This replaces the canvas's old "colour of whichever level happened to be
+   *  first", which could paint a rack white when its pick face was jammed and
+   *  its bulk level empty. Occupancy rolls up weighted by capacity; velocity
+   *  reports the fastest class present and congestion the busiest node, since
+   *  those are the levels an operator needs to notice. */
+  const rackColors = useMemo(() => {
+    if (overlay === 'none' || overlay === 'slotting') return undefined
+    const map = new Map<number, string>()
+    for (const [rackId, levels] of model.levelsByRackId) {
+      if (overlay === 'occupancy') {
+        let used = 0
+        let capacity = 0
+        for (const lv of levels) {
+          const pct = model.binFillPct.get(lv.id)
+          const cap = lv.capacitySlots
+          if (pct == null || cap == null || cap <= 0) continue
+          used += pct * cap
+          capacity += cap
+        }
+        map.set(rackId, occupancyFill(capacity > 0 ? used / capacity : null))
+      } else if (overlay === 'velocity') {
+        const order: VelocityClass[] = ['A', 'B', 'C']
+        let best: VelocityClass | null = null
+        for (const lv of levels) {
+          const cls = model.binVelocityClass.get(lv.id)
+          if (cls && (best == null || order.indexOf(cls) < order.indexOf(best))) best = cls
+        }
+        map.set(rackId, velocityFill(best))
+      } else if (overlay === 'congestion') {
+        let peak = 0
+        for (const lv of levels) {
+          const node = placementByLocation.get(lv.id)?.graphNodeId
+          if (node != null) peak = Math.max(peak, model.visitsByNode.get(node) ?? 0)
+        }
+        const c = congestionFill(peak, model.maxVisits)
+        if (c) map.set(rackId, c)
+      }
+    }
+    return map
+  }, [
+    overlay, model.levelsByRackId, model.binFillPct, model.binVelocityClass,
+    model.visitsByNode, model.maxVisits, placementByLocation,
+  ])
+
+  /** Zones have no geometry of their own (see zoneRegions.ts) — recover the area
+   *  each one covers from the cells of the bins parented under it. */
+  const zoneAreas = useMemo(
+    () => computeZoneRegions(placements, model.locationsById, floor),
+    [placements, model.locationsById, floor],
+  )
+
+  /** Legend rows for the map's own colours, restricted to what this warehouse
+   *  actually contains. Storage forms are omitted while an overlay is active
+   *  because the overlay has recoloured those very bins — showing the form
+   *  swatches then would explain a colour that is no longer on screen. */
+  const legendExtras = useMemo(() => {
+    const entries: LegendEntry[] = []
+
+    if (overlay === 'none') {
+      const usedFormIds = new Set<number>()
+      for (const loc of model.locationsById.values()) {
+        if (loc.storageTypeId != null) usedFormIds.add(loc.storageTypeId)
+      }
+      for (const st of storageTypes) {
+        if (st.color && usedFormIds.has(st.id)) entries.push({ color: st.color, label: st.name })
+      }
+    }
+
+    const usedRoleKeys = new Set<string>()
+    for (const loc of model.locationsById.values()) {
+      if (loc.levelRole) usedRoleKeys.add(loc.levelRole)
+    }
+    for (const role of sortedRoles(levelRoles)) {
+      if (usedRoleKeys.has(role.key)) {
+        entries.push({ color: role.colorFill, label: roleLabel(levelRoles, role.key) })
+      }
+    }
+
+    const seenZoneTypes = new Set<string>()
+    for (const area of zoneAreas) {
+      const type = area.zoneProfileId != null ? zoneTypeByProfileId.get(area.zoneProfileId) : undefined
+      const key = type ?? ''
+      if (seenZoneTypes.has(key)) continue
+      seenZoneTypes.add(key)
+      entries.push({ color: zoneTint(type), label: `${zoneTypeLabel(type)} zone` })
+    }
+
+    return entries
+  }, [overlay, model.locationsById, storageTypes, levelRoles, zoneAreas, zoneTypeByProfileId])
 
   // Highlight the descendant bins of a selected non-bin (zone/aisle/rack).
   const highlightedLocationIds = useMemo(() => {
@@ -182,14 +333,19 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
           highlightedLocationIds={highlightedLocationIds}
           onSelectBin={setSelectedLocationId}
           binColors={binColors}
+          rackColors={rackColors}
           binBadges={binBadges}
+          binInfo={binInfo}
+          binFillPct={model.binFillPct}
+          zoneRegions={zoneAreas}
+          zoneTypeByProfileId={zoneTypeByProfileId}
           renderOverlay={renderMarkers}
           locationsById={model.locationsById}
         />
       </div>
 
       <div className="glass-card rounded-xl p-3">
-        <OverlayControls overlay={overlay} onChange={setOverlay} />
+        <OverlayControls overlay={overlay} onChange={setOverlay} extraEntries={legendExtras} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)]">
