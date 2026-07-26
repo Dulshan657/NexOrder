@@ -3,6 +3,7 @@ import {
   getProductHomeBins,
   setProductHomeBin,
   clearProductHomeBin,
+  type HomeBinReplenInput,
 } from '@/services/supabase/productHomeBinService'
 
 export const productHomeBinKeys = {
@@ -20,8 +21,8 @@ export function useProductHomeBins(productId: number | null) {
 export function useSetProductHomeBin(productId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ warehouseId, binId }: { warehouseId: number; binId: number }) =>
-      setProductHomeBin(productId, warehouseId, binId),
+    mutationFn: ({ warehouseId, binId, replen }: { warehouseId: number; binId: number; replen?: HomeBinReplenInput }) =>
+      setProductHomeBin(productId, warehouseId, binId, replen),
     onSuccess: () => qc.invalidateQueries({ queryKey: productHomeBinKeys.byProduct(productId) }),
   })
 }

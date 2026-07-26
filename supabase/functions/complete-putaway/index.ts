@@ -273,6 +273,23 @@ serve(async (req: Request) => {
       },
     })
 
+    // Stock has just ARRIVED somewhere in this warehouse, which is the other way
+    // a replenishment becomes possible — and the only way the "slot is short but
+    // there was nothing to pull" case ever resolves. A pick-only detector can
+    // never see it: that state is entered by a putaway, not a pick, so without
+    // this hook it stays stuck until a human presses a button.
+    //
+    // Advisory and hard-wrapped, like the receiving-side putaway trigger: the
+    // pallet is already in the bay, and nothing downstream may undo that.
+    try {
+      await admin.rpc('wie_replen_detect', {
+        p_warehouse_id: warehouseId,
+        p_product_id: productId,
+        p_actor: auth.userId,
+        p_dry_run: false,
+      })
+    } catch { /* advisory */ }
+
     return new Response(JSON.stringify({
       ok: true,
       status: placed.status,

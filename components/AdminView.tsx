@@ -21,6 +21,7 @@ const StockView = lazyWithRetry(() => import('./StockView'));
 const ReceiveStockView = lazyWithRetry(() => import('./inventory/ReceiveStockView'));
 const PickQueueView = lazyWithRetry(() => import('./inventory/PickQueueView'));
 const PutawayQueuePage = lazyWithRetry(() => import('./inventory/PutawayQueuePage'));
+const ReplenQueuePage = lazyWithRetry(() => import('./inventory/ReplenQueuePage'));
 const DispatchedOrdersView = lazyWithRetry(() => import('./inventory/DispatchedOrdersView'));
 const DocumentsView = lazyWithRetry(() => import('./inventory/DocumentsView'));
 const WarehousePage = lazyWithRetry(() => import('./inventory/warehouse/WarehousePage'));
@@ -75,7 +76,7 @@ interface AdminViewProps {
     onViewInOrderImport?: (orderId: string) => void;
 }
 
-export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Order Import' | 'Promotions' | 'Accounts' | 'Stock' | 'Receiving' | 'Putaway' | 'Pick Queue' | 'Dispatched' | 'Documents' | 'Warehouse' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'PO Inbox' | 'Settings' | 'Audit Log' | 'System Health';
+export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Order Import' | 'Promotions' | 'Accounts' | 'Stock' | 'Receiving' | 'Putaway' | 'Replenishment' | 'Pick Queue' | 'Dispatched' | 'Documents' | 'Warehouse' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'PO Inbox' | 'Settings' | 'Audit Log' | 'System Health';
 
 const AdminView: React.FC<AdminViewProps> = (props) => {
     const isDashboard = props.activeTab === 'Dashboard';
@@ -116,6 +117,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} addToast={props.addToast} />}
                 {props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} onOpenPutaway={openPutaway} />}
                 {props.activeTab === 'Putaway' && <PutawayQueuePage currentUser={props.currentUser} />}
+                {props.activeTab === 'Replenishment' && <ReplenQueuePage currentUser={props.currentUser} />}
                 {props.activeTab === 'Pick Queue' && <PickQueueView currentUser={props.currentUser} />}
                 {props.activeTab === 'Dispatched' && <DispatchedOrdersView orders={props.allOrders} onViewDetail={props.onViewOrderDetail} />}
                 {props.activeTab === 'Documents' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <DocumentsView />}

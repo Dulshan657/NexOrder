@@ -198,17 +198,24 @@ serve(async (req: Request) => {
 
     const { data: itemRow } = await admin
       .from('order_items')
-      .select('order_id')
+      .select('order_id, product_id')
       .eq('id', orderItemId)
       .single()
     const orderId = (itemRow as { order_id: string } | null)?.order_id ?? null
+    const pickedProductId = (itemRow as { product_id: number } | null)?.product_id ?? null
+
+    // The bin's ROOT warehouse — a racked pick lands on a level whose id is
+    // nothing like its warehouse's. Hoisted out of the fulfilment block below so
+    // the replenishment hook can use it too.
+    const { data: rootWh } = await admin.rpc('inv_root_warehouse', { p_location_id: locationId })
+    const pickWarehouseId = (typeof rootWh === 'number' ? rootWh : null) ?? locationId!
 
     if (orderId) {
       const nowIso = new Date().toISOString()
       // A pick may land on a bin (racked); the fulfilment is keyed by the bin's
-      // root warehouse. Resolve it (mig 00040) so we advance the right fulfilment.
-      const { data: rootData } = await admin.rpc('inv_root_warehouse', { p_location_id: locationId })
-      const warehouseId = (typeof rootData === 'number' ? rootData : null) ?? locationId!
+      // root warehouse (mig 00040). Resolved once above, so the replenishment
+      // hook at the end of this handler can reuse it.
+      const warehouseId = pickWarehouseId
 
       // Fulfilment model: advance this warehouse's fulfilment to 'picked' once its
       // portion is fully picked, then recompute the derived order status.
@@ -273,6 +280,24 @@ serve(async (req: Request) => {
         ...result,
       },
     })
+
+    // A pick is the moment a pick zone drains, so this is where a shortfall
+    // becomes true. Advisory and hard-wrapped: replenishment is a suggestion,
+    // and a picker must never be told their pick failed because a downstream
+    // detector had a bad day. Same rule generatePutawayTasks is called under.
+    //
+    // wie_replen_detect (mig 00082) opens with a cheap EXISTS bail when no home
+    // bin in this warehouse has replenishment enabled, so on a site that does
+    // not use it this costs a couple of index hits on the hottest warehouse
+    // endpoint there is.
+    try {
+      await admin.rpc('wie_replen_detect', {
+        p_warehouse_id: pickWarehouseId,
+        p_product_id: pickedProductId,
+        p_actor: auth.userId,
+        p_dry_run: false,
+      })
+    } catch { /* advisory */ }
 
     return new Response(JSON.stringify({ ok: true, locationId, scanVerified, ...result }), {
       status: 200,

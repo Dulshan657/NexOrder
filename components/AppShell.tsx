@@ -68,6 +68,7 @@ import {
     useDeletePromotion,
 } from '../hooks/queries/usePromotions';
 import { usePendingPutawayCounts } from '../hooks/queries/usePendingPutawayCounts';
+import { usePendingReplenCounts } from '../hooks/queries/useReplenishment';
 import { getDemoPersona } from '../lib/demoAccounts';
 
 import { type AdminTab } from './AdminView';
@@ -128,6 +129,7 @@ import {
     BookOpen,
     PackagePlus,
     PackageOpen,
+    ArrowDownToLine,
     ClipboardCheck,
     Send,
     FileText,
@@ -308,9 +310,16 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     // Nav badge total — RLS only allows Admin/Manager/Warehouse to read the
     // recommendations table the counts come from.
     const { data: putawayCounts } = usePendingPutawayCounts(isAdminOrManager || isWarehouse);
+    const { data: replenCounts } = usePendingReplenCounts(isAdminOrManager || isWarehouse);
     const putawayPendingCount = useMemo(
         () => Object.values(putawayCounts ?? {}).reduce((sum, n) => sum + n, 0),
         [putawayCounts],
+    );
+    // A Map, not a plain object, because getPendingReplenCounts aggregates rows
+    // client-side rather than reading a per-warehouse view.
+    const replenPendingCount = useMemo(
+        () => [...(replenCounts?.values() ?? [])].reduce((sum, n) => sum + n, 0),
+        [replenCounts],
     );
     // PO-Inbox demo persona (Tridon, V2food, …): an Admin login with a bespoke
     // sidebar order (PO Inbox → Order Import pinned first) and client branding.
@@ -793,6 +802,18 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 )}
                             </button>
                             <button
+                                onClick={() => { setAdminView('Replenishment'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Replenishment' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <ArrowDownToLine className="w-5 h-5 mr-3" />
+                                <span className="flex-1 text-left">Replenishment</span>
+                                {replenPendingCount > 0 && (
+                                    <span className="text-[10px] font-bold bg-indigo-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                                        {replenPendingCount}
+                                    </span>
+                                )}
+                            </button>
+                            <button
                                 onClick={() => { setAdminView('Pick Queue'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Pick Queue' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
@@ -886,6 +907,18 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 {putawayPendingCount > 0 && (
                                     <span className="text-[10px] font-bold bg-amber-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
                                         {putawayPendingCount}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Replenishment'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Replenishment' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <ArrowDownToLine className="w-5 h-5 mr-3" />
+                                <span className="flex-1 text-left">Replenishment</span>
+                                {replenPendingCount > 0 && (
+                                    <span className="text-[10px] font-bold bg-indigo-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                                        {replenPendingCount}
                                     </span>
                                 )}
                             </button>
