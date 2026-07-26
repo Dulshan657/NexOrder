@@ -21,16 +21,17 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
+// Small per-level travel penalty (mig 00072) so lower levels stay preferred with
+// no scoring change — the lowest level_index in a rack's template gets offset 0,
+// each level above adds one step. Imported rather than redeclared: it had
+// drifted to 0.3 here and in mutate-warehouse-location while the migration and
+// the frontend used 0.5, so a same-rack level reported two different reach costs
+// depending on which path built it.
+import { ACCESS_OFFSET_STEP_M } from '../_shared/wie/levelGeometry.ts'
+import { assertValidRoles, loadActiveRoleKeys } from '../_shared/levelRoleLookup.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const BIN_KINDS = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN'] as const
-const LEVEL_ROLES = ['pick', 'reserve', 'bulk'] as const
-// Small per-level travel penalty (mig 00072) so lower levels stay preferred
-// with no scoring change — the lowest level_index in a rack's template gets
-// offset 0, each level above adds one step. Must match the constant of the
-// same name in mutate-warehouse-location/index.ts (which re-levels an
-// already-published rack; this file only seeds brand-new ones).
-const ACCESS_OFFSET_STEP_M = 0.3
 
 const createLayoutSchema = z.object({
   warehouse_id: z.number().int().positive(),
@@ -44,7 +45,9 @@ const createLayoutSchema = z.object({
 // One level of a leveled rack (mig 00072).
 const levelSchema = z.object({
   level_index: z.number().int().positive(),
-  role: z.enum(LEVEL_ROLES),
+  // Validated at runtime against level_roles (mig 00081) — the vocabulary is
+  // operator-managed, so a z.enum literal would reject a newly-created role.
+  role: z.string().min(1).max(32),
   capacity_slots: z.number().nonnegative().optional(),
   slot_kind: z.enum(['pallet', 'carton']).optional(),
   weight_capacity_kg: z.number().nonnegative().optional(),
@@ -340,6 +343,14 @@ serve(async (req: Request) => {
       if (o.new_staging && o.object_type !== 'staging') {
         throw new EdgeFunctionError('INVALID_INPUT', "new_staging is only valid on a 'staging' object")
       }
+    }
+
+    // Level roles are operator-managed (mig 00081), so they are validated here
+    // rather than by a z.enum. Checked BEFORE the destructive geometry replace
+    // below: an FK violation partway through would leave the draft empty.
+    const draftedRoles = input.placements.flatMap((p) => (p.new_bin?.levels ?? []).map((l) => l.role))
+    if (draftedRoles.length > 0) {
+      assertValidRoles(draftedRoles, await loadActiveRoleKeys(admin))
     }
 
     const { data: whRow, error: whErr } = await admin.from('locations')

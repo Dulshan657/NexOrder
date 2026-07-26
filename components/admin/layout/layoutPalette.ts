@@ -66,23 +66,28 @@ export const LEGEND_ITEMS: LegendItem[] = [
 // (see the file banner + memory/warehouse-tab-immersive-map-2026-07.md) — do
 // not edit anything above this line, only append.
 
-/** Fill per rack-level role, used by the exploded level stack on both canvases. */
-export const LEVEL_ROLE_FILL: Record<LevelRole, string> = {
-  pick: '#a7f3d0',
-  reserve: '#c7d2fe',
-  bulk: '#fde68a',
-}
+// These three were `Record<LevelRole, string>` maps keyed on a closed union.
+// Since mig 00081 the role vocabulary is operator-managed data, so the colours
+// and the label live on the role row and these become lookups over it. The seed
+// carries the exact values that used to be hardcoded here, so nothing changed
+// visually — but an operator can now recolour a role, and a role they invent
+// renders correctly instead of falling off the map.
+//
+// Callers get the role array from useLevelRoles(). Re-exported (rather than
+// having callers import @/lib/levelRoles directly) so the canvases keep a single
+// palette import, which is what the file banner's add-only rule is protecting.
+export { roleFill as levelRoleFill, roleStroke as levelRoleStroke } from '@/lib/levelRoles'
 
-/** Stroke per rack-level role — paired with LEVEL_ROLE_FILL. */
-export const LEVEL_ROLE_STROKE: Record<LevelRole, string> = {
-  pick: '#059669',
-  reserve: '#4f46e5',
-  bulk: '#d97706',
-}
+import { roleLabel } from '@/lib/levelRoles'
+import type { LevelRoleRecord } from '@/lib/levelRoles'
 
-/** Short display label per rack-level role, for the exploded stack's text. */
-export const LEVEL_ROLE_LABEL: Record<LevelRole, string> = {
-  pick: 'Pick',
-  reserve: 'Reserve',
-  bulk: 'Bulk',
+/** Short display label per rack-level role, for the exploded stack's text.
+ *
+ *  Truncated to a canvas-sized label: the stack draws these inside a level band
+ *  a few pixels tall, which is why this reads "Pick Zone" as-is but would clip a
+ *  long operator-invented name. The editor and the bin picker use the full
+ *  displayName; only the canvas abbreviates. */
+export function levelRoleLabel(roles: readonly LevelRoleRecord[], key: string | null | undefined): string {
+  const full = roleLabel(roles, key)
+  return full.length > 12 ? `${full.slice(0, 11)}…` : full
 }

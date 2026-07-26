@@ -64,8 +64,13 @@ export interface PlacementFootprint {
  *  itself runs in SQL (wie_putaway_candidates' p_roles argument); this type
  *  just carries the value through for explainability + UI display. `null` on
  *  a location/CandidateBin means unconstrained — every legacy bin (and every
- *  level with no explicit role) stays eligible for any SKU. */
-export type LevelRole = 'pick' | 'reserve' | 'bulk'
+ *  level with no explicit role) stays eligible for any SKU.
+ *
+ *  Since mig 00081 the vocabulary is operator-managed (`level_roles`), so this
+ *  is a bare string: 'pick'/'reserve'/'bulk' are the seeded keys, not the only
+ *  legal ones. The engine never branches on the value — see levelRoles.ts for
+ *  the semantic flags, which arrive as data. */
+export type LevelRole = string
 
 /** The SKU being put away, plus the attributes the rule/scoring layers read.
  *  Phase-3 attributes (hazard/temp) are optional and null until that phase. */

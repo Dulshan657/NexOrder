@@ -15,16 +15,17 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
+// Small per-level travel penalty (mig 00072) so lower levels stay preferred with
+// no scoring change — L(lowest index) keeps its existing offset, each level
+// above adds one step. Imported rather than redeclared: it had drifted to 0.3
+// here and in mutate-layout while the migration and the frontend used 0.5, so a
+// same-rack level reported two different reach costs depending on which path
+// built it — invisible until replenishment routing started pricing a pull.
+import { ACCESS_OFFSET_STEP_M } from '../_shared/wie/levelGeometry.ts'
+import { assertValidRoles, loadActiveRoleKeys } from '../_shared/levelRoleLookup.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 const NODE_KINDS = ['ZONE', 'BIN', 'SHELF'] as const
-const LEVEL_ROLES = ['pick', 'reserve', 'bulk'] as const
-// Small per-level travel penalty (mig 00072) so lower levels stay preferred
-// with no scoring change — L(lowest index) keeps its existing offset, each
-// level above adds one step. Must match the constant of the same name in
-// mutate-layout/index.ts (new racks are seeded there; this file only
-// re-levels an already-published one).
-const ACCESS_OFFSET_STEP_M = 0.3
 
 const createSchema = z.object({
   parent_id: z.number().int().positive(),
@@ -49,7 +50,10 @@ const updateSchema = z
 // REMOVED (guarded against stock below), one present but new is ADDED.
 const setLevelsSchema = z.object({
   level_index: z.number().int().positive(),
-  role: z.enum(LEVEL_ROLES),
+  // Validated at runtime against level_roles (mig 00081) — the vocabulary is
+  // operator-managed, so a z.enum literal here would reject a role an admin had
+  // just created.
+  role: z.string().min(1).max(32),
   capacity_slots: z.number().nonnegative().nullable().optional(),
   weight_capacity_kg: z.number().nonnegative().nullable().optional(),
 })
@@ -166,6 +170,10 @@ serve(async (req: Request) => {
       if (dupIndex.size !== input.levels.length) {
         throw new EdgeFunctionError('INVALID_INPUT', 'level_index values must be unique')
       }
+      // wie_convert_rack_to_levels_tx re-checks this and raises
+      // INVALID_LEVEL_ROLE, but it does so mid-transaction after locking the
+      // rack. Checking first gives the same refusal without taking the lock.
+      assertValidRoles(input.levels.map((l) => l.role), await loadActiveRoleKeys(admin))
       // The RPC takes levels as an ascending L1..Ln array, positionally.
       const ordered = [...input.levels].sort((a, b) => a.level_index - b.level_index)
 
@@ -213,6 +221,10 @@ serve(async (req: Request) => {
       if (dupIndex.size !== input.levels.length) {
         throw new EdgeFunctionError('INVALID_INPUT', 'level_index values must be unique')
       }
+      // Fails closed. The FK on locations.level_role would also refuse a bogus
+      // key, but mid-loop and with an unreadable message — and it cannot check
+      // is_active, which this does.
+      assertValidRoles(input.levels.map((l) => l.role), await loadActiveRoleKeys(admin))
 
       const { data: rack, error: rackErr } = await admin.from('locations')
         .select('id, kind, code, materialized_path, is_active')

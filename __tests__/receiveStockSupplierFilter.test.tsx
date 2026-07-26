@@ -21,6 +21,13 @@ vi.mock('@/hooks/queries/useSuppliers', () => ({
     data: [{ id: 1, name: 'Acme Foods' }, { id: 2, name: 'Beta Trading' }],
   }),
 }))
+// The plate-type dropdown names each unit's destination from the level_roles
+// vocabulary (mig 00081) rather than hardcoding "bulk/reserve" / "pick face".
+// The seeds give this test the same wording the real screen shows.
+vi.mock('@/hooks/queries/useLevelRoles', async () => {
+  const { FALLBACK_LEVEL_ROLES } = await import('@/lib/levelRoles')
+  return { useLevelRoles: () => ({ data: FALLBACK_LEVEL_ROLES }) }
+})
 vi.mock('@/hooks/useToasts', () => ({ useToasts: () => ({ addToast: vi.fn() }) }))
 
 import ReceiveStockView from '@/components/inventory/ReceiveStockView'

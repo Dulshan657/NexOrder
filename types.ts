@@ -175,8 +175,18 @@ export type SlotUnit = 'pallet' | 'carton' | 'each' | 'uncounted';
 
 /** What a rack level is used for (mig 00072). Drives the HARD putaway gate:
  *  a SKU may only be placed on a level whose role it allows. `undefined` /
- *  NULL on a location means "unconstrained" — every legacy bin keeps working. */
-export type LevelRole = 'pick' | 'reserve' | 'bulk';
+ *  NULL on a location means "unconstrained" — every legacy bin keeps working.
+ *
+ *  Since mig 00081 the vocabulary is operator-managed (`level_roles`), so this
+ *  is a bare string rather than a closed union: `'pick' | 'reserve' | 'bulk'`
+ *  are the seeded keys, not the only legal ones. Never compare against a
+ *  literal to decide behaviour — read the semantic flags off the role record
+ *  (`isPickZone`, `replenSourceRank`, `huTypes`) via `@/lib/levelRoles`. */
+export type LevelRole = string;
+
+/** One row of `level_roles` (mig 00081). Re-exported from the pure engine module
+ *  so both runtimes share one shape; the helpers live in `@/lib/levelRoles`. */
+export type { LevelRoleRecord } from '@/supabase/functions/_shared/wie/levelRoles';
 
 /** One addressable level of a rack. Persisted as a SHELF-kind `locations` row
  *  (child of a RACK-kind parent) plus its own co-located `layout_placements`

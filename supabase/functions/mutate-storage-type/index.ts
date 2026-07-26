@@ -17,15 +17,19 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { levelRetroPatches } from '../_shared/storageFormLevels.ts'
+import { assertValidRoles, loadActiveRoleKeys } from '../_shared/levelRoleLookup.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const SLOT_UNITS = ['pallet', 'carton', 'each', 'uncounted'] as const
-const LEVEL_ROLES = ['pick', 'reserve', 'bulk'] as const
 
 // One entry of a storage form's STANDARD level layout (mig 00072) — every rack
 // drawn with this form inherits it; individual racks may override.
 const levelTemplateEntrySchema = z.object({
-  role: z.enum(LEVEL_ROLES),
+  // Validated at runtime against level_roles (mig 00081). level_template is
+  // JSONB, so no FK can guard it — validateLevelTemplate below is the ONLY
+  // thing standing between an operator and a form that references a role which
+  // does not exist.
+  role: z.string().min(1).max(32),
   capacity_slots: z.number().nonnegative().nullable().optional(),
   weight_capacity_kg: z.number().nonnegative().nullable().optional(),
 })
@@ -52,15 +56,16 @@ const formFields = {
  *  checked against the row's EFFECTIVE state, not the raw request body: an
  *  update can patch has_levels and level_template in separate calls, so
  *  either field alone can be absent from a given payload. */
-function validateLevelTemplate(hasLevels: unknown, template: unknown): void {
+function validateLevelTemplate(hasLevels: unknown, template: unknown, validRoles: string[]): void {
   if (!hasLevels) return
   if (!Array.isArray(template) || template.length === 0) {
     throw new EdgeFunctionError('INVALID_INPUT', 'A form with levels needs at least one level in its template')
   }
   for (const entry of template as any[]) {
-    if (!entry || typeof entry !== 'object' || !LEVEL_ROLES.includes(entry.role)) {
-      throw new EdgeFunctionError('INVALID_INPUT', `Each level's role must be one of ${LEVEL_ROLES.join(', ')}`)
+    if (!entry || typeof entry !== 'object') {
+      throw new EdgeFunctionError('INVALID_INPUT', 'Each level must be an object with a role')
     }
+    assertValidRoles([entry.role], validRoles)
     if (entry.capacity_slots != null && (typeof entry.capacity_slots !== 'number' || entry.capacity_slots < 0)) {
       throw new EdgeFunctionError('INVALID_INPUT', 'Level capacity must be zero or a positive number')
     }
@@ -149,7 +154,7 @@ serve(async (req: Request) => {
         level_template: input.data.level_template ?? null,
       }
       if (!row.code) throw new EdgeFunctionError('INVALID_INPUT', 'Code must contain a letter or digit')
-      validateLevelTemplate(row.has_levels, row.level_template)
+      validateLevelTemplate(row.has_levels, row.level_template, await loadActiveRoleKeys(admin))
 
       const { data: created, error } = await admin.from('storage_types').insert(row as any).select().single()
       if (error) {
@@ -180,7 +185,7 @@ serve(async (req: Request) => {
       const effectiveTemplate = input.data.level_template !== undefined
         ? input.data.level_template
         : (existing as any).level_template
-      validateLevelTemplate(effectiveHasLevels, effectiveTemplate)
+      validateLevelTemplate(effectiveHasLevels, effectiveTemplate, await loadActiveRoleKeys(admin))
     }
     const { data: updated, error: updErr } = await admin
       .from('storage_types').update(patch as any).eq('id', input.id).select().single()

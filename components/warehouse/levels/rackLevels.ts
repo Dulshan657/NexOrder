@@ -71,13 +71,18 @@ export function matchesTemplate(levels: RackLevel[], template?: RackLevel[]): bo
 
 /** Appends a new top level. Inherits capacity/weight/slotKind from the current
  *  topmost level (if any) so a rack that's "5 pick levels" grows another pick
- *  level, not a blank one; role defaults to `'bulk'` when there's nothing to
- *  inherit from (a sensible default for an overflow level added to an empty rack). */
-export function addLevel(levels: RackLevel[]): RackLevel[] {
+ *  level, not a blank one.
+ *
+ *  `fallbackRole` is used only when there is nothing to inherit from (an empty
+ *  rack). It is a parameter rather than the old hardcoded `'bulk'` because the
+ *  role vocabulary is operator-managed since mig 00081 — a literal here would
+ *  write a key that may have been renamed or retired. Callers pass
+ *  `defaultRoleKey(roles)`. */
+export function addLevel(levels: RackLevel[], fallbackRole: LevelRole): RackLevel[] {
   const top = levels[levels.length - 1]
   const added: RackLevel = {
     levelIndex: levels.length + 1,
-    role: top?.role ?? 'bulk',
+    role: top?.role ?? fallbackRole,
     capacitySlots: top?.capacitySlots,
     slotKind: top?.slotKind,
     weightCapacityKg: top?.weightCapacityKg,
@@ -126,9 +131,11 @@ export function totalCapacity(levels: RackLevel[]): number {
   return levels.reduce((sum, l) => sum + (l.capacitySlots ?? 0), 0)
 }
 
-/** Vertical reach cost for a level: ascending, +0.5m per level above L1. Rides
- *  on the existing `layout_placements.access_offset_m` column, so the engine
- *  already prefers reachable levels with no scoring change. */
-export function accessOffsetForLevel(levelIndex: number, baseOffsetM = 0): number {
-  return baseOffsetM + Math.max(0, levelIndex - 1) * 0.5
-}
+/** Vertical reach cost for a level: ascending, one step per level above L1.
+ *  Rides on the existing `layout_placements.access_offset_m` column, so the
+ *  engine already prefers reachable levels with no scoring change.
+ *
+ *  Re-exported from the shared engine module rather than reimplemented — this
+ *  file and the migration used 0.5 while two Edge Functions used 0.3, and
+ *  replenishment routing reads this value to price a pull. */
+export { accessOffsetForLevel } from '@/supabase/functions/_shared/wie/levelGeometry'

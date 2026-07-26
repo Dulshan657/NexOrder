@@ -82,7 +82,9 @@ export async function deleteLayout(layoutId: number): Promise<number> {
 /** One level of a new_bin.levels array (mig 00072). */
 export interface NewBinLevelInput {
   level_index: number
-  role: 'pick' | 'reserve' | 'bulk'
+  /** A level_roles.key (mig 00081) — operator-managed, so not a closed union.
+   *  mutate-layout validates it against the table. */
+  role: string
   capacity_slots?: number
   slot_kind?: 'pallet' | 'carton'
   weight_capacity_kg?: number

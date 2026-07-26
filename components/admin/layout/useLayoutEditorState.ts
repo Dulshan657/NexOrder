@@ -325,7 +325,10 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
           return {
             locationId: row.locationId,
             levelIndex: m?.levelIndex ?? row.levelIndex ?? 1,
-            role: m?.levelRole ?? 'pick',
+            // No stored role = unconstrained. Defaulting to 'pick' here would
+            // silently claim these levels are pick zones, which now drives
+            // replenishment and order allocation.
+            role: m?.levelRole ?? '',
             code: m?.code,
             capacitySlots: m?.capacitySlots,
             slotKind: m?.slotKind,

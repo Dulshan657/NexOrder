@@ -50,7 +50,7 @@ test.describe('Rack levels — putaway override', () => {
     await openProductEdit(page, PRODUCT_NAME)
     await expect(page.getByText('Allowed level roles')).toBeVisible()
 
-    const pick = page.getByLabel('pick', { exact: true })
+    const pick = page.getByLabel('Pick Zone', { exact: true })
     const bulk = page.getByLabel('bulk', { exact: true })
     const reserve = page.getByLabel('reserve', { exact: true })
     const original = { pick: await pick.isChecked(), bulk: await bulk.isChecked(), reserve: await reserve.isChecked() }
@@ -110,7 +110,7 @@ test.describe('Rack levels — putaway override', () => {
     } finally {
       await openProducts(page)
       await openProductEdit(page, PRODUCT_NAME)
-      const pickAgain = page.getByLabel('pick', { exact: true })
+      const pickAgain = page.getByLabel('Pick Zone', { exact: true })
       const bulkAgain = page.getByLabel('bulk', { exact: true })
       const reserveAgain = page.getByLabel('reserve', { exact: true })
       if ((await pickAgain.isChecked()) !== original.pick) await pickAgain.click()

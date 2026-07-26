@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { RackLevelEditor } from '../components/warehouse/levels/RackLevelEditor'
+import { FALLBACK_LEVEL_ROLES } from '../lib/levelRoles'
 import type { RackLevel } from '../types'
+
+// The editor takes the role vocabulary as a prop (mig 00081) rather than
+// fetching it, which is what keeps it renderable here with no query client.
+const ROLES = FALLBACK_LEVEL_ROLES
 
 afterEach(() => {
   cleanup()
@@ -15,7 +20,7 @@ const LEVELS: RackLevel[] = [
 
 describe('RackLevelEditor', () => {
   it('renders levels TOP level first, even though the prop is bottom-first', () => {
-    render(<RackLevelEditor levels={LEVELS} />)
+    render(<RackLevelEditor levels={LEVELS} roles={ROLES} />)
     const rows = screen.getAllByRole('listitem')
     expect(rows).toHaveLength(3)
     // L3 (top) should render before L1 (bottom).
@@ -24,18 +29,18 @@ describe('RackLevelEditor', () => {
   })
 
   it('shows a fill percentage when fillByLevel is supplied', () => {
-    render(<RackLevelEditor levels={LEVELS} fillByLevel={new Map([[1, 0.5]])} />)
+    render(<RackLevelEditor levels={LEVELS} roles={ROLES} fillByLevel={new Map([[1, 0.5]])} />)
     expect(screen.getByText('50% full')).toBeTruthy()
   })
 
   it('shows the live location code from codeByLevel over the draft code', () => {
-    render(<RackLevelEditor levels={LEVELS} codeByLevel={new Map([[1, 'MAIN-B-4-2-L1']])} />)
+    render(<RackLevelEditor levels={LEVELS} roles={ROLES} codeByLevel={new Map([[1, 'MAIN-B-4-2-L1']])} />)
     expect(screen.getByText(/MAIN-B-4-2-L1/)).toBeTruthy()
   })
 
   it('calls onSelectLevel when a row is clicked', () => {
     const onSelectLevel = vi.fn()
-    render(<RackLevelEditor levels={LEVELS} onSelectLevel={onSelectLevel} />)
+    render(<RackLevelEditor levels={LEVELS} roles={ROLES} onSelectLevel={onSelectLevel} />)
     const rows = screen.getAllByRole('listitem')
     fireEvent.click(rows[0]) // the top row, L3
     expect(onSelectLevel).toHaveBeenCalledWith(3)
@@ -43,7 +48,7 @@ describe('RackLevelEditor', () => {
 
   it('calls onChange with a new level added when "Add level" is clicked', () => {
     const onChange = vi.fn()
-    render(<RackLevelEditor levels={LEVELS} onChange={onChange} />)
+    render(<RackLevelEditor levels={LEVELS} roles={ROLES} onChange={onChange} />)
     fireEvent.click(screen.getByRole('button', { name: 'Add level' }))
     expect(onChange).toHaveBeenCalledTimes(1)
     const next = onChange.mock.calls[0][0] as RackLevel[]
@@ -52,7 +57,7 @@ describe('RackLevelEditor', () => {
 
   it('calls onChange with the level removed when its remove button is clicked', () => {
     const onChange = vi.fn()
-    render(<RackLevelEditor levels={LEVELS} onChange={onChange} />)
+    render(<RackLevelEditor levels={LEVELS} roles={ROLES} onChange={onChange} />)
     fireEvent.click(screen.getByRole('button', { name: 'Remove level 3' }))
     const next = onChange.mock.calls[0][0] as RackLevel[]
     expect(next).toHaveLength(2)
@@ -61,7 +66,7 @@ describe('RackLevelEditor', () => {
 
   it('calls onChange with the new role when a level\'s role select changes', () => {
     const onChange = vi.fn()
-    render(<RackLevelEditor levels={LEVELS} onChange={onChange} />)
+    render(<RackLevelEditor levels={LEVELS} roles={ROLES} onChange={onChange} />)
     const rows = screen.getAllByRole('listitem')
     const roleSelect = within(rows[2]).getByLabelText('Role') // L1 row (bottom, last rendered)
     fireEvent.change(roleSelect, { target: { value: 'reserve' } })
@@ -71,19 +76,19 @@ describe('RackLevelEditor', () => {
 
   it('shows "Reset to form standard" only when the current levels diverge from the template, and only when editable', () => {
     const template: RackLevel[] = LEVELS.map((l) => ({ ...l }))
-    const { rerender } = render(<RackLevelEditor levels={LEVELS} template={template} />)
+    const { rerender } = render(<RackLevelEditor levels={LEVELS} roles={ROLES} template={template} />)
     expect(screen.queryByText('Reset to form standard')).toBeNull() // matches template
 
     const diverged = LEVELS.map((l) => (l.levelIndex === 3 ? { ...l, role: 'reserve' as const } : l))
-    rerender(<RackLevelEditor levels={diverged} template={template} />)
+    rerender(<RackLevelEditor levels={diverged} roles={ROLES} template={template} />)
     expect(screen.getByText('Reset to form standard')).toBeTruthy()
 
-    rerender(<RackLevelEditor levels={diverged} template={template} readOnly />)
+    rerender(<RackLevelEditor levels={diverged} roles={ROLES} template={template} readOnly />)
     expect(screen.queryByText('Reset to form standard')).toBeNull()
   })
 
   it('renders no editable controls or add/remove affordances when readOnly', () => {
-    render(<RackLevelEditor levels={LEVELS} readOnly />)
+    render(<RackLevelEditor levels={LEVELS} roles={ROLES} readOnly />)
     expect(screen.queryByRole('button', { name: 'Add level' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Remove level/ })).toBeNull()
     const roleSelect = screen.getAllByLabelText('Role')[0] as HTMLSelectElement

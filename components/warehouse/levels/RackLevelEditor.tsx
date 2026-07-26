@@ -12,13 +12,33 @@
 
 import { useId } from 'react'
 import { Plus, Trash2, RotateCcw } from 'lucide-react'
-import type { LevelRole, RackLevel } from '@/types'
+import type { LevelRole, RackLevel, LevelRoleRecord } from '@/types'
 import { Field, Input, Select } from '@/components/ui'
+import { defaultRoleKey, roleTint, sortedRoles } from '@/lib/levelRoles'
+import type { RoleTint } from '@/lib/levelRoles'
 import { addLevel, applyTemplate, matchesTemplate, rackCodeFromLevels, removeLevel, setLevelCapacity, setLevelRole } from './rackLevels'
+
+/** Which surface this editor is mounted on.
+ *
+ *  'instance' — a real rack (Layout Designer draft or the Warehouse tab's live
+ *  rack). Levels have location codes and may show a fill bar.
+ *  'template'  — a storage form's STANDARD level layout in Settings. There are
+ *  no codes and no stock, so neither is rendered.
+ *
+ *  The template mode exists to retire `LevelTemplateEditor`, the near-identical
+ *  copy that lived inside StorageFormsView because this component did not exist
+ *  yet. Both emitted `data-testid="level-role-select-<n>"`, so the E2E selectors
+ *  collided; the testid is now mode-scoped. */
+export type RackLevelEditorMode = 'instance' | 'template'
 
 export interface RackLevelEditorProps {
   /** Bottom level first (levelIndex 1 = bottom). Rendered TOP level first. */
   levels: RackLevel[]
+  /** The operator-managed role vocabulary (mig 00081), from useLevelRoles().
+   *  Passed in rather than fetched so this component stays pure and testable —
+   *  and so the same array drives the dropdown and the tints. */
+  roles: LevelRoleRecord[]
+  mode?: RackLevelEditorMode
   /** The storage form's standard template, for the "reset to standard" action. */
   template?: RackLevel[]
   /** Per-level fill fraction 0..1, keyed by levelIndex. Live surfaces pass this;
@@ -34,26 +54,12 @@ export interface RackLevelEditorProps {
   onChange?: (levels: RackLevel[]) => void
 }
 
-// Local role tints. `layoutPalette.ts` is off-limits (another agent is adding
-// role tints there); once that lands, this map should be replaced by its
-// exports rather than kept as a second source of truth.
-const ROLE_LABEL: Record<LevelRole, string> = {
-  pick: 'Pick face',
-  reserve: 'Reserve',
-  bulk: 'Bulk',
-}
-
-const ROLE_TINT: Record<LevelRole, { bg: string; border: string; text: string; bar: string }> = {
-  pick: { bg: '#ecfdf5', border: '#34d399', text: '#065f46', bar: '#10b981' },
-  reserve: { bg: '#eef2ff', border: '#818cf8', text: '#3730a3', bar: '#6366f1' },
-  bulk: { bg: '#fffbeb', border: '#fbbf24', text: '#92400e', bar: '#d97706' },
-}
-
-const ROLES: LevelRole[] = ['pick', 'reserve', 'bulk']
-
 interface LevelRowProps {
   idPrefix: string
+  mode: RackLevelEditorMode
   level: RackLevel
+  roles: LevelRoleRecord[]
+  tint: RoleTint
   code?: string
   fill?: number
   selected: boolean
@@ -75,12 +81,18 @@ interface LevelRowProps {
 // instead of calling `useId()` per row, which a variable-length `.map()`
 // cannot do without breaking the rules of hooks.
 function levelRow(props: LevelRowProps) {
-  const { idPrefix, level, code, fill, selected, readOnly, onSelect, onSetRole, onSetCapacity, onSetWeight, onRemove } = props
+  const { idPrefix, mode, level, roles, tint, code, fill, selected, readOnly, onSelect, onSetRole, onSetCapacity, onSetWeight, onRemove } = props
   const roleId = `${idPrefix}-role-${level.levelIndex}`
   const capId = `${idPrefix}-cap-${level.levelIndex}`
   const weightId = `${idPrefix}-weight-${level.levelIndex}`
-  const tint = ROLE_TINT[level.role]
   const displayCode = code ?? level.code ?? `L${level.levelIndex}`
+  // A level may still carry a role an operator has since deactivated. Keep that
+  // role selectable on THIS row so opening the editor cannot silently rewrite it
+  // to something else the moment the form is saved.
+  const options = sortedRoles(roles)
+  const roleOptions = options.some((r) => r.key === level.role)
+    ? options
+    : [...options, ...roles.filter((r) => r.key === level.role)]
 
   return (
     <div
@@ -97,7 +109,7 @@ function levelRow(props: LevelRowProps) {
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-mono font-semibold" style={{ color: tint.text }}>
-          L{level.levelIndex}{code || level.code ? ` · ${displayCode}` : ''}
+          L{level.levelIndex}{mode === 'instance' && (code || level.code) ? ` · ${displayCode}` : ''}
         </span>
         {!readOnly && (
           <button
@@ -122,10 +134,12 @@ function levelRow(props: LevelRowProps) {
             value={level.role}
             disabled={readOnly}
             onChange={(e) => onSetRole(e.target.value as LevelRole)}
-            data-testid={`level-role-select-${level.levelIndex}`}
+            data-testid={`level-role-select-${mode}-${level.levelIndex}`}
           >
-            {ROLES.map((r) => (
-              <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+            {roleOptions.map((r) => (
+              <option key={r.key} value={r.key}>
+                {r.displayName}{r.isActive ? '' : ' (retired)'}
+              </option>
             ))}
           </Select>
         </Field>
@@ -172,6 +186,8 @@ function levelRow(props: LevelRowProps) {
 export function RackLevelEditor(props: RackLevelEditorProps) {
   const {
     levels,
+    roles,
+    mode = 'instance',
     template,
     fillByLevel,
     codeByLevel,
@@ -206,7 +222,7 @@ export function RackLevelEditor(props: RackLevelEditorProps) {
               type="button"
               aria-label="Add level"
               className="text-[11px] flex items-center gap-1 text-emerald-700 hover:text-emerald-800 btn-press"
-              onClick={() => emit(addLevel(levels))}
+              onClick={() => emit(addLevel(levels, defaultRoleKey(roles)))}
             >
               <Plus size={12} /> Add level
             </button>
@@ -217,9 +233,12 @@ export function RackLevelEditor(props: RackLevelEditorProps) {
       <div role="list" className="space-y-1.5">
         {topFirst.map((level) => levelRow({
           idPrefix,
+          mode,
           level,
-          code: codeByLevel?.get(level.levelIndex),
-          fill: fillByLevel?.get(level.levelIndex),
+          roles,
+          tint: roleTint(roles, level.role),
+          code: mode === 'instance' ? codeByLevel?.get(level.levelIndex) : undefined,
+          fill: mode === 'instance' ? fillByLevel?.get(level.levelIndex) : undefined,
           selected: selectedLevelIndex === level.levelIndex,
           readOnly,
           onSelect: () => onSelectLevel?.(level.levelIndex),

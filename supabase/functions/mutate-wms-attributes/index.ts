@@ -14,6 +14,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
+import { assertValidRoles, loadActiveRoleKeys } from '../_shared/levelRoleLookup.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -33,7 +34,10 @@ const inputSchema = z.object({
   // which is every existing product's behaviour — so an EMPTY array is
   // normalised to null below rather than being stored as "no role allowed",
   // which would make the SKU unputawayable.
-  allowed_level_roles: z.array(z.enum(['pick', 'reserve', 'bulk'])).nullable().optional(),
+  // Validated at runtime against level_roles (mig 00081), not by a z.enum: the
+  // vocabulary is operator-managed, so a literal here would silently reject a
+  // role an admin had just created.
+  allowed_level_roles: z.array(z.string().min(1).max(32)).nullable().optional(),
 }).refine(
   (d) => d.temp_min == null || d.temp_max == null || d.temp_min <= d.temp_max,
   { message: 'temp_min must be ≤ temp_max' },
@@ -73,6 +77,12 @@ serve(async (req: Request) => {
     // in the putaway queue forever. Normalise it to null.
     if ('allowed_level_roles' in input) {
       const roles = input.allowed_level_roles
+      if (roles && roles.length > 0) {
+        // Fails closed: allowed_level_roles is a TEXT[], so no FK can catch a
+        // bogus key here and a bad value would hard-filter this SKU out of
+        // every candidate level with no error to explain why.
+        assertValidRoles(roles, await loadActiveRoleKeys(admin))
+      }
       row.allowed_level_roles = roles && roles.length > 0 ? roles : null
     }
     const { data: saved, error } = await admin.from('product_wms_attributes')

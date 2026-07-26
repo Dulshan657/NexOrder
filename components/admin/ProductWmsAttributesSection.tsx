@@ -8,12 +8,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getWmsAttributes, saveWmsAttributes, type WmsAttributesInput } from '@/services/supabase/wmsAttributesService'
 import { useToasts } from '@/hooks/useToasts'
 import type { LevelRole, ProductWmsAttributes, ShelfLifePolicy } from '@/types'
+import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
+import { roleLabel, sortedRoles } from '@/lib/levelRoles'
 
 interface ProductWmsAttributesSectionProps {
   productId: number
 }
-
-const LEVEL_ROLES: LevelRole[] = ['pick', 'reserve', 'bulk']
 
 // `allowed_level_roles` (mig 00072) isn't on ProductWmsAttributes / the
 // wmsAttributesService payload yet — read/write it defensively through these
@@ -26,6 +26,8 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
   const qc = useQueryClient()
   const { addToast } = useToasts()
   const { data } = useQuery({ queryKey: ['wms-attributes', productId], queryFn: () => getWmsAttributes(productId) })
+  // Operator-managed role vocabulary (mig 00081).
+  const { data: levelRoles = [] } = useLevelRoles()
   const save = useMutation({
     mutationFn: saveWmsAttributes,
     onSuccess: () => {
@@ -118,21 +120,21 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
       <fieldset className="mt-3 border border-stone-200 rounded-lg p-2.5">
         <legend className="text-xs font-medium text-stone-600 px-1">Allowed level roles</legend>
         <div className="flex items-center gap-4">
-          {LEVEL_ROLES.map((role) => (
-            <label key={role} className="flex items-center gap-1.5 text-xs text-stone-600">
+          {sortedRoles(levelRoles).map((role) => (
+            <label key={role.key} className="flex items-center gap-1.5 text-xs text-stone-600">
               <input
                 type="checkbox"
-                checked={allowedLevelRoles.includes(role)}
-                onChange={() => toggleLevelRole(role)}
+                checked={allowedLevelRoles.includes(role.key)}
+                onChange={() => toggleLevelRole(role.key)}
               />
-              {role}
+              {role.displayName}
             </label>
           ))}
         </div>
         <p className="text-[11px] text-stone-400 mt-1.5">
           {allowedLevelRoles.length === 0
             ? 'Nothing checked = any level role is allowed. This is how every product behaves today.'
-            : `Restricted to ${allowedLevelRoles.join(', ')} levels — putaway will never place this SKU on any other role without an operator override.`}
+            : `Restricted to ${allowedLevelRoles.map((r) => roleLabel(levelRoles, r)).join(', ')} levels — putaway will never place this SKU on any other role without an operator override.`}
         </p>
       </fieldset>
 

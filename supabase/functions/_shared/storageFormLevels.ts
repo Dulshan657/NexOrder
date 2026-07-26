@@ -9,7 +9,12 @@
 // No Deno, no IO — same pattern as `_shared/wie/*`, so vitest covers it
 // directly (see __tests__/storageFormLevels.test.ts).
 
-export type LevelRole = 'pick' | 'reserve' | 'bulk'
+// Re-exported, not redeclared: this file used to carry its own copy of the
+// union, which then had to be kept in step with _shared/wie/types.ts by hand.
+// Since mig 00081 the vocabulary is operator-managed, so there is exactly one
+// definition and it is a bare string.
+export type { LevelRole } from './wie/types.ts'
+import type { LevelRole } from './wie/types.ts'
 
 /** One entry of a form's standard level layout, as stored in jsonb. */
 export interface LevelTemplateEntry {

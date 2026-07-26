@@ -13,7 +13,8 @@
 
 import { useMemo, useState, type ReactNode, type CSSProperties } from 'react'
 import type { WarehouseLayout, LayoutPlacement, LayoutObject, InventoryLocation } from '@/types'
-import { OBJECT_FILL, BASE_CELL, PLACEMENT_FILL, LEVEL_ROLE_FILL, LEVEL_ROLE_STROKE, LEVEL_ROLE_LABEL } from '@/components/admin/layout/layoutPalette'
+import { OBJECT_FILL, BASE_CELL, PLACEMENT_FILL, levelRoleFill, levelRoleStroke, levelRoleLabel } from '@/components/admin/layout/layoutPalette'
+import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { groupPlacementsByCell } from '@/components/admin/layout/LayoutCanvas'
 import { DEFAULT_BIN_FILL, DEFAULT_BIN_STROKE } from './warehouseOverlays'
 import type { Viewport } from './mapViewport'
@@ -69,6 +70,10 @@ export function WarehouseCanvas({
   locationsById,
   guardClick,
 }: WarehouseCanvasProps) {
+  // Operator-managed role vocabulary (mig 00081). A level whose role has been
+  // retired still renders with its own colour, because getLevelRoles returns
+  // inactive rows too.
+  const { data: levelRoles = [] } = useLevelRoles()
   const cell = BASE_CELL
   const { gridWidth, gridHeight } = layout
   const guard = guardClick ?? ((fn: () => void) => fn())
@@ -244,7 +249,7 @@ export function WarehouseCanvas({
               />
               {levels.map((lvl, stackPos) => {
                 const loc = locationsById?.get(lvl.locationId)
-                const role = loc?.levelRole ?? 'pick'
+                const role = loc?.levelRole ?? null
                 const idx = lvl.levelIndex ?? loc?.levelIndex ?? 0
                 const y = stackY + stackPos * (rowH + gap)
                 const isSelected = lvl.locationId === selectedLocationId
@@ -260,8 +265,8 @@ export function WarehouseCanvas({
                   >
                     <rect
                       x={stackX} y={y} width={stackW} height={rowH} rx={4}
-                      fill={LEVEL_ROLE_FILL[role]}
-                      stroke={isSelected ? PLACEMENT_FILL.selectedStroke : LEVEL_ROLE_STROKE[role]}
+                      fill={levelRoleFill(levelRoles, role)}
+                      stroke={isSelected ? PLACEMENT_FILL.selectedStroke : levelRoleStroke(levelRoles, role)}
                       strokeWidth={isSelected ? 2.5 : 1.5}
                       vectorEffect="non-scaling-stroke"
                     />
@@ -272,7 +277,7 @@ export function WarehouseCanvas({
                       x={stackX + stackW - 6} y={y + rowH / 2 + 3}
                       textAnchor="end" fontSize={9} fontFamily="sans-serif" fill="#44403c"
                     >
-                      {LEVEL_ROLE_LABEL[role]}
+                      {levelRoleLabel(levelRoles, role)}
                     </text>
                   </g>
                 )

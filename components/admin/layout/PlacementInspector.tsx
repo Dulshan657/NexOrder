@@ -8,6 +8,7 @@ import type { StorageType, ZoneProfile } from '@/types'
 import type { EditorAction, EditorPlacement } from './useLayoutEditorState'
 import { RackLevelEditor } from '@/components/warehouse/levels/RackLevelEditor'
 import { applyTemplate } from '@/components/warehouse/levels/rackLevels'
+import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 
 interface PlacementInspectorProps {
   placement: EditorPlacement | null
@@ -24,6 +25,9 @@ const KINDS: EditorPlacement['kind'][] = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF
 
 export function PlacementInspector({ placement, dispatch, zoneProfiles, storageTypes, selectedCount }: PlacementInspectorProps) {
   const [selectedLevelIndex, setSelectedLevelIndex] = useState<number | null>(null)
+  // Called before the early return so the hook order is stable when the
+  // selection clears.
+  const { data: levelRoles = [] } = useLevelRoles()
 
   if (!placement) {
     return (
@@ -180,6 +184,7 @@ export function PlacementInspector({ placement, dispatch, zoneProfiles, storageT
         <div className="pt-2 border-t border-stone-100">
           <RackLevelEditor
             levels={levels}
+            roles={levelRoles}
             template={levelTemplate}
             selectedLevelIndex={selectedLevelIndex}
             onSelectLevel={setSelectedLevelIndex}

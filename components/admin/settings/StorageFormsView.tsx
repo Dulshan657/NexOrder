@@ -18,11 +18,13 @@ import {
 } from '../../../hooks/queries/useStorageTypes'
 import { useToasts } from '../../../hooks/useToasts'
 import { deriveCapacitySlots, capacityModeOf, type CapacityMode } from '../../../lib/storageFormCapacity'
+import { RackLevelEditor } from '../../warehouse/levels/RackLevelEditor'
+import { useLevelRoles } from '../../../hooks/queries/useLevelRoles'
+import { sortedRoles } from '../../../lib/levelRoles'
 import type { LevelRole, RackLevel, SlotUnit, StorageType } from '../../../types'
 
 const SLOT_UNITS: SlotUnit[] = ['pallet', 'carton', 'each', 'uncounted']
 const PRESET_COLORS = ['#10b981', '#6366f1', '#f59e0b', '#0ea5e9', '#a855f7', '#ef4444', '#14b8a6', '#78716c']
-const LEVEL_ROLES: LevelRole[] = ['pick', 'reserve', 'bulk']
 
 interface FormState {
   code: string
@@ -78,105 +80,13 @@ function toForm(t: StorageType): FormState {
   }
 }
 
-/** Renumber to a contiguous 1..N after an add/remove so `levelIndex` never
- *  has a gap — L1 is always the bottom level. */
-function renumbered(levels: RackLevel[]): RackLevel[] {
-  return levels.map((l, i) => ({ ...l, levelIndex: i + 1 }))
-}
-
-/** Compact standard-level-template editor. A drop-in swap for the shared
- *  `RackLevelEditor` (components/warehouse/levels/), which another agent is
- *  building for the per-rack case — that component isn't on disk yet, so this
- *  form-scoped editor stands in rather than shipping a broken import. */
-function LevelTemplateEditor({
-  levels,
-  onChange,
-}: {
-  levels: RackLevel[]
-  onChange: (next: RackLevel[]) => void
-}) {
-  const addLevel = () => onChange(renumbered([...levels, { levelIndex: levels.length + 1, role: 'pick' }]))
-  const removeLevel = (index: number) => onChange(renumbered(levels.filter((_, i) => i !== index)))
-  const setRole = (index: number, role: LevelRole) =>
-    onChange(levels.map((l, i) => (i === index ? { ...l, role } : l)))
-  const setCapacity = (index: number, value: string) =>
-    onChange(levels.map((l, i) => (i === index ? { ...l, capacitySlots: value === '' ? undefined : Number(value) } : l)))
-  const setWeight = (index: number, value: string) =>
-    onChange(levels.map((l, i) => (i === index ? { ...l, weightCapacityKg: value === '' ? undefined : Number(value) } : l)))
-
-  return (
-    <div className="rounded-lg border border-stone-200 p-3 space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-stone-600 flex items-center gap-1.5">
-          <Layers className="w-3.5 h-3.5" /> Standard levels
-        </p>
-        <button
-          type="button"
-          onClick={addLevel}
-          className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-stone-200 text-stone-600 btn-press"
-        >
-          <Plus className="w-3.5 h-3.5" /> Add level
-        </button>
-      </div>
-      <p className="text-[11px] text-stone-500">
-        Every new rack drawn with this form starts with this layout — L1 is the bottom level. Individual racks can
-        override it afterward without changing the standard.
-      </p>
-
-      {levels.length === 0 ? (
-        <p className="text-xs text-stone-400 py-2">No levels defined yet. Add at least one.</p>
-      ) : (
-        <div className="space-y-1.5">
-          {levels.map((level, i) => (
-            <div key={i} className="flex items-center gap-2 bg-stone-50 rounded-md px-2 py-1.5">
-              <span className="text-xs font-mono text-stone-500 w-8 shrink-0">L{level.levelIndex}</span>
-              <select
-                value={level.role}
-                onChange={(e) => setRole(i, e.target.value as LevelRole)}
-                aria-label={`Role for level ${level.levelIndex}`}
-                data-testid={`level-role-select-${level.levelIndex}`}
-                className="flex-1 text-xs border border-stone-200 rounded px-2 py-1 bg-white"
-              >
-                {LEVEL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-              <input
-                type="number"
-                min={0}
-                placeholder="slots"
-                value={level.capacitySlots ?? ''}
-                onChange={(e) => setCapacity(i, e.target.value)}
-                aria-label={`Capacity slots for level ${level.levelIndex}`}
-                className="w-20 text-xs border border-stone-200 rounded px-2 py-1"
-              />
-              <input
-                type="number"
-                min={0}
-                placeholder="kg"
-                value={level.weightCapacityKg ?? ''}
-                onChange={(e) => setWeight(i, e.target.value)}
-                aria-label={`Weight capacity (kg) for level ${level.levelIndex}`}
-                className="w-16 text-xs border border-stone-200 rounded px-2 py-1"
-              />
-              <button
-                type="button"
-                onClick={() => removeLevel(i)}
-                className="p-1 rounded hover:bg-red-50 btn-press shrink-0"
-                aria-label={`Remove level ${level.levelIndex}`}
-              >
-                <Trash2 className="w-3.5 h-3.5 text-red-500" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 const numOrNull = (s: string): number | null => (s.trim() === '' ? null : Number(s))
 
 const StorageFormsView: React.FC = () => {
   const { data: types, isLoading, isError } = useStorageTypes()
+  // Operator-managed role vocabulary (mig 00081).
+  const { data: levelRoles = [] } = useLevelRoles()
+  const roleNames = sortedRoles(levelRoles).map((r) => r.displayName).join(' / ')
   const createType = useCreateStorageType()
   const updateType = useUpdateStorageType()
   const deactivateType = useDeactivateStorageType()
@@ -514,14 +424,29 @@ const StorageFormsView: React.FC = () => {
                   checked={form.hasLevels}
                   onChange={(next) => setForm({ ...form, hasLevels: next, levelTemplate: next ? form.levelTemplate : [] })}
                   label="This form has addressable levels"
-                  description="Splits every rack drawn with this form into individually-addressable levels, each with its own pick/reserve/bulk role. Leave off for forms where levels don't apply, like Bulk Floor or Staging Area."
+                  description={`Splits every rack drawn with this form into individually-addressable levels, each with its own role (${roleNames}). Leave off for forms where levels don't apply, like Bulk Floor or Staging Area.`}
                 />
               </div>
               {form.hasLevels && (
-                <LevelTemplateEditor
-                  levels={form.levelTemplate}
-                  onChange={(next) => setForm({ ...form, levelTemplate: next })}
-                />
+                <div className="rounded-lg border border-stone-200 p-3">
+                  <p className="text-[11px] text-stone-500 mb-2">
+                    Every new rack drawn with this form starts with this layout — L1 is the bottom level. Individual
+                    racks can override it afterward without changing the standard.
+                  </p>
+                  {/* The shared per-rack editor in template mode. This used to be
+                      LevelTemplateEditor, a near-identical copy written here when
+                      RackLevelEditor did not exist yet; both emitted the same
+                      data-testid, so the E2E selectors collided. */}
+                  <RackLevelEditor
+                    levels={form.levelTemplate}
+                    roles={levelRoles}
+                    mode="template"
+                    onChange={(next) => setForm({ ...form, levelTemplate: next })}
+                  />
+                  {form.levelTemplate.length === 0 && (
+                    <p className="text-xs text-stone-400 pt-2">No levels defined yet. Add at least one.</p>
+                  )}
+                </div>
               )}
             </div>
           </div>

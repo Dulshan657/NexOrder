@@ -19,7 +19,7 @@ import type {
   WieRule, WieRuleDefinition, ProductWmsAttributes, CategoryCompatibility,
   WieScoringProfile, WieScoringWeights, SlottingSuggestion,
   WieProductVelocity, WieLocationTraffic, ProductUom, ProductSupplierLink,
-  LevelRole, RackLevel,
+  LevelRole, RackLevel, LevelRoleRecord,
 } from '@/types'
 import { sortUoms } from './uom'
 import type { Database } from './database.types'
@@ -917,6 +917,30 @@ export function toZoneProfile(row: ZoneProfileRow): ZoneProfile {
       : undefined,
     maxUtilizationPct: row.max_utilization_pct != null ? Number(row.max_utilization_pct) : undefined,
     isActive: row.is_active,
+  }
+}
+
+/** A level_roles row (mig 00081). The vocabulary is operator-managed, so this is
+ *  the only place the DB's snake_case shape is known. `key` is the stored value
+ *  in locations.level_role and never changes; display_name is what operators
+ *  see, which is how "Pick face" became "Pick Zone" without touching any data. */
+export function toLevelRole(raw: unknown): LevelRoleRecord {
+  const row = (raw ?? {}) as Record<string, unknown>
+  return {
+    key: String(row.key ?? ''),
+    displayName: String(row.display_name ?? row.key ?? ''),
+    description: (row.description as string | null) ?? null,
+    colorFill: String(row.color_fill ?? '#e7e5e4'),
+    colorStroke: String(row.color_stroke ?? '#78716c'),
+    colorText: (row.color_text as string | null) ?? null,
+    sortOrder: Number(row.sort_order ?? 100),
+    // TEXT[] arrives as a real array from PostgREST; guard anyway so a null
+    // column can never make .includes() throw inside a canvas render.
+    huTypes: Array.isArray(row.hu_types) ? (row.hu_types as string[]) : [],
+    isPickZone: Boolean(row.is_pick_zone),
+    replenSourceRank: row.replen_source_rank != null ? Number(row.replen_source_rank) : null,
+    isSystem: Boolean(row.is_system),
+    isActive: row.is_active !== false,
   }
 }
 

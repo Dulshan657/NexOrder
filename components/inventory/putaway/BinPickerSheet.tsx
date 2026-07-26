@@ -20,6 +20,8 @@ import { Sheet } from '@/components/ui/Sheet'
 import { ScanField } from '@/components/ui/ScanField'
 import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
 import { useBalancesByWarehouse } from '@/hooks/queries/useInventoryBalances'
+import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
+import { roleLabel } from '@/lib/levelRoles'
 import { useZoneProfiles } from '@/hooks/queries/useZoneProfiles'
 import { getWmsAttributes } from '@/services/supabase/wmsAttributesService'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
@@ -57,6 +59,9 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
   const locationsQuery = useWarehouseLocations(open ? warehouseId : null)
   const balancesQuery = useBalancesByWarehouse(open ? warehouseId : null)
   const { data: zoneProfiles } = useZoneProfiles()
+  // Operator-managed role vocabulary (mig 00081), so every role in this sheet
+  // reads the way it does everywhere else ("Pick Zone", not "pick").
+  const { data: levelRoles = [] } = useLevelRoles()
   // Per-base-unit weight (product_wms_attributes). Shares its cache key with
   // ProductWmsAttributesSection so the admin form and this picker agree.
   const { data: wms } = useQuery({
@@ -151,8 +156,9 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
       unitWeightKg: wms?.weightKg ?? null,
       allowedLevelRoles,
       huType: row.huType,
+      levelRoles,
     })
-  }, [chosen, zoneProfile, row.product, row.huType, baseQty, fill, wms, allowedLevelRoles])
+  }, [chosen, zoneProfile, row.product, row.huType, baseQty, fill, wms, allowedLevelRoles, levelRoles])
 
   const qtyError =
     baseQty <= 0
@@ -341,9 +347,9 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
                     {mismatched && (
                       <span
                         className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 shrink-0"
-                        title={`This SKU only allows: ${(allowedLevelRoles ?? []).join(', ')}`}
+                        title={`This SKU only allows: ${(allowedLevelRoles ?? []).map((r) => roleLabel(levelRoles, r)).join(', ')}`}
                       >
-                        <AlertTriangle className="w-3 h-3" aria-hidden="true" /> {b.levelRole} level
+                        <AlertTriangle className="w-3 h-3" aria-hidden="true" /> {roleLabel(levelRoles, b.levelRole)} level
                       </span>
                     )}
                     <span className="text-[11px] text-stone-400 tabular-nums shrink-0">

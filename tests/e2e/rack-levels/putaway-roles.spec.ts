@@ -41,7 +41,7 @@ test.describe('Rack levels — putaway role gate', () => {
     await openProductEdit(page, PRODUCT_NAME)
     await expect(page.getByText('Allowed level roles')).toBeVisible()
 
-    const pick = page.getByLabel('pick', { exact: true })
+    const pick = page.getByLabel('Pick Zone', { exact: true })
     const reserve = page.getByLabel('reserve', { exact: true })
     const bulk = page.getByLabel('bulk', { exact: true })
     const original = { pick: await pick.isChecked(), reserve: await reserve.isChecked(), bulk: await bulk.isChecked() }
@@ -77,7 +77,7 @@ test.describe('Rack levels — putaway role gate', () => {
       // Restore the product's allowed level roles no matter what happened above.
       await openProducts(page)
       await openProductEdit(page, PRODUCT_NAME)
-      const pickAgain = page.getByLabel('pick', { exact: true })
+      const pickAgain = page.getByLabel('Pick Zone', { exact: true })
       const reserveAgain = page.getByLabel('reserve', { exact: true })
       const bulkAgain = page.getByLabel('bulk', { exact: true })
       if ((await pickAgain.isChecked()) !== original.pick) await pickAgain.click()

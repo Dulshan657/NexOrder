@@ -96,26 +96,26 @@ describe('rackLevels', () => {
   describe('addLevel', () => {
     it('appends a new top level, renumbered contiguously', () => {
       const levels = applyTemplate(template, 'A-01')
-      const next = addLevel(levels)
+      const next = addLevel(levels, 'bulk')
       expect(next).toHaveLength(6)
       expect(next[5]).toMatchObject({ levelIndex: 6, code: 'A-01-L6' })
     })
 
     it('inherits capacity/weight/slotKind/role from the current top level', () => {
       const levels: RackLevel[] = [{ levelIndex: 1, role: 'reserve', capacitySlots: 3, weightCapacityKg: 500, slotKind: 'carton' }]
-      const next = addLevel(levels)
+      const next = addLevel(levels, 'bulk')
       expect(next[1]).toMatchObject({ levelIndex: 2, role: 'reserve', capacitySlots: 3, weightCapacityKg: 500, slotKind: 'carton' })
     })
 
-    it('defaults role to bulk on an empty rack', () => {
-      const next = addLevel([])
+    it('uses the supplied fallback role on an empty rack', () => {
+      const next = addLevel([], 'bulk')
       expect(next).toEqual([{ levelIndex: 1, role: 'bulk', capacitySlots: undefined, slotKind: undefined, weightCapacityKg: undefined }])
     })
 
     it('never mutates the input array', () => {
       const levels = applyTemplate(template, 'A-01')
       const clone = levels.map((l) => ({ ...l }))
-      addLevel(levels)
+      addLevel(levels, 'bulk')
       expect(levels).toEqual(clone)
     })
   })
@@ -191,7 +191,7 @@ describe('rackLevels', () => {
     it('stays in sync with add/remove — the rollup invariant CapacityAdvisor relies on', () => {
       let levels = applyTemplate(template, 'A-01')
       const before = totalCapacity(levels)
-      levels = addLevel(levels) // inherits the top level's capacity (4)
+      levels = addLevel(levels, 'bulk') // inherits the top level's capacity (4)
       expect(totalCapacity(levels)).toBe(before + 4)
       levels = removeLevel(levels, 1) // drops the first pick level (capacity 2)
       expect(totalCapacity(levels)).toBe(before + 4 - 2)

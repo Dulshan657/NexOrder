@@ -22,6 +22,9 @@ import { planPutaway } from './wie/putawayPlan.ts'
 import { DEFAULT_WEIGHTS } from './wie/types.ts'
 import { isUnitLoad, positionsRequired } from './wie/capacity.ts'
 import { ENGINE_VERSION } from './wie/version.ts'
+import { resolveRolesForPutaway, rolesForHuType } from './wie/levelRoles.ts'
+import { loadLevelRoles } from './levelRoleLookup.ts'
+import type { LevelRoleRecord } from './wie/levelRoles.ts'
 import type { CandidateBin, LevelRole, RuleDefinition, ScoringWeights, SkuProfile, SlotKind } from './wie/types.ts'
 
 // wie_putaway_candidates is ordered by dock distance with p_limit as a hard
@@ -47,14 +50,14 @@ export interface PutawayLineInput {
   hu_id?: number
 }
 
-/** Level roles each kind of handling unit belongs on (mig 00072 roles). */
-const ROLES_BY_HU_TYPE: Record<string, LevelRole[]> = {
-  pallet: ['bulk', 'reserve'],
-  carton: ['pick'],
-}
-
 /**
  * Combine the SKU's own level-role rule with the plate's preferred roles.
+ *
+ * Until mig 00081 the plate preference was a hardcoded map here
+ * (`pallet -> ['bulk','reserve']`, `carton -> ['pick']`). It now arrives as
+ * data: each level_roles row lists the handling-unit types that belong on it,
+ * so adding a role — or deciding that pallets may sit on a pick zone — is an
+ * operator edit rather than a deploy.
  *
  * The SKU rule (product_wms_attributes.allowed_level_roles) is a HARD rule
  * enforced in wie_putaway_candidates' WHERE clause; the plate type is a
@@ -68,14 +71,12 @@ const ROLES_BY_HU_TYPE: Record<string, LevelRole[]> = {
  */
 export function resolvePutawayRoles(
   skuRoles: LevelRole[] | null,
-  huType?: 'pallet' | 'carton',
+  huType: 'pallet' | 'carton' | undefined,
+  roles: readonly LevelRoleRecord[],
 ): LevelRole[] | null {
-  const plateRoles = huType ? ROLES_BY_HU_TYPE[huType] : undefined
-  if (!plateRoles) return skuRoles
-  if (!skuRoles || skuRoles.length === 0) return plateRoles
-  const intersection = skuRoles.filter((r) => plateRoles.includes(r))
-  return intersection.length > 0 ? intersection : skuRoles
+  return resolveRolesForPutaway(skuRoles, rolesForHuType(roles, huType))
 }
+
 
 export interface GeneratePutawayArgs {
   /** The location stock landed in — expected to be a WAREHOUSE-kind root. */
@@ -152,6 +153,12 @@ export async function generatePutawayTasks(
   const compatibility = ((compatRows ?? []) as any[]).map((c) => ({
     categoryA: c.category_a, categoryB: c.category_b, level: c.level,
   }))
+
+  // The operator-managed role vocabulary (mig 00081) — read ONCE per call, then
+  // threaded into the pure engine as data. This load lives here rather than in
+  // _shared/wie/levelRoles.ts because that module is inside the purity contract
+  // and may not perform I/O.
+  const levelRoles = await loadLevelRoles(admin)
 
   // Per-warehouse scoring weights — NOT a safety gate, fail OPEN to defaults.
   const { data: profileRow } = await admin.from('wie_scoring_profiles')
@@ -258,9 +265,11 @@ export async function generatePutawayTasks(
       continue
     }
 
-    // Pallets are steered to bulk/reserve levels and cartons to pick faces,
-    // without ever overriding the SKU's own hard role rule.
-    const effectiveRoles = resolvePutawayRoles(allowedLevelRoles, line.hu_type)
+    // Plates are steered to the level roles that claim their handling-unit type
+    // (by default pallets to bulk/reserve, cartons to the pick zone), without
+    // ever overriding the SKU's own hard role rule. Which roles claim which
+    // plate type is operator-configured since mig 00081.
+    const effectiveRoles = resolvePutawayRoles(allowedLevelRoles, line.hu_type, levelRoles)
 
     const { data: candRows, error: cErr } = await admin.rpc('wie_putaway_candidates', {
       p_layout_id: layoutId, p_product_id: line.product_id, p_limit: CANDIDATE_LIMIT, p_roles: effectiveRoles,

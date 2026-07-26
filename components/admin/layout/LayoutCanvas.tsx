@@ -7,7 +7,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorAction, EditorObject, EditorPlacement, EditorState } from './useLayoutEditorState'
-import { BASE_CELL, LEVEL_ROLE_FILL, LEVEL_ROLE_LABEL, LEVEL_ROLE_STROKE, OBJECT_FILL, PLACEMENT_FILL } from './layoutPalette'
+import { BASE_CELL, levelRoleFill, levelRoleLabel, levelRoleStroke, OBJECT_FILL, PLACEMENT_FILL } from './layoutPalette'
+import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
+import { defaultRoleKey } from '@/lib/levelRoles'
 import type { LevelRole, RackLevel } from '@/types'
 
 // Re-exported for back-compat: existing importers (WarehouseCanvas) pulled these
@@ -102,7 +104,7 @@ function embeddedLevels(p: EditorPlacement): RackLevel[] | undefined {
  *  embedded array) regardless of which of those two shapes the editor state
  *  ends up using. Returns an empty level list for anything that isn't (yet)
  *  a levelled rack, so callers can key expand-in-place off `levels.length`. */
-function levelDataForGroup(group: PlacementGroup<EditorPlacement>): { levels: RackLevel[]; refByIndex: Map<number, string> } {
+function levelDataForGroup(group: PlacementGroup<EditorPlacement>, fallbackRole: LevelRole): { levels: RackLevel[]; refByIndex: Map<number, string> } {
   const refByIndex = new Map<number, string>()
   if (group.items.length > 1) {
     // Each level is its own EditorPlacement row (mirrors the published model).
@@ -110,7 +112,7 @@ function levelDataForGroup(group: PlacementGroup<EditorPlacement>): { levels: Ra
       const withLevelFields = p as EditorPlacement & { levelIndex?: number; levelRole?: LevelRole }
       const levelIndex = withLevelFields.levelIndex ?? i + 1
       refByIndex.set(levelIndex, p.clientRef)
-      const role = withLevelFields.levelRole ?? 'pick'
+      const role = withLevelFields.levelRole ?? fallbackRole
       return {
         locationId: p.locationId, levelIndex, role, code: p.code,
         capacitySlots: p.capacitySlots, slotKind: p.slotKind, weightCapacityKg: p.weightCapacityKg,
@@ -133,6 +135,10 @@ interface LayoutCanvasProps {
 }
 
 export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlightRefs, formColorById }: LayoutCanvasProps) {
+  // Operator-managed role vocabulary (mig 00081). placeholderData means the
+  // exploded level stack never flashes grey while this resolves.
+  const { data: levelRoles = [] } = useLevelRoles()
+  const fallbackRole = defaultRoleKey(levelRoles)
   const [zoom, setZoom] = useState(1)
   const painting = useRef(false)
   const lastCell = useRef<{ x: number; y: number } | null>(null)
@@ -206,10 +212,10 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
     const map = new Map<string, { levels: RackLevel[]; refByIndex: Map<number, string> }>()
     for (const g of placementGroups) {
       if (g.isLegacyBin) continue
-      map.set(g.key, levelDataForGroup(g))
+      map.set(g.key, levelDataForGroup(g, fallbackRole))
     }
     return map
-  }, [placementGroups])
+  }, [placementGroups, fallbackRole])
 
   // Selecting a rack (the existing click-to-select path — no new reducer
   // action needed) expands it in place; selecting anything else, or nothing,
@@ -427,8 +433,8 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
                     >
                       <rect
                         x={stackX} y={y} width={stackW} height={rowH} rx={4}
-                        fill={LEVEL_ROLE_FILL[level.role]}
-                        stroke={levelSelected ? PLACEMENT_FILL.selectedStroke : LEVEL_ROLE_STROKE[level.role]}
+                        fill={levelRoleFill(levelRoles, level.role)}
+                        stroke={levelSelected ? PLACEMENT_FILL.selectedStroke : levelRoleStroke(levelRoles, level.role)}
                         strokeWidth={levelSelected ? 2.5 : 1.5}
                       />
                       <text x={stackX + 6} y={y + rowH / 2 + 3} fontSize={10} fontFamily="monospace" fill="#1c1917">
@@ -438,7 +444,7 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
                         x={stackX + stackW - 6} y={y + rowH / 2 + 3}
                         textAnchor="end" fontSize={9} fontFamily="sans-serif" fill="#44403c"
                       >
-                        {LEVEL_ROLE_LABEL[level.role]}
+                        {levelRoleLabel(levelRoles, level.role)}
                       </text>
                     </g>
                   )

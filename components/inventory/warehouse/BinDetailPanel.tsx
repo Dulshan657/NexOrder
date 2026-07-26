@@ -10,6 +10,8 @@ import { supabase } from '@/lib/supabase'
 import { extractFunctionErrorMessage } from '@/lib/functionError'
 import { useToasts } from '@/hooks/useToasts'
 import { warehouseLocationKeys } from '@/hooks/queries/useWarehouseLocations'
+import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
+import { defaultRoleKey } from '@/lib/levelRoles'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
 import { convertRackToLevels } from '@/services/supabase/warehouseLocationService'
 import { ConfirmDialog } from '@/components/ui'
@@ -113,6 +115,9 @@ export function BinDetailPanel({
   const setLevels = useSetRackLevels(warehouseId)
   const convertRack = useConvertRack(warehouseId)
   const storageTypes = useStorageTypes()
+  // Operator-managed role vocabulary (mig 00081) — drives the level editor's
+  // dropdown, its tints, and the role a freshly-drafted level starts on.
+  const { data: levelRoles = [] } = useLevelRoles()
   // Draft level layout for a not-yet-converted bin, plus the confirm gate.
   // Held here (not in the editor) so Cancel discards it cleanly.
   const [draftLevels, setDraftLevels] = useState<RackLevel[] | null>(null)
@@ -141,7 +146,7 @@ export function BinDetailPanel({
     .map((loc) => ({
       locationId: loc.id,
       levelIndex: loc.levelIndex,
-      role: loc.levelRole ?? 'pick',
+      role: loc.levelRole ?? '',
       code: loc.code,
       capacitySlots: loc.capacitySlots,
       slotKind: loc.slotKind,
@@ -173,7 +178,11 @@ export function BinDetailPanel({
       // Seed from the form's standard layout when it has one; otherwise a
       // single pick level, so the operator builds up explicitly rather than
       // us inventing a level count for their physical rack.
-      applyTemplate(formTemplate && formTemplate.length > 0 ? formTemplate : [{ levelIndex: 1, role: 'pick' }]),
+      applyTemplate(
+        formTemplate && formTemplate.length > 0
+          ? formTemplate
+          : [{ levelIndex: 1, role: defaultRoleKey(levelRoles) }],
+      ),
     )
 
   const doConvert = () => {
@@ -256,6 +265,7 @@ export function BinDetailPanel({
         <div className="border-t border-stone-200 pt-3" data-testid="rack-level-panel">
           <RackLevelEditor
             levels={levels}
+            roles={levelRoles}
             fillByLevel={rackFillByLevel}
             codeByLevel={codeByLevel}
             selectedLevelIndex={isLevel ? location.levelIndex ?? null : null}
@@ -288,7 +298,7 @@ export function BinDetailPanel({
             </>
           ) : (
             <>
-              <RackLevelEditor levels={draftLevels} template={formTemplate} onChange={setDraftLevels} />
+              <RackLevelEditor levels={draftLevels} roles={levelRoles} template={formTemplate} onChange={setDraftLevels} />
               <div className="mt-3 flex items-center justify-end gap-2">
                 <button
                   type="button"

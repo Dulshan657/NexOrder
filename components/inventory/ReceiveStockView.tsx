@@ -4,6 +4,8 @@ import { UserRole } from '../../types';
 import { useReceiveStock } from '../../hooks/queries/useReceiveStock';
 import { useRecentReceipts } from '../../hooks/queries/useInventoryBalances';
 import { useSuppliers } from '../../hooks/queries/useSuppliers';
+import { useLevelRoles } from '@/hooks/queries/useLevelRoles';
+import { roleLabel, rolesForHuType } from '@/lib/levelRoles';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import type { ReceiptHeader, ReceiptLine, ReceiptPlate } from '../../services/supabase/receivingService';
 import { useToasts } from '../../hooks/useToasts';
@@ -262,6 +264,18 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   const receive = useReceiveStock();
   const { data: supplierRows } = useSuppliers();
   const { data: warehouseRows } = useWarehouses();
+  // Operator-managed role vocabulary (mig 00081). The plate-type dropdown tells
+  // the receiver where each kind of unit will be steered, so it has to read the
+  // routing rather than restate it.
+  const { data: levelRoles = [] } = useLevelRoles();
+
+  const plateDestinationLabel = (huType: 'pallet' | 'carton'): string => {
+    const noun = huType === 'pallet' ? 'Pallet' : 'Carton';
+    const dest = rolesForHuType(levelRoles, huType).map((k) => roleLabel(levelRoles, k));
+    // No role claims this plate type: putaway falls back to the SKU's own rule,
+    // so promising a destination here would be a lie.
+    return dest.length > 0 ? `${noun} → ${dest.join('/')}` : noun;
+  };
 
   // Engine putaway recommendations for the most recent receipt (layout warehouses).
   const [putaway, setPutaway] = useState<{ warehouseId: number; recommendations: PutawayLineRecommendation[] } | null>(null);
@@ -794,8 +808,12 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                           onChange={e => setPlateType(line.plateKey, e.target.value as 'pallet' | 'carton')}
                           className="mt-1.5 w-full px-2 py-1 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
                         >
-                          <option value="pallet">Pallet → bulk/reserve</option>
-                          <option value="carton">Carton → pick face</option>
+                          {/* The destination shown here IS the routing: since
+                              mig 00081 each level role declares which plate
+                              types belong on it, so an operator who moves
+                              pallets to a different role sees it change. */}
+                          <option value="pallet">{plateDestinationLabel('pallet')}</option>
+                          <option value="carton">{plateDestinationLabel('carton')}</option>
                         </select>
                       </td>
                       <td className="px-4 py-3 text-right">

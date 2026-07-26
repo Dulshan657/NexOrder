@@ -12,6 +12,8 @@
 import type { InventoryLocation, LevelRole, Product, ZoneProfile } from '@/types'
 import type { WarehouseBinBalance } from '@/services/supabase/inventoryService'
 import { capacityUnitLabel, positionsRequired, positionsUsed } from '@/supabase/functions/_shared/wie/capacity'
+import { roleLabel } from '@/lib/levelRoles'
+import type { LevelRoleRecord } from '@/lib/levelRoles'
 import type { HuType, OccupancyRow } from '@/supabase/functions/_shared/wie/capacity'
 
 export type PutawayWarningCode = 'level_role_mismatch' | 'capacity' | 'zone_category' | 'weight' | 'not_storage'
@@ -85,6 +87,10 @@ export interface EvaluateBinInput {
    *  pallet-slot bin takes ONE position whatever is on it (mig 00078);
    *  undefined keeps the per-unit maths. */
   huType?: HuType
+  /** The role vocabulary (mig 00081), so warnings can name a role the way the
+   *  operator does ("Pick Zone") instead of echoing its stored key ("pick").
+   *  Optional: omitted, messages fall back to the key, which is still legible. */
+  levelRoles?: readonly LevelRoleRecord[]
 }
 
 /** True when `bin` is a rack level whose role the SKU does not allow. A bin
@@ -116,17 +122,18 @@ export function evaluateBinWarnings({
   unitWeightKg,
   allowedLevelRoles,
   huType,
+  levelRoles = [],
 }: EvaluateBinInput): PutawayWarning[] {
   const warnings: PutawayWarning[] = []
 
   // ── Level role (the HARD putaway rule; here as an operator-facing warning
   // because a MANUAL bin choice deliberately bypasses the engine's gate) ─────
   if (isLevelRoleMismatch(bin, allowedLevelRoles)) {
-    const allowedLabel = (allowedLevelRoles ?? []).join(', ')
+    const allowedLabel = (allowedLevelRoles ?? []).map((r) => roleLabel(levelRoles, r)).join(', ')
     warnings.push({
       code: 'level_role_mismatch',
       message:
-        `${bin.code} is a ${bin.levelRole} level — this product is only allowed on ${allowedLabel} levels. ` +
+        `${bin.code} is a ${roleLabel(levelRoles, bin.levelRole)} level — this product is only allowed on ${allowedLabel} levels. ` +
         `Placing it here overrides the rule and is recorded.`,
     })
   }
