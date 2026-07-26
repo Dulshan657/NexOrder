@@ -20,6 +20,7 @@ import { WarehousePicker } from '@/components/inventory/WarehousePicker'
 import { RackedWorkspace } from './RackedWorkspace'
 import { WarehouseEmptyState } from './WarehouseEmptyState'
 import { KpiStrip } from './KpiStrip'
+import LayoutLabelBadge from '@/components/admin/labels/LayoutLabelBadge'
 
 interface WarehousePageProps {
   currentUser: User
@@ -90,10 +91,19 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
           </h1>
           {effectiveWarehouseId != null && isRacked && <KpiStrip warehouseId={effectiveWarehouseId} />}
         </div>
-        <label className="inline-flex items-center gap-2 text-sm text-stone-600">
-          <span className="font-medium">Warehouse</span>
-          <WarehousePicker showAllOption={false} effectiveId={effectiveWarehouseId ?? undefined} />
-        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          {isRacked && publishedLayout && (
+            <LayoutLabelBadge
+              layoutId={publishedLayout.id}
+              layoutName={selectedWarehouse?.name}
+              dense
+            />
+          )}
+          <label className="inline-flex items-center gap-2 text-sm text-stone-600">
+            <span className="font-medium">Warehouse</span>
+            <WarehousePicker showAllOption={false} effectiveId={effectiveWarehouseId ?? undefined} />
+          </label>
+        </div>
       </div>
 
       <div className="px-4 sm:px-6 lg:px-8 py-6">

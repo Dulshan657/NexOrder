@@ -34,6 +34,7 @@ import { LayoutLegend } from './LayoutLegend'
 import { PlacementInspector } from './PlacementInspector'
 import { ObjectInspector } from './ObjectInspector'
 import { PublishChecklist } from './PublishChecklist'
+import LayoutLabelBadge from '@/components/admin/labels/LayoutLabelBadge'
 import { CapacityAdvisor } from './CapacityAdvisor'
 import { ReslotPlannerModal } from './ReslotPlannerModal'
 import { RackWizard } from './RackWizard'
@@ -464,14 +465,25 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
               <p className="text-xs text-stone-500">
                 This layout is {selectedLayout.status} and read-only. Clone it to make changes.
               </p>
-              <button
-                type="button"
-                onClick={() => cloneLayout.mutate({ layoutId: selectedLayout.id, name: `${selectedLayout.name} copy` })}
-                disabled={cloneLayout.isPending}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-50 btn-press"
-              >
-                <Copy className="h-4 w-4" strokeWidth={2} /> Clone to edit
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {/* Labels only make sense once the geometry is final — a draft's
+                    bins can still be moved or renamed out from under a sticker. */}
+                {selectedLayout.status === 'published' && (
+                  <LayoutLabelBadge
+                    layoutId={selectedLayout.id}
+                    layoutName={selectedLayout.name}
+                    dense
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => cloneLayout.mutate({ layoutId: selectedLayout.id, name: `${selectedLayout.name} copy` })}
+                  disabled={cloneLayout.isPending}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-50 btn-press"
+                >
+                  <Copy className="h-4 w-4" strokeWidth={2} /> Clone to edit
+                </button>
+              </div>
             </div>
           )}
 

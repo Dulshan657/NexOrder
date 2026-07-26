@@ -13,6 +13,16 @@
 //
 // Geometry lives in _shared/labelSheet.ts, which is pure and unit-tested by
 // vitest in the frontend — this file only does I/O and drawing.
+//
+// Two selection modes:
+//   * warehouse + kind (original) — ad-hoc runs, products, handling units.
+//   * layoutId + sheetGroup (mig 00084) — everything a PUBLISHED layout needs,
+//     one call per sheet of stock. Grouping and label wording come from the pure
+//     _shared/labels/layoutLabelPlan.ts, shared with the browser.
+//
+// A layout run NEVER flips locations.label_printed. Generating a PDF is not
+// evidence a sticker reached a rack; confirm-label-print records that, per job,
+// once the operator says so.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -33,6 +43,11 @@ import {
   type LabelCell,
   type SheetPresetName,
 } from '../_shared/labelSheet.ts'
+import {
+  planLabelJob,
+  type LabelTargetRow,
+  type SheetGroup,
+} from '../_shared/labels/layoutLabelPlan.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 const BUCKET = 'warehouse-labels'
@@ -53,6 +68,22 @@ const inputSchema = z.object({
   locationKinds: z.array(z.string()).optional(),
   /** Explicit id list, for reprinting a specific handful. */
   ids: z.array(z.number().int().positive()).optional(),
+
+  // ── Layout run (mig 00084) ──
+  // With a layoutId the selection comes from wie_layout_label_targets instead of
+  // the warehouse+kind query: the layout's placements, its staging areas and
+  // their ZONE/AISLE/RACK ancestors. Scoped to the LAYOUT because publishing
+  // never retires old bins, so the warehouse subtree contains locations that are
+  // no longer on the floor.
+  layoutId: z.number().int().positive().optional(),
+  /** Which sheet of stock this call renders. Required alongside layoutId. */
+  sheetGroup: z.enum(['wayfinding', 'slots', 'staging']).optional(),
+  /** Narrow to one subtree — "reprint aisle A3". Includes that root's own sign. */
+  rootLocationId: z.number().int().positive().optional(),
+  /** Default: only locations with no sticker yet. */
+  onlyUnprinted: z.boolean().default(true),
+  /** Groups the sheets of one run. Minted by the client, one per job. */
+  jobId: z.string().uuid().optional(),
 })
 
 interface LabelItem {
@@ -114,6 +145,73 @@ function drawQr(page: PDFPage, matrix: QrMatrix, x: number, y: number, size: num
 /** Location kinds that are worth a sticker by default: storable slots plus the
  *  wayfinding levels an operator uses to find them. */
 const DEFAULT_LOCATION_KINDS = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN', 'STAGING']
+
+/**
+ * Every label one sheet-group of a layout run needs.
+ *
+ * The RPC returns raw pieces; grouping and the context wording come from the
+ * pure planner, which the browser imports too — so what the operator previews in
+ * the modal and what lands on the sticker cannot drift apart.
+ *
+ * Deliberately re-derives the set server-side rather than accepting a list of
+ * ids from the client: the client picks WHICH group to render, never WHAT is in
+ * it.
+ */
+async function loadLayoutItems(
+  admin: any,
+  input: z.infer<typeof inputSchema>,
+): Promise<{ items: LabelItem[]; warehouseId: number | null; preset: SheetPresetName }> {
+  const group = input.sheetGroup
+  if (!group) {
+    throw new EdgeFunctionError('INVALID_INPUT', 'sheetGroup is required when layoutId is given')
+  }
+
+  const { data: layout, error: layoutError } = await admin
+    .from('warehouse_layouts')
+    .select('id, warehouse_id, status')
+    .eq('id', input.layoutId)
+    .single()
+  if (layoutError || !layout) {
+    throw new EdgeFunctionError('NOT_FOUND', `Layout ${input.layoutId} not found`)
+  }
+  // Draft geometry is still being moved around; stickers printed from it would
+  // name bins that may not survive to publish.
+  if ((layout as any).status !== 'published') {
+    throw new EdgeFunctionError(
+      'INVALID_INPUT',
+      'Labels can only be printed from a published layout.',
+    )
+  }
+
+  const { data, error } = await admin.rpc('wie_layout_label_targets', {
+    p_layout_id: input.layoutId,
+    p_root_location_id: input.rootLocationId ?? null,
+    p_only_unprinted: input.onlyUnprinted,
+  })
+  if (error) throw new EdgeFunctionError('INTERNAL', error.message)
+
+  const rows: LabelTargetRow[] = ((data ?? []) as any[]).map((r) => ({
+    locationId: r.location_id as number,
+    code: r.code as string,
+    kind: r.kind as string,
+    name: (r.name as string | null) ?? null,
+    zoneName: (r.zone_name as string | null) ?? null,
+    aisleCode: (r.aisle_code as string | null) ?? null,
+    levelRoleName: (r.level_role_name as string | null) ?? null,
+    levelIndex: (r.level_index as number | null) ?? null,
+    labelPrinted: !!r.label_printed,
+  }))
+
+  const sheet = planLabelJob(rows).find((s) => s.group === (group as SheetGroup))
+
+  return {
+    items: (sheet?.items ?? []).map((i) => ({ code: i.code, context: i.context })),
+    warehouseId: (layout as any).warehouse_id ?? null,
+    // The stock a group prints on is a property of the group, never of the
+    // request — a bin sticker rendered at aisle-sign size wastes a sheet.
+    preset: sheet?.preset ?? 'a4-24',
+  }
+}
 
 async function loadItems(
   admin: any,
@@ -320,7 +418,10 @@ serve(async (req: Request) => {
       { auth: { persistSession: false } },
     )
 
-    const { items, warehouseId, markPrintedIds } = await loadItems(admin, input)
+    const isLayoutRun = input.layoutId != null
+    const { items, warehouseId, markPrintedIds, preset } = isLayoutRun
+      ? { ...(await loadLayoutItems(admin, input)), markPrintedIds: undefined }
+      : { ...(await loadItems(admin, input)), preset: input.preset }
 
     if (items.length === 0) {
       throw new EdgeFunctionError('INVALID_INPUT', 'Nothing to print — that selection matched no records.')
@@ -332,10 +433,12 @@ serve(async (req: Request) => {
       )
     }
 
-    const bytes = await buildLabelPdf(items, input.preset, input.startOffset)
+    const bytes = await buildLabelPdf(items, preset, input.startOffset)
 
     const stamp = Date.now()
-    const storagePath = `${input.kind}/${input.kind}-${stamp}.pdf`
+    const storagePath = isLayoutRun
+      ? `location/layout-${input.layoutId}-${input.sheetGroup}-${stamp}.pdf`
+      : `${input.kind}/${input.kind}-${stamp}.pdf`
     const { error: uploadError } = await admin.storage
       .from(BUCKET)
       .upload(storagePath, bytes, { contentType: 'application/pdf', upsert: false })
@@ -348,6 +451,9 @@ serve(async (req: Request) => {
       warehouse_id: warehouseId,
       storage_path: storagePath,
       generated_by: auth.userId,
+      job_id: input.jobId ?? null,
+      sheet_group: isLayoutRun ? input.sheetGroup : null,
+      layout_id: isLayoutRun ? input.layoutId : null,
     })
     if (logError) throw new EdgeFunctionError('INTERNAL', `record failed: ${logError.message}`)
 
@@ -373,7 +479,15 @@ serve(async (req: Request) => {
       action: 'create',
       resource: 'label_sheet',
       resourceId: storagePath,
-      after: { kind: input.kind, count: items.length, preset: input.preset, warehouse_id: warehouseId },
+      after: {
+        kind: input.kind,
+        count: items.length,
+        preset,
+        warehouse_id: warehouseId,
+        layout_id: isLayoutRun ? input.layoutId : null,
+        sheet_group: isLayoutRun ? input.sheetGroup : null,
+        job_id: input.jobId ?? null,
+      },
     })
 
     return new Response(
@@ -382,6 +496,9 @@ serve(async (req: Request) => {
         storagePath,
         signedUrl: signed?.signedUrl ?? null,
         labelCount: items.length,
+        preset,
+        sheetGroup: isLayoutRun ? input.sheetGroup : null,
+        jobId: input.jobId ?? null,
       }),
       { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
