@@ -131,7 +131,7 @@ The Gmail connect flow (`start-po-oauth` → `_shared/poInbox/oauthUrls.ts` → 
 
 ## Warehouse & inventory (WIE)
 
-The largest subsystem after ordering. Migrations `00027`–`00080`; ~28 of the 60 Edge Functions.
+The largest subsystem after ordering. Migrations `00027`–`00083`; ~34 of the 66 Edge Functions.
 
 **Inventory truth.** `inventory_balances` (product × location × batch **× handling unit**; `on_hand`, `allocated`, `available` generated) is the source of truth; `inventory_movements` is the append-only ledger. `products.inventory` / `products.available` are **caches**, maintained only by `inv_recompute_product_cache()` via `inv_apply_leg()`. All quantities are base units. Every write funnels through `inv_apply_leg` (service_role only): `inv_receive_stock`, `inv_reserve_order`, `inv_pick_order_line`, `inv_transfer_stock`, `inv_adjust_stock`.
 
@@ -144,6 +144,17 @@ The largest subsystem after ordering. Migrations `00027`–`00080`; ~28 of the 6
 - **Putaway is two-stage since mig `00080`** — `suggested --assign--> assigned --complete--> accepted|overridden`. Assigning moves **no stock** (`wie_assign_putaway_tx`); the transfer fires only at `complete-putaway` (`wie_complete_putaway_tx`), when the operator scans the bin and the plate on the floor. Un-placed goods therefore read as sitting at the warehouse root, which is where they actually are. `wie_unassign_putaway_tx` returns an abandoned run to `'suggested'`; `wie_putaway_stops` turns assigned rows into routable walk stops (`recommend-putaway-route`). Scanning the *wrong* bin warns but still records.
 - `wie_decide_putaway_tx` (mig `00071`) is deliberately untouched by `00080` and remains the **one-step "place it now"** desk/bulk path (also used by the CSV opening-stock importer). Both transactions claim the row `FOR UPDATE` and optionally **split** it: a partial putaway leaves the ORIGINAL row `'suggested'` holding the remainder and inserts a decided copy as the audit record. Re-scoring a queued line is `recommend-putaway` + `replaces_recommendation_id`, which expires the row it supersedes.
 - Frontend: `components/inventory/PutawayWalkView.tsx` + `inventory/putaway/{PutawayScanFinder,PutawayStopCard}.tsx`, `hooks/queries/usePutawayWalk.ts`, `services/supabase/putawayRouteService.ts`.
+
+**Level roles are operator-managed data** (mig `00081`). A rack level's role lives in `level_roles`; `locations.level_role` FKs it (the CHECK is gone). The **stored key never changes** — `'pick'` is still `'pick'`; its `display_name` is "Pick Zone". `NULL` still means an unconstrained legacy bin, which the FK preserves for free.
+- The row carries what used to be code: `hu_types` (replaced `ROLES_BY_HU_TYPE`), `is_pick_zone` (replenishment destination + `inv_reserve_order` preference), `replen_source_rank` (which roles feed a pick zone, in order).
+- **One definition, both runtimes:** `_shared/wie/levelRoles.ts` (pure — every helper takes the role array as its first arg, no cache, no fetch), re-exported by `lib/levelRoles.ts`. Load it via `useLevelRoles()` client-side or `_shared/levelRoleLookup.ts` server-side. **Never** compare a role to a literal to decide behaviour — read the flags.
+- Admin CRUD: `mutate-level-role` + `components/admin/LevelRolesSection.tsx` (Settings → Warehouse). Deleting needs `wie_level_role_usage` all-zero — it counts the two references no FK can guard, `product_wms_attributes.allowed_level_roles` (array element) and `storage_types.level_template` (JSONB).
+
+**Replenishment** (mig `00082`) — reserve/bulk → pick zone, same two-stage shape as putaway: `suggested --assign--> assigned --complete--> accepted|overridden`, stock moving only at `complete-replenishment`.
+- Config is `product_home_bins.{min_qty,max_qty,replen_enabled}` (base units), guarded by a trigger to pick-zone levels. Its unique key is now `(product_id, warehouse_id, purpose)`.
+- Detector `wie_replen_detect` runs advisorily after **every pick and every putaway**, plus on demand. The putaway hook is not redundant: "short but nothing to pull" is a state entered by a putaway, not a pick.
+- Functions: `detect-`/`assign-`/`complete-`/`unassign-replenishment`, `recommend-replen-route` — all Admin/Manager/**Warehouse** (`transfer-stock` is Admin/Manager only, so it could never serve this).
+- Frontend: `components/inventory/{ReplenQueuePage,ReplenQueueView,ReplenWalkView}.tsx` + `inventory/replen/ReplenStopCard.tsx`, `hooks/queries/useReplenishment.ts`.
 
 **QR tracking & handling units** (migs `00074`–`00078`).
 - **Scan identity.** The QR payload is **bare text** — a `locations.code`, a product SKU, or a handling-unit code — with no URL wrapper and no namespace prefix, so third-party scanner apps read something meaningful. The cost is that one string could name two things: `lib/scan/resolveScan.ts` returns `ambiguous` with every candidate and the UI asks the operator. **It never guesses.** Labels are rendered by `generate-labels` (`_shared/labelSheet.ts`) and logged to `label_print_log`; print UI is `components/admin/LabelPrintingSection.tsx`, input primitive is `components/ui/ScanField.tsx` (+ `lib/scan/useBarcodeScanner.ts`).
@@ -159,6 +170,10 @@ The largest subsystem after ordering. Migrations `00027`–`00080`; ~28 of the 6
 - `inv_transfer_stock` moves **available** stock only. Reserved units cannot leave their balance row.
 - For **loose** stock a bin's `capacity_slots` is consumed as `qty × products.size_factor`, so a form's capacity must be expressed in the same base unit as `on_hand`. Structured forms must satisfy `levels × positions_per_level = default_capacity_slots` (`lib/storageFormCapacity.ts`). Stock **on a handling unit** consumes one position per plate instead (`00078`) — see `_shared/wie/capacity.ts` and `v_bin_fill`.
 - **`CREATE OR REPLACE FUNCTION` with a changed signature creates a second overload — it does not replace.** `inv_transfer_stock` and `inv_receive_stock` have both been silently duplicated this way, after which Postgres errors on the ambiguous call or picks the stale body. Always `DROP FUNCTION` the old signature first (see `00080`, `00037`).
+- **The replenishment audit trio is on the SOURCE**, not the destination (the mirror of `00080`). The destination *is* the task — it is the pick slot that is low; re-deciding it would be a slotting decision. What varies on the floor is which reserve bin was actually pulled from.
+- **Replenishment scans the two bins by opposite rules** (`_shared/replenScanCheck.ts`): a wrong SOURCE is allowed and recorded (the bay is often empty), a wrong DESTINATION is refused (placing elsewhere leaves the short slot short while reporting the work done).
+- **Replenishment is sized from `available`, never `on_hand`** — `inv_transfer_stock` is available-only, so a task sized otherwise would fail at the rack. Fully-allocated reserve stock therefore raises **no task**; `wie_replen_detect` returns a reason (`source_reserved`, `no_source`, `slot_full`…) and the queue **must** render it.
+- **`uq_wie_replen_open` is `WHERE status = 'suggested'` — do not widen it** to include `'assigned'`. The partial-assign split leaves the original `'suggested'` and inserts an `'assigned'` copy with the same triple. The matching `ON CONFLICT` must restate that predicate or Postgres cannot infer the arbiter and errors at runtime.
 - **One scan-folding definition, two runtimes.** `normalizeScan`/`barcodeVariants` live in `_shared/scanNormalize.ts` and are imported by *both* the browser resolver (`lib/scan/resolveScan.ts`) and the server pick validator (`_shared/pickScanCheck.ts`). If they diverge, a scan the client told the operator was valid gets rejected server-side. Never fork the folding logic.
 
 ## Server-side lockdown (Edge Functions + RLS)
@@ -187,6 +202,8 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 | `locations` (warehouses / bins) | `mutate-warehouse`, `mutate-warehouse-location` | Admin, Manager | `00036` |
 | `warehouse_layouts`, `layout_*` | `mutate-layout`, `publish-layout` | Admin | `00045`, `00046` |
 | `wie_rules`, `zone_profiles`, `storage_types`, `wie_scoring_profiles`, `product_wms_attributes`, `product_home_bins` | `mutate-wie-rule`, `mutate-zone-profile`, `mutate-storage-type`, `mutate-scoring-profile`, `mutate-wms-attributes`, `mutate-product-home-bin` | Admin | `00045`–`00061` |
+| `level_roles` | `mutate-level-role` | Admin | `00081` |
+| `wie_replen_tasks` | `detect-`/`assign-`/`complete-`/`unassign-replenishment` | Admin, Manager, Warehouse | `00082` |
 
 - **Audit trail** for every privileged mutation → `audit_events` (mig `00012`). Admin-only SELECT; service_role-only INSERT.
 - **Client error log** → `client_errors` (mig `00014`), written by `log-client-error`. Admin-only SELECT; service_role-only INSERT. `actor_id` nullable so pre-auth crashes are captured.
@@ -203,7 +220,7 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 | Field Sales Rep | Rep Dashboard, Shop, Order History, Routes, Visits |
 | Office Sales Rep | Rep Dashboard, Shop, Order History |
 | Customer | Shop, Order History (scoped to own HoReCa) |
-| Warehouse | Pick Queue, Dispatched (site-scoped via `profiles.home_warehouse_id`) |
+| Warehouse | Pick Queue, Dispatched, Receive Stock, Putaway, Replenishment, Stock, Documents, Warehouse (site-scoped via `profiles.home_warehouse_id`) |
 
 ## Gotchas
 
@@ -242,6 +259,7 @@ Condensed changelog; git history has the detail.
 - **Warehouse programme** (see the Warehouse & inventory section) — multi-warehouse core (`00036`), racked/directed inventory (`00039`–`00041`), the WIE engine + layout designer (`00045`–`00060`), storage forms & capacity (`00061`), stock adjustments (`00062`), directed per-bin picking (`00064`), floor-plan AI import (`00058`), and bulk catalogue/opening-stock CSV import.
 - **QR tracking programme** (4 phases, migs `00074`–`00078`) — scan identity + printable labels, handling units as an inventory dimension, scan-enforced picking, per-plate capacity. See the QR section above.
 - **Two-stage putaway** (mig `00080`) — Accept no longer moves stock; assign at the desk, then walk a routed list and scan bin + plate to commit the transfer.
+- **Pick Zone + replenishment** (migs `00081`–`00083`) — "Pick face" is now **Pick Zone**, and the level-role vocabulary is operator-managed rather than hardcoded in eleven places; replenishment moves stock reserve/bulk → pick zone on a min/max trigger, through the same assign → walk → scan pipeline. **`00083` (order allocation prefers the pick zone) is committed but deliberately NOT applied** — see its header for the gate and rollback.
 - **Rack levels & storage forms** — addressable pick/reserve/bulk rack levels (`00072`) and a seeded levelled "Rack" form (`00073`); adding a form needs zero code.
 - **Multi-supplier products & multi-UOM** — N suppliers per product with their own SKU/cost (`00070`); N-level units of measure each/carton/pallet (`00067`–`00069`).
 - **MAIN floor plan + slotting** — `NexOrder/warehouse-main/` (`warehouse:main:{seed,reset}`) replaces MAIN's placeholder 15-bin layout with a 189-bay DC and drives the real `recommend-putaway` → `decide-putaway` path to slot every SKU. See `warehouse-main/README.md`.
