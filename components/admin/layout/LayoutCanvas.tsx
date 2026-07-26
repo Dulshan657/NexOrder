@@ -341,12 +341,13 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
                   stroke={stroke}
                   strokeWidth={problem || selected ? 3 : 1.5} rx={3}
                 />
-                {/* `cell` here already IS screen px per cell (the designer scales
-                    its cell rather than the scene), so labelTier reads directly.
-                    fitCode replaces a hardcoded 6-character clip: warehouse codes
-                    share a prefix, so it keeps the discriminating tail and fits
-                    the width actually available. See mapLabels.ts. */}
-                {labelTier(cell) !== 'none' && (() => {
+                {/* `cell` here already IS screen px (the designer scales its cell
+                    rather than the scene), so the rect's screen size is just
+                    w×cell by h×cell. fitCode replaces a hardcoded 6-character
+                    clip: warehouse codes share a prefix, so it keeps the
+                    discriminating tail and fits the width actually available.
+                    See mapLabels.ts. */}
+                {labelTier(p.w * cell - 2, p.h * cell - 2) !== 'none' && (() => {
                   const fontSize = Math.min(9, cell / 3)
                   const code = fitCode(p.code, p.w * cell - 4, fontSize)
                   return code ? (

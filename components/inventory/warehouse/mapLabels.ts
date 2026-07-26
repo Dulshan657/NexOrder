@@ -16,13 +16,27 @@
 // and to counter-scale font sizes with `screenFont` wherever the surrounding
 // group is scaled, so a glyph is a fixed size on screen at every zoom.
 
-/** How much text a cell has room for. */
+/** How much text a placement has room for. */
 export type LabelTier = 'none' | 'code' | 'full'
 
-/** Below this many screen px per cell, any text is unreadable — draw none. */
-export const TIER_CODE_MIN_PX = 18
-/** From this many screen px per cell, there is room for a second line. */
-export const TIER_FULL_MIN_PX = 34
+// Measured against the PLACEMENT's rect, not against one cell.
+//
+// Calibrating on a single cell was wrong and shipped a map with no labels on it:
+// MAIN's perimeter walls span its whole 60x40 grid, so the default `fit()` lands
+// around scale 0.55-0.61 — about 15 screen px per cell, under any sane per-cell
+// threshold. But MAIN's bays are 2 cells WIDE, giving them ~31px of usable
+// width, which is comfortably enough for a short code. A rule that cannot see
+// the difference between a 1x1 bin and a 2x1 bay will always be wrong for one
+// of them.
+
+/** A line of 9px text needs about this much height to sit in a rect. */
+export const MIN_LINE_PX = 9
+/** Narrower than this and even an elided code is noise rather than a label. */
+export const TIER_CODE_MIN_W_PX = 22
+/** Two stacked lines (code + detail) need roughly this much height... */
+export const TIER_FULL_MIN_H_PX = 20
+/** ...and enough width to be worth splitting. */
+export const TIER_FULL_MIN_W_PX = 30
 
 /**
  * Approximate glyph advance as a fraction of font size, for the monospace face
@@ -33,10 +47,18 @@ export const TIER_FULL_MIN_PX = 34
  */
 const MONO_ADVANCE = 0.6
 
-/** Screen px one grid cell covers → how much text it can carry. */
-export function labelTier(cellPx: number): LabelTier {
-  if (!Number.isFinite(cellPx) || cellPx < TIER_CODE_MIN_PX) return 'none'
-  return cellPx >= TIER_FULL_MIN_PX ? 'full' : 'code'
+/**
+ * A placement's on-screen size → how much text it can carry.
+ *
+ * Both dimensions are in SCREEN px: `rect user units × viewport.scale` for the
+ * viewer, or `rect × cell` for the designer (whose cell already is screen px).
+ * Width still only gets a floor here — the exact horizontal fit is `fitCode`'s
+ * job, and it returns '' when not even an elided code fits.
+ */
+export function labelTier(rectPxW: number, rectPxH: number): LabelTier {
+  if (!Number.isFinite(rectPxW) || !Number.isFinite(rectPxH)) return 'none'
+  if (rectPxH < MIN_LINE_PX || rectPxW < TIER_CODE_MIN_W_PX) return 'none'
+  return rectPxH >= TIER_FULL_MIN_H_PX && rectPxW >= TIER_FULL_MIN_W_PX ? 'full' : 'code'
 }
 
 /**
@@ -50,6 +72,55 @@ export function labelTier(cellPx: number): LabelTier {
 export function screenFont(basePx: number, scale: number): number {
   if (!Number.isFinite(scale) || scale <= 0) return basePx
   return basePx / scale
+}
+
+/** Separator between segments of a hierarchical location code. */
+const CODE_SEP = '-'
+
+/**
+ * The prefix every one of these codes shares, snapped to a segment boundary.
+ *
+ * Warehouse codes are hierarchical and rooted at the warehouse: MAIN's bays are
+ * `MAIN-F01-L01`, `MAIN-F02-L03`, … so `MAIN-` is on every label and identifies
+ * nothing. Stripping it is what makes a 4-character label carry 4 useful
+ * characters. Returns '' for fewer than two codes (nothing is "shared" with
+ * itself) and never returns the whole code.
+ */
+export function commonCodePrefix(codes: readonly string[]): string {
+  if (codes.length < 2) return ''
+  let prefix = codes[0]
+  for (const code of codes) {
+    let i = 0
+    while (i < prefix.length && i < code.length && prefix[i] === code[i]) i++
+    prefix = prefix.slice(0, i)
+    if (!prefix) return ''
+  }
+  // Only strip whole segments — cutting "MAIN-F0" out of "MAIN-F01-L01" would
+  // leave "1-L01", which reads as a different bay.
+  const cut = prefix.lastIndexOf(CODE_SEP)
+  return cut < 0 ? '' : prefix.slice(0, cut + 1)
+}
+
+/** `code` without the shared root, e.g. `MAIN-F01-L01` → `F01-L01`. */
+export function shortCode(code: string, sharedPrefix: string): string {
+  if (!sharedPrefix || !code.startsWith(sharedPrefix)) return code
+  const rest = code.slice(sharedPrefix.length)
+  return rest || code
+}
+
+/**
+ * The coarsest useful locator: the first segment after the shared root.
+ *
+ * This is the zoomed-out label. `MAIN-F01-L01` → `F01` — the aisle, which is how
+ * an operator navigates a 190-bay floor. The position within the aisle (`L01`)
+ * is what you read once you are close, and it is identical across every aisle,
+ * so it is precisely the wrong thing to show when the whole warehouse is in
+ * view. Coarse-then-fine as you zoom is the same rule a road map uses.
+ */
+export function coarseCode(code: string, sharedPrefix: string): string {
+  const short = shortCode(code, sharedPrefix)
+  const cut = short.indexOf(CODE_SEP)
+  return cut <= 0 ? short : short.slice(0, cut)
 }
 
 /**

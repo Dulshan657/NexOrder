@@ -29,7 +29,7 @@ import { OBJECT_FILL, BASE_CELL, PLACEMENT_FILL, levelRoleFill, levelRoleStroke,
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { groupPlacementsByCell } from '@/components/admin/layout/LayoutCanvas'
 import { DEFAULT_BIN_FILL, DEFAULT_BIN_STROKE } from './warehouseOverlays'
-import { labelTier, screenFont, fitCode } from './mapLabels'
+import { labelTier, screenFont, fitCode, commonCodePrefix, shortCode, coarseCode } from './mapLabels'
 import { spineRows, spineFits, rollupFill } from './levelSpine'
 import { zoneTint, zoneTypeLabel, ZONE_FILL_OPACITY, ZONE_STROKE_OPACITY } from './zoneTints'
 import type { ZoneRegion } from './zoneRegions'
@@ -178,6 +178,22 @@ export function WarehouseCanvas({
   // stale selection still pointing at one of that rack's levels.
   const [expandOverride, setExpandOverride] = useState<string | null>(null)
 
+  // The warehouse root every code on this floor shares ("MAIN-"), computed once
+  // so labels spend their few characters on what actually differs.
+  const sharedPrefix = useMemo(() => {
+    if (!binInfo) return ''
+    const codes: string[] = []
+    for (const group of placementGroups) {
+      // Mirror the renderer's choice of which location supplies the label: a
+      // levelled rack is labelled by its RACK parent, not by one of its levels.
+      const first = group.items[0].locationId
+      const id = group.isLegacyBin ? first : locationsById?.get(first)?.parentId
+      const code = id != null ? binInfo.get(id)?.code : undefined
+      if (code) codes.push(code)
+    }
+    return commonCodePrefix(codes)
+  }, [binInfo, placementGroups, locationsById])
+
   const derivedExpandedKey = useMemo(() => {
     if (selectedLocationId == null) return null
     const g = placementGroups.find((gr) => gr.items.some((item) => item.locationId === selectedLocationId))
@@ -206,7 +222,10 @@ export function WarehouseCanvas({
      *  must not grow with zoom (text, insets, hairlines). */
     const u = (px: number) => screenFont(px, scale)
     const cellPx = cell * scale
-    const tier = labelTier(cellPx)
+    /** How much text THIS placement can hold, from its own on-screen size —
+     *  a 2x1 bay carries a label at zooms where a 1x1 bin cannot. */
+    const tierFor = (p: LayoutPlacement) =>
+      labelTier((p.w * cell - 2) * scale, (p.h * cell - 2) * scale)
 
     /** The RACK parent of a levelled group, which is what carries the human code
      *  ("MAIN-B-4-2"); its levels are "…-L1", "…-L2". */
@@ -303,6 +322,7 @@ export function WarehouseCanvas({
           const selected = group.items.some((item) => item.locationId === selectedLocationId)
           const highlighted = group.items.some((item) => highlightedLocationIds?.has(item.locationId))
           const isRack = !group.isLegacyBin
+          const tier = tierFor(p)
           const stroke = selected
             ? PLACEMENT_FILL.selectedStroke
             : highlighted
@@ -341,7 +361,7 @@ export function WarehouseCanvas({
                   vectorEffect="non-scaling-stroke"
                 />
                 {info && <title>{hoverTitle(info, fillPct, 0)}</title>}
-                {renderBinLabel({ tier, u, info, fillPct, levelCount: 0, rectX, rectY, rectW, rectH, cellPx })}
+                {renderBinLabel({ tier, u, info, sharedPrefix, fillPct, levelCount: 0, rectX, rectY, rectW, rectH, cellPx })}
                 {badge && tier !== 'none' && (
                   <text
                     x={rectX + rectW - u(2)} y={rectY + u(9)}
@@ -445,7 +465,7 @@ export function WarehouseCanvas({
               })()}
 
               {renderBinLabel({
-                tier, u, info: rackInfo, fillPct: rackFill, levelCount: rows.length,
+                tier, u, info: rackInfo, sharedPrefix, fillPct: rackFill, levelCount: rows.length,
                 rectX, rectY, rectW, rectH, cellPx,
                 // With a spine behind it the code needs a plate to stay legible.
                 plate: showSpine,
@@ -454,8 +474,12 @@ export function WarehouseCanvas({
           )
         })}
 
-        {/* Zone names, above the bins so they stay readable over a dense floor. */}
-        {tier !== 'none' && zoneRegions?.map((region) => {
+        {/* Zone names, above the bins so they stay readable over a dense floor.
+            Deliberately NOT gated on how legible an individual bin is: an area
+            name is the wayfinding layer, and it matters MOST at the zoomed-out
+            view where no bin can label itself. Being counter-scaled, it stays
+            the same size on screen however far out you go. */}
+        {zoneRegions?.map((region) => {
           const type = region.zoneProfileId != null ? zoneTypeByProfileId?.get(region.zoneProfileId) : null
           return (
             <text
@@ -580,6 +604,8 @@ interface BinLabelArgs {
   tier: ReturnType<typeof labelTier>
   u: (px: number) => number
   info?: BinInfo
+  /** Shared code root to strip, so labels spend their width on what differs. */
+  sharedPrefix: string
   fillPct: number | null
   levelCount: number
   rectX: number
@@ -599,12 +625,18 @@ interface BinLabelArgs {
  * its own box.
  */
 function renderBinLabel({
-  tier, u, info, fillPct, levelCount, rectX, rectY, rectW, rectH, plate,
+  tier, u, info, sharedPrefix, fillPct, levelCount, rectX, rectY, rectW, rectH, plate,
 }: BinLabelArgs): ReactNode {
   if (tier === 'none' || !info?.code) return null
 
   const codeFont = u(9)
-  const code = fitCode(info.code, rectW - u(4), codeFont)
+  // Coarse-then-fine: a tight rect gets the aisle ("F01"), a roomy one the full
+  // in-warehouse code ("F01-L01"). See coarseCode's note on why the tail is the
+  // wrong thing to keep when the whole floor is in view.
+  const source = tier === 'full'
+    ? shortCode(info.code, sharedPrefix)
+    : coarseCode(info.code, sharedPrefix)
+  const code = fitCode(source, rectW - u(4), codeFont)
   if (!code) return null
 
   const detail: string[] = []
