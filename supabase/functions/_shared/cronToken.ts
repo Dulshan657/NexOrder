@@ -34,6 +34,19 @@ export function isAuthorizedCronCall(authHeader: string | null, envName: string)
   return constantTimeEquals(match[1].trim(), expected)
 }
 
+/**
+ * Validate that a request carries the platform service-role key as its bearer
+ * token — i.e. that the caller is another Edge Function (or a trusted backend),
+ * not a browser holding the publishable key.
+ *
+ * For `verify_jwt = false` functions that are only ever invoked server-to-server
+ * (`send-email`), this is the auth gate. Functions callable by real users should
+ * use `requireAuth` from `_shared/auth.ts` instead.
+ */
+export function isServiceRoleCall(authHeader: string | null): boolean {
+  return isAuthorizedCronCall(authHeader, 'SUPABASE_SERVICE_ROLE_KEY')
+}
+
 function readSecret(name: string): string | undefined {
   // deno-lint-ignore no-explicit-any
   const denoEnv = (globalThis as any).Deno?.env

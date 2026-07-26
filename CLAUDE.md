@@ -190,6 +190,8 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 
 - **Audit trail** for every privileged mutation → `audit_events` (mig `00012`). Admin-only SELECT; service_role-only INSERT.
 - **Client error log** → `client_errors` (mig `00014`), written by `log-client-error`. Admin-only SELECT; service_role-only INSERT. `actor_id` nullable so pre-auth crashes are captured.
+- **`verify_jwt = false` functions must gate themselves.** The eight functions listed in `supabase/config.toml` bypass the platform JWT check, so each re-implements auth in-body: cron callers via `isAuthorizedCronCall` (`_shared/cronToken.ts`), server-to-server callers via `isServiceRoleCall`, OAuth callbacks via state consumption. `send-email` had no gate at all until mig-era 2026-07 — it was world-callable and leaked order-ID existence through its `sent` vs `recipient_unresolved` response. Never add a `verify_jwt = false` entry without an in-body gate.
+- **Storage buckets:** public read, `authenticated` write. The dev-only `anon_write_*` policies from `00004`/`00024` were dropped in `00081` — do not reintroduce anonymous writes; `FOR ALL TO anon` includes DELETE.
 - **Rate limiting** (`_shared/rateLimit.ts`): `place-order` 10/min/user, `invite-user` 5/min/admin, `mutate-pantry-item` 60/min/user, `log-client-error` 30/min/IP, `send-email` 20/min/IP → 429 `TOO_MANY_REQUESTS`. Cross-isolate global cap via the `rate_limit_hit()` Postgres RPC + `rate_limit_counters` table (mig `00026`, fixed-window, hourly `pg_cron` cleanup); fails open to a per-isolate in-memory counter if the DB call errors.
 
 ## Role-Based Views

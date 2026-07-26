@@ -14,17 +14,36 @@ interface DemoAccount {
   email: string
 }
 
-const DEMO_PASSWORD = 'Password123!'
+// The click-to-fill demo roster publishes working credentials for real accounts
+// — including an Admin (alice@nexorder.com.au) — to anyone who loads the login
+// page. That is deliberate while the deployment is a sales-demo surface, and is
+// documented as a launch blocker in PRODUCTION-READINESS-AUDIT.md.
+//
+// SECURITY: before the first paying client, set `VITE_SHOW_DEMO_LOGINS=false`
+// in the Vercel project env AND rotate the seeded account passwords. The flag
+// defaults ON so demo behaviour is unchanged until that call is made.
+//
+// Vite statically replaces `import.meta.env.VITE_SHOW_DEMO_LOGINS`, so setting
+// it to "false" folds the ternaries below to constants at build time and strips
+// the emails and the password from the bundle. Guarding the *data* rather than
+// only the JSX is deliberate: dropping an unreferenced module-level array
+// relies on tree-shaking, whereas constant folding of a ternary is guaranteed.
+// Verify with `grep -r Password123 dist/` after a build.
+const SHOW_DEMO_LOGINS = import.meta.env.VITE_SHOW_DEMO_LOGINS !== 'false'
 
-const DEMO_ACCOUNTS: readonly DemoAccount[] = [
-  { role: 'Admin', email: 'alice@nexorder.com.au' },
-  { role: 'Manager', email: 'bob@nexorder.com.au' },
-  { role: 'Field Rep', email: 'charlie@nexorder.com.au' },
-  { role: 'Office Rep', email: 'emma@nexorder.com.au' },
-  { role: 'Warehouse', email: 'warehouse@nexorder.com.au' },
-  { role: 'Customer · Seaside Bistro', email: 'david@seasidebistro.com' },
-  { role: 'Customer · Lotus Garden', email: 'mei@lotusgarden.com.au' },
-]
+const DEMO_PASSWORD = SHOW_DEMO_LOGINS ? 'Password123!' : ''
+
+const DEMO_ACCOUNTS: readonly DemoAccount[] = SHOW_DEMO_LOGINS
+  ? [
+      { role: 'Admin', email: 'alice@nexorder.com.au' },
+      { role: 'Manager', email: 'bob@nexorder.com.au' },
+      { role: 'Field Rep', email: 'charlie@nexorder.com.au' },
+      { role: 'Office Rep', email: 'emma@nexorder.com.au' },
+      { role: 'Warehouse', email: 'warehouse@nexorder.com.au' },
+      { role: 'Customer · Seaside Bistro', email: 'david@seasidebistro.com' },
+      { role: 'Customer · Lotus Garden', email: 'mei@lotusgarden.com.au' },
+    ]
+  : []
 
 const CAPABILITIES: readonly string[] = [
   'Tier-aware pricing applied at checkout',
@@ -151,7 +170,8 @@ export default function LoginPage() {
               Welcome back.
             </h1>
             <p className="mt-3 max-w-sm text-sm leading-relaxed text-stone-500">
-              Sign in to manage orders and products — or pick a demo role below.
+              Sign in to manage orders and products
+              {SHOW_DEMO_LOGINS ? ' — or pick a demo role below.' : '.'}
             </p>
           </div>
 
@@ -245,7 +265,8 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Demo accounts */}
+          {/* Demo accounts — dev/demo builds only (see SHOW_DEMO_LOGINS above) */}
+          {SHOW_DEMO_LOGINS && (
           <section className="mt-10">
             <div className="mb-3 flex items-baseline justify-between gap-4">
               <h2 className="font-mono text-[11px] uppercase tracking-[0.24em] text-stone-500">
@@ -291,6 +312,7 @@ export default function LoginPage() {
               ))}
             </ul>
           </section>
+          )}
         </div>
 
         <p className="mt-12 font-sans text-xs leading-relaxed text-stone-400">

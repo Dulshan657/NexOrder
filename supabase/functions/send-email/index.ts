@@ -1,9 +1,9 @@
 // send-email Edge Function
 //
 // Single transactional-email entry point. Other Edge Functions invoke it
-// fire-and-forget after a successful mutation; nothing is exposed to the
-// browser yet (CORS is open but the templates only accept stable resource
-// IDs, not arbitrary recipient strings).
+// fire-and-forget after a successful mutation. It is NOT callable from the
+// browser: `verify_jwt = false` in config.toml, so the handler enforces a
+// service-role bearer token itself (see the auth gate below).
 //
 // Templates (v1):
 //   order_confirmation — sent after place-order creates an order
@@ -28,6 +28,7 @@ import { z } from 'https://esm.sh/zod@3.23.8'
 import { errorResponse } from '../_shared/errors.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit, clientIp } from '../_shared/rateLimit.ts'
+import { isServiceRoleCall } from '../_shared/cronToken.ts'
 
 const DEFAULT_APP_URL = 'https://nexorder.vercel.app'
 const DEFAULT_FROM = 'Nex Order <onboarding@resend.dev>'
@@ -67,14 +68,25 @@ serve(async (req: Request) => {
     return errorResponse('INVALID_INPUT', 'Method not allowed', undefined, 405, req)
   }
 
-  // Rate limit by IP. send-email is invoked fire-and-forget by other Edge
-  // Functions (service role) and could in principle be called from the
-  // browser too. 20 req/min per IP is generous for the legitimate path
-  // (one order = one email) and tight enough to throttle abuse.
+  // Rate limit by IP before doing any work, so an unauthenticated flood is
+  // cheap to shed. 20 req/min is generous for the legitimate path (one order =
+  // one email).
   const ip = clientIp(req)
   const rl = await checkRateLimit(`send-email:${ip}`, { windowMs: 60_000, max: 20 })
   if (!rl.ok) {
     return errorResponse('TOO_MANY_REQUESTS', 'Rate limit exceeded', undefined, 429, req)
+  }
+
+  // This function is `verify_jwt = false` (config.toml) because its callers are
+  // other Edge Functions, not browsers — so the platform gate is off and auth
+  // has to happen here. Without this check the endpoint is world-callable: any
+  // POST could mail a real customer, and the `sent` vs `recipient_unresolved`
+  // response distinguishes real order/invoice IDs from fabricated ones.
+  //
+  // Both callers already send the service-role key as their bearer token
+  // (place-order/index.ts, health/index.ts), so this gate breaks nothing.
+  if (!isServiceRoleCall(req.headers.get('Authorization'))) {
+    return errorResponse('UNAUTHORIZED', 'Service-role credentials required', undefined, 401, req)
   }
 
   try {
