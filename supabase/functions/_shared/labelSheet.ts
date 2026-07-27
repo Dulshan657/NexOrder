@@ -137,51 +137,98 @@ export function layoutLabels(count: number, spec: LabelSheetSpec, startOffset = 
 }
 
 /**
- * Geometry for one label's contents: a square QR on the left, the human-readable
- * code and context text to its right.
+ * Geometry for one label's contents: a square QR on top, the human-readable code
+ * and context text centred beneath it.
  *
  * A QR-only label is unreadable the moment it is scuffed, wet or badly lit, and
  * an operator who cannot read the code cannot type it either — so the text is
- * not decoration, it is the fallback path.
+ * not decoration, it is the fallback path. Which is exactly why the text used to
+ * sit in a column beside the QR and no longer does: on the 24-up bin sheet that
+ * column was 97.5pt, and a code in Courier-Bold at 15pt costs 9pt per character,
+ * so it held 10.8 of them. MAIN's bin codes are 11-12 characters. Every sticker
+ * printed `MAIN-O01-…`, and half a code is not a fallback.
+ *
+ * Stacked, the text gets the whole inner width — 172.5pt on that sheet, 77% more
+ * — at the cost of a QR that shrinks from 24mm to 18mm, which is still a 0.72mm
+ * module at 25 modules and far inside what a warehouse scanner reads.
  */
+export interface LabelTextSlot {
+  /** Horizontal centre of the text column; the caller measures and centres on it. */
+  centerX: number
+  /** Baseline. */
+  y: number
+  maxWidth: number
+  /** Preferred size. The caller may shrink it to fit — see fitFontSize. */
+  fontSize: number
+  /** How far that shrinking may go before an ellipsis is the better answer. */
+  minFontSize: number
+}
+
 export interface LabelArtwork {
   qr: { x: number; y: number; size: number }
-  code: { x: number; y: number; maxWidth: number; fontSize: number }
-  context: { x: number; y: number; maxWidth: number; fontSize: number } | null
+  code: LabelTextSlot
+  context: LabelTextSlot | null
 }
+
+/**
+ * Floors for shrink-to-fit. The code's is higher because it is the line an
+ * operator types when a QR will not scan — a code too small to read is no more
+ * use than a truncated one, so past this point the ellipsis is honest. The
+ * context is supplementary and can afford to go smaller before giving up.
+ */
+export const MIN_CODE_FONT_SIZE = 7
+export const MIN_CONTEXT_FONT_SIZE = 5
 
 export function labelArtwork(cell: LabelCell, opts?: { withContext?: boolean }): LabelArtwork {
   const { inner } = cell
   const withContext = opts?.withContext ?? true
 
-  // The QR is square and as tall as the cell allows, capped so it never eats
-  // more than 40% of the width on a wide label.
-  const qrSize = Math.min(inner.height, inner.width * 0.4)
-  const qr = { x: inner.x, y: inner.y + (inner.height - qrSize) / 2, size: qrSize }
+  // Sizes scale with the label. The previous ceilings (15pt code, 8pt context)
+  // were tuned for the smallest sheet and never revisited, so a 99x67mm aisle
+  // sign meant to be read from across a warehouse printed its code no larger
+  // than a bin sticker read at arm's length.
+  const codeFontSize = clamp(inner.height * 0.17, MIN_CODE_FONT_SIZE, 36)
+  const contextFontSize = withContext ? clamp(codeFontSize * 0.55, 5, 18) : 0
 
-  const textX = inner.x + qrSize + 6
-  const textWidth = Math.max(0, inner.x + inner.width - textX)
+  // Height the text needs: each line plus the gap between them and room for
+  // descenders below the last baseline.
+  const textZone = withContext
+    ? 1.22 * codeFontSize + 1.25 * contextFontSize
+    : 1.25 * codeFontSize
 
-  // Code size scales with the space left over, floored so it stays legible and
-  // ceilinged so a short code on a big label doesn't look like a ransom note.
-  const codeFontSize = clamp(inner.height * 0.34, 6, 15)
-  const contextFontSize = clamp(codeFontSize * 0.62, 4.5, 8)
+  // The QR takes what is left, and the /1.16 reserves the rest as its quiet
+  // zone. That divisor is load-bearing: qrcode's create() returns the bare
+  // symbol with NO quiet zone (its `margin` option belongs to the renderers),
+  // which the old layout got for free from the cell padding and the gutter to
+  // the text beside it. With text directly underneath, it has to be deliberate.
+  // 16% of the symbol is the standard 4 modules at 25 modules across.
+  const available = Math.max(0, inner.height - textZone)
+  const qrSize = Math.max(0, Math.min(inner.width, available / 1.16))
 
-  const code = withContext
-    ? { x: textX, y: inner.y + inner.height / 2, maxWidth: textWidth, fontSize: codeFontSize }
-    : {
-        x: textX,
-        y: inner.y + (inner.height - codeFontSize) / 2,
-        maxWidth: textWidth,
-        fontSize: codeFontSize,
-      }
+  const centerX = inner.x + inner.width / 2
+  const qr = { x: centerX - qrSize / 2, y: inner.y + inner.height - qrSize, size: qrSize }
 
-  const context = withContext
+  // Baselines are measured up from the bottom of the inner box so the text
+  // block sits on the floor of the cell and the slack lands in the quiet zone.
+  const codeBaseline = withContext
+    ? inner.y + 1.25 * contextFontSize + 0.22 * codeFontSize
+    : inner.y + 0.25 * codeFontSize
+
+  const code: LabelTextSlot = {
+    centerX,
+    y: codeBaseline,
+    maxWidth: inner.width,
+    fontSize: codeFontSize,
+    minFontSize: Math.min(MIN_CODE_FONT_SIZE, codeFontSize),
+  }
+
+  const context: LabelTextSlot | null = withContext
     ? {
-        x: textX,
-        y: inner.y + inner.height / 2 - contextFontSize - 3,
-        maxWidth: textWidth,
+        centerX,
+        y: inner.y + 0.25 * contextFontSize,
+        maxWidth: inner.width,
         fontSize: contextFontSize,
+        minFontSize: Math.min(MIN_CONTEXT_FONT_SIZE, contextFontSize),
       }
     : null
 
@@ -190,6 +237,36 @@ export function labelArtwork(cell: LabelCell, opts?: { withContext?: boolean }):
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+/**
+ * Largest size at or below `preferredSize` at which `text` fits `maxWidth`.
+ *
+ * Shrinking beats truncating: the printed code is what an operator types when a
+ * QR will not scan, so a smaller whole code is worth more than a large partial
+ * one. Glyph widths are linear in font size, so the answer is one measurement
+ * and a division; the loop only guards against a font that reports otherwise.
+ *
+ * Returns `minSize` when even that overflows — hand the result to `fitText`,
+ * which adds the ellipsis for that last case.
+ */
+export function fitFontSize(
+  text: string,
+  maxWidth: number,
+  preferredSize: number,
+  minSize: number,
+  measure: (s: string, size: number) => number,
+): number {
+  if (!text || maxWidth <= 0) return minSize
+  const atPreferred = measure(text, preferredSize)
+  if (atPreferred <= maxWidth) return preferredSize
+  if (atPreferred <= 0) return preferredSize
+
+  let size = clamp((preferredSize * maxWidth) / atPreferred, minSize, preferredSize)
+  while (size > minSize && measure(text, size) > maxWidth) {
+    size = Math.max(minSize, size - 0.25)
+  }
+  return size
 }
 
 /**

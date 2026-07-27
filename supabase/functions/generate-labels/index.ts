@@ -36,11 +36,13 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import {
+  fitFontSize,
   fitText,
   labelArtwork,
   layoutLabels,
   sheetSpec,
   type LabelCell,
+  type LabelTextSlot,
   type SheetPresetName,
 } from '../_shared/labelSheet.ts'
 import {
@@ -358,30 +360,43 @@ function drawLabel(
 
   drawQr(page, qrMatrix(item.code), art.qr.x, art.qr.y, art.qr.size)
 
-  const codeText = fitText(item.code, art.code.maxWidth, art.code.fontSize, measure(codeFont))
-  page.drawText(codeText, {
-    x: art.code.x,
-    y: art.code.y,
-    size: art.code.fontSize,
-    font: codeFont,
-    color: rgb(0, 0, 0),
-  })
+  drawCentred(page, art.code, item.code, codeFont, measure(codeFont), rgb(0, 0, 0))
 
   if (art.context && item.context) {
-    const contextText = fitText(
+    drawCentred(
+      page,
+      art.context,
       item.context,
-      art.context.maxWidth,
-      art.context.fontSize,
+      contextFont,
       measure(contextFont),
+      rgb(0.42, 0.4, 0.38),
     )
-    page.drawText(contextText, {
-      x: art.context.x,
-      y: art.context.y,
-      size: art.context.fontSize,
-      font: contextFont,
-      color: rgb(0.42, 0.4, 0.38),
-    })
   }
+}
+
+/**
+ * Draw one line centred on its slot, shrinking before it will truncate.
+ *
+ * The slot carries a centre rather than a left edge because only here — where
+ * the font lives — can the string be measured, and centring needs its width.
+ */
+function drawCentred(
+  page: PDFPage,
+  slot: LabelTextSlot,
+  text: string,
+  font: PDFFont,
+  measure: (s: string, size: number) => number,
+  color: ReturnType<typeof rgb>,
+): void {
+  const size = fitFontSize(text, slot.maxWidth, slot.fontSize, slot.minFontSize, measure)
+  const fitted = fitText(text, slot.maxWidth, size, measure)
+  page.drawText(fitted, {
+    x: slot.centerX - measure(fitted, size) / 2,
+    y: slot.y,
+    size,
+    font,
+    color,
+  })
 }
 
 // ── Handler ───────────────────────────────────────────────────────
