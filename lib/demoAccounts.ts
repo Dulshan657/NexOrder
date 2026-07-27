@@ -55,7 +55,10 @@ const V2FOOD: DemoPersona = {
   email: 'v2food@nexorder.demo',
   brandKey: 'v2food',
   displayName: 'V2food',
-  logoSrc: '/assets/v2food-logo.png',
+  // Deliberately the Nex Order logo, not a V2food one: this persona no longer wears
+  // the client's mark anywhere (login brand pane or sidebar). The rest of the persona
+  // — PO Inbox first, Shop kept, the order-import cutoff — is unchanged.
+  logoSrc: '/assets/Nex-Order-no-bg-logo.png',
   leadWithPoInbox: true,
   // Unlike Tridon, V2food keeps the Shop so we can demo adding the pinned V2food
   // products to a cart.

@@ -1,8 +1,17 @@
 import React, { useState } from 'react'
-import { ArrowRight, Check } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { getBrandByKey } from '@/lib/demoAccounts'
 import ForgotPasswordDialog from './ForgotPasswordDialog'
+import {
+  AuthAlert,
+  AuthEyebrow,
+  AuthField,
+  AuthSubmit,
+  AUTH_EASING,
+  EYEBROW_CLASS,
+  authStagger,
+} from './authChrome'
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
@@ -45,10 +54,13 @@ const DEMO_ACCOUNTS: readonly DemoAccount[] = SHOW_DEMO_LOGINS
     ]
   : []
 
+// Each line names something the app actually does — inbound-PO extraction, WIE
+// directed picking, the shared ledger. Keep them checkable: an operator reading
+// this panel can go and find the screen behind every claim.
 const CAPABILITIES: readonly string[] = [
-  'Tier-aware pricing applied at checkout',
-  'Field rep visits plotted on-route',
-  'POs, stock, invoicing on one ledger',
+  'Purchase orders read straight from your inbox',
+  'Pickers routed bin by bin through the racks',
+  'Tier pricing, stock and invoicing on one ledger',
 ]
 
 // Login renders before auth, so the brand can't key on the user — it's selected
@@ -62,6 +74,11 @@ function resolveBrand(): { logoSrc: string; displayName: string } {
   return getBrandByKey(key) ?? DEFAULT_BRAND
 }
 
+/** `Customer · Seaside Bistro` → `['Customer', 'Seaside Bistro']`; plain roles → `[role]`. */
+function splitRole(role: string): readonly string[] {
+  return role.split('·').map((part) => part.trim())
+}
+
 export default function LoginPage() {
   const { signIn } = useAuth()
   const [email, setEmail] = useState('')
@@ -70,6 +87,7 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [forgotOpen, setForgotOpen] = useState(false)
   const brand = resolveBrand()
+  const isDefaultBrand = brand.logoSrc === DEFAULT_BRAND.logoSrc
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -91,58 +109,60 @@ export default function LoginPage() {
     setError(null)
   }
 
-  const easing = 'cubic-bezier(0.16,1,0.3,1)'
-
   return (
     <div className="min-h-[100dvh] bg-stone-50 grid grid-cols-1 lg:grid-cols-[5fr_7fr]">
-      {/* Brand pane */}
-      <aside className="relative hidden lg:flex flex-col overflow-hidden bg-gradient-to-br from-nexgen-blue to-nexgen-blue-dark text-stone-100 p-12 xl:p-16">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-[0.06]"
-          style={{
-            backgroundImage:
-              'linear-gradient(to right, #fff 1px, transparent 1px), linear-gradient(to bottom, #fff 1px, transparent 1px)',
-            backgroundSize: '48px 48px',
-          }}
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -top-40 -right-40 h-[520px] w-[520px] rounded-full bg-white/10 blur-3xl"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -bottom-32 -left-24 h-[420px] w-[420px] rounded-full bg-nexgen-blue-dark/60 blur-3xl"
-        />
-
-        <header className="relative z-10 flex items-center">
-          <div className="rounded-lg bg-white p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
+      {/* Brand pane. Flat charcoal field rather than a gradient: the previous blue
+          gradient put stone-500 footer text at ~1.03:1 and a stone-400 eyebrow at
+          ~1.95:1, both far under the 4.5:1 AA floor. On #0f172a the same greys
+          measure 7.3:1 and 12.4:1. */}
+      <aside className="relative hidden lg:flex flex-col overflow-hidden bg-nexgen-charcoal-dark text-stone-100 p-12 xl:p-16">
+        {/* The Nex Order mark is monochrome blue on transparent, so it inverts cleanly
+            to white and can sit straight on the charcoal — no white plate needed. The
+            `?brand=` client logos (Tridon, V2food) are full-colour and drawn for light
+            backgrounds, so inverting them would destroy the brand; those keep a plate. */}
+        <header className="flex items-center auth-in" style={authStagger(0)}>
+          {isDefaultBrand ? (
             <img
               src={brand.logoSrc}
               alt={brand.displayName}
-              className="h-9 w-auto object-contain"
+              className="h-11 w-auto object-contain"
+              style={{ filter: 'brightness(0) invert(1)' }}
             />
-          </div>
+          ) : (
+            <div className="rounded-xl bg-white p-3">
+              <img src={brand.logoSrc} alt={brand.displayName} className="h-9 w-auto object-contain" />
+            </div>
+          )}
         </header>
 
-        <div className="relative z-10 mt-auto">
-          <p className="mb-6 font-mono text-[11px] uppercase tracking-[0.24em] text-stone-400">
-            Wholesale ordering, end to end
-          </p>
-          <h2 className="max-w-md font-display text-4xl leading-[1.05] tracking-tighter text-stone-50 xl:text-[2.75rem]">
-            Place orders, plan routes, and reconcile invoices in one operating layer.
+        <div className="mt-auto">
+          <div className="mb-6 auth-in" style={authStagger(1)}>
+            <AuthEyebrow className="text-stone-400">Wholesale operations, end to end</AuthEyebrow>
+          </div>
+          <h2
+            className="max-w-md font-display text-4xl leading-[1.05] tracking-tighter text-stone-50 xl:text-[2.75rem] auth-in"
+            style={authStagger(2)}
+          >
+            From the order email to the loading dock.
           </h2>
           <ul className="mt-10 space-y-3">
-            {CAPABILITIES.map((cap) => (
-              <li key={cap} className="flex items-start gap-2.5 text-sm leading-relaxed text-stone-300">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-white" strokeWidth={2} />
+            {CAPABILITIES.map((cap, i) => (
+              <li
+                key={cap}
+                className="flex items-start gap-2.5 text-sm leading-relaxed text-stone-300 auth-in"
+                style={authStagger(3 + i)}
+              >
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-nexgen-blue" strokeWidth={2} aria-hidden="true" />
                 <span>{cap}</span>
               </li>
             ))}
           </ul>
         </div>
 
-        <footer className="relative z-10 mt-12 flex items-center justify-between font-mono text-[11px] text-stone-500">
+        <footer
+          className={`mt-12 flex items-center justify-between ${EYEBROW_CLASS} text-stone-400 auth-in`}
+          style={authStagger(6)}
+        >
           <span>v1.3 · demo build</span>
           <span>Sydney · 2026</span>
         </footer>
@@ -150,23 +170,19 @@ export default function LoginPage() {
 
       {/* Form pane */}
       <main className="flex flex-col px-6 py-10 sm:px-10 lg:px-16 xl:px-24">
-        <div className="flex items-center justify-between lg:hidden">
-          <img
-            src={brand.logoSrc}
-            alt={brand.displayName}
-            className="h-9 w-auto object-contain"
-          />
-          <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-stone-500">
+        <div className="flex items-center justify-between lg:hidden auth-in" style={authStagger(0)}>
+          <img src={brand.logoSrc} alt={brand.displayName} className="h-9 w-auto object-contain" />
+          <span
+            className={`rounded-full border border-stone-200 bg-white px-2.5 py-1 ${EYEBROW_CLASS} text-stone-500`}
+          >
             Demo build
           </span>
         </div>
 
         <div className="my-auto w-full max-w-md pt-12 lg:pt-0">
-          <div className="mb-9">
-            <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.24em] text-stone-500">
-              Sign in to your account
-            </p>
-            <h1 className="font-display text-4xl leading-none tracking-tighter text-stone-900 md:text-5xl">
+          <div className="mb-9 auth-in" style={authStagger(1)}>
+            <AuthEyebrow className="mb-3 text-stone-500">Sign in to your account</AuthEyebrow>
+            <h1 className="font-display text-4xl leading-none tracking-tighter text-stone-900">
               Welcome back.
             </h1>
             <p className="mt-3 max-w-sm text-sm leading-relaxed text-stone-500">
@@ -176,146 +192,105 @@ export default function LoginPage() {
           </div>
 
           {error !== null && (
-            <div
-              role="alert"
-              className="mb-5 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3"
-            >
-              <p className="text-sm leading-relaxed text-rose-800">{error}</p>
+            <div className="mb-5">
+              <AuthAlert tone="error">{error}</AuthAlert>
             </div>
           )}
 
           <form onSubmit={handleSubmit} noValidate className="space-y-4">
-            <div className="grid gap-2">
-              <label
-                htmlFor="email"
-                className="font-mono text-[10px] uppercase tracking-[0.18em] text-stone-600"
-              >
-                Email address
-              </label>
-              <input
+            <div className="auth-in" style={authStagger(2)}>
+              <AuthField
                 id="email"
+                label="Email address"
                 type="email"
                 autoComplete="email"
                 required
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={setEmail}
                 placeholder="you@company.com"
                 disabled={isSubmitting}
-                style={{ transitionTimingFunction: easing }}
-                className="w-full rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900
-                           placeholder-stone-400
-                           focus:border-nexgen-blue focus:outline-none focus:ring-2 focus:ring-nexgen-blue/15
-                           disabled:bg-stone-100 disabled:text-stone-400
-                           transition-[border-color,box-shadow,background-color] duration-300"
               />
             </div>
 
-            <div className="grid gap-2">
-              <div className="flex items-baseline justify-between">
-                <label
-                  htmlFor="password"
-                  className="font-mono text-[10px] uppercase tracking-[0.18em] text-stone-600"
-                >
-                  Password
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setForgotOpen(true)}
-                  disabled={isSubmitting}
-                  className="text-[11px] font-medium text-nexgen-blue hover:text-nexgen-blue-dark hover:underline disabled:opacity-50 cursor-pointer"
-                >
-                  Forgot your password?
-                </button>
-              </div>
-              <input
+            <div className="auth-in" style={authStagger(3)}>
+              <AuthField
                 id="password"
+                label="Password"
                 type="password"
                 autoComplete="current-password"
                 required
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 placeholder="••••••••"
                 disabled={isSubmitting}
-                style={{ transitionTimingFunction: easing }}
-                className="w-full rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900
-                           placeholder-stone-400
-                           focus:border-nexgen-blue focus:outline-none focus:ring-2 focus:ring-nexgen-blue/15
-                           disabled:bg-stone-100 disabled:text-stone-400
-                           transition-[border-color,box-shadow,background-color] duration-300"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isSubmitting || email === '' || password === ''}
-              style={{ transitionTimingFunction: easing }}
-              className="group mt-2 inline-flex w-full items-center justify-between gap-3 rounded-lg
-                         bg-nexgen-blue px-5 py-3 text-sm font-semibold text-white
-                         shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]
-                         hover:bg-nexgen-blue-dark active:translate-y-[1px]
-                         focus:outline-none focus:ring-2 focus:ring-nexgen-blue focus:ring-offset-2 focus:ring-offset-stone-50
-                         disabled:cursor-not-allowed disabled:opacity-40
-                         transition-[background-color,transform,opacity] duration-300"
-            >
-              <span>{isSubmitting ? 'Signing in…' : 'Sign in'}</span>
-              <ArrowRight
-                className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5 group-disabled:translate-x-0"
-                strokeWidth={2}
-              />
-            </button>
-          </form>
-
-          {/* Demo accounts — dev/demo builds only (see SHOW_DEMO_LOGINS above) */}
-          {SHOW_DEMO_LOGINS && (
-          <section className="mt-10">
-            <div className="mb-3 flex items-baseline justify-between gap-4">
-              <h2 className="font-mono text-[11px] uppercase tracking-[0.24em] text-stone-500">
-                Demo accounts · click to fill
-              </h2>
-              <span className="font-mono text-[11px] text-stone-400">
-                pw{' '}
-                <span className="rounded bg-stone-100 px-1.5 py-0.5 text-stone-700">
-                  {DEMO_PASSWORD}
-                </span>
-              </span>
-            </div>
-            <ul className="border-y border-stone-200 divide-y divide-stone-200">
-              {DEMO_ACCOUNTS.map((account, i) => (
-                <li key={account.email}>
+                action={
                   <button
                     type="button"
-                    onClick={() => fillAccount(account)}
+                    onClick={() => setForgotOpen(true)}
                     disabled={isSubmitting}
-                    style={{ transitionTimingFunction: easing }}
-                    className="group flex w-full items-center gap-4 py-3
-                               text-left
-                               hover:bg-nexgen-blue/5 active:translate-y-[0.5px]
-                               disabled:cursor-not-allowed disabled:opacity-50
-                               transition-[background-color,transform] duration-300
-                               px-2 -mx-2 rounded"
+                    className="text-[11px] font-medium text-nexgen-blue hover:text-nexgen-blue-dark hover:underline disabled:opacity-50 cursor-pointer"
                   >
-                    <span className="w-6 font-mono text-[11px] tabular-nums text-stone-400">
-                      {String(i + 1).padStart(2, '0')}
-                    </span>
-                    <span className="flex-1 text-sm font-medium text-stone-800">
-                      {account.role}
-                    </span>
-                    <span className="hidden font-mono text-[11px] text-stone-500 sm:inline">
-                      {account.email}
-                    </span>
-                    <ArrowRight
-                      className="h-3.5 w-3.5 shrink-0 text-stone-300 transition-[color,transform] duration-300 group-hover:translate-x-0.5 group-hover:text-stone-700"
-                      strokeWidth={2}
-                    />
+                    Forgot your password?
                   </button>
-                </li>
-              ))}
-            </ul>
-          </section>
+                }
+              />
+            </div>
+
+            <div className="pt-2 auth-in" style={authStagger(4)}>
+              <AuthSubmit disabled={isSubmitting || email === '' || password === ''}>
+                {isSubmitting ? 'Signing in…' : 'Sign in'}
+              </AuthSubmit>
+            </div>
+          </form>
+
+          {/* Demo accounts — dev/demo builds only (see SHOW_DEMO_LOGINS above).
+              Chips rather than a numbered list: a roster of roles is a set, not a
+              sequence, so the old 01…07 markers encoded nothing. */}
+          {SHOW_DEMO_LOGINS && (
+            <section className="mt-10 auth-in" style={authStagger(5)}>
+              <div className="mb-3 flex items-baseline justify-between gap-4">
+                <h2 className={`${EYEBROW_CLASS} text-stone-500`}>Demo accounts · click to fill</h2>
+                <span className="font-mono text-[11px] text-stone-400">
+                  pw{' '}
+                  <span className="rounded bg-stone-100 px-1.5 py-0.5 text-stone-700">
+                    {DEMO_PASSWORD}
+                  </span>
+                </span>
+              </div>
+              <ul className="flex flex-wrap gap-2">
+                {DEMO_ACCOUNTS.map((account) => {
+                  const [primary, secondary] = splitRole(account.role)
+                  return (
+                    <li key={account.email}>
+                      <button
+                        type="button"
+                        onClick={() => fillAccount(account)}
+                        disabled={isSubmitting}
+                        title={account.email}
+                        aria-label={`Fill the form with the ${account.role} account, ${account.email}`}
+                        style={{ transitionTimingFunction: AUTH_EASING }}
+                        className="inline-flex items-baseline gap-1.5 rounded-full border border-stone-200 bg-white
+                                   px-3 py-1.5 text-xs font-medium text-stone-700
+                                   hover:border-nexgen-blue hover:bg-nexgen-blue/5 hover:text-nexgen-blue
+                                   focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue/40
+                                   active:translate-y-[0.5px]
+                                   disabled:cursor-not-allowed disabled:opacity-50
+                                   transition-[color,background-color,border-color,transform] duration-300"
+                      >
+                        <span>{primary}</span>
+                        {secondary !== undefined && (
+                          <span className="font-normal text-stone-400">{secondary}</span>
+                        )}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
           )}
         </div>
 
-        <p className="mt-12 font-sans text-xs leading-relaxed text-stone-400">
+        <p className="mt-12 text-xs leading-relaxed text-stone-400">
           Trouble signing in? Contact your administrator if you need access.
         </p>
       </main>

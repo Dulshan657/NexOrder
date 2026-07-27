@@ -181,6 +181,20 @@ body {
 }
 .po-badge-pulse { animation: po-badge-pulse 2.2s ease-in-out infinite; }
 
+/* Pre-auth surfaces (login / forgot / reset) — one orchestrated page-load entrance.
+   --auth-i is set inline per element by `authStagger()` in components/auth/authChrome.tsx,
+   so the brand copy and the form fields rise in sequence instead of all at once. Same
+   idiom as .po-row-in above, at a slower step because there are ~8 elements, not a list.
+   Disabled in the prefers-reduced-motion block below. */
+@keyframes auth-in {
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.auth-in {
+  animation: auth-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--auth-i, 0) * 40ms);
+}
+
 /* Image loading — shimmer skeleton behind <OptimizedImage> until the bitmap
    paints, then the image fades in (opacity transition lives on the <img>). */
 @keyframes img-shimmer {
@@ -309,6 +323,7 @@ body {
   .po-pop-in,
   .po-modal-in,
   .po-badge-pulse,
+  .auth-in,
   .img-skeleton,
   .wh-bin-in,
   .wh-bin,
