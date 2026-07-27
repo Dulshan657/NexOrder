@@ -76,13 +76,9 @@ import UserProfile from './UserProfile';
 import MobileCheckoutButton from './MobileCheckoutButton';
 import OrderSummary from './OrderSummary';
 import OrderConfirmation from './OrderConfirmation';
-import OrdersHistoryView from '../views/OrdersHistoryView';
-import RepDashboardView from '../views/RepDashboardView';
 import ShopView from '../views/ShopView';
 import NotificationCenter from './NotificationCenter';
 import ProfileMenu from './auth/ProfileMenu';
-import HoReCaListView from './HoReCaListView';
-import AccountsAgingTable from './AccountsAgingTable';
 import { LoadingSkeleton } from './Skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
@@ -98,6 +94,14 @@ const BundleSelectModal = lazyWithRetry(() => import('./BundleSelectModal'));
 const StockView = lazyWithRetry(() => import('./StockView'));
 const ReceiveStockView = lazyWithRetry(() => import('./inventory/ReceiveStockView'));
 const ScheduledVisitsView = lazyWithRetry(() => import('./scheduled-visits/ScheduledVisitsView'));
+
+// Each of these renders behind a single `view === ...` branch, so none of them
+// is on the initial paint path for any role. ShopView deliberately stays eager
+// — it is the landing view for both reps and customers.
+const OrdersHistoryView = lazyWithRetry(() => import('../views/OrdersHistoryView'));
+const RepDashboardView = lazyWithRetry(() => import('../views/RepDashboardView'));
+const HoReCaListView = lazyWithRetry(() => import('./HoReCaListView'));
+const AccountsAgingTable = lazyWithRetry(() => import('./AccountsAgingTable'));
 
 import { inviteUser, updateUserProfile } from '../services/supabase/inviteUserService';
 import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit } from '../lib/adapters';
@@ -1172,6 +1176,8 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                         {(isRep || isHoReCaUser) && (
                             <div>
                                 {view === 'dashboard' && isRep && (
+                                    <ErrorBoundary label="Rep dashboard">
+                                    <Suspense fallback={<LoadingSkeleton />}>
                                     <RepDashboardView
                                         currentUser={currentUser}
                                         hoReCas={hoReCas}
@@ -1195,6 +1201,8 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                             setView('scheduled_visits');
                                         }}
                                     />
+                                    </Suspense>
+                                    </ErrorBoundary>
                                 )}
                                 {view === 'ordering' && (
                                     <ShopView
@@ -1250,21 +1258,27 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     />
                                 )}
                                 {view === 'orders' && (
-                                    <OrdersHistoryView
-                                        orders={ordersForHistory}
-                                        hoReCas={hoReCas}
-                                        invoices={invoices}
-                                        currentUser={currentUser}
-                                        onReorder={handleReorderWithNav}
-                                        onReorderItems={handleReorderItems}
-                                        onResetOrder={resetOrder}
-                                        onSelectOrder={setSelectedOrderId}
-                                        onUpdateStatus={handleUpdateOrderStatus}
-                                        onNavigateToShop={() => setView('ordering')}
-                                        onNavigateBack={() => setView(isRep ? 'dashboard' : 'ordering')}
-                                    />
+                                    <ErrorBoundary label="Order history">
+                                        <Suspense fallback={<LoadingSkeleton />}>
+                                            <OrdersHistoryView
+                                                orders={ordersForHistory}
+                                                hoReCas={hoReCas}
+                                                invoices={invoices}
+                                                currentUser={currentUser}
+                                                onReorder={handleReorderWithNav}
+                                                onReorderItems={handleReorderItems}
+                                                onResetOrder={resetOrder}
+                                                onSelectOrder={setSelectedOrderId}
+                                                onUpdateStatus={handleUpdateOrderStatus}
+                                                onNavigateToShop={() => setView('ordering')}
+                                                onNavigateBack={() => setView(isRep ? 'dashboard' : 'ordering')}
+                                            />
+                                        </Suspense>
+                                    </ErrorBoundary>
                                 )}
                                 {view === 'hoReCas' && isRep && (
+                                    <ErrorBoundary label="HoReCa list">
+                                    <Suspense fallback={<LoadingSkeleton />}>
                                     <HoReCaListView
                                         hoReCas={hoReCas}
                                         orders={allOrders}
@@ -1280,6 +1294,8 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         onStartOrder={handleStartOrderWithNav}
                                         setVisits={setVisits}
                                     />
+                                    </Suspense>
+                                    </ErrorBoundary>
                                 )}
                                 {view === 'stock' && (
                                     <ErrorBoundary label="Stock view">
@@ -1292,7 +1308,11 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     </ErrorBoundary>
                                 )}
                                 {view === 'accounts' && (
-                                    <AccountsAgingTable invoices={invoices} hoReCas={hoReCas} currentUser={currentUser} />
+                                    <ErrorBoundary label="Accounts aging">
+                                        <Suspense fallback={<LoadingSkeleton />}>
+                                            <AccountsAgingTable invoices={invoices} hoReCas={hoReCas} currentUser={currentUser} />
+                                        </Suspense>
+                                    </ErrorBoundary>
                                 )}
                                 {view === 'scheduled_visits' && isFieldRep && (
                                     <ErrorBoundary label="Scheduled visits">
