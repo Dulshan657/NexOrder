@@ -3,7 +3,6 @@
   "files": [
     "components/BundleSelectModal.tsx",
     "components/HoReCaForm.tsx",
-    "components/OrderConfirmation.tsx",
     "components/OrderDetailView.tsx",
     "components/OrderVerificationModal.tsx",
     "components/PaymentActionModal.tsx",
@@ -13,7 +12,6 @@
     "components/StockAssignmentModal.tsx",
     "components/SupplierForm.tsx",
     "components/UserForm.tsx",
-    "components/UserProfile.tsx",
     "components/admin/AdjustStockModal.tsx",
     "components/admin/POAliasEditModal.tsx",
     "components/admin/POInboxDetailModal.tsx",
@@ -30,7 +28,6 @@
     "components/pantry/PantryAddDrawer.tsx",
     "components/scheduled-visits/AddStopModal.tsx",
     "components/scheduled-visits/ChangeRequestModal.tsx",
-    "components/visits/VisitModal.tsx",
-    "context/DocumentViewerContext.tsx"
+    "components/visits/VisitModal.tsx"
   ]
 }
