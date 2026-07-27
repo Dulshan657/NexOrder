@@ -10,23 +10,39 @@
 //
 // Generating does NOT mark anything labelled. The confirm at the end does, after
 // the stickers are actually on the racks. See confirm-label-print for why.
+//
+// The sheets are DOWNLOADED, never window.open'd. A signed URL only exists after
+// an await, and a tab opened after an await is outside the click gesture, so the
+// browser blocks it — silently, and hardest on the 2nd and 3rd of a burst, which
+// is precisely a three-sheet job. Fetching to a Blob and clicking an <a download>
+// has no such dependency. Same reasoning as lib/openSignedDoc.ts, which this uses.
+//
+// But a browser also caps UNATTENDED downloads, and that cap is what a multi-sheet
+// job runs into. Measured: one <a download> fired without a click always lands;
+// fire two in a loop and the second is dropped AND the origin is left in a state
+// where even later button clicks are dropped. Two downloads each driven by their
+// own click both land, gesture already spent by an await or not.
+//
+// Hence the rule below: a job of ONE sheet downloads itself, a job of several
+// downloads nothing and asks for a click per sheet. That is not a lesser fallback
+// — it is the only shape that reliably puts every sheet on the operator's disk,
+// and it matches the floor anyway, where each sheet goes on different stock.
 
 import React, { useMemo, useState } from 'react'
 import { Printer, Download, AlertTriangle, CheckCircle2, Undo2 } from 'lucide-react'
 import { Modal, Button, Field, Select, NumberInput, Toggle } from '@/components/ui'
+import { downloadSignedDoc } from '@/lib/openSignedDoc'
+import { GROUP_LABEL, labelSheetFileName } from '@/lib/labelFileName'
 import {
   useConfirmLabelPrint,
   useLayoutLabelTargets,
   usePrintLayoutLabels,
 } from '@/hooks/queries/useLabelJobs'
-import { signLabelSheet, type LayoutLabelJob } from '@/services/supabase/labelService'
-import type { SheetGroup } from '@/supabase/functions/_shared/labels/layoutLabelPlan'
-
-const GROUP_LABEL: Record<SheetGroup, string> = {
-  wayfinding: 'Zone & aisle signs',
-  slots: 'Bin & level stickers',
-  staging: 'Staging & dock',
-}
+import {
+  signLabelSheet,
+  type LayoutLabelJob,
+  type LayoutLabelSheet,
+} from '@/services/supabase/labelService'
 
 const PRESET_LABEL: Record<string, string> = {
   'a4-24': '24 per sheet · 63×34mm',
@@ -53,6 +69,10 @@ export function LayoutLabelJobModal({
   const [job, setJob] = useState<LayoutLabelJob | null>(null)
   const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Which sheets have actually reached the operator's disk. A sheet that
+  // rendered but failed to download must not look like one that arrived.
+  const [downloaded, setDownloaded] = useState<Record<string, boolean>>({})
+  const [downloading, setDownloading] = useState(false)
 
   const rootId = rootLocationId === '' ? null : Number(rootLocationId)
 
@@ -83,10 +103,43 @@ export function LayoutLabelJobModal({
     setJob(null)
     setConfirmed(false)
     setError(null)
+    setDownloaded({})
+  }
+
+  /**
+   * Put one sheet on the operator's disk.
+   *
+   * Signs afresh from the storage path every time rather than reusing the URL
+   * the job came back with: that one expires after 10 minutes, and a modal left
+   * open while someone loads the printer outlives it. Nothing is regenerated —
+   * the same stored PDF, so the codes stay exactly as first printed.
+   */
+  const downloadSheet = async (sheet: LayoutLabelSheet): Promise<void> => {
+    let failed = false
+    await downloadSignedDoc(
+      async () => {
+        const url = await signLabelSheet(sheet.storagePath)
+        if (!url) throw new Error('That sheet is no longer available in storage.')
+        return url
+      },
+      labelSheetFileName({ group: sheet.group, layoutName, date: new Date() }),
+      {
+        onError: (err) => {
+          failed = true
+          setError(
+            err instanceof Error
+              ? `${GROUP_LABEL[sheet.group]}: ${err.message}`
+              : `Could not download the ${GROUP_LABEL[sheet.group].toLowerCase()} sheet.`,
+          )
+        },
+      },
+    )
+    setDownloaded((prev) => ({ ...prev, [sheet.group]: !failed }))
   }
 
   const run = async () => {
     setError(null)
+    setDownloaded({})
     try {
       const result = await printJob.mutateAsync({
         layoutId,
@@ -96,10 +149,15 @@ export function LayoutLabelJobModal({
       })
       setJob(result)
       setConfirmed(false)
-      // Sheets open in the order they should be printed: signs go up before the
-      // bin stickers underneath them mean anything.
-      for (const sheet of result.sheets) {
-        if (sheet.signedUrl) window.open(sheet.signedUrl, '_blank', 'noopener')
+      // A single sheet can be handed over without being asked for; several
+      // cannot (see the note at the top of this file), so they wait for a click.
+      if (result.sheets.length === 1) {
+        setDownloading(true)
+        try {
+          await downloadSheet(result.sheets[0])
+        } finally {
+          setDownloading(false)
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not generate the label sheets.')
@@ -117,18 +175,7 @@ export function LayoutLabelJobModal({
     }
   }
 
-  const reopen = async (storagePath: string) => {
-    setError(null)
-    try {
-      const url = await signLabelSheet(storagePath)
-      if (url) window.open(url, '_blank', 'noopener')
-      else setError('That sheet is no longer available in storage.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open that sheet.')
-    }
-  }
-
-  const busy = printJob.isPending || confirmJob.isPending
+  const busy = printJob.isPending || confirmJob.isPending || downloading
 
   return (
     <Modal
@@ -252,8 +299,8 @@ export function LayoutLabelJobModal({
             {plannedTotal > 0 && (
               <p className="text-xs text-stone-400">
                 {(plan.data ?? []).length === 1
-                  ? 'One PDF will open.'
-                  : `${(plan.data ?? []).length} PDFs will open — one per sheet size, because they print on different stock.`}
+                  ? 'One PDF will download.'
+                  : `${(plan.data ?? []).length} PDFs — one per sheet size, because they print on different stock. You download each one from the list.`}
               </p>
             )}
           </>
@@ -269,20 +316,40 @@ export function LayoutLabelJobModal({
                     <span className="block text-xs text-stone-400">
                       {sheet.labelCount} label{sheet.labelCount === 1 ? '' : 's'} ·{' '}
                       {PRESET_LABEL[sheet.preset] ?? sheet.preset}
+                      {downloaded[sheet.group] === true && ' · downloaded'}
+                      {downloaded[sheet.group] === false && ' · not downloaded'}
                     </span>
                   </span>
                   <Button
-                    variant="secondary"
+                    // Outstanding sheets read as the action; a sheet already on
+                    // disk steps back so the eye lands on what is still missing.
+                    variant={downloaded[sheet.group] === true ? 'secondary' : 'primary'}
                     size="sm"
-                    onClick={() => reopen(sheet.storagePath)}
+                    onClick={() => downloadSheet(sheet)}
+                    disabled={busy}
                     className="shrink-0"
                   >
                     <Download className="w-3.5 h-3.5" aria-hidden="true" />
-                    Open
+                    {downloaded[sheet.group] === true ? 'Download again' : 'Download'}
                   </Button>
                 </div>
               ))}
+              {job.failures.map((failure) => (
+                <div key={failure.group} className="flex items-start gap-2 p-3 text-sm text-red-600">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span>
+                    {GROUP_LABEL[failure.group]} could not be rendered — {failure.message} The other
+                    sheets above are unaffected; re-run to retry this one.
+                  </span>
+                </div>
+              ))}
             </div>
+
+            <p className="text-xs text-stone-400">
+              {job.sheets.length === 1
+                ? 'Saved to your downloads. Download it again any time — nothing is regenerated, so the codes stay exactly as printed.'
+                : 'Download each sheet above. They do not arrive on their own: browsers drop a burst of downloads, and a sheet that never reached you is worse than one more click. Nothing is regenerated, so the codes stay exactly as printed.'}
+            </p>
 
             {confirmed ? (
               <p className="flex items-start gap-2 text-sm text-emerald-700">

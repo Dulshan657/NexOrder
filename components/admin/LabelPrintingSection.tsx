@@ -5,9 +5,13 @@
 // type, so a scuffed or badly-lit label can still be read and typed.
 //
 // The generated PDF lands in the private warehouse-labels bucket (mig 00074);
-// this opens it through a short-lived signed URL. Past runs are listed so a
+// this downloads it through a short-lived signed URL. Past runs are listed so a
 // sheet can be re-downloaded instead of regenerated — the codes are recorded on
 // the log row exactly as they were at print time.
+//
+// Downloaded, not window.open'd: the signed URL only exists after an await, and
+// a tab opened after an await is outside the click gesture and gets blocked
+// silently. See lib/openSignedDoc.ts.
 
 import React, { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -15,6 +19,8 @@ import { Printer, QrCode, Download, AlertTriangle } from 'lucide-react'
 import { useWarehouses } from '../../hooks/queries/useWarehouses'
 import { useLayouts } from '@/hooks/queries/useLayouts'
 import LayoutLabelJobModal from '@/components/admin/labels/LayoutLabelJobModal'
+import { downloadSignedDoc } from '@/lib/openSignedDoc'
+import { labelSheetFileName } from '@/lib/labelFileName'
 import {
   generateLabels,
   listLabelPrintLog,
@@ -65,7 +71,7 @@ const LabelPrintingSection: React.FC = () => {
   const [startOffset, setStartOffset] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [lastRun, setLastRun] = useState<{ count: number; url: string | null } | null>(null)
+  const [lastRun, setLastRun] = useState<{ count: number } | null>(null)
 
   const logQuery = useQuery({ queryKey: ['label-print-log'], queryFn: () => listLabelPrintLog(10) })
 
@@ -89,9 +95,19 @@ const LabelPrintingSection: React.FC = () => {
         warehouseId: kind === 'location' && warehouseId !== '' ? Number(warehouseId) : undefined,
         locationKinds: kind === 'location' ? KIND_GROUPS[groupIndex].kinds : undefined,
       })
-      setLastRun({ count: result.labelCount, url: result.signedUrl })
-      if (result.signedUrl) window.open(result.signedUrl, '_blank', 'noopener')
+      setLastRun({ count: result.labelCount })
       void qc.invalidateQueries({ queryKey: ['label-print-log'] })
+      await downloadSignedDoc(
+        async () => {
+          // Signed fresh from the path, not reused from the response — one
+          // cheap call, and it cannot be the stale half of the pair.
+          const url = await signLabelSheet(result.storagePath)
+          if (!url) throw new Error('That sheet is no longer available in storage.')
+          return url
+        },
+        labelSheetFileName({ kind }),
+        { onError: (err) => setError(err instanceof Error ? err.message : 'Could not download the sheet.') },
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not generate the label sheet.')
     } finally {
@@ -99,15 +115,17 @@ const LabelPrintingSection: React.FC = () => {
     }
   }
 
-  const reopen = async (storagePath: string) => {
+  const download = async (row: { labelKind: LabelKind; storagePath: string }) => {
     setError(null)
-    try {
-      const url = await signLabelSheet(storagePath)
-      if (url) window.open(url, '_blank', 'noopener')
-      else setError('That sheet is no longer available in storage.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open that sheet.')
-    }
+    await downloadSignedDoc(
+      async () => {
+        const url = await signLabelSheet(row.storagePath)
+        if (!url) throw new Error('That sheet is no longer available in storage.')
+        return url
+      },
+      labelSheetFileName({ kind: row.labelKind }),
+      { onError: (err) => setError(err instanceof Error ? err.message : 'Could not download that sheet.') },
+    )
   }
 
   return (
@@ -256,8 +274,8 @@ const LabelPrintingSection: React.FC = () => {
 
       {lastRun && (
         <p className="mt-4 text-sm text-emerald-700">
-          Generated {lastRun.count} label{lastRun.count === 1 ? '' : 's'}.
-          {lastRun.url ? ' The PDF opened in a new tab.' : ''}
+          Generated {lastRun.count} label{lastRun.count === 1 ? '' : 's'} — the PDF is in your
+          downloads.
         </p>
       )}
 
@@ -309,10 +327,10 @@ const LabelPrintingSection: React.FC = () => {
                 </span>
                 <button
                   type="button"
-                  onClick={() => reopen(row.storagePath)}
+                  onClick={() => download(row)}
                   className="shrink-0 inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-stone-200 text-stone-600 btn-press"
                 >
-                  <Download className="w-3 h-3" aria-hidden="true" /> Open
+                  <Download className="w-3 h-3" aria-hidden="true" /> Download
                 </button>
               </li>
             ))}

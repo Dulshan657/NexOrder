@@ -153,9 +153,16 @@ export interface LayoutLabelSheet {
   storagePath: string
 }
 
+export interface LayoutLabelSheetFailure {
+  group: SheetGroup
+  message: string
+}
+
 export interface LayoutLabelJob {
   jobId: string
   sheets: LayoutLabelSheet[]
+  /** Groups that failed to render. Empty on a clean run. */
+  failures: LayoutLabelSheetFailure[]
 }
 
 export interface PrintLayoutLabelsInput {
@@ -176,6 +183,11 @@ export interface PrintLayoutLabelsInput {
  * The groups are discovered from the same preview the modal shows, so empty
  * groups cost nothing: a warehouse with no staging area never calls for a
  * staging sheet.
+ *
+ * A failing group does NOT abandon the ones already rendered. Those PDFs exist
+ * in the bucket and are logged against this job, so throwing them away would
+ * leave the operator re-rendering a thousand QR codes to recover work that is
+ * already done. Only a job where nothing rendered is an outright failure.
  */
 export async function printLayoutLabels(input: PrintLayoutLabelsInput): Promise<LayoutLabelJob> {
   const onlyUnprinted = input.onlyUnprinted ?? true
@@ -189,30 +201,44 @@ export async function printLayoutLabels(input: PrintLayoutLabelsInput): Promise<
 
   const jobId = crypto.randomUUID()
   const sheets: LayoutLabelSheet[] = []
+  const failures: LayoutLabelSheetFailure[] = []
 
   for (const sheet of planned) {
-    const result = await generateLabels({
-      kind: 'location',
-      layoutId: input.layoutId,
-      sheetGroup: sheet.group,
-      rootLocationId: input.rootLocationId ?? undefined,
-      onlyUnprinted,
-      jobId,
-      // Only the FIRST sheet honours a part-used stock offset: each group prints
-      // onto its own fresh sheet of a different die-cut, so carrying the offset
-      // across would blank cells on stock that was never part-used.
-      startOffset: sheets.length === 0 ? (input.startOffset ?? 0) : 0,
-    })
-    sheets.push({
-      group: sheet.group,
-      preset: (result.preset ?? sheet.preset) as LabelPreset,
-      labelCount: result.labelCount,
-      signedUrl: result.signedUrl,
-      storagePath: result.storagePath,
-    })
+    try {
+      const result = await generateLabels({
+        kind: 'location',
+        layoutId: input.layoutId,
+        sheetGroup: sheet.group,
+        rootLocationId: input.rootLocationId ?? undefined,
+        onlyUnprinted,
+        jobId,
+        // Only the FIRST sheet honours a part-used stock offset: each group
+        // prints onto its own fresh sheet of a different die-cut, so carrying
+        // the offset across would blank cells on stock never part-used.
+        // Keyed on sheets.length, so a failed first sheet passes the offset on
+        // to whichever sheet actually reaches that part-used stock first.
+        startOffset: sheets.length === 0 ? (input.startOffset ?? 0) : 0,
+      })
+      sheets.push({
+        group: sheet.group,
+        preset: (result.preset ?? sheet.preset) as LabelPreset,
+        labelCount: result.labelCount,
+        signedUrl: result.signedUrl,
+        storagePath: result.storagePath,
+      })
+    } catch (err) {
+      failures.push({
+        group: sheet.group,
+        message: err instanceof Error ? err.message : 'Could not render that sheet.',
+      })
+    }
   }
 
-  return { jobId, sheets }
+  if (sheets.length === 0) {
+    throw new Error(failures[0]?.message ?? 'Could not render any label sheets.')
+  }
+
+  return { jobId, sheets, failures }
 }
 
 /** Record that a job's stickers are physically on the floor (or undo that). */
