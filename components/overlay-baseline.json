@@ -1,27 +1,13 @@
 {
   "_comment": "Files that still hand-roll a `fixed inset-0` overlay. Shrinks with each migration PR; when `files` is empty, scripts/check-overlays.mjs becomes an absolute ban. Never add entries.",
   "files": [
-    "components/HoReCaForm.tsx",
     "components/OrderDetailView.tsx",
-    "components/OrderVerificationModal.tsx",
     "components/ProductForm.tsx",
     "components/PromotionForm.tsx",
-    "components/SalesTargetModal.tsx",
-    "components/StockAssignmentModal.tsx",
-    "components/SupplierForm.tsx",
-    "components/UserForm.tsx",
-    "components/admin/AdjustStockModal.tsx",
     "components/admin/POAliasEditModal.tsx",
     "components/admin/POInboxDetailModal.tsx",
-    "components/admin/ProductImportModal.tsx",
-    "components/admin/StockImportModal.tsx",
-    "components/admin/TransferStockModal.tsx",
     "components/admin/WarehousesSettingsSection.tsx",
-    "components/admin/ZoneProfilesSection.tsx",
     "components/inventory/PickWorkspaceModal.tsx",
-    "components/pantry/PantryAddDrawer.tsx",
-    "components/scheduled-visits/AddStopModal.tsx",
-    "components/scheduled-visits/ChangeRequestModal.tsx",
-    "components/visits/VisitModal.tsx"
+    "components/pantry/PantryAddDrawer.tsx"
   ]
 }

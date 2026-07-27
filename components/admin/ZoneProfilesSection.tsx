@@ -4,14 +4,15 @@
 // (mig 00057 made zone_type free text). Custom types work with priority + category
 // rules but carry no built-in hazard/temperature logic. Rendered in Settings.
 
-import React, { useState } from 'react';
-import { Layers, Plus, Pencil, Power, X } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Layers, Plus, Pencil, Power } from 'lucide-react';
 import {
   useZoneProfiles,
   useCreateZoneProfile,
   useUpdateZoneProfile,
   useDeactivateZoneProfile,
 } from '../../hooks/queries/useZoneProfiles';
+import { Button, Modal } from '../ui';
 import type { ZoneProfile } from '../../types';
 
 interface FormState {
@@ -43,11 +44,25 @@ const ZoneProfilesSection: React.FC = () => {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ZoneProfile | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
+  // Dirty baseline. This section outlives any one dialog, so the baseline is captured
+  // each time the dialog opens rather than once at mount.
+  const [initialForm, setInitialForm] = useState<FormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
-  const openCreate = () => { setEditing(null); setForm(emptyForm); setError(null); setFormOpen(true); };
-  const openEdit = (p: ZoneProfile) => { setEditing(p); setForm(toForm(p)); setError(null); setFormOpen(true); };
+  const isDirty = useMemo(
+    () => (Object.keys(initialForm) as (keyof FormState)[]).some((key) => form[key] !== initialForm[key]),
+    [form, initialForm],
+  );
+
+  const openForm = (profile: ZoneProfile | null) => {
+    const next = profile ? toForm(profile) : emptyForm;
+    setEditing(profile);
+    setForm(next);
+    setInitialForm(next);
+    setError(null);
+    setFormOpen(true);
+  };
 
   const parseCategories = (raw: string): string[] | null => {
     const list = raw.split(',').map((s) => s.trim()).filter(Boolean);
@@ -96,7 +111,7 @@ const ZoneProfilesSection: React.FC = () => {
           <h3 className="text-base font-display font-bold text-stone-900">Zone profiles</h3>
         </div>
         <button
-          onClick={openCreate}
+          onClick={() => openForm(null)}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-nexgen-blue text-white hover:bg-nexgen-blue/90 btn-press"
         >
           <Plus className="w-4 h-4" /> Add profile
@@ -134,7 +149,7 @@ const ZoneProfilesSection: React.FC = () => {
                   {p.maxUtilizationPct != null ? ` · target ${Math.round(p.maxUtilizationPct * 100)}%` : ''}
                 </p>
               </div>
-              <button onClick={() => openEdit(p)} className="p-2 rounded-lg hover:bg-stone-100 btn-press" aria-label={`Edit ${p.name}`}>
+              <button onClick={() => openForm(p)} className="p-2 rounded-lg hover:bg-stone-100 btn-press" aria-label={`Edit ${p.name}`}>
                 <Pencil className="w-4 h-4 text-stone-500" />
               </button>
               <button
@@ -151,85 +166,79 @@ const ZoneProfilesSection: React.FC = () => {
         </div>
       )}
 
-      {formOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setFormOpen(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-stone-700">{editing ? `Edit ${editing.name}` : 'New zone profile'}</h3>
-              <button onClick={() => setFormOpen(false)} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close">
-                <X className="w-4 h-4 text-stone-500" />
-              </button>
-            </div>
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        size="md"
+        dirty={isDirty}
+        title={editing ? `Edit ${editing.name}` : 'New zone profile'}
+        footer={({ requestClose }) => (
+          <>
+            <Button variant="secondary" onClick={requestClose}>Cancel</Button>
+            <Button onClick={save} loading={saving}>
+              {saving ? 'Saving…' : editing ? 'Save changes' : 'Create profile'}
+            </Button>
+          </>
+        )}
+      >
+        <div className="space-y-4">
+          {error && <p className="text-xs text-red-600">{error}</p>}
 
-            {error && <p className="text-xs text-red-600">{error}</p>}
-
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block text-xs text-stone-500">
-                  Name
-                  <input
-                    className="mt-1 w-full text-sm border border-stone-200 rounded px-2 py-1.5"
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  />
-                </label>
-                <label className="block text-xs text-stone-500">
-                  Zone type
-                  <input
-                    className="mt-1 w-full text-sm border border-stone-200 rounded px-2 py-1.5 font-mono"
-                    value={form.zoneType}
-                    placeholder="fast_moving"
-                    onChange={(e) => setForm({ ...form, zoneType: e.target.value })}
-                  />
-                </label>
-              </div>
-
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
               <label className="block text-xs text-stone-500">
-                Priority weight — <span className="font-mono text-stone-700">{form.priorityWeight.toFixed(2)}</span>
-                <input
-                  type="range" min={0} max={1} step={0.05}
-                  className="mt-1 w-full"
-                  value={form.priorityWeight}
-                  onChange={(e) => setForm({ ...form, priorityWeight: Number(e.target.value) })}
-                />
-                <span className="text-[10px] text-stone-400">Higher = the optimizer prefers this zone.</span>
-              </label>
-
-              <label className="block text-xs text-stone-500">
-                Allowed categories (comma-separated; blank = any)
+                Name
                 <input
                   className="mt-1 w-full text-sm border border-stone-200 rounded px-2 py-1.5"
-                  value={form.allowedCategories}
-                  placeholder="Fish, Noodles"
-                  onChange={(e) => setForm({ ...form, allowedCategories: e.target.value })}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
                 />
               </label>
-
               <label className="block text-xs text-stone-500">
-                Max utilization target (%, optional)
+                Zone type
                 <input
-                  type="number" min={0} max={100}
-                  className="mt-1 w-full text-sm border border-stone-200 rounded px-2 py-1.5"
-                  value={form.maxUtilizationPct}
-                  placeholder="—"
-                  onChange={(e) => setForm({ ...form, maxUtilizationPct: e.target.value })}
+                  className="mt-1 w-full text-sm border border-stone-200 rounded px-2 py-1.5 font-mono"
+                  value={form.zoneType}
+                  placeholder="fast_moving"
+                  onChange={(e) => setForm({ ...form, zoneType: e.target.value })}
                 />
               </label>
             </div>
 
-            <div className="flex justify-end gap-2">
-              <button className="text-sm px-3 py-1.5 border border-stone-200 rounded-lg btn-press" onClick={() => setFormOpen(false)}>Cancel</button>
-              <button
-                className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-50"
-                onClick={save}
-                disabled={saving}
-              >
-                {saving ? 'Saving…' : editing ? 'Save changes' : 'Create profile'}
-              </button>
-            </div>
+            <label className="block text-xs text-stone-500">
+              Priority weight — <span className="font-mono text-stone-700">{form.priorityWeight.toFixed(2)}</span>
+              <input
+                type="range" min={0} max={1} step={0.05}
+                className="mt-1 w-full"
+                value={form.priorityWeight}
+                onChange={(e) => setForm({ ...form, priorityWeight: Number(e.target.value) })}
+              />
+              <span className="text-[10px] text-stone-400">Higher = the optimizer prefers this zone.</span>
+            </label>
+
+            <label className="block text-xs text-stone-500">
+              Allowed categories (comma-separated; blank = any)
+              <input
+                className="mt-1 w-full text-sm border border-stone-200 rounded px-2 py-1.5"
+                value={form.allowedCategories}
+                placeholder="Fish, Noodles"
+                onChange={(e) => setForm({ ...form, allowedCategories: e.target.value })}
+              />
+            </label>
+
+            <label className="block text-xs text-stone-500">
+              Max utilization target (%, optional)
+              <input
+                type="number" min={0} max={100}
+                className="mt-1 w-full text-sm border border-stone-200 rounded px-2 py-1.5"
+                value={form.maxUtilizationPct}
+                placeholder="—"
+                onChange={(e) => setForm({ ...form, maxUtilizationPct: e.target.value })}
+              />
+            </label>
           </div>
         </div>
-      )}
+      </Modal>
     </section>
   );
 };

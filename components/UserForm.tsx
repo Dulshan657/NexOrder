@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Loader2, UserCircle } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { useToasts } from '../hooks/useToasts';
 import { compressImage } from '../lib/imageCompression';
 import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/supabase/storageService';
 import OptimizedImage from './OptimizedImage';
 import { useWarehouses } from '../hooks/queries/useWarehouses';
+import { Button, Field, Input, Modal, Select } from './ui';
 
 interface UserFormProps {
     userToEdit: User | null;
@@ -13,38 +14,47 @@ interface UserFormProps {
     onClose: () => void;
 }
 
+interface FormFields {
+    name: string;
+    email: string;
+    role: UserRole;
+    avatarUrl: string;
+}
+
+const toFormFields = (user: User | null): FormFields => ({
+    name: user?.name ?? '',
+    email: user?.email ?? '',
+    role: user?.role ?? UserRole.FIELD_REP, // Default role for new users
+    avatarUrl: user?.avatarUrl ?? '',
+});
+
 const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
-    const [formData, setFormData] = useState({
-        name: '',
-        email: '',
-        role: UserRole.FIELD_REP, // Default role for new users
-        avatarUrl: '',
-    });
-    const [homeWarehouseId, setHomeWarehouseId] = useState<number | ''>('');
+    // Derived from the prop rather than captured once with `useState(() => …)`, so the
+    // dirty baseline stays in step with the resync effect below.
+    const initialFields = useMemo(() => toFormFields(userToEdit), [userToEdit]);
+    const initialWarehouseId: number | '' = userToEdit?.homeWarehouseId ?? '';
+
+    const [formData, setFormData] = useState<FormFields>(initialFields);
+    const [homeWarehouseId, setHomeWarehouseId] = useState<number | ''>(initialWarehouseId);
+    const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { addToast } = useToasts();
     const [isUploading, setIsUploading] = useState(false);
     const { data: warehouses } = useWarehouses();
 
     useEffect(() => {
-        if (userToEdit) {
-            setFormData({
-                name: userToEdit.name,
-                email: userToEdit.email,
-                role: userToEdit.role,
-                avatarUrl: userToEdit.avatarUrl || '',
-            });
-            setHomeWarehouseId(userToEdit.homeWarehouseId ?? '');
-        } else {
-             setFormData({
-                name: '',
-                email: '',
-                role: UserRole.FIELD_REP,
-                avatarUrl: '',
-            });
-            setHomeWarehouseId('');
-        }
-    }, [userToEdit]);
+        setFormData(initialFields);
+        setHomeWarehouseId(initialWarehouseId);
+    }, [initialFields, initialWarehouseId]);
+
+    // The avatar is part of `formData`, so picking an image and then clicking the
+    // backdrop raises the discard confirm instead of silently dropping the upload.
+    const isDirty = useMemo(
+        () =>
+            homeWarehouseId !== initialWarehouseId ||
+            (Object.keys(initialFields) as (keyof FormFields)[]).some((key) => formData[key] !== initialFields[key]),
+        [formData, initialFields, homeWarehouseId, initialWarehouseId],
+    );
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -79,8 +89,9 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.name || !formData.email) {
-            alert('Name and email are required.');
+        setError(null);
+        if (!formData.name.trim() || !formData.email.trim()) {
+            setError('Name and email are required.');
             return;
         }
 
@@ -99,92 +110,108 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
             onSave(userData);
         }
     };
-    
-    const inputClasses = "block w-full rounded-lg border-0 bg-stone-50 py-2.5 px-3 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300";
 
     return (
-        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg border border-stone-200">
-                <form onSubmit={handleSubmit}>
-                    <h2 className="text-2xl font-display font-bold text-stone-900 mb-6 border-b border-stone-100 pb-3">{userToEdit ? 'Edit User' : 'Add New User'}</h2>
-                    
-                    <div className="space-y-5">
-                        <div>
-                            <label htmlFor="name" className="block text-sm font-medium text-stone-700 mb-1.5">Name</label>
-                            <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required className={inputClasses} />
-                        </div>
-                        <div>
-                            <label htmlFor="email" className="block text-sm font-medium text-stone-700 mb-1.5">Email</label>
-                            <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} required className={inputClasses} />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-1.5">Avatar</label>
-                            <div className="flex items-center space-x-4">
-                                {isUploading ? (
-                                    <div className="h-16 w-16 rounded-full bg-stone-100 border border-stone-200 shadow-sm flex items-center justify-center">
-                                        <Loader2 className="h-5 w-5 text-stone-400 animate-spin" />
-                                    </div>
-                                ) : (
-                                    <OptimizedImage
-                                        src={formData.avatarUrl || `https://i.pravatar.cc/150?u=${userToEdit?.id ?? 'new-user'}`}
-                                        alt="Avatar preview"
-                                        className="h-16 w-16 rounded-full bg-stone-100 border border-stone-200 shadow-sm"
-                                        transformWidth={128}
-                                    />
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={() => fileInputRef.current?.click()}
-                                    disabled={isUploading}
-                                    className="bg-white py-2 px-4 border border-stone-300 rounded-lg shadow-sm text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                                >
-                                    {isUploading ? 'Uploading…' : 'Upload Image'}
-                                </button>
-                                <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
-                            </div>
-                        </div>
-                        <div>
-                            <label htmlFor="avatarUrl" className="block text-sm font-medium text-stone-700 mb-1.5">Or enter Avatar URL</label>
-                            <input type="text" name="avatarUrl" id="avatarUrl" value={formData.avatarUrl} onChange={handleChange} placeholder="https://..." className={inputClasses} />
-                        </div>
-                        <div>
-                            <label htmlFor="role" className="block text-sm font-medium text-stone-700 mb-1.5">Role</label>
-                            <select name="role" id="role" value={formData.role} onChange={handleChange} required className={`${inputClasses} capitalize`}>
-                                {Object.values(UserRole).map(role => (
-                                    <option key={role} value={role}>{role}</option>
-                                ))}
-                            </select>
-                        </div>
-                        {formData.role === UserRole.WAREHOUSE && (
-                            <div>
-                                <label htmlFor="homeWarehouse" className="block text-sm font-medium text-stone-700 mb-1.5">Home warehouse</label>
-                                <select
-                                    id="homeWarehouse"
-                                    value={homeWarehouseId}
-                                    onChange={(e) => setHomeWarehouseId(e.target.value === '' ? '' : Number(e.target.value))}
-                                    className={inputClasses}
-                                >
-                                    <option value="">Select a warehouse…</option>
-                                    {(warehouses ?? []).filter(w => w.isActive).map(w => (
-                                        <option key={w.id} value={w.id}>{w.name}</option>
-                                    ))}
-                                </select>
-                                <p className="text-xs text-stone-400 mt-1">Pickers/receivers only see and act on their own site's work.</p>
-                            </div>
-                        )}
-                    </div>
+        <Modal
+            open
+            onClose={onClose}
+            dirty={isDirty}
+            onSubmit={handleSubmit}
+            icon={<UserCircle className="w-4 h-4 text-nexgen-blue" />}
+            title={userToEdit ? 'Edit User' : 'Add New User'}
+            footer={({ requestClose }) => (
+                <>
+                    <Button variant="ghost" onClick={requestClose}>Cancel</Button>
+                    <Button type="submit" loading={isUploading}>Save User</Button>
+                </>
+            )}
+        >
+            <div className="space-y-5">
+                <Field label="Name" htmlFor="name">
+                    <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
+                </Field>
 
-                    <div className="mt-8 flex justify-end space-x-3 pt-4 border-t border-stone-100">
-                        <button type="button" onClick={onClose} className="bg-white py-2.5 px-4 border border-stone-300 rounded-lg shadow-sm text-sm font-medium text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors">
-                            Cancel
-                        </button>
-                        <button type="submit" disabled={isUploading} className="inline-flex justify-center py-2.5 px-5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-stone-900 hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
-                            Save User
-                        </button>
+                <Field label="Email" htmlFor="email">
+                    <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} required />
+                </Field>
+
+                <div>
+                    <label className="block text-sm font-medium text-stone-700 mb-1">Avatar</label>
+                    <div className="flex items-center space-x-4">
+                        {isUploading ? (
+                            <div className="h-16 w-16 rounded-full bg-stone-100 border border-stone-200 shadow-sm flex items-center justify-center">
+                                <Loader2 className="h-5 w-5 text-stone-400 animate-spin" />
+                            </div>
+                        ) : (
+                            <OptimizedImage
+                                src={formData.avatarUrl || `https://i.pravatar.cc/150?u=${userToEdit?.id ?? 'new-user'}`}
+                                alt="Avatar preview"
+                                className="h-16 w-16 rounded-full bg-stone-100 border border-stone-200 shadow-sm"
+                                transformWidth={128}
+                            />
+                        )}
+                        <Button
+                            variant="secondary"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploading}
+                        >
+                            {isUploading ? 'Uploading…' : 'Upload Image'}
+                        </Button>
+                        <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
                     </div>
-                </form>
+                </div>
+
+                <Field label="Or enter Avatar URL" htmlFor="avatarUrl">
+                    <Input
+                        id="avatarUrl"
+                        name="avatarUrl"
+                        value={formData.avatarUrl}
+                        onChange={handleChange}
+                        placeholder="https://..."
+                    />
+                </Field>
+
+                <Field label="Role" htmlFor="role">
+                    <Select
+                        id="role"
+                        name="role"
+                        value={formData.role}
+                        onChange={handleChange}
+                        required
+                        className="capitalize"
+                    >
+                        {Object.values(UserRole).map(role => (
+                            <option key={role} value={role}>{role}</option>
+                        ))}
+                    </Select>
+                </Field>
+
+                {formData.role === UserRole.WAREHOUSE && (
+                    <Field
+                        label="Home warehouse"
+                        htmlFor="homeWarehouse"
+                        helper="Pickers/receivers only see and act on their own site's work."
+                    >
+                        <Select
+                            id="homeWarehouse"
+                            value={homeWarehouseId}
+                            onChange={(e) => setHomeWarehouseId(e.target.value === '' ? '' : Number(e.target.value))}
+                        >
+                            <option value="">Select a warehouse…</option>
+                            {(warehouses ?? []).filter(w => w.isActive).map(w => (
+                                <option key={w.id} value={w.id}>{w.name}</option>
+                            ))}
+                        </Select>
+                    </Field>
+                )}
+
+                {error && (
+                    <p className="text-sm text-red-600" role="alert">
+                        {error}
+                    </p>
+                )}
             </div>
-        </div>
+        </Modal>
     );
 };
 
