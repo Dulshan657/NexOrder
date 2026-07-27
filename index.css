@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
-@import "leaflet/dist/leaflet.css";
+/* Leaflet's stylesheet is imported by the three map components instead, so it
+   ships with the map chunk rather than in the stylesheet every user loads.
+   See components/admin/WarehouseMapPicker.tsx et al. */
 
 @theme {
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;

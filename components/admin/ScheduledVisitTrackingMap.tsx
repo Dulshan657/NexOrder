@@ -3,6 +3,7 @@ import type { ScheduledVisit, HoReCa, User, Visit, MockRepPosition } from '../..
 import { simulateRepPosition } from '../../services/scheduledVisitService';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { Play, CheckCircle2, MapPin } from 'lucide-react';
 import ScheduledVisitTrackingDetail from './ScheduledVisitTrackingDetail';
 
