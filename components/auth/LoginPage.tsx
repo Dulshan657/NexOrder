@@ -125,12 +125,12 @@ export default function LoginPage() {
             <img
               src={brand.logoSrc}
               alt={brand.displayName}
-              className="h-11 w-auto object-contain"
+              className="h-22 w-auto object-contain"
               style={{ filter: 'brightness(0) invert(1)' }}
             />
           ) : (
             <div className="rounded-xl bg-white p-3">
-              <img src={brand.logoSrc} alt={brand.displayName} className="h-9 w-auto object-contain" />
+              <img src={brand.logoSrc} alt={brand.displayName} className="h-18 w-auto object-contain" />
             </div>
           )}
         </header>
