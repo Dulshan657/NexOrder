@@ -11,21 +11,20 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import { USERS, DEFAULT_SETTINGS } from '../constants'
 import {
-  USERS,
   SUPPLIERS,
   PRODUCTS,
   HORECAS,
   ALL_ORDERS,
   ALL_PURCHASE_ORDERS,
-  DEFAULT_SETTINGS,
   INITIAL_PANTRY_LISTS,
   INITIAL_INVOICES,
   INITIAL_SALES_TARGETS,
   INITIAL_PROMOTIONS,
   INITIAL_ROUTES,
   INITIAL_VISITS,
-} from '../constants'
+} from './seedData'
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
