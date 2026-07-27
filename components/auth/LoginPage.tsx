@@ -58,6 +58,15 @@ const DEMO_ACCOUNTS: readonly DemoAccount[] = SHOW_DEMO_LOGINS
 // Each line names something the app actually does — inbound-PO extraction, WIE
 // directed picking, the shared ledger. Keep them checkable: an operator reading
 // this panel can go and find the screen behind every claim.
+//
+// These rotate one at a time on the rail (.auth-proof in index.css). THE COUNT IS
+// COUPLED TO THAT CSS: the slot width is baked into the keyframe percentages
+// (33.333% = one of three) and there is one :nth-child delay per line. Adding a
+// fourth means 25% slots, an 18s duration and a fourth delay — the rotation will
+// not adapt on its own, it will just skip.
+//
+// Keep them within a line or two of each other in length. They share one grid cell
+// sized to the tallest, so a much longer line leaves dead space under the others.
 const CAPABILITIES: readonly string[] = [
   'Purchase orders read straight from your inbox',
   'Pickers routed bin by bin through the racks',
@@ -116,11 +125,14 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-[100dvh] bg-stone-50 grid grid-cols-1 lg:grid-cols-[5fr_7fr]">
-      {/* Brand pane. Flat charcoal field rather than a gradient: the previous blue
-          gradient put stone-500 footer text at ~1.03:1 and a stone-400 eyebrow at
-          ~1.95:1, both far under the 4.5:1 AA floor. On #0f172a the same greys
-          measure 7.3:1 and 12.4:1. */}
-      <aside className="relative hidden lg:flex flex-col overflow-hidden bg-nexgen-charcoal-dark text-stone-100 p-12 xl:p-16">
+      {/* Brand pane. Deep navy (#0A2E52, a darkened #2988de) under one soft wash of
+          brand blue — see .auth-rail-wash in index.css, which carries the full
+          contrast table. This pane was flat charcoal because an earlier blue
+          gradient measured contrast against the base colour and left stone-500
+          footer text at ~1.03:1 on the bright end. The wash is capped at 14% and
+          the greys below were promoted stone-400 -> stone-300 so the worst point
+          on the gradient is 7.76:1, not 4.12:1. Re-measure if you touch either. */}
+      <aside className="relative hidden lg:flex flex-col overflow-hidden bg-nexgen-navy auth-rail-wash text-stone-100 p-12 xl:p-16">
         {/* The Nex Order mark is monochrome blue on transparent, so it inverts cleanly
             to white and can sit straight on the charcoal — no white plate needed. The
             `?brand=` client logos (Tridon, V2food) are full-colour and drawn for light
@@ -142,7 +154,7 @@ export default function LoginPage() {
 
         <div className="mt-auto">
           <div className="mb-6 auth-in" style={authStagger(1)}>
-            <AuthEyebrow className="text-stone-400">Wholesale operations, end to end</AuthEyebrow>
+            <AuthEyebrow className="text-stone-300">Wholesale operations, end to end</AuthEyebrow>
           </div>
           <h2
             className="max-w-md font-display text-4xl leading-[1.05] tracking-tighter text-stone-50 xl:text-[2.75rem] auth-in"
@@ -150,12 +162,23 @@ export default function LoginPage() {
           >
             From the order email to the loading dock.
           </h2>
-          <ul className="mt-10 space-y-3">
-            {CAPABILITIES.map((cap, i) => (
+          {/* One line at a time, on a 13.5s CSS loop (.auth-proof in index.css).
+              All three stay in the DOM and in the accessibility tree throughout, so
+              a screen reader gets the whole list at once rather than waiting out a
+              carousel — which is why there is no aria-live here and why the
+              off-slot lines must NOT be aria-hidden.
+
+              The entrance and the rotation are on DIFFERENT elements on purpose.
+              `.auth-in` and `.auth-proof-item` are both single-class, both
+              unlayered, and both set the `animation` shorthand — on one element the
+              later rule in index.css wins outright and silently drops the other
+              (plus the --auth-i delay). So the <ul> rises in once as a block and the
+              <li>s cycle inside it. */}
+          <ul className="auth-proof mt-10 max-w-[36ch] auth-in" style={authStagger(3)}>
+            {CAPABILITIES.map((cap) => (
               <li
                 key={cap}
-                className="flex items-start gap-2.5 text-sm leading-relaxed text-stone-300 auth-in"
-                style={authStagger(3 + i)}
+                className="auth-proof-item flex items-start gap-2.5 text-sm leading-relaxed text-stone-300"
               >
                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-nexgen-blue" strokeWidth={2} aria-hidden="true" />
                 <span>{cap}</span>
@@ -164,9 +187,11 @@ export default function LoginPage() {
           </ul>
         </div>
 
+        {/* Stagger index 4, not 6: the three capability lines collapsed into one
+            <ul> at index 3, and leaving a gap here would stall the entrance 80ms. */}
         <footer
-          className={`mt-12 flex items-center justify-between ${EYEBROW_CLASS} text-stone-400 auth-in`}
-          style={authStagger(6)}
+          className={`mt-12 flex items-center justify-between ${EYEBROW_CLASS} text-stone-300 auth-in`}
+          style={authStagger(4)}
         >
           <span>v1.3 · demo build</span>
           <span>Sydney · 2026</span>
@@ -175,16 +200,43 @@ export default function LoginPage() {
 
       {/* Form pane */}
       <main className="flex flex-col px-6 py-10 sm:px-10 lg:px-16 xl:px-24">
-        <div className="flex items-center justify-between lg:hidden auth-in" style={authStagger(0)}>
-          <img src={brand.logoSrc} alt={brand.displayName} className="h-9 w-auto object-contain" />
-          <span
-            className={`rounded-full border border-stone-200 bg-white px-2.5 py-1 ${EYEBROW_CLASS} text-stone-500`}
-          >
-            Demo build
-          </span>
+        {/* Mobile brand band. The rail is desktop-only, so without this a phone sees
+            no brand colour at all. Negative margins cancel <main>'s padding to bleed
+            edge to edge, then the band re-pads itself; it reuses the rail's own
+            background so the two can never drift apart. Same logo branching as the
+            rail — the mono Nex Order mark inverts to white, full-colour `?brand=`
+            logos keep a plate. */}
+        <div
+          className="-mx-6 -mt-10 mb-8 bg-nexgen-navy auth-rail-wash px-6 py-7 sm:-mx-10 sm:px-10 lg:hidden auth-in"
+          style={authStagger(0)}
+        >
+          <div className="flex items-center justify-between gap-4">
+            {isDefaultBrand ? (
+              <img
+                src={brand.logoSrc}
+                alt={brand.displayName}
+                className="h-10 w-auto object-contain"
+                style={{ filter: 'brightness(0) invert(1)' }}
+              />
+            ) : (
+              <div className="rounded-lg bg-white p-2">
+                <img src={brand.logoSrc} alt={brand.displayName} className="h-8 w-auto object-contain" />
+              </div>
+            )}
+            <span
+              className={`shrink-0 rounded-full border border-white/20 px-2.5 py-1 ${EYEBROW_CLASS} text-stone-300`}
+            >
+              Demo build
+            </span>
+          </div>
+          <p className="mt-5 max-w-[22ch] font-display text-2xl leading-tight tracking-tighter text-stone-50">
+            From the order email to the loading dock.
+          </p>
         </div>
 
-        <div className="my-auto w-full max-w-md pt-12 lg:pt-0">
+        {/* No top padding: the mobile band supplies its own mb-8, and on lg the band
+            is gone and my-auto centres the form in the pane. */}
+        <div className="my-auto w-full max-w-md">
           <div className="mb-9 auth-in" style={authStagger(1)}>
             <AuthEyebrow className="mb-3 text-stone-500">Sign in to your account</AuthEyebrow>
             <h1 className="font-display text-4xl leading-none tracking-tighter text-stone-900">
@@ -253,15 +305,12 @@ export default function LoginPage() {
               sequence, so the old 01…07 markers encoded nothing. */}
           {SHOW_DEMO_LOGINS && (
             <section className="mt-10 auth-in" style={authStagger(5)}>
-              <div className="mb-3 flex items-baseline justify-between gap-4">
-                <h2 className={`${EYEBROW_CLASS} text-stone-500`}>Demo accounts · click to fill</h2>
-                <span className="font-mono text-[11px] text-stone-400">
-                  pw{' '}
-                  <span className="rounded bg-stone-100 px-1.5 py-0.5 text-stone-700">
-                    {DEMO_PASSWORD}
-                  </span>
-                </span>
-              </div>
+              {/* The password used to be printed next to this heading. It is gone
+                  from the UI because clicking a chip already fills it — but note
+                  that is a display change only: DEMO_PASSWORD is still a module
+                  constant and still ships in the bundle. The fix is the env flag
+                  above, not this. */}
+              <h2 className={`mb-3 ${EYEBROW_CLASS} text-stone-500`}>Demo accounts · click to fill</h2>
               <ul className="flex flex-wrap gap-2">
                 {DEMO_ACCOUNTS.map((account) => {
                   const [primary, secondary] = splitRole(account.role)

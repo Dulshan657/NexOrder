@@ -42,7 +42,15 @@ const TRIDON: DemoPersona = {
   email: 'tridon@nexorder.demo',
   brandKey: 'tridon',
   displayName: 'Tridon',
-  logoSrc: '/assets/tridon-logo.png',
+  // Deliberately the Nex Order logo, not Tridon's own — same call as V2food below.
+  // Neither persona wears the client's mark any more, on the login brand pane or in
+  // the sidebar. Consequence worth knowing: no persona now has a distinct logoSrc, so
+  // `isDefaultBrand` in components/auth/LoginPage.tsx is true for every `?brand=` value
+  // and the white-plate branch there is currently unreachable. It is kept because it
+  // is the correct treatment for any future full-colour client mark — point a persona
+  // at its own file and the plate comes back with no code change.
+  // (/assets/tridon-logo.png is still on disk, just no longer referenced.)
+  logoSrc: '/assets/Nex-Order-no-bg-logo.png',
   leadWithPoInbox: true,
   hideShop: true,
   landingView: 'PO Inbox',
