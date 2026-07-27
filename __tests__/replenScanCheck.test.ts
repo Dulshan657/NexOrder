@@ -74,7 +74,7 @@ describe('checkReplenScan', () => {
       20,
     )
     expect(v.ok).toBe(false)
-    if (!v.ok) expect(v.code).toBe('WRONG_PLATE')
+    if (v.ok === false) expect(v.code).toBe('WRONG_PLATE')
   })
 
   // ── The destination is not a choice ───────────────────────────────────────
@@ -86,7 +86,11 @@ describe('checkReplenScan', () => {
       20,
     )
     expect(v.ok).toBe(false)
-    if (!v.ok) {
+    // `v.ok === false`, not `!v.ok`: this repo has `strict` off, so TypeScript
+    // only narrows a discriminated union through an explicit comparison against
+    // the literal. `!v.ok` type-checks as `ReplenScanVerdict` and loses `code`.
+    // Same form as putawayScanCheck.test.ts / pickScanCheck.test.ts.
+    if (v.ok === false) {
       expect(v.code).toBe('WRONG_DESTINATION')
       // The message has to name the slot that would be left short.
       expect(v.message).toContain('MAIN-B-04-L1')
@@ -102,7 +106,7 @@ describe('checkReplenScan', () => {
       20,
     )
     expect(v.ok).toBe(false)
-    if (!v.ok) expect(v.code).toBe('WRONG_PRODUCT')
+    if (v.ok === false) expect(v.code).toBe('WRONG_PRODUCT')
   })
 
   it('accepts the product by barcode as well as by sku', () => {
@@ -117,7 +121,7 @@ describe('checkReplenScan', () => {
   it('refuses a quantity above what is left on the task', () => {
     const v = checkReplenScan(TASK, { fromLocationCode: 'MAIN-B-04-L3' }, 21)
     expect(v.ok).toBe(false)
-    if (!v.ok) expect(v.code).toBe('INVALID_QTY')
+    if (v.ok === false) expect(v.code).toBe('INVALID_QTY')
   })
 
   it('refuses a zero or negative quantity', () => {
