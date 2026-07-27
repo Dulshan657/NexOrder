@@ -116,7 +116,9 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
                 <div className="mb-6">
                     <AuthEyebrow className="mb-3 text-stone-500">Reset password</AuthEyebrow>
                     <h1 className="font-display text-3xl leading-none tracking-tighter text-stone-900">
-                        {phase === 'success' ? 'Password updated' : 'Set a new password'}
+                        {phase === 'success' && 'Password updated'}
+                        {phase === 'invalid' && 'Link no longer valid'}
+                        {phase !== 'success' && phase !== 'invalid' && 'Set a new password'}
                     </h1>
                 </div>
 
