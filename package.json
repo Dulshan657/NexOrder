@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:analyze": "node -e \"process.env.ANALYZE='1';require('child_process').execSync('vite build',{stdio:'inherit',env:process.env})\"",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -60,6 +61,7 @@
     "jsdom": "^29.1.1",
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
+    "rollup-plugin-visualizer": "^7.0.1",
     "tailwindcss": "^4.2.2",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
