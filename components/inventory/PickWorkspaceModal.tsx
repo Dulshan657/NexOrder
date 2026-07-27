@@ -12,10 +12,9 @@ import { useAuth } from '../../hooks/useAuth';
 import { useDocumentViewer } from '../../context/DocumentViewerContext';
 import { PickRoutePanel } from './PickRoutePanel';
 import { PickTaskRow } from './pick/PickTaskRow';
+import { Button, Modal } from '../ui';
 import type { PickQueueLine, PickTask } from '../../services/supabase/pickService';
-import {
-  X, Check, PackageCheck, FileText, Truck, MapPin, Box, PackageCheck as PackIcon,
-} from 'lucide-react';
+import { Check, FileText, Truck, Box, PackageCheck as PackIcon } from 'lucide-react';
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
   processed: { label: 'Ready to pick', cls: 'bg-nexgen-blue/10 text-nexgen-blue' },
@@ -134,12 +133,6 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
   const dispatchAdvice = useGenerateDispatchAdvice();
   const { previewDocument } = useDocumentViewer();
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   // The order can leave the queue once dispatched (queue holds processed/picked/
   // packed). Close gracefully if it's gone.
   useEffect(() => {
@@ -182,35 +175,68 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Pick order ${order.orderId}`}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 p-5 border-b border-stone-200">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-nexgen-blue/10 flex items-center justify-center text-nexgen-blue shrink-0">
-              <Box className="w-5 h-5" />
+    <Modal
+      open
+      onClose={onClose}
+      size="2xl"
+      icon={<Box className="w-4 h-4 text-nexgen-blue" />}
+      title={
+        <span className="inline-flex items-center gap-2 align-middle">
+          {order.orderId}
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${badge.cls}`}>{badge.label}</span>
+        </span>
+      }
+      description={`${order.horecaName}${order.deliveryDate ? ` · deliver ${order.deliveryDate.slice(0, 10)}` : ''}`}
+      footer={
+        <div className="w-full space-y-3">
+          {!allPicked ? (
+            <p className="text-xs text-stone-500 text-center">Pick every line to unlock packing &amp; dispatch.</p>
+          ) : (
+            <div className="flex items-center justify-center gap-2">
+              {order.status === 'picked' && (
+                <Button
+                  onClick={() => advance('packed', 'packed')}
+                  disabled={updateStatus.isPending}
+                  icon={<PackIcon className="w-4 h-4" />}
+                >
+                  Mark packed
+                </Button>
+              )}
+              {(order.status === 'packed') && (
+                <Button
+                  onClick={() => advance('dispatched', 'dispatched')}
+                  disabled={updateStatus.isPending}
+                  icon={<Truck className="w-4 h-4" />}
+                >
+                  Mark dispatched
+                </Button>
+              )}
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-stone-900 truncate">{order.orderId}</h2>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${badge.cls}`}>{badge.label}</span>
-              </div>
-              <p className="text-xs text-stone-500 truncate">
-                {order.horecaName}{order.deliveryDate ? ` · deliver ${order.deliveryDate.slice(0, 10)}` : ''}
-              </p>
-            </div>
+          )}
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => openDoc('pick')}
+              disabled={pickSlip.isPending}
+              icon={<FileText className="w-4 h-4" />}
+            >
+              Pick slip
+            </Button>
+            <Button
+              onClick={() => openDoc('dispatch')}
+              disabled={!allPicked || dispatchAdvice.isPending}
+              title={allPicked ? 'Generate dispatch advice' : 'Pick all lines first'}
+              icon={<Truck className="w-4 h-4" />}
+            >
+              Dispatch advice
+            </Button>
           </div>
-          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 cursor-pointer shrink-0" aria-label="Close"><X className="w-5 h-5" /></button>
         </div>
-
+      }
+    >
+      <div className="space-y-2">
         {/* Progress */}
-        <div className="px-5 pt-4">
+        <div>
           <div className="flex items-center justify-between text-xs text-stone-500 mb-1.5">
             <span>Picking progress</span>
             <span className="font-mono text-stone-700">{totalPicked}/{totalOrdered} · {pct}%</span>
@@ -221,7 +247,7 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
         </div>
 
         {/* Lines */}
-        <div className="px-5 py-2 overflow-y-auto flex-1">
+        <div>
           {/* Additive advisory: engine-suggested bin-walk order for this order's
               fulfilment warehouse (renders nothing for non-layout sites). */}
           <PickRoutePanel
@@ -233,67 +259,22 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
             orderIds={[order.orderId]}
           />
           <div className="divide-y divide-stone-100">
-          {order.lines.map((line) => (
-            <PickLineRow
-              key={line.orderItemId}
-              line={line}
-              orderId={order.orderId}
-              tasks={tasksByLine.get(line.orderItemId) ?? []}
-              tasksLoading={tasksLoading}
-              canPick={canPick}
-              homeWarehouseId={homeWarehouseId}
-              isWarehouseRole={isWarehouseRole}
-            />
-          ))}
-          </div>
-        </div>
-
-        {/* Footer actions */}
-        <div className="border-t border-stone-200 p-4 space-y-3 bg-stone-50/60 rounded-b-2xl">
-          {!allPicked ? (
-            <p className="text-xs text-stone-500 text-center">Pick every line to unlock packing &amp; dispatch.</p>
-          ) : (
-            <div className="flex items-center justify-center gap-2">
-              {order.status === 'picked' && (
-                <button
-                  onClick={() => advance('packed', 'packed')}
-                  disabled={updateStatus.isPending}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg btn-press disabled:opacity-50"
-                >
-                  <PackIcon className="w-4 h-4" /> Mark packed
-                </button>
-              )}
-              {(order.status === 'packed') && (
-                <button
-                  onClick={() => advance('dispatched', 'dispatched')}
-                  disabled={updateStatus.isPending}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg btn-press disabled:opacity-50"
-                >
-                  <Truck className="w-4 h-4" /> Mark dispatched
-                </button>
-              )}
-            </div>
-          )}
-          <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={() => openDoc('pick')}
-              disabled={pickSlip.isPending}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press disabled:opacity-50"
-            >
-              <FileText className="w-4 h-4" /> Pick slip
-            </button>
-            <button
-              onClick={() => openDoc('dispatch')}
-              disabled={!allPicked || dispatchAdvice.isPending}
-              title={allPicked ? 'Generate dispatch advice' : 'Pick all lines first'}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-nexgen-blue text-white text-sm font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Truck className="w-4 h-4" /> Dispatch advice
-            </button>
+            {order.lines.map((line) => (
+              <PickLineRow
+                key={line.orderItemId}
+                line={line}
+                orderId={order.orderId}
+                tasks={tasksByLine.get(line.orderItemId) ?? []}
+                tasksLoading={tasksLoading}
+                canPick={canPick}
+                homeWarehouseId={homeWarehouseId}
+                isWarehouseRole={isWarehouseRole}
+              />
+            ))}
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

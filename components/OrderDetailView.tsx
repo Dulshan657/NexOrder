@@ -11,7 +11,8 @@ import OrderFulfillmentsPanel from './OrderFulfillmentsPanel';
 import { getInboundApproval } from '../lib/orderSource';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
 import { useToasts } from '../hooks/useToasts';
-import { X, Package, Truck, Calendar, FileText } from 'lucide-react';
+import { Modal } from './ui';
+import { Package, Truck, Calendar, FileText } from 'lucide-react';
 
 interface OrderDetailViewProps {
     order: Order;
@@ -59,27 +60,29 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-stone-900/50 p-4 sm:p-8">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl my-4">
-                {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b border-stone-200">
-                    <div>
-                        <h2 className="text-xl font-display font-bold text-stone-900">Order {order.id}</h2>
-                        <p className="text-sm text-stone-500 mt-0.5">
-                            {new Date(order.orderDate).toLocaleDateString('en-AU', { dateStyle: 'long' })}
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-3">
+        <>
+            <Modal
+                open
+                onClose={onClose}
+                size="3xl"
+                // A display surface with inline actions rather than a form, so there is
+                // no `dirty` baseline to guard — the one editable field (the optional
+                // status note) is consumed immediately by its own button. Without the
+                // guard, backdrop dismissal stays off, matching the old behaviour where
+                // only the X closed this.
+                dismissOnBackdrop={false}
+                title={`Order ${order.id}`}
+                description={new Date(order.orderDate).toLocaleDateString('en-AU', { dateStyle: 'long' })}
+            >
+                <div className="space-y-6">
+                    {/* Status badges. They sat beside the old hand-rolled close button;
+                        DialogChrome's header is title + close only, so they lead the body. */}
+                    <div className="flex flex-wrap items-center gap-3">
                         <OrderSourceBadge order={order} />
                         <StatusBadge status={order.status} size="md" />
                         <PaymentStatusBadge invoice={invoice} />
-                        <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition-colors cursor-pointer">
-                            <X className="w-5 h-5" />
-                        </button>
                     </div>
-                </div>
 
-                <div className="p-6 space-y-6">
                     {/* OrderStream notice */}
                     <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
                         <Truck className="w-5 h-5 text-blue-600 flex-shrink-0" />
@@ -339,8 +342,10 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                         </div>
                     )}
                 </div>
-            </div>
+            </Modal>
 
+            {/* Sibling, not a child: it mounts after this modal, so overlayStack hands
+                it the higher z automatically. Never add a z-* class to compensate. */}
             {paymentAction && (
                 <PaymentActionModal
                     isOpen
@@ -353,7 +358,7 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                     onCancel={() => { setPaymentAction(null); setPaymentError(undefined); }}
                 />
             )}
-        </div>
+        </>
     );
 };
 
