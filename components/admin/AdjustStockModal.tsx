@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { X, SlidersHorizontal, AlertTriangle } from 'lucide-react';
+import { SlidersHorizontal, AlertTriangle } from 'lucide-react';
 import type { Product } from '../../types';
+import { Button, Modal } from '../ui';
 import { useAdjustStock } from '../../hooks/queries/useAdjustStock';
 import {
   computeAdjustPreview,
@@ -48,6 +48,10 @@ const AdjustStockModal: React.FC<AdjustStockModalProps> = ({
     [mode, amountText, currentOnHand],
   );
 
+  // Only the two typed fields are worth protecting — `mode` is a toggle that clears
+  // them anyway, and once the adjustment is recorded there is nothing left to discard.
+  const isDirty = !done && (amountText.trim() !== '' || reason.trim() !== '');
+
   const switchMode = (next: AdjustMode) => {
     setMode(next);
     setAmountText('');
@@ -76,100 +80,94 @@ const AdjustStockModal: React.FC<AdjustStockModalProps> = ({
     }
   };
 
-  return createPortal(
-    <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex justify-center items-center p-4" role="dialog" aria-modal="true">
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-stone-200">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-nexgen-blue/10"><SlidersHorizontal className="w-4 h-4 text-nexgen-blue" /></div>
-            <div>
-              <h2 className="text-base font-display font-bold text-stone-900">Adjust stock</h2>
-              <p className="text-xs text-stone-500">{product.name} · {locationLabel}</p>
-            </div>
-          </div>
-          <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-stone-100" aria-label="Close"><X className="w-4 h-4 text-stone-500" /></button>
-        </div>
-
-        <div className="px-6 py-5 space-y-4">
-          <div className="flex rounded-lg border border-stone-200 p-1 bg-stone-50">
-            <button
-              type="button"
-              onClick={() => switchMode('delta')}
-              className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === 'delta' ? 'bg-white shadow-sm text-stone-900' : 'text-stone-500 hover:text-stone-700'}`}
-            >
-              Adjust by amount
-            </button>
-            <button
-              type="button"
-              onClick={() => switchMode('set_count')}
-              className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === 'set_count' ? 'bg-white shadow-sm text-stone-900' : 'text-stone-500 hover:text-stone-700'}`}
-            >
-              Set counted total
-            </button>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-stone-600 mb-1">
-              {mode === 'delta' ? 'Quantity change (use − for shrinkage)' : 'Counted total'}
-            </label>
-            <input
-              className={fieldCls}
-              type="number"
-              step="1"
-              value={amountText}
-              onChange={(e) => setAmountText(e.target.value)}
-              placeholder={mode === 'delta' ? 'e.g. -3 or 5' : `e.g. ${currentOnHand}`}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-stone-600 mb-1">Reason (required)</label>
-            <textarea
-              className={`${fieldCls} resize-none`}
-              rows={2}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Damaged in transit, cycle count correction…"
-            />
-          </div>
-
-          <div className="rounded-lg bg-stone-50 border border-stone-200 px-3 py-2 text-xs text-stone-600 flex items-center justify-between">
-            <span>Current on hand</span>
-            <span className="font-mono font-semibold text-stone-900">{currentOnHand}</span>
-          </div>
-          {preview && (
-            <div
-              className={`rounded-lg border px-3 py-2 text-xs flex items-center justify-between ${
-                preview.newOnHand < 0 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-              }`}
-            >
-              <span>New on hand ({preview.delta > 0 ? '+' : ''}{preview.delta})</span>
-              <span className="font-mono font-semibold">{preview.newOnHand}</span>
-            </div>
-          )}
-
-          {error && (
-            <div className="flex items-start gap-2 text-sm text-red-600">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-          {done && <p className="text-sm text-emerald-600">Adjustment recorded.</p>}
-        </div>
-
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-stone-100">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-stone-600 hover:bg-stone-100">Cancel</button>
-          <button
-            type="submit"
-            disabled={adjust.isPending || done}
-            className="px-4 py-2 rounded-lg text-sm font-semibold bg-nexgen-blue text-white hover:bg-nexgen-blue/90 disabled:opacity-60 btn-press"
-          >
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="md"
+      dirty={isDirty}
+      onSubmit={handleSubmit}
+      icon={<SlidersHorizontal className="w-4 h-4 text-nexgen-blue" />}
+      title="Adjust stock"
+      description={`${product.name} · ${locationLabel}`}
+      footer={({ requestClose }) => (
+        <>
+          <Button variant="ghost" onClick={requestClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={done} loading={adjust.isPending}>
             {adjust.isPending ? 'Saving…' : 'Save adjustment'}
+          </Button>
+        </>
+      )}
+    >
+      <div className="space-y-4">
+        <div className="flex rounded-lg border border-stone-200 p-1 bg-stone-50">
+          <button
+            type="button"
+            onClick={() => switchMode('delta')}
+            className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === 'delta' ? 'bg-white shadow-sm text-stone-900' : 'text-stone-500 hover:text-stone-700'}`}
+          >
+            Adjust by amount
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMode('set_count')}
+            className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === 'set_count' ? 'bg-white shadow-sm text-stone-900' : 'text-stone-500 hover:text-stone-700'}`}
+          >
+            Set counted total
           </button>
         </div>
-      </form>
-    </div>,
-    document.body,
+
+        <div>
+          <label className="block text-xs font-semibold text-stone-600 mb-1">
+            {mode === 'delta' ? 'Quantity change (use − for shrinkage)' : 'Counted total'}
+          </label>
+          <input
+            className={fieldCls}
+            type="number"
+            step="1"
+            value={amountText}
+            onChange={(e) => setAmountText(e.target.value)}
+            placeholder={mode === 'delta' ? 'e.g. -3 or 5' : `e.g. ${currentOnHand}`}
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-stone-600 mb-1">Reason (required)</label>
+          <textarea
+            className={`${fieldCls} resize-none`}
+            rows={2}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Damaged in transit, cycle count correction…"
+          />
+        </div>
+
+        <div className="rounded-lg bg-stone-50 border border-stone-200 px-3 py-2 text-xs text-stone-600 flex items-center justify-between">
+          <span>Current on hand</span>
+          <span className="font-mono font-semibold text-stone-900">{currentOnHand}</span>
+        </div>
+        {preview && (
+          <div
+            className={`rounded-lg border px-3 py-2 text-xs flex items-center justify-between ${
+              preview.newOnHand < 0 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+            }`}
+          >
+            <span>New on hand ({preview.delta > 0 ? '+' : ''}{preview.delta})</span>
+            <span className="font-mono font-semibold">{preview.newOnHand}</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2 text-sm text-red-600">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
+        {done && <p className="text-sm text-emerald-600">Adjustment recorded.</p>}
+      </div>
+    </Modal>
   );
 };
 

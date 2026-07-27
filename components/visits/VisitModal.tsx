@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { Visit, VisitOutcome, HoReCa } from '../../types';
 import PhotoUpload from './PhotoUpload';
-import { X, Clock, CheckCircle2, AlertCircle, UserX, Search, ShoppingCart } from 'lucide-react';
+import { X, Clock, CheckCircle2, AlertCircle, UserX, Search, ShoppingCart, ClipboardCheck } from 'lucide-react';
+import { Button, Modal } from '../ui';
 
 interface VisitModalProps {
   hoReCaId: number;
@@ -31,6 +32,16 @@ const VisitModal: React.FC<VisitModalProps> = ({ hoReCaId, userId, scheduledVisi
 
   const customer = hoReCas.find(c => c.id === hoReCaId);
 
+  // The report starts empty, so "dirty" is simply "the rep has entered something".
+  // Derived over the existing scalars rather than folding them into one form object.
+  const isDirty = useMemo(
+    () =>
+      outcome !== undefined ||
+      photos.length > 0 ||
+      [notes, competitorNotes, stockCheckNotes, nextVisitRecommendation].some(value => value.trim() !== ''),
+    [outcome, photos, notes, competitorNotes, stockCheckNotes, nextVisitRecommendation],
+  );
+
   const handleSave = () => {
     const visit: Visit = {
       id: `VISIT-${Date.now()}`,
@@ -51,112 +62,106 @@ const VisitModal: React.FC<VisitModalProps> = ({ hoReCaId, userId, scheduledVisi
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-elevated w-full max-w-xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-stone-200 p-5 rounded-t-2xl flex items-center justify-between z-10">
-          <div>
-            <h2 className="text-lg font-display font-bold text-stone-800">Visit Report</h2>
-            {customer && <p className="text-sm text-stone-500">{customer.name}</p>}
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-stone-100 rounded-lg transition-colors">
-            <X className="w-5 h-5 text-stone-400" />
-          </button>
+    <Modal
+      open
+      onClose={onClose}
+      size="xl"
+      dirty={isDirty}
+      icon={<ClipboardCheck className="w-4 h-4 text-nexgen-blue" />}
+      title="Visit Report"
+      description={customer?.name}
+      discardConfirm={{
+        title: 'Discard visit report?',
+        message: 'The notes and photos on this report have not been saved.',
+      }}
+      footer={({ requestClose }) => (
+        <>
+          <Button variant="ghost" onClick={requestClose}>Cancel</Button>
+          <Button onClick={handleSave} icon={<CheckCircle2 className="w-4 h-4" />}>
+            Check Out &amp; Save
+          </Button>
+        </>
+      )}
+    >
+      <div className="space-y-6">
+        {/* Check-in time */}
+        <div className="flex items-center gap-2 text-sm text-stone-600 bg-emerald-50/60 border border-emerald-100 p-3 rounded-lg">
+          <Clock className="w-4 h-4 text-emerald-500" />
+          <span>Checked in at {new Date(arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
         </div>
 
-        <div className="p-5 space-y-6">
-          {/* Check-in time */}
-          <div className="flex items-center gap-2 text-sm text-stone-600 bg-emerald-50/60 border border-emerald-100 p-3 rounded-lg">
-            <Clock className="w-4 h-4 text-emerald-500" />
-            <span>Checked in at {new Date(arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        {/* Outcome */}
+        <div>
+          <label className="block text-sm font-medium text-stone-700 mb-2">Visit Outcome</label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            {OUTCOMES.map(o => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => setOutcome(o.value)}
+                className={`flex items-center gap-2 p-2.5 rounded-lg border text-sm font-medium btn-press cursor-pointer ${
+                  outcome === o.value ? `ring-2 ring-offset-1 ring-stone-400 ${o.color}` : `border-stone-200 text-stone-600 hover:bg-stone-50`
+                }`}
+              >
+                {o.icon}
+                {o.label}
+              </button>
+            ))}
           </div>
-
-          {/* Outcome */}
-          <div>
-            <label className="block text-sm font-medium text-stone-700 mb-2">Visit Outcome</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {OUTCOMES.map(o => (
-                <button
-                  key={o.value}
-                  onClick={() => setOutcome(o.value)}
-                  className={`flex items-center gap-2 p-2.5 rounded-lg border text-sm font-medium btn-press cursor-pointer ${
-                    outcome === o.value ? `ring-2 ring-offset-1 ring-stone-400 ${o.color}` : `border-stone-200 text-stone-600 hover:bg-stone-50`
-                  }`}
-                >
-                  {o.icon}
-                  {o.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Notes</label>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="General visit notes..."
-              rows={3}
-              className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-nexgen-blue focus:border-transparent resize-none"
-            />
-          </div>
-
-          {/* Competitor Notes */}
-          <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Competitor Observations</label>
-            <textarea
-              value={competitorNotes}
-              onChange={e => setCompetitorNotes(e.target.value)}
-              placeholder="Competitor products spotted, pricing info..."
-              rows={2}
-              className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-nexgen-blue focus:border-transparent resize-none"
-            />
-          </div>
-
-          {/* Stock Check Notes */}
-          <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Stock Check</label>
-            <textarea
-              value={stockCheckNotes}
-              onChange={e => setStockCheckNotes(e.target.value)}
-              placeholder="HoReCa stock levels, items running low..."
-              rows={2}
-              className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-nexgen-blue focus:border-transparent resize-none"
-            />
-          </div>
-
-          {/* Next Visit */}
-          <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Next Visit Recommendation</label>
-            <input
-              type="text"
-              value={nextVisitRecommendation}
-              onChange={e => setNextVisitRecommendation(e.target.value)}
-              placeholder="e.g. Follow up in 1 week about new range"
-              className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-nexgen-blue focus:border-transparent"
-            />
-          </div>
-
-          {/* Photos */}
-          <PhotoUpload photos={photos} onPhotosChange={setPhotos} />
         </div>
 
-        {/* Actions */}
-        <div className="sticky bottom-0 bg-white border-t border-stone-200 p-5 rounded-b-2xl flex justify-end gap-3" style={{ boxShadow: '0 -1px 3px rgba(0,0,0,0.05)' }}>
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100 rounded-lg transition-colors">
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="flex items-center gap-1 px-5 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            Check Out & Save
-          </button>
+        {/* Notes */}
+        <div>
+          <label className="block text-sm font-medium text-stone-700 mb-1">Notes</label>
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="General visit notes..."
+            rows={3}
+            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-nexgen-blue focus:border-transparent resize-none"
+          />
         </div>
+
+        {/* Competitor Notes */}
+        <div>
+          <label className="block text-sm font-medium text-stone-700 mb-1">Competitor Observations</label>
+          <textarea
+            value={competitorNotes}
+            onChange={e => setCompetitorNotes(e.target.value)}
+            placeholder="Competitor products spotted, pricing info..."
+            rows={2}
+            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-nexgen-blue focus:border-transparent resize-none"
+          />
+        </div>
+
+        {/* Stock Check Notes */}
+        <div>
+          <label className="block text-sm font-medium text-stone-700 mb-1">Stock Check</label>
+          <textarea
+            value={stockCheckNotes}
+            onChange={e => setStockCheckNotes(e.target.value)}
+            placeholder="HoReCa stock levels, items running low..."
+            rows={2}
+            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-nexgen-blue focus:border-transparent resize-none"
+          />
+        </div>
+
+        {/* Next Visit */}
+        <div>
+          <label className="block text-sm font-medium text-stone-700 mb-1">Next Visit Recommendation</label>
+          <input
+            type="text"
+            value={nextVisitRecommendation}
+            onChange={e => setNextVisitRecommendation(e.target.value)}
+            placeholder="e.g. Follow up in 1 week about new range"
+            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:ring-2 focus:ring-nexgen-blue focus:border-transparent"
+          />
+        </div>
+
+        {/* Photos */}
+        <PhotoUpload photos={photos} onPhotosChange={setPhotos} />
       </div>
-    </div>
+    </Modal>
   );
 };
 

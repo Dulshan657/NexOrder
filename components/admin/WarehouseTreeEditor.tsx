@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { X, Plus, Power, ChevronRight, ChevronDown, Boxes } from 'lucide-react';
+import { Plus, Power, ChevronRight, ChevronDown, Boxes } from 'lucide-react';
+import { Modal } from '../ui';
 import {
   useWarehouseLocations,
   useCreateWarehouseLocation,
@@ -48,6 +48,13 @@ const WarehouseTreeEditor: React.FC<WarehouseTreeEditorProps> = ({ warehouse, on
     for (const arr of m.values()) arr.sort((a, b) => a.code.localeCompare(b.code));
     return m;
   }, [locations, warehouse.id]);
+
+  // Adds and deactivations commit the moment they are clicked, so the only unsaved
+  // state this dialog holds is a half-typed inline add row.
+  const isDirty = useMemo(
+    () => !!addForm && [addForm.code, addForm.name, addForm.capacity].some((value) => value.trim() !== ''),
+    [addForm],
+  );
 
   const toggle = (id: number) =>
     setExpanded((prev) => {
@@ -132,56 +139,48 @@ const WarehouseTreeEditor: React.FC<WarehouseTreeEditorProps> = ({ warehouse, on
 
   const rootKids = childrenByParent.get(warehouse.id) ?? [];
 
-  return createPortal(
-    <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex justify-center items-start sm:items-center p-4 overflow-y-auto" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl border border-stone-200 my-8 max-h-[85vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-violet-50"><Boxes className="w-4 h-4 text-violet-600" /></div>
-            <div>
-              <h2 className="text-base font-display font-bold text-stone-900">{warehouse.name} — storage layout</h2>
-              <p className="text-xs text-stone-500">Build zones, bins and shelves. Click + on a node to add a child.</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-stone-100" aria-label="Close"><X className="w-4 h-4 text-stone-500" /></button>
-        </div>
-
-        <div className="px-6 py-4 overflow-y-auto flex-1">
-          {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-semibold text-stone-700">Root</p>
-            <button
-              onClick={() => setAddForm({ parentId: warehouse.id, kind: 'ZONE', code: '', name: '', capacity: '' })}
-              className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-nexgen-blue text-white"
-            >
-              <Plus className="w-3.5 h-3.5" /> Add top-level
-            </button>
-          </div>
-
-          {addForm?.parentId === warehouse.id && (
-            <div className="flex flex-wrap items-center gap-2 py-2 mb-2 border-b border-stone-100">
-              <select value={addForm.kind} onChange={(e) => setAddForm({ ...addForm, kind: e.target.value as NodeKind })} className="text-xs border border-stone-200 rounded px-2 py-1">
-                {(['ZONE', 'BIN', 'SHELF'] as NodeKind[]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
-              </select>
-              <input value={addForm.code} onChange={(e) => setAddForm({ ...addForm, code: e.target.value.toUpperCase() })} placeholder="Code" className="text-xs border border-stone-200 rounded px-2 py-1 w-24" />
-              <input value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder="Name" className="text-xs border border-stone-200 rounded px-2 py-1 w-32" />
-              <input value={addForm.capacity} onChange={(e) => setAddForm({ ...addForm, capacity: e.target.value })} placeholder="Cap." type="number" className="text-xs border border-stone-200 rounded px-2 py-1 w-16" />
-              <button onClick={submitAdd} disabled={create.isPending} className="text-xs font-semibold px-2 py-1 rounded bg-nexgen-blue text-white">Add</button>
-              <button onClick={() => setAddForm(null)} className="text-xs text-stone-500 px-1">Cancel</button>
-            </div>
-          )}
-
-          {isLoading ? (
-            <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-8 rounded bg-stone-100 animate-pulse" />)}</div>
-          ) : rootKids.length === 0 ? (
-            <p className="text-sm text-stone-500 py-6 text-center">No storage locations yet. Add a top-level zone or bin.</p>
-          ) : (
-            <div>{rootKids.map((k) => renderNode(k, 0))}</div>
-          )}
-        </div>
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="2xl"
+      dirty={isDirty}
+      icon={<Boxes className="w-4 h-4 text-nexgen-blue" />}
+      title={`${warehouse.name} — storage layout`}
+      description="Build zones, bins and shelves. Click + on a node to add a child."
+    >
+      {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-semibold text-stone-700">Root</p>
+        <button
+          onClick={() => setAddForm({ parentId: warehouse.id, kind: 'ZONE', code: '', name: '', capacity: '' })}
+          className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-nexgen-blue text-white"
+        >
+          <Plus className="w-3.5 h-3.5" /> Add top-level
+        </button>
       </div>
-    </div>,
-    document.body,
+
+      {addForm?.parentId === warehouse.id && (
+        <div className="flex flex-wrap items-center gap-2 py-2 mb-2 border-b border-stone-100">
+          <select value={addForm.kind} onChange={(e) => setAddForm({ ...addForm, kind: e.target.value as NodeKind })} className="text-xs border border-stone-200 rounded px-2 py-1">
+            {(['ZONE', 'BIN', 'SHELF'] as NodeKind[]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+          </select>
+          <input value={addForm.code} onChange={(e) => setAddForm({ ...addForm, code: e.target.value.toUpperCase() })} placeholder="Code" className="text-xs border border-stone-200 rounded px-2 py-1 w-24" />
+          <input value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder="Name" className="text-xs border border-stone-200 rounded px-2 py-1 w-32" />
+          <input value={addForm.capacity} onChange={(e) => setAddForm({ ...addForm, capacity: e.target.value })} placeholder="Cap." type="number" className="text-xs border border-stone-200 rounded px-2 py-1 w-16" />
+          <button onClick={submitAdd} disabled={create.isPending} className="text-xs font-semibold px-2 py-1 rounded bg-nexgen-blue text-white">Add</button>
+          <button onClick={() => setAddForm(null)} className="text-xs text-stone-500 px-1">Cancel</button>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-8 rounded bg-stone-100 animate-pulse" />)}</div>
+      ) : rootKids.length === 0 ? (
+        <p className="text-sm text-stone-500 py-6 text-center">No storage locations yet. Add a top-level zone or bin.</p>
+      ) : (
+        <div>{rootKids.map((k) => renderNode(k, 0))}</div>
+      )}
+    </Modal>
   );
 };
 

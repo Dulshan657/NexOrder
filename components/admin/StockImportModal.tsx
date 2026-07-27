@@ -7,8 +7,9 @@
 // chunk here is reported as a whole row-range, and its rows stay in the grid
 // so the operator can just hit Import again to retry only what's left.
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { X, PackagePlus, Download, Loader2, CheckCircle2, AlertTriangle, Warehouse as WarehouseIcon } from 'lucide-react';
+import { PackagePlus, Download, CheckCircle2, AlertTriangle, Warehouse as WarehouseIcon } from 'lucide-react';
 import type { Product } from '@/types';
+import { Button, Modal } from '@/components/ui';
 import { downloadCsv } from '@/lib/csvExport';
 import { validateStockRow, type StockImportContext, type StockRowResult, type StockImportLine } from '@/lib/stockImportRow';
 import { useWarehouses } from '@/hooks/queries/useWarehouses';
@@ -203,22 +204,41 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
   };
 
   const canImport = !!summary && summary.valid > 0 && warehouseId != null && !submitting;
+  // Rows still sitting in the preview grid are unimported work, so every dismiss
+  // path (Escape, backdrop, X, Close) routes through the discard guard first.
+  const hasPendingRows = (records?.length ?? 0) > 0;
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-white rounded-2xl w-full max-w-5xl p-5 space-y-4 max-h-[90vh] overflow-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-700">
-            <PackagePlus className="h-4 w-4 text-emerald-600" /> Bulk import opening stock
-          </h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close">
-            <X className="h-4 w-4 text-stone-500" />
-          </button>
-        </div>
-
+    <Modal
+      open
+      onClose={onClose}
+      size="full"
+      dirty={hasPendingRows}
+      discardConfirm={{
+        title: 'Discard this import?',
+        message: 'The rows parsed from your CSV have not been received into stock yet.',
+      }}
+      icon={<PackagePlus className="w-4 h-4 text-nexgen-blue" />}
+      title="Bulk import opening stock"
+      footer={({ requestClose }) => (
+        <>
+          <Button variant="secondary" onClick={requestClose}>
+            {records ? 'Close' : 'Cancel'}
+          </Button>
+          {records && (
+            <Button
+              onClick={handleImport}
+              disabled={!canImport}
+              loading={submitting}
+              icon={<CheckCircle2 className="h-4 w-4" />}
+            >
+              {submitting ? 'Receiving…' : `Import ${summary?.valid ?? 0} row${summary?.valid === 1 ? '' : 's'}`}
+            </Button>
+          )}
+        </>
+      )}
+    >
+      <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-stone-500">
             Upload a CSV of opening balances (quantities are <strong>base units</strong>, not cartons). Receiving is
@@ -348,24 +368,8 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
             ]}
           />
         )}
-
-        <div className="flex justify-end gap-2">
-          <button className="text-sm px-3 py-1.5 border border-stone-200 rounded-lg btn-press" onClick={onClose}>
-            {records ? 'Close' : 'Cancel'}
-          </button>
-          {records && (
-            <button
-              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-50"
-              onClick={handleImport}
-              disabled={!canImport}
-            >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              {submitting ? 'Receiving…' : `Import ${summary?.valid ?? 0} row${summary?.valid === 1 ? '' : 's'}`}
-            </button>
-          )}
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

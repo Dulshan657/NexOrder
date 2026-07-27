@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { X, Download, ExternalLink, FileText } from 'lucide-react';
+import { Download, ExternalLink, FileText } from 'lucide-react';
+import { Modal } from '../components/ui';
 
 // In-app PDF viewer. We preview signed documents inside the app (an <iframe>
 // over the fetched Blob) instead of window.open — because the signed URL is
@@ -65,14 +66,10 @@ export function DocumentViewerProvider({ children }: { children: React.ReactNode
     [revoke],
   );
 
-  // Revoke on unmount + close on Escape.
+  // Revoke on unmount. Escape is handled by <Modal>, which — unlike the window
+  // listener this replaced — only closes the topmost overlay, so previewing a
+  // document from inside another dialog no longer closes both.
   useEffect(() => () => revoke(), [revoke]);
-  useEffect(() => {
-    if (state.status === 'closed') return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [state.status, close]);
 
   const download = () => {
     if (state.status !== 'ready') return;
@@ -88,52 +85,45 @@ export function DocumentViewerProvider({ children }: { children: React.ReactNode
     <DocumentViewerContext.Provider value={{ previewDocument }}>
       {children}
       {state.status !== 'closed' && (
-        <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4" onClick={close}>
-          <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label={state.title}
-          >
-            <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-stone-200 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <FileText className="w-4 h-4 text-nexgen-blue shrink-0" />
-                <p className="text-sm font-semibold text-stone-800 truncate">{state.title}</p>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {state.status === 'ready' && (
-                  <>
-                    <button onClick={download} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press" aria-label="Download">
-                      <Download className="w-3.5 h-3.5" /> Download
-                    </button>
-                    <button onClick={() => window.open(state.objectUrl, '_blank', 'noopener')} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press" aria-label="Open in new tab">
-                      <ExternalLink className="w-3.5 h-3.5" /> New tab
-                    </button>
-                  </>
-                )}
-                <button onClick={close} className="p-1.5 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-lg cursor-pointer" aria-label="Close"><X className="w-5 h-5" /></button>
-              </div>
+        // The body carries an explicit height rather than relying on `flex-1`.
+        // The old panel was `h-[88vh]` — a DEFINITE height, which is what let
+        // the `h-full` iframe resolve. Modal's panel is `max-h-[90vh]`, which
+        // is not definite, so a percentage-height iframe inside a flex-1 body
+        // would collapse to zero and the PDF would render as a blank strip.
+        <Modal
+          open
+          onClose={close}
+          size="full"
+          icon={<FileText className="w-4 h-4 text-nexgen-blue" />}
+          title={state.title}
+          bodyClassName="shrink-0 h-[78vh] bg-stone-100 overflow-hidden"
+          footer={state.status === 'ready' ? (
+            <>
+              <button onClick={download} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press" aria-label="Download">
+                <Download className="w-3.5 h-3.5" /> Download
+              </button>
+              <button onClick={() => window.open(state.objectUrl, '_blank', 'noopener')} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press" aria-label="Open in new tab">
+                <ExternalLink className="w-3.5 h-3.5" /> New tab
+              </button>
+            </>
+          ) : undefined}
+        >
+          {state.status === 'loading' && (
+            <div className="h-full flex flex-col items-center justify-center gap-3 text-stone-400">
+              <div className="w-8 h-8 border-2 border-stone-300 border-t-nexgen-blue rounded-full animate-spin" />
+              <p className="text-sm">Loading document…</p>
             </div>
-            <div className="flex-1 bg-stone-100 min-h-0">
-              {state.status === 'loading' && (
-                <div className="h-full flex flex-col items-center justify-center gap-3 text-stone-400">
-                  <div className="w-8 h-8 border-2 border-stone-300 border-t-nexgen-blue rounded-full animate-spin" />
-                  <p className="text-sm">Loading document…</p>
-                </div>
-              )}
-              {state.status === 'error' && (
-                <div className="h-full flex flex-col items-center justify-center gap-2 text-center px-6">
-                  <p className="text-sm text-red-600">{state.message}</p>
-                  <p className="text-xs text-stone-400">The link may have expired — try again.</p>
-                </div>
-              )}
-              {state.status === 'ready' && (
-                <iframe title={state.title} src={state.objectUrl} className="w-full h-full border-0" />
-              )}
+          )}
+          {state.status === 'error' && (
+            <div className="h-full flex flex-col items-center justify-center gap-2 text-center px-6">
+              <p className="text-sm text-red-600">{state.message}</p>
+              <p className="text-xs text-stone-400">The link may have expired — try again.</p>
             </div>
-          </div>
-        </div>
+          )}
+          {state.status === 'ready' && (
+            <iframe title={state.title} src={state.objectUrl} className="w-full h-full border-0" />
+          )}
+        </Modal>
       )}
     </DocumentViewerContext.Provider>
   );

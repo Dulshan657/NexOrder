@@ -2,9 +2,10 @@
 // step instead of hand-placing each cell, optionally assigning them all to a zone
 // and a uniform capacity. A big usability win for real racked layouts.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Dispatch } from 'react'
 import type { RackLevel, StorageType, ZoneProfile } from '@/types'
+import { Button, Modal } from '@/components/ui'
 import type { EditorAction } from './useLayoutEditorState'
 
 interface RackWizardProps {
@@ -16,22 +17,54 @@ interface RackWizardProps {
   onClose: () => void
 }
 
+// Every field opens on these values, so "the operator touched something" is just
+// a comparison against them. Declared once rather than inline in each useState so
+// the dirty check below can't drift out of step with the initial state.
+const DEFAULTS = {
+  startX: 0,
+  startY: 0,
+  cols: 4,
+  rows: 3,
+  capacity: 10,
+  slotKind: 'pallet' as 'pallet' | 'carton',
+  weightCap: '' as number | '',
+  zoneProfileId: '' as number | '',
+  storageTypeId: '' as number | '',
+}
+
 export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gridHeight, onClose }: RackWizardProps) {
-  const [startX, setStartX] = useState(0)
-  const [startY, setStartY] = useState(0)
-  const [cols, setCols] = useState(4)
-  const [rows, setRows] = useState(3)
-  const [capacity, setCapacity] = useState(10)
-  const [slotKind, setSlotKind] = useState<'pallet' | 'carton'>('pallet')
-  const [weightCap, setWeightCap] = useState<number | ''>('')
-  const [zoneProfileId, setZoneProfileId] = useState<number | ''>('')
-  const [storageTypeId, setStorageTypeId] = useState<number | ''>('')
+  const [startX, setStartX] = useState(DEFAULTS.startX)
+  const [startY, setStartY] = useState(DEFAULTS.startY)
+  const [cols, setCols] = useState(DEFAULTS.cols)
+  const [rows, setRows] = useState(DEFAULTS.rows)
+  const [capacity, setCapacity] = useState(DEFAULTS.capacity)
+  const [slotKind, setSlotKind] = useState<'pallet' | 'carton'>(DEFAULTS.slotKind)
+  const [weightCap, setWeightCap] = useState<number | ''>(DEFAULTS.weightCap)
+  const [zoneProfileId, setZoneProfileId] = useState<number | ''>(DEFAULTS.zoneProfileId)
+  const [storageTypeId, setStorageTypeId] = useState<number | ''>(DEFAULTS.storageTypeId)
   // The chosen form's standard level layout (mig 00072); every rack this
   // wizard generates inherits it (recoded to that rack's own code).
   const [levelTemplate, setLevelTemplate] = useState<RackLevel[] | undefined>(undefined)
 
   const fits = startX + cols <= gridWidth && startY + rows <= gridHeight
   const count = cols * rows
+
+  // Arms the discard guard so a stray backdrop click can't silently throw away a
+  // block the operator has already dialled in. `levelTemplate` is derived from
+  // `storageTypeId`, so it needs no term of its own.
+  const isDirty = useMemo(
+    () =>
+      startX !== DEFAULTS.startX ||
+      startY !== DEFAULTS.startY ||
+      cols !== DEFAULTS.cols ||
+      rows !== DEFAULTS.rows ||
+      capacity !== DEFAULTS.capacity ||
+      slotKind !== DEFAULTS.slotKind ||
+      weightCap !== DEFAULTS.weightCap ||
+      zoneProfileId !== DEFAULTS.zoneProfileId ||
+      storageTypeId !== DEFAULTS.storageTypeId,
+    [startX, startY, cols, rows, capacity, slotKind, weightCap, zoneProfileId, storageTypeId],
+  )
 
   // Selecting a storage type prefills capacity + slot kind from its defaults.
   const onStorageType = (val: string) => {
@@ -76,10 +109,24 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
   )
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-sm font-semibold text-stone-700">Generate racks</h3>
-
+    <Modal
+      open
+      onClose={onClose}
+      size="md"
+      dirty={isDirty}
+      title="Generate racks"
+      footer={({ requestClose }) => (
+        <>
+          <Button variant="ghost" size="sm" onClick={requestClose}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={generate} disabled={!fits || count === 0}>
+            Generate {count}
+          </Button>
+        </>
+      )}
+    >
+      <div className="space-y-4">
         {storageTypes.length > 0 && (
           <label className="block text-xs text-stone-500">
             Storage type
@@ -139,18 +186,7 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
           Creates up to {count} racks{fits ? '' : ' — but the block runs off the grid'}
           {levelTemplate ? ` · ${levelTemplate.length} levels each` : ''}.
         </p>
-
-        <div className="flex justify-end gap-2">
-          <button className="text-xs px-3 py-1.5 border border-stone-200 rounded-lg btn-press" onClick={onClose}>Cancel</button>
-          <button
-            className="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-40"
-            onClick={generate}
-            disabled={!fits || count === 0}
-          >
-            Generate {count}
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   )
 }

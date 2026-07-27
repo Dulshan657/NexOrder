@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Warehouse as WarehouseIcon, Plus, Pencil, Power, MapPin, Boxes, LayoutGrid, Gauge, X } from 'lucide-react';
+import { Warehouse as WarehouseIcon, Plus, Pencil, Power, MapPin, Boxes, LayoutGrid, Gauge } from 'lucide-react';
 import { useWarehouses, useDeactivateWarehouse } from '../../hooks/queries/useWarehouses';
+import { Modal } from '../ui';
 import WarehouseForm from './WarehouseForm';
 import WarehouseTreeEditor from './WarehouseTreeEditor';
 import { LayoutDesignerView } from './layout/LayoutDesignerView';
@@ -157,28 +158,30 @@ const WarehousesSettingsSection: React.FC = () => {
 
       {formOpen && <WarehouseForm warehouse={editing} onClose={() => setFormOpen(false)} />}
       {treeFor && <WarehouseTreeEditor warehouse={treeFor} onClose={() => setTreeFor(null)} />}
+      {/* The `key` remounts the hosted view per warehouse — without it, opening a
+        * second warehouse would reuse the first one's designer / optimizer state.
+        * It sits on a Fragment because the repo has no @types/react, so `key` on a
+        * typed component is a tsc error. */}
       {designerFor && (
-        <div key={designerFor.id} className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setDesignerFor(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-stone-700">Warehouse Intelligence — Layout Designer</h3>
-              <button onClick={() => setDesignerFor(null)} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close designer">
-                <X className="w-4 h-4 text-stone-500" />
-              </button>
-            </div>
+        <React.Fragment key={designerFor.id}>
+          <Modal
+            open
+            onClose={() => setDesignerFor(null)}
+            size="full"
+            title="Warehouse Intelligence — Layout Designer"
+          >
             <LayoutDesignerView warehouse={designerFor} autoOpenImport={designerAutoImport} />
-          </div>
-        </div>
+          </Modal>
+        </React.Fragment>
       )}
       {optimizeFor && (
-        <div key={optimizeFor.id} className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setOptimizeFor(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-stone-700">Warehouse Intelligence — Optimization · {optimizeFor.name}</h3>
-              <button onClick={() => setOptimizeFor(null)} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close optimization">
-                <X className="w-4 h-4 text-stone-500" />
-              </button>
-            </div>
+        <React.Fragment key={optimizeFor.id}>
+          <Modal
+            open
+            onClose={() => setOptimizeFor(null)}
+            size="3xl"
+            title={`Warehouse Intelligence — Optimization · ${optimizeFor.name}`}
+          >
             <div className="space-y-6">
               <ScoringWeightsSection warehouse={optimizeFor} />
               <div className="border-t border-stone-100" />
@@ -189,21 +192,18 @@ const WarehousesSettingsSection: React.FC = () => {
                 <WarehouseIntelligenceReport warehouseId={optimizeFor.id} />
               </div>
             </div>
-          </div>
-        </div>
+          </Modal>
+        </React.Fragment>
       )}
       {rulesOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setRulesOpen(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-stone-700">Warehouse Intelligence — Optimizer Rules</h3>
-              <button onClick={() => setRulesOpen(false)} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close">
-                <X className="w-4 h-4 text-stone-500" />
-              </button>
-            </div>
-            <WarehouseIntelligenceRulesView />
-          </div>
-        </div>
+        <Modal
+          open
+          onClose={() => setRulesOpen(false)}
+          size="full"
+          title="Warehouse Intelligence — Optimizer Rules"
+        >
+          <WarehouseIntelligenceRulesView />
+        </Modal>
       )}
     </section>
   );

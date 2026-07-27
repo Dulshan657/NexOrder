@@ -2,8 +2,9 @@
 // bulk-create action. Cloned structurally from FloorPlanImportModal (overlay,
 // dropzone, progress/result areas, two-stage footer, double-submit guard).
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { X, FileUp, Download, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { FileUp, Download, CheckCircle2, AlertTriangle } from 'lucide-react';
 import type { Product, Supplier } from '@/types';
+import { Button, Modal } from '@/components/ui';
 import { categoryOptions } from '@/lib/productTaxonomy';
 import { downloadCsv } from '@/lib/csvExport';
 import { validateCatalogRow, type CatalogImportContext, type RowResult } from '@/lib/productImportRow';
@@ -186,22 +187,41 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
 
   const busy = bulkCreate.isPending;
   const canImport = !!summary && summary.valid > 0 && !busy;
+  // Rows still sitting in the preview grid are unimported work, so every dismiss
+  // path (Escape, backdrop, X, Close) routes through the discard guard first.
+  const hasPendingRows = (records?.length ?? 0) > 0;
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-white rounded-2xl w-full max-w-5xl p-5 space-y-4 max-h-[90vh] overflow-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-700">
-            <FileUp className="h-4 w-4 text-emerald-600" /> Bulk import products
-          </h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close">
-            <X className="h-4 w-4 text-stone-500" />
-          </button>
-        </div>
-
+    <Modal
+      open
+      onClose={onClose}
+      size="full"
+      dirty={hasPendingRows}
+      discardConfirm={{
+        title: 'Discard this import?',
+        message: 'The rows parsed from your CSV have not been imported yet.',
+      }}
+      icon={<FileUp className="w-4 h-4 text-nexgen-blue" />}
+      title="Bulk import products"
+      footer={({ requestClose }) => (
+        <>
+          <Button variant="secondary" onClick={requestClose}>
+            {records ? 'Close' : 'Cancel'}
+          </Button>
+          {records && (
+            <Button
+              onClick={handleImport}
+              disabled={!canImport}
+              loading={busy}
+              icon={<CheckCircle2 className="h-4 w-4" />}
+            >
+              {busy ? 'Importing…' : `Import ${summary?.valid ?? 0} product${summary?.valid === 1 ? '' : 's'}`}
+            </Button>
+          )}
+        </>
+      )}
+    >
+      <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-stone-500">
             Upload a CSV of products to create in bulk. Unknown suppliers are created automatically.
@@ -303,24 +323,8 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
             ]}
           />
         )}
-
-        <div className="flex justify-end gap-2">
-          <button className="text-sm px-3 py-1.5 border border-stone-200 rounded-lg btn-press" onClick={onClose}>
-            {records ? 'Close' : 'Cancel'}
-          </button>
-          {records && (
-            <button
-              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-50"
-              onClick={handleImport}
-              disabled={!canImport}
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              {busy ? 'Importing…' : `Import ${summary?.valid ?? 0} product${summary?.valid === 1 ? '' : 's'}`}
-            </button>
-          )}
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

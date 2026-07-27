@@ -6,8 +6,9 @@
 // constraint violation) as an inline field error so the operator can adjust
 // without losing form state.
 
-import React, { useEffect, useId, useMemo, useState } from 'react'
-import { X, Loader2 } from 'lucide-react'
+import React, { useId, useMemo, useState } from 'react'
+import { Loader2 } from 'lucide-react'
+import { Modal } from '../ui'
 import type { HoReCa, Product } from '../../types'
 import type {
   CustomerAliasRow,
@@ -50,69 +51,36 @@ const POAliasEditModal: React.FC<POAliasEditModalProps> = ({
   products,
   onClose,
   onSaved,
-}) => {
-  // ESC closes — feels native for a small form modal.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+}) => (
+  // No `onSubmit` on the Modal: the two variants below are alternative <form>s (only
+  // ever one is mounted), and each owns its own submit handler and pending state.
+  // Promoting either one to the panel would leave the other nested inside a <form>,
+  // which is invalid HTML — so both stay inner forms and the panel stays a <div>.
+  <Modal
+    open
+    onClose={onClose}
+    title={`${mode.action === 'create' ? 'New' : 'Edit'} ${
+      mode.kind === 'customer' ? 'customer' : 'product'
+    } alias`}
+    description={
+      mode.kind === 'customer'
+        ? 'Maps an identifier from incoming email to a HoReCa.'
+        : 'Maps a code or description in incoming email to one of your products.'
     }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 px-4"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-stone-200 p-6 space-y-5"
-        onClick={e => e.stopPropagation()}
-      >
-        <header className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-base font-semibold text-stone-900">
-              {mode.action === 'create' ? 'New' : 'Edit'}{' '}
-              {mode.kind === 'customer' ? 'customer' : 'product'} alias
-            </h2>
-            <p className="text-xs text-stone-500 mt-0.5">
-              {mode.kind === 'customer'
-                ? 'Maps an identifier from incoming email to a HoReCa.'
-                : 'Maps a code or description in incoming email to one of your products.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-stone-400 hover:text-stone-700 p-1 rounded-md hover:bg-stone-100"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </header>
-
-        {mode.kind === 'customer' ? (
-          <CustomerAliasForm
-            mode={mode}
-            hoReCas={hoReCas}
-            onClose={onClose}
-            onSaved={onSaved}
-          />
-        ) : (
-          <ProductAliasForm
-            mode={mode}
-            hoReCas={hoReCas}
-            products={products}
-            onClose={onClose}
-            onSaved={onSaved}
-          />
-        )}
-      </div>
-    </div>
-  )
-}
+  >
+    {mode.kind === 'customer' ? (
+      <CustomerAliasForm mode={mode} hoReCas={hoReCas} onClose={onClose} onSaved={onSaved} />
+    ) : (
+      <ProductAliasForm
+        mode={mode}
+        hoReCas={hoReCas}
+        products={products}
+        onClose={onClose}
+        onSaved={onSaved}
+      />
+    )}
+  </Modal>
+)
 
 // -----------------------------------------------------------------------
 // Customer alias form

@@ -3,8 +3,9 @@
 // Nothing auto-publishes; the draft opens in the designer on success.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { X, UploadCloud, Loader2, CheckCircle2, Circle, AlertTriangle, Sparkles } from 'lucide-react'
+import { UploadCloud, Loader2, CheckCircle2, Circle, AlertTriangle, Sparkles } from 'lucide-react'
 import type { LayoutObjectType, Warehouse } from '@/types'
+import { Button, Modal } from '@/components/ui'
 import { useQueryClient } from '@tanstack/react-query'
 import { createLayout, saveGeometry, type SaveObjectInput } from '@/services/supabase/layoutService'
 import { layoutKeys } from '@/hooks/queries/useLayouts'
@@ -317,17 +318,43 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
   const confidencePct = result ? Math.round(result.confidence * 100) : 0
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-lg p-5 space-y-4 max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-700">
-            <Sparkles className="h-4 w-4 text-emerald-600" /> Import a floor plan
-          </h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Close">
-            <X className="h-4 w-4 text-stone-500" />
-          </button>
-        </div>
-
+    // Backdrop dismissal stays off: a click outside would throw away a picked
+    // file, an in-flight AI read, or an un-actioned extraction result.
+    <Modal
+      open
+      onClose={onClose}
+      dismissOnBackdrop={false}
+      icon={<Sparkles className="h-4 w-4 text-nexgen-blue" />}
+      title="Import a floor plan"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          {!result ? (
+            <Button
+              size="sm"
+              icon={<Sparkles className="h-4 w-4" />}
+              loading={busy}
+              onClick={() => file && run(file, fidelity)}
+              disabled={!file}
+            >
+              Analyze floor plan
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              icon={<CheckCircle2 className="h-4 w-4" />}
+              loading={creating}
+              onClick={createDraft}
+            >
+              Create draft
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-4">
         <p className="text-xs text-stone-500">
           Upload a photo or scan of {warehouse.name}'s floor plan. We'll read it into an editable draft layout —
           you review and correct it before publishing. Nothing goes live automatically.
@@ -550,31 +577,7 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
             {createError && <p className="text-xs text-red-600">{createError}</p>}
           </div>
         )}
-
-        {/* Actions */}
-        <div className="flex justify-end gap-2">
-          <button className="text-sm px-3 py-1.5 border border-stone-200 rounded-lg btn-press" onClick={onClose}>Cancel</button>
-          {!result ? (
-            <button
-              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-50"
-              onClick={() => file && run(file, fidelity)}
-              disabled={!file || busy}
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Analyze floor plan
-            </button>
-          ) : (
-            <button
-              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-50"
-              onClick={createDraft}
-              disabled={creating}
-            >
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              Create draft
-            </button>
-          )}
-        </div>
       </div>
-    </div>
+    </Modal>
   )
 }

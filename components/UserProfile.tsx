@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { UserCircle } from 'lucide-react';
 import type { User } from '../types';
 import OptimizedImage from './OptimizedImage';
+import { Button, Field, Input, Modal } from './ui';
 
 interface UserProfileProps {
     user: User;
@@ -8,71 +10,90 @@ interface UserProfileProps {
     onClose: () => void;
 }
 
-const UserProfile: React.FC<UserProfileProps> = ({ user, onSave, onClose }) => {
-    const [formData, setFormData] = useState({
-        name: user.name,
-        email: user.email,
-    });
+interface FormState {
+    name: string;
+    email: string;
+}
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
+const toFormState = (user: User): FormState => ({ name: user.name, email: user.email });
+
+const UserProfile: React.FC<UserProfileProps> = ({ user, onSave, onClose }) => {
+    const [initial] = useState(() => toFormState(user));
+    const [form, setForm] = useState<FormState>(initial);
+    const [error, setError] = useState<string | null>(null);
+
+    const isDirty = useMemo(
+        () => (Object.keys(initial) as (keyof FormState)[]).some((key) => form[key] !== initial[key]),
+        [form, initial],
+    );
+
+    const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+        setForm((current) => ({ ...current, [key]: value }));
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.name || !formData.email) {
-            alert('Name and email cannot be empty.');
+        setError(null);
+        if (!form.name.trim() || !form.email.trim()) {
+            setError('Name and email cannot be empty.');
             return;
         }
-        onSave({ ...user, ...formData });
+        onSave({ ...user, name: form.name.trim(), email: form.email.trim() });
     };
 
-    const inputClasses = "block w-full rounded-lg border-0 bg-stone-50 py-2.5 px-3 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300";
-
     return (
-        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md border border-stone-200">
-                <form onSubmit={handleSubmit}>
-                    <div className="flex items-start justify-between mb-6 border-b border-stone-100 pb-4">
-                        <div>
-                            <h2 className="text-2xl font-display font-bold text-stone-900">My Profile</h2>
-                            <p className="text-sm text-stone-500 mt-1">Update your personal information.</p>
-                        </div>
-                        <OptimizedImage
-                            src={user.avatarUrl || `https://i.pravatar.cc/150?u=${user.id}`}
-                            alt="User avatar"
-                            className="h-16 w-16 rounded-full border-2 border-white shadow-md ring-2 ring-stone-100"
-                            transformWidth={128}
-                        />
-                    </div>
-                    
-                    <div className="space-y-5">
-                        <div>
-                            <label htmlFor="name" className="block text-sm font-medium text-stone-700 mb-1.5">Name</label>
-                            <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required className={inputClasses} />
-                        </div>
-                        <div>
-                            <label htmlFor="email" className="block text-sm font-medium text-stone-700 mb-1.5">Email Address</label>
-                            <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} required className={inputClasses} />
-                        </div>
-                         <div>
-                            <label className="block text-sm font-medium text-stone-700 mb-1.5">Role</label>
-                            <p className="mt-1 text-sm text-stone-600 bg-stone-100 px-3 py-2.5 rounded-lg capitalize font-medium">{user.role}</p>
-                        </div>
-                    </div>
+        <Modal
+            open
+            onClose={onClose}
+            size="md"
+            dirty={isDirty}
+            onSubmit={handleSubmit}
+            icon={<UserCircle className="w-4 h-4 text-nexgen-blue" />}
+            title="My Profile"
+            description="Update your personal information."
+            footer={({ requestClose }) => (
+                <>
+                    <Button variant="ghost" onClick={requestClose}>Cancel</Button>
+                    <Button type="submit">Save Changes</Button>
+                </>
+            )}
+        >
+            <div className="space-y-5">
+                <div className="flex justify-center">
+                    <OptimizedImage
+                        src={user.avatarUrl || `https://i.pravatar.cc/150?u=${user.id}`}
+                        alt="User avatar"
+                        className="h-20 w-20 rounded-full border-2 border-white shadow-md ring-2 ring-stone-100"
+                        transformWidth={128}
+                    />
+                </div>
 
-                    <div className="mt-8 flex justify-end space-x-3 pt-4 border-t border-stone-100">
-                        <button type="button" onClick={onClose} className="bg-white py-2.5 px-4 border border-stone-300 rounded-lg shadow-sm text-sm font-medium text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors">
-                            Cancel
-                        </button>
-                        <button type="submit" className="inline-flex justify-center py-2.5 px-5 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-stone-900 hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-900 transition-colors">
-                            Save Changes
-                        </button>
-                    </div>
-                </form>
+                <Field label="Name" htmlFor="profile-name">
+                    <Input
+                        id="profile-name"
+                        value={form.name}
+                        onChange={(e) => set('name', e.target.value)}
+                        required
+                    />
+                </Field>
+
+                <Field label="Email Address" htmlFor="profile-email">
+                    <Input
+                        id="profile-email"
+                        type="email"
+                        value={form.email}
+                        onChange={(e) => set('email', e.target.value)}
+                        required
+                    />
+                </Field>
+
+                <div>
+                    <label className="block text-sm font-medium text-stone-700 mb-1.5">Role</label>
+                    <p className="mt-1 text-sm text-stone-600 bg-stone-100 px-3 py-2.5 rounded-lg capitalize font-medium">{user.role}</p>
+                </div>
+
+                {error && <p className="text-sm text-rose-600">{error}</p>}
             </div>
-        </div>
+        </Modal>
     );
 };
 
