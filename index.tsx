@@ -11,7 +11,8 @@ import { DocumentViewerProvider } from './context/DocumentViewerContext';
 import { ErrorBoundary, FullPageErrorFallback } from './components/ErrorBoundary';
 import { installGlobalErrorHandlers } from './lib/errorReporter';
 import { registerChunkErrorReload } from './lib/lazyWithRetry';
-import ResetPasswordView, { isRecoveryUrl } from './components/auth/ResetPasswordView';
+import ResetPasswordView from './components/auth/ResetPasswordView';
+import { isRecoveryUrl } from './lib/auth/recoveryLink';
 
 // Popup OAuth completion handshake.
 //
@@ -111,10 +112,12 @@ installGlobalErrorHandlers();
 // guarded reload pulls a fresh index.html with the current chunk hashes.
 registerChunkErrorReload();
 
-// Top-level switch: when arriving via a Supabase password recovery link
-// (URL hash contains type=recovery), render the dedicated reset view
-// instead of the normal AuthGate → App tree. After the reset completes,
-// flip a one-shot flag so the app falls through to LoginPage.
+// Top-level switch: when arriving via a Supabase password recovery link,
+// render the dedicated reset view instead of the normal AuthGate → App tree.
+// This covers FAILED links too (expired, already used) — they carry an
+// error in the URL, and routing them here is what lets the reason be shown
+// instead of a bare login page. After the reset completes, flip a one-shot
+// flag so the app falls through to LoginPage.
 function Root() {
   const [recovering, setRecovering] = useState<boolean>(() => isRecoveryUrl());
 

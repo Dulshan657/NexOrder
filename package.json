@@ -12,6 +12,8 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run -c vitest.integration.config.ts",
     "deploy": "node scripts/deploy.mjs",
+    "auth:config": "node supabase/apply-auth-config.mjs",
+    "auth:config:check": "node supabase/apply-auth-config.mjs --check",
     "po-fixtures": "node tests/fixtures/po-samples/generate.mjs",
     "po-inject": "node tests/fixtures/po-samples/inject.mjs",
     "po-demo-seed": "node tests/fixtures/po-samples/demo-seed.mjs",

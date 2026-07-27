@@ -1,32 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { DEFAULT_RECOVERY_ERROR, RESET_REQUEST_PARAM, parseRecoveryLink } from '@/lib/auth/recoveryLink'
 import { AuthAlert, AuthEyebrow, AuthField, AuthSubmit, authStagger } from './authChrome'
-
-interface RecoveryTokens {
-    access_token: string
-    refresh_token: string
-}
-
-/**
- * Parse the recovery URL hash. Supabase emits links of the form
- *   https://app.example.com/#access_token=…&refresh_token=…&type=recovery
- * (Older email templates may use a `?token_hash=…&type=recovery` query
- * string, but this project uses the default template.)
- */
-function parseRecoveryHash(hash: string): RecoveryTokens | null {
-    const trimmed = hash.startsWith('#') ? hash.slice(1) : hash
-    const params = new URLSearchParams(trimmed)
-    if (params.get('type') !== 'recovery') return null
-    const access_token = params.get('access_token')
-    const refresh_token = params.get('refresh_token')
-    if (!access_token || !refresh_token) return null
-    return { access_token, refresh_token }
-}
-
-export function isRecoveryUrl(): boolean {
-    if (typeof window === 'undefined') return false
-    return parseRecoveryHash(window.location.hash) !== null
-}
 
 function getErrorMessage(error: unknown): string {
     if (error instanceof Error) return error.message
@@ -44,8 +19,18 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
     const [confirm, setConfirm] = useState('')
 
     useEffect(() => {
-        const tokens = parseRecoveryHash(window.location.hash)
-        if (!tokens) {
+        const link = parseRecoveryLink(window.location.hash, window.location.search)
+
+        if (link.kind === 'none') {
+            setPhase('invalid')
+            return
+        }
+
+        // Supabase already told us why the link failed (expired, already used,
+        // wrong project). Show its reason rather than dropping the user on a
+        // bare login page, which is what happened before this branch existed.
+        if (link.kind === 'error') {
+            setError(link.description)
             setPhase('invalid')
             return
         }
@@ -53,14 +38,26 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
         let cancelled = false
         ;(async () => {
             try {
-                const { error: sessionError } = await supabase.auth.setSession({
-                    access_token: tokens.access_token,
-                    refresh_token: tokens.refresh_token,
-                })
-                if (sessionError) throw sessionError
+                if (link.kind === 'tokens') {
+                    const { error: sessionError } = await supabase.auth.setSession({
+                        access_token: link.accessToken,
+                        refresh_token: link.refreshToken,
+                    })
+                    if (sessionError) throw sessionError
+                } else if (link.kind === 'token_hash') {
+                    // verifyOtp needs no PKCE verifier, so it works even though
+                    // the client runs with persistSession:false and no storage.
+                    const { error: verifyError } = await supabase.auth.verifyOtp({
+                        token_hash: link.tokenHash,
+                        type: 'recovery',
+                    })
+                    if (verifyError) throw verifyError
+                }
 
-                // Strip the hash from the URL before the user can refresh.
-                window.history.replaceState(null, '', window.location.pathname + window.location.search)
+                // Strip the credentials from the URL before the user can refresh
+                // or share it. One shape carries them in the hash, the other in
+                // the query string, so drop both.
+                window.history.replaceState(null, '', window.location.pathname)
 
                 if (!cancelled) setPhase('ready')
             } catch (err) {
@@ -75,6 +72,15 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
             cancelled = true
         }
     }, [])
+
+    // A dead recovery link is the one moment the user definitely wants a fresh
+    // one, but the request dialog lives on LoginPage. Leave a marker in the URL
+    // and let LoginPage open it on arrival, rather than plumbing a callback up
+    // through Root → AuthGate.
+    const handleRequestNewLink = () => {
+        window.history.replaceState(null, '', `${window.location.pathname}?${RESET_REQUEST_PARAM}=1`)
+        onComplete()
+    }
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault()
@@ -123,12 +129,17 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
 
                 {phase === 'invalid' && (
                     <div className="space-y-4">
-                        <AuthAlert tone="error">
-                            {error ?? 'This recovery link is invalid or has expired. Request a new one from the sign-in page.'}
-                        </AuthAlert>
-                        <AuthSubmit type="button" onClick={onComplete}>
-                            Back to sign in
+                        <AuthAlert tone="error">{error ?? DEFAULT_RECOVERY_ERROR}</AuthAlert>
+                        <AuthSubmit type="button" onClick={handleRequestNewLink}>
+                            Request a new link
                         </AuthSubmit>
+                        <button
+                            type="button"
+                            onClick={onComplete}
+                            className="w-full text-center text-sm text-stone-500 underline-offset-4 hover:text-stone-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue focus-visible:ring-offset-2 rounded"
+                        >
+                            Back to sign in
+                        </button>
                     </div>
                 )}
 

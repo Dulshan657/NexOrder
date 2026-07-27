@@ -37,6 +37,10 @@ SUPABASE_URL="$URL" SUPABASE_SERVICE_ROLE_KEY="$KEY" npx tsx supabase/seed.ts
 # Run raw SQL against the live DB (Management API; the direct DB host is unreachable on Windows)
 node supabase/apply-sql.mjs --query "SELECT ..."   # or: node supabase/apply-sql.mjs <file.sql>
 
+# Assert the Supabase Auth config (site URL, redirect allow-list, password rules)
+npm run auth:config          # diff, then PATCH if it differs (idempotent)
+npm run auth:config:check    # diff only, exit 1 on drift
+
 # Warehouse fixtures (both write to PROD — there is no staging project)
 npm run warehouse:main:seed / :reset   # MAIN floor plan + engine slotting of all stock
 npm run demo:wie:seed / :reset         # standalone WIE-DEMO racked warehouse
@@ -229,6 +233,9 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 - **RLS is enabled** (mig `00008` re-enables; `00009`+ lock down individual table mutations to Edge Functions). Direct INSERT/UPDATE/DELETE from `authenticated` is blocked for the tables in the lockdown table; mutations must go through Edge Functions.
 - **Edge Function deploy order matters.** When wiring the client to a new function: deploy the function FIRST (`npx supabase functions deploy <name>`), then push the frontend, then apply any RLS lockdown migration LAST. Reversing the order breaks admin UIs.
 - **Type-check** with `npx tsc --noEmit` before deploy (CI runs it but block-on-red isn't enforced on `main` yet).
+- **Supabase Auth config lives in `supabase/apply-auth-config.mjs`, not `config.toml`.** That toml is per-function `verify_jwt` only and is never pushed. `DESIRED` in the mjs is the source of truth for `site_url` / `uri_allow_list` / `password_min_length`; edit it and run `npm run auth:config` rather than clicking in Studio, or the next person has no way to know what the values should be. The allow-list entries are **globs** — `*` does not cross a `/`, and `ForgotPasswordDialog` sends `${origin}/` with a trailing slash, so every entry needs a `/**` suffix to match. A `redirectTo` that misses the list is silently replaced with `site_url`, which reads as "the reset link sent me to the wrong place".
+- **`mailer_otp_exp` (3600) is duplicated as prose** in `ForgotPasswordDialog` ("expires in 1 hour"). Change one, change the other.
+- **Recovery links have four shapes, and `lib/auth/recoveryLink.ts` is the only place that knows them.** `#access_token=…` (default template), `?token_hash=…`, an `error`/`error_code` pair on **either** the hash or the query, and PKCE `?code=` — which is deliberately *not* claimed, because `persistSession: false` leaves nowhere for the code verifier and `?code=` is also the PO-Inbox OAuth popup's param. `isRecoveryUrl()` returns true for failed links on purpose: that is what routes them to a screen that can explain itself.
 - `App.tsx` is intentionally thin (~170 lines). Don't add UI logic here — it belongs in `components/AppShell.tsx` or a view file under `views/`.
 
 ## Pending Work
@@ -238,19 +245,18 @@ Ordered by impact; one-line scope each so future agents don't drift.
 **High**
 1. **Branch protection** — CI's `verify` job runs on every PR but `main` doesn't yet *require* it. **Blocked by plan tier (2026-05-21):** GitHub's Free plan disallows branch protection *and* rulesets on **private** repos — both `PUT …/branches/main/protection` and `POST …/rulesets` return `403 "Upgrade to GitHub Pro or make this repository public"`. To unblock, either upgrade to **GitHub Pro** (~$4/mo) or make the repo public, then require the status-check context **`typecheck · test · build`** (= the `verify` job's `name:` in `ci.yml`) via Settings → Branches or the API. Ready-to-run payload + commands saved in `~/.claude/plans/add-branch-protection-generic-zebra.md`.
 2. **Email setup (operator)** — `send-email` is live but dormant. Set `RESEND_API_KEY` (and optionally `EMAIL_FROM` / `EMAIL_REPLY_TO` / `APP_URL`) via `npx supabase secrets set` to start sending order confirmations.
-3. **Recovery URL setup (operator)** — add `https://nexorder.vercel.app` (and `http://localhost:3000` for dev) to Supabase Studio → Auth → URL Configuration → Redirect URLs so password-reset links return to the app.
 
 **Medium**
-4. **Accessibility pass** — minimal ARIA. Add labels to icon-only buttons (`AccountsAgingTable`, sort headers, modal close), focus traps in `BundleSelectModal` / `OrderVerificationModal`, ARIA-live region for the toast container.
-5. **Email expansion** — wire `invoice_issued` template on invoice → `issued`; decide whether to use the custom `user_invitation` template vs Supabase's built-in invite email.
-6. **Test coverage expansion** — 1652 tests today (strong PO-inbox, pricing, scan and WIE-engine coverage; PO-inbox matching resolvers covered via the `__tests__/support/fakeSupabase.ts` harness). Gaps: cart submission flow, pantry add/remove, HoReCa reason-prompt gate, role-based routing.
+3. **Accessibility pass** — minimal ARIA. Add labels to icon-only buttons (`AccountsAgingTable`, sort headers, modal close), focus traps in `BundleSelectModal` / `OrderVerificationModal`, ARIA-live region for the toast container.
+4. **Email expansion** — wire `invoice_issued` template on invoice → `issued`; decide whether to use the custom `user_invitation` template vs Supabase's built-in invite email.
+5. **Test coverage expansion** — 1814 tests today (strong PO-inbox, pricing, scan and WIE-engine coverage; PO-inbox matching resolvers covered via the `__tests__/support/fakeSupabase.ts` harness). Gaps: cart submission flow, pantry add/remove, HoReCa reason-prompt gate, role-based routing.
 
 **Lower**
-7. **Dead code sweep** — `CustomerForm.tsx` (stub, at the repo root — not under `components/`), `constants.ts` (seed data still shipped to browser; move to `supabase/seed.ts`), `hooks/useLocalStorage.ts` (zero imports). Verify with `knip`/`ts-prune` before deleting.
-8. **Inventory automation** — restock alerts are read-only. Add "generate PO from low-stock alerts", soft stock reservations on order confirmation, expiry/FIFO for perishables.
-9. **Reports export** — add CSV/PDF download on accounts-aging, sales-by-rep, stock-status, promotion-ROI panels (CSV helper exists at `lib/csvExport.ts`).
-10. **i18n** — UI is English-only; currency hardcoded `AUD`. Wire `react-i18next` before strings calcify if non-English markets are in scope.
-11. **PWA** — no manifest/service worker. Low priority for B2B (reps online); install-to-home-screen would help field reps.
+6. **Dead code sweep** — `CustomerForm.tsx` (stub, at the repo root — not under `components/`), `constants.ts` (seed data still shipped to browser; move to `supabase/seed.ts`), `hooks/useLocalStorage.ts` (zero imports). Verify with `knip`/`ts-prune` before deleting.
+7. **Inventory automation** — restock alerts are read-only. Add "generate PO from low-stock alerts", soft stock reservations on order confirmation, expiry/FIFO for perishables.
+8. **Reports export** — add CSV/PDF download on accounts-aging, sales-by-rep, stock-status, promotion-ROI panels (CSV helper exists at `lib/csvExport.ts`).
+9. **i18n** — UI is English-only; currency hardcoded `AUD`. Wire `react-i18next` before strings calcify if non-English markets are in scope.
+10. **PWA** — no manifest/service worker. Low priority for B2B (reps online); install-to-home-screen would help field reps.
 
 ## Recently shipped
 
@@ -268,6 +274,7 @@ Condensed changelog; git history has the detail.
 - **Admin-mutation lockdown** — 8+ `mutate-*` Edge Functions + `audit_events` + `_shared/{auth,errors,audit,cors}.ts` + RLS mig `00013`. Invoices locked down later in `00017`.
 - **Realtime, error boundaries, audit-log viewer, transactional email** — see Architecture / lockdown sections; Admin "Audit Log" tab over `audit_events` + `client_errors` with filters, pagination, diffs, CSV export.
 - **Auth polish** — password reset (`<ForgotPasswordDialog>` → `resetPasswordForEmail` → `<ResetPasswordView>`) and 30-min idle timeout (`hooks/useIdleTimeout.ts`).
+- **Password-reset round trip closed out** — the Supabase auth config is no longer a dashboard-only setting: `supabase/apply-auth-config.mjs` declares it and `npm run auth:config` asserts it (`:check` exits 1 on drift). Recovery-link parsing moved to the pure `lib/auth/recoveryLink.ts`, which now understands `?token_hash=` links and — the actual bug — **failed** links, so an expired one shows Supabase's own reason instead of silently rendering a bare login page.
 - **CI** — `.github/workflows/ci.yml` single `verify` job: `tsc --noEmit` → `npm test` → `npm run build`. Block-on-red is a branch-protection setting (see Pending #1).
 - **Perf** — `React.lazy`/`Suspense` bundle splitting for admin/modals/heavy views; DB indexes + constraints (migs `00016`).
 - **Pantry redesign** — `components/pantry/*` with frequency intelligence, OOS substitutes, keyboard nav, mobile card stack.
