@@ -10,7 +10,7 @@ const createNumberedIcon = (num: number, isVisited: boolean) => {
     className: 'custom-marker',
     html: `<div style="
       width: 28px; height: 28px; border-radius: 50%;
-      background: ${isVisited ? '#059669' : '#2E86DE'};
+      background: ${isVisited ? '#059669' : '#2988de'};
       color: white; display: flex; align-items: center; justify-content: center;
       font-size: 13px; font-weight: 700; border: 2px solid white;
       box-shadow: 0 2px 4px rgba(0,0,0,0.3);
@@ -94,7 +94,7 @@ const ScheduledVisitMap: React.FC<RouteMapProps> = ({ stops, hoReCas }) => {
         {positions.length > 1 && (
           <Polyline
             positions={positions}
-            pathOptions={{ color: '#2E86DE', weight: 3, dashArray: '8 4', opacity: 0.7 }}
+            pathOptions={{ color: '#2988de', weight: 3, dashArray: '8 4', opacity: 0.7 }}
           />
         )}
       </MapContainer>

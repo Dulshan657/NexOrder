@@ -8,12 +8,16 @@
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  --color-nexgen-blue: #2E86DE;
+  --color-nexgen-blue: #2988de;
   --color-nexgen-blue-dark: #2472C2;
   --color-nexgen-blue-light: #e8f2fc;
   --color-nexgen-charcoal: #1e293b;
-  --color-nexgen-charcoal-dark: #0f172a;
   --color-nexgen-charcoal-light: #334155;
+  /* Login brand rail / mobile brand band. A darkened #2988de — same hue family as
+     the brand blue, dark enough to carry muted greys at AA. Replaced
+     --color-nexgen-charcoal-dark (#0f172a), whose only consumer app-wide was the
+     login rail. See .auth-rail-wash below for the contrast budget. */
+  --color-nexgen-navy: #0A2E52;
 }
 
 body {
@@ -34,7 +38,7 @@ body {
     @apply bg-white/70 backdrop-blur-xl border border-stone-200/50 shadow-[0_1px_3px_rgba(120,113,108,0.06),inset_0_1px_0_rgba(255,255,255,0.8)];
   }
   .gradient-card {
-    background: linear-gradient(135deg, rgba(46,134,222,0.05) 0%, rgba(255,255,255,0.8) 100%);
+    background: linear-gradient(135deg, rgba(41,136,222,0.05) 0%, rgba(255,255,255,0.8) 100%);
   }
   .glow-blue {
     box-shadow: 0 0 20px rgba(0,123,255,0.15);
@@ -197,6 +201,96 @@ body {
   animation-delay: calc(var(--auth-i, 0) * 40ms);
 }
 
+/* Login brand rail + mobile brand band — deep navy field with one soft wash of
+   brand blue in the top-right corner.
+
+   THE 14% CEILING IS A CONTRAST CONSTRAINT, NOT A TASTE ONE. Contrast is measured
+   on the COMPOSITE, not on #0A2E52 alone — getting that backwards is exactly why
+   the previous blue gradient here was reverted to flat charcoal.
+
+     foreground            on #0A2E52   @22% (#114271)   @14% (#0E3B66)
+     stone-300 #d6d3d1        9.24:1        6.90:1           7.68:1
+     stone-400 #a8a29e        5.46:1        4.08:1 FAIL      4.53:1
+     white                   11.9:1        10.3:1           11.4:1
+
+   Two mitigations run together so there is real headroom rather than 0.08: this
+   alpha is capped at 0.14, AND the rail's two former stone-400 usages (eyebrow,
+   footer) were promoted to stone-300. Raise the alpha and you must re-measure both.
+
+   Origin is 85% 10% (top-right), deliberately the opposite corner from the logo
+   header, so the inverted white mark keeps maximum separation from the bright spot.
+
+   Literal rgba(...,0) rather than `transparent` on the final stop: `transparent`
+   is rgba(0,0,0,0), and interpolating toward it in sRGB fringes the gradient grey. */
+.auth-rail-wash {
+  background-image: radial-gradient(
+    120% 85% at 85% 10%,
+    rgba(41, 136, 222, 0.14) 0%,
+    rgba(41, 136, 222, 0.05) 45%,
+    rgba(41, 136, 222, 0) 72%
+  );
+}
+
+/* Login rail — rotating proof. The capability lines share one grid cell and
+   cross-fade, one at a time. All of them stay in the DOM and in the accessibility
+   tree the whole time (opacity:0 — never display:none, visibility:hidden or
+   aria-hidden), so a screen reader gets "list, 3 items" up front and reads all of
+   them at once. This is a decorative rotation of static content, NOT a live region:
+   an opacity change is not a DOM mutation, so aria-live would announce nothing, and
+   if it did it would interrupt someone typing a password every 4.5s.
+
+   THE ITEM COUNT IS ENCODED IN THE KEYFRAME PERCENTAGES (33.333% = one slot), not
+   inferred. A fourth line means 25% slots, an 18s duration and an :nth-child(4)
+   delay — see CAPABILITIES in components/auth/LoginPage.tsx.
+
+   Grid-stacking rather than absolute positioning, for two reasons: the row
+   auto-sizes to the tallest line (no hand-written min-height that is wrong at some
+   breakpoint), and the reduced-motion fallback is a single property revert instead
+   of unsetting position + inset + the parent's height. `gap` is inert while the
+   items share one cell and becomes the list spacing in that fallback, for free.
+
+   Note there is deliberately no static `opacity: 0` on the item: `both` fill-mode
+   supplies the 0% frame from t=0, so killing the animation lands on opacity 1 with
+   no !important. A static hidden state here would be the .wh-route-leg trap below.
+
+   These classes are UNLAYERED (like .auth-in), so they beat anything in Tailwind's
+   @layer utilities regardless of source order. That is why .auth-proof-item declares
+   no `display` — the `flex` utility on the <li> has to keep working. */
+@keyframes auth-proof-cycle {
+  0%      { opacity: 0; transform: translateY(6px); }
+  4%      { opacity: 1; transform: translateY(0); }
+  29%     { opacity: 1; transform: translateY(0); }
+  33.333% { opacity: 0; transform: translateY(-6px); }
+  /* Snap back to the entry offset while fully transparent, so the line does not
+     visibly travel backwards before its next turn. */
+  37%     { opacity: 0; transform: translateY(6px); }
+  100%    { opacity: 0; transform: translateY(6px); }
+}
+.auth-proof {
+  display: grid;
+  align-items: start;
+  gap: 0.75rem;
+}
+.auth-proof-item {
+  grid-area: 1 / 1;
+  animation: auth-proof-cycle 13.5s cubic-bezier(0.16, 1, 0.3, 1) infinite both;
+}
+/* Negative delays so every line starts mid-cycle at t=0 — line 1 is already visible
+   on first paint instead of the rail sitting blank for 4.5s.
+   THESE READ BACKWARDS AND THAT IS CORRECT. A negative delay seeks FORWARD into the
+   cycle, so an item next becomes visible when its clock wraps — at (13.5s - |delay|),
+   not at |delay|. Line 2 wants its turn at 4.5s, so it needs -9s. Getting this the
+   intuitive way round makes the lines rotate 1 -> 3 -> 2. */
+.auth-proof-item:nth-child(2) { animation-delay: -9s; }
+.auth-proof-item:nth-child(3) { animation-delay: -4.5s; }
+
+/* WCAG 2.2 SC 2.2.2 (Pause, Stop, Hide) — auto-starting motion that runs longer
+   than 5s needs a pause mechanism. Hover/focus-within is the zero-JS one. */
+.auth-proof:hover .auth-proof-item,
+.auth-proof:focus-within .auth-proof-item {
+  animation-play-state: paused;
+}
+
 /* Image loading — shimmer skeleton behind <OptimizedImage> until the bitmap
    paints, then the image fades in (opacity transition lives on the <img>). */
 @keyframes img-shimmer {
@@ -326,6 +420,7 @@ body {
   .po-modal-in,
   .po-badge-pulse,
   .auth-in,
+  .auth-proof-item,
   .img-skeleton,
   .wh-bin-in,
   .wh-bin,
@@ -343,5 +438,19 @@ body {
      offset must be neutralized too, or the leg stays permanently invisible. */
   .wh-route-leg {
     stroke-dashoffset: 0 !important;
+  }
+  /* Same class of problem as .wh-route-leg above: .auth-proof-item sets
+     `grid-area: 1/1` OUTSIDE the keyframes so the lines share one cell. With the
+     animation off, that alone would pile all three on top of each other,
+     unreadable. Releasing them to auto-placement turns the rotation into the
+     static stacked list it is supposed to degrade to — and .auth-proof's `gap`,
+     inert while they shared a cell, becomes the spacing between them.
+     opacity/transform are belt-and-braces: with `animation: none` there is no
+     fill to apply, but stating them means a future static hidden-state
+     declaration on .auth-proof-item cannot silently resurrect the bug. */
+  .auth-proof-item {
+    grid-area: auto;
+    opacity: 1 !important;
+    transform: none !important;
   }
 }

@@ -113,7 +113,19 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
                 className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-6 shadow-elevated sm:p-8 auth-in"
                 style={authStagger(0)}
             >
+                {/* Branded the same way as the AuthGate splash and the login rail —
+                    navy tile, mono mark inverted to white. This screen is reached
+                    from an emailed link with no other context, so it has to say
+                    whose app it is before it asks for a password. */}
                 <div className="mb-6">
+                    <div className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-nexgen-navy auth-rail-wash p-2.5">
+                        <img
+                            src="/assets/Nex-Order-no-bg-logo.png"
+                            alt="Nex Order"
+                            className="h-full w-auto object-contain"
+                            style={{ filter: 'brightness(0) invert(1)' }}
+                        />
+                    </div>
                     <AuthEyebrow className="mb-3 text-stone-500">Reset password</AuthEyebrow>
                     <h1 className="font-display text-3xl leading-none tracking-tighter text-stone-900">
                         {phase === 'success' && 'Password updated'}

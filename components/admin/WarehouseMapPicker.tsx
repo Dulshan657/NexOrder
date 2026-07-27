@@ -7,7 +7,7 @@ const pinIcon = L.divIcon({
   className: 'wh-pin-marker',
   html: `<div style="
     width: 26px; height: 26px; border-radius: 50% 50% 50% 0;
-    background: #2E86DE; border: 2px solid white; transform: rotate(-45deg);
+    background: #2988de; border: 2px solid white; transform: rotate(-45deg);
     box-shadow: 0 2px 5px rgba(0,0,0,0.35);
   "></div>`,
   iconSize: [26, 26],
