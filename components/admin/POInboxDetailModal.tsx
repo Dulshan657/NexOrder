@@ -48,6 +48,7 @@ import type {
 import type { HorecaAddressRow } from '@/services/supabase/horecaAddressService'
 import type { HoReCa, Product } from '../../types'
 import { toProduct } from '@/lib/adapters'
+import { Modal } from '../ui'
 
 const FIELD_CLASS =
   'w-full rounded-lg border border-stone-300 bg-white px-2.5 py-1.5 text-sm transition-colors focus:outline-none focus:border-nexgen-blue focus:ring-2 focus:ring-nexgen-blue/20 disabled:bg-stone-100 disabled:text-stone-500'
@@ -416,109 +417,105 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
     }
   }
 
+  // No `title`: this modal renders its own <Header> (confidence ring, status badge,
+  // subject, sender, PO number) which DialogChrome's title row cannot express. The
+  // body is therefore a header + issues + two-pane grid + footer column, not a single
+  // scroller. Backdrop dismissal is off — the form holds unsaved operator edits and
+  // there is no dirty guard wired across them.
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-stretch justify-center bg-stone-900/60 p-3"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={DIALOG_TITLE_ID}
-      tabIndex={-1}
-      onClick={onClose}
-      onKeyDown={e => {
-        if (e.key === 'Escape') onClose()
-      }}
+    <Modal
+      open
+      onClose={onClose}
+      size="full"
+      dismissOnBackdrop={false}
+      bodyClassName="flex-1 min-h-0 p-0 flex flex-col overflow-hidden"
     >
-      <div
-        className="relative w-full max-w-6xl bg-white rounded-2xl shadow-elevated overflow-hidden flex flex-col po-modal-in"
-        onClick={e => e.stopPropagation()}
-      >
-        <Header detail={detail} onClose={onClose} />
+      <Header detail={detail} onClose={onClose} />
 
-        {poIssues.length > 0 && (
-          <div className="border-b border-stone-200/70">
-            {poIssues.map(issue => (
-              <div
-                key={issue.kind}
-                className={`flex items-start gap-2 px-4 sm:px-6 py-2 text-xs ${
-                  issue.severity === 'error' ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-800'
+      {poIssues.length > 0 && (
+        <div className="shrink-0 border-b border-stone-200/70">
+          {poIssues.map(issue => (
+            <div
+              key={issue.kind}
+              className={`flex items-start gap-2 px-4 sm:px-6 py-2 text-xs ${
+                issue.severity === 'error' ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-800'
+              }`}
+            >
+              <AlertTriangle
+                className={`w-4 h-4 shrink-0 mt-0.5 ${
+                  issue.severity === 'error' ? 'text-rose-600' : 'text-amber-600'
                 }`}
-              >
-                <AlertTriangle
-                  className={`w-4 h-4 shrink-0 mt-0.5 ${
-                    issue.severity === 'error' ? 'text-rose-600' : 'text-amber-600'
-                  }`}
-                />
-                <p>
-                  <span className="font-semibold">{issue.label}.</span> {issue.detail}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
+              />
+              <p>
+                <span className="font-semibold">{issue.label}.</span> {issue.detail}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
 
-        {detailQuery.isLoading || !detail ? (
-          <div className="flex-1 flex items-center justify-center text-stone-500">
-            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-            Loading PO…
-          </div>
-        ) : (
-          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden">
-            <DocumentPane
-              url={docUrl}
-              error={docError}
-              detail={detail}
-              bodyText={bodyText}
-              bodyHtml={bodyHtml}
-              bodyLoading={bodyLoading}
-              docLoading={docLoading}
-              onRetry={retryDocument}
-            />
-            <FormPane
-              detail={detail}
-              hoReCas={hoReCas}
-              products={products}
-              productById={productById}
-              horecaId={horecaId}
-              setHorecaId={setHorecaId}
-              lines={lines}
-              setLines={setLines}
-              onAddLine={addLine}
-              onRemoveLine={removeLine}
-              deliveryDate={deliveryDate}
-              setDeliveryDate={setDeliveryDate}
-              deliveryTimeSlot={deliveryTimeSlot}
-              setDeliveryTimeSlot={setDeliveryTimeSlot}
-              notes={notes}
-              setNotes={setNotes}
-              addresses={addresses}
-              addressesLoading={addressesQuery.isLoading}
-              addressMode={addressMode}
-              setAddressMode={setAddressMode}
-              selectedAddressId={selectedAddressId}
-              setSelectedAddressId={setSelectedAddressId}
-              newAddress={newAddress}
-              setNewAddress={setNewAddress}
-              saveToBook={saveToBook}
-              setSaveToBook={setSaveToBook}
-              useExtractedAddress={useExtractedAddress}
-            />
-          </div>
-        )}
+      {detailQuery.isLoading || !detail ? (
+        <div className="flex-1 flex items-center justify-center text-stone-500">
+          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+          Loading PO…
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 overflow-hidden">
+          <DocumentPane
+            url={docUrl}
+            error={docError}
+            detail={detail}
+            bodyText={bodyText}
+            bodyHtml={bodyHtml}
+            bodyLoading={bodyLoading}
+            docLoading={docLoading}
+            onRetry={retryDocument}
+          />
+          <FormPane
+            detail={detail}
+            hoReCas={hoReCas}
+            products={products}
+            productById={productById}
+            horecaId={horecaId}
+            setHorecaId={setHorecaId}
+            lines={lines}
+            setLines={setLines}
+            onAddLine={addLine}
+            onRemoveLine={removeLine}
+            deliveryDate={deliveryDate}
+            setDeliveryDate={setDeliveryDate}
+            deliveryTimeSlot={deliveryTimeSlot}
+            setDeliveryTimeSlot={setDeliveryTimeSlot}
+            notes={notes}
+            setNotes={setNotes}
+            addresses={addresses}
+            addressesLoading={addressesQuery.isLoading}
+            addressMode={addressMode}
+            setAddressMode={setAddressMode}
+            selectedAddressId={selectedAddressId}
+            setSelectedAddressId={setSelectedAddressId}
+            newAddress={newAddress}
+            setNewAddress={setNewAddress}
+            saveToBook={saveToBook}
+            setSaveToBook={setSaveToBook}
+            useExtractedAddress={useExtractedAddress}
+          />
+        </div>
+      )}
 
-        <Footer
-          detail={detail}
-          canApprove={canApprove}
-          approving={approveMutation.isPending}
-          rejecting={rejectMutation.isPending}
-          showRejectForm={showRejectForm}
-          rejectionReason={rejectionReason}
-          setShowRejectForm={setShowRejectForm}
-          setRejectionReason={setRejectionReason}
-          onApprove={handleApprove}
-          onReject={handleReject}
-        />
-      </div>
-    </div>
+      <Footer
+        detail={detail}
+        canApprove={canApprove}
+        approving={approveMutation.isPending}
+        rejecting={rejectMutation.isPending}
+        showRejectForm={showRejectForm}
+        rejectionReason={rejectionReason}
+        setShowRejectForm={setShowRejectForm}
+        setRejectionReason={setRejectionReason}
+        onApprove={handleApprove}
+        onReject={handleReject}
+      />
+    </Modal>
   )
 }
 
@@ -569,7 +566,7 @@ const Header: React.FC<{ detail: PendingPoDetailRow | undefined; onClose: () => 
 }) => {
   const badge = detail ? statusBadge(detail.status) : null
   return (
-    <div className="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-stone-200/70">
+    <div className="shrink-0 flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-stone-200/70">
       {detail && (
         <ConfidenceRing
           value={detail.confidence_overall}
@@ -1407,7 +1404,7 @@ const Footer: React.FC<FooterProps> = props => {
 
   if (isResolved) {
     return (
-      <div className="px-4 sm:px-6 py-3 border-t border-stone-200/70 text-xs text-stone-500 flex items-center gap-2">
+      <div className="shrink-0 px-4 sm:px-6 py-3 border-t border-stone-200/70 text-xs text-stone-500 flex items-center gap-2">
         {props.detail.status === 'rejected' ? (
           <span>
             Rejected{props.detail.reviewed_at ? ` ${new Date(props.detail.reviewed_at).toLocaleString()}` : ''}
@@ -1423,7 +1420,7 @@ const Footer: React.FC<FooterProps> = props => {
   }
 
   return (
-    <div className="px-4 sm:px-6 py-3 border-t border-stone-200/70 space-y-2">
+    <div className="shrink-0 px-4 sm:px-6 py-3 border-t border-stone-200/70 space-y-2">
       {props.showRejectForm && (
         <div className="flex items-center gap-2">
           <input

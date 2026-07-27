@@ -1,7 +1,4 @@
 {
   "_comment": "Files that still hand-roll a `fixed inset-0` overlay. Shrinks with each migration PR; when `files` is empty, scripts/check-overlays.mjs becomes an absolute ban. Never add entries.",
-  "files": [
-    "components/admin/POInboxDetailModal.tsx",
-    "components/admin/WarehousesSettingsSection.tsx"
-  ]
+  "files": []
 }
