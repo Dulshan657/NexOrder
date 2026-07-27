@@ -372,8 +372,8 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
       {visitHoReCaId !== null && setVisits && (
         <VisitModal
           hoReCaId={visitHoReCaId}
-          hoReCaName={hoReCas.find(h => h.id === visitHoReCaId)?.name ?? ''}
-          currentUser={currentUser}
+          userId={currentUser.id}
+          hoReCas={hoReCas}
           onSave={(visit) => { setVisits([...visits, visit]); setVisitHoReCaId(null); }}
           onClose={() => setVisitHoReCaId(null)}
         />
