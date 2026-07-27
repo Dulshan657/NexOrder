@@ -497,8 +497,8 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
       {showVisitModal && visitHoReCaId !== null && setVisits && (
         <VisitModal
           hoReCaId={visitHoReCaId}
-          hoReCaName={hoReCas.find(c => c.id === visitHoReCaId)?.name ?? ''}
-          currentUser={currentUser}
+          userId={currentUser.id}
+          hoReCas={hoReCas}
           onSave={(visit) => {
             setVisits([...visits, visit]);
             setShowVisitModal(false);

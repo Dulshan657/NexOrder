@@ -238,8 +238,8 @@ const HoReCaProfile: React.FC<HoReCaProfileProps> = ({
       {showVisitModal && setVisits && (
         <VisitModal
           hoReCaId={hoReCa.id}
-          hoReCaName={hoReCa.name}
-          currentUser={currentUser}
+          userId={currentUser.id}
+          hoReCas={hoReCas}
           onSave={(visit) => { setVisits([...visits, visit]); setShowVisitModal(false); }}
           onClose={() => setShowVisitModal(false)}
         />
