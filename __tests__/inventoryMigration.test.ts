@@ -22,6 +22,8 @@ const PARTIAL_SQL = read('supabase/migrations/00030_inv_reserve_allow_partial.sq
 const DOC_BUCKET_SQL = read('supabase/migrations/00031_order_documents_bucket.sql');
 const WAREHOUSE_SQL = read('supabase/migrations/00032_warehouse_read_access.sql');
 const PICK_TOLERATE_SQL = read('supabase/migrations/00033_inv_pick_tolerate_unreserved.sql');
+const PICK_ZONE_SQL = read('supabase/migrations/00083_reserve_order_pick_zone.sql');
+const RACK_HU_SQL = read('supabase/migrations/00085_convert_rack_levels_handling_units.sql');
 
 const containsCreateTable = (sql: string, table: string): boolean =>
   new RegExp(`CREATE\\s+TABLE\\s+public\\.${table}\\b`, 'i').test(sql);
@@ -245,5 +247,74 @@ describe('00033 pick tolerates unreserved orders', () => {
 
   it('keeps EXECUTE locked to service_role', () => {
     expect(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.inv_pick_order_line\(INT,NUMERIC,UUID\)\s+TO\s+service_role/i.test(PICK_TOLERATE_SQL)).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 00083 / 00085 — two functions redefined with CREATE OR REPLACE.
+//
+// The repo's documented trap is that CREATE OR REPLACE with a CHANGED signature
+// creates a SECOND overload instead of replacing (inv_transfer_stock and
+// inv_receive_stock were both silently duplicated that way). Both migrations
+// below rely on the signature being unchanged, so a future edit that adds or
+// reorders a parameter without a DROP would be a silent, runtime-only break.
+// These guard exactly that.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('00083 order allocation prefers the pick zone', () => {
+  it('keeps the 5-arg signature so CREATE OR REPLACE really replaces', () => {
+    expect(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.inv_reserve_order\s*\(\s*p_order_id\s+TEXT/i.test(PICK_ZONE_SQL),
+    ).toBe(true);
+    expect(/p_allow_partial\s+BOOLEAN/i.test(PICK_ZONE_SQL)).toBe(true);
+  });
+
+  it('does NOT drop the function — a DROP would discard its service_role GRANT', () => {
+    expect(/DROP\s+FUNCTION[^\n]*inv_reserve_order/i.test(PICK_ZONE_SQL)).toBe(false);
+  });
+
+  it('puts the pick-zone preference INSIDE the expiry tier, never above it', () => {
+    // This ordering is the entire correctness argument of the migration: FEFO
+    // first, preference only as a tie-break within one expiry date. Flipping
+    // the two terms would let a newer batch jump an older one.
+    //
+    // Strip comment lines first — the file's header PROSE also contains an
+    // "ORDER BY bt.expiry_date ..." sketch, and the trailing ROLLBACK note
+    // quotes the OLD ordering. Matching those instead of the real clause is
+    // exactly how this test passed vacuously the first time it was written.
+    const sql = PICK_ZONE_SQL.split('\n').filter((l) => !/^\s*--/.test(l)).join('\n');
+    const order = sql.match(/ORDER\s+BY[\s\S]*?b\.id/i)?.[0] ?? '';
+    const expiryAt = order.search(/expiry_date/i);
+    const caseAt = order.search(/is_pick_zone/i);
+    const receivedAt = order.search(/received_at/i);
+    expect(expiryAt).toBeGreaterThanOrEqual(0);
+    expect(caseAt).toBeGreaterThan(expiryAt);
+    expect(receivedAt).toBeGreaterThan(caseAt);
+  });
+
+  it('COALESCEs is_pick_zone so a legacy NULL level_role does not poison the sort', () => {
+    expect(/COALESCE\s*\(\s*lr\.is_pick_zone\s*,\s*false\s*\)/i.test(PICK_ZONE_SQL)).toBe(true);
+  });
+});
+
+describe('00085 rack conversion carries the handling unit', () => {
+  it('keeps the 4-arg signature so CREATE OR REPLACE really replaces', () => {
+    expect(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.wie_convert_rack_to_levels_tx\s*\(\s*p_location_id\s+integer/i
+        .test(RACK_HU_SQL),
+    ).toBe(true);
+  });
+
+  it('does NOT drop the function — a DROP would discard 00072 GRANTs', () => {
+    expect(/DROP\s+FUNCTION[^\n]*wie_convert_rack_to_levels_tx/i.test(RACK_HU_SQL)).toBe(false);
+  });
+
+  it('selects handling_unit_id and threads it through BOTH legs by name', () => {
+    // Named, not positional: p_handling_unit_id is the 12th parameter of
+    // inv_apply_leg and p_supplier_id is the 11th, so a positional call would
+    // silently bind the wrong one.
+    expect(/SELECT\s+product_id,\s*batch_id,\s*handling_unit_id,\s*on_hand,\s*allocated/i.test(RACK_HU_SQL)).toBe(true);
+    const named = RACK_HU_SQL.match(/p_handling_unit_id\s*=>\s*v_bal\.handling_unit_id/gi) ?? [];
+    expect(named.length).toBe(2);
   });
 });
