@@ -73,23 +73,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     })()
 
-    // Subscribe to auth state changes for the lifetime of the provider
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        try {
-          if (session?.user) {
-            setUser(session.user)
-            const profileData = await fetchProfile(session.user.id)
-            setProfile(profileData)
-          } else {
-            setUser(null)
-            setProfile(null)
-          }
-        } finally {
-          setIsLoading(false)
-        }
+    // Subscribe to auth state changes for the lifetime of the provider.
+    //
+    // This callback MUST NOT await another supabase call. supabase-js
+    // dispatches it while holding its internal auth lock, and fetchProfile
+    // issues a PostgREST query, which needs getSession() — which waits for
+    // that same lock. The result is a self-deadlock: whatever triggered the
+    // event never resolves. It bites setSession() and getSession() (both take
+    // the lock) but not signInWithPassword() (which doesn't), which is why
+    // ordinary login always worked while the password-recovery screen sat on
+    // "Verifying recovery link…" forever.
+    //
+    // So: synchronous state updates inline, every await deferred to a fresh
+    // task that runs after the lock is released.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const sessionUser = session?.user ?? null
+      setUser(sessionUser)
+
+      if (sessionUser === null) {
+        setProfile(null)
+        setIsLoading(false)
+        return
       }
-    )
+
+      setTimeout(() => {
+        void (async () => {
+          try {
+            const profileData = await fetchProfile(sessionUser.id)
+            if (!cancelled) setProfile(profileData)
+          } finally {
+            if (!cancelled) setIsLoading(false)
+          }
+        })()
+      }, 0)
+    })
 
     return () => {
       cancelled = true

@@ -15,7 +15,7 @@ AYAM Order System (Nex Order) — B2B order management for AYAM brand Asian food
 npm install
 npm run dev                        # Vite on :3000
 npm run build
-npm test                           # vitest run (1652 tests / 127 files today)
+npm test                           # vitest run
 npm run test:watch                 # vitest in watch mode
 npm run test:coverage              # vitest + coverage report
 npm run test:integration           # vitest against a live pg (vitest.integration.config.ts)
@@ -36,6 +36,10 @@ SUPABASE_URL="$URL" SUPABASE_SERVICE_ROLE_KEY="$KEY" npx tsx supabase/seed.ts
 
 # Run raw SQL against the live DB (Management API; the direct DB host is unreachable on Windows)
 node supabase/apply-sql.mjs --query "SELECT ..."   # or: node supabase/apply-sql.mjs <file.sql>
+
+# Assert the Supabase Auth config (site URL, redirect allow-list, password rules)
+npm run auth:config          # diff, then PATCH if it differs (idempotent)
+npm run auth:config:check    # diff only, exit 1 on drift
 
 # Warehouse fixtures (both write to PROD — there is no staging project)
 npm run warehouse:main:seed / :reset   # MAIN floor plan + engine slotting of all stock
@@ -67,7 +71,7 @@ React 19 · TypeScript · Tailwind v4 · Vite 6 · Supabase Postgres + Deno Edge
 
 **Key files:**
 - `App.tsx` (~170 lines) — data root: auth, queries, adapters, `placeOrderMutation`, mounts `<AppShell>`. No render tree, no UI state.
-- `components/AppShell.tsx` (~1450 lines) — owns UI/nav state; mounts `<OrderProvider>` + `<PantryProvider>`; inner component (`AppShellInner`) consumes contexts and renders the entire UI tree.
+- `components/AppShell.tsx` — the big one; owns UI/nav state; mounts `<OrderProvider>` + `<PantryProvider>`; inner component (`AppShellInner`) consumes contexts and renders the entire UI tree.
 - `context/OrderContext.tsx` — cart state + order handlers (add/apply-promo/bundle/qty/submit/place/reorder/start/reset).
 - `context/PantryContext.tsx` — per-HoReCa pantry state + handlers; mounted inside OrderProvider (it consumes `useOrderContext()`).
 - `hooks/useOrderingState.ts` — derived shop memos (filteredProducts, ordering hints, recent products).
@@ -82,7 +86,7 @@ React 19 · TypeScript · Tailwind v4 · Vite 6 · Supabase Postgres + Deno Edge
 - `index.tsx` — providers: QueryClient → Auth → Toast → App; also detects the password-recovery hash and routes to `<ResetPasswordView>`.
 
 **Layers:**
-- `supabase/functions/` — Deno Edge Functions (server-side validation gate, 60 functions). All admin, order and inventory mutations route through here.
+- `supabase/functions/` — Deno Edge Functions (the server-side validation gate). All admin, order and inventory mutations route through here.
 - `supabase/functions/_shared/` — `auth.ts` (`requireAuth`), `errors.ts` (`EdgeFunctionError`, `errorResponse`), `audit.ts` (`logAuditEvent`), `cors.ts` (`corsHeadersFor` — origin allowlist), `rateLimit.ts` (per-isolate in-memory limiter).
 - `services/supabase/` — thin clients that invoke Edge Functions or do read-only queries.
 - `hooks/queries/` — TanStack Query wrappers around the services.
@@ -131,7 +135,7 @@ The Gmail connect flow (`start-po-oauth` → `_shared/poInbox/oauthUrls.ts` → 
 
 ## Warehouse & inventory (WIE)
 
-The largest subsystem after ordering. Migrations `00027`–`00083`; ~34 of the 66 Edge Functions.
+The largest subsystem after ordering, and about half the Edge Functions. Migrations `00027`–`00084`.
 
 **Inventory truth.** `inventory_balances` (product × location × batch **× handling unit**; `on_hand`, `allocated`, `available` generated) is the source of truth; `inventory_movements` is the append-only ledger. `products.inventory` / `products.available` are **caches**, maintained only by `inv_recompute_product_cache()` via `inv_apply_leg()`. All quantities are base units. Every write funnels through `inv_apply_leg` (service_role only): `inv_receive_stock`, `inv_reserve_order`, `inv_pick_order_line`, `inv_transfer_stock`, `inv_adjust_stock`.
 
@@ -229,6 +233,10 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 - **RLS is enabled** (mig `00008` re-enables; `00009`+ lock down individual table mutations to Edge Functions). Direct INSERT/UPDATE/DELETE from `authenticated` is blocked for the tables in the lockdown table; mutations must go through Edge Functions.
 - **Edge Function deploy order matters.** When wiring the client to a new function: deploy the function FIRST (`npx supabase functions deploy <name>`), then push the frontend, then apply any RLS lockdown migration LAST. Reversing the order breaks admin UIs.
 - **Type-check** with `npx tsc --noEmit` before deploy (CI runs it but block-on-red isn't enforced on `main` yet).
+- **Supabase Auth config lives in `supabase/apply-auth-config.mjs`, not `config.toml`.** That toml is per-function `verify_jwt` only and is never pushed. `DESIRED` in the mjs is the source of truth for `site_url` / `uri_allow_list` / `password_min_length`; edit it and run `npm run auth:config` rather than clicking in Studio, or the next person has no way to know what the values should be. The allow-list entries are **globs** — `*` does not cross a `/`, and `ForgotPasswordDialog` sends `${origin}/` with a trailing slash, so every entry needs a `/**` suffix to match. A `redirectTo` that misses the list is silently replaced with `site_url`, which reads as "the reset link sent me to the wrong place".
+- **`mailer_otp_exp` (3600) is duplicated as prose** in `ForgotPasswordDialog` ("expires in 1 hour"). Change one, change the other.
+- **Never `await` a supabase call inside an `onAuthStateChange` callback.** supabase-js dispatches it while holding its internal auth lock and awaits whatever you return; any PostgREST query needs `getSession()`, which waits for that same lock, and the lock deadlocks against itself. `signInWithPassword` doesn't take the lock but `setSession`/`getSession` do — so ordinary login looks fine while the password-recovery screen hangs on "Verifying recovery link…" with no error anywhere. `hooks/useAuth.ts` therefore does sync state updates inline and defers the profile fetch to a `setTimeout(…, 0)`; `__tests__/authProviderNoDeadlock.test.tsx` pins that.
+- **Recovery links have four shapes, and `lib/auth/recoveryLink.ts` is the only place that knows them.** `#access_token=…` (default template), `?token_hash=…`, an `error`/`error_code` pair on **either** the hash or the query, and PKCE `?code=` — which is deliberately *not* claimed, because `persistSession: false` leaves nowhere for the code verifier and `?code=` is also the PO-Inbox OAuth popup's param. `isRecoveryUrl()` returns true for failed links on purpose: that is what routes them to a screen that can explain itself.
 - `App.tsx` is intentionally thin (~170 lines). Don't add UI logic here — it belongs in `components/AppShell.tsx` or a view file under `views/`.
 
 ## Pending Work
@@ -238,40 +246,27 @@ Ordered by impact; one-line scope each so future agents don't drift.
 **High**
 1. **Branch protection** — CI's `verify` job runs on every PR but `main` doesn't yet *require* it. **Blocked by plan tier (2026-05-21):** GitHub's Free plan disallows branch protection *and* rulesets on **private** repos — both `PUT …/branches/main/protection` and `POST …/rulesets` return `403 "Upgrade to GitHub Pro or make this repository public"`. To unblock, either upgrade to **GitHub Pro** (~$4/mo) or make the repo public, then require the status-check context **`typecheck · test · build`** (= the `verify` job's `name:` in `ci.yml`) via Settings → Branches or the API. Ready-to-run payload + commands saved in `~/.claude/plans/add-branch-protection-generic-zebra.md`.
 2. **Email setup (operator)** — `send-email` is live but dormant. Set `RESEND_API_KEY` (and optionally `EMAIL_FROM` / `EMAIL_REPLY_TO` / `APP_URL`) via `npx supabase secrets set` to start sending order confirmations.
-3. **Recovery URL setup (operator)** — add `https://nexorder.vercel.app` (and `http://localhost:3000` for dev) to Supabase Studio → Auth → URL Configuration → Redirect URLs so password-reset links return to the app.
 
 **Medium**
-4. **Accessibility pass** — minimal ARIA. Add labels to icon-only buttons (`AccountsAgingTable`, sort headers, modal close), focus traps in `BundleSelectModal` / `OrderVerificationModal`, ARIA-live region for the toast container.
-5. **Email expansion** — wire `invoice_issued` template on invoice → `issued`; decide whether to use the custom `user_invitation` template vs Supabase's built-in invite email.
-6. **Test coverage expansion** — 1652 tests today (strong PO-inbox, pricing, scan and WIE-engine coverage; PO-inbox matching resolvers covered via the `__tests__/support/fakeSupabase.ts` harness). Gaps: cart submission flow, pantry add/remove, HoReCa reason-prompt gate, role-based routing.
+3. **Accessibility pass** — minimal ARIA. Add labels to icon-only buttons (`AccountsAgingTable`, sort headers, modal close), focus traps in `BundleSelectModal` / `OrderVerificationModal`, ARIA-live region for the toast container.
+4. **Email expansion** — wire `invoice_issued` template on invoice → `issued`; decide whether to use the custom `user_invitation` template vs Supabase's built-in invite email.
+5. **Test coverage expansion** — strong PO-inbox, pricing, scan, auth-link and WIE-engine coverage; PO-inbox matching resolvers use the `__tests__/support/fakeSupabase.ts` harness. Gaps: cart submission flow, pantry add/remove, HoReCa reason-prompt gate, role-based routing.
 
 **Lower**
-7. **Dead code sweep** — `CustomerForm.tsx` (stub, at the repo root — not under `components/`), `constants.ts` (seed data still shipped to browser; move to `supabase/seed.ts`), `hooks/useLocalStorage.ts` (zero imports). Verify with `knip`/`ts-prune` before deleting.
-8. **Inventory automation** — restock alerts are read-only. Add "generate PO from low-stock alerts", soft stock reservations on order confirmation, expiry/FIFO for perishables.
-9. **Reports export** — add CSV/PDF download on accounts-aging, sales-by-rep, stock-status, promotion-ROI panels (CSV helper exists at `lib/csvExport.ts`).
-10. **i18n** — UI is English-only; currency hardcoded `AUD`. Wire `react-i18next` before strings calcify if non-English markets are in scope.
-11. **PWA** — no manifest/service worker. Low priority for B2B (reps online); install-to-home-screen would help field reps.
+6. **Dead code sweep** — `CustomerForm.tsx` (stub, at the repo root — not under `components/`), `constants.ts` (seed data still shipped to browser; move to `supabase/seed.ts`), `hooks/useLocalStorage.ts` (zero imports). Verify with `knip`/`ts-prune` before deleting.
+7. **Inventory automation** — restock alerts are read-only. Add "generate PO from low-stock alerts", soft stock reservations on order confirmation, expiry/FIFO for perishables.
+8. **Reports export** — add CSV/PDF download on accounts-aging, sales-by-rep, stock-status, promotion-ROI panels (CSV helper exists at `lib/csvExport.ts`).
+9. **i18n** — UI is English-only; currency hardcoded `AUD`. Wire `react-i18next` before strings calcify if non-English markets are in scope.
+10. **PWA** — no manifest/service worker. Low priority for B2B (reps online); install-to-home-screen would help field reps.
 
 ## Recently shipped
 
-Condensed changelog; git history has the detail.
+git history is the changelog. Only the items below carry something the sections above don't.
 
-- **Warehouse programme** (see the Warehouse & inventory section) — multi-warehouse core (`00036`), racked/directed inventory (`00039`–`00041`), the WIE engine + layout designer (`00045`–`00060`), storage forms & capacity (`00061`), stock adjustments (`00062`), directed per-bin picking (`00064`), floor-plan AI import (`00058`), and bulk catalogue/opening-stock CSV import.
-- **QR tracking programme** (4 phases, migs `00074`–`00078`) — scan identity + printable labels, handling units as an inventory dimension, scan-enforced picking, per-plate capacity. See the QR section above.
-- **Two-stage putaway** (mig `00080`) — Accept no longer moves stock; assign at the desk, then walk a routed list and scan bin + plate to commit the transfer.
-- **Pick Zone + replenishment** (migs `00081`–`00083`) — "Pick face" is now **Pick Zone**, and the level-role vocabulary is operator-managed rather than hardcoded in eleven places; replenishment moves stock reserve/bulk → pick zone on a min/max trigger, through the same assign → walk → scan pipeline. **`00083` (order allocation prefers the pick zone) is committed but deliberately NOT applied** — see its header for the gate and rollback.
-- **Rack levels & storage forms** — addressable pick/reserve/bulk rack levels (`00072`) and a seeded levelled "Rack" form (`00073`); adding a form needs zero code.
-- **Multi-supplier products & multi-UOM** — N suppliers per product with their own SKU/cost (`00070`); N-level units of measure each/carton/pallet (`00067`–`00069`).
-- **MAIN floor plan + slotting** — `NexOrder/warehouse-main/` (`warehouse:main:{seed,reset}`) replaces MAIN's placeholder 15-bin layout with a 189-bay DC and drives the real `recommend-putaway` → `decide-putaway` path to slot every SKU. See `warehouse-main/README.md`.
-- **PO Inbox** — AI email-to-PO triage subsystem (see the PO Inbox section).
-- **Tridon demo (cookie-cutter)** — self-contained `NexOrder/tridon-demo/` for a repeatable real-email hardware demo: email `tridon-sydney-auto.pdf` (auto-approves) + `tridon-sydney-review.pdf` (one uncatalogued Milwaukee line → review). Scripts `demo:tridon:{seed,reset,pdfs}`. Shares the `dulshanb@…` sender with the V2food demo (seed repoints it; re-run `seed:v2food-demo` after). See `tridon-demo/README.md`.
-- **Admin-mutation lockdown** — 8+ `mutate-*` Edge Functions + `audit_events` + `_shared/{auth,errors,audit,cors}.ts` + RLS mig `00013`. Invoices locked down later in `00017`.
-- **Realtime, error boundaries, audit-log viewer, transactional email** — see Architecture / lockdown sections; Admin "Audit Log" tab over `audit_events` + `client_errors` with filters, pagination, diffs, CSV export.
-- **Auth polish** — password reset (`<ForgotPasswordDialog>` → `resetPasswordForEmail` → `<ResetPasswordView>`) and 30-min idle timeout (`hooks/useIdleTimeout.ts`).
-- **CI** — `.github/workflows/ci.yml` single `verify` job: `tsc --noEmit` → `npm test` → `npm run build`. Block-on-red is a branch-protection setting (see Pending #1).
-- **Perf** — `React.lazy`/`Suspense` bundle splitting for admin/modals/heavy views; DB indexes + constraints (migs `00016`).
-- **Pantry redesign** — `components/pantry/*` with frequency intelligence, OOS substitutes, keyboard nav, mobile card stack.
-- **Order-status rework** — fulfillment model went 5→6 statuses grouped into three Order Import tabs (Received: `processing`/`processed`; In Progress: `picked`/`packed`; Completed: `dispatched`/`delivered`). Mig `00025`.
-- **Image pipeline** — product/avatar/photo uploads now compress to WebP (`browser-image-compression`) and land in Storage buckets; columns store public object URLs instead of base64 data URLs. Mig `00024`.
-- **Global rate limiting** — `_shared/rateLimit.ts` now backs the cap with the `rate_limit_hit()` Postgres RPC + `rate_limit_counters` table (mig `00026`) for a true cross-isolate cap, with hourly `pg_cron` cleanup and fail-open to the legacy per-isolate in-memory counter.
-- **Settings revamp + health monitoring** — Settings split into 6 sub-tabs under `components/admin/settings/`; security headers, a health cron and an admin "System Health" tab over `health_checks` (mig `00059`).
+- **`00083` (order allocation prefers the pick zone) is committed but deliberately NOT applied.** Read its header for the gate and the rollback before you even consider running it.
+- **Order statuses are 6, grouped into 3 Order Import tabs** — Received (`processing`/`processed`), In Progress (`picked`/`packed`), Completed (`dispatched`/`delivered`). Mig `00025`.
+- **Image columns store public Storage URLs, never base64.** Uploads compress to WebP via `browser-image-compression` (mig `00024`) — don't reintroduce data URLs.
+- **`warehouse-main/`** — replaces MAIN's placeholder 15-bin layout with the real 189-bay DC and drives `recommend-putaway` → `decide-putaway` to slot every SKU (`warehouse:main:{seed,reset}`). See its README.
+- **`tridon-demo/`** — self-contained real-email hardware demo: one auto-approving PO, one that lands in review (an uncatalogued Milwaukee line). `demo:tridon:{seed,reset,pdfs}`. It **steals** the `dulshanb@…` sender from the V2food demo, so re-run `seed:v2food-demo` afterwards. See its README.
+
+Everything else — the warehouse/WIE programme, QR tracking, two-stage putaway, Pick Zone + replenishment, rack levels, multi-supplier & multi-UOM, PO Inbox, the admin-mutation lockdown, realtime, error boundaries, the audit-log viewer, CI, perf splitting, the pantry redesign, the settings revamp, health monitoring and the password-reset round trip — is described in the sections above.

@@ -31,7 +31,7 @@ Once an order is placed, **fulfilment works and is ledger-correct**. The problem
 
 1. **Product creation was 100% broken.** Form never collected SKU/carton size, sent an empty image field the server rejects, and closed before showing the error. A second blocker sat behind it: the form's default category `Plant-Based` wasn't in the server allow-list. Fixed both; verified live. Commits `ccf1e71`, `8548a49`.
 2. **No stock-adjustment path.** Ledger supported adjustment/stocktake types but nothing wrote them. Added `inv_adjust_stock` RPC + `adjust-stock` function + Stock-screen UI. Migration `00062`, commit `a497df1`.
-3. **Auth redirect** (`site_url`/allow-list) pointed at localhost — fixed live via the Management API.
+3. **Auth redirect** (`site_url`/allow-list) pointed at localhost — fixed live via the Management API. _(Since codified: `supabase/apply-auth-config.mjs` / `npm run auth:config` now declares and asserts it, so a dashboard edit can no longer lose it silently.)_
 
 ## Open findings — high (blocks a real rollout)
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Check } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { getBrandByKey } from '@/lib/demoAccounts'
+import { wantsResetRequest } from '@/lib/auth/recoveryLink'
 import ForgotPasswordDialog from './ForgotPasswordDialog'
 import {
   AuthAlert,
@@ -85,7 +86,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [forgotOpen, setForgotOpen] = useState(false)
+  // Open straight into the request dialog when we arrived from a dead recovery
+  // link's "Request a new link" (ResetPasswordView leaves the marker behind).
+  const [forgotOpen, setForgotOpen] = useState(
+    () => typeof window !== 'undefined' && wantsResetRequest(window.location.search),
+  )
   const brand = resolveBrand()
   const isDefaultBrand = brand.logoSrc === DEFAULT_BRAND.logoSrc
 
@@ -297,7 +302,14 @@ export default function LoginPage() {
 
       <ForgotPasswordDialog
         open={forgotOpen}
-        onClose={() => setForgotOpen(false)}
+        onClose={() => {
+          setForgotOpen(false)
+          // Drop the marker so a refresh doesn't reopen a dialog the user just
+          // dismissed.
+          if (wantsResetRequest(window.location.search)) {
+            window.history.replaceState(null, '', window.location.pathname)
+          }
+        }}
         initialEmail={email}
       />
     </div>
