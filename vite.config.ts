@@ -3,6 +3,13 @@ import { execSync } from 'node:child_process';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { visualizer } from 'rollup-plugin-visualizer';
+
+// Bundle analysis is opt-in via ANALYZE=1 (`npm run build:analyze`) so that CI
+// and Vercel builds stay byte-identical to what they produced before the
+// analyzer was added. rollup-plugin-visualizer is a devDependency and must
+// never appear in the default plugin list.
+const ANALYZE = process.env.ANALYZE === '1';
 
 // Resolve the commit sha for the build-version embed. Vercel CLI deploys build
 // remotely without .git, so deploy.mjs passes GIT_COMMIT_SHA explicitly;
@@ -47,7 +54,26 @@ export default defineConfig(() => {
         port: 3000,
         host: '0.0.0.0',
       },
-      plugins: [react(), tailwindcss(), versionJsonPlugin(sha, builtAt)],
+      plugins: [
+        react(),
+        tailwindcss(),
+        versionJsonPlugin(sha, builtAt),
+        ...(ANALYZE
+          ? [visualizer({
+              filename: 'dist/stats.html',
+              template: 'treemap',
+              gzipSize: true,
+              brotliSize: true,
+              open: false,
+            }) as Plugin]
+          : []),
+      ],
+      build: {
+        // 'hidden' keeps attribution accurate for the treemap without shipping
+        // a sourceMappingURL comment to production.
+        sourcemap: ANALYZE ? 'hidden' as const : false,
+        chunkSizeWarningLimit: 700,
+      },
       define: {
         __APP_VERSION__: JSON.stringify(sha),
         __BUILD_TIME__: JSON.stringify(builtAt),
