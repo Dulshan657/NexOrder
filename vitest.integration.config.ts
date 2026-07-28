@@ -11,7 +11,9 @@ export default defineConfig({
     test: {
         environment: 'node',
         include: ['**/*.integration.test.ts'],
-        // Load .env.local into process.env before the suite runs.
+        // Load .env.dev.local into process.env before the suite runs. That file
+        // throws if the loaded credentials belong to production — this suite
+        // writes to whatever it connects to.
         setupFiles: ['./__tests__/support/loadEnv.ts'],
         // Live DB round-trips are slower than unit tests.
         testTimeout: 30_000,

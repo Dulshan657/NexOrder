@@ -5,9 +5,9 @@
 import type { Product, Supplier } from '../../types';
 
 export const SUPPLIERS: Supplier[] = [
-  { id: 1, name: 'AYAM Brand Malaysia', contactPerson: 'Ahmad Razak', email: 'sales@ayam.com.my', phone: '+60-3-7785-1234' },
-  { id: 2, name: 'AYAM Australia Distribution', contactPerson: 'Sarah Mitchell', email: 'distribution@ayam.com.au', phone: '+61-2-9876-5432' },
-  { id: 3, name: 'AYAM Organic Supply', contactPerson: 'Lisa Chen', email: 'organic@ayam.com.au', phone: '+61-3-8765-4321' },
+  { id: 1, name: 'Demo Brand Malaysia', contactPerson: 'Ahmad Razak', email: 'sales@demo-brand.example', phone: '+60-3-7785-1234' },
+  { id: 2, name: 'Demo Australia Distribution', contactPerson: 'Sarah Mitchell', email: 'distribution@demo-brand.example', phone: '+61-2-9876-5432' },
+  { id: 3, name: 'Demo Organic Supply', contactPerson: 'Lisa Chen', email: 'organic@demo-brand.example', phone: '+61-3-8765-4321' },
   // V2food — plant-based range for the V2food client demo (featured at the top of the shop).
   { id: 4, name: 'v2food', contactPerson: 'Foodservice Team', email: 'foodservice@v2food.com', phone: '+61-2-8520-0000' },
 ];
@@ -16,7 +16,7 @@ export const SUPPLIERS: Supplier[] = [
 const V2 = 'https://cdn.prod.website-files.com/67886572ee5d279b0cc8aab7';
 
 const IMG = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_IMAGE_CDN_URL)
-  || 'https://ayam.com/images/com_hikashop/upload/thumbnails/263x263f';
+  || 'https://cdn.example.com/images/thumbnails/263x263f';
 
 // Seed literals omit `available` (demo data is not allocation-aware); it
 // defaults to on-hand below. Real product data comes from Supabase via the

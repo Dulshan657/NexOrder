@@ -53,7 +53,7 @@ is an acceptable tradeoff for a suite this size.
 - `smoke.spec.ts` — harness health check (login, app loads, Warehouse tab
   navigates). Independent of any in-flight feature; should always be green.
 - `rack-levels/*.spec.ts` — specs for the "rack levels" feature described in
-  `~/.claude/plans/warehouse-tab-after-clicking-floofy-bumblebee.md`. As of
-  writing the feature is mid-flight (some pieces shipped, migration `00072`
-  not yet applied to prod) — every file's `describe` title says exactly what
-  it depends on and is expected to fail until that lands.
+  `~/.claude/plans/warehouse-tab-after-clicking-floofy-bumblebee.md`. This note
+  used to say migration `00072` was unapplied; it has since shipped and is live
+  on dev (verified 2026-07-28 against `pg_proc` / `information_schema`). Every
+  file's `describe` title still states what it depends on.

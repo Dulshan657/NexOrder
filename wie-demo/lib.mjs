@@ -3,41 +3,15 @@
 // builder (supabase/functions/_shared/wie/graph.ts) so the seed can call
 // wie_publish_layout_tx directly with a correct node/edge/distance/snap payload.
 
-import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createClient } from '@supabase/supabase-js'
+
+import { createDevClient } from '../scripts/lib/devClient.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..') // NexOrder/
 
-function loadEnv() {
-  const env = { ...process.env }
-  try {
-    const text = readFileSync(resolve(ROOT, '.env.local'), 'utf8')
-    for (const line of text.split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/)
-      if (!m) continue
-      let v = m[2]
-      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1)
-      if (env[m[1]] === undefined || env[m[1]] === '') env[m[1]] = v
-    }
-  } catch { /* rely on process.env */ }
-  return env
-}
-
-const ENV = loadEnv()
-const SUPABASE_URL = ENV.VITE_SUPABASE_URL || ENV.SUPABASE_URL
-const SERVICE_KEY = ENV.SUPABASE_SERVICE_ROLE_KEY
-
-if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error('Missing VITE_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (set in NexOrder/.env.local).')
-  process.exit(1)
-}
-
-export const supa = createClient(SUPABASE_URL, SERVICE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-})
+export const { supa, env: ENV, target: TARGET } = await createDevClient()
 
 // ── Demo constants ───────────────────────────────────────────────────────────
 export const WH_CODE = 'WIE-DEMO'
@@ -46,7 +20,7 @@ export const CODE_PREFIX = 'WIEDEMO' // every location/product code is namespace
 export const GRID = { width: 24, height: 16, cellSize: 1, floorCount: 2 }
 
 // 10 demo products; size_factor varies so occupancy math produces a spread.
-// Categories are from the AYAM set (products_category_check).
+// Categories are from the demo catalogue's set (products_category_check).
 export const PRODUCTS = [
   { sku: `${CODE_PREFIX}-P01`, name: 'Demo Fast Mover A', category: 'Noodles', sizeFactor: 1 },
   { sku: `${CODE_PREFIX}-P02`, name: 'Demo Fast Mover B', category: 'Noodles', sizeFactor: 0.5 },

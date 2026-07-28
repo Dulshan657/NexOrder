@@ -39,7 +39,7 @@
 --     SAME batch from reserve down to pick, so the two tie on expiry and the
 --     pick zone wins outright.
 --   * It wins unconditionally for non-dated SKUs (expiry_date IS NULL ties every
---     row), which is most of the AYAM catalogue.
+--     row), which is most of the demo catalogue.
 --   * It "loses" only where losing is correct — an older batch in bulk beats a
 --     newer one in the pick zone. That is the answer you want.
 --

@@ -10,7 +10,7 @@ import {
 const STORAGE_URL =
   'https://lsgkznyiabqitqfpveey.supabase.co/storage/v1/object/public/product-images/products/abc.webp';
 const EXTERNAL_URL =
-  'https://ayam.com/images/com_hikashop/upload/thumbnails/263x263f/9311627603729-1.png';
+  'https://cdn.example.com/images/thumbnails/263x263f/9311627603729-1.png';
 const DATA_URL = 'data:image/png;base64,iVBORw0KGgo=';
 
 describe('isSupabaseStorageObjectUrl', () => {

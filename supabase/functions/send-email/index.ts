@@ -29,8 +29,8 @@ import { errorResponse } from '../_shared/errors.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit, clientIp } from '../_shared/rateLimit.ts'
 import { isServiceRoleCall } from '../_shared/cronToken.ts'
+import { requireAppUrl } from '../_shared/appUrl.ts'
 
-const DEFAULT_APP_URL = 'https://nexorder.vercel.app'
 const DEFAULT_FROM = 'Nex Order <onboarding@resend.dev>'
 
 const inputSchema = z.discriminatedUnion('template', [
@@ -190,7 +190,7 @@ async function renderOrderConfirmation(admin: any, orderId: string): Promise<Ren
   const horeca = order.horecas as { name: string; email: string | null } | null
   if (!horeca?.email) return null
 
-  const appUrl = Deno.env.get('APP_URL') ?? DEFAULT_APP_URL
+  const appUrl = requireAppUrl()
   const subject = `Order ${order.id} received — ${horeca.name}`
   const formattedTotal = formatCurrency(Number(order.total ?? 0))
   const orderDate = formatDate(order.order_date)
@@ -223,7 +223,7 @@ async function renderInvoiceIssued(admin: any, invoiceId: string): Promise<Rende
   const horeca = invoice.horecas as { name: string; email: string | null } | null
   if (!horeca?.email) return null
 
-  const appUrl = Deno.env.get('APP_URL') ?? DEFAULT_APP_URL
+  const appUrl = requireAppUrl()
   const subject = `Invoice ${invoice.id} — ${horeca.name}`
   const formattedAmount = formatCurrency(Number(invoice.amount ?? 0))
   const dueDate = formatDate(invoice.due_date)
@@ -252,7 +252,7 @@ async function renderUserInvitation(admin: any, userId: string): Promise<Rendere
   const { email, user_metadata } = data.user
   if (!email) return null
 
-  const appUrl = Deno.env.get('APP_URL') ?? DEFAULT_APP_URL
+  const appUrl = requireAppUrl()
   const name = (user_metadata?.name as string | undefined) ?? 'there'
   const role = (user_metadata?.role as string | undefined) ?? 'team member'
   const subject = `Welcome to Nex Order, ${name}`
@@ -277,7 +277,7 @@ function renderSystemAlert(status: 'ok' | 'degraded' | 'down', message: string):
   const to = Deno.env.get('ALERT_EMAIL')
   if (!to) return null
 
-  const appUrl = Deno.env.get('APP_URL') ?? DEFAULT_APP_URL
+  const appUrl = requireAppUrl()
   const subject = `[Nex Order] System ${status === 'ok' ? 'recovered' : status}`
 
   const html = layout({

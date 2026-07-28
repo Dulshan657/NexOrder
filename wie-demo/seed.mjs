@@ -8,7 +8,7 @@
 //   npm run demo:wie:seed     (runs reset first, then seeds)
 //   npm run demo:wie:reset    (tear down)
 //
-// Service-role creds come from NexOrder/.env.local. All codes are namespaced
+// Dev-only: lib.mjs resolves the target and refuses anything but dev. All codes are namespaced
 // WIEDEMO- / WIE-DEMO so teardown is exact and nothing collides.
 
 import { pathToFileURL } from 'node:url'

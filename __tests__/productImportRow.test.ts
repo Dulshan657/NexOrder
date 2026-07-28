@@ -6,7 +6,7 @@ import { CATEGORIES } from '../constants'
 function ctx(overrides: Partial<CatalogImportContext> = {}): CatalogImportContext {
   return {
     suppliersByName: new Map([
-      ['ayam brand malaysia', 1],
+      ['demo brand malaysia', 1],
       ['v2food', 4],
     ]),
     categories: new Set(CATEGORIES),
@@ -22,7 +22,7 @@ const validRec: Record<string, string> = {
   category: 'coconut',
   unit: 'can',
   carton_size: '12',
-  supplier_name: 'AYAM Brand Malaysia',
+  supplier_name: 'Demo Brand Malaysia',
   image_url: '',
   cubic_meters_unit: '',
   cubic_meters_carton: '',
@@ -50,7 +50,7 @@ describe('validateCatalogRow', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('expected ok result')
     expect(result.supplierWillBeCreated).toBe(false)
-    expect(result.supplierName).toBe('AYAM Brand Malaysia')
+    expect(result.supplierName).toBe('Demo Brand Malaysia')
     expect(result.row.supplier_id).toBe(1)
     expect(result.row).not.toHaveProperty('supplier_name')
   })
@@ -238,7 +238,7 @@ describe('validateCatalogRow — multiple suppliers', () => {
   })
 
   it('reports every supplier on the row that does not exist yet', () => {
-    // 'AYAM Brand Malaysia' and 'V2food' are in the ctx map; 'Beta Foods' isn't.
+    // 'Demo Brand Malaysia' and 'V2food' are in the ctx map; 'Beta Foods' isn't.
     const result = validateCatalogRow(
       { ...validRec, additional_suppliers: 'V2food;Beta Foods' },
       ctx(),
@@ -303,7 +303,7 @@ describe('validateCatalogRow — multiple suppliers', () => {
 
   it('rejects an additional supplier that repeats the primary', () => {
     const result = validateCatalogRow(
-      { ...validRec, additional_suppliers: 'ayam brand malaysia' },
+      { ...validRec, additional_suppliers: 'demo brand malaysia' },
       ctx(),
     )
     expect(result.ok).toBe(false)

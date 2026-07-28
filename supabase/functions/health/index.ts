@@ -29,6 +29,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit, clientIp } from '../_shared/rateLimit.ts'
 import { isAuthorizedCronCall } from '../_shared/cronToken.ts'
+import { readAppUrl } from '../_shared/appUrl.ts'
 import {
   deriveStatus,
   shouldAlert,
@@ -36,7 +37,6 @@ import {
   type HealthStatus,
 } from '../_shared/healthLogic.ts'
 
-const DEFAULT_APP_URL = 'https://nexorder.vercel.app'
 const VERSION_FETCH_TIMEOUT_MS = 5_000
 const ERROR_WINDOW_MS = 10 * 60_000
 
@@ -108,24 +108,34 @@ serve(async (req: Request) => {
   const db = await pingDb(admin)
 
   // 2. Frontend probe — /version.json must parse within the timeout.
-  const appUrl = Deno.env.get('APP_URL') ?? DEFAULT_APP_URL
+  //
+  //    APP_URL has NO default. It used to fall back to the demo origin, which
+  //    meant an unconfigured production project happily probed the demo's
+  //    version.json and reported `ok` while production itself was down. An
+  //    unset value is now a frontend FAILURE, not a silent redirect: better a
+  //    false alarm you can fix in one command than a health check that lies.
+  const appUrl = readAppUrl()
   let frontendOk = false
   let frontendVersion: string | null = null
   let frontendError: string | null = null
-  try {
-    const resp = await fetch(`${appUrl}/version.json`, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(VERSION_FETCH_TIMEOUT_MS),
-    })
-    if (resp.ok) {
-      const json = (await resp.json()) as { sha?: string }
-      frontendOk = true
-      frontendVersion = typeof json.sha === 'string' ? json.sha : null
-    } else {
-      frontendError = `version.json HTTP ${resp.status}`
+  if (!appUrl) {
+    frontendError = 'APP_URL not configured — cannot probe the frontend'
+  } else {
+    try {
+      const resp = await fetch(`${appUrl}/version.json`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(VERSION_FETCH_TIMEOUT_MS),
+      })
+      if (resp.ok) {
+        const json = (await resp.json()) as { sha?: string }
+        frontendOk = true
+        frontendVersion = typeof json.sha === 'string' ? json.sha : null
+      } else {
+        frontendError = `version.json HTTP ${resp.status}`
+      }
+    } catch (e) {
+      frontendError = e instanceof Error ? e.message : String(e)
     }
-  } catch (e) {
-    frontendError = e instanceof Error ? e.message : String(e)
   }
 
   // 3. Client-error spike count (last 10 minutes). Count failure degrades to 0

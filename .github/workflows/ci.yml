@@ -35,6 +35,9 @@ jobs:
       - name: Overlay guard (no raw `fixed inset-0` outside components/ui)
         run: node scripts/check-overlays.mjs
 
+      - name: CSP guard (vercel.json covers every provisioned environment)
+        run: node scripts/check-csp.mjs
+
       - name: Type check
         run: npx tsc --noEmit
 

@@ -2,12 +2,30 @@
 
 ## Project Overview
 
-AYAM Order System (Nex Order) — B2B order management for AYAM brand Asian food products. Sales reps and restaurant/hotel (HoReCa) customers place orders; admins/managers manage products, customers, suppliers, purchase orders, and AI-triaged inbound-PO email.
+Nex Order — B2B order management for food and general distribution. Sales reps and restaurant/hotel (HoReCa) customers place orders; admins/managers manage products, customers, suppliers, purchase orders, and AI-triaged inbound-PO email. NexGen Innovations owns the product; each deployment carries its operator's identity in `app_settings`.
 
 **App root:** this directory (`NexOrder/`, the git repo root) — all commands run from here.
-**Production:** https://nexorder.vercel.app (Vercel project `dulshan657s-projects/copy-of-curatif-order-system-v1.3`)
 
 > The app directory was renamed `copy-of-curatif-order-system-v1.3/` → `NexOrder/`. The Vercel **project** still carries the old name — don't "fix" it.
+
+## ⚠️ Two environments. Nothing defaults.
+
+There are **two** Supabase projects. Read this before running anything that writes.
+
+| | dev / sales demo | production |
+|---|---|---|
+| Supabase | `lsgkznyiabqitqfpveey` (Singapore) | Sydney (`ap-southeast-2`) — **see `config/environments.mjs`** |
+| App | https://nexorder.vercel.app | https://nexorder.com.au |
+| Holds | AYAM seed data, Tridon + V2food demo tenants, WIE-DEMO, MAIN | **Amadiya Agro Products' real business data** |
+| `tenant` tag | `ayam` | `amadiya` |
+| Fixtures / seeds | yes | **never** |
+| Credentials | `.env.dev.local` | `.env.prod.local` |
+
+- **`config/environments.mjs` is the only file where a project ref belongs.** Import from it; never type a ref.
+- **Every script takes `--env=<dev|prod>`, equals-form only, and hard-fails without one.** `--env prod` (space) is rejected on purpose — `apply-sql.mjs` reads the first non-`--` argument as a filename.
+- **Seed / demo / reset scripts are dev-only and there is no `--force`.** Three guards (`scripts/lib/fixtureGuard.mjs`): the named target, a credential-vs-registry assertion, and `environment_marker` in the database itself.
+- **`.mcp.json` is pinned to dev, permanently.** Never add a prod entry — an agent session with MCP write access to the client's database is the single largest unforced risk in this repo.
+- Prod is not provisioned yet (`projectRef: null`), so every `--env=prod` command refuses until `PRODUCTION-LAUNCH-PLAN.md` §A0.3 is done. That refusal is the feature.
 
 ## Commands
 
@@ -18,46 +36,56 @@ npm run build
 npm test                           # vitest run
 npm run test:watch                 # vitest in watch mode
 npm run test:coverage              # vitest + coverage report
-npm run test:integration           # vitest against a live pg (vitest.integration.config.ts)
-npm run test:e2e                   # Playwright (:ui / :headed variants)
-npm run deploy                     # deploy to prod AND alias nexorder.vercel.app
+npm run test:integration           # vitest against live pg — dev only, throws on a prod URL
+npm run test:e2e                   # Playwright (:ui / :headed variants) — dev only
+npm run check:overlays             # no raw `fixed inset-0` outside components/ui
+npm run check:csp                  # vercel.json CSP covers every provisioned environment
 
 # Type-check before deploy (no CI block-on-red yet)
 npx tsc --noEmit
 
-# Run a migration
-SUPABASE_DB_PASSWORD="$DB_PW" node supabase/run-migration.mjs supabase/migrations/<file>.sql
+# Deploy: builds, aliases, verifies /version.json AND /functions/v1/health
+npm run deploy:dev                 # -> nexorder.vercel.app
+npm run deploy:prod                # -> nexorder.com.au
 
-# Deploy an Edge Function (requires SUPABASE_ACCESS_TOKEN, no TTY login)
-SUPABASE_ACCESS_TOKEN="$TOK" npx supabase functions deploy <name> --project-ref lsgkznyiabqitqfpveey
+# Migrations — ledgered in public.schema_migrations, checksummed, transactional
+node supabase/migrate.mjs --env=dev --dry-run    # what would run, in order
+npm run migrate:dev                              # apply everything pending
+npm run migrate:prod
 
-# Seed DB
-SUPABASE_URL="$URL" SUPABASE_SERVICE_ROLE_KEY="$KEY" npx tsx supabase/seed.ts
+# Edge Functions (never pass --no-verify-jwt; config.toml governs the gate)
+npm run fn:deploy:dev              # all; append a name for one
+npm run fn:deploy:prod
 
-# Run raw SQL against the live DB (Management API; the direct DB host is unreachable on Windows)
-node supabase/apply-sql.mjs --query "SELECT ..."   # or: node supabase/apply-sql.mjs <file.sql>
+# Raw SQL (Management API — the direct DB host is unreachable on Windows)
+node supabase/apply-sql.mjs --env=dev --query "SELECT ..."
+node supabase/apply-sql.mjs --env=dev <file.sql>
 
-# Assert the Supabase Auth config (site URL, redirect allow-list, password rules)
-npm run auth:config          # diff, then PATCH if it differs (idempotent)
-npm run auth:config:check    # diff only, exit 1 on drift
+# Supabase Auth config (site URL, redirect allow-list, password rules, disable_signup)
+npm run auth:config:dev / :prod          # diff, then PATCH if it differs
+npm run auth:config:check:dev / :prod    # diff only, exit 1 on drift
 
-# Warehouse fixtures (both write to PROD — there is no staging project)
-npm run warehouse:main:seed / :reset   # MAIN floor plan + engine slotting of all stock
-npm run demo:wie:seed / :reset         # standalone WIE-DEMO racked warehouse
+# Seed / fixtures — DEV ONLY, guarded three ways, no override
+npx tsx supabase/seed.ts --env=dev
+npm run warehouse:main:seed / :reset     # MAIN floor plan + engine slotting of all stock
+npm run demo:wie:seed / :reset           # standalone WIE-DEMO racked warehouse
 ```
 
-**Never run `vercel deploy --prod` directly** — it won't move the `nexorder.vercel.app` alias, and users will report fixes as "not live". Always use `npm run deploy` (wraps deploy + alias set).
+**Never run `vercel deploy --prod` directly** — it won't move the alias, and users will report fixes as "not live". Always use `npm run deploy:<env>` (wraps deploy + alias + verification).
+
+`supabase/run-migration.mjs` is legacy and cannot reach the DB host from this box. Use `supabase/migrate.mjs`.
 
 ## Supabase
 
 | Key | Value |
 |-----|-------|
-| Project ref | `lsgkznyiabqitqfpveey` |
-| URL | `https://lsgkznyiabqitqfpveey.supabase.co` |
-| Anon / publishable key | _see `NexOrder/.env.local` → `VITE_SUPABASE_ANON_KEY`_ |
-| Service role / secret key | _see `NexOrder/.env.local` → `SUPABASE_SERVICE_ROLE_KEY`_ |
-| DB password | _see `NexOrder/.env.local` → `SUPABASE_DB_PASSWORD`_ |
-| Seeded user password | `Password123!` (all users) |
+| Dev project ref | `lsgkznyiabqitqfpveey` |
+| Dev URL | `https://lsgkznyiabqitqfpveey.supabase.co` |
+| Prod project ref | _not yet created — `config/environments.mjs` → `ENVIRONMENTS.prod`_ |
+| Anon / publishable key | _see `.env.dev.local` / `.env.prod.local` → `VITE_SUPABASE_ANON_KEY`_ |
+| Service role / secret key | _same files → `SUPABASE_SERVICE_ROLE_KEY`_ |
+| DB password | _same files → `SUPABASE_DB_PASSWORD`_ |
+| Seeded user password (dev only) | `Password123!` (all seeded users) |
 
 **Note:** Credentials use Supabase's `sb_publishable_*` / `sb_secret_*` API key format (rotated 2026-05-18; legacy JWT-format keys are revoked). Never paste live credentials into this file — it's loaded into every Claude session and ends up in transcripts. Edge Function reads of `SUPABASE_SERVICE_ROLE_KEY` use the platform-injected value.
 
@@ -235,8 +263,11 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 - **`persistSession: false`** — enabling session persistence with *either* localStorage or sessionStorage made `getSession()` hang on Windows. Sessions therefore don't survive a tab close (re-login required). Don't re-enable persistence without retesting on Windows.
 - **RLS is enabled** (mig `00008` re-enables; `00009`+ lock down individual table mutations to Edge Functions). Direct INSERT/UPDATE/DELETE from `authenticated` is blocked for the tables in the lockdown table; mutations must go through Edge Functions.
 - **Edge Function deploy order matters.** When wiring the client to a new function: deploy the function FIRST (`npx supabase functions deploy <name>`), then push the frontend, then apply any RLS lockdown migration LAST. Reversing the order breaks admin UIs.
+- **Migrations are ledgered and checksummed** (`public.schema_migrations`, written by `supabase/migrate.mjs`). An applied file whose bytes change is a hard error, not a re-run — **edit forward with a new migration**. Ordering is (numeric prefix, full filename); `00022` and `00081` are each a duplicated-number pair of mutually independent files, so **do not renumber them** — a rename makes an applied migration look unapplied forever. Each file commits together with its ledger row (the `INSERT` is spliced before the single `COMMIT;`, or the file is wrapped in `BEGIN…COMMIT`).
+- **The `tenant` tag is environment-derived, and `ayam` must never appear in prod.** `00087` re-points the eight `00042` column defaults and both derivation triggers at `public.default_tenant()`, which reads `environment_marker.tenant_key` — `ayam` on dev, `amadiya` on prod. It is `SECURITY DEFINER` with a pinned `search_path` because a column DEFAULT evaluates as the *inserting* role and `environment_marker` is service_role-only. On an unstamped database it returns NULL and the `NOT NULL` tenant columns reject the insert — that is intended, not a bug. The column is still **read by nothing**; it is written correctly so a future read-side filter has something true to filter on.
+- **`APP_URL`, `ALLOWED_ORIGINS` and `PO_OAUTH_APP_BASE` have no defaults and fail closed.** Each previously fell back to the demo origin, and each failed *silently and successfully*: `send-email` would send a customer real links to the wrong app while answering `sent: true`, and `health` would probe the demo's `version.json` so prod reported `ok` while prod was down. **Set `ALLOWED_ORIGINS` on a project before deploying `_shared/cors.ts` to it** — `cors.ts` and `callbackCommon.ts` both read it, so the ordering breaks browser calls and OAuth callbacks together.
 - **Type-check** with `npx tsc --noEmit` before deploy (CI runs it but block-on-red isn't enforced on `main` yet).
-- **Supabase Auth config lives in `supabase/apply-auth-config.mjs`, not `config.toml`.** That toml is per-function `verify_jwt` only and is never pushed. `DESIRED` in the mjs is the source of truth for `site_url` / `uri_allow_list` / `password_min_length`; edit it and run `npm run auth:config` rather than clicking in Studio, or the next person has no way to know what the values should be. The allow-list entries are **globs** — `*` does not cross a `/`, and `ForgotPasswordDialog` sends `${origin}/` with a trailing slash, so every entry needs a `/**` suffix to match. A `redirectTo` that misses the list is silently replaced with `site_url`, which reads as "the reset link sent me to the wrong place".
+- **Supabase Auth config lives in `supabase/apply-auth-config.mjs`, not `config.toml`.** That toml is per-function `verify_jwt` only and is never pushed. `buildDesired(config)` in the mjs is the source of truth for `site_url` / `uri_allow_list` / `password_min_length` / `disable_signup`, deriving the origins from `config/environments.mjs`; edit it and run `npm run auth:config:<env>` rather than clicking in Studio, or the next person has no way to know what the values should be. **The preview glob belongs to dev only** — in the prod allow-list it would make any preview build a valid password-reset landing page for a client account. The allow-list entries are **globs** — `*` does not cross a `/`, and `ForgotPasswordDialog` sends `${origin}/` with a trailing slash, so every entry needs a `/**` suffix to match. A `redirectTo` that misses the list is silently replaced with `site_url`, which reads as "the reset link sent me to the wrong place".
 - **`mailer_otp_exp` (3600) is duplicated as prose** in `ForgotPasswordDialog` ("expires in 1 hour"). Change one, change the other.
 - **Never `await` a supabase call inside an `onAuthStateChange` callback.** supabase-js dispatches it while holding its internal auth lock and awaits whatever you return; any PostgREST query needs `getSession()`, which waits for that same lock, and the lock deadlocks against itself. `signInWithPassword` doesn't take the lock but `setSession`/`getSession` do — so ordinary login looks fine while the password-recovery screen hangs on "Verifying recovery link…" with no error anywhere. `hooks/useAuth.ts` therefore does sync state updates inline and defers the profile fetch to a `setTimeout(…, 0)`; `__tests__/authProviderNoDeadlock.test.tsx` pins that.
 - **Recovery links have four shapes, and `lib/auth/recoveryLink.ts` is the only place that knows them.** `#access_token=…` (default template), `?token_hash=…`, an `error`/`error_code` pair on **either** the hash or the query, and PKCE `?code=` — which is deliberately *not* claimed, because `persistSession: false` leaves nowhere for the code verifier and `?code=` is also the PO-Inbox OAuth popup's param. `isRecoveryUrl()` returns true for failed links on purpose: that is what routes them to a screen that can explain itself.

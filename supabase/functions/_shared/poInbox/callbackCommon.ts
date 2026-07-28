@@ -47,24 +47,42 @@ export interface CallbackProviderHandlers {
   }): Promise<TokenExchangeResult>
 }
 
-// PO_OAUTH_APP_BASE is read from env. Defaults to production; non-prod
-// environments MUST set the secret explicitly. To prevent an
-// open-redirect class of bug if the env var is ever set to an attacker-
-// controlled value, we allowlist the acceptable hosts.
-const ALLOWED_APP_BASES = new Set<string>([
-  'https://nexorder.vercel.app',
-  'http://localhost:3000',
-])
-
-const PRODUCTION_DEFAULT = 'https://nexorder.vercel.app'
+// Where to send the operator's browser once the OAuth round trip completes.
+//
+// PO_OAUTH_APP_BASE must be set per project; there is NO default. It used to
+// fall back to the demo origin, which meant a mailbox connected from the
+// client's app would finish its consent flow and land the operator in a
+// completely different environment — with the grant recorded in the project
+// they started from and no visible sign of it in the app they ended up in.
+//
+// The allowlist is retained on top of that: PO_OAUTH_APP_BASE is a redirect
+// target, so a mis-set (or attacker-influenced) value is an open-redirect
+// primitive. The per-environment app origins come from
+// config/environments.mjs (`appOrigin`); `ALLOWED_ORIGINS` already carries the
+// same set, so it is reused rather than maintained twice.
+function allowedAppBases(): Set<string> {
+  const raw = Deno.env.get('ALLOWED_ORIGINS') ?? ''
+  return new Set(
+    raw
+      .split(',')
+      .map((o) => o.trim().replace(/\/+$/, ''))
+      .filter(Boolean),
+  )
+}
 
 function resolveAppBase(): string {
-  const raw = (readEnv('PO_OAUTH_APP_BASE') ?? PRODUCTION_DEFAULT).replace(/\/+$/, '')
-  if (!ALLOWED_APP_BASES.has(raw)) {
-    console.warn(
-      `[oauth-callback] PO_OAUTH_APP_BASE=${sanitizeForLog(raw, 80)} not in allowlist — falling back to ${PRODUCTION_DEFAULT}`,
+  const raw = (readEnv('PO_OAUTH_APP_BASE') ?? '').replace(/\/+$/, '')
+  if (!raw) {
+    throw new Error(
+      'PO_OAUTH_APP_BASE is not set on this project. Refusing to guess an OAuth redirect target.',
     )
-    return PRODUCTION_DEFAULT
+  }
+  const allowed = allowedAppBases()
+  if (!allowed.has(raw)) {
+    throw new Error(
+      `PO_OAUTH_APP_BASE=${sanitizeForLog(raw, 80)} is not in this project's ALLOWED_ORIGINS. ` +
+        'Refusing to redirect: silently rewriting the target is how an operator ends up in the wrong environment.',
+    )
   }
   return raw
 }
@@ -106,7 +124,22 @@ function classifyProviderError(code: string): string {
 
 export function callbackRedirectError(code: string, message: string): Response {
   const safeMessage = message.length > 120 ? `${message.slice(0, 120)}…` : message
-  return htmlRedirect(buildAppRedirect({ connect_error: code, message: safeMessage }))
+  try {
+    return htmlRedirect(buildAppRedirect({ connect_error: code, message: safeMessage }))
+  } catch (e) {
+    // resolveAppBase() now refuses to guess, so the error path can itself fail
+    // when the project is misconfigured. Answer in plain text rather than
+    // throwing inside an error handler — the operator is sitting in front of a
+    // browser waiting for *something*, and a 500 with no body tells them
+    // nothing about which of the two problems they have.
+    console.error('[oauth-callback] cannot build the app redirect:', e)
+    return new Response(
+      `Mailbox connection failed (${code}: ${safeMessage}).\n\n` +
+        'Additionally, this project cannot build a redirect back to the app: ' +
+        `${e instanceof Error ? e.message : String(e)}`,
+      { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } },
+    )
+  }
 }
 
 /**

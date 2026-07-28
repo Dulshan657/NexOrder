@@ -26,15 +26,16 @@
 // disables V2food auto-approve for it until you re-run `npm run seed:v2food-demo`.
 // To avoid the collision entirely, set TRIDON_DEMO_SENDER to a dedicated address.
 //
-// Credentials come from NexOrder/.env.local (VITE_SUPABASE_URL /
-// SUPABASE_SERVICE_ROLE_KEY) or the environment.
+// Dev-only fixture script. scripts/lib/devClient.mjs resolves the target
+// (--env=dev, baked into the npm script), asserts the credentials belong to
+// it, and asks the database itself whether it is dev before writing anything.
 
-import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createClient } from '@supabase/supabase-js'
 
 import { REVIEW_UNKNOWN_CODE } from './specs.mjs'
+
+import { createDevClient } from '../scripts/lib/devClient.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..') // NexOrder/
@@ -64,40 +65,7 @@ const LINES = [
 
 const STOCK_PER_PRODUCT = 50 // demo PO qtys top out at 12 — plenty of headroom.
 
-function loadEnv() {
-  const env = { ...process.env }
-  try {
-    const text = readFileSync(resolve(ROOT, '.env.local'), 'utf8')
-    for (const line of text.split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/)
-      if (!m) continue
-      let v = m[2]
-      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-        v = v.slice(1, -1)
-      }
-      if (env[m[1]] === undefined || env[m[1]] === '') env[m[1]] = v
-    }
-  } catch {
-    /* rely on process.env */
-  }
-  return env
-}
-
-const ENV = loadEnv()
-const SUPABASE_URL = ENV.VITE_SUPABASE_URL || ENV.SUPABASE_URL
-const SERVICE_KEY = ENV.SUPABASE_SERVICE_ROLE_KEY
-const PASSWORD = ENV.SEED_USER_PASSWORD || 'Password123!'
-const DEMO_SENDER = (ENV.TRIDON_DEMO_SENDER || DEFAULT_SENDER).trim().toLowerCase()
-const UNKNOWN_SKU = REVIEW_UNKNOWN_CODE.toUpperCase()
-
-if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error('Missing VITE_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (set in NexOrder/.env.local).')
-  process.exit(1)
-}
-
-const supa = createClient(SUPABASE_URL, SERVICE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-})
+const { supa, env: ENV, target: TARGET } = await createDevClient()
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -1,5 +1,5 @@
 -- =============================================================================
--- AYAM Order System — Initial Schema Migration
+-- Nex Order — Initial Schema Migration
 -- Migration: 00001_initial_schema.sql
 -- =============================================================================
 -- Table creation order respects FK dependencies:

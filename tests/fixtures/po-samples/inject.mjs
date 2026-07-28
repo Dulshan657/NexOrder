@@ -15,15 +15,17 @@
 //
 // Review the results in the app under PO Inbox → Queue.
 //
-// Credentials come from NexOrder/.env.local (VITE_SUPABASE_URL /
-// SUPABASE_SERVICE_ROLE_KEY) or the environment.
+// Dev-only fixture script. scripts/lib/devClient.mjs resolves the target
+// (--env=dev, baked into the npm script), asserts the credentials belong to
+// it, and asks the database itself whether it is dev before writing anything.
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createClient } from '@supabase/supabase-js'
 
 import { renderPdf, renderDocx, renderImagePo, makeLogoPng, SIGNATURE_GIF_BYTES } from './render.mjs'
+
+import { createDevClient } from '../../../scripts/lib/devClient.mjs'
 import {
   GRAND_HOTEL,
   LOTUS_GARDEN,
@@ -311,37 +313,9 @@ function buildFileMessages(dir) {
 // ----------------------------------------------------------------------------
 // Env + client
 // ----------------------------------------------------------------------------
-function loadEnv() {
-  const env = { ...process.env }
-  try {
-    const text = readFileSync(resolve(ROOT, '.env.local'), 'utf8')
-    for (const line of text.split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/)
-      if (!m) continue
-      let v = m[2]
-      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-        v = v.slice(1, -1)
-      }
-      if (env[m[1]] === undefined || env[m[1]] === '') env[m[1]] = v
-    }
-  } catch {
-    /* no .env.local — rely on process.env */
-  }
-  return env
-}
-
-const ENV = loadEnv()
-const SUPABASE_URL = ENV.VITE_SUPABASE_URL || ENV.SUPABASE_URL
+const { supa, env: ENV, target: TARGET } = await createDevClient()
+const SUPABASE_URL = TARGET.config.supabaseUrl
 const SERVICE_KEY = ENV.SUPABASE_SERVICE_ROLE_KEY
-
-if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error('Missing VITE_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (set in NexOrder/.env.local).')
-  process.exit(1)
-}
-
-const supa = createClient(SUPABASE_URL, SERVICE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-})
 
 // ----------------------------------------------------------------------------
 // Helpers

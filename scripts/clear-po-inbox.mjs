@@ -14,23 +14,19 @@
  * (deleting a pending_po never deletes the order it became).
  *
  * Usage (run from the project root):
- *   node scripts/clear-po-inbox.mjs            # DRY RUN — prints counts, deletes nothing
- *   node scripts/clear-po-inbox.mjs --apply    # actually deletes
+ *   node scripts/clear-po-inbox.mjs --env=dev            # DRY RUN — prints counts, deletes nothing
+ *   node scripts/clear-po-inbox.mjs --env=dev --apply    # actually deletes
  *
- * Reads SUPABASE_URL (or VITE_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY from
- * the environment, falling back to .env.local. Service role bypasses RLS, which
- * is required because these tables/bucket are locked to Edge Functions.
+ * DEV ONLY, and not overridable. createDevClient() resolves the target, asserts
+ * the credentials belong to it, and asks the database itself whether it is dev
+ * before anything is read or written. Service role bypasses RLS, which is
+ * required because these tables/bucket are locked to Edge Functions — and is
+ * exactly why this script must not be able to reach production.
  *
  * Idempotent: safe to re-run. Delete-all + bucket-walk converge to empty, so a
  * partial failure mid-run is recovered by simply running it again.
  */
-import { createClient } from '@supabase/supabase-js'
-import { readFileSync, existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const ROOT = join(__dirname, '..')
+import { createDevClient } from './lib/devClient.mjs'
 
 const APPLY = process.argv.includes('--apply')
 const BUCKET = 'po-archive'
@@ -47,43 +43,6 @@ const TABLES_IN_DELETE_ORDER = [
   'po_customer_aliases',
   'po_product_aliases',
 ]
-
-function parseEnvFile(text) {
-  const env = {}
-  for (let line of text.split(/\r?\n/)) {
-    line = line.trim()
-    if (!line || line.startsWith('#')) continue
-    if (line.startsWith('export ')) line = line.slice(7).trim()
-    const eq = line.indexOf('=')
-    if (eq === -1) continue
-    const key = line.slice(0, eq).trim()
-    let val = line.slice(eq + 1).trim()
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
-      val = val.slice(1, -1)
-    }
-    env[key] = val
-  }
-  return env
-}
-
-function loadCreds() {
-  const envPath = join(ROOT, '.env.local')
-  const fileEnv = existsSync(envPath) ? parseEnvFile(readFileSync(envPath, 'utf8')) : {}
-  const get = name => process.env[name] ?? fileEnv[name]
-  const url = get('SUPABASE_URL') || get('VITE_SUPABASE_URL')
-  const serviceKey = get('SUPABASE_SERVICE_ROLE_KEY')
-  if (!url || !serviceKey) {
-    console.error(
-      'Missing SUPABASE_URL (or VITE_SUPABASE_URL) and/or SUPABASE_SERVICE_ROLE_KEY.\n' +
-        `Looked in process.env and ${envPath}.`,
-    )
-    process.exit(1)
-  }
-  return { url, serviceKey }
-}
 
 async function countTable(supabase, table) {
   const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true })
@@ -142,12 +101,9 @@ async function report(supabase, label) {
 }
 
 async function main() {
-  const { url, serviceKey } = loadCreds()
-  const supabase = createClient(url, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
+  const { supa: supabase, target } = await createDevClient()
 
-  console.log(`PO Inbox cleaner — target project: ${url}`)
+  console.log(`PO Inbox cleaner — target project: ${target.config.supabaseUrl}`)
   console.log(APPLY ? 'MODE: APPLY (will delete)' : 'MODE: DRY RUN (no changes; pass --apply to delete)')
 
   const objectsBefore = await report(supabase, 'BEFORE')
