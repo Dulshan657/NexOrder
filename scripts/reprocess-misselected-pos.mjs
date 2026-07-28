@@ -11,30 +11,18 @@
 // rejected rows. For each affected row we delete the stale needs_review row
 // (extract-po short-circuits if a pending_po already exists) and re-invoke
 // extract-po, which now deprioritizes the signature and picks the real doc.
-import { createClient } from '@supabase/supabase-js'
-import { readFileSync } from 'fs'
+//
+// Dev-only. This deletes pending_pos rows and re-invokes extract-po; both are
+// destructive enough that it goes through the same three-guard path as the seed
+// scripts rather than reading whatever .env.local happens to hold.
+import { createDevClient } from './lib/devClient.mjs'
 
-const env = Object.fromEntries(
-  readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
-    .split('\n')
-    .filter(l => l.includes('=') && !l.trimStart().startsWith('#'))
-    .map(l => {
-      const i = l.indexOf('=')
-      return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, '')]
-    }),
-)
+const { supa, env: ENV, target: TARGET } = await createDevClient()
+const url = TARGET.config.supabaseUrl
+const key = ENV.SUPABASE_SERVICE_ROLE_KEY
 
-const url = env.VITE_SUPABASE_URL
-const key = env.SUPABASE_SERVICE_ROLE_KEY
 const BUCKET = 'po-archive'
 const apply = process.argv.includes('--apply')
-
-if (!url || !key) {
-  console.error('Missing VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local')
-  process.exit(1)
-}
-
-const supa = createClient(url, key, { auth: { persistSession: false } })
 
 const { data: pos, error } = await supa
   .from('pending_pos')

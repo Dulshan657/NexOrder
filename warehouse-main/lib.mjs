@@ -7,42 +7,25 @@
 //              the shipped Edge Functions so this seed exercises the same
 //              validation, audit and putaway code path the app does.
 
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+// Dev-only. createDevClient() resolves the target (--env=dev, baked into the
+// npm script), asserts the credentials belong to it, and asks the database
+// itself whether it is dev — all before a single row is touched.
+
 import { createClient } from '@supabase/supabase-js'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
-const ROOT = resolve(HERE, '..') // NexOrder/
+import { createDevClient } from '../scripts/lib/devClient.mjs'
 
-function loadEnv() {
-  const env = { ...process.env }
-  try {
-    const text = readFileSync(resolve(ROOT, '.env.local'), 'utf8')
-    for (const line of text.split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/)
-      if (!m) continue
-      let v = m[2]
-      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1)
-      if (env[m[1]] === undefined || env[m[1]] === '') env[m[1]] = v
-    }
-  } catch { /* rely on process.env */ }
-  return env
-}
+const { supa: serviceClient, env: ENV, target: TARGET } = await createDevClient()
 
-const ENV = loadEnv()
-const SUPABASE_URL = ENV.VITE_SUPABASE_URL || ENV.SUPABASE_URL
-const SERVICE_KEY = ENV.SUPABASE_SERVICE_ROLE_KEY
+const SUPABASE_URL = TARGET.config.supabaseUrl
 const ANON_KEY = ENV.VITE_SUPABASE_ANON_KEY
 
-if (!SUPABASE_URL || !SERVICE_KEY || !ANON_KEY) {
-  console.error('Missing VITE_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / VITE_SUPABASE_ANON_KEY (set in NexOrder/.env.local).')
+if (!ANON_KEY) {
+  console.error(`Missing VITE_SUPABASE_ANON_KEY (set it in ${TARGET.config.envFile}).`)
   process.exit(1)
 }
 
-export const supa = createClient(SUPABASE_URL, SERVICE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-})
+export const supa = serviceClient
 
 export const ADMIN_EMAIL = ENV.WAREHOUSE_SEED_ADMIN_EMAIL || 'alice@nexorder.com.au'
 export const ADMIN_PASSWORD = ENV.WAREHOUSE_SEED_ADMIN_PASSWORD || 'Password123!'

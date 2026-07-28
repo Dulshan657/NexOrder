@@ -31,7 +31,8 @@ export function imageTransformsEnabled(): boolean {
 
 /**
  * Only a Supabase Storage *public object* URL can be routed through
- * render/image. External CDN URLs (e.g. ayam.com) and `data:` URLs cannot.
+ * render/image. External CDN URLs (a supplier's own image host, say) and
+ * `data:` URLs cannot.
  */
 export function isSupabaseStorageObjectUrl(url: string): boolean {
   return url.includes(PUBLIC_OBJECT_MARKER);

@@ -9,8 +9,11 @@
 // seed/reset scripts — not MAIN, which holds real stock, and not E2ERACKLVL,
 // which an E2E run can clobber.
 //
-//   node supabase/exercise-replen-gate.mjs          # run the gate
-//   node supabase/exercise-replen-gate.mjs --report # just print current state
+//   node supabase/exercise-replen-gate.mjs --env=dev          # run the gate
+//   node supabase/exercise-replen-gate.mjs --env=dev --report # just print current state
+//
+// Dev-only: the import below pulls in warehouse-main/lib.mjs, which resolves the
+// target through the three fixture guards and refuses anything but dev.
 //
 // Everything goes through the real Edge Functions as an Admin (warehouse-main/
 // lib.mjs `invokeAdmin`), not raw SQL, so the auth, validation and audit layers

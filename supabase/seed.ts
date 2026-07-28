@@ -1,16 +1,18 @@
 /**
- * Seed script for the AYAM Order System Supabase database.
+ * Seed script for the Nex Order demo database.
  *
  * Usage:
- *   npx tsx supabase/seed.ts
+ *   npx tsx supabase/seed.ts --env=dev
  *
- * Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables
- * (service role key, NOT the anon key — needed for admin operations).
- *
- * This script imports data from constants.ts and inserts it into Supabase tables.
+ * DEV ONLY, and not overridable. This writes demo users (with a shared,
+ * published password), demo customers and a demo catalogue. On a client's
+ * production database that would be both a data-integrity problem and a
+ * credential disclosure, so it goes through all three fixture guards:
+ * the named target, the credential assertion, and the database's own
+ * environment_marker.
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { createDevClient } from '../scripts/lib/devClient.mjs'
 import { USERS, DEFAULT_SETTINGS } from '../constants'
 import {
   SUPPLIERS,
@@ -26,17 +28,7 @@ import {
   INITIAL_VISITS,
 } from './seedData'
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables')
-  process.exit(1)
-}
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-})
+const { supa: supabase } = await createDevClient()
 
 // Deterministic UUID mapping for mock user IDs
 const USER_UUID_MAP: Record<number, string> = {
@@ -451,7 +443,7 @@ async function seedSettings() {
 }
 
 async function main() {
-  console.log('=== AYAM Order System — Database Seed ===\n')
+  console.log('=== Nex Order — Demo Database Seed ===\n')
 
   try {
     // Order matters — FK dependencies
