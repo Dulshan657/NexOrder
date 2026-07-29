@@ -322,8 +322,22 @@ export function toUser(row: ProfileRow): User {
 // non-inbound orders, or when RLS hides pending_pos from non-admins).
 type PendingPoEmbed = { inbound_message_id: string | null; status: string }
 
+// orders.delivery_address arrived in migration 00021 but database.types.ts has
+// not been regenerated since, so OrderRow doesn't know about it. Declared here
+// rather than hand-patching the generated file, which the next regen would
+// overwrite. The DB CHECK (orders_delivery_address_is_object) guarantees an
+// object or NULL, never a scalar.
+type DeliveryAddressJson = {
+  street?: string | null
+  city?: string | null
+  postcode?: string | null
+  country?: string | null
+  recipient_name?: string | null
+}
+
 export function toOrder(
   row: OrderRow & {
+    delivery_address?: DeliveryAddressJson | null
     order_items?: OrderItemRow[] | null
     pending_pos?: PendingPoEmbed[] | PendingPoEmbed | null
     order_fulfillments?: (OrderFulfillmentRow & { locations?: { name: string } | null })[] | null
@@ -385,6 +399,17 @@ export function toOrder(
       : [],
     deliveryDate: row.delivery_date ?? undefined,
     deliveryTimeSlot: (row.delivery_time_slot as DeliveryTimeSlot) ?? undefined,
+    // A row with no usable street is treated as absent, so consumers get the
+    // HoReCa fallback rather than rendering an address with no street in it.
+    deliveryAddress: row.delivery_address?.street
+      ? {
+          street: row.delivery_address.street,
+          city: row.delivery_address.city ?? null,
+          postcode: row.delivery_address.postcode ?? null,
+          country: row.delivery_address.country ?? null,
+          recipientName: row.delivery_address.recipient_name ?? null,
+        }
+      : undefined,
     verification: (row.verification as unknown as OrderVerification) ?? undefined,
     appliedPromotions: Array.isArray(row.applied_promotions)
       ? (row.applied_promotions as unknown as AppliedPromotion[])

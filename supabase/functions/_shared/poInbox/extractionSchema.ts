@@ -59,6 +59,14 @@ export const EXTRACT_PO_SCHEMA = {
       description:
         'Home builder / head contractor the job is for, verbatim; null if the document names none.',
     },
+    job_address: {
+      type: ['string', 'null'],
+      maxLength: MAX_FIELD_CHARS,
+      description:
+        'The site the work is being carried out at, from a "Job Address" / "Site Address" ' +
+        'label, verbatim and on one line. This is NOT ship_to: the goods routinely go to ' +
+        'the buyer\'s own yard while the job sits at a different address. Null if absent.',
+    },
     order_date: {
       type: ['string', 'null'],
       maxLength: 32,
@@ -173,6 +181,7 @@ export const EXTRACT_PO_SCHEMA = {
     'customer_name_raw',
     'customer_id_guess',
     'builder',
+    'job_address',
     'order_date',
     'requested_date',
     'ship_to',
@@ -225,6 +234,12 @@ export interface ExtractedPo {
    *  not participate in customer matching or the auto-approval gates, which is
    *  why (like customer_id_guess) it has no `confidence` sibling. */
   builder: string | null
+  /** Site the work happens at, as printed against a "Job Address" label. Kept
+   *  apart from `ship_to`, which is where the goods physically go — on builder
+   *  POs those are routinely different addresses. Informational, like `builder`:
+   *  it reaches the picker through `composeOrderNotes`, and gates nothing, which
+   *  is why it too has no `confidence` sibling. */
+  job_address: string | null
   order_date: string | null
   requested_date: string | null
   ship_to: ExtractedShipTo | null
@@ -281,6 +296,12 @@ Rules:
   the lower half of the page, near a job or site address. It is NOT the
   supplier, NOT the customer placing the order, and NOT the delivery
   recipient. Copy the name verbatim as printed. Null when absent or blank.
+* job_address is the site the work is being carried out at, printed against a
+  "Job Address" or "Site Address" label — usually right under the builder.
+  It is NOT ship_to and the two are routinely DIFFERENT addresses on the same
+  page: the goods go to the buyer's own yard or warehouse, while the job is at
+  a house on an estate. Extract both, independently, from their own labels.
+  Put it on one line and copy it verbatim. Null when the document has none.
 * The top-level notes and delivery_instructions are WHOLE-DOCUMENT blocks,
   usually printed near the bottom under headings of those names. Copy each
   verbatim, including any part numbers listed beneath it. They are separate

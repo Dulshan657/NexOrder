@@ -11,6 +11,11 @@
 export interface DocumentNotesSource {
   notes?: string | null
   delivery_instructions?: string | null
+  /** Not a text block like the other two — a labelled field (see
+   *  extractionSchema.ts). It rides along here because `orders.notes` is the
+   *  only channel the printed document has to the person picking the order,
+   *  and "which site is this for?" is the question they ask next. */
+  job_address?: string | null
 }
 
 /**
@@ -28,23 +33,32 @@ export function documentNoteText(value: string | null | undefined): string | nul
   return trimmed.length > 0 ? trimmed : null
 }
 
-/** Heading used when both blocks are present and have to share one column. */
+/** Headings for the blocks that are never safe to print bare. */
 const DELIVERY_HEADING = 'Delivery instructions:'
+const JOB_ADDRESS_HEADING = 'Job address:'
 
 /**
  * Fold the PO's printed blocks into the single `orders.notes` text column.
  *
- * Labelled only when both are present — a lone block reads better as bare text,
- * and the common case ("Don't deliver outdoor unit as it will be called up at a
- * later date") is exactly that. Returns null when the document carried neither,
- * so callers can leave `orders.notes` null rather than writing an empty string.
+ * One rule decides the labelling: `notes` is the document's general remark and
+ * reads fine as bare text — the common case ("Don't deliver outdoor unit as it
+ * will be called up at a later date") is exactly that — while the others are
+ * meaningless without their heading. A bare "Lot 21/21 Coomleigh Avenue" in the
+ * middle of a picking note is worse than no note at all. So `notes` leads,
+ * unlabelled, and every other block follows under its own heading.
+ *
+ * Returns null when the document carried none of them, so callers can leave
+ * `orders.notes` null rather than writing an empty string.
  */
 export function composeOrderNotes(extracted: DocumentNotesSource | null | undefined): string | null {
   const notes = documentNoteText(extracted?.notes)
   const delivery = documentNoteText(extracted?.delivery_instructions)
+  const jobAddress = documentNoteText(extracted?.job_address)
 
-  if (notes && delivery) return `${notes}\n\n${DELIVERY_HEADING}\n${delivery}`
-  if (notes) return notes
-  if (delivery) return `${DELIVERY_HEADING}\n${delivery}`
-  return null
+  const sections: string[] = []
+  if (notes) sections.push(notes)
+  if (delivery) sections.push(`${DELIVERY_HEADING}\n${delivery}`)
+  if (jobAddress) sections.push(`${JOB_ADDRESS_HEADING}\n${jobAddress}`)
+
+  return sections.length > 0 ? sections.join('\n\n') : null
 }

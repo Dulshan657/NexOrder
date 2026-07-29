@@ -9,6 +9,7 @@ import PaymentActionModal from './PaymentActionModal';
 import OrderSourceBadge from './OrderSourceBadge';
 import OrderFulfillmentsPanel from './OrderFulfillmentsPanel';
 import { getInboundApproval } from '../lib/orderSource';
+import { orderDeliveryAddress } from '../lib/orderDeliveryAddress';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
 import { useToasts } from '../hooks/useToasts';
 import { Modal } from './ui';
@@ -24,6 +25,7 @@ interface OrderDetailViewProps {
 
 const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, invoice, onUpdateStatus, onClose }) => {
     const [statusNote, setStatusNote] = useState('');
+    const deliveryAddress = orderDeliveryAddress(order);
     const isAdmin = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
     const isManager = currentUser.role === UserRole.MANAGER;
 
@@ -309,11 +311,33 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                         </div>
                     </div>
 
+                    {/* Delivery address — the order's own snapshot when it has one,
+                        otherwise the customer's standing address. Labelled either way,
+                        so "this went to head office" is visible rather than inferred. */}
+                    {deliveryAddress && (
+                        <div className="bg-stone-50 rounded-xl p-4">
+                            <p className="text-xs text-stone-500 uppercase tracking-wider mb-1">
+                                Delivery Address
+                            </p>
+                            <p className="text-sm text-stone-700">{deliveryAddress.text}</p>
+                            {order.deliveryAddress?.recipientName && (
+                                <p className="text-xs text-stone-500 mt-0.5">
+                                    Attn: {order.deliveryAddress.recipientName}
+                                </p>
+                            )}
+                            {deliveryAddress.source === 'customer' && (
+                                <p className="text-xs text-stone-400 mt-1">
+                                    Customer&rsquo;s account address &mdash; this order carried none of its own.
+                                </p>
+                            )}
+                        </div>
+                    )}
+
                     {/* Notes */}
                     {order.notes && (
                         <div className="bg-stone-50 rounded-xl p-4">
                             <p className="text-xs text-stone-500 uppercase tracking-wider mb-1">Order Notes</p>
-                            <p className="text-sm text-stone-700">{order.notes}</p>
+                            <p className="text-sm text-stone-700 whitespace-pre-line">{order.notes}</p>
                         </div>
                     )}
 

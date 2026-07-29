@@ -10,7 +10,7 @@
 // Aliases write themselves on Approve via approve-po's diff logic, so
 // nothing extra needs to happen here for the learning loop.
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -53,6 +53,7 @@ import type {
 import type { HorecaAddressRow } from '@/services/supabase/horecaAddressService'
 import type { HoReCa, Product } from '../../types'
 import { toProduct } from '@/lib/adapters'
+import { fetchPdfObjectUrl } from '@/lib/pdfObjectUrl'
 import { Modal } from '../ui'
 
 const FIELD_CLASS =
@@ -61,6 +62,12 @@ const FIELD_CLASS =
 /** Format a number as AUD currency for display of extracted PO prices. */
 function formatMoney(value: number): string {
   return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value)
+}
+
+/** Release a blob: URL. Tolerates null and the signed-URL case, so every
+ *  cleanup path can call it without first working out which kind it holds. */
+function revokeIfBlob(url: string | null): void {
+  if (url && url.startsWith('blob:')) URL.revokeObjectURL(url)
 }
 
 interface POInboxDetailModalProps {
@@ -140,6 +147,9 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
   const [saveToBook, setSaveToBook] = useState<boolean>(true)
 
   const [docUrl, setDocUrl] = useState<string | null>(null)
+  // The live blob: URL behind a PDF preview, so it can be revoked. Null for
+  // the image / DOCX paths, which render the signed URL directly.
+  const objectUrlRef = useRef<string | null>(null)
   const [docError, setDocError] = useState<string | null>(null)
   const [docLoading, setDocLoading] = useState(false)
   const [bodyText, setBodyText] = useState<string | null>(null)
@@ -168,6 +178,9 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       setDeliveryDate,
       setDeliveryTimeSlot,
       setNotes,
+      setAddressMode,
+      setNewAddress,
+      setSaveToBook,
     })
   }, [detailQuery.data])
 
@@ -184,13 +197,18 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
     setSelectedAddressId(def.id)
   }, [addresses, addressMode, selectedAddressId])
 
-  // Switching HoReCa wipes the picked address — addresses belong to one
-  // HoReCa, so a stale selection from the previous customer is wrong.
+  // Switching HoReCa wipes the PICKED address — address-book rows belong to one
+  // HoReCa, so a stale selection from the previous customer is wrong, and the
+  // effect above re-seeds the new customer's default.
+  //
+  // It deliberately leaves the new-address form alone. That form is seeded from
+  // the PO's own "Deliver To" block (seedAddressFromShipTo), which is a fact
+  // about the document, not about whichever customer record we matched it to —
+  // correcting the customer must not silently redirect the delivery. Resetting
+  // it here also used to undo that seed, since setHorecaId fires this effect on
+  // every load.
   useEffect(() => {
     setSelectedAddressId(null)
-    setAddressMode('saved')
-    setNewAddress(EMPTY_ADDRESS_FORM)
-    setSaveToBook(true)
   }, [horecaId])
 
   // Fetch document signed URL once we know which kind of document to show.
@@ -253,8 +271,20 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       attachmentName: sourceFilename ?? undefined,
       attachmentIndex: 0,
     })
-      .then(r => {
-        if (!cancelled) setDocUrl(r.signedUrl)
+      // PDFs are re-fetched into a same-origin blob: URL — Chrome will not run
+      // its PDF viewer inside a sandboxed frame, and lib/pdfObjectUrl.ts
+      // explains what pins the blob's type in exchange for dropping that
+      // sandbox. Images and DOCX keep the raw signed URL: <img> is already
+      // safe, and DOCX must download with its real type, not as a PDF.
+      .then(r => (format === 'pdf' ? fetchPdfObjectUrl(r.signedUrl) : r.signedUrl))
+      .then(url => {
+        // A superseded fetch must not leak the object URL it just created.
+        if (cancelled) {
+          revokeIfBlob(url)
+          return
+        }
+        objectUrlRef.current = url.startsWith('blob:') ? url : null
+        setDocUrl(url)
       })
       .catch(err => {
         if (!cancelled) setDocError(err instanceof Error ? err.message : String(err))
@@ -264,8 +294,20 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       })
     return () => {
       cancelled = true
+      revokeIfBlob(objectUrlRef.current)
+      objectUrlRef.current = null
     }
   }, [detailId, sourceFormat, sourceFilename, docNonce])
+
+  // Last line of defence for the object URL: the effect cleanup covers a
+  // re-run, this covers the modal simply closing.
+  useEffect(
+    () => () => {
+      revokeIfBlob(objectUrlRef.current)
+      objectUrlRef.current = null
+    },
+    [],
+  )
 
   const productById = useMemo(() => {
     const m = new Map<number, Product>()
@@ -530,6 +572,9 @@ interface InitArgs {
   setDeliveryDate: (v: string) => void
   setDeliveryTimeSlot: (v: DeliveryTimeSlot | '') => void
   setNotes: (v: string) => void
+  setAddressMode: (v: 'saved' | 'new') => void
+  setNewAddress: (v: NewAddressForm) => void
+  setSaveToBook: (v: boolean) => void
 }
 
 function initFormFromRow(detail: PendingPoDetailRow, args: InitArgs): void {
@@ -538,6 +583,47 @@ function initFormFromRow(detail: PendingPoDetailRow, args: InitArgs): void {
   args.setDeliveryDate(detail.extracted_po.requested_date ?? '')
   args.setDeliveryTimeSlot('')
   args.setNotes('')
+  seedAddressFromShipTo(detail, args)
+}
+
+/**
+ * Default the address pane to what the PO printed under "Deliver To".
+ *
+ * The previous default was the HoReCa's is_default address, which is wrong in
+ * both directions: with an address book it silently ships a builder's order to
+ * the customer's head office while the Approve button sits green and unworried,
+ * and with an EMPTY book (every customer created since migration 00021's
+ * backfill — `mutate-horeca` writes no address row) `addressOk` can never be
+ * satisfied and Approve stays disabled with nothing on screen explaining why.
+ *
+ * The document is the better default, and it matches what approve-po now does
+ * server-side when no override is sent. The operator can still switch to a saved
+ * address; that choice still wins.
+ *
+ * `save_to_horeca_address_book` is false here on purpose. An address lifted off
+ * a document was not chosen by anyone, and `city` carries the whole
+ * "Hallam VIC 3803" blob because the extraction schema has no postcode field —
+ * saving that would seed the customer's address book with a degraded row that
+ * then gets picked from a dropdown forever. Ticking the box is an explicit act.
+ */
+function seedAddressFromShipTo(detail: PendingPoDetailRow, args: InitArgs): void {
+  const shipTo = detail.extracted_po.ship_to
+  const street = shipTo?.street?.trim() ?? ''
+  if (!street) {
+    args.setAddressMode('saved')
+    args.setNewAddress(EMPTY_ADDRESS_FORM)
+    args.setSaveToBook(true)
+    return
+  }
+  args.setAddressMode('new')
+  args.setNewAddress({
+    street,
+    city: shipTo?.city?.trim() ?? '',
+    postcode: '',
+    country: '',
+    recipient_name: shipTo?.name?.trim() ?? '',
+  })
+  args.setSaveToBook(false)
 }
 
 export function buildEditableLines(
@@ -683,6 +769,13 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
             // srcDoc — content originated from an inbound email and MUST
             // be treated as attacker-controlled. sandbox="" disables
             // scripts, forms, popups, same-origin, and top-navigation.
+            //
+            // This is deliberately UNLIKE the PDF frame further down, which
+            // carries no sandbox. Raw email HTML has to be rendered as HTML,
+            // so the sandbox is the only control available here; a PDF can be
+            // pinned to a type that is never executable, so it doesn't need
+            // one — and cannot have one, because Chrome blocks its viewer in
+            // sandboxed frames. Keep them different.
             <iframe
               srcDoc={bodyHtml ?? ''}
               title="PO email body"
@@ -709,21 +802,24 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
             <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading document…
           </div>
         ) : format === 'pdf' ? (
-          // Chromium's built-in PDF viewer is an internal extension whose
-          // scripts must run to paint the viewer — "allow-same-origin" alone
-          // renders a blank/grey pane. The signed URL is cross-origin
-          // (supabase.co), so the framed document cannot reach the parent
-          // (vercel.app) even with both sandbox tokens; the "escape sandbox"
-          // caveat only applies to SAME-origin framed content. This does not
-          // run attacker-controlled JS embedded in the PDF — Chrome's PDFium
-          // viewer does not execute PDF-embedded scripts by default.
-          // Forms, popups, and top-navigation beyond the viewer stay blocked.
-          // The "Open in new tab" link above is the fallback if any browser
-          // still refuses to embed the document.
+          // DELIBERATELY NOT SANDBOXED — do not "fix" this to match the
+          // srcDoc frame below. Chrome refuses to instantiate its PDF viewer
+          // inside a sandboxed frame no matter which tokens are granted, and
+          // shows its own "This page has been blocked by Chrome" interstitial
+          // instead. Escalating the tokens was tried and is what produced that.
+          //
+          // What keeps this safe is `url`: a same-origin blob: URL whose type
+          // is PINNED to application/pdf by lib/pdfObjectUrl.ts, never taken
+          // from the server. So an attacker-supplied attachment can only ever
+          // be handed to Chrome's PDFium viewer, which does not execute
+          // PDF-embedded scripts by default — it can never be interpreted as
+          // HTML in our origin. Read that file before changing this.
+          //
+          // The "Open in new tab" link above is the fallback if some other
+          // browser still refuses to embed the document.
           <iframe
             src={url}
             title="PO document"
-            sandbox="allow-scripts allow-same-origin"
             referrerPolicy="no-referrer"
             className="w-full h-full min-h-[60vh] bg-white"
           />
