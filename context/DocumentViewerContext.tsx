@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Download, ExternalLink, FileText } from 'lucide-react';
 import { Modal } from '../components/ui';
+import { fetchPdfObjectUrl } from '../lib/pdfObjectUrl';
 
 // In-app PDF viewer. We preview signed documents inside the app (an <iframe>
 // over the fetched Blob) instead of window.open — because the signed URL is
@@ -8,6 +9,13 @@ import { Modal } from '../components/ui';
 // gesture and gets popup-blocked (silently). Fetching the Blob works post-await
 // (the bucket is CORS-open), and a same-origin blob: URL renders the PDF inline
 // with zero popup dependency.
+//
+// The fetch-to-blob step lives in lib/pdfObjectUrl.ts, shared with the PO Inbox
+// document pane. It pins the blob's type instead of inheriting the server's:
+// the frame is unsandboxed (Chrome blocks its PDF viewer in sandboxed frames),
+// so a blob typed text/html would execute in our origin. That matters most for
+// the PO pane, whose documents arrive from inbound email, but the guarantee is
+// worth having in one place rather than two.
 
 interface DocumentViewerContextValue {
   /** Fetch + preview a document. `resolver` returns the (short-lived) signed URL. */
@@ -50,11 +58,11 @@ export function DocumentViewerProvider({ children }: { children: React.ReactNode
       (async () => {
         try {
           const url = await resolver();
-          const res = await fetch(url);
-          if (!res.ok) throw new Error(`Couldn't load document (${res.status})`);
-          const blob = await res.blob();
-          if (seq !== requestSeq.current) return; // superseded / closed
-          const objectUrl = URL.createObjectURL(blob);
+          const objectUrl = await fetchPdfObjectUrl(url);
+          if (seq !== requestSeq.current) {
+            URL.revokeObjectURL(objectUrl); // superseded / closed — don't leak it
+            return;
+          }
           objectUrlRef.current = objectUrl;
           setState({ status: 'ready', title, filename, objectUrl });
         } catch (err) {

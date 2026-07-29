@@ -49,6 +49,7 @@ import {
 } from '../_shared/poInbox/aliasResolver.ts'
 import { detectSenderMismatch } from '../_shared/poInbox/senderTrust.ts'
 import { selectAttachments, type AttachmentMeta } from '../_shared/poInbox/attachmentSelect.ts'
+import { archivePrefixCandidates, isSafeStoredName } from '../_shared/poInbox/archivePaths.ts'
 
 interface ExtractRequest {
   inboundMessageId: string
@@ -588,25 +589,32 @@ async function buildAttachmentManifest(
       .sort((x, y) => x.storedName.localeCompare(y.storedName))
   }
 
-  const { data: listing, error: listError } = await serviceClient.storage
-    .from(ARCHIVE_BUCKET)
-    .list(prefix)
-  if (listError) {
-    throw new Error(`storage list ${prefix}: ${listError.message}`)
+  // Try both spellings of the prefix: storage_path_prefix is percent-encoded
+  // but list() compares its prefix literally while every path-based call is
+  // URL-decoded by storage-api. See _shared/poInbox/archivePaths.ts.
+  for (const candidate of archivePrefixCandidates(prefix)) {
+    const { data: listing, error: listError } = await serviceClient.storage
+      .from(ARCHIVE_BUCKET)
+      .list(candidate)
+    if (listError) {
+      throw new Error(`storage list ${candidate}: ${listError.message}`)
+    }
+    const metas = (listing ?? [])
+      .filter(entry => isSafeStoredName(entry.name))
+      .map(entry => {
+        const meta = (entry.metadata ?? {}) as { size?: number; mimetype?: string }
+        return {
+          storedName: entry.name,
+          filename: entry.name,
+          mimeType: (meta.mimetype ?? '').toLowerCase(),
+          size: typeof meta.size === 'number' ? meta.size : 0,
+          inline: false,
+        }
+      })
+      .sort((x, y) => x.storedName.localeCompare(y.storedName))
+    if (metas.length > 0) return metas
   }
-  return (listing ?? [])
-    .filter(entry => entry.name && entry.name !== 'original.json')
-    .map(entry => {
-      const meta = (entry.metadata ?? {}) as { size?: number; mimetype?: string }
-      return {
-        storedName: entry.name,
-        filename: entry.name,
-        mimeType: (meta.mimetype ?? '').toLowerCase(),
-        size: typeof meta.size === 'number' ? meta.size : 0,
-        inline: false,
-      }
-    })
-    .sort((x, y) => x.storedName.localeCompare(y.storedName))
+  return []
 }
 
 async function classifyIsPurchaseOrder(params: {

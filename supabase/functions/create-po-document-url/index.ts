@@ -14,8 +14,11 @@
 //      signed URL to a row the caller can already see, eliminating
 //      the "supply an arbitrary path" attack surface.
 //   3. The caller may request either:
-//        kind='original'             → /original.json
-//        kind='attachment', index=N → /{N}-{filename-from-extracted_po}
+//        kind='original'                  → /original.json
+//        kind='attachment', name='0-x.pdf' → that stored object
+//        kind='attachment', index=N        → the Nth stored object
+//      Either way the object must already exist under this row's prefix; the
+//      name is matched against the archive, never used to build a path.
 //
 // The TTL is short (5 minutes) — long enough for the operator to scroll
 // through a PDF, short enough to bound the replay window if the URL is
@@ -28,6 +31,13 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { EdgeFunctionError, errorResponse } from '../_shared/errors.ts'
 import { requireAuth } from '../_shared/auth.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
+import {
+  ARCHIVE_ENVELOPE_NAME,
+  archivePrefixCandidates,
+  isSafeStoredName,
+  pickAttachmentName,
+  sortStoredNames,
+} from '../_shared/poInbox/archivePaths.ts'
 
 interface SignUrlRequest {
   pendingPoId: string
@@ -157,41 +167,115 @@ async function resolvePath(
   // strip the bucket name so we have an in-bucket path.
   const inBucketPrefix = storagePathPrefix.replace(/^po-archive\//, '')
 
+  const archive = await resolveArchive(serviceClient, inBucketPrefix)
+
   if (body.kind === 'original') {
-    return `${inBucketPrefix}/original.json`
+    return `${archive.prefix}/${ARCHIVE_ENVELOPE_NAME}`
   }
 
-  // Attachments: resolve by LISTING the prefix and picking by index rather
-  // than reconstructing the filename. The write-time name went through
-  // poll-inbox's attachmentPath sanitizer with an `{index}-` prefix, and
-  // extract-po records that already-prefixed object name back into
-  // extracted_po.source.original_filename — so any client-side or
-  // reader-side filename reconstruction would mismatch (e.g. double the
-  // `{index}-` prefix). Listing the bucket is ground truth and mirrors how
-  // extract-po itself selects the primary document.
-  const { data: listing, error: listError } = await serviceClient.storage
-    .from(ARCHIVE_BUCKET)
-    .list(inBucketPrefix)
-  if (listError) {
-    throw new EdgeFunctionError('INTERNAL', `storage list: ${listError.message}`)
+  // Attachments: never reconstruct the filename. The write-time name went
+  // through poll-inbox's attachmentPath sanitizer with an `{index}-` prefix,
+  // and extract-po records that already-prefixed object name back into
+  // extracted_po.source.original_filename — so any reader-side
+  // reconstruction would mismatch (e.g. double the `{index}-` prefix).
+  if (archive.names.length === 0) {
+    throw new EdgeFunctionError('NOT_FOUND', 'archive has no attachments')
   }
-  const attachments = (listing ?? [])
-    .filter(entry => entry.name && entry.name !== 'original.json')
-    .sort((a, b) => a.name.localeCompare(b.name))
 
-  // Preferred: resolve by exact stored name (bound to this row's prefix, so
-  // still no arbitrary-path access). Falls back to positional index.
-  if (typeof body.attachmentName === 'string' && body.attachmentName.length > 0) {
-    const match = attachments.find(entry => entry.name === body.attachmentName)
-    if (!match) {
-      throw new EdgeFunctionError('NOT_FOUND', `no attachment named ${body.attachmentName}`)
+  const chosen = pickAttachmentName(archive.names, {
+    name: body.attachmentName,
+    index: body.attachmentIndex,
+  })
+  if (!chosen) {
+    // Name the alternatives — a miss here used to be undebuggable from the UI.
+    // Admin/Manager-only, and these are the operator's own filenames.
+    if (typeof body.attachmentName === 'string' && body.attachmentName.length > 0) {
+      throw new EdgeFunctionError(
+        'NOT_FOUND',
+        `no attachment named ${body.attachmentName} (archive holds: ${summarize(archive.names)})`,
+      )
     }
-    return `${inBucketPrefix}/${match.name}`
-  }
-
-  const entry = attachments[body.attachmentIndex as number]
-  if (!entry) {
     throw new EdgeFunctionError('NOT_FOUND', `no attachment at index ${body.attachmentIndex}`)
   }
-  return `${inBucketPrefix}/${entry.name}`
+
+  return `${archive.prefix}/${chosen}`
+}
+
+interface ResolvedArchive {
+  /** The prefix objects are ACTUALLY stored under — sign against this. */
+  prefix: string
+  /** Attachment object names under that prefix, sorted, envelope excluded. */
+  names: string[]
+}
+
+/**
+ * Find the spelling of the prefix that Storage really used, and the attachment
+ * names under it.
+ *
+ * `storage_path_prefix` is percent-encoded (Graph message ids carry '/' and
+ * '='), but a Storage key may not contain '%' at all — so `upload()`, whose
+ * path travels in the request URL, wrote the objects under the DECODED prefix.
+ * Signing the encoded spelling produces a URL that 400s `InvalidKey` at fetch
+ * time, which is a failure the signing call itself does not report.
+ *
+ * Listing settles it: whichever candidate prefix returns objects is the one
+ * they live under. That is ground truth for both the envelope and the
+ * attachments, so it is resolved once here.
+ */
+async function resolveArchive(
+  serviceClient: SupabaseClient,
+  inBucketPrefix: string,
+): Promise<ResolvedArchive> {
+  const candidates = archivePrefixCandidates(inBucketPrefix)
+  for (const prefix of candidates) {
+    const { data: listing, error: listError } = await serviceClient.storage
+      .from(ARCHIVE_BUCKET)
+      .list(prefix)
+    if (listError) {
+      throw new EdgeFunctionError('INTERNAL', `storage list: ${listError.message}`)
+    }
+    const entries = listing ?? []
+    // A body-only email archives just original.json — still enough to identify
+    // the prefix, and it correctly yields zero attachments.
+    if (entries.length > 0) {
+      const names = entries.map(entry => entry.name).filter(isSafeStoredName)
+      return { prefix, names: sortStoredNames(names) }
+    }
+  }
+
+  // Nothing listed anywhere: fall back to the manifest for names and to the
+  // decoded prefix (candidates[0]) for the path, since that is the spelling
+  // Storage accepts. Reached only for an archive we cannot see by listing.
+  const prefix = candidates[0]
+  return { prefix, names: await manifestNames(serviceClient, prefix) }
+}
+
+/** Attachment names from the manifest poll-inbox writes into original.json. */
+async function manifestNames(
+  serviceClient: SupabaseClient,
+  prefix: string,
+): Promise<string[]> {
+  const { data: blob, error } = await serviceClient.storage
+    .from(ARCHIVE_BUCKET)
+    .download(`${prefix}/${ARCHIVE_ENVELOPE_NAME}`)
+  if (error || !blob) return []
+  try {
+    const envelope = JSON.parse(await blob.text()) as {
+      attachments?: Array<{ storedName?: unknown }>
+    }
+    const names = (envelope.attachments ?? [])
+      .map(a => a?.storedName)
+      .filter(isSafeStoredName)
+    return sortStoredNames(names)
+  } catch (err) {
+    console.warn('[create-po-document-url] unreadable envelope:', err)
+    return []
+  }
+}
+
+/** First few names, bounded, for an error message. */
+function summarize(names: string[]): string {
+  const shown = names.slice(0, 5).join(', ')
+  const suffix = names.length > 5 ? `, +${names.length - 5} more` : ''
+  return `${shown}${suffix}`.slice(0, 240)
 }

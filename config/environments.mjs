@@ -48,6 +48,11 @@ export const ENVIRONMENTS = {
     corsOrigins: [
       'https://nexorder.vercel.app',
       'http://localhost:3000',
+      // Vite's fallback port when a second dev server is already on :3000.
+      // Listed so a tab that landed there is not a silent CORS failure — an
+      // origin that works in practice but is missing from this file is what
+      // makes "Failed to send a request to the Edge Function" unreadable.
+      'http://localhost:3001',
     ],
 
     /**
