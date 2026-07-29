@@ -19,6 +19,7 @@ import {
   FileText,
   Loader2,
   MapPin,
+  NotebookPen,
   Plus,
   RefreshCw,
   Trash2,
@@ -38,7 +39,11 @@ import { getPoDocumentUrl, senderMismatch } from '@/services/supabase/poInboxSer
 import type { ApproveDeliveryAddress } from '@/services/supabase/poInboxService'
 import { useToasts } from '@/hooks/useToasts'
 import ConfidenceRing from './ConfidenceRing'
-import { confidenceReasoning, statusBadge } from './poInboxFormat'
+import { builderLabel, confidenceReasoning, statusBadge } from './poInboxFormat'
+// Shared with approve-po, which uses the same helpers to fold these blocks into
+// orders.notes — so what the reviewer reads here and what the picker is handed
+// can never drift apart.
+import { documentNoteText } from '@/supabase/functions/_shared/poInbox/documentNotes'
 import ProductSearchDropdown from './ProductSearchDropdown'
 import type {
   ExtractedPoLine,
@@ -816,6 +821,12 @@ const FormPane: React.FC<FormPaneProps> = props => {
           poNumber={extractedPo.po_number}
           orderDate={extractedPo.order_date}
           requestedDate={extractedPo.requested_date}
+          builder={builderLabel(props.detail.builder)}
+        />
+
+        <PrintedNotes
+          notes={extractedPo.notes}
+          deliveryInstructions={extractedPo.delivery_instructions}
         />
 
         {/* Customer */}
@@ -1029,24 +1040,72 @@ function readConfidence(perField: Record<string, unknown>, key: string): number 
 // Supporting subcomponents for the rebuilt right pane
 // ---------------------------------------------------------------------------
 
+// Module scope, not inside POHeaderChips: a component declared in a render body
+// is a new type on every render, so React unmounts and remounts the whole subtree.
+const Chip: React.FC<{ label: string; value: string | null; title?: string }> = ({
+  label,
+  value,
+  title,
+}) => (
+  <div className="flex flex-col min-w-0">
+    <span className="text-[10px] uppercase tracking-wide text-stone-500">{label}</span>
+    <span className="text-xs font-medium text-stone-900 truncate" title={title}>
+      {value && value.trim().length > 0 ? value : <span className="text-stone-400 italic">—</span>}
+    </span>
+  </div>
+)
+
 const POHeaderChips: React.FC<{
   poNumber: string | null
   orderDate: string | null
   requestedDate: string | null
-}> = ({ poNumber, orderDate, requestedDate }) => {
-  const Chip: React.FC<{ label: string; value: string | null }> = ({ label, value }) => (
-    <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-wide text-stone-500">{label}</span>
-      <span className="text-xs font-medium text-stone-900 truncate">
-        {value && value.trim().length > 0 ? value : <span className="text-stone-400 italic">—</span>}
-      </span>
-    </div>
-  )
+  builder: string | null
+}> = ({ poNumber, orderDate, requestedDate, builder }) => (
+  // Two columns on narrow panes so four chips don't crush; four from sm up.
+  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pb-3 border-b border-stone-200/70">
+    <Chip label="PO #" value={poNumber} />
+    <Chip label="Order date" value={orderDate} />
+    <Chip label="Requested" value={requestedDate} />
+    <Chip label="Builder" value={builder} title={builder ?? undefined} />
+  </div>
+)
+
+/**
+ * The whole-document text the customer printed on the PO — the "Notes" and
+ * "Delivery Instructions" blocks. Read-only: this is what they wrote, and it is
+ * deliberately kept apart from the editable "Notes (admin-internal)" box lower
+ * down, which is the reviewer's own. approve-po is what carries this text onto
+ * orders.notes, including for auto-approvals that never open this modal.
+ *
+ * Amber rather than a neutral tone: the usual content is a fulfilment caveat
+ * ("Don't deliver outdoor unit as it will be called up at a later date") that
+ * changes what the warehouse does, so it should catch the eye.
+ */
+const PrintedNotes: React.FC<{
+  notes: string | null | undefined
+  deliveryInstructions: string | null | undefined
+}> = ({ notes, deliveryInstructions }) => {
+  const body = documentNoteText(notes)
+  const delivery = documentNoteText(deliveryInstructions)
+  if (!body && !delivery) return null
+
   return (
-    <div className="grid grid-cols-3 gap-4 pb-3 border-b border-stone-200/70">
-      <Chip label="PO #" value={poNumber} />
-      <Chip label="Order date" value={orderDate} />
-      <Chip label="Requested" value={requestedDate} />
+    <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+        <NotebookPen className="w-3.5 h-3.5 shrink-0" />
+        Notes on this PO
+      </div>
+      {/* whitespace-pre-line: these blocks carry meaningful line breaks — the
+          affected part numbers are listed one per line under the note. */}
+      {body && (
+        <p className="mt-1.5 text-xs text-stone-800 whitespace-pre-line">{body}</p>
+      )}
+      {delivery && (
+        <p className="mt-2 text-xs text-stone-800 whitespace-pre-line">
+          <span className="text-stone-500">Delivery instructions: </span>
+          {delivery}
+        </p>
+      )}
     </div>
   )
 }

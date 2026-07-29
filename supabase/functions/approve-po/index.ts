@@ -36,6 +36,7 @@ import { requireAuth } from '../_shared/auth.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { computeAliasDiff } from '../_shared/poInbox/aliasDiff.ts'
+import { composeOrderNotes } from '../_shared/poInbox/documentNotes.ts'
 import { sanitizeForLog } from '../_shared/poInbox/env.ts'
 import { isServiceRoleBearer } from '../_shared/poInbox/dispatch.ts'
 import { findStockShortages, type StockShortage } from '../_shared/poInbox/stockCheck.ts'
@@ -427,7 +428,13 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
       submitted_by: submittedBy,
       total,
       order_date: new Date().toISOString(),
-      notes: args.overrides.notes ?? null,
+      // Fall back to whatever the PO itself printed under "Notes" / "Delivery
+      // Instructions" — same shape as delivery_date below. This is the only
+      // path those instructions have onto the order for mode:'auto', where
+      // nobody ever opens the review modal, and "don't deliver the outdoor
+      // unit yet" needs to reach whoever picks it. An operator's typed note
+      // still wins.
+      notes: args.overrides.notes ?? composeOrderNotes(pending.extracted_po),
       status: 'processing',
       // jsonb array (CHECK orders_status_history_is_array) — pass the array
       // directly, NOT JSON.stringify'd, matching place-order / update-order-status.

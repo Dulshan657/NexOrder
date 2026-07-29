@@ -65,6 +65,22 @@ export function statusBadge(status: PendingPoStatus): StatusBadgeStyle {
   }
 }
 
+/**
+ * Normalise the builder named on a PO for display.
+ *
+ * Three distinct inputs all mean "no builder" and must collapse to one:
+ * rows extracted before the field shipped (key absent -> null), documents with
+ * no builder at all (model returns null), and documents that print a "Builder:"
+ * heading with nothing under it (model returns an empty or blank string).
+ * Extracted values also routinely carry surrounding whitespace, since the label
+ * and value sit on separate lines in the source PDF.
+ */
+export function builderLabel(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
 export function confidenceBadgeStyle(confidence: number): string {
   if (confidence >= 0.95) return 'bg-emerald-50 text-emerald-700 border-emerald-200'
   if (confidence >= 0.75) return 'bg-amber-50 text-amber-800 border-amber-200'

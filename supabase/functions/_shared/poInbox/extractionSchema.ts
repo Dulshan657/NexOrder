@@ -43,9 +43,22 @@ export const EXTRACT_PO_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    po_number: { type: ['string', 'null'], maxLength: MAX_FIELD_CHARS },
+    po_number: {
+      type: ['string', 'null'],
+      maxLength: MAX_FIELD_CHARS,
+      description:
+        'The buyer\'s purchase-order number, taken from the value printed against a ' +
+        '"Purchase Order No" / "PO Number" / "Order No" label. Never a telephone, fax, ' +
+        'ABN, account, invoice or quote number.',
+    },
     customer_name_raw: { type: ['string', 'null'], maxLength: MAX_FIELD_CHARS },
     customer_id_guess: { type: ['string', 'null'], maxLength: MAX_FIELD_CHARS },
+    builder: {
+      type: ['string', 'null'],
+      maxLength: MAX_FIELD_CHARS,
+      description:
+        'Home builder / head contractor the job is for, verbatim; null if the document names none.',
+    },
     order_date: {
       type: ['string', 'null'],
       maxLength: 32,
@@ -62,14 +75,41 @@ export const EXTRACT_PO_SCHEMA = {
           type: 'object',
           additionalProperties: false,
           properties: {
-            name: { type: ['string', 'null'], maxLength: MAX_FIELD_CHARS },
-            street: { type: ['string', 'null'], maxLength: MAX_FIELD_CHARS },
-            city: { type: ['string', 'null'], maxLength: MAX_FIELD_CHARS },
+            name: {
+              type: ['string', 'null'],
+              maxLength: MAX_FIELD_CHARS,
+              description: 'Recipient named on the delivery address, if one is printed.',
+            },
+            street: {
+              type: ['string', 'null'],
+              maxLength: MAX_FIELD_CHARS,
+              description: 'Street line of the DELIVERY address, not the supplier\'s.',
+            },
+            city: {
+              type: ['string', 'null'],
+              maxLength: MAX_FIELD_CHARS,
+              description: 'Suburb/city (and state/postcode) of the delivery address.',
+            },
           },
           required: ['name', 'street', 'city'],
         },
         { type: 'null' },
       ],
+    },
+    notes: {
+      type: ['string', 'null'],
+      maxLength: MAX_NOTES_CHARS,
+      description:
+        'Whole-document notes, verbatim — the block labelled "Notes" that applies to the ' +
+        'order as a whole. Not the per-line notes below.',
+    },
+    delivery_instructions: {
+      type: ['string', 'null'],
+      maxLength: MAX_NOTES_CHARS,
+      description:
+        'Whole-document delivery instructions, verbatim — the block labelled ' +
+        '"Delivery Instructions". Separate from notes; null when the document has no ' +
+        'such block.',
     },
     lines: {
       type: 'array',
@@ -124,13 +164,20 @@ export const EXTRACT_PO_SCHEMA = {
       ],
     },
   },
+  // Every property must be listed here: the schema is sent with strict:true and
+  // additionalProperties:false, under which OpenAI rejects the request outright
+  // (400 invalid_schema) if a declared property is missing from `required`.
+  // Optionality is expressed by the ['string','null'] type, not by omission.
   required: [
     'po_number',
     'customer_name_raw',
     'customer_id_guess',
+    'builder',
     'order_date',
     'requested_date',
     'ship_to',
+    'notes',
+    'delivery_instructions',
     'lines',
     'confidence',
   ],
@@ -174,9 +221,20 @@ export interface ExtractedPo {
   po_number: string | null
   customer_name_raw: string | null
   customer_id_guess: string | null
+  /** Home builder / head contractor the job is for. Informational only — it does
+   *  not participate in customer matching or the auto-approval gates, which is
+   *  why (like customer_id_guess) it has no `confidence` sibling. */
+  builder: string | null
   order_date: string | null
   requested_date: string | null
   ship_to: ExtractedShipTo | null
+  /** Whole-document "Notes" block, verbatim. Distinct from ExtractedLine.notes,
+   *  which is per-line. Like builder, informational and without a `confidence`
+   *  sibling — it gates nothing. */
+  notes: string | null
+  /** Whole-document "Delivery Instructions" block, verbatim. Kept separate from
+   *  `notes`: one is a fulfilment caveat, the other is how to deliver. */
+  delivery_instructions: string | null
   lines: ExtractedLine[]
   confidence: ExtractedConfidence
 }
@@ -190,6 +248,24 @@ Extract the structured fields exactly as they appear on the document.
 
 Rules:
 * Set fields to null when the document does not contain them. Do not guess.
+* Bind every value to its printed LABEL, never to whichever text happens to
+  sit nearest it. These documents are laid out in columns, so a label and its
+  value are routinely separated by several unrelated lines, and a run of
+  labels ("Issue Date:", "Purchase Order No:", "Tel:", "Fax:") is often
+  followed by a run of values in a different order. Read the label, then find
+  the value that belongs to it. If you cannot tell which value belongs to a
+  label, return null for that field and give it a LOW confidence rather than
+  taking the closest candidate.
+* po_number is the buyer's purchase-order number, printed against a
+  "Purchase Order No" / "PO Number" / "Order No" label. It is never a
+  telephone number, a fax number, an ABN, an account number, an invoice
+  number or a quote number. If the only candidate you can see is also printed
+  against a "Tel" or "Fax" label, that is the wrong value: return null and
+  set confidence.po_number low.
+* ship_to is the DELIVERY address — the block labelled "Deliver To", "Ship
+  To" or "Delivery Address". It is NOT the "Supplier" block (the business the
+  order is being sent TO, i.e. whoever is being asked to supply the goods),
+  and it is NOT the buyer's own letterhead or postal address.
 * Quantity must be a number; if the document says "two pallets" of an item,
   quantity=2 and uom="Pallet".
 * item_code_raw is the customer's product code as printed (e.g., "402",
@@ -200,6 +276,17 @@ Rules:
   ex-GST and inc-GST prices are shown, use the ex-GST figure. Do not
   divide an extended/line total by quantity — only report a price the
   document states per unit. Null when no per-unit price is printed.
+* builder is the home builder / head contractor the job is being carried out
+  for, when the document names one — usually a labelled "Builder:" field in
+  the lower half of the page, near a job or site address. It is NOT the
+  supplier, NOT the customer placing the order, and NOT the delivery
+  recipient. Copy the name verbatim as printed. Null when absent or blank.
+* The top-level notes and delivery_instructions are WHOLE-DOCUMENT blocks,
+  usually printed near the bottom under headings of those names. Copy each
+  verbatim, including any part numbers listed beneath it. They are separate
+  from each other, and both are separate from the per-line notes inside
+  lines[] — never move text between the three. Null when a block is absent
+  or empty.
 * Dates: ISO yyyy-mm-dd. Resolve ambiguous formats by preferring the
   newer date in the document (PO date is usually printed before
   requested-delivery date).
