@@ -391,7 +391,11 @@ function cellKey(floor: number, x: number, y: number): string {
 // priority order and rebuild each object from its surviving cells so every
 // cell has exactly one owner before bin placement (blockedCellKeys) ever runs.
 
-const OVERLAP_PRIORITY: Record<Exclude<NormalizedObjectType, 'label'>, number> = {
+// Exported so the interactive designer's "Clean up overlaps" repair
+// (components/admin/layout/resolveOverlaps.ts) resolves a hand-drawn layout in
+// exactly the same order this normalizer resolves an AI-imported one. Two
+// different answers to "who owns this cell" would be worse than either.
+export const OVERLAP_PRIORITY: Record<Exclude<NormalizedObjectType, 'label'>, number> = {
   dock: 0,
   lift: 1,
   wall: 2,

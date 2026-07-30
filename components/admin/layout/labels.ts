@@ -9,3 +9,36 @@ export const STORAGE_UNIT = {
   lower: 'rack',
   lowerPlural: 'racks',
 } as const
+
+import type { OccupantKind } from './useLayoutEditorState'
+import type { EditorTool } from './useLayoutEditorState'
+
+/** What already owns a cell, said the way an operator would say it. Used by the
+ *  "can't draw here" hint, so `storage` reads as the STORAGE_UNIT wording rather
+ *  than leaking the internal 'BIN'/'storage' vocabulary. */
+export const OCCUPANT_LABEL: Record<OccupantKind, string> = {
+  wall: 'wall',
+  walkway: 'walkway',
+  dock: 'dock',
+  lift: 'lift',
+  conveyor: 'conveyor',
+  staging: 'staging floor',
+  obstacle: 'obstacle',
+  label: 'label',
+  storage: STORAGE_UNIT.lower,
+}
+
+/** What the operator is currently trying to draw. */
+export const TOOL_LABEL: Record<EditorTool, string> = {
+  select: 'selection',
+  walkway: 'a walkway',
+  wall: 'a wall',
+  dock: 'a dock',
+  lift: 'a lift',
+  conveyor: 'a conveyor',
+  staging: 'a staging floor',
+  obstacle: 'an obstacle',
+  label: 'a label',
+  rack: `a ${STORAGE_UNIT.lower}`,
+  erase: 'an erase',
+}

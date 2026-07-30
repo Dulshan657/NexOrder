@@ -91,3 +91,37 @@ export function levelRoleLabel(roles: readonly LevelRoleRecord[], key: string | 
   const full = roleLabel(roles, key)
   return full.length > 12 ? `${full.slice(0, 11)}…` : full
 }
+
+// ── Merged object regions (objectRegions.ts) ──────────────────────────────
+// Still add-only. Nothing above this line is edited.
+
+/**
+ * Outline colour per structural object type, for the merged-region silhouette.
+ *
+ * Objects carried NO stroke while every cell drew its own 1px-inset rounded rect —
+ * the inset WAS the separator, and it is also what made a drawn wall read as a
+ * grid of squares. A merged region has no inset, so without a real stroke a wall
+ * run bleeds straight into the walkway beside it. Each value is a step or two
+ * darker than the matching OBJECT_FILL so the material still reads the same.
+ */
+export const OBJECT_STROKE: Record<LayoutObjectType, string> = {
+  walkway: '#38bdf8',
+  wall: '#0c0a09',
+  dock: '#b45309',
+  obstacle: '#57534e',
+  label: '#a8a29e',
+  lift: '#8b5cf6',
+  conveyor: '#ea580c',
+  staging: '#2dd4bf',
+}
+
+/** LEGEND_ITEMS with the merged-region stroke applied, so a swatch's border
+ *  matches the outline the canvas now draws. DERIVED rather than edited in place,
+ *  because LEGEND_ITEMS sits above this file's add-only line. `LegendItem` already
+ *  carries an optional `stroke` and LayoutLegend's Swatch already renders it, so
+ *  the only component change is which constant it imports. */
+export const LEGEND_ITEMS_WITH_STROKE: LegendItem[] = LEGEND_ITEMS.map((item) =>
+  item.key in OBJECT_STROKE
+    ? { ...item, stroke: OBJECT_STROKE[item.key as LayoutObjectType] }
+    : item,
+)

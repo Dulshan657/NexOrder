@@ -89,6 +89,27 @@ export interface EditorState {
   codePrefix: string
   /** The storage form the 'rack' tool paints; null = generic bin (10 pallet). */
   activeForm: ActiveStorageForm | null
+  /** Set when a paint stroke was REFUSED because something incompatible already
+   *  owns the cell (see ALLOWED_COOCCUPANTS). Purely a UI hint channel — the
+   *  reducer is pure and cannot toast, and silently returning state unchanged
+   *  (the old behaviour) reads to the operator as "the tool is broken".
+   *
+   *  Consumers key off `seq`, never off presence: a second refusal at the SAME
+   *  cell still bumps `seq`, so a canvas flash re-triggers. `count` is set only
+   *  by generate_bins (how many cells the wizard skipped). Cleared by every
+   *  successful paint; deliberately untouched by every other action. */
+  blockedAt: BlockedPaint | null
+}
+
+export interface BlockedPaint {
+  x: number
+  y: number
+  floor: number
+  blockedBy: OccupantKind
+  tool: EditorTool
+  /** Cells skipped by a batch fill; absent for a single refused stroke. */
+  count?: number
+  seq: number
 }
 
 export type EditorAction =
@@ -107,12 +128,15 @@ export type EditorAction =
   | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number }> }
   | { type: 'mark_saved'; refMap: Array<{ client_ref: string; location_id: number }> }
   | { type: 'apply_auto_connect'; objects: Array<Pick<EditorObject, 'objectType' | 'floor' | 'x' | 'y' | 'w' | 'h'> & Partial<Pick<EditorObject, 'meta' | 'stagingLocationId'>>> }
+  // Wholesale object replace from resolveLayoutOverlaps (the "Clean up overlaps"
+  // repair). Placements are never touched by it.
+  | { type: 'apply_overlap_repair'; objects: Array<Pick<EditorObject, 'objectType' | 'floor' | 'x' | 'y' | 'w' | 'h'> & Partial<Pick<EditorObject, 'meta' | 'stagingLocationId'>>> }
   // Rack levels (mig 00072).
   | { type: 'set_rack_levels'; ref: string; levels: RackLevel[] }
   | { type: 'apply_levels_to_selection'; levels: RackLevel[] }
 
 export function initialEditorState(codePrefix = 'W'): EditorState {
-  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, selectedRefs: new Set(), dirty: false, seq: 1, codePrefix, activeForm: null }
+  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, selectedRefs: new Set(), dirty: false, seq: 1, codePrefix, activeForm: null, blockedAt: null }
 }
 
 /** Single-selection helper: `selectedRefs` always mirrors `selectedRef` as its
@@ -133,12 +157,160 @@ const OBJECT_TOOLS: Partial<Record<EditorTool, LayoutObjectType>> = {
   label: 'label',
 }
 
-function objectAt(state: EditorState, x: number, y: number): EditorObject | undefined {
-  return state.objects.find((o) => o.floor === state.floor && o.x === x && o.y === y)
+/** True when (x,y) falls inside a rect's footprint. `Math.max(1, …)` defends
+ *  against a 0/NaN w or h off a bad server row — zoneRegions.ts guards the same
+ *  way. */
+export function covers(r: { x: number; y: number; w: number; h: number }, x: number, y: number): boolean {
+  return x >= r.x && x < r.x + Math.max(1, r.w) && y >= r.y && y < r.y + Math.max(1, r.h)
 }
 
-function placementAt(state: EditorState, x: number, y: number): EditorPlacement | undefined {
-  return state.placements.find((p) => p.floor === state.floor && p.x === x && p.y === y)
+/**
+ * AABB containment, NOT top-left equality.
+ *
+ * Multi-cell objects have existed in production data for a long time — the
+ * floor-plan importer emits them, `resolveObjectOverlaps` emits them, and the
+ * WIE demo seeds a `w:1,h:14` wall — but every hit test here used to match only
+ * an object's own top-left cell. So a 14-cell imported wall could not be
+ * selected or erased from anywhere except its top cell, and painting over its
+ * middle silently stacked a second object underneath it.
+ */
+export function objectAt(state: EditorState, x: number, y: number): EditorObject | undefined {
+  return state.objects.find((o) => o.floor === state.floor && covers(o, x, y))
+}
+
+export function placementAt(state: EditorState, x: number, y: number): EditorPlacement | undefined {
+  return state.placements.find((p) => p.floor === state.floor && covers(p, x, y))
+}
+
+/** Everything that can own a grid cell. `'storage'` is any EditorPlacement
+ *  (bin/rack); the rest are LayoutObjectType verbatim. */
+export type OccupantKind = LayoutObjectType | 'storage'
+
+export interface CellOccupant {
+  kind: OccupantKind
+  clientRef: string
+}
+
+/**
+ * WHICH KINDS MAY SHARE ONE CELL. Read as: an incoming occupant of kind K may
+ * join a cell only if EVERY existing occupant's kind is in
+ * ALLOWED_COOCCUPANTS[K]. Anything unlisted blocks — including across categories,
+ * so a rack cannot share a cell with a wall and a wall cannot share one with a
+ * rack.
+ *
+ * Only two exemptions, both principled:
+ *  - `label` is annotation, not structure. It co-exists with everything: it is
+ *    already exempt from the AI importer's resolveObjectOverlaps and is
+ *    non-blocking in publishReadiness' buildWalkableCells.
+ *  - `staging` ↔ `dock`: a dock IS the doorway onto the shipping/receiving
+ *    floor, and buildWalkableCells already treats both as plain walkable ground.
+ *
+ * Cross-category overlap is what silently broke publishing: buildWalkableCells
+ * subtracts every placement footprint, so a dock or walkway drawn under a bin
+ * stops counting and the layout reports `no_walkways`/`unreachable_bins` for a
+ * cause nothing in the UI ever named.
+ *
+ * MUST BE SYMMETRIC — isBlocked only looks the matrix up in one direction. A
+ * unit test asserts symmetry rather than trusting a hand-read.
+ */
+export const ALLOWED_COOCCUPANTS: Record<OccupantKind, readonly OccupantKind[]> = {
+  label: ['label', 'wall', 'dock', 'walkway', 'obstacle', 'lift', 'conveyor', 'staging', 'storage'],
+  wall: ['label'],
+  dock: ['label', 'staging'],
+  walkway: ['label'],
+  obstacle: ['label'],
+  lift: ['label'],
+  conveyor: ['label'],
+  staging: ['label', 'dock'],
+  storage: ['label'],
+}
+
+/** The one place the matrix is consulted. */
+function isBlocked(existing: OccupantKind, incoming: OccupantKind): boolean {
+  return !ALLOWED_COOCCUPANTS[incoming].includes(existing)
+}
+
+const cellKey = (x: number, y: number) => `${x}:${y}`
+
+/** Every occupant of (x,y) on the current floor — objects AND placements. */
+export function occupantsAt(state: EditorState, x: number, y: number): CellOccupant[] {
+  const out: CellOccupant[] = []
+  for (const o of state.objects) {
+    if (o.floor === state.floor && covers(o, x, y)) out.push({ kind: o.objectType, clientRef: o.clientRef })
+  }
+  for (const p of state.placements) {
+    if (p.floor === state.floor && covers(p, x, y)) out.push({ kind: 'storage', clientRef: p.clientRef })
+  }
+  return out
+}
+
+/** The first occupant forbidding `kind` at (x,y), or null. */
+export function blockerAt(state: EditorState, x: number, y: number, kind: OccupantKind): CellOccupant | null {
+  return occupantsAt(state, x, y).find((occ) => isBlocked(occ.kind, kind)) ?? null
+}
+
+/** Batch form for whole-rectangle work (generate_bins, the repair pass):
+ *  rasterizes one floor ONCE instead of rescanning every object per cell. A
+ *  120×80 Rack Wizard fill is 9,600 cells, so the linear form would be
+ *  9,600 × |objects|. */
+export function buildOccupancyIndex(state: EditorState, floor = state.floor): Map<string, CellOccupant[]> {
+  const index = new Map<string, CellOccupant[]>()
+  const add = (x: number, y: number, occ: CellOccupant) => {
+    const key = cellKey(x, y)
+    const bucket = index.get(key)
+    if (bucket) bucket.push(occ)
+    else index.set(key, [occ])
+  }
+  for (const o of state.objects) {
+    if (o.floor !== floor) continue
+    for (let dy = 0; dy < Math.max(1, o.h); dy++) {
+      for (let dx = 0; dx < Math.max(1, o.w); dx++) add(o.x + dx, o.y + dy, { kind: o.objectType, clientRef: o.clientRef })
+    }
+  }
+  for (const p of state.placements) {
+    if (p.floor !== floor) continue
+    for (let dy = 0; dy < Math.max(1, p.h); dy++) {
+      for (let dx = 0; dx < Math.max(1, p.w); dx++) add(p.x + dx, p.y + dy, { kind: 'storage', clientRef: p.clientRef })
+    }
+  }
+  return index
+}
+
+export function blockedByIndex(
+  index: Map<string, CellOccupant[]>,
+  x: number,
+  y: number,
+  kind: OccupantKind,
+): CellOccupant | null {
+  return (index.get(cellKey(x, y)) ?? []).find((occ) => isBlocked(occ.kind, kind)) ?? null
+}
+
+/** Refuse a stroke: record the hint, change nothing else. Notably does NOT set
+ *  `dirty` — a refused stroke edited nothing. */
+function refuse(state: EditorState, x: number, y: number, blockedBy: OccupantKind, count?: number): EditorState {
+  return {
+    ...state,
+    blockedAt: { x, y, floor: state.floor, blockedBy, tool: state.tool, count, seq: (state.blockedAt?.seq ?? 0) + 1 },
+  }
+}
+
+/** Explode a rect into the 1×1 fragments it covers, minus one cell. Used by
+ *  erase so clicking the middle of a multi-cell object removes just that cell
+ *  rather than the whole shape — cheap, because this editor's own paint tools
+ *  only ever mint 1×1 objects anyway, and the canvas re-merges contiguous cells
+ *  visually so the remainder still reads as one wall. */
+function fragmentsExcluding(o: EditorObject, x: number, y: number, startSeq: number): { objects: EditorObject[]; seq: number } {
+  const objects: EditorObject[] = []
+  let seq = startSeq
+  for (let dy = 0; dy < Math.max(1, o.h); dy++) {
+    for (let dx = 0; dx < Math.max(1, o.w); dx++) {
+      const cx = o.x + dx
+      const cy = o.y + dy
+      if (cx === x && cy === y) continue
+      objects.push({ ...o, clientRef: `o${seq++}`, x: cx, y: cy, w: 1, h: 1 })
+    }
+  }
+  return { objects, seq }
 }
 
 function withoutRef(refs: Set<string>, ref: string): Set<string> {
@@ -179,28 +351,58 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         const obj = objectAt(state, x, y)
         const place = placementAt(state, x, y)
         if (!obj && !place) return state
-        const erasedSelectedRef = place && place.clientRef === state.selectedRef
-        const selectedRefs = place ? withoutRef(state.selectedRefs, place.clientRef) : state.selectedRefs
+        // An object erases PER CELL: a multi-cell rect is rebuilt as 1×1
+        // fragments minus this cell, so clicking the middle of an imported wall
+        // opens a doorway instead of deleting the whole run. A PLACEMENT erases
+        // whole — it is one addressable location with one code, and fragmenting
+        // it would mint N bins claiming the same code.
+        let objects = state.objects
+        let seq = state.seq
+        if (obj) {
+          const isMultiCell = Math.max(1, obj.w) * Math.max(1, obj.h) > 1
+          if (isMultiCell) {
+            const split = fragmentsExcluding(obj, x, y, seq)
+            seq = split.seq
+            objects = [...state.objects.filter((o) => o !== obj), ...split.objects]
+          } else {
+            objects = state.objects.filter((o) => o !== obj)
+          }
+        }
+        const erasedRefs = [place?.clientRef, obj && Math.max(1, obj.w) * Math.max(1, obj.h) === 1 ? obj.clientRef : undefined]
+        const erasedSelected = erasedRefs.some((r) => r && r === state.selectedRef)
+        let selectedRefs = state.selectedRefs
+        for (const r of erasedRefs) if (r) selectedRefs = withoutRef(selectedRefs, r)
         return {
           ...state,
-          objects: state.objects.filter((o) => o !== obj),
+          objects,
           placements: state.placements.filter((p) => p !== place),
-          selectedRef: erasedSelectedRef ? null : state.selectedRef,
+          selectedRef: erasedSelected ? null : state.selectedRef,
           selectedRefs,
+          seq,
           dirty: true,
+          blockedAt: null,
         }
       }
 
       const objectType = OBJECT_TOOLS[state.tool]
       if (objectType) {
-        // Don't stack; replace whatever object is already in the cell.
-        const without = state.objects.filter((o) => !(o.floor === state.floor && o.x === x && o.y === y))
+        const blocker = blockerAt(state, x, y, objectType)
+        // Same-kind is an idempotent RE-PAINT, not a refusal: a drag that
+        // crosses its own stroke must not flash red or toast. `label` is the
+        // exception — the matrix lets it co-exist with itself, so it falls
+        // through to the replace below and a drag can't stack N labels on a cell.
+        if (blocker && blocker.kind === objectType && objectType !== 'label') return state
+        if (blocker) return refuse(state, x, y, blocker.kind)
+        // Don't stack same-type; replace whatever object of this type covers the cell.
+        const without = state.objects.filter((o) => !(o.floor === state.floor && o.objectType === objectType && covers(o, x, y)))
         const obj: EditorObject = { clientRef: `o${state.seq}`, objectType, floor: state.floor, x, y, w: 1, h: 1 }
-        return { ...state, objects: [...without, obj], seq: state.seq + 1, dirty: true }
+        return { ...state, objects: [...without, obj], seq: state.seq + 1, dirty: true, blockedAt: null }
       }
 
       if (state.tool === 'rack') {
-        if (placementAt(state, x, y)) return state // already a bin here
+        const blocker = blockerAt(state, x, y, 'storage')
+        if (blocker && blocker.kind === 'storage') return state // already a bin here
+        if (blocker) return refuse(state, x, y, blocker.kind)
         const ref = `p${state.seq}`
         const f = state.activeForm
         const code = `${state.codePrefix}-B-${x}-${y}`
@@ -214,7 +416,7 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
           // leaves `levels` undefined — not every rack is levelled.
           levels: f?.levelTemplate ? applyTemplate(f.levelTemplate, code) : undefined,
         }
-        return { ...state, placements: [...state.placements, placement], ...singleSelect(ref), seq: state.seq + 1, dirty: true }
+        return { ...state, placements: [...state.placements, placement], ...singleSelect(ref), seq: state.seq + 1, dirty: true, blockedAt: null }
       }
 
       // select tool: clicking a bin selects it; otherwise fall back to whatever
@@ -252,17 +454,27 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
     }
 
     case 'generate_bins': {
-      // Fill a rectangle with bins, skipping any cell already occupied by a bin.
-      const occupied = new Set(
-        state.placements.filter((p) => p.floor === state.floor).map((p) => `${p.x}:${p.y}`),
-      )
+      // Fill a rectangle with bins, skipping any cell an incompatible occupant
+      // already owns — walls and docks included, not just other bins. The old
+      // check only knew about placements, so the wizard would happily fill a
+      // rectangle straight through a wall. Skips are now REPORTED (blockedAt.count):
+      // RackWizard closes its modal on submit, so "Generate 40" quietly producing
+      // 28 bins was invisible.
+      const index = buildOccupancyIndex(state)
       const added: EditorPlacement[] = []
       let seq = state.seq
+      let skipped = 0
+      let firstSkip: { x: number; y: number; kind: OccupantKind } | null = null
       for (let dy = 0; dy < action.rows; dy++) {
         for (let dx = 0; dx < action.cols; dx++) {
           const x = action.startX + dx
           const y = action.startY + dy
-          if (occupied.has(`${x}:${y}`)) continue
+          const blocker = blockedByIndex(index, x, y, 'storage')
+          if (blocker) {
+            skipped++
+            if (!firstSkip) firstSkip = { x, y, kind: blocker.kind }
+            continue
+          }
           const code = `${state.codePrefix}-B-${x}-${y}`
           added.push({
             clientRef: `p${seq++}`, floor: state.floor, x, y, w: 1, h: 1, rotation: 0,
@@ -274,8 +486,13 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
           })
         }
       }
-      if (added.length === 0) return state
-      return { ...state, placements: [...state.placements, ...added], seq, dirty: true }
+      const blocked: BlockedPaint | null = firstSkip
+        ? { x: firstSkip.x, y: firstSkip.y, floor: state.floor, blockedBy: firstSkip.kind, tool: 'rack', count: skipped, seq: (state.blockedAt?.seq ?? 0) + 1 }
+        : null
+      // A fully-blocked fill still has to report, so return the hint rather than
+      // the untouched state.
+      if (added.length === 0) return blocked ? { ...state, blockedAt: blocked } : state
+      return { ...state, placements: [...state.placements, ...added], seq, dirty: true, blockedAt: blocked }
     }
 
     case 'load': {
@@ -371,6 +588,26 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         meta: o.meta, stagingLocationId: o.stagingLocationId,
       }))
       return { ...state, objects, seq, dirty: true }
+    }
+
+    case 'apply_overlap_repair': {
+      // Same wholesale object replace as 'apply_auto_connect', plus the one thing
+      // that action is missing: every clientRef is regenerated, so a selection
+      // pointing at an OBJECT is now dangling and must be cleared. A selection
+      // pointing at a placement survives — placements aren't touched here.
+      let seq = state.seq
+      const objects: EditorObject[] = action.objects.map((o) => ({
+        clientRef: `o${seq++}`, objectType: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+        meta: o.meta, stagingLocationId: o.stagingLocationId,
+      }))
+      const selectionWasPlacement = state.placements.some((p) => p.clientRef === state.selectedRef)
+      return {
+        ...state,
+        objects,
+        seq,
+        dirty: true,
+        ...(selectionWasPlacement ? {} : singleSelect(null)),
+      }
     }
 
     case 'set_rack_levels':
