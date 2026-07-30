@@ -453,7 +453,7 @@ export async function resolveProduct(
   // from ~20 candidates rather than the 500-row cap below — which is both a
   // correctness ceiling (SKU 501 was unmatchable) and ~15k prompt tokens a line.
   // The pick itself, its threshold and its audit row are unchanged either way.
-  const shortlist = await fetchProductCandidates(supa, input.itemCodeRaw, input.descriptionRaw)
+  const shortlist = await fetchProductCandidates(input)
   const catalog = shortlist ?? await fetchProductCatalog(supa)
   if (catalog.length === 0) return missingProduct()
 
@@ -580,17 +580,24 @@ const MIN_VECTOR_CANDIDATES = 3
  * the model sees; it must never be the reason a PO fails to resolve.
  */
 async function fetchProductCandidates(
-  supa: SupabaseLike,
-  itemCode: string | null,
-  description: string | null,
+  input: ResolveProductInput,
 ): Promise<ProductRow[] | null> {
+  const { supa } = input
   if (typeof supa.rpc !== 'function') return null
 
-  const queryText = poLineEmbedText(itemCode, description)
+  const queryText = poLineEmbedText(input.itemCodeRaw, input.descriptionRaw)
   if (!queryText) return null
 
   try {
-    const { vectors } = await embedTexts({ texts: [queryText] })
+    // Audited like every other model call in this pipeline, so the retrieval
+    // cost sits in po_extraction_audit next to the prompt tokens it displaces.
+    const { vectors } = await embedTexts({
+      texts: [queryText],
+      audit: input.audit,
+      inboundMessageId: input.inboundMessageId,
+      edgeFunction: input.edgeFunction,
+      purpose: 'product_query_embed',
+    })
     if (vectors.length !== 1) return null
 
     const { data, error } = await supa.rpc('match_products', {
