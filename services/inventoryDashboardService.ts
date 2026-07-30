@@ -1,5 +1,6 @@
-import type { Order, OrderStatus, Product } from '@/types';
+import type { Order, Product } from '@/types';
 import { classifyStock, lowStockThresholdFor } from '@/lib/stockStatus';
+import { groupOrdersByStatus, type StatusCount } from '@/lib/semantic/metrics/sales';
 
 // Pure derivations for the Admin Dashboard "Inventory & Dispatch" section.
 // No DB calls — these operate on data already cached in the dashboard (products,
@@ -57,27 +58,19 @@ export function computeStockHealth(
 
 export type DispatchWindow = 7 | 30 | 90;
 
-export interface DispatchFunnelStage {
-  status: OrderStatus;
-  label: string;
-  count: number;
-}
-
-// Fulfilment pipeline order + human labels. Drives both the funnel ordering and
-// the zero-filled stages returned when no orders match.
-const FUNNEL_STAGES: readonly { status: OrderStatus; label: string }[] = [
-  { status: 'processing', label: 'Processing' },
-  { status: 'processed', label: 'Processed' },
-  { status: 'picked', label: 'Picked' },
-  { status: 'packed', label: 'Packed' },
-  { status: 'dispatched', label: 'Dispatched' },
-  { status: 'delivered', label: 'Delivered' },
-];
+/** Kept as an alias so existing importers are unaffected by the move. */
+export type DispatchFunnelStage = StatusCount;
 
 /**
  * Count orders placed within the last `windowDays` (relative to the injected
  * `now`) grouped by their current fulfilment status, returned in pipeline order.
  * `now` is a parameter so the function is deterministic and testable.
+ *
+ * The rolling window is this function's own concern — a "last 30 days" window is
+ * a different question from the calendar range `sales.ordersByStatus` answers, so
+ * it stays here. The grouping and the stage labels are NOT its own concern, and
+ * are delegated to `groupOrdersByStatus` in the semantic layer; this file used to
+ * carry a second copy of the pipeline order and every label.
  */
 export function computeDispatchFunnel(
   orders: readonly Order[],
@@ -86,16 +79,10 @@ export function computeDispatchFunnel(
 ): DispatchFunnelStage[] {
   const cutoff = now.getTime() - windowDays * 86_400_000;
 
-  const counts = new Map<OrderStatus, number>();
-  for (const order of orders) {
+  const withinWindow = orders.filter((order) => {
     const placed = new Date(order.orderDate).getTime();
-    if (Number.isNaN(placed) || placed < cutoff || placed > now.getTime()) continue;
-    counts.set(order.status, (counts.get(order.status) ?? 0) + 1);
-  }
+    return !Number.isNaN(placed) && placed >= cutoff && placed <= now.getTime();
+  });
 
-  return FUNNEL_STAGES.map((stage) => ({
-    status: stage.status,
-    label: stage.label,
-    count: counts.get(stage.status) ?? 0,
-  }));
+  return groupOrdersByStatus(withinWindow);
 }

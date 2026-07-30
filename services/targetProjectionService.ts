@@ -1,34 +1,28 @@
 import type { SalesTarget, Order, TargetProjection, WeeklyPacePoint } from '../types';
+import { computeTargetAchieved } from '../lib/semantic/targets';
 
 const MS_PER_DAY = 86_400_000;
 
+/**
+ * What the target owner has achieved, delegated to the semantic layer.
+ *
+ * This function used to hold its own copy of the definition — the fourth in the
+ * codebase — and it disagreed with the three in the dashboards on two points: it
+ * bounded the window with `<= new Date(endDate)`, i.e. midnight, silently
+ * dropping every order placed during the final day; and it defined a "new
+ * HoReCa" as one with no order before the window rather than one whose first
+ * order falls inside it. Both are now answered by `sales.newCustomerCount` and
+ * friends, so the projection below is computed from the same number the
+ * dashboards display.
+ *
+ * `userId` is honoured over `target.userId` because callers pass the viewing
+ * user; the two are the same for every current call site.
+ */
 function getTargetValue(target: SalesTarget, orders: readonly Order[], userId: number): number {
-  const start = new Date(target.startDate);
-  const end = new Date(target.endDate);
-  const filtered = orders.filter(o => {
-    const d = new Date(o.orderDate);
-    return o.submittedBy.id === userId && d >= start && d <= end;
-  });
-
-  switch (target.type) {
-    case 'revenue':
-      return filtered.reduce((sum, o) => sum + o.total, 0);
-    case 'orders':
-      return filtered.length;
-    case 'new_horecas': {
-      const allPriorCustomerIds = new Set(
-        orders
-          .filter(o => o.submittedBy.id === userId && new Date(o.orderDate) < start)
-          .map(o => o.hoReCa.id)
-      );
-      const newCustomerIds = new Set(
-        filtered.map(o => o.hoReCa.id).filter(id => !allPriorCustomerIds.has(id))
-      );
-      return newCustomerIds.size;
-    }
-    default:
-      return 0;
-  }
+  return computeTargetAchieved(
+    { ...target, userId },
+    { orders, products: [], settings: { lowStockThreshold: 0 }, now: new Date(target.endDate) },
+  );
 }
 
 export function computeTargetProjection(
@@ -110,7 +104,14 @@ export function computeWeeklyPace(
           cumulative += weekOrders.length;
           break;
         case 'new_horecas':
-          // Simplified: count unique customer IDs in this week's orders
+          // Deliberately NOT the canonical definition: this counts unique
+          // customers active in the week, so a repeat customer contributes to the
+          // pace line. The canonical acquisition count is `sales.newCustomerCount`
+          // (see lib/semantic/targets.ts), which cannot be accumulated week by
+          // week — a customer is new once, in one week, and summing per-week
+          // "new" counts would double-count. Fixing the pace chart properly means
+          // computing cumulative acquisitions from the range start each week,
+          // which is a change to what the chart shows, not a refactor.
           cumulative += new Set(weekOrders.map(o => o.hoReCa.id)).size;
           break;
       }
