@@ -30,6 +30,32 @@ export async function extractFunctionErrorDetails(error: unknown): Promise<unkno
   }
 }
 
+/** Render an Edge Function's schema-validation `details` as `path: message`.
+ *
+ *  "Invalid request body" is a true statement and a useless one — the operator
+ *  cannot act on it and neither can the next engineer. The function attaches the
+ *  offending field paths as `{ issues: [{ path, message }] }`; this turns them
+ *  into a suffix worth reading. Capped at three because the first one is almost
+ *  always the whole story. Returns '' for any other details shape, so callers can
+ *  append it unconditionally.
+ *
+ *  Pure and total: never throws on a malformed `details`. */
+export function describeValidationIssues(details: unknown): string {
+  const issues = (details as { issues?: unknown } | null | undefined)?.issues
+  if (!Array.isArray(issues)) return ''
+  const parts = issues
+    .filter((i): i is { path?: unknown; message?: unknown } => !!i && typeof i === 'object')
+    .map((i) => {
+      const path = typeof i.path === 'string' ? i.path : ''
+      const message = typeof i.message === 'string' ? i.message : ''
+      if (!message) return path
+      return path ? `${path}: ${message}` : message
+    })
+    .filter((s) => s.length > 0)
+    .slice(0, 3)
+  return parts.join('; ')
+}
+
 export async function extractFunctionErrorMessage(
   error: unknown,
   fallback: string,
