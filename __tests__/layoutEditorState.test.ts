@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
+  ALLOWED_COOCCUPANTS,
   initialEditorState,
   layoutEditorReducer,
   type EditorState,
+  type OccupantKind,
 } from '../components/admin/layout/useLayoutEditorState'
 import type { RackLevel } from '../types'
 
@@ -26,11 +28,15 @@ describe('layoutEditorReducer', () => {
     expect(s.dirty).toBe(true)
   })
 
-  it('does not stack two objects in the same cell', () => {
+  // Was "does not stack two objects in the same cell", which asserted the dock
+  // REPLACED the wall. Overlap prevention makes an occupied cell a no-op instead:
+  // eviction meant a drag could silently delete a wall run you'd just drawn.
+  it('blocks a different-type object in an occupied cell', () => {
     let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 1, y: 1 })
     s = layoutEditorReducer({ ...s, tool: 'dock' }, { type: 'paint_cell', x: 1, y: 1 })
     expect(s.objects).toHaveLength(1)
-    expect(s.objects[0].objectType).toBe('dock')
+    expect(s.objects[0].objectType).toBe('wall')
+    expect(s.blockedAt).toMatchObject({ x: 1, y: 1, blockedBy: 'wall', tool: 'dock' })
   })
 
   it('places a bin and selects it', () => {
@@ -376,6 +382,212 @@ describe('layoutEditorReducer', () => {
       const s1 = layoutEditorReducer(s0, { type: 'select', ref: null })
       const s2 = layoutEditorReducer(s1, { type: 'apply_levels_to_selection', levels: PALLET_RACK_TEMPLATE })
       expect(s2).toBe(s1)
+    })
+  })
+
+  // ── Overlap prevention ───────────────────────────────────────────────────
+  describe('overlap prevention', () => {
+    /** Load a single multi-cell object, the way an AI import or a clone delivers
+     *  one. The paint tools only ever mint 1×1, so `load` is the only way in. */
+    function withLoadedObject(o: { objectType: string; x: number; y: number; w: number; h: number }): EditorState {
+      return layoutEditorReducer(initialEditorState(), {
+        type: 'load',
+        placements: [],
+        objects: [{ id: 1, layoutId: 1, objectType: o.objectType, floor: 0, x: o.x, y: o.y, w: o.w, h: o.h } as never],
+        codeByLocation: {},
+      })
+    }
+
+    it('cross-category: a rack cannot be painted onto a wall', () => {
+      let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 3, y: 3 })
+      s = layoutEditorReducer({ ...s, tool: 'rack' }, { type: 'paint_cell', x: 3, y: 3 })
+      expect(s.placements).toHaveLength(0)
+      expect(s.blockedAt).toMatchObject({ blockedBy: 'wall', tool: 'rack' })
+    })
+
+    it('cross-category: a wall cannot be painted onto a rack', () => {
+      let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 3, y: 3 })
+      s = layoutEditorReducer({ ...s, tool: 'wall' }, { type: 'paint_cell', x: 3, y: 3 })
+      expect(s.objects).toHaveLength(0)
+      expect(s.blockedAt).toMatchObject({ blockedBy: 'storage', tool: 'wall' })
+    })
+
+    it('a label may share a cell with anything, in both directions', () => {
+      let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 1, y: 1 })
+      s = layoutEditorReducer({ ...s, tool: 'label' }, { type: 'paint_cell', x: 1, y: 1 })
+      expect(s.objects).toHaveLength(2)
+      expect(s.blockedAt).toBeNull()
+
+      let t = layoutEditorReducer(withTool('label'), { type: 'paint_cell', x: 2, y: 2 })
+      t = layoutEditorReducer({ ...t, tool: 'wall' }, { type: 'paint_cell', x: 2, y: 2 })
+      expect(t.objects).toHaveLength(2)
+      expect(t.blockedAt).toBeNull()
+    })
+
+    it('two labels in one cell collapse to one, silently', () => {
+      let s = layoutEditorReducer(withTool('label'), { type: 'paint_cell', x: 1, y: 1 })
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 1 })
+      expect(s.objects).toHaveLength(1)
+      expect(s.blockedAt).toBeNull()
+    })
+
+    it('staging and dock may share a cell, in both directions', () => {
+      let s = layoutEditorReducer(withTool('dock'), { type: 'paint_cell', x: 1, y: 1 })
+      s = layoutEditorReducer({ ...s, tool: 'staging' }, { type: 'paint_cell', x: 1, y: 1 })
+      expect(s.objects).toHaveLength(2)
+
+      let t = layoutEditorReducer(withTool('staging'), { type: 'paint_cell', x: 5, y: 5 })
+      t = layoutEditorReducer({ ...t, tool: 'dock' }, { type: 'paint_cell', x: 5, y: 5 })
+      expect(t.objects).toHaveLength(2)
+    })
+
+    it('staging is still blocked by a wall', () => {
+      let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 1, y: 1 })
+      s = layoutEditorReducer({ ...s, tool: 'staging' }, { type: 'paint_cell', x: 1, y: 1 })
+      expect(s.objects).toHaveLength(1)
+      expect(s.blockedAt).toMatchObject({ blockedBy: 'wall' })
+    })
+
+    // A drag that crosses its own stroke must not flash or toast.
+    it('re-painting the same type is a silent no-op, not a refusal', () => {
+      const s1 = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 1, y: 1 })
+      const s2 = layoutEditorReducer(s1, { type: 'paint_cell', x: 1, y: 1 })
+      expect(s2.objects).toHaveLength(1)
+      expect(s2.blockedAt).toBeNull()
+
+      const r1 = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 1, y: 1 })
+      const r2 = layoutEditorReducer(r1, { type: 'paint_cell', x: 1, y: 1 })
+      expect(r2).toBe(r1)
+    })
+
+    it('blockedAt.seq increments on repeated refusals at the same cell', () => {
+      let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 1, y: 1 })
+      s = layoutEditorReducer({ ...s, tool: 'dock' }, { type: 'paint_cell', x: 1, y: 1 })
+      const first = s.blockedAt!.seq
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 1 })
+      expect(s.blockedAt!.seq).toBeGreaterThan(first)
+    })
+
+    it('a refusal does not mark the layout dirty', () => {
+      let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 1, y: 1 })
+      s = { ...s, dirty: false, tool: 'dock' }
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 1 })
+      expect(s.dirty).toBe(false)
+    })
+
+    it('a successful paint clears blockedAt', () => {
+      let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 1, y: 1 })
+      s = layoutEditorReducer({ ...s, tool: 'dock' }, { type: 'paint_cell', x: 1, y: 1 })
+      expect(s.blockedAt).not.toBeNull()
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 9, y: 9 })
+      expect(s.blockedAt).toBeNull()
+    })
+
+    it('generate_bins skips wall-owned cells and reports the count', () => {
+      let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 0, y: 0 })
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 })
+      s = layoutEditorReducer(s, { type: 'generate_bins', startX: 0, startY: 0, cols: 3, rows: 1 })
+      expect(s.placements).toHaveLength(1)
+      expect(s.placements[0]).toMatchObject({ x: 2, y: 0 })
+      expect(s.blockedAt).toMatchObject({ count: 2, blockedBy: 'wall', tool: 'rack' })
+    })
+
+    it('a fully-blocked generate_bins still reports', () => {
+      let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 0, y: 0 })
+      s = layoutEditorReducer(s, { type: 'generate_bins', startX: 0, startY: 0, cols: 1, rows: 1 })
+      expect(s.placements).toHaveLength(0)
+      expect(s.blockedAt).toMatchObject({ count: 1 })
+    })
+
+    // AABB containment. A multi-cell object used to be invisible to every hit test
+    // except at its own top-left cell.
+    it('a multi-cell wall blocks a rack painted at its interior', () => {
+      const s0 = withLoadedObject({ objectType: 'wall', x: 2, y: 2, w: 5, h: 1 })
+      const s = layoutEditorReducer({ ...s0, tool: 'rack' }, { type: 'paint_cell', x: 4, y: 2 })
+      expect(s.placements).toHaveLength(0)
+      expect(s.blockedAt).toMatchObject({ blockedBy: 'wall' })
+    })
+
+    it('a multi-cell object is selectable from its interior', () => {
+      const s0 = withLoadedObject({ objectType: 'wall', x: 2, y: 2, w: 5, h: 1 })
+      const s = layoutEditorReducer({ ...s0, tool: 'select' }, { type: 'paint_cell', x: 4, y: 2 })
+      expect(s.selectedRef).toBe(s0.objects[0].clientRef)
+    })
+
+    it('erasing the interior of a multi-cell object removes only that cell', () => {
+      const s0 = withLoadedObject({ objectType: 'wall', x: 2, y: 2, w: 5, h: 1 })
+      const s = layoutEditorReducer({ ...s0, tool: 'erase' }, { type: 'paint_cell', x: 4, y: 2 })
+      // 5 cells minus the erased one, as four 1×1 fragments.
+      expect(s.objects).toHaveLength(4)
+      expect(s.objects.map((o) => o.x).sort((a, b) => a - b)).toEqual([2, 3, 5, 6])
+      expect(s.objects.every((o) => o.w === 1 && o.h === 1)).toBe(true)
+    })
+
+    it('erasing a 1×1 object still removes it outright', () => {
+      let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 1, y: 1 })
+      s = layoutEditorReducer({ ...s, tool: 'erase' }, { type: 'paint_cell', x: 1, y: 1 })
+      expect(s.objects).toHaveLength(0)
+    })
+
+    it('apply_overlap_repair mints fresh refs and clears a dangling object selection', () => {
+      let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 1, y: 1 })
+      s = layoutEditorReducer({ ...s, tool: 'select' }, { type: 'paint_cell', x: 1, y: 1 })
+      const originalRef = s.selectedRef
+      expect(originalRef).not.toBeNull()
+      s = layoutEditorReducer(s, {
+        type: 'apply_overlap_repair',
+        objects: [{ objectType: 'wall', floor: 0, x: 1, y: 1, w: 1, h: 1 }],
+      })
+      expect(s.objects).toHaveLength(1)
+      expect(s.objects[0].clientRef).not.toBe(originalRef)
+      expect(s.selectedRef).toBeNull()
+    })
+
+    it('apply_overlap_repair keeps a placement selection and never touches placements', () => {
+      let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 4, y: 4 })
+      const placementRef = s.selectedRef
+      s = layoutEditorReducer(s, {
+        type: 'apply_overlap_repair',
+        objects: [{ objectType: 'wall', floor: 0, x: 1, y: 1, w: 1, h: 1 }],
+      })
+      expect(s.placements).toHaveLength(1)
+      expect(s.selectedRef).toBe(placementRef)
+    })
+  })
+
+  // The matrix drives every decision above, so assert its invariants rather than
+  // trusting a hand-read of the table.
+  describe('ALLOWED_COOCCUPANTS', () => {
+    const kinds = Object.keys(ALLOWED_COOCCUPANTS) as OccupantKind[]
+
+    it('covers every occupant kind', () => {
+      const expected: OccupantKind[] = [
+        'wall', 'walkway', 'dock', 'lift', 'conveyor', 'staging', 'obstacle', 'label', 'storage',
+      ]
+      expect(kinds.sort()).toEqual(expected.sort())
+    })
+
+    // blockerAt only looks the matrix up in one direction, so an asymmetric entry
+    // would let A sit on B while refusing B on A.
+    it('is symmetric', () => {
+      for (const a of kinds) {
+        for (const b of kinds) {
+          expect(ALLOWED_COOCCUPANTS[a].includes(b)).toBe(ALLOWED_COOCCUPANTS[b].includes(a))
+        }
+      }
+    })
+
+    it('lets a label co-exist with everything', () => {
+      for (const k of kinds) expect(ALLOWED_COOCCUPANTS.label).toContain(k)
+    })
+
+    it('allows nothing but label except the staging↔dock pair', () => {
+      for (const k of kinds) {
+        if (k === 'label' || k === 'dock' || k === 'staging') continue
+        expect([...ALLOWED_COOCCUPANTS[k]]).toEqual(['label'])
+      }
+      expect([...ALLOWED_COOCCUPANTS.dock].sort()).toEqual(['label', 'staging'])
+      expect([...ALLOWED_COOCCUPANTS.staging].sort()).toEqual(['dock', 'label'])
     })
   })
 })

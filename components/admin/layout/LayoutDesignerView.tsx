@@ -5,7 +5,7 @@
 // archived layouts can be deleted outright to keep the list clean.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Trash2, Check, X, ImageUp, Copy } from 'lucide-react'
+import { Plus, Trash2, Check, X, ImageUp, Copy, Wand2 } from 'lucide-react'
 import { evaluatePublishReadiness } from '@/supabase/functions/_shared/wie/publishReadiness'
 import { autoConnectLayout } from '@/supabase/functions/_shared/wie/autoConnect'
 import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
@@ -40,8 +40,9 @@ import { ReslotPlannerModal } from './ReslotPlannerModal'
 import { RackWizard } from './RackWizard'
 import { FloorPlanImportModal } from './FloorPlanImportModal'
 import { SimulationResultCard } from './SimulationResultCard'
-import { STORAGE_UNIT } from './labels'
+import { OCCUPANT_LABEL, STORAGE_UNIT, TOOL_LABEL } from './labels'
 import { useLayoutEditorState } from './useLayoutEditorState'
+import { resolveLayoutOverlaps } from './resolveOverlaps'
 
 interface LayoutDesignerViewProps {
   warehouse: Warehouse
@@ -179,6 +180,83 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const highlightRefs = useMemo(() => new Set(readiness.unreachableIds), [readiness])
   const canAutoConnect = !!isDraft && readiness.unreachableIds.length > 0
 
+  // Pre-existing overlaps in the loaded draft. Draw-time prevention can't help a
+  // layout that already has them — cloning an older layout and AI floor-plan
+  // import both bypass the reducer's paint branch. One memo serves both the
+  // banner's visibility and the button's payload; it's two Map passes over the
+  // cells, strictly cheaper than the BFS the readiness memo above already runs.
+  const overlapReport = useMemo(
+    () => resolveLayoutOverlaps(state.objects, state.placements),
+    [state.objects, state.placements],
+  )
+  const hasOverlaps = !!isDraft && (overlapReport.changed || overlapReport.placementConflicts.length > 0)
+
+  // Refused-paint hint. paint_cell fires once per cell CROSSED during a drag, so a
+  // 40-cell drag over a wall would raise 40 toasts (addToast has no dedupe and each
+  // lives 5s). The canvas flash gives free per-cell feedback; this cooldown caps the
+  // toast at one per stroke-ish regardless of drag length. Dep list is `seq` only,
+  // so no unrelated re-render can re-fire it.
+  const BLOCKED_TOAST_COOLDOWN_MS = 4_000
+  const lastBlockedToastAt = useRef(0)
+  const blockedSeq = state.blockedAt?.seq
+  useEffect(() => {
+    const b = state.blockedAt
+    if (!b) return
+    const now = Date.now()
+    if (now - lastBlockedToastAt.current < BLOCKED_TOAST_COOLDOWN_MS) return
+    lastBlockedToastAt.current = now
+    addToast(
+      b.count != null
+        ? `Skipped ${b.count} cell${b.count === 1 ? '' : 's'} that already hold something else.`
+        : `Can't draw ${TOOL_LABEL[b.tool]} at (${b.x},${b.y}) — that cell is already a ${OCCUPANT_LABEL[b.blockedBy]}. Erase it first, or use Clean up overlaps.`,
+      'info',
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blockedSeq])
+
+  // Resolve every cell with more than one owner. Placements are never removed —
+  // a bin may already be a real `locations` row with stock, a label and open pick
+  // tasks, whereas a wall costs one drag to redraw — so a bin-vs-object clash
+  // drops the object and REPORTS it, and a bin-vs-bin clash is reported only.
+  const handleCleanUpOverlaps = () => {
+    if (!overlapReport.changed && overlapReport.placementConflicts.length === 0) {
+      addToast('No overlaps to clean up.', 'info')
+      return
+    }
+    if (overlapReport.changed) {
+      dispatch({
+        type: 'apply_overlap_repair',
+        objects: overlapReport.objects.map((o) => ({
+          objectType: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+          meta: o.meta, stagingLocationId: o.stagingLocationId,
+        })),
+      })
+    }
+
+    const parts: string[] = []
+    if (overlapReport.removedObjectCells > 0) {
+      parts.push(`Cleared ${overlapReport.removedObjectCells} overlapping cell${overlapReport.removedObjectCells === 1 ? '' : 's'}.`)
+    }
+    if (overlapReport.removedObjects > 0) {
+      parts.push(`Removed ${overlapReport.removedObjects} fully-covered object${overlapReport.removedObjects === 1 ? '' : 's'}.`)
+    }
+    if (overlapReport.binConflicts.length > 0) {
+      const saved = overlapReport.binConflicts.filter((c) => c.saved)
+      const savedCodes = [...new Set(saved.map((c) => c.placementCode))]
+      parts.push(
+        `${overlapReport.binConflicts.length} cell${overlapReport.binConflicts.length === 1 ? '' : 's'} kept the ${STORAGE_UNIT.lower} and lost what was drawn over it` +
+          (savedCodes.length > 0 ? ` (${savedCodes.length} already saved: ${savedCodes.slice(0, 4).join(', ')}${savedCodes.length > 4 ? '…' : ''}).` : '.'),
+      )
+    }
+    if (overlapReport.placementConflicts.length > 0) {
+      const codes = [...new Set(overlapReport.placementConflicts.flatMap((c) => c.codes))]
+      parts.push(
+        `${overlapReport.placementConflicts.length} cell${overlapReport.placementConflicts.length === 1 ? '' : 's'} hold two ${STORAGE_UNIT.lowerPlural} — erase one by hand: ${codes.slice(0, 4).join(' / ')}${codes.length > 4 ? '…' : ''}.`,
+      )
+    }
+    addToast(parts.join(' ') || 'Nothing to change.', overlapReport.placementConflicts.length > 0 ? 'info' : 'success')
+  }
+
   // Repair unreachable bins in one click: carve docks out of overlapping walls
   // and route new 1×1 walkway cells from the reachable network to every
   // stranded bin. Uses the exact same objects/placements→ConnectObject/
@@ -202,11 +280,24 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
       return
     }
 
+    // De-overlap the engine's output before it lands. autoConnectLayout is very
+    // nearly overlap-free already (its `isFree` excludes walls, obstacles,
+    // conveyors and placement cells), but an UNREACHABLE lift cell is `isFree` and
+    // in neither the reachable nor the current-walkway set, so a BFS path can lay a
+    // walkway straight over it. Running the same resolver used by "Clean up
+    // overlaps" also collapses duplicate 1×1 wall fragments left by the dock carve.
+    const connected = result.objects.map((o, i) => ({
+      clientRef: `ac${i}`,
+      objectType: o.objectType as LayoutObjectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+      meta: o.meta, stagingLocationId: (o as { stagingLocationId?: number }).stagingLocationId,
+    }))
+    const cleaned = resolveLayoutOverlaps(connected, state.placements)
+
     dispatch({
       type: 'apply_auto_connect',
-      objects: result.objects.map((o) => ({
-        objectType: o.objectType as LayoutObjectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
-        meta: o.meta, stagingLocationId: (o as { stagingLocationId?: number }).stagingLocationId,
+      objects: cleaned.objects.map((o) => ({
+        objectType: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+        meta: o.meta, stagingLocationId: o.stagingLocationId,
       })),
     })
 
@@ -252,7 +343,13 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
           zone_profile_id: p.zoneProfileId, storage_type_id: p.storageTypeId,
           levels: hasLevels
             ? p.levels!.map((l) => ({
-                level_index: l.levelIndex, role: l.role,
+                level_index: l.levelIndex,
+                // '' is how the editor represents "no stored role" (see the
+                // reducer's `load` — defaulting to 'pick' would silently claim a
+                // Pick Zone that drives replenishment and allocation). It is NOT a
+                // role, so it goes over the wire as null, which is what
+                // locations.level_role and assertValidRoles both already accept.
+                role: l.role && l.role.trim().length > 0 ? l.role : null,
                 capacity_slots: l.capacitySlots ?? null, weight_capacity_kg: l.weightCapacityKg ?? null,
               }))
             : undefined,
@@ -509,6 +606,28 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             onArchive={() => archiveLayout.mutate(selectedLayout.id)}
             onImport={() => setImportOpen(true)}
           />
+
+          {/* Overlaps that predate draw-time prevention (a cloned layout, an AI
+              import). Self-dismissing: the banner is gone the moment it's repaired,
+              so it adds no clutter in the normal case. Deliberately NOT a
+              PublishChecklist row — a row there reads as a gate, and overlaps don't
+              block publish. */}
+          {hasOverlaps && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-xs text-amber-800">
+                {overlapReport.removedObjectCells > 0 || overlapReport.removedObjects > 0
+                  ? `${overlapReport.removedObjectCells} cell${overlapReport.removedObjectCells === 1 ? '' : 's'} have more than one thing drawn on them. Overlaps hide walkways and docks from the routing engine, which shows up later as "no walkways" or unreachable ${STORAGE_UNIT.lowerPlural}.`
+                  : `${overlapReport.placementConflicts.length} cell${overlapReport.placementConflicts.length === 1 ? '' : 's'} hold two ${STORAGE_UNIT.lowerPlural}. Erase one of each pair — nothing else can decide which to keep.`}
+              </p>
+              <button
+                type="button"
+                onClick={handleCleanUpOverlaps}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 btn-press"
+              >
+                <Wand2 className="h-4 w-4" strokeWidth={2} /> Clean up overlaps
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-[1fr_240px] gap-3">
             <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} highlightRefs={isDraft ? highlightRefs : undefined} formColorById={formColorById} />

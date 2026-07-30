@@ -25,7 +25,8 @@
 
 import { useMemo, useState, type ReactNode, type CSSProperties } from 'react'
 import type { WarehouseLayout, LayoutPlacement, LayoutObject, InventoryLocation } from '@/types'
-import { OBJECT_FILL, BASE_CELL, PLACEMENT_FILL, levelRoleFill, levelRoleStroke, levelRoleLabel } from '@/components/admin/layout/layoutPalette'
+import { OBJECT_FILL, OBJECT_STROKE, BASE_CELL, PLACEMENT_FILL, levelRoleFill, levelRoleStroke, levelRoleLabel } from '@/components/admin/layout/layoutPalette'
+import { MERGED_OBJECT_TYPES, objectRegions, regionFillPath, regionOutlinePath } from '@/components/admin/layout/objectRegions'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { groupPlacementsByCell } from '@/components/admin/layout/LayoutCanvas'
 import { DEFAULT_BIN_FILL, DEFAULT_BIN_STROKE } from './warehouseOverlays'
@@ -163,6 +164,10 @@ export function WarehouseCanvas({
   // deps each frame and defeat the whole optimization.
   const guard = useMemo(() => guardClick ?? ((fn: () => void) => fn()), [guardClick])
   const floorObjects = useMemo(() => objects.filter((o) => o.floor === floor), [objects, floor])
+  // Outside the `scene` memo on purpose: a pan/zoom must never rebuild the flood
+  // fill. Keyed on the raw `objects` array, not on `floorObjects`, for the same
+  // reason the designer is.
+  const objRegions = useMemo(() => objectRegions(objects, floor), [objects, floor])
   const floorPlacements = useMemo(() => placements.filter((p) => p.floor === floor), [placements, floor])
 
   // Group by (floor,x,y) — every level of a rack now shares its rack's cell,
@@ -289,27 +294,50 @@ export function WarehouseCanvas({
           )
         })}
 
-        {/* Objects (walls/walkways/docks/lifts) */}
+        {/* Merged structural regions — mirrors LayoutCanvas so the designer and
+            this viewer never disagree about how a floor looks. Contiguous same-type
+            cells are one silhouette: inset-free, radius-free union fill plus an
+            exterior-only outline. `vectorEffect` is needed HERE and not in the
+            designer because this canvas draws in grid user units under a scaling
+            <g transform>, so without it the outline thickens as you zoom in. */}
+        {objRegions.map((region) => (
+          <g key={region.key} pointerEvents="none">
+            <path d={regionFillPath(region, cell)} fill={OBJECT_FILL[region.objectType]} />
+            <path
+              d={regionOutlinePath(region, cell)}
+              fill="none"
+              stroke={OBJECT_STROKE[region.objectType]}
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+          </g>
+        ))}
+
+        {/* Types that deliberately don't merge: `label` (may overlap anything) and
+            `obstacle` (discrete named rooms). */}
+        {floorObjects
+          .filter((o) => !MERGED_OBJECT_TYPES.has(o.objectType))
+          .map((o) => (
+            <rect
+              key={o.id} pointerEvents="none"
+              x={o.x * cell + 1} y={o.y * cell + 1} width={o.w * cell - 2} height={o.h * cell - 2}
+              fill={OBJECT_FILL[o.objectType]} rx={2}
+            />
+          ))}
+
+        {/* Object names, above the fills so a name is never buried under a region. */}
         {floorObjects.map((o) => {
           const name = typeof o.meta?.name === 'string' ? o.meta.name : null
-          const showName =
-            name && NAMED_OBJECT_TYPES.has(o.objectType) && o.w * cellPx >= MIN_OBJECT_NAME_PX
+          if (!name || !NAMED_OBJECT_TYPES.has(o.objectType) || o.w * cellPx < MIN_OBJECT_NAME_PX) return null
           return (
-            <g key={o.id} pointerEvents="none">
-              <rect
-                x={o.x * cell + 1} y={o.y * cell + 1} width={o.w * cell - 2} height={o.h * cell - 2}
-                fill={OBJECT_FILL[o.objectType]} rx={2}
-              />
-              {showName && (
-                <text
-                  x={o.x * cell + (o.w * cell) / 2} y={o.y * cell + (o.h * cell) / 2 + u(3.5)}
-                  textAnchor="middle" fontSize={u(10)} fontWeight={600}
-                  fill="#44403c" fontFamily="sans-serif"
-                >
-                  {fitCode(name, o.w * cell, u(10))}
-                </text>
-              )}
-            </g>
+            <text
+              key={`name-${o.id}`} pointerEvents="none"
+              x={o.x * cell + (o.w * cell) / 2} y={o.y * cell + (o.h * cell) / 2 + u(3.5)}
+              textAnchor="middle" fontSize={u(10)} fontWeight={600}
+              fill="#44403c" fontFamily="sans-serif"
+            >
+              {fitCode(name, o.w * cell, u(10))}
+            </text>
           )
         })}
 
@@ -570,7 +598,7 @@ export function WarehouseCanvas({
     // `viewport.tx`/`viewport.ty` are deliberately absent: they only move the
     // wrapping <g>, so excluding them makes a pan skip this whole subtree.
   }, [
-    cell, scale, gridWidth, gridHeight, floorObjects, placementGroups, expandedGroup,
+    cell, scale, gridWidth, gridHeight, floorObjects, objRegions, placementGroups, expandedGroup,
     selectedLocationId, highlightedLocationIds, binColors, rackColors, binBadges, binInfo,
     binFillPct, zoneRegions, zoneTypeByProfileId, locationsById, levelRoles, renderOverlay,
     onSelectBin, onHoverBin, guard,
