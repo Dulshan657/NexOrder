@@ -7,6 +7,7 @@ vi.mock('@/lib/supabase', () => ({
 }))
 
 import { saveGeometry, publishLayout, createLayout } from '../services/supabase/layoutService'
+import { describeValidationIssues } from '../lib/functionError'
 
 function httpError(status: number, body: unknown): Error {
   // Mirror supabase-js FunctionsHttpError: a generic message plus the raw
@@ -58,5 +59,54 @@ describe('layoutService error surfacing', () => {
   it('passes a successful save straight through', async () => {
     invoke.mockResolvedValue({ data: { ok: true, layout_id: 78, ref_map: [] }, error: null })
     await expect(saveGeometry(78, [], [])).resolves.toMatchObject({ layout_id: 78 })
+  })
+
+  // "Invalid request body" is true and useless. mutate-layout attaches the paths
+  // that failed; reading them is the difference between a four-word dead end and
+  // knowing which field of which placement the server refused.
+  it('names the offending field when the failure was schema validation', async () => {
+    invoke.mockResolvedValue({
+      data: null,
+      error: httpError(400, {
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Invalid request body',
+          details: {
+            issues: [
+              { path: 'placements.14.new_bin.levels.0.weight_capacity_kg', message: 'Expected number, received null' },
+            ],
+          },
+        },
+      }),
+    })
+    await expect(saveGeometry(78, [], [])).rejects.toThrow(
+      'Invalid request body — placements.14.new_bin.levels.0.weight_capacity_kg: Expected number, received null',
+    )
+  })
+
+  it('leaves a message with no validation details unchanged', async () => {
+    invoke.mockResolvedValue({
+      data: null,
+      error: httpError(400, { error: { code: 'INVALID_INPUT', message: 'A bin appears twice in the layout', details: { foo: 1 } } }),
+    })
+    await expect(saveGeometry(78, [], [])).rejects.toThrow(/^A bin appears twice in the layout$/)
+  })
+})
+
+describe('describeValidationIssues', () => {
+  it('caps the suffix at the first three issues', () => {
+    const issues = Array.from({ length: 5 }, (_, i) => ({ path: `p.${i}`, message: 'bad' }))
+    expect(describeValidationIssues({ issues })).toBe('p.0: bad; p.1: bad; p.2: bad')
+  })
+
+  it('returns empty string for anything that is not an issue list', () => {
+    // Callers append it unconditionally, so it must be total.
+    for (const details of [undefined, null, {}, { issues: 'nope' }, 42]) {
+      expect(describeValidationIssues(details)).toBe('')
+    }
+  })
+
+  it('survives a malformed issue entry', () => {
+    expect(describeValidationIssues({ issues: [null, { path: 'a' }, { message: 'b' }] })).toBe('a; b')
   })
 })

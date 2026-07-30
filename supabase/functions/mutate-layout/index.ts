@@ -61,9 +61,49 @@ const levelSchema = z.object({
   // drives replenishment and allocation), and persistGeometry forwarded that ''
   // verbatim. Empty string is normalised to null below.
   role: z.string().max(32).nullish().transform((r) => (r && r.trim().length > 0 ? r : null)),
-  capacity_slots: z.number().nonnegative().optional(),
-  slot_kind: z.enum(['pallet', 'carton']).optional(),
-  weight_capacity_kg: z.number().nonnegative().optional(),
+  // NULLISH, not optional — and this is the same class of bug the `role` comment
+  // above describes, in the two fields right beside it. `.optional()` accepts
+  // `undefined` and REJECTS `null`; the designer sends `l.capacitySlots ?? null`
+  // because these columns are nullable and NULL is the honest wire value for
+  // "no limit". Every drawable storage form whose level_template omits a weight
+  // (SHELVING and COLD_ROOM both do, and NULL is what mig 00072 writes when the
+  // form has no weight_capacity_kg) therefore failed EVERY save with a bare
+  // "Invalid request body". mutate-warehouse-location, which validates this same
+  // per-level payload, has always used `.nullable().optional()` — this schema
+  // simply never got widened, and with `strict` off tsc cannot see the drift
+  // (`number | null` assigns cleanly to `capacity_slots?: number`).
+  //
+  // Nothing downstream changes: every consumer reads `lvl.capacity_slots ??
+  // <rack default>`, and `??` already treats null as absent, so a null level
+  // inherits the storage form's default exactly as an omitted one does.
+  capacity_slots: z.number().nonnegative().nullish(),
+  slot_kind: z.enum(['pallet', 'carton']).nullish(),
+  weight_capacity_kg: z.number().nonnegative().nullish(),
+})
+
+/**
+ * One level of a rack that ALREADY EXISTS — i.e. a level carried on a placement
+ * next to `location_id`, rather than inside `new_bin`.
+ *
+ * A levelled rack round-trips to the client as ONE placement whose
+ * `location_id` is the RACK PARENT (the parent has no placement row of its own;
+ * its SHELF children do). Without this schema there was no way to express "this
+ * saved rack still has these levels", so the second save of any levelled rack
+ * sent the parent alone — and save_geometry, being a full replace, wrote one
+ * placement row on the RACK parent and then garbage-collected every SHELF level
+ * as an unreferenced draft orphan. The levels, their roles and their capacities
+ * were deleted, silently, by the act of saving twice.
+ *
+ * `location_id` is omitted for a level the operator just ADDED to a saved rack;
+ * that one is created here the same way the new_bin branch creates its levels.
+ */
+const existingLevelSchema = z.object({
+  location_id: z.number().int().positive().optional(),
+  level_index: z.number().int().positive(),
+  role: z.string().max(32).nullish().transform((r) => (r && r.trim().length > 0 ? r : null)),
+  capacity_slots: z.number().nonnegative().nullish(),
+  slot_kind: z.enum(['pallet', 'carton']).nullish(),
+  weight_capacity_kg: z.number().nonnegative().nullish(),
 })
 
 const newBinSchema = z.object({
@@ -71,10 +111,14 @@ const newBinSchema = z.object({
   kind: z.enum(BIN_KINDS),
   code: z.string().min(1).max(48),
   name: z.string().min(1).max(120),
-  capacity_slots: z.number().nonnegative().optional(),
-  slot_kind: z.enum(['pallet', 'carton']).optional(),
+  // Nullish rather than optional for the same reason as levelSchema's copies of
+  // these fields: the columns are nullable, `?? null` below already folds null
+  // into "inherit from the storage form", and a caller that spells "no limit" as
+  // null must not get a 400 for it.
+  capacity_slots: z.number().nonnegative().nullish(),
+  slot_kind: z.enum(['pallet', 'carton']).nullish(),
   // Per-unit weight limit, kg (mig 00061); inherited from the storage form when omitted.
-  weight_capacity_kg: z.number().nonnegative().optional(),
+  weight_capacity_kg: z.number().nonnegative().nullish(),
   // When set, the bin is parented under (creating if needed) the warehouse's ZONE
   // location for this profile, so it inherits the zone's semantics.
   zone_profile_id: z.number().int().positive().optional(),
@@ -95,6 +139,10 @@ const placementSchema = z.object({
   client_ref: z.string().min(1).max(64),
   location_id: z.number().int().positive().optional(),
   new_bin: newBinSchema.optional(),
+  // The levels of an EXISTING rack (see existingLevelSchema). A brand-new rack
+  // carries its levels inside `new_bin` instead — the two are mutually exclusive
+  // because a placement is either an existing location or a request to make one.
+  levels: z.array(existingLevelSchema).min(1).max(50).optional(),
   floor: z.number().int().nonnegative().default(0),
   x: z.number().int().nonnegative(),
   y: z.number().int().nonnegative(),
@@ -103,6 +151,10 @@ const placementSchema = z.object({
   rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),
 }).refine((p) => p.location_id !== undefined || p.new_bin !== undefined, {
   message: 'placement needs either location_id or new_bin',
+}).refine((p) => !p.levels || p.location_id !== undefined, {
+  message: 'levels on a placement requires location_id (a new rack carries levels in new_bin)',
+}).refine((p) => !p.levels || new Set(p.levels.map((l) => l.level_index)).size === p.levels.length, {
+  message: 'level_index values must be unique',
 })
 
 const objectSchema = z.object({
@@ -135,6 +187,21 @@ const inputSchema = z.discriminatedUnion('action', [
   }),
 ])
 
+/**
+ * Failure details that NAME THE FIELD, as `{ issues: [{ path, message }] }`.
+ *
+ * This used to be `error.flatten()`, which collapses every nested path onto its
+ * top-level key — so a null deep inside `placements[14].new_bin.levels[0]`
+ * reported as `{ placements: ['Expected number, received null'] }` and the
+ * operator was told only "Invalid request body". The path is the whole diagnosis;
+ * capped at 10 issues so a 5000-placement payload can't return a wall of text.
+ */
+function validationIssues(error: z.ZodError): { issues: Array<{ path: string; message: string }> } {
+  return {
+    issues: error.issues.slice(0, 10).map((i) => ({ path: i.path.join('.'), message: i.message })),
+  }
+}
+
 async function getLayout(admin: any, layoutId: number): Promise<any> {
   const { data, error } = await admin.from('warehouse_layouts').select('*').eq('id', layoutId).single()
   if (error || !data) throw new EdgeFunctionError('NOT_FOUND', `Layout ${layoutId} not found`)
@@ -160,7 +227,7 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError('INVALID_INPUT', 'Request body must be valid JSON')
     })
     const parsed = inputSchema.safeParse(body)
-    if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
+    if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', validationIssues(parsed.error))
     const input = parsed.data
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
@@ -361,7 +428,13 @@ serve(async (req: Request) => {
     // Level roles are operator-managed (mig 00081), so they are validated here
     // rather than by a z.enum. Checked BEFORE the destructive geometry replace
     // below: an FK violation partway through would leave the draft empty.
-    const draftedRoles = input.placements.flatMap((p) => (p.new_bin?.levels ?? []).map((l) => l.role))
+    // Both level sources: a brand-new rack's `new_bin.levels` AND an existing
+    // rack's `levels`. Only the first was checked, so a role edited on a saved
+    // rack reached the UPDATE unvalidated and surfaced as a raw FK violation.
+    const draftedRoles = input.placements.flatMap((p) => [
+      ...(p.new_bin?.levels ?? []).map((l) => l.role),
+      ...(p.levels ?? []).map((l) => l.role),
+    ])
     if (draftedRoles.length > 0) {
       assertValidRoles(draftedRoles, await loadActiveRoleKeys(admin))
     }
@@ -468,6 +541,187 @@ serve(async (req: Request) => {
       return row.id
     }
 
+    // ── Existing levelled racks ──────────────────────────────────────────────
+    // Pre-read every existing placement's SHELF level children in ONE chunked
+    // query rather than one query per placement: save_geometry accepts up to
+    // 5000 placements and functions.invoke is bounded by a 20s fetch ceiling, so
+    // a per-placement round trip would time out on a real DC layout long before
+    // it returned. `.in()` rides in the URL, hence the chunking.
+    interface LevelRow {
+      id: number
+      parent_id: number
+      code: string
+      level_index: number
+      level_role: string | null
+      capacity_slots: number | string | null
+      slot_kind: string | null
+      weight_capacity_kg: number | string | null
+    }
+    const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v))
+    const chunked = <T,>(items: T[], size: number): T[][] => {
+      const out: T[][] = []
+      for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+      return out
+    }
+
+    const existingIds = [...new Set(
+      input.placements.map((p) => p.location_id).filter((id): id is number => id !== undefined),
+    )]
+    const levelsByRack = new Map<number, LevelRow[]>()
+    for (const chunk of chunked(existingIds, 200)) {
+      const { data, error } = await admin.from('locations')
+        .select('id, parent_id, code, level_index, level_role, capacity_slots, slot_kind, weight_capacity_kg')
+        .in('parent_id', chunk).eq('kind', 'SHELF').not('level_index', 'is', null)
+      if (error) throw new EdgeFunctionError('INTERNAL', `Could not read rack levels: ${error.message}`)
+      for (const row of (data ?? []) as LevelRow[]) {
+        const bucket = levelsByRack.get(row.parent_id)
+        if (bucket) bucket.push(row)
+        else levelsByRack.set(row.parent_id, [row])
+      }
+    }
+    for (const rows of levelsByRack.values()) rows.sort((a, b) => a.level_index - b.level_index)
+
+    // The rack rows themselves, needed only to create/re-default a level.
+    interface RackRow {
+      id: number
+      kind: string
+      code: string
+      materialized_path: string
+      storage_type_id: number | null
+      capacity_slots: number | string | null
+      slot_kind: string | null
+      weight_capacity_kg: number | string | null
+    }
+    const rackRows = new Map<number, RackRow>()
+    const idsWithLevelEdits = [...new Set(
+      input.placements.filter((p) => p.levels).map((p) => p.location_id!),
+    )]
+    for (const chunk of chunked(idsWithLevelEdits, 200)) {
+      const { data, error } = await admin.from('locations')
+        .select('id, kind, code, materialized_path, storage_type_id, capacity_slots, slot_kind, weight_capacity_kg')
+        .in('id', chunk)
+      if (error) throw new EdgeFunctionError('INTERNAL', `Could not read racks: ${error.message}`)
+      for (const row of (data ?? []) as RackRow[]) rackRows.set(row.id, row)
+    }
+
+    /**
+     * Resolve `{ level_index -> SHELF location id }` for an EXISTING placement,
+     * applying whatever per-level edits the client sent. Returns null when the
+     * placement isn't a levelled rack (a flat bin), which leaves that path
+     * byte-identical to before.
+     *
+     * The `edits === undefined` branch is a SAFETY NET, not a nicety: a client
+     * that doesn't send `levels` — an older bundle still being served between the
+     * function deploy and the frontend deploy, or a stale tab — otherwise saved
+     * the rack PARENT as the placement, and the orphan sweep below then deleted
+     * every level as unreferenced. Deriving the levels from the database instead
+     * makes that flattening unreachable regardless of what the client sends.
+     */
+    const resolveExistingRackLevels = async (
+      rackId: number,
+      edits: Array<z.infer<typeof existingLevelSchema>> | undefined,
+    ): Promise<Record<number, number> | null> => {
+      const current = levelsByRack.get(rackId) ?? []
+      if (!edits) {
+        if (current.length === 0) return null
+        const ids: Record<number, number> = {}
+        for (const row of current) ids[row.level_index] = row.id
+        return ids
+      }
+
+      const rack = rackRows.get(rackId)
+      if (!rack) throw new EdgeFunctionError('INVALID_INPUT', `Placement location ${rackId} not found`)
+      if (rack.kind !== 'RACK') {
+        throw new EdgeFunctionError('INVALID_INPUT', `Location ${rackId} is a ${rack.kind}, not a RACK; it cannot carry levels`)
+      }
+      // Defaults a null level field inherits, exactly as the new-rack branch
+      // resolves them — so "no limit" on a level means the same thing whether the
+      // rack was created this save or ten saves ago.
+      let capacityDefault = num(rack.capacity_slots)
+      let slotDefault = rack.slot_kind
+      let weightDefault = num(rack.weight_capacity_kg)
+      if (rack.storage_type_id) {
+        const st = await resolveStorageDefaults(rack.storage_type_id)
+        if (capacityDefault == null) capacityDefault = st.defaultCapacitySlots
+        if (slotDefault == null && (st.slotUnit === 'pallet' || st.slotUnit === 'carton')) slotDefault = st.slotUnit
+        if (weightDefault == null) weightDefault = st.weightCapacityKg
+      }
+
+      const byId = new Map(current.map((r) => [r.id, r]))
+      const ids: Record<number, number> = {}
+      for (const lvl of edits) {
+        const desired = {
+          level_role: lvl.role,
+          capacity_slots: lvl.capacity_slots ?? capacityDefault,
+          slot_kind: lvl.slot_kind ?? slotDefault,
+          weight_capacity_kg: lvl.weight_capacity_kg ?? weightDefault,
+        }
+        if (lvl.location_id !== undefined) {
+          const row = byId.get(lvl.location_id)
+          // Never take a client's word for which location a level is. Without
+          // this, a crafted payload could re-role or re-capacity any SHELF in the
+          // database through a layout the caller happens to be allowed to edit.
+          if (!row) {
+            throw new EdgeFunctionError('INVALID_INPUT', `Location ${lvl.location_id} is not a level of rack ${rack.code}`)
+          }
+          const unchanged = row.level_role === desired.level_role
+            && num(row.capacity_slots) === desired.capacity_slots
+            && (row.slot_kind ?? null) === (desired.slot_kind ?? null)
+            && num(row.weight_capacity_kg) === desired.weight_capacity_kg
+            && row.level_index === lvl.level_index
+          // Skip the write when nothing moved. The overwhelmingly common save is
+          // "geometry changed, levels didn't", and 945 no-op UPDATEs (a 189-bay
+          // DC at 5 levels) would blow the invoke timeout for no effect.
+          if (!unchanged) {
+            const { error } = await admin.from('locations')
+              .update({ ...desired, level_index: lvl.level_index } as any).eq('id', row.id)
+            if (error) throw new EdgeFunctionError('INTERNAL', `Failed to update level ${lvl.level_index}: ${error.message}`)
+          }
+          ids[lvl.level_index] = row.id
+          continue
+        }
+        // A level the operator ADDED to a saved rack: create it under the rack,
+        // reusing the insert-or-adopt dance so a failed earlier save can't
+        // permanently dead-end every retry on its own leftover row.
+        const newCode = `${rack.code}-L${lvl.level_index}`
+        const payload = {
+          parent_id: rackId, kind: 'SHELF', code: newCode, name: `Level ${lvl.level_index}`,
+          materialized_path: `${rack.materialized_path}/${newCode}`,
+          level_index: lvl.level_index, storage_type_id: rack.storage_type_id ?? null,
+          ...desired,
+        }
+        const { data: created, error: insErr } = await admin.from('locations')
+          .insert({ ...payload, is_active: false, created_in_layout_id: layout.id } as any)
+          .select('id').single()
+        if (created && !insErr) {
+          ids[lvl.level_index] = (created as any).id
+          continue
+        }
+        if (insErr?.code !== '23505') {
+          throw new EdgeFunctionError('INTERNAL', insErr?.message ?? `Failed to create level ${lvl.level_index}`)
+        }
+        const adopted = await adoptDraftOrphan(newCode, payload)
+        if (adopted === null) throw new EdgeFunctionError('CONFLICT', `Level code "${newCode}" already exists`)
+        ids[lvl.level_index] = adopted
+      }
+      // A level's `code` is derived from its index once, at creation, and never
+      // rewritten (codes are globally unique, so renumbering them in place would
+      // collide mid-swap). Delete a MIDDLE level and the survivors' indexes shift
+      // while their codes don't — after which adding a level can pick a `-L<n>`
+      // code that another surviving level still owns, and adopt it. Catch that
+      // here: two indexes resolving to one location would violate UNIQUE(layout_id,
+      // location_id) on the insert BELOW the destructive delete, leaving the draft
+      // empty. Failing now costs the operator a reload instead of their layout.
+      const resolved = Object.values(ids)
+      if (new Set(resolved).size !== resolved.length) {
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          `Rack ${rack.code}'s levels no longer line up with their codes — reload the layout and re-apply the level change`,
+        )
+      }
+      return ids
+    }
+
     // Create locations for brand-new bins, mapping client_ref -> location_id.
     const refToLocation = new Map<string, number>()
     // Leveled racks (mig 00072): client_ref -> { levelIndex -> SHELF location id }.
@@ -477,6 +731,8 @@ serve(async (req: Request) => {
     for (const p of input.placements) {
       if (p.location_id !== undefined) {
         refToLocation.set(p.client_ref, p.location_id)
+        const levelIds = await resolveExistingRackLevels(p.location_id, p.levels)
+        if (levelIds) refToLevelLocations.set(p.client_ref, levelIds)
         continue
       }
       const nb = p.new_bin!
@@ -610,6 +866,14 @@ serve(async (req: Request) => {
     const resolvedIds = input.placements.map((p) => refToLocation.get(p.client_ref)!)
     if (new Set(resolvedIds).size !== resolvedIds.length) {
       throw new EdgeFunctionError('INVALID_INPUT', 'A bin appears twice in the layout')
+    }
+    // Same check for the ids that actually become placement rows: a levelled rack
+    // contributes its LEVELS, not itself, so a level shared between two racks (or
+    // a rack drawn twice) is invisible to the check above and would only surface
+    // as that same post-delete unique violation.
+    const placedLevelIds = [...refToLevelLocations.values()].flatMap((m) => Object.values(m))
+    if (new Set(placedLevelIds).size !== placedLevelIds.length) {
+      throw new EdgeFunctionError('INVALID_INPUT', 'A rack level appears twice in the layout')
     }
 
     // Full replace of this layout's geometry.
