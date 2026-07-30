@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { toAppSettings, fromAppSettings } from '../lib/adapters'
 import type { AppSettings } from '../types'
 
-// Full app_settings row (mig 00044 columns included).
+// Full app_settings row (mig 00044 + 00088 columns included).
 const baseRow = {
   id: 1,
   company_name: 'NexGen',
@@ -21,6 +21,7 @@ const baseRow = {
   po_auto_approve_enabled: true,
   po_auto_approve_block_on_short_stock: false,
   po_auto_approve_block_on_sender_mismatch: true,
+  po_auto_approve_block_on_customer_mismatch: true,
 } as Parameters<typeof toAppSettings>[0]
 
 describe('toAppSettings / fromAppSettings', () => {
@@ -43,6 +44,7 @@ describe('toAppSettings / fromAppSettings', () => {
       po_auto_approve_enabled: true,
       po_auto_approve_block_on_short_stock: false,
       po_auto_approve_block_on_sender_mismatch: true,
+      po_auto_approve_block_on_customer_mismatch: true,
     })
   })
 
@@ -59,15 +61,17 @@ describe('toAppSettings / fromAppSettings', () => {
     expect(app.cartonDiscountPercent).toBe(5)
   })
 
-  it('defaults po_auto_approve_* to true when columns are absent (pre-mig-00044 row)', () => {
+  it('defaults po_auto_approve_* to true when columns are absent (pre-mig-00044/00088 row)', () => {
     const legacy = { ...baseRow } as Record<string, unknown>
     delete legacy.po_auto_approve_enabled
     delete legacy.po_auto_approve_block_on_short_stock
     delete legacy.po_auto_approve_block_on_sender_mismatch
+    delete legacy.po_auto_approve_block_on_customer_mismatch
     const app = toAppSettings(legacy as Parameters<typeof toAppSettings>[0])
     expect(app.poAutoApproveEnabled).toBe(true)
     expect(app.poAutoApproveBlockOnShortStock).toBe(true)
     expect(app.poAutoApproveBlockOnSenderMismatch).toBe(true)
+    expect(app.poAutoApproveBlockOnCustomerMismatch).toBe(true)
   })
 
   it('preserves explicit false for po_auto_approve_* columns', () => {

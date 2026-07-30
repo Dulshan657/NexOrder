@@ -47,8 +47,10 @@ import {
   resolveProduct,
   type SupabaseLike,
 } from '../_shared/poInbox/aliasResolver.ts'
+import { detectCustomerNameMismatch } from '../_shared/poInbox/customerNameMatch.ts'
 import { detectSenderMismatch } from '../_shared/poInbox/senderTrust.ts'
 import { selectAttachments, type AttachmentMeta } from '../_shared/poInbox/attachmentSelect.ts'
+import { archivePrefixCandidates, isSafeStoredName } from '../_shared/poInbox/archivePaths.ts'
 
 interface ExtractRequest {
   inboundMessageId: string
@@ -56,21 +58,27 @@ interface ExtractRequest {
 
 /**
  * Read the auto-approval policy toggles from the singleton app_settings row
- * (mig 00044). Fails open to the historical always-on behaviour (both true) if
- * the row or columns are missing.
+ * (migs 00044, 00088). Fails open to the protective default (all true) if the
+ * row or columns are missing — a database that predates 00088 therefore still
+ * blocks on a customer-name mismatch rather than silently skipping the gate.
  */
 async function loadAutoApprovePolicy(
   supa: SupabaseClient,
-): Promise<{ enabled: boolean; blockOnSenderMismatch: boolean }> {
+): Promise<{ enabled: boolean; blockOnSenderMismatch: boolean; blockOnCustomerMismatch: boolean }> {
   const { data, error } = await supa
     .from('app_settings')
-    .select('po_auto_approve_enabled, po_auto_approve_block_on_sender_mismatch')
+    .select(
+      'po_auto_approve_enabled, po_auto_approve_block_on_sender_mismatch, po_auto_approve_block_on_customer_mismatch',
+    )
     .eq('id', 1)
     .single()
-  if (error || !data) return { enabled: true, blockOnSenderMismatch: true }
+  if (error || !data) {
+    return { enabled: true, blockOnSenderMismatch: true, blockOnCustomerMismatch: true }
+  }
   return {
     enabled: (data as any).po_auto_approve_enabled !== false,
     blockOnSenderMismatch: (data as any).po_auto_approve_block_on_sender_mismatch !== false,
+    blockOnCustomerMismatch: (data as any).po_auto_approve_block_on_customer_mismatch !== false,
   }
 }
 
@@ -267,8 +275,21 @@ async function runExtraction(
       })
     : { flagged: false, sender: null }
 
-  // 5c. Auto-approval policy (app_settings, mig 00044). Missing row/columns ⇒
-  //     default true (historical always-on behaviour).
+  // 5b-ii. Document / customer mismatch. The complement of 5b, and NOT covered
+  //        by it: once an address is a `sender_email` alias, resolveCustomer
+  //        matches on it first and detectSenderMismatch trusts it by
+  //        construction, so a PO on someone else's letterhead sailed through.
+  //        This asks whether the customer is who the paperwork says.
+  const customerNameTrust = customerResolution.horecaId !== null
+    ? await detectCustomerNameMismatch({
+        supa: serviceClient as unknown as SupabaseLike,
+        extractedName: extracted.customer_name_raw ?? null,
+        horecaId: customerResolution.horecaId,
+      })
+    : { flagged: false, documentName: null, matchedName: null }
+
+  // 5c. Auto-approval policy (app_settings, migs 00044 + 00088). Missing
+  //     row/columns ⇒ default true (the protective setting).
   const autoApprovePolicy = await loadAutoApprovePolicy(serviceClient)
 
   // 6. Decide status
@@ -278,8 +299,10 @@ async function runExtraction(
     allLinesResolved:
       matchedItems.length > 0 && matchedItems.every(m => m.product_id !== null),
     senderMismatch: senderTrust.flagged,
+    customerNameMismatch: customerNameTrust.flagged,
     autoApproveEnabled: autoApprovePolicy.enabled,
     blockOnSenderMismatch: autoApprovePolicy.blockOnSenderMismatch,
+    blockOnCustomerMismatch: autoApprovePolicy.blockOnCustomerMismatch,
   })
 
   // 7. Persist the pending_pos row
@@ -321,6 +344,16 @@ async function runExtraction(
               sender_mismatch: {
                 flagged: true,
                 sender: senderTrust.sender,
+                horeca_id: customerResolution.horecaId,
+              },
+            }
+          : {}),
+        ...(customerNameTrust.flagged
+          ? {
+              customer_name_mismatch: {
+                flagged: true,
+                document_name: customerNameTrust.documentName,
+                matched_name: customerNameTrust.matchedName,
                 horeca_id: customerResolution.horecaId,
               },
             }
@@ -588,25 +621,32 @@ async function buildAttachmentManifest(
       .sort((x, y) => x.storedName.localeCompare(y.storedName))
   }
 
-  const { data: listing, error: listError } = await serviceClient.storage
-    .from(ARCHIVE_BUCKET)
-    .list(prefix)
-  if (listError) {
-    throw new Error(`storage list ${prefix}: ${listError.message}`)
+  // Try both spellings of the prefix: storage_path_prefix is percent-encoded
+  // but list() compares its prefix literally while every path-based call is
+  // URL-decoded by storage-api. See _shared/poInbox/archivePaths.ts.
+  for (const candidate of archivePrefixCandidates(prefix)) {
+    const { data: listing, error: listError } = await serviceClient.storage
+      .from(ARCHIVE_BUCKET)
+      .list(candidate)
+    if (listError) {
+      throw new Error(`storage list ${candidate}: ${listError.message}`)
+    }
+    const metas = (listing ?? [])
+      .filter(entry => isSafeStoredName(entry.name))
+      .map(entry => {
+        const meta = (entry.metadata ?? {}) as { size?: number; mimetype?: string }
+        return {
+          storedName: entry.name,
+          filename: entry.name,
+          mimeType: (meta.mimetype ?? '').toLowerCase(),
+          size: typeof meta.size === 'number' ? meta.size : 0,
+          inline: false,
+        }
+      })
+      .sort((x, y) => x.storedName.localeCompare(y.storedName))
+    if (metas.length > 0) return metas
   }
-  return (listing ?? [])
-    .filter(entry => entry.name && entry.name !== 'original.json')
-    .map(entry => {
-      const meta = (entry.metadata ?? {}) as { size?: number; mimetype?: string }
-      return {
-        storedName: entry.name,
-        filename: entry.name,
-        mimeType: (meta.mimetype ?? '').toLowerCase(),
-        size: typeof meta.size === 'number' ? meta.size : 0,
-        inline: false,
-      }
-    })
-    .sort((x, y) => x.storedName.localeCompare(y.storedName))
+  return []
 }
 
 async function classifyIsPurchaseOrder(params: {

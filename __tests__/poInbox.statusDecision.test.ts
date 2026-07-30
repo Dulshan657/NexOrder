@@ -181,4 +181,78 @@ describe('decidePendingPoStatus', () => {
     expect(result.status).toBe('needs_review')
     expect(result.reason.some(r => /spoofing/.test(r))).toBe(true)
   })
+
+  // ── Customer-name mismatch (mig 00088) ────────────────────────────────────
+  // The gate that would have caught a Hallidays PO being booked against
+  // Executive. It is independent of senderMismatch on purpose: the sender was
+  // trusted, which is exactly why nothing objected.
+  it('routes to needs_review when the document names a different customer', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      senderMismatch: false,
+      customerNameMismatch: true,
+    })
+    expect(result.status).toBe('needs_review')
+    expect(result.reason).toContain('document names a different customer')
+  })
+
+  it('auto-approves when customerNameMismatch is false', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      customerNameMismatch: false,
+    })
+    expect(result.status).toBe('auto_approved')
+    expect(result.reason).toEqual([])
+  })
+
+  it('does NOT block on customer mismatch when blockOnCustomerMismatch is off', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      customerNameMismatch: true,
+      blockOnCustomerMismatch: false,
+    })
+    expect(result.status).toBe('auto_approved')
+    expect(result.reason).toEqual([])
+  })
+
+  it('blocks on customer mismatch by default (toggle absent)', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      customerNameMismatch: true,
+    })
+    expect(result.status).toBe('needs_review')
+    expect(result.reason).toContain('document names a different customer')
+  })
+
+  it('reports both mismatch reasons when both fire', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      senderMismatch: true,
+      customerNameMismatch: true,
+    })
+    expect(result.reason).toHaveLength(2)
+  })
+
+  it('leaves the two mismatch toggles independent', () => {
+    const result = decidePendingPoStatus({
+      confidence: fullConfidence,
+      customerResolved: true,
+      allLinesResolved: true,
+      senderMismatch: true,
+      customerNameMismatch: true,
+      blockOnSenderMismatch: false,
+    })
+    expect(result.status).toBe('needs_review')
+    expect(result.reason).toEqual(['document names a different customer'])
+  })
 })

@@ -722,6 +722,19 @@ export interface StatusHistoryEntry {
 
 export type DeliveryTimeSlot = 'Morning (8am-12pm)' | 'Afternoon (12pm-4pm)' | 'Evening (4pm-8pm)';
 
+/** Snapshot of where one order ships, taken at creation time (mig 00021).
+ *  Distinct from `HoReCa.address`, which is the customer's standing address:
+ *  an inbound PO carries its own "Deliver To" block and a customer can ship to
+ *  several sites. Absent means "use the HoReCa's address" — that is what NULL
+ *  in the column means, and legacy orders predate it entirely. */
+export interface OrderDeliveryAddress {
+    street: string;
+    city?: string | null;
+    postcode?: string | null;
+    country?: string | null;
+    recipientName?: string | null;
+}
+
 export interface Order {
     id: string;
     hoReCa: HoReCa;
@@ -734,6 +747,10 @@ export interface Order {
     statusHistory: StatusHistoryEntry[];
     deliveryDate?: string;
     deliveryTimeSlot?: DeliveryTimeSlot;
+    // Per-order shipping snapshot. Undefined for legacy orders and whenever the
+    // source document printed no usable address — read through
+    // lib/orderDeliveryAddress.ts, which applies the HoReCa fallback.
+    deliveryAddress?: OrderDeliveryAddress;
     verification?: OrderVerification;
     appliedPromotions?: AppliedPromotion[];
     // Set by the data adapter when this order was created from an inbound email PO.
@@ -842,10 +859,11 @@ export interface AppSettings {
     currency: string;
     showStockToHoReCa: boolean;
     companyLogoUrl?: string | null;
-    // PO-Inbox auto-approval policy toggles (mig 00044). All default true.
+    // PO-Inbox auto-approval policy toggles (migs 00044, 00088). All default true.
     poAutoApproveEnabled: boolean;
     poAutoApproveBlockOnShortStock: boolean;
     poAutoApproveBlockOnSenderMismatch: boolean;
+    poAutoApproveBlockOnCustomerMismatch: boolean;
 }
 
 export interface PantryItem {

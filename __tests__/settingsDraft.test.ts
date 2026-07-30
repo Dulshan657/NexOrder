@@ -19,6 +19,7 @@ const base: AppSettings = {
   poAutoApproveEnabled: true,
   poAutoApproveBlockOnShortStock: true,
   poAutoApproveBlockOnSenderMismatch: true,
+  poAutoApproveBlockOnCustomerMismatch: true,
 }
 
 describe('pickSettings', () => {

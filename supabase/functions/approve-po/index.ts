@@ -36,6 +36,12 @@ import { requireAuth } from '../_shared/auth.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { computeAliasDiff } from '../_shared/poInbox/aliasDiff.ts'
+import {
+  shipToDeliveryAddress,
+  type DeliveryAddressSnapshot,
+  type ShipToSource,
+} from '../_shared/poInbox/deliveryAddress.ts'
+import { composeOrderNotes } from '../_shared/poInbox/documentNotes.ts'
 import { sanitizeForLog } from '../_shared/poInbox/env.ts'
 import { isServiceRoleBearer } from '../_shared/poInbox/dispatch.ts'
 import { findStockShortages, type StockShortage } from '../_shared/poInbox/stockCheck.ts'
@@ -201,9 +207,25 @@ interface PendingPoRow {
     pack_size: number | null
     confidence: number
   }>
+  // Only the slice approve-po reads, not the full ExtractedPo — but every field
+  // it hands to a shared helper must be declared. Both `documentNotes.ts` and
+  // `deliveryAddress.ts` take all-optional parameter types, and TypeScript's
+  // weak-type check rejects an argument that shares NO property with such a
+  // type. Omitting `ship_to` here therefore doesn't just lose intent, it fails
+  // to compile at the call site — and this directory is excluded from
+  // `npx tsc --noEmit` (tsconfig.json), so the first thing to notice would have
+  // been `supabase functions deploy`.
   extracted_po: {
     customer_name_raw?: string | null
     requested_date?: string | null
+    ship_to?: {
+      name?: string | null
+      street?: string | null
+      city?: string | null
+    } | null
+    notes?: string | null
+    delivery_instructions?: string | null
+    job_address?: string | null
     lines?: Array<{
       item_code_raw?: string | null
       description_raw?: string | null
@@ -253,14 +275,7 @@ interface RunApproveArgs {
   }
 }
 
-interface ResolvedDeliveryAddress {
-  street: string
-  city: string | null
-  postcode: string | null
-  country: string | null
-  recipient_name: string | null
-  source_address_id: string | null
-}
+type ResolvedDeliveryAddress = DeliveryAddressSnapshot
 
 async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
   const pending = await loadPendingPo(args.supa, args.pendingPoId)
@@ -354,6 +369,7 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
     args.supa,
     effectiveHorecaId,
     args.overrides.deliveryAddress,
+    pending.extracted_po,
   )
 
   // submittedBy: for human approvals the operator; for auto approvals
@@ -392,8 +408,9 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
   // fulfilled — decline and leave the PO in needs_review so a human reviews it
   // (human approval still proceeds with an advisory warning). If the admin has
   // turned the policy off, a short auto PO is approved anyway. No claim and no
-  // order have been written yet — auto mode has no deliveryAddress override, so
-  // resolveDeliveryAddress was a no-op above.
+  // order have been written yet, and nothing above persisted anything either:
+  // auto mode has no deliveryAddress override, so resolveDeliveryAddress took
+  // its ship_to fallback, which is pure and writes no horeca_addresses row.
   if (
     args.mode === 'auto' &&
     stockWarnings.length > 0 &&
@@ -427,7 +444,13 @@ async function runApprove(args: RunApproveArgs): Promise<ApproveResult> {
       submitted_by: submittedBy,
       total,
       order_date: new Date().toISOString(),
-      notes: args.overrides.notes ?? null,
+      // Fall back to whatever the PO itself printed under "Notes" / "Delivery
+      // Instructions" — same shape as delivery_date below. This is the only
+      // path those instructions have onto the order for mode:'auto', where
+      // nobody ever opens the review modal, and "don't deliver the outdoor
+      // unit yet" needs to reach whoever picks it. An operator's typed note
+      // still wins.
+      notes: args.overrides.notes ?? composeOrderNotes(pending.extracted_po),
       status: 'processing',
       // jsonb array (CHECK orders_status_history_is_array) — pass the array
       // directly, NOT JSON.stringify'd, matching place-order / update-order-status.
@@ -752,7 +775,17 @@ function isUniqueViolation(error: { code?: string | null }): boolean {
  *      horeca_addresses row tagged is_default=false so the operator can
  *      pick it again next time. The new row's id is back-filled into
  *      `source_address_id` for cross-reference.
- *   3. No override at all → null (orders.delivery_address NULL means
+ *   3. No override at all → whatever the PO itself printed under "Deliver
+ *      To", exactly as `notes` falls back to the document's own blocks and
+ *      `delivery_date` to its `requested_date`. This is the only path the
+ *      printed address has onto the order for mode:'auto', where nobody
+ *      ever opens the review modal — and shipping a builder's order to the
+ *      customer's head office because the document was never consulted is
+ *      the kind of error nobody notices until the goods are in the wrong
+ *      suburb. It writes NO horeca_addresses row: an address that came off
+ *      a document was never chosen by an operator, and auto-approval would
+ *      otherwise grow the customer's address book on every PO.
+ *   4. Nothing printed either → null (orders.delivery_address NULL means
  *      "fall back to horecas.address" for display, matching legacy rows).
  *
  * The HoReCa's existing default is never touched by this path.
@@ -761,8 +794,9 @@ async function resolveDeliveryAddress(
   supa: SupabaseClient,
   horecaId: number,
   override: RunApproveArgs['overrides']['deliveryAddress'],
+  extracted: ShipToSource | null,
 ): Promise<ResolvedDeliveryAddress | null> {
-  if (!override) return null
+  if (!override) return shipToDeliveryAddress(extracted)
 
   // 1. Picked an existing address from the HoReCa's book.
   if (override.source_address_id) {

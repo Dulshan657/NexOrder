@@ -53,6 +53,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     poAutoApproveEnabled: true,
     poAutoApproveBlockOnShortStock: true,
     poAutoApproveBlockOnSenderMismatch: true,
+    poAutoApproveBlockOnCustomerMismatch: true,
 };
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {

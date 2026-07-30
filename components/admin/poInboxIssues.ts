@@ -11,7 +11,12 @@
 
 import { lineStockStatus } from './poInboxStock'
 
-export type PoIssueKind = 'sender_mismatch' | 'stock' | 'unresolved_lines' | 'no_customer'
+export type PoIssueKind =
+  | 'sender_mismatch'
+  | 'customer_name_mismatch'
+  | 'stock'
+  | 'unresolved_lines'
+  | 'no_customer'
 
 export interface PoIssue {
   kind: PoIssueKind
@@ -33,6 +38,11 @@ export interface PoIssueInputs {
   hasCustomer: boolean
   /** Sender-mismatch payload (from senderMismatch()), or null when fine. */
   senderMismatch: { sender: string | null } | null
+  /**
+   * Document/customer name-mismatch payload (from customerNameMismatch()), or
+   * null when fine. Optional so existing callers keep compiling.
+   */
+  customerNameMismatch?: { documentName: string | null; matchedName: string | null } | null
   lines: PoIssueLine[]
   lowThreshold: number
 }
@@ -48,6 +58,17 @@ export function computePoIssues(input: PoIssueInputs): PoIssue[] {
       severity: 'error',
       label: 'Sender mismatch',
       detail: `${sender} is not a known address for this customer. Verify the sender is genuine before approving.`,
+    })
+  }
+
+  if (input.customerNameMismatch) {
+    const doc = input.customerNameMismatch.documentName ?? 'A different company'
+    const matched = input.customerNameMismatch.matchedName ?? 'the selected customer'
+    issues.push({
+      kind: 'customer_name_mismatch',
+      severity: 'error',
+      label: 'Different customer on document',
+      detail: `The document is addressed from ${doc}, but this PO is being booked against ${matched}. Confirm the customer before approving.`,
     })
   }
 

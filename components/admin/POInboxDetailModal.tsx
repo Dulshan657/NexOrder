@@ -10,7 +10,7 @@
 // Aliases write themselves on Approve via approve-po's diff logic, so
 // nothing extra needs to happen here for the learning loop.
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -19,6 +19,7 @@ import {
   FileText,
   Loader2,
   MapPin,
+  NotebookPen,
   Plus,
   RefreshCw,
   Trash2,
@@ -34,11 +35,19 @@ import { useHorecaAddresses } from '@/hooks/queries/useHorecaAddresses'
 import { useSettings } from '@/hooks/queries/useSettings'
 import { lineStockStatus, type LineStockStatus } from './poInboxStock'
 import { computePoIssues } from './poInboxIssues'
-import { getPoDocumentUrl, senderMismatch } from '@/services/supabase/poInboxService'
+import {
+  customerNameMismatch,
+  getPoDocumentUrl,
+  senderMismatch,
+} from '@/services/supabase/poInboxService'
 import type { ApproveDeliveryAddress } from '@/services/supabase/poInboxService'
 import { useToasts } from '@/hooks/useToasts'
 import ConfidenceRing from './ConfidenceRing'
-import { confidenceReasoning, statusBadge } from './poInboxFormat'
+import { builderLabel, confidenceReasoning, statusBadge } from './poInboxFormat'
+// Shared with approve-po, which uses the same helpers to fold these blocks into
+// orders.notes — so what the reviewer reads here and what the picker is handed
+// can never drift apart.
+import { documentNoteText } from '@/supabase/functions/_shared/poInbox/documentNotes'
 import ProductSearchDropdown from './ProductSearchDropdown'
 import type {
   ExtractedPoLine,
@@ -48,6 +57,7 @@ import type {
 import type { HorecaAddressRow } from '@/services/supabase/horecaAddressService'
 import type { HoReCa, Product } from '../../types'
 import { toProduct } from '@/lib/adapters'
+import { fetchPdfObjectUrl } from '@/lib/pdfObjectUrl'
 import { Modal } from '../ui'
 
 const FIELD_CLASS =
@@ -56,6 +66,12 @@ const FIELD_CLASS =
 /** Format a number as AUD currency for display of extracted PO prices. */
 function formatMoney(value: number): string {
   return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value)
+}
+
+/** Release a blob: URL. Tolerates null and the signed-URL case, so every
+ *  cleanup path can call it without first working out which kind it holds. */
+function revokeIfBlob(url: string | null): void {
+  if (url && url.startsWith('blob:')) URL.revokeObjectURL(url)
 }
 
 interface POInboxDetailModalProps {
@@ -135,6 +151,9 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
   const [saveToBook, setSaveToBook] = useState<boolean>(true)
 
   const [docUrl, setDocUrl] = useState<string | null>(null)
+  // The live blob: URL behind a PDF preview, so it can be revoked. Null for
+  // the image / DOCX paths, which render the signed URL directly.
+  const objectUrlRef = useRef<string | null>(null)
   const [docError, setDocError] = useState<string | null>(null)
   const [docLoading, setDocLoading] = useState(false)
   const [bodyText, setBodyText] = useState<string | null>(null)
@@ -163,6 +182,9 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       setDeliveryDate,
       setDeliveryTimeSlot,
       setNotes,
+      setAddressMode,
+      setNewAddress,
+      setSaveToBook,
     })
   }, [detailQuery.data])
 
@@ -179,13 +201,18 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
     setSelectedAddressId(def.id)
   }, [addresses, addressMode, selectedAddressId])
 
-  // Switching HoReCa wipes the picked address — addresses belong to one
-  // HoReCa, so a stale selection from the previous customer is wrong.
+  // Switching HoReCa wipes the PICKED address — address-book rows belong to one
+  // HoReCa, so a stale selection from the previous customer is wrong, and the
+  // effect above re-seeds the new customer's default.
+  //
+  // It deliberately leaves the new-address form alone. That form is seeded from
+  // the PO's own "Deliver To" block (seedAddressFromShipTo), which is a fact
+  // about the document, not about whichever customer record we matched it to —
+  // correcting the customer must not silently redirect the delivery. Resetting
+  // it here also used to undo that seed, since setHorecaId fires this effect on
+  // every load.
   useEffect(() => {
     setSelectedAddressId(null)
-    setAddressMode('saved')
-    setNewAddress(EMPTY_ADDRESS_FORM)
-    setSaveToBook(true)
   }, [horecaId])
 
   // Fetch document signed URL once we know which kind of document to show.
@@ -248,8 +275,20 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       attachmentName: sourceFilename ?? undefined,
       attachmentIndex: 0,
     })
-      .then(r => {
-        if (!cancelled) setDocUrl(r.signedUrl)
+      // PDFs are re-fetched into a same-origin blob: URL — Chrome will not run
+      // its PDF viewer inside a sandboxed frame, and lib/pdfObjectUrl.ts
+      // explains what pins the blob's type in exchange for dropping that
+      // sandbox. Images and DOCX keep the raw signed URL: <img> is already
+      // safe, and DOCX must download with its real type, not as a PDF.
+      .then(r => (format === 'pdf' ? fetchPdfObjectUrl(r.signedUrl) : r.signedUrl))
+      .then(url => {
+        // A superseded fetch must not leak the object URL it just created.
+        if (cancelled) {
+          revokeIfBlob(url)
+          return
+        }
+        objectUrlRef.current = url.startsWith('blob:') ? url : null
+        setDocUrl(url)
       })
       .catch(err => {
         if (!cancelled) setDocError(err instanceof Error ? err.message : String(err))
@@ -259,8 +298,20 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       })
     return () => {
       cancelled = true
+      revokeIfBlob(objectUrlRef.current)
+      objectUrlRef.current = null
     }
   }, [detailId, sourceFormat, sourceFilename, docNonce])
+
+  // Last line of defence for the object URL: the effect cleanup covers a
+  // re-run, this covers the modal simply closing.
+  useEffect(
+    () => () => {
+      revokeIfBlob(objectUrlRef.current)
+      objectUrlRef.current = null
+    },
+    [],
+  )
 
   const productById = useMemo(() => {
     const m = new Map<number, Product>()
@@ -288,11 +339,22 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
   // operator edits. Mirrors the queue-row pills.
   const { data: settings } = useSettings()
   const issueLowThreshold = settings?.low_stock_threshold ?? 10
+  // Cleared once the operator reassigns the PO: the flag was raised against a
+  // specific customer, and continuing to warn after they've corrected the
+  // choice would be nagging about a decision already made.
+  const nameMismatch = useMemo(() => {
+    const flag = detail ? customerNameMismatch(detail.confidence_fields) : null
+    if (!flag) return null
+    if (flag.horecaId != null && horecaId !== flag.horecaId) return null
+    return flag
+  }, [detail, horecaId])
+
   const poIssues = useMemo(() => {
     if (!detail) return []
     return computePoIssues({
       hasCustomer: horecaId != null,
       senderMismatch: senderMismatch(detail.confidence_fields),
+      customerNameMismatch: nameMismatch,
       lines: lines.map(l => ({
         resolved: l.productId != null,
         inventory: l.productId != null ? productById.get(l.productId)?.inventory ?? null : null,
@@ -300,7 +362,7 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       })),
       lowThreshold: issueLowThreshold,
     })
-  }, [detail, horecaId, lines, productById, issueLowThreshold])
+  }, [detail, horecaId, lines, productById, issueLowThreshold, nameMismatch])
 
   const handleApprove = async () => {
     if (!detail) return
@@ -525,6 +587,9 @@ interface InitArgs {
   setDeliveryDate: (v: string) => void
   setDeliveryTimeSlot: (v: DeliveryTimeSlot | '') => void
   setNotes: (v: string) => void
+  setAddressMode: (v: 'saved' | 'new') => void
+  setNewAddress: (v: NewAddressForm) => void
+  setSaveToBook: (v: boolean) => void
 }
 
 function initFormFromRow(detail: PendingPoDetailRow, args: InitArgs): void {
@@ -533,6 +598,47 @@ function initFormFromRow(detail: PendingPoDetailRow, args: InitArgs): void {
   args.setDeliveryDate(detail.extracted_po.requested_date ?? '')
   args.setDeliveryTimeSlot('')
   args.setNotes('')
+  seedAddressFromShipTo(detail, args)
+}
+
+/**
+ * Default the address pane to what the PO printed under "Deliver To".
+ *
+ * The previous default was the HoReCa's is_default address, which is wrong in
+ * both directions: with an address book it silently ships a builder's order to
+ * the customer's head office while the Approve button sits green and unworried,
+ * and with an EMPTY book (every customer created since migration 00021's
+ * backfill — `mutate-horeca` writes no address row) `addressOk` can never be
+ * satisfied and Approve stays disabled with nothing on screen explaining why.
+ *
+ * The document is the better default, and it matches what approve-po now does
+ * server-side when no override is sent. The operator can still switch to a saved
+ * address; that choice still wins.
+ *
+ * `save_to_horeca_address_book` is false here on purpose. An address lifted off
+ * a document was not chosen by anyone, and `city` carries the whole
+ * "Hallam VIC 3803" blob because the extraction schema has no postcode field —
+ * saving that would seed the customer's address book with a degraded row that
+ * then gets picked from a dropdown forever. Ticking the box is an explicit act.
+ */
+function seedAddressFromShipTo(detail: PendingPoDetailRow, args: InitArgs): void {
+  const shipTo = detail.extracted_po.ship_to
+  const street = shipTo?.street?.trim() ?? ''
+  if (!street) {
+    args.setAddressMode('saved')
+    args.setNewAddress(EMPTY_ADDRESS_FORM)
+    args.setSaveToBook(true)
+    return
+  }
+  args.setAddressMode('new')
+  args.setNewAddress({
+    street,
+    city: shipTo?.city?.trim() ?? '',
+    postcode: '',
+    country: '',
+    recipient_name: shipTo?.name?.trim() ?? '',
+  })
+  args.setSaveToBook(false)
 }
 
 export function buildEditableLines(
@@ -678,6 +784,13 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
             // srcDoc — content originated from an inbound email and MUST
             // be treated as attacker-controlled. sandbox="" disables
             // scripts, forms, popups, same-origin, and top-navigation.
+            //
+            // This is deliberately UNLIKE the PDF frame further down, which
+            // carries no sandbox. Raw email HTML has to be rendered as HTML,
+            // so the sandbox is the only control available here; a PDF can be
+            // pinned to a type that is never executable, so it doesn't need
+            // one — and cannot have one, because Chrome blocks its viewer in
+            // sandboxed frames. Keep them different.
             <iframe
               srcDoc={bodyHtml ?? ''}
               title="PO email body"
@@ -704,21 +817,24 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
             <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading document…
           </div>
         ) : format === 'pdf' ? (
-          // Chromium's built-in PDF viewer is an internal extension whose
-          // scripts must run to paint the viewer — "allow-same-origin" alone
-          // renders a blank/grey pane. The signed URL is cross-origin
-          // (supabase.co), so the framed document cannot reach the parent
-          // (vercel.app) even with both sandbox tokens; the "escape sandbox"
-          // caveat only applies to SAME-origin framed content. This does not
-          // run attacker-controlled JS embedded in the PDF — Chrome's PDFium
-          // viewer does not execute PDF-embedded scripts by default.
-          // Forms, popups, and top-navigation beyond the viewer stay blocked.
-          // The "Open in new tab" link above is the fallback if any browser
-          // still refuses to embed the document.
+          // DELIBERATELY NOT SANDBOXED — do not "fix" this to match the
+          // srcDoc frame below. Chrome refuses to instantiate its PDF viewer
+          // inside a sandboxed frame no matter which tokens are granted, and
+          // shows its own "This page has been blocked by Chrome" interstitial
+          // instead. Escalating the tokens was tried and is what produced that.
+          //
+          // What keeps this safe is `url`: a same-origin blob: URL whose type
+          // is PINNED to application/pdf by lib/pdfObjectUrl.ts, never taken
+          // from the server. So an attacker-supplied attachment can only ever
+          // be handed to Chrome's PDFium viewer, which does not execute
+          // PDF-embedded scripts by default — it can never be interpreted as
+          // HTML in our origin. Read that file before changing this.
+          //
+          // The "Open in new tab" link above is the fallback if some other
+          // browser still refuses to embed the document.
           <iframe
             src={url}
             title="PO document"
-            sandbox="allow-scripts allow-same-origin"
             referrerPolicy="no-referrer"
             className="w-full h-full min-h-[60vh] bg-white"
           />
@@ -805,6 +921,13 @@ const FormPane: React.FC<FormPaneProps> = props => {
     (props.detail.confidence_fields as { per_field?: Record<string, unknown> })?.per_field ?? {}
   const customerMatch =
     (props.detail.confidence_fields as { customer_match?: string })?.customer_match ?? null
+  // Same clear-on-reassign rule as the issues banner above: the flag belongs to
+  // the customer it was raised against, not to the form.
+  const nameFlagRaw = customerNameMismatch(props.detail.confidence_fields)
+  const nameFlag =
+    nameFlagRaw && (nameFlagRaw.horecaId == null || props.horecaId === nameFlagRaw.horecaId)
+      ? nameFlagRaw
+      : null
 
   const extractedPo = props.detail.extracted_po
 
@@ -816,6 +939,12 @@ const FormPane: React.FC<FormPaneProps> = props => {
           poNumber={extractedPo.po_number}
           orderDate={extractedPo.order_date}
           requestedDate={extractedPo.requested_date}
+          builder={builderLabel(props.detail.builder)}
+        />
+
+        <PrintedNotes
+          notes={extractedPo.notes}
+          deliveryInstructions={extractedPo.delivery_instructions}
         />
 
         {/* Customer */}
@@ -841,6 +970,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
             matchSource={customerMatch}
             extractedName={extractedPo.customer_name_raw}
             picked={props.horecaId != null}
+            nameMismatch={nameFlag != null}
           />
         </div>
 
@@ -1029,24 +1159,72 @@ function readConfidence(perField: Record<string, unknown>, key: string): number 
 // Supporting subcomponents for the rebuilt right pane
 // ---------------------------------------------------------------------------
 
+// Module scope, not inside POHeaderChips: a component declared in a render body
+// is a new type on every render, so React unmounts and remounts the whole subtree.
+const Chip: React.FC<{ label: string; value: string | null; title?: string }> = ({
+  label,
+  value,
+  title,
+}) => (
+  <div className="flex flex-col min-w-0">
+    <span className="text-[10px] uppercase tracking-wide text-stone-500">{label}</span>
+    <span className="text-xs font-medium text-stone-900 truncate" title={title}>
+      {value && value.trim().length > 0 ? value : <span className="text-stone-400 italic">—</span>}
+    </span>
+  </div>
+)
+
 const POHeaderChips: React.FC<{
   poNumber: string | null
   orderDate: string | null
   requestedDate: string | null
-}> = ({ poNumber, orderDate, requestedDate }) => {
-  const Chip: React.FC<{ label: string; value: string | null }> = ({ label, value }) => (
-    <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-wide text-stone-500">{label}</span>
-      <span className="text-xs font-medium text-stone-900 truncate">
-        {value && value.trim().length > 0 ? value : <span className="text-stone-400 italic">—</span>}
-      </span>
-    </div>
-  )
+  builder: string | null
+}> = ({ poNumber, orderDate, requestedDate, builder }) => (
+  // Two columns on narrow panes so four chips don't crush; four from sm up.
+  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pb-3 border-b border-stone-200/70">
+    <Chip label="PO #" value={poNumber} />
+    <Chip label="Order date" value={orderDate} />
+    <Chip label="Requested" value={requestedDate} />
+    <Chip label="Builder" value={builder} title={builder ?? undefined} />
+  </div>
+)
+
+/**
+ * The whole-document text the customer printed on the PO — the "Notes" and
+ * "Delivery Instructions" blocks. Read-only: this is what they wrote, and it is
+ * deliberately kept apart from the editable "Notes (admin-internal)" box lower
+ * down, which is the reviewer's own. approve-po is what carries this text onto
+ * orders.notes, including for auto-approvals that never open this modal.
+ *
+ * Amber rather than a neutral tone: the usual content is a fulfilment caveat
+ * ("Don't deliver outdoor unit as it will be called up at a later date") that
+ * changes what the warehouse does, so it should catch the eye.
+ */
+const PrintedNotes: React.FC<{
+  notes: string | null | undefined
+  deliveryInstructions: string | null | undefined
+}> = ({ notes, deliveryInstructions }) => {
+  const body = documentNoteText(notes)
+  const delivery = documentNoteText(deliveryInstructions)
+  if (!body && !delivery) return null
+
   return (
-    <div className="grid grid-cols-3 gap-4 pb-3 border-b border-stone-200/70">
-      <Chip label="PO #" value={poNumber} />
-      <Chip label="Order date" value={orderDate} />
-      <Chip label="Requested" value={requestedDate} />
+    <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+        <NotebookPen className="w-3.5 h-3.5 shrink-0" />
+        Notes on this PO
+      </div>
+      {/* whitespace-pre-line: these blocks carry meaningful line breaks — the
+          affected part numbers are listed one per line under the note. */}
+      {body && (
+        <p className="mt-1.5 text-xs text-stone-800 whitespace-pre-line">{body}</p>
+      )}
+      {delivery && (
+        <p className="mt-2 text-xs text-stone-800 whitespace-pre-line">
+          <span className="text-stone-500">Delivery instructions: </span>
+          {delivery}
+        </p>
+      )}
     </div>
   )
 }
@@ -1112,11 +1290,21 @@ const LineConfidenceBadge: React.FC<{ value: number | null }> = ({ value }) => {
   )
 }
 
+/** How the customer was matched, plus the name the document actually carried.
+ *
+ *  `nameMismatch` is what stops this block lying. Both facts were already on
+ *  screen when a Hallidays PO was booked against Executive — but the match
+ *  source rendered as a green tick and the contradicting name as 11px grey
+ *  underneath it, so the pairing read as confirmation. When the names disagree
+ *  the tick becomes a rose warning and the extracted name is promoted, because
+ *  "auto-matched via sender_email alias" is precisely the mechanism that went
+ *  wrong, not evidence that anything went right. */
 const CustomerMatchHint: React.FC<{
   matchSource: string | null
   extractedName: string | null
   picked: boolean
-}> = ({ matchSource, extractedName, picked }) => {
+  nameMismatch?: boolean
+}> = ({ matchSource, extractedName, picked, nameMismatch }) => {
   let label = ''
   if (matchSource === 'sender_email_alias') label = 'Auto-matched via sender_email alias'
   else if (matchSource === 'sender_domain_alias') label = 'Auto-matched via sender_domain alias'
@@ -1127,9 +1315,14 @@ const CustomerMatchHint: React.FC<{
   return (
     <div className="mt-1 space-y-0.5">
       {label && (
-        <p className="text-[11px] text-emerald-700">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 align-middle" />
+        <p className={nameMismatch ? 'text-[11px] text-rose-700' : 'text-[11px] text-emerald-700'}>
+          {nameMismatch ? (
+            <AlertTriangle className="inline-block w-3 h-3 mr-1 align-middle" />
+          ) : (
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 align-middle" />
+          )}
           {label}
+          {nameMismatch && ' — but the document names another company'}
         </p>
       )}
       {!picked && matchSource == null && (
@@ -1147,7 +1340,7 @@ const CustomerMatchHint: React.FC<{
         </p>
       )}
       {extractedName && (
-        <p className="text-[11px] text-stone-500">
+        <p className={nameMismatch ? 'text-xs font-medium text-rose-700' : 'text-[11px] text-stone-500'}>
           Extracted as: <em>{extractedName}</em>
         </p>
       )}

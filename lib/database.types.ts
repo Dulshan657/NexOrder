@@ -783,6 +783,7 @@ export type Database = {
           po_auto_approve_enabled: boolean
           po_auto_approve_block_on_short_stock: boolean
           po_auto_approve_block_on_sender_mismatch: boolean
+          po_auto_approve_block_on_customer_mismatch: boolean
         }
         Insert: {
           id?: number
@@ -801,6 +802,7 @@ export type Database = {
           po_auto_approve_enabled?: boolean
           po_auto_approve_block_on_short_stock?: boolean
           po_auto_approve_block_on_sender_mismatch?: boolean
+          po_auto_approve_block_on_customer_mismatch?: boolean
         }
         Update: {
           id?: number
@@ -819,6 +821,7 @@ export type Database = {
           po_auto_approve_enabled?: boolean
           po_auto_approve_block_on_short_stock?: boolean
           po_auto_approve_block_on_sender_mismatch?: boolean
+          po_auto_approve_block_on_customer_mismatch?: boolean
         }
         Relationships: []
       }

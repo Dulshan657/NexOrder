@@ -5,16 +5,27 @@
 // (separate component to keep this file small).
 
 import React, { Suspense, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, ChevronRight, Inbox, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronRight, HardHat, Inbox, Loader2, RefreshCw } from 'lucide-react'
 import { LoadingOverlay } from '../ui'
 import { lazyWithRetry } from '../../lib/lazyWithRetry'
 import { usePendingPos, usePendingPoCount } from '@/hooks/queries/usePendingPos'
 import { useProducts } from '@/hooks/queries/useProducts'
 import { useSettings } from '@/hooks/queries/useSettings'
-import { PO_INBOX_TABS, confidenceReasoning, formatAge, sortForDisplay, statusBadge } from './poInboxFormat'
+import {
+  PO_INBOX_TABS,
+  builderLabel,
+  confidenceReasoning,
+  formatAge,
+  sortForDisplay,
+  statusBadge,
+} from './poInboxFormat'
 import { computePoIssues } from './poInboxIssues'
 import ConfidenceRing from './ConfidenceRing'
-import { ARCHIVE_AFTER_DAYS, senderMismatch } from '@/services/supabase/poInboxService'
+import {
+  ARCHIVE_AFTER_DAYS,
+  customerNameMismatch,
+  senderMismatch,
+} from '@/services/supabase/poInboxService'
 import type { PendingPoStatus, PendingPoSummaryRow } from '@/services/supabase/poInboxService'
 import type { HoReCa, Product } from '../../types'
 import { toProduct } from '@/lib/adapters'
@@ -292,6 +303,8 @@ interface RowProps {
 const Row: React.FC<RowProps> = ({ row, hoReCa, index, productById, lowThreshold, onClick }) => {
   const customerName = hoReCa?.name ?? (row.matched_horeca_id ? `#${row.matched_horeca_id}` : null)
   const mismatch = senderMismatch(row.confidence_fields)
+  const nameMismatch = customerNameMismatch(row.confidence_fields)
+  const builder = builderLabel(row.builder)
   const badge = statusBadge(row.status)
   // Non-sender issues (stock / unresolved lines / no customer) for rows still
   // awaiting review. Sender mismatch keeps its own pill below, so it's excluded
@@ -301,6 +314,7 @@ const Row: React.FC<RowProps> = ({ row, hoReCa, index, productById, lowThreshold
       ? computePoIssues({
           hasCustomer: row.matched_horeca_id != null,
           senderMismatch: null,
+          customerNameMismatch: nameMismatch,
           lines: (row.matched_items ?? []).map(it => ({
             resolved: it.product_id != null,
             inventory: it.product_id != null ? productById.get(it.product_id)?.inventory ?? null : null,
@@ -311,7 +325,7 @@ const Row: React.FC<RowProps> = ({ row, hoReCa, index, productById, lowThreshold
       : []
   // Priority rail: rose when risky (mismatch or low confidence), else the
   // status hue. Drives the eye to the rows that need a human first.
-  const risky = !!mismatch || row.confidence_overall < 0.75
+  const risky = !!mismatch || !!nameMismatch || row.confidence_overall < 0.75
   const railClass = risky
     ? 'border-rose-400'
     : row.status === 'needs_review'
@@ -341,6 +355,17 @@ const Row: React.FC<RowProps> = ({ row, hoReCa, index, productById, lowThreshold
             </span>
             {row.approved_order_id && (
               <span className="text-xs font-mono text-stone-500">{row.approved_order_id}</span>
+            )}
+            {/* Informational, not a problem — deliberately a neutral sky tone so
+                it never reads as one of the amber/rose warning flags beside it. */}
+            {builder && (
+              <span
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 rounded-full px-2 py-0.5 max-w-[14rem]"
+                title={`Builder: ${builder}`}
+              >
+                <HardHat className="w-3 h-3 shrink-0" />
+                <span className="truncate">{builder}</span>
+              </span>
             )}
             {mismatch && (
               <span

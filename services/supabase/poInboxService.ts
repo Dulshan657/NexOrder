@@ -20,6 +20,11 @@ export interface PendingPoSummaryRow {
   matched_items: MatchedItem[]
   confidence_overall: number
   confidence_fields: Record<string, unknown>
+  /** Home builder named on the PO, or null. Projected straight out of the
+   *  extracted_po JSONB (see SUMMARY_SELECT) so the queue can flag it without
+   *  pulling the whole document payload for every row. Raw as extracted —
+   *  normalise for display with builderLabel(). */
+  builder: string | null
   approved_order_id: string | null
   reviewed_at: string | null
   created_at: string
@@ -51,6 +56,43 @@ export function senderMismatch(
   return { sender: sm.sender ?? null }
 }
 
+/**
+ * Document / customer mismatch flag (written by extract-po into
+ * confidence_fields.customer_name_mismatch when the PDF names a company other
+ * than the customer it resolved to — mig 00088). Returns the flag payload when
+ * set, else null.
+ *
+ * Distinct from senderMismatch() and NOT implied by it: a PO from an address
+ * already learned for customer X is always a trusted sender for X, whatever
+ * letterhead it carries. This is the check that reads the letterhead.
+ */
+export function customerNameMismatch(
+  confidenceFields: Record<string, unknown> | undefined | null,
+): { documentName: string | null; matchedName: string | null; horecaId: number | null } | null {
+  const cm = (
+    confidenceFields as
+      | {
+          customer_name_mismatch?: {
+            flagged?: boolean
+            document_name?: string | null
+            matched_name?: string | null
+            horeca_id?: number | null
+          }
+        }
+      | undefined
+  )?.customer_name_mismatch
+  if (!cm || cm.flagged !== true) return null
+  return {
+    documentName: cm.document_name ?? null,
+    matchedName: cm.matched_name ?? null,
+    // Which customer the flag was raised against. The detail modal compares
+    // this to the currently-selected customer so the warning clears once the
+    // operator reassigns the PO, rather than accusing them of a choice they
+    // have already corrected.
+    horecaId: cm.horeca_id ?? null,
+  }
+}
+
 export interface MatchedItem {
   po_line_index: number
   product_id: number | null
@@ -74,9 +116,18 @@ export interface ExtractedPoShape {
   po_number: string | null
   customer_name_raw: string | null
   customer_id_guess: string | null
+  /** Present only on rows extracted after the builder field shipped; older
+   *  rows simply lack the key, which reads as undefined -> null. */
+  builder?: string | null
   order_date: string | null
   requested_date: string | null
   ship_to: { name: string | null; street: string | null; city: string | null } | null
+  /** Whole-document "Notes" block. Optional for the same reason as `builder`:
+   *  rows extracted before the field shipped lack the key entirely. Distinct
+   *  from ExtractedPoLine.notes above, which is per-line. */
+  notes?: string | null
+  /** Whole-document "Delivery Instructions" block. Same optionality. */
+  delivery_instructions?: string | null
   lines: ExtractedPoLine[]
   source?: {
     channel: string
@@ -87,10 +138,14 @@ export interface ExtractedPoShape {
   }
 }
 
+// The summary deliberately does NOT select extracted_po — it is the full
+// document payload and the queue lists up to 200 rows. `builder` is projected
+// out of it as a single scalar instead; PostgREST's ->> operator reads a key
+// that may not exist on older rows and yields null, so no backfill is needed.
 const SUMMARY_SELECT = `
   id, status, inbound_message_id, matched_horeca_id, matched_items,
   confidence_overall, confidence_fields, approved_order_id, reviewed_at,
-  created_at,
+  created_at, builder:extracted_po->>builder,
   inbound_messages:inbound_message_id (
     from_address, subject, received_at, storage_path_prefix
   )
@@ -116,7 +171,13 @@ type SummaryRow = Omit<PendingPoSummaryRow, 'from_address' | 'subject' | 'receiv
   inbound_messages: JoinedInbound | null
 }
 
-type DetailRow = Omit<PendingPoDetailRow, 'from_address' | 'subject' | 'received_at' | 'storage_path_prefix'> & {
+// `builder` is omitted here too: DETAIL_SELECT already pulls the whole
+// extracted_po, so the detail mapper reads the key off the JSONB rather than
+// paying for a second projection of the same value.
+type DetailRow = Omit<
+  PendingPoDetailRow,
+  'from_address' | 'subject' | 'received_at' | 'storage_path_prefix' | 'builder'
+> & {
   inbound_messages: JoinedInbound | null
 }
 
@@ -135,6 +196,7 @@ function flattenSummary(row: SummaryRow): PendingPoSummaryRow {
     matched_items: row.matched_items ?? [],
     confidence_overall: Number(row.confidence_overall),
     confidence_fields: row.confidence_fields ?? {},
+    builder: row.builder ?? null,
     approved_order_id: row.approved_order_id,
     reviewed_at: row.reviewed_at,
     created_at: row.created_at,
@@ -216,6 +278,7 @@ export async function getPendingPoDetail(id: string): Promise<PendingPoDetailRow
     extracted_po: row.extracted_po,
     confidence_overall: Number(row.confidence_overall),
     confidence_fields: row.confidence_fields ?? {},
+    builder: row.extracted_po?.builder ?? null,
     approved_order_id: row.approved_order_id,
     reviewed_at: row.reviewed_at,
     rejection_reason: row.rejection_reason,
