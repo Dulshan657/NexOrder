@@ -34,3 +34,23 @@ export function zIndexOf(stack: readonly StackEntry[], id: number): number {
 export function isTopmost(stack: readonly StackEntry[], id: number): boolean {
   return stack.length > 0 && stack[stack.length - 1].id === id
 }
+
+/** Depth the stack is allowed to reach before the toast layer would be swallowed.
+ *  Today's deepest real nesting is Modal → Modal → ConfirmDialog (1000/1010/1020),
+ *  so 100 slots is ~30× headroom. */
+export const MAX_STACK_DEPTH = 100
+
+/**
+ * Toasts render ABOVE every overlay, rather than taking a slot of their own.
+ *
+ * A toast owns nothing the stack exists to arbitrate — it never traps focus and
+ * never handles Escape — and it is usually raised BY overlay content. The layout
+ * designer is mounted inside a `<Modal size="full">`, so at the old bare `z-50`
+ * every toast it raised rendered UNDER that modal's `bg-stone-900/60
+ * backdrop-blur-sm` container: dimmed AND blurred, i.e. unreadable. Which meant
+ * the one surface that reports why a save failed was the one surface you
+ * couldn't read it on.
+ *
+ * Derived from BASE_Z/Z_STEP so it tracks them if they ever move.
+ */
+export const TOAST_Z = BASE_Z + MAX_STACK_DEPTH * Z_STEP

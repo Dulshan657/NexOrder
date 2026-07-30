@@ -419,6 +419,42 @@ serve(async (req: Request) => {
       return st
     }
 
+    /**
+     * Adopt a draft-created orphan location carrying this code, refreshing its
+     * fields, and return its id — or null when the code belongs to something we
+     * must NOT touch.
+     *
+     * The new-bin loop below is NOT transactional: every insert is its own round
+     * trip, so a failure partway through leaves every earlier insert COMMITTED.
+     * Those rows are `is_active = false, created_in_layout_id = <this layout>` —
+     * reservations, not yet real locations. On the operator's retry the same
+     * deterministic codes come back (`<warehouse>-B-<x>-<y>`, and `<code>-L<n>`
+     * for levels), so a bare 23505 → CONFLICT dead-ends EVERY retry, permanently.
+     *
+     * The flat-bin branch has adopted since day one. The LEVELLED-RACK branch did
+     * not — which is why one failed save of a levelled rack was fatal, and every
+     * drawable levelled storage form (Pallet Rack, Shelving, Cold Room, Rack) goes
+     * down that branch. Both branches now share this one implementation so they
+     * cannot drift apart again.
+     *
+     * Returns null for an ACTIVE location, a hand-made one (`created_in_layout_id`
+     * null), or one another layout created — adopting any of those would hijack
+     * real inventory.
+     */
+    const adoptDraftOrphan = async (
+      code: string,
+      patch: Record<string, unknown>,
+    ): Promise<number | null> => {
+      const { data: prior } = await admin.from('locations')
+        .select('id, created_in_layout_id, is_active').eq('code', code).maybeSingle()
+      if (!prior) return null
+      const row = prior as { id: number; created_in_layout_id: number | null; is_active: boolean }
+      if (row.created_in_layout_id !== layout.id || row.is_active) return null
+      const { error } = await admin.from('locations').update(patch as any).eq('id', row.id)
+      if (error) return null
+      return row.id
+    }
+
     // Create locations for brand-new bins, mapping client_ref -> location_id.
     const refToLocation = new Map<string, number>()
     // Leveled racks (mig 00072): client_ref -> { levelIndex -> SHELF location id }.
@@ -468,11 +504,23 @@ serve(async (req: Request) => {
           storage_type_id: nb.storage_type_id ?? null,
           is_active: false, created_in_layout_id: layout.id,
         } as any).select('id').single()
+        let rackId: number
         if (rackErr || !createdRack) {
-          if (rackErr?.code === '23505') throw new EdgeFunctionError('CONFLICT', `Location code "${nb.code}" already exists`)
-          throw new EdgeFunctionError('INTERNAL', rackErr?.message ?? 'Failed to create rack')
+          if (rackErr?.code !== '23505') {
+            throw new EdgeFunctionError('INTERNAL', rackErr?.message ?? 'Failed to create rack')
+          }
+          const adopted = await adoptDraftOrphan(nb.code, {
+            parent_id: parentId, kind: 'RACK', name: nb.name,
+            materialized_path: `${parentPath}/${nb.code}`,
+            storage_type_id: nb.storage_type_id ?? null,
+          })
+          if (adopted === null) {
+            throw new EdgeFunctionError('CONFLICT', `Location code "${nb.code}" already exists`)
+          }
+          rackId = adopted
+        } else {
+          rackId = (createdRack as any).id as number
         }
-        const rackId = (createdRack as any).id as number
         refToLocation.set(p.client_ref, rackId)
 
         const levelIds: Record<number, number> = {}
@@ -489,8 +537,25 @@ serve(async (req: Request) => {
             is_active: false, created_in_layout_id: layout.id,
           } as any).select('id').single()
           if (lvlErr || !createdLevel) {
-            if (lvlErr?.code === '23505') throw new EdgeFunctionError('CONFLICT', `Level code "${levelCode}" already exists`)
-            throw new EdgeFunctionError('INTERNAL', lvlErr?.message ?? `Failed to create level ${lvl.level_index}`)
+            if (lvlErr?.code !== '23505') {
+              throw new EdgeFunctionError('INTERNAL', lvlErr?.message ?? `Failed to create level ${lvl.level_index}`)
+            }
+            // Re-setting parent_id is deliberate: it re-anchors a surviving level
+            // row even if the RACK row's identity changed between attempts.
+            const adopted = await adoptDraftOrphan(levelCode, {
+              parent_id: rackId, kind: 'SHELF', name: `Level ${lvl.level_index}`,
+              materialized_path: `${parentPath}/${nb.code}/${levelCode}`,
+              level_role: lvl.role, level_index: lvl.level_index,
+              capacity_slots: lvl.capacity_slots ?? capacitySlots,
+              slot_kind: lvl.slot_kind ?? slotKind,
+              weight_capacity_kg: lvl.weight_capacity_kg ?? weightCapacityKg,
+              storage_type_id: nb.storage_type_id ?? null,
+            })
+            if (adopted === null) {
+              throw new EdgeFunctionError('CONFLICT', `Level code "${levelCode}" already exists`)
+            }
+            levelIds[lvl.level_index] = adopted
+            continue
           }
           levelIds[lvl.level_index] = (createdLevel as any).id
         }
@@ -509,22 +574,20 @@ serve(async (req: Request) => {
         // A prior draft-created orphan (erase→redraw at the same cell reuses the
         // deterministic code, and a partial earlier save can leave rows behind).
         // Adopt & refresh it instead of dead-ending every retry with a conflict.
-        if (cErr?.code === '23505') {
-          const { data: prior } = await admin.from('locations')
-            .select('id, created_in_layout_id, is_active').eq('code', nb.code).maybeSingle()
-          if (prior && (prior as any).created_in_layout_id === layout.id && !(prior as any).is_active) {
-            await admin.from('locations').update({
-              parent_id: parentId, kind: nb.kind, name: nb.name,
-              materialized_path: `${parentPath}/${nb.code}`,
-              capacity_slots: capacitySlots, slot_kind: slotKind, weight_capacity_kg: weightCapacityKg,
-              storage_type_id: nb.storage_type_id ?? null,
-            } as any).eq('id', (prior as any).id)
-            refToLocation.set(p.client_ref, (prior as any).id)
-            continue
-          }
+        if (cErr?.code !== '23505') {
+          throw new EdgeFunctionError('INTERNAL', cErr?.message ?? 'Failed to create bin')
+        }
+        const adopted = await adoptDraftOrphan(nb.code, {
+          parent_id: parentId, kind: nb.kind, name: nb.name,
+          materialized_path: `${parentPath}/${nb.code}`,
+          capacity_slots: capacitySlots, slot_kind: slotKind, weight_capacity_kg: weightCapacityKg,
+          storage_type_id: nb.storage_type_id ?? null,
+        })
+        if (adopted === null) {
           throw new EdgeFunctionError('CONFLICT', `Location code "${nb.code}" already exists`)
         }
-        throw new EdgeFunctionError('INTERNAL', cErr?.message ?? 'Failed to create bin')
+        refToLocation.set(p.client_ref, adopted)
+        continue
       }
       refToLocation.set(p.client_ref, (created as any).id)
     }

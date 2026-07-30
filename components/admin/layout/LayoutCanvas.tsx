@@ -7,7 +7,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorAction, EditorObject, EditorPlacement, EditorState } from './useLayoutEditorState'
-import { BASE_CELL, levelRoleFill, levelRoleLabel, levelRoleStroke, OBJECT_FILL, PLACEMENT_FILL } from './layoutPalette'
+import { placementAt } from './useLayoutEditorState'
+import { BASE_CELL, levelRoleFill, levelRoleLabel, levelRoleStroke, OBJECT_FILL, OBJECT_STROKE, PLACEMENT_FILL } from './layoutPalette'
+import { MERGED_OBJECT_TYPES, objectRegions, regionFillPath, regionOutlinePath } from './objectRegions'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { labelTier, fitCode } from '@/components/inventory/warehouse/mapLabels'
 import { defaultRoleKey } from '@/lib/levelRoles'
@@ -175,7 +177,7 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
     // selected racks" in the inspector. Without this the reducer's additive
     // select action is unreachable and multi-select silently does nothing.
     if (state.tool === 'select' && (e.shiftKey || e.ctrlKey || e.metaKey)) {
-      const hit = state.placements.find((p) => p.floor === state.floor && p.x === c.x && p.y === c.y)
+      const hit = placementAt(state, c.x, c.y)
       if (hit) {
         dispatch({ type: 'select', ref: hit.clientRef, additive: true })
         return
@@ -198,8 +200,35 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
     lastCell.current = null
   }
 
-  const floorObjects = state.objects.filter((o) => o.floor === state.floor)
-  const floorPlacements = state.placements.filter((p) => p.floor === state.floor)
+  // Memoized on state.objects/state.floor, NOT on floorObjects — that's a fresh
+  // array every render, so a memo keyed on it would never hit.
+  const objRegions = useMemo(() => objectRegions(state.objects, state.floor), [state.objects, state.floor])
+  const unmergedObjects = useMemo(
+    () => state.objects.filter((o) => o.floor === state.floor && !MERGED_OBJECT_TYPES.has(o.objectType)),
+    [state.objects, state.floor],
+  )
+
+  const floorObjects = useMemo(
+    () => state.objects.filter((o) => o.floor === state.floor),
+    [state.objects, state.floor],
+  )
+  const floorPlacements = useMemo(
+    () => state.placements.filter((p) => p.floor === state.floor),
+    [state.placements, state.floor],
+  )
+
+  // Brief red flash on a cell whose paint was refused (see EditorState.blockedAt).
+  // Keyed off `seq`, not off presence, so a repeated refusal at the same cell
+  // re-triggers instead of sitting silent.
+  const [flash, setFlash] = useState<{ x: number; y: number } | null>(null)
+  const blockedSeq = state.blockedAt?.seq
+  useEffect(() => {
+    if (!state.blockedAt) return
+    setFlash({ x: state.blockedAt.x, y: state.blockedAt.y })
+    const timer = setTimeout(() => setFlash(null), 350)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blockedSeq])
 
   // Group by cell (see groupPlacementsByCell above) so a levelled rack — once
   // useLayoutEditorState represents one — paints one rect, not N overlapping
@@ -288,34 +317,67 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
           {/* Grid lines */}
           {gridLines}
 
-          {/* Objects (walls/walkways/docks/conveyors/staging/obstacles/labels) */}
+          {/* Merged structural regions (walls/walkways/docks/lifts/conveyors/
+              staging). Contiguous same-type cells draw as ONE silhouette: an
+              inset-free, radius-free union fill plus an exterior-only outline.
+              The old per-cell rect carried a 1px inset and rx={2}, which put a
+              2px gap between neighbours with the grid line showing through — a
+              drawn wall looked like a row of separate squares. The inset and the
+              radius now live on the SELECTION highlight below, which is the one
+              place they help. */}
+          {objRegions.map((region) => (
+            <g key={region.key} pointerEvents="none">
+              <path d={regionFillPath(region, cell)} fill={OBJECT_FILL[region.objectType]} />
+              {region.objectType === 'conveyor' && (
+                <path d={regionFillPath(region, cell)} fill="url(#conveyor-hatch)" />
+              )}
+              <path
+                d={regionOutlinePath(region, cell)}
+                fill="none"
+                stroke={OBJECT_STROKE[region.objectType]}
+                strokeWidth={1}
+                shapeRendering="crispEdges"
+              />
+            </g>
+          ))}
+
+          {/* Objects that deliberately do NOT merge — `label` (annotation that may
+              overlap anything) and `obstacle` (discrete named rooms, which would
+              read as one mislabelled room if two adjacent ones fused). */}
+          {unmergedObjects.map((o) => (
+            <rect
+              key={o.clientRef}
+              x={o.x * cell + 1} y={o.y * cell + 1} width={o.w * cell - 2} height={o.h * cell - 2}
+              fill={OBJECT_FILL[o.objectType]} rx={2} pointerEvents="none"
+            />
+          ))}
+
+          {/* Selection highlight — per OBJECT, keyed by clientRef, so clicking one
+              cell of a merged wall outlines that cell and not the whole run. */}
+          {floorObjects
+            .filter((o) => o.clientRef === state.selectedRef)
+            .map((o) => (
+              <rect
+                key={`sel-${o.clientRef}`}
+                x={o.x * cell + 1} y={o.y * cell + 1} width={o.w * cell - 2} height={o.h * cell - 2}
+                fill="none" rx={2} pointerEvents="none"
+                stroke={PLACEMENT_FILL.selectedStroke} strokeWidth={2}
+              />
+            ))}
+
+          {/* Object names, topmost of the object layers so a name is never buried
+              under a merged fill. */}
           {floorObjects.map((o) => {
             const name = typeof o.meta?.name === 'string' ? o.meta.name : undefined
-            const showName = NAMED_OBJECT_TYPES.has(o.objectType) && !!name && o.w * cell >= MIN_NAME_WIDTH
-            const selected = o.clientRef === state.selectedRef
+            if (!NAMED_OBJECT_TYPES.has(o.objectType) || !name || o.w * cell < MIN_NAME_WIDTH) return null
             return (
-              <g key={o.clientRef}>
-                <rect
-                  x={o.x * cell + 1} y={o.y * cell + 1} width={o.w * cell - 2} height={o.h * cell - 2}
-                  fill={OBJECT_FILL[o.objectType]} rx={2} pointerEvents="none"
-                  stroke={selected ? PLACEMENT_FILL.selectedStroke : undefined}
-                  strokeWidth={selected ? 2 : 0}
-                />
-                {o.objectType === 'conveyor' && (
-                  <rect
-                    x={o.x * cell + 1} y={o.y * cell + 1} width={o.w * cell - 2} height={o.h * cell - 2}
-                    fill="url(#conveyor-hatch)" rx={2} pointerEvents="none"
-                  />
-                )}
-                {showName && (
-                  <text
-                    x={o.x * cell + (o.w * cell) / 2} y={o.y * cell + (o.h * cell) / 2 + 3}
-                    textAnchor="middle" fontSize={11} fill="#292524" fontFamily="sans-serif" pointerEvents="none"
-                  >
-                    {name}
-                  </text>
-                )}
-              </g>
+              <text
+                key={`name-${o.clientRef}`}
+                x={o.x * cell + (o.w * cell) / 2} y={o.y * cell + (o.h * cell) / 2 + 3}
+                textAnchor="middle" fontSize={11} fill="#292524" fontFamily="sans-serif" pointerEvents="none"
+              >
+                {name}
+              </text>
             )
           })}
 
@@ -384,6 +446,18 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
             style={{ cursor: state.tool === 'select' ? 'pointer' : 'crosshair' }}
           />
 
+          {/* Refused-paint flash. Above the interaction rect so it's visible, and
+              pointerEvents="none" is mandatory there or it would swallow the drag. */}
+          {flash && (
+            <rect
+              data-testid="blocked-cell-flash"
+              x={flash.x * cell} y={flash.y * cell} width={cell} height={cell}
+              fill={PLACEMENT_FILL.problemFill} fillOpacity={0.55}
+              stroke={PLACEMENT_FILL.problemStroke} strokeWidth={2}
+              pointerEvents="none"
+            />
+          )}
+
           {/* Expand-in-place: selecting a rack (the existing select-tool path,
               above) explodes its cell into an editable level stack. Drawn
               ABOVE the interaction rect so clicks reach it; the scrim dims
@@ -417,7 +491,7 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
                     // first instead of adding the second. Plain click collapses.
                     if (e.shiftKey || e.ctrlKey || e.metaKey) {
                       const c = cellFromEvent(e)
-                      const hit = c && state.placements.find((p) => p.floor === state.floor && p.x === c.x && p.y === c.y)
+                      const hit = c && placementAt(state, c.x, c.y)
                       if (hit) {
                         dispatch({ type: 'select', ref: hit.clientRef, additive: true })
                         return

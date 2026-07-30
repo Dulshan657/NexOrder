@@ -1,5 +1,7 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { useToasts } from '../hooks/useToasts';
+import { TOAST_Z } from './ui/overlayStack';
 import { ToastType } from '../types';
 
 const ICONS: Record<ToastType, React.ReactElement> = {
@@ -40,8 +42,8 @@ const ToastMessage: React.FC<{ toast: import('../types').Toast; onRemove: (id: n
     const colors = COLORS[toast.type];
 
     return (
-        <div 
-             className={`flex items-start w-full max-w-sm p-4 rounded-xl shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-300 ease-in-out transform ${colors.bg} ${isExiting ? 'opacity-0 translate-x-full' : 'opacity-100 translate-x-0'}`}
+        <div
+             className={`pointer-events-auto flex items-start w-full max-w-sm p-4 rounded-xl shadow-lg ring-1 ring-black ring-opacity-5 transition-all duration-300 ease-in-out transform ${colors.bg} ${isExiting ? 'opacity-0 translate-x-full' : 'opacity-100 translate-x-0'}`}
              style={{ willChange: 'transform, opacity' }}
         >
             <div className={`flex-shrink-0 ${colors.icon}`}>{ICONS[toast.type]}</div>
@@ -73,15 +75,32 @@ const ToastMessage: React.FC<{ toast: import('../types').Toast; onRemove: (id: n
 };
 
 
+// Portalled to document.body and stacked above every overlay (TOAST_Z).
+//
+// Two things are load-bearing here:
+//  - The PORTAL. The container is a plain descendant of #root; the overlays it
+//    has to clear are children of document.body. Raising the number alone works
+//    today, but the moment anything above #root gains a `transform`/`filter` it
+//    becomes a stacking context and re-traps the toast at any z-index. Portalling
+//    makes the fix survive that. (`useToasts()` still resolves — the portal moves
+//    the DOM node, not the React parent.)
+//  - The POINTER-EVENTS SPLIT. `fixed top-4 right-4 max-w-sm` now sits above a
+//    full-screen modal, i.e. directly over where Modal renders its close X. The
+//    container must not intercept those clicks, so it is inert and each toast
+//    opts back in (`pointer-events-auto` on ToastMessage's root).
 const ToastContainer: React.FC = () => {
   const { toasts, removeToast } = useToasts();
 
-  return (
-    <div className="fixed top-4 right-4 z-50 w-full max-w-sm space-y-3">
+  return createPortal(
+    <div
+      className="pointer-events-none fixed top-4 right-4 w-full max-w-sm space-y-3"
+      style={{ zIndex: TOAST_Z }}
+    >
       {toasts.map(toast => (
         <ToastMessage key={toast.id} toast={toast} onRemove={removeToast} />
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 };
 
