@@ -859,10 +859,11 @@ export interface AppSettings {
     currency: string;
     showStockToHoReCa: boolean;
     companyLogoUrl?: string | null;
-    // PO-Inbox auto-approval policy toggles (mig 00044). All default true.
+    // PO-Inbox auto-approval policy toggles (migs 00044, 00088). All default true.
     poAutoApproveEnabled: boolean;
     poAutoApproveBlockOnShortStock: boolean;
     poAutoApproveBlockOnSenderMismatch: boolean;
+    poAutoApproveBlockOnCustomerMismatch: boolean;
 }
 
 export interface PantryItem {

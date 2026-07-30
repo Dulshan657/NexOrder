@@ -81,4 +81,34 @@ describe('computePoIssues', () => {
     // sender mismatch (error) should come before warn-level issues
     expect(ks.indexOf('sender_mismatch')).toBe(0)
   })
+
+  it('passes through customer_name_mismatch naming both companies', () => {
+    const issues = computePoIssues({
+      ...clean,
+      customerNameMismatch: {
+        documentName: 'Hallidays Heating and Cooling Pty Ltd',
+        matchedName: 'Executive Heating & Cooling',
+      },
+    })
+    const cm = issues.find(i => i.kind === 'customer_name_mismatch')
+    expect(cm?.severity).toBe('error')
+    expect(cm?.detail).toContain('Hallidays Heating and Cooling Pty Ltd')
+    expect(cm?.detail).toContain('Executive Heating & Cooling')
+  })
+
+  it('omits customer_name_mismatch when absent or null', () => {
+    expect(kinds(clean)).not.toContain('customer_name_mismatch')
+    expect(kinds({ ...clean, customerNameMismatch: null })).not.toContain('customer_name_mismatch')
+  })
+
+  it('ranks both error-level mismatches above the warn-level issues', () => {
+    const ks = kinds({
+      hasCustomer: false,
+      senderMismatch: { sender: 'evil@x.com' },
+      customerNameMismatch: { documentName: 'Hallidays', matchedName: 'Executive' },
+      lines: [{ resolved: false, inventory: null, ordered: 5 }],
+      lowThreshold: 10,
+    })
+    expect(ks.slice(0, 2)).toEqual(['sender_mismatch', 'customer_name_mismatch'])
+  })
 })

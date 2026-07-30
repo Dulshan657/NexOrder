@@ -35,7 +35,11 @@ import { useHorecaAddresses } from '@/hooks/queries/useHorecaAddresses'
 import { useSettings } from '@/hooks/queries/useSettings'
 import { lineStockStatus, type LineStockStatus } from './poInboxStock'
 import { computePoIssues } from './poInboxIssues'
-import { getPoDocumentUrl, senderMismatch } from '@/services/supabase/poInboxService'
+import {
+  customerNameMismatch,
+  getPoDocumentUrl,
+  senderMismatch,
+} from '@/services/supabase/poInboxService'
 import type { ApproveDeliveryAddress } from '@/services/supabase/poInboxService'
 import { useToasts } from '@/hooks/useToasts'
 import ConfidenceRing from './ConfidenceRing'
@@ -335,11 +339,22 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
   // operator edits. Mirrors the queue-row pills.
   const { data: settings } = useSettings()
   const issueLowThreshold = settings?.low_stock_threshold ?? 10
+  // Cleared once the operator reassigns the PO: the flag was raised against a
+  // specific customer, and continuing to warn after they've corrected the
+  // choice would be nagging about a decision already made.
+  const nameMismatch = useMemo(() => {
+    const flag = detail ? customerNameMismatch(detail.confidence_fields) : null
+    if (!flag) return null
+    if (flag.horecaId != null && horecaId !== flag.horecaId) return null
+    return flag
+  }, [detail, horecaId])
+
   const poIssues = useMemo(() => {
     if (!detail) return []
     return computePoIssues({
       hasCustomer: horecaId != null,
       senderMismatch: senderMismatch(detail.confidence_fields),
+      customerNameMismatch: nameMismatch,
       lines: lines.map(l => ({
         resolved: l.productId != null,
         inventory: l.productId != null ? productById.get(l.productId)?.inventory ?? null : null,
@@ -347,7 +362,7 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
       })),
       lowThreshold: issueLowThreshold,
     })
-  }, [detail, horecaId, lines, productById, issueLowThreshold])
+  }, [detail, horecaId, lines, productById, issueLowThreshold, nameMismatch])
 
   const handleApprove = async () => {
     if (!detail) return
@@ -906,6 +921,13 @@ const FormPane: React.FC<FormPaneProps> = props => {
     (props.detail.confidence_fields as { per_field?: Record<string, unknown> })?.per_field ?? {}
   const customerMatch =
     (props.detail.confidence_fields as { customer_match?: string })?.customer_match ?? null
+  // Same clear-on-reassign rule as the issues banner above: the flag belongs to
+  // the customer it was raised against, not to the form.
+  const nameFlagRaw = customerNameMismatch(props.detail.confidence_fields)
+  const nameFlag =
+    nameFlagRaw && (nameFlagRaw.horecaId == null || props.horecaId === nameFlagRaw.horecaId)
+      ? nameFlagRaw
+      : null
 
   const extractedPo = props.detail.extracted_po
 
@@ -948,6 +970,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
             matchSource={customerMatch}
             extractedName={extractedPo.customer_name_raw}
             picked={props.horecaId != null}
+            nameMismatch={nameFlag != null}
           />
         </div>
 
@@ -1267,11 +1290,21 @@ const LineConfidenceBadge: React.FC<{ value: number | null }> = ({ value }) => {
   )
 }
 
+/** How the customer was matched, plus the name the document actually carried.
+ *
+ *  `nameMismatch` is what stops this block lying. Both facts were already on
+ *  screen when a Hallidays PO was booked against Executive — but the match
+ *  source rendered as a green tick and the contradicting name as 11px grey
+ *  underneath it, so the pairing read as confirmation. When the names disagree
+ *  the tick becomes a rose warning and the extracted name is promoted, because
+ *  "auto-matched via sender_email alias" is precisely the mechanism that went
+ *  wrong, not evidence that anything went right. */
 const CustomerMatchHint: React.FC<{
   matchSource: string | null
   extractedName: string | null
   picked: boolean
-}> = ({ matchSource, extractedName, picked }) => {
+  nameMismatch?: boolean
+}> = ({ matchSource, extractedName, picked, nameMismatch }) => {
   let label = ''
   if (matchSource === 'sender_email_alias') label = 'Auto-matched via sender_email alias'
   else if (matchSource === 'sender_domain_alias') label = 'Auto-matched via sender_domain alias'
@@ -1282,9 +1315,14 @@ const CustomerMatchHint: React.FC<{
   return (
     <div className="mt-1 space-y-0.5">
       {label && (
-        <p className="text-[11px] text-emerald-700">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 align-middle" />
+        <p className={nameMismatch ? 'text-[11px] text-rose-700' : 'text-[11px] text-emerald-700'}>
+          {nameMismatch ? (
+            <AlertTriangle className="inline-block w-3 h-3 mr-1 align-middle" />
+          ) : (
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 align-middle" />
+          )}
           {label}
+          {nameMismatch && ' — but the document names another company'}
         </p>
       )}
       {!picked && matchSource == null && (
@@ -1302,7 +1340,7 @@ const CustomerMatchHint: React.FC<{
         </p>
       )}
       {extractedName && (
-        <p className="text-[11px] text-stone-500">
+        <p className={nameMismatch ? 'text-xs font-medium text-rose-700' : 'text-[11px] text-stone-500'}>
           Extracted as: <em>{extractedName}</em>
         </p>
       )}

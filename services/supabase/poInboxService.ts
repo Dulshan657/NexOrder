@@ -56,6 +56,43 @@ export function senderMismatch(
   return { sender: sm.sender ?? null }
 }
 
+/**
+ * Document / customer mismatch flag (written by extract-po into
+ * confidence_fields.customer_name_mismatch when the PDF names a company other
+ * than the customer it resolved to — mig 00088). Returns the flag payload when
+ * set, else null.
+ *
+ * Distinct from senderMismatch() and NOT implied by it: a PO from an address
+ * already learned for customer X is always a trusted sender for X, whatever
+ * letterhead it carries. This is the check that reads the letterhead.
+ */
+export function customerNameMismatch(
+  confidenceFields: Record<string, unknown> | undefined | null,
+): { documentName: string | null; matchedName: string | null; horecaId: number | null } | null {
+  const cm = (
+    confidenceFields as
+      | {
+          customer_name_mismatch?: {
+            flagged?: boolean
+            document_name?: string | null
+            matched_name?: string | null
+            horeca_id?: number | null
+          }
+        }
+      | undefined
+  )?.customer_name_mismatch
+  if (!cm || cm.flagged !== true) return null
+  return {
+    documentName: cm.document_name ?? null,
+    matchedName: cm.matched_name ?? null,
+    // Which customer the flag was raised against. The detail modal compares
+    // this to the currently-selected customer so the warning clears once the
+    // operator reassigns the PO, rather than accusing them of a choice they
+    // have already corrected.
+    horecaId: cm.horeca_id ?? null,
+  }
+}
+
 export interface MatchedItem {
   po_line_index: number
   product_id: number | null

@@ -24,6 +24,13 @@ export interface StatusDecisionInput {
    */
   senderMismatch?: boolean
   /**
+   * True when the customer was resolved but the DOCUMENT names a different
+   * company (see customerNameMatch.ts). Distinct from senderMismatch: that one
+   * asks whether the sender may order for this customer, this one asks whether
+   * the customer is who the paperwork says. Defaults to false.
+   */
+  customerNameMismatch?: boolean
+  /**
    * Master auto-approval switch (app_settings.po_auto_approve_enabled).
    * When false, every PO is routed to review. Defaults to true.
    */
@@ -33,6 +40,12 @@ export interface StatusDecisionInput {
    * (app_settings.po_auto_approve_block_on_sender_mismatch). Defaults to true.
    */
   blockOnSenderMismatch?: boolean
+  /**
+   * Whether a document/customer name mismatch blocks auto-approval
+   * (app_settings.po_auto_approve_block_on_customer_mismatch, mig 00088).
+   * Defaults to true.
+   */
+  blockOnCustomerMismatch?: boolean
 }
 
 export interface StatusDecisionResult {
@@ -55,7 +68,7 @@ export interface StatusDecisionResult {
  *   * confidenceOverall >= 0.95 (over essential fields)
  *   * customer was resolved
  *   * every line resolved to a product
- * and must not be flagged for sender mismatch.
+ * and must be flagged for neither sender mismatch nor customer-name mismatch.
  *
  * The `reason` array captures every check that failed (or, on success,
  * the empty array). It's logged + persisted to confidence_fields for
@@ -74,6 +87,7 @@ export function decidePendingPoStatus(input: StatusDecisionInput): StatusDecisio
   // the historical always-on behaviour.
   const autoApproveEnabled = input.autoApproveEnabled !== false
   const blockOnSenderMismatch = input.blockOnSenderMismatch !== false
+  const blockOnCustomerMismatch = input.blockOnCustomerMismatch !== false
 
   const reasons: string[] = []
   if (!autoApproveEnabled) reasons.push('auto-approval disabled in settings')
@@ -86,6 +100,9 @@ export function decidePendingPoStatus(input: StatusDecisionInput): StatusDecisio
   if (!input.allLinesResolved) reasons.push('one or more lines failed to resolve to a product')
   if (input.senderMismatch && blockOnSenderMismatch) {
     reasons.push('sender does not match customer (possible spoofing)')
+  }
+  if (input.customerNameMismatch && blockOnCustomerMismatch) {
+    reasons.push('document names a different customer')
   }
 
   return {

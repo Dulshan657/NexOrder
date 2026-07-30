@@ -21,7 +21,11 @@ import {
 } from './poInboxFormat'
 import { computePoIssues } from './poInboxIssues'
 import ConfidenceRing from './ConfidenceRing'
-import { ARCHIVE_AFTER_DAYS, senderMismatch } from '@/services/supabase/poInboxService'
+import {
+  ARCHIVE_AFTER_DAYS,
+  customerNameMismatch,
+  senderMismatch,
+} from '@/services/supabase/poInboxService'
 import type { PendingPoStatus, PendingPoSummaryRow } from '@/services/supabase/poInboxService'
 import type { HoReCa, Product } from '../../types'
 import { toProduct } from '@/lib/adapters'
@@ -299,6 +303,7 @@ interface RowProps {
 const Row: React.FC<RowProps> = ({ row, hoReCa, index, productById, lowThreshold, onClick }) => {
   const customerName = hoReCa?.name ?? (row.matched_horeca_id ? `#${row.matched_horeca_id}` : null)
   const mismatch = senderMismatch(row.confidence_fields)
+  const nameMismatch = customerNameMismatch(row.confidence_fields)
   const builder = builderLabel(row.builder)
   const badge = statusBadge(row.status)
   // Non-sender issues (stock / unresolved lines / no customer) for rows still
@@ -309,6 +314,7 @@ const Row: React.FC<RowProps> = ({ row, hoReCa, index, productById, lowThreshold
       ? computePoIssues({
           hasCustomer: row.matched_horeca_id != null,
           senderMismatch: null,
+          customerNameMismatch: nameMismatch,
           lines: (row.matched_items ?? []).map(it => ({
             resolved: it.product_id != null,
             inventory: it.product_id != null ? productById.get(it.product_id)?.inventory ?? null : null,
@@ -319,7 +325,7 @@ const Row: React.FC<RowProps> = ({ row, hoReCa, index, productById, lowThreshold
       : []
   // Priority rail: rose when risky (mismatch or low confidence), else the
   // status hue. Drives the eye to the rows that need a human first.
-  const risky = !!mismatch || row.confidence_overall < 0.75
+  const risky = !!mismatch || !!nameMismatch || row.confidence_overall < 0.75
   const railClass = risky
     ? 'border-rose-400'
     : row.status === 'needs_review'

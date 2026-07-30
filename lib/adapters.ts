@@ -625,12 +625,16 @@ export function toAppSettings(row: SettingsRow): AppSettings {
     currency: row.currency,
     showStockToHoReCa: row.show_stock_to_horeca,
     companyLogoUrl: row.company_logo_url,
-    // Auto-approval policy (mig 00044). Default true if a row predates the columns.
+    // Auto-approval policy (migs 00044, 00088). Default true if a row predates
+    // the columns — the protective setting, matching the Edge Function.
     poAutoApproveEnabled: (row as { po_auto_approve_enabled?: boolean }).po_auto_approve_enabled ?? true,
     poAutoApproveBlockOnShortStock:
       (row as { po_auto_approve_block_on_short_stock?: boolean }).po_auto_approve_block_on_short_stock ?? true,
     poAutoApproveBlockOnSenderMismatch:
       (row as { po_auto_approve_block_on_sender_mismatch?: boolean }).po_auto_approve_block_on_sender_mismatch ?? true,
+    poAutoApproveBlockOnCustomerMismatch:
+      (row as { po_auto_approve_block_on_customer_mismatch?: boolean })
+        .po_auto_approve_block_on_customer_mismatch ?? true,
   }
 }
 
@@ -653,6 +657,8 @@ export function fromAppSettings(s: Partial<AppSettings>): Record<string, unknown
     row.po_auto_approve_block_on_short_stock = s.poAutoApproveBlockOnShortStock
   if (s.poAutoApproveBlockOnSenderMismatch !== undefined)
     row.po_auto_approve_block_on_sender_mismatch = s.poAutoApproveBlockOnSenderMismatch
+  if (s.poAutoApproveBlockOnCustomerMismatch !== undefined)
+    row.po_auto_approve_block_on_customer_mismatch = s.poAutoApproveBlockOnCustomerMismatch
   return row
 }
 
