@@ -33,6 +33,7 @@ import {
   stripControlChars,
 } from './normalize.ts'
 import { extractStructured, type AuditWriter, type ExtractionPurpose } from './openai.ts'
+import { embedTexts, poLineEmbedText, toVectorLiteral } from './embeddings.ts'
 
 // Structural interfaces for the Supabase client. We don't import supabase-js
 // here so this file stays decoupled from the URL-imported SDK, but the
@@ -77,6 +78,17 @@ export interface SupabaseLike {
     insert(row: Record<string, unknown>): SupabaseInsertBuilder
     update(row: Record<string, unknown>): SupabaseUpdateBuilder
   }
+  /**
+   * OPTIONAL on purpose. Vector retrieval (mig 00089) calls `match_products`
+   * through this, and a client without it — including the existing
+   * `__tests__/support/fakeSupabase.ts` harness — simply takes the pre-embedding
+   * path of sending the whole catalog. That makes the absence of `rpc` a clean
+   * seam for testing the fallback rather than something to stub out.
+   */
+  rpc?(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<{ data: unknown; error: { message?: string } | null }>
 }
 
 /** Clamp an AI-reported confidence to [0, 1]. JSON-schema strict mode
@@ -437,7 +449,12 @@ export async function resolveProduct(
   // 3. AI fuzzy match. Skip when we have neither a code nor a description.
   if (!code && !desc) return missingProduct()
 
-  const catalog = await fetchProductCatalog(supa)
+  // Shortlist by embedding similarity when it is available, so the model chooses
+  // from ~20 candidates rather than the 500-row cap below — which is both a
+  // correctness ceiling (SKU 501 was unmatchable) and ~15k prompt tokens a line.
+  // The pick itself, its threshold and its audit row are unchanged either way.
+  const shortlist = await fetchProductCandidates(supa, input.itemCodeRaw, input.descriptionRaw)
+  const catalog = shortlist ?? await fetchProductCatalog(supa)
   if (catalog.length === 0) return missingProduct()
 
   const ai = await aiPickProduct({
@@ -542,6 +559,64 @@ async function fetchProductAliasByDesc(
     return null
   }
   return result.data
+}
+
+/** How many nearest products to put in front of the model. */
+export const PRODUCT_CANDIDATE_LIMIT = 20
+
+/**
+ * The fewest vector hits worth trusting. Below this the index is probably
+ * unbuilt or barely populated, and the full catalog is the better answer.
+ */
+const MIN_VECTOR_CANDIDATES = 3
+
+/**
+ * Shortlist products by embedding similarity (mig 00089), or return null to mean
+ * "use the catalog path".
+ *
+ * Null — never a throw — on every failure mode: no `rpc` on the client, no
+ * OPENAI_API_KEY, an RPC error, an empty table, or fewer than
+ * MIN_VECTOR_CANDIDATES hits. Retrieval is an optimisation over which candidates
+ * the model sees; it must never be the reason a PO fails to resolve.
+ */
+async function fetchProductCandidates(
+  supa: SupabaseLike,
+  itemCode: string | null,
+  description: string | null,
+): Promise<ProductRow[] | null> {
+  if (typeof supa.rpc !== 'function') return null
+
+  const queryText = poLineEmbedText(itemCode, description)
+  if (!queryText) return null
+
+  try {
+    const { vectors } = await embedTexts({ texts: [queryText] })
+    if (vectors.length !== 1) return null
+
+    const { data, error } = await supa.rpc('match_products', {
+      p_query: toVectorLiteral(vectors[0]),
+      p_limit: PRODUCT_CANDIDATE_LIMIT,
+    })
+    if (error) {
+      console.warn('[aliasResolver] match_products failed, using full catalog:', error.message)
+      return null
+    }
+
+    const rows = Array.isArray(data) ? (data as ProductRow[]) : []
+    if (rows.length < MIN_VECTOR_CANDIDATES) {
+      console.warn(
+        `[aliasResolver] match_products returned ${rows.length} candidates; using full catalog`,
+      )
+      return null
+    }
+    return rows
+  } catch (err) {
+    console.warn(
+      '[aliasResolver] embedding retrieval unavailable, using full catalog:',
+      err instanceof Error ? err.message : String(err),
+    )
+    return null
+  }
 }
 
 async function fetchProductCatalog(supa: SupabaseLike): Promise<ProductRow[]> {

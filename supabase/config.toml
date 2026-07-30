@@ -27,6 +27,10 @@
 # - health                — pg_cron sends HEALTH_CRON_TOKEN (constant-time
 #                           compared); unauthenticated GET is a minimal
 #                           liveness probe, rate-limited per IP
+# - embed-products        — invoked by a script or pg_cron to refresh the product
+#                           embeddings (mig 00089); accepts the service-role
+#                           bearer OR EMBED_PRODUCTS_CRON_TOKEN, both compared
+#                           in-function. Writes nothing a caller supplies.
 #
 # All other functions keep the default verify_jwt = true so callers must
 # supply a valid Supabase auth JWT.
@@ -53,4 +57,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.health]
+verify_jwt = false
+
+[functions.embed-products]
 verify_jwt = false

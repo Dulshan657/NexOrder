@@ -41,6 +41,10 @@ export type ExtractionPurpose =
   | 'customer_match'
   | 'product_match'
   | 'extract_floorplan'
+  // Embedding calls (mig 00089). Same audit table, so cost and latency for
+  // retrieval sit alongside the extraction calls they replace tokens in.
+  | 'product_embed'
+  | 'product_query_embed'
 
 export interface ChatMessagePart {
   type: 'text' | 'image_url' | 'file'

@@ -19,6 +19,9 @@ export interface ModelPricing {
 export const MODEL_PRICING: Record<string, ModelPricing> = {
   'gpt-4o-mini': { inputPer1M: 0.15, outputPer1M: 0.6 },
   'gpt-4o': { inputPer1M: 2.5, outputPer1M: 10 },
+  // Embeddings (mig 00089). No completion tokens, hence 0 output — which also
+  // makes computeCostUsd correct for them without a special case.
+  'text-embedding-3-small': { inputPer1M: 0.02, outputPer1M: 0 },
 }
 
 /**
