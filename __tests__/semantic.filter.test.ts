@@ -1,34 +1,39 @@
 import { describe, it, expect } from 'vitest'
 
-import { filterOrders } from '../lib/semantic/filter'
+import { dayRange, filterOrders } from '../lib/semantic/filter'
 import { UserRole } from '../types'
 import { makeHoReCa, makeItem, makeOrder, makeUser } from './support/metricFixtures'
 
-// filterOrders is the single order-scoping definition. Before it existed the
-// codebase had three spellings of "inclusive date range" that disagreed at the
-// day boundary (AdminDashboard `<= end`, SalesDashboard `< end + 1 day`, and
-// target attainment's `endDate + 'T23:59:59'`, which dropped the final second).
-// These tests pin the resolution: whole-day inclusive on both ends.
+// Two distinct concerns, deliberately separated:
+//
+//   filterOrders  compares exact INSTANTS, because a Date is an instant and
+//                 AdminDashboard's "since local midnight, up to now" window is
+//                 genuinely instant-based.
+//   dayRange      is the one definition of "these two calendar dates, inclusive",
+//                 for callers holding YYYY-MM-DD values from a date input.
+//
+// Conflating the two is what produced `endDate + 'T23:59:59'` — a day-based
+// boundary built in local time that dropped the final second of the day.
 
-describe('filterOrders — date range', () => {
+describe('filterOrders — date range is instant-based', () => {
   const early = makeOrder({ id: 'A', orderDate: '2026-07-01T00:00:00.000Z' })
   const mid = makeOrder({ id: 'B', orderDate: '2026-07-15T12:00:00.000Z' })
   const lastInstant = makeOrder({ id: 'C', orderDate: '2026-07-31T23:59:59.999Z' })
   const after = makeOrder({ id: 'D', orderDate: '2026-08-01T00:00:00.000Z' })
   const orders = [early, mid, lastInstant, after]
 
-  it('includes both bounds for the whole day', () => {
+  it('includes both bounds exactly', () => {
     const out = filterOrders(orders, {
       from: new Date('2026-07-01T00:00:00.000Z'),
-      to: new Date('2026-07-31T00:00:00.000Z'),
+      to: new Date('2026-07-31T23:59:59.999Z'),
     })
     expect(out.map(o => o.id)).toEqual(['A', 'B', 'C'])
   })
 
-  it('does not drop the final second of the end day', () => {
-    // The `endDate + 'T23:59:59'` spelling excluded this order.
+  it('does not silently widen a bound to the end of its day', () => {
+    // An instant bound means what it says: midday excludes the evening.
     const out = filterOrders([lastInstant], { to: new Date('2026-07-31T09:00:00.000Z') })
-    expect(out).toHaveLength(1)
+    expect(out).toHaveLength(0)
   })
 
   it('treats a missing bound as unbounded', () => {
@@ -41,6 +46,33 @@ describe('filterOrders — date range', () => {
     const bad = makeOrder({ id: 'X', orderDate: 'not-a-date' })
     const out = filterOrders([bad], { from: new Date('2026-01-01T00:00:00.000Z') })
     expect(out).toHaveLength(0)
+  })
+})
+
+describe('dayRange — the one definition of an inclusive calendar range', () => {
+  const lastInstant = makeOrder({ id: 'C', orderDate: '2026-07-31T23:59:59.999Z' })
+  const nextDay = makeOrder({ id: 'D', orderDate: '2026-08-01T00:00:00.000Z' })
+
+  it('covers the whole of both end days', () => {
+    const range = dayRange('2026-07-01', '2026-07-31')
+    expect(range.from.toISOString()).toBe('2026-07-01T00:00:00.000Z')
+    expect(range.to.toISOString()).toBe('2026-07-31T23:59:59.999Z')
+  })
+
+  it('keeps an order placed in the final second of the last day', () => {
+    // This is the order the `endDate + 'T23:59:59'` spelling dropped.
+    expect(filterOrders([lastInstant], dayRange('2026-07-01', '2026-07-31'))).toHaveLength(1)
+  })
+
+  it('still excludes the next day', () => {
+    expect(filterOrders([nextDay], dayRange('2026-07-01', '2026-07-31'))).toHaveLength(0)
+  })
+
+  it('accepts Dates as well as YYYY-MM-DD strings', () => {
+    const fromString = dayRange('2026-07-01', '2026-07-31')
+    const fromDates = dayRange(new Date('2026-07-01T08:30:00.000Z'), new Date('2026-07-31T08:30:00.000Z'))
+    expect(fromDates.from.toISOString()).toBe(fromString.from.toISOString())
+    expect(fromDates.to.toISOString()).toBe(fromString.to.toISOString())
   })
 })
 

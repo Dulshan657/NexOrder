@@ -3,7 +3,7 @@
 
 export { METRICS, getMetric, listMetrics } from './registry'
 export { evaluateMetric, evaluateMetrics } from './evaluate'
-export { filterOrders, rangeBounds, withinRange } from './filter'
+export { dayRange, filterOrders, rangeBounds, withinRange } from './filter'
 export { computeTargetAchieved, computeTargetProgress, targetFilter } from './targets'
 export type { RangeBounds } from './filter'
 export type { TargetProgress } from './targets'

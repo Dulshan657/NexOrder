@@ -55,9 +55,15 @@ export type MetricContextKey = keyof MetricContext
  * of "inclusive date range" existed before this type did.
  */
 export interface OrderFilter {
-  /** Inclusive lower bound on `orderDate`. */
+  /** Inclusive lower bound on `orderDate`, as an exact instant. */
   from?: Date
-  /** Inclusive upper bound — the whole calendar day of this date is included. */
+  /**
+   * Inclusive upper bound, as an exact instant.
+   *
+   * For a range picked as two calendar dates, build these with `dayRange()`
+   * rather than by hand — that is the one place that knows an inclusive whole-day
+   * range ends at 23:59:59.999 UTC.
+   */
   to?: Date
   horecaId?: number
   /** `submittedBy.id`. */

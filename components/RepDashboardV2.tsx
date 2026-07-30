@@ -18,6 +18,9 @@ import { getHoReCaOutstanding } from '../services/accountingService';
 import { getVisitCompletionRate } from '../services/repProductivityService';
 import { computeTargetProjection } from '../services/targetProjectionService';
 import { classifyStock, lowStockThresholdFor } from '../lib/stockStatus';
+import { computeTargetAchieved, computeTargetProgress } from '../lib/semantic';
+import { useMetric, useMetricContext } from '../hooks/useMetrics';
+import type { CustomerRevenue, DateRevenue, ProductUnits } from '../lib/semantic';
 import { useSettings } from '../hooks/queries/useSettings';
 
 interface RepDashboardV2Props {
@@ -54,6 +57,14 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
 
   const myOrders = useMemo(() => orders.filter(o => o.submittedBy.id === currentUser.id), [orders, currentUser.id]);
 
+  // Everything on this screen is scoped to the signed-in rep.
+  const mineFilter = useMemo(() => ({ repId: currentUser.id }), [currentUser.id]);
+  const metricCtx = useMetricContext({ orders, products, lowStockThreshold: globalThreshold });
+
+  const totalSales = useMetric<number>('sales.revenue', metricCtx, mineFilter);
+  const totalOrders = useMetric<number>('sales.orderCount', metricCtx, mineFilter);
+  const avgOrderValue = useMetric<number>('sales.averageOrderValue', metricCtx, mineFilter);
+
   // Performance metrics with period-over-period comparison
   const metrics = useMemo(() => {
     const sorted = [...myOrders].sort((a, b) => new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime());
@@ -61,9 +72,10 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
     const firstHalf = sorted.slice(0, mid);
     const secondHalf = sorted.slice(mid);
 
-    const totalSales = myOrders.reduce((sum, o) => sum + o.total, 0);
-    const totalOrders = myOrders.length;
-    const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
+    // The three headline figures come from the registry (see mineFilter). The
+    // half-over-half deltas below stay here: splitting a rep's orders at their
+    // median is a bespoke comparison, not a metric, and it reads the same
+    // canonical stored total the registry does.
     const uniqueHoReCas = new Set(myOrders.map(o => o.hoReCa?.id).filter(Boolean)).size;
 
     const firstRevenue = firstHalf.reduce((s, o) => s + o.total, 0);
@@ -77,7 +89,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
     const ordersDelta = firstHalf.length > 0 ? ((secondHalf.length - firstHalf.length) / firstHalf.length) * 100 : 0;
 
     return { totalSales, totalOrders, avgOrderValue, uniqueHoReCas, revenueDelta, ordersDelta, aovDelta };
-  }, [myOrders]);
+  }, [myOrders, totalSales, totalOrders, avgOrderValue]);
 
   // Today's route (only for field reps)
   const isFieldRep = currentUser.role === UserRole.FIELD_REP;
@@ -103,14 +115,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
     const revenueTarget = salesTargets.find(t => t.userId === currentUser.id && t.type === 'revenue');
     if (!revenueTarget) return null;
 
-    const startMs = new Date(revenueTarget.startDate).getTime();
-    const endMs = new Date(revenueTarget.endDate + 'T23:59:59').getTime();
-    const achieved = myOrders
-      .filter(o => {
-        const d = new Date(o.orderDate).getTime();
-        return d >= startMs && d <= endMs;
-      })
-      .reduce((sum, o) => sum + o.total, 0);
+    const achieved = computeTargetAchieved({ ...revenueTarget, userId: currentUser.id }, metricCtx);
 
     const remaining = Math.max(revenueTarget.targetValue - achieved, 0);
     const projection = computeTargetProjection(revenueTarget, myOrders, currentUser.id);
@@ -188,14 +193,14 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
     ];
   }, [reorderPredictions, atRiskCustomers, lowStockProducts, onStartOrder]);
 
-  // Sales trend chart data (last 30 days)
+  // Sales trend chart data (last 30 days). The registry groups the revenue; the
+  // gap-filling loop stays because only this component knows the axis it draws.
+  const thirtyDaysAgo = useMemo(() => new Date(Date.now() - 30 * 86400000), []);
+  const recentRevenueByDate = useMetric<readonly DateRevenue[]>(
+    'sales.revenueByDate', metricCtx, { ...mineFilter, from: thirtyDaysAgo },
+  );
   const salesChartData = useMemo(() => {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
-    const salesByDate = new Map<string, number>();
-    myOrders.filter(o => new Date(o.orderDate) >= thirtyDaysAgo).forEach(o => {
-      const date = o.orderDate.split('T')[0];
-      salesByDate.set(date, (salesByDate.get(date) || 0) + o.total);
-    });
+    const salesByDate = new Map(recentRevenueByDate.map(row => [row.date, row.revenue]));
 
     const data: { date: string; revenue: number }[] = [];
     const d = new Date(thirtyDaysAgo);
@@ -206,19 +211,16 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
       d.setDate(d.getDate() + 1);
     }
     return data;
-  }, [myOrders]);
+  }, [recentRevenueByDate, thirtyDaysAgo]);
 
   // Top customers & products
+  const myRevenueByCustomer = useMetric<readonly CustomerRevenue[]>('sales.revenueByCustomer', metricCtx, mineFilter);
+  const myUnitsByProduct = useMetric<readonly ProductUnits[]>('sales.unitsByProduct', metricCtx, mineFilter);
   const { topCustomers, topProducts } = useMemo(() => {
-    const custMap = new Map<string, number>();
-    myOrders.forEach(o => custMap.set(o.hoReCa.name, (custMap.get(o.hoReCa.name) || 0) + o.total));
-    const topC = [...custMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
-      .map(([label, value]) => ({ label, value, formattedValue: `$${value.toFixed(0)}` }));
-
-    const prodMap = new Map<string, number>();
-    myOrders.forEach(o => o.items.forEach(i => prodMap.set(i.name, (prodMap.get(i.name) || 0) + i.quantity)));
-    const topP = [...prodMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
-      .map(([label, value]) => ({ label, value, formattedValue: `${value} units` }));
+    const topC = myRevenueByCustomer.slice(0, 5)
+      .map(row => ({ label: row.name, value: row.revenue, formattedValue: `$${row.revenue.toFixed(0)}` }));
+    const topP = myUnitsByProduct.slice(0, 5)
+      .map(row => ({ label: row.name, value: row.units, formattedValue: `${row.units} units` }));
 
     return { topCustomers: topC, topProducts: topP };
   }, [myOrders]);
@@ -393,28 +395,10 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
           </div>
           <div className="space-y-3">
             {myTargets.map(target => {
-              const startMs = new Date(target.startDate).getTime();
-              const endMs = new Date(target.endDate + 'T23:59:59').getTime();
-              const ordersInRange = myOrders.filter(o => {
-                const d = new Date(o.orderDate).getTime();
-                return d >= startMs && d <= endMs;
-              });
-
-              let achieved = 0;
-              if (target.type === 'revenue') {
-                achieved = ordersInRange.reduce((s, o) => s + o.total, 0);
-              } else if (target.type === 'orders') {
-                achieved = ordersInRange.length;
-              } else {
-                const firstByHoReCa: Record<number, number> = {};
-                myOrders.forEach(o => {
-                  const t = new Date(o.orderDate).getTime();
-                  if (!firstByHoReCa[o.hoReCa.id] || t < firstByHoReCa[o.hoReCa.id]) firstByHoReCa[o.hoReCa.id] = t;
-                });
-                achieved = Object.values(firstByHoReCa).filter(t => t >= startMs && t <= endMs).length;
-              }
-
-              const pct = target.targetValue > 0 ? Math.min((achieved / target.targetValue) * 100, 100) : 0;
+              const { achieved, percent: pct } = computeTargetProgress(
+                { ...target, userId: currentUser.id },
+                metricCtx,
+              );
               const labels = { revenue: 'Revenue', orders: 'Orders', new_horecas: 'New HoReCa' } as const;
               const fmtA = target.type === 'revenue' ? `$${achieved.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : String(achieved);
               const fmtT = target.type === 'revenue' ? `$${target.targetValue.toLocaleString()}` : String(target.targetValue);

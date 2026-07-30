@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import { evaluateMetric } from '../lib/semantic/evaluate'
-import { filterOrders } from '../lib/semantic/filter'
+import { dayRange, filterOrders } from '../lib/semantic/filter'
 import { computeTargetAchieved } from '../lib/semantic/targets'
 import type { MetricContext } from '../lib/semantic/types'
 import { UserRole } from '../types'
@@ -56,9 +56,13 @@ const ctx: MetricContext = {
   now: new Date('2026-07-25T00:00:00.000Z'),
 }
 
+// AdminDashboard's window is instant-based (local midnight .. now), so its
+// equivalence is checked with raw instants. SalesDashboard's comes from two date
+// inputs, so its equivalence is checked with dayRange.
 const start = new Date('2026-07-01T00:00:00.000Z')
 const end = new Date('2026-07-31T00:00:00.000Z')
 const range = { from: start, to: end }
+const calendarRange = dayRange('2026-07-01', '2026-07-31')
 
 describe('AdminDashboard.tsx:84-107 — revenue, orders, AOV', () => {
   // Old: allOrders.filter(o => d >= start && d <= end) then reduce(o.total)
@@ -95,14 +99,14 @@ describe('SalesDashboard.tsx:209-223 — the line-sum override', () => {
     .reduce((acc, o) => acc + o.items.reduce((s, i) => s + i.price * i.quantity, 0), 0)
 
   it('matches sales.lineRevenue exactly', () => {
-    expect(evaluateMetric('sales.lineRevenue', ctx, range)).toBe(oldRevenue)
+    expect(evaluateMetric('sales.lineRevenue', ctx, calendarRange)).toBe(oldRevenue)
   })
 
   it('also matches sales.revenue, because stored total equals the line sum here', () => {
     // This is the migration's justification: on dev the two agree, so
     // SalesDashboard adopting the stored total moves nothing on screen. The
     // assertion below is what breaks the day a header-level promotion lands.
-    expect(evaluateMetric('sales.revenue', ctx, range)).toBe(oldRevenue)
+    expect(evaluateMetric('sales.revenue', ctx, calendarRange)).toBe(oldRevenue)
   })
 })
 
@@ -243,8 +247,8 @@ describe('target attainment — four old copies collapse to one', () => {
   })
 })
 
-describe('filterOrders replaces three different range spellings', () => {
-  it('agrees with the AdminDashboard spelling on interior dates', () => {
+describe('filterOrders reproduces each old range spelling', () => {
+  it('reproduces the AdminDashboard instant spelling exactly', () => {
     const admin = orders.filter(o => {
       const d = new Date(o.orderDate).getTime()
       return d >= start.getTime() && d <= end.getTime()
@@ -252,11 +256,21 @@ describe('filterOrders replaces three different range spellings', () => {
     expect(filterOrders(orders, range).map(o => o.id)).toEqual(admin.map(o => o.id))
   })
 
-  it('agrees with the SalesDashboard next-day-exclusive spelling', () => {
+  it('reproduces the SalesDashboard next-day-exclusive spelling via dayRange', () => {
+    // Old: d >= new Date(startDate) && d < new Date(endDate) + 1 day.
+    // dayRange's inclusive 23:59:59.999 end is the same set of instants.
     const sales = orders.filter(o => {
       const d = new Date(o.orderDate)
       return d >= start && d < new Date(end.getTime() + 86_400_000)
     })
-    expect(filterOrders(orders, range).map(o => o.id)).toEqual(sales.map(o => o.id))
+    expect(filterOrders(orders, calendarRange).map(o => o.id)).toEqual(sales.map(o => o.id))
+  })
+
+  it('and the two spellings only ever differed inside the final day', () => {
+    const lateOnFinalDay = makeOrder({ id: 'LATE', orderDate: '2026-07-31T20:00:00.000Z' })
+    // The AdminDashboard instant window ended at 00:00 of the 31st, so it missed
+    // an order placed that evening; the calendar window keeps it.
+    expect(filterOrders([lateOnFinalDay], range)).toHaveLength(0)
+    expect(filterOrders([lateOnFinalDay], calendarRange)).toHaveLength(1)
   })
 })

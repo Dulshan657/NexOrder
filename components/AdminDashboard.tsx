@@ -19,6 +19,9 @@ import { getRestockAlerts, getDaysToStockout } from '../services/productMovement
 import { computeAllHoReCaInsights } from '../services/buyingPatternsService';
 import { getPromotionROI } from '../services/promotionROIService';
 import { computeRepProductivity } from '../services/repProductivityService';
+import { computeTargetProgress, dayRange, filterOrders } from '../lib/semantic';
+import { useMetric, useMetricContext } from '../hooks/useMetrics';
+import type { CustomerRevenue, DateRevenue, ProductUnits, RepRevenue } from '../lib/semantic';
 
 interface AdminDashboardProps {
   allOrders: Order[];
@@ -59,6 +62,13 @@ function getDateRange(period: DashboardTimePeriod, customStart?: string, customE
     case 'this_month':
       return { start: new Date(today.getFullYear(), today.getMonth(), 1), end: now };
     case 'custom':
+      // Both bounds come from date inputs, so this is a calendar range and
+      // dayRange owns it. The old `customEnd + 'T23:59:59'` built the boundary in
+      // local time and dropped the final second of the day.
+      if (customStart && customEnd) {
+        const range = dayRange(customStart, customEnd);
+        return { start: range.from, end: range.to };
+      }
       return {
         start: customStart ? new Date(customStart) : new Date(today.getTime() - 30 * 86400000),
         end: customEnd ? new Date(customEnd + 'T23:59:59') : now,
@@ -79,34 +89,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const dateRange = useMemo(() => getDateRange(period, customStart, customEnd), [period, customStart, customEnd]);
 
-  // Filtered orders for the selected period
-  const { filteredOrders, previousOrders } = useMemo(() => {
-    const filtered = allOrders.filter(o => {
-      const d = new Date(o.orderDate).getTime();
-      return d >= dateRange.start.getTime() && d <= dateRange.end.getTime();
-    });
-
-    // Previous period for delta calculation
+  // This window and the one before it, for the deltas. Both are INSTANT ranges:
+  // getDateRange returns local midnight .. now, not two calendar dates, so they
+  // are passed through as instants rather than via dayRange.
+  const periodFilter = useMemo(
+    () => ({ from: dateRange.start, to: dateRange.end }),
+    [dateRange],
+  );
+  const previousFilter = useMemo(() => {
     const periodMs = dateRange.end.getTime() - dateRange.start.getTime();
-    const prevStart = new Date(dateRange.start.getTime() - periodMs);
-    const prevEnd = dateRange.start;
-    const previous = allOrders.filter(o => {
-      const d = new Date(o.orderDate).getTime();
-      return d >= prevStart.getTime() && d < prevEnd.getTime();
-    });
+    return {
+      from: new Date(dateRange.start.getTime() - periodMs),
+      // The old predicate was `< prevEnd`; one millisecond short of the current
+      // window's start is the same set of orders, expressed inclusively.
+      to: new Date(dateRange.start.getTime() - 1),
+    };
+  }, [dateRange]);
 
-    return { filteredOrders: filtered, previousOrders: previous };
-  }, [allOrders, dateRange]);
+  const metricCtx = useMetricContext({ orders: allOrders, products, lowStockThreshold });
 
-  // Revenue metrics
+  const filteredOrders = useMemo(
+    () => filterOrders(allOrders, periodFilter),
+    [allOrders, periodFilter],
+  );
+
+  const revenue = useMetric<number>('sales.revenue', metricCtx, periodFilter);
+  const prevRevenue = useMetric<number>('sales.revenue', metricCtx, previousFilter);
+  const orderCount = useMetric<number>('sales.orderCount', metricCtx, periodFilter);
+  const prevOrderCount = useMetric<number>('sales.orderCount', metricCtx, previousFilter);
+  const aov = useMetric<number>('sales.averageOrderValue', metricCtx, periodFilter);
+  const prevAov = useMetric<number>('sales.averageOrderValue', metricCtx, previousFilter);
+
+  // Receivables math stays inline: the AR domain is deliberately outside the
+  // semantic layer's first cut. See lib/semantic/registry.ts when it lands.
   const metrics = useMemo(() => {
-    const revenue = filteredOrders.reduce((s, o) => s + o.total, 0);
-    const prevRevenue = previousOrders.reduce((s, o) => s + o.total, 0);
-    const orders = filteredOrders.length;
-    const prevOrders = previousOrders.length;
-    const aov = orders > 0 ? revenue / orders : 0;
-    const prevAov = prevOrders > 0 ? prevRevenue / prevOrders : 0;
-
     const totalInvoiced = invoices.reduce((s, i) => s + i.amount, 0);
     const totalPaid = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.amount, 0);
     const totalOverdue = invoices.filter(i => i.status === 'overdue').reduce((s, i) => s + i.amount, 0);
@@ -116,11 +132,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     return {
       revenue, prevRevenue, revenueDelta: delta(revenue, prevRevenue),
-      orders, prevOrders, ordersDelta: delta(orders, prevOrders),
+      orders: orderCount, prevOrders: prevOrderCount, ordersDelta: delta(orderCount, prevOrderCount),
       aov, prevAov, aovDelta: delta(aov, prevAov),
       collectionRate, totalOverdue,
     };
-  }, [filteredOrders, previousOrders, invoices]);
+  }, [invoices, revenue, prevRevenue, orderCount, prevOrderCount, aov, prevAov]);
+
+  const lowStockProducts = useMetric<readonly Product[]>('inventory.lowStockProducts', metricCtx);
+  const outOfStockProducts = useMetric<readonly Product[]>('inventory.outOfStockProducts', metricCtx);
 
   // Alerts
   const alerts = useMemo(() => {
@@ -128,14 +147,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const outstanding = getAllOutstanding(invoices, hoReCas);
     const restockAlerts = getRestockAlerts(allOrders, products);
     const stockoutData = getDaysToStockout(allOrders, products).filter(d => (d.daysRemaining ?? Infinity) <= 30);
-    const lowStock = products.filter(p => p.inventory > 0 && p.inventory < lowStockThreshold);
-    const outOfStock = products.filter(p => p.inventory <= 0);
+    // Was `p.inventory > 0 && p.inventory < lowStockThreshold` / `p.inventory <= 0`,
+    // which used a strict `<`, ignored each product's own reorderPoint and
+    // alerted on retired products. The registry applies the canonical
+    // classifyStock rule instead, so a product exactly at its threshold is low.
+    const lowStock = lowStockProducts;
+    const outOfStock = outOfStockProducts;
 
     const allInsights = computeAllHoReCaInsights(allOrders, hoReCas);
     const atRisk = allInsights.filter(i => i.segment === 'at_risk' || i.segment === 'declining');
 
     return { overdue, outstanding, restockAlerts, stockoutData, lowStock, outOfStock, atRisk };
-  }, [invoices, hoReCas, allOrders, products, lowStockThreshold]);
+  }, [invoices, hoReCas, allOrders, products, lowStockProducts, outOfStockProducts]);
 
   const actionColumns = useMemo((): ActionItemColumn[] => {
     const overdueItems: ActionItem[] = alerts.outstanding.map(o => ({
@@ -193,13 +216,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     ];
   }, [alerts, onNavigateTab]);
 
-  // Sales trend chart data
+  // Sales trend chart data. The registry supplies the per-day revenue; filling
+  // the gaps stays here because only this component knows the axis it is drawing.
+  const revenueByDate = useMetric<readonly DateRevenue[]>('sales.revenueByDate', metricCtx, periodFilter);
   const salesOverTimeData = useMemo(() => {
-    const salesByDate = new Map<string, number>();
-    filteredOrders.forEach(order => {
-      const date = order.orderDate.split('T')[0];
-      salesByDate.set(date, (salesByDate.get(date) || 0) + order.total);
-    });
+    const salesByDate = new Map(revenueByDate.map(row => [row.date, row.revenue]));
 
     const data: { date: string; revenue: number }[] = [];
     const d = new Date(dateRange.start);
@@ -209,39 +230,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       d.setDate(d.getDate() + 1);
     }
     return data;
-  }, [filteredOrders, dateRange]);
+  }, [revenueByDate, dateRange]);
 
-  // Top data
-  const { topProducts, topCustomers, topReps } = useMemo(() => {
-    const productSales = new Map<string, number>();
-    filteredOrders.forEach(o => o.items.forEach(item => {
-      productSales.set(item.name, (productSales.get(item.name) || 0) + item.quantity);
-    }));
-    const topProd = [...productSales.entries()]
-      .sort((a, b) => b[1] - a[1]).slice(0, 5)
-      .map(([label, value]) => ({ label, value, formattedValue: `${value} units` }));
+  // Top data. The ranking and the rep-roles-only rule live in the registry; only
+  // the top-5 cut and the display formatting are this component's business.
+  const unitsByProduct = useMetric<readonly ProductUnits[]>('sales.unitsByProduct', metricCtx, periodFilter);
+  const revenueByCustomer = useMetric<readonly CustomerRevenue[]>('sales.revenueByCustomer', metricCtx, periodFilter);
+  const revenueByRep = useMetric<readonly RepRevenue[]>('sales.revenueByRep', metricCtx, periodFilter);
 
-    const customerSales = new Map<string, number>();
-    filteredOrders.forEach(o => {
-      customerSales.set(o.hoReCa.name, (customerSales.get(o.hoReCa.name) || 0) + o.total);
-    });
-    const topCust = [...customerSales.entries()]
-      .sort((a, b) => b[1] - a[1]).slice(0, 5)
-      .map(([name, value]) => ({ name, value: `$${value.toFixed(2)}` }));
-
-    const repSales = new Map<string, { revenue: number; avatarUrl?: string }>();
-    filteredOrders.forEach(o => {
-      if (o.submittedBy.role === UserRole.FIELD_REP || o.submittedBy.role === UserRole.OFFICE_REP) {
-        const curr = repSales.get(o.submittedBy.name) || { revenue: 0, avatarUrl: o.submittedBy.avatarUrl };
-        repSales.set(o.submittedBy.name, { revenue: curr.revenue + o.total, avatarUrl: curr.avatarUrl });
-      }
-    });
-    const topR = [...repSales.entries()]
-      .sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 5)
-      .map(([name, data]) => ({ name, value: `$${data.revenue.toFixed(2)}`, avatarUrl: data.avatarUrl }));
-
-    return { topProducts: topProd, topCustomers: topCust, topReps: topR };
-  }, [filteredOrders]);
+  const { topProducts, topCustomers, topReps } = useMemo(() => ({
+    topProducts: unitsByProduct.slice(0, 5)
+      .map(row => ({ label: row.name, value: row.units, formattedValue: `${row.units} units` })),
+    topCustomers: revenueByCustomer.slice(0, 5)
+      .map(row => ({ name: row.name, value: `$${row.revenue.toFixed(2)}` })),
+    topReps: revenueByRep.slice(0, 5)
+      .map(row => ({ name: row.name, value: `$${row.revenue.toFixed(2)}`, avatarUrl: row.avatarUrl })),
+  }), [unitsByProduct, revenueByCustomer, revenueByRep]);
 
   // Promo ROI
   const promoROI = useMemo(() => getPromotionROI(promotions, allOrders, products), [promotions, allOrders, products]);
@@ -469,32 +473,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {myTargets.length > 0 ? (
             <div className="space-y-3">
               {myTargets.map(target => {
-                const startMs = new Date(target.startDate).getTime();
-                const endMs = new Date(target.endDate + 'T23:59:59').getTime();
-                const ordersInRange = allOrders.filter(o =>
-                  o.submittedBy.id === currentUser.id &&
-                  new Date(o.orderDate).getTime() >= startMs &&
-                  new Date(o.orderDate).getTime() <= endMs
+                // Was ~25 lines re-deriving attainment for each of the three
+                // target types, with its own 'T23:59:59' window bound. The
+                // registry composes the same three metrics over the window the
+                // target itself describes.
+                const { achieved, percent } = computeTargetProgress(
+                  { ...target, userId: currentUser.id },
+                  metricCtx,
                 );
-
-                let achieved = 0;
-                if (target.type === 'revenue') {
-                  achieved = ordersInRange.reduce((sum, o) => sum + o.total, 0);
-                } else if (target.type === 'orders') {
-                  achieved = ordersInRange.length;
-                } else {
-                  const allMyOrders = allOrders.filter(o => o.submittedBy.id === currentUser.id);
-                  const firstOrderByHoReCa: Record<number, number> = {};
-                  allMyOrders.forEach(o => {
-                    const t = new Date(o.orderDate).getTime();
-                    if (!firstOrderByHoReCa[o.hoReCa.id] || t < firstOrderByHoReCa[o.hoReCa.id]) {
-                      firstOrderByHoReCa[o.hoReCa.id] = t;
-                    }
-                  });
-                  achieved = Object.values(firstOrderByHoReCa).filter(t => t >= startMs && t <= endMs).length;
-                }
-
-                const percent = target.targetValue > 0 ? Math.min((achieved / target.targetValue) * 100, 100) : 0;
                 const labelMap = { revenue: 'Revenue', orders: 'Orders', new_horecas: 'New HoReCa' } as const;
                 const formatVal = target.type === 'revenue' ? `$${achieved.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : String(achieved);
                 const formatTarget = target.type === 'revenue' ? `$${target.targetValue.toLocaleString()}` : String(target.targetValue);

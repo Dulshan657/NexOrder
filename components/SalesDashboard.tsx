@@ -1,10 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import type { Order, Category, Product, HoReCa, User, Invoice, SalesTarget } from '../types';
+import type { Order, Product, HoReCa, User, Invoice, SalesTarget } from '../types';
 import { UserRole } from '../types';
-import { CATEGORIES, ORDER_STATUS_SEQUENCE, ORDER_STATUS_LABELS } from '../constants';
+import { CATEGORIES } from '../constants';
 import { Target, DollarSign, ShoppingBag, Users } from 'lucide-react';
 import SalesTargetModal from './SalesTargetModal';
 import OptimizedImage from './OptimizedImage';
+import { computeTargetProgress, dayRange, filterOrders } from '../lib/semantic';
+import { useMetric, useMetricContext } from '../hooks/useMetrics';
+import type {
+    CategoryRevenue, CustomerRevenue, DateRevenue, ProductUnits, RepRevenue, StatusCount,
+} from '../lib/semantic';
 
 // Helper function to format date for input fields
 const formatDateForInput = (date: Date) => {
@@ -197,37 +202,39 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ allOrders, products, ho
         });
     };
 
-    const { filteredOrders, totalRevenue, totalOrders, avgOrderValue, topProductsData, topCategoriesData, salesOverTimeData, lowStockItems, topHoReCaData, topRepsData } = useMemo(() => {
-        const startDate = new Date(filters.startDate);
-        const endDate = new Date(new Date(new Date(filters.endDate).setDate(new Date(filters.endDate).getDate() + 1))); // inclusive end date
+    // One filter object describes every scope this screen offers, and the
+    // semantic layer applies it. `category` is a LINE-level scope: it narrows each
+    // order's items and switches the revenue basis to the surviving lines, which
+    // is what the old `total: items.reduce(...)` rewrite was doing by hand.
+    const metricFilter = useMemo(() => ({
+        ...dayRange(filters.startDate, filters.endDate),
+        horecaId: filters.hoReCaId !== 'all' ? parseInt(filters.hoReCaId) : undefined,
+        userRole: filters.userRole !== 'all' ? (filters.userRole as UserRole) : undefined,
+        category: filters.category !== 'all' ? filters.category : undefined,
+    }), [filters]);
 
-        const ordersInDateRange = allOrders.filter(order => {
-            const orderDate = new Date(order.orderDate);
-            return orderDate >= startDate && orderDate < endDate;
-        });
+    const metricCtx = useMetricContext({ orders: allOrders, products, lowStockThreshold });
 
-        const filtered = ordersInDateRange.map(order => {
-             if (filters.hoReCaId !== 'all' && order.hoReCa.id !== parseInt(filters.hoReCaId)) return null;
-             if (filters.userRole !== 'all' && order.submittedBy.role !== filters.userRole) return null;
-             
-             let items = order.items;
-             if (filters.category !== 'all') {
-                items = items.filter(item => item.category === filters.category);
-                if (items.length === 0) return null;
-             }
-             
-             return {...order, items, total: items.reduce((sum, item) => sum + item.price * item.quantity, 0)};
-        }).filter((o): o is Order => o !== null);
+    const filteredOrders = useMemo(
+        () => filterOrders(allOrders, metricFilter),
+        [allOrders, metricFilter],
+    );
 
-        // --- Calculate Stats ---
-        const revenue = filtered.reduce((acc, order) => acc + order.total, 0);
-        const avgValue = filtered.length > 0 ? revenue / filtered.length : 0;
+    const totalRevenue = useMetric<number>('sales.scopedRevenue', metricCtx, metricFilter);
+    const totalOrders = useMetric<number>('sales.orderCount', metricCtx, metricFilter);
+    const avgOrderValue = useMetric<number>('sales.averageOrderValue', metricCtx, metricFilter);
+    const lowStockItems = useMetric<readonly Product[]>('inventory.lowStockProducts', metricCtx);
+    const revenueByDate = useMetric<readonly DateRevenue[]>('sales.revenueByDate', metricCtx, metricFilter);
+    const unitsByProduct = useMetric<readonly ProductUnits[]>('sales.unitsByProduct', metricCtx, metricFilter);
+    const revenueByCategory = useMetric<readonly CategoryRevenue[]>('sales.revenueByCategory', metricCtx, metricFilter);
+    const revenueByCustomer = useMetric<readonly CustomerRevenue[]>('sales.revenueByCustomer', metricCtx, metricFilter);
+    const revenueByRep = useMetric<readonly RepRevenue[]>('sales.revenueByRep', metricCtx, metricFilter);
+    const ordersByStatus = useMetric<readonly StatusCount[]>('sales.ordersByStatus', metricCtx, metricFilter);
 
-        const salesByDate = new Map<string, number>();
-        filtered.forEach(order => {
-            const date = order.orderDate.split('T')[0];
-            salesByDate.set(date, (salesByDate.get(date) || 0) + order.total);
-        });
+    // Only the presentation is left here: the top-N cut, the currency formatting,
+    // and filling the chart's date gaps (which needs the axis this screen drew).
+    const { topProductsData, topCategoriesData, salesOverTimeData, topHoReCaData, topRepsData } = useMemo(() => {
+        const salesByDate = new Map(revenueByDate.map(row => [row.date, row.revenue]));
 
         const filledSalesData = [];
         try {
@@ -243,44 +250,19 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ allOrders, products, ho
                 }
             }
         } catch (error) { console.error("Error generating chart data:", error); }
-        
-        const lowStock = products.filter(p => p.inventory > 0 && p.inventory < lowStockThreshold);
-        
-        const productSales = new Map<string, { quantity: number }>();
-        filtered.forEach(order => order.items.forEach(item => {
-            const current = productSales.get(item.name) || { quantity: 0 };
-            productSales.set(item.name, { quantity: current.quantity + item.quantity });
-        }));
-        const topProducts = [...productSales.entries()].sort((a,b) => b[1].quantity - a[1].quantity).slice(0,5).map(([label, data]) => ({label, value: data.quantity, formattedValue: `${data.quantity} units`}));
-        
-        const categorySales = new Map<Category, number>();
-        filtered.forEach(order => order.items.forEach(item => {
-             categorySales.set(item.category, (categorySales.get(item.category) || 0) + (item.price * item.quantity));
-        }));
-        const topCategories = [...categorySales.entries()].sort((a,b) => b[1] - a[1]).slice(0,5).map(([label, value]) => ({label, value, formattedValue: `$${value.toFixed(2)}`}));
-        
-        const customerSales = new Map<string, { revenue: number }>();
-        filtered.forEach(order => {
-            const current = customerSales.get(order.hoReCa.name) || { revenue: 0 };
-            customerSales.set(order.hoReCa.name, { revenue: current.revenue + order.total });
-        });
-        const topCustomers = [...customerSales.entries()].sort((a,b) => b[1].revenue - a[1].revenue).slice(0, 5).map(([name, data]) => ({ name, value: `$${data.revenue.toFixed(2)}` }));
-        
-        const repSales = new Map<string, { revenue: number, avatarUrl?: string }>();
-        filtered.forEach(order => {
-            if (order.submittedBy.role === UserRole.FIELD_REP || order.submittedBy.role === UserRole.OFFICE_REP) {
-                const current = repSales.get(order.submittedBy.name) || { revenue: 0, avatarUrl: order.submittedBy.avatarUrl };
-                repSales.set(order.submittedBy.name, { revenue: current.revenue + order.total, avatarUrl: current.avatarUrl });
-            }
-        });
-        const topReps = [...repSales.entries()].sort((a,b) => b[1].revenue - a[1].revenue).slice(0, 3).map(([name, data]) => ({ name, value: `$${data.revenue.toFixed(2)}`, avatarUrl: data.avatarUrl }));
 
         return {
-            filteredOrders: filtered, totalRevenue: revenue, totalOrders: filtered.length, avgOrderValue: avgValue,
-            topProductsData: topProducts, topCategoriesData: topCategories, salesOverTimeData: filledSalesData, 
-            lowStockItems: lowStock, topHoReCaData: topCustomers, topRepsData: topReps,
+            salesOverTimeData: filledSalesData,
+            topProductsData: unitsByProduct.slice(0, 5)
+                .map(row => ({ label: row.name, value: row.units, formattedValue: `${row.units} units` })),
+            topCategoriesData: revenueByCategory.slice(0, 5)
+                .map(row => ({ label: row.category, value: row.revenue, formattedValue: `$${row.revenue.toFixed(2)}` })),
+            topHoReCaData: revenueByCustomer.slice(0, 5)
+                .map(row => ({ name: row.name, value: `$${row.revenue.toFixed(2)}` })),
+            topRepsData: revenueByRep.slice(0, 3)
+                .map(row => ({ name: row.name, value: `$${row.revenue.toFixed(2)}`, avatarUrl: row.avatarUrl })),
         };
-    }, [allOrders, products, hoReCas, users, filters]);
+    }, [filters, revenueByDate, unitsByProduct, revenueByCategory, revenueByCustomer, revenueByRep]);
     
     const handleExportCSV = () => {
         const headers = ["Order ID", "Date", "HoReCa Name", "Submitted By", "Status", "Delivery Date", "Product Name", "Category", "Quantity", "Unit Price", "Row Total", "Order Notes"];
@@ -335,13 +317,12 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ allOrders, products, ho
                         <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-sm">
                             <h3 className="font-bold text-stone-900 mb-3">Orders by Status</h3>
                             <div className="space-y-2">
-                                {ORDER_STATUS_SEQUENCE.map(status => {
-                                    const count = filteredOrders.filter(o => o.status === status).length;
+                                {ordersByStatus.map(({ status, label, count }) => {
                                     const pct = totalOrders > 0 ? (count / totalOrders) * 100 : 0;
                                     const colors: Record<string, string> = { processing: 'bg-blue-500', processed: 'bg-amber-500', picked: 'bg-indigo-500', packed: 'bg-purple-500', dispatched: 'bg-cyan-500', delivered: 'bg-emerald-500' };
                                     return (
                                         <div key={status} className="flex items-center gap-3">
-                                            <span className="text-xs text-stone-500 w-20">{ORDER_STATUS_LABELS[status]}</span>
+                                            <span className="text-xs text-stone-500 w-20">{label}</span>
                                             <div className="flex-1 bg-stone-100 rounded-full h-2"><div className={`h-2 rounded-full ${colors[status]}`} style={{ width: `${pct}%` }} /></div>
                                             <span className="text-xs font-semibold text-stone-700 w-8 text-right">{count}</span>
                                         </div>
@@ -421,32 +402,13 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ allOrders, products, ho
                 };
 
                 const targetProgress = myTargets.map(target => {
-                    const startMs = new Date(target.startDate).getTime();
-                    const endMs = new Date(target.endDate + 'T23:59:59').getTime();
-                    const ordersInRange = allOrders.filter(o =>
-                        o.submittedBy.id === currentUser.id &&
-                        new Date(o.orderDate).getTime() >= startMs &&
-                        new Date(o.orderDate).getTime() <= endMs
+                    // Attainment comes from the registry, which composes the same
+                    // metrics this screen displays elsewhere. This block used to
+                    // re-derive all three target types with its own window bound.
+                    const { achieved, percent } = computeTargetProgress(
+                        { ...target, userId: currentUser.id },
+                        metricCtx,
                     );
-
-                    let achieved = 0;
-                    if (target.type === 'revenue') {
-                        achieved = ordersInRange.reduce((sum, o) => sum + o.total, 0);
-                    } else if (target.type === 'orders') {
-                        achieved = ordersInRange.length;
-                    } else {
-                        const allMyOrders = allOrders.filter(o => o.submittedBy.id === currentUser.id);
-                        const firstOrderByHoReCa: Record<number, number> = {};
-                        allMyOrders.forEach(o => {
-                            const t = new Date(o.orderDate).getTime();
-                            if (!firstOrderByHoReCa[o.hoReCa.id] || t < firstOrderByHoReCa[o.hoReCa.id]) {
-                                firstOrderByHoReCa[o.hoReCa.id] = t;
-                            }
-                        });
-                        achieved = Object.values(firstOrderByHoReCa).filter(t => t >= startMs && t <= endMs).length;
-                    }
-
-                    const percent = target.targetValue > 0 ? Math.min((achieved / target.targetValue) * 100, 100) : 0;
                     const labelMap = { revenue: 'Revenue', orders: 'Orders', new_horecas: 'New HoReCa' } as const;
                     const iconMap = { revenue: DollarSign, orders: ShoppingBag, new_horecas: Users } as const;
                     const formatAchieved = target.type === 'revenue' ? `$${achieved.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : String(achieved);
@@ -554,32 +516,12 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ allOrders, products, ho
                                         </div>
                                         <div className="space-y-3">
                                             {targets.map(target => {
-                                                const startMs = new Date(target.startDate).getTime();
-                                                const endMs = new Date(target.endDate + 'T23:59:59').getTime();
-                                                const ordersInRange = allOrders.filter(o =>
-                                                    o.submittedBy.id === teamUser.id &&
-                                                    new Date(o.orderDate).getTime() >= startMs &&
-                                                    new Date(o.orderDate).getTime() <= endMs
+                                                // Same registry call as the personal-targets block above,
+                                                // scoped to this team member instead of the viewer.
+                                                const { achieved, percent } = computeTargetProgress(
+                                                    { ...target, userId: teamUser.id },
+                                                    metricCtx,
                                                 );
-
-                                                let achieved = 0;
-                                                if (target.type === 'revenue') {
-                                                    achieved = ordersInRange.reduce((sum, o) => sum + o.total, 0);
-                                                } else if (target.type === 'orders') {
-                                                    achieved = ordersInRange.length;
-                                                } else {
-                                                    const allUserOrders = allOrders.filter(o => o.submittedBy.id === teamUser.id);
-                                                    const firstOrderByHoReCa: Record<number, number> = {};
-                                                    allUserOrders.forEach(o => {
-                                                        const ts = new Date(o.orderDate).getTime();
-                                                        if (!firstOrderByHoReCa[o.hoReCa.id] || ts < firstOrderByHoReCa[o.hoReCa.id]) {
-                                                            firstOrderByHoReCa[o.hoReCa.id] = ts;
-                                                        }
-                                                    });
-                                                    achieved = Object.values(firstOrderByHoReCa).filter(ts => ts >= startMs && ts <= endMs).length;
-                                                }
-
-                                                const percent = target.targetValue > 0 ? Math.min((achieved / target.targetValue) * 100, 100) : 0;
                                                 const labelMap = { revenue: 'Revenue', orders: 'Orders', new_horecas: 'New HoReCa' } as const;
                                                 const iconMap = { revenue: DollarSign, orders: ShoppingBag, new_horecas: Users } as const;
                                                 const Icon = iconMap[target.type];

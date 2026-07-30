@@ -91,6 +91,41 @@ describe('sales.lineRevenue', () => {
   })
 })
 
+describe('sales.scopedRevenue', () => {
+  it('is the stored total with no line scope', () => {
+    expect(evaluateMetric('sales.scopedRevenue', ctx, {})).toBe(240)
+  })
+
+  it('switches to line revenue under a category scope', () => {
+    expect(evaluateMetric('sales.scopedRevenue', ctx, { category: 'Dry Goods' })).toBe(140)
+    expect(evaluateMetric('sales.scopedRevenue', ctx, { category: 'Frozen' })).toBe(110)
+  })
+
+  it('never double-counts a mixed order across its categories', () => {
+    // ORD-3 is mixed. Its two category slices sum to the LINE total (100), which
+    // is deliberately less than its stored total (90 + the $10 promotion), and
+    // never more — the failure mode of scoping a stored total.
+    const dry = evaluateMetric<number>('sales.scopedRevenue', ctx, { category: 'Dry Goods' })
+    const frozen = evaluateMetric<number>('sales.scopedRevenue', ctx, { category: 'Frozen' })
+    const lines = evaluateMetric<number>('sales.lineRevenue', ctx, {})
+    expect(dry + frozen).toBe(lines)
+  })
+
+  it('groups on the same basis it totals on', () => {
+    // The old code switched basis by rewriting order.total in place, so the tile
+    // and the chart beside it could not disagree. That property must survive.
+    const scoped = evaluateMetric<number>('sales.scopedRevenue', ctx, { category: 'Frozen' })
+    const byDate = evaluateMetric<ReadonlyArray<{ revenue: number }>>(
+      'sales.revenueByDate', ctx, { category: 'Frozen' },
+    )
+    const byCustomer = evaluateMetric<ReadonlyArray<{ revenue: number }>>(
+      'sales.revenueByCustomer', ctx, { category: 'Frozen' },
+    )
+    expect(byDate.reduce((s, r) => s + r.revenue, 0)).toBe(scoped)
+    expect(byCustomer.reduce((s, r) => s + r.revenue, 0)).toBe(scoped)
+  })
+})
+
 describe('sales.orderCount / averageOrderValue', () => {
   it('counts filtered orders', () => {
     expect(evaluateMetric('sales.orderCount', ctx, {})).toBe(3)

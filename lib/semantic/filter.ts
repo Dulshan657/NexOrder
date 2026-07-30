@@ -1,15 +1,20 @@
 // The single order-scoping definition.
 //
-// Before this file, "orders in the selected range" was written three ways that
-// disagreed at the day boundary:
+// Before this file, "orders in the selected range" was written three ways:
 //
-//   AdminDashboard.tsx:86    d >= start && d <= end
-//   SalesDashboard.tsx:206   d >= start && d <  end + 1 day
+//   AdminDashboard.tsx:86    d >= start && d <= end          (instants: local midnight .. now)
+//   SalesDashboard.tsx:206   d >= start && d <  end + 1 day  (whole days, from date inputs)
 //   AdminDashboard.tsx:473   d >= start && d <= Date(endDate + 'T23:59:59')
 //
-// The third silently dropped the last second of the final day. This module
-// resolves all three in favour of whole-day-inclusive on both ends, which is
-// what every calling UI already claimed to do.
+// The third is the broken one: it is a whole-day range that drops the final
+// second, and it builds its boundary in LOCAL time from a UTC date string.
+//
+// The fix is not to pick one. The first is genuinely instant-based ("since
+// midnight, up to right now") and the second genuinely day-based ("these two
+// calendar dates, inclusive"), and both are legitimate. So `from`/`to` here are
+// exact inclusive INSTANTS — a Date is an instant, and pretending otherwise is
+// what produced the third spelling — and `dayRange()` below is the single
+// definition of turning two calendar dates into an inclusive range.
 
 import type { Order } from '../../types'
 import type { OrderFilter } from './types'
@@ -17,16 +22,33 @@ import type { OrderFilter } from './types'
 const MS_PER_DAY = 86_400_000
 
 /**
- * Start of the UTC calendar day containing `d`.
- *
- * UTC rather than local time on purpose. The `<input type="date">` values the
+ * UTC rather than local time throughout. The `<input type="date">` values the
  * dashboards feed in are `YYYY-MM-DD` strings, which `new Date(...)` parses as
  * UTC midnight, and `sales.revenueByDate` groups on `orderDate.split('T')[0]`,
- * which is also UTC. Using local time here would make the range boundary depend
- * on the viewer's timezone while the day labels next to it did not.
+ * which is also UTC. Building day boundaries in local time — as
+ * `endDate + 'T23:59:59'` did — makes the range edge depend on the viewer's
+ * timezone while the day labels beside it do not.
  */
-function startOfUtcDay(d: Date): number {
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+function startOfUtcDay(value: Date | string): Date {
+  const d = typeof value === 'string' ? new Date(value) : value
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+}
+
+/** Last representable instant of the UTC day containing `value`. */
+function endOfUtcDay(value: Date | string): Date {
+  return new Date(startOfUtcDay(value).getTime() + MS_PER_DAY - 1)
+}
+
+/**
+ * The single definition of "these two calendar dates, inclusive".
+ *
+ * Accepts what the UI actually holds: `YYYY-MM-DD` strings from a date input, or
+ * Dates. Returns instants suitable for an `OrderFilter`, covering the whole of
+ * both end days — so an order placed at 23:59:59.9 on the final day counts,
+ * which is precisely what the old `T23:59:59` spelling got wrong.
+ */
+export function dayRange(from: Date | string, to: Date | string): { from: Date; to: Date } {
+  return { from: startOfUtcDay(from), to: endOfUtcDay(to) }
 }
 
 export interface RangeBounds {
@@ -39,13 +61,13 @@ export interface RangeBounds {
 /**
  * Resolve a filter's date range to millisecond bounds. Exported so a metric that
  * needs to range-test a bare timestamp (see `sales.newCustomerCount`, which tests
- * a customer's first-order instant) uses the same boundary rule as
- * `filterOrders` instead of re-deriving it.
+ * a customer's first-order instant) uses the same comparison as `filterOrders`
+ * instead of re-deriving it.
  */
 export function rangeBounds(filter: Pick<OrderFilter, 'from' | 'to'>): RangeBounds {
   return {
-    fromMs: filter.from ? startOfUtcDay(filter.from) : null,
-    toMs: filter.to ? startOfUtcDay(filter.to) + MS_PER_DAY - 1 : null,
+    fromMs: filter.from ? filter.from.getTime() : null,
+    toMs: filter.to ? filter.to.getTime() : null,
   }
 }
 

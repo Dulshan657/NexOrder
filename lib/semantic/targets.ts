@@ -14,15 +14,20 @@
 
 import type { SalesTarget } from '../../types'
 import { evaluateMetric } from './evaluate'
+import { dayRange } from './filter'
 import type { MetricContext, OrderFilter } from './types'
 
-/** The scope a target describes: its window, for its owner. */
+/**
+ * The scope a target describes: its window, for its owner.
+ *
+ * `startDate` / `endDate` are `YYYY-MM-DD`, so the window is a whole-day range
+ * and is built by `dayRange`. That is the fix for both old spellings: the
+ * dashboards' `endDate + 'T23:59:59'` dropped the final second and was built in
+ * local time, and the service's `<= new Date(endDate)` stopped at midnight and
+ * so ignored the entire last day.
+ */
 export function targetFilter(target: SalesTarget): OrderFilter {
-  return {
-    from: new Date(target.startDate),
-    to: new Date(target.endDate),
-    repId: target.userId,
-  }
+  return { ...dayRange(target.startDate, target.endDate), repId: target.userId }
 }
 
 /** Which registry metric answers each target type. */

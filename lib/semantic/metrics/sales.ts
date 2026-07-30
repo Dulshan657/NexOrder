@@ -14,7 +14,7 @@ import { ORDER_STATUS_LABELS, ORDER_STATUS_SEQUENCE } from '../../../constants'
 import { UserRole } from '../../../types'
 import type { Order, OrderStatus } from '../../../types'
 import { filterOrders, rangeBounds, withinRange } from '../filter'
-import type { MetricDef } from '../types'
+import type { MetricDef, OrderFilter } from '../types'
 
 export interface StatusCount {
   status: OrderStatus
@@ -53,6 +53,25 @@ export interface CategoryRevenue {
 /** Σ price × quantity over an order's lines. */
 function lineTotal(order: Order): number {
   return (order.items ?? []).reduce((sum, item) => sum + item.price * item.quantity, 0)
+}
+
+/**
+ * The revenue figure appropriate to the scope being asked about.
+ *
+ * Without a line scope this is the stored order total — the canonical booked
+ * figure. Under a line scope it is the sum of the surviving lines, because an
+ * order's stored total belongs to the whole order and attributing it to one
+ * category would over-count every mixed-category order.
+ *
+ * Naming the rule here is the point. `SalesDashboard` used to apply it by
+ * rewriting `order.total` in place, which silently changed the basis of the trend
+ * chart, the top-customers list and the top-reps list at the same time — and
+ * applied it even with no category selected, which is where its numbers drifted
+ * from `AdminDashboard`. Every grouping metric below reads through this function,
+ * so the basis switches together or not at all.
+ */
+function effectiveRevenue(order: Order, filter: OrderFilter): number {
+  return filter.category !== undefined ? lineTotal(order) : (order.total ?? 0)
 }
 
 /** The roles whose orders count as rep credit. An admin placing an order is not a rep sale. */
@@ -111,6 +130,18 @@ export const SALES_METRICS: readonly MetricDef[] = [
       filterOrders(ctx.orders, filter).reduce((sum, order) => sum + lineTotal(order), 0),
   },
   {
+    id: 'sales.scopedRevenue',
+    label: 'Revenue',
+    description:
+      'Revenue on the basis appropriate to the scope: the stored order total normally, and line revenue when a category scope is applied. Use this for a revenue tile whose filters the user controls, so selecting a category narrows the figure instead of over-counting mixed orders. Use sales.revenue instead when the answer must be the booked total and a line scope should be rejected rather than silently accommodated.',
+    unit: 'currency',
+    shape: 'scalar',
+    requires: ['orders'],
+    supportsLineScope: true,
+    compute: (ctx, filter) =>
+      filterOrders(ctx.orders, filter).reduce((sum, order) => sum + effectiveRevenue(order, filter), 0),
+  },
+  {
     id: 'sales.orderCount',
     label: 'Orders',
     description:
@@ -125,15 +156,15 @@ export const SALES_METRICS: readonly MetricDef[] = [
     id: 'sales.averageOrderValue',
     label: 'Avg. order value',
     description:
-      'Stored revenue divided by order count over the same scope. Returns 0 rather than NaN when no orders match, which is what every inline copy of this division had to remember to do.',
+      'Revenue divided by order count over the same scope, using the scope-appropriate revenue basis (stored total normally, line revenue under a category scope). Returns 0 rather than NaN when no orders match, which is what every inline copy of this division had to remember to do.',
     unit: 'currency',
     shape: 'scalar',
     requires: ['orders'],
-    supportsLineScope: false,
+    supportsLineScope: true,
     compute: (ctx, filter) => {
       const scoped = filterOrders(ctx.orders, filter)
       if (scoped.length === 0) return 0
-      return scoped.reduce((sum, order) => sum + (order.total ?? 0), 0) / scoped.length
+      return scoped.reduce((sum, order) => sum + effectiveRevenue(order, filter), 0) / scoped.length
     },
   },
   {
@@ -152,7 +183,7 @@ export const SALES_METRICS: readonly MetricDef[] = [
     id: 'sales.revenueByDate',
     label: 'Revenue by date',
     description:
-      'Stored revenue grouped by the UTC calendar day of the placement date, ascending. Days with no orders are absent; a caller wanting a gap-free axis fills the range itself, because only the caller knows which range it is drawing.',
+      'Revenue grouped by the UTC calendar day of the placement date, ascending, on the scope-appropriate basis (line revenue under a category scope). Days with no orders are absent; a caller wanting a gap-free axis fills the range itself, because only the caller knows which range it is drawing.',
     unit: 'currency',
     shape: 'series',
     requires: ['orders'],
@@ -161,7 +192,7 @@ export const SALES_METRICS: readonly MetricDef[] = [
       const byDate = new Map<string, number>()
       for (const order of filterOrders(ctx.orders, filter)) {
         const date = order.orderDate.split('T')[0]
-        byDate.set(date, (byDate.get(date) ?? 0) + (order.total ?? 0))
+        byDate.set(date, (byDate.get(date) ?? 0) + effectiveRevenue(order, filter))
       }
       return [...byDate.entries()]
         .map(([date, revenue]) => ({ date, revenue }))
@@ -172,7 +203,7 @@ export const SALES_METRICS: readonly MetricDef[] = [
     id: 'sales.revenueByCustomer',
     label: 'Revenue by customer',
     description:
-      'Stored revenue grouped by HoReCa, highest first. Keyed by customer id rather than name so two customers sharing a trading name are not merged into one row.',
+      'Revenue grouped by HoReCa, highest first, on the scope-appropriate basis (line revenue under a category scope). Keyed by customer id rather than name so two customers sharing a trading name are not merged into one row.',
     unit: 'currency',
     shape: 'series',
     requires: ['orders'],
@@ -186,7 +217,7 @@ export const SALES_METRICS: readonly MetricDef[] = [
         byCustomer.set(id, {
           horecaId: id,
           name: order.hoReCa.name,
-          revenue: (current?.revenue ?? 0) + (order.total ?? 0),
+          revenue: (current?.revenue ?? 0) + effectiveRevenue(order, filter),
         })
       }
       return descendingBy([...byCustomer.values()], row => row.revenue)
@@ -196,7 +227,7 @@ export const SALES_METRICS: readonly MetricDef[] = [
     id: 'sales.revenueByRep',
     label: 'Revenue by rep',
     description:
-      'Stored revenue grouped by submitting user, restricted to the Field and Office Sales Rep roles. An order placed by an admin or a customer is real revenue but is not rep credit, so it appears in sales.revenue and not here.',
+      'Revenue grouped by submitting user on the scope-appropriate basis, restricted to the Field and Office Sales Rep roles. An order placed by an admin or a customer is real revenue but is not rep credit, so it appears in sales.revenue and not here.',
     unit: 'currency',
     shape: 'series',
     requires: ['orders'],
@@ -210,7 +241,7 @@ export const SALES_METRICS: readonly MetricDef[] = [
         byRep.set(submitter.id, {
           repId: submitter.id,
           name: submitter.name,
-          revenue: (current?.revenue ?? 0) + (order.total ?? 0),
+          revenue: (current?.revenue ?? 0) + effectiveRevenue(order, filter),
           avatarUrl: current?.avatarUrl ?? submitter.avatarUrl,
         })
       }
