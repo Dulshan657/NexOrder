@@ -343,7 +343,13 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
           zone_profile_id: p.zoneProfileId, storage_type_id: p.storageTypeId,
           levels: hasLevels
             ? p.levels!.map((l) => ({
-                level_index: l.levelIndex, role: l.role,
+                level_index: l.levelIndex,
+                // '' is how the editor represents "no stored role" (see the
+                // reducer's `load` — defaulting to 'pick' would silently claim a
+                // Pick Zone that drives replenishment and allocation). It is NOT a
+                // role, so it goes over the wire as null, which is what
+                // locations.level_role and assertValidRoles both already accept.
+                role: l.role && l.role.trim().length > 0 ? l.role : null,
                 capacity_slots: l.capacitySlots ?? null, weight_capacity_kg: l.weightCapacityKg ?? null,
               }))
             : undefined,

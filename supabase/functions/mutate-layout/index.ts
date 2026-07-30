@@ -47,7 +47,20 @@ const levelSchema = z.object({
   level_index: z.number().int().positive(),
   // Validated at runtime against level_roles (mig 00081) — the vocabulary is
   // operator-managed, so a z.enum literal would reject a newly-created role.
-  role: z.string().min(1).max(32),
+  //
+  // NULLISH IS LEGAL, and this schema used to say otherwise. `locations.level_role`
+  // is nullable, NULL means "unconstrained" (every legacy bin), and
+  // assertValidRoles explicitly documents that it skips null/undefined rather
+  // than rejecting them. But `z.string().min(1)` made the field required and
+  // non-empty, so the one representation of "unconstrained" the rest of the
+  // system treats as valid was rejected at the door — as a bare
+  // INVALID_INPUT/400, which supabase-js then flattened to "Edge Function
+  // returned a non-2xx status code". The designer reaches this on any rack whose
+  // level has no stored role: useLayoutEditorState's `load` maps a missing role to
+  // '' deliberately (defaulting to 'pick' would silently claim a Pick Zone that
+  // drives replenishment and allocation), and persistGeometry forwarded that ''
+  // verbatim. Empty string is normalised to null below.
+  role: z.string().max(32).nullish().transform((r) => (r && r.trim().length > 0 ? r : null)),
   capacity_slots: z.number().nonnegative().optional(),
   slot_kind: z.enum(['pallet', 'carton']).optional(),
   weight_capacity_kg: z.number().nonnegative().optional(),

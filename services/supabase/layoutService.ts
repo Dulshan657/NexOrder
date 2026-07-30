@@ -1,6 +1,24 @@
 import { supabase } from '@/lib/supabase'
 import { toLayoutObject, toLayoutPlacement, toWarehouseLayout } from '@/lib/adapters'
+import { extractFunctionErrorMessage } from '@/lib/functionError'
 import type { LayoutObject, LayoutObjectType, LayoutPlacement, WarehouseLayout } from '@/types'
+
+/**
+ * Rethrow a functions.invoke failure carrying the message the server actually
+ * sent.
+ *
+ * `supabase.functions.invoke` collapses every non-2xx into a FunctionsHttpError
+ * whose `.message` is the generic "Edge Function returned a non-2xx status code";
+ * the real `{ error: { code, message } }` body sits unread on `.context`. This
+ * file used to `throw error` raw, so every layout save/publish failure — a
+ * duplicate bin, a bad level role, a code collision, a stale draft — surfaced as
+ * that one useless string, and there was no way to tell them apart from the UI.
+ * orderService / putawayService / replenService / emailAccountsService already do
+ * this; the layout path was the one that never adopted it.
+ */
+async function rethrowWithServerMessage(error: unknown, fallback: string): Promise<never> {
+  throw new Error(await extractFunctionErrorMessage(error, fallback))
+}
 
 export interface LayoutDetail {
   layout: WarehouseLayout
@@ -49,7 +67,7 @@ export async function createLayout(input: CreateLayoutInput): Promise<WarehouseL
   const { data, error } = await supabase.functions.invoke<{ ok: true; layout: unknown }>('mutate-layout', {
     body: { action: 'create_layout', data: input },
   })
-  if (error) throw error
+  if (error) await rethrowWithServerMessage(error, 'Could not create the layout')
   return toWarehouseLayout((data as any).layout)
 }
 
@@ -57,7 +75,7 @@ export async function cloneLayout(layoutId: number, name: string): Promise<Wareh
   const { data, error } = await supabase.functions.invoke<{ ok: true; layout: unknown }>('mutate-layout', {
     body: { action: 'clone_layout', layout_id: layoutId, name },
   })
-  if (error) throw error
+  if (error) await rethrowWithServerMessage(error, 'Could not clone the layout')
   return toWarehouseLayout((data as any).layout)
 }
 
@@ -65,7 +83,7 @@ export async function archiveLayout(layoutId: number): Promise<WarehouseLayout> 
   const { data, error } = await supabase.functions.invoke<{ ok: true; layout: unknown }>('mutate-layout', {
     body: { action: 'archive_layout', layout_id: layoutId },
   })
-  if (error) throw error
+  if (error) await rethrowWithServerMessage(error, 'Could not archive the layout')
   return toWarehouseLayout((data as any).layout)
 }
 
@@ -75,7 +93,7 @@ export async function deleteLayout(layoutId: number): Promise<number> {
   const { data, error } = await supabase.functions.invoke<{ ok: true; layout_id: number }>('mutate-layout', {
     body: { action: 'delete_layout', layout_id: layoutId },
   })
-  if (error) throw error
+  if (error) await rethrowWithServerMessage(error, 'Could not delete the layout')
   return (data as any).layout_id as number
 }
 
@@ -83,8 +101,12 @@ export async function deleteLayout(layoutId: number): Promise<number> {
 export interface NewBinLevelInput {
   level_index: number
   /** A level_roles.key (mig 00081) — operator-managed, so not a closed union.
-   *  mutate-layout validates it against the table. */
-  role: string
+   *  mutate-layout validates it against the table.
+   *
+   *  `null` is legal and means UNCONSTRAINED (a nullable `locations.level_role`).
+   *  Send null rather than '' — the editor represents "no stored role" as an empty
+   *  string so it can't fake a Pick Zone, and an empty string is not a role. */
+  role: string | null
   capacity_slots?: number
   slot_kind?: 'pallet' | 'carton'
   weight_capacity_kg?: number
@@ -154,7 +176,7 @@ export async function saveGeometry(
   const { data, error } = await supabase.functions.invoke<SaveGeometryResult & { ok: true }>('mutate-layout', {
     body: { action: 'save_geometry', layout_id: layoutId, placements, objects },
   })
-  if (error) throw error
+  if (error) await rethrowWithServerMessage(error, 'Could not save the layout')
   return data as SaveGeometryResult
 }
 
@@ -176,6 +198,6 @@ export async function publishLayout(layoutId: number): Promise<PublishResult> {
   const { data, error } = await supabase.functions.invoke<PublishResult>('publish-layout', {
     body: { layout_id: layoutId },
   })
-  if (error) throw error
+  if (error) await rethrowWithServerMessage(error, 'Could not publish the layout')
   return data as PublishResult
 }
