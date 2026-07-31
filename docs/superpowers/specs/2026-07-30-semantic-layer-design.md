@@ -16,6 +16,16 @@ Measured, not assumed:
 | Target achieved | `AdminDashboard.tsx:480`, `SalesDashboard.tsx:426`, `RepDashboardV2.tsx:398`, `targetProjectionService.ts:5` | Four copies. `computeWeeklyPace:113` documents its own wrong one: *"Simplified: count unique customer IDs"* |
 | Stock health buckets | `services/inventoryDashboardService.ts:27`, `lib/stockStatus.ts` | Agree — and `stockStatus.ts:9` says so in a comment, which is the duplication admitting itself |
 
+**Correction, found during browser verification:** `components/SalesDashboard.tsx` is
+**not mounted anywhere** — nothing imports it, and it still carries a scaffold
+comment (`// FIX: Define SalesDashboardProps`) at line 167. Its disagreements with
+`AdminDashboard` were therefore real in the source but never reached a user. The
+live surfaces are `AdminDashboard` and `RepDashboardV2`, and those two agreed with
+each other on revenue already. The migration still applies to `SalesDashboard`, so
+it is correct if it is ever wired up, but it belongs on the dead-code sweep in
+CLAUDE.md's Pending Work alongside `CustomerForm.tsx` — verify with `knip` before
+deleting.
+
 Separately, on the matching side: `_shared/poInbox/aliasResolver.ts:547` sends the
 **entire product catalog, capped at 500 rows**, to `gpt-4o-mini` for every PO line
 that misses its alias. The cap is a correctness ceiling (SKU 501 can never be
@@ -117,7 +127,11 @@ existing `aliasResolver` tests must pass unmodified; that is the proof.
 ## Consequences
 
 - One place to look up what a number means, and one place to change it.
-- `SalesDashboard` stops disagreeing with `AdminDashboard` about revenue.
+- The four target-attainment copies collapse to one, which fixes a real
+  user-visible bug: `targetProjectionService` bounded its window at midnight and
+  so ignored every order placed on a target's final day.
+- `SalesDashboard` stops disagreeing with `AdminDashboard` about revenue — a
+  source-level fix only, since it is unmounted (see the correction above).
 - The PO product catalog is no longer capped at 500 SKUs.
 - Cost per unmatched PO line drops by roughly an order of magnitude.
 - Receivables and customer-activity math stays inline for now, and is the
