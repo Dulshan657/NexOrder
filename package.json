@@ -75,7 +75,7 @@
     "rollup-plugin-visualizer": "^7.0.1",
     "tailwindcss": "^4.2.2",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
+    "typescript": "~7.0.2",
     "vite": "^6.2.0",
     "vitest": "^4.1.4"
   }
