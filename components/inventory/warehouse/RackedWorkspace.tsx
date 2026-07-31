@@ -12,7 +12,7 @@
 // except MapControls and the hint pill, both inside MapStage's own stacking
 // context — this component no longer needs one of its own.
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { InventoryLocation, LayoutPlacement, VelocityClass } from '@/types'
 import { useLayoutDetail } from '@/hooks/queries/useLayouts'
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
@@ -42,7 +42,7 @@ export interface RackedWorkspaceProps {
 export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps) {
   const { data: detail, isLoading } = useLayoutDetail(layoutId)
   const model = useWarehouseViewerModel(warehouseId, layoutId)
-  const { data: storageTypes = [] } = useStorageTypes()
+  const { data: storageTypes = [], isLoading: storageTypesLoading } = useStorageTypes()
   const { data: zoneProfiles = [] } = useZoneProfiles()
   const { data: levelRoles = [] } = useLevelRoles()
 
@@ -250,6 +250,30 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
     if (placement) setFloor(placement.floor)
   }
 
+  /**
+   * Selecting from the MAP has to bring Bin detail with it.
+   *
+   * The map is `md:h-[65vh]` and the panel row sits below it in normal document
+   * flow, so clicking a bin — or a level in an expanded rack — answered entirely
+   * off-screen: the panel filled in correctly and the operator never saw it, which
+   * reads as "clicking does nothing".
+   *
+   * Only the map path scrolls. The tree already scrolls its own selected row into
+   * view (WarehouseTreePanel's useLayoutEffect), and scrolling the page from there
+   * too would fight it — selecting in the tree would yank the tree off-screen.
+   */
+  const binDetailRef = useRef<HTMLDivElement | null>(null)
+  const selectFromMap = (locationId: number) => {
+    setSelectedLocationId(locationId)
+    const reduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    binDetailRef.current?.scrollIntoView({
+      block: 'nearest',
+      behavior: reduced ? 'auto' : 'smooth',
+    })
+  }
+
   const selectedLocation = selectedLocationId != null ? model.locationsById.get(selectedLocationId) ?? null : null
   const selectedPlacement = selectedLocationId != null ? placementByLocation.get(selectedLocationId) : undefined
   const nodeVisits =
@@ -298,7 +322,19 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
 
   // Skeleton mirrors the loaded shape (a tall map slot) so the tab doesn't
   // reflow when the layout lands — this is the first frame of every demo.
-  if (isLoading || !detail) {
+  //
+  // Gated on THREE queries, not one. The layout supplies geometry; the storage
+  // forms supply every fill colour and the locations supply every code, the tree
+  // and a levelled rack's colour. Waiting on the layout alone opened a window
+  // where geometry had landed and the other two had not, and the canvas has a
+  // defined-but-wrong answer for that state: `formColorById` and `locationsById`
+  // are both empty, so every bin falls through to DEFAULT_BIN_FILL and the tree
+  // renders "No storage locations defined for this warehouse." An operator sees a
+  // finished-looking grey map that silently recolours a moment later, which reads
+  // as a rendering bug rather than as loading — and is exactly what was reported
+  // on NEXG. Deliberately NOT gated on `model.isLoading`: that bundles velocity
+  // and traffic, whose absence costs a `0%` label, not the picture.
+  if (isLoading || !detail || model.isCoreLoading || storageTypesLoading) {
     return (
       <div aria-busy="true" className="flex flex-col gap-4">
         <span className="sr-only">Loading warehouse layout…</span>
@@ -331,7 +367,7 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
           onFloorChange={setFloor}
           selectedLocationId={selectedLocationId}
           highlightedLocationIds={highlightedLocationIds}
-          onSelectBin={setSelectedLocationId}
+          onSelectBin={selectFromMap}
           binColors={binColors}
           rackColors={rackColors}
           binBadges={binBadges}
@@ -359,7 +395,12 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
           />
         </FloatingPanel>
 
-        <FloatingPanel id="wh-bin-detail" title="Bin detail" className="max-h-[70vh]">
+        <FloatingPanel
+          id="wh-bin-detail"
+          title="Bin detail"
+          className="max-h-[70vh]"
+          containerRef={binDetailRef}
+        >
           <BinDetailPanel
             warehouseId={warehouseId}
             location={selectedLocation}

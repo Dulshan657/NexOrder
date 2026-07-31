@@ -67,9 +67,15 @@ describe('occupancyPill', () => {
 })
 
 describe('DEFAULT_BIN_FILL vs occupancyFill', () => {
-  it('the map default fill is never byte-identical to an occupancy overlay color (regression guard)', () => {
-    expect(DEFAULT_BIN_FILL).not.toBe(occupancyFill(0.3))
-    expect(DEFAULT_BIN_FILL).toBe('#e7e5e4')
+  it('is never byte-identical to ANY occupancy overlay colour (regression guard)', () => {
+    // This used to check only occupancyFill(0.3) — the `low` bucket — while
+    // asserting the literal '#e7e5e4', which is precisely occupancyFill(null).
+    // So the guard passed while the invariant it names was violated: an
+    // unresolvable bin and a "No capacity" bin rendered the same colour. Cover
+    // every bucket boundary, so the next collision cannot slip through.
+    for (const pct of [null, undefined, 0, 0.3, 0.6, 0.9, 1, 1.5]) {
+      expect(DEFAULT_BIN_FILL).not.toBe(occupancyFill(pct))
+    }
   })
 })
 

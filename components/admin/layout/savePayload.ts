@@ -72,6 +72,7 @@ function placementForWire(p: EditorPlacement, ctx: SavePayloadContext): SavePlac
         location_id: l.locationId,
         ...levelForWire(l),
       })),
+      storage_type_id: p.storageTypeId ?? null,
       floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h, rotation: p.rotation,
     }
   }
@@ -79,6 +80,13 @@ function placementForWire(p: EditorPlacement, ctx: SavePayloadContext): SavePlac
   return {
     client_ref: p.clientRef,
     location_id: p.locationId,
+    // Only meaningful for a SAVED bin — a new one carries its form inside
+    // new_bin below, and the server ignores this alongside it. Sending `?? null`
+    // (rather than omitting) is what makes clearing a form persist; it is safe
+    // because the reducer's `load` hydrates storageTypeId from the database for
+    // both flat bins and RACK parents (see codeByLocation in LayoutDesignerView),
+    // so an untouched bin re-sends the value it already had.
+    storage_type_id: p.locationId ? p.storageTypeId ?? null : undefined,
     // A rack with a level layout persists as a RACK PARENT + one SHELF child per
     // level (mig 00072); the server rejects `levels` unless kind is RACK. A flat
     // bin (no levels) keeps its own kind untouched.

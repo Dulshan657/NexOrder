@@ -47,6 +47,20 @@ export interface WarehouseViewerModel {
   maxVisits: number
   slotting: SlottingSuggestion[]
   isLoading: boolean
+  /**
+   * Just the `locations` query — the one input a caller must WAIT for rather than
+   * degrade through.
+   *
+   * `isLoading` above bundles four queries, three of which are analytics: a caller
+   * that blocks on it holds the map back on velocity and traffic data the map can
+   * render perfectly well without. Locations are different in kind. Every code, the
+   * tree, and a levelled rack's colour (which is read from its RACK parent, see
+   * WarehouseCanvas's `rackIdOf`) resolve through `locationsById`, so an empty one
+   * doesn't render a map with some numbers missing — it renders an anonymous grey
+   * grid that reads as broken. Missing balances only cost a `0%`; missing locations
+   * cost the whole picture.
+   */
+  isCoreLoading: boolean
   isError: boolean
 }
 
@@ -179,6 +193,7 @@ export function useWarehouseViewerModel(
       slotting: slottingQ.data ?? [],
       isLoading:
         locationsQ.isLoading || balancesQ.isLoading || velocityQ.isLoading || trafficQ.isLoading,
+      isCoreLoading: locationsQ.isLoading,
       isError: locationsQ.isError || balancesQ.isError,
     }
   }, [

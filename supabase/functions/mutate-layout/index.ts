@@ -143,6 +143,14 @@ const placementSchema = z.object({
   // carries its levels inside `new_bin` instead — the two are mutually exclusive
   // because a placement is either an existing location or a request to make one.
   levels: z.array(existingLevelSchema).min(1).max(50).optional(),
+  // Re-point an ALREADY-SAVED bin at a storage form (mig 00056). A new bin
+  // carries this inside `new_bin`; without it here, repainting a saved cell with
+  // a different form was silently dropped on save.
+  //
+  // `.nullish()`, not `.optional()`: `locations.storage_type_id` is nullable and
+  // null is the honest wire value for "no form". Absent means "don't touch it",
+  // which is what keeps an older bundle's payload from clearing the column.
+  storage_type_id: z.number().int().positive().nullish(),
   floor: z.number().int().nonnegative().default(0),
   x: z.number().int().nonnegative(),
   y: z.number().int().nonnegative(),
@@ -859,6 +867,56 @@ serve(async (req: Request) => {
         continue
       }
       refToLocation.set(p.client_ref, (created as any).id)
+    }
+
+    // ── Re-point saved bins at their storage form ─────────────────────────────
+    //
+    // `storage_type_id` used to travel only inside `new_bin`, i.e. only at
+    // creation. Repainting an already-saved cell with a different form showed the
+    // new colour in the designer (which reads it straight from editor state) and
+    // was dropped on save, so the Warehouse tab kept the old colour forever and
+    // the two canvases disagreed about the same cell.
+    //
+    // Only the form ID moves. capacity_slots / slot_kind / weight_capacity_kg are
+    // deliberately NOT re-derived from the new form: they are per-bin facts an
+    // operator may have tuned, and silently resizing a bin that holds stock is how
+    // you drive `available` negative. mutate-storage-type's explicit retro-apply
+    // is the sanctioned path for changing those.
+    const repoints = input.placements.filter(
+      (p) => p.location_id !== undefined && p.storage_type_id !== undefined,
+    )
+    if (repoints.length > 0) {
+      const repointIds = [...new Set(repoints.map((p) => p.location_id!))]
+      const currentById = new Map<number, { path: string; storageTypeId: number | null }>()
+      for (const chunk of chunked(repointIds, 200)) {
+        const { data, error } = await admin.from('locations')
+          .select('id, materialized_path, storage_type_id').in('id', chunk)
+        if (error) throw new EdgeFunctionError('INTERNAL', `Could not read bins: ${error.message}`)
+        for (const row of (data ?? []) as Array<{ id: number; materialized_path: string; storage_type_id: number | null }>) {
+          currentById.set(row.id, { path: row.materialized_path, storageTypeId: row.storage_type_id ?? null })
+        }
+      }
+      for (const p of repoints) {
+        const row = currentById.get(p.location_id!)
+        if (!row) throw new EdgeFunctionError('INVALID_INPUT', `Placement location ${p.location_id} not found`)
+        // Scope the write to this layout's warehouse. An EXISTING placement's
+        // location_id is otherwise unvalidated here (only new bins check their
+        // parent against whPath), and an UPDATE driven by a client-supplied id
+        // must not be the first operation to take that id on trust.
+        if (whPath && row.path !== whPath && !row.path.startsWith(`${whPath}/`)) {
+          throw new EdgeFunctionError('INVALID_INPUT', 'A placement must sit inside this layout\'s warehouse')
+        }
+        const next = p.storage_type_id ?? null
+        if (row.storageTypeId === next) continue
+        // A levelled rack is COLOURED from its parent but its SHELF children carry
+        // the form too (see the new_bin branch above) — move both, or the rack and
+        // its levels disagree about what they are.
+        const levelIds = refToLevelLocations.get(p.client_ref)
+        const ids = [p.location_id!, ...(levelIds ? Object.values(levelIds) : [])]
+        const { error } = await admin.from('locations')
+          .update({ storage_type_id: next } as any).in('id', ids)
+        if (error) throw new EdgeFunctionError('INTERNAL', `Could not update storage form: ${error.message}`)
+      }
     }
 
     // Reject duplicate bins BEFORE the destructive replace — a UNIQUE(layout_id,

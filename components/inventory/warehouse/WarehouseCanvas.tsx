@@ -364,10 +364,17 @@ export function WarehouseCanvas({
           // ── Legacy single bin ────────────────────────────────────────────
           if (!isRack) {
             const info = binInfo?.get(p.locationId)
-            // At rest a bin now carries its storage form's colour instead of one
-            // undifferentiated grey; an active overlay still wins, because that
-            // is the layer the operator switched on to read.
-            const fill = binColors?.get(p.locationId) ?? info?.formColor ?? DEFAULT_BIN_FILL
+            // At rest a bin carries its storage form's colour; an active overlay
+            // still wins, because that is the layer the operator switched on to
+            // read. With no form colour we land on the DESIGNER's fallback
+            // (PLACEMENT_FILL.existing) rather than on grey — the same cell drawn
+            // by LayoutCanvas:394 is emerald there, and a bin that changes colour
+            // between the two canvases reads as data loss. Grey is reserved for
+            // `!info`: no location row at all, hence no code and nothing to say.
+            const fill =
+              binColors?.get(p.locationId)
+              ?? info?.formColor
+              ?? (info ? PLACEMENT_FILL.existing : DEFAULT_BIN_FILL)
             const badge = binBadges?.get(p.locationId)
             const fillPct = binFillPct?.get(p.locationId) ?? null
             return (
@@ -422,7 +429,9 @@ export function WarehouseCanvas({
           // caller's capacity-weighted rack rollup, which replaced the old
           // "colour of whichever level happened to be first" approximation.
           const rackInfo = rackId != null ? binInfo?.get(rackId) : undefined
-          const baseFill = rackInfo?.formColor ?? DEFAULT_BIN_FILL
+          // Same designer-parity rule as the legacy bin above. Note this reads the
+          // RACK PARENT's form, not the level's — the parent is what owns the cell.
+          const baseFill = rackInfo?.formColor ?? (rackInfo ? PLACEMENT_FILL.existing : DEFAULT_BIN_FILL)
           const fill = showSpine
             ? baseFill
             : (rackId != null ? rackColors?.get(rackId) : undefined)
@@ -534,15 +543,69 @@ export function WarehouseCanvas({
           const gridPxW = gridWidth * cell
           const gridPxH = gridHeight * cell
           const levels = [...group.items].sort((a, b) => (b.levelIndex ?? 0) - (a.levelIndex ?? 0))
-          const rowH = Math.max(cell * 1.1, 20)
-          const gap = 3
-          const stackW = Math.max(cell * 2.6, 100)
+
+          // Every dimension here is a SCREEN measurement expressed in user units
+          // through u(), exactly as renderBinLabel does.
+          //
+          // This block used to mix the two currencies: rowH/stackW were in GRID
+          // units (constant on the grid, shrinking on screen as you zoom out)
+          // while fontSize was a raw user-unit number (growing on screen as you
+          // zoom in). The text therefore outgrew a box that never moved, and
+          // since the code and the role label were both anchored inside that one
+          // box with no reserved columns, they overlapped into an unreadable
+          // smear — `L3 · NEXG0%-·2Bulk1-L`. Everything below is derived from
+          // u(), so the panel is the same size on screen at every zoom.
+          const font = u(10)
+          const metaFont = u(9)
+          const padX = u(7)
+          const colGap = u(10)
+          const rowH = Math.max(cell * 1.1, u(22))
+          const gap = u(3)
+          /** Monospace advance, matching mapLabels' MONO_ADVANCE. Used to size the
+           *  panel from its content; over-estimating only widens it. */
+          const advance = 0.6
+
+          const rows = levels.map((lvl) => {
+            const loc = locationsById?.get(lvl.locationId)
+            const pct = binFillPct?.get(lvl.locationId)
+            const role = loc?.levelRole ?? null
+            const roleText = levelRoleLabel(levelRoles, role)
+            // A level with no capacity configured has no honest fullness, and a
+            // legacy row has no role — either half may be absent, so join what is
+            // actually there rather than emitting a dangling separator.
+            const meta = [pct != null ? `${Math.round(pct * 100)}%` : null, roleText || null]
+              .filter(Boolean)
+              .join(' · ')
+            return {
+              locationId: lvl.locationId,
+              role,
+              fullCode: loc?.code ?? `#${lvl.locationId}`,
+              code: loc ? shortCode(loc.code, sharedPrefix) : `#${lvl.locationId}`,
+              idx: lvl.levelIndex ?? loc?.levelIndex ?? 0,
+              meta,
+            }
+          })
+
+          // Width comes from the widest row, so a long code or an operator-renamed
+          // role ("Quarantine overflow") widens the panel instead of colliding
+          // inside it. Capped so one pathological code can't span the floor;
+          // anything past the cap is elided by fitCode per row below.
+          const leftChars = Math.max(...rows.map((r) => `L${r.idx} · ${r.code}`.length), 1)
+          const metaChars = Math.max(...rows.map((r) => r.meta.length), 0)
+          const naturalW =
+            padX * 2 + leftChars * font * advance + (metaChars > 0 ? colGap + metaChars * metaFont * advance : 0)
+          const stackW = Math.min(
+            Math.max(cell * 2.6, naturalW),
+            Math.max(cell * 2.6, Math.min(u(340), gridPxW - u(8))),
+          )
+          const metaW = metaChars * metaFont * advance
           const stackH = levels.length * rowH + (levels.length - 1) * gap
           const cellCenterX = group.x * cell + (group.w * cell) / 2
           const cellCenterY = group.y * cell + (group.h * cell) / 2
           const clamp = (v: number, max: number) => Math.min(Math.max(v, 4), Math.max(4, max - 4))
           const stackX = clamp(cellCenterX - stackW / 2, gridPxW - stackW)
           const stackY = clamp(cellCenterY - stackH / 2, gridPxH - stackH)
+
           return (
             <g>
               <rect
@@ -551,39 +614,52 @@ export function WarehouseCanvas({
                 onClick={() => guard(() => setExpandOverride(COLLAPSED))}
                 style={{ cursor: 'pointer' }}
               />
-              {levels.map((lvl, stackPos) => {
-                const loc = locationsById?.get(lvl.locationId)
-                const role = loc?.levelRole ?? null
-                const idx = lvl.levelIndex ?? loc?.levelIndex ?? 0
+              {rows.map((row, stackPos) => {
                 const y = stackY + stackPos * (rowH + gap)
-                const isSelected = lvl.locationId === selectedLocationId
-                const pct = binFillPct?.get(lvl.locationId)
+                const isSelected = row.locationId === selectedLocationId
+                // The code gets whatever the meta column doesn't claim. fitCode
+                // keeps the TAIL (see mapLabels) — the discriminating end of a
+                // hierarchical code — and returns '' rather than a lone ellipsis.
+                const prefix = `L${row.idx} · `
+                const codeW =
+                  stackW - padX * 2 - (row.meta ? metaW + colGap : 0) - prefix.length * font * advance
+                const code = fitCode(row.code, codeW, font)
                 return (
                   <g
-                    key={lvl.locationId}
-                    data-testid={`level-${loc?.code ?? lvl.locationId}`}
+                    key={row.locationId}
+                    data-testid={`level-${row.fullCode}`}
                     onClick={(e) => {
                       e.stopPropagation()
-                      selectLevel(lvl.locationId)
+                      selectLevel(row.locationId)
                     }}
                     style={{ cursor: 'pointer' }}
                   >
                     <rect
-                      x={stackX} y={y} width={stackW} height={rowH} rx={4}
-                      fill={levelRoleFill(levelRoles, role)}
-                      stroke={isSelected ? PLACEMENT_FILL.selectedStroke : levelRoleStroke(levelRoles, role)}
+                      x={stackX} y={y} width={stackW} height={rowH} rx={u(4)}
+                      fill={levelRoleFill(levelRoles, row.role)}
+                      stroke={isSelected ? PLACEMENT_FILL.selectedStroke : levelRoleStroke(levelRoles, row.role)}
                       strokeWidth={isSelected ? 2.5 : 1.5}
                       vectorEffect="non-scaling-stroke"
                     />
-                    <text x={stackX + 6} y={y + rowH / 2 + 3} fontSize={10} fontFamily="monospace" fill="#1c1917">
-                      L{idx} · {(loc?.code ?? `#${lvl.locationId}`).slice(0, 14)}
-                    </text>
+                    {/* Elision means the visible code can be partial, so the full
+                        one lives in a title — same contract as the bins above. */}
+                    <title>{row.fullCode}{row.meta ? ` · ${row.meta}` : ''}</title>
                     <text
-                      x={stackX + stackW - 6} y={y + rowH / 2 + 3}
-                      textAnchor="end" fontSize={9} fontFamily="sans-serif" fill="#44403c"
+                      x={stackX + padX} y={y + rowH / 2 + font * 0.35}
+                      fontSize={font} fontFamily="monospace" fill="#1c1917"
+                      pointerEvents="none"
                     >
-                      {pct != null ? `${Math.round(pct * 100)}% · ` : ''}{levelRoleLabel(levelRoles, role)}
+                      {prefix}{code}
                     </text>
+                    {row.meta && (
+                      <text
+                        x={stackX + stackW - padX} y={y + rowH / 2 + metaFont * 0.35}
+                        textAnchor="end" fontSize={metaFont} fontFamily="sans-serif" fill="#44403c"
+                        pointerEvents="none"
+                      >
+                        {row.meta}
+                      </text>
+                    )}
                   </g>
                 )
               })}
@@ -601,7 +677,7 @@ export function WarehouseCanvas({
     cell, scale, gridWidth, gridHeight, floorObjects, objRegions, placementGroups, expandedGroup,
     selectedLocationId, highlightedLocationIds, binColors, rackColors, binBadges, binInfo,
     binFillPct, zoneRegions, zoneTypeByProfileId, locationsById, levelRoles, renderOverlay,
-    onSelectBin, onHoverBin, guard,
+    onSelectBin, onHoverBin, guard, sharedPrefix,
   ])
 
   return (
