@@ -25,7 +25,7 @@ import { useRunSimulation } from '@/hooks/queries/useSimulation'
 import { useWarehouseStockSummary } from '@/hooks/queries/useWarehouseStockSummary'
 import { useCommitReslotPlan } from '@/hooks/queries/useReslotPlan'
 import { useToasts } from '@/hooks/useToasts'
-import type { PublishRejection, SaveObjectInput, SavePlacementInput } from '@/services/supabase/layoutService'
+import type { PublishRejection } from '@/services/supabase/layoutService'
 import type { CommitMove } from '@/services/supabase/reslotService'
 import type { LayoutObjectType, LevelRole, SimulationResult, Warehouse } from '@/types'
 import { LayoutCanvas } from './LayoutCanvas'
@@ -42,6 +42,7 @@ import { FloorPlanImportModal } from './FloorPlanImportModal'
 import { SimulationResultCard } from './SimulationResultCard'
 import { OCCUPANT_LABEL, STORAGE_UNIT, TOOL_LABEL } from './labels'
 import { useLayoutEditorState } from './useLayoutEditorState'
+import { buildSaveGeometryPayload } from './savePayload'
 import { resolveLayoutOverlaps } from './resolveOverlaps'
 
 interface LayoutDesignerViewProps {
@@ -326,50 +327,15 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   // ids. Shared by explicit Save and by the one-click Save & Publish path.
   const persistGeometry = async () => {
     if (!selectedLayoutId) return
-    const layoutId = selectedLayoutId
-    const placements: SavePlacementInput[] = state.placements.map((p) => {
-      // A rack with a level layout persists as a RACK PARENT + one SHELF child
-      // per level (mig 00072); the server rejects `levels` unless kind is RACK.
-      // Without threading p.levels here, an operator's per-rack level override
-      // was pure client state — Save dropped it and reload showed the form's
-      // standard again. A flat bin (no levels) keeps its own kind untouched.
-      const hasLevels = !!p.levels && p.levels.length > 0
-      return {
-        client_ref: p.clientRef,
-        location_id: p.locationId,
-        new_bin: p.locationId ? undefined : {
-          parent_id: warehouse.id, kind: hasLevels ? 'RACK' : p.kind, code: p.code, name: p.name,
-          capacity_slots: p.capacitySlots, slot_kind: p.slotKind, weight_capacity_kg: p.weightCapacityKg,
-          zone_profile_id: p.zoneProfileId, storage_type_id: p.storageTypeId,
-          levels: hasLevels
-            ? p.levels!.map((l) => ({
-                level_index: l.levelIndex,
-                // '' is how the editor represents "no stored role" (see the
-                // reducer's `load` — defaulting to 'pick' would silently claim a
-                // Pick Zone that drives replenishment and allocation). It is NOT a
-                // role, so it goes over the wire as null, which is what
-                // locations.level_role and assertValidRoles both already accept.
-                role: l.role && l.role.trim().length > 0 ? l.role : null,
-                capacity_slots: l.capacitySlots ?? null, weight_capacity_kg: l.weightCapacityKg ?? null,
-              }))
-            : undefined,
-        },
-        floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h, rotation: p.rotation,
-      }
+    // The editor-state -> wire translation is a pure function in savePayload.ts
+    // so the contract with mutate-layout can be asserted in a test; it used to
+    // live inline here, where the one `null` that broke every Shelving save was
+    // invisible to both tsc and the suite.
+    const { placements, objects } = buildSaveGeometryPayload(state.placements, state.objects, {
+      warehouseId: warehouse.id,
+      warehouseCode: warehouse.code,
+      layoutId: selectedLayoutId,
     })
-    // A hand-drawn "Staging floor" object has no stagingLocationId until the
-    // server find-or-creates one — mirrors FloorPlanImportModal.createDraft's
-    // new_staging wiring. Every unlinked staging object shares the SAME code
-    // (single-S&R assumption: the server dedupes by code and adopts on re-save,
-    // so a second save re-sending new_staging for an already-linked object is
-    // harmless).
-    const objects: SaveObjectInput[] = state.objects.map((o) => ({
-      object_type: o.objectType, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
-      meta: o.meta, staging_location_id: o.stagingLocationId,
-      new_staging: o.objectType === 'staging' && !o.stagingLocationId
-        ? { code: `${warehouse.code}-STG-L${layoutId}`, name: (o.meta?.name as string) || 'Staging' }
-        : undefined,
-    }))
     const result = await saveGeometry.mutateAsync({ placements, objects })
     dispatch({ type: 'mark_saved', refMap: result.ref_map })
   }

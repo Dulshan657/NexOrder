@@ -126,7 +126,9 @@ export type EditorAction =
   | { type: 'delete_selected' }
   | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number; levelTemplate?: RackLevel[] }
   | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number }> }
-  | { type: 'mark_saved'; refMap: Array<{ client_ref: string; location_id: number }> }
+  // `level_location_ids` is present only for a levelled rack: level_index -> the
+  // SHELF location id the server created/kept for it (mig 00072).
+  | { type: 'mark_saved'; refMap: Array<{ client_ref: string; location_id: number; level_location_ids?: Record<number, number> }> }
   | { type: 'apply_auto_connect'; objects: Array<Pick<EditorObject, 'objectType' | 'floor' | 'x' | 'y' | 'w' | 'h'> & Partial<Pick<EditorObject, 'meta' | 'stagingLocationId'>>> }
   // Wholesale object replace from resolveLayoutOverlaps (the "Clean up overlaps"
   // repair). Placements are never touched by it.
@@ -571,9 +573,31 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
 
     case 'mark_saved': {
       const byRef = new Map(action.refMap.map((r) => [r.client_ref, r.location_id]))
+      // A levelled rack's ref_map entry also names the SHELF location the server
+      // created for each level. Recording them is what lets the NEXT save address
+      // those levels: `locationId` alone identifies the RACK PARENT, and a save
+      // that sends the parent with no levels is read as "this cell is one flat
+      // location" — the levels lose their placement rows and are garbage-collected.
+      // Before this, level ids only appeared after a full page reload, so the
+      // second save of a freshly-drawn rack re-created every level from scratch.
+      const levelsByRef = new Map(
+        action.refMap
+          .filter((r) => r.level_location_ids)
+          .map((r) => [r.client_ref, r.level_location_ids as Record<number, number>]),
+      )
       return {
         ...state,
-        placements: state.placements.map((p) => (byRef.has(p.clientRef) ? { ...p, locationId: byRef.get(p.clientRef) } : p)),
+        placements: state.placements.map((p) => {
+          if (!byRef.has(p.clientRef)) return p
+          const levelIds = levelsByRef.get(p.clientRef)
+          const levels = levelIds && p.levels
+            ? p.levels.map((l) => {
+                const id = levelIds[l.levelIndex]
+                return id === undefined ? l : { ...l, locationId: id }
+              })
+            : p.levels
+          return { ...p, locationId: byRef.get(p.clientRef), levels }
+        }),
         dirty: false,
       }
     }

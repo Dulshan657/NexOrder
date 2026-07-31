@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { toLayoutObject, toLayoutPlacement, toWarehouseLayout } from '@/lib/adapters'
-import { extractFunctionErrorMessage } from '@/lib/functionError'
+import { describeValidationIssues, extractFunctionErrorDetails, extractFunctionErrorMessage } from '@/lib/functionError'
 import type { LayoutObject, LayoutObjectType, LayoutPlacement, WarehouseLayout } from '@/types'
 
 /**
@@ -17,7 +17,12 @@ import type { LayoutObject, LayoutObjectType, LayoutPlacement, WarehouseLayout }
  * this; the layout path was the one that never adopted it.
  */
 async function rethrowWithServerMessage(error: unknown, fallback: string): Promise<never> {
-  throw new Error(await extractFunctionErrorMessage(error, fallback))
+  const message = await extractFunctionErrorMessage(error, fallback)
+  // Append the offending field paths when the failure was schema validation.
+  // "Invalid request body" on its own sent us reading zod schemas by hand to find
+  // one `null`; the server attaches the paths, and nobody was reading them.
+  const issues = describeValidationIssues(await extractFunctionErrorDetails(error))
+  throw new Error(issues ? `${message} — ${issues}` : message)
 }
 
 export interface LayoutDetail {
@@ -107,9 +112,24 @@ export interface NewBinLevelInput {
    *  Send null rather than '' — the editor represents "no stored role" as an empty
    *  string so it can't fake a Pick Zone, and an empty string is not a role. */
   role: string | null
-  capacity_slots?: number
-  slot_kind?: 'pallet' | 'carton'
-  weight_capacity_kg?: number
+  /** `null` = no limit; the server folds it into the storage form's default.
+   *  Typed nullable deliberately — the designer sends `?? null` and, with
+   *  `strict` off, declaring these `?: number` let a null through unnoticed while
+   *  mutate-layout's schema still rejected it. That mismatch is what made every
+   *  save of a Shelving / Cold Room rack fail with "Invalid request body". */
+  capacity_slots?: number | null
+  slot_kind?: 'pallet' | 'carton' | null
+  weight_capacity_kg?: number | null
+}
+
+/** One level of an ALREADY-SAVED rack, sent alongside `location_id`.
+ *
+ *  A levelled rack round-trips as ONE placement whose `location_id` is the RACK
+ *  PARENT, so without this the second save of any levelled rack sent the parent
+ *  alone and save_geometry (a full replace) dropped the levels and GC'd them.
+ *  `location_id` is omitted for a level the operator just added. */
+export interface ExistingLevelInput extends NewBinLevelInput {
+  location_id?: number
 }
 
 /** One placement to save. Existing bins carry location_id; new bins carry new_bin. */
@@ -121,9 +141,9 @@ export interface SavePlacementInput {
     kind: 'ZONE' | 'AISLE' | 'RACK' | 'BAY' | 'SHELF' | 'BIN'
     code: string
     name: string
-    capacity_slots?: number
-    slot_kind?: 'pallet' | 'carton'
-    weight_capacity_kg?: number
+    capacity_slots?: number | null
+    slot_kind?: 'pallet' | 'carton' | null
+    weight_capacity_kg?: number | null
     zone_profile_id?: number
     storage_type_id?: number
     /** Per-level config (mig 00072; kind must be 'RACK' when present). When
@@ -132,6 +152,9 @@ export interface SavePlacementInput {
      *  BIN — see ref_map's level_location_ids on the result. */
     levels?: NewBinLevelInput[]
   }
+  /** The levels of an EXISTING rack (`location_id` set). Mutually exclusive with
+   *  `new_bin`, which carries a brand-new rack's levels instead. */
+  levels?: ExistingLevelInput[]
   floor: number
   x: number
   y: number
