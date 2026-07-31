@@ -25,9 +25,4 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, Dispatch<SetState
     return [storedValue, setStoredValue];
 }
 
-function clearAllStoredData(): void {
-    const keys = Object.keys(window.localStorage).filter(k => k.startsWith(STORAGE_PREFIX));
-    keys.forEach(k => window.localStorage.removeItem(k));
-}
-
-export { useLocalStorage, clearAllStoredData };
+export { useLocalStorage };
