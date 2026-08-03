@@ -165,6 +165,12 @@ serve(async (req: Request) => {
 
   // Send invite. Supabase creates the auth.users row immediately and the
   // on_auth_user_created trigger inserts a profile from raw_user_meta_data.
+  //
+  // No redirectTo on purpose: the link then lands on `site_url`, the app root,
+  // which routes `type=invite` to ResetPasswordView (lib/auth/recoveryLink.ts).
+  // Passing an explicit redirectTo would have to match the auth allow-list —
+  // a glob that misses is silently replaced with site_url anyway, so naming it
+  // buys nothing and adds a way to get it wrong.
   const { data: invite, error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(email, {
     data: { name, role },
   })

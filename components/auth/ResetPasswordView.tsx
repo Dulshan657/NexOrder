@@ -1,7 +1,37 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { DEFAULT_RECOVERY_ERROR, RESET_REQUEST_PARAM, parseRecoveryLink } from '@/lib/auth/recoveryLink'
+import type { AuthLinkFlow } from '@/lib/auth/recoveryLink'
+import { DEFAULT_RECOVERY_ERROR, RESET_REQUEST_PARAM, parseAuthLink } from '@/lib/auth/recoveryLink'
 import { AuthAlert, AuthEyebrow, AuthField, AuthSubmit, authStagger } from './authChrome'
+
+// The same screen serves a forgotten password and a fresh invitation. Only the
+// words differ, and they matter: an invitee has never had a password, so
+// "reset" would be a lie and "finish resetting your account" reads as an error.
+const COPY: Record<AuthLinkFlow, {
+    eyebrow: string
+    heading: string
+    successHeading: string
+    verifying: string
+    lead: string
+    success: string
+}> = {
+    recovery: {
+        eyebrow: 'Reset password',
+        heading: 'Set a new password',
+        successHeading: 'Password updated',
+        verifying: 'Verifying recovery link…',
+        lead: 'Choose a new password to finish resetting your account.',
+        success: 'Password updated. Please sign in with your new password.',
+    },
+    invite: {
+        eyebrow: 'Welcome to Nex Order',
+        heading: 'Set your password',
+        successHeading: 'Account activated',
+        verifying: 'Verifying your invitation…',
+        lead: 'Choose a password to activate your account and sign in.',
+        success: 'Account activated. Please sign in with your new password.',
+    },
+}
 
 function getErrorMessage(error: unknown): string {
     if (error instanceof Error) return error.message
@@ -17,9 +47,12 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
     const [error, setError] = useState<string | null>(null)
     const [password, setPassword] = useState('')
     const [confirm, setConfirm] = useState('')
+    // Defaults to 'recovery' so a dead link — which carries no type= — keeps the
+    // wording it has always had rather than greeting a stranger.
+    const [flow, setFlow] = useState<AuthLinkFlow>('recovery')
 
     useEffect(() => {
-        const link = parseRecoveryLink(window.location.hash, window.location.search)
+        const link = parseAuthLink(window.location.hash, window.location.search)
 
         if (link.kind === 'none') {
             setPhase('invalid')
@@ -35,6 +68,8 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
             return
         }
 
+        setFlow(link.flow)
+
         let cancelled = false
         ;(async () => {
             try {
@@ -47,9 +82,11 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
                 } else if (link.kind === 'token_hash') {
                     // verifyOtp needs no PKCE verifier, so it works even though
                     // the client runs with persistSession:false and no storage.
+                    // `type` must match the token that was issued — sending
+                    // 'recovery' for an invite token is refused server-side.
                     const { error: verifyError } = await supabase.auth.verifyOtp({
                         token_hash: link.tokenHash,
-                        type: 'recovery',
+                        type: link.flow,
                     })
                     if (verifyError) throw verifyError
                 }
@@ -126,18 +163,18 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
                             style={{ filter: 'brightness(0) invert(1)' }}
                         />
                     </div>
-                    <AuthEyebrow className="mb-3 text-stone-500">Reset password</AuthEyebrow>
+                    <AuthEyebrow className="mb-3 text-stone-500">{COPY[flow].eyebrow}</AuthEyebrow>
                     <h1 className="font-display text-3xl leading-none tracking-tighter text-stone-900">
-                        {phase === 'success' && 'Password updated'}
+                        {phase === 'success' && COPY[flow].successHeading}
                         {phase === 'invalid' && 'Link no longer valid'}
-                        {phase !== 'success' && phase !== 'invalid' && 'Set a new password'}
+                        {phase !== 'success' && phase !== 'invalid' && COPY[flow].heading}
                     </h1>
                 </div>
 
                 {phase === 'verifying' && (
                     <div className="flex items-center gap-3 text-sm text-stone-600">
                         <span className="inline-block h-4 w-4 rounded-full border-2 border-stone-200 border-t-nexgen-blue animate-spin" />
-                        Verifying recovery link…
+                        {COPY[flow].verifying}
                     </div>
                 )}
 
@@ -160,7 +197,7 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
                 {(phase === 'ready' || phase === 'updating') && (
                     <form onSubmit={handleSubmit} noValidate className="space-y-4">
                         <p className="text-sm leading-relaxed text-stone-600">
-                            Choose a new password to finish resetting your account.
+                            {COPY[flow].lead}
                         </p>
 
                         {error !== null && <AuthAlert tone="error">{error}</AuthAlert>}
@@ -204,9 +241,7 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
 
                 {phase === 'success' && (
                     <div className="space-y-4">
-                        <AuthAlert tone="success">
-                            Password updated. Please sign in with your new password.
-                        </AuthAlert>
+                        <AuthAlert tone="success">{COPY[flow].success}</AuthAlert>
                         <AuthSubmit type="button" onClick={onComplete}>
                             Continue to sign in
                         </AuthSubmit>

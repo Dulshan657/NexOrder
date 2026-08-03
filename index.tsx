@@ -12,7 +12,7 @@ import { ErrorBoundary, FullPageErrorFallback } from './components/ErrorBoundary
 import { installGlobalErrorHandlers } from './lib/errorReporter';
 import { registerChunkErrorReload } from './lib/lazyWithRetry';
 import ResetPasswordView from './components/auth/ResetPasswordView';
-import { isRecoveryUrl } from './lib/auth/recoveryLink';
+import { isAuthLinkUrl } from './lib/auth/recoveryLink';
 
 // Popup OAuth completion handshake.
 //
@@ -119,7 +119,7 @@ registerChunkErrorReload();
 // instead of a bare login page. After the reset completes, flip a one-shot
 // flag so the app falls through to LoginPage.
 function Root() {
-  const [recovering, setRecovering] = useState<boolean>(() => isRecoveryUrl());
+  const [recovering, setRecovering] = useState<boolean>(() => isAuthLinkUrl());
 
   if (recovering) {
     return <ResetPasswordView onComplete={() => setRecovering(false)} />;
