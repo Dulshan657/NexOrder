@@ -168,6 +168,11 @@ export function WarehouseCanvas({
   // fill. Keyed on the raw `objects` array, not on `floorObjects`, for the same
   // reason the designer is.
   const objRegions = useMemo(() => objectRegions(objects, floor), [objects, floor])
+  // Areas (mig 00090) are a BACKDROP, not structure: they name the ground the
+  // racks stand on, so they render under the grid while walls and walkways
+  // render over it. Split once here rather than filtering twice in the scene.
+  const areaRegions = useMemo(() => objRegions.filter((r) => r.objectType === 'area'), [objRegions])
+  const structuralRegions = useMemo(() => objRegions.filter((r) => r.objectType !== 'area'), [objRegions])
   const floorPlacements = useMemo(() => placements.filter((p) => p.floor === floor), [placements, floor])
 
   // Group by (floor,x,y) — every level of a rack now shares its rack's cell,
@@ -237,6 +242,18 @@ export function WarehouseCanvas({
     const rackIdOf = (locationId: number): number | undefined =>
       locationsById?.get(locationId)?.parentId
 
+    /** An area wears its zone profile's tint, so "Cold Storage" reads the same
+     *  sky as the cold zone and the COLD_ROOM storage form. Without a profile it
+     *  falls back to the palette's neutral rather than to a zone colour it has
+     *  not earned. */
+    const areaFill = (region: (typeof areaRegions)[number]): string => {
+      const zp = region.meta?.zoneProfileId
+      const zoneType = typeof zp === 'number' ? zoneTypeByProfileId?.get(zp) : undefined
+      return zoneType ? zoneTint(zoneType) : OBJECT_FILL.area
+    }
+    const areaName = (region: (typeof areaRegions)[number]): string =>
+      typeof region.meta?.name === 'string' ? region.meta.name : ''
+
     return (
       <>
         {/* Zone washes — under the grid so the grid still reads through them. */}
@@ -253,6 +270,25 @@ export function WarehouseCanvas({
                   fill={tint} fillOpacity={ZONE_FILL_OPACITY}
                 />
               ))}
+            </g>
+          )
+        })}
+
+        {/* Named areas (mig 00090) — the wayfinding backdrop, under the grid so
+            the grid still reads through them, exactly like the zone washes
+            above. An area is what makes "cold storage, bottom right" visible as
+            a region rather than as a scattering of individually-tinted bins. */}
+        {areaRegions.map((region) => {
+          const tint = areaFill(region)
+          return (
+            <g key={region.key} pointerEvents="none">
+              <path d={regionFillPath(region, cell)} fill={tint} fillOpacity={ZONE_FILL_OPACITY} />
+              <path
+                d={regionOutlinePath(region, cell)}
+                fill="none" stroke={tint} strokeOpacity={ZONE_STROKE_OPACITY}
+                strokeWidth={2} strokeDasharray="5 3"
+                vectorEffect="non-scaling-stroke"
+              />
             </g>
           )
         })}
@@ -300,7 +336,7 @@ export function WarehouseCanvas({
             exterior-only outline. `vectorEffect` is needed HERE and not in the
             designer because this canvas draws in grid user units under a scaling
             <g transform>, so without it the outline thickens as you zoom in. */}
-        {objRegions.map((region) => (
+        {structuralRegions.map((region) => (
           <g key={region.key} pointerEvents="none">
             <path d={regionFillPath(region, cell)} fill={OBJECT_FILL[region.objectType]} />
             <path
@@ -511,6 +547,27 @@ export function WarehouseCanvas({
           )
         })}
 
+        {/* Area names — same wayfinding layer as the zone names below, and for
+            the same reason: an area label matters MOST when zoomed out, where no
+            individual bin can label itself. Anchored to the region's top-left
+            cell (cells are (y,x)-sorted, so [0] never lands in an L's notch). */}
+        {areaRegions.map((region) => {
+          const name = areaName(region)
+          const anchor = region.cells[0]
+          if (!name || !anchor) return null
+          return (
+            <text
+              key={`area-name-${region.key}`}
+              x={anchor.x * cell + u(3)}
+              y={Math.max(u(11), anchor.y * cell - u(3))}
+              fontSize={u(12)} fontWeight={700} fontFamily="sans-serif"
+              fill={areaFill(region)} pointerEvents="none"
+            >
+              {name}
+            </text>
+          )
+        })}
+
         {/* Zone names, above the bins so they stay readable over a dense floor.
             Deliberately NOT gated on how legible an individual bin is: an area
             name is the wayfinding layer, and it matters MOST at the zoomed-out
@@ -674,7 +731,7 @@ export function WarehouseCanvas({
     // `viewport.tx`/`viewport.ty` are deliberately absent: they only move the
     // wrapping <g>, so excluding them makes a pan skip this whole subtree.
   }, [
-    cell, scale, gridWidth, gridHeight, floorObjects, objRegions, placementGroups, expandedGroup,
+    cell, scale, gridWidth, gridHeight, floorObjects, areaRegions, structuralRegions, placementGroups, expandedGroup,
     selectedLocationId, highlightedLocationIds, binColors, rackColors, binBadges, binInfo,
     binFillPct, zoneRegions, zoneTypeByProfileId, locationsById, levelRoles, renderOverlay,
     onSelectBin, onHoverBin, guard, sharedPrefix,

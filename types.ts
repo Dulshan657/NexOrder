@@ -367,7 +367,10 @@ export interface PaymentMethod {
 // ── Warehouse Intelligence Engine (WIE) ──────────────────────────────────────
 
 export type LayoutStatus = 'draft' | 'published' | 'archived';
-export type LayoutObjectType = 'wall' | 'dock' | 'walkway' | 'obstacle' | 'label' | 'lift' | 'conveyor' | 'staging';
+/** `area` (mig 00090) is an operator-named region wash — "Cold Storage", "Bulk".
+ *  It carries `meta.name` (its identity; contiguous cells sharing one merge into
+ *  a single labelled region) and optionally `meta.zoneProfileId`. */
+export type LayoutObjectType = 'wall' | 'dock' | 'walkway' | 'obstacle' | 'label' | 'lift' | 'conveyor' | 'staging' | 'area';
 
 /** A versioned warehouse layout (spatial digital twin). One published per warehouse. */
 export interface WarehouseLayout {

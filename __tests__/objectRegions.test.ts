@@ -143,3 +143,64 @@ describe('regionFillPath', () => {
     expect(d).toContain('M26,0h26')
   })
 })
+
+// ── Named areas (mig 00090) ─────────────────────────────────────────────────
+// An area is painted cell-by-cell like a wall, so merging is what turns those
+// cells into one labelled region. Merging on TYPE alone would fuse two touching
+// areas into a single shape carrying one of their two names — the exact problem
+// that keeps `obstacle` out of MERGED_OBJECT_TYPES. `regionGroupKey` is what
+// buys the merge without the fusion.
+
+function area(name: string, x: number, y: number, zoneProfileId?: number): RegionObject {
+  return { objectType: 'area', floor: 0, x, y, w: 1, h: 1, meta: { name, zoneProfileId } }
+}
+
+describe('objectRegions — named areas', () => {
+  it('merges contiguous cells that share a name into one region', () => {
+    const regions = objectRegions([area('Cold Storage', 0, 0), area('Cold Storage', 1, 0)], 0)
+
+    expect(regions).toHaveLength(1)
+    expect(regions[0].cells).toHaveLength(2)
+    expect(regions[0].groupKey).toBe('Cold Storage')
+  })
+
+  it('keeps two DIFFERENT areas apart even when they touch', () => {
+    const regions = objectRegions([area('Cold Storage', 0, 0), area('Bulk', 1, 0)], 0)
+
+    expect(regions).toHaveLength(2)
+    expect(regions.map((r) => r.groupKey).sort()).toEqual(['Bulk', 'Cold Storage'])
+    for (const r of regions) expect(r.cells).toHaveLength(1)
+  })
+
+  it('separates names that differ only by a space or a colon', () => {
+    // The bucket key joins type and group; a separator that can occur inside an
+    // operator-typed name would collide two distinct areas into one region.
+    const regions = objectRegions([area('Cold Storage', 0, 0), area('Cold:Storage', 5, 5)], 0)
+
+    expect(regions).toHaveLength(2)
+  })
+
+  it('carries the area meta through, so the canvas can tint and label it', () => {
+    const regions = objectRegions([area('Cold Storage', 0, 0, 4)], 0)
+
+    expect(regions[0].meta).toMatchObject({ name: 'Cold Storage', zoneProfileId: 4 })
+  })
+
+  it('still splits one name into separate regions when the cells are apart', () => {
+    const regions = objectRegions([area('Bulk', 0, 0), area('Bulk', 9, 9)], 0)
+
+    expect(regions).toHaveLength(2)
+    expect(regions.map((r) => r.key)).toEqual([...new Set(regions.map((r) => r.key))])
+  })
+
+  it('leaves every non-area type on the empty group key', () => {
+    const regions = objectRegions(run('wall', 0, 0, 3), 0)
+
+    expect(regions).toHaveLength(1)
+    expect(regions[0].groupKey).toBe('')
+  })
+
+  it('is a merged type — otherwise a 50-cell area would draw 50 names', () => {
+    expect(MERGED_OBJECT_TYPES.has('area')).toBe(true)
+  })
+})

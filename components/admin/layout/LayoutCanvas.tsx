@@ -12,6 +12,7 @@ import { BASE_CELL, levelRoleFill, levelRoleLabel, levelRoleStroke, OBJECT_FILL,
 import { MERGED_OBJECT_TYPES, objectRegions, regionFillPath, regionOutlinePath } from './objectRegions'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { labelTier, fitCode } from '@/components/inventory/warehouse/mapLabels'
+import { zoneTint, ZONE_FILL_OPACITY, ZONE_STROKE_OPACITY } from '@/components/inventory/warehouse/zoneTints'
 import { defaultRoleKey } from '@/lib/levelRoles'
 import type { LevelRole, RackLevel } from '@/types'
 
@@ -135,9 +136,13 @@ interface LayoutCanvasProps {
   highlightRefs?: ReadonlySet<string>
   /** storage_type_id → palette colour, so each form draws in its own colour. */
   formColorById?: ReadonlyMap<number, string>
+  /** zone_profiles.id → zone_type, so a named area draws in its zone's tint —
+   *  the same lookup the viewer does, so the two canvases agree about what
+   *  "Cold Storage" looks like. */
+  zoneTypeByProfileId?: ReadonlyMap<number, string>
 }
 
-export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlightRefs, formColorById }: LayoutCanvasProps) {
+export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlightRefs, formColorById, zoneTypeByProfileId }: LayoutCanvasProps) {
   // Operator-managed role vocabulary (mig 00081). placeholderData means the
   // exploded level stack never flashes grey while this resolves.
   const { data: levelRoles = [] } = useLevelRoles()
@@ -203,6 +208,18 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
   // Memoized on state.objects/state.floor, NOT on floorObjects — that's a fresh
   // array every render, so a memo keyed on it would never hit.
   const objRegions = useMemo(() => objectRegions(state.objects, state.floor), [state.objects, state.floor])
+  const areaRegions = useMemo(() => objRegions.filter((r) => r.objectType === 'area'), [objRegions])
+
+  /** An area wears its zone profile's tint (the same lookup WarehouseCanvas
+   *  does), falling back to the palette neutral when it has no profile yet. */
+  const areaFill = useCallback(
+    (region: (typeof areaRegions)[number]): string => {
+      const zp = region.meta?.zoneProfileId
+      const zoneType = typeof zp === 'number' ? zoneTypeByProfileId?.get(zp) : undefined
+      return zoneType ? zoneTint(zoneType) : OBJECT_FILL.area
+    },
+    [zoneTypeByProfileId],
+  )
   const unmergedObjects = useMemo(
     () => state.objects.filter((o) => o.floor === state.floor && !MERGED_OBJECT_TYPES.has(o.objectType)),
     [state.objects, state.floor],
@@ -314,6 +331,27 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
             </pattern>
           </defs>
 
+          {/* Named areas (mig 00090) — the wayfinding backdrop, UNDER the grid so
+              the grid reads through them, and under every structural object: an
+              area names the ground the racks stand on rather than competing with
+              them for the cell (which is also why ALLOWED_COOCCUPANTS lets it
+              overlap everything). Drawn from merged regions, not per cell, so a
+              50-cell "Cold Storage" is one outline with one name — matching
+              WarehouseCanvas exactly, so the designer and the ops map agree. */}
+          {areaRegions.map((region) => {
+            const tint = areaFill(region)
+            return (
+              <g key={region.key} pointerEvents="none">
+                <path d={regionFillPath(region, cell)} fill={tint} fillOpacity={ZONE_FILL_OPACITY} />
+                <path
+                  d={regionOutlinePath(region, cell)}
+                  fill="none" stroke={tint} strokeOpacity={ZONE_STROKE_OPACITY}
+                  strokeWidth={2} strokeDasharray="5 3"
+                />
+              </g>
+            )
+          })}
+
           {/* Grid lines */}
           {gridLines}
 
@@ -325,7 +363,7 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
               drawn wall looked like a row of separate squares. The inset and the
               radius now live on the SELECTION highlight below, which is the one
               place they help. */}
-          {objRegions.map((region) => (
+          {objRegions.filter((r) => r.objectType !== 'area').map((region) => (
             <g key={region.key} pointerEvents="none">
               <path d={regionFillPath(region, cell)} fill={OBJECT_FILL[region.objectType]} />
               {region.objectType === 'conveyor' && (
@@ -375,6 +413,27 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
                 key={`name-${o.clientRef}`}
                 x={o.x * cell + (o.w * cell) / 2} y={o.y * cell + (o.h * cell) / 2 + 3}
                 textAnchor="middle" fontSize={11} fill="#292524" fontFamily="sans-serif" pointerEvents="none"
+              >
+                {name}
+              </text>
+            )
+          })}
+
+          {/* Area names — one per merged region, anchored to its top-left cell.
+              Deliberately NOT driven by NAMED_OBJECT_TYPES like the block above:
+              an area is painted cell-by-cell, so that path would stamp the name
+              onto every one of its cells. */}
+          {areaRegions.map((region) => {
+            const name = typeof region.meta?.name === 'string' ? region.meta.name : ''
+            const anchor = region.cells[0]
+            if (!name || !anchor) return null
+            return (
+              <text
+                key={`area-name-${region.key}`}
+                x={anchor.x * cell + 3}
+                y={Math.max(11, anchor.y * cell - 3)}
+                fontSize={12} fontWeight={700} fill={areaFill(region)}
+                fontFamily="sans-serif" pointerEvents="none"
               >
                 {name}
               </text>

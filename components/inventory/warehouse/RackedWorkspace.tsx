@@ -31,8 +31,13 @@ import { AskEnginePanel } from './AskEnginePanel'
 import { slottingArrows, routePath, putawayMarkers } from './warehouseMarkers'
 import { occupancyFill, velocityFill, congestionFill, type OverlayKind, type LegendEntry } from './warehouseOverlays'
 import { zoneTint, zoneTypeLabel } from './zoneTints'
+import { OBJECT_FILL } from '@/components/admin/layout/layoutPalette'
 import { roleLabel, sortedRoles } from '@/lib/levelRoles'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
+
+/** Swatch for an area with no zone profile — the same neutral both canvases
+ *  paint it with, so the legend never promises a colour the map doesn't use. */
+const AREA_LEGEND_FALLBACK = OBJECT_FILL.area
 
 export interface RackedWorkspaceProps {
   warehouseId: number
@@ -219,6 +224,20 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
       }
     }
 
+    // Named areas (mig 00090). Listed before the derived zone rows because an
+    // area is what the operator actually drew and named; a zone region is
+    // inferred from bin ancestry. Deduped by name — an area is many 1×1 cells.
+    const seenAreas = new Set<string>()
+    for (const o of detail?.objects ?? []) {
+      if (o.objectType !== 'area' || o.floor !== floor) continue
+      const name = typeof o.meta?.name === 'string' ? o.meta.name : ''
+      if (!name || seenAreas.has(name)) continue
+      seenAreas.add(name)
+      const zp = o.meta?.zoneProfileId
+      const zoneType = typeof zp === 'number' ? zoneTypeByProfileId.get(zp) : undefined
+      entries.push({ color: zoneType ? zoneTint(zoneType) : AREA_LEGEND_FALLBACK, label: name })
+    }
+
     const seenZoneTypes = new Set<string>()
     for (const area of zoneAreas) {
       const type = area.zoneProfileId != null ? zoneTypeByProfileId.get(area.zoneProfileId) : undefined
@@ -229,7 +248,7 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
     }
 
     return entries
-  }, [overlay, model.locationsById, storageTypes, levelRoles, zoneAreas, zoneTypeByProfileId])
+  }, [overlay, model.locationsById, storageTypes, levelRoles, zoneAreas, zoneTypeByProfileId, detail?.objects, floor])
 
   // Highlight the descendant bins of a selected non-bin (zone/aisle/rack).
   const highlightedLocationIds = useMemo(() => {

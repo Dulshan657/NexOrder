@@ -20,6 +20,13 @@ export const OBJECT_FILL: Record<LayoutObjectType, string> = {
   // Distinct from the seeded "Staging Area" storage form (#a855f7, mig 00061) —
   // this is a walkable floor object, not a storage unit.
   staging: '#99f6e4',
+  // A named region wash (mig 00090). This is only the FALLBACK: an area with a
+  // zone profile takes that profile's tint instead (zoneTints.ts), so "Cold
+  // Storage" reads the same on the designer and the ops map. Both canvases draw
+  // areas at low opacity underneath everything else, so a mid stone reads as a
+  // tint rather than as a surface. Appending a key here is forced by
+  // Record<LayoutObjectType, …> and is not a restyle of anything above.
+  area: '#a8a29e',
 }
 
 /** Storage-rack fills + strokes. `existing` = persisted (has a location id);
@@ -58,6 +65,7 @@ export const LEGEND_ITEMS: LegendItem[] = [
   { key: 'staging', label: 'Staging floor', shape: 'rect', fill: OBJECT_FILL.staging },
   { key: 'obstacle', label: 'Obstacle', shape: 'rect', fill: OBJECT_FILL.obstacle },
   { key: 'label', label: 'Label', shape: 'rect', fill: OBJECT_FILL.label },
+  { key: 'area', label: 'Named area', shape: 'outline', stroke: OBJECT_FILL.area },
 ]
 
 // ── Rack levels (mig 00072) ───────────────────────────────────────────────
@@ -113,6 +121,7 @@ export const OBJECT_STROKE: Record<LayoutObjectType, string> = {
   lift: '#8b5cf6',
   conveyor: '#ea580c',
   staging: '#2dd4bf',
+  area: '#78716c',
 }
 
 /** LEGEND_ITEMS with the merged-region stroke applied, so a swatch's border

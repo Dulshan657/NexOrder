@@ -166,7 +166,9 @@ const placementSchema = z.object({
 })
 
 const objectSchema = z.object({
-  object_type: z.enum(['wall', 'dock', 'walkway', 'obstacle', 'label', 'lift', 'conveyor', 'staging']),
+  // 'area' (mig 00090) — an operator-named region wash. Its identity and zone
+  // profile ride in `meta` ({ name, zoneProfileId }), so no new column.
+  object_type: z.enum(['wall', 'dock', 'walkway', 'obstacle', 'label', 'lift', 'conveyor', 'staging', 'area']),
   floor: z.number().int().nonnegative().default(0),
   x: z.number().int().nonnegative(),
   y: z.number().int().nonnegative(),
