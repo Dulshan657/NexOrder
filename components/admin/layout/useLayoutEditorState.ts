@@ -15,6 +15,20 @@ import { applyTemplate } from '@/components/warehouse/levels/rackLevels'
 // `activeForm` (mig 00061 storage forms), so every drawable form shares one tool.
 export type EditorTool =
   | 'select' | 'walkway' | 'wall' | 'dock' | 'lift' | 'conveyor' | 'staging' | 'obstacle' | 'label' | 'rack' | 'erase'
+  | 'area'
+
+/** The named region the 'area' tool paints (mig 00090).
+ *
+ *  An area's identity IS its name, per floor — painting with "Cold Storage"
+ *  active adds cells to Cold Storage, and contiguous cells sharing a name merge
+ *  into one labelled region (see objectRegions' regionGroupKey). This mirrors
+ *  `activeForm`: one tool, and the toolbar carries WHICH thing it draws. */
+export interface ActiveArea {
+  name: string
+  /** Records which zone profile the operator intends this area to be. See the
+   *  note in mig 00090: this is intent, not yet a binding the engine reads. */
+  zoneProfileId?: number
+}
 
 /** The storage form the 'rack' tool currently paints (from the forms catalogue). */
 export interface ActiveStorageForm {
@@ -89,6 +103,8 @@ export interface EditorState {
   codePrefix: string
   /** The storage form the 'rack' tool paints; null = generic bin (10 pallet). */
   activeForm: ActiveStorageForm | null
+  /** The named region the 'area' tool paints; null = an unnamed area. */
+  activeArea: ActiveArea | null
   /** Set when a paint stroke was REFUSED because something incompatible already
    *  owns the cell (see ALLOWED_COOCCUPANTS). Purely a UI hint channel — the
    *  reducer is pure and cannot toast, and silently returning state unchanged
@@ -115,6 +131,11 @@ export interface BlockedPaint {
 export type EditorAction =
   | { type: 'set_tool'; tool: EditorTool }
   | { type: 'set_storage_form'; form: ActiveStorageForm }
+  | { type: 'set_area'; area: ActiveArea | null }
+  // Renames an area WHOLESALE: every cell on this floor carrying `from` becomes
+  // `to`. An area is identified by its name, so renaming one cell at a time
+  // would split the region in half mid-edit.
+  | { type: 'rename_area'; from: string; to: string; zoneProfileId?: number }
   | { type: 'set_floor'; floor: number }
   | { type: 'paint_cell'; x: number; y: number }
   // `additive: true` toggles `ref` into the multi-selection instead of
@@ -138,7 +159,7 @@ export type EditorAction =
   | { type: 'apply_levels_to_selection'; levels: RackLevel[] }
 
 export function initialEditorState(codePrefix = 'W'): EditorState {
-  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, selectedRefs: new Set(), dirty: false, seq: 1, codePrefix, activeForm: null, blockedAt: null }
+  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, selectedRefs: new Set(), dirty: false, seq: 1, codePrefix, activeForm: null, activeArea: null, blockedAt: null }
 }
 
 /** Single-selection helper: `selectedRefs` always mirrors `selectedRef` as its
@@ -157,6 +178,7 @@ const OBJECT_TOOLS: Partial<Record<EditorTool, LayoutObjectType>> = {
   staging: 'staging',
   obstacle: 'obstacle',
   label: 'label',
+  area: 'area',
 }
 
 /** True when (x,y) falls inside a rect's footprint. `Math.max(1, …)` defends
@@ -200,10 +222,15 @@ export interface CellOccupant {
  * so a rack cannot share a cell with a wall and a wall cannot share one with a
  * rack.
  *
- * Only two exemptions, both principled:
+ * Only three exemptions, all principled:
  *  - `label` is annotation, not structure. It co-exists with everything: it is
  *    already exempt from the AI importer's resolveObjectOverlaps and is
  *    non-blocking in publishReadiness' buildWalkableCells.
+ *  - `area` (mig 00090) is a named region WASH, not structure. Saying "this
+ *    corner is Cold Storage" is a statement ABOUT the racks and walkways there,
+ *    so it must lie over them rather than compete for the cell — an area that
+ *    could not overlap the bins it names would be unable to name anything. Like
+ *    `label` it is non-blocking in buildWalkableCells (see publishReadiness).
  *  - `staging` ↔ `dock`: a dock IS the doorway onto the shipping/receiving
  *    floor, and buildWalkableCells already treats both as plain walkable ground.
  *
@@ -216,15 +243,16 @@ export interface CellOccupant {
  * unit test asserts symmetry rather than trusting a hand-read.
  */
 export const ALLOWED_COOCCUPANTS: Record<OccupantKind, readonly OccupantKind[]> = {
-  label: ['label', 'wall', 'dock', 'walkway', 'obstacle', 'lift', 'conveyor', 'staging', 'storage'],
-  wall: ['label'],
-  dock: ['label', 'staging'],
-  walkway: ['label'],
-  obstacle: ['label'],
-  lift: ['label'],
-  conveyor: ['label'],
-  staging: ['label', 'dock'],
-  storage: ['label'],
+  label: ['label', 'wall', 'dock', 'walkway', 'obstacle', 'lift', 'conveyor', 'staging', 'storage', 'area'],
+  area: ['area', 'label', 'wall', 'dock', 'walkway', 'obstacle', 'lift', 'conveyor', 'staging', 'storage'],
+  wall: ['label', 'area'],
+  dock: ['label', 'staging', 'area'],
+  walkway: ['label', 'area'],
+  obstacle: ['label', 'area'],
+  lift: ['label', 'area'],
+  conveyor: ['label', 'area'],
+  staging: ['label', 'dock', 'area'],
+  storage: ['label', 'area'],
 }
 
 /** The one place the matrix is consulted. */
@@ -331,6 +359,26 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
       // Selecting a form activates the storage-paint tool bound to that form.
       return { ...state, tool: 'rack', activeForm: action.form, ...singleSelect(null) }
 
+    case 'set_area':
+      // Mirrors set_storage_form: naming the area is how you pick up the tool.
+      return { ...state, tool: 'area', activeArea: action.area, ...singleSelect(null) }
+
+    case 'rename_area': {
+      const to = action.to.trim()
+      if (!to || to === action.from) return state
+      const objects = state.objects.map((o) =>
+        o.floor === state.floor && o.objectType === 'area' && (o.meta?.name ?? '') === action.from
+          ? { ...o, meta: { ...o.meta, name: to, zoneProfileId: action.zoneProfileId } }
+          : o,
+      )
+      // Keep the brush in sync, so the next stroke extends the RENAMED area
+      // rather than re-creating the old one beside it.
+      const activeArea = state.activeArea?.name === action.from
+        ? { name: to, zoneProfileId: action.zoneProfileId }
+        : state.activeArea
+      return { ...state, objects, activeArea, dirty: true }
+    }
+
     case 'set_floor':
       return { ...state, floor: action.floor, ...singleSelect(null) }
 
@@ -393,11 +441,30 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         // crosses its own stroke must not flash red or toast. `label` is the
         // exception — the matrix lets it co-exist with itself, so it falls
         // through to the replace below and a drag can't stack N labels on a cell.
-        if (blocker && blocker.kind === objectType && objectType !== 'label') return state
+        if (blocker && blocker.kind === objectType && objectType !== 'label') {
+          // `area` is the second exception, and for a different reason: two areas
+          // are distinguished by NAME, so painting "Cold Storage" over a cell that
+          // currently belongs to "Bulk" is a genuine reassignment and must fall
+          // through to the replace. Only the same name is a no-op — without that
+          // check, dragging back across your own stroke would mark the layout
+          // dirty on every cell.
+          if (objectType !== 'area') return state
+          const existing = state.objects.find(
+            (o) => o.floor === state.floor && o.objectType === 'area' && covers(o, x, y),
+          )
+          if ((existing?.meta?.name ?? '') === (state.activeArea?.name ?? '')) return state
+        }
         if (blocker) return refuse(state, x, y, blocker.kind)
         // Don't stack same-type; replace whatever object of this type covers the cell.
         const without = state.objects.filter((o) => !(o.floor === state.floor && o.objectType === objectType && covers(o, x, y)))
-        const obj: EditorObject = { clientRef: `o${state.seq}`, objectType, floor: state.floor, x, y, w: 1, h: 1 }
+        const obj: EditorObject = {
+          clientRef: `o${state.seq}`, objectType, floor: state.floor, x, y, w: 1, h: 1,
+          // An area cell carries its identity, because that is what merges it
+          // into a region — an area with no meta is a cell belonging to nothing.
+          ...(objectType === 'area' && state.activeArea
+            ? { meta: { name: state.activeArea.name, zoneProfileId: state.activeArea.zoneProfileId } }
+            : {}),
+        }
         return { ...state, objects: [...without, obj], seq: state.seq + 1, dirty: true, blockedAt: null }
       }
 

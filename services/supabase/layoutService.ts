@@ -155,6 +155,13 @@ export interface SavePlacementInput {
   /** The levels of an EXISTING rack (`location_id` set). Mutually exclusive with
    *  `new_bin`, which carries a brand-new rack's levels instead. */
   levels?: ExistingLevelInput[]
+  /** Re-point an ALREADY-SAVED bin at a storage form; a new bin carries this
+   *  inside `new_bin` instead.
+   *
+   *  `null` = no form. OMITTED = leave the stored value alone — the server keys
+   *  on `undefined` for that, so never spell "unchanged" as null. Only the form
+   *  id moves; capacity/slot/weight are not re-derived from the new form. */
+  storage_type_id?: number | null
   floor: number
   x: number
   y: number

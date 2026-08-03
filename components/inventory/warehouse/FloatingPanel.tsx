@@ -22,6 +22,11 @@ export interface FloatingPanelProps {
   className?: string
   /** Extra classes on the scrollable body (padding overrides, etc). */
   bodyClassName?: string
+  /** Handle on the outer element, for callers that need to scroll this panel
+   *  into view. Deliberately a ref rather than an id on the container: the panel
+   *  is a grid item, and wrapping it in a positioned div to get a handle would
+   *  change how it stretches in the row. */
+  containerRef?: { current: HTMLDivElement | null }
   children: ReactNode
 }
 
@@ -32,13 +37,14 @@ export function FloatingPanel({
   defaultOpen = true,
   className = '',
   bodyClassName = '',
+  containerRef,
   children,
 }: FloatingPanelProps) {
   const [open, setOpen] = useState(defaultOpen)
   const bodyId = `${id}-body`
 
   return (
-    <div className={`glass-card flex flex-col rounded-xl ${className}`}>
+    <div ref={containerRef} className={`glass-card flex flex-col rounded-xl ${className}`}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

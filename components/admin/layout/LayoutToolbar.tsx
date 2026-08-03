@@ -7,10 +7,10 @@
 import {
   MousePointer2, Footprints, BrickWall, DoorOpen, ArrowUpDown, Boxes, Eraser,
   Grid3x3, Copy, PlayCircle, Save, Upload, Archive, ImageUp,
-  Waypoints, PackageOpen, Ban, Tag,
+  Waypoints, PackageOpen, Ban, Tag, SquareDashed,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { EditorTool } from './useLayoutEditorState'
+import type { ActiveArea, EditorTool } from './useLayoutEditorState'
 import { STORAGE_UNIT } from './labels'
 
 // Structural (non-storage) tools. Storage FORMS are rendered dynamically from the
@@ -34,6 +34,12 @@ export interface ToolbarForm {
   color?: string
 }
 
+/** A zone profile offered as an area's meaning. */
+export interface ToolbarZoneProfile {
+  id: number
+  name: string
+}
+
 interface LayoutToolbarProps {
   isDraft: boolean
   tool: EditorTool
@@ -43,6 +49,12 @@ interface LayoutToolbarProps {
   activeFormId?: number | null
   onSelectForm: (id: number) => void
   onGenerate: () => void
+  /** Named areas already drawn on this floor, so extending one is a click rather
+   *  than retyping its name exactly (a typo would start a second area). */
+  areaNames: string[]
+  activeArea: ActiveArea | null
+  onSelectArea: (area: ActiveArea) => void
+  zoneProfiles: ToolbarZoneProfile[]
   floorCount: number
   floor: number
   onSetFloor: (f: number) => void
@@ -63,7 +75,8 @@ const actionBtn =
   'inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50 btn-press'
 
 export function LayoutToolbar({
-  isDraft, tool, onSelectTool, forms, activeFormId, onSelectForm, onGenerate, floorCount, floor, onSetFloor,
+  isDraft, tool, onSelectTool, forms, activeFormId, onSelectForm, onGenerate,
+  areaNames, activeArea, onSelectArea, zoneProfiles, floorCount, floor, onSetFloor,
   dirty, saving, publishing, simulating, onSave, onPublish, onClone, onSimulate, onArchive, onImport,
 }: LayoutToolbarProps) {
   return (
@@ -124,6 +137,20 @@ export function LayoutToolbar({
             })
           )}
 
+          {/* Named area — its own tool because WHAT it paints (the area's name)
+              is carried in state, exactly like the storage forms above. */}
+          <button
+            type="button"
+            onClick={() => onSelectTool('area')}
+            aria-pressed={tool === 'area'}
+            title="Named area"
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors btn-press ${
+              tool === 'area' ? 'bg-white text-emerald-700 shadow-sm ring-1 ring-emerald-500/40' : 'text-stone-600 hover:bg-white/70'
+            }`}
+          >
+            <SquareDashed className="h-4 w-4" strokeWidth={2} /> Area
+          </button>
+
           <button
             type="button"
             onClick={() => onSelectTool('erase')}
@@ -135,6 +162,58 @@ export function LayoutToolbar({
           >
             <Eraser className="h-4 w-4" strokeWidth={2} /> Erase
           </button>
+        </div>
+      )}
+
+      {/* What the Area tool is currently painting. Shown only while that tool is
+          held, so it doesn't compete for width the rest of the time — an area's
+          NAME is its identity (cells sharing one merge into a single region), so
+          this bar is the equivalent of picking which storage form to paint. */}
+      {isDraft && tool === 'area' && (
+        <div className="inline-flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-2 py-1.5">
+          <span className="text-[11px] font-medium text-stone-400">Painting area</span>
+          <input
+            value={activeArea?.name ?? ''}
+            onChange={(e) => onSelectArea({ name: e.target.value, zoneProfileId: activeArea?.zoneProfileId })}
+            placeholder="Cold Storage"
+            aria-label="Area name"
+            className="w-40 rounded-lg border border-stone-200 bg-white px-2 py-1 text-xs text-stone-700"
+          />
+          <select
+            value={activeArea?.zoneProfileId ?? ''}
+            onChange={(e) =>
+              onSelectArea({
+                name: activeArea?.name ?? '',
+                zoneProfileId: e.target.value ? Number(e.target.value) : undefined,
+              })
+            }
+            aria-label="Zone profile"
+            className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-xs text-stone-700"
+          >
+            <option value="">No zone profile</option>
+            {zoneProfiles.map((zp) => (
+              <option key={zp.id} value={zp.id}>{zp.name}</option>
+            ))}
+          </select>
+          {areaNames.length > 0 && (
+            <>
+              <span className="pl-1 text-[11px] text-stone-400">or extend</span>
+              {areaNames.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => onSelectArea({ name, zoneProfileId: activeArea?.zoneProfileId })}
+                  className={`rounded-full border px-2 py-0.5 text-[11px] btn-press ${
+                    activeArea?.name === name
+                      ? 'border-emerald-500/40 bg-white text-emerald-700'
+                      : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
+                  }`}
+                >
+                  {name}
+                </button>
+              ))}
+            </>
+          )}
         </div>
       )}
 

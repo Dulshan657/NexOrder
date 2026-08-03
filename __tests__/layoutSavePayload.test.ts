@@ -141,13 +141,36 @@ describe('buildSaveGeometryPayload — already-saved levelled rack', () => {
     expect(placements[0].levels?.[2].level_index).toBe(3)
   })
 
-  it('leaves a saved FLAT bin exactly as before — location_id only, no levels', () => {
+  it('leaves a saved FLAT bin as location_id + its form, no levels', () => {
     const { placements } = buildSaveGeometryPayload([placement({ locationId: 900 })], [], CTX)
 
     expect(placements[0]).toEqual({
-      client_ref: 'p1', location_id: 900, new_bin: undefined,
+      client_ref: 'p1', location_id: 900, new_bin: undefined, storage_type_id: null,
       floor: 0, x: 3, y: 4, w: 1, h: 1, rotation: 0,
     })
+  })
+
+  it('re-sends storage_type_id for a saved bin, flat and levelled', () => {
+    // The form used to travel only inside `new_bin`, so repainting an
+    // already-saved cell with a different storage form was silently dropped: the
+    // designer showed the new colour from editor state, the save discarded it,
+    // and the Warehouse tab kept the old one forever.
+    const flat = buildSaveGeometryPayload([placement({ locationId: 900, storageTypeId: 4 })], [], CTX)
+    expect(flat.placements[0].storage_type_id).toBe(4)
+
+    const levelled = buildSaveGeometryPayload([{ ...saved, storageTypeId: 12 }], [], CTX)
+    expect(levelled.placements[0].storage_type_id).toBe(12)
+    // …without disturbing the levels, which the same branch is responsible for.
+    expect(levelled.placements[0].levels).toHaveLength(2)
+  })
+
+  it('omits storage_type_id on a NEW bin, which carries its form inside new_bin', () => {
+    // Sending both would be two sources of truth for one column; the server keys
+    // "leave it alone" on `undefined`, so a new bin must not spell it as null.
+    const { placements } = buildSaveGeometryPayload([placement({ storageTypeId: 4 })], [], CTX)
+
+    expect(placements[0].storage_type_id).toBeUndefined()
+    expect(placements[0].new_bin?.storage_type_id).toBe(4)
   })
 
   it('does not send levels for a saved rack whose levels array is empty', () => {

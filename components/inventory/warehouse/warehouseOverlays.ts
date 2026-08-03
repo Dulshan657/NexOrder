@@ -4,10 +4,9 @@
 //
 // This file is the single source of truth for occupancy color: the bucket
 // table below drives both the map fill (occupancyFill) and the tree pill
-// (occupancyPill), so the two views can never disagree. The neutral "no data"
-// fill also lives here as DEFAULT_BIN_FILL/STROKE — the map's default bin
-// appearance, deliberately distinct from every overlay bucket color (see the
-// `DEFAULT_BIN_FILL !== occupancyFill(...)` guard test).
+// (occupancyPill), so the two views can never disagree. The "cannot resolve this
+// bin at all" fill also lives here as DEFAULT_BIN_FILL/STROKE, distinct from
+// every overlay bucket colour (see the guard test, which checks ALL of them).
 
 import type { VelocityClass } from '@/types'
 
@@ -20,9 +19,19 @@ export interface LegendEntry {
 
 const NEUTRAL = '#e7e5e4' // stone-200
 
-/** Default (no overlay active) bin fill/stroke on the map — neutral stone,
- *  intentionally distinct from every occupancy bucket color below. */
-export const DEFAULT_BIN_FILL = '#e7e5e4' // stone-200
+/**
+ * Fill/stroke for a bin the map cannot resolve at all — no location row, so no
+ * code, no capacity and no storage form. NOT the ordinary resting appearance: a
+ * saved bin falls back to the designer's own colour (PLACEMENT_FILL.existing) so
+ * the two canvases agree, and only a genuinely unknown cell lands here.
+ *
+ * stone-300 rather than stone-200 because the header's claim that this is
+ * "distinct from every overlay bucket color" was false: it was byte-identical to
+ * OCCUPANCY_BUCKETS.none ("No capacity"), so an unresolvable bin and a bin with
+ * no capacity configured were indistinguishable, and the guard test only ever
+ * compared against the `low` bucket. Both are fixed together.
+ */
+export const DEFAULT_BIN_FILL = '#d6d3d1' // stone-300
 export const DEFAULT_BIN_STROKE = '#a8a29e' // stone-400
 
 // ── Occupancy ────────────────────────────────────────────────────────────────

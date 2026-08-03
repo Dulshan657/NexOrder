@@ -25,6 +25,7 @@ export const OCCUPANT_LABEL: Record<OccupantKind, string> = {
   staging: 'staging floor',
   obstacle: 'obstacle',
   label: 'label',
+  area: 'area',
   storage: STORAGE_UNIT.lower,
 }
 
@@ -39,6 +40,7 @@ export const TOOL_LABEL: Record<EditorTool, string> = {
   staging: 'a staging floor',
   obstacle: 'an obstacle',
   label: 'a label',
+  area: 'an area',
   rack: `a ${STORAGE_UNIT.lower}`,
   erase: 'an erase',
 }

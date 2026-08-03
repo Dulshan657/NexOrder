@@ -81,6 +81,27 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const stockSummary = useWarehouseStockSummary(warehouse.id)
   const commitReslot = useCommitReslotPlan(warehouse.id)
 
+  /** zone_profiles.id → zone_type, so a named area draws in its zone's tint on
+   *  both canvases (WarehouseCanvas builds the identical map). */
+  const zoneTypeByProfileId = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const zp of zoneProfilesQuery.data ?? []) map.set(zp.id, zp.zoneType)
+    return map
+  }, [zoneProfilesQuery.data])
+
+  /** Distinct area names already drawn on the current floor, in first-drawn
+   *  order — the toolbar offers these so extending an area is a click rather
+   *  than retyping its name, where one typo would silently start a second area. */
+  const areaNamesOnFloor = useMemo(() => {
+    const names: string[] = []
+    for (const o of state.objects) {
+      if (o.floor !== state.floor || o.objectType !== 'area') continue
+      const name = typeof o.meta?.name === 'string' ? o.meta.name : ''
+      if (name && !names.includes(name)) names.push(name)
+    }
+    return names
+  }, [state.objects, state.floor])
+
   const codeByLocation = useMemo(() => {
     const map: Record<number, { code: string; name: string; kind: never; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number }> = {}
     for (const l of locationsQuery.data ?? []) {
@@ -558,6 +579,10 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             activeFormId={state.activeForm?.storageTypeId ?? null}
             onSelectForm={handleSelectForm}
             onGenerate={() => setWizardOpen(true)}
+            areaNames={areaNamesOnFloor}
+            activeArea={state.activeArea}
+            onSelectArea={(area) => dispatch({ type: 'set_area', area })}
+            zoneProfiles={(zoneProfilesQuery.data ?? []).map((zp) => ({ id: zp.id, name: zp.name }))}
             floorCount={selectedLayout.floorCount}
             floor={state.floor}
             onSetFloor={(f) => dispatch({ type: 'set_floor', floor: f })}
@@ -596,7 +621,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
           )}
 
           <div className="grid grid-cols-[1fr_240px] gap-3">
-            <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} highlightRefs={isDraft ? highlightRefs : undefined} formColorById={formColorById} />
+            <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} highlightRefs={isDraft ? highlightRefs : undefined} formColorById={formColorById} zoneTypeByProfileId={zoneTypeByProfileId} />
             <div className="space-y-3">
               {isDraft && <PublishChecklist readiness={readiness} onAutoConnect={canAutoConnect ? handleAutoConnect : undefined} />}
               {isDraft && (

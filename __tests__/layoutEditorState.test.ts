@@ -562,7 +562,7 @@ describe('layoutEditorReducer', () => {
 
     it('covers every occupant kind', () => {
       const expected: OccupantKind[] = [
-        'wall', 'walkway', 'dock', 'lift', 'conveyor', 'staging', 'obstacle', 'label', 'storage',
+        'wall', 'walkway', 'dock', 'lift', 'conveyor', 'staging', 'obstacle', 'label', 'storage', 'area',
       ]
       expect(kinds.sort()).toEqual(expected.sort())
     })
@@ -581,13 +581,20 @@ describe('layoutEditorReducer', () => {
       for (const k of kinds) expect(ALLOWED_COOCCUPANTS.label).toContain(k)
     })
 
-    it('allows nothing but label except the staging↔dock pair', () => {
+    // An area (mig 00090) names the ground the racks stand on, so it must lie
+    // OVER them rather than compete for the cell — an area that could not
+    // overlap the bins it names would be unable to name anything.
+    it('lets an area co-exist with everything', () => {
+      for (const k of kinds) expect(ALLOWED_COOCCUPANTS.area).toContain(k)
+    })
+
+    it('allows nothing but label and area except the staging↔dock pair', () => {
       for (const k of kinds) {
-        if (k === 'label' || k === 'dock' || k === 'staging') continue
-        expect([...ALLOWED_COOCCUPANTS[k]]).toEqual(['label'])
+        if (k === 'label' || k === 'area' || k === 'dock' || k === 'staging') continue
+        expect([...ALLOWED_COOCCUPANTS[k]].sort()).toEqual(['area', 'label'])
       }
-      expect([...ALLOWED_COOCCUPANTS.dock].sort()).toEqual(['label', 'staging'])
-      expect([...ALLOWED_COOCCUPANTS.staging].sort()).toEqual(['dock', 'label'])
+      expect([...ALLOWED_COOCCUPANTS.dock].sort()).toEqual(['area', 'label', 'staging'])
+      expect([...ALLOWED_COOCCUPANTS.staging].sort()).toEqual(['area', 'dock', 'label'])
     })
   })
 })
