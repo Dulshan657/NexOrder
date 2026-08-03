@@ -79,6 +79,10 @@ export interface AutoConnectInput {
   gridWidth: number
   gridHeight: number
   floors: number
+  /** The layout's metres-per-cell. Only reaches the publish-readiness
+   *  self-check at the end, which is scale-invariant — the BFS below works in
+   *  cells throughout. Defaults to 1 so existing callers are unaffected. */
+  cellSizeM?: number
 }
 
 export interface AutoConnectResult {
@@ -328,7 +332,7 @@ function parseCellKey(key: string): { floor: number; x: number; y: number } {
 }
 
 export function autoConnectLayout(input: AutoConnectInput): AutoConnectResult {
-  const { objects, placements, gridWidth, gridHeight } = input
+  const { objects, placements, gridWidth, gridHeight, cellSizeM = 1 } = input
 
   const { carvedObjects, removedWallCells } = carveDocksUnderWalls(objects)
   const { wallCellKeys, obstacleCellKeys, walkwayCellKeys } = buildCellSets(carvedObjects)
@@ -379,7 +383,14 @@ export function autoConnectLayout(input: AutoConnectInput): AutoConnectResult {
     currentObjects = [...currentObjects, ...newObjects]
   }
 
-  const readiness = evaluatePublishReadiness({ objects: currentObjects, placements, cellSizeM: 1 })
+  // Cell size is threaded through only to satisfy evaluatePublishReadiness's
+  // signature: every gate it runs is a connectivity predicate (a dock exists,
+  // walkable cells remain, a bin is placed, each bin reaches a dock), and none
+  // compares a distance against a threshold — so the answer is scale-invariant
+  // and the metres it computes are discarded. It was hardcoded to 1 here, which
+  // was true of every layout in existence until grid scale became settable.
+  // Passing the real value costs nothing and stops this being a latent lie.
+  const readiness = evaluatePublishReadiness({ objects: currentObjects, placements, cellSizeM })
 
   return {
     objects: currentObjects,

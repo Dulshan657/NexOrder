@@ -5,7 +5,7 @@
 // archived layouts can be deleted outright to keep the list clean.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Trash2, Check, X, ImageUp, Copy, Wand2 } from 'lucide-react'
+import { Plus, Trash2, Check, X, ImageUp, Copy, Wand2, Ruler } from 'lucide-react'
 import { evaluatePublishReadiness } from '@/supabase/functions/_shared/wie/publishReadiness'
 import { autoConnectLayout } from '@/supabase/functions/_shared/wie/autoConnect'
 import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
@@ -15,6 +15,7 @@ import {
   useLayouts,
   useLayoutDetail,
   useCreateLayout,
+  useUpdateLayout,
   useCloneLayout,
   useArchiveLayout,
   useDeleteLayout,
@@ -39,6 +40,7 @@ import { CapacityAdvisor } from './CapacityAdvisor'
 import { ReslotPlannerModal } from './ReslotPlannerModal'
 import { RackWizard } from './RackWizard'
 import { FloorPlanImportModal } from './FloorPlanImportModal'
+import { LayoutPropertiesModal, type LayoutPropertiesValues, type PreviewItem } from './LayoutPropertiesModal'
 import { SimulationResultCard } from './SimulationResultCard'
 import { OCCUPANT_LABEL, STORAGE_UNIT, TOOL_LABEL } from './labels'
 import { useLayoutEditorState } from './useLayoutEditorState'
@@ -59,7 +61,9 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const [selectedLayoutId, setSelectedLayoutId] = useState<number | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(autoOpenImport)
-  const [floorCountInput, setFloorCountInput] = useState(1)
+  // Layout header editor. 'create' births a draft; 'edit' changes an existing
+  // one's building size or resolution. null = closed.
+  const [propertiesMode, setPropertiesMode] = useState<'create' | 'edit' | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [reslotOpen, setReslotOpen] = useState(false)
   const detailQuery = useLayoutDetail(selectedLayoutId)
@@ -72,6 +76,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const { addToast } = useToasts()
 
   const createLayout = useCreateLayout(warehouse.id)
+  const updateLayout = useUpdateLayout(warehouse.id)
   const cloneLayout = useCloneLayout(warehouse.id)
   const archiveLayout = useArchiveLayout(warehouse.id)
   const deleteLayout = useDeleteLayout(warehouse.id)
@@ -295,6 +300,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
       gridWidth: selectedLayout.gridWidth,
       gridHeight: selectedLayout.gridHeight,
       floors: selectedLayout.floorCount,
+      cellSizeM: selectedLayout.cellSizeM,
     })
 
     if (!result.changed) {
@@ -337,11 +343,65 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     addToast(parts.join(' '), result.stillUnreachable.length > 0 ? 'info' : 'success')
   }
 
-  const handleCreate = async () => {
-    const floorCount = Math.min(10, Math.max(1, Math.round(floorCountInput) || 1))
-    const layout = await createLayout.mutateAsync({ warehouse_id: warehouse.id, name: `Layout ${new Date().getFullYear()}`, floor_count: floorCount })
-    setSelectedLayoutId(layout.id)
-    setNotice(`Draft created — draw walkways, a dock, and ${STORAGE_UNIT.lowerPlural}, then Publish.`)
+  // What the properties modal previews a rescale against. Labels are what a
+  // refusal names, so they must be something the operator can walk to: a bin's
+  // code, or an object described by type and position.
+  const previewPlacements = useMemo<PreviewItem[]>(
+    () => state.placements.map((p) => ({ label: p.code || p.clientRef, floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h })),
+    [state.placements],
+  )
+  const previewObjects = useMemo<PreviewItem[]>(
+    () => state.objects.map((o) => ({ label: `${o.objectType} at (${o.x},${o.y})`, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h })),
+    [state.objects],
+  )
+
+  /** Editing the header rescales rows in the DATABASE while the canvas holds its
+   *  own copy of the geometry. Saving first is the only way those two stay in
+   *  agreement — anything cleverer silently desynchronises them. */
+  const openProperties = (mode: 'create' | 'edit') => {
+    if (mode === 'edit' && state.dirty) {
+      addToast('Save or discard your changes before editing the layout properties.', 'info')
+      return
+    }
+    setPropertiesMode(mode)
+  }
+
+  const handlePropertiesSubmit = async (v: LayoutPropertiesValues) => {
+    try {
+      if (propertiesMode === 'create') {
+        const layout = await createLayout.mutateAsync({
+          warehouse_id: warehouse.id,
+          name: v.name,
+          grid_width: v.gridWidth,
+          grid_height: v.gridHeight,
+          cell_size_m: v.cellSizeM,
+          floor_count: v.floorCount,
+        })
+        setSelectedLayoutId(layout.id)
+        setNotice(`Draft created — draw walkways, a dock, and ${STORAGE_UNIT.lowerPlural}, then Publish.`)
+      } else if (selectedLayout) {
+        const rescaled = v.cellSizeM !== selectedLayout.cellSizeM
+        const updated = await updateLayout.mutateAsync({
+          layout_id: selectedLayout.id,
+          name: v.name,
+          grid_width: v.gridWidth,
+          grid_height: v.gridHeight,
+          cell_size_m: v.cellSizeM,
+          floor_count: v.floorCount,
+        })
+        setNotice(
+          rescaled
+            ? `Now ${v.cellSizeM} m per cell — everything was rescaled to keep its real size.` +
+                (updated.status === 'published' ? ' Publish again to update travel distances.' : '')
+            : 'Layout properties saved.',
+        )
+      }
+      setPropertiesMode(null)
+    } catch (error) {
+      // The server names the offending racks/walls; surface it verbatim rather
+      // than a generic failure, because the message IS the fix instruction.
+      addToast(error instanceof Error ? error.message : 'Failed to save layout properties', 'error')
+    }
   }
 
   // Persist the current canvas geometry and reconcile client refs → real location
@@ -451,19 +511,19 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
           <p className="text-xs text-stone-500">{warehouse.name} — model the floor, then publish to enable putaway intelligence.</p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-stone-500 flex items-center gap-1">
-            Floors
-            <input
-              type="number" min={1} max={10}
-              className="w-14 text-xs border border-stone-200 rounded px-2 py-1"
-              value={floorCountInput}
-              onChange={(e) => setFloorCountInput(Math.min(10, Math.max(1, Number(e.target.value) || 1)))}
-            />
-          </label>
+          {selectedLayout && (
+            <button
+              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 border border-stone-200 rounded-lg hover:bg-stone-50 btn-press"
+              onClick={() => openProperties('edit')}
+              title={state.dirty ? 'Save or discard your changes first' : 'Floor size, resolution and floors'}
+            >
+              <Ruler className="h-4 w-4 text-stone-500" strokeWidth={2} /> Properties
+            </button>
+          )}
           <button className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 border border-stone-200 rounded-lg hover:bg-stone-50 btn-press" onClick={() => setImportOpen(true)}>
             <ImageUp className="h-4 w-4 text-emerald-600" strokeWidth={2} /> Import floor plan
           </button>
-          <button className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 btn-press" onClick={handleCreate} disabled={createLayout.isPending}>
+          <button className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 btn-press" onClick={() => openProperties('create')} disabled={createLayout.isPending}>
             <Plus className="h-4 w-4" strokeWidth={2} /> New draft
           </button>
         </div>
@@ -534,6 +594,17 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
       </div>
 
       {notice && <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{notice}</div>}
+
+      {/* A live layout's travel graph is frozen at publish, so a header change is
+          inert until it is rebuilt. Without this the operator changes the scale,
+          sees every distance stay exactly as it was, and has no way to tell that
+          from a bug. */}
+      {selectedLayout?.needsRepublish && (
+        <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          This layout's properties changed after it was published. Travel distances still reflect the old
+          settings — publish it again to rebuild them.
+        </div>
+      )}
 
       {rejections && rejections.length > 0 && (
         <div className="text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-1">
@@ -621,7 +692,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
           )}
 
           <div className="grid grid-cols-[1fr_240px] gap-3">
-            <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} highlightRefs={isDraft ? highlightRefs : undefined} formColorById={formColorById} zoneTypeByProfileId={zoneTypeByProfileId} />
+            <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} cellSizeM={selectedLayout.cellSizeM} highlightRefs={isDraft ? highlightRefs : undefined} formColorById={formColorById} zoneTypeByProfileId={zoneTypeByProfileId} />
             <div className="space-y-3">
               {isDraft && <PublishChecklist readiness={readiness} onAutoConnect={canAutoConnect ? handleAutoConnect : undefined} />}
               {isDraft && (
@@ -673,6 +744,17 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
           }}
         />
       )}
+
+      <LayoutPropertiesModal
+        open={propertiesMode !== null}
+        mode={propertiesMode ?? 'create'}
+        layout={propertiesMode === 'edit' ? selectedLayout : null}
+        placements={previewPlacements}
+        objects={previewObjects}
+        busy={createLayout.isPending || updateLayout.isPending}
+        onClose={() => setPropertiesMode(null)}
+        onSubmit={handlePropertiesSubmit}
+      />
 
       {reslotOpen && selectedLayoutId && (
         <ReslotPlannerModal

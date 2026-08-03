@@ -145,6 +145,13 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [selectedFormId, setSelectedFormId] = useState<number | null>(null)
+  // Real-world floor size. Seeded from the extraction when the drawing stated it,
+  // typed by the operator when it didn't — but always CONFIRMED before it becomes
+  // the layout's scale. A misread scale bar would otherwise silently corrupt
+  // every distance the warehouse reports, with no moment where a human looked.
+  const [floorWM, setFloorWM] = useState('')
+  const [floorHM, setFloorHM] = useState('')
+  const [scaleProposed, setScaleProposed] = useState(false)
   const [fidelity, setFidelity] = useState<FloorplanFidelity>('standard')
   const [palletAreaChoices, setPalletAreaChoices] = useState<Record<string, PalletAreaChoiceState>>({})
   const inputRef = useRef<HTMLInputElement>(null)
@@ -193,6 +200,41 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
     })
   }, [result, forms, selectedFormId])
 
+  // Seed the floor-size fields from the extraction. It only PROPOSES: the values
+  // land in editable inputs and are used only if the operator leaves them there.
+  useEffect(() => {
+    if (!result) return
+    const w = result.draft.floorWidthM
+    const h = result.draft.floorHeightM
+    setScaleProposed(w != null && h != null)
+    setFloorWM(w != null ? String(w) : '')
+    setFloorHM(h != null ? String(h) : '')
+  }, [result])
+
+  /** Cell size implied by the stated width over the extraction's fixed grid. */
+  const importScale = useMemo(() => {
+    const gw = result?.draft.gridWidth ?? 0
+    const gh = result?.draft.gridHeight ?? 0
+    const w = Number(floorWM)
+    const h = Number(floorHM)
+    if (!gw || !Number.isFinite(w) || w <= 0) {
+      return { cellSizeM: null as number | null, aspectWarning: false, impliedHeightM: '' }
+    }
+    // NUMERIC(6,2): two decimals is all the column can hold, so round here rather
+    // than let the database do it silently.
+    const cellSizeM = Math.round((w / gw) * 100) / 100
+    const impliedH = gh && Number.isFinite(h) && h > 0 ? Math.round((h / gh) * 100) / 100 : null
+    // Cells are square. If the two axes imply materially different cell sizes the
+    // grid's proportions don't match the building's, which is worth saying rather
+    // than quietly halving one dimension's accuracy.
+    const aspectWarning = impliedH !== null && cellSizeM > 0 && Math.abs(impliedH - cellSizeM) / cellSizeM > 0.05
+    return {
+      cellSizeM: cellSizeM > 0 ? cellSizeM : null,
+      aspectWarning,
+      impliedHeightM: impliedH !== null ? String(Math.round(gh * cellSizeM * 10) / 10) : '',
+    }
+  }, [result, floorWM, floorHM])
+
   const matchStats = useMemo(() => {
     const placements = result?.draft.placements ?? []
     const total = placements.length
@@ -224,6 +266,10 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
         name: `Imported ${new Date().toISOString().slice(0, 10)}`,
         grid_width: result.draft.gridWidth,
         grid_height: result.draft.gridHeight,
+        // Omitted when the operator left the floor size blank — the server
+        // defaults to 1.0 m/cell and Properties can set it later. Sending a
+        // half-known scale would be worse than admitting we don't have one.
+        ...(importScale.cellSizeM ? { cell_size_m: importScale.cellSizeM } : {}),
         floor_count: result.draft.floors,
       })
       // Scope every imported rack code to THIS layout so re-creating from the same
@@ -499,6 +545,47 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
               </div>
             )}
             {result.notes && <p className="rounded-lg bg-stone-50 px-3 py-2 text-[11px] text-stone-500">{result.notes}</p>}
+
+            {/* Real-world scale. Here the GRID is fixed — it came out of the
+                extraction and every rack coordinate is expressed in it — so the
+                cell size is the derived value, the mirror of the designer's
+                properties modal where the grid follows from the resolution.
+                Changing the grid instead would invalidate the whole extraction. */}
+            <div className="space-y-1.5 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
+              <p className="text-xs text-stone-600">
+                {scaleProposed
+                  ? 'Dimensions read off the drawing — check them against the building.'
+                  : 'The drawing states no dimensions. How big is this floor really?'}
+              </p>
+              <div className="flex items-center gap-2 text-xs">
+                <input
+                  type="number" min={1} step={0.1} aria-label="Floor width in metres"
+                  className="w-24 rounded-lg border border-stone-200 bg-white px-2 py-1.5"
+                  value={floorWM}
+                  onChange={(e) => setFloorWM(e.target.value)}
+                />
+                <span className="text-stone-400">m ×</span>
+                <input
+                  type="number" min={1} step={0.1} aria-label="Floor depth in metres"
+                  className="w-24 rounded-lg border border-stone-200 bg-white px-2 py-1.5"
+                  value={floorHM}
+                  onChange={(e) => setFloorHM(e.target.value)}
+                />
+                <span className="text-stone-400">m</span>
+              </div>
+              <p className="text-[11px] text-stone-500">
+                {importScale.cellSizeM
+                  ? `1 cell = ${importScale.cellSizeM} m across a ${result.draft.gridWidth} × ${result.draft.gridHeight} grid.`
+                  : `Leave blank to import at 1 m per cell; you can set the scale later in Properties.`}
+              </p>
+              {importScale.aspectWarning && (
+                <div className="flex items-start gap-2 text-[11px] text-amber-600">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" />
+                  Those dimensions don't match the grid's proportions ({importScale.impliedHeightM} m implied by the
+                  depth). Cells are square, so the width is used — check the plan isn't cropped.
+                </div>
+              )}
+            </div>
             {matchStats.unmatched > 0 && (
               <div className="space-y-1.5 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
                 <p className="text-xs text-stone-600">

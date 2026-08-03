@@ -29,6 +29,15 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 // depending on which path built it.
 import { ACCESS_OFFSET_STEP_M } from '../_shared/wie/levelGeometry.ts'
 import { assertValidRoles, loadActiveRoleKeys } from '../_shared/levelRoleLookup.ts'
+// Grid scale. MAX_GRID_CELLS is imported rather than restated so the zod caps
+// below, the designer's refusal message and the rescale planner cannot drift
+// apart about where the ceiling is.
+import {
+  MAX_GRID_CELLS,
+  findOutOfBounds,
+  planRescale,
+  type ScaleItem,
+} from '../_shared/wie/gridScale.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const BIN_KINDS = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN'] as const
@@ -36,8 +45,19 @@ const BIN_KINDS = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN'] as const
 const createLayoutSchema = z.object({
   warehouse_id: z.number().int().positive(),
   name: z.string().min(1).max(120),
-  grid_width: z.number().int().positive().max(200).optional(),
-  grid_height: z.number().int().positive().max(200).optional(),
+  grid_width: z.number().int().positive().max(MAX_GRID_CELLS).optional(),
+  grid_height: z.number().int().positive().max(MAX_GRID_CELLS).optional(),
+  cell_size_m: z.number().positive().max(100).optional(),
+  floor_count: z.number().int().positive().max(50).optional(),
+})
+
+// Layout HEADER edit (name / floor size / resolution / floors). Geometry moves as
+// a consequence of a resolution change — see the update_layout handler.
+const updateLayoutSchema = z.object({
+  layout_id: z.number().int().positive(),
+  name: z.string().min(1).max(120).optional(),
+  grid_width: z.number().int().positive().max(MAX_GRID_CELLS).optional(),
+  grid_height: z.number().int().positive().max(MAX_GRID_CELLS).optional(),
   cell_size_m: z.number().positive().max(100).optional(),
   floor_count: z.number().int().positive().max(50).optional(),
 })
@@ -186,6 +206,7 @@ const objectSchema = z.object({
 
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create_layout'), data: createLayoutSchema }),
+  z.object({ action: z.literal('update_layout'), data: updateLayoutSchema }),
   z.object({ action: z.literal('clone_layout'), layout_id: z.number().int().positive(), name: z.string().min(1).max(120) }),
   z.object({ action: z.literal('archive_layout'), layout_id: z.number().int().positive() }),
   z.object({ action: z.literal('delete_layout'), layout_id: z.number().int().positive() }),
@@ -274,6 +295,147 @@ serve(async (req: Request) => {
       })
       return new Response(JSON.stringify({ ok: true, layout: created }), {
         status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── update_layout ────────────────────────────────────────────────────────
+    //
+    // The layout HEADER: its name, the building's real dimensions (as a grid),
+    // the drawing resolution, and the floor count.
+    //
+    // THIS IS THE ONE ACTION THAT DOES NOT CALL requireDraft. Every other edit
+    // here writes geometry, which is a draft-only activity. A header edit is
+    // different: an operator who mis-measured the building only finds out after
+    // the layout is live, and the alternative — clone, redraw, republish —
+    // throws away the floor plan to fix a number. Moving layout_placements /
+    // layout_objects rows on a published layout is safe because they carry no
+    // inventory (`locations` does, and is untouched here); what a published
+    // layout's rescale DOES invalidate is the graph frozen at publish
+    // (layout_graph_edges.weight_m, layout_travel_distances.distance_m,
+    // layout_placements.access_offset_m), which stays stale until a republish.
+    // That is surfaced, not silently repaired — see needsRepublish in adapters.
+    if (input.action === 'update_layout') {
+      const d = input.data
+      const layout = await getLayout(admin, d.layout_id)
+      if (layout.status === 'archived') {
+        throw new EdgeFunctionError('CONFLICT', 'Layout is archived; restore or clone it before editing')
+      }
+
+      const fromCellM = Number(layout.cell_size_m)
+      const toCellM = d.cell_size_m ?? fromCellM
+      // Both sides are NUMERIC(6,2) round-trips, so a direct compare is exact.
+      const resolutionChanged = toCellM !== fromCellM
+
+      const { data: pRows, error: pErr } = await admin.from('layout_placements')
+        .select('id, location_id, floor, x, y, w, h').eq('layout_id', layout.id).order('id')
+      if (pErr) throw new EdgeFunctionError('INTERNAL', `Could not read placements: ${pErr.message}`)
+      const { data: oRows, error: oErr } = await admin.from('layout_objects')
+        .select('id, object_type, floor, x, y, w, h').eq('layout_id', layout.id).order('id')
+      if (oErr) throw new EdgeFunctionError('INTERNAL', `Could not read objects: ${oErr.message}`)
+
+      const placementRowsIn = (pRows ?? []) as Array<{ id: number; location_id: number; floor: number; x: number; y: number; w: number; h: number }>
+      const objectRowsIn = (oRows ?? []) as Array<{ id: number; object_type: string; floor: number; x: number; y: number; w: number; h: number }>
+
+      // Name the offenders by their location CODE. "Rack A-03 doesn't divide" is
+      // something an operator can walk to; "placement 4172" is not.
+      const codeById = new Map<number, string>()
+      const locIds = [...new Set(placementRowsIn.map((r) => r.location_id))]
+      for (let i = 0; i < locIds.length; i += 200) {
+        const { data } = await admin.from('locations').select('id, code').in('id', locIds.slice(i, i + 200))
+        for (const row of (data ?? []) as Array<{ id: number; code: string }>) codeById.set(row.id, row.code)
+      }
+
+      const placementItems: ScaleItem[] = placementRowsIn.map((r) => ({
+        label: codeById.get(r.location_id) ?? `location ${r.location_id}`,
+        x: r.x, y: r.y, w: r.w, h: r.h,
+      }))
+      const objectItems: ScaleItem[] = objectRowsIn.map((r) => ({
+        label: `${r.object_type} at (${r.x},${r.y})`,
+        x: r.x, y: r.y, w: r.w, h: r.h,
+      }))
+
+      let gridWidth = d.grid_width ?? layout.grid_width
+      let gridHeight = d.grid_height ?? layout.grid_height
+      let scaledPlacements: Array<{ id: number; x: number; y: number; w: number; h: number }> | null = null
+      let scaledObjects: Array<{ id: number; x: number; y: number; w: number; h: number }> | null = null
+
+      if (resolutionChanged) {
+        // planRescale is the SAME function LayoutPropertiesModal runs to preview
+        // this edit (_shared/wie/gridScale.ts, imported by both runtimes). If the
+        // preview said "×2, nothing refused" then so does this call.
+        const plan = planRescale({
+          placements: placementItems,
+          objects: objectItems,
+          fromCellM,
+          toCellM,
+          gridWidth: layout.grid_width,
+          gridHeight: layout.grid_height,
+          toGridWidth: d.grid_width,
+          toGridHeight: d.grid_height,
+        })
+        if (plan.ok === false) {
+          throw new EdgeFunctionError('CONFLICT', plan.detail, { reason: plan.reason, offenders: plan.offenders })
+        }
+        gridWidth = plan.gridWidth
+        gridHeight = plan.gridHeight
+        // planRescale preserves input order, which is what lets these zip back
+        // onto their rows by index without threading ids through the pure module.
+        scaledPlacements = plan.placements.map((it, i) => ({ id: placementRowsIn[i].id, x: it.x, y: it.y, w: it.w, h: it.h }))
+        scaledObjects = plan.objects.map((it, i) => ({ id: objectRowsIn[i].id, x: it.x, y: it.y, w: it.w, h: it.h }))
+      } else if (gridWidth !== layout.grid_width || gridHeight !== layout.grid_height) {
+        // Floor resized at an unchanged resolution: nothing moves, but a shrink
+        // can strand a bin outside the plan. A stranded bin is a real location
+        // that may hold stock, so it is never relocated or dropped for them.
+        const outside = findOutOfBounds([...placementItems, ...objectItems], { gridWidth, gridHeight })
+        if (outside.length > 0) {
+          throw new EdgeFunctionError(
+            'CONFLICT',
+            `A ${gridWidth} x ${gridHeight} grid would leave these outside the floor: ${outside.slice(0, 6).join(', ')}` +
+              `${outside.length > 6 ? ` and ${outside.length - 6} more` : ''}. Move or remove them first.`,
+            { reason: 'out_of_bounds', offenders: outside },
+          )
+        }
+      }
+
+      // Same class of problem, one axis over: dropping a floor strands whatever
+      // was drawn on it.
+      const floorCount = d.floor_count ?? layout.floor_count
+      const usedFloors = [...new Set([...placementRowsIn, ...objectRowsIn].map((r) => r.floor))].filter((f) => f >= floorCount)
+      if (usedFloors.length > 0) {
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          `${floorCount} floor${floorCount === 1 ? '' : 's'} would strand everything drawn on floor ${usedFloors.sort((a, b) => a - b).join(', ')}. Clear those floors first.`,
+          { reason: 'floors_in_use', offenders: usedFloors.map(String) },
+        )
+      }
+
+      const { data: updated, error: upErr } = await admin.rpc('wie_update_layout_tx', {
+        p_layout_id: layout.id,
+        p_header: {
+          name: d.name,
+          cell_size_m: toCellM,
+          grid_width: gridWidth,
+          grid_height: gridHeight,
+          floor_count: floorCount,
+        },
+        p_placements: scaledPlacements,
+        p_objects: scaledObjects,
+      } as any)
+      if (upErr || !updated) throw new EdgeFunctionError('INTERNAL', upErr?.message ?? 'Failed to update layout')
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'warehouse_layouts',
+        resourceId: String(layout.id), before: layout, after: updated as Record<string, unknown>,
+        metadata: {
+          rescaled: resolutionChanged,
+          from_cell_size_m: fromCellM,
+          to_cell_size_m: toCellM,
+          moved_placements: scaledPlacements?.length ?? 0,
+          moved_objects: scaledObjects?.length ?? 0,
+        },
+      })
+      return new Response(JSON.stringify({ ok: true, layout: updated }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 

@@ -22,6 +22,7 @@ import { WarehouseCanvas, type BinInfo, type BinHover } from './WarehouseCanvas'
 import { MapControls } from './MapControls'
 import { useMapViewport } from './useMapViewport'
 import { BASE_CELL } from '@/components/admin/layout/layoutPalette'
+import { ScaleIndicator } from '@/components/admin/layout/ScaleIndicator'
 import type { ZoneRegion } from './zoneRegions'
 
 const HINT_AUTO_DISMISS_MS = 4000
@@ -175,6 +176,11 @@ export function MapStage({
         floorCount={layout.floorCount}
         onFloorChange={onFloorChange}
       />
+      {/* Same scale bar the designer draws, off the same maths — the ops map and
+          the plan it was drawn from must agree about how long 5 m is. */}
+      <div className="map-panel-pill pointer-events-none absolute bottom-3 right-3 z-20 px-3 py-1.5">
+        <ScaleIndicator pxPerCell={BASE_CELL * viewport.scale} cellSizeM={layout.cellSizeM} />
+      </div>
       {gesturesEnabled && (
         <div
           aria-hidden="true"

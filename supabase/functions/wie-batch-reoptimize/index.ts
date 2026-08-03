@@ -22,7 +22,22 @@ import { filterCandidates } from '../_shared/wie/scoring.ts'
 import type { CandidateBin, CompatibilityRule, LevelRole, RuleDefinition, SkuProfile } from '../_shared/wie/types.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
+/** Floor on how much travel a re-slot must save before it's worth suggesting.
+ *  See minGainFor — this is the absolute-metres half of the rule. */
 const MIN_GAIN_M = 1.0
+
+/**
+ * A suggestion must save at least a metre AND at least one whole cell.
+ *
+ * MIN_GAIN_M alone was written when every layout was 1.0 m/cell, where the two
+ * conditions happened to be the same sentence. They aren't: at 3 m/cell a bare
+ * 1.0 m floor admits a move worth a third of a cell, and the queue fills with
+ * suggestions that don't relocate a pallet so much as jiggle it. At 0.25 m/cell
+ * it would swing the other way and suppress genuine four-cell wins.
+ */
+function minGainFor(cellSizeM: number): number {
+  return Math.max(MIN_GAIN_M, cellSizeM)
+}
 const MAX_SUGGESTIONS = 50
 // Wide enough that a stocked bin's own row is present so we can measure its dock
 // distance even when it's far from the dock (the exact case worth re-slotting).
@@ -101,6 +116,11 @@ serve(async (req: Request) => {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    // The layout's resolution sets the gain floor (see minGainFor).
+    const { data: layoutRow } = await admin.from('warehouse_layouts')
+      .select('cell_size_m').eq('id', layoutId).single()
+    const minGainM = minGainFor(Number((layoutRow as any)?.cell_size_m) || 1)
 
     // Safety gates (same as recommend-putaway) — a suggestion must survive these.
     const { data: ruleRows, error: ruleErr } = await admin.from('wie_rules').select('*')
@@ -207,7 +227,7 @@ serve(async (req: Request) => {
         if (best === null || c.distanceFromDockM < best.distanceFromDockM!) best = c
       }
       if (!best || best.distanceFromDockM == null) continue
-      if (best.distanceFromDockM >= currentDist - MIN_GAIN_M) continue
+      if (best.distanceFromDockM >= currentDist - minGainM) continue
 
       const { error: insErr } = await admin.from('wie_slotting_suggestions').insert({
         warehouse_id, product_id: row.productId, from_location_id: row.locationId,

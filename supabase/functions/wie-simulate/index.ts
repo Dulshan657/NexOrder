@@ -243,7 +243,16 @@ serve(async (req: Request) => {
     let baselineKpis = null
     let diff: (ReturnType<typeof diffKpis> & { coverageWarning: boolean }) | null = null
     if (activeLayoutId && activeLayoutId !== layout_id) {
-      const baseCtx = await buildLayoutContext(admin, activeLayoutId, cellSizeM)
+      // The BASELINE's own scale, not the target's. buildLayoutContext only
+      // consults cell size for an unpublished layout (a published one reads the
+      // metres frozen into layout_graph_edges), so this was harmless while every
+      // layout in existence was 1.0 m/cell. Now that scale is settable, comparing
+      // a 0.5 m/cell draft against a 1.0 m/cell baseline through the target's
+      // figure would report a travel saving that is purely a unit change.
+      const { data: baseLayout } = await admin.from('warehouse_layouts')
+        .select('cell_size_m').eq('id', activeLayoutId).single()
+      const baselineCellSizeM = Number((baseLayout as any)?.cell_size_m) || 1
+      const baseCtx = await buildLayoutContext(admin, activeLayoutId, baselineCellSizeM)
       if (baseCtx.dockNodeId !== null) {
         baselineKpis = simulateLayout(baseCtx.graph, baseCtx.dockNodeId, buildOrders(historyByOrder, baseCtx), baseCtx.bins)
         // Coverage warning: if the target leaves MORE stops unreachable than the

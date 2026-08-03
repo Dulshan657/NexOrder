@@ -14,6 +14,8 @@ import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { labelTier, fitCode } from '@/components/inventory/warehouse/mapLabels'
 import { zoneTint, ZONE_FILL_OPACITY, ZONE_STROKE_OPACITY } from '@/components/inventory/warehouse/zoneTints'
 import { defaultRoleKey } from '@/lib/levelRoles'
+import { rulerStride } from '@/supabase/functions/_shared/wie/gridScale'
+import { ScaleIndicator } from './ScaleIndicator'
 import type { LevelRole, RackLevel } from '@/types'
 
 // Re-exported for back-compat: existing importers (WarehouseCanvas) pulled these
@@ -27,6 +29,15 @@ const NAMED_OBJECT_TYPES = new Set<EditorObject['objectType']>(['obstacle', 'sta
 
 /** Minimum rendered rect width (px) before we bother drawing the name text. */
 const MIN_NAME_WIDTH = 48
+
+/** Width of the ruler gutters, px. Fixed rather than zoom-scaled: it holds text,
+ *  and text doesn't get more legible because the cells grew. */
+const RULER_PX = 22
+
+/** Ruler labels are distances, so they read in metres, not cells. Whole numbers
+ *  stay whole; a 0.5 m grid gets one decimal rather than "2.5000000004". */
+const formatTick = (metres: number): string =>
+  Number.isInteger(metres) ? String(metres) : metres.toFixed(1)
 
 // ── Rack-level grouping (mig 00072) ─────────────────────────────────────────
 // Each level of a rack now gets its own placement row, co-located at the
@@ -132,6 +143,9 @@ interface LayoutCanvasProps {
   dispatch: Dispatch<EditorAction>
   gridWidth: number
   gridHeight: number
+  /** The layout's metres per cell — drives the scale bar and the ruler ticks.
+   *  Defaults to 1, which is what every layout was before it was settable. */
+  cellSizeM?: number
   /** clientRefs of bins to flag as problems (e.g. unreachable from a dock). */
   highlightRefs?: ReadonlySet<string>
   /** storage_type_id → palette colour, so each form draws in its own colour. */
@@ -142,7 +156,7 @@ interface LayoutCanvasProps {
   zoneTypeByProfileId?: ReadonlyMap<number, string>
 }
 
-export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlightRefs, formColorById, zoneTypeByProfileId }: LayoutCanvasProps) {
+export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, cellSizeM = 1, highlightRefs, formColorById, zoneTypeByProfileId }: LayoutCanvasProps) {
   // Operator-managed role vocabulary (mig 00081). placeholderData means the
   // exploded level stack never flashes grey while this resolves.
   const { data: levelRoles = [] } = useLevelRoles()
@@ -166,8 +180,12 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
       const svg = svgRef.current
       if (!svg) return null
       const rect = svg.getBoundingClientRect()
-      const x = Math.floor((e.clientX - rect.left) / cell)
-      const y = Math.floor((e.clientY - rect.top) / cell)
+      // RULER_PX offset: the grid content sits inside a translated <g>, but this
+      // derives the cell from raw screen coordinates rather than from a DOM node,
+      // so the translation has to be subtracted here by hand. Miss it and every
+      // stroke lands one gutter up and to the left of the pointer.
+      const x = Math.floor((e.clientX - rect.left - RULER_PX) / cell)
+      const y = Math.floor((e.clientY - rect.top - RULER_PX) / cell)
       if (x < 0 || y < 0 || x >= gridWidth || y >= gridHeight) return null
       return { x, y }
     },
@@ -304,6 +322,18 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
     return lines
   }, [gridWidth, gridHeight, cell])
 
+  // Which cells get a ruler label. Memoized next to gridLines for the same
+  // reason: it is recomputed only when the grid or the zoom actually moves.
+  const rulerTicks = useMemo(() => {
+    const stride = rulerStride(cell)
+    const every = (n: number) => {
+      const out: number[] = []
+      for (let i = 0; i <= n; i += stride) out.push(i)
+      return out
+    }
+    return { x: every(gridWidth), y: every(gridHeight) }
+  }, [gridWidth, gridHeight, cell])
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2 text-xs text-stone-500">
@@ -311,12 +341,13 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
         <button className="px-2 py-0.5 border border-stone-200 rounded btn-press" onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}>−</button>
         <span className="w-10 text-center font-mono">{Math.round(zoom * 100)}%</span>
         <button className="px-2 py-0.5 border border-stone-200 rounded btn-press" onClick={() => setZoom((z) => Math.min(2.5, z + 0.25))}>+</button>
+        <ScaleIndicator pxPerCell={cell} cellSizeM={cellSizeM} className="ml-3" />
       </div>
       <div className="overflow-auto border border-stone-200 rounded-lg bg-stone-50" style={{ maxHeight: 520 }}>
         <svg
           ref={svgRef}
-          width={gridWidth * cell}
-          height={gridHeight * cell}
+          width={gridWidth * cell + RULER_PX}
+          height={gridHeight * cell + RULER_PX}
           onPointerUp={stopPainting}
           onPointerLeave={stopPainting}
           role="img"
@@ -330,6 +361,29 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
               <line x1={0} y1={0} x2={0} y2={8} stroke="#9a3412" strokeWidth={2} />
             </pattern>
           </defs>
+
+          {/* Ruler gutters. Drawn INSIDE the same <svg> and the grid shifted
+              right/down by RULER_PX, so the ticks pan and zoom with the plan
+              inside the existing overflow-auto container. Sticky gutters outside
+              the scroll container would need their scroll position mirrored by
+              hand and would drift on every zoom step. */}
+          <g pointerEvents="none" fontFamily="sans-serif" fontSize={9} fill="#a8a29e">
+            {rulerTicks.x.map((c) => (
+              <text key={`rx${c}`} x={RULER_PX + c * cell + cell / 2} y={RULER_PX - 4} textAnchor="middle">
+                {formatTick(c * cellSizeM)}
+              </text>
+            ))}
+            {rulerTicks.y.map((c) => (
+              <text key={`ry${c}`} x={RULER_PX - 4} y={RULER_PX + c * cell + cell / 2 + 3} textAnchor="end">
+                {formatTick(c * cellSizeM)}
+              </text>
+            ))}
+            <line x1={RULER_PX} y1={RULER_PX} x2={RULER_PX + gridWidth * cell} y2={RULER_PX} stroke="#d6d3d1" />
+            <line x1={RULER_PX} y1={RULER_PX} x2={RULER_PX} y2={RULER_PX + gridHeight * cell} stroke="#d6d3d1" />
+            <text x={4} y={RULER_PX - 4} fontSize={8}>m</text>
+          </g>
+
+          <g transform={`translate(${RULER_PX},${RULER_PX})`}>
 
           {/* Named areas (mig 00090) — the wayfinding backdrop, UNDER the grid so
               the grid reads through them, and under every structural object: an
@@ -596,6 +650,7 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, highlight
               </g>
             )
           })()}
+          </g>
         </svg>
       </div>
     </div>

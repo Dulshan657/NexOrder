@@ -61,8 +61,20 @@ serve(async (req: Request) => {
 
     const { data: layout, error: lErr } = await admin.from('warehouse_layouts').select('*').eq('id', layout_id).single()
     if (lErr || !layout) throw new EdgeFunctionError('NOT_FOUND', `Layout ${layout_id} not found`)
-    if ((layout as any).status !== 'draft') {
-      throw new EdgeFunctionError('CONFLICT', `Layout is ${(layout as any).status}; only drafts can be published`)
+    // Drafts publish, and a PUBLISHED layout re-publishes. The republish path is
+    // what reconciles a header change made through mutate-layout's update_layout:
+    // the travel graph is frozen into layout_graph_edges.weight_m /
+    // layout_travel_distances.distance_m / layout_placements.access_offset_m at
+    // publish time, so changing cell_size_m on a live layout is INERT until it is
+    // rebuilt here. Refusing that left the operator with "change the scale, watch
+    // nothing happen" and no way forward but cloning and redrawing the floor.
+    //
+    // wie_publish_layout_tx was already built for this: it deletes the layout's
+    // prior graph before rebuilding ("republish/rollback rebuilds it"), and its
+    // archive-the-previous step is scoped `id <> p_layout_id` so a republish
+    // cannot archive itself.
+    if ((layout as any).status === 'archived') {
+      throw new EdgeFunctionError('CONFLICT', 'Layout is archived; clone it to a draft before publishing')
     }
 
     const cellSize = Number((layout as any).cell_size_m) || 1

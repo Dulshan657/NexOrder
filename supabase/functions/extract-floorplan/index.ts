@@ -351,6 +351,8 @@ serve(async (req: Request) => {
       gridWidth: draft.gridWidth,
       gridHeight: draft.gridHeight,
       floors: draft.floors,
+      // cellSizeM defaults to 1: the layout doesn't exist yet, so it has no
+      // scale — and the repair works in cells regardless.
     })
     // ConnectObject is structurally identical to NormalizedObject bar the
     // objectType/object_type field name — adapt back, preserving meta.
@@ -373,6 +375,11 @@ serve(async (req: Request) => {
       draft: {
         gridWidth: draft.gridWidth,
         gridHeight: draft.gridHeight,
+        // What the drawing said the building measures, or null. The import modal
+        // shows these for confirmation and derives cell_size_m from the width
+        // over the (already fixed) grid — it is never applied unreviewed.
+        floorWidthM: draft.floorWidthM,
+        floorHeightM: draft.floorHeightM,
         floors: draft.floors,
         placements: draft.placements,
         objects: repairedObjects,

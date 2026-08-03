@@ -76,6 +76,28 @@ export async function createLayout(input: CreateLayoutInput): Promise<WarehouseL
   return toWarehouseLayout((data as any).layout)
 }
 
+/** A layout HEADER edit. Changing `cell_size_m` rescales the layout's geometry
+ *  server-side so it keeps its real-world size; the server refuses (naming the
+ *  offenders) when that wouldn't land on whole cells or would push something off
+ *  the floor. Preview it with planRescale before calling — it's the same
+ *  function the server runs. */
+export interface UpdateLayoutInput {
+  layout_id: number
+  name?: string
+  grid_width?: number
+  grid_height?: number
+  cell_size_m?: number
+  floor_count?: number
+}
+
+export async function updateLayout(input: UpdateLayoutInput): Promise<WarehouseLayout> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; layout: unknown }>('mutate-layout', {
+    body: { action: 'update_layout', data: input },
+  })
+  if (error) await rethrowWithServerMessage(error, 'Could not update the layout')
+  return toWarehouseLayout((data as any).layout)
+}
+
 export async function cloneLayout(layoutId: number, name: string): Promise<WarehouseLayout> {
   const { data, error } = await supabase.functions.invoke<{ ok: true; layout: unknown }>('mutate-layout', {
     body: { action: 'clone_layout', layout_id: layoutId, name },
