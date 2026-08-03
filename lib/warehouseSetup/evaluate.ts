@@ -66,12 +66,18 @@ export interface SetupSummary {
   steps: readonly SetupStepState[]
   doneCount: number
   totalCount: number
+  /** Steps not yet done, blocked ones included. The panel is collapsed by
+   *  default, so this is what its one visible line counts. */
+  remainingCount: number
   /** Every DERIVED step passes. Drives the collapse-to-one-line behaviour, so a
    *  site that is genuinely live stops shouting even with sign-offs missing. */
   derivedComplete: boolean
   outstandingSignoffs: number
   /** The one step the operator should do next, if any. */
   currentKey: string | null
+  /** That step's title, so a collapsed panel can name the next action without
+   *  its consumer re-looking-it-up. Null once nothing is left to do. */
+  currentTitle: string | null
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {
@@ -185,12 +191,16 @@ export function evaluateSetup(input: SetupInput): SetupSummary {
   const derivedSteps = states.filter((s) => s.step.kind === 'derived')
   const signoffSteps = states.filter((s) => s.step.kind === 'signoff')
 
+  const doneCount = states.filter((s) => s.status === 'done').length
+
   return {
     steps: states,
-    doneCount: states.filter((s) => s.status === 'done').length,
+    doneCount,
     totalCount: states.length,
+    remainingCount: states.length - doneCount,
     derivedComplete: derivedSteps.every((s) => s.status === 'done'),
     outstandingSignoffs: signoffSteps.filter((s) => s.status !== 'done').length,
     currentKey,
+    currentTitle: states.find((s) => s.step.key === currentKey)?.step.title ?? null,
   }
 }
