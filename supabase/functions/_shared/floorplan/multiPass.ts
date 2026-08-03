@@ -44,6 +44,13 @@ export function mergeExtractions(
   return {
     gridWidth: structure.gridWidth,
     gridHeight: structure.gridHeight,
+    // Real-world dimensions come from pass 1 (which reads the fixed structure,
+    // dimension lines and scale bar included); pass 2 only looks at racking and
+    // is told to echo the grid back, so it has nothing better to offer. `??`
+    // rather than a bare read so a pass-1 null can still be rescued if pass 2
+    // happened to spot the dimension string.
+    floorWidthM: structure.floorWidthM ?? detail.floorWidthM ?? null,
+    floorHeightM: structure.floorHeightM ?? detail.floorHeightM ?? null,
     floors: structure.floors,
     objects: structure.objects,
     zones: structure.zones,

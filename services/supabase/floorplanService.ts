@@ -41,6 +41,12 @@ export interface FloorplanPalletAreaDraft {
 export interface FloorplanDraft {
   gridWidth: number
   gridHeight: number
+  /** Real building dimensions the drawing stated, in metres. Null when it stated
+   *  none; optional because an older deployed function doesn't send them at all.
+   *  A PROPOSAL — the import modal makes the operator confirm before it becomes
+   *  the layout's scale. */
+  floorWidthM?: number | null
+  floorHeightM?: number | null
   floors: number
   placements: SavePlacementInput[]
   objects: SaveObjectInput[]

@@ -831,6 +831,22 @@ export function toWarehouseLayout(row: WarehouseLayoutRow): WarehouseLayout {
     publishedAt: row.published_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // Publishing FREEZES the travel graph — layout_graph_edges.weight_m,
+    // layout_travel_distances.distance_m and layout_placements.access_offset_m
+    // are all computed once, at publish, from cell_size_m. So a header edit on a
+    // live layout (mutate-layout's update_layout) is inert until it is
+    // republished, and an operator who changes the scale and sees no distance
+    // move has no way to tell that from a bug.
+    //
+    // No column is needed to say so: on a PUBLISHED layout nothing but that edit
+    // can move updated_at — save_geometry refuses a non-draft, and
+    // archive_layout leaves the row non-published. A boolean would be a second
+    // copy of a fact these two timestamps already hold, with the usual risk that
+    // the copy is the one that's wrong.
+    needsRepublish:
+      row.status === 'published' &&
+      !!row.published_at &&
+      new Date(row.updated_at).getTime() > new Date(row.published_at).getTime(),
   }
 }
 

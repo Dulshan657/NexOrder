@@ -3,12 +3,14 @@ import {
   getLayouts,
   getLayoutDetail,
   createLayout,
+  updateLayout,
   cloneLayout,
   archiveLayout,
   deleteLayout,
   saveGeometry,
   publishLayout,
   type CreateLayoutInput,
+  type UpdateLayoutInput,
   type SavePlacementInput,
   type SaveObjectInput,
 } from '@/services/supabase/layoutService'
@@ -39,6 +41,20 @@ export function useCreateLayout(warehouseId: number) {
   return useMutation({
     mutationFn: (input: CreateLayoutInput) => createLayout(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: layoutKeys.byWarehouse(warehouseId) }),
+  })
+}
+
+/** A rescale moves layout_placements / layout_objects rows, so the DETAIL cache
+ *  is as stale as the list — invalidate both or the canvas keeps drawing the
+ *  pre-rescale geometry on the post-rescale grid. */
+export function useUpdateLayout(warehouseId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: UpdateLayoutInput) => updateLayout(input),
+    onSuccess: (_layout, input) => {
+      qc.invalidateQueries({ queryKey: layoutKeys.byWarehouse(warehouseId) })
+      qc.invalidateQueries({ queryKey: layoutKeys.detail(input.layout_id) })
+    },
   })
 }
 

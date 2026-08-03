@@ -382,11 +382,17 @@ export interface WarehouseLayout {
     clonedFrom?: number;
     gridWidth: number;
     gridHeight: number;
+    /** Real metres spanned by one grid cell. Every distance the engine reports is
+     *  linear in this, so it is what makes those metres mean anything. */
     cellSizeM: number;
     floorCount: number;
     publishedAt?: string;
     createdAt: string;
     updatedAt: string;
+    /** DERIVED, not a column: this layout is published but its header has moved
+     *  since, so the travel graph frozen at publish no longer describes it.
+     *  See toWarehouseLayout for why the timestamps can carry this. */
+    needsRepublish: boolean;
 }
 
 /** Geometry of a storage location (bin/rack/zone) within a layout. */

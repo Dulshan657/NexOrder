@@ -59,6 +59,31 @@ describe('evaluatePublishReadiness', () => {
     expect(r.checks.every((c) => c.status === 'pass')).toBe(true)
   })
 
+  // Grid scale became operator-settable, and several call sites lean on the
+  // readiness gates being INDEPENDENT of it — autoConnect self-verifies its
+  // repair at the layout's scale, the designer runs the same checks live, and
+  // publish-layout runs them server-side. Every gate is a connectivity
+  // predicate, so none of them may start comparing a distance to a threshold
+  // without this test noticing. Until now every call in the suite passed 1.
+  it('gives the same verdict at any cell size — the gates are connectivity, not distance', () => {
+    const objects = [obj('dock', 0, 0), obj('walkway', 1, 0), obj('walkway', 2, 0)]
+    const placements = [bin('a', 3, 0)]
+    for (const cellSizeM of [0.25, 1, 2.5, 40]) {
+      const r = evaluatePublishReadiness({ objects, placements, cellSizeM })
+      expect(r.ready).toBe(true)
+      expect(r.unreachableIds).toEqual([])
+    }
+  })
+
+  it('flags the same stranded bin at any cell size', () => {
+    const objects = [obj('dock', 0, 0), obj('walkway', 1, 0), obj('walkway', 10, 10)]
+    const placements = [bin('island-bin', 10, 11)]
+    for (const cellSizeM of [0.25, 1, 40]) {
+      const r = evaluatePublishReadiness({ objects, placements, cellSizeM })
+      expect(r.unreachableIds).toEqual(['island-bin'])
+    }
+  })
+
   it('fails no_dock and leaves reachability pending when no dock is drawn', () => {
     const objects = [obj('walkway', 0, 0), obj('walkway', 1, 0)]
     const r = evaluatePublishReadiness({ objects, placements: [bin('a', 2, 0)], cellSizeM: 1 })

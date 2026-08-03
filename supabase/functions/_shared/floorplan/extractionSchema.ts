@@ -81,6 +81,12 @@ export interface FloorplanRack {
 export interface FloorplanExtraction {
   gridWidth: number
   gridHeight: number
+  /** The building's real overall dimensions in metres, read off printed
+   *  dimension strings or a scale bar. NULL when the drawing carries neither —
+   *  which is common, and far better than a confident guess. The operator
+   *  confirms or corrects these before they become the layout's scale. */
+  floorWidthM?: number | null
+  floorHeightM?: number | null
   floors: number
   objects: FloorplanObject[]
   zones: FloorplanZone[]
@@ -99,10 +105,23 @@ export interface FloorplanExtraction {
 export const FLOORPLAN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['gridWidth', 'gridHeight', 'floors', 'objects', 'zones', 'rackRows', 'palletAreas', 'confidence', 'notes'],
+  required: ['gridWidth', 'gridHeight', 'floorWidthM', 'floorHeightM', 'floors', 'objects', 'zones', 'rackRows', 'palletAreas', 'confidence', 'notes'],
   properties: {
     gridWidth: { type: 'integer', description: `Grid columns (10–${MAX_GRID_WIDTH}). Prefer a larger, finer grid — aim for ~1 cell ≈ 1 metre.` },
     gridHeight: { type: 'integer', description: `Grid rows (10–${MAX_GRID_HEIGHT}). Prefer a larger, finer grid — aim for ~1 cell ≈ 1 metre.` },
+    // Nullable, and strict mode requires it in `required` regardless — the point
+    // is that "the drawing doesn't say" is a legitimate, expressible answer. An
+    // invented scale bar poisons every distance in the warehouse silently.
+    floorWidthM: {
+      type: ['number', 'null'],
+      description:
+        'Overall building WIDTH in metres, taken ONLY from a printed dimension string, a dimension line, or a scale bar in the drawing. Return null if the drawing does not state it — do not estimate from apparent size.',
+    },
+    floorHeightM: {
+      type: ['number', 'null'],
+      description:
+        'Overall building DEPTH in metres, on the same terms as floorWidthM. Return null if the drawing does not state it.',
+    },
     floors: { type: 'integer', description: 'Number of floors/levels (1–10).' },
     objects: {
       type: 'array',
@@ -231,6 +250,7 @@ Read the plan and return a coordinate grid where (0,0) is the top-left. ${gridDi
 - rackRows: storage racking as ROWS, not individual cells — one rackRow per line/run of racking (a straight aisle of bays). Give each a code, its rectangle (the long axis is the row's length), a bayCount estimate (bays along that long axis; use 0 if you can't tell), and a storageTypeHint ("pallet rack", "shelving", "cold", or "").
 - palletAreas: cross-hatched or gridded floor blocks used for palletized floor storage (not racked) — give each a code and rectangle. A block is EITHER a rackRow OR a palletArea, never both.
 - Never extract movable objects: trucks, cars, forklifts, people, loose pallets, dollies. They aren't part of the fixed layout.
+- floorWidthM / floorHeightM: the building's real overall size in metres. Take it ONLY from something the drawing actually states — a printed dimension string ("48.0 m", "48000", "157'-6\\""), a dimension line with an arrow at each end, or a scale bar. Convert millimetres and feet/inches to metres. If the drawing states no dimension and carries no scale bar, return null for both: a wrong scale silently corrupts every distance the warehouse reports, and the operator is asked to supply it instead. Never infer it from how big the building looks or from an assumed cell size.
 
 Prefer completeness but do not invent detail that isn't visible. Set confidence honestly (lower if the image is blurry or partial). Keep everything inside the grid bounds.`
 }
@@ -330,6 +350,10 @@ export interface NormalizedPalletArea {
 export interface NormalizedDraft {
   gridWidth: number
   gridHeight: number
+  /** What the drawing SAID the building measures, or null when it said nothing.
+   *  A proposal for the operator to confirm, never applied on its own. */
+  floorWidthM: number | null
+  floorHeightM: number | null
   floors: number
   placements: NormalizedPlacement[]
   objects: NormalizedObject[]
@@ -728,9 +752,18 @@ export function normalizeFloorplan(raw: FloorplanExtraction, opts: NormalizeOpti
     palletAreas.push({ code: a.code, floor, x, y, w, h, placements: areaPlacements })
   }
 
+  // A dimension is only useful if it's a positive real number; anything else
+  // (null, 0, a string the model invented) becomes "the drawing didn't say".
+  const positiveOrNull = (v: unknown): number | null => {
+    const n = Number(v)
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+
   return {
     gridWidth: gw,
     gridHeight: gh,
+    floorWidthM: positiveOrNull((raw as any).floorWidthM),
+    floorHeightM: positiveOrNull((raw as any).floorHeightM),
     floors,
     placements,
     objects: resolvedObjects,
