@@ -3,6 +3,8 @@ import { UserRole, User, Product, ProductSupplierLink, HoReCa, Supplier, Order, 
 import { LoadingSkeleton } from './Skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
+import type { AdminTab } from '../lib/adminTabUrl';
+import type { NavTarget as SetupNavTarget } from '../lib/warehouseSetup/steps';
 import ProductAdmin from './ProductAdmin';
 import HoReCaListView from './HoReCaListView';
 import UserAdmin from './UserAdmin';
@@ -76,29 +78,46 @@ interface AdminViewProps {
     onViewInOrderImport?: (orderId: string) => void;
 }
 
-export type AdminTab = 'Dashboard' | 'Shop' | 'Products' | 'HoReCa' | 'HoReCa Insights' | 'Order Import' | 'Promotions' | 'Accounts' | 'Stock' | 'Receiving' | 'Putaway' | 'Replenishment' | 'Pick Queue' | 'Dispatched' | 'Documents' | 'Warehouse' | 'Scheduled Visits' | 'Walk-in Review' | 'Users' | 'Suppliers' | 'PO Inbox' | 'Settings' | 'Audit Log' | 'System Health';
+// The union moved to lib/adminTabUrl.ts so `?tab=` parsing can validate against
+// it without importing a component. Re-exported here so the many existing
+// `import type { AdminTab } from './AdminView'` call sites keep working.
+export type { AdminTab } from '../lib/adminTabUrl';
 
 const AdminView: React.FC<AdminViewProps> = (props) => {
     const isDashboard = props.activeTab === 'Dashboard';
+    // The one deep-link writer. Params are written to the URL FIRST, then the
+    // tab switches — every admin tab unmounts on switch, so the target mounts
+    // fresh and reads them in a mount effect. A null value deletes the param,
+    // which is how a stale flag from a previous link gets cleared.
+    const openWith = (tab: AdminTab, params?: Record<string, string | null>) => {
+        const url = new URL(window.location.href);
+        for (const [key, value] of Object.entries(params ?? {})) {
+            if (value === null) url.searchParams.delete(key);
+            else url.searchParams.set(key, value);
+        }
+        window.history.replaceState({}, '', url.toString());
+        props.onSetAdminView?.(tab);
+    };
     // Jump from the Warehouse viewer's empty-state CTA into the Layout Designer:
     // deep-link the warehouse via ?designer= (and ?import= for the floor-plan flow),
     // then switch to Settings where WarehousesSettingsSection auto-opens it.
-    const openDesigner = (warehouseId: number, opts?: { import?: boolean }) => {
-        const url = new URL(window.location.href);
-        url.searchParams.set('designer', String(warehouseId));
-        if (opts?.import) url.searchParams.set('import', '1');
-        else url.searchParams.delete('import');
-        window.history.replaceState({}, '', url.toString());
-        props.onSetAdminView?.('Settings');
-    };
+    const openDesigner = (warehouseId: number, opts?: { import?: boolean }) =>
+        openWith('Settings', {
+            designer: String(warehouseId),
+            import: opts?.import ? '1' : null,
+        });
     // Post-receipt "Go to putaway" deep-link: pre-select the receipt's
     // server-resolved destination warehouse via ?wh= (PutawayQueuePage reads
     // this the same way the Warehouse viewer does) before switching tabs.
-    const openPutaway = (warehouseId: number) => {
-        const url = new URL(window.location.href);
-        url.searchParams.set('wh', String(warehouseId));
-        window.history.replaceState({}, '', url.toString());
-        props.onSetAdminView?.('Putaway');
+    const openPutaway = (warehouseId: number) => openWith('Putaway', { wh: String(warehouseId) });
+
+    // Setup-checklist steps. The target says which params it needs; the
+    // warehouse id is substituted here because only this level knows it.
+    const openSetupTarget = (target: SetupNavTarget, warehouseId: number) => {
+        const params: Record<string, string | null> = { ...(target.params ?? {}) };
+        if (target.warehouseParam) params[target.warehouseParam] = String(warehouseId);
+        if (target.section) params.section = target.section;
+        openWith(target.tab, params);
     };
     return (
         <div>
@@ -121,7 +140,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {props.activeTab === 'Pick Queue' && <PickQueueView currentUser={props.currentUser} />}
                 {props.activeTab === 'Dispatched' && <DispatchedOrdersView orders={props.allOrders} onViewDetail={props.onViewOrderDetail} />}
                 {props.activeTab === 'Documents' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <DocumentsView />}
-                {props.activeTab === 'Warehouse' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <WarehousePage currentUser={props.currentUser} onOpenDesigner={props.currentUser.role === UserRole.ADMIN ? openDesigner : undefined} />}
+                {props.activeTab === 'Warehouse' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <WarehousePage currentUser={props.currentUser} onOpenDesigner={props.currentUser.role === UserRole.ADMIN ? openDesigner : undefined} onNavigateSetup={openSetupTarget} />}
                 {props.activeTab === 'Scheduled Visits' && props.routes && props.onSetRoutes && props.addToast && (
                     <ScheduledVisitsAdmin routes={props.routes} users={props.users} hoReCas={props.hoReCas} visits={props.visits ?? []} currentUser={props.currentUser} onSetRoutes={props.onSetRoutes} addToast={props.addToast} />
                 )}

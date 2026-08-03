@@ -10,9 +10,11 @@
 // sizes its own map block (`h-[65vh]`) rather than requiring this page to
 // clamp itself to `100vh`.
 
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 import { LayoutGrid } from 'lucide-react'
 import type { User, Warehouse } from '@/types'
+import type { NavTarget as SetupNavTarget } from '@/lib/warehouseSetup/steps'
+import { WarehouseSetupPanel } from './setup/WarehouseSetupPanel'
 import { useWarehouses } from '@/hooks/queries/useWarehouses'
 import { useLayouts } from '@/hooks/queries/useLayouts'
 import { useWarehouseScope } from '@/context/WarehouseScopeContext'
@@ -27,6 +29,9 @@ interface WarehousePageProps {
   /** Navigate into the Layout Designer (Settings) for a warehouse — used by the
    *  empty-state CTA when a site has no visual grid yet. */
   onOpenDesigner?: (warehouseId: number, opts?: { import?: boolean }) => void
+  /** Navigate to a setup-checklist step's target. Threaded from AdminView,
+   *  which owns the one URL writer. */
+  onNavigateSetup?: (target: SetupNavTarget, warehouseId: number) => void
 }
 
 /** True when a warehouse renders as a visual grid (racked + a published layout). */
@@ -57,7 +62,7 @@ export function resolveDefaultWarehouse(
   return active[0]?.id ?? null
 }
 
-const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesigner }) => {
+const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesigner, onNavigateSetup }) => {
   const { data: warehouses } = useWarehouses()
   const activeWarehouses = useMemo(() => (warehouses ?? []).filter((w) => w.isActive), [warehouses])
 
@@ -69,9 +74,33 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
   // published site so we land on the grid, not the list); we never call
   // setScope for it. Explicitly picking a site via the selector below DOES
   // write back to the shared scope — that's intended.
-  const { scope } = useWarehouseScope()
+  const { scope, setScope } = useWarehouseScope()
   const effectiveWarehouseId =
     scope !== 'all' ? scope : resolveDefaultWarehouse(warehouses ?? [], null, currentUser.homeWarehouseId)
+
+  // A setup-checklist step targeting this tab sets `?wh=<id>` then switches
+  // tabs. The scope provider only reads `?wh=` at its OWN init, so a fresh page
+  // load honours the link but an in-session tab switch would silently show a
+  // different site. Adopt a valid deep link into the shared scope exactly once,
+  // and only while scope is still 'all' — an explicitly chosen site must never
+  // be overridden by a stale link. Same effect as PutawayQueuePage:90-106.
+  const deepLinkAdopted = useRef(false)
+  useEffect(() => {
+    if (deepLinkAdopted.current) return
+    if (scope !== 'all') {
+      deepLinkAdopted.current = true
+      return
+    }
+    if (activeWarehouses.length === 0) return
+    if (typeof window === 'undefined') return
+
+    const raw = new URLSearchParams(window.location.search).get('wh')
+    const deepLinkId = raw && /^\d+$/.test(raw) ? Number(raw) : null
+    if (deepLinkId != null && activeWarehouses.some((w) => w.id === deepLinkId)) {
+      deepLinkAdopted.current = true
+      setScope(deepLinkId)
+    }
+  }, [scope, activeWarehouses, setScope])
 
   const selectedWarehouse = useMemo(
     () => activeWarehouses.find((w) => w.id === effectiveWarehouseId) ?? null,
@@ -105,6 +134,20 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
           </label>
         </div>
       </div>
+
+      {/* Above the map, and above the empty state — the checklist is the first
+          thing an incompletely-set-up site should say. It renders nothing once
+          every derivable step passes except a single collapsed summary line. */}
+      {selectedWarehouse != null && effectiveWarehouseId != null && (
+        <div className="px-4 sm:px-6 lg:px-8 pt-4">
+          <WarehouseSetupPanel
+            warehouseId={effectiveWarehouseId}
+            warehouseName={selectedWarehouse.name}
+            currentUser={currentUser}
+            onNavigate={onNavigateSetup}
+          />
+        </div>
+      )}
 
       <div className="px-4 sm:px-6 lg:px-8 py-6">
         {selectedWarehouse == null || effectiveWarehouseId == null ? (

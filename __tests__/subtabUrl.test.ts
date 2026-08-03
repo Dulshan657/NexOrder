@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 
+import { SETTINGS_SECTION_IDS } from '../lib/warehouseSetup/steps'
 import {
+  isKnownSettingsSection,
   parseSubtab,
   settingsSubtabFromSearch,
   SETTINGS_SUBTABS,
@@ -56,5 +58,33 @@ describe('settingsSubtabFromSearch', () => {
 
   it('degrades a stale PO Inbox ?subtab=queue to general', () => {
     expect(settingsSubtabFromSearch('?subtab=queue')).toBe('general')
+  })
+
+  // Setup-checklist deep links. Each must force the sub-tab that HOSTS its
+  // target: a consuming effect that fires while its host is `hidden` pops a
+  // modal over the wrong tab, and scrollIntoView silently no-ops there.
+  it('routes ?whrules= to the warehouse tab', () => {
+    expect(settingsSubtabFromSearch('?whrules=1')).toBe('warehouse')
+    expect(settingsSubtabFromSearch('?whrules=1&subtab=general')).toBe('warehouse')
+  })
+
+  it('routes every known ?section= anchor to the tab hosting it', () => {
+    for (const id of Object.values(SETTINGS_SECTION_IDS)) {
+      expect(settingsSubtabFromSearch(`?section=${id}`)).toBe('warehouse')
+    }
+  })
+
+  it('ignores an unknown ?section= rather than forcing a tab', () => {
+    expect(settingsSubtabFromSearch('?section=nonsense')).toBe('general')
+    expect(settingsSubtabFromSearch('?section=nonsense&subtab=customers')).toBe('customers')
+  })
+
+  it('recognises exactly the five warehouse section anchors', () => {
+    for (const id of Object.values(SETTINGS_SECTION_IDS)) {
+      expect(isKnownSettingsSection(id)).toBe(true)
+    }
+    expect(isKnownSettingsSection('nonsense')).toBe(false)
+    // Guards against a prototype key being read as a known section.
+    expect(isKnownSettingsSection('constructor')).toBe(false)
   })
 })

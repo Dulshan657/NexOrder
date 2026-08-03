@@ -232,6 +232,23 @@ export interface ScoringWeights {
   velocityMatch: number
 }
 
+/**
+ * How many candidate bins the putaway engine loads per line.
+ *
+ * `wie_putaway_candidates` orders by dock distance and treats this as a HARD
+ * cutoff, so a layout with more placements than this silently hides its
+ * FARTHEST bays from the engine — stock is simply never recommended there, with
+ * no error anywhere. It was 200 until mig 00072 raised it: MAIN alone is 189
+ * bays, and levelled at 5 levels/rack that is 945 locations, so 200 hid the far
+ * half of the warehouse.
+ *
+ * Lives here, in the pure engine module, so BOTH the impure task generator that
+ * passes it and the designer warning that watches for it read one number.
+ * _shared/putawayTasks.ts imports supabase-js from a URL, so the frontend
+ * cannot import the constant from there.
+ */
+export const PUTAWAY_CANDIDATE_LIMIT = 2000
+
 /** Default weights (Phase 4 — all six factors live). Per-warehouse
  *  wie_scoring_profiles override these. Sum ≈ 1.0. */
 export const DEFAULT_WEIGHTS: ScoringWeights = {

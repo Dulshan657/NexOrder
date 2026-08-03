@@ -72,6 +72,7 @@ import { usePendingReplenCounts } from '../hooks/queries/useReplenishment';
 import { getDemoPersona } from '../lib/demoAccounts';
 
 import { type AdminTab } from './AdminView';
+import { adminTabFromSearch } from '../lib/adminTabUrl';
 import UserProfile from './UserProfile';
 import MobileCheckoutButton from './MobileCheckoutButton';
 import OrderSummary from './OrderSummary';
@@ -170,7 +171,9 @@ interface AppShellInnerProps extends AppShellProps {
     view: 'ordering' | 'orders' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits';
     setView: React.Dispatch<React.SetStateAction<'ordering' | 'orders' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits'>>;
     adminView: AdminTab;
-    setAdminView: React.Dispatch<React.SetStateAction<AdminTab>>;
+    // Narrowed from Dispatch<SetStateAction<AdminTab>>: it now also writes ?tab=,
+    // so it takes a tab, not an updater. Nothing ever used the updater form.
+    setAdminView: (tab: AdminTab) => void;
     orderingTab: OrderingTabKey;
     setOrderingTab: React.Dispatch<React.SetStateAction<OrderingTabKey>>;
     selectedCategory: string;
@@ -1457,7 +1460,16 @@ const AppShell: React.FC<AppShellProps> = props => {
     const [view, setView] = useState<
         'ordering' | 'orders' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits'
     >(currentUser.role === UserRole.CUSTOMER ? 'ordering' : 'dashboard');
-    const [adminView, setAdminView] = useState<AdminTab>(() => {
+    const [adminView, setAdminViewState] = useState<AdminTab>(() => {
+        if (typeof window !== 'undefined') {
+            // An explicit ?tab= wins over every landing-view default — it is the
+            // whole point of a pasted deep link. Role-validated inside
+            // adminTabFromSearch: AdminView renders NOTHING when a role gate
+            // fails, so an unchecked tab would be a blank page rather than an
+            // error. A link a role can't open degrades to that role's default.
+            const requested = adminTabFromSearch(window.location.search, String(currentUser.role));
+            if (requested) return requested;
+        }
         // The Warehouse role has no Dashboard — land it on its pick queue.
         if (currentUser.role === UserRole.WAREHOUSE) return 'Pick Queue';
         // PO-Inbox demo personas open straight on their landing tab (their sidebar
@@ -1477,6 +1489,19 @@ const AppShell: React.FC<AppShellProps> = props => {
         }
         return 'Dashboard';
     });
+    // Every tab change writes ?tab=, so a deep link survives a refresh and the
+    // sidebar's ~30 onClick sites need no edits. This also retires a latent bug:
+    // ?subtab= / ?wh= were written without their owning tab, so a reload landed
+    // on Dashboard with orphan params that the next view to read them consumed.
+    const setAdminView = useCallback((tab: AdminTab) => {
+        if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.set('tab', tab);
+            window.history.replaceState({}, '', url.toString());
+        }
+        setAdminViewState(tab);
+    }, []);
+
     const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
     const [orderingTab, setOrderingTab] = useState<OrderingTabKey>('catalogue');
     const [selectedCategory, setSelectedCategory] = useState('All');

@@ -36,14 +36,47 @@ export const SETTINGS_SUBTABS: ReadonlyArray<SettingsSubTab> = [
 ]
 
 /**
- * Resolve which Settings sub-tab to open from a search string. A warehouse
- * layout-designer deep link (`?designer=` / `?import=`) always wins over the
- * plain `?subtab=` value so the openDesigner flow lands on the Warehouse tab.
- * Everything else defers to `parseSubtab`, so a stale `?subtab=queue` handed
- * over from PO Inbox degrades to `general`.
+ * Params that FORCE a sub-tab, first match wins. A deep link naming a specific
+ * surface must land on the sub-tab hosting it, whatever `?subtab=` says —
+ * otherwise the consuming effect fires while its host is `hidden`.
+ *
+ * Note `import` is already claimed globally as *floor-plan import*, which is
+ * why the CSV importers use `stockimport` / `prodimport`: a bare `import` here
+ * would drag an unrelated tab to Warehouse for the rest of the session.
+ */
+const FORCED_SUBTAB: ReadonlyArray<readonly [param: string, tab: SettingsSubTab]> = [
+  ['designer', 'warehouse'],
+  ['import', 'warehouse'],
+  ['whrules', 'warehouse'],
+]
+
+/** Settings section anchors (`?section=`) and the sub-tab that hosts each. */
+const SECTION_SUBTAB: Readonly<Record<string, SettingsSubTab>> = {
+  'settings-wh-warehouses': 'warehouse',
+  'settings-wh-storage-forms': 'warehouse',
+  'settings-wh-level-roles': 'warehouse',
+  'settings-wh-zone-profiles': 'warehouse',
+  'settings-wh-label-printing': 'warehouse',
+}
+
+/**
+ * Resolve which Settings sub-tab to open from a search string. A deep link to a
+ * specific surface (`?designer=`, `?whrules=`, `?section=`) always wins over the
+ * plain `?subtab=` value. Everything else defers to `parseSubtab`, so a stale
+ * `?subtab=queue` handed over from PO Inbox degrades to `general`.
  */
 export function settingsSubtabFromSearch(search: string): SettingsSubTab {
   const params = new URLSearchParams(search)
-  if (params.get('designer') || params.get('import')) return 'warehouse'
+  for (const [param, tab] of FORCED_SUBTAB) {
+    if (params.get(param)) return tab
+  }
+  const section = params.get('section')
+  if (section && SECTION_SUBTAB[section]) return SECTION_SUBTAB[section]
   return parseSubtab(search, SETTINGS_SUBTABS, 'general')
+}
+
+/** The Settings section ids that `?section=` may name. Anything else is ignored
+ *  rather than scrolled to, so a stale link cannot leave the page mid-scroll. */
+export function isKnownSettingsSection(id: string): boolean {
+  return Object.prototype.hasOwnProperty.call(SECTION_SUBTAB, id)
 }

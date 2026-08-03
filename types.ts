@@ -567,6 +567,22 @@ export interface WarehouseReport {
     } | null;
 }
 
+/**
+ * One operator sign-off on a warehouse setup step (mig 00092).
+ *
+ * The row EXISTING is the acknowledgement — there is no `done` flag and no
+ * revoked state, so revoking is a delete. Only the sign-off steps are stored;
+ * the derived ones are read from the database on every render.
+ */
+export interface WarehouseSetupAck {
+    id: number;
+    warehouseId: number;
+    stepKey: string;
+    note: string | null;
+    acknowledgedBy: string | null;
+    acknowledgedAt: string;
+}
+
 // ── WIE analytical simulation (Phase 6) ──────────────────────────────────────
 
 export interface SimulationKpis {

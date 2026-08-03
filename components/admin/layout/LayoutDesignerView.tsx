@@ -8,6 +8,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Trash2, Check, X, ImageUp, Copy, Wand2, Ruler } from 'lucide-react'
 import { evaluatePublishReadiness } from '@/supabase/functions/_shared/wie/publishReadiness'
 import { autoConnectLayout } from '@/supabase/functions/_shared/wie/autoConnect'
+import { PUTAWAY_CANDIDATE_LIMIT } from '@/supabase/functions/_shared/wie/types'
+import { useSetupAcks } from '@/hooks/queries/useWarehouseSetup'
 import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
 import { useZoneProfiles } from '@/hooks/queries/useZoneProfiles'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
@@ -206,6 +208,35 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   )
   const highlightRefs = useMemo(() => new Set(readiness.unreachableIds), [readiness])
   const canAutoConnect = !!isDraft && readiness.unreachableIds.length > 0
+
+  // How many addressable LOCATIONS this layout will publish. Not the placement
+  // count: a levelled rack holds no placement row of its own — its SHELF levels
+  // do — so a 189-bay site at 5 levels/rack is 945 locations. That is the
+  // number wie_putaway_candidates' hard cutoff counts against.
+  const addressableLocations = useMemo(
+    () => state.placements.reduce((sum, p) => sum + (p.levels?.length || 1), 0),
+    [state.placements],
+  )
+  // Warn while there is still room to reorganise, not at the cliff. Past the
+  // ceiling the FARTHEST bays vanish from the engine silently — stock is never
+  // recommended there and nothing reports it.
+  const nearCandidateCeiling = addressableLocations >= PUTAWAY_CANDIDATE_LIMIT * 0.9
+
+  // Level roles and zone profiles both ship SEEDED, so "are any configured" is
+  // permanently true and worthless as a gate. What matters is whether anyone
+  // checked them against this building — which is a sign-off on the setup
+  // checklist, and is what this reads.
+  const { data: setupAcks } = useSetupAcks(warehouse.id)
+  const unreviewedConfig = useMemo(() => {
+    const done = new Set((setupAcks ?? []).map((a) => a.stepKey))
+    return [
+      { key: 'level_roles_reviewed', label: 'Level roles' },
+      { key: 'zone_profiles_reviewed', label: 'Zone profiles' },
+    ].filter((c) => !done.has(c.key))
+  }, [setupAcks])
+  const configReviewed = unreviewedConfig.length === 0
+  const unreviewedConfigCount = unreviewedConfig.length
+  const unreviewedConfigLabel = unreviewedConfig.map((c) => c.label).join(' and ')
 
   // Pre-existing overlaps in the loaded draft. Draw-time prevention can't help a
   // layout that already has them — cloning an older layout and AI floor-plan
@@ -695,6 +726,27 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             <LayoutCanvas state={state} dispatch={dispatch} gridWidth={selectedLayout.gridWidth} gridHeight={selectedLayout.gridHeight} cellSizeM={selectedLayout.cellSizeM} highlightRefs={isDraft ? highlightRefs : undefined} formColorById={formColorById} zoneTypeByProfileId={zoneTypeByProfileId} />
             <div className="space-y-3">
               {isDraft && <PublishChecklist readiness={readiness} onAutoConnect={canAutoConnect ? handleAutoConnect : undefined} />}
+              {isDraft && nearCandidateCeiling && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-800">
+                  <p className="font-semibold">Approaching the putaway engine's limit</p>
+                  <p className="mt-1">
+                    This layout publishes {addressableLocations.toLocaleString()} addressable locations;
+                    the engine loads at most {PUTAWAY_CANDIDATE_LIMIT.toLocaleString()} candidates per line,
+                    ordered by distance from the dock. Past that the furthest bays stop being offered for
+                    putaway — silently, with no error. Consider fewer rack levels or a second warehouse.
+                  </p>
+                </div>
+              )}
+              {isDraft && !configReviewed && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-800">
+                  <p className="font-semibold">Config not checked for this site</p>
+                  <p className="mt-1">
+                    {unreviewedConfigLabel} still {unreviewedConfigCount === 1 ? 'shows' : 'show'} as
+                    unchecked on the warehouse setup checklist. Publishing creates every bin with the level
+                    roles and zones it inherits from that config, so it is worth settling first.
+                  </p>
+                </div>
+              )}
               {isDraft && (
                 <CapacityAdvisor
                   requiredSlots={palletDenominated ? stockSummary.requiredPositions : stockSummary.requiredSlots}

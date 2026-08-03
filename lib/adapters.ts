@@ -19,7 +19,7 @@ import type {
   WieRule, WieRuleDefinition, ProductWmsAttributes, CategoryCompatibility,
   WieScoringProfile, WieScoringWeights, SlottingSuggestion,
   WieProductVelocity, WieLocationTraffic, ProductUom, ProductSupplierLink,
-  LevelRole, RackLevel, LevelRoleRecord,
+  LevelRole, RackLevel, LevelRoleRecord, WarehouseSetupAck,
 } from '@/types'
 import { sortUoms } from './uom'
 import type { Database } from './database.types'
@@ -1029,6 +1029,21 @@ export function toStorageType(row: StorageTypeRow): StorageType {
     isDrawable: row.is_drawable,
     hasLevels: leveled.has_levels ?? false,
     levelTemplate: toRackLevelTemplate(leveled.level_template),
+  }
+}
+
+/** One warehouse setup sign-off (mig 00092). Defensive coercion throughout —
+ *  `acknowledged_by` is nullable because a profile can be deleted after the
+ *  fact, and losing the person must not lose the fact that it was signed off. */
+export function toWarehouseSetupAck(raw: unknown): WarehouseSetupAck {
+  const row = (raw ?? {}) as Record<string, unknown>
+  return {
+    id: Number(row.id ?? 0),
+    warehouseId: Number(row.warehouse_id ?? 0),
+    stepKey: String(row.step_key ?? ''),
+    note: (row.note as string | null) ?? null,
+    acknowledgedBy: (row.acknowledged_by as string | null) ?? null,
+    acknowledgedAt: String(row.acknowledged_at ?? ''),
   }
 }
 

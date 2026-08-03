@@ -12,6 +12,7 @@ import { OpsStockRow, StatusPill } from './stock/OpsStockRow';
 import { StockKpiTiles } from './stock/StockKpiTiles';
 import TransferStockModal from './admin/TransferStockModal';
 import StockImportModal from './admin/StockImportModal';
+import { useFlagDeepLink } from '../hooks/useFlagDeepLink';
 
 interface StockViewProps {
   products: Product[];
@@ -32,6 +33,11 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
   const isAdminManager = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
   const [transferOpen, setTransferOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+
+  // ?stockimport=1 — the setup checklist's "import opening stock" step. Named
+  // `stockimport` rather than `import`, which is already read globally as the
+  // warehouse floor-plan import and would drag Settings to its Warehouse tab.
+  useFlagDeepLink('stockimport', () => setImportOpen(true), isAdminManager);
 
   // Only the ops branch (Admin/Manager/Warehouse) scopes to a warehouse — the
   // rep and customer branches must keep reading the global aggregate exactly
