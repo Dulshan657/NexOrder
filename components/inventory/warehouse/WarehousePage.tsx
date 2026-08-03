@@ -139,14 +139,23 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
           thing an incompletely-set-up site should say. It renders nothing once
           every derivable step passes except a single collapsed summary line. */}
       {selectedWarehouse != null && effectiveWarehouseId != null && (
-        <div className="px-4 sm:px-6 lg:px-8 pt-4">
-          <WarehouseSetupPanel
-            warehouseId={effectiveWarehouseId}
-            warehouseName={selectedWarehouse.name}
-            currentUser={currentUser}
-            onNavigate={onNavigateSetup}
-          />
-        </div>
+        // Keyed by warehouse so the panel REMOUNTS when the site changes. Its
+        // collapsed/expanded state is remembered per warehouse in localStorage,
+        // and useLocalStorage seeds its value in a useState initialiser that
+        // runs once while its key recomputes every render — without the
+        // remount, switching sites would write the previous site's state under
+        // the new site's key. Fragment carries the key because there is no
+        // @types/react, so `key` on a typed component is a tsc error.
+        <React.Fragment key={effectiveWarehouseId}>
+          <div className="px-4 sm:px-6 lg:px-8 pt-4">
+            <WarehouseSetupPanel
+              warehouseId={effectiveWarehouseId}
+              warehouseName={selectedWarehouse.name}
+              currentUser={currentUser}
+              onNavigate={onNavigateSetup}
+            />
+          </div>
+        </React.Fragment>
       )}
 
       <div className="px-4 sm:px-6 lg:px-8 py-6">

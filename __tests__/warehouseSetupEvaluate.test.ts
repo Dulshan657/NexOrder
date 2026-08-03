@@ -184,3 +184,46 @@ describe('evaluateSetup — summary', () => {
     expect(s.derivedComplete).toBe(false)
   })
 })
+
+// The panel renders collapsed, so these two fields ARE the visible line.
+describe('evaluateSetup — collapsed-header fields', () => {
+  it('counts every unfinished step, blocked ones included', () => {
+    expect(evaluateSetup(freshRacked()).remainingCount).toBe(13)
+    expect(evaluateSetup(freshRacked({ locationType: 'bulk' })).remainingCount).toBe(3)
+  })
+
+  it('always agrees with doneCount and totalCount', () => {
+    for (const input of [freshRacked(), liveRacked(), liveRacked({ acknowledgedKeys: [] })]) {
+      const s = evaluateSetup(input)
+      expect(s.remainingCount).toBe(s.totalCount - s.doneCount)
+    }
+  })
+
+  it('drops to zero only when everything is done', () => {
+    expect(evaluateSetup(liveRacked()).remainingCount).toBe(0)
+    // Derived chain complete but sign-offs outstanding is NOT zero remaining —
+    // the header would otherwise read "Setup complete" with nothing to do.
+    expect(evaluateSetup(liveRacked({ acknowledgedKeys: [] })).remainingCount).toBeGreaterThan(0)
+  })
+
+  it('names the current step, and is null once nothing is left', () => {
+    const fresh = evaluateSetup(freshRacked())
+    expect(fresh.currentTitle).toBe(SETUP_STEPS[0].title)
+
+    const s = evaluateSetup(
+      freshRacked({ acknowledgedKeys: ['storage_forms_reviewed', 'level_roles_reviewed'] }),
+    )
+    expect(s.currentKey).toBe('zone_profiles_reviewed')
+    expect(s.currentTitle).toBe(byKey(s, 'zone_profiles_reviewed').step.title)
+
+    const done = evaluateSetup(liveRacked())
+    expect(done.currentKey).toBeNull()
+    expect(done.currentTitle).toBeNull()
+  })
+
+  it('keeps currentTitle in step with currentKey on a bulk site too', () => {
+    const s = evaluateSetup(freshRacked({ locationType: 'bulk' }))
+    expect(s.currentKey).toBe('catalogue_loaded')
+    expect(s.currentTitle).toBe(byKey(s, 'catalogue_loaded').step.title)
+  })
+})

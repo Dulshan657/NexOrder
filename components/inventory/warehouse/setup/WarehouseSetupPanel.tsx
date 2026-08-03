@@ -7,14 +7,17 @@
 // Two deliberate restraints:
 //   - it never blocks anything. A step out of order raises a warning at the
 //     point of the mistake (see StockImportModal / PublishChecklist), not here;
-//   - once every DERIVED step passes it collapses to one line, so a live site
-//     is quiet even with sign-offs outstanding. There is no dismiss button —
-//     dismissal could hide a genuinely missing step, and collapsing cannot.
+//   - it opens COLLAPSED. The map is why this tab exists, and thirteen steps of
+//     prose pushed it off the screen on every visit. There is still no dismiss
+//     button — dismissal could hide a genuinely missing step, and collapsing
+//     cannot, because the one visible line always carries the count and names
+//     the next action.
 
-import React, { useMemo, useState } from 'react'
+import React, { useMemo } from 'react'
 import { ChevronDown, ChevronRight, ClipboardList, CheckCircle2 } from 'lucide-react'
 import { UserRole, type User } from '@/types'
 import { useToasts } from '@/hooks/useToasts'
+import { useLocalStorage } from '@/hooks/useLocalStorage'
 import {
   useAcknowledgeSetupStep,
   useRevokeSetupStep,
@@ -44,7 +47,17 @@ export function WarehouseSetupPanel({
   const { summary, isLoading } = useWarehouseSetup(warehouseId)
   const acknowledge = useAcknowledgeSetupStep(warehouseId)
   const revoke = useRevokeSetupStep(warehouseId)
-  const [manuallyOpen, setManuallyOpen] = useState<boolean | null>(null)
+
+  // Collapsed on first view of a site, then the operator's choice sticks —
+  // admin tabs unmount on switch, and onboarding means bouncing between here
+  // and Settings constantly, so plain useState would re-collapse every return.
+  //
+  // Per-warehouse key, and WarehousePage remounts this component per warehouse
+  // (keyed Fragment) BECAUSE OF THAT: useLocalStorage seeds `storedValue` in a
+  // useState initialiser that runs once, while its key recomputes every render.
+  // Without the remount, changing warehouse would write the previous site's
+  // value under the new site's key.
+  const [expanded, setExpanded] = useLocalStorage(`wh_setup_open_${warehouseId}`, false)
 
   const role = currentUser.role
   const canSee = role === UserRole.ADMIN || role === UserRole.MANAGER
@@ -58,10 +71,6 @@ export function WarehouseSetupPanel({
   }, [summary])
 
   if (!canSee || isLoading || !summary || summary.totalCount === 0) return null
-
-  // Collapsed by default once the derivable chain is complete; the operator can
-  // still open it to clear the remaining sign-offs.
-  const expanded = manuallyOpen ?? !summary.derivedComplete
 
   const busy = acknowledge.isPending || revoke.isPending
 
@@ -90,7 +99,7 @@ export function WarehouseSetupPanel({
     <div className="glass-panel shadow-card rounded-2xl p-4 sm:p-5">
       <button
         type="button"
-        onClick={() => setManuallyOpen(!expanded)}
+        onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-3 text-left btn-press"
       >
         <div
@@ -112,13 +121,20 @@ export function WarehouseSetupPanel({
             {summary.derivedComplete ? 'Setup complete' : 'Warehouse setup'}
             <span className="ml-2 font-normal text-stone-400">{warehouseName}</span>
           </p>
-          <p className="mt-0.5 text-xs text-stone-500">
-            {summary.derivedComplete && summary.outstandingSignoffs > 0
-              ? `${summary.outstandingSignoffs} sign-off${summary.outstandingSignoffs === 1 ? '' : 's'} outstanding`
+          {/* Naming the next action is what lets this collapse without hiding
+              the answer. Falls back to the tally only when nothing is left. */}
+          <p className="mt-0.5 truncate text-xs text-stone-500">
+            {summary.currentTitle
+              ? <>Next: <span className="text-stone-600">{summary.currentTitle}</span></>
               : `${summary.doneCount} of ${summary.totalCount} steps done`}
-            {!summary.derivedComplete && ' · the order matters, each step unlocks the next'}
           </p>
         </div>
+
+        {summary.remainingCount > 0 && (
+          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+            {summary.remainingCount} remaining
+          </span>
+        )}
 
         <span className="shrink-0 text-stone-400">
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
