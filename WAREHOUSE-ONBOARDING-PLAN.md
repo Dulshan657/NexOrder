@@ -77,6 +77,19 @@ The CSV now takes an optional **`bin_code`**. Rows are grouped by bin *before* c
 - Rows leave the preview grid once the **receipt** succeeds, even if placement then fails — re-importing would receive the quantities twice. The failure text says so and points at the Putaway queue.
 - Leaving `bin_code` blank preserves the old behaviour exactly.
 
+### B4 · A re-count could not correct downward — **fixed**
+
+B3 got a counted stocktake *in*, but only upward: receiving is additive, and `AdjustStockModal` corrects one (product, location, batch) slot at a time. A spot re-count that found **less** than the system believed — the Phase 4 exit criterion — had nowhere to go but a hand-typed adjustment per line.
+
+There is now a **Stocktake** nav item (Admin/Manager/Warehouse). Scan a bin, or pick a place from the list; every SKU the system holds there is listed with its lots and plates; type what you counted; post. One `count-bin` call carries the whole location.
+
+- **One number per SKU.** The server fans out across lots, and `inv_adjust_stock` fans out across plates within each lot. That split exists because the RPC only ever targets one batch — `p_batch_id => NULL` means the *untracked* slot, not "every lot".
+- **Blank leaves a line untouched; `0` writes it off.** A half-finished count must never zero a bin.
+- **A surplus goes to the only lot present, or to untracked** — and the sheet says which. It never invents an expiry.
+- **A shortfall deeper than the unreserved stock refuses that line whole** and posts every other line, naming what is reserved. Nothing is half-applied.
+- **Bulk areas are countable**: the target may be a warehouse ROOT, which is where floor-stacked stock actually sits and which has no QR to scan.
+- **The desktop entry point is deliberately not built** — office-side reconciliation from `BinDetailPanel` is tracked in CLAUDE.md's Pending Work. `count-bin` already accepts any location, so it is UI-only work.
+
 ---
 
 ## Gaps still open — decide before or during the visit
@@ -84,7 +97,7 @@ The CSV now takes an optional **`bin_code`**. Rows are grouped by bin *before* c
 ### High
 
 - **H1 · No cancel or short-ship path.** `OrderStatus.CANCELLED` exists in `types.ts` and *nothing writes it*. There is no way to release a reservation on a cancelled order, and a permanently short line blocks dispatch forever. Open since the July 2026 audit. **This will be hit within the first weeks of real trading** — a customer cancels, and the stock stays allocated. Needs an edge-function path plus a reservation-release RPC.
-- **H2 · No stocktake-by-bin UI.** `AdjustStockModal` adjusts one line at a time. After go-live, reconciling drift is manual, bin by bin. The `bin_code` importer partly covers re-counts, but it is *additive* — it cannot correct a count downward.
+- **H2 · No stocktake-by-bin UI.** — **fixed, see B4 above.** The Stocktake page counts any location, up or down, and refuses only what reservations genuinely block.
 - **H3 · Replenishment min/max is hand-typed per product.** `ProductHomeBinsSection` only, one product at a time. Full WIE wants min/max on every fast mover. Budget real time for this, or accept that replenishment stays quiet until it is filled in.
 
 ### Medium
@@ -134,7 +147,7 @@ The CSV now takes an optional **`bin_code`**. Rows are grouped by bin *before* c
 1. **Freeze the warehouse.** No receiving, no dispatch during the count.
 2. **Count by bin**, recording `sku, quantity, bin_code` — quantities in **base units**, not cartons.
 3. **Import** via the opening-stock CSV with the `bin_code` column. Verify the "Placed in bins" figure equals the received figure; anything unplaced is sitting at the root and needs finishing from the Putaway queue.
-4. **Reconcile** the imported totals against their stock-on-hand report (if you got one). Investigate every difference before trading.
+4. **Reconcile** the imported totals against their stock-on-hand report (if you got one). Investigate every difference before trading. Where the import over-stated a bin — a doubled row, a miscounted pallet — fix it on the **Stocktake** tab rather than by hand: scan the bin, type the true figure, post. That is the one correction the importer cannot make.
 5. **Exercise one of everything** before declaring go-live: one receipt → putaway (assign, walk, scan, complete); one order → reserve → directed pick → pack → dispatch; one replenishment task driven `suggested → assigned → accepted` with stock actually moving.
 6. **Train on the phone flows**, not on the desktop ones. The floor uses `ScanField`, and scanning is where habits form.
 
@@ -144,7 +157,7 @@ Keep their existing method alive for a few weeks. Bin and count errors surface w
 
 **Exit criteria for retiring the old method:**
 - Stock accuracy holds through a full cycle of receipts, picks and replenishments.
-- No unexplained variance between `inventory_balances` and a spot re-count.
+- No unexplained variance between `inventory_balances` and a spot re-count. Do the re-count on the **Stocktake** tab — it both measures the variance and corrects it, and a refused line tells you the stock is reserved rather than missing.
 - H1 resolved, or an agreed manual workaround for cancellations documented with them.
 
 ---
