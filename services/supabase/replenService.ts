@@ -117,13 +117,19 @@ export async function getPendingReplenCounts(): Promise<Map<number, number>> {
   return counts
 }
 
+/**
+ * Run the detector. With `dryRun` it counts what it WOULD raise and writes
+ * nothing — which is how the min/max grid can answer "arming these 40 products
+ * puts how much work in the queue?" before anybody is committed to it.
+ */
 export async function detectReplenishment(
   warehouseId: number,
   productId?: number,
+  dryRun?: boolean,
 ): Promise<ReplenDetectResult> {
   const { data, error } = await supabase.functions.invoke<{ ok: true; result: ReplenDetectResult }>(
     'detect-replenishment',
-    { body: { warehouse_id: warehouseId, product_id: productId } },
+    { body: { warehouse_id: warehouseId, product_id: productId, dry_run: dryRun } },
   )
   if (error) throw error
   return (data as any).result as ReplenDetectResult

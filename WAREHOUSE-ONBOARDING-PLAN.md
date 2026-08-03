@@ -90,6 +90,20 @@ There is now a **Stocktake** nav item (Admin/Manager/Warehouse). Scan a bin, or 
 - **Bulk areas are countable**: the target may be a warehouse ROOT, which is where floor-stacked stock actually sits and which has no QR to scan.
 - **The desktop entry point is deliberately not built** — office-side reconciliation from `BinDetailPanel` is tracked in CLAUDE.md's Pending Work. `count-bin` already accepts any location, so it is UI-only work.
 
+### B5 · Replenishment min/max was hand-typed per product — **fixed**
+
+Replenishment has been complete and silent since mig `00082`: `wie_replen_detect` bails on its first line unless a `product_home_bins` row carries `replen_enabled` with a min and a max, and the only way to write one was inside a single product's form, one warehouse row at a time. Nobody finishes that for a 200-SKU catalogue, so the queue stays empty and nothing explains why. The setup checklist named the step and then pointed at the Products tab.
+
+**Replenishment → Min/max setup** (Admin/Manager) is now one grid for a whole site: every candidate SKU ranked by demand, its home bin, its two figures, export and import as CSV. Read is one RPC (mig `00093`); write is `mutate-product-home-bin`'s new `bulkSet`, up to 200 rows a call.
+
+- **The suggestion is made of capacity, not demand.** How much fits in the pick slot is the only thing that is true before a site has traded. Days-of-cover waits until there are real picks to read.
+- **A pallet-denominated slot with no pallet UOM gets NO suggestion.** Positions cannot be turned into base units without units-per-pallet, and an invented figure becomes a real transfer to a real rack.
+- **Home bins are proposed too** — the bin the stock is already in, else the nearest unclaimed pick bin, greedily and never twice. This is what makes the grid usable *before* the opening count, which is where it sits in the chain.
+- **Saving figures and arming are separate acts.** A save leaves `replen_enabled` alone; arming is its own button, its own confirmation, and reports what the next scan would raise.
+- **Filling never overwrites**, and a CSV merges: a blank cell leaves the stored value alone, `0` is a real zero.
+- **A refused row is reported, never fatal** — the batch's other 199 rows still land.
+- Type in **packs**, see base units beside them. Note the checklist step only goes green once something is *armed*, which is the honest test of whether replenishment is on.
+
 ---
 
 ## Gaps still open — decide before or during the visit
@@ -98,7 +112,7 @@ There is now a **Stocktake** nav item (Admin/Manager/Warehouse). Scan a bin, or 
 
 - **H1 · No cancel or short-ship path.** `OrderStatus.CANCELLED` exists in `types.ts` and *nothing writes it*. There is no way to release a reservation on a cancelled order, and a permanently short line blocks dispatch forever. Open since the July 2026 audit. **This will be hit within the first weeks of real trading** — a customer cancels, and the stock stays allocated. Needs an edge-function path plus a reservation-release RPC.
 - **H2 · No stocktake-by-bin UI.** — **fixed, see B4 above.** The Stocktake page counts any location, up or down, and refuses only what reservations genuinely block.
-- **H3 · Replenishment min/max is hand-typed per product.** `ProductHomeBinsSection` only, one product at a time. Full WIE wants min/max on every fast mover. Budget real time for this, or accept that replenishment stays quiet until it is filled in.
+- **H3 · Replenishment min/max is hand-typed per product.** — **fixed, see B5 above.** One grid per site, with capacity-derived suggestions, proposed home bins and a CSV round trip. Arming stays a separate deliberate act.
 
 ### Medium
 
@@ -138,7 +152,7 @@ There is now a **Stocktake** nav item (Admin/Manager/Warehouse). Scan a bin, or 
 
 ## Phase 2 — between visits: catalogue
 
-**Path A — the lists arrived.** Import the catalogue (SKUs, pack sizes, UOMs), suppliers and customers via the CSV importers. Then set `product_wms_attributes` and `product_home_bins` min/max for the fast movers (H3). Reconcile their stock-on-hand report against what you expect to count.
+**Path A — the lists arrived.** Import the catalogue (SKUs, pack sizes, UOMs), suppliers and customers via the CSV importers. Then set `product_wms_attributes`, and the replenishment min/max for the fast movers on **Replenishment → Min/max setup** (B5) — export the grid, agree the numbers with the client in a spreadsheet, import it back. Leave them unarmed until after the count. Reconcile their stock-on-hand report against what you expect to count.
 
 **Path B — nothing arrived.** Stop and say so before visit 2 is booked. Building the catalogue from the shelf is its own visit: you are reading labels, inventing SKUs, and guessing pack sizes. **Do not attempt it in the same visit as the count** — an invented SKU with a wrong pack size corrupts every quantity that follows it, and pack size is the one field that cannot be fixed later without re-counting. Sequence it as: visit 2 = catalogue capture, visit 3 = count and go-live.
 

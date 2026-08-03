@@ -222,7 +222,14 @@ export const SETUP_STEPS: readonly SetupStep[] = [
     appliesTo: 'racked',
     kind: 'derived',
     blockedBy: ['layout_published'],
-    target: { tab: 'Products', label: 'Open products' },
+    // The grid, not the Products tab. Pointing an operator at 200 product forms
+    // and calling it a step is what left this undone (onboarding gap H3).
+    target: {
+      tab: 'Replenishment',
+      params: { subtab: 'setup' },
+      warehouseParam: 'wh',
+      label: 'Set min/max',
+    },
   },
   {
     key: 'opening_stock',

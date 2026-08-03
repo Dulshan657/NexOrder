@@ -7,6 +7,9 @@ import {
 } from '@/services/supabase/productHomeBinService'
 
 export const productHomeBinKeys = {
+  /** Prefix for every product's slots — the bulk grid writes many at once and
+   *  cannot name them one by one. */
+  all: ['product-home-bins'] as const,
   byProduct: (id: number) => ['product-home-bins', id] as const,
 }
 
