@@ -25,6 +25,7 @@ export type AdminTab =
   | 'Receiving'
   | 'Putaway'
   | 'Replenishment'
+  | 'Stocktake'
   | 'Pick Queue'
   | 'Dispatched'
   | 'Documents'
@@ -51,6 +52,7 @@ export const ADMIN_TABS: ReadonlyArray<AdminTab> = [
   'Receiving',
   'Putaway',
   'Replenishment',
+  'Stocktake',
   'Pick Queue',
   'Dispatched',
   'Documents',
@@ -107,6 +109,7 @@ const TABS_BY_ROLE: Record<string, ReadonlyArray<AdminTab>> = {
     'Receiving',
     'Putaway',
     'Replenishment',
+    'Stocktake',
     'Pick Queue',
     'Dispatched',
     'Documents',
@@ -121,6 +124,7 @@ const TABS_BY_ROLE: Record<string, ReadonlyArray<AdminTab>> = {
     'Receiving',
     'Putaway',
     'Replenishment',
+    'Stocktake',
     'Stock',
     'Documents',
     'Warehouse',

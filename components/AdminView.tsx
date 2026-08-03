@@ -24,6 +24,7 @@ const ReceiveStockView = lazyWithRetry(() => import('./inventory/ReceiveStockVie
 const PickQueueView = lazyWithRetry(() => import('./inventory/PickQueueView'));
 const PutawayQueuePage = lazyWithRetry(() => import('./inventory/PutawayQueuePage'));
 const ReplenQueuePage = lazyWithRetry(() => import('./inventory/ReplenQueuePage'));
+const StocktakePage = lazyWithRetry(() => import('./inventory/StocktakePage'));
 const DispatchedOrdersView = lazyWithRetry(() => import('./inventory/DispatchedOrdersView'));
 const DocumentsView = lazyWithRetry(() => import('./inventory/DocumentsView'));
 const WarehousePage = lazyWithRetry(() => import('./inventory/warehouse/WarehousePage'));
@@ -137,6 +138,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} onOpenPutaway={openPutaway} />}
                 {props.activeTab === 'Putaway' && <PutawayQueuePage currentUser={props.currentUser} />}
                 {props.activeTab === 'Replenishment' && <ReplenQueuePage currentUser={props.currentUser} />}
+                {props.activeTab === 'Stocktake' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <StocktakePage currentUser={props.currentUser} products={props.products} />}
                 {props.activeTab === 'Pick Queue' && <PickQueueView currentUser={props.currentUser} />}
                 {props.activeTab === 'Dispatched' && <DispatchedOrdersView orders={props.allOrders} onViewDetail={props.onViewOrderDetail} />}
                 {props.activeTab === 'Documents' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <DocumentsView />}

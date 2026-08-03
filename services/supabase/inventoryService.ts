@@ -50,6 +50,77 @@ export async function getBalancesByProduct(productId: number): Promise<ProductBa
   }))
 }
 
+/** One count-sheet line: everything the system believes about one product at one
+ *  location, at (batch × plate) grain. */
+export interface CountSheetSlotRow {
+  batchId: number | null
+  lotCode: string | null
+  expiryDate: string | null
+  huId: number | null
+  huCode: string | null
+  onHand: number
+  allocated: number
+}
+
+export interface CountSheetRow {
+  productId: number
+  sku: string
+  name: string
+  barcode: string | null
+  slots: CountSheetSlotRow[]
+}
+
+/**
+ * The stocktake sheet for ONE location — every product with a balance row here,
+ * each carrying its lots and plates.
+ *
+ * Rows with `on_hand = 0` are KEPT. A slot the system believes is empty still
+ * matters: it is the lot a surplus should be attributed to when it is the only
+ * one on the shelf, and dropping it would push that surplus to untracked stock
+ * for no reason. `_shared/binCount.ts` decides what to do with them.
+ *
+ * Ordered by SKU so the sheet reads the same way twice — an operator working
+ * down a bin needs the list stable between refetches.
+ */
+export async function getLocationCountSheet(locationId: number): Promise<CountSheetRow[]> {
+  const { data, error } = await supabase
+    .from('inventory_balances')
+    .select(
+      'product_id, batch_id, on_hand, allocated, handling_unit_id, ' +
+      'products(sku, name, barcode), batches(lot_code, expiry_date), handling_units(code)',
+    )
+    .eq('location_id', locationId)
+  if (error) throw error
+
+  const byProduct = new Map<number, CountSheetRow>()
+  for (const r of (data ?? []) as any[]) {
+    const productId = Number(r.product_id)
+    let row = byProduct.get(productId)
+    if (!row) {
+      row = {
+        productId,
+        sku: r.products?.sku ?? '',
+        name: r.products?.name ?? 'Unknown product',
+        barcode: r.products?.barcode ?? null,
+        slots: [],
+      }
+      byProduct.set(productId, row)
+    }
+    row.slots.push({
+      batchId: r.batch_id != null ? Number(r.batch_id) : null,
+      lotCode: r.batches?.lot_code ?? null,
+      expiryDate: r.batches?.expiry_date ?? null,
+      huId: r.handling_unit_id != null ? Number(r.handling_unit_id) : null,
+      huCode: r.handling_units?.code ?? null,
+      // NUMERIC columns arrive as strings over the wire.
+      onHand: Number(r.on_hand),
+      allocated: Number(r.allocated),
+    })
+  }
+
+  return [...byProduct.values()].sort((a, b) => a.sku.localeCompare(b.sku))
+}
+
 /** Capacity currently used at a location, in the unit its capacity_slots is
  *  denominated in: one position per pallet plate in a pallet-slot bin,
  *  Σ(on_hand × size_factor) everywhere else (mig 00078). Same rule the engine

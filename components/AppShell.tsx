@@ -136,6 +136,7 @@ import {
     PackageOpen,
     ArrowDownToLine,
     ClipboardCheck,
+    ClipboardList,
     Send,
     FileText,
     LayoutGrid,
@@ -821,6 +822,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 )}
                             </button>
                             <button
+                                onClick={() => { setAdminView('Stocktake'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Stocktake' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <ClipboardList className="w-5 h-5 mr-3" /> Stocktake
+                            </button>
+                            <button
                                 onClick={() => { setAdminView('Pick Queue'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Pick Queue' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
@@ -928,6 +935,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         {replenPendingCount}
                                     </span>
                                 )}
+                            </button>
+                            <button
+                                onClick={() => { setAdminView('Stocktake'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Stocktake' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <ClipboardList className="w-5 h-5 mr-3" /> Stocktake
                             </button>
                             <button
                                 onClick={() => { setAdminView('Stock'); setIsSidebarOpen(false); }}
