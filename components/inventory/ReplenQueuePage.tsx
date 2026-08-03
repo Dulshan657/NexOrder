@@ -8,7 +8,7 @@
 // bulk bin to pull FROM.
 
 import React, { useMemo, useState } from 'react';
-import { ClipboardList, Footprints, ArrowDownToLine, RefreshCw } from 'lucide-react';
+import { ClipboardList, Footprints, ArrowDownToLine, RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import { useWarehouseScope } from '../../context/WarehouseScopeContext';
 import {
@@ -20,13 +20,28 @@ import { useToasts } from '../../hooks/useToasts';
 import { UserRole, type User } from '../../types';
 import ReplenQueueView from './ReplenQueueView';
 import ReplenWalkView from './ReplenWalkView';
+import ReplenSetupView from './replen/ReplenSetupView';
+import { parseSubtab } from '../../lib/subtabUrl';
 
-type Stage = 'assign' | 'walk';
+type Stage = 'assign' | 'walk' | 'setup';
 
-/** A phone in an aisle is a walker; a wide screen is someone at a desk. */
+const STAGES: ReadonlyArray<Stage> = ['assign', 'walk', 'setup'];
+
+/** A phone in an aisle is a walker; a wide screen is someone at a desk. A
+ *  `?subtab=` in the URL beats both — that is how the warehouse setup
+ *  checklist's `replen_min_max` step lands straight on the grid. */
 function defaultStage(): Stage {
   if (typeof window === 'undefined') return 'assign';
+  const fromUrl = parseSubtab<Stage>(window.location.search, STAGES, 'assign');
+  if (new URLSearchParams(window.location.search).get('subtab')) return fromUrl;
   return window.matchMedia('(max-width: 767px)').matches ? 'walk' : 'assign';
+}
+
+function writeStageToUrl(next: Stage): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  url.searchParams.set('subtab', next);
+  window.history.replaceState({}, '', url.toString());
 }
 
 interface ReplenQueuePageProps {
@@ -66,7 +81,20 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
 
   const effectiveWarehouseId = scope !== 'all' ? scope : localFallback;
 
-  const [stage, setStage] = useState<Stage>(defaultStage);
+  // Setting min/max is configuration, not floor work: mutate-product-home-bin
+  // allows Admin and Manager only, so Warehouse staff never see the tab rather
+  // than meeting a refusal at the Save button.
+  const canConfigure =
+    currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
+
+  const [stage, setStageState] = useState<Stage>(() => {
+    const initial = defaultStage();
+    return initial === 'setup' && !canConfigure ? 'assign' : initial;
+  });
+  const setStage = (next: Stage) => {
+    setStageState(next);
+    writeStageToUrl(next);
+  };
   const { data: tasks } = useReplenTasks(effectiveWarehouseId);
   const assignedCount = (tasks ?? []).filter((t) => t.status === 'assigned').length;
   const suggestedCount = (tasks ?? []).filter((t) => t.status === 'suggested').length;
@@ -142,8 +170,8 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
               aria-label="Replenishment stage"
               className="inline-flex p-0.5 rounded-lg bg-stone-100 border border-stone-200"
             >
-              {(['assign', 'walk'] as const).map((t) => {
-                const badge = t === 'assign' ? suggestedCount : assignedCount;
+              {(canConfigure ? STAGES : (['assign', 'walk'] as const)).map((t) => {
+                const badge = t === 'assign' ? suggestedCount : t === 'walk' ? assignedCount : 0;
                 return (
                   <button
                     key={t}
@@ -156,7 +184,9 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
                   >
                     {t === 'assign'
                       ? <><ClipboardList className="w-4 h-4" aria-hidden="true" /> Assign</>
-                      : <><Footprints className="w-4 h-4" aria-hidden="true" /> Walk</>}
+                      : t === 'walk'
+                        ? <><Footprints className="w-4 h-4" aria-hidden="true" /> Walk</>
+                        : <><SlidersHorizontal className="w-4 h-4" aria-hidden="true" /> Min/max setup</>}
                     {badge > 0 && (
                       <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-nexgen-blue text-white text-[10px] tabular-nums">
                         {badge}
@@ -169,15 +199,26 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
             <p className="mt-2 text-xs text-stone-400">
               {stage === 'assign'
                 ? 'Decide which bin each top-up comes from. Nothing moves until someone carries it.'
-                : 'Pull from the source bin and place it in the pick zone. This is when the stock moves.'}
+                : stage === 'walk'
+                  ? 'Pull from the source bin and place it in the pick zone. This is when the stock moves.'
+                  : 'Nothing is replenished until a product has a minimum, a maximum and a pick-zone home bin. Set them here for the whole site at once.'}
             </p>
           </div>
 
           <div className="p-4 sm:p-6 lg:p-8">
-            {stage === 'assign' ? (
+            {stage === 'assign' && (
               <ReplenQueueView warehouseId={effectiveWarehouseId} canWork={canWorkHere} />
-            ) : (
+            )}
+            {stage === 'walk' && (
               <ReplenWalkView warehouseId={effectiveWarehouseId} canWork={canWorkHere} />
+            )}
+            {stage === 'setup' && canConfigure && (
+              <ReplenSetupView
+                warehouseId={effectiveWarehouseId}
+                warehouseName={
+                  activeWarehouses.find((w) => w.id === effectiveWarehouseId)?.name ?? 'this warehouse'
+                }
+              />
             )}
           </div>
         </>
