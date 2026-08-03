@@ -15,6 +15,8 @@ import { validateStockRow, type StockImportContext, type StockRowResult, type St
 import { useWarehouses } from '@/hooks/queries/useWarehouses';
 import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations';
 import { useReceiveStock } from '@/hooks/queries/useReceiveStock';
+import { useLayouts } from '@/hooks/queries/useLayouts';
+import { useLayoutLabelStatus } from '@/hooks/queries/useLabelJobs';
 import { decidePutaway } from '@/services/supabase/putawayService';
 import { SelectInput } from '@/components/admin/settings/primitives';
 import {
@@ -85,6 +87,19 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
   // so scoping the map here is what stops a code from a different site
   // resolving — the row is rejected by name instead.
   const { data: warehouseLocations } = useWarehouseLocations(warehouseId);
+
+  // Ordering guardrail: a count by bin only works once the QR labels are
+  // physically on the racking, and `label_printed` is only set by the explicit
+  // confirm step — generating the sheets does not set it. `byGroup.slots` is
+  // exactly the bins (BIN/SHELF/BAY); the wayfinding and staging labels don't
+  // gate a count. Racked sites only — a bulk site has no bins to label.
+  const { data: destinationLayouts } = useLayouts(warehouseId);
+  const publishedLayoutId = useMemo(
+    () => destinationLayouts?.find((l) => l.status === 'published')?.id ?? null,
+    [destinationLayouts],
+  );
+  const { data: labelStatus } = useLayoutLabelStatus(publishedLayoutId);
+  const unconfirmedLabelCount = labelStatus?.byGroup.slots.outstanding ?? 0;
 
   const binIdByCode = useMemo(() => {
     const map = new Map<string, number>();
@@ -374,6 +389,22 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
             </SelectInput>
             {activeWarehouses.length === 0 && (
               <p className="text-xs text-amber-600 mt-1">No active warehouse found — create one in Settings first.</p>
+            )}
+            {unconfirmedLabelCount > 0 && (
+              // Ordering guardrail, not a block. A count keyed by bin_code is
+              // only transcribable if the bins carry their codes on the floor;
+              // confirming the label run is the statement that they do. The
+              // import is still allowed — the operator may have applied labels
+              // without confirming, and refusing would not put stickers up.
+              <p className="mt-1.5 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" strokeWidth={2.5} />
+                <span>
+                  {unconfirmedLabelCount} bin{unconfirmedLabelCount === 1 ? '' : 's'} here still show as
+                  unlabelled. Counting by <strong>bin_code</strong> before the QR labels are on the racking
+                  produces a count nobody can transcribe — confirm the label run first (Settings → Warehouse
+                  → Print labels).
+                </span>
+              </p>
             )}
           </div>
           <div>

@@ -10,6 +10,7 @@ import { ScoringWeightsSection } from './ScoringWeightsSection';
 import { SlottingSuggestionsView } from './SlottingSuggestionsView';
 import { WarehouseIntelligenceReport } from './WarehouseIntelligenceReport';
 import type { Warehouse } from '../../types';
+import { useFlagDeepLink } from '../../hooks/useFlagDeepLink';
 
 /** Admin warehouse management — create / edit / deactivate any number of
  * warehouses, each bulk or racked, with map-picked coordinates used for
@@ -40,15 +41,24 @@ const WarehousesSettingsSection: React.FC = () => {
     const id = params.get('designer');
     if (!id) return;
     const match = warehouses.find((w) => String(w.id) === id);
-    if (!match) return;
+    // Spent once the list has loaded and we have looked, MATCH OR NOT. This
+    // used to return early on a miss, leaving ?designer= in the URL forever —
+    // and because AdminView unmounts the tab on switch, the ref reset and the
+    // dead link re-fired on every later visit to Settings.
     designerDeepLinkDone.current = true;
-    setDesignerAutoImport(params.get('import') === '1');
-    setDesignerFor(match);
     const url = new URL(window.location.href);
     url.searchParams.delete('designer');
     url.searchParams.delete('import');
     window.history.replaceState({}, '', url.toString());
+    if (!match) return;
+    setDesignerAutoImport(params.get('import') === '1');
+    setDesignerFor(match);
   }, [warehouses]);
+
+  // ?whrules=1 opens the optimizer-rules modal — the setup checklist's target
+  // for "optimizer rules set for this site". No data dependency, so unlike the
+  // designer link this need not wait for the warehouse list.
+  useFlagDeepLink('whrules', () => setRulesOpen(true));
 
   const handleDeactivate = async (w: Warehouse) => {
     setActionError(null);

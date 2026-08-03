@@ -10,6 +10,7 @@ import { WarehousePicker } from './inventory/WarehousePicker';
 import { useWarehouseScope } from '../context/WarehouseScopeContext';
 import { useProductStockByWarehouse } from '../hooks/queries/useInventoryBalances';
 import { useSettings } from '../hooks/queries/useSettings';
+import { useFlagDeepLink } from '../hooks/useFlagDeepLink';
 
 interface ProductAdminProps {
     products: Product[];
@@ -26,6 +27,9 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
     const [productToDelete, setProductToDelete] = useState<Product | null>(null);
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [hideNotStockedHere, setHideNotStockedHere] = useState(false);
+
+    // ?prodimport=1 — the setup checklist's "catalogue loaded" step.
+    useFlagDeepLink('prodimport', () => setIsImportOpen(true));
 
     const { scope } = useWarehouseScope();
     const { data: siteStock } = useProductStockByWarehouse(scope === 'all' ? null : scope);

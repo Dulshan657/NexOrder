@@ -19,7 +19,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { planPutaway } from './wie/putawayPlan.ts'
-import { DEFAULT_WEIGHTS } from './wie/types.ts'
+import { DEFAULT_WEIGHTS, PUTAWAY_CANDIDATE_LIMIT } from './wie/types.ts'
 import { isUnitLoad, positionsRequired } from './wie/capacity.ts'
 import { ENGINE_VERSION } from './wie/version.ts'
 import { resolveRolesForPutaway, rolesForHuType } from './wie/levelRoles.ts'
@@ -27,13 +27,10 @@ import { loadLevelRoles } from './levelRoleLookup.ts'
 import type { LevelRoleRecord } from './wie/levelRoles.ts'
 import type { CandidateBin, LevelRole, RuleDefinition, ScoringWeights, SkuProfile, SlotKind } from './wie/types.ts'
 
-// wie_putaway_candidates is ordered by dock distance with p_limit as a hard
-// cutoff — a layout with more placements than this silently hides its
-// farthest bays from the engine. MAIN alone is 189 bays; levelled at 5
-// levels/rack that's 945 locations, so 200 (the old default) would have
-// hidden the far half of the warehouse again. See
-// memory/main-warehouse-slotting-2026-07.md.
-const CANDIDATE_LIMIT = 2000
+// The candidate ceiling now lives in the pure engine module so the layout
+// designer can warn as a site approaches it, reading the same number this
+// passes. See PUTAWAY_CANDIDATE_LIMIT's comment for why 200 was not enough.
+const CANDIDATE_LIMIT = PUTAWAY_CANDIDATE_LIMIT
 
 export interface PutawayLineInput {
   product_id: number
