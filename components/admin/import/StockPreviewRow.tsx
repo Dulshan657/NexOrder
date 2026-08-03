@@ -60,6 +60,11 @@ function StockPreviewRowImpl({ index, record, ctx, resolveProduct, onChange, ser
         ) : '—'}
       </td>
       <td className={`${cellClass} min-w-[80px] text-sm text-stone-500`}>{productInfo?.cartonSize ?? '—'}</td>
+      {/* Editable, because the commonest failure on a counted-by-bin import is
+          a mistyped bin code — fixing it in the grid beats re-exporting the CSV. */}
+      <td className={`${cellClass} min-w-[120px]`}>
+        <TextInput dense value={record.bin_code ?? ''} onChange={set('bin_code')} placeholder="root" />
+      </td>
       <td className={`${cellClass} min-w-[130px]`}>
         <TextInput dense value={record.lot_code ?? ''} onChange={set('lot_code')} placeholder="optional" />
       </td>

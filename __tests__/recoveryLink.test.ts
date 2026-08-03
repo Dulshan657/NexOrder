@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
     DEFAULT_RECOVERY_ERROR,
-    parseRecoveryLink,
+    parseAuthLink as parseRecoveryLink,
     wantsResetRequest,
 } from '@/lib/auth/recoveryLink'
 
@@ -12,7 +12,7 @@ import {
 describe('parseRecoveryLink — implicit flow (the default template)', () => {
     it('reads access + refresh tokens from the hash', () => {
         const link = parseRecoveryLink('#access_token=abc&refresh_token=def&type=recovery', '')
-        expect(link).toEqual({ kind: 'tokens', accessToken: 'abc', refreshToken: 'def' })
+        expect(link).toEqual({ kind: 'tokens', flow: 'recovery', accessToken: 'abc', refreshToken: 'def' })
     })
 
     it('tolerates a hash with no leading #', () => {
@@ -34,12 +34,36 @@ describe('parseRecoveryLink — implicit flow (the default template)', () => {
 describe('parseRecoveryLink — token_hash flow', () => {
     it('reads token_hash from the query string', () => {
         const link = parseRecoveryLink('', '?token_hash=pkce_abc123&type=recovery')
-        expect(link).toEqual({ kind: 'token_hash', tokenHash: 'pkce_abc123' })
+        expect(link).toEqual({ kind: 'token_hash', flow: 'recovery', tokenHash: 'pkce_abc123' })
     })
 
     it('requires type=recovery, so a bare token_hash is not claimed', () => {
         const link = parseRecoveryLink('', '?token_hash=pkce_abc123')
         expect(link.kind).toBe('none')
+    })
+})
+
+// An invited user has an auth row but no password, so this link is the only
+// way they can ever sign in. Before it was claimed, the invite landed on a bare
+// login page and the only way to onboard staff was a direct database write.
+describe('parseRecoveryLink — invitations', () => {
+    it('claims an invite hash and tags it as the invite flow', () => {
+        const link = parseRecoveryLink('#access_token=abc&refresh_token=def&type=invite', '')
+        expect(link).toEqual({ kind: 'tokens', flow: 'invite', accessToken: 'abc', refreshToken: 'def' })
+    })
+
+    it('claims an invite token_hash', () => {
+        const link = parseRecoveryLink('', '?token_hash=pkce_abc123&type=invite')
+        expect(link).toEqual({ kind: 'token_hash', flow: 'invite', tokenHash: 'pkce_abc123' })
+    })
+
+    it('still requires both tokens on the implicit flow', () => {
+        expect(parseRecoveryLink('#access_token=abc&type=invite', '').kind).toBe('none')
+    })
+
+    it('surfaces an expired invitation as an error, not a dead end', () => {
+        const link = parseRecoveryLink('#error=access_denied&error_code=otp_expired', '')
+        expect(link.kind).toBe('error')
     })
 })
 

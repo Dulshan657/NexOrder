@@ -13,7 +13,9 @@ import { Button, Modal } from '@/components/ui';
 import { downloadCsv } from '@/lib/csvExport';
 import { validateStockRow, type StockImportContext, type StockRowResult, type StockImportLine } from '@/lib/stockImportRow';
 import { useWarehouses } from '@/hooks/queries/useWarehouses';
+import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations';
 import { useReceiveStock } from '@/hooks/queries/useReceiveStock';
+import { decidePutaway } from '@/services/supabase/putawayService';
 import { SelectInput } from '@/components/admin/settings/primitives';
 import {
   MAX_IMPORT_ROWS,
@@ -34,7 +36,13 @@ interface StockImportModalProps {
 type ValidStockRow = Extract<StockRowResult, { ok: true }>;
 
 const CHUNK_SIZE = 200;
-const TEMPLATE_HEADERS = ['sku', 'quantity', 'lot_code', 'expiry_date', 'barcode'];
+const TEMPLATE_HEADERS = ['sku', 'quantity', 'bin_code', 'lot_code', 'expiry_date', 'barcode'];
+
+// Bins a counted stocktake can legitimately name. The tree also holds
+// WAREHOUSE/ZONE/AISLE/RACK nodes, which are containers rather than places you
+// can stand a pallet in — offering them would let a count land on a node that
+// holds no stock and confuse every fill calculation downstream.
+const BIN_KINDS = new Set(['BIN', 'SHELF', 'BAY', 'STAGING']);
 
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
@@ -46,6 +54,9 @@ interface ChunkFailure {
 
 interface StockImportOutcome {
   received: number;
+  /** Of those received, how many landed in the bin the CSV named. Rows with no
+   *  bin_code are received but never "placed", so this is always ≤ received. */
+  placed: number;
   failed: number;
   total: number;
 }
@@ -70,9 +81,24 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
   const [submitting, setSubmitting] = useState(false);
   const creatingRef = useRef(false);
 
+  // Bins of the SELECTED warehouse only. `locations.code` is globally unique,
+  // so scoping the map here is what stops a code from a different site
+  // resolving — the row is rejected by name instead.
+  const { data: warehouseLocations } = useWarehouseLocations(warehouseId);
+
+  const binIdByCode = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const loc of warehouseLocations ?? []) {
+      if (!loc.isActive || !BIN_KINDS.has(loc.kind)) continue;
+      map.set(loc.code.trim(), loc.id);
+    }
+    return map;
+  }, [warehouseLocations]);
+
   const ctx = useMemo<StockImportContext>(() => ({
     productIdBySku: new Map(products.map((p) => [p.sku.trim(), p.id])),
-  }), [products]);
+    binIdByCode,
+  }), [products, binIdByCode]);
 
   const productMaps = useMemo(() => {
     const bySkuExact = new Map<string, Product>();
@@ -140,7 +166,10 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
 
   const handleDownloadTemplate = () => {
     const sampleSku = products[0]?.sku ?? 'AYM-EXAMPLE-001';
-    downloadCsv(TEMPLATE_HEADERS, [[sampleSku, '24', '', '', '']], 'opening-stock-template.csv');
+    // The sample carries a bin_code so the column is discovered rather than
+    // read about. Leaving it blank keeps the old behaviour (receive to root).
+    const sampleBin = [...binIdByCode.keys()][0] ?? '';
+    downloadCsv(TEMPLATE_HEADERS, [[sampleSku, '24', sampleBin, '', '', '']], 'opening-stock-template.csv');
   };
 
   const handleImport = async () => {
@@ -159,41 +188,114 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
       }
 
       const baseReference = `Opening stock import ${fileName ?? 'file'} ${todayIso()}`;
-      const chunks: Array<typeof entries> = [];
-      for (let i = 0; i < entries.length; i += CHUNK_SIZE) chunks.push(entries.slice(i, i + CHUNK_SIZE));
+
+      // Group by destination bin BEFORE chunking. Every line in a receipt then
+      // shares one destination, which is what makes placement trivial: each
+      // recommendation the server hands back belongs to this group's bin, so
+      // there is no fragile matching of recommendations back to CSV rows.
+      // Rows naming no bin land in the `null` group and behave exactly as they
+      // always have — received to the root, put away by hand.
+      const groups = new Map<number | null, typeof entries>();
+      for (const e of entries) {
+        const key = e.result.binLocationId ?? null;
+        const bucket = groups.get(key);
+        if (bucket) bucket.push(e);
+        else groups.set(key, [e]);
+      }
 
       const succeededIdx = new Set<number>();
       const failures: ChunkFailure[] = [];
       let receivedLines = 0;
+      let placedLines = 0;
 
-      for (let c = 0; c < chunks.length; c++) {
-        const chunk = chunks[c];
-        const lines: StockImportLine[] = chunk.map((e) => e.result.line);
-        const reference = chunks.length > 1 ? `${baseReference} (chunk ${c + 1}/${chunks.length})` : baseReference;
-        try {
-          await receiveStock.mutateAsync({
-            header: {
-              supplier_name: 'Opening Balance',
-              reference,
-              location_id: warehouseId,
-              ...(receivedDate ? { received_date: receivedDate } : {}),
-            },
-            lines,
-          });
+      for (const [binId, groupEntries] of groups) {
+        const binCode = groupEntries[0].result.binCode;
+        const chunks: Array<typeof entries> = [];
+        for (let i = 0; i < groupEntries.length; i += CHUNK_SIZE) {
+          chunks.push(groupEntries.slice(i, i + CHUNK_SIZE));
+        }
+
+        for (let c = 0; c < chunks.length; c++) {
+          const chunk = chunks[c];
+          const lines: StockImportLine[] = chunk.map((e) => e.result.line);
+          const suffix = chunks.length > 1 ? ` (chunk ${c + 1}/${chunks.length})` : '';
+          const reference = `${baseReference}${binCode ? ` → ${binCode}` : ''}${suffix}`;
+          const rowRange = { firstRow: chunk[0].idx + 1, lastRow: chunk[chunk.length - 1].idx + 1 };
+
+          let received;
+          try {
+            received = await receiveStock.mutateAsync({
+              header: {
+                supplier_name: 'Opening Balance',
+                reference,
+                location_id: warehouseId,
+                ...(receivedDate ? { received_date: receivedDate } : {}),
+              },
+              lines,
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to receive this batch of stock.';
+            failures.push({ ...rowRange, message });
+            continue;
+          }
+
+          // The stock is in the building from here on. These rows must leave the
+          // grid even if placement fails below — re-importing them would receive
+          // the same quantities a second time.
           chunk.forEach((e) => succeededIdx.add(e.idx));
           receivedLines += chunk.length;
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Failed to receive this batch of stock.';
-          failures.push({ firstRow: chunk[0].idx + 1, lastRow: chunk[chunk.length - 1].idx + 1, message });
+
+          if (binId == null) continue;
+
+          const recommendations =
+            received.putaway?.mode === 'engine' ? received.putaway.recommendations : [];
+          if (recommendations.length === 0) {
+            failures.push({
+              ...rowRange,
+              message:
+                `Received into the warehouse, but nothing could be placed into ${binCode}: this warehouse has no ` +
+                'published layout, so the engine raised no putaway task. Publish the layout, then put these lines away from the Putaway queue.',
+            });
+            continue;
+          }
+
+          // roleOverride: an opening count records where stock PHYSICALLY is. If
+          // the floor has pallets on a pick level, refusing the count would not
+          // move them — it would just leave the system wrong about them.
+          const placements = await Promise.allSettled(
+            recommendations.map((rec) =>
+              decidePutaway({
+                recommendationId: rec.recommendationId,
+                decision: 'override',
+                chosenLocationId: binId,
+                quantity: rec.quantity,
+                roleOverride: true,
+              }),
+            ),
+          );
+          const rejected = placements.filter((p) => p.status === 'rejected');
+          if (rejected.length === 0) {
+            placedLines += chunk.length;
+            continue;
+          }
+          const first = rejected[0] as PromiseRejectedResult;
+          const reason = first.reason instanceof Error ? first.reason.message : String(first.reason);
+          failures.push({
+            ...rowRange,
+            message:
+              `Received into the warehouse, but ${rejected.length} of ${recommendations.length} placements into ` +
+              `${binCode} failed (${reason}). The stock is at the warehouse root — finish it from the Putaway queue.`,
+          });
         }
       }
 
       setRecords((prev) => (prev ? prev.filter((_, i) => !succeededIdx.has(i)) : prev));
       setChunkFailures(failures);
       const failedRows = entries.length - receivedLines;
-      setImportOutcome({ received: receivedLines, failed: failedRows, total: entries.length });
+      setImportOutcome({ received: receivedLines, placed: placedLines, failed: failedRows, total: entries.length });
       if (receivedLines > 0) {
-        addToast?.(`Received ${receivedLines} line${receivedLines === 1 ? '' : 's'} into stock`, 'success');
+        const placedNote = placedLines > 0 ? `, ${placedLines} placed into bins` : '';
+        addToast?.(`Received ${receivedLines} line${receivedLines === 1 ? '' : 's'} into stock${placedNote}`, 'success');
       }
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'Opening-stock import failed.');
@@ -241,8 +343,10 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-stone-500">
-            Upload a CSV of opening balances (quantities are <strong>base units</strong>, not cartons). Receiving is
-            additive, so re-running the same file twice will double the stock.
+            Upload a CSV of opening balances (quantities are <strong>base units</strong>, not cartons). Fill{' '}
+            <strong>bin_code</strong> to land a counted stocktake straight into its bin; leave it blank and the stock
+            arrives at the warehouse root for the Putaway queue. Receiving is additive, so re-running the same file
+            twice will double the stock.
           </p>
           <button
             type="button"
@@ -323,6 +427,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
                     <th className="px-2 py-2">Qty (base units)</th>
                     <th className="px-2 py-2">Current on-hand</th>
                     <th className="px-2 py-2">Carton size</th>
+                    <th className="px-2 py-2">Bin</th>
                     <th className="px-2 py-2">Lot code</th>
                     <th className="px-2 py-2">Expiry</th>
                     <th className="px-2 py-2">Barcode</th>
@@ -363,6 +468,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
           <ImportResultStatGrid
             items={[
               { label: 'Received', value: importOutcome.received, tone: 'success' },
+              { label: 'Placed in bins', value: importOutcome.placed, tone: importOutcome.placed > 0 ? 'success' : 'default' },
               { label: 'Failed', value: importOutcome.failed, tone: importOutcome.failed > 0 ? 'error' : 'default' },
               { label: 'Total', value: importOutcome.total },
             ]}
