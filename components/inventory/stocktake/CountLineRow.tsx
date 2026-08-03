@@ -11,8 +11,8 @@ import {
   describeLineResult,
   describeSlots,
   entryStatus,
+  parseCountedQty,
   predictedRefusal,
-  planLine,
   systemQtyOf,
   type CountLineResult,
   type CountSheetLine,
@@ -43,8 +43,11 @@ export const CountLineRow: React.FC<CountLineRowProps> = ({
 }) => {
   const systemQty = systemQtyOf(line.slots)
   const status = entryStatus(line, value)
-  const plan = planLine(line, value)
-  const delta = plan && plan.ok === true ? plan.delta : null
+  // The REQUESTED variance, not the plannable one. Reading it off the plan
+  // meant a line the planner refused had no delta at all and the chip rendered
+  // the string "null" — the operator still needs to see what they counted.
+  const counted = parseCountedQty(value)
+  const delta = typeof counted === 'number' ? counted - systemQty : null
   const refusal = predictedRefusal(line, value)
   // A posted line's own message wins over the live prediction — the server has
   // spoken, and its numbers are the current ones.

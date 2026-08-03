@@ -220,6 +220,12 @@ export const CountSheet: React.FC<CountSheetProps> = ({ location, products, canW
               {summary.variances > 0 && (
                 <> · net <span className="font-mono tabular-nums">{summary.netUnits > 0 ? '+' : ''}{summary.netUnits}</span></>
               )}
+              {/* Without this a sheet whose only variance is blocked reads
+                  "1 variance · net 0", which looks like an arithmetic bug
+                  rather than the reservation it actually is. */}
+              {summary.blocked > 0 && (
+                <> · <span className="font-semibold text-red-600">{summary.blocked} blocked by reservations</span></>
+              )}
               {summary.blank > 0 && <> · {summary.blank} not counted</>}
             </div>
             <div className="flex items-center gap-2">
