@@ -20,6 +20,8 @@ import {
   parseCountedQty,
   entryStatus,
   describeSlots,
+  describeLineResult,
+  distinctLotsOf,
   sheetSummary,
   postableLines,
   predictedRefusal,
@@ -326,6 +328,42 @@ describe('sheetSummary / postableLines', () => {
 
   it('drops a typed number that merely confirms the system', () => {
     expect(postableLines(lines, { 1: '24' })).toEqual([])
+  })
+})
+
+describe('describeLineResult — untracked surplus wording', () => {
+  const posted = { productId: 1, systemQty: 10, countedQty: 13, delta: 3, ok: true, surplusIsUntracked: true }
+
+  it('says WHY when several lots are held', () => {
+    expect(describeLineResult(posted, 2)).toContain('more than one lot is held here')
+  })
+
+  it('does not claim several lots when the stock carries none', () => {
+    // The live WIE-DEMO case: a bin holding untracked stock takes an untracked
+    // surplus, and the old copy explained it as a multi-lot ambiguity that had
+    // not happened.
+    const message = describeLineResult(posted, 0)
+    expect(message).toContain('no lot is recorded')
+    expect(message).not.toContain('more than one lot')
+  })
+
+  it('says nothing at all about a surplus attributed to its lot', () => {
+    expect(describeLineResult({ ...posted, surplusIsUntracked: false }, 1)).toBeNull()
+  })
+})
+
+describe('distinctLotsOf', () => {
+  it('counts only lots actually holding stock', () => {
+    expect(distinctLotsOf(line({ slots: [
+      sheetSlot({ batchId: 7, onHand: 12 }),
+      sheetSlot({ batchId: 7, onHand: 12 }),
+      sheetSlot({ batchId: 9, onHand: 0 }),
+      sheetSlot({ batchId: null, onHand: 5 }),
+    ] }))).toBe(1)
+  })
+
+  it('is zero for wholly untracked stock', () => {
+    expect(distinctLotsOf(line({ slots: [sheetSlot({ batchId: null, onHand: 10 })] }))).toBe(0)
   })
 })
 

@@ -10,6 +10,7 @@ import { AlertTriangle, Info } from 'lucide-react'
 import {
   describeLineResult,
   describeSlots,
+  distinctLotsOf,
   entryStatus,
   parseCountedQty,
   predictedRefusal,
@@ -51,7 +52,7 @@ export const CountLineRow: React.FC<CountLineRowProps> = ({
   const refusal = predictedRefusal(line, value)
   // A posted line's own message wins over the live prediction — the server has
   // spoken, and its numbers are the current ones.
-  const serverNote = result ? describeLineResult(result) : null
+  const serverNote = result ? describeLineResult(result, distinctLotsOf(line)) : null
 
   const chip =
     status === 'blank' ? null

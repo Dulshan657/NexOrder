@@ -218,20 +218,36 @@ export interface CountPostResult {
   results: CountLineResult[]
 }
 
+/** How many distinct lots hold stock on this line. Drives the wording of the
+ *  untracked-surplus note: "no lot is recorded here" and "more than one lot is
+ *  held here" are both reasons a surplus goes untracked, and they are not the
+ *  same sentence. */
+export function distinctLotsOf(line: CountSheetLine): number {
+  return new Set(
+    line.slots.filter((s) => s.onHand > 0 && s.batchId != null).map((s) => s.batchId as number),
+  ).size
+}
+
 /**
  * What to tell the operator about one line the server has answered on.
  *
  * Returns null for a line that posted cleanly — there is nothing to say about
  * work that simply worked. Everything else gets a sentence naming the numbers
  * and the next action.
+ *
+ * `distinctLots` is what makes the untracked-surplus note true rather than
+ * merely plausible. Without it the message asserted "more than one lot is held
+ * here" for every untracked surplus, including the far commoner case of a bin
+ * holding no lot-tracked stock at all — which is a confident explanation of
+ * something that did not happen.
  */
-export function describeLineResult(result: CountLineResult): string | null {
+export function describeLineResult(result: CountLineResult, distinctLots?: number): string | null {
   if (result.ok) {
     if (result.surplusIsUntracked && result.delta > 0) {
-      return (
-        `+${result.delta} recorded as untracked stock — more than one lot is held here, ` +
-        'so the surplus is not attributed to either. Use Adjust on a lot if you know which it came from.'
-      )
+      const why = distinctLots != null && distinctLots >= 2
+        ? 'more than one lot is held here, so the surplus is not attributed to either'
+        : 'no lot is recorded for the stock here, so the surplus is untracked too'
+      return `+${result.delta} recorded as untracked stock — ${why}.`
     }
     return null
   }
