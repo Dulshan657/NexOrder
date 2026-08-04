@@ -17,6 +17,7 @@ import { useAssignedPutaways, usePutawayRoute } from '../../hooks/queries/usePut
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
 import { PutawayStopCard } from './putaway/PutawayStopCard';
 import { PutawayScanFinder } from './putaway/PutawayScanFinder';
+import { buildDisplayLookup, displayFor, searchTextFor } from '@/lib/locationLookup';
 
 interface PutawayWalkViewProps {
   warehouseId: number;
@@ -32,11 +33,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
   const [activeId, setActiveId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
 
-  const codeById = useMemo(() => {
-    const m = new Map<number, string>();
-    for (const l of locationsQuery.data ?? []) m.set(l.id, l.code);
-    return m;
-  }, [locationsQuery.data]);
+  const binById = useMemo(() => buildDisplayLookup(locationsQuery.data), [locationsQuery.data]);
 
   const tasks = tasksQuery.data ?? [];
 
@@ -69,15 +66,17 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
     const q = search.trim().toLowerCase();
     if (!q) return ordered;
     return ordered.filter(({ row }) => {
-      const bin = row.assignedLocationId ? codeById.get(row.assignedLocationId) ?? '' : '';
+      // Code AND name: an operator reading "Chiller · Rack 7" off the card
+      // will search for that, not for NEXG-B-9-4.
+      const bin = searchTextFor(displayFor(binById, row.assignedLocationId));
       return (
         (row.product?.name ?? '').toLowerCase().includes(q) ||
         (row.product?.sku ?? '').toLowerCase().includes(q) ||
         (row.huCode ?? '').toLowerCase().includes(q) ||
-        bin.toLowerCase().includes(q)
+        bin.includes(q)
       );
     });
-  }, [ordered, search, codeById]);
+  }, [ordered, search, binById]);
 
   const totalDistance = routeQuery.data?.mode === 'engine' ? routeQuery.data.totalDistanceM : null;
 
@@ -158,7 +157,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
             <PutawayStopCard
               key={row.id}
               row={row}
-              binCode={row.assignedLocationId ? codeById.get(row.assignedLocationId) ?? `#${row.assignedLocationId}` : '—'}
+              bin={displayFor(binById, row.assignedLocationId)}
               sequence={stop?.sequence ?? null}
               legDistanceM={stop?.legDistanceM ?? null}
               reachable={stop?.reachable ?? true}

@@ -45,7 +45,8 @@ import { FloorPlanImportModal } from './FloorPlanImportModal'
 import { LayoutPropertiesModal, type LayoutPropertiesValues, type PreviewItem } from './LayoutPropertiesModal'
 import { SimulationResultCard } from './SimulationResultCard'
 import { OCCUPANT_LABEL, STORAGE_UNIT, TOOL_LABEL } from './labels'
-import { useLayoutEditorState } from './useLayoutEditorState'
+import { editorUnits, useLayoutEditorState } from './useLayoutEditorState'
+import { composeName, nextSeqForArea, sanitizeAreaName } from '@/lib/locationNaming'
 import { buildSaveGeometryPayload } from './savePayload'
 import { resolveLayoutOverlaps } from './resolveOverlaps'
 
@@ -82,7 +83,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const cloneLayout = useCloneLayout(warehouse.id)
   const archiveLayout = useArchiveLayout(warehouse.id)
   const deleteLayout = useDeleteLayout(warehouse.id)
-  const saveGeometry = useSaveGeometry(selectedLayoutId ?? 0)
+  const saveGeometry = useSaveGeometry(selectedLayoutId ?? 0, warehouse.id)
   const publishLayout = usePublishLayout(warehouse.id)
   const runSimulation = useRunSimulation()
   const stockSummary = useWarehouseStockSummary(warehouse.id)
@@ -109,8 +110,16 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     return names
   }, [state.objects, state.floor])
 
+  /** What the next rack painted into the active area will be called (mig 00094).
+   *  Produced by the same pure module the reducer and the server use, so the
+   *  hint cannot drift from what actually gets stored. */
+  const nextRackName = useMemo(() => {
+    const areaName = sanitizeAreaName(state.activeArea?.name ?? '')
+    return composeName(areaName, nextSeqForArea(editorUnits(state.placements), areaName))
+  }, [state.activeArea, state.placements])
+
   const codeByLocation = useMemo(() => {
-    const map: Record<number, { code: string; name: string; kind: never; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number }> = {}
+    const map: Record<number, { code: string; name: string; kind: never; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number; nameSeq?: number | null; nameArea?: string | null; nameIsAuto?: boolean }> = {}
     for (const l of locationsQuery.data ?? []) {
       map[l.id] = {
         code: l.code, name: l.name, kind: l.kind as never,
@@ -118,6 +127,9 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
         // Level metadata so the reducer's `load` can rebuild a levelled rack's
         // embedded levels[] instead of falling back to the form standard.
         parentId: l.parentId, levelRole: l.levelRole, levelIndex: l.levelIndex,
+        // Name provenance (mig 00094) — without it a reload would treat every
+        // saved rack as never-numbered and hand it a second number.
+        nameSeq: l.nameSeq, nameArea: l.nameArea, nameIsAuto: l.nameIsAuto,
       }
     }
     return map
@@ -271,6 +283,17 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blockedSeq])
+
+  // What a batch fill just named. RackWizard closes its modal on submit, so a
+  // fill spanning two areas would otherwise mint two number ranges the operator
+  // never sees. Same seq-keyed hint channel as blockedAt above.
+  const lastFillSeq = state.lastFill?.seq
+  useEffect(() => {
+    const fill = state.lastFill
+    if (!fill || !fill.ranges) return
+    addToast(`Named ${fill.count} bin${fill.count === 1 ? '' : 's'} — ${fill.ranges}.`, 'info')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastFillSeq])
 
   // Resolve every cell with more than one owner. Placements are never removed —
   // a bin may already be a real `locations` row with stock, a label and open pick
@@ -443,12 +466,12 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     // so the contract with mutate-layout can be asserted in a test; it used to
     // live inline here, where the one `null` that broke every Shelving save was
     // invisible to both tsc and the suite.
-    const { placements, objects } = buildSaveGeometryPayload(state.placements, state.objects, {
+    const { placements, objects, area_renames } = buildSaveGeometryPayload(state.placements, state.objects, {
       warehouseId: warehouse.id,
       warehouseCode: warehouse.code,
       layoutId: selectedLayoutId,
-    })
-    const result = await saveGeometry.mutateAsync({ placements, objects })
+    }, state.pendingRenames)
+    const result = await saveGeometry.mutateAsync({ placements, objects, areaRenames: area_renames })
     dispatch({ type: 'mark_saved', refMap: result.ref_map })
   }
 
@@ -684,6 +707,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             areaNames={areaNamesOnFloor}
             activeArea={state.activeArea}
             onSelectArea={(area) => dispatch({ type: 'set_area', area })}
+            nextRackName={nextRackName}
             zoneProfiles={(zoneProfilesQuery.data ?? []).map((zp) => ({ id: zp.id, name: zp.name }))}
             floorCount={selectedLayout.floorCount}
             floor={state.floor}

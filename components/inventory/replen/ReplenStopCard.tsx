@@ -26,9 +26,16 @@ import { useCompleteReplenishment, useUnassignReplenishment } from '@/hooks/quer
 import { useToasts } from '@/hooks/useToasts'
 import { CompleteReplenError } from '@/services/supabase/replenService'
 import type { ReplenRouteStop } from '@/services/supabase/replenRouteService'
+import { locationTitle, type DisplayLocation } from '@/lib/locationDisplay'
 
 interface ReplenStopCardProps {
   stop: ReplenRouteStop
+  /** Friendly names for the two bins (mig 00094). The walk resolves them from
+   *  the warehouse locations it already caches — recommend-replen-route returns
+   *  codes only, and widening it would mean a DROP FUNCTION on a live RPC for
+   *  something one cached query already answers. */
+  fromLocation?: DisplayLocation
+  toLocation?: DisplayLocation
   active: boolean
   disabled: boolean
   onActivate: () => void
@@ -40,8 +47,12 @@ type Step = 'idle' | 'source' | 'plate' | 'qty' | 'destination'
 // React.FC deliberately: this repo ships no @types/react, so a plainly-typed
 // component's props do not include `key`, and the walk renders these in a list.
 export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
-  stop, active, disabled, onActivate, onDone,
+  stop, fromLocation, toLocation, active, disabled, onActivate, onDone,
 }) => {
+  // Fall back to the bare code when no name is available (a bulk site, or a bin
+  // predating mig 00094) — locationTitle already does exactly that.
+  const from = fromLocation ?? { code: stop.code }
+  const to = toLocation ?? { code: stop.toCode }
   const { addToast } = useToasts()
   const complete = useCompleteReplenishment()
   const unassign = useUnassignReplenishment()
@@ -148,9 +159,9 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
           </div>
           <p className="text-xs text-stone-500 font-mono mt-0.5">{stop.sku}</p>
           <p className="text-sm mt-1.5 flex items-center gap-1.5 flex-wrap">
-            <span className="font-mono text-stone-700">{stop.code}</span>
+            <span className="text-stone-700">{locationTitle(from)}</span>
             <ArrowRight className="w-3.5 h-3.5 text-stone-400" aria-hidden="true" />
-            <span className="font-mono text-emerald-700 font-semibold">{stop.toCode}</span>
+            <span className="text-emerald-700 font-semibold">{locationTitle(to)}</span>
             <span className="text-stone-400">·</span>
             <span className="tabular-nums text-stone-700">{stop.qtyBase}</span>
             {stop.huCode && <span className="text-[11px] font-mono text-stone-400">{stop.huCode}</span>}

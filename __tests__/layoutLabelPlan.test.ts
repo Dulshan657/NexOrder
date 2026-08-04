@@ -3,6 +3,7 @@ import {
   SHEET_GROUPS,
   groupForKind,
   labelContext,
+  MAX_CONTEXT_CHARS,
   planLabelJob,
   type LabelTargetRow,
 } from '@/supabase/functions/_shared/labels/layoutLabelPlan'
@@ -62,11 +63,47 @@ describe('SHEET_GROUPS', () => {
 })
 
 describe('labelContext', () => {
-  it('leads a slot label with the level role, which is what matters at the face', () => {
+  // Since mig 00094 a slot leads with its own NAME: that is the string the
+  // operator reads on the pick list, and a sticker that does not repeat it makes
+  // them translate between two vocabularies while holding a carton. The level
+  // role follows, being the next question once you are at the right rack.
+  it('leads a slot label with its own name, then the level role', () => {
     const context = labelContext(
-      row({ kind: 'SHELF', code: 'A3-04-L1', levelRoleName: 'Pick Zone', aisleCode: 'A3', zoneName: 'Chilled' }),
+      row({ kind: 'SHELF', code: 'A3-04-L1', name: 'Chiller · Rack 7 · L1', levelRoleName: 'Pick Zone', aisleCode: 'A3', zoneName: 'Chilled' }),
     )
-    expect(context).toBe('Pick Zone · A3 · Chilled')
+    expect(context).toBe('Chiller · Rack 7 · L1 · Pick Zone')
+  })
+
+  it('omits a pre-00094 generated name, which only repeats the coordinate', () => {
+    // `Bin 9,4` and `Level 4` say nothing the code above them does not.
+    expect(
+      labelContext(row({ kind: 'SHELF', code: 'A3-04-L1', name: 'Level 1', levelRoleName: 'Pick Zone', aisleCode: 'A3', zoneName: 'Chilled' })),
+    ).toBe('Pick Zone · A3 · Chilled')
+    expect(
+      labelContext(row({ kind: 'BIN', code: 'NEXG-B-9-4', name: 'Bin 9,4', levelRoleName: 'Pick Zone' })),
+    ).toBe('Pick Zone')
+  })
+
+  it('drops whole parts from the END rather than letting the sticker ellipsize', () => {
+    // labelArtwork shrinks to 5pt and then truncates mid-word, silently. A long
+    // area name would eat the level role that way; dropping zone-then-aisle
+    // keeps the part an operator at the rack actually needs.
+    const context = labelContext(
+      row({
+        kind: 'SHELF', code: 'A3-04-L1',
+        name: 'Cold Room North · Rack 12 · L4',
+        levelRoleName: 'Pick Zone', aisleCode: 'A3', zoneName: 'Chilled',
+      }),
+    )
+    expect(context.length).toBeLessThanOrEqual(MAX_CONTEXT_CHARS)
+    expect(context).toBe('Cold Room North · Rack 12 · L4')
+  })
+
+  it('never drops below one part, however long that part is', () => {
+    const context = labelContext(
+      row({ kind: 'SHELF', code: 'A3-04-L1', name: 'x'.repeat(80), levelRoleName: 'Pick Zone' }),
+    )
+    expect(context).toBe('x'.repeat(80))
   })
 
   it('leads a wayfinding label with the hierarchy instead', () => {
@@ -88,8 +125,8 @@ describe('labelContext', () => {
     expect(labelContext(row({ kind: 'STAGING', code: 'DOCK-1', name: 'Inbound dock' }))).toBe('Inbound dock')
   })
 
-  it('still produces a usable line for a legacy level with no role', () => {
-    const context = labelContext(row({ kind: 'SHELF', code: 'B1-02-L3', levelRoleName: null, aisleCode: 'B1' }))
+  it('still produces a usable line for a legacy level with no role or name', () => {
+    const context = labelContext(row({ kind: 'SHELF', code: 'B1-02-L3', name: 'Level 3', levelRoleName: null, aisleCode: 'B1' }))
     expect(context).toBe('B1')
     expect(context).not.toContain('null')
   })

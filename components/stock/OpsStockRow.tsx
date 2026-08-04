@@ -8,6 +8,7 @@ import type { ProductBatchBalance } from '../../services/supabase/inventoryServi
 import { decomposeToUoms, formatBreakdown } from '../../lib/uomDecompose';
 import { deriveDefaultUoms } from '../../lib/uom';
 import AdjustStockModal from '../admin/AdjustStockModal';
+import { locationOneLine, locationTitle } from '@/lib/locationDisplay';
 
 export interface Agg { onHand: number; allocated: number; available: number }
 
@@ -131,7 +132,11 @@ export const OpsStockRow: React.FC<OpsStockRowProps> = ({ product, agg, maxQty, 
                         <td className="px-3 py-2 text-stone-700">
                           <span className="inline-flex items-center gap-1">
                             <MapPin className="w-3 h-3 text-stone-400" />
-                            {b.locationCode ?? 'MAIN'} · {b.lotCode ? `lot ${b.lotCode}` : 'untracked'}
+                            {/* Name first (mig 00094); getBalancesByProduct
+                                already selects both, it was just being dropped. */}
+                            {locationTitle({ code: b.locationCode ?? 'MAIN', name: b.locationName })}
+                            {' · '}
+                            {b.lotCode ? `lot ${b.lotCode}` : 'untracked'}
                           </span>
                         </td>
                         <td className="px-3 py-2 text-stone-500">{b.expiryDate ?? '—'}</td>
@@ -162,7 +167,7 @@ export const OpsStockRow: React.FC<OpsStockRowProps> = ({ product, agg, maxQty, 
         <AdjustStockModal
           product={product}
           locationId={adjustTarget.locationId}
-          locationLabel={`${adjustTarget.locationCode ?? 'MAIN'} · ${adjustTarget.lotCode ? `lot ${adjustTarget.lotCode}` : 'untracked'}`}
+          locationLabel={`${locationOneLine({ code: adjustTarget.locationCode ?? 'MAIN', name: adjustTarget.locationName })} · ${adjustTarget.lotCode ? `lot ${adjustTarget.lotCode}` : 'untracked'}`}
           batchId={adjustTarget.batchId}
           currentOnHand={adjustTarget.onHand}
           onClose={() => setAdjustTarget(null)}

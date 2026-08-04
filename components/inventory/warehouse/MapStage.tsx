@@ -48,6 +48,10 @@ export interface MapStageProps {
   renderOverlay?: (cell: number) => ReactNode
   /** Location metadata for labelling a rack's exploded level stack (mig 00072). */
   locationsById?: Map<number, InventoryLocation>
+  /** Admin/Manager clicked an area's name to rename it (mig 00094). Passed
+   *  straight through; the canvas routes it via `guardClick` so a pan that ends
+   *  over the label does not open a dialog. */
+  onRenameArea?: (areaName: string) => void
 }
 
 export function MapStage({
@@ -68,6 +72,7 @@ export function MapStage({
   zoneTypeByProfileId,
   renderOverlay,
   locationsById,
+  onRenameArea,
 }: MapStageProps) {
   const { viewport, containerRef, handlers, fit, zoomIn, zoomOut, isPanning, didDrag, gesturesEnabled } = useMapViewport({
     placements,
@@ -163,6 +168,7 @@ export function MapStage({
         locationsById={locationsById}
         guardClick={guardClick}
         onHoverBin={handleHover}
+        onRenameArea={onRenameArea}
       />
       {hover && hoverInfo && (
         <BinHoverCard hover={hover} info={hoverInfo} viewport={viewport} />

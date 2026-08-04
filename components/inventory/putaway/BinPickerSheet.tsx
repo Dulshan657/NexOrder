@@ -28,6 +28,7 @@ import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import type { InventoryLocation, LevelRole, ProductWmsAttributes } from '@/types'
 import { binFillFromBalances, evaluateBinWarnings, isLevelRoleMismatch, resolveZoneProfileId } from './putawayGuards'
 import { baseUnitLabel, describeQuantity, toBaseQty, trimNumber, uomsForProduct } from './putawayFormat'
+import { locationSubtitle, locationTitle } from '@/lib/locationDisplay'
 
 interface BinPickerSheetProps {
   open: boolean
@@ -342,8 +343,12 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
                       chosenId === b.id ? 'bg-emerald-50' : mismatched ? 'bg-amber-50/40 hover:bg-amber-50' : 'hover:bg-stone-50'
                     }`}
                   >
-                    <span className="font-mono text-xs text-stone-700 shrink-0">{b.code}</span>
-                    <span className="text-xs text-stone-400 truncate flex-1">{b.name}</span>
+                    {/* Name first, code second (mig 00094) — this list is
+                        searched by both, so both stay visible. */}
+                    <span className="text-xs text-stone-700 truncate flex-1">{locationTitle(b)}</span>
+                    {locationSubtitle(b) && (
+                      <span className="font-mono text-[10px] text-stone-400 shrink-0">{locationSubtitle(b)}</span>
+                    )}
                     {mismatched && (
                       <span
                         className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 shrink-0"
@@ -375,8 +380,12 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
             }`}
           >
             <p className={`text-sm ${roleOverride ? 'text-amber-800' : 'text-emerald-800'}`}>
-              <span className="font-mono">{chosen.code}</span>
-              <span className={roleOverride ? 'text-amber-700/70' : 'text-emerald-700/70'}> · {chosen.name}</span>
+              <span className="font-medium">{locationTitle(chosen)}</span>
+              {locationSubtitle(chosen) && (
+                <span className={`font-mono text-xs ${roleOverride ? 'text-amber-700/70' : 'text-emerald-700/70'}`}>
+                  {' '}{locationSubtitle(chosen)}
+                </span>
+              )}
             </p>
             {warnings.map((w) => (
               <p key={w.code} className="flex items-start gap-1.5 text-xs text-amber-700">

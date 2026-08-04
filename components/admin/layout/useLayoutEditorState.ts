@@ -10,6 +10,17 @@
 import { useReducer } from 'react'
 import type { LayoutObject, LayoutObjectType, LayoutPlacement, LevelRole, RackLevel } from '@/types'
 import { applyTemplate } from '@/components/warehouse/levels/rackLevels'
+import {
+  areaNameAt,
+  areaNameAtIndexed,
+  assignAutoNames,
+  buildAreaIndex,
+  composeName,
+  describeSeqRanges,
+  highWaterFromRows,
+  nextSeqForArea,
+  type NamingUnit,
+} from '@/lib/locationNaming'
 
 // 'rack' is the generic storage-paint tool; WHICH form it draws is carried by
 // `activeForm` (mig 00061 storage forms), so every drawable form shares one tool.
@@ -66,6 +77,15 @@ export interface EditorPlacement {
   /** Per-instance level configuration (mig 00072); undefined = not a levelled
    *  rack (or a levelled form whose levels haven't been customised/created yet). */
   levels?: RackLevel[]
+  // ── Name provenance (mig 00094) ───────────────────────────────────────────
+  /** The rack number inside `nameArea`. Assigned once and never reassigned, so
+   *  deleting a rack leaves a permanent gap. null = never numbered. */
+  nameSeq?: number | null
+  /** The pool that number came from — NOT derived from geometry, so painting a
+   *  different area over a rack does not release its claim. */
+  nameArea?: string | null
+  /** false = a human typed this name; an area rename must leave it alone. */
+  nameIsAuto?: boolean
 }
 
 export interface EditorObject {
@@ -115,6 +135,36 @@ export interface EditorState {
    *  by generate_bins (how many cells the wizard skipped). Cleared by every
    *  successful paint; deliberately untouched by every other action. */
   blockedAt: BlockedPaint | null
+  /**
+   * Area renames made since the last save, oldest first (mig 00094).
+   *
+   * `save_geometry` is a FULL REPLACE, so "renamed Chiller to Cold Room" and
+   * "erased Chiller, painted Cold Room" produce byte-identical payloads. The
+   * server cannot tell them apart and so cannot infer that the bins inside
+   * should follow — it has to be told. This is the telling.
+   *
+   * Coalesced (A→B then B→C becomes A→C) and cleared by `mark_saved`.
+   */
+  pendingRenames: Array<{ from: string; to: string }>
+  /**
+   * Pool → the highest rack number already handed out ANYWHERE in this
+   * warehouse, including on racks no longer in this layout (mig 00094).
+   *
+   * Seeded by `load` from the warehouse's locations. Deleting a saved rack drops
+   * its placement row but not its `locations` row — publishing never retires a
+   * bin and its QR label is still on the racking — so without this floor the
+   * next rack drawn would take a number that is live on the floor.
+   */
+  seqFloor: Record<string, number>
+  /**
+   * What the last batch fill actually named, e.g. `{ count: 40, ranges:
+   * 'Chiller 1–24, Bulk 1–16' }`.
+   *
+   * Same hint channel as `blockedAt`, and it exists for the same reason: the
+   * wizard closes its modal on submit, so a fill spanning two areas would mint
+   * two number ranges the operator never sees. Consumers key off `seq`.
+   */
+  lastFill: { count: number; ranges: string; seq: number } | null
 }
 
 export interface BlockedPaint {
@@ -146,10 +196,13 @@ export type EditorAction =
   | { type: 'update_object'; ref: string; patch: { meta?: Record<string, unknown> } }
   | { type: 'delete_selected' }
   | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number; levelTemplate?: RackLevel[] }
-  | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number }> }
+  | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number; nameSeq?: number | null; nameArea?: string | null; nameIsAuto?: boolean }> }
   // `level_location_ids` is present only for a levelled rack: level_index -> the
   // SHELF location id the server created/kept for it (mig 00072).
-  | { type: 'mark_saved'; refMap: Array<{ client_ref: string; location_id: number; level_location_ids?: Record<number, number> }> }
+  // `name`/`name_seq`/`name_area` are the SERVER's answer, which is authoritative:
+  // it recomputes from the database rather than trusting the wire, so a stale tab
+  // is corrected here rather than silently persisting a wrong number.
+  | { type: 'mark_saved'; refMap: Array<{ client_ref: string; location_id: number; level_location_ids?: Record<number, number>; name?: string; name_seq?: number | null; name_area?: string | null }> }
   | { type: 'apply_auto_connect'; objects: Array<Pick<EditorObject, 'objectType' | 'floor' | 'x' | 'y' | 'w' | 'h'> & Partial<Pick<EditorObject, 'meta' | 'stagingLocationId'>>> }
   // Wholesale object replace from resolveLayoutOverlaps (the "Clean up overlaps"
   // repair). Placements are never touched by it.
@@ -159,7 +212,55 @@ export type EditorAction =
   | { type: 'apply_levels_to_selection'; levels: RackLevel[] }
 
 export function initialEditorState(codePrefix = 'W'): EditorState {
-  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, selectedRefs: new Set(), dirty: false, seq: 1, codePrefix, activeForm: null, activeArea: null, blockedAt: null }
+  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, selectedRefs: new Set(), dirty: false, seq: 1, codePrefix, activeForm: null, activeArea: null, blockedAt: null, pendingRenames: [], lastFill: null, seqFloor: {} }
+}
+
+/** `EditorState.seqFloor` as the naming module wants it. */
+export function seqFloorMap(state: Pick<EditorState, 'seqFloor'>): Map<string, number> {
+  return new Map(Object.entries(state.seqFloor))
+}
+
+/**
+ * Editor placements as the naming module sees them.
+ *
+ * The single adapter between editor state and _shared/wie/locationNaming — so the
+ * designer's preview of a name is produced by the very function the server runs,
+ * not by a second copy of the rule.
+ */
+export function editorUnits(placements: readonly EditorPlacement[]): NamingUnit[] {
+  return placements.map((p) => ({
+    ref: p.clientRef,
+    floor: p.floor,
+    x: p.x,
+    y: p.y,
+    w: p.w,
+    h: p.h,
+    name: p.name,
+    nameIsAuto: p.nameIsAuto !== false,
+    nameSeq: p.nameSeq ?? null,
+    nameArea: p.nameArea ?? null,
+    levelIndexes: p.levels?.map((l) => l.levelIndex),
+  }))
+}
+
+/**
+ * Fold a new rename into the pending list.
+ *
+ * A→B followed by B→C is one rename A→C, not two: the server applies them in
+ * order over the POST-rename geometry, and by the time it runs there is no "B"
+ * left on the floor for the second entry to match. Renaming back to where you
+ * started removes the entry entirely.
+ */
+export function coalesceRename(
+  pending: ReadonlyArray<{ from: string; to: string }>,
+  from: string,
+  to: string,
+): Array<{ from: string; to: string }> {
+  const existing = pending.findIndex((r) => r.to === from)
+  if (existing === -1) return [...pending, { from, to }]
+  const merged = { from: pending[existing].from, to }
+  const next = pending.filter((_, i) => i !== existing)
+  return merged.from === merged.to ? next : [...next, merged]
 }
 
 /** Single-selection helper: `selectedRefs` always mirrors `selectedRef` as its
@@ -366,8 +467,14 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
     case 'rename_area': {
       const to = action.to.trim()
       if (!to || to === action.from) return state
+      // EVERY floor, not just this one (mig 00094). Rack numbers are pooled per
+      // area NAME across floors — two floors both painted "Chiller" share one
+      // 1..N run — so renaming one floor's cells while the other floor's racks
+      // renumber into the new pool would leave the two disagreeing. 00090's "an
+      // area's identity is its name, PER FLOOR" is about region merging, which is
+      // a flood fill and genuinely cannot cross floors; label identity is not.
       const objects = state.objects.map((o) =>
-        o.floor === state.floor && o.objectType === 'area' && (o.meta?.name ?? '') === action.from
+        o.objectType === 'area' && (o.meta?.name ?? '') === action.from
           ? { ...o, meta: { ...o.meta, name: to, zoneProfileId: action.zoneProfileId } }
           : o,
       )
@@ -376,7 +483,13 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
       const activeArea = state.activeArea?.name === action.from
         ? { name: to, zoneProfileId: action.zoneProfileId }
         : state.activeArea
-      return { ...state, objects, activeArea, dirty: true }
+      return {
+        ...state,
+        objects,
+        activeArea,
+        pendingRenames: coalesceRename(state.pendingRenames, action.from, to),
+        dirty: true,
+      }
     }
 
     case 'set_floor':
@@ -475,9 +588,18 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         const ref = `p${state.seq}`
         const f = state.activeForm
         const code = `${state.codePrefix}-B-${x}-${y}`
+        // The code stays a grid coordinate — it is the QR payload and the scan
+        // identity. The NAME is what the operator reads, so it comes from the
+        // area they painted plus the next free number in that area's pool.
+        // `areaNameAt` (linear) rather than buildAreaIndex: rasterizing a
+        // 2000-cell area on every pointer move would be absurd, and a test pins
+        // that the two agree cell-for-cell.
+        const nameArea = areaNameAt(state.objects, state.floor, x, y)
+        const nameSeq = nextSeqForArea(editorUnits(state.placements), nameArea, seqFloorMap(state))
         const placement: EditorPlacement = {
           clientRef: ref, floor: state.floor, x, y, w: 1, h: 1, rotation: 0,
-          kind: 'BIN', code, name: `Bin ${x},${y}`,
+          kind: 'BIN', code, name: composeName(nameArea, nameSeq),
+          nameSeq, nameArea, nameIsAuto: true,
           capacitySlots: f?.capacitySlots ?? 10, slotKind: f?.slotKind ?? 'pallet',
           weightCapacityKg: f?.weightCapacityKg, storageTypeId: f?.storageTypeId,
           // A form with a standard level layout hands every rack it paints that
@@ -497,12 +619,21 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
       return { ...state, ...singleSelect(objHit?.clientRef ?? null) }
     }
 
-    case 'update_placement':
+    case 'update_placement': {
+      // Typing a name IS the definition of a custom name, so the provenance is
+      // forced here rather than left to the call site — the same rule
+      // mutate-warehouse-location applies server-side. Releasing the number is
+      // deliberate: the row no longer holds a claim on its area's pool, so the
+      // next rack drawn there takes the next number rather than colliding.
+      const patch = action.patch.name !== undefined
+        ? { ...action.patch, nameIsAuto: false, nameSeq: null, nameArea: null }
+        : action.patch
       return {
         ...state,
-        placements: state.placements.map((p) => (p.clientRef === action.ref ? { ...p, ...action.patch } : p)),
+        placements: state.placements.map((p) => (p.clientRef === action.ref ? { ...p, ...patch } : p)),
         dirty: true,
       }
+    }
 
     case 'update_object':
       return {
@@ -530,6 +661,14 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
       // RackWizard closes its modal on submit, so "Generate 40" quietly producing
       // 28 bins was invisible.
       const index = buildOccupancyIndex(state)
+      // A fill can cross several areas, so rasterize once and carry a per-pool
+      // high-water mark through the loop rather than re-deriving it per cell. The
+      // loop already walks dy-then-dx, which is the same reading order
+      // assignAutoNames sorts into — so the server's recomputation agrees.
+      const areaIndex = buildAreaIndex(state.objects)
+      const highWater = new Map(
+        assignAutoNames(editorUnits(state.placements), areaIndex, { minSeq: seqFloorMap(state) }).highWater,
+      )
       const added: EditorPlacement[] = []
       let seq = state.seq
       let skipped = 0
@@ -545,9 +684,13 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
             continue
           }
           const code = `${state.codePrefix}-B-${x}-${y}`
+          const nameArea = areaNameAtIndexed(areaIndex, state.floor, x, y)
+          const nameSeq = (highWater.get(nameArea) ?? 0) + 1
+          highWater.set(nameArea, nameSeq)
           added.push({
             clientRef: `p${seq++}`, floor: state.floor, x, y, w: 1, h: 1, rotation: 0,
-            kind: 'BIN', code, name: `Bin ${x},${y}`,
+            kind: 'BIN', code, name: composeName(nameArea, nameSeq),
+            nameSeq, nameArea, nameIsAuto: true,
             capacitySlots: action.capacitySlots ?? 10, slotKind: action.slotKind ?? 'pallet',
             weightCapacityKg: action.weightCapacityKg,
             zoneProfileId: action.zoneProfileId, storageTypeId: action.storageTypeId,
@@ -561,7 +704,22 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
       // A fully-blocked fill still has to report, so return the hint rather than
       // the untouched state.
       if (added.length === 0) return blocked ? { ...state, blockedAt: blocked } : state
-      return { ...state, placements: [...state.placements, ...added], seq, dirty: true, blockedAt: blocked }
+      // Report which numbers were minted, per area — the wizard's modal is gone
+      // by now, so this is the operator's only sight of them.
+      const ranges = describeSeqRanges(
+        added.map((p) => ({
+          ref: p.clientRef, areaName: p.nameArea ?? '', seq: p.nameSeq ?? 0, name: p.name,
+          levelNames: {}, assigned: true, restamped: false, isAuto: true,
+        })),
+      )
+      return {
+        ...state,
+        placements: [...state.placements, ...added],
+        seq,
+        dirty: true,
+        blockedAt: blocked,
+        lastFill: { count: added.length, ranges, seq: (state.lastFill?.seq ?? 0) + 1 },
+      }
     }
 
     case 'load': {
@@ -593,8 +751,12 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         return {
           clientRef: `p${seq++}`, locationId: p.locationId, floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h,
           rotation: p.rotation, kind: meta?.kind ?? 'BIN', code: meta?.code ?? `L${p.locationId}`,
+          // The `?? Bin N` fallback stays: it means "the server sent me no
+          // metadata for this row", not "this is how bins are named".
           name: meta?.name ?? `Bin ${p.locationId}`, capacitySlots: meta?.capacitySlots, slotKind: meta?.slotKind,
           weightCapacityKg: meta?.weightCapacityKg, storageTypeId: meta?.storageTypeId,
+          nameSeq: meta?.nameSeq ?? null, nameArea: meta?.nameArea ?? null,
+          nameIsAuto: meta?.nameIsAuto ?? false,
         }
       })
 
@@ -626,6 +788,8 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
           clientRef: `p${seq++}`, locationId: rackId, floor: g.floor, x: g.x, y: g.y, w: g.w, h: g.h,
           rotation: g.rotation, kind: 'RACK', code: rackMeta?.code ?? `R${rackId}`,
           name: rackMeta?.name ?? `Rack ${rackId}`, storageTypeId: rackMeta?.storageTypeId,
+          nameSeq: rackMeta?.nameSeq ?? null, nameArea: rackMeta?.nameArea ?? null,
+          nameIsAuto: rackMeta?.nameIsAuto ?? false,
           levels,
         })
       }
@@ -635,7 +799,12 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
         // lost imported zone-label names on the next manual save.
         meta: o.meta, stagingLocationId: o.stagingLocationId,
       }))
-      return { ...state, placements, objects, ...singleSelect(null), dirty: false, seq }
+      // Every number this warehouse has ever handed out — codeByLocation covers
+      // the whole warehouse, not just this layout, so a rack that was deleted
+      // from the layout but still exists (and still has a label on it) keeps its
+      // claim. See EditorState.seqFloor.
+      const seqFloor = Object.fromEntries(highWaterFromRows(Object.values(action.codeByLocation)))
+      return { ...state, placements, objects, ...singleSelect(null), dirty: false, seq, pendingRenames: [], seqFloor }
     }
 
     case 'mark_saved': {
@@ -652,8 +821,20 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
           .filter((r) => r.level_location_ids)
           .map((r) => [r.client_ref, r.level_location_ids as Record<number, number>]),
       )
+      const namesByRef = new Map(action.refMap.map((r) => [r.client_ref, r]))
+      // Raise the floor with what the server just committed. The editor hydrates
+      // `seqFloor` once per layout, so without this a rack drawn, saved and then
+      // deleted in one session would hand its number to the next rack — while
+      // its label is on the racking.
+      const seqFloor = { ...state.seqFloor }
+      for (const r of action.refMap) {
+        if (r.name_seq == null) continue
+        const pool = (r.name_area ?? '').trim()
+        seqFloor[pool] = Math.max(seqFloor[pool] ?? 0, r.name_seq)
+      }
       return {
         ...state,
+        seqFloor,
         placements: state.placements.map((p) => {
           if (!byRef.has(p.clientRef)) return p
           const levelIds = levelsByRef.get(p.clientRef)
@@ -663,8 +844,15 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
                 return id === undefined ? l : { ...l, locationId: id }
               })
             : p.levels
-          return { ...p, locationId: byRef.get(p.clientRef), levels }
+          // Adopt the server's name/number where it sent one. It recomputed from
+          // the database, so this is where a stale tab's guess gets corrected.
+          const named = namesByRef.get(p.clientRef)
+          const naming = named?.name
+            ? { name: named.name, nameSeq: named.name_seq ?? null, nameArea: named.name_area ?? null }
+            : {}
+          return { ...p, locationId: byRef.get(p.clientRef), levels, ...naming }
         }),
+        pendingRenames: [],
         dirty: false,
       }
     }

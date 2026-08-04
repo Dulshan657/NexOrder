@@ -30,7 +30,8 @@ import { MERGED_OBJECT_TYPES, objectRegions, regionFillPath, regionOutlinePath }
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { groupPlacementsByCell } from '@/components/admin/layout/LayoutCanvas'
 import { DEFAULT_BIN_FILL, DEFAULT_BIN_STROKE } from './warehouseOverlays'
-import { labelTier, screenFont, fitCode, commonCodePrefix, shortCode, coarseCode } from './mapLabels'
+import { labelTier, screenFont, fitCode, fitName, commonCodePrefix, shortCode, coarseCode } from './mapLabels'
+import { isUninformativeName, locationOneLine, nameTail } from '@/lib/locationDisplay'
 import { spineRows, spineFits, rollupFill } from './levelSpine'
 import { zoneTint, zoneTypeLabel, ZONE_FILL_OPACITY, ZONE_STROKE_OPACITY } from './zoneTints'
 import type { ZoneRegion } from './zoneRegions'
@@ -53,6 +54,9 @@ const MIN_OBJECT_NAME_PX = 48
  *  already holds — none of this is a new query. */
 export interface BinInfo {
   code: string
+  /** The operator-facing name (mig 00094), e.g. "Chiller · Rack 7". Absent on a
+   *  warehouse drawn before names existed, where the label falls back to code. */
+  name?: string | null
   capacitySlots?: number
   slotKind?: 'pallet' | 'carton'
   /** Distinct products in the bin; drives the "×3" badge and the hover card. */
@@ -126,6 +130,11 @@ export interface WarehouseCanvasProps {
   guardClick?: (fn: () => void) => void
   /** Pointer entered/left a bin; the stage turns this into a hover card. */
   onHoverBin?: (hover: BinHover | null) => void
+  /** Admin/Manager clicked an area's NAME to rename it (mig 00094). Omitted →
+   *  the label is inert, as it always was. Note the target is the label, never
+   *  the wash: the wash lies under the racks with pointerEvents="none" so it
+   *  cannot steal their hit tests, and a handler there would fight that. */
+  onRenameArea?: (areaName: string) => void
 }
 
 export function WarehouseCanvas({
@@ -148,6 +157,7 @@ export function WarehouseCanvas({
   locationsById,
   guardClick,
   onHoverBin,
+  onRenameArea,
 }: WarehouseCanvasProps) {
   // Operator-managed role vocabulary (mig 00081). A level whose role has been
   // retired still renders with its own colour, because getLevelRoles returns
@@ -555,15 +565,28 @@ export function WarehouseCanvas({
           const name = areaName(region)
           const anchor = region.cells[0]
           if (!name || !anchor) return null
+          // The NAME is the rename target, never the wash. The wash sits under
+          // the racks with pointerEvents="none" precisely so it cannot steal
+          // their hit tests; giving it a click handler would fight that.
+          const clickable = Boolean(onRenameArea)
           return (
             <text
               key={`area-name-${region.key}`}
               x={anchor.x * cell + u(3)}
               y={Math.max(u(11), anchor.y * cell - u(3))}
               fontSize={u(12)} fontWeight={700} fontFamily="sans-serif"
-              fill={areaFill(region)} pointerEvents="none"
+              fill={areaFill(region)}
+              pointerEvents={clickable ? 'auto' : 'none'}
+              style={clickable ? { cursor: 'pointer' } : undefined}
+              onClick={clickable ? (e: { stopPropagation: () => void }) => {
+                e.stopPropagation()
+                // Through the stage's pan guard, so finishing a drag over the
+                // label does not pop a dialog.
+                guard(() => onRenameArea!(name))
+              } : undefined}
             >
-              {name}
+              {name}{clickable ? ' ✎' : ''}
+              {clickable && <title>Rename “{name}” and the bins inside it</title>}
             </text>
           )
         })}
@@ -637,6 +660,7 @@ export function WarehouseCanvas({
               locationId: lvl.locationId,
               role,
               fullCode: loc?.code ?? `#${lvl.locationId}`,
+              fullName: loc?.name ?? null,
               code: loc ? shortCode(loc.code, sharedPrefix) : `#${lvl.locationId}`,
               idx: lvl.levelIndex ?? loc?.levelIndex ?? 0,
               meta,
@@ -700,7 +724,10 @@ export function WarehouseCanvas({
                     />
                     {/* Elision means the visible code can be partial, so the full
                         one lives in a title — same contract as the bins above. */}
-                    <title>{row.fullCode}{row.meta ? ` · ${row.meta}` : ''}</title>
+                    <title>
+                      {locationOneLine({ code: row.fullCode, name: row.fullName })}
+                      {row.meta ? ` · ${row.meta}` : ''}
+                    </title>
                     <text
                       x={stackX + padX} y={y + rowH / 2 + font * 0.35}
                       fontSize={font} fontFamily="monospace" fill="#1c1917"
@@ -753,7 +780,9 @@ export function WarehouseCanvas({
 /** Native SVG tooltip — the no-pointer and assistive fallback for the stage's
  *  hover card. Kept terse: a `<title>` has no layout, so it must read as one line. */
 function hoverTitle(info: BinInfo, fillPct: number | null, levelCount: number): string {
-  const parts = [info.code]
+  // Name AND code, always — the drawn label is elided (and since mig 00094 may
+  // be the name's tail alone), so this is where the full pair lives.
+  const parts = [locationOneLine(info)]
   if (levelCount > 0) parts.push(`${levelCount} levels`)
   if (fillPct != null) parts.push(`${Math.round(fillPct * 100)}% full`)
   if (info.capacitySlots) parts.push(`${info.capacitySlots} ${info.slotKind ?? 'slot'}s`)
@@ -791,14 +820,32 @@ function renderBinLabel({
   if (tier === 'none' || !info?.code) return null
 
   const codeFont = u(9)
-  // Coarse-then-fine: a tight rect gets the aisle ("F01"), a roomy one the full
-  // in-warehouse code ("F01-L01"). See coarseCode's note on why the tail is the
-  // wrong thing to keep when the whole floor is in view.
-  const source = tier === 'full'
-    ? shortCode(info.code, sharedPrefix)
-    : coarseCode(info.code, sharedPrefix)
-  const code = fitCode(source, rectW - u(4), codeFont)
-  if (!code) return null
+  // Prefer the friendly name (mig 00094), and specifically its TAIL: the area
+  // name is already drawn across the whole region as its own wayfinding layer,
+  // so repeating "Chiller" on each of its forty bins spends the entire label on
+  // the one part the operator can already see. "Rack 7" is what is left.
+  //
+  // Falls back to the code — for a warehouse that predates 00094 (where `name`
+  // is `Bin 9,4`, strictly worse than the code) and for any rect too narrow for
+  // even the tail. A truncated name stub is worse than a whole code.
+  const label = (() => {
+    const tail = isUninformativeName(info.name, info.code) ? '' : nameTail(info.name)
+    if (tail) {
+      const fitted = fitName(tail, rectW - u(4), codeFont)
+      if (fitted) return { text: fitted, mono: false }
+    }
+    // Coarse-then-fine: a tight rect gets the aisle ("F01"), a roomy one the full
+    // in-warehouse code ("F01-L01"). See coarseCode's note on why the tail is the
+    // wrong thing to keep when the whole floor is in view.
+    const source = tier === 'full'
+      ? shortCode(info.code, sharedPrefix)
+      : coarseCode(info.code, sharedPrefix)
+    const fitted = fitCode(source, rectW - u(4), codeFont)
+    return fitted ? { text: fitted, mono: true } : null
+  })()
+  if (!label) return null
+  const code = label.text
+  const advance = label.mono ? 0.6 : 0.52
 
   const detail: string[] = []
   if (fillPct != null) detail.push(`${Math.round(fillPct * 100)}%`)
@@ -815,16 +862,17 @@ function renderBinLabel({
         // A code drawn straight over the level spine is unreadable; this is the
         // smallest thing that restores contrast without hiding the stripes.
         <rect
-          x={cx - (code.length * codeFont * 0.6) / 2 - u(2)}
+          x={cx - (code.length * codeFont * advance) / 2 - u(2)}
           y={hasSecond ? cy - u(10) : cy - u(6)}
-          width={code.length * codeFont * 0.6 + u(4)}
+          width={code.length * codeFont * advance + u(4)}
           height={hasSecond ? u(20) : u(12)}
           fill="#ffffff" fillOpacity={0.78} rx={u(2)}
         />
       )}
       <text
         x={cx} y={hasSecond ? cy - u(0.5) : cy + u(3.2)}
-        textAnchor="middle" fontSize={codeFont} fontFamily="monospace" fill="#1c1917"
+        textAnchor="middle" fontSize={codeFont}
+        fontFamily={label.mono ? 'monospace' : 'sans-serif'} fill="#1c1917"
       >
         {code}
       </text>

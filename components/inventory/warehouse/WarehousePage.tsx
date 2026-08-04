@@ -12,6 +12,7 @@
 
 import React, { useEffect, useMemo, useRef } from 'react'
 import { LayoutGrid } from 'lucide-react'
+import { UserRole } from '@/types'
 import type { User, Warehouse } from '@/types'
 import type { NavTarget as SetupNavTarget } from '@/lib/warehouseSetup/steps'
 import { WarehouseSetupPanel } from './setup/WarehouseSetupPanel'
@@ -169,7 +170,11 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
           // Keyed wrapper: remount the whole workspace on warehouse/layout change
           // so floor/selection/overlay/dry-run state can't leak across sites.
           <div key={`${effectiveWarehouseId}:${publishedLayout!.id}`}>
-            <RackedWorkspace warehouseId={effectiveWarehouseId} layoutId={publishedLayout!.id} />
+            <RackedWorkspace
+              warehouseId={effectiveWarehouseId}
+              layoutId={publishedLayout!.id}
+              canRename={currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER}
+            />
           </div>
         ) : (
           <WarehouseEmptyState

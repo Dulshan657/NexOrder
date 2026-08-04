@@ -14,6 +14,9 @@
 // to a literal (see the level-roles contract in _shared/wie/levelRoles.ts).
 
 import type { SheetPresetName } from '../labelSheet.ts'
+// Same predicate the screens use, so a name the UI refuses to show as a
+// headline is never printed on a sticker either.
+import { isUninformativeName } from '../wie/locationNaming.ts'
 
 export type SheetGroup = 'wayfinding' | 'slots' | 'staging'
 
@@ -78,30 +81,56 @@ export function presetForGroup(group: SheetGroup): SheetPresetName {
 }
 
 /**
+ * The most a 63×34 mm sticker's context line holds at a legible size.
+ *
+ * `labelArtwork` already shrinks the context to MIN_CONTEXT_FONT_SIZE (5 pt) and
+ * then ellipsizes — SILENTLY. That is fine for one part too many and terrible
+ * for the case a long area name creates, where the level role at the end is what
+ * gets eaten. Dropping a whole part, in a stated order, makes it a decision
+ * rather than a font-shrink accident.
+ */
+export const MAX_CONTEXT_CHARS = 36
+
+/**
  * The second line of a label — where this thing sits and what it is for.
  *
- * A slot leads with its level role because that is what an operator is checking
- * when they are already standing at the right rack ("is this the pick zone or
- * the reserve above it?"). A sign leads with the hierarchy, because someone
- * reading it from across the floor is still navigating. That ordering also
- * decides what survives truncation on a 63x34mm sticker, which is the real
- * reason it is not just alphabetical.
+ * A SLOT now leads with its own NAME (mig 00094): "Chiller · Rack 7 · L2" is
+ * the string the operator reads on the pick list, and a sticker that does not
+ * repeat it forces them to translate between two vocabularies while holding a
+ * carton. The level role follows, because that is the next question once you
+ * are at the right rack ("pick zone, or the reserve above it?").
+ *
+ * A SIGN still leads with the hierarchy — someone reading a rack sign from
+ * across the floor is navigating, not confirming.
+ *
+ * The order also decides what survives truncation, which is the real reason it
+ * is not alphabetical: parts are dropped from the END until the line fits.
  *
  * Pieces that merely restate the location's own identity are dropped: a zone
  * label reading "Chilled · Chilled" helps nobody.
  */
 export function labelContext(row: LabelTargetRow): string {
   const upper = (row.kind ?? '').toUpperCase()
+  const isSlot = groupForKind(upper) === 'slots'
+
+  // A name worth printing. `Bin 9,4` and `Level 4` are the pre-00094 generated
+  // names — they repeat the coordinate the code already carries — so they are
+  // not printed as context, exactly as before.
+  const ownName = isSlot && !isUninformativeName(row.name, row.code ?? '') ? row.name : null
+
+  // When the name IS being printed, only the code may filter a part out. Leaving
+  // the name in this set would make it filter itself.
   const own = new Set(
-    [row.name, row.code].filter((v): v is string => !!v).map((v) => v.toLowerCase()),
+    [ownName ? null : row.name, row.code]
+      .filter((v): v is string => !!v)
+      .map((v) => v.toLowerCase()),
   )
 
   const zone = upper === 'ZONE' ? null : row.zoneName
   const aisle = upper === 'AISLE' ? null : row.aisleCode
   const role = row.levelRoleName
 
-  const ordered =
-    groupForKind(upper) === 'slots' ? [role, aisle, zone] : [zone, aisle, role]
+  const ordered = isSlot ? [ownName, role, aisle, zone] : [zone, aisle, role]
 
   const seen = new Set<string>()
   const parts = ordered.filter((part): part is string => {
@@ -111,6 +140,9 @@ export function labelContext(row: LabelTargetRow): string {
     seen.add(key)
     return true
   })
+
+  // Drop from the END until it fits — never mid-word, and never below one part.
+  while (parts.length > 1 && parts.join(' · ').length > MAX_CONTEXT_CHARS) parts.pop()
 
   if (parts.length > 0) return parts.join(' · ')
   // Nothing situates it — fall back to its own name. Never the code: that is

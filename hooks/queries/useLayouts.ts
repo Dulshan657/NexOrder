@@ -14,6 +14,7 @@ import {
   type SavePlacementInput,
   type SaveObjectInput,
 } from '@/services/supabase/layoutService'
+import { warehouseLocationKeys } from './useWarehouseLocations'
 
 export const layoutKeys = {
   byWarehouse: (warehouseId: number) => ['layouts', warehouseId] as const,
@@ -82,12 +83,24 @@ export function useDeleteLayout(warehouseId: number) {
   })
 }
 
-export function useSaveGeometry(layoutId: number) {
+export function useSaveGeometry(layoutId: number, warehouseId?: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ placements, objects }: { placements: SavePlacementInput[]; objects: SaveObjectInput[] }) =>
-      saveGeometry(layoutId, placements, objects),
-    onSuccess: () => qc.invalidateQueries({ queryKey: layoutKeys.detail(layoutId) }),
+    mutationFn: ({ placements, objects, areaRenames }: {
+      placements: SavePlacementInput[]
+      objects: SaveObjectInput[]
+      areaRenames?: ReadonlyArray<{ from: string; to: string }>
+    }) => saveGeometry(layoutId, placements, objects, areaRenames ?? []),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: layoutKeys.detail(layoutId) })
+      // A save can now rewrite `locations.name` (mig 00094 — an area rename
+      // cascades to every auto-named bin inside it), and the designer reads
+      // names from the LOCATIONS query, not the layout detail. Without this the
+      // renamed bins keep their old names until a hard reload.
+      if (warehouseId) {
+        qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) })
+      }
+    },
   })
 }
 

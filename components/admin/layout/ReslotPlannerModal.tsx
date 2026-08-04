@@ -12,6 +12,9 @@ import { usePlanReslot } from '@/hooks/queries/useReslotPlan'
 import type { CommitMove } from '@/services/supabase/reslotService'
 import type { ReslotMove } from '@/services/supabase/reslotService'
 import type { Warehouse } from '@/types'
+import { locationOneLine } from '@/lib/locationDisplay'
+import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
+import { buildDisplayLookup } from '@/lib/locationLookup'
 
 interface ReslotPlannerModalProps {
   warehouse: Warehouse
@@ -24,6 +27,8 @@ interface ReslotPlannerModalProps {
 
 export function ReslotPlannerModal({ warehouse, layoutId, publishing, onCancel, onApprove }: ReslotPlannerModalProps) {
   const plan = usePlanReslot()
+  const { data: locations } = useWarehouseLocations(warehouse.id)
+  const binById = useMemo(() => buildDisplayLookup(locations), [locations])
   // Editable destination override per move, keyed by move index.
   const [overrides, setOverrides] = useState<Record<number, number>>({})
 
@@ -48,7 +53,17 @@ export function ReslotPlannerModal({ warehouse, layoutId, publishing, onCancel, 
     [moves, overrides],
   )
 
-  const binLabel = (id: number) => data?.bins.find((b) => b.locationId === id)?.code ?? `#${id}`
+  // Name-first with the code alongside (mig 00094). plan-reslot's bins come
+  // from wie_putaway_candidates, which returns codes and no name — and widening
+  // that RPC would mean a DROP FUNCTION on a live function for something the
+  // cached warehouse locations already answer. So resolve by id from those, and
+  // fall back to the plan's own code when a bin is not in the list.
+  const binLabel = (id: number) => {
+    const named = binById.get(id)
+    if (named) return locationOneLine(named)
+    const bin = data?.bins.find((b) => b.locationId === id)
+    return bin ? bin.code : `#${id}`
+  }
   const topFactor = (m: ReslotMove) =>
     [...(m.breakdown?.factors ?? [])].sort((a, b) => b.weighted - a.weighted)[0]?.detail ?? ''
 

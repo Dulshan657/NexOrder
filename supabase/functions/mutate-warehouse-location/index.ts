@@ -23,6 +23,23 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 // built it — invisible until replenishment routing started pricing a pull.
 import { ACCESS_OFFSET_STEP_M } from '../_shared/wie/levelGeometry.ts'
 import { assertValidRoles, loadActiveRoleKeys } from '../_shared/levelRoleLookup.ts'
+// Friendly names (mig 00094). The rules are pure and shared with the browser, so
+// the rename dialog's preview IS this function's decision evaluated early.
+import {
+  NAME_SEP,
+  areaForRect,
+  areaNameIssue,
+  assignAutoNames,
+  buildAreaIndex,
+  composeName,
+  sanitizeAreaName,
+  type NamingUnit,
+} from '../_shared/wie/locationNaming.ts'
+import {
+  applyNameWrites,
+  loadAreaHighWater,
+  type NameWrite,
+} from '../_shared/locationNamingWrite.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 const NODE_KINDS = ['ZONE', 'BIN', 'SHELF'] as const
@@ -58,9 +75,49 @@ const setLevelsSchema = z.object({
   weight_capacity_kg: z.number().nonnegative().nullable().optional(),
 })
 
+// ── Friendly names (mig 00094) ───────────────────────────────────────────────
+//
+// WHY THESE LIVE HERE AND NOT ON mutate-layout. An area is a `layout_objects`
+// row, which the lockdown table assigns to mutate-layout — but that function is
+// Admin-only and gates BEFORE parsing the body, so widening one action would
+// mean reordering auth across every action in it. Meanwhile the surface an
+// operator renames from is the Warehouse MAP, which Managers use, and this
+// function is already Admin+Manager, already owns `locations.name`, and already
+// writes `layout_placements` (see set_levels). The precedent is established
+// rather than invented. CLAUDE.md's lockdown table records the exception.
+//
+// The rename changes DISPLAY TEXT only. No geometry moves, no stock moves, no
+// routing changes, and — critically — no code changes.
+const renameAreaSchema = z.object({
+  action: z.literal('rename_area'),
+  warehouse_id: z.number().int().positive(),
+  from: z.string().min(1).max(60),
+  to: z.string().min(1).max(60),
+  zone_profile_id: z.number().int().positive().nullish(),
+  /** Restamp hand-named bins too — the operator ticking "also rename these" in
+   *  a dialog that has already shown them exactly what will change. */
+  include_custom: z.boolean().optional(),
+  /** Compute and report, write nothing. One action with a flag rather than a
+   *  separate preview action, which is what guarantees the preview and the
+   *  write run identical code. */
+  dry_run: z.boolean().optional(),
+})
+
+// Rename a levelled rack and, optionally, its levels in one round trip. A
+// client-side loop of N `update` calls would burn N of the 30/min budget and
+// produce N audit rows for what the operator did once.
+const renameRackSchema = z.object({
+  action: z.literal('rename_rack'),
+  id: z.number().int().positive(),
+  name: z.string().min(1).max(120),
+  include_levels: z.boolean().optional(),
+})
+
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: createSchema }),
   z.object({ action: z.literal('update'), id: z.number().int().positive(), data: updateSchema }),
+  renameAreaSchema,
+  renameRackSchema,
   z.object({ action: z.literal('deactivate'), id: z.number().int().positive() }),
   z.object({ action: z.literal('set_levels'), id: z.number().int().positive(), levels: z.array(setLevelsSchema).min(1).max(50) }),
   // First-time conversion of a flat BIN into a levelled RACK. Separate from
@@ -84,6 +141,51 @@ async function rootWarehouse(admin: any, locationId: number): Promise<{ id: numb
     cur = (data as any).parent_id
   }
   return null
+}
+
+/** What rename_area needs to know about one `locations` row. */
+interface NamingLocation {
+  id: number
+  code: string
+  name: string
+  kind: string
+  parentId: number | null
+  levelIndex: number | null
+  path: string
+  nameIsAuto: boolean
+  nameSeq: number | null
+  nameArea: string | null
+}
+
+/** Chunked read, keyed by id. `.in()` caps out around 200, and a 189-bay
+ *  warehouse resolves 1134 rows. */
+async function loadLocationsForNaming(
+  admin: any,
+  ids: readonly number[],
+): Promise<Map<number, NamingLocation>> {
+  const out = new Map<number, NamingLocation>()
+  const unique = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))]
+  for (let i = 0; i < unique.length; i += 200) {
+    const { data, error } = await admin.from('locations')
+      .select('id, code, name, kind, parent_id, level_index, materialized_path, name_is_auto, name_seq, name_area')
+      .in('id', unique.slice(i, i + 200))
+    if (error) throw new EdgeFunctionError('INTERNAL', `Could not read locations: ${error.message}`)
+    for (const r of (data ?? []) as any[]) {
+      out.set(Number(r.id), {
+        id: Number(r.id),
+        code: String(r.code),
+        name: String(r.name ?? ''),
+        kind: String(r.kind),
+        parentId: r.parent_id != null ? Number(r.parent_id) : null,
+        levelIndex: r.level_index != null ? Number(r.level_index) : null,
+        path: String(r.materialized_path ?? ''),
+        nameIsAuto: r.name_is_auto === true,
+        nameSeq: r.name_seq != null ? Number(r.name_seq) : null,
+        nameArea: r.name_area ?? null,
+      })
+    }
+  }
+  return out
 }
 
 async function nodeHasStock(admin: any, locationId: number): Promise<boolean> {
@@ -353,6 +455,277 @@ serve(async (req: Request) => {
       })
     }
 
+    // ── rename_area (mig 00094) ──────────────────────────────────────────────
+    //
+    // Rename a painted area and cascade to every auto-named bin inside it,
+    // ON A LIVE WAREHOUSE. The designer cannot do this: save_geometry requires a
+    // draft, and a mis-named area is only ever discovered after go-live.
+    //
+    // THE JOIN, since there is no FK between an area and a bin. An area is
+    // `layout_objects` geometry; a bin is a `locations` row. The only thing
+    // connecting them is that both describe the same grid cells on the same
+    // layout, and `layout_placements` is what says which cells a bin occupies.
+    // The geometric intersection is then done in TypeScript, not SQL, for the
+    // same reason proposeHomeBins is JS: a SQL formulation would have to restate
+    // the majority-of-cells rule and its tie-break, which is a second copy of a
+    // decision that already has exactly one.
+    if (input.action === 'rename_area') {
+      // Its own bucket. The shared 30/min is sized for single-node edits; one
+      // call here can touch 1100+ rows. Mirrors mutate-product-home-bin's :bulk.
+      const bulkRl = await checkRateLimit(`mutate-warehouse-location:area:${auth.userId}`, {
+        windowMs: 60_000,
+        max: 10,
+      })
+      if (!bulkRl.ok) {
+        throw new EdgeFunctionError(
+          'TOO_MANY_REQUESTS',
+          `Rate limit exceeded; try again in ${Math.ceil(bulkRl.resetMs / 1000)}s`,
+        )
+      }
+
+      const from = sanitizeAreaName(input.from)
+      const to = sanitizeAreaName(input.to)
+      const issue = areaNameIssue(input.to)
+      if (issue) throw new EdgeFunctionError('INVALID_INPUT', issue)
+      if (!from) throw new EdgeFunctionError('INVALID_INPUT', 'Name the area being renamed')
+
+      // 1. The warehouse, its path, and its published layout.
+      const { data: whRow } = await admin.from('locations')
+        .select('id, kind, materialized_path, location_type, active_layout_id')
+        .eq('id', input.warehouse_id).maybeSingle()
+      if (!whRow || (whRow as any).kind !== 'WAREHOUSE') {
+        throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
+      }
+      const whPath = (whRow as any).materialized_path as string
+      const layoutId = (whRow as any).active_layout_id as number | null
+      if ((whRow as any).location_type !== 'racked' || !layoutId) {
+        throw new EdgeFunctionError('CONFLICT', 'This site has no published layout, so it has no areas to rename')
+      }
+
+      // 2. The area cells.
+      const { data: objectRows, error: objErr } = await admin.from('layout_objects')
+        .select('id, object_type, floor, x, y, w, h, meta')
+        .eq('layout_id', layoutId).eq('object_type', 'area')
+      if (objErr) throw new EdgeFunctionError('INTERNAL', `Could not read areas: ${objErr.message}`)
+      const areaCells = (objectRows ?? []) as any[]
+      const matching = areaCells.filter((o) => String(o.meta?.name ?? '').trim() === from)
+      if (matching.length === 0) {
+        throw new EdgeFunctionError('NOT_FOUND', `No area called "${from}" on this site`)
+      }
+
+      // The index is built from the POST-rename picture, so membership needs no
+      // pre-image reconstruction — a cell is in the target area iff it will be.
+      const renamedCells = areaCells.map((o) => (
+        String(o.meta?.name ?? '').trim() === from
+          ? { ...o, meta: { ...(o.meta ?? {}), name: to } }
+          : o
+      ))
+      const areaIndex = buildAreaIndex(renamedCells.map((o) => ({
+        objectType: o.object_type, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h, meta: o.meta ?? null,
+      })))
+
+      // 3. Placements — this is the join.
+      const { data: placementRows, error: plErr } = await admin.from('layout_placements')
+        .select('location_id, floor, x, y, w, h')
+        .eq('layout_id', layoutId)
+      if (plErr) throw new EdgeFunctionError('INTERNAL', `Could not read placements: ${plErr.message}`)
+      const placements = (placementRows ?? []) as any[]
+
+      // 4. The locations behind them, plus every rack PARENT: a levelled rack
+      //    holds no placement row of its own — its SHELF levels do — so rolling
+      //    up to the parent is what makes a rack nameable at all.
+      const placementIds = [...new Set(placements.map((p) => Number(p.location_id)))]
+      const locById = await loadLocationsForNaming(admin, placementIds)
+      const parentIds = [...new Set(
+        [...locById.values()]
+          .filter((l) => l.kind === 'SHELF' && l.parentId != null)
+          .map((l) => l.parentId as number),
+      )].filter((id) => !locById.has(id))
+      for (const [id, row] of await loadLocationsForNaming(admin, parentIds)) locById.set(id, row)
+
+      // Scope check. Every id above came from client-supplied geometry, and an
+      // UPDATE must not be the first operation to take that on trust — the same
+      // guard mutate-layout applies to a repoint.
+      for (const loc of locById.values()) {
+        if (loc.path !== whPath && !loc.path.startsWith(`${whPath}/`)) {
+          throw new EdgeFunctionError('INVALID_INPUT', 'A placement resolved outside this warehouse')
+        }
+      }
+
+      // 5. One naming unit per RACK/BIN, with its levels attached.
+      const levelsByParent = new Map<number, Array<{ id: number; levelIndex: number }>>()
+      const unitGeometry = new Map<number, { floor: number; x: number; y: number; w: number; h: number }>()
+      for (const p of placements) {
+        const loc = locById.get(Number(p.location_id))
+        if (!loc) continue
+        const geo = { floor: Number(p.floor), x: Number(p.x), y: Number(p.y), w: Number(p.w), h: Number(p.h) }
+        if (loc.kind === 'SHELF' && loc.parentId != null) {
+          const bucket = levelsByParent.get(loc.parentId) ?? []
+          bucket.push({ id: loc.id, levelIndex: loc.levelIndex ?? bucket.length + 1 })
+          levelsByParent.set(loc.parentId, bucket)
+          // Levels are co-located; any of them gives the rack its geometry.
+          if (!unitGeometry.has(loc.parentId)) unitGeometry.set(loc.parentId, geo)
+        } else {
+          unitGeometry.set(loc.id, geo)
+        }
+      }
+
+      const units: NamingUnit[] = [...unitGeometry.entries()].map(([id, geo]) => {
+        const loc = locById.get(id)!
+        return {
+          ref: `loc:${id}`,
+          ...geo,
+          name: loc.name,
+          nameIsAuto: loc.nameIsAuto,
+          nameSeq: loc.nameSeq,
+          nameArea: loc.nameArea,
+          levelIndexes: (levelsByParent.get(id) ?? []).map((l) => l.levelIndex),
+        }
+      })
+
+      const result = assignAutoNames(units, areaIndex, {
+        rename: { from, to },
+        includeCustom: input.include_custom === true,
+        // Numbers spoken for anywhere in this warehouse, including on racks that
+        // have left the layout but whose labels are still on the racking.
+        minSeq: await loadAreaHighWater(admin, whPath),
+      })
+
+      // 6. Turn that into writes, and count what was deliberately left alone.
+      const writes: NameWrite[] = []
+      let skippedCustom = 0
+      const examples: Array<{ code: string; from: string; to: string }> = []
+      for (const named of result.units) {
+        const id = Number(named.ref.slice(4))
+        const loc = locById.get(id)!
+        if (!named.isAuto) {
+          // Only count the ones the rename would otherwise have taken — a
+          // hand-named bin in a different area is not "kept", it is unrelated.
+          if (areaForRect(areaIndex, unitGeometry.get(id)!) === to) skippedCustom++
+          continue
+        }
+        if (named.seq == null) continue
+        const rackWrite: NameWrite = {
+          id, name: named.name, name_seq: named.seq,
+          name_area: named.areaName || null, name_is_auto: true,
+        }
+        if (loc.name !== rackWrite.name) {
+          writes.push(rackWrite)
+          if (examples.length < 5) examples.push({ code: loc.code, from: loc.name, to: named.name })
+        }
+        for (const lvl of levelsByParent.get(id) ?? []) {
+          const levelLoc = locById.get(lvl.id)
+          // A level carries its OWN provenance, so one an operator hand-named
+          // survives its rack being renamed around it.
+          if (!levelLoc || (!levelLoc.nameIsAuto && input.include_custom !== true)) continue
+          const levelName = composeName(named.areaName, named.seq, lvl.levelIndex)
+          if (levelLoc.name === levelName) continue
+          writes.push({
+            id: lvl.id, name: levelName, name_seq: null,
+            name_area: named.areaName || null, name_is_auto: true,
+          })
+        }
+      }
+
+      const rackCount = writes.filter((w) => w.name_seq != null).length
+      const levelCount = writes.length - rackCount
+
+      if (input.dry_run) {
+        // Nothing happened, so nothing is audited.
+        return new Response(JSON.stringify({
+          ok: true,
+          preview: { willRename: writes.length, racks: rackCount, levels: levelCount, skippedCustom, examples },
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      // 7. The area's own label, then the bins. Every cell of one area shares
+      //    its meta by construction, so this is a single update.
+      const zoneProfileId = input.zone_profile_id === undefined
+        ? undefined
+        : input.zone_profile_id ?? null
+      const { error: metaErr } = await admin.from('layout_objects')
+        .update({
+          meta: {
+            ...(matching[0].meta ?? {}),
+            name: to,
+            ...(zoneProfileId === undefined ? {} : { zoneProfileId }),
+          },
+        } as any)
+        .in('id', matching.map((o) => o.id))
+      if (metaErr) throw new EdgeFunctionError('INTERNAL', `Could not rename the area: ${metaErr.message}`)
+
+      const renamed = await applyNameWrites(admin, whPath, writes)
+
+      // Deliberately NOT touching warehouse_layouts.updated_at. `needsRepublish`
+      // is derived from `updated_at > published_at`, so bumping it would tell the
+      // operator to republish — rebuilding the routing graph and refreezing every
+      // edge weight — because they corrected a spelling.
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
+        resourceId: String(input.warehouse_id),
+        metadata: {
+          area_rename: true, layout_id: layoutId, from, to,
+          renamed, racks: rackCount, levels: levelCount,
+          skipped_custom: skippedCustom, include_custom: input.include_custom === true,
+        },
+      })
+
+      return new Response(JSON.stringify({
+        ok: true, renamed, racks: rackCount, levels: levelCount, skippedCustom,
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── rename_rack (mig 00094) ──────────────────────────────────────────────
+    // One rack, optionally with its levels, in one round trip and one audit row.
+    if (input.action === 'rename_rack') {
+      const { data: rackRow } = await admin.from('locations')
+        .select('id, code, name, kind, materialized_path').eq('id', input.id).maybeSingle()
+      if (!rackRow) throw new EdgeFunctionError('NOT_FOUND', `Location ${input.id} not found`)
+      if ((rackRow as any).kind === 'WAREHOUSE') {
+        throw new EdgeFunctionError('INVALID_INPUT', 'Use mutate-warehouse for WAREHOUSE rows')
+      }
+      const name = input.name.trim().slice(0, 120)
+      if (!name) throw new EdgeFunctionError('INVALID_INPUT', 'Give the location a name')
+
+      const root = await rootWarehouse(admin, input.id)
+      if (!root) throw new EdgeFunctionError('INVALID_INPUT', 'Location is not inside a warehouse')
+      const { data: rootRow } = await admin.from('locations')
+        .select('materialized_path').eq('id', root.id).single()
+      const whPath = (rootRow as any).materialized_path as string
+
+      // Typing a name IS the definition of a custom name, so the provenance is
+      // forced here rather than taken from the client. Releasing the number is
+      // deliberate: the row no longer holds a claim on its area's pool.
+      const writes: NameWrite[] = [
+        { id: input.id, name, name_seq: null, name_area: null, name_is_auto: false },
+      ]
+      if (input.include_levels) {
+        const { data: levelRows } = await admin.from('locations')
+          .select('id, level_index').eq('parent_id', input.id).eq('kind', 'SHELF')
+          .not('level_index', 'is', null)
+        for (const lvl of (levelRows ?? []) as any[]) {
+          writes.push({
+            id: Number(lvl.id),
+            name: `${name}${NAME_SEP}L${lvl.level_index}`.slice(0, 120),
+            name_seq: null, name_area: null, name_is_auto: false,
+          })
+        }
+      }
+
+      const renamed = await applyNameWrites(admin, whPath, writes)
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
+        resourceId: String(input.id),
+        before: { name: (rackRow as any).name } as Record<string, unknown>,
+        after: { name } as Record<string, unknown>,
+        metadata: { renamed, include_levels: input.include_levels === true },
+      })
+      return new Response(JSON.stringify({ ok: true, renamed }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const { data: existing, error: fErr } = await admin.from('locations').select('*').eq('id', input.id).single()
     if (fErr || !existing) throw new EdgeFunctionError('NOT_FOUND', `Location ${input.id} not found`)
     if ((existing as any).kind === 'WAREHOUSE') {
@@ -360,7 +733,15 @@ serve(async (req: Request) => {
     }
 
     if (input.action === 'update') {
-      const { data: updated, error } = await admin.from('locations').update(input.data as any).eq('id', input.id).select().single()
+      // A typed name IS a custom name (mig 00094), and the provenance is forced
+      // server-side rather than accepted from the client — otherwise a caller
+      // could leave a hand-typed name marked auto and have the next area rename
+      // silently overwrite it. Clearing the number is deliberate: this row no
+      // longer holds a claim on its area's pool.
+      const patch = input.data.name !== undefined
+        ? { ...input.data, name_is_auto: false, name_seq: null, name_area: null }
+        : input.data
+      const { data: updated, error } = await admin.from('locations').update(patch as any).eq('id', input.id).select().single()
       if (error || !updated) throw new EdgeFunctionError('INTERNAL', error?.message ?? 'Failed to update location')
       await logAuditEvent(admin, {
         actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',

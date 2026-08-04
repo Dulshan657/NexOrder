@@ -18,6 +18,8 @@ import { useLevelRoles } from '../../hooks/queries/useLevelRoles';
 import { roleLabel } from '../../lib/levelRoles';
 import { useToasts } from '../../hooks/useToasts';
 import type { ReplenSkipReason, ReplenTask } from '../../services/supabase/replenService';
+import { buildDisplayLookup, displayFor } from '@/lib/locationLookup';
+import { locationOneLine, locationTitle, type DisplayLocation } from '@/lib/locationDisplay';
 
 interface ReplenQueueViewProps {
   warehouseId: number;
@@ -60,6 +62,18 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
 
   const [sourceByTask, setSourceByTask] = useState<Record<number, number>>({});
   const [qtyByTask, setQtyByTask] = useState<Record<number, string>>({});
+
+  // Two lookups because the two sources speak different languages: the skip
+  // reasons from wie_replen_detect carry location IDs, while a task carries the
+  // CODES its three FK-aliased joins selected. Neither returns a name, but the
+  // warehouse locations are already cached here, so resolving both is free —
+  // and far cheaper than a DROP FUNCTION on each of the replen RPCs.
+  const binById = useMemo(() => buildDisplayLookup(locations), [locations]);
+  const binByCode = useMemo(() => {
+    const m = new Map<string, DisplayLocation>();
+    for (const l of locations ?? []) m.set(l.code, { code: l.code, name: l.name });
+    return m;
+  }, [locations]);
 
   const suggested = useMemo(
     () => (tasks ?? []).filter((t) => t.status === 'suggested'),
@@ -138,10 +152,10 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
           <ul className="mt-2 space-y-1.5">
             {skipped.map((s, i) => {
               const copy = SKIP_COPY[s.reason] ?? { title: s.reason, detail: '' };
-              const code = (locations ?? []).find((l) => l.id === s.to_location_id)?.code;
+              const slot = displayFor(binById, s.to_location_id);
               return (
                 <li key={`${s.product_id}-${s.to_location_id}-${i}`} className="text-xs text-amber-900">
-                  <span className="font-mono">{code ?? `#${s.to_location_id}`}</span>
+                  <span>{locationOneLine(slot)}</span>
                   {' — '}
                   <span className="font-medium">{copy.title}.</span> {copy.detail}
                 </li>
@@ -167,7 +181,9 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
                     </p>
                     <p className="text-xs text-stone-500 font-mono">{task.sku}</p>
                     <p className="text-xs text-stone-500 mt-1">
-                      <span className="font-mono text-emerald-700">{task.toCode}</span>
+                      <span className="font-medium text-emerald-700">
+                        {locationTitle(binByCode.get(task.toCode) ?? { code: task.toCode })}
+                      </span>
                       {' holds '}
                       <span className="tabular-nums">{task.slotOnHand ?? 0}</span>
                       {task.minQty != null && <> · min <span className="tabular-nums">{task.minQty}</span></>}
@@ -197,7 +213,7 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
                       )}
                       {sourceOptions.map((l) => (
                         <option key={l.id} value={l.id}>
-                          {l.code} — {roleLabel(levelRoles, l.levelRole)}
+                          {locationOneLine(l)} — {roleLabel(levelRoles, l.levelRole)}
                           {l.id === task.recommendedFromLocationId ? ' (suggested)' : ''}
                         </option>
                       ))}
@@ -250,8 +266,10 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
                   <span className="text-stone-400"> · </span>
                   <span className="tabular-nums">{task.quantity}</span>
                 </p>
-                <p className="text-xs font-mono text-stone-500">
-                  {task.assignedFromCode} → {task.toCode}
+                <p className="text-xs text-stone-500">
+                  {locationTitle(binByCode.get(task.assignedFromCode ?? '') ?? { code: task.assignedFromCode ?? '—' })}
+                  {' → '}
+                  {locationTitle(binByCode.get(task.toCode ?? '') ?? { code: task.toCode ?? '—' })}
                 </p>
               </div>
               <button

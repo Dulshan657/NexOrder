@@ -5,6 +5,7 @@
 import { Info } from 'lucide-react'
 import { useWarehouseViewerModel } from './useWarehouseViewerModel'
 import { StockTable } from './StockTable'
+import { LocationLabel } from '@/components/inventory/LocationLabel'
 
 interface BulkWarehouseViewProps {
   warehouseId: number
@@ -64,8 +65,11 @@ export function BulkWarehouseView({ warehouseId, reason }: BulkWarehouseViewProp
           {locationsWithStock.map((loc) => (
             <div key={loc.id} className="glass-card rounded-xl p-3">
               <div className="mb-2 flex items-center gap-2">
-                <span className="font-mono text-xs font-semibold text-stone-900">{loc.code}</span>
-                <span className="text-xs text-stone-500">{loc.name}</span>
+                <LocationLabel
+                  location={loc}
+                  layout="inline"
+                  titleClassName="text-xs font-semibold text-stone-900"
+                />
               </div>
               <StockTable rows={loc.rows} showAllocated />
             </div>

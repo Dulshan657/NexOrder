@@ -12,6 +12,7 @@ import { Package, ScanLine, Search } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
 import { buildScanIndex, resolveScan, type ScanMatch } from '@/lib/scan/resolveScan'
 import type { InventoryLocation } from '@/types'
+import { locationSubtitle, locationTitle } from '@/lib/locationDisplay'
 
 /** Kinds that physically hold stock. WAREHOUSE is here because a bulk site (and
  *  a racked site's unplaced goods) keep their stock on the root. ZONE/AISLE/RACK
@@ -143,8 +144,11 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
                   className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-stone-50 btn-press"
                 >
                   <span className="min-w-0">
-                    <span className="block font-mono text-sm text-stone-900">{loc.code}</span>
-                    <span className="block truncate text-xs text-stone-500">{loc.name}</span>
+                    {/* Name first (mig 00094); this list already searched both. */}
+                    <span className="block truncate text-sm text-stone-900">{locationTitle(loc)}</span>
+                    {locationSubtitle(loc) && (
+                      <span className="block font-mono text-xs text-stone-400">{locationSubtitle(loc)}</span>
+                    )}
                   </span>
                   <span className="shrink-0 rounded bg-stone-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-500">
                     {loc.kind === 'WAREHOUSE'

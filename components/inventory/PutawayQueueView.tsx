@@ -19,6 +19,7 @@ import { BinPickerSheet } from './putaway/BinPickerSheet';
 import { PutawayScanFinder } from './putaway/PutawayScanFinder';
 import { filterQueue, groupByReceipt, placeableRows, type QueueStateFilter } from './putaway/putawayGrouping';
 import { trimNumber } from './putaway/putawayFormat';
+import { buildDisplayLookup, displayFor } from '@/lib/locationLookup';
 
 interface PutawayQueueViewProps {
   warehouseId: number;
@@ -48,23 +49,21 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
   const [confirmAll, setConfirmAll] = useState<PendingPutawayRow[] | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  const codeById = useMemo(() => {
-    const m = new Map<number, string>();
-    for (const l of locationsQuery.data ?? []) m.set(l.id, l.code);
-    return m;
-  }, [locationsQuery.data]);
+  // Both halves of a location's identity (mig 00094). `select('*')` already
+  // brings the name back, so carrying it costs nothing.
+  const binById = useMemo(() => buildDisplayLookup(locationsQuery.data), [locationsQuery.data]);
 
   const rows = queueQuery.data ?? [];
   const visible = useMemo(
-    () => filterQueue(rows, { query: search, state: stateFilter, codeById }),
-    [rows, search, stateFilter, codeById],
+    () => filterQueue(rows, { query: search, state: stateFilter, binById }),
+    [rows, search, stateFilter, binById],
   );
   const groups = useMemo(() => (grouped ? groupByReceipt(visible) : null), [grouped, visible]);
 
   const busy = decide.isPending || rerun.isPending || bulkBusy;
 
-  const binCodeFor = (r: PendingPutawayRow) =>
-    r.recommendedLocationId ? codeById.get(r.recommendedLocationId) ?? `#${r.recommendedLocationId}` : null;
+  const binFor = (r: PendingPutawayRow) =>
+    r.recommendedLocationId ? displayFor(binById, r.recommendedLocationId) : null;
 
   // Assign = decide the bin, move nothing; the line becomes a stop on the Walk
   // run and the stock stays on the dock until someone carries it (mig 00080).
@@ -159,7 +158,8 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
     <PutawayRow
       key={r.id}
       row={r}
-      binCode={binCodeFor(r)}
+      bin={binFor(r)}
+      binById={binById}
       expanded={expanded === r.id}
       busy={busy}
       onToggleExplanation={() => setExpanded(expanded === r.id ? null : r.id)}

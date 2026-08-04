@@ -5,7 +5,9 @@
 
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Layers, PackageSearch } from 'lucide-react'
+import { Layers, PackageSearch, Pencil } from 'lucide-react'
+import { locationSubtitle, locationTitle } from '@/lib/locationDisplay'
+import { RenameLocationModal } from './RenameLocationModal'
 import { supabase } from '@/lib/supabase'
 import { extractFunctionErrorMessage } from '@/lib/functionError'
 import { useToasts } from '@/hooks/useToasts'
@@ -37,6 +39,10 @@ interface BinDetailPanelProps {
   rackFillByLevel: ReadonlyMap<number, number>
   /** Selecting a level from the editor re-selects it on the map/tree too. */
   onSelectLevel?: (locationId: number) => void
+  /** Admin/Manager — mutate-warehouse-location's role gate (mig 00094). The
+   *  pencil is hidden otherwise: the function refuses anyway, and a button that
+   *  always errors is worse than no button. */
+  canRename?: boolean
 }
 
 /**
@@ -110,7 +116,9 @@ export function BinDetailPanel({
   rackLevelLocations,
   rackFillByLevel,
   onSelectLevel,
+  canRename = false,
 }: BinDetailPanelProps) {
+  const [renaming, setRenaming] = useState(false)
   const { addToast } = useToasts()
   const setLevels = useSetRackLevels(warehouseId)
   const convertRack = useConvertRack(warehouseId)
@@ -211,15 +219,42 @@ export function BinDetailPanel({
   return (
     <div className="glass-card rounded-xl p-4 space-y-4">
       <div>
+        {/* Name over code (mig 00094), the same order every other surface uses.
+            The code stays visible in mono: it is what the QR prints, what a scan
+            matches, and what someone quotes when reporting a problem. */}
         <div className="mb-3 flex items-start justify-between gap-2">
-          <div>
-            <p className="font-mono text-sm font-semibold text-stone-900">{location.code}</p>
-            <p className="text-xs text-stone-500">{location.name}</p>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <p className="truncate text-sm font-semibold text-stone-900">{locationTitle(location)}</p>
+              {canRename && (
+                <button
+                  type="button"
+                  onClick={() => setRenaming(true)}
+                  aria-label="Rename this location"
+                  title="Rename"
+                  className="shrink-0 rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-600 btn-press"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            {locationSubtitle(location) && (
+              <p className="font-mono text-[11px] text-stone-400">{locationSubtitle(location)}</p>
+            )}
           </div>
-          <span className="rounded bg-stone-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-500">
+          <span className="shrink-0 rounded bg-stone-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-500">
             {isLevel ? `LEVEL ${location.levelIndex}` : location.kind}
           </span>
         </div>
+
+        {renaming && (
+          <RenameLocationModal
+            warehouseId={warehouseId}
+            location={location}
+            levelCount={rackLevelLocations.length}
+            onClose={() => setRenaming(false)}
+          />
+        )}
 
         <dl className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
           {isBin && (

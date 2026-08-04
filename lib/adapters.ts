@@ -714,6 +714,12 @@ export function toInventoryLocation(row: LocationRow): InventoryLocation {
     // applied — same pattern as toSlottingSuggestion's origin/plan_batch below.
     levelRole: (row as LocationRow & { level_role?: LevelRole | null }).level_role ?? undefined,
     levelIndex: (row as LocationRow & { level_index?: number | null }).level_index ?? undefined,
+    // Name provenance (mig 00094); same cast reason as the level columns above.
+    // Note `?? null` rather than `?? undefined`: null is the honest value for
+    // "never numbered", and the naming module distinguishes it from absent.
+    nameSeq: (row as LocationRow & { name_seq?: number | null }).name_seq ?? null,
+    nameArea: (row as LocationRow & { name_area?: string | null }).name_area ?? null,
+    nameIsAuto: (row as LocationRow & { name_is_auto?: boolean | null }).name_is_auto ?? false,
   }
 }
 

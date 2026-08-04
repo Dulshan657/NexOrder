@@ -173,6 +173,16 @@ export interface SavePlacementInput {
      *  co-located layout_placements row per level, instead of a single flat
      *  BIN — see ref_map's level_location_ids on the result. */
     levels?: NewBinLevelInput[]
+    // ── Name provenance (mig 00094) ─────────────────────────────────────────
+    /** The rack number inside `name_area`, or null for one never numbered.
+     *  Nullable, so `?: number` would silently let a null past `strict`-off TS
+     *  into a schema that rejects it — the Shelving-rack failure again. */
+    name_seq?: number | null
+    /** The pool the number came from; null = drawn outside every area. */
+    name_area?: string | null
+    /** false = the operator typed this name before the first save; the server
+     *  stores it verbatim and never recomposes it. */
+    name_is_auto?: boolean
   }
   /** The levels of an EXISTING rack (`location_id` set). Mutually exclusive with
    *  `new_bin`, which carries a brand-new rack's levels instead. */
@@ -217,6 +227,13 @@ export interface SaveGeometryResult {
     /** Present only when this placement's new_bin carried levels: level_index
      *  -> the created SHELF (level) location id (mig 00072). */
     level_location_ids?: Record<number, number>
+    /** The name the server actually stored (mig 00094). Authoritative: it
+     *  recomputes from the database rather than trusting the wire, so this is
+     *  where a stale tab's guess at a rack number gets corrected. Absent for a
+     *  hand-named bin, which the server never recomposes. */
+    name?: string
+    name_seq?: number | null
+    name_area?: string | null
   }>
 }
 
@@ -224,9 +241,18 @@ export async function saveGeometry(
   layoutId: number,
   placements: SavePlacementInput[],
   objects: SaveObjectInput[],
+  areaRenames: ReadonlyArray<{ from: string; to: string }> = [],
 ): Promise<SaveGeometryResult> {
   const { data, error } = await supabase.functions.invoke<SaveGeometryResult & { ok: true }>('mutate-layout', {
-    body: { action: 'save_geometry', layout_id: layoutId, placements, objects },
+    body: {
+      action: 'save_geometry',
+      layout_id: layoutId,
+      placements,
+      objects,
+      // A full replace cannot distinguish a rename from an erase-and-repaint, so
+      // the renames ride alongside the geometry rather than being inferred.
+      area_renames: areaRenames,
+    },
   })
   if (error) await rethrowWithServerMessage(error, 'Could not save the layout')
   return data as SaveGeometryResult

@@ -10,8 +10,10 @@ export type QueueStateFilter = 'all' | 'placeable' | 'unplaceable'
 export interface QueueFilter {
   query?: string
   state?: QueueStateFilter
-  /** Bin code per location id, so a search can match the destination too. */
-  codeById?: ReadonlyMap<number, string>
+  /** Destination location per id, so a search can match the bin too. Carries
+   *  the NAME as well as the code (mig 00094): an operator who reads
+   *  "Chiller · Rack 7" on the card will type that, not `NEXG-B-9-4`. */
+  binById?: ReadonlyMap<number, { code: string; name?: string | null }>
 }
 
 /** Rows matching a free-text query (product name, SKU, supplier, receipt
@@ -19,7 +21,7 @@ export interface QueueFilter {
  *  input order, which is already newest-first from the service. */
 export function filterQueue(
   rows: readonly PendingPutawayRow[],
-  { query, state = 'all', codeById }: QueueFilter = {},
+  { query, state = 'all', binById }: QueueFilter = {},
 ): PendingPutawayRow[] {
   const q = (query ?? '').trim().toLowerCase()
   return rows.filter((row) => {
@@ -27,15 +29,14 @@ export function filterQueue(
     if (state === 'unplaceable' && row.recommendedLocationId != null) return false
     if (!q) return true
 
-    const binCode = row.recommendedLocationId != null
-      ? codeById?.get(row.recommendedLocationId) ?? ''
-      : ''
+    const bin = row.recommendedLocationId != null ? binById?.get(row.recommendedLocationId) : undefined
     const haystack = [
       row.product?.name,
       row.product?.sku,
       row.receipt?.supplierName,
       row.receipt?.reference,
-      binCode,
+      bin?.code,
+      bin?.name,
       `#${row.productId}`,
     ]
     return haystack.some((field) => field != null && String(field).toLowerCase().includes(q))

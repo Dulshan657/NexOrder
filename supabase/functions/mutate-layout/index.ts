@@ -38,6 +38,23 @@ import {
   planRescale,
   type ScaleItem,
 } from '../_shared/wie/gridScale.ts'
+// Friendly location names (mig 00094). The RULES are pure and shared with the
+// browser, so the designer's preview of "Chiller · Rack 7" is this function's
+// decision evaluated early; the I/O beside them is deliberately not in wie/,
+// which is under the purity contract.
+import {
+  assignAutoNames,
+  buildAreaIndex,
+  composeName,
+  type NamingUnit,
+} from '../_shared/wie/locationNaming.ts'
+import {
+  applyNameWrites,
+  loadAreaHighWater,
+  loadNameState,
+  nameWriteNeeded,
+  type NameWrite,
+} from '../_shared/locationNamingWrite.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const BIN_KINDS = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN'] as const
@@ -149,6 +166,18 @@ const newBinSchema = z.object({
   // parent + one SHELF child + one co-located layout_placements row per
   // level, instead of a single flat BIN.
   levels: z.array(levelSchema).min(1).max(50).optional(),
+  // Name provenance (mig 00094). `.nullish()` on the seq because the column is
+  // nullable and null is the honest wire value for "never numbered" — the
+  // `.optional()`-rejects-null trap that broke every Shelving rack save.
+  //
+  // The server RECOMPUTES all three rather than trusting them; they are here so
+  // it has something to recompute FROM for a bin it has never seen. The one
+  // exception is `name_is_auto: false`, which is respected verbatim: the operator
+  // typed a name in the inspector before the first save, and no rule may
+  // overwrite that.
+  name_seq: z.number().int().positive().nullish(),
+  name_area: z.string().max(60).nullish(),
+  name_is_auto: z.boolean().optional(),
 }).refine((d) => !d.levels || d.kind === 'RACK', {
   message: 'levels is only valid when kind is RACK',
 }).refine((d) => !d.levels || new Set(d.levels.map((l) => l.level_index)).size === d.levels.length, {
@@ -215,6 +244,17 @@ const inputSchema = z.discriminatedUnion('action', [
     layout_id: z.number().int().positive(),
     placements: z.array(placementSchema).max(5000),
     objects: z.array(objectSchema).max(20000),
+    // Area renames since the last save, oldest first (mig 00094).
+    //
+    // This has to be told, not inferred: save_geometry is a FULL REPLACE, so
+    // "renamed Chiller to Cold Room" and "erased Chiller, painted Cold Room"
+    // arrive as byte-identical geometry. Without this the bins inside a renamed
+    // area would keep the old name and the map would disagree with every pick
+    // list.
+    area_renames: z.array(z.object({
+      from: z.string().min(1).max(60),
+      to: z.string().min(1).max(60),
+    })).max(50).optional(),
   }),
 ])
 
@@ -894,6 +934,75 @@ serve(async (req: Request) => {
       return ids
     }
 
+    // ── Friendly names (mig 00094) ────────────────────────────────────────────
+    //
+    // THE SERVER RECOMPUTES; IT DOES NOT TRUST THE WIRE. Existing placements take
+    // their provenance from the DATABASE, so a stale tab — or the window between
+    // this function deploying and the frontend deploying — cannot mint a rack
+    // number that is already on the floor. This is the same second path
+    // resolveExistingRackLevels exists to provide for levels.
+    //
+    // Recomputation is safe rather than merely redundant because assignAutoNames
+    // is monotonic: it only ever hands out a number where there is none, and only
+    // ever rewrites a name when explicitly told to by `area_renames`. Both sides
+    // run the identical pure module, so in the normal case this is a no-op that
+    // confirms the designer's preview.
+    const namingExistingIds = input.placements
+      .filter((p) => p.location_id !== undefined)
+      .map((p) => p.location_id!)
+    const storedNames = await loadNameState(admin, namingExistingIds)
+    // Numbers already spoken for ANYWHERE in this warehouse, including on racks
+    // that have since left the layout. Without this, deleting a rack and drawing
+    // another would re-mint its number onto a second rack while the first one's
+    // label is still on the racking.
+    const areaHighWater = whPath ? await loadAreaHighWater(admin, whPath) : new Map<string, number>()
+    const areaIndex = buildAreaIndex(
+      input.objects.map((o) => ({
+        objectType: o.object_type, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+        meta: o.meta ?? null,
+      })),
+    )
+    let namingUnits: NamingUnit[] = input.placements.map((p) => {
+      const stored = p.location_id !== undefined ? storedNames.get(p.location_id) : undefined
+      return {
+        ref: p.client_ref,
+        floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h,
+        name: stored?.name ?? p.new_bin?.name ?? null,
+        // A brand-new bin the operator already named in the inspector arrives
+        // with name_is_auto:false and is stored verbatim — nothing may overwrite
+        // a name a human typed.
+        nameIsAuto: stored ? stored.nameIsAuto : p.new_bin?.name_is_auto !== false,
+        // null for a new bin: the SERVER assigns the number, not the client.
+        nameSeq: stored ? stored.nameSeq : null,
+        nameArea: stored ? stored.nameArea : null,
+        levelIndexes: p.new_bin?.levels?.map((l) => l.level_index)
+          ?? p.levels?.map((l) => l.level_index),
+      }
+    })
+    let naming = assignAutoNames(namingUnits, areaIndex, { minSeq: areaHighWater })
+    // Renames apply IN ORDER, each over the result of the last. The client has
+    // already coalesced A→B→C into A→C, so by the time this runs there is no
+    // intermediate name left on the floor for a stale entry to match.
+    for (const rename of input.area_renames ?? []) {
+      const previous = new Map(naming.units.map((u) => [u.ref, u]))
+      namingUnits = namingUnits.map((u) => {
+        const n = previous.get(u.ref)
+        return n ? { ...u, name: n.name, nameSeq: n.seq, nameArea: n.areaName, nameIsAuto: n.isAuto } : u
+      })
+      naming = assignAutoNames(namingUnits, areaIndex, { rename, minSeq: areaHighWater })
+    }
+    const namedByRef = new Map(naming.units.map((u) => [u.ref, u]))
+
+    /** A level's stored name. Falls back to the pre-00094 `Level N` when the rack
+     *  is hand-named or unnumbered — a composed level name would then be lying
+     *  about which rack it belongs to. */
+    const levelNameFor = (ref: string, levelIndex: number): string => {
+      const named = namedByRef.get(ref)
+      return named && named.isAuto && named.seq != null
+        ? composeName(named.areaName, named.seq, levelIndex)
+        : `Level ${levelIndex}`
+    }
+
     // Create locations for brand-new bins, mapping client_ref -> location_id.
     const refToLocation = new Map<string, number>()
     // Leveled racks (mig 00072): client_ref -> { levelIndex -> SHELF location id }.
@@ -908,6 +1017,15 @@ serve(async (req: Request) => {
         continue
       }
       const nb = p.new_bin!
+      // The name the server decided on. `|| nb.name` covers a hand-named bin,
+      // whose unit is echoed back verbatim rather than recomposed.
+      const named = namedByRef.get(p.client_ref)
+      const binName = (named?.name || nb.name).slice(0, 120)
+      const binNaming = {
+        name_is_auto: named?.isAuto === true,
+        name_seq: named?.isAuto ? named.seq : null,
+        name_area: named?.isAuto ? (named.areaName || null) : null,
+      }
 
       // Resolve effective capacity/slot/weight from the storage type when omitted.
       let capacitySlots: number | null = nb.capacity_slots ?? null
@@ -940,9 +1058,10 @@ serve(async (req: Request) => {
         // Leveled rack: one RACK parent (no placement row of its own) + one
         // SHELF child + one co-located layout_placements row per level.
         const { data: createdRack, error: rackErr } = await admin.from('locations').insert({
-          parent_id: parentId, kind: 'RACK', code: nb.code, name: nb.name,
+          parent_id: parentId, kind: 'RACK', code: nb.code, name: binName,
           materialized_path: `${parentPath}/${nb.code}`,
           storage_type_id: nb.storage_type_id ?? null,
+          ...binNaming,
           is_active: false, created_in_layout_id: layout.id,
         } as any).select('id').single()
         let rackId: number
@@ -950,10 +1069,13 @@ serve(async (req: Request) => {
           if (rackErr?.code !== '23505') {
             throw new EdgeFunctionError('INTERNAL', rackErr?.message ?? 'Failed to create rack')
           }
+          // The adopt path must carry the naming too, or an erase-then-redraw at
+          // the same cell revives the old row with its stale name.
           const adopted = await adoptDraftOrphan(nb.code, {
-            parent_id: parentId, kind: 'RACK', name: nb.name,
+            parent_id: parentId, kind: 'RACK', name: binName,
             materialized_path: `${parentPath}/${nb.code}`,
             storage_type_id: nb.storage_type_id ?? null,
+            ...binNaming,
           })
           if (adopted === null) {
             throw new EdgeFunctionError('CONFLICT', `Location code "${nb.code}" already exists`)
@@ -967,9 +1089,21 @@ serve(async (req: Request) => {
         const levelIds: Record<number, number> = {}
         for (const lvl of nb.levels) {
           const levelCode = `${nb.code}-L${lvl.level_index}`
+          // A level's name is composed IN FULL ("Chiller · Rack 7 · L2") because
+          // a pick task, a putaway stop and a replen stop all point at the SHELF
+          // row directly and would otherwise each need a parent lookup to say
+          // where the operator should stand. `name_seq` stays NULL: the number
+          // belongs to the RACK, and a level composes from it plus level_index.
+          const levelName = levelNameFor(p.client_ref, lvl.level_index)
+          const levelNaming = {
+            name_is_auto: binNaming.name_is_auto,
+            name_seq: null,
+            name_area: binNaming.name_area,
+          }
           const { data: createdLevel, error: lvlErr } = await admin.from('locations').insert({
-            parent_id: rackId, kind: 'SHELF', code: levelCode, name: `Level ${lvl.level_index}`,
+            parent_id: rackId, kind: 'SHELF', code: levelCode, name: levelName,
             materialized_path: `${parentPath}/${nb.code}/${levelCode}`,
+            ...levelNaming,
             level_role: lvl.role, level_index: lvl.level_index,
             capacity_slots: lvl.capacity_slots ?? capacitySlots,
             slot_kind: lvl.slot_kind ?? slotKind,
@@ -984,8 +1118,9 @@ serve(async (req: Request) => {
             // Re-setting parent_id is deliberate: it re-anchors a surviving level
             // row even if the RACK row's identity changed between attempts.
             const adopted = await adoptDraftOrphan(levelCode, {
-              parent_id: rackId, kind: 'SHELF', name: `Level ${lvl.level_index}`,
+              parent_id: rackId, kind: 'SHELF', name: levelName,
               materialized_path: `${parentPath}/${nb.code}/${levelCode}`,
+              ...levelNaming,
               level_role: lvl.role, level_index: lvl.level_index,
               capacity_slots: lvl.capacity_slots ?? capacitySlots,
               slot_kind: lvl.slot_kind ?? slotKind,
@@ -1005,10 +1140,11 @@ serve(async (req: Request) => {
       }
 
       const { data: created, error: cErr } = await admin.from('locations').insert({
-        parent_id: parentId, kind: nb.kind, code: nb.code, name: nb.name,
+        parent_id: parentId, kind: nb.kind, code: nb.code, name: binName,
         materialized_path: `${parentPath}/${nb.code}`,
         capacity_slots: capacitySlots, slot_kind: slotKind, weight_capacity_kg: weightCapacityKg,
         storage_type_id: nb.storage_type_id ?? null,
+        ...binNaming,
         is_active: false, created_in_layout_id: layout.id,
       } as any).select('id').single()
       if (cErr || !created) {
@@ -1019,10 +1155,11 @@ serve(async (req: Request) => {
           throw new EdgeFunctionError('INTERNAL', cErr?.message ?? 'Failed to create bin')
         }
         const adopted = await adoptDraftOrphan(nb.code, {
-          parent_id: parentId, kind: nb.kind, name: nb.name,
+          parent_id: parentId, kind: nb.kind, name: binName,
           materialized_path: `${parentPath}/${nb.code}`,
           capacity_slots: capacitySlots, slot_kind: slotKind, weight_capacity_kg: weightCapacityKg,
           storage_type_id: nb.storage_type_id ?? null,
+          ...binNaming,
         })
         if (adopted === null) {
           throw new EdgeFunctionError('CONFLICT', `Location code "${nb.code}" already exists`)
@@ -1080,6 +1217,63 @@ serve(async (req: Request) => {
         const { error } = await admin.from('locations')
           .update({ storage_type_id: next } as any).in('id', ids)
         if (error) throw new EdgeFunctionError('INTERNAL', `Could not update storage form: ${error.message}`)
+      }
+    }
+
+    // ── Restamp names on rows that already existed (mig 00094) ───────────────
+    //
+    // New rows were inserted with their names above; this is the other half —
+    // an area rename reaching bins that are already in the database, which is the
+    // whole point of `area_renames`.
+    //
+    // A levelled rack's SHELF children are restamped too. They carry their OWN
+    // `name_is_auto`, so a level someone hand-named survives even when its rack
+    // is renamed around it.
+    {
+      const existingPlacements = input.placements.filter((p) => p.location_id !== undefined)
+      const levelIdsToCheck: number[] = []
+      for (const p of existingPlacements) {
+        const levels = refToLevelLocations.get(p.client_ref)
+        if (levels) levelIdsToCheck.push(...Object.values(levels))
+      }
+      const storedLevelNames = await loadNameState(admin, levelIdsToCheck)
+
+      const nameWrites: NameWrite[] = []
+      for (const p of existingPlacements) {
+        const named = namedByRef.get(p.client_ref)
+        // isAuto false = hand-named, and assignAutoNames echoed it back untouched.
+        // Nothing to write, and nothing that MAY be written.
+        if (!named || !named.isAuto || named.seq == null) continue
+
+        const rackWrite: NameWrite = {
+          id: p.location_id!,
+          name: named.name,
+          name_seq: named.seq,
+          name_area: named.areaName || null,
+          name_is_auto: true,
+        }
+        if (nameWriteNeeded(storedNames.get(p.location_id!), rackWrite)) nameWrites.push(rackWrite)
+
+        const levels = refToLevelLocations.get(p.client_ref)
+        if (!levels) continue
+        for (const [levelIndex, levelId] of Object.entries(levels)) {
+          const stored = storedLevelNames.get(levelId)
+          if (stored && !stored.nameIsAuto) continue
+          const levelWrite: NameWrite = {
+            id: levelId,
+            name: composeName(named.areaName, named.seq, Number(levelIndex)),
+            name_seq: null,
+            name_area: named.areaName || null,
+            name_is_auto: true,
+          }
+          if (nameWriteNeeded(stored, levelWrite)) nameWrites.push(levelWrite)
+        }
+      }
+
+      // whPath is this layout's warehouse path; the RPC re-checks every row
+      // against it, because these ids came from client-supplied geometry.
+      if (nameWrites.length > 0 && whPath) {
+        await applyNameWrites(admin, whPath, nameWrites)
       }
     }
 
@@ -1228,7 +1422,17 @@ serve(async (req: Request) => {
 
     const refMap = [...refToLocation.entries()].map(([client_ref, location_id]) => {
       const levelIds = refToLevelLocations.get(client_ref)
-      return levelIds ? { client_ref, location_id, level_location_ids: levelIds } : { client_ref, location_id }
+      // Hand back the name the server actually decided on (mig 00094), so
+      // `mark_saved` can correct a stale tab's guess in place instead of leaving
+      // the two disagreeing until the next reload. Omitted for a hand-named bin,
+      // which the server never recomposes.
+      const named = namedByRef.get(client_ref)
+      const naming = named && named.isAuto && named.seq != null
+        ? { name: named.name, name_seq: named.seq, name_area: named.areaName || null }
+        : {}
+      return levelIds
+        ? { client_ref, location_id, level_location_ids: levelIds, ...naming }
+        : { client_ref, location_id, ...naming }
     })
     return new Response(JSON.stringify({ ok: true, layout_id: layout.id, ref_map: refMap }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
