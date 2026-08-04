@@ -130,6 +130,11 @@ export interface WarehouseCanvasProps {
   guardClick?: (fn: () => void) => void
   /** Pointer entered/left a bin; the stage turns this into a hover card. */
   onHoverBin?: (hover: BinHover | null) => void
+  /** Admin/Manager clicked an area's NAME to rename it (mig 00094). Omitted →
+   *  the label is inert, as it always was. Note the target is the label, never
+   *  the wash: the wash lies under the racks with pointerEvents="none" so it
+   *  cannot steal their hit tests, and a handler there would fight that. */
+  onRenameArea?: (areaName: string) => void
 }
 
 export function WarehouseCanvas({
@@ -152,6 +157,7 @@ export function WarehouseCanvas({
   locationsById,
   guardClick,
   onHoverBin,
+  onRenameArea,
 }: WarehouseCanvasProps) {
   // Operator-managed role vocabulary (mig 00081). A level whose role has been
   // retired still renders with its own colour, because getLevelRoles returns
@@ -559,15 +565,28 @@ export function WarehouseCanvas({
           const name = areaName(region)
           const anchor = region.cells[0]
           if (!name || !anchor) return null
+          // The NAME is the rename target, never the wash. The wash sits under
+          // the racks with pointerEvents="none" precisely so it cannot steal
+          // their hit tests; giving it a click handler would fight that.
+          const clickable = Boolean(onRenameArea)
           return (
             <text
               key={`area-name-${region.key}`}
               x={anchor.x * cell + u(3)}
               y={Math.max(u(11), anchor.y * cell - u(3))}
               fontSize={u(12)} fontWeight={700} fontFamily="sans-serif"
-              fill={areaFill(region)} pointerEvents="none"
+              fill={areaFill(region)}
+              pointerEvents={clickable ? 'auto' : 'none'}
+              style={clickable ? { cursor: 'pointer' } : undefined}
+              onClick={clickable ? (e: { stopPropagation: () => void }) => {
+                e.stopPropagation()
+                // Through the stage's pan guard, so finishing a drag over the
+                // label does not pop a dialog.
+                guard(() => onRenameArea!(name))
+              } : undefined}
             >
-              {name}
+              {name}{clickable ? ' ✎' : ''}
+              {clickable && <title>Rename “{name}” and the bins inside it</title>}
             </text>
           )
         })}

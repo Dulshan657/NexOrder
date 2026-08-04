@@ -26,6 +26,7 @@ import { MapStage } from './MapStage'
 import { FloatingPanel } from './FloatingPanel'
 import { WarehouseTreePanel } from './WarehouseTreePanel'
 import { BinDetailPanel } from './BinDetailPanel'
+import { RenameAreaModal } from './RenameAreaModal'
 import { OverlayControls } from './OverlayControls'
 import { AskEnginePanel } from './AskEnginePanel'
 import { slottingArrows, routePath, putawayMarkers } from './warehouseMarkers'
@@ -42,9 +43,13 @@ const AREA_LEGEND_FALLBACK = OBJECT_FILL.area
 export interface RackedWorkspaceProps {
   warehouseId: number
   layoutId: number
+  /** Admin/Manager, per mutate-warehouse-location's role gate (mig 00094).
+   *  Warehouse staff read the map; they do not rename what is on it. A button
+   *  that always errors is worse than no button. */
+  canRename?: boolean
 }
 
-export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps) {
+export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: RackedWorkspaceProps) {
   const { data: detail, isLoading } = useLayoutDetail(layoutId)
   const model = useWarehouseViewerModel(warehouseId, layoutId)
   const { data: storageTypes = [], isLoading: storageTypesLoading } = useStorageTypes()
@@ -52,6 +57,8 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
   const { data: levelRoles = [] } = useLevelRoles()
 
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null)
+  /** Area whose name is being edited (mig 00094); null = dialog closed. */
+  const [renamingArea, setRenamingArea] = useState<string | null>(null)
   const [floor, setFloor] = useState(0)
   const [overlay, setOverlay] = useState<OverlayKind>('none')
   // Dry-run test-bench outputs drawn on the grid.
@@ -399,8 +406,17 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
           zoneTypeByProfileId={zoneTypeByProfileId}
           renderOverlay={renderMarkers}
           locationsById={model.locationsById}
+          onRenameArea={canRename ? setRenamingArea : undefined}
         />
       </div>
+
+      {renamingArea && (
+        <RenameAreaModal
+          warehouseId={warehouseId}
+          areaName={renamingArea}
+          onClose={() => setRenamingArea(null)}
+        />
+      )}
 
       <div className="glass-card rounded-xl p-3">
         <OverlayControls overlay={overlay} onChange={setOverlay} extraEntries={legendExtras} />
@@ -434,6 +450,7 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
             rackLevelLocations={rackLevelLocations}
             rackFillByLevel={rackFillByLevel}
             onSelectLevel={setSelectedLocationId}
+            canRename={canRename}
           />
           {/* Slotting's suggested moves live here rather than as a separate
               panel: they're overlay-driven context about what's currently on

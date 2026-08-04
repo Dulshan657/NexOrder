@@ -1,6 +1,23 @@
 import { supabase } from '@/lib/supabase'
 import { toInventoryLocation } from '@/lib/adapters'
+import { describeValidationIssues, extractFunctionErrorDetails, extractFunctionErrorMessage } from '@/lib/functionError'
 import type { InventoryLocation, LevelRole, LocationKind } from '@/types'
+
+/**
+ * Rethrow a functions.invoke failure carrying the message the server sent.
+ *
+ * `functions.invoke` collapses every non-2xx into "Edge Function returned a
+ * non-2xx status code" and leaves the real `{ error: { code, message } }` body
+ * unread on `.context`. A rename can be refused for several distinct and
+ * actionable reasons — no published layout, no area by that name, a placement
+ * outside the warehouse, the bulk rate limit — and all of them read identically
+ * without this. Same helper as layoutService's.
+ */
+async function rethrowWithServerMessage(error: unknown, fallback: string): Promise<never> {
+  const message = await extractFunctionErrorMessage(error, fallback)
+  const issues = describeValidationIssues(await extractFunctionErrorDetails(error))
+  throw new Error(issues ? `${message} — ${issues}` : message)
+}
 
 export interface CreateLocationInput {
   parent_id: number
@@ -107,6 +124,94 @@ export async function setRackLevels(id: number, levels: RackLevelInput[]): Promi
     body: { action: 'set_levels', id, levels },
   })
   if (error) throw error
+}
+
+// ── Friendly names (mig 00094) ───────────────────────────────────────────────
+
+export interface AreaRenamePreview {
+  /** Locations that will actually change name. */
+  willRename: number
+  racks: number
+  levels: number
+  /** Hand-named locations inside the area that will be left alone unless the
+   *  operator opts in. Reported, never silently skipped. */
+  skippedCustom: number
+  examples: Array<{ code: string; from: string; to: string }>
+}
+
+export interface AreaRenameResult {
+  renamed: number
+  racks: number
+  levels: number
+  skippedCustom: number
+}
+
+interface AreaRenameArgs {
+  warehouseId: number
+  from: string
+  to: string
+  zoneProfileId?: number | null
+  includeCustom?: boolean
+}
+
+/**
+ * What renaming this area would do — computed by the SERVER, running the same
+ * pure module the dialog does.
+ *
+ * A `dry_run` flag on the real action rather than a separate preview endpoint,
+ * so the preview and the write cannot drift apart. Writes nothing and audits
+ * nothing.
+ */
+export async function previewAreaRename(args: AreaRenameArgs): Promise<AreaRenamePreview> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; preview: AreaRenamePreview }>(
+    'mutate-warehouse-location',
+    {
+      body: {
+        action: 'rename_area',
+        warehouse_id: args.warehouseId,
+        from: args.from,
+        to: args.to,
+        include_custom: args.includeCustom ?? false,
+        dry_run: true,
+      },
+    },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not check the rename')
+  return (data as any).preview as AreaRenamePreview
+}
+
+/** Rename an area and cascade to every auto-named bin inside it. Works on a
+ *  LIVE warehouse — the designer cannot, since save_geometry requires a draft. */
+export async function renameArea(args: AreaRenameArgs): Promise<AreaRenameResult> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true } & AreaRenameResult>(
+    'mutate-warehouse-location',
+    {
+      body: {
+        action: 'rename_area',
+        warehouse_id: args.warehouseId,
+        from: args.from,
+        to: args.to,
+        ...(args.zoneProfileId === undefined ? {} : { zone_profile_id: args.zoneProfileId }),
+        include_custom: args.includeCustom ?? false,
+      },
+    },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not rename the area')
+  return data as AreaRenameResult
+}
+
+/** Rename one rack, optionally restamping its levels, in a single round trip. */
+export async function renameRack(
+  id: number,
+  name: string,
+  includeLevels = false,
+): Promise<number> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; renamed: number }>(
+    'mutate-warehouse-location',
+    { body: { action: 'rename_rack', id, name, include_levels: includeLevels } },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not rename the location')
+  return Number((data as any)?.renamed ?? 0)
 }
 
 export async function deactivateWarehouseLocation(id: number): Promise<void> {

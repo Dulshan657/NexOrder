@@ -6,6 +6,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronRight, ChevronDown } from 'lucide-react'
+import { locationSubtitle, locationTitle } from '@/lib/locationDisplay'
 import type { InventoryLocation } from '@/types'
 import type { LocationTreeNode, BinContentRow } from './useWarehouseViewerModel'
 import { occupancyPill } from './warehouseOverlays'
@@ -105,8 +106,12 @@ export function WarehouseTreePanel({
           ) : (
             <span className="w-3.5 shrink-0" />
           )}
-          <span className="font-mono text-[11px] shrink-0">{location.code}</span>
-          <span className="truncate text-stone-500">{location.name}</span>
+          {/* Name first, code second (mig 00094) — the same order every other
+              surface uses. The code stays because it is the scan identity. */}
+          <span className="truncate">{locationTitle(location)}</span>
+          {locationSubtitle(location) && (
+            <span className="font-mono text-[11px] shrink-0 text-stone-400">{locationSubtitle(location)}</span>
+          )}
           {isBin && (
             <span className="ml-auto flex items-center gap-1 shrink-0">
               {count ? <span className="text-[10px] text-stone-400">{count} SKU</span> : null}
