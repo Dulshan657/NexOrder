@@ -247,7 +247,19 @@ export function areaNameIssue(raw: string): string | null {
 export function isUninformativeName(name: string | null | undefined, code: string): boolean {
   const trimmed = (name ?? '').trim()
   if (!trimmed) return true
-  if (trimmed.toUpperCase() === (code ?? '').trim().toUpperCase()) return true
+
+  const upperCode = (code ?? '').trim().toUpperCase()
+  const upperName = trimmed.toUpperCase()
+  if (upperCode && upperName === upperCode) return true
+
+  // A name that CONTAINS the whole code adds nothing over it, and is actively
+  // worse on a canvas: `Bin WIEDEMO-Z1-AL-R1-B3` elides to "Bin WI…" — identical
+  // for every bin on the floor — where the bare code keeps its discriminating
+  // tail ("…R1-B3"). This is the seeded shape on WIE-DEMO and MAIN, so it is the
+  // common case, not an edge one.
+  if (upperCode && upperName.includes(upperCode)) return true
+
+  // The two generators the layout designer has used since 00027.
   if (/^Bin \d+,\d+$/.test(trimmed)) return true
   if (/^Level \d+$/.test(trimmed)) return true
   return false

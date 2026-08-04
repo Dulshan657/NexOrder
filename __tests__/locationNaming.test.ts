@@ -112,6 +112,11 @@ describe('isUninformativeName', () => {
     ['Bin 9,4', 'NEXG-B-9-4', true],
     ['Level 4', 'NEXG-B-9-4-L4', true],
     ['nexg-b-9-4', 'NEXG-B-9-4', true],
+    // The seeded shape on WIE-DEMO and MAIN. Worse than the bare code on a
+    // canvas: it elides to "Bin WI…", identical for every bin on the floor,
+    // where the code keeps its discriminating tail.
+    ['Bin WIEDEMO-Z1-AL-R1-B3', 'WIEDEMO-Z1-AL-R1-B3', true],
+    ['Rack MAIN-F01-L01', 'MAIN-F01-L01', true],
     ['Chiller · Rack 7', 'NEXG-B-9-4', false],
     ['Rack 12', 'NEXG-B-9-4', false],
     ['Damaged goods bay', 'NEXG-B-9-4', false],

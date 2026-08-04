@@ -80,7 +80,10 @@ describe('isUninformativeName is re-exported from the pure module', () => {
   it('matches the two legacy generators and nothing else', () => {
     expect(isUninformativeName('Bin 12,3', 'X')).toBe(true)
     expect(isUninformativeName('Level 2', 'X')).toBe(true)
+    // A name that contains the whole code adds nothing over it.
+    expect(isUninformativeName('Bin WIEDEMO-Z1-AL-R1-B3', 'WIEDEMO-Z1-AL-R1-B3')).toBe(true)
     // Deliberately NOT matched: a legitimate name for a rack outside any area.
     expect(isUninformativeName('Rack 12', 'X')).toBe(false)
+    expect(isUninformativeName('Chiller · Rack 7', 'NEXG-B-9-4')).toBe(false)
   })
 })
