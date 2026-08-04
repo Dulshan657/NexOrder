@@ -8,6 +8,8 @@ import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
 import { useSlottingSuggestions, useDecideSlotting, useRunReoptimize } from '@/hooks/queries/useSlottingSuggestions'
 import { useToasts } from '@/hooks/useToasts'
 import type { SlottingSuggestion, Warehouse } from '@/types'
+import { buildDisplayLookup, displayFor } from '@/lib/locationLookup'
+import { locationOneLine } from '@/lib/locationDisplay'
 
 interface SlottingSuggestionsViewProps {
   warehouse: Warehouse
@@ -22,11 +24,8 @@ export function SlottingSuggestionsView({ warehouse, productNameById }: Slotting
   const reoptimize = useRunReoptimize(warehouse.id)
   const { addToast } = useToasts()
 
-  const codeById = useMemo(() => {
-    const m = new Map<number, string>()
-    for (const l of locationsQuery.data ?? []) m.set(l.id, l.code)
-    return m
-  }, [locationsQuery.data])
+  // Name AND code (mig 00094) — select('*') already returns both.
+  const binById = useMemo(() => buildDisplayLookup(locationsQuery.data), [locationsQuery.data])
 
   const runReoptimize = async () => {
     try {
@@ -50,7 +49,7 @@ export function SlottingSuggestionsView({ warehouse, productNameById }: Slotting
   }
 
   const productName = (id: number) => productNameById?.get(id) ?? `#${id}`
-  const binCode = (id: number) => codeById.get(id) ?? `#${id}`
+  const binCode = (id: number) => locationOneLine(displayFor(binById, id))
 
   const suggestions = suggestionsQuery.data ?? []
   const reslotCount = suggestions.filter((s) => s.origin === 'reslot').length

@@ -11,7 +11,9 @@
 import React, { useMemo, useState } from 'react';
 import { Footprints, Route } from 'lucide-react';
 import { useReplenRoute, useReplenTasks } from '../../hooks/queries/useReplenishment';
+import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
 import ReplenStopCard from './replen/ReplenStopCard';
+import type { DisplayLocation } from '@/lib/locationDisplay';
 import type { ReplenRouteStop } from '../../services/supabase/replenRouteService';
 
 interface ReplenWalkViewProps {
@@ -22,8 +24,17 @@ interface ReplenWalkViewProps {
 const ReplenWalkView: React.FC<ReplenWalkViewProps> = ({ warehouseId, canWork }) => {
   const { data: route, isLoading } = useReplenRoute(warehouseId);
   const { data: tasks } = useReplenTasks(warehouseId);
+  const { data: locations } = useWarehouseLocations(warehouseId);
   const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
   const [filter, setFilter] = useState('');
+
+  // Keyed by CODE, because that is what recommend-replen-route returns for both
+  // ends of a stop. The names ride along on a query this screen already makes.
+  const binByCode = useMemo(() => {
+    const m = new Map<string, DisplayLocation>();
+    for (const l of locations ?? []) m.set(l.code, { code: l.code, name: l.name });
+    return m;
+  }, [locations]);
 
   // A warehouse with no published layout still has work to do; fabricate flat
   // stops from the task rows so the card renders identically, just unsequenced.
@@ -55,11 +66,16 @@ const ReplenWalkView: React.FC<ReplenWalkViewProps> = ({ warehouseId, canWork })
     const q = filter.trim().toLowerCase();
     if (!q) return stops;
     return stops.filter((s) =>
-      [s.productName, s.sku, s.code, s.toCode, s.huCode]
+      [
+        s.productName, s.sku, s.code, s.toCode, s.huCode,
+        // Names too (mig 00094): an operator reading "Chiller · Rack 7" off the
+        // card will search for that, not for NEXG-B-9-4.
+        binByCode.get(s.code)?.name, binByCode.get(s.toCode)?.name,
+      ]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q)),
     );
-  }, [stops, filter]);
+  }, [stops, filter, binByCode]);
 
   if (isLoading) {
     return (
@@ -112,6 +128,8 @@ const ReplenWalkView: React.FC<ReplenWalkViewProps> = ({ warehouseId, canWork })
         <ReplenStopCard
           key={stop.taskId}
           stop={stop}
+          fromLocation={binByCode.get(stop.code)}
+          toLocation={binByCode.get(stop.toCode)}
           active={activeTaskId === stop.taskId}
           disabled={!canWork}
           onActivate={() => setActiveTaskId(stop.taskId)}

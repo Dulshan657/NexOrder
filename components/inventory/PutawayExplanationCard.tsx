@@ -4,6 +4,7 @@
 
 import { AlertTriangle, PackageSearch } from 'lucide-react'
 import type { CandidateBreakdown, PutawayExplanation } from '@/types'
+import { locationOneLine, type DisplayLocation } from '@/lib/locationDisplay'
 
 const FACTOR_LABEL: Record<string, string> = {
   travel_distance: 'Travel distance',
@@ -35,7 +36,13 @@ function CandidateFactors({ candidate }: { candidate: CandidateBreakdown }) {
   )
 }
 
-export function PutawayExplanationCard({ explanation }: { explanation: PutawayExplanation }) {
+export function PutawayExplanationCard({ explanation, binById }: {
+  explanation: PutawayExplanation
+  /** Friendly names by location id (mig 00094). Optional: this card is also
+   *  rendered where no lookup is at hand, and locationOneLine falls back to the
+   *  code on its own. */
+  binById?: ReadonlyMap<number, DisplayLocation>
+}) {
   const { winner, alternatives, hardFilters, candidatesConsidered, note } = explanation
   // The hard never-mix rule (mig 00072): a SKU may only land on a level whose
   // role it allows. When this is the reason NOTHING came back, that's the
@@ -80,7 +87,9 @@ export function PutawayExplanationCard({ explanation }: { explanation: PutawayEx
 
       {winner && (
         <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
-          <p className="font-medium text-emerald-800 mb-1.5">{winner.locationCode}</p>
+          <p className="font-medium text-emerald-800 mb-1.5">
+            {locationOneLine(binById?.get(winner.locationId) ?? { code: winner.locationCode })}
+          </p>
           <CandidateFactors candidate={winner} />
         </div>
       )}
@@ -93,7 +102,9 @@ export function PutawayExplanationCard({ explanation }: { explanation: PutawayEx
           <div className="mt-2 space-y-2">
             {alternatives.map((a) => (
               <div key={a.locationId} className="p-2 rounded-lg bg-stone-50 border border-stone-100">
-                <p className="font-medium text-stone-600 mb-1.5">{a.locationCode} · {a.totalScore.toFixed(2)}</p>
+                <p className="font-medium text-stone-600 mb-1.5">
+                  {locationOneLine(binById?.get(a.locationId) ?? { code: a.locationCode })} · {a.totalScore.toFixed(2)}
+                </p>
                 <CandidateFactors candidate={a} />
               </div>
             ))}

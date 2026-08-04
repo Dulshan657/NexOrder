@@ -18,12 +18,17 @@ import { checkPickScan } from '@/supabase/functions/_shared/pickScanCheck'
 import { useRecordPick } from '@/hooks/queries/usePickQueue'
 import { useToasts } from '@/hooks/useToasts'
 import type { PickQueueLine, PickTask } from '@/services/supabase/pickService'
+import { locationOneLine, locationSubtitle, locationTitle } from '@/lib/locationDisplay'
 
 interface PickTaskRowProps {
   orderId: string
   task: PickTask
   line: PickQueueLine
   disabled: boolean
+  /** Friendly name for the bin (mig 00094). Resolved by the queue via
+   *  useLocationNames — the pick path is ORDER-scoped, so it has no warehouse
+   *  locations query to read from. Absent falls back to the code. */
+  binName?: string | null
 }
 
 type Step = 'idle' | 'bin' | 'item' | 'qty'
@@ -32,7 +37,8 @@ type Step = 'idle' | 'bin' | 'item' | 'qty'
 // function component's props interface does not include `key`, and callers
 // rendering it in a list fail to type-check. Same reason the rest of the
 // codebase uses React.FC. (See the types gotcha in CLAUDE.md.)
-export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, disabled }) => {
+export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, disabled, binName }) => {
+  const bin = { code: task.code, name: binName ?? null }
   const { addToast } = useToasts()
   const recordPick = useRecordPick()
 
@@ -110,7 +116,9 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
         locationId: task.locationId,
         scan: { locationCode: binCode, productCode: itemCode },
       })
-      addToast(`Picked ${picked} × ${task.code}`, 'success')
+      // A toast is a receipt, so it carries both — unlike the scan prompt below,
+      // which must quote the code alone.
+      addToast(`Picked ${picked} × ${locationOneLine(bin)}`, 'success')
       reset()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to record pick')
@@ -121,7 +129,13 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
     return (
       <div className="flex items-center gap-3 py-1.5 pl-5">
         <MapPin className="w-3 h-3 text-stone-400 shrink-0" aria-hidden="true" />
-        <span className="flex-1 min-w-0 text-xs text-stone-500 truncate font-mono">{task.code}</span>
+        {/* Name first, code beneath — the same order as the walk cards. */}
+        <span className="flex-1 min-w-0 truncate">
+          <span className="block text-xs text-stone-600 truncate">{locationTitle(bin)}</span>
+          {locationSubtitle(bin) && (
+            <span className="block font-mono text-[10px] text-stone-400 truncate">{locationSubtitle(bin)}</span>
+          )}
+        </span>
         <span className="font-mono text-xs text-stone-400 shrink-0">
           {task.pickedQty}/{task.allocatedQty}
         </span>
@@ -155,6 +169,13 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
         </button>
       </div>
 
+      {/* The prompt quotes the CODE. generate-labels prints the code in large
+          type and the name only as a small context line, so an operator
+          cross-checking the sticker must be shown the string that is big on it.
+          The name is stated above the field instead. */}
+      {step === 'bin' && locationSubtitle(bin) && (
+        <p className="text-xs text-stone-500">Go to <span className="font-medium">{locationTitle(bin)}</span></p>
+      )}
       {step === 'bin' && (
         <ScanField
           label={`Scan the bin — expecting ${task.code}`}

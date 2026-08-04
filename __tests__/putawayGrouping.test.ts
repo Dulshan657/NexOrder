@@ -26,7 +26,10 @@ function row(over: Partial<PendingPutawayRow> = {}): PendingPutawayRow {
   }
 }
 
-const codeById = new Map([[100, 'A-01-01'], [200, 'B-02-02']])
+const binById = new Map([
+  [100, { code: 'A-01-01', name: 'Chiller · Rack 1' }],
+  [200, { code: 'B-02-02', name: 'Bulk · Rack 4' }],
+])
 
 describe('filterQueue', () => {
   const rows = [
@@ -54,7 +57,14 @@ describe('filterQueue', () => {
   })
 
   it('matches on the destination bin code when one is supplied', () => {
-    expect(filterQueue(rows, { query: 'B-02', codeById }).map((r) => r.id)).toEqual([3])
+    expect(filterQueue(rows, { query: 'B-02', binById }).map((r) => r.id)).toEqual([3])
+  })
+
+  // Operators read "Chiller · Rack 1" off the card, so that is what they type
+  // into the search box (mig 00094).
+  it('matches the destination bin by NAME as well as by code', () => {
+    expect(filterQueue(rows, { query: 'chiller', binById }).map((r) => r.id)).toEqual([1])
+    expect(filterQueue(rows, { query: 'rack 4', binById }).map((r) => r.id)).toEqual([3])
   })
 
   it('falls back to the #id for a row with no product join', () => {

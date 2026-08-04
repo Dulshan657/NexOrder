@@ -26,6 +26,7 @@ import { extractFunctionErrorMessage } from '@/lib/functionError'
 import { useToasts } from '@/hooks/useToasts'
 import { CountLineRow } from './CountLineRow'
 import { FoundItemPicker } from './FoundItemPicker'
+import { locationOneLine, locationSubtitle, locationTitle } from '@/lib/locationDisplay'
 
 interface CountSheetProps {
   location: InventoryLocation
@@ -112,7 +113,7 @@ export const CountSheet: React.FC<CountSheetProps> = ({ location, products, canW
           outcome.posted > 0 ? 'info' : 'error',
         )
       } else {
-        addToast(`${location.code} counted — ${outcome.posted} variance${outcome.posted === 1 ? '' : 's'} posted`, 'success')
+        addToast(`${locationOneLine(location)} counted — ${outcome.posted} variance${outcome.posted === 1 ? '' : 's'} posted`, 'success')
       }
     } catch (err) {
       setPostError(await extractFunctionErrorMessage(err, 'Count could not be posted'))
@@ -129,10 +130,14 @@ export const CountSheet: React.FC<CountSheetProps> = ({ location, products, canW
         <div className="flex items-center gap-2">
           <MapPin className="h-4 w-4 text-nexgen-blue" aria-hidden="true" />
           <div>
-            <p className="font-mono text-sm font-semibold text-stone-900">{location.code}</p>
+            {/* Name over code (mig 00094). The code stays because a counter
+                standing at the rack matches it against the sticker. */}
+            <p className="text-sm font-semibold text-stone-900">{locationTitle(location)}</p>
             <p className="text-xs text-stone-500">
-              {location.name}
-              {location.kind === 'WAREHOUSE' ? ' · bulk / floor stock at the site root' : ` · ${location.kind}`}
+              {locationSubtitle(location) && (
+                <span className="font-mono text-stone-400">{locationSubtitle(location)} · </span>
+              )}
+              {location.kind === 'WAREHOUSE' ? 'bulk / floor stock at the site root' : location.kind}
             </p>
           </div>
         </div>

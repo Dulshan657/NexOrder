@@ -7,10 +7,15 @@ import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import { formatRelative } from '@/components/admin/emailAccountFormat'
 import { PutawayExplanationCard } from '../PutawayExplanationCard'
 import { describeQuantity } from './putawayFormat'
+import { LocationLabel } from '@/components/inventory/LocationLabel'
+import type { DisplayLocation } from '@/lib/locationDisplay'
 
 interface PutawayRowProps {
   row: PendingPutawayRow
-  binCode: string | null
+  /** Destination, name-first with the code beneath (mig 00094). */
+  bin: DisplayLocation | null
+  /** Names for the scoring card's candidate list. */
+  binById?: ReadonlyMap<number, DisplayLocation>
   expanded: boolean
   busy: boolean
   onToggleExplanation: () => void
@@ -28,7 +33,8 @@ interface PutawayRowProps {
 // `any` here and lets the special prop through.
 export const PutawayRow: React.FC<PutawayRowProps> = ({
   row,
-  binCode,
+  bin,
+  binById,
   expanded,
   busy,
   onToggleExplanation,
@@ -85,8 +91,12 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
         {/* Destination + actions */}
         <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
           <p className="text-xs max-w-[16rem] sm:max-w-[20rem]">
-            {binCode ? (
-              <span className="font-mono text-emerald-600">{binCode}</span>
+            {bin ? (
+              <LocationLabel
+                location={bin}
+                titleClassName="text-xs font-medium text-emerald-600"
+                codeClassName="font-mono text-[10px] text-emerald-600/60"
+              />
             ) : mismatch ? (
               <span className="inline-flex items-start gap-1 text-amber-600">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
@@ -151,7 +161,7 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
 
       {expanded && (
         <div className="mt-3 pl-1">
-          <PutawayExplanationCard explanation={row.explanation} />
+          <PutawayExplanationCard explanation={row.explanation} binById={binById} />
         </div>
       )}
     </div>

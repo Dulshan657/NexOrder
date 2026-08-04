@@ -15,6 +15,8 @@ import { PickTaskRow } from './pick/PickTaskRow';
 import { Button, Modal } from '../ui';
 import type { PickQueueLine, PickTask } from '../../services/supabase/pickService';
 import { Check, FileText, Truck, Box, PackageCheck as PackIcon } from 'lucide-react';
+import { useLocationNames } from '@/hooks/queries/useLocationNames';
+import type { DisplayLocation } from '@/lib/locationDisplay';
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
   processed: { label: 'Ready to pick', cls: 'bg-nexgen-blue/10 text-nexgen-blue' },
@@ -31,13 +33,17 @@ interface PickLineRowProps {
   canPick: boolean;
   homeWarehouseId: number | null;
   isWarehouseRole: boolean;
+  /** locationId -> friendly name (mig 00094). The pick path is ORDER-scoped and
+   *  has no warehouse locations query, so the workspace resolves these once for
+   *  every bin in the wave and hands them down. */
+  binNames?: ReadonlyMap<number, DisplayLocation>;
 }
 
 /** One order line, grouped line → warehouse → bin: each allocated bin is its
  *  own directed pick task (PickTaskRow) so the operator is told exactly where
  *  to pick and the recorded pick decrements that exact bin. */
 const PickLineRow: React.FC<PickLineRowProps> = ({
-  line, orderId, tasks, tasksLoading, canPick, homeWarehouseId, isWarehouseRole,
+  line, orderId, tasks, tasksLoading, canPick, homeWarehouseId, isWarehouseRole, binNames,
 }) => {
   const remaining = Math.max(line.quantity - line.picked, 0);
   const done = remaining === 0;
@@ -89,6 +95,7 @@ const PickLineRow: React.FC<PickLineRowProps> = ({
                     orderId={orderId}
                     task={t}
                     line={line}
+                    binName={binNames?.get(t.locationId)?.name}
                     disabled={!canPick || (isWarehouseRole && warehouseId !== homeWarehouseId)}
                   />
                 ))}
@@ -127,6 +134,13 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
     }
     return map;
   }, [pickTasks]);
+
+  // Friendly bin names (mig 00094). Resolved ONCE for the whole wave rather than
+  // per row: `wie_order_alloc_bins` returns codes only, and this screen is
+  // order-scoped so it has no warehouse locations query to read from.
+  const { data: binNames } = useLocationNames(
+    useMemo(() => (pickTasks ?? []).map((t) => t.locationId), [pickTasks]),
+  );
 
   const updateStatus = useUpdateOrderStatus();
   const pickSlip = useGeneratePickSlip();
@@ -269,6 +283,7 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
                 canPick={canPick}
                 homeWarehouseId={homeWarehouseId}
                 isWarehouseRole={isWarehouseRole}
+                binNames={binNames}
               />
             ))}
           </div>

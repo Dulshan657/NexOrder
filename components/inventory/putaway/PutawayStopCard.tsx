@@ -22,12 +22,15 @@ import { useCompletePutaway, useUnassignPutaway } from '@/hooks/queries/usePutaw
 import { useToasts } from '@/hooks/useToasts'
 import { CompletePutawayError } from '@/services/supabase/putawayService'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
+import { locationSubtitle, locationTitle, type DisplayLocation } from '@/lib/locationDisplay'
 import { describeQuantity, trimNumber } from './putawayFormat'
 
 interface PutawayStopCardProps {
   row: PendingPutawayRow
-  /** Code of the bin this task was assigned to. */
-  binCode: string
+  /** The bin this task was assigned to — name AND code (mig 00094). The name is
+   *  what the operator reads; the code is what they scan and what the server
+   *  validates against, so both have to be here. */
+  bin: DisplayLocation
   sequence: number | null
   legDistanceM: number | null
   reachable: boolean
@@ -42,8 +45,12 @@ type Step = 'idle' | 'plate' | 'bin' | 'qty'
 // React.FC deliberately: this repo ships no @types/react, so a plainly-typed
 // component's props do not include `key`, and the walk renders these in a list.
 export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
-  row, binCode, sequence, legDistanceM, reachable, active, disabled, onActivate, onDone,
+  row, bin, sequence, legDistanceM, reachable, active, disabled, onActivate, onDone,
 }) => {
+  // The scan identity. Every scan check, placeholder and refusal message below
+  // quotes this rather than the friendly name — the operator is matching a
+  // string against the big text on a sticker, and that text is the code.
+  const binCode = bin.code
   const { addToast } = useToasts()
   const complete = useCompletePutaway()
   const unassign = useUnassignPutaway()
@@ -203,7 +210,10 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           </span>
         </span>
         <span className="shrink-0 text-right">
-          <span className="block font-mono text-sm text-emerald-600">{binCode}</span>
+          <span className="block text-sm font-medium text-emerald-600 truncate">{locationTitle(bin)}</span>
+          {locationSubtitle(bin) && (
+            <span className="block font-mono text-[10px] text-emerald-600/60">{locationSubtitle(bin)}</span>
+          )}
           <span className="block text-[11px] text-stone-400 tabular-nums">
             {reachable
               ? legDistanceM != null ? `${Math.round(legDistanceM)}m` : ''
@@ -240,7 +250,13 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         <MapPin className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-stone-400">Take it to</p>
-          <p className="font-mono text-lg font-bold text-stone-900 truncate">{binCode}</p>
+          {/* Name big, because this is the instruction someone acts on while
+              walking. The code stays underneath: it is what is printed large on
+              the sticker they will match against. */}
+          <p className="text-lg font-bold text-stone-900 truncate">{locationTitle(bin)}</p>
+          {locationSubtitle(bin) && (
+            <p className="font-mono text-xs text-stone-500 truncate">{locationSubtitle(bin)}</p>
+          )}
         </div>
       </div>
 
@@ -269,6 +285,11 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         />
       )}
 
+      {/* The prompt quotes the CODE, deliberately. generate-labels prints the
+          code in large type with the name only as a small context line, so an
+          operator cross-checking the sticker must be shown the same string that
+          is big on it. The friendly name is stated above, in the destination
+          block, where it belongs. */}
       {step === 'bin' && (
         <ScanField
           label={`Scan the bin — expecting ${binCode}`}

@@ -5,6 +5,9 @@
 // non-layout sites. Purely presentational; matches PutawayExplanationCard.
 
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
+import { useMemo } from 'react'
+import { useLocationNames } from '@/hooks/queries/useLocationNames'
+import { locationTitle } from '@/lib/locationDisplay'
 
 interface PickRoutePanelProps {
   warehouseId: number | null
@@ -13,6 +16,13 @@ interface PickRoutePanelProps {
 
 export function PickRoutePanel({ warehouseId, orderIds }: PickRoutePanelProps) {
   const { data, isLoading } = usePickRoute(warehouseId, orderIds)
+  // The route's stops carry a locationId but no name — recommend-pick-route
+  // returns codes only. Resolve them by id rather than widening that RPC.
+  const stopIds = useMemo(
+    () => (data?.mode === 'engine' ? data.route.stops.map((s) => s.locationId) : []),
+    [data],
+  )
+  const { data: binNames } = useLocationNames(stopIds)
 
   // Reserve the loaded card's footprint while the route computes so the Pick
   // buttons below never reflow mid-click (ONBOARDING-AUDIT: the panel used to
@@ -55,7 +65,9 @@ export function PickRoutePanel({ warehouseId, orderIds }: PickRoutePanelProps) {
         {stops.map((stop) => (
           <li key={stop.sequence} className="flex items-center gap-2 text-stone-600">
             <span className="font-mono text-emerald-700 shrink-0">#{stop.sequence}</span>
-            <span className="font-medium text-stone-700 shrink-0">{stop.code ?? '—'}</span>
+            <span className="font-medium text-stone-700 shrink-0">
+              {locationTitle(binNames?.get(stop.locationId) ?? (stop.code ? { code: stop.code } : null))}
+            </span>
             <span className="text-stone-400">·</span>
             <span className="font-mono text-stone-600">{stop.qtyBase} units</span>
             <span className="text-stone-400">·</span>
