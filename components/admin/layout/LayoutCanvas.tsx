@@ -11,7 +11,8 @@ import { placementAt } from './useLayoutEditorState'
 import { BASE_CELL, levelRoleFill, levelRoleLabel, levelRoleStroke, OBJECT_FILL, OBJECT_STROKE, PLACEMENT_FILL } from './layoutPalette'
 import { MERGED_OBJECT_TYPES, objectRegions, regionFillPath, regionOutlinePath } from './objectRegions'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
-import { labelTier, fitCode } from '@/components/inventory/warehouse/mapLabels'
+import { labelTier, fitCode, fitName } from '@/components/inventory/warehouse/mapLabels'
+import { isUninformativeName, nameTail } from '@/lib/locationDisplay'
 import { zoneTint, ZONE_FILL_OPACITY, ZONE_STROKE_OPACITY } from '@/components/inventory/warehouse/zoneTints'
 import { defaultRoleKey } from '@/lib/levelRoles'
 import { rulerStride } from '@/supabase/functions/_shared/wie/gridScale'
@@ -524,11 +525,20 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, cellSizeM
                     See mapLabels.ts. */}
                 {labelTier(p.w * cell - 2, p.h * cell - 2) !== 'none' && (() => {
                   const fontSize = Math.min(9, cell / 3)
-                  const code = fitCode(p.code, p.w * cell - 4, fontSize)
+                  // Prefer the friendly name's TAIL (mig 00094) — the area name
+                  // is drawn once across the region, so repeating it per bin
+                  // spends the label on what the operator can already see. Falls
+                  // back to the code when there is no useful name (a layout
+                  // drawn before 00094) or when even the tail will not fit: a
+                  // truncated stub is worse than a whole code.
+                  const tail = isUninformativeName(p.name, p.code) ? '' : nameTail(p.name)
+                  const named = tail ? fitName(tail, p.w * cell - 4, fontSize) : ''
+                  const code = named || fitCode(p.code, p.w * cell - 4, fontSize)
                   return code ? (
                     <text
                       x={p.x * cell + cell / 2} y={p.y * cell + cell / 2 + 3}
-                      textAnchor="middle" fontSize={fontSize} fill={PLACEMENT_FILL.labelText} fontFamily="monospace"
+                      textAnchor="middle" fontSize={fontSize} fill={PLACEMENT_FILL.labelText}
+                      fontFamily={named ? 'sans-serif' : 'monospace'}
                     >
                       {code}
                     </text>

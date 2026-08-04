@@ -167,6 +167,17 @@ export interface InventoryLocation {
     levelRole?: LevelRole;
     /** 1-based level number within the parent rack; undefined if not a level. */
     levelIndex?: number;
+    // Name provenance (mig 00094). `name` is what an operator reads; `code` stays
+    // the scan identity. These three say where the name came from.
+    /** The rack number inside `nameArea`. Assigned once and never reassigned, so
+     *  a deleted rack leaves a permanent gap — a sign already on the floor
+     *  cannot be un-printed. null/undefined = never numbered. */
+    nameSeq?: number | null;
+    /** The pool that number was drawn from. NOT derived from geometry: painting
+     *  a different area over a rack must not release its claim. */
+    nameArea?: string | null;
+    /** false = a human typed this name, so an area rename must leave it alone. */
+    nameIsAuto?: boolean;
 }
 
 /** What one "slot" of a storage type counts. 'each'/'uncounted' don't map onto

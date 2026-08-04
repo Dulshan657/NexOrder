@@ -28,6 +28,15 @@ export interface SavePayloadContext {
 export interface SaveGeometryPayload {
   placements: SavePlacementInput[]
   objects: SaveObjectInput[]
+  /**
+   * Area renames since the last save (mig 00094).
+   *
+   * Load-bearing, not a convenience: `save_geometry` is a full replace, so
+   * "renamed Chiller to Cold Room" and "erased Chiller, painted Cold Room" send
+   * byte-identical geometry. The server cannot infer which one happened and so
+   * cannot know whether the bins inside should follow.
+   */
+  area_renames: Array<{ from: string; to: string }>
 }
 
 /** '' is how the editor represents "no stored role" (see the reducer's `load` —
@@ -95,6 +104,13 @@ function placementForWire(p: EditorPlacement, ctx: SavePayloadContext): SavePlac
       capacity_slots: p.capacitySlots, slot_kind: p.slotKind, weight_capacity_kg: p.weightCapacityKg,
       zone_profile_id: p.zoneProfileId, storage_type_id: p.storageTypeId,
       levels: hasLevels ? p.levels!.map(levelForWire) : undefined,
+      // Name provenance (mig 00094). `?? null`, never omitted: the server
+      // declares these `.nullish()` because the columns are nullable, and null
+      // is the honest wire value for "never numbered". The server recomputes
+      // anyway — this is what it recomputes FROM for a bin it has not seen.
+      name_seq: p.nameSeq ?? null,
+      name_area: p.nameArea ?? null,
+      name_is_auto: p.nameIsAuto !== false,
     },
     floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h, rotation: p.rotation,
   }
@@ -120,9 +136,11 @@ export function buildSaveGeometryPayload(
   placements: EditorPlacement[],
   objects: EditorObject[],
   ctx: SavePayloadContext,
+  areaRenames: ReadonlyArray<{ from: string; to: string }> = [],
 ): SaveGeometryPayload {
   return {
     placements: placements.map((p) => placementForWire(p, ctx)),
     objects: objects.map((o) => objectForWire(o, ctx)),
+    area_renames: areaRenames.map((r) => ({ from: r.from, to: r.to })),
   }
 }

@@ -598,3 +598,199 @@ describe('layoutEditorReducer', () => {
     })
   })
 })
+
+// ── Friendly names at draw time (mig 00094) ──────────────────────────────────
+
+/** Paint a named area over a rectangle, then pick up the rack tool. */
+function withArea(name: string, w = 6, h = 6): EditorState {
+  let s = layoutEditorReducer(initialEditorState('NEXG'), { type: 'set_tool', tool: 'area' })
+  s = layoutEditorReducer(s, { type: 'set_area', area: { name } })
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) s = layoutEditorReducer(s, { type: 'paint_cell', x, y })
+  }
+  return layoutEditorReducer(s, { type: 'set_tool', tool: 'rack' })
+}
+
+describe('draw-time naming', () => {
+  it('names a rack from the area it is painted in, and numbers it', () => {
+    let s = withArea('Chiller')
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 0, y: 0 })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 })
+
+    expect(s.placements.map((p) => p.name)).toEqual(['Chiller · Rack 1', 'Chiller · Rack 2'])
+    expect(s.placements.map((p) => p.nameSeq)).toEqual([1, 2])
+    expect(s.placements.every((p) => p.nameArea === 'Chiller' && p.nameIsAuto)).toBe(true)
+    // The CODE is untouched — it is the QR payload and the scan identity.
+    expect(s.placements.map((p) => p.code)).toEqual(['NEXG-B-0-0', 'NEXG-B-1-0'])
+  })
+
+  it('never reuses the number of a rack that was SAVED and then deleted', () => {
+    // The number that matters is one that reached a label. Deleting a saved rack
+    // drops its placement row but not its `locations` row — publishing never
+    // retires a bin — so its number stays spoken for.
+    let s = withArea('Chiller')
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 0, y: 0 })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 })
+    s = layoutEditorReducer(s, {
+      type: 'mark_saved',
+      refMap: s.placements.map((p, i) => ({
+        client_ref: p.clientRef, location_id: 700 + i,
+        name: p.name, name_seq: p.nameSeq!, name_area: 'Chiller',
+      })),
+    })
+    s = layoutEditorReducer(s, { type: 'select', ref: s.placements[1].clientRef })
+    s = layoutEditorReducer(s, { type: 'delete_selected' })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 2, y: 0 })
+
+    // Not "Rack 2" — a sign already on the floor cannot be un-printed.
+    expect(s.placements.map((p) => p.name)).toEqual(['Chiller · Rack 1', 'Chiller · Rack 3'])
+  })
+
+  it('frees the number of a rack drawn and deleted before any save', () => {
+    // Nothing was ever printed, so the number really is free. Holding it would
+    // burn a number every time someone mis-clicked.
+    let s = withArea('Chiller')
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 0, y: 0 })
+    s = layoutEditorReducer(s, { type: 'select', ref: s.placements[0].clientRef })
+    s = layoutEditorReducer(s, { type: 'delete_selected' })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 })
+
+    expect(s.placements[0].name).toBe('Chiller · Rack 1')
+  })
+
+  it('seeds the floor from the whole warehouse on load, not just this layout', () => {
+    // codeByLocation covers every location under the warehouse, so a rack that
+    // left this layout still holds its claim after a reload.
+    let s = layoutEditorReducer(initialEditorState('NEXG'), {
+      type: 'load',
+      placements: [],
+      objects: [],
+      codeByLocation: {
+        900: { code: 'NEXG-B-0-0', name: 'Chiller · Rack 12', kind: 'BIN', nameSeq: 12, nameArea: 'Chiller', nameIsAuto: true },
+      } as never,
+    })
+    expect(s.seqFloor).toEqual({ Chiller: 12 })
+
+    s = layoutEditorReducer(s, { type: 'set_tool', tool: 'area' })
+    s = layoutEditorReducer(s, { type: 'set_area', area: { name: 'Chiller' } })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 0, y: 0 })
+    s = layoutEditorReducer(s, { type: 'set_tool', tool: 'rack' })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 0, y: 0 })
+
+    expect(s.placements[0].name).toBe('Chiller · Rack 13')
+  })
+
+  it('names a rack drawn outside every area without an area prefix', () => {
+    let s = layoutEditorReducer(initialEditorState('NEXG'), { type: 'set_tool', tool: 'rack' })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 9, y: 9 })
+
+    expect(s.placements[0].name).toBe('Rack 1')
+    expect(s.placements[0].nameArea).toBe('')
+  })
+
+  it('gives each area in a batch fill its own number run', () => {
+    let s = layoutEditorReducer(initialEditorState('NEXG'), { type: 'set_tool', tool: 'area' })
+    s = layoutEditorReducer(s, { type: 'set_area', area: { name: 'Chiller' } })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 0, y: 0 })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 })
+    s = layoutEditorReducer(s, { type: 'set_area', area: { name: 'Bulk' } })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 2, y: 0 })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 3, y: 0 })
+    s = layoutEditorReducer(s, { type: 'set_tool', tool: 'rack' })
+    s = layoutEditorReducer(s, { type: 'generate_bins', startX: 0, startY: 0, cols: 4, rows: 1 })
+
+    expect(s.placements.map((p) => p.name)).toEqual([
+      'Chiller · Rack 1', 'Chiller · Rack 2', 'Bulk · Rack 1', 'Bulk · Rack 2',
+    ])
+    // RackWizard closes its modal on submit, so the ranges have to be reported
+    // or the operator never sees what was minted.
+    expect(s.lastFill).toMatchObject({ count: 4, ranges: 'Chiller 1–2, Bulk 1–2' })
+  })
+
+  it('marks a hand-typed name as custom and releases its number', () => {
+    let s = withArea('Chiller')
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 0, y: 0 })
+    const ref = s.placements[0].clientRef
+    s = layoutEditorReducer(s, { type: 'update_placement', ref, patch: { name: 'Damaged goods bay' } })
+
+    expect(s.placements[0]).toMatchObject({
+      name: 'Damaged goods bay', nameIsAuto: false, nameSeq: null, nameArea: null,
+    })
+    // Releasing the claim is deliberate: the pool no longer holds 1.
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 0 })
+    expect(s.placements[1].name).toBe('Chiller · Rack 1')
+  })
+
+  it('does not clobber provenance on an unrelated placement edit', () => {
+    let s = withArea('Chiller')
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 0, y: 0 })
+    const ref = s.placements[0].clientRef
+    s = layoutEditorReducer(s, { type: 'update_placement', ref, patch: { capacitySlots: 42 } })
+
+    expect(s.placements[0]).toMatchObject({ nameIsAuto: true, nameSeq: 1, nameArea: 'Chiller' })
+  })
+})
+
+describe('rename_area', () => {
+  function twoFloorChiller(): EditorState {
+    let s = layoutEditorReducer(initialEditorState('NEXG'), { type: 'set_tool', tool: 'area' })
+    s = layoutEditorReducer(s, { type: 'set_area', area: { name: 'Chiller' } })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 0, y: 0 })
+    s = layoutEditorReducer(s, { type: 'set_floor', floor: 1 })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 0, y: 0 })
+    return layoutEditorReducer(s, { type: 'set_floor', floor: 0 })
+  }
+
+  it('renames the area on EVERY floor, because number pools are layout-wide', () => {
+    let s = twoFloorChiller()
+    s = layoutEditorReducer(s, { type: 'rename_area', from: 'Chiller', to: 'Cold Room' })
+
+    expect(s.objects.map((o) => o.meta?.name)).toEqual(['Cold Room', 'Cold Room'])
+  })
+
+  it('records the rename so the server can tell it from an erase-and-repaint', () => {
+    let s = twoFloorChiller()
+    s = layoutEditorReducer(s, { type: 'rename_area', from: 'Chiller', to: 'Cold Room' })
+
+    expect(s.pendingRenames).toEqual([{ from: 'Chiller', to: 'Cold Room' }])
+  })
+
+  it('coalesces A→B→C into A→C', () => {
+    let s = twoFloorChiller()
+    s = layoutEditorReducer(s, { type: 'rename_area', from: 'Chiller', to: 'Cold' })
+    s = layoutEditorReducer(s, { type: 'rename_area', from: 'Cold', to: 'Cold Room' })
+
+    expect(s.pendingRenames).toEqual([{ from: 'Chiller', to: 'Cold Room' }])
+  })
+
+  it('drops the entry entirely when renamed back to where it started', () => {
+    let s = twoFloorChiller()
+    s = layoutEditorReducer(s, { type: 'rename_area', from: 'Chiller', to: 'Cold' })
+    s = layoutEditorReducer(s, { type: 'rename_area', from: 'Cold', to: 'Chiller' })
+
+    expect(s.pendingRenames).toEqual([])
+  })
+
+  it('clears pending renames once saved', () => {
+    let s = twoFloorChiller()
+    s = layoutEditorReducer(s, { type: 'rename_area', from: 'Chiller', to: 'Cold Room' })
+    s = layoutEditorReducer(s, { type: 'mark_saved', refMap: [] })
+
+    expect(s.pendingRenames).toEqual([])
+  })
+
+  it('adopts the server’s authoritative name on save', () => {
+    let s = layoutEditorReducer(initialEditorState('NEXG'), { type: 'set_tool', tool: 'rack' })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 0, y: 0 })
+    const ref = s.placements[0].clientRef
+    // The server recomputed from the database and disagreed with this stale tab.
+    s = layoutEditorReducer(s, {
+      type: 'mark_saved',
+      refMap: [{ client_ref: ref, location_id: 501, name: 'Chiller · Rack 9', name_seq: 9, name_area: 'Chiller' }],
+    })
+
+    expect(s.placements[0]).toMatchObject({
+      locationId: 501, name: 'Chiller · Rack 9', nameSeq: 9, nameArea: 'Chiller',
+    })
+  })
+})

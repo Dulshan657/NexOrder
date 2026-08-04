@@ -133,6 +133,9 @@ export function RackedWorkspace({ warehouseId, layoutId }: RackedWorkspaceProps)
 
       map.set(loc.id, {
         code: loc.code,
+        // Already on the client: getWarehouseLocations does select('*'), so the
+        // friendly name (mig 00094) arrives with no new query.
+        name: loc.name,
         capacitySlots,
         slotKind: loc.slotKind,
         contentsCount: contents.length,

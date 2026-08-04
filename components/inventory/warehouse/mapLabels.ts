@@ -48,6 +48,17 @@ export const TIER_FULL_MIN_W_PX = 30
 const MONO_ADVANCE = 0.6
 
 /**
+ * The same estimate for the PROPORTIONAL face that friendly names render in
+ * (mig 00094). DM Sans averages a little under 0.52em across mixed-case text.
+ *
+ * It needs its own constant because a name is 2–4× the length of a code and
+ * measuring it with the monospace advance over-estimates by ~15% — which sounds
+ * conservative until you remember these labels sit inside a rect, where
+ * over-estimating truncates a legible name that would have fitted.
+ */
+const SANS_ADVANCE = 0.52
+
+/**
  * A placement's on-screen size → how much text it can carry.
  *
  * Both dimensions are in SCREEN px: `rect user units × viewport.scale` for the
@@ -143,4 +154,28 @@ export function fitCode(code: string, widthPx: number, fontPx: number): string {
   if (code.length <= maxChars) return code
   if (maxChars < 2) return ''
   return `…${code.slice(-(maxChars - 1))}`
+}
+
+/**
+ * Truncate a friendly NAME to the width available, KEEPING THE HEAD.
+ *
+ * The exact opposite of `fitCode`, and for the same underlying reason. Codes
+ * share a prefix, so their information is in the tail. A name arriving here has
+ * already had its shared part removed — `nameTail` drops the area, which the
+ * canvas draws once across the whole region as its own wayfinding layer — so
+ * what is left is "Rack 7" or "L4", where the information is at the FRONT.
+ * Trimming that to "…7" would throw away the word that says what the number
+ * counts.
+ *
+ * Returns '' rather than a lone '…', matching fitCode: a stub reads as a
+ * rendering fault, and the caller's fallback (the code) is better than a stub.
+ */
+export function fitName(name: string, widthPx: number, fontPx: number): string {
+  if (!name) return ''
+  if (!Number.isFinite(widthPx) || !Number.isFinite(fontPx) || fontPx <= 0) return ''
+  const maxChars = Math.floor(widthPx / (fontPx * SANS_ADVANCE))
+  if (maxChars <= 0) return ''
+  if (name.length <= maxChars) return name
+  if (maxChars < 3) return ''
+  return `${name.slice(0, maxChars - 1)}…`
 }

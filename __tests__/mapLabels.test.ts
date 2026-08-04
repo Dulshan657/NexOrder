@@ -4,6 +4,7 @@ import {
   labelTier,
   screenFont,
   fitCode,
+  fitName,
   commonCodePrefix,
   shortCode,
   coarseCode,
@@ -189,5 +190,33 @@ describe('fitCode', () => {
 
   it('handles an empty code', () => {
     expect(fitCode('', 100, 9)).toBe('')
+  })
+})
+
+// ── fitName (mig 00094) ──────────────────────────────────────────────────────
+
+describe('fitName', () => {
+  it('keeps the HEAD, the opposite of fitCode', () => {
+    // A name arriving here has already had its shared part removed (nameTail
+    // drops the area), so what is left carries its information at the front:
+    // "Rack 7" trimmed to "…7" throws away the word that says what 7 counts.
+    expect(fitName('Rack 12', 200, 10)).toBe('Rack 12')
+    const tight = fitName('Reserve level 3', 30, 10)
+    expect(tight.startsWith('Rese')).toBe(true)
+    expect(tight.endsWith('\u2026')).toBe(true)
+  })
+
+  it('returns nothing rather than a stub, so the caller can fall back to the code', () => {
+    expect(fitName('Rack 12', 8, 10)).toBe('')
+    expect(fitName('', 200, 10)).toBe('')
+  })
+
+  it('fits more characters than fitCode at the same width, being proportional', () => {
+    expect(fitName('AAAAAAAAAA', 52, 10).length).toBeGreaterThan(fitCode('AAAAAAAAAA', 52, 10).length)
+  })
+
+  it('survives a degenerate viewport instead of emitting Infinity', () => {
+    expect(fitName('Rack 1', Number.NaN, 10)).toBe('')
+    expect(fitName('Rack 1', 100, 0)).toBe('')
   })
 })

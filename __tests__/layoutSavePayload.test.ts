@@ -210,3 +210,64 @@ describe('buildSaveGeometryPayload — objects', () => {
     })
   })
 })
+
+// ── Name provenance (mig 00094) ──────────────────────────────────────────────
+
+describe('buildSaveGeometryPayload — name provenance', () => {
+  it('sends the three provenance fields on a new bin', () => {
+    const { placements } = buildSaveGeometryPayload(
+      [placement({ name: 'Chiller · Rack 7', nameSeq: 7, nameArea: 'Chiller', nameIsAuto: true })],
+      [], CTX,
+    )
+
+    expect(placements[0].new_bin).toMatchObject({
+      name: 'Chiller · Rack 7', name_seq: 7, name_area: 'Chiller', name_is_auto: true,
+    })
+  })
+
+  it('spells "never numbered" as null, not undefined', () => {
+    // `.optional()` in zod accepts undefined and REJECTS null; these columns are
+    // nullable so the server declares them `.nullish()`. Sending undefined for a
+    // field the server expects to be able to read as null is the same class of
+    // bug that made every Shelving rack save fail with "Invalid request body".
+    const { placements } = buildSaveGeometryPayload([placement()], [], CTX)
+
+    expect(placements[0].new_bin!.name_seq).toBeNull()
+    expect(placements[0].new_bin!.name_area).toBeNull()
+    expect('name_seq' in placements[0].new_bin!).toBe(true)
+  })
+
+  it('marks a hand-named bin as custom so the server stores it verbatim', () => {
+    const { placements } = buildSaveGeometryPayload(
+      [placement({ name: 'Damaged goods bay', nameIsAuto: false })], [], CTX,
+    )
+
+    expect(placements[0].new_bin!.name_is_auto).toBe(false)
+    expect(placements[0].new_bin!.name).toBe('Damaged goods bay')
+  })
+
+  it('sends no name at all for an already-saved bin', () => {
+    // save_geometry has never updated an existing bin's name implicitly and must
+    // not start: the cascade is explicit, via area_renames.
+    const { placements } = buildSaveGeometryPayload(
+      [placement({ locationId: 900, name: 'Chiller · Rack 7' })], [], CTX,
+    )
+
+    expect(placements[0].new_bin).toBeUndefined()
+    expect('name' in placements[0]).toBe(false)
+  })
+
+  it('carries area renames alongside the geometry', () => {
+    // Load-bearing: a full replace cannot distinguish "renamed Chiller" from
+    // "erased Chiller, painted Cold Room" — the payloads are byte-identical.
+    const { area_renames } = buildSaveGeometryPayload(
+      [], [], CTX, [{ from: 'Chiller', to: 'Cold Room' }],
+    )
+
+    expect(area_renames).toEqual([{ from: 'Chiller', to: 'Cold Room' }])
+  })
+
+  it('defaults to an empty rename list', () => {
+    expect(buildSaveGeometryPayload([], [], CTX).area_renames).toEqual([])
+  })
+})

@@ -54,6 +54,10 @@ interface LayoutToolbarProps {
   areaNames: string[]
   activeArea: ActiveArea | null
   onSelectArea: (area: ActiveArea) => void
+  /** What the next rack painted into the active area will be called, e.g.
+   *  "Chiller · Rack 8" (mig 00094). Shown so the naming is visible while the
+   *  operator draws, not discovered afterwards. */
+  nextRackName?: string
   zoneProfiles: ToolbarZoneProfile[]
   floorCount: number
   floor: number
@@ -76,7 +80,7 @@ const actionBtn =
 
 export function LayoutToolbar({
   isDraft, tool, onSelectTool, forms, activeFormId, onSelectForm, onGenerate,
-  areaNames, activeArea, onSelectArea, zoneProfiles, floorCount, floor, onSetFloor,
+  areaNames, activeArea, onSelectArea, nextRackName, zoneProfiles, floorCount, floor, onSetFloor,
   dirty, saving, publishing, simulating, onSave, onPublish, onClone, onSimulate, onArchive, onImport,
 }: LayoutToolbarProps) {
   return (
@@ -214,6 +218,17 @@ export function LayoutToolbar({
               ))}
             </>
           )}
+          {/* Two things the operator cannot otherwise know. The first is what the
+              area is FOR now that it names the bins inside it. The second is that
+              a draft points at the same `locations` rows as the published layout,
+              so a rename here reaches live pick lists before publish — true of
+              the storage-form repoint too, but names are what people read. */}
+          <p className="w-full pt-0.5 text-[11px] leading-snug text-stone-400">
+            {nextRackName
+              ? <>Next rack drawn here will be called <span className="font-medium text-stone-500">{nextRackName}</span>. </>
+              : null}
+            Renaming an area renames every bin inside it — including on the live map, before you publish.
+          </p>
         </div>
       )}
 
