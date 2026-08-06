@@ -13,6 +13,7 @@ import {
   expandSignRuns,
   packSignRuns,
   sanitizeSignName,
+  sanitizeSignNameInput,
   signCellsFingerprint,
   signNameIssue,
   signObjectsFromSpecs,
@@ -141,6 +142,26 @@ describe('name rules', () => {
 
   it('refuses a blank text', () => {
     expect(signNameIssue('   ')).toBeTruthy()
+  })
+
+  // Found in a real browser: the field refused spaces outright. sanitize*Name
+  // trims, so applied per keystroke it deletes the space in "Inbound Staging"
+  // the instant it is typed and the operator gets "InboundStaging" with no way
+  // to fix it. The input variant keeps the space they are typing through.
+  it('the INPUT variant keeps a trailing space so one can be typed at all', () => {
+    expect(sanitizeSignNameInput('Inbound ')).toBe('Inbound ')
+    expect(sanitizeSignNameInput('Inbound Staging')).toBe('Inbound Staging')
+    // Still no leading space, still collapsed, still capped.
+    expect(sanitizeSignNameInput('   Inbound')).toBe('Inbound')
+    expect(sanitizeSignNameInput('Inbound    Staging')).toBe('Inbound Staging')
+    expect(sanitizeSignNameInput('x'.repeat(200))).toHaveLength(MAX_SIGN_NAME)
+  })
+
+  it('the storing variant still trims, so a brush-trailing space never reaches a cell', () => {
+    expect(sanitizeSignName('Inbound ')).toBe('Inbound')
+    expect(signObjectsFromSpecs(signSpecsFromObjects([
+      { objectType: 'label', floor: 0, x: 0, y: 0, w: 1, h: 1, meta: { name: 'Inbound ' } },
+    ]))[0].meta).toEqual({ name: 'Inbound' })
   })
 
   it('ALLOWS "·", unlike an area name', () => {

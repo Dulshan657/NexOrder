@@ -116,6 +116,14 @@ export function sanitizeSignName(raw: string): string {
   return raw.replace(/\s+/g, ' ').trim().slice(0, MAX_SIGN_NAME)
 }
 
+/** The same rules MINUS the trailing trim, for a controlled text input. See
+ *  sanitizeAreaNameInput for why per-keystroke trimming makes a space
+ *  untypeable — "Inbound Staging" comes out as "InboundStaging". Nothing stores
+ *  this value; every paint path re-runs sanitizeSignName before writing a cell. */
+export function sanitizeSignNameInput(raw: string): string {
+  return raw.replace(/\s+/g, ' ').replace(/^\s+/, '').slice(0, MAX_SIGN_NAME)
+}
+
 /**
  * Why a sign text is unusable, or null when it is fine.
  *

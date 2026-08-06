@@ -20,6 +20,7 @@ export {
   areaForRect,
   composeName,
   sanitizeAreaName,
+  sanitizeAreaNameInput,
   areaNameIssue,
   isUninformativeName,
   assignAutoNames,

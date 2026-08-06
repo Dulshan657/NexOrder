@@ -220,6 +220,24 @@ export function sanitizeAreaName(raw: string): string {
 }
 
 /**
+ * The same rules MINUS the trailing trim, for a controlled text input.
+ *
+ * sanitizeAreaName cannot be applied per keystroke: it trims, so the space in
+ * "Cold Storage" is deleted the instant it is typed and the operator gets
+ * "ColdStorage" with no way to fix it. Verified in a real browser — the field
+ * simply refuses spaces.
+ *
+ * Leading whitespace is still dropped (a name cannot start with a space) and the
+ * cap still applies, so the only difference is a space the operator is currently
+ * typing THROUGH. That is safe because nothing stores this value: every paint
+ * path runs the real sanitizeAreaName before writing a cell, and the server runs
+ * it again on receipt. The byte-for-byte contract is unaffected.
+ */
+export function sanitizeAreaNameInput(raw: string): string {
+  return raw.replace(/\s+/g, ' ').replace(/^\s+/, '').slice(0, MAX_AREA_NAME)
+}
+
+/**
  * Why an area name is unusable, or null when it is fine. For the input's inline
  * hint — the server validates the same things.
  *

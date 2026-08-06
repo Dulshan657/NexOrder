@@ -265,6 +265,34 @@ function sign(name: string, x: number, y = 0, floor = 0, w = 1): LayoutObject {
   }
 }
 
+describe('brush text accepts spaces', () => {
+  // The bug this pins was found in a real browser and affected the AREA brush
+  // too, which had shipped with it since 00095: the reducer sanitized per
+  // keystroke, sanitize trims, so "Cold Storage" became "ColdStorage" and there
+  // was no way to type the space at all.
+  it('keeps a space the operator is typing through, on both layers', () => {
+    let s = begun([])
+    for (const chunk of ['C', 'o', 'l', 'd', ' ', 'S', 't', 'o', 'r', 'e']) {
+      s = areaPaintReducer(s, { type: 'set_brush_name', name: s.brush.name + chunk })
+    }
+    expect(s.brush.name).toBe('Cold Store')
+
+    let t = begun([])
+    for (const chunk of ['I', 'n', ' ', 'L', 'a', 'n', 'e']) {
+      t = areaPaintReducer(t, { type: 'set_sign_brush', name: t.signBrush + chunk })
+    }
+    expect(t.signBrush).toBe('In Lane')
+  })
+
+  it('still trims when the cell is written, so a trailing space never lands', () => {
+    const s = reduce(begun([]),
+      { type: 'set_brush_name', name: 'Chiller ' },
+      { type: 'paint_cell', floor: 0, x: 1, y: 1 },
+    )
+    expect(areaNamesInPaintState(s)).toEqual(['Chiller'])
+  })
+})
+
 describe('areaPaintReducer — the sign layer', () => {
   it('hydrates signs and areas into separate maps', () => {
     const state = begun([...row('Chiller', 0, 3), sign('Inbound', 10, 0, 0, 4)])
