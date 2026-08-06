@@ -20,6 +20,145 @@ function withTool(tool: EditorState['tool']): EditorState {
   return layoutEditorReducer(initialEditorState(), { type: 'set_tool', tool })
 }
 
+// ── Area-only scope: a PUBLISHED layout (mig 00095) ──────────────────────────
+//
+// The reducer is where this is enforced, not the toolbar: a keyboard shortcut, a
+// stale render or a canvas drag must be refused by the same thing that refuses a
+// bad co-occupancy. A published layout's placements and walls carry the frozen
+// routing graph; an `area` carries none of it, which is why the scope exists.
+
+describe('layoutEditorReducer — editScope: areas', () => {
+  /** A published layout holding one rack, one wall and one painted area. */
+  function published(): EditorState {
+    let s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 1, y: 1 })
+    s = layoutEditorReducer({ ...s, tool: 'wall' }, { type: 'paint_cell', x: 2, y: 1 })
+    s = layoutEditorReducer({ ...s, tool: 'area', activeArea: { name: 'Chiller' } }, { type: 'paint_cell', x: 3, y: 1 })
+    return layoutEditorReducer(s, { type: 'set_edit_scope', scope: 'areas' })
+  }
+
+  it('drops a geometry tool the operator was holding rather than leaving it inert', () => {
+    const s = layoutEditorReducer({ ...withTool('wall') }, { type: 'set_edit_scope', scope: 'areas' })
+    expect(s.tool).toBe('select')
+  })
+
+  it('refuses to pick up a geometry tool, leaving the current one held', () => {
+    const s = { ...published(), tool: 'select' as const }
+    for (const tool of ['wall', 'rack', 'dock', 'walkway', 'lift', 'staging'] as const) {
+      expect(layoutEditorReducer(s, { type: 'set_tool', tool })).toBe(s)
+    }
+    expect(layoutEditorReducer(s, { type: 'set_tool', tool: 'area' }).tool).toBe('area')
+    expect(layoutEditorReducer(s, { type: 'set_tool', tool: 'erase' }).tool).toBe('erase')
+  })
+
+  it('still paints and erases AREAS', () => {
+    let s = layoutEditorReducer(published(), { type: 'set_area', area: { name: 'Cold Room' } })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 9, y: 9 })
+    expect(s.objects.filter((o) => o.objectType === 'area')).toHaveLength(2)
+
+    s = layoutEditorReducer({ ...s, tool: 'erase' }, { type: 'paint_cell', x: 9, y: 9 })
+    expect(s.objects.filter((o) => o.objectType === 'area')).toHaveLength(1)
+  })
+
+  it('erase cannot reach a placement or a wall, and says why', () => {
+    const s = { ...published(), tool: 'erase' as const }
+
+    const overRack = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 1 })
+    expect(overRack.placements).toHaveLength(1)
+    expect(overRack.blockedAt).toMatchObject({ x: 1, y: 1, blockedBy: 'storage' })
+
+    const overWall = layoutEditorReducer(s, { type: 'paint_cell', x: 2, y: 1 })
+    expect(overWall.objects.filter((o) => o.objectType === 'wall')).toHaveLength(1)
+    expect(overWall.blockedAt).toMatchObject({ x: 2, y: 1, blockedBy: 'wall' })
+  })
+
+  it('erases the AREA over a wall, not the wall under it', () => {
+    // Areas co-occupy with everything — they name the ground the racks stand on
+    // — so objectAt's topmost hit over this cell is the wall, not the area.
+    let s = layoutEditorReducer(
+      { ...published(), tool: 'area', activeArea: { name: 'Chiller' } },
+      { type: 'paint_cell', x: 2, y: 1 },
+    )
+    s = layoutEditorReducer({ ...s, tool: 'erase' }, { type: 'paint_cell', x: 2, y: 1 })
+    expect(s.objects.filter((o) => o.objectType === 'wall')).toHaveLength(1)
+    expect(s.objects.some((o) => o.objectType === 'area' && o.x === 2 && o.y === 1)).toBe(false)
+  })
+
+  it('no-ops every action that would touch frozen geometry', () => {
+    const s = published()
+    const rackRef = s.placements[0].clientRef
+    expect(layoutEditorReducer(s, { type: 'update_placement', ref: rackRef, patch: { name: 'Nope' } })).toBe(s)
+    expect(layoutEditorReducer(s, { type: 'set_rack_levels', ref: rackRef, levels: PALLET_RACK_TEMPLATE })).toBe(s)
+    expect(layoutEditorReducer(s, { type: 'apply_levels_to_selection', levels: PALLET_RACK_TEMPLATE })).toBe(s)
+    expect(layoutEditorReducer(s, { type: 'generate_bins', startX: 0, startY: 5, cols: 3, rows: 3 })).toBe(s)
+    expect(layoutEditorReducer(s, { type: 'apply_auto_connect', objects: [{ objectType: 'walkway', floor: 0, x: 0, y: 0, w: 1, h: 1 }] })).toBe(s)
+    expect(layoutEditorReducer(s, { type: 'apply_overlap_repair', objects: [] })).toBe(s)
+    expect(layoutEditorReducer(s, { type: 'set_storage_form', form: { storageTypeId: 1, label: 'x' } })).toBe(s)
+  })
+
+  it('deletes a selected AREA but not a selected rack or wall', () => {
+    const s = published()
+    const area = s.objects.find((o) => o.objectType === 'area')!
+    const wall = s.objects.find((o) => o.objectType === 'wall')!
+
+    const wallSelected = { ...s, selectedRef: wall.clientRef }
+    expect(layoutEditorReducer(wallSelected, { type: 'delete_selected' })).toBe(wallSelected)
+
+    const rackSelected = { ...s, selectedRef: s.placements[0].clientRef }
+    expect(layoutEditorReducer(rackSelected, { type: 'delete_selected' })).toBe(rackSelected)
+
+    const areaSelected = { ...s, selectedRef: area.clientRef }
+    expect(layoutEditorReducer(areaSelected, { type: 'delete_selected' }).objects
+      .filter((o) => o.objectType === 'area')).toHaveLength(0)
+  })
+
+  it('lets update_object rename an area but not relabel a wall', () => {
+    const s = published()
+    const area = s.objects.find((o) => o.objectType === 'area')!
+    const wall = s.objects.find((o) => o.objectType === 'wall')!
+    expect(layoutEditorReducer(s, { type: 'update_object', ref: wall.clientRef, patch: { meta: { name: 'x' } } })).toBe(s)
+    expect(layoutEditorReducer(s, { type: 'update_object', ref: area.clientRef, patch: { meta: { name: 'x' } } })
+      .objects.find((o) => o.clientRef === area.clientRef)!.meta).toMatchObject({ name: 'x' })
+  })
+
+  it('survives a load, because load spreads state', () => {
+    const s = layoutEditorReducer(published(), { type: 'load', placements: [], objects: [], codeByLocation: {} })
+    expect(s.editScope).toBe('areas')
+  })
+})
+
+describe('layoutEditorReducer — replace_areas', () => {
+  it('swaps the area set, keeps every other object, and clears pending renames', () => {
+    let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 0, y: 0 })
+    s = layoutEditorReducer({ ...s, tool: 'area', activeArea: { name: 'Chiller' } }, { type: 'paint_cell', x: 1, y: 0 })
+    s = layoutEditorReducer(s, { type: 'rename_area', from: 'Chiller', to: 'Cold Room' })
+    expect(s.pendingRenames).toHaveLength(1)
+
+    const next = layoutEditorReducer(s, {
+      type: 'replace_areas',
+      objects: [
+        { floor: 0, x: 5, y: 5, meta: { name: 'Bulk', zoneProfileId: 2 } },
+        { floor: 0, x: 6, y: 5, meta: { name: 'Bulk', zoneProfileId: 2 } },
+      ],
+    })
+
+    expect(next.objects.filter((o) => o.objectType === 'wall')).toHaveLength(1)
+    const areas = next.objects.filter((o) => o.objectType === 'area')
+    expect(areas).toHaveLength(2)
+    expect(areas.every((o) => o.meta?.name === 'Bulk' && o.w === 1 && o.h === 1)).toBe(true)
+    // A rename recorded against the DISCARDED set would rename something else.
+    expect(next.pendingRenames).toEqual([])
+    expect(next.dirty).toBe(true)
+  })
+
+  it('mints fresh clientRefs so an adopted cell cannot collide with an existing one', () => {
+    const s = layoutEditorReducer(
+      layoutEditorReducer(withTool('area'), { type: 'paint_cell', x: 0, y: 0 }),
+      { type: 'replace_areas', objects: [{ floor: 0, x: 1, y: 1, meta: { name: 'Bulk' } }] },
+    )
+    expect(new Set(s.objects.map((o) => o.clientRef)).size).toBe(s.objects.length)
+  })
+})
+
 describe('layoutEditorReducer', () => {
   it('paints a walkway object at a cell', () => {
     const s = layoutEditorReducer(withTool('walkway'), { type: 'paint_cell', x: 2, y: 3 })

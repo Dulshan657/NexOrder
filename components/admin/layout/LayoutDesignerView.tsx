@@ -47,6 +47,11 @@ import { SimulationResultCard } from './SimulationResultCard'
 import { OCCUPANT_LABEL, STORAGE_UNIT, TOOL_LABEL } from './labels'
 import { editorUnits, useLayoutEditorState } from './useLayoutEditorState'
 import { composeName, nextSeqForArea, sanitizeAreaName } from '@/lib/locationNaming'
+import { areaCellsFingerprint, areaSpecsFromObjects } from '@/lib/areaPaint'
+// The same confirm panel the live map uses. Deliberately not forked: the counts
+// it shows are the server's dry run, and two copies would eventually disagree
+// about what the operator was told before they pressed Save.
+import { AreaPaintSummaryModal } from '@/components/inventory/warehouse/AreaPaintSummaryModal'
 import { buildSaveGeometryPayload } from './savePayload'
 import { resolveLayoutOverlaps } from './resolveOverlaps'
 
@@ -76,6 +81,9 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const [notice, setNotice] = useState<string | null>(null)
   const [simulation, setSimulation] = useState<SimulationResult | null>(null)
   const hydratedLayoutRef = useRef<number | null>(null)
+  // Live area painting (mig 00095).
+  const [areaConfirmOpen, setAreaConfirmOpen] = useState(false)
+  const areaBaseFingerprintRef = useRef<string>('')
   const { addToast } = useToasts()
 
   const createLayout = useCreateLayout(warehouse.id)
@@ -189,6 +197,16 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   useEffect(() => {
     if (detailQuery.data && locationsQuery.data && selectedLayoutId && hydratedLayoutRef.current !== selectedLayoutId) {
       hydratedLayoutRef.current = selectedLayoutId
+      const status = (layoutsQuery.data ?? []).find((l) => l.id === selectedLayoutId)?.status
+      // Scope FIRST: `load` spreads `...state`, so the scope survives it, and a
+      // scope applied afterwards would leave one render in which a published
+      // layout's geometry tools were live.
+      dispatch({ type: 'set_edit_scope', scope: status === 'draft' ? 'all' : 'areas' })
+      // The picture this session's area edits are based on, captured ONCE. Never
+      // recomputed from live query data: a background refetch would move the
+      // baseline and leave the conflict check comparing the server's picture
+      // against itself.
+      areaBaseFingerprintRef.current = areaCellsFingerprint(detailQuery.data.objects as never)
       dispatch({
         type: 'load',
         placements: detailQuery.data.placements,
@@ -196,11 +214,41 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
         codeByLocation,
       })
     }
-  }, [detailQuery.data, locationsQuery.data, selectedLayoutId, codeByLocation, dispatch])
+  }, [detailQuery.data, locationsQuery.data, selectedLayoutId, codeByLocation, dispatch, layoutsQuery.data])
 
   const layouts = layoutsQuery.data ?? []
   const selectedLayout = layouts.find((l) => l.id === selectedLayoutId) ?? null
   const isDraft = selectedLayout?.status === 'draft'
+  // Two axes, not one flag (mig 00095). Geometry is frozen at publish — the
+  // routing graph, every edge weight and every access offset were computed from
+  // it — but an `area` carries none of that, so it stays editable for life.
+  const canEditAreas = isDraft || selectedLayout?.status === 'published'
+  const areaOnly = !!canEditAreas && !isDraft
+
+  // ── Stale-draft warning (mig 00095) ────────────────────────────────────────
+  //
+  // Areas can now be repainted on the LIVE layout, so a draft cloned before that
+  // happened would silently discard the operator's labelling the moment it is
+  // published — save_geometry is a full replace.
+  //
+  // Compared by FINGERPRINT and not by timestamp, and that is not a preference:
+  // paint_areas deliberately does not bump warehouse_layouts.updated_at (it must
+  // not, or needsRepublish would demand a routing rebuild for a wayfinding edit),
+  // so there is NO timestamp that moves when areas change. Reaching for one here
+  // would find it stale and conclude this warning is broken.
+  //
+  // Gated on `clonedFrom` deliberately: a draft drawn from scratch was never
+  // meant to match the live areas, and nagging about it trains the operator to
+  // ignore the banner.
+  const publishedLayout = layouts.find((l) => l.status === 'published') ?? null
+  const draftClonedFromLive =
+    isDraft && publishedLayout != null && selectedLayout?.clonedFrom === publishedLayout.id
+  const publishedDetailQuery = useLayoutDetail(draftClonedFromLive ? publishedLayout!.id : null)
+  const liveAreas = publishedDetailQuery.data?.objects
+  const liveAreasDiffer = useMemo(() => {
+    if (!draftClonedFromLive || !liveAreas) return false
+    return areaCellsFingerprint(liveAreas as never) !== areaCellsFingerprint(state.objects as never)
+  }, [draftClonedFromLive, liveAreas, state.objects])
   const selectedPlacement = state.placements.find((p) => p.clientRef === state.selectedRef) ?? null
   // A selection is either a placement (rack) or a structural object
   // (obstacle/staging/label/…) — never both, since clientRefs don't collide.
@@ -484,6 +532,12 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     }
   }
 
+  // On a PUBLISHED layout, Save routes to `paint_areas` instead — a narrow,
+  // area-only replace. It must NEVER route to save_geometry: that is a full
+  // replace of every placement and object plus an orphan sweep that hard-deletes
+  // `locations` rows, and on a live site those rows hold stock.
+  const areaSpecs = useMemo(() => areaSpecsFromObjects(state.objects as never), [state.objects])
+
   // Publish the draft; returns true on success. Renders rejections on failure.
   const doPublish = async (): Promise<boolean> => {
     const result = await publishLayout.mutateAsync(selectedLayoutId as number)
@@ -669,10 +723,33 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
 
       {selectedLayout && (
         <div className="space-y-3">
+          {liveAreasDiffer && (
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <p className="text-xs text-amber-900">
+                The live layout's named areas have changed since this draft was cloned. Publishing
+                this draft will replace them.
+              </p>
+              <button
+                type="button"
+                onClick={() => dispatch({
+                  type: 'replace_areas',
+                  objects: (liveAreas ?? [])
+                    .filter((o) => o.objectType === 'area')
+                    .map((o) => ({ floor: o.floor, x: o.x, y: o.y, meta: o.meta })),
+                })}
+                className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 btn-press"
+              >
+                Pull in live areas
+              </button>
+            </div>
+          )}
+
           {!isDraft && (
             <div className="flex items-center justify-between gap-3 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
               <p className="text-xs text-stone-500">
-                This layout is {selectedLayout.status} and read-only. Clone it to make changes.
+                {areaOnly
+                  ? 'This layout is published. You can repaint named areas here; everything else is read-only — clone it to change the geometry.'
+                  : `This layout is ${selectedLayout.status} and read-only. Clone it to make changes.`}
               </p>
               <div className="flex shrink-0 items-center gap-2">
                 {/* Labels only make sense once the geometry is final — a draft's
@@ -698,6 +775,8 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
 
           <LayoutToolbar
             isDraft={!!isDraft}
+            canEditAreas={!!canEditAreas}
+            areaOnly={areaOnly}
             tool={state.tool}
             onSelectTool={(t) => dispatch({ type: 'set_tool', tool: t })}
             forms={drawableForms.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
@@ -716,7 +795,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             saving={saveGeometry.isPending}
             publishing={publishLayout.isPending}
             simulating={runSimulation.isPending}
-            onSave={handleSave}
+            onSave={areaOnly ? () => setAreaConfirmOpen(true) : handleSave}
             onPublish={handlePublish}
             onClone={() => cloneLayout.mutate({ layoutId: selectedLayout.id, name: `${selectedLayout.name} copy` })}
             onSimulate={() => handleSimulate(selectedLayout.id)}
@@ -781,9 +860,17 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
                   loading={stockSummary.isLoading}
                 />
               )}
+              {/* In area-only scope the placement inspector is not merely
+                  useless, it is misleading: the reducer no-ops update_placement,
+                  and a control that silently does nothing is worse than an
+                  absent one. An AREA object still gets its inspector. */}
               {selectedObject
-                ? <ObjectInspector object={selectedObject} dispatch={dispatch} locationCodeById={locationCodeById} />
-                : <PlacementInspector placement={selectedPlacement} dispatch={dispatch} zoneProfiles={zoneProfilesQuery.data ?? []} storageTypes={storageTypesQuery.data ?? []} selectedCount={state.selectedRefs?.size ?? 0} />}
+                ? (!areaOnly || selectedObject.objectType === 'area') && (
+                    <ObjectInspector object={selectedObject} dispatch={dispatch} locationCodeById={locationCodeById} />
+                  )
+                : !areaOnly && (
+                    <PlacementInspector placement={selectedPlacement} dispatch={dispatch} zoneProfiles={zoneProfilesQuery.data ?? []} storageTypes={storageTypesQuery.data ?? []} selectedCount={state.selectedRefs?.size ?? 0} />
+                  )}
             </div>
           </div>
           <LayoutLegend forms={drawableForms.map((t) => ({ id: t.id, name: t.name, color: t.color }))} />
@@ -795,6 +882,26 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             </div>
           )}
         </div>
+      )}
+
+      {areaConfirmOpen && selectedLayout && (
+        <AreaPaintSummaryModal
+          warehouseId={warehouse.id}
+          layoutId={selectedLayout.id}
+          baseFingerprint={areaBaseFingerprintRef.current}
+          specs={areaSpecs}
+          floorCount={selectedLayout.floorCount}
+          onClose={() => setAreaConfirmOpen(false)}
+          onSaved={() => {
+            setAreaConfirmOpen(false)
+            // Force a re-hydrate from the server's answer rather than inventing a
+            // placement-shaped refMap for a payload that has none. `mark_saved`
+            // gives the geometry path the same "the server wins" contract; this
+            // is that contract, expressed through the load effect.
+            hydratedLayoutRef.current = null
+            setNotice('Areas saved.')
+          }}
+        />
       )}
 
       {wizardOpen && selectedLayout && (
