@@ -779,7 +779,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             <div className="flex items-center justify-between gap-3 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
               <p className="text-xs text-stone-500">
                 {areaOnly
-                  ? 'This layout is published. You can repaint named areas here; everything else is read-only — clone it to change the geometry.'
+                  ? 'This layout is published. You can repaint named areas and floor signs here; everything else is read-only — clone it to change the geometry.'
                   : `This layout is ${selectedLayout.status} and read-only. Clone it to make changes.`}
               </p>
               <div className="flex shrink-0 items-center gap-2">
