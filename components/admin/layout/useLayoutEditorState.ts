@@ -123,8 +123,18 @@ export interface EditorState {
   codePrefix: string
   /** The storage form the 'rack' tool paints; null = generic bin (10 pallet). */
   activeForm: ActiveStorageForm | null
-  /** The named region the 'area' tool paints; null = an unnamed area. */
+  /** The named region the 'area' tool paints; null = nothing named yet, and the
+   *  reducer refuses the stroke rather than writing a cell belonging to nothing. */
   activeArea: ActiveArea | null
+  /** The text the 'label' tool paints (mig 00097); null = nothing typed yet.
+   *  A plain string, not an object like ActiveArea: a sign carries no zone
+   *  profile and must never grow one. */
+  activeSign: string | null
+  /** Which annotation layer the operator is working on. Set by set_area /
+   *  set_sign, read by the scoped ERASER — areas and signs overlap freely, so
+   *  the eraser cannot pick between them by stacking order without sometimes
+   *  deleting the layer the operator was not looking at. */
+  annotationBrush: 'area' | 'sign'
   /** Set when a paint stroke was REFUSED because something incompatible already
    *  owns the cell (see ALLOWED_COOCCUPANTS). Purely a UI hint channel — the
    *  reducer is pure and cannot toast, and silently returning state unchanged
@@ -169,26 +179,53 @@ export interface EditorState {
    * Which tools the reducer honours (mig 00095).
    *
    * `'all'` is the draft case and is unchanged. `'areas'` is a PUBLISHED layout,
-   * where only select / area / erase-an-area are live and Save routes to
-   * `paint_areas` instead of `save_geometry`.
+   * where only select / area / label / erase-one-of-those are live and Save
+   * routes to `paint_areas` + `paint_labels` instead of `save_geometry`.
    *
    * The guard lives HERE and not in the toolbar because a keyboard shortcut, a
    * stale render or a canvas drag must be refused by the same thing that refuses
    * a bad co-occupancy. A published layout's placements are frozen geometry: the
    * routing graph, every edge weight and every access offset were computed from
-   * them, and an area is the one object type that carries none of that.
+   * them, and `area` and `label` are the two object types that carry none of it.
+   *
+   * The name is historical — the scope covers signs too as of mig 00097. Renaming
+   * it would touch every call site for no behavioural gain.
    */
   editScope: 'all' | 'areas'
 }
 
-/** The only tools that make sense on a published layout. */
-const AREA_SCOPE_TOOLS: readonly EditorTool[] = ['select', 'area', 'erase']
+/**
+ * The only tools that make sense on a published layout.
+ *
+ * `label` joins as of mig 00097 on exactly the same argument that admitted
+ * `area`: buildWalkableCells whitelists walkway/dock/lift/staging and subtracts
+ * wall/conveyor, so neither type contributes a graph node, an edge weight or an
+ * access offset, and neither can invalidate anything publishing froze.
+ */
+const AREA_SCOPE_TOOLS: readonly EditorTool[] = ['select', 'area', 'label', 'erase']
+
+/** Object types whose identity is the operator's text, and which are therefore
+ *  editable on a published layout. Both are erased by the scoped eraser and both
+ *  refuse a nameless stroke. */
+const ANNOTATION_TYPES: readonly LayoutObjectType[] = ['area', 'label']
+
+function isAnnotation(type: LayoutObjectType | undefined): boolean {
+  return type !== undefined && ANNOTATION_TYPES.includes(type)
+}
 
 export interface BlockedPaint {
   x: number
   y: number
   floor: number
-  blockedBy: OccupantKind
+  /** What already owns the cell. `null` when `reason` is not an occupancy clash. */
+  blockedBy: OccupantKind | null
+  /** Why the stroke was refused. `'occupied'` is the original case (see
+   *  ALLOWED_COOCCUPANTS). `'unnamed'` is a brush with no text yet: an area or a
+   *  sign IS its name, so painting one nameless writes a cell belonging to
+   *  nothing — invisible on both canvases and rejected by the server. That used
+   *  to happen silently, which is precisely how an operator ends up reporting
+   *  "I painted and nothing showed". */
+  reason?: 'occupied' | 'unnamed'
   tool: EditorTool
   /** Cells skipped by a batch fill; absent for a single refused stroke. */
   count?: number
@@ -199,10 +236,20 @@ export type EditorAction =
   | { type: 'set_tool'; tool: EditorTool }
   | { type: 'set_storage_form'; form: ActiveStorageForm }
   | { type: 'set_area'; area: ActiveArea | null }
+  // The sign brush (mig 00097). Sanitised by the caller, exactly as the area
+  // name is — the toolbar and the server must store byte-identical text or the
+  // fingerprint disagrees.
+  | { type: 'set_sign'; name: string | null }
   // Renames an area WHOLESALE: every cell on this floor carrying `from` becomes
   // `to`. An area is identified by its name, so renaming one cell at a time
   // would split the region in half mid-edit.
   | { type: 'rename_area'; from: string; to: string; zoneProfileId?: number }
+  // The sign equivalent (mig 00097), and it exists for the identical reason: a
+  // sign is painted as many 1x1 cells sharing one name, so retyping the one cell
+  // the operator happened to select would split the region and leave half of it
+  // reading the old text. No pendingRenames counterpart — nothing cascades off a
+  // sign's text, and paint_labels derives the change from the before-picture.
+  | { type: 'rename_sign'; from: string; to: string }
   | { type: 'set_floor'; floor: number }
   | { type: 'paint_cell'; x: number; y: number }
   // `additive: true` toggles `ref` into the multi-selection instead of
@@ -235,7 +282,7 @@ export type EditorAction =
   | { type: 'replace_areas'; objects: Array<Pick<EditorObject, 'floor' | 'x' | 'y'> & Partial<Pick<EditorObject, 'meta'>>> }
 
 export function initialEditorState(codePrefix = 'W'): EditorState {
-  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, selectedRefs: new Set(), dirty: false, seq: 1, codePrefix, activeForm: null, activeArea: null, blockedAt: null, pendingRenames: [], lastFill: null, seqFloor: {}, editScope: 'all' }
+  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, selectedRefs: new Set(), dirty: false, seq: 1, codePrefix, activeForm: null, activeArea: null, activeSign: null, annotationBrush: 'area', blockedAt: null, pendingRenames: [], lastFill: null, seqFloor: {}, editScope: 'all' }
 }
 
 /** `EditorState.seqFloor` as the naming module wants it. */
@@ -444,7 +491,22 @@ export function blockedByIndex(
 function refuse(state: EditorState, x: number, y: number, blockedBy: OccupantKind, count?: number): EditorState {
   return {
     ...state,
-    blockedAt: { x, y, floor: state.floor, blockedBy, tool: state.tool, count, seq: (state.blockedAt?.seq ?? 0) + 1 },
+    blockedAt: { x, y, floor: state.floor, blockedBy, reason: 'occupied', tool: state.tool, count, seq: (state.blockedAt?.seq ?? 0) + 1 },
+  }
+}
+
+/** Refuse a stroke because the brush has no text yet.
+ *
+ *  Through the SAME channel as an occupancy refusal, deliberately. An area or a
+ *  sign IS its name: a cell with no `meta.name` merges into no region, draws no
+ *  text, and is rejected outright by the server — so painting one is never what
+ *  the operator meant. It used to be allowed and produced, for an area, a
+ *  12%-opacity wash under the grid that is invisible on stone. "I painted and
+ *  nothing showed" was exactly this. */
+function refuseUnnamed(state: EditorState, x: number, y: number): EditorState {
+  return {
+    ...state,
+    blockedAt: { x, y, floor: state.floor, blockedBy: null, reason: 'unnamed', tool: state.tool, seq: (state.blockedAt?.seq ?? 0) + 1 },
   }
 }
 
@@ -488,9 +550,9 @@ function allowedInAreaScope(state: EditorState, action: EditorAction): boolean {
     case 'set_tool':
       return AREA_SCOPE_TOOLS.includes(action.tool)
     case 'update_object':
-      return state.objects.find((o) => o.clientRef === action.ref)?.objectType === 'area'
+      return isAnnotation(state.objects.find((o) => o.clientRef === action.ref)?.objectType)
     case 'delete_selected':
-      return state.objects.find((o) => o.clientRef === state.selectedRef)?.objectType === 'area'
+      return isAnnotation(state.objects.find((o) => o.clientRef === state.selectedRef)?.objectType)
     case 'set_storage_form':
     case 'update_placement':
     case 'set_rack_levels':
@@ -543,7 +605,11 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
 
     case 'set_area':
       // Mirrors set_storage_form: naming the area is how you pick up the tool.
-      return { ...state, tool: 'area', activeArea: action.area, ...singleSelect(null) }
+      return { ...state, tool: 'area', activeArea: action.area, annotationBrush: 'area', ...singleSelect(null) }
+
+    case 'set_sign':
+      // Same shape as set_area: typing the text is how you pick up the tool.
+      return { ...state, tool: 'label', activeSign: action.name, annotationBrush: 'sign', ...singleSelect(null) }
 
     case 'rename_area': {
       const to = action.to.trim()
@@ -573,6 +639,22 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
       }
     }
 
+    case 'rename_sign': {
+      const to = action.to.trim()
+      if (!to || to === action.from) return state
+      // EVERY floor, like rename_area: a sign's identity is its text, and two
+      // floors carrying the same sign are one sign for merging purposes on each.
+      const objects = state.objects.map((o) =>
+        o.objectType === 'label' && (o.meta?.name ?? '') === action.from
+          ? { ...o, meta: { ...o.meta, name: to } }
+          : o,
+      )
+      // Keep the brush in sync so the next stroke extends the RENAMED sign
+      // rather than re-creating the old one beside it.
+      const activeSign = state.activeSign === action.from ? to : state.activeSign
+      return { ...state, objects, activeSign, dirty: true }
+    }
+
     case 'set_floor':
       return { ...state, floor: action.floor, ...singleSelect(null) }
 
@@ -592,13 +674,25 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
       const { x, y } = action
 
       if (state.tool === 'erase') {
-        // In area scope the eraser is an AREA eraser and nothing else. Note it
-        // must look for an area SPECIFICALLY rather than take objectAt's topmost
-        // hit: areas co-occupy with everything (they name the ground the racks
-        // stand on), so over a wall the topmost object is the wall.
+        // In area scope the eraser erases ANNOTATIONS and nothing else. Note it
+        // must look for one SPECIFICALLY rather than take objectAt's topmost
+        // hit: both areas and signs co-occupy with everything (an area names the
+        // ground the racks stand on; a sign is read over whatever it sits on),
+        // so over a wall the topmost object is the wall.
+        //
+        // Which of the two it takes is decided by the brush the operator last
+        // picked up (`annotationBrush`), NOT by stacking order. Signs co-occupy
+        // with areas and routinely sit on top of one, so a stacking rule would
+        // make "erase this area cell" silently eat the sign over it — and there
+        // is no ordering of the two that is right in both directions. The
+        // operator already told us which layer they are working on.
         const areasOnly = state.editScope === 'areas'
+        const eraseOrder: readonly LayoutObjectType[] =
+          state.annotationBrush === 'sign' ? ['label', 'area'] : ['area', 'label']
         const obj = areasOnly
-          ? state.objects.find((o) => o.floor === state.floor && o.objectType === 'area' && covers(o, x, y))
+          ? eraseOrder
+              .map((t) => state.objects.find((o) => o.floor === state.floor && o.objectType === t && covers(o, x, y)))
+              .find((o) => o !== undefined)
           : objectAt(state, x, y)
         const place = areasOnly ? undefined : placementAt(state, x, y)
         if (!obj && !place) {
@@ -645,33 +739,53 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
 
       const objectType = OBJECT_TOOLS[state.tool]
       if (objectType) {
+        // An ANNOTATION IS ITS NAME. A nameless cell merges into no region, draws
+        // no text on either canvas, and is refused by the server — so it can only
+        // ever be a mistake, and allowing it is what produced the invisible-paint
+        // bug this refusal fixes. Checked BEFORE the co-occupancy matrix: the
+        // brush is unusable regardless of what is under the pointer.
+        const annotationName =
+          objectType === 'area' ? (state.activeArea?.name ?? '')
+            : objectType === 'label' ? (state.activeSign ?? '')
+              : null
+        if (annotationName !== null && annotationName.trim() === '') {
+          return refuseUnnamed(state, x, y)
+        }
+
+        // Repainting a cell with the SAME annotation name is an idempotent
+        // no-op: dragging back across your own stroke must not churn object
+        // identity or re-mark the layout dirty on every cell. A DIFFERENT name
+        // falls through to the replace below, because that is a genuine
+        // reassignment — "Cold Storage" painted over a cell of "Bulk".
+        //
+        // This is checked here rather than off `blockerAt` (where it used to
+        // sit) because the co-occupancy matrix lets an annotation share a cell
+        // with its own kind, so blockerAt returns null and the branch could
+        // never fire.
+        if (annotationName !== null) {
+          const existing = state.objects.find(
+            (o) => o.floor === state.floor && o.objectType === objectType && covers(o, x, y),
+          )
+          if (existing && (existing.meta?.name ?? '') === annotationName) return state
+        }
+
         const blocker = blockerAt(state, x, y, objectType)
         // Same-kind is an idempotent RE-PAINT, not a refusal: a drag that
-        // crosses its own stroke must not flash red or toast. `label` is the
-        // exception — the matrix lets it co-exist with itself, so it falls
-        // through to the replace below and a drag can't stack N labels on a cell.
-        if (blocker && blocker.kind === objectType && objectType !== 'label') {
-          // `area` is the second exception, and for a different reason: two areas
-          // are distinguished by NAME, so painting "Cold Storage" over a cell that
-          // currently belongs to "Bulk" is a genuine reassignment and must fall
-          // through to the replace. Only the same name is a no-op — without that
-          // check, dragging back across your own stroke would mark the layout
-          // dirty on every cell.
-          if (objectType !== 'area') return state
-          const existing = state.objects.find(
-            (o) => o.floor === state.floor && o.objectType === 'area' && covers(o, x, y),
-          )
-          if ((existing?.meta?.name ?? '') === (state.activeArea?.name ?? '')) return state
-        }
+        // crosses its own stroke must not flash red or toast.
+        if (blocker && blocker.kind === objectType) return state
         if (blocker) return refuse(state, x, y, blocker.kind)
         // Don't stack same-type; replace whatever object of this type covers the cell.
         const without = state.objects.filter((o) => !(o.floor === state.floor && o.objectType === objectType && covers(o, x, y)))
         const obj: EditorObject = {
           clientRef: `o${state.seq}`, objectType, floor: state.floor, x, y, w: 1, h: 1,
-          // An area cell carries its identity, because that is what merges it
-          // into a region — an area with no meta is a cell belonging to nothing.
+          // An annotation cell carries its identity, because that is what merges
+          // it into a region. A sign carries ONLY its name — no zoneProfileId,
+          // ever, or it quietly becomes an area.
           ...(objectType === 'area' && state.activeArea
             ? { meta: { name: state.activeArea.name, zoneProfileId: state.activeArea.zoneProfileId } }
+            : {}),
+          ...(objectType === 'label' && state.activeSign
+            ? { meta: { name: state.activeSign } }
             : {}),
         }
         return { ...state, objects: [...without, obj], seq: state.seq + 1, dirty: true, blockedAt: null }

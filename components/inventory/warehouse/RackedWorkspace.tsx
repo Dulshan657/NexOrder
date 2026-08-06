@@ -28,10 +28,12 @@ import { WarehouseTreePanel } from './WarehouseTreePanel'
 import { BinDetailPanel } from './BinDetailPanel'
 import { RenameAreaModal } from './RenameAreaModal'
 import { BindZonesModal } from './BindZonesModal'
+import { EditSignModal } from './EditSignModal'
 import { AreaPaintToolbar } from './AreaPaintToolbar'
 import { AreaPaintSummaryModal } from './AreaPaintSummaryModal'
 import { useAreaPaintState } from './useAreaPaintState'
 import { areaCellsFingerprint } from '@/lib/areaPaint'
+import { signCellsFingerprint } from '@/lib/signPaint'
 import { OverlayControls } from './OverlayControls'
 import { AskEnginePanel } from './AskEnginePanel'
 import { slottingArrows, routePath, putawayMarkers } from './warehouseMarkers'
@@ -82,10 +84,33 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const { data: layouts = [] } = useLayouts(warehouseId)
   const draftLayout = layouts.find((l) => l.status === 'draft')
 
+  /** The sign picture's own baseline (mig 00097). Separate from the area one, and
+   *  captured at the same moment for the same reason — the two pictures move
+   *  independently and each server action checks only its own, so sharing a
+   *  fingerprint would make an area paint 409 a sign save. */
+  const signBaseFingerprintRef = useRef<string>('')
+  /** Sign whose text is being edited from the map; null = dialog closed. */
+  const [editingSign, setEditingSign] = useState<string | null>(null)
+
   const beginPaint = () => {
     if (!detail) return
     baseFingerprintRef.current = areaCellsFingerprint(detail.objects as any)
+    signBaseFingerprintRef.current = signCellsFingerprint(detail.objects as any)
     paint.dispatch({ type: 'begin', objects: detail.objects })
+  }
+
+  /** Click-to-edit a sign on the map. Opens annotate mode on the sign layer with
+   *  that sign already picked up, rather than a bespoke dialog: the edit is a
+   *  full `paint_labels` replace either way, so a separate path would be a second
+   *  implementation of the same save with its own fingerprint to get wrong. */
+  const beginSignEdit = (name: string) => {
+    if (!detail) return
+    baseFingerprintRef.current = areaCellsFingerprint(detail.objects as any)
+    signBaseFingerprintRef.current = signCellsFingerprint(detail.objects as any)
+    paint.dispatch({ type: 'begin', objects: detail.objects })
+    paint.dispatch({ type: 'set_layer', layer: 'sign' })
+    paint.dispatch({ type: 'set_sign_brush', name })
+    setEditingSign(name)
   }
   const [floor, setFloor] = useState(0)
   const [overlay, setOverlay] = useState<OverlayKind>('none')
@@ -402,11 +427,15 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     )
   }
 
-  // While painting, the canvas draws the WORKING SET in place of the stored
-  // areas — through the very same shape the stored rows have, so the preview and
-  // the saved result cannot look different. Every other object is untouched.
+  // While annotating, the canvas draws the WORKING SET in place of the stored
+  // areas AND signs — through the very same shape the stored rows have, so the
+  // preview and the saved result cannot look different. Every other object is
+  // untouched.
   const canvasObjects = paint.state.active
-    ? [...detail.objects.filter((o) => o.objectType !== 'area'), ...paint.previewObjects]
+    ? [
+        ...detail.objects.filter((o) => o.objectType !== 'area' && o.objectType !== 'label'),
+        ...paint.previewObjects,
+      ]
     : detail.objects
 
   return (
@@ -437,12 +466,16 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           >
             Bind areas to zones
           </button>
+          {/* One entry point for both annotation layers (mig 00097). A third
+              header button would imply areas and signs are different errands;
+              they are the same errand with different consequences, and the
+              toolbar's Areas | Signs toggle is where that distinction belongs. */}
           <button
             type="button"
             onClick={beginPaint}
             className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
           >
-            Paint areas
+            Annotate
           </button>
         </div>
       )}
@@ -450,8 +483,11 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
       {paint.state.active && (
         <AreaPaintToolbar
           brush={paint.state.brush}
+          signBrush={paint.state.signBrush}
+          layer={paint.state.layer}
           mode={paint.state.mode}
           areaNames={paint.names}
+          signNames={paint.signNames}
           zoneProfiles={zoneProfiles}
           dirty={paint.state.dirty}
           canUndo={paint.state.undo.length > 0}
@@ -459,12 +495,15 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           draftWarning={draftLayout
             ? `A draft of this layout exists (“${draftLayout.name}”). Publishing it will replace these areas.`
             : null}
+          onLayer={(layer) => paint.dispatch({ type: 'set_layer', layer })}
           onBrushName={(name) => paint.dispatch({ type: 'set_brush_name', name })}
           onBrushProfile={(zoneProfileId) => paint.dispatch({ type: 'set_brush_profile', zoneProfileId })}
+          onSignBrush={(name) => paint.dispatch({ type: 'set_sign_brush', name })}
           onMode={(mode) => paint.dispatch({ type: 'set_mode', mode })}
           onEraseArea={(name) => paint.dispatch({ type: 'erase_area', name })}
+          onEraseSign={(name) => paint.dispatch({ type: 'erase_sign', name })}
           onUndo={() => paint.dispatch({ type: 'undo' })}
-          onCancel={() => paint.dispatch({ type: 'cancel' })}
+          onCancel={() => { setEditingSign(null); paint.dispatch({ type: 'cancel' }) }}
           onSave={() => setConfirmingPaint(true)}
         />
       )}
@@ -493,6 +532,10 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           // not been saved would be computed from a picture the server has
           // never seen.
           onRenameArea={canRename && !paint.state.active ? setRenamingArea : undefined}
+          // Same mutual exclusion as the area pencil, and for the same reason:
+          // clicking a sign ENTERS annotate mode, so offering it while already
+          // in one would re-hydrate the working set and discard unsaved edits.
+          onEditSign={canRename && !paint.state.active ? beginSignEdit : undefined}
           paint={{
             active: paint.state.active,
             onStrokeStart: () => paint.dispatch({ type: 'stroke_start' }),
@@ -509,6 +552,15 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
         />
       )}
 
+      {editingSign && (
+        <EditSignModal
+          signName={editingSign}
+          onRename={(from, to) => paint.dispatch({ type: 'rename_sign', from, to })}
+          onErase={(name) => paint.dispatch({ type: 'erase_sign', name })}
+          onClose={() => setEditingSign(null)}
+        />
+      )}
+
       {bindingZones && (
         <BindZonesModal warehouseId={warehouseId} onClose={() => setBindingZones(false)} />
       )}
@@ -519,10 +571,13 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           layoutId={layoutId}
           baseFingerprint={baseFingerprintRef.current}
           specs={paint.specs}
+          signSpecs={paint.signSpecs}
+          signBaseFingerprint={signBaseFingerprintRef.current}
           floorCount={detail.layout.floorCount}
           onClose={() => setConfirmingPaint(false)}
           onSaved={() => {
             setConfirmingPaint(false)
+            setEditingSign(null)
             // Leave paint mode outright rather than re-hydrating: the mutation
             // has invalidated layout-detail, and the next `detail` to arrive is
             // the server's answer. Staying in with a stale baseFingerprint would

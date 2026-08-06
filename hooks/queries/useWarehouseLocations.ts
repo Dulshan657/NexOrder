@@ -6,10 +6,12 @@ import {
   updateWarehouseLocation,
   deactivateWarehouseLocation,
   paintAreas,
+  paintSigns,
   renameArea,
   renameRack,
   type CreateLocationInput,
   type PaintAreasArgs,
+  type PaintSignsArgs,
   type UpdateLocationInput,
 } from '@/services/supabase/warehouseLocationService'
 
@@ -79,6 +81,28 @@ export function usePaintAreas(warehouseId: number) {
     mutationFn: (args: Omit<PaintAreasArgs, 'warehouseId'>) => paintAreas({ ...args, warehouseId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) })
+      qc.invalidateQueries({ queryKey: ['layout-detail'] })
+      qc.invalidateQueries({ queryKey: ['layouts', warehouseId] })
+    },
+  })
+}
+
+// ── Floor signs (mig 00097) ──────────────────────────────────────────────────
+
+/**
+ * Replace every floor sign on a live site.
+ *
+ * Invalidates the two LAYOUT keys but NOT the locations key, and the difference
+ * is the point: a sign lives entirely in `layout_objects` and cannot touch a
+ * `locations` row, so refetching the tree would be a lie about what just
+ * happened. Compare usePaintAreas, which must invalidate all three because its
+ * cascade renames bins and its binding re-parents them.
+ */
+export function usePaintSigns(warehouseId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args: Omit<PaintSignsArgs, 'warehouseId'>) => paintSigns({ ...args, warehouseId }),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['layout-detail'] })
       qc.invalidateQueries({ queryKey: ['layouts', warehouseId] })
     },

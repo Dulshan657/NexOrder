@@ -102,12 +102,36 @@ describe('objectRegions', () => {
     expect(regions[0].edges).toHaveLength(6)
   })
 
-  it('never returns label or obstacle', () => {
-    const regions = objectRegions([obj('label', 0, 0), obj('obstacle', 2, 2), obj('wall', 5, 5)], 0)
+  // `obstacle` is the last unmerged type. `label` joined the merged set with
+  // mig 00097: a floor sign is painted cell-by-cell and merging by NAME is what
+  // lets it draw its text once, over the whole run, instead of never (a lone 1x1
+  // cell can't clear the canvases' minimum-width gate).
+  it('never returns obstacle as a region', () => {
+    const regions = objectRegions([obj('obstacle', 2, 2), obj('wall', 5, 5)], 0)
     expect(regions).toHaveLength(1)
     expect(regions[0].objectType).toBe('wall')
-    expect(MERGED_OBJECT_TYPES.has('label')).toBe(false)
     expect(MERGED_OBJECT_TYPES.has('obstacle')).toBe(false)
+    expect(MERGED_OBJECT_TYPES.has('label')).toBe(true)
+  })
+
+  it('merges adjacent sign cells sharing one text into a single region', () => {
+    const cells = [0, 1, 2].map((x) => ({ ...obj('label', x, 0), meta: { name: 'Inbound Staging' } }))
+    const regions = objectRegions(cells, 0)
+    expect(regions).toHaveLength(1)
+    expect(regions[0].cells).toHaveLength(3)
+    expect(regions[0].meta?.name).toBe('Inbound Staging')
+  })
+
+  it('keeps adjacent signs with DIFFERENT text apart', () => {
+    // The failure this guards: merging on type alone would fuse the two into one
+    // silhouette carrying whichever name won, which is exactly why `obstacle`
+    // stays out of the merged set.
+    const regions = objectRegions([
+      { ...obj('label', 0, 0), meta: { name: 'Inbound' } },
+      { ...obj('label', 1, 0), meta: { name: 'Outbound' } },
+    ], 0)
+    expect(regions).toHaveLength(2)
+    expect(regions.map((r) => r.meta?.name).sort()).toEqual(['Inbound', 'Outbound'])
   })
 
   it('ignores other floors', () => {

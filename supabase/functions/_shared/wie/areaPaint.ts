@@ -134,12 +134,22 @@ export function areaZoneProfileOf(object: Pick<AreaCellSource, 'meta'>): number 
  * payload — which is what "two surfaces, one server path" actually means.
  *
  * Expands `w`/`h` defensively: storage is 1x1 today, but a row written before
- * that was enforced must still fold correctly rather than lose its tail.
+ * that was enforced must still fold correctly rather than lose its tail. That
+ * defence is load-bearing for `label`: MAIN's seeded signs were written as
+ * single `w: 10` rows and must fold to the same cells a painted run does.
+ *
+ * `objectType` is a parameter rather than a constant so floor signs
+ * (object_type 'label', see signPaint.ts) reuse this fold, its canonical
+ * ordering and its fingerprint instead of forking them. Defaulted, so every
+ * area call site reads exactly as it did.
  */
-export function areaSpecsFromObjects(objects: readonly AreaCellSource[]): AreaPaintSpec[] {
+export function areaSpecsFromObjects(
+  objects: readonly AreaCellSource[],
+  objectType = 'area',
+): AreaPaintSpec[] {
   const byName = new Map<string, { zoneProfileId: number | null; cells: AreaPaintCell[] }>()
   for (const object of objects) {
-    if (object.objectType !== 'area') continue
+    if (object.objectType !== objectType) continue
     const name = areaNameOf(object)
     if (!name) continue
     const entry = byName.get(name) ?? { zoneProfileId: null, cells: [] }
@@ -164,7 +174,7 @@ export function areaSpecsFromObjects(objects: readonly AreaCellSource[]): AreaPa
     const first = cells[0]
     if (first) {
       for (const object of objects) {
-        if (object.objectType !== 'area' || areaNameOf(object) !== name) continue
+        if (object.objectType !== objectType || areaNameOf(object) !== name) continue
         const w = Math.max(1, object.w ?? 1)
         const h = Math.max(1, object.h ?? 1)
         if (first.floor !== object.floor) continue
@@ -179,15 +189,18 @@ export function areaSpecsFromObjects(objects: readonly AreaCellSource[]): AreaPa
   return specs.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
 }
 
-/** The inverse: 1x1 area rows from specs. Used to build the after-index
- *  server-side and the canvas preview client-side, so both see the same picture
- *  the payload describes. */
-export function areaObjectsFromSpecs(specs: readonly AreaPaintSpec[]): AreaCellSource[] {
+/** The inverse: 1x1 rows from specs. Used to build the after-index server-side
+ *  and the canvas preview client-side, so both see the same picture the payload
+ *  describes. `objectType` defaulted for the same reason as the fold above. */
+export function areaObjectsFromSpecs(
+  specs: readonly AreaPaintSpec[],
+  objectType = 'area',
+): AreaCellSource[] {
   const out: AreaCellSource[] = []
   for (const spec of specs) {
     for (const cell of spec.cells) {
       out.push({
-        objectType: 'area',
+        objectType,
         floor: cell.floor,
         x: cell.x,
         y: cell.y,
@@ -227,8 +240,11 @@ function fnv1a(input: string, seed: number): number {
  * since repainting the same number of cells under a different name has the same
  * count and is exactly the change worth catching. Two seeds, 64 bits.
  */
-export function areaCellsFingerprint(objects: readonly AreaCellSource[]): string {
-  const specs = areaSpecsFromObjects(objects)
+export function areaCellsFingerprint(
+  objects: readonly AreaCellSource[],
+  objectType = 'area',
+): string {
+  const specs = areaSpecsFromObjects(objects, objectType)
   const parts: string[] = []
   for (const spec of specs) {
     for (const cell of spec.cells) {
@@ -259,9 +275,10 @@ export interface AreaGeometryDelta {
 export function diffAreas(
   before: readonly AreaCellSource[],
   after: readonly AreaCellSource[],
+  objectType = 'area',
 ): AreaGeometryDelta {
-  const beforeSpecs = new Map(areaSpecsFromObjects(before).map((s) => [s.name, s]))
-  const afterSpecs = new Map(areaSpecsFromObjects(after).map((s) => [s.name, s]))
+  const beforeSpecs = new Map(areaSpecsFromObjects(before, objectType).map((s) => [s.name, s]))
+  const afterSpecs = new Map(areaSpecsFromObjects(after, objectType).map((s) => [s.name, s]))
 
   const created: string[] = []
   const erased: string[] = []

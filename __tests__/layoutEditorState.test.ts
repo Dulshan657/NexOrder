@@ -48,6 +48,52 @@ describe('layoutEditorReducer — editScope: areas', () => {
     }
     expect(layoutEditorReducer(s, { type: 'set_tool', tool: 'area' }).tool).toBe('area')
     expect(layoutEditorReducer(s, { type: 'set_tool', tool: 'erase' }).tool).toBe('erase')
+    // Signs join the scope with mig 00097 on the same argument that admitted
+    // areas: a `label` row is inert in buildWalkableCells, so it freezes nothing.
+    expect(layoutEditorReducer(s, { type: 'set_tool', tool: 'label' }).tool).toBe('label')
+  })
+
+  it('paints and erases SIGNS on a published layout', () => {
+    let s = layoutEditorReducer(published(), { type: 'set_sign', name: 'Inbound Staging' })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 9, y: 9 })
+    expect(s.objects.filter((o) => o.objectType === 'label')).toHaveLength(1)
+
+    s = layoutEditorReducer({ ...s, tool: 'erase' }, { type: 'paint_cell', x: 9, y: 9 })
+    expect(s.objects.filter((o) => o.objectType === 'label')).toHaveLength(0)
+  })
+
+  it('the eraser takes the layer the operator last picked up, not the topmost hit', () => {
+    // Signs and areas co-occupy freely, so there is NO stacking rule that is
+    // right in both directions — erasing an area cell must not eat the sign over
+    // it, and erasing a sign must not eat the area under it. `annotationBrush`
+    // is how the operator says which layer they are working on.
+    let s = layoutEditorReducer(published(), { type: 'set_sign', name: 'Inbound' })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 3, y: 1 })   // over "Chiller"
+    expect(s.objects.filter((o) => o.x === 3 && o.y === 1)).toHaveLength(2)
+
+    // Sign brush held → the eraser takes the sign.
+    const signGone = layoutEditorReducer({ ...s, tool: 'erase' }, { type: 'paint_cell', x: 3, y: 1 })
+    expect(signGone.objects.filter((o) => o.objectType === 'label')).toHaveLength(0)
+    expect(signGone.objects.filter((o) => o.objectType === 'area')).toHaveLength(1)
+
+    // Area brush picked back up → the eraser takes the area instead.
+    let t = layoutEditorReducer(s, { type: 'set_area', area: { name: 'Chiller' } })
+    t = layoutEditorReducer({ ...t, tool: 'erase' }, { type: 'paint_cell', x: 3, y: 1 })
+    expect(t.objects.filter((o) => o.objectType === 'area')).toHaveLength(0)
+    expect(t.objects.filter((o) => o.objectType === 'label')).toHaveLength(1)
+  })
+
+  it('rename_sign moves EVERY cell, so a merged sign cannot be split in half', () => {
+    let s = layoutEditorReducer(published(), { type: 'set_sign', name: 'Inbound' })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 5, y: 5 })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 6, y: 5 })
+    s = layoutEditorReducer(s, { type: 'rename_sign', from: 'Inbound', to: 'Goods In' })
+    const signs = s.objects.filter((o) => o.objectType === 'label')
+    expect(signs).toHaveLength(2)
+    expect(signs.every((o) => (o.meta as any).name === 'Goods In')).toBe(true)
+    // The brush follows, so the next stroke extends the RENAMED sign rather than
+    // re-creating the old one beside it.
+    expect(s.activeSign).toBe('Goods In')
   })
 
   it('still paints and erases AREAS', () => {
@@ -315,11 +361,20 @@ describe('layoutEditorReducer', () => {
     ['conveyor', 'conveyor'],
     ['staging', 'staging'],
     ['obstacle', 'obstacle'],
-    ['label', 'label'],
   ] as const)('paints a %s object at a cell', (tool, objectType) => {
     const s = layoutEditorReducer(withTool(tool), { type: 'paint_cell', x: 3, y: 3 })
     expect(s.objects).toHaveLength(1)
     expect(s.objects[0]).toMatchObject({ objectType, x: 3, y: 3 })
+    expect(s.dirty).toBe(true)
+  })
+
+  // A sign is its text (mig 00097), so it takes the brush first — see the
+  // blank-brush block below for why painting without one is refused outright.
+  it('paints a sign at a cell, carrying its text', () => {
+    let s = layoutEditorReducer(initialEditorState(), { type: 'set_sign', name: 'Inbound Staging' })
+    s = layoutEditorReducer(s, { type: 'paint_cell', x: 3, y: 3 })
+    expect(s.objects).toHaveLength(1)
+    expect(s.objects[0]).toMatchObject({ objectType: 'label', x: 3, y: 3, meta: { name: 'Inbound Staging' } })
     expect(s.dirty).toBe(true)
   })
 
@@ -356,7 +411,7 @@ describe('layoutEditorReducer', () => {
   })
 
   it('delete_selected removes a selected object by clientRef', () => {
-    let s = layoutEditorReducer(withTool('label'), { type: 'paint_cell', x: 7, y: 7 })
+    let s = layoutEditorReducer(withTool('obstacle'), { type: 'paint_cell', x: 7, y: 7 })
     const objectRef = s.objects[0].clientRef
     s = layoutEditorReducer({ ...s, tool: 'select', selectedRef: objectRef }, { type: 'delete_selected' })
     expect(s.objects).toHaveLength(0)
@@ -551,23 +606,50 @@ describe('layoutEditorReducer', () => {
       expect(s.blockedAt).toMatchObject({ blockedBy: 'storage', tool: 'wall' })
     })
 
-    it('a label may share a cell with anything, in both directions', () => {
+    /** Pick up the sign brush, which a sign stroke now requires. */
+    const withSign = (name = 'Inbound Staging') =>
+      layoutEditorReducer(initialEditorState(), { type: 'set_sign', name })
+
+    it('a sign may share a cell with anything, in both directions', () => {
       let s = layoutEditorReducer(withTool('wall'), { type: 'paint_cell', x: 1, y: 1 })
-      s = layoutEditorReducer({ ...s, tool: 'label' }, { type: 'paint_cell', x: 1, y: 1 })
+      s = layoutEditorReducer({ ...s, tool: 'label', activeSign: 'Inbound Staging' }, { type: 'paint_cell', x: 1, y: 1 })
       expect(s.objects).toHaveLength(2)
       expect(s.blockedAt).toBeNull()
 
-      let t = layoutEditorReducer(withTool('label'), { type: 'paint_cell', x: 2, y: 2 })
+      let t = layoutEditorReducer(withSign(), { type: 'paint_cell', x: 2, y: 2 })
       t = layoutEditorReducer({ ...t, tool: 'wall' }, { type: 'paint_cell', x: 2, y: 2 })
       expect(t.objects).toHaveLength(2)
       expect(t.blockedAt).toBeNull()
     })
 
-    it('two labels in one cell collapse to one, silently', () => {
-      let s = layoutEditorReducer(withTool('label'), { type: 'paint_cell', x: 1, y: 1 })
+    it('repainting a cell with the SAME sign text is an idempotent no-op', () => {
+      // A drag that crosses its own stroke must not churn object identity or
+      // re-mark the layout dirty on every cell.
+      let s = layoutEditorReducer(withSign(), { type: 'paint_cell', x: 1, y: 1 })
+      const before = s.objects
       s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 1 })
       expect(s.objects).toHaveLength(1)
+      expect(s.objects).toBe(before)
       expect(s.blockedAt).toBeNull()
+    })
+
+    it('painting DIFFERENT sign text over a cell reassigns it', () => {
+      let s = layoutEditorReducer(withSign('Inbound'), { type: 'paint_cell', x: 1, y: 1 })
+      s = layoutEditorReducer(s, { type: 'set_sign', name: 'Outbound' })
+      s = layoutEditorReducer(s, { type: 'paint_cell', x: 1, y: 1 })
+      expect(s.objects).toHaveLength(1)
+      expect(s.objects[0].meta).toEqual({ name: 'Outbound' })
+    })
+
+    // The reported bug, both halves: an annotation IS its name, so a nameless
+    // brush wrote a cell belonging to nothing — invisible on the map (an area's
+    // wash is 12% opacity under the grid; a sign draws no text at all) and
+    // refused by the server. It must be refused HERE, out loud.
+    it.each(['area', 'label'] as const)('refuses a %s stroke while the brush has no name', (tool) => {
+      const s = layoutEditorReducer(withTool(tool), { type: 'paint_cell', x: 1, y: 1 })
+      expect(s.objects).toHaveLength(0)
+      expect(s.dirty).toBe(false)
+      expect(s.blockedAt).toMatchObject({ x: 1, y: 1, reason: 'unnamed', tool })
     })
 
     it('staging and dock may share a cell, in both directions', () => {

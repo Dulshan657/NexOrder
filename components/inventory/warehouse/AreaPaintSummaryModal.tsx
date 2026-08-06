@@ -1,28 +1,47 @@
-// What this paint is about to do, before it does it (mig 00095).
+// What this annotation edit is about to do, before it does it (migs 00095/00097).
 //
 // THE SUMMARY IS THE SERVER'S ANSWER, not an estimate. It comes from the same
-// `paint_areas` action with `dry_run: true`, so the counts here are the counts
-// that move. It fires ONCE on open and again only when `includeCustom` changes,
-// which is the one input the counts actually depend on — re-firing per keystroke
-// would burn the 10/min paint bucket for nothing.
+// `paint_areas` / `paint_labels` actions with `dry_run: true`, so the counts here
+// are the counts that move. It fires ONCE on open and again only when
+// `includeCustom` changes, which is the one input the counts actually depend on —
+// re-firing per keystroke would burn the 10/min buckets for nothing.
 //
 // The preview always computes the cascade even when the checkbox is off. That is
 // deliberate: "24 racks would be renamed" is the information the opt-in exists to
 // present, and computing it only after the operator has already opted in would
 // make the choice blind.
+//
+// AREAS AND SIGNS ARE PREVIEWED AND SAVED SEPARATELY, through two actions with
+// two fingerprints and two rate buckets — see signPaint.ts for why they are not
+// one thing. This modal is the single place an operator confirms both, so the
+// two panels below are deliberately worded to make the difference legible: areas
+// rename bins and move them between zones, signs do neither. (The component name
+// predates signs; it is the annotation-save confirm.)
 
 import { useEffect, useState } from 'react'
 import { Modal } from '@/components/ui'
 import { useToasts } from '@/hooks/useToasts'
-import { usePaintAreas } from '@/hooks/queries/useWarehouseLocations'
-import { previewPaintAreas, type AreaPaintPreview } from '@/services/supabase/warehouseLocationService'
+import { usePaintAreas, usePaintSigns } from '@/hooks/queries/useWarehouseLocations'
+import {
+  previewPaintAreas,
+  previewPaintSigns,
+  type AreaPaintPreview,
+  type SignPaintPreview,
+} from '@/services/supabase/warehouseLocationService'
 import type { AreaPaintSpec } from '@/lib/areaPaint'
+import type { SignSpec } from '@/lib/signPaint'
 
 interface AreaPaintSummaryModalProps {
   warehouseId: number
   layoutId: number
   baseFingerprint: string
   specs: AreaPaintSpec[]
+  /** Floor signs (mig 00097). Omitted on a surface that does not edit them, in
+   *  which case no sign preview is fetched and no sign write is issued. */
+  signSpecs?: SignSpec[]
+  /** signCellsFingerprint over the rows the sign working set was built from.
+   *  Its own baseline — never the area one. */
+  signBaseFingerprint?: string
   floorCount: number
   onClose: () => void
   onSaved: () => void
@@ -33,6 +52,8 @@ export function AreaPaintSummaryModal({
   layoutId,
   baseFingerprint,
   specs,
+  signSpecs,
+  signBaseFingerprint,
   floorCount,
   onClose,
   onSaved,
@@ -40,9 +61,12 @@ export function AreaPaintSummaryModal({
   const [cascade, setCascade] = useState(false)
   const [includeCustom, setIncludeCustom] = useState(false)
   const [preview, setPreview] = useState<AreaPaintPreview | null>(null)
+  const [signPreview, setSignPreview] = useState<SignPaintPreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const paint = usePaintAreas(warehouseId)
+  const paintSignsMutation = usePaintSigns(warehouseId)
   const { addToast } = useToasts()
+  const editsSigns = signSpecs !== undefined && signBaseFingerprint !== undefined
 
   useEffect(() => {
     let cancelled = false
@@ -61,21 +85,60 @@ export function AreaPaintSummaryModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [warehouseId, layoutId, baseFingerprint, includeCustom])
 
+  // Separate effect, and deliberately NOT keyed on includeCustom: signs have no
+  // cascade, so re-fetching this when that checkbox moves would spend the sign
+  // bucket on an answer that cannot have changed.
+  useEffect(() => {
+    if (!editsSigns) return
+    let cancelled = false
+    setSignPreview(null)
+    previewPaintSigns({ warehouseId, layoutId, baseFingerprint: signBaseFingerprint!, signs: signSpecs! })
+      .then((p) => { if (!cancelled) setSignPreview(p) })
+      .catch((e: unknown) => {
+        if (!cancelled) setPreviewError(e instanceof Error ? e.message : 'Could not check the signs')
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warehouseId, layoutId, signBaseFingerprint, editsSigns])
+
   const submit = async () => {
     try {
-      const result = await paint.mutateAsync({
-        layoutId, baseFingerprint, areas: specs,
-        cascadeNames: cascade, includeCustom: cascade && includeCustom,
-      })
+      // SIGNS FIRST, and only when they actually changed. They are inert — no
+      // cascade, no binding — so they cannot fail on anything the operator has
+      // to decide. If the area write then fails, the signs are already safe and
+      // the retry is only the risky half. Skipping an unchanged picture also
+      // keeps a pure sign edit from spending the area bucket, and vice versa.
+      let signsSaved = 0
+      if (editsSigns && signPreview && !signPreview.unchanged) {
+        const signResult = await paintSignsMutation.mutateAsync({
+          layoutId, baseFingerprint: signBaseFingerprint!, signs: signSpecs!,
+        })
+        signsSaved = signResult.signs
+      }
+
+      let renamed = 0
+      let areasTouched = false
+      if (!preview || !preview.unchanged || cascade) {
+        const result = await paint.mutateAsync({
+          layoutId, baseFingerprint, areas: specs,
+          cascadeNames: cascade, includeCustom: cascade && includeCustom,
+        })
+        renamed = result.renamed
+        areasTouched = true
+      }
+
+      const what = areasTouched && signsSaved > 0 ? 'Areas and signs saved'
+        : signsSaved > 0 ? 'Signs saved'
+          : 'Areas saved'
       addToast(
-        result.renamed > 0
-          ? `Areas saved — ${result.renamed} location${result.renamed === 1 ? '' : 's'} renamed`
-          : 'Areas saved',
+        renamed > 0
+          ? `${what} — ${renamed} location${renamed === 1 ? '' : 's'} renamed`
+          : what,
         'success',
       )
       onSaved()
     } catch (error) {
-      addToast(error instanceof Error ? error.message : 'Could not save the areas', 'error')
+      addToast(error instanceof Error ? error.message : 'Could not save', 'error')
     }
   }
 
@@ -88,7 +151,7 @@ export function AreaPaintSummaryModal({
     <Modal
       open
       onClose={onClose}
-      title="Save areas"
+      title={editsSigns ? 'Save annotations' : 'Save areas'}
       size="md"
       footer={({ requestClose }) => (
         <div className="flex justify-end gap-2">
@@ -102,10 +165,12 @@ export function AreaPaintSummaryModal({
           <button
             type="button"
             onClick={submit}
-            disabled={paint.isPending || !!previewError}
+            disabled={paint.isPending || paintSignsMutation.isPending || !!previewError}
             className="rounded-lg bg-stone-900 px-3 py-1.5 text-sm text-white btn-press disabled:opacity-40"
           >
-            {paint.isPending ? 'Saving…' : 'Save areas'}
+            {paint.isPending || paintSignsMutation.isPending
+              ? 'Saving…'
+              : editsSigns ? 'Save annotations' : 'Save areas'}
           </button>
         </div>
       )}
@@ -115,6 +180,37 @@ export function AreaPaintSummaryModal({
           <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{previewError}</p>
         )}
         {!preview && !previewError && <p className="text-sm text-stone-400">Checking…</p>}
+
+        {/* Signs first, matching the save order, and visually separated from the
+            areas below because the consequences are not comparable: everything
+            in this block is text on a picture. */}
+        {editsSigns && signPreview && !signPreview.unchanged && (
+          <div className="space-y-1.5 rounded-lg border border-stone-200 bg-white p-2.5 text-sm text-stone-600">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-stone-400">Signs</p>
+            {signPreview.created.map((name) => (
+              <p key={`sc-${name}`}>
+                <span className="font-medium text-stone-800">New sign “{name}”</span>
+                {' — '}{signSpecs!.find((s) => s.name === name)?.cells.length ?? 0} cells.
+              </p>
+            ))}
+            {signPreview.resized.map((r) => (
+              <p key={`sr-${r.name}`}>
+                <span className="font-medium text-stone-800">“{r.name}”</span>
+                {' '}{r.after > r.before ? 'grows' : r.after < r.before ? 'shrinks' : 'moves'}
+                {' '}{r.before} → {r.after} cells.
+              </p>
+            ))}
+            {signPreview.erased.map((name) => (
+              <p key={`se-${name}`}>
+                <span className="font-medium text-rose-700">“{name}” is removed.</span>
+              </p>
+            ))}
+            <p className="text-[11px] text-stone-400">
+              Signs are wayfinding text — no bin is renamed, no zone changes, and the layout does
+              not need republishing.
+            </p>
+          </div>
+        )}
 
         {preview && (
           <>
