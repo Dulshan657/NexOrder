@@ -234,6 +234,12 @@ export interface AreaPaintPreview {
    *  paint did not make them inconsistent, so it does not repair them either. */
   skippedForeign: number
   examples: Array<{ code: string; from: string; to: string }>
+  /** Zone binding (mig 00096). Not gated by the cascade — an area naming a zone
+   *  re-parents its bins whether or not their names change. */
+  willBind: number
+  bindLevels: number
+  unbind: number
+  categoryWarnings: ZoneCategoryWarning[]
 }
 
 export interface AreaPaintResult {
@@ -245,6 +251,12 @@ export interface AreaPaintResult {
   levels: number
   skippedCustom: number
   skippedForeign: number
+  /** Rows the re-parent actually wrote — units plus their rack levels (00096). */
+  bound: number
+  boundUnits: number
+  boundLevels: number
+  unbound: number
+  categoryWarnings: ZoneCategoryWarning[]
 }
 
 export interface PaintAreasArgs {
@@ -308,6 +320,80 @@ export async function paintAreas(args: PaintAreasArgs): Promise<AreaPaintResult>
   )
   if (error) await rethrowWithServerMessage(error, 'Could not save the areas')
   return data as AreaPaintResult
+}
+
+// ── Zone binding (mig 00096) ─────────────────────────────────────────────────
+
+/** An area whose zone profile would refuse stock its bins already hold. Advisory
+ *  — the server warns and binds anyway, because refusing would not move it. */
+export interface ZoneCategoryWarning {
+  areaName: string
+  profileId: number
+  bins: number
+  categories: string[]
+}
+
+export interface ZoneBindingPreview {
+  /** Racks and flat bins that will be re-parented. */
+  willBind: number
+  /** SHELF rows whose path rides along with their rack. */
+  levels: number
+  /** Bins returning to the warehouse root because their area names no zone. */
+  unbind: number
+  /** Already in the right place. */
+  unchanged: number
+  byArea: Array<{
+    areaName: string
+    profileId: number | null
+    zoneId: number | null
+    units: number
+    moved: number
+  }>
+  categoryWarnings: ZoneCategoryWarning[]
+  examples: Array<{ code: string; from: string; to: string }>
+}
+
+export interface ZoneBindingResult {
+  /** Rows the RPC actually wrote — units plus their levels. */
+  bound: number
+  boundUnits: number
+  boundLevels: number
+  unbound: number
+  unchanged: number
+  categoryWarnings: ZoneCategoryWarning[]
+}
+
+/**
+ * What binding this site's areas to their zones would do.
+ *
+ * A `dry_run` on the real action, never a separate preview endpoint — the same
+ * discipline as previewAreaRename and previewPaintAreas, and it matters more
+ * here: this is the only surface that shows a 1100-row re-parent before it
+ * happens. Writes nothing, audits nothing.
+ */
+export async function previewZoneBinding(warehouseId: number): Promise<ZoneBindingPreview> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; preview: ZoneBindingPreview }>(
+    'mutate-warehouse-location',
+    { body: { action: 'bind_zones', warehouse_id: warehouseId, dry_run: true } },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not check the zone binding')
+  return (data as any).preview as ZoneBindingPreview
+}
+
+/**
+ * Bind every drawn bin to the ZONE its area names.
+ *
+ * Painting and saving already bind as a side effect, so this is for a site
+ * painted before mig 00096 — the alternative being to ask an operator to
+ * re-paint an area they already painted correctly.
+ */
+export async function bindZones(warehouseId: number): Promise<ZoneBindingResult> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true } & ZoneBindingResult>(
+    'mutate-warehouse-location',
+    { body: { action: 'bind_zones', warehouse_id: warehouseId } },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not bind the areas to their zones')
+  return data as ZoneBindingResult
 }
 
 export async function deactivateWarehouseLocation(id: number): Promise<void> {

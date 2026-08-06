@@ -27,6 +27,7 @@ import { FloatingPanel } from './FloatingPanel'
 import { WarehouseTreePanel } from './WarehouseTreePanel'
 import { BinDetailPanel } from './BinDetailPanel'
 import { RenameAreaModal } from './RenameAreaModal'
+import { BindZonesModal } from './BindZonesModal'
 import { AreaPaintToolbar } from './AreaPaintToolbar'
 import { AreaPaintSummaryModal } from './AreaPaintSummaryModal'
 import { useAreaPaintState } from './useAreaPaintState'
@@ -63,6 +64,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null)
   /** Area whose name is being edited (mig 00094); null = dialog closed. */
   const [renamingArea, setRenamingArea] = useState<string | null>(null)
+  const [bindingZones, setBindingZones] = useState(false)
 
   // ── Area painting (mig 00095) ─────────────────────────────────────────────
   const paint = useAreaPaintState()
@@ -424,7 +426,17 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           one-finger equivalent — MapStage disables gestures below md anyway, so
           the entry point is desktop-only rather than ambiguous on a phone. */}
       {canRename && !paint.state.active && (
-        <div className="hidden md:flex md:justify-end">
+        <div className="hidden md:flex md:justify-end md:gap-2">
+          {/* Painting and saving bind automatically (mig 00096), so this is for a
+              site painted before that existed — and it is the only surface that
+              previews a re-parent before it happens. */}
+          <button
+            type="button"
+            onClick={() => setBindingZones(true)}
+            className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
+          >
+            Bind areas to zones
+          </button>
           <button
             type="button"
             onClick={beginPaint}
@@ -495,6 +507,10 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           areaName={renamingArea}
           onClose={() => setRenamingArea(null)}
         />
+      )}
+
+      {bindingZones && (
+        <BindZonesModal warehouseId={warehouseId} onClose={() => setBindingZones(false)} />
       )}
 
       {confirmingPaint && (

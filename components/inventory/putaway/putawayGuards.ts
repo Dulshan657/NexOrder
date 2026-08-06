@@ -54,9 +54,23 @@ export function binFillFromBalances(
   return fill
 }
 
-/** The nearest ancestor-or-self carrying a zone profile. Zone semantics live on
- *  ZONE nodes (mig 00047) while stock goes into bins several levels below, so a
- *  bin inherits its zone's rules by walking up the parent chain. */
+/**
+ * The nearest ancestor-or-self carrying a zone profile. Zone semantics live on
+ * ZONE nodes (mig 00047) while stock goes into bins several levels below, so a
+ * bin inherits its zone's rules by walking up the parent chain.
+ *
+ * THIS WALKS parent_id; THE SERVER WALKS materialized_path. wie_putaway_candidates
+ * finds a bin's zone with `l.materialized_path LIKE z.materialized_path || '/%'`,
+ * and the two answers agree only because every writer of one is also a writer of
+ * the other — locations carries no trigger, so parent_id and materialized_path
+ * are two independent hand-maintained copies of one edge. Zone binding (mig
+ * 00096, _shared/wie/zoneBinding.ts) is what keeps them in step on a re-parent.
+ *
+ * Do not "simplify" either side to match the other. The path form is what SQL can
+ * index; the parent form is what the browser already holds, since
+ * getWarehouseLocations returns the whole subtree and a client-side LIKE over
+ * every location would be the slower of the two.
+ */
 export function resolveZoneProfileId(
   bin: InventoryLocation | undefined,
   locationsById: ReadonlyMap<number, InventoryLocation>,

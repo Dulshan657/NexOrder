@@ -51,10 +51,23 @@ import {
 import {
   applyNameWrites,
   loadAreaHighWater,
+  loadLocationsForNaming,
   loadNameState,
   nameWriteNeeded,
   type NameWrite,
 } from '../_shared/locationNamingWrite.ts'
+// Zone binding (mig 00096). Same split again: the rule is pure and shared, the
+// find-or-create of the ZONE row and the batched re-parent are I/O beside it.
+// resolveZone used to be defined inline here and is now shared, because
+// mutate-warehouse-location binds too and two find-or-create implementations
+// racing on one (warehouse, profile) pair is how you get two ZONE rows.
+import {
+  planZoneBinding,
+  requiredProfileIds,
+  zoneTargets,
+  type BindingUnit,
+} from '../_shared/wie/zoneBinding.ts'
+import { applyReparents, makeZoneResolver, resolveZones } from '../_shared/zoneResolve.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const BIN_KINDS = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN'] as const
@@ -658,45 +671,11 @@ serve(async (req: Request) => {
     const whCode = (whRow as any).code as string
 
     // Find-or-create the warehouse's ZONE location for a given profile so bins can
-    // inherit zone semantics through the materialized-path ancestry.
-    const zoneCache = new Map<number, { id: number; path: string }>()
-    const resolveZone = async (profileId: number): Promise<{ id: number; path: string }> => {
-      const cached = zoneCache.get(profileId)
-      if (cached) return cached
-      // Scoped find — kind + profile + this warehouse's subtree (used for both the
-      // initial lookup and the race-recovery re-read, so we never adopt a stray row).
-      const findZone = () => admin.from('locations')
-        .select('id, materialized_path')
-        .eq('kind', 'ZONE').eq('zone_profile_id', profileId)
-        .like('materialized_path', `${whPath}/%`).limit(1).maybeSingle()
-
-      const { data: existing } = await findZone()
-      if (existing) {
-        const z = { id: (existing as any).id, path: (existing as any).materialized_path }
-        zoneCache.set(profileId, z)
-        return z
-      }
-      const { data: profile, error: profErr } = await admin.from('zone_profiles').select('name').eq('id', profileId).single()
-      if (profErr || !profile) throw new EdgeFunctionError('INVALID_INPUT', `Unknown zone profile ${profileId}`)
-      const zoneCode = `${whCode}-Z${profileId}`
-      const { data: created, error } = await admin.from('locations').insert({
-        parent_id: layout.warehouse_id, kind: 'ZONE', code: zoneCode,
-        name: (profile as any).name ?? `Zone ${profileId}`,
-        materialized_path: `${whPath}/${zoneCode}`, zone_profile_id: profileId, is_active: true,
-      } as any).select('id, materialized_path').single()
-      if (error || !created) {
-        // Lost a race — re-run the SCOPED find (not a by-code read, which could
-        // otherwise adopt an unrelated location that happens to share the code).
-        const { data: reread } = await findZone()
-        if (!reread) throw new EdgeFunctionError('INTERNAL', error?.message ?? 'Failed to create zone')
-        const z = { id: (reread as any).id, path: (reread as any).materialized_path }
-        zoneCache.set(profileId, z)
-        return z
-      }
-      const z = { id: (created as any).id, path: (created as any).materialized_path }
-      zoneCache.set(profileId, z)
-      return z
-    }
+    // inherit zone semantics through the materialized-path ancestry. Shared with
+    // mutate-warehouse-location as of mig 00096 — see _shared/zoneResolve.ts.
+    const resolveZone = makeZoneResolver(admin, {
+      id: layout.warehouse_id, path: whPath, code: whCode,
+    })
 
     // Storage-type defaults: when a new bin names a storage_type_id but omits
     // capacity/slot, inherit them from the type. Only pallet/carton map onto
@@ -956,12 +935,41 @@ serve(async (req: Request) => {
     // another would re-mint its number onto a second rack while the first one's
     // label is still on the racking.
     const areaHighWater = whPath ? await loadAreaHighWater(admin, whPath) : new Map<string, number>()
-    const areaIndex = buildAreaIndex(
-      input.objects.map((o) => ({
-        objectType: o.object_type, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
-        meta: o.meta ?? null,
-      })),
-    )
+    const areaCellSources = input.objects.map((o) => ({
+      objectType: o.object_type, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+      meta: o.meta ?? null,
+    }))
+    const areaIndex = buildAreaIndex(areaCellSources)
+
+    // Area NAME -> its zone profile (mig 00096). Areas are keyed by name across
+    // the site, so an area painted on two floors is one entry; a later cell wins
+    // a disagreement, which cannot arise from the designer (paint_cell replaces)
+    // and only matters for imported geometry.
+    const profileByArea = new Map<string, number | null>()
+    for (const o of areaCellSources) {
+      if (o.objectType !== 'area') continue
+      const name = typeof o.meta?.name === 'string' ? o.meta.name.trim() : ''
+      if (!name) continue
+      const raw = (o.meta as any)?.zoneProfileId
+      profileByArea.set(name, typeof raw === 'number' ? raw : null)
+    }
+
+    /** The zone profile a placement should be parented under: its area's, else
+     *  its own dropdown value, else none. The pure rule, applied to one row —
+     *  planZoneBinding applies the identical one to the rows already stored. */
+    const resolveNewBinProfile = (p: (typeof input.placements)[number]): number | null => {
+      const targets = zoneTargets(
+        [{
+          ref: p.client_ref, id: 0, code: '', parentId: null, path: '',
+          floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h,
+          ownZoneProfileId: p.new_bin?.zone_profile_id ?? null,
+        }],
+        areaIndex,
+        profileByArea,
+      )
+      const fromArea = targets.get(p.client_ref)?.profileId ?? null
+      return fromArea ?? p.new_bin?.zone_profile_id ?? null
+    }
     let namingUnits: NamingUnit[] = input.placements.map((p) => {
       const stored = p.location_id !== undefined ? storedNames.get(p.location_id) : undefined
       return {
@@ -1038,10 +1046,18 @@ serve(async (req: Request) => {
         if (weightCapacityKg == null) weightCapacityKg = st.weightCapacityKg
       }
       // Resolve the bin's parent: a zone (if assigned) else the given parent.
+      //
+      // The AREA the bin was drawn inside wins over the per-bin zone dropdown
+      // (mig 00096). The dropdown predates areas and is invisible on the map; an
+      // area is the thing the operator drew, named and can see. Applying the rule
+      // HERE rather than re-parenting afterwards means a newly drawn bin lands in
+      // its zone on the first write — the binding pass below is then only ever
+      // about locations that already existed.
+      const areaProfileId = resolveNewBinProfile(p)
       let parentId = nb.parent_id
       let parentPath: string
-      if (nb.zone_profile_id) {
-        const zone = await resolveZone(nb.zone_profile_id)
+      if (areaProfileId != null) {
+        const zone = await resolveZone(areaProfileId)
         parentId = zone.id
         parentPath = zone.path
       } else {
@@ -1274,6 +1290,65 @@ serve(async (req: Request) => {
       // against it, because these ids came from client-supplied geometry.
       if (nameWrites.length > 0 && whPath) {
         await applyNameWrites(admin, whPath, nameWrites)
+      }
+    }
+
+    // ── Bind existing bins to their area's ZONE (mig 00096) ──────────────────
+    //
+    // New bins were already inserted under the right parent above, so this is the
+    // other half: locations that already existed and whose area — or whose area's
+    // profile — has changed since they were drawn. Painting "Chiller" over racks
+    // that are already in the database is the whole point.
+    //
+    // Runs BEFORE the destructive geometry replace for the same reason the
+    // duplicate checks below do: a failure here must leave the draft intact.
+    // Re-parenting touches no placement row, so the two are independent.
+    if (whPath) {
+      const existing = input.placements.filter((p) => p.location_id !== undefined)
+      const levelIdsByRef = new Map<string, number[]>()
+      for (const p of existing) {
+        const levels = refToLevelLocations.get(p.client_ref)
+        if (levels) levelIdsByRef.set(p.client_ref, Object.values(levels))
+      }
+      const wanted = [
+        ...existing.map((p) => p.location_id!),
+        ...[...levelIdsByRef.values()].flat(),
+      ]
+      const locById = await loadLocationsForNaming(admin, wanted)
+
+      const bindingUnits: BindingUnit[] = []
+      for (const p of existing) {
+        const loc = locById.get(p.location_id!)
+        // A placement whose location vanished under us. The naming pass above
+        // skips it the same way; the geometry replace will fail loudly if it
+        // matters.
+        if (!loc) continue
+        bindingUnits.push({
+          ref: p.client_ref,
+          id: loc.id,
+          code: loc.code,
+          parentId: loc.parentId,
+          path: loc.path,
+          floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h,
+          // The stored bin carries no zone_profile_id of its own (nothing writes
+          // it on a bin), so the per-placement dropdown is the only fallback and
+          // it only ever arrives on a NEW bin. An existing bin therefore follows
+          // its area, or returns to the root.
+          ownZoneProfileId: null,
+          levels: (levelIdsByRef.get(p.client_ref) ?? [])
+            .map((id) => locById.get(id))
+            .filter((l): l is NonNullable<typeof l> => !!l)
+            .map((l) => ({ id: l.id, code: l.code, path: l.path })),
+        })
+      }
+
+      if (bindingUnits.length > 0) {
+        const targets = zoneTargets(bindingUnits, areaIndex, profileByArea)
+        const zones = await resolveZones(resolveZone, requiredProfileIds(bindingUnits, targets))
+        const plan = planZoneBinding(bindingUnits, targets, zones, {
+          id: layout.warehouse_id, path: whPath,
+        })
+        await applyReparents(admin, whPath, plan.moves)
       }
     }
 
