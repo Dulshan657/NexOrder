@@ -378,13 +378,13 @@ export function LayoutToolbar({
         <button type="button" className={actionBtn} onClick={onSimulate} disabled={simulating}>
           <PlayCircle className="h-4 w-4" strokeWidth={2} /> {simulating ? 'Simulating…' : 'Simulate'}
         </button>
-        {/* Save areas is the ONLY document action a published layout gets. It
-            routes to `paint_areas`, never to save_geometry — that is a full
-            replace of every placement and object plus an orphan sweep, and on a
-            live site those rows hold stock. */}
+        {/* Saving annotations is the ONLY document action a published layout
+            gets. It routes to `paint_areas` and `paint_labels`, never to
+            save_geometry — that is a full replace of every placement and object
+            plus an orphan sweep, and on a live site those rows hold stock. */}
         {areaOnly && (
           <button type="button" className={actionBtn} onClick={onSave} disabled={saving || !dirty}>
-            <Save className="h-4 w-4" strokeWidth={2} /> {dirty ? 'Save areas' : 'Areas saved'}
+            <Save className="h-4 w-4" strokeWidth={2} /> {dirty ? 'Save annotations' : 'Annotations saved'}
           </button>
         )}
         {isDraft && (
