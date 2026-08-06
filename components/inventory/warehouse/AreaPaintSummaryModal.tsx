@@ -68,6 +68,19 @@ export function AreaPaintSummaryModal({
   const { addToast } = useToasts()
   const editsSigns = signSpecs !== undefined && signBaseFingerprint !== undefined
 
+  /**
+   * Whether `paint_areas` will actually be called — the same condition `submit`
+   * uses, deliberately, so the panel cannot describe a write that will not happen.
+   *
+   * This matters because `paint_areas` ALWAYS runs the zone-binding pass, and on
+   * a site with no painted areas that pass resolves every bin to the warehouse
+   * root. Verified on MAIN: saving one sign showed "189 locations will move into
+   * their area's zone; 189 will return to the site root", on a save that touched
+   * no location at all. Alarming, and a straightforward lie about the pending
+   * action.
+   */
+  const willWriteAreas = !preview || !preview.unchanged || cascade
+
   useEffect(() => {
     let cancelled = false
     setPreview(null)
@@ -247,7 +260,12 @@ export function AreaPaintSummaryModal({
               )}
             </div>
 
-            {preview.willRename > 0 ? (
+            {!willWriteAreas ? (
+              <p className="text-xs text-stone-400">
+                The areas are untouched, so nothing about them will be written — no bin is renamed
+                and no bin changes zone.
+              </p>
+            ) : preview.willRename > 0 ? (
               <label className="flex items-start gap-2 rounded-lg border border-stone-200 bg-stone-50 p-2.5 text-xs text-stone-700">
                 <input
                   type="checkbox"
@@ -309,7 +327,7 @@ export function AreaPaintSummaryModal({
               </label>
             )}
 
-            {preview.skippedForeign > 0 && (
+            {willWriteAreas && preview.skippedForeign > 0 && (
               <p className="text-[11px] leading-snug text-stone-400">
                 {preview.skippedForeign} location{preview.skippedForeign === 1 ? '' : 's'} already
                 carried a different area&rsquo;s name before this paint, so {preview.skippedForeign === 1 ? 'it is' : 'they are'} left
@@ -321,7 +339,7 @@ export function AreaPaintSummaryModal({
                 area naming a zone parents its bins under it either way — but it
                 is a real re-parent and the operator should not discover it from
                 the audit log. */}
-            {(preview.willBind > 0 || preview.unbind > 0) && (
+            {willWriteAreas && (preview.willBind > 0 || preview.unbind > 0) && (
               <p className="text-xs text-stone-500">
                 {preview.willBind > 0 && (
                   <>
@@ -340,7 +358,7 @@ export function AreaPaintSummaryModal({
               </p>
             )}
 
-            {preview.categoryWarnings.length > 0 && (
+            {willWriteAreas && preview.categoryWarnings.length > 0 && (
               <div className="space-y-1.5 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
                 {preview.categoryWarnings.map((w) => (
                   <p key={w.areaName}>
