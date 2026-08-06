@@ -304,6 +304,22 @@ export interface NamingOptions {
    * correct — nothing was ever printed, so the number really is free.
    */
   minSeq?: ReadonlyMap<string, number>
+  /**
+   * Numbers already live in `rename.to`, held by rows THIS PASS WILL NOT REWRITE.
+   *
+   * A unit swept into `to` whose number appears here takes a FRESH one instead of
+   * keeping it. Its printed label is wrong either way the moment the area
+   * boundary moved under it, and keeping the number would put two racks in `to`
+   * under one name — the exact thing the numbering rule exists to prevent.
+   *
+   * Absent means nothing can collide, which is true for a plain RENAME: renaming
+   * moves a whole pool at once, so the only numbers arriving in `to` are the ones
+   * leaving `from`, and the high-water fold above already reconciles those. It is
+   * NOT true once an area BOUNDARY can move, which is what live painting adds:
+   * `Bulk · Rack 3` swept into a Chiller that already holds `Chiller · Rack 3` is
+   * an ordinary act, not an edge case. planAreaCascade supplies this per group.
+   */
+  claimedInTarget?: ReadonlySet<number>
 }
 
 export interface NamedUnit {
@@ -448,7 +464,16 @@ export function assignAutoNames(
       // Keep the number when it came from either side of the rename; a rack
       // adopted from somewhere else takes a fresh one above the high-water mark
       // rather than colliding with a number already on the floor.
-      if (unit.nameSeq != null && (carried === rename!.from || carried === rename!.to)) {
+      //
+      // `claimedInTarget` is the second half of that guarantee, and it only bites
+      // when an area BOUNDARY moved rather than a whole pool being renamed: the
+      // number is inherited from `from`, but an untouched incumbent in `to`
+      // already answers to it. See NamingOptions.claimedInTarget.
+      if (
+        unit.nameSeq != null &&
+        (carried === rename!.from || carried === rename!.to) &&
+        !options.claimedInTarget?.has(unit.nameSeq)
+      ) {
         seq = unit.nameSeq
       } else {
         seq = (highWater.get(areaName) ?? 0) + 1
