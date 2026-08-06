@@ -99,13 +99,49 @@ serve(async (req: Request) => {
     // ── Candidate bin metadata (capacity, zone, code) ────────────────────────
     const { data: binRows } = candidateLocIds.length
       ? await admin.from('locations')
-          .select('id, code, capacity_slots, slot_kind, weight_capacity_kg, zone_profile_id')
+          .select('id, code, capacity_slots, slot_kind, weight_capacity_kg, materialized_path')
           .in('id', candidateLocIds)
       : { data: [] as any[] }
     const binById = new Map<number, any>()
     for (const b of (binRows ?? []) as any[]) binById.set(b.id, b)
 
-    const zoneProfileIds = [...new Set(((binRows ?? []) as any[]).map((b) => b.zone_profile_id).filter((z) => z != null))]
+    // A BIN'S ZONE COMES FROM ITS ANCESTRY, NOT FROM A COLUMN ON THE BIN.
+    //
+    // This read used to be `.eq(bin.zone_profile_id)`, which is a column nothing
+    // has ever written on a bin — `resolveZone` sets it on the ZONE row it
+    // creates, never on the bins beneath. So every reslot plan ran zone-blind:
+    // zoneTag, zoneType, the priority weight and the allowed-category filter were
+    // NULL for every candidate, silently.
+    //
+    // wie_putaway_candidates has always derived it the other way, by
+    // prefix-matching the bin's materialized_path against kind='ZONE' rows and
+    // taking the DEEPEST match. This is that same rule, in TypeScript, so the
+    // planner and the engine finally agree about what a bin is. Binding (00096)
+    // is what makes either of them return anything at all.
+    const { data: zoneLocRows } = await admin.from('locations')
+      .select('id, name, materialized_path, zone_profile_id')
+      .eq('kind', 'ZONE')
+      .not('zone_profile_id', 'is', null)
+    // Deepest path first — the LATERAL's ORDER BY length(z.materialized_path) DESC.
+    const zoneLocs = ((zoneLocRows ?? []) as any[])
+      .map((z) => ({
+        id: Number(z.id),
+        name: String(z.name ?? ''),
+        path: String(z.materialized_path ?? ''),
+        profileId: Number(z.zone_profile_id),
+      }))
+      .sort((a, b) => b.path.length - a.path.length)
+
+    const zoneForBin = (locId: number): { id: number; name: string; profileId: number } | null => {
+      const path = binById.get(locId)?.materialized_path as string | undefined
+      if (!path) return null
+      const hit = zoneLocs.find((z) => z.path && path.startsWith(`${z.path}/`))
+      return hit ? { id: hit.id, name: hit.name, profileId: hit.profileId } : null
+    }
+
+    const zoneProfileIds = [...new Set(
+      candidateLocIds.map((id) => zoneForBin(id)?.profileId).filter((z): z is number => z != null),
+    )]
     const zoneById = new Map<number, any>()
     if (zoneProfileIds.length) {
       const { data: zoneRows } = await admin.from('zone_profiles')
@@ -225,12 +261,17 @@ serve(async (req: Request) => {
       candidateLocIds.map((locId) => {
         const bin = binById.get(locId)
         const snap = snapByLoc.get(locId)
-        const zone = bin?.zone_profile_id != null ? zoneById.get(bin.zone_profile_id) : null
+        const zoneLoc = zoneForBin(locId)
+        const zone = zoneLoc ? zoneById.get(zoneLoc.profileId) : null
         return {
           locationId: locId,
           code: bin?.code ?? String(locId),
-          zoneId: null,
-          zoneTag: zone?.zone_type ?? null,
+          zoneId: zoneLoc?.id ?? null,
+          // lower(zone.name), matching wie_putaway_candidates' projection — NOT
+          // zone_type, which is what this used to send. `zoneTag` is the field an
+          // operator's wie_rules row matches on, so the two engines have to agree
+          // on what the string IS or the same rule fires in putaway and not here.
+          zoneTag: zoneLoc ? zoneLoc.name.toLowerCase() : null,
           capacitySlots: bin?.capacity_slots != null ? Number(bin.capacity_slots) : null,
           slotKind: bin?.slot_kind ?? null,
           usedSlots: usedByBin.get(locId) ?? 0,

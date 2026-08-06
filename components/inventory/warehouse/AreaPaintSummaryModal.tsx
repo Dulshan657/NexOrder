@@ -220,6 +220,43 @@ export function AreaPaintSummaryModal({
                 alone. Rename {preview.skippedForeign === 1 ? 'it' : 'them'} from the map if that is wrong.
               </p>
             )}
+
+            {/* Zone binding (mig 00096). Not opt-in like the name cascade — an
+                area naming a zone parents its bins under it either way — but it
+                is a real re-parent and the operator should not discover it from
+                the audit log. */}
+            {(preview.willBind > 0 || preview.unbind > 0) && (
+              <p className="text-xs text-stone-500">
+                {preview.willBind > 0 && (
+                  <>
+                    {preview.willBind} location{preview.willBind === 1 ? '' : 's'} will move into
+                    their area&rsquo;s zone
+                    {preview.bindLevels > 0 && `, carrying ${preview.bindLevels} rack level${preview.bindLevels === 1 ? '' : 's'}`}
+                  </>
+                )}
+                {preview.willBind > 0 && preview.unbind > 0 && '; '}
+                {preview.unbind > 0 && (
+                  <>
+                    {preview.unbind} will return to the site root
+                  </>
+                )}
+                .
+              </p>
+            )}
+
+            {preview.categoryWarnings.length > 0 && (
+              <div className="space-y-1.5 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+                {preview.categoryWarnings.map((w) => (
+                  <p key={w.areaName}>
+                    <span className="font-medium">{w.areaName}</span> allows only some categories, but{' '}
+                    {w.bins} bin{w.bins === 1 ? '' : 's'} in it hold {w.categories.join(', ')}. Putaway
+                    will stop offering {w.bins === 1 ? 'that bin' : 'those bins'} for{' '}
+                    {w.categories.length === 1 ? 'that category' : 'those categories'} — the stock
+                    already there is not moved.
+                  </p>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>

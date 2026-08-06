@@ -53,6 +53,26 @@ import {
   nameWriteNeeded,
   type NameWrite,
 } from '../_shared/locationNamingWrite.ts'
+// Zone binding (mig 00096) — what finally reads an area's meta.zoneProfileId.
+// Pure rule + I/O beside it, the same split as naming. resolveZone is shared with
+// mutate-layout: two find-or-create implementations racing on one
+// (warehouse, profile) pair would leave two ZONE rows and a LATERAL that picks
+// whichever happens to have the longer path.
+import {
+  categoryConflicts,
+  planZoneBinding,
+  requiredProfileIds,
+  zoneTargets,
+  type BindingUnit,
+  type ZoneBindingPlan,
+} from '../_shared/wie/zoneBinding.ts'
+import {
+  applyReparents,
+  loadAllowedCategories,
+  loadStockedCategories,
+  makeZoneResolver,
+  resolveZones,
+} from '../_shared/zoneResolve.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 const NODE_KINDS = ['ZONE', 'BIN', 'SHELF'] as const
@@ -180,9 +200,32 @@ const paintAreasSchema = z.object({
   dry_run: z.boolean().optional(),
 })
 
+// ── bind_zones (mig 00096) ───────────────────────────────────────────────────
+//
+// Re-parent every drawn bin under the ZONE its area names, and every bin whose
+// area no longer names one back to the warehouse root.
+//
+// paint_areas and save_geometry already bind as a side effect, so this action is
+// not how binding normally happens. It exists for the site that was painted
+// BEFORE 00096 shipped: MAIN carries 189 racks and 945 shelves under areas that
+// have never been bound to anything, and the alternative to this button is
+// telling an operator to re-paint an area they already painted correctly.
+//
+// It is also the only surface that previews a re-parent before it happens, which
+// is why it is the documented way to bind a large site: `dry_run` reports the
+// exact count, which areas contribute it, and — the part worth reading — which
+// areas carry a zone profile whose allowed_categories would refuse stock those
+// bins already hold.
+const bindZonesSchema = z.object({
+  action: z.literal('bind_zones'),
+  warehouse_id: z.number().int().positive(),
+  dry_run: z.boolean().optional(),
+})
+
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: createSchema }),
   paintAreasSchema,
+  bindZonesSchema,
   z.object({ action: z.literal('update'), id: z.number().int().positive(), data: updateSchema }),
   renameAreaSchema,
   renameRackSchema,
@@ -229,6 +272,127 @@ function validationIssues(error: z.ZodError): { issues: Array<{ path: string; me
 async function nodeHasStock(admin: any, locationId: number): Promise<boolean> {
   const { data } = await admin.from('inventory_balances').select('id').gt('on_hand', 0).eq('location_id', locationId).limit(1)
   return !!(data && data.length > 0)
+}
+
+/** An area's grid cells as this function holds them, from either `layout_objects`
+ *  or a paint payload. Structurally what buildAreaIndex and zoneBinding want. */
+interface AreaObject {
+  objectType: string
+  floor: number
+  x: number
+  y: number
+  w: number
+  h: number
+  meta: Record<string, unknown> | null
+}
+
+/** Area NAME → its zone profile. Areas are keyed by name across the whole site
+ *  (00094's pools work the same way), so one painted on two floors is one entry. */
+function profilesByArea(objects: readonly AreaObject[]): Map<string, number | null> {
+  const out = new Map<string, number | null>()
+  for (const o of objects) {
+    if (o.objectType !== 'area') continue
+    const name = typeof o.meta?.name === 'string' ? o.meta.name.trim() : ''
+    if (!name) continue
+    const raw = (o.meta as any)?.zoneProfileId
+    out.set(name, typeof raw === 'number' ? raw : null)
+  }
+  return out
+}
+
+interface ZoneBindingContext {
+  plan: ZoneBindingPlan
+  /** rack/bin id → the location ids that can actually hold stock for it. A
+   *  levelled rack holds none itself; its SHELF rows do. */
+  stockIdsByUnit: Map<number, number[]>
+}
+
+/**
+ * The zone-binding plan for a whole site, given the areas it will have.
+ *
+ * Shared by paint_areas, rename_area and bind_zones — all three ask the same
+ * question ("given these areas, where should every bin be parented") and must
+ * answer it identically, or a preview and the write that follows it would
+ * disagree. Exactly the reason loadLayoutNamingUnits is shared.
+ *
+ * `areaObjects` is the AFTER picture: the caller passes what the areas will be
+ * once its own change lands, never what they are now.
+ */
+async function buildZoneBindingPlan(
+  admin: any,
+  warehouse: { id: number; path: string; code: string },
+  layoutId: number,
+  areaObjects: readonly AreaObject[],
+): Promise<ZoneBindingContext> {
+  const { units, locById, levelsByParent } = await loadLayoutNamingUnits(admin, layoutId, warehouse.path)
+
+  const stockIdsByUnit = new Map<number, number[]>()
+  const bindingUnits: BindingUnit[] = []
+  for (const u of units) {
+    const id = Number(u.ref.slice(4))
+    const loc = locById.get(id)
+    if (!loc) continue
+    const levels = (levelsByParent.get(id) ?? [])
+      .map((l) => locById.get(l.id))
+      .filter((l): l is NonNullable<typeof l> => !!l)
+    bindingUnits.push({
+      ref: u.ref,
+      id,
+      code: loc.code,
+      parentId: loc.parentId,
+      path: loc.path,
+      floor: u.floor, x: u.x, y: u.y, w: u.w, h: u.h,
+      // A stored bin carries no zone_profile_id of its own — nothing writes that
+      // column on a bin — so an existing bin follows its area or returns to the
+      // root. The per-placement dropdown only ever reaches a NEW bin, in
+      // mutate-layout.
+      ownZoneProfileId: null,
+      levels: levels.map((l) => ({ id: l.id, code: l.code, path: l.path })),
+    })
+    stockIdsByUnit.set(id, levels.length > 0 ? levels.map((l) => l.id) : [id])
+  }
+
+  const targets = zoneTargets(bindingUnits, buildAreaIndex(areaObjects), profilesByArea(areaObjects))
+  const resolveZone = makeZoneResolver(admin, warehouse)
+  const zones = await resolveZones(resolveZone, requiredProfileIds(bindingUnits, targets))
+  const plan = planZoneBinding(bindingUnits, targets, zones, { id: warehouse.id, path: warehouse.path })
+
+  return { plan, stockIdsByUnit }
+}
+
+/**
+ * Areas whose profile would refuse stock their bins already hold.
+ *
+ * WARNS, never blocks — refusing would not move the pallets off the rack, it
+ * would only stop the operator recording where they are. Same temperament as the
+ * warehouse setup checklist's three guardrails.
+ */
+async function zoneCategoryWarnings(
+  admin: any,
+  ctx: ZoneBindingContext,
+): Promise<Array<{ areaName: string; profileId: number; bins: number; categories: string[] }>> {
+  const profileIds = ctx.plan.byArea
+    .map((a) => a.profileId)
+    .filter((id): id is number => id != null)
+  if (profileIds.length === 0) return []
+
+  const allowed = await loadAllowedCategories(admin, profileIds)
+  // Nothing to warn about if every profile in play allows everything — skip the
+  // stock read entirely, which is the common case.
+  const constrained = [...allowed.values()].some((list) => list && list.length > 0)
+  if (!constrained) return []
+
+  const stockIds = [...ctx.stockIdsByUnit.values()].flat()
+  const byLocation = await loadStockedCategories(admin, stockIds)
+  // Roll a levelled rack's SHELF categories up onto the rack, which is the unit
+  // the plan and the areas both speak in.
+  const byUnit = new Map<number, string[]>()
+  for (const [unitId, ids] of ctx.stockIdsByUnit) {
+    const merged = new Set<string>()
+    for (const id of ids) for (const c of byLocation.get(id) ?? []) merged.add(c)
+    if (merged.size > 0) byUnit.set(unitId, [...merged])
+  }
+  return categoryConflicts(ctx.plan, allowed, byUnit)
 }
 
 serve(async (req: Request) => {
@@ -514,12 +678,14 @@ serve(async (req: Request) => {
 
       // 1. The warehouse, its path, and its published layout.
       const { data: whRow } = await admin.from('locations')
-        .select('id, kind, materialized_path, location_type, active_layout_id')
+        .select('id, kind, code, materialized_path, location_type, active_layout_id')
         .eq('id', input.warehouse_id).maybeSingle()
       if (!whRow || (whRow as any).kind !== 'WAREHOUSE') {
         throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
       }
       const whPath = (whRow as any).materialized_path as string
+      // Needed to derive a ZONE's code when binding find-or-creates one (00096).
+      const whCode = (whRow as any).code as string
       const layoutId = (whRow as any).active_layout_id as number | null
       if ((whRow as any).location_type !== 'racked' || !layoutId) {
         throw new EdgeFunctionError('CONFLICT', 'This site has no published layout, so it has no areas to paint')
@@ -675,6 +841,23 @@ serve(async (req: Request) => {
       const rackCount = writes.filter((w) => w.name_seq != null).length
       const levelCount = writes.length - rackCount
 
+      // 4b. Zone binding (mig 00096). Computed from the AFTER picture, always —
+      //     this is not opt-in the way the name cascade is. A name is the
+      //     operator's vocabulary and rewriting it is a judgement call; parentage
+      //     is the mechanical consequence of where they just said the area is,
+      //     and leaving it stale would mean the map draws a cold zone that
+      //     putaway does not believe in.
+      const binding = await buildZoneBindingPlan(
+        admin,
+        { id: input.warehouse_id, path: whPath, code: whCode },
+        layoutId,
+        afterObjects.map((o) => ({
+          objectType: o.objectType, floor: o.floor, x: o.x, y: o.y,
+          w: o.w ?? 1, h: o.h ?? 1, meta: o.meta ?? null,
+        })),
+      )
+      const categoryWarnings = await zoneCategoryWarnings(admin, binding)
+
       // 5. dry_run returns HERE — before any write and before the audit — which
       //    is what guarantees the previewed count is the count that moves.
       if (input.dry_run) {
@@ -694,6 +877,10 @@ serve(async (req: Request) => {
             skippedCustom,
             skippedForeign,
             examples,
+            willBind: binding.plan.units,
+            bindLevels: binding.plan.levels,
+            unbind: binding.plan.toRoot,
+            categoryWarnings,
           },
         }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
@@ -720,6 +907,12 @@ serve(async (req: Request) => {
       // no-ops, so the retry writes exactly what the first attempt missed.
       const renamed = await applyNameWrites(admin, whPath, writes)
 
+      // Parentage third, on the same terms and for the same reason (mig 00096).
+      // planZoneBinding is idempotent too, so a failure here is recoverable by
+      // pressing Save again — and unlike the names, leaving it unapplied is
+      // visible: the area draws its tint while putaway still ignores the zone.
+      const bound = await applyReparents(admin, whPath, binding.plan.moves)
+
       // Deliberately NOT touching warehouse_layouts.updated_at. `needsRepublish`
       // is derived from `updated_at > published_at`, and an area contributes no
       // graph node, no edge weight and no access_offset_m — demanding a routing
@@ -738,6 +931,8 @@ serve(async (req: Request) => {
           cascade_names: input.cascade_names === true, include_custom: includeCustom,
           renamed, racks: rackCount, levels: levelCount,
           skipped_custom: skippedCustom, skipped_foreign: skippedForeign,
+          bound, bind_units: binding.plan.units, bind_levels: binding.plan.levels,
+          unbind: binding.plan.toRoot, category_warnings: categoryWarnings.length,
         },
       })
 
@@ -748,6 +943,8 @@ serve(async (req: Request) => {
         areas: specs.length,
         renamed, racks: rackCount, levels: levelCount,
         skippedCustom, skippedForeign,
+        bound, boundUnits: binding.plan.units, boundLevels: binding.plan.levels,
+        unbound: binding.plan.toRoot, categoryWarnings,
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
@@ -787,12 +984,14 @@ serve(async (req: Request) => {
 
       // 1. The warehouse, its path, and its published layout.
       const { data: whRow } = await admin.from('locations')
-        .select('id, kind, materialized_path, location_type, active_layout_id')
+        .select('id, kind, code, materialized_path, location_type, active_layout_id')
         .eq('id', input.warehouse_id).maybeSingle()
       if (!whRow || (whRow as any).kind !== 'WAREHOUSE') {
         throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
       }
       const whPath = (whRow as any).materialized_path as string
+      // Needed to derive a ZONE's code when binding find-or-creates one (00096).
+      const whCode = (whRow as any).code as string
       const layoutId = (whRow as any).active_layout_id as number | null
       if ((whRow as any).location_type !== 'racked' || !layoutId) {
         throw new EdgeFunctionError('CONFLICT', 'This site has no published layout, so it has no areas to rename')
@@ -877,36 +1076,64 @@ serve(async (req: Request) => {
       const rackCount = writes.filter((w) => w.name_seq != null).length
       const levelCount = writes.length - rackCount
 
+      // Zone binding (mig 00096). A rename on its own changes no profile and so
+      // normally plans nothing — but this action ALSO accepts zone_profile_id, so
+      // re-tinting an area from the rename dialog must rebind its bins. Built
+      // from the post-rename picture with the new profile folded in, which is the
+      // same AFTER-picture discipline the naming pass above uses.
+      const boundProfileId = input.zone_profile_id === undefined
+        ? undefined
+        : input.zone_profile_id ?? null
+      const binding = await buildZoneBindingPlan(
+        admin,
+        { id: input.warehouse_id, path: whPath, code: whCode },
+        layoutId,
+        renamedCells.map((o) => ({
+          objectType: o.object_type, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h,
+          meta: String(o.meta?.name ?? '').trim() === to && boundProfileId !== undefined
+            ? { ...(o.meta ?? {}), zoneProfileId: boundProfileId }
+            : o.meta ?? null,
+        })),
+      )
+      const categoryWarnings = await zoneCategoryWarnings(admin, binding)
+
       if (input.dry_run) {
         // Nothing happened, so nothing is audited.
         return new Response(JSON.stringify({
           ok: true,
-          preview: { willRename: writes.length, racks: rackCount, levels: levelCount, skippedCustom, examples },
+          preview: {
+            willRename: writes.length, racks: rackCount, levels: levelCount, skippedCustom, examples,
+            willBind: binding.plan.units, bindLevels: binding.plan.levels,
+            unbind: binding.plan.toRoot, categoryWarnings,
+          },
         }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
 
       // 7. The area's own label, then the bins. Every cell of one area shares
-      //    its meta by construction, so this is a single update.
-      const zoneProfileId = input.zone_profile_id === undefined
-        ? undefined
-        : input.zone_profile_id ?? null
+      //    its meta by construction, so this is a single update. `boundProfileId`
+      //    is the same value the binding plan above was computed from — derived
+      //    once, so the meta that gets stored and the parentage that gets applied
+      //    cannot disagree about which profile this area now names.
       const { error: metaErr } = await admin.from('layout_objects')
         .update({
           meta: {
             ...(matching[0].meta ?? {}),
             name: to,
-            ...(zoneProfileId === undefined ? {} : { zoneProfileId }),
+            ...(boundProfileId === undefined ? {} : { zoneProfileId: boundProfileId }),
           },
         } as any)
         .in('id', matching.map((o) => o.id))
       if (metaErr) throw new EdgeFunctionError('INTERNAL', `Could not rename the area: ${metaErr.message}`)
 
       const renamed = await applyNameWrites(admin, whPath, writes)
+      const bound = await applyReparents(admin, whPath, binding.plan.moves)
 
       // Deliberately NOT touching warehouse_layouts.updated_at. `needsRepublish`
       // is derived from `updated_at > published_at`, so bumping it would tell the
       // operator to republish — rebuilding the routing graph and refreezing every
-      // edge weight — because they corrected a spelling.
+      // edge weight — because they corrected a spelling. Re-parenting does not
+      // change that: a bin's parent contributes no graph node, no edge weight and
+      // no access_offset_m either.
 
       await logAuditEvent(admin, {
         actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
@@ -915,11 +1142,115 @@ serve(async (req: Request) => {
           area_rename: true, layout_id: layoutId, from, to,
           renamed, racks: rackCount, levels: levelCount,
           skipped_custom: skippedCustom, include_custom: input.include_custom === true,
+          bound, bind_units: binding.plan.units, bind_levels: binding.plan.levels,
+          unbind: binding.plan.toRoot, category_warnings: categoryWarnings.length,
         },
       })
 
       return new Response(JSON.stringify({
         ok: true, renamed, racks: rackCount, levels: levelCount, skippedCustom,
+        bound, boundUnits: binding.plan.units, boundLevels: binding.plan.levels,
+        unbound: binding.plan.toRoot, categoryWarnings,
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── bind_zones (mig 00096) ───────────────────────────────────────────────
+    //
+    // Bind a whole site's bins to the zones its areas name, from the areas
+    // already stored. paint_areas and save_geometry do this as a side effect, so
+    // this is for the site painted before 00096 existed — and for previewing a
+    // 1100-row re-parent before it happens.
+    if (input.action === 'bind_zones') {
+      // Its own bucket, deliberately shared with neither :paint: nor :area:. One
+      // call can re-parent 1134 rows, and a burst of paint saves must not lock
+      // the operator out of the one action that repairs a site wholesale.
+      const bindRl = await checkRateLimit(`mutate-warehouse-location:bind:${auth.userId}`, {
+        windowMs: 60_000,
+        max: 10,
+      })
+      if (!bindRl.ok) {
+        throw new EdgeFunctionError(
+          'TOO_MANY_REQUESTS',
+          `Rate limit exceeded; try again in ${Math.ceil(bindRl.resetMs / 1000)}s`,
+        )
+      }
+
+      const { data: whRow } = await admin.from('locations')
+        .select('id, kind, code, materialized_path, location_type, active_layout_id')
+        .eq('id', input.warehouse_id).maybeSingle()
+      if (!whRow || (whRow as any).kind !== 'WAREHOUSE') {
+        throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
+      }
+      const whPath = (whRow as any).materialized_path as string
+      const whCode = (whRow as any).code as string
+      const layoutId = (whRow as any).active_layout_id as number | null
+      if ((whRow as any).location_type !== 'racked' || !layoutId) {
+        throw new EdgeFunctionError('CONFLICT', 'This site has no published layout, so it has no areas to bind')
+      }
+
+      // The areas AS STORED — this action changes no geometry, it only applies
+      // the consequence of geometry that is already there.
+      const { data: objectRows, error: objErr } = await admin.from('layout_objects')
+        .select('object_type, floor, x, y, w, h, meta')
+        .eq('layout_id', layoutId).eq('object_type', 'area')
+      if (objErr) throw new EdgeFunctionError('INTERNAL', `Could not read areas: ${objErr.message}`)
+
+      const binding = await buildZoneBindingPlan(
+        admin,
+        { id: input.warehouse_id, path: whPath, code: whCode },
+        layoutId,
+        ((objectRows ?? []) as any[]).map((o) => ({
+          objectType: String(o.object_type), floor: Number(o.floor), x: Number(o.x), y: Number(o.y),
+          w: Number(o.w), h: Number(o.h), meta: o.meta ?? null,
+        })),
+      )
+      const categoryWarnings = await zoneCategoryWarnings(admin, binding)
+
+      // dry_run returns HERE — before any write and before the audit — so the
+      // previewed count is provably the count that moves.
+      if (input.dry_run) {
+        return new Response(JSON.stringify({
+          ok: true,
+          preview: {
+            willBind: binding.plan.units,
+            levels: binding.plan.levels,
+            unbind: binding.plan.toRoot,
+            unchanged: binding.plan.unchanged,
+            byArea: binding.plan.byArea.map((a) => ({
+              areaName: a.areaName, profileId: a.profileId, zoneId: a.zoneId,
+              units: a.units, moved: a.moved,
+            })),
+            categoryWarnings,
+            examples: binding.plan.examples,
+          },
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      const bound = await applyReparents(admin, whPath, binding.plan.moves)
+
+      // No warehouse_layouts.updated_at bump, for the reason rename_area gives:
+      // parentage contributes no graph node, no edge weight and no
+      // access_offset_m, so demanding a republish for it would be a lie.
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
+        resourceId: String(input.warehouse_id),
+        metadata: {
+          zone_bind: true, layout_id: layoutId,
+          bound, bind_units: binding.plan.units, bind_levels: binding.plan.levels,
+          unbind: binding.plan.toRoot, unchanged: binding.plan.unchanged,
+          areas: binding.plan.byArea.length, category_warnings: categoryWarnings.length,
+        },
+      })
+
+      return new Response(JSON.stringify({
+        ok: true,
+        bound,
+        boundUnits: binding.plan.units,
+        boundLevels: binding.plan.levels,
+        unbound: binding.plan.toRoot,
+        unchanged: binding.plan.unchanged,
+        categoryWarnings,
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 

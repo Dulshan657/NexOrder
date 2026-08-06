@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
+  bindZones,
   getWarehouseLocations,
   createWarehouseLocation,
   updateWarehouseLocation,
@@ -76,6 +77,28 @@ export function usePaintAreas(warehouseId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (args: Omit<PaintAreasArgs, 'warehouseId'>) => paintAreas({ ...args, warehouseId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) })
+      qc.invalidateQueries({ queryKey: ['layout-detail'] })
+      qc.invalidateQueries({ queryKey: ['layouts', warehouseId] })
+    },
+  })
+}
+
+// ── Zone binding (mig 00096) ─────────────────────────────────────────────────
+
+/**
+ * Bind every drawn bin to the ZONE its area names.
+ *
+ * Invalidates the locations (their parent and path just changed, which is what
+ * the tree renders from) AND the layout keys — the map derives its zone washes
+ * from the bins' ancestry, so a site that just gained zones draws them for the
+ * first time and a stale layout would keep drawing none.
+ */
+export function useBindZones(warehouseId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => bindZones(warehouseId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) })
       qc.invalidateQueries({ queryKey: ['layout-detail'] })
