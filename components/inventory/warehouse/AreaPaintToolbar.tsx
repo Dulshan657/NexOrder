@@ -233,6 +233,18 @@ export function AreaPaintToolbar({
 
       {issue && <p className="text-[11px] text-rose-600">{issue}</p>}
 
+      {/* An empty brush refuses every stroke, and the reducer cannot toast. Say
+          so BEFORE the operator drags across forty cells and watches nothing
+          happen — which is exactly the report that started this work. Amber, not
+          rose: nothing is wrong yet, there is just a box to fill in. */}
+      {mode === 'paint' && !activeText && (
+        <p className="text-[11px] font-medium text-amber-600">
+          {signLayer
+            ? 'Type the sign’s text above before placing it.'
+            : 'Name the area above before painting it.'}
+        </p>
+      )}
+
       {draftWarning && (
         <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] leading-snug text-amber-900">
           {draftWarning}
