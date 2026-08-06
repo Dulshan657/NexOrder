@@ -12,6 +12,8 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import type { ActiveArea, EditorTool } from './useLayoutEditorState'
 import { STORAGE_UNIT } from './labels'
+import { MAX_AREA_NAME, areaNameIssue, sanitizeAreaName } from '@/lib/locationNaming'
+import { MAX_SIGN_NAME, sanitizeSignName, signNameIssue } from '@/lib/signPaint'
 
 // Structural (non-storage) tools. Storage FORMS are rendered dynamically from the
 // catalogue between these and Erase, so every drawable form gets its own tool.
@@ -24,8 +26,12 @@ const TOOLS: Array<{ tool: EditorTool; label: string; icon: LucideIcon }> = [
   { tool: 'conveyor', label: 'Conveyor', icon: Waypoints },
   { tool: 'staging', label: 'Staging floor', icon: PackageOpen },
   { tool: 'obstacle', label: 'Obstacle', icon: Ban },
-  { tool: 'label', label: 'Label', icon: Tag },
 ]
+
+/** Tools that survive on a PUBLISHED layout. Areas and signs carry no routing
+ *  weight, so publishing does not freeze them (migs 00095/00097); everything in
+ *  TOOLS above draws or subtracts walkable cells and is draft-only. */
+const AREA_SCOPE_TOOLS: readonly EditorTool[] = ['select']
 
 /** A drawable storage form shown as its own paint tool. */
 export interface ToolbarForm {
@@ -65,6 +71,11 @@ interface LayoutToolbarProps {
    *  "Chiller · Rack 8" (mig 00094). Shown so the naming is visible while the
    *  operator draws, not discovered afterwards. */
   nextRackName?: string
+  /** Sign texts already placed on this floor, so extending one is a click rather
+   *  than retyping it exactly (a typo would start a second sign). */
+  signNames: string[]
+  activeSign: string | null
+  onSelectSign: (name: string) => void
   zoneProfiles: ToolbarZoneProfile[]
   floorCount: number
   floor: number
@@ -88,9 +99,15 @@ const actionBtn =
 export function LayoutToolbar({
   isDraft, canEditAreas = false, areaOnly = false,
   tool, onSelectTool, forms, activeFormId, onSelectForm, onGenerate,
-  areaNames, activeArea, onSelectArea, nextRackName, zoneProfiles, floorCount, floor, onSetFloor,
+  areaNames, activeArea, onSelectArea, nextRackName,
+  signNames, activeSign, onSelectSign, zoneProfiles, floorCount, floor, onSetFloor,
   dirty, saving, publishing, simulating, onSave, onPublish, onClone, onSimulate, onArchive, onImport,
 }: LayoutToolbarProps) {
+  // Blank is not an "issue" while the box is still empty — the operator has not
+  // typed anything wrong yet, and nagging before the first keystroke is noise.
+  // The reducer still refuses the stroke, and the toast explains why.
+  const areaIssue = activeArea?.name ? areaNameIssue(activeArea.name) : null
+  const signIssue = activeSign ? signNameIssue(activeSign) : null
   return (
     <div className="flex flex-wrap items-center gap-2">
       {/* ── Paint tools ─────────────────────────────────────────────────────
@@ -100,7 +117,7 @@ export function LayoutToolbar({
           that touches frozen geometry is gated individually below. */}
       {canEditAreas && (
         <div className="inline-flex flex-wrap items-center gap-0.5 rounded-xl border border-stone-200 bg-stone-50 p-1">
-          {(areaOnly ? TOOLS.filter((t) => t.tool === 'select') : TOOLS).map(({ tool: t, label, icon: Icon }) => {
+          {(areaOnly ? TOOLS.filter((t) => AREA_SCOPE_TOOLS.includes(t.tool)) : TOOLS).map(({ tool: t, label, icon: Icon }) => {
             const active = tool === t
             return (
               <button
@@ -168,6 +185,22 @@ export function LayoutToolbar({
             <SquareDashed className="h-4 w-4" strokeWidth={2} /> Area
           </button>
 
+          {/* Floor sign (mig 00097) — sits beside Area rather than in TOOLS
+              because, like Area, it survives publishing: a `label` row is inert
+              in buildWalkableCells, so it freezes nothing. Everything left in
+              TOOLS draws or subtracts walkable cells. */}
+          <button
+            type="button"
+            onClick={() => onSelectTool('label')}
+            aria-pressed={tool === 'label'}
+            title="Floor sign"
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors btn-press ${
+              tool === 'label' ? 'bg-white text-emerald-700 shadow-sm ring-1 ring-emerald-500/40' : 'text-stone-600 hover:bg-white/70'
+            }`}
+          >
+            <Tag className="h-4 w-4" strokeWidth={2} /> Sign
+          </button>
+
           <button
             type="button"
             onClick={() => onSelectTool('erase')}
@@ -189,11 +222,18 @@ export function LayoutToolbar({
       {canEditAreas && tool === 'area' && (
         <div className="inline-flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-2 py-1.5">
           <span className="text-[11px] font-medium text-stone-400">Painting area</span>
+          {/* sanitize + maxLength + the inline issue hint below all mirror the
+              live map's AreaPaintToolbar, which has had them since 00095. Their
+              absence here is why a bad name (a "·", or 200 characters) only
+              surfaced as a bare INVALID_INPUT after the operator had painted
+              fifty cells — and why the stored value could differ from the
+              "Next rack drawn here…" preview, which does sanitize. */}
           <input
             value={activeArea?.name ?? ''}
-            onChange={(e) => onSelectArea({ name: e.target.value, zoneProfileId: activeArea?.zoneProfileId })}
+            onChange={(e) => onSelectArea({ name: sanitizeAreaName(e.target.value), zoneProfileId: activeArea?.zoneProfileId })}
             placeholder="Cold Storage"
             aria-label="Area name"
+            maxLength={MAX_AREA_NAME}
             className="w-40 rounded-lg border border-stone-200 bg-white px-2 py-1 text-xs text-stone-700"
           />
           <select
@@ -237,12 +277,61 @@ export function LayoutToolbar({
               so a rename here reaches live pick lists before publish — true of
               the storage-form repoint too, but names are what people read. */}
           <p className="w-full pt-0.5 text-[11px] leading-snug text-stone-400">
-            {!areaOnly && nextRackName
-              ? <>Next rack drawn here will be called <span className="font-medium text-stone-500">{nextRackName}</span>. </>
-              : null}
-            {areaOnly
-              ? 'This layout is live. Saving replaces its areas and offers to rename the bins inside them — nothing else on the plan is touched.'
-              : 'Renaming an area renames every bin inside it — including on the live map, before you publish.'}
+            {areaIssue
+              // Shown while typing, so a rejected name is discovered before the
+              // painting rather than after it.
+              ? <span className="font-medium text-amber-600">{areaIssue}</span>
+              : <>
+                  {!areaOnly && nextRackName
+                    ? <>Next rack drawn here will be called <span className="font-medium text-stone-500">{nextRackName}</span>. </>
+                    : null}
+                  {areaOnly
+                    ? 'This layout is live. Saving replaces its areas and offers to rename the bins inside them — nothing else on the plan is touched.'
+                    : 'Renaming an area renames every bin inside it — including on the live map, before you publish.'}
+                </>}
+          </p>
+        </div>
+      )}
+
+      {/* What the Sign tool is currently painting (mig 00097). Same shape as the
+          area bar above and deliberately NOT merged with it: there is no zone
+          profile here, and offering one would make a sign an area by the back
+          door. The prose is the other half of the distinction — an operator who
+          has just been told areas rename bins needs to know this one does not. */}
+      {canEditAreas && tool === 'label' && (
+        <div className="inline-flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-2 py-1.5">
+          <span className="text-[11px] font-medium text-stone-400">Sign text</span>
+          <input
+            value={activeSign ?? ''}
+            onChange={(e) => onSelectSign(sanitizeSignName(e.target.value))}
+            placeholder="Inbound Staging"
+            aria-label="Sign text"
+            maxLength={MAX_SIGN_NAME}
+            className="w-48 rounded-lg border border-stone-200 bg-white px-2 py-1 text-xs text-stone-700"
+          />
+          {signNames.length > 0 && (
+            <>
+              <span className="pl-1 text-[11px] text-stone-400">or extend</span>
+              {signNames.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => onSelectSign(name)}
+                  className={`rounded-full border px-2 py-0.5 text-[11px] btn-press ${
+                    activeSign === name
+                      ? 'border-emerald-500/40 bg-white text-emerald-700'
+                      : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
+                  }`}
+                >
+                  {name}
+                </button>
+              ))}
+            </>
+          )}
+          <p className="w-full pt-0.5 text-[11px] leading-snug text-stone-400">
+            {signIssue
+              ? <span className="font-medium text-amber-600">{signIssue}</span>
+              : 'A sign is wayfinding text only — it renames no bins, sets no zone and changes no routing. Drag across cells to size it.'}
           </p>
         </div>
       )}

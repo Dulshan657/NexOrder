@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import { toInventoryLocation } from '@/lib/adapters'
 import { describeValidationIssues, extractFunctionErrorDetails, extractFunctionErrorMessage } from '@/lib/functionError'
 import { packAreaRuns, type AreaPaintSpec } from '@/lib/areaPaint'
+import { packSignRuns, type SignSpec } from '@/lib/signPaint'
 import type { InventoryLocation, LevelRole, LocationKind } from '@/types'
 
 /**
@@ -320,6 +321,75 @@ export async function paintAreas(args: PaintAreasArgs): Promise<AreaPaintResult>
   )
   if (error) await rethrowWithServerMessage(error, 'Could not save the areas')
   return data as AreaPaintResult
+}
+
+// ── Floor signs (mig 00097) ──────────────────────────────────────────────────
+//
+// The same shape as paint_areas — full replace, fingerprint, dry_run on the real
+// action — minus the cascade and the binding, because a sign names nothing and
+// re-parents nothing. Keep the two apart: folding signs into PaintAreasArgs
+// would put a `cascadeNames` flag within reach of a call that must never have one.
+
+export interface SignPaintPreview {
+  created: string[]
+  erased: string[]
+  resized: Array<{ name: string; before: number; after: number; added: number; removed: number }>
+  cellsAfter: number
+  unchanged: boolean
+}
+
+export interface SignPaintResult {
+  fingerprint: string
+  cells: number
+  signs: number
+}
+
+export interface PaintSignsArgs {
+  warehouseId: number
+  /** The layout the operator was looking at. Refused if a publish has landed. */
+  layoutId: number
+  /** signCellsFingerprint over the rows this working set was built from. Its own
+   *  stamp, never the area one — the two pictures move independently. */
+  baseFingerprint: string
+  /** The COMPLETE set. A sign left out is erased; `[]` erases every sign. */
+  signs: SignSpec[]
+}
+
+/** One body builder for both the preview and the write, so they cannot drift. */
+function paintSignsBody(args: PaintSignsArgs, dryRun: boolean) {
+  return {
+    action: 'paint_labels',
+    warehouse_id: args.warehouseId,
+    layout_id: args.layoutId,
+    base_fingerprint: args.baseFingerprint,
+    // A sign with no cells has been erased, and the wire schema requires at
+    // least one run — dropping it here IS how an erase is expressed.
+    signs: args.signs
+      .filter((s) => s.cells.length > 0)
+      .map((s) => ({ name: s.name, runs: packSignRuns(s.cells) })),
+    ...(dryRun ? { dry_run: true } : {}),
+  }
+}
+
+/** What this sign edit would do, computed by the SERVER running the same pure
+ *  module the summary panel does. Writes nothing, audits nothing. */
+export async function previewPaintSigns(args: PaintSignsArgs): Promise<SignPaintPreview> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; preview: SignPaintPreview }>(
+    'mutate-warehouse-location',
+    { body: paintSignsBody(args, true) },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not check the signs')
+  return (data as any).preview as SignPaintPreview
+}
+
+/** Replace every floor sign on a LIVE warehouse. Touches no location row. */
+export async function paintSigns(args: PaintSignsArgs): Promise<SignPaintResult> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true } & SignPaintResult>(
+    'mutate-warehouse-location',
+    { body: paintSignsBody(args, false) },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not save the signs')
+  return data as SignPaintResult
 }
 
 // ── Zone binding (mig 00096) ─────────────────────────────────────────────────

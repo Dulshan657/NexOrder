@@ -9,7 +9,7 @@ import type { Dispatch, PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorAction, EditorObject, EditorPlacement, EditorState } from './useLayoutEditorState'
 import { placementAt } from './useLayoutEditorState'
 import { BASE_CELL, levelRoleFill, levelRoleLabel, levelRoleStroke, OBJECT_FILL, OBJECT_STROKE, PLACEMENT_FILL } from './layoutPalette'
-import { MERGED_OBJECT_TYPES, objectRegions, regionFillPath, regionOutlinePath } from './objectRegions'
+import { MERGED_OBJECT_TYPES, objectRegions, regionBounds, regionFillPath, regionOutlinePath } from './objectRegions'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { labelTier, fitCode, fitName } from '@/components/inventory/warehouse/mapLabels'
 import { isUninformativeName, nameTail } from '@/lib/locationDisplay'
@@ -25,8 +25,13 @@ import type { LevelRole, RackLevel } from '@/types'
 export { BASE_CELL, OBJECT_FILL }
 
 /** Object types that render their `meta.name` as centered label text (when the
- *  cell is wide enough to read it). */
-const NAMED_OBJECT_TYPES = new Set<EditorObject['objectType']>(['obstacle', 'staging', 'label'])
+ *  cell is wide enough to read it), stamped PER OBJECT.
+ *
+ *  `label` left here as of mig 00097: a floor sign is now a merged named region,
+ *  drawn once per region below. Stamping it per object would repeat the text on
+ *  every one of a painted sign's 1x1 cells — and would never draw at all, since
+ *  a single cell can't clear MIN_NAME_WIDTH. */
+const NAMED_OBJECT_TYPES = new Set<EditorObject['objectType']>(['obstacle', 'staging'])
 
 /** Minimum rendered rect width (px) before we bother drawing the name text. */
 const MIN_NAME_WIDTH = 48
@@ -228,6 +233,10 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, cellSizeM
   // array every render, so a memo keyed on it would never hit.
   const objRegions = useMemo(() => objectRegions(state.objects, state.floor), [state.objects, state.floor])
   const areaRegions = useMemo(() => objRegions.filter((r) => r.objectType === 'area'), [objRegions])
+  // Signs (mig 00097) draw their PLATE with the structural regions above and
+  // their TEXT once per region below, so they need their own handle without
+  // being subtracted from the structural pass.
+  const signRegions = useMemo(() => objRegions.filter((r) => r.objectType === 'label'), [objRegions])
 
   /** An area wears its zone profile's tint (the same lookup WarehouseCanvas
    *  does), falling back to the palette neutral when it has no profile yet. */
@@ -434,9 +443,9 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, cellSizeM
             </g>
           ))}
 
-          {/* Objects that deliberately do NOT merge — `label` (annotation that may
-              overlap anything) and `obstacle` (discrete named rooms, which would
-              read as one mislabelled room if two adjacent ones fused). */}
+          {/* The one type that deliberately does NOT merge — `obstacle` (discrete
+              named rooms, which would read as one mislabelled room if two
+              adjacent ones fused). */}
           {unmergedObjects.map((o) => (
             <rect
               key={o.clientRef}
@@ -553,6 +562,33 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, cellSizeM
                   </text>
                 )}
               </g>
+            )
+          })}
+
+          {/* Floor signs (mig 00097) — one per merged region, centred on its
+              bounding box, and drawn ABOVE the bins. Signs co-occupy with
+              everything, so one placed over a rack row is the normal case rather
+              than an edge one, and text under the bins would simply vanish.
+              Centred rather than top-left-anchored like an area name because a
+              sign IS the plate being read, where an area is a backdrop whose name
+              must clear the racks standing on it. Centring also keeps a seeded
+              `w: 10` sign looking exactly as it did before signs became regions. */}
+          {signRegions.map((region) => {
+            const name = typeof region.meta?.name === 'string' ? region.meta.name : ''
+            if (!name) return null
+            const b = regionBounds(region)
+            // Gated on the REGION's width, which is the point of merging: a
+            // painted sign is N 1x1 cells and could never clear this bar
+            // object-by-object.
+            if (b.w * cell < MIN_NAME_WIDTH) return null
+            return (
+              <text
+                key={`sign-name-${region.key}`}
+                x={(b.x + b.w / 2) * cell} y={(b.y + b.h / 2) * cell + 3}
+                textAnchor="middle" fontSize={11} fill="#292524" fontFamily="sans-serif" pointerEvents="none"
+              >
+                {name}
+              </text>
             )
           })}
 

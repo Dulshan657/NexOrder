@@ -24,7 +24,7 @@ const TYPE_LABEL: Record<EditorObject['objectType'], string> = {
   conveyor: 'Conveyor',
   obstacle: 'Obstacle',
   staging: 'Staging floor',
-  label: 'Label',
+  label: 'Floor sign',
   area: 'Named area',
 }
 
@@ -33,13 +33,17 @@ export function ObjectInspector({ object, dispatch, locationCodeById }: ObjectIn
 
   const name = typeof object.meta?.name === 'string' ? object.meta.name : ''
   const zoneProfileId = typeof object.meta?.zoneProfileId === 'number' ? object.meta.zoneProfileId : undefined
-  // An AREA is identified by its name, and is painted as many 1x1 cells — so
-  // renaming the one cell you happened to select would split the region in two,
-  // leaving half of it under the old name. `rename_area` moves every cell.
+  // An AREA — and, since mig 00097, a SIGN — is identified by its name and is
+  // painted as many 1x1 cells, so renaming the one cell you happened to select
+  // would split the region in two and leave half of it under the old name. The
+  // dedicated actions move every cell. An obstacle or a staging floor is a single
+  // object with a name, so a plain patch is right for those.
   const setName = (value: string) =>
     object.objectType === 'area'
       ? dispatch({ type: 'rename_area', from: name, to: value, zoneProfileId })
-      : dispatch({ type: 'update_object', ref: object.clientRef, patch: { meta: { ...object.meta, name: value } } })
+      : object.objectType === 'label'
+        ? dispatch({ type: 'rename_sign', from: name, to: value })
+        : dispatch({ type: 'update_object', ref: object.clientRef, patch: { meta: { ...object.meta, name: value } } })
 
   return (
     <div className="space-y-3 p-3 border border-stone-200 rounded-lg bg-white">

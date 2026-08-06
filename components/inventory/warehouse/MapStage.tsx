@@ -52,6 +52,9 @@ export interface MapStageProps {
    *  straight through; the canvas routes it via `guardClick` so a pan that ends
    *  over the label does not open a dialog. */
   onRenameArea?: (areaName: string) => void
+  /** Admin/Manager clicked a floor sign's text to edit or remove it (mig 00097).
+   *  Routed through `guardClick` on the same terms as onRenameArea. */
+  onEditSign?: (signName: string) => void
   /**
    * Area paint mode (mig 00095).
    *
@@ -88,6 +91,7 @@ export function MapStage({
   renderOverlay,
   locationsById,
   onRenameArea,
+  onEditSign,
   paint,
 }: MapStageProps) {
   const { viewport, containerRef, handlers, fit, zoomIn, zoomOut, isPanning, didDrag, gesturesEnabled } = useMapViewport({
@@ -243,6 +247,7 @@ export function MapStage({
         guardClick={guardClick}
         onHoverBin={handleHover}
         onRenameArea={onRenameArea}
+        onEditSign={onEditSign}
       />
       {hover && hoverInfo && (
         <BinHoverCard hover={hover} info={hoverInfo} viewport={viewport} />

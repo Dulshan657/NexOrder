@@ -46,6 +46,19 @@ import {
   planAreaCascade,
   type AreaPaintSpec,
 } from '../_shared/wie/areaPaint.ts'
+// Floor signs (mig 00097). Same fold, same packing, same fingerprint as areas —
+// deliberately delegated rather than reimplemented — but NO cascade and NO
+// binding, which is the whole distinction between a sign and an area.
+import {
+  MAX_SIGN_NAME,
+  diffSigns,
+  expandSignRuns,
+  sanitizeSignName,
+  signCellsFingerprint,
+  signNameIssue,
+  signObjectsFromSpecs,
+  type SignSpec,
+} from '../_shared/wie/signPaint.ts'
 import {
   applyNameWrites,
   loadAreaSeqClaims,
@@ -200,6 +213,47 @@ const paintAreasSchema = z.object({
   dry_run: z.boolean().optional(),
 })
 
+// ── paint_labels (mig 00097) ─────────────────────────────────────────────────
+//
+// Place, reshape and erase FLOOR SIGNS on a live warehouse — the plain text an
+// operator reads on the map ("Inbound Staging"). Backed by `object_type =
+// 'label'`, legal since 00045 but until now authorable only on a draft, because
+// save_geometry was its only writer and it calls requireDraft.
+//
+// A SIGN IS NOT AN AREA, and every difference below follows from that. An area
+// renames the bins standing on it (00094) and re-parents them under a ZONE
+// (00096); a sign touches no `locations` row at all. So this action has NO
+// cascade_names, NO include_custom, and runs NO binding pass. Do not add them
+// later "for symmetry" with paint_areas — the asymmetry is the feature, and it
+// is what makes a sign safe to hand to anyone who can read the map.
+//
+// It shares everything else with paint_areas because those parts are genuinely
+// the same problem: a FULL REPLACE (the server reads the before-picture, so a
+// rename and an erase-then-repaint derive to the same plan), a fingerprint for
+// concurrency, run-length packing on the wire only, and dry_run on the real
+// action rather than a separate preview endpoint.
+const paintSignSchema = z.object({
+  name: z.string().min(1).max(MAX_SIGN_NAME),
+  /** Horizontal runs. A wire format only — storage is 1x1, enforced by the RPC. */
+  runs: z.array(areaRunSchema).min(1).max(4000),
+})
+
+const paintLabelsSchema = z.object({
+  action: z.literal('paint_labels'),
+  warehouse_id: z.number().int().positive(),
+  /** The layout the client was looking at. Refused when it is no longer the
+   *  warehouse's active_layout_id — a publish landed under the operator's tab. */
+  layout_id: z.number().int().positive(),
+  /** signCellsFingerprint over the rows the client rendered from. Its own stamp,
+   *  never the area one: the two pictures move independently and sharing a
+   *  fingerprint would make an area paint 409 a sign save. */
+  base_fingerprint: z.string().min(1).max(64),
+  /** The COMPLETE replacement set, ALL FLOORS. A sign omitted here is erased;
+   *  `[]` erases every sign on the site. */
+  signs: z.array(paintSignSchema).max(64),
+  dry_run: z.boolean().optional(),
+})
+
 // ── bind_zones (mig 00096) ───────────────────────────────────────────────────
 //
 // Re-parent every drawn bin under the ZONE its area names, and every bin whose
@@ -225,6 +279,7 @@ const bindZonesSchema = z.object({
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: createSchema }),
   paintAreasSchema,
+  paintLabelsSchema,
   bindZonesSchema,
   z.object({ action: z.literal('update'), id: z.number().int().positive(), data: updateSchema }),
   renameAreaSchema,
@@ -945,6 +1000,174 @@ serve(async (req: Request) => {
         skippedCustom, skippedForeign,
         bound, boundUnits: binding.plan.units, boundLevels: binding.plan.levels,
         unbound: binding.plan.toRoot, categoryWarnings,
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── paint_labels (mig 00097) ─────────────────────────────────────────────
+    if (input.action === 'paint_labels') {
+      // Its own bucket, deliberately NOT shared with :paint: or :area:. Signage
+      // is the cheap, safe edit an operator makes repeatedly while walking the
+      // floor, and a burst of it must not lock them out of the two actions that
+      // repair a genuinely wrong area.
+      const signRl = await checkRateLimit(`mutate-warehouse-location:sign:${auth.userId}`, {
+        windowMs: 60_000,
+        max: 10,
+      })
+      if (!signRl.ok) {
+        throw new EdgeFunctionError(
+          'TOO_MANY_REQUESTS',
+          `Rate limit exceeded; try again in ${Math.ceil(signRl.resetMs / 1000)}s`,
+        )
+      }
+
+      // 1. The warehouse and its published layout. No materialized_path and no
+      //    warehouse code needed — nothing here resolves a zone or writes a name.
+      const { data: whRow } = await admin.from('locations')
+        .select('id, kind, location_type, active_layout_id')
+        .eq('id', input.warehouse_id).maybeSingle()
+      if (!whRow || (whRow as any).kind !== 'WAREHOUSE') {
+        throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
+      }
+      const layoutId = (whRow as any).active_layout_id as number | null
+      if ((whRow as any).location_type !== 'racked' || !layoutId) {
+        throw new EdgeFunctionError('CONFLICT', 'This site has no published layout, so it has nowhere to put a sign')
+      }
+      if (layoutId !== input.layout_id) {
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          'This site’s published layout changed while you were editing. Reload the map and try again.',
+        )
+      }
+
+      const { data: layoutRow } = await admin.from('warehouse_layouts')
+        .select('id, grid_width, grid_height, floor_count').eq('id', layoutId).maybeSingle()
+      if (!layoutRow) throw new EdgeFunctionError('NOT_FOUND', 'Published layout not found')
+      const gridW = Number((layoutRow as any).grid_width)
+      const gridH = Number((layoutRow as any).grid_height)
+      const floors = Number((layoutRow as any).floor_count)
+
+      // 2. Validate into canonical specs. signNameIssue is deliberately laxer
+      //    than areaNameIssue — `·` is legal on a sign because nothing composes
+      //    a sign into a longer name the way composeName does with an area.
+      const specs: SignSpec[] = []
+      const seenSignNames = new Set<string>()
+      for (const sign of input.signs) {
+        const issue = signNameIssue(sign.name)
+        if (issue) throw new EdgeFunctionError('INVALID_INPUT', issue)
+        const name = sanitizeSignName(sign.name)
+        // Two entries sanitizing to one name would make the region merge
+        // ambiguous and leave the operator unable to say which they clicked.
+        if (seenSignNames.has(name)) {
+          throw new EdgeFunctionError('INVALID_INPUT', `“${name}” is listed twice`)
+        }
+        seenSignNames.add(name)
+        specs.push({ name, cells: expandSignRuns(sign.runs) })
+      }
+
+      // Bounds, and a cell may carry one sign only. The RPC backstops the bounds;
+      // this names the offender, which the RPC cannot.
+      const signClaimedBy = new Map<string, string>()
+      for (const spec of specs) {
+        for (const cell of spec.cells) {
+          if (cell.floor < 0 || cell.floor >= floors || cell.x < 0 || cell.x >= gridW || cell.y < 0 || cell.y >= gridH) {
+            throw new EdgeFunctionError(
+              'INVALID_INPUT',
+              `“${spec.name}” covers a cell (floor ${cell.floor}, ${cell.x}, ${cell.y}) outside this layout’s ${gridW} × ${gridH} grid`,
+            )
+          }
+          const key = `${cell.floor}:${cell.x}:${cell.y}`
+          const owner = signClaimedBy.get(key)
+          if (owner !== undefined && owner !== spec.name) {
+            throw new EdgeFunctionError(
+              'INVALID_INPUT',
+              `Cell (floor ${cell.floor}, ${cell.x}, ${cell.y}) is labelled both “${owner}” and “${spec.name}”`,
+            )
+          }
+          signClaimedBy.set(key, spec.name)
+        }
+      }
+
+      // 3. The before-picture. Note this reads rows of ANY width: MAIN's seeded
+      //    signs are single `w: 10` objects, and signSpecsFromObjects expands
+      //    them, so the fingerprint the client computed from the same rows
+      //    matches and the round trip is lossless.
+      const { data: signRows, error: signErr } = await admin.from('layout_objects')
+        .select('id, object_type, floor, x, y, w, h, meta')
+        .eq('layout_id', layoutId).eq('object_type', 'label')
+      if (signErr) throw new EdgeFunctionError('INTERNAL', `Could not read signs: ${signErr.message}`)
+      const beforeSigns = ((signRows ?? []) as any[]).map((o) => ({
+        objectType: String(o.object_type), floor: Number(o.floor), x: Number(o.x), y: Number(o.y),
+        w: Number(o.w), h: Number(o.h), meta: o.meta ?? null,
+      }))
+
+      const serverSignFingerprint = signCellsFingerprint(beforeSigns)
+      if (serverSignFingerprint !== input.base_fingerprint) {
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          'Someone else changed this site’s signs while you were editing. Reload the map and try again.',
+        )
+      }
+
+      const afterSigns = signObjectsFromSpecs(specs)
+      const signDelta = diffSigns(beforeSigns, afterSigns)
+
+      // No publish-readiness re-check and no zone binding, deliberately. A
+      // `label` row is inert in buildWalkableCells and names nothing, so the
+      // gates could only ever fail for something the operator did not do, and
+      // there is no parentage for this action to have made stale.
+
+      // 4. dry_run returns HERE — before any write and before the audit.
+      if (input.dry_run) {
+        return new Response(JSON.stringify({
+          ok: true,
+          fingerprint: serverSignFingerprint,
+          preview: {
+            created: signDelta.created,
+            erased: signDelta.erased,
+            resized: signDelta.resized,
+            cellsAfter: signDelta.cellsAfter,
+            unchanged: signDelta.unchanged,
+          },
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      // 5. One transaction for the replace — two supabase-js statements are not
+      //    a transaction, and delete-first would leave a live warehouse with
+      //    every sign gone if the insert failed.
+      const signInsertRows = afterSigns.map((o) => ({ floor: o.floor, x: o.x, y: o.y, meta: o.meta }))
+      const { data: signInsertedRaw, error: signReplaceErr } = await admin.rpc('wie_replace_layout_labels_tx', {
+        p_layout_id: layoutId,
+        p_rows: signInsertRows,
+      })
+      if (signReplaceErr) {
+        throw new EdgeFunctionError('INTERNAL', `Could not save the signs: ${signReplaceErr.message}`)
+      }
+      const signInserted = Number(signInsertedRaw ?? 0)
+      if (signInserted !== signInsertRows.length) {
+        throw new EdgeFunctionError('INTERNAL', `Saved ${signInserted} of ${signInsertRows.length} sign cells`)
+      }
+
+      // Deliberately NOT touching warehouse_layouts.updated_at, for the same
+      // reason paint_areas does not: `needsRepublish` is derived from
+      // `updated_at > published_at`, and a sign contributes no graph node, no
+      // edge weight and no access_offset_m. It is also why the client's
+      // staleness check is a fingerprint — nothing timestamped moves here.
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'layout_signs',
+        resourceId: String(input.warehouse_id),
+        metadata: {
+          layout_id: layoutId,
+          created: signDelta.created, erased: signDelta.erased, resized: signDelta.resized,
+          signs_after: specs.length, cells_after: signDelta.cellsAfter,
+        },
+      })
+
+      return new Response(JSON.stringify({
+        ok: true,
+        fingerprint: signCellsFingerprint(afterSigns),
+        cells: signInserted,
+        signs: specs.length,
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 

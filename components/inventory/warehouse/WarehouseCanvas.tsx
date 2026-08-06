@@ -26,7 +26,7 @@
 import { useMemo, useState, type ReactNode, type CSSProperties } from 'react'
 import type { WarehouseLayout, LayoutPlacement, LayoutObject, InventoryLocation } from '@/types'
 import { OBJECT_FILL, OBJECT_STROKE, BASE_CELL, PLACEMENT_FILL, levelRoleFill, levelRoleStroke, levelRoleLabel } from '@/components/admin/layout/layoutPalette'
-import { MERGED_OBJECT_TYPES, objectRegions, regionFillPath, regionOutlinePath } from '@/components/admin/layout/objectRegions'
+import { MERGED_OBJECT_TYPES, objectRegions, regionBounds, regionFillPath, regionOutlinePath } from '@/components/admin/layout/objectRegions'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { groupPlacementsByCell } from '@/components/admin/layout/LayoutCanvas'
 import { DEFAULT_BIN_FILL, DEFAULT_BIN_STROKE } from './warehouseOverlays'
@@ -41,11 +41,15 @@ import type { Viewport } from './mapViewport'
  *  override; derive expansion from `selectedLocationId`"), see `expandedKey`. */
 const COLLAPSED = '__collapsed__'
 
-/** Structural objects that carry an operator-authored `meta.name` worth drawing.
- *  Mirrors LayoutCanvas's NAMED_OBJECT_TYPES so the two canvases agree on which
- *  blocks are named — this is how MAIN's "Cold room" / "Returns" / "Quarantine"
- *  stop being anonymous grey rectangles on the ops map. */
-const NAMED_OBJECT_TYPES = new Set(['obstacle', 'staging', 'label'])
+/** Structural objects that carry an operator-authored `meta.name` worth drawing,
+ *  stamped PER OBJECT. Mirrors LayoutCanvas's NAMED_OBJECT_TYPES so the two
+ *  canvases agree on which blocks are named — this is how MAIN's "Cold room" /
+ *  "Returns" / "Quarantine" stop being anonymous grey rectangles on the ops map.
+ *
+ *  `label` is deliberately NOT here any more (mig 00097). A sign is now a merged
+ *  named region like an area, so it is drawn once per region below; leaving it in
+ *  this pass would stamp the text onto every one of its 1x1 cells. */
+const NAMED_OBJECT_TYPES = new Set(['obstacle', 'staging'])
 /** Below this many screen px of width, an object's name cannot be read. */
 const MIN_OBJECT_NAME_PX = 48
 
@@ -135,6 +139,9 @@ export interface WarehouseCanvasProps {
    *  the wash: the wash lies under the racks with pointerEvents="none" so it
    *  cannot steal their hit tests, and a handler there would fight that. */
   onRenameArea?: (areaName: string) => void
+  /** Admin/Manager clicked a floor sign's text to edit or remove it (mig 00097).
+   *  Omitted → signs are inert, which is what every read-only surface wants. */
+  onEditSign?: (signName: string) => void
 }
 
 export function WarehouseCanvas({
@@ -158,6 +165,7 @@ export function WarehouseCanvas({
   guardClick,
   onHoverBin,
   onRenameArea,
+  onEditSign,
 }: WarehouseCanvasProps) {
   // Operator-managed role vocabulary (mig 00081). A level whose role has been
   // retired still renders with its own colour, because getLevelRoles returns
@@ -183,6 +191,11 @@ export function WarehouseCanvas({
   // render over it. Split once here rather than filtering twice in the scene.
   const areaRegions = useMemo(() => objRegions.filter((r) => r.objectType === 'area'), [objRegions])
   const structuralRegions = useMemo(() => objRegions.filter((r) => r.objectType !== 'area'), [objRegions])
+  // Signs (mig 00097) are structural for their PLATE — they stay in
+  // structuralRegions above and draw with the rest — but their TEXT is hoisted
+  // into the wayfinding layer, so it needs its own handle. Not subtracted from
+  // structuralRegions: the plate belongs where it is.
+  const signRegions = useMemo(() => objRegions.filter((r) => r.objectType === 'label'), [objRegions])
   const floorPlacements = useMemo(() => placements.filter((p) => p.floor === floor), [placements, floor])
 
   // Group by (floor,x,y) — every level of a rack now shares its rack's cell,
@@ -359,8 +372,9 @@ export function WarehouseCanvas({
           </g>
         ))}
 
-        {/* Types that deliberately don't merge: `label` (may overlap anything) and
-            `obstacle` (discrete named rooms). */}
+        {/* The one type that deliberately doesn't merge: `obstacle` (discrete
+            named rooms — two adjacent ones fusing would read as one mislabelled
+            room). */}
         {floorObjects
           .filter((o) => !MERGED_OBJECT_TYPES.has(o.objectType))
           .map((o) => (
@@ -587,6 +601,45 @@ export function WarehouseCanvas({
             >
               {name}{clickable ? ' ✎' : ''}
               {clickable && <title>Rename “{name}” and the bins inside it</title>}
+            </text>
+          )
+        })}
+
+        {/* Floor signs (mig 00097) — the plate is already drawn among the
+            structural regions above; this is its text, hoisted into the
+            wayfinding layer so a sign painted OVER racks is not buried under
+            them. Signs co-occupy with everything, so that is the normal case,
+            not an edge one.
+
+            Centred on the region's bounding box, unlike an area name (which
+            anchors above its region). See regionBounds for why the two differ. */}
+        {signRegions.map((region) => {
+          const name = typeof region.meta?.name === 'string' ? region.meta.name : ''
+          if (!name) return null
+          const b = regionBounds(region)
+          // The gate is on the REGION's width, which is the whole point of
+          // merging: a painted sign is N 1x1 cells and could never clear this
+          // bar object-by-object.
+          if (b.w * cellPx < MIN_OBJECT_NAME_PX) return null
+          const clickable = Boolean(onEditSign)
+          return (
+            <text
+              key={`sign-name-${region.key}`}
+              x={(b.x + b.w / 2) * cell}
+              y={(b.y + b.h / 2) * cell + u(3.5)}
+              textAnchor="middle" fontSize={u(10)} fontWeight={600}
+              fill="#44403c" fontFamily="sans-serif"
+              pointerEvents={clickable ? 'auto' : 'none'}
+              style={clickable ? { cursor: 'pointer' } : undefined}
+              onClick={clickable ? (e: { stopPropagation: () => void }) => {
+                e.stopPropagation()
+                // Through the stage's pan guard, so finishing a drag over the
+                // sign does not pop a dialog.
+                guard(() => onEditSign!(name))
+              } : undefined}
+            >
+              {fitCode(clickable ? `${name} ✎` : name, b.w * cell, u(10))}
+              {clickable && <title>Edit or remove the sign “{name}”</title>}
             </text>
           )
         })}

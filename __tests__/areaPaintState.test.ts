@@ -2,12 +2,15 @@ import { describe, it, expect } from 'vitest'
 import {
   areaPaintReducer,
   areaNamesInPaintState,
+  signNamesInPaintState,
   specsFromPaintState,
+  signSpecsFromPaintState,
   cellKey,
   type AreaPaintAction,
   type AreaPaintState,
 } from '@/components/inventory/warehouse/useAreaPaintState'
 import { areaSpecsFromObjects, areaCellsFingerprint } from '@/lib/areaPaint'
+import { signSpecsFromObjects } from '@/lib/signPaint'
 import type { LayoutObject } from '@/types'
 
 // The live map's working state. `tsc` is nearly blind in components here (no
@@ -41,7 +44,8 @@ const reduce = (state: AreaPaintState, ...actions: AreaPaintAction[]): AreaPaint
 
 const START: AreaPaintState = {
   active: false, brush: { name: '', zoneProfileId: null }, mode: 'paint',
-  cells: new Map(), profiles: new Map(), undo: [], dirty: false,
+  signBrush: '', layer: 'area',
+  cells: new Map(), profiles: new Map(), signCells: new Map(), undo: [], dirty: false,
 }
 
 const begun = (objects: LayoutObject[]) => areaPaintReducer(START, { type: 'begin', objects })
@@ -248,5 +252,89 @@ describe('specsFromPaintState — one payload, two surfaces', () => {
   it('drops an emptied area entirely rather than sending it with no cells', () => {
     const state = reduce(begun(row('Chiller', 0, 2)), { type: 'erase_area', name: 'Chiller' })
     expect(specsFromPaintState(state)).toEqual([])
+  })
+})
+
+// ── the sign layer (mig 00097) ──────────────────────────────────────────────
+
+/** A stored sign row, as the map holds it. */
+function sign(name: string, x: number, y = 0, floor = 0, w = 1): LayoutObject {
+  return {
+    id: nextId++, layoutId: 1, objectType: 'label' as LayoutObject['objectType'],
+    floor, x, y, w, h: 1, meta: { name },
+  }
+}
+
+describe('areaPaintReducer — the sign layer', () => {
+  it('hydrates signs and areas into separate maps', () => {
+    const state = begun([...row('Chiller', 0, 3), sign('Inbound', 10, 0, 0, 4)])
+    expect(areaNamesInPaintState(state)).toEqual(['Chiller'])
+    expect(signNamesInPaintState(state)).toEqual(['Inbound'])
+    // The seeded wide row expands, which is what keeps MAIN's fingerprint stable.
+    expect(state.signCells.size).toBe(4)
+  })
+
+  it('paints on whichever layer is selected, leaving the other alone', () => {
+    let s = reduce(begun([]), { type: 'set_layer', layer: 'sign' }, { type: 'set_sign_brush', name: 'Inbound' })
+    s = reduce(s, { type: 'paint_cell', floor: 0, x: 1, y: 1 })
+    expect(s.signCells.size).toBe(1)
+    expect(s.cells.size).toBe(0)
+
+    s = reduce(s, { type: 'set_layer', layer: 'area' }, { type: 'set_brush_name', name: 'Chiller' })
+    s = reduce(s, { type: 'paint_cell', floor: 0, x: 1, y: 1 })
+    // Same cell, both layers — they co-occupy, so neither displaces the other.
+    expect(s.signCells.size).toBe(1)
+    expect(s.cells.size).toBe(1)
+  })
+
+  it('refuses a sign stroke while the brush has no text', () => {
+    const s = reduce(begun([]), { type: 'set_layer', layer: 'sign' }, { type: 'paint_cell', floor: 0, x: 1, y: 1 })
+    expect(s.signCells.size).toBe(0)
+    expect(s.dirty).toBe(false)
+  })
+
+  it('undo spans both layers, in the order the operator worked', () => {
+    // One stack, because an operator switching layers mid-session does not think
+    // of the two as separate sessions to unwind independently.
+    let s = reduce(begun([]),
+      { type: 'set_brush_name', name: 'Chiller' },
+      { type: 'stroke_start' },
+      { type: 'paint_cell', floor: 0, x: 1, y: 1 },
+      { type: 'set_layer', layer: 'sign' },
+      { type: 'set_sign_brush', name: 'Inbound' },
+      { type: 'stroke_start' },
+      { type: 'paint_cell', floor: 0, x: 5, y: 5 },
+    )
+    expect(s.cells.size).toBe(1)
+    expect(s.signCells.size).toBe(1)
+
+    s = areaPaintReducer(s, { type: 'undo' })
+    expect(s.signCells.size).toBe(0)
+    expect(s.cells.size).toBe(1)
+
+    s = areaPaintReducer(s, { type: 'undo' })
+    expect(s.cells.size).toBe(0)
+  })
+
+  it('rename_sign moves every cell and follows the brush', () => {
+    const s = reduce(begun([sign('Inbound', 0), sign('Inbound', 1)]),
+      { type: 'set_sign_brush', name: 'Inbound' },
+      { type: 'rename_sign', from: 'Inbound', to: 'Goods In' },
+    )
+    expect(signNamesInPaintState(s)).toEqual(['Goods In'])
+    expect(s.signCells.size).toBe(2)
+    expect(s.signBrush).toBe('Goods In')
+  })
+
+  it('erase_sign removes the whole sign in one act', () => {
+    const s = reduce(begun([sign('Inbound', 0), sign('Inbound', 1)]), { type: 'erase_sign', name: 'Inbound' })
+    expect(signSpecsFromPaintState(s)).toEqual([])
+  })
+
+  it('folds to exactly what signSpecsFromObjects produces from the same picture', () => {
+    // The same cross-surface invariant the areas have: the map's working set and
+    // the designer's object list must describe one payload.
+    const objects = [sign('Inbound', 3, 3, 0, 10), sign('Outbound', 46, 3, 0, 10), ...row('Chiller', 0, 2)]
+    expect(signSpecsFromPaintState(begun(objects))).toEqual(signSpecsFromObjects(objects as any))
   })
 })

@@ -48,6 +48,7 @@ import { OCCUPANT_LABEL, STORAGE_UNIT, TOOL_LABEL } from './labels'
 import { editorUnits, useLayoutEditorState } from './useLayoutEditorState'
 import { composeName, nextSeqForArea, sanitizeAreaName } from '@/lib/locationNaming'
 import { areaCellsFingerprint, areaSpecsFromObjects } from '@/lib/areaPaint'
+import { sanitizeSignName, signCellsFingerprint, signSpecsFromObjects } from '@/lib/signPaint'
 // The same confirm panel the live map uses. Deliberately not forked: the counts
 // it shows are the server's dry run, and two copies would eventually disagree
 // about what the operator was told before they pressed Save.
@@ -84,6 +85,8 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   // Live area painting (mig 00095).
   const [areaConfirmOpen, setAreaConfirmOpen] = useState(false)
   const areaBaseFingerprintRef = useRef<string>('')
+  // Floor signs (mig 00097) — their own baseline, see the hydrate effect.
+  const signBaseFingerprintRef = useRef<string>('')
   const { addToast } = useToasts()
 
   const createLayout = useCreateLayout(warehouse.id)
@@ -112,6 +115,19 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     const names: string[] = []
     for (const o of state.objects) {
       if (o.floor !== state.floor || o.objectType !== 'area') continue
+      const name = typeof o.meta?.name === 'string' ? o.meta.name : ''
+      if (name && !names.includes(name)) names.push(name)
+    }
+    return names
+  }, [state.objects, state.floor])
+
+  /** Distinct sign texts already placed on the current floor (mig 00097). Same
+   *  purpose as areaNamesOnFloor: extending a sign must be a click, because a
+   *  typo starts a second one. */
+  const signNamesOnFloor = useMemo(() => {
+    const names: string[] = []
+    for (const o of state.objects) {
+      if (o.floor !== state.floor || o.objectType !== 'label') continue
       const name = typeof o.meta?.name === 'string' ? o.meta.name : ''
       if (name && !names.includes(name)) names.push(name)
     }
@@ -207,6 +223,10 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
       // baseline and leave the conflict check comparing the server's picture
       // against itself.
       areaBaseFingerprintRef.current = areaCellsFingerprint(detailQuery.data.objects as never)
+      // Signs get their OWN baseline (mig 00097). Sharing the area one would make
+      // an area paint 409 a sign save and vice versa — the two pictures move
+      // independently and each server action checks only its own.
+      signBaseFingerprintRef.current = signCellsFingerprint(detailQuery.data.objects as never)
       dispatch({
         type: 'load',
         placements: detailQuery.data.placements,
@@ -324,9 +344,16 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
     if (now - lastBlockedToastAt.current < BLOCKED_TOAST_COOLDOWN_MS) return
     lastBlockedToastAt.current = now
     addToast(
-      b.count != null
-        ? `Skipped ${b.count} cell${b.count === 1 ? '' : 's'} that already hold something else.`
-        : `Can't draw ${TOOL_LABEL[b.tool]} at (${b.x},${b.y}) — that cell is already a ${OCCUPANT_LABEL[b.blockedBy]}. Erase it first, or use Clean up overlaps.`,
+      b.reason === 'unnamed'
+        // The bug this message exists for: the Area tool armed on click, so
+        // painting before typing wrote cells belonging to nothing — invisible on
+        // the map and rejected on save. Say which box to fill in.
+        ? b.tool === 'label'
+          ? 'Type the sign’s text first — a sign is its text, so there is nothing to draw yet.'
+          : 'Name the area first — an area is its name, so there is nothing to draw yet.'
+        : b.count != null
+          ? `Skipped ${b.count} cell${b.count === 1 ? '' : 's'} that already hold something else.`
+          : `Can't draw ${TOOL_LABEL[b.tool]} at (${b.x},${b.y}) — that cell is already a ${OCCUPANT_LABEL[b.blockedBy!]}. Erase it first, or use Clean up overlaps.`,
       'info',
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -537,6 +564,10 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   // replace of every placement and object plus an orphan sweep that hard-deletes
   // `locations` rows, and on a live site those rows hold stock.
   const areaSpecs = useMemo(() => areaSpecsFromObjects(state.objects as never), [state.objects])
+  // Signs ride the same Save (mig 00097) through their own action. Folded here
+  // rather than in the modal so the designer and the live map hand it identical
+  // specs — the same reason areaSpecs is folded here.
+  const signSpecs = useMemo(() => signSpecsFromObjects(state.objects as never), [state.objects])
 
   // Publish the draft; returns true on success. Renders rejections on failure.
   const doPublish = async (): Promise<boolean> => {
@@ -787,6 +818,9 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             activeArea={state.activeArea}
             onSelectArea={(area) => dispatch({ type: 'set_area', area })}
             nextRackName={nextRackName}
+            signNames={signNamesOnFloor}
+            activeSign={state.activeSign}
+            onSelectSign={(name) => dispatch({ type: 'set_sign', name: sanitizeSignName(name) })}
             zoneProfiles={(zoneProfilesQuery.data ?? []).map((zp) => ({ id: zp.id, name: zp.name }))}
             floorCount={selectedLayout.floorCount}
             floor={state.floor}
@@ -890,6 +924,8 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
           layoutId={selectedLayout.id}
           baseFingerprint={areaBaseFingerprintRef.current}
           specs={areaSpecs}
+          signSpecs={signSpecs}
+          signBaseFingerprint={signBaseFingerprintRef.current}
           floorCount={selectedLayout.floorCount}
           onClose={() => setAreaConfirmOpen(false)}
           onSaved={() => {
