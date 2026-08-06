@@ -12,8 +12,11 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import type { ActiveArea, EditorTool } from './useLayoutEditorState'
 import { STORAGE_UNIT } from './labels'
-import { MAX_AREA_NAME, areaNameIssue, sanitizeAreaName } from '@/lib/locationNaming'
-import { MAX_SIGN_NAME, sanitizeSignName, signNameIssue } from '@/lib/signPaint'
+// The INPUT variants, never the full sanitize: trimming per keystroke deletes
+// the space in "Cold Storage" as it is typed. The reducer and the server both
+// run the real sanitize before anything is stored.
+import { MAX_AREA_NAME, areaNameIssue, sanitizeAreaNameInput } from '@/lib/locationNaming'
+import { MAX_SIGN_NAME, sanitizeSignNameInput, signNameIssue } from '@/lib/signPaint'
 
 // Structural (non-storage) tools. Storage FORMS are rendered dynamically from the
 // catalogue between these and Erase, so every drawable form gets its own tool.
@@ -230,7 +233,7 @@ export function LayoutToolbar({
               "Next rack drawn here…" preview, which does sanitize. */}
           <input
             value={activeArea?.name ?? ''}
-            onChange={(e) => onSelectArea({ name: sanitizeAreaName(e.target.value), zoneProfileId: activeArea?.zoneProfileId })}
+            onChange={(e) => onSelectArea({ name: sanitizeAreaNameInput(e.target.value), zoneProfileId: activeArea?.zoneProfileId })}
             placeholder="Cold Storage"
             aria-label="Area name"
             maxLength={MAX_AREA_NAME}
@@ -303,7 +306,7 @@ export function LayoutToolbar({
           <span className="text-[11px] font-medium text-stone-400">Sign text</span>
           <input
             value={activeSign ?? ''}
-            onChange={(e) => onSelectSign(sanitizeSignName(e.target.value))}
+            onChange={(e) => onSelectSign(sanitizeSignNameInput(e.target.value))}
             placeholder="Inbound Staging"
             aria-label="Sign text"
             maxLength={MAX_SIGN_NAME}

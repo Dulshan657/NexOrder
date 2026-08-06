@@ -19,8 +19,12 @@ import {
   describeSeqRanges,
   highWaterFromRows,
   nextSeqForArea,
+  sanitizeAreaName,
   type NamingUnit,
 } from '@/lib/locationNaming'
+// The brush may carry a trailing space (the input variant allows one so a space
+// is typeable at all), so the write point applies the REAL sanitize.
+import { sanitizeSignName } from '@/lib/signPaint'
 
 // 'rack' is the generic storage-paint tool; WHICH form it draws is carried by
 // `activeForm` (mig 00061 storage forms), so every drawable form shares one tool.
@@ -744,9 +748,13 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
         // ever be a mistake, and allowing it is what produced the invisible-paint
         // bug this refusal fixes. Checked BEFORE the co-occupancy matrix: the
         // brush is unusable regardless of what is under the pointer.
+        // Sanitized HERE, not read raw off the brush: the toolbar's input
+        // deliberately tolerates a trailing space so one can be typed at all,
+        // and a stored `"Chiller "` would fold to a different name than the
+        // server's `"Chiller"` and break the fingerprint.
         const annotationName =
-          objectType === 'area' ? (state.activeArea?.name ?? '')
-            : objectType === 'label' ? (state.activeSign ?? '')
+          objectType === 'area' ? sanitizeAreaName(state.activeArea?.name ?? '')
+            : objectType === 'label' ? sanitizeSignName(state.activeSign ?? '')
               : null
         if (annotationName !== null && annotationName.trim() === '') {
           return refuseUnnamed(state, x, y)
@@ -782,10 +790,10 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
           // it into a region. A sign carries ONLY its name — no zoneProfileId,
           // ever, or it quietly becomes an area.
           ...(objectType === 'area' && state.activeArea
-            ? { meta: { name: state.activeArea.name, zoneProfileId: state.activeArea.zoneProfileId } }
+            ? { meta: { name: annotationName as string, zoneProfileId: state.activeArea.zoneProfileId } }
             : {}),
           ...(objectType === 'label' && state.activeSign
-            ? { meta: { name: state.activeSign } }
+            ? { meta: { name: annotationName as string } }
             : {}),
         }
         return { ...state, objects: [...without, obj], seq: state.seq + 1, dirty: true, blockedAt: null }

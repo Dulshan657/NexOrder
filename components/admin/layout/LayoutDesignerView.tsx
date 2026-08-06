@@ -48,7 +48,7 @@ import { OCCUPANT_LABEL, STORAGE_UNIT, TOOL_LABEL } from './labels'
 import { editorUnits, useLayoutEditorState } from './useLayoutEditorState'
 import { composeName, nextSeqForArea, sanitizeAreaName } from '@/lib/locationNaming'
 import { areaCellsFingerprint, areaSpecsFromObjects } from '@/lib/areaPaint'
-import { sanitizeSignName, signCellsFingerprint, signSpecsFromObjects } from '@/lib/signPaint'
+import { sanitizeSignNameInput, signCellsFingerprint, signSpecsFromObjects } from '@/lib/signPaint'
 // The same confirm panel the live map uses. Deliberately not forked: the counts
 // it shows are the server's dry run, and two copies would eventually disagree
 // about what the operator was told before they pressed Save.
@@ -820,7 +820,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             nextRackName={nextRackName}
             signNames={signNamesOnFloor}
             activeSign={state.activeSign}
-            onSelectSign={(name) => dispatch({ type: 'set_sign', name: sanitizeSignName(name) })}
+            onSelectSign={(name) => dispatch({ type: 'set_sign', name: sanitizeSignNameInput(name) })}
             zoneProfiles={(zoneProfilesQuery.data ?? []).map((zp) => ({ id: zp.id, name: zp.name }))}
             floorCount={selectedLayout.floorCount}
             floor={state.floor}

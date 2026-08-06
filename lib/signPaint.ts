@@ -18,6 +18,7 @@ export {
   signCellsFingerprint,
   diffSigns,
   sanitizeSignName,
+  sanitizeSignNameInput,
   signNameIssue,
 } from '@/supabase/functions/_shared/wie/signPaint'
 

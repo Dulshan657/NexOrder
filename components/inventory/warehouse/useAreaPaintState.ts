@@ -22,8 +22,14 @@
 import { useReducer, useMemo, useCallback } from 'react'
 import type { LayoutObject } from '@/types'
 import { areaSpecsFromObjects, areaObjectsFromSpecs, type AreaPaintSpec } from '@/lib/areaPaint'
-import { sanitizeAreaName } from '@/lib/locationNaming'
-import { sanitizeSignName, signObjectsFromSpecs, signSpecsFromObjects, type SignSpec } from '@/lib/signPaint'
+import { sanitizeAreaName, sanitizeAreaNameInput } from '@/lib/locationNaming'
+import {
+  sanitizeSignName,
+  sanitizeSignNameInput,
+  signObjectsFromSpecs,
+  signSpecsFromObjects,
+  type SignSpec,
+} from '@/lib/signPaint'
 
 /** How deep undo goes. A Map copy at a few thousand cells is trivial; the cap is
  *  only here so a long session cannot grow without bound. */
@@ -147,7 +153,10 @@ export function areaPaintReducer(state: AreaPaintState, action: AreaPaintAction)
       return { ...state, ...hydrate(action.objects), undo: [], dirty: false }
 
     case 'set_brush_name':
-      return { ...state, brush: { ...state.brush, name: sanitizeAreaName(action.name) } }
+      // The INPUT variant: the full sanitize trims, which per keystroke deletes
+      // the space in "Cold Storage" the instant it is typed. Every paint path
+      // below still runs the real sanitizeAreaName before writing a cell.
+      return { ...state, brush: { ...state.brush, name: sanitizeAreaNameInput(action.name) } }
 
     case 'set_brush_profile': {
       const name = sanitizeAreaName(state.brush.name)
@@ -167,7 +176,7 @@ export function areaPaintReducer(state: AreaPaintState, action: AreaPaintAction)
       return { ...state, layer: action.layer }
 
     case 'set_sign_brush':
-      return { ...state, signBrush: sanitizeSignName(action.name) }
+      return { ...state, signBrush: sanitizeSignNameInput(action.name) }
 
     case 'set_mode':
       return { ...state, mode: action.mode }
