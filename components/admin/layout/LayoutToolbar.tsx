@@ -42,6 +42,13 @@ export interface ToolbarZoneProfile {
 
 interface LayoutToolbarProps {
   isDraft: boolean
+  /** Areas stay editable for the life of a layout (mig 00095) — they carry no
+   *  routing weight, so publishing does not freeze them the way it freezes
+   *  placements and walls. */
+  canEditAreas?: boolean
+  /** A PUBLISHED layout: only the area tools are live, and Save routes to
+   *  `paint_areas` rather than `save_geometry`. */
+  areaOnly?: boolean
   tool: EditorTool
   onSelectTool: (t: EditorTool) => void
   /** Drawable storage forms (mig 00061); each becomes a coloured paint tool. */
@@ -79,16 +86,21 @@ const actionBtn =
   'inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50 btn-press'
 
 export function LayoutToolbar({
-  isDraft, tool, onSelectTool, forms, activeFormId, onSelectForm, onGenerate,
+  isDraft, canEditAreas = false, areaOnly = false,
+  tool, onSelectTool, forms, activeFormId, onSelectForm, onGenerate,
   areaNames, activeArea, onSelectArea, nextRackName, zoneProfiles, floorCount, floor, onSetFloor,
   dirty, saving, publishing, simulating, onSave, onPublish, onClone, onSimulate, onArchive, onImport,
 }: LayoutToolbarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {/* ── Paint tools ─────────────────────────────────────────────────── */}
-      {isDraft && (
+      {/* ── Paint tools ─────────────────────────────────────────────────────
+          Gated on canEditAreas rather than isDraft, because Area and Erase live
+          inside this strip: gating the strip on isDraft would hide the whole
+          thing on a published layout and take the area tool with it. Everything
+          that touches frozen geometry is gated individually below. */}
+      {canEditAreas && (
         <div className="inline-flex flex-wrap items-center gap-0.5 rounded-xl border border-stone-200 bg-stone-50 p-1">
-          {TOOLS.map(({ tool: t, label, icon: Icon }) => {
+          {(areaOnly ? TOOLS.filter((t) => t.tool === 'select') : TOOLS).map(({ tool: t, label, icon: Icon }) => {
             const active = tool === t
             return (
               <button
@@ -107,8 +119,9 @@ export function LayoutToolbar({
             )
           })}
 
-          {/* Storage forms — one coloured tool per drawable form. */}
-          {forms.length === 0 ? (
+          {/* Storage forms — one coloured tool per drawable form. Draft only:
+              a placement carries the frozen routing graph. */}
+          {!isDraft ? null : forms.length === 0 ? (
             <button
               type="button"
               onClick={() => onSelectTool('rack')}
@@ -173,7 +186,7 @@ export function LayoutToolbar({
           held, so it doesn't compete for width the rest of the time — an area's
           NAME is its identity (cells sharing one merge into a single region), so
           this bar is the equivalent of picking which storage form to paint. */}
-      {isDraft && tool === 'area' && (
+      {canEditAreas && tool === 'area' && (
         <div className="inline-flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-2 py-1.5">
           <span className="text-[11px] font-medium text-stone-400">Painting area</span>
           <input
@@ -224,10 +237,12 @@ export function LayoutToolbar({
               so a rename here reaches live pick lists before publish — true of
               the storage-form repoint too, but names are what people read. */}
           <p className="w-full pt-0.5 text-[11px] leading-snug text-stone-400">
-            {nextRackName
+            {!areaOnly && nextRackName
               ? <>Next rack drawn here will be called <span className="font-medium text-stone-500">{nextRackName}</span>. </>
               : null}
-            Renaming an area renames every bin inside it — including on the live map, before you publish.
+            {areaOnly
+              ? 'This layout is live. Saving replaces its areas and offers to rename the bins inside them — nothing else on the plan is touched.'
+              : 'Renaming an area renames every bin inside it — including on the live map, before you publish.'}
           </p>
         </div>
       )}
@@ -271,6 +286,15 @@ export function LayoutToolbar({
         <button type="button" className={actionBtn} onClick={onSimulate} disabled={simulating}>
           <PlayCircle className="h-4 w-4" strokeWidth={2} /> {simulating ? 'Simulating…' : 'Simulate'}
         </button>
+        {/* Save areas is the ONLY document action a published layout gets. It
+            routes to `paint_areas`, never to save_geometry — that is a full
+            replace of every placement and object plus an orphan sweep, and on a
+            live site those rows hold stock. */}
+        {areaOnly && (
+          <button type="button" className={actionBtn} onClick={onSave} disabled={saving || !dirty}>
+            <Save className="h-4 w-4" strokeWidth={2} /> {dirty ? 'Save areas' : 'Areas saved'}
+          </button>
+        )}
         {isDraft && (
           <>
             <button type="button" className={actionBtn} onClick={onSave} disabled={saving || !dirty}>

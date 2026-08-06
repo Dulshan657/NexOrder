@@ -4,9 +4,11 @@ import {
   createWarehouseLocation,
   updateWarehouseLocation,
   deactivateWarehouseLocation,
+  paintAreas,
   renameArea,
   renameRack,
   type CreateLocationInput,
+  type PaintAreasArgs,
   type UpdateLocationInput,
 } from '@/services/supabase/warehouseLocationService'
 
@@ -53,6 +55,27 @@ export function useRenameArea(warehouseId: number) {
   return useMutation({
     mutationFn: (args: Omit<Parameters<typeof renameArea>[0], 'warehouseId'>) =>
       renameArea({ ...args, warehouseId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) })
+      qc.invalidateQueries({ queryKey: ['layout-detail'] })
+      qc.invalidateQueries({ queryKey: ['layouts', warehouseId] })
+    },
+  })
+}
+
+// ── Live area painting (mig 00095) ───────────────────────────────────────────
+
+/**
+ * Replace every named area on a live site, optionally cascading the bin names.
+ *
+ * Invalidates the same three keys as useRenameArea, and for the same reason: the
+ * area's own geometry and label live in `layout_objects`, so the map would keep
+ * drawing the old picture over correctly-renamed bins.
+ */
+export function usePaintAreas(warehouseId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args: Omit<PaintAreasArgs, 'warehouseId'>) => paintAreas({ ...args, warehouseId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) })
       qc.invalidateQueries({ queryKey: ['layout-detail'] })

@@ -26,6 +26,7 @@ import { assertValidRoles, loadActiveRoleKeys } from '../_shared/levelRoleLookup
 // Friendly names (mig 00094). The rules are pure and shared with the browser, so
 // the rename dialog's preview IS this function's decision evaluated early.
 import {
+  MAX_AREA_NAME,
   NAME_SEP,
   areaForRect,
   areaNameIssue,
@@ -33,11 +34,23 @@ import {
   buildAreaIndex,
   composeName,
   sanitizeAreaName,
-  type NamingUnit,
 } from '../_shared/wie/locationNaming.ts'
+// Live area painting (mig 00095). Pure, and shared with the browser for two
+// reasons that both bite: the CONFLICT fingerprint must agree byte-for-byte, and
+// the summary panel's counts must BE this function's decision evaluated early.
+import {
+  areaCellsFingerprint,
+  areaObjectsFromSpecs,
+  diffAreas,
+  expandAreaRuns,
+  planAreaCascade,
+  type AreaPaintSpec,
+} from '../_shared/wie/areaPaint.ts'
 import {
   applyNameWrites,
-  loadAreaHighWater,
+  loadAreaSeqClaims,
+  loadLayoutNamingUnits,
+  nameWriteNeeded,
   type NameWrite,
 } from '../_shared/locationNamingWrite.ts'
 
@@ -113,8 +126,63 @@ const renameRackSchema = z.object({
   include_levels: z.boolean().optional(),
 })
 
+// ── paint_areas (mig 00095) ──────────────────────────────────────────────────
+//
+// Paint, reshape, re-tint and erase named areas ON A LIVE WAREHOUSE. Same
+// reasoning as rename_area for why it lives on this function rather than
+// mutate-layout, plus one more: an `area` row is INERT in routing
+// (buildWalkableCells adds only walkway/dock/lift/staging and subtracts only
+// wall/conveyor), so unlike every other kind of geometry it cannot invalidate
+// anything publishing froze. That is what makes editing one on a published layout
+// safe at all, and why this must not bump warehouse_layouts.updated_at.
+//
+// FULL REPLACE, NOT A DIFF, and this is the load-bearing design choice. The
+// server reads the before-picture from the database, so "renamed Chiller to Cold
+// Room" and "erased Chiller, painted Cold Room over the same cells" are DERIVED
+// as the same plan rather than needing to be told apart — which is correct,
+// because both mean "these racks are now in Cold Room". This is exactly the
+// ambiguity `save_geometry` needs `area_renames` to resolve; do not port that
+// field here.
+const areaRunSchema = z.object({
+  floor: z.number().int().min(0).max(15),
+  y: z.number().int().min(0).max(4095),
+  x: z.number().int().min(0).max(4095),
+  len: z.number().int().min(1).max(4096),
+})
+
+const paintAreaSchema = z.object({
+  name: z.string().min(1).max(MAX_AREA_NAME),
+  // .nullish(), never .optional(): meta.zoneProfileId is genuinely nullable and
+  // `null` is the honest wire value for "cleared". With `strict` off, `.optional()`
+  // would accept the type and reject the value at runtime — the trap that made
+  // every Shelving/Cold Room rack save fail with a bare "Invalid request body".
+  zone_profile_id: z.number().int().positive().nullish(),
+  /** Horizontal runs. A wire format only — storage is 1x1, enforced by the RPC. */
+  runs: z.array(areaRunSchema).min(1).max(4000),
+})
+
+const paintAreasSchema = z.object({
+  action: z.literal('paint_areas'),
+  warehouse_id: z.number().int().positive(),
+  /** The layout the client was looking at. Refused when it is no longer the
+   *  warehouse's active_layout_id — a publish landed under the operator's tab. */
+  layout_id: z.number().int().positive(),
+  /** areaCellsFingerprint over the rows the client rendered from. Refused on
+   *  mismatch, which is the whole concurrency story: two operators painting at
+   *  once, or a preview confirmed after someone else saved. */
+  base_fingerprint: z.string().min(1).max(64),
+  /** The COMPLETE replacement set, ALL FLOORS. An area omitted here is erased;
+   *  `[]` erases every area on the site. */
+  areas: z.array(paintAreaSchema).max(64),
+  /** Opt-in. Absent = geometry only, and not one locations.name is touched. */
+  cascade_names: z.boolean().optional(),
+  include_custom: z.boolean().optional(),
+  dry_run: z.boolean().optional(),
+})
+
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: createSchema }),
+  paintAreasSchema,
   z.object({ action: z.literal('update'), id: z.number().int().positive(), data: updateSchema }),
   renameAreaSchema,
   renameRackSchema,
@@ -143,49 +211,19 @@ async function rootWarehouse(admin: any, locationId: number): Promise<{ id: numb
   return null
 }
 
-/** What rename_area needs to know about one `locations` row. */
-interface NamingLocation {
-  id: number
-  code: string
-  name: string
-  kind: string
-  parentId: number | null
-  levelIndex: number | null
-  path: string
-  nameIsAuto: boolean
-  nameSeq: number | null
-  nameArea: string | null
-}
+// NamingLocation / loadLocationsForNaming / the whole placements → locations →
+// rack-parent rollup now live in _shared/locationNamingWrite.ts as
+// loadLayoutNamingUnits: rename_area and paint_areas must resolve the SAME units
+// or a preview and a paint would disagree about what is even in the area.
 
-/** Chunked read, keyed by id. `.in()` caps out around 200, and a 189-bay
- *  warehouse resolves 1134 rows. */
-async function loadLocationsForNaming(
-  admin: any,
-  ids: readonly number[],
-): Promise<Map<number, NamingLocation>> {
-  const out = new Map<number, NamingLocation>()
-  const unique = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))]
-  for (let i = 0; i < unique.length; i += 200) {
-    const { data, error } = await admin.from('locations')
-      .select('id, code, name, kind, parent_id, level_index, materialized_path, name_is_auto, name_seq, name_area')
-      .in('id', unique.slice(i, i + 200))
-    if (error) throw new EdgeFunctionError('INTERNAL', `Could not read locations: ${error.message}`)
-    for (const r of (data ?? []) as any[]) {
-      out.set(Number(r.id), {
-        id: Number(r.id),
-        code: String(r.code),
-        name: String(r.name ?? ''),
-        kind: String(r.kind),
-        parentId: r.parent_id != null ? Number(r.parent_id) : null,
-        levelIndex: r.level_index != null ? Number(r.level_index) : null,
-        path: String(r.materialized_path ?? ''),
-        nameIsAuto: r.name_is_auto === true,
-        nameSeq: r.name_seq != null ? Number(r.name_seq) : null,
-        nameArea: r.name_area ?? null,
-      })
-    }
+/** zod's flatten() collapses a nested path to its top-level key, so a bad
+ *  `areas.2.runs.412.x` would reach the operator as a bare "Invalid request
+ *  body". Attach the issue paths instead; the client renders them via
+ *  describeValidationIssues. Same helper as count-bin and mutate-product-home-bin. */
+function validationIssues(error: z.ZodError): { issues: Array<{ path: string; message: string }> } {
+  return {
+    issues: error.issues.slice(0, 10).map((i) => ({ path: i.path.join('.'), message: i.message })),
   }
-  return out
 }
 
 async function nodeHasStock(admin: any, locationId: number): Promise<boolean> {
@@ -215,7 +253,9 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError('INVALID_INPUT', 'Request body must be valid JSON')
     })
     const parsed = inputSchema.safeParse(body)
-    if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
+    if (!parsed.success) {
+      throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', validationIssues(parsed.error))
+    }
     const input = parsed.data
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
@@ -455,6 +495,262 @@ serve(async (req: Request) => {
       })
     }
 
+    // ── paint_areas (mig 00095) ──────────────────────────────────────────────
+    if (input.action === 'paint_areas') {
+      // Its own bucket, deliberately NOT shared with :area:. One call replaces
+      // every area on the site and can rename 1100+ rows, but more importantly a
+      // burst of paint saves must not lock the operator out of rename_area —
+      // fixing a spelling is the cheap remedy when a paint went wrong.
+      const paintRl = await checkRateLimit(`mutate-warehouse-location:paint:${auth.userId}`, {
+        windowMs: 60_000,
+        max: 10,
+      })
+      if (!paintRl.ok) {
+        throw new EdgeFunctionError(
+          'TOO_MANY_REQUESTS',
+          `Rate limit exceeded; try again in ${Math.ceil(paintRl.resetMs / 1000)}s`,
+        )
+      }
+
+      // 1. The warehouse, its path, and its published layout.
+      const { data: whRow } = await admin.from('locations')
+        .select('id, kind, materialized_path, location_type, active_layout_id')
+        .eq('id', input.warehouse_id).maybeSingle()
+      if (!whRow || (whRow as any).kind !== 'WAREHOUSE') {
+        throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
+      }
+      const whPath = (whRow as any).materialized_path as string
+      const layoutId = (whRow as any).active_layout_id as number | null
+      if ((whRow as any).location_type !== 'racked' || !layoutId) {
+        throw new EdgeFunctionError('CONFLICT', 'This site has no published layout, so it has no areas to paint')
+      }
+      // A publish landed while the operator was painting. Their working set
+      // describes a layout that is no longer live; applying it would move areas
+      // onto a floor plan they never saw.
+      if (layoutId !== input.layout_id) {
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          'This site’s published layout changed while you were painting. Reload the map and repaint.',
+        )
+      }
+
+      const { data: layoutRow } = await admin.from('warehouse_layouts')
+        .select('id, grid_width, grid_height, floor_count').eq('id', layoutId).maybeSingle()
+      if (!layoutRow) throw new EdgeFunctionError('NOT_FOUND', 'Published layout not found')
+      const gridW = Number((layoutRow as any).grid_width)
+      const gridH = Number((layoutRow as any).grid_height)
+      const floors = Number((layoutRow as any).floor_count)
+
+      // 2. Validate the payload into canonical specs.
+      const specs: AreaPaintSpec[] = []
+      const seenNames = new Set<string>()
+      for (const area of input.areas) {
+        const issue = areaNameIssue(area.name)
+        if (issue) throw new EdgeFunctionError('INVALID_INPUT', issue)
+        const name = sanitizeAreaName(area.name)
+        // Two entries sanitizing to one name would give the cascade no defined
+        // target — "which of these is Chiller" has no answer.
+        if (seenNames.has(name)) {
+          throw new EdgeFunctionError('INVALID_INPUT', `“${name}” is listed twice`)
+        }
+        seenNames.add(name)
+        specs.push({ name, zoneProfileId: area.zone_profile_id ?? null, cells: expandAreaRuns(area.runs) })
+      }
+
+      // Bounds, and a cell may belong to one area only. buildAreaIndex resolves an
+      // overlap by taking the smaller name, but that is a RECOVERY rule for
+      // imported geometry — silently applying it to an explicit paint would put
+      // an operator's label somewhere they did not put it. Name the offender.
+      const claimedBy = new Map<string, string>()
+      for (const spec of specs) {
+        for (const cell of spec.cells) {
+          if (cell.floor < 0 || cell.floor >= floors || cell.x < 0 || cell.x >= gridW || cell.y < 0 || cell.y >= gridH) {
+            throw new EdgeFunctionError(
+              'INVALID_INPUT',
+              `“${spec.name}” covers a cell (floor ${cell.floor}, ${cell.x}, ${cell.y}) outside this layout’s ${gridW} × ${gridH} grid`,
+            )
+          }
+          const key = `${cell.floor}:${cell.x}:${cell.y}`
+          const owner = claimedBy.get(key)
+          if (owner !== undefined && owner !== spec.name) {
+            throw new EdgeFunctionError(
+              'INVALID_INPUT',
+              `Cell (floor ${cell.floor}, ${cell.x}, ${cell.y}) is painted as both “${owner}” and “${spec.name}”`,
+            )
+          }
+          claimedBy.set(key, spec.name)
+        }
+      }
+
+      // meta is JSONB with no FK, so nothing else would ever catch a bogus
+      // profile id — the map would just draw the fallback tint forever.
+      const profileIds = [...new Set(specs.map((s) => s.zoneProfileId).filter((id): id is number => id != null))]
+      if (profileIds.length > 0) {
+        const { data: profileRows, error: profErr } = await admin.from('zone_profiles')
+          .select('id').in('id', profileIds)
+        if (profErr) throw new EdgeFunctionError('INTERNAL', `Could not read zone profiles: ${profErr.message}`)
+        const known = new Set((profileRows ?? []).map((r: any) => Number(r.id)))
+        const missing = profileIds.filter((id) => !known.has(id))
+        if (missing.length > 0) {
+          throw new EdgeFunctionError('INVALID_INPUT', `Unknown zone profile ${missing.join(', ')}`)
+        }
+      }
+
+      // 3. The before-picture — needed for the diff and the cascade anyway, so
+      //    the conflict check is free.
+      const { data: objectRows, error: objErr } = await admin.from('layout_objects')
+        .select('id, object_type, floor, x, y, w, h, meta')
+        .eq('layout_id', layoutId).eq('object_type', 'area')
+      if (objErr) throw new EdgeFunctionError('INTERNAL', `Could not read areas: ${objErr.message}`)
+      const beforeObjects = ((objectRows ?? []) as any[]).map((o) => ({
+        objectType: String(o.object_type), floor: Number(o.floor), x: Number(o.x), y: Number(o.y),
+        w: Number(o.w), h: Number(o.h), meta: o.meta ?? null,
+      }))
+
+      const serverFingerprint = areaCellsFingerprint(beforeObjects)
+      if (serverFingerprint !== input.base_fingerprint) {
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          'Someone else changed this site’s areas while you were painting. Reload the map and repaint.',
+        )
+      }
+
+      const afterObjects = areaObjectsFromSpecs(specs)
+      const delta = diffAreas(beforeObjects, afterObjects)
+
+      // No publish-readiness re-check, deliberately. An `area` row is inert in
+      // buildWalkableCells, so running the gates here could only ever fail for
+      // something the operator did not do.
+
+      // 4. The cascade, only when asked for.
+      const includeCustom = input.include_custom === true
+      const writes: NameWrite[] = []
+      const examples: Array<{ code: string; from: string; to: string }> = []
+      let skippedCustom = 0
+      let skippedForeign = 0
+
+      if (input.cascade_names) {
+        const beforeIndex = buildAreaIndex(beforeObjects)
+        const afterIndex = buildAreaIndex(afterObjects)
+        const { units, locById, levelsByParent } = await loadLayoutNamingUnits(admin, layoutId, whPath)
+        const { high, claims } = await loadAreaSeqClaims(admin, whPath)
+        const plan = planAreaCascade(units, beforeIndex, afterIndex, { includeCustom, minSeq: high, claims })
+        skippedCustom = plan.skippedCustom
+        skippedForeign = plan.skippedForeign
+
+        for (const named of plan.decided.values()) {
+          const id = Number(named.ref.slice(4))
+          const loc = locById.get(id)
+          if (!loc) continue
+          // A hand-named rack is echoed back untouched; the plan has already
+          // counted it as skippedCustom.
+          if (!named.isAuto || named.seq == null) continue
+
+          const rackWrite: NameWrite = {
+            id, name: named.name, name_seq: named.seq,
+            name_area: named.areaName || null, name_is_auto: true,
+          }
+          // nameWriteNeeded rather than a bare name comparison: a row whose name
+          // is already right but whose name_area/name_seq drifted must still be
+          // repaired, or its pool claim stays wrong forever.
+          if (nameWriteNeeded(loc, rackWrite)) {
+            writes.push(rackWrite)
+            if (examples.length < 5) examples.push({ code: loc.code, from: loc.name, to: named.name })
+          }
+
+          for (const lvl of levelsByParent.get(id) ?? []) {
+            const levelLoc = locById.get(lvl.id)
+            // A level carries its OWN provenance, so one an operator hand-named
+            // survives its rack being renamed around it.
+            if (!levelLoc || (!levelLoc.nameIsAuto && !includeCustom)) continue
+            const levelWrite: NameWrite = {
+              id: lvl.id, name: composeName(named.areaName, named.seq, lvl.levelIndex),
+              name_seq: null, name_area: named.areaName || null, name_is_auto: true,
+            }
+            if (nameWriteNeeded(levelLoc, levelWrite)) writes.push(levelWrite)
+          }
+        }
+      }
+
+      const rackCount = writes.filter((w) => w.name_seq != null).length
+      const levelCount = writes.length - rackCount
+
+      // 5. dry_run returns HERE — before any write and before the audit — which
+      //    is what guarantees the previewed count is the count that moves.
+      if (input.dry_run) {
+        return new Response(JSON.stringify({
+          ok: true,
+          fingerprint: serverFingerprint,
+          preview: {
+            created: delta.created,
+            erased: delta.erased,
+            resized: delta.resized,
+            reprofiled: delta.reprofiled,
+            cellsAfter: delta.cellsAfter,
+            unchanged: delta.unchanged,
+            willRename: writes.length,
+            racks: rackCount,
+            levels: levelCount,
+            skippedCustom,
+            skippedForeign,
+            examples,
+          },
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      // 6. Geometry first, then names. One transaction for the replace — two
+      //    supabase-js statements are not a transaction, and delete-first would
+      //    leave a live warehouse with every area gone if the insert failed.
+      const rows = afterObjects.map((o) => ({ floor: o.floor, x: o.x, y: o.y, meta: o.meta }))
+      const { data: insertedRaw, error: replaceErr } = await admin.rpc('wie_replace_layout_areas_tx', {
+        p_layout_id: layoutId,
+        p_rows: rows,
+      })
+      if (replaceErr) {
+        throw new EdgeFunctionError('INTERNAL', `Could not save the areas: ${replaceErr.message}`)
+      }
+      const inserted = Number(insertedRaw ?? 0)
+      if (inserted !== rows.length) {
+        throw new EdgeFunctionError('INTERNAL', `Saved ${inserted} of ${rows.length} area cells`)
+      }
+
+      // Names second and separately: a geometry failure must leave names alone,
+      // and a name failure after the geometry landed is recoverable by pressing
+      // Save again — planAreaCascade is idempotent and nameWriteNeeded skips
+      // no-ops, so the retry writes exactly what the first attempt missed.
+      const renamed = await applyNameWrites(admin, whPath, writes)
+
+      // Deliberately NOT touching warehouse_layouts.updated_at. `needsRepublish`
+      // is derived from `updated_at > published_at`, and an area contributes no
+      // graph node, no edge weight and no access_offset_m — demanding a routing
+      // rebuild because somebody labelled a corner would be a lie. It is also why
+      // the stale-draft warning compares fingerprints and not timestamps: there
+      // is no timestamp that moves when areas change.
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
+        resourceId: String(input.warehouse_id),
+        metadata: {
+          area_paint: true, layout_id: layoutId,
+          created: delta.created, erased: delta.erased,
+          resized: delta.resized, reprofiled: delta.reprofiled,
+          areas_after: specs.length, cells_after: delta.cellsAfter,
+          cascade_names: input.cascade_names === true, include_custom: includeCustom,
+          renamed, racks: rackCount, levels: levelCount,
+          skipped_custom: skippedCustom, skipped_foreign: skippedForeign,
+        },
+      })
+
+      return new Response(JSON.stringify({
+        ok: true,
+        fingerprint: areaCellsFingerprint(afterObjects),
+        cells: inserted,
+        areas: specs.length,
+        renamed, racks: rackCount, levels: levelCount,
+        skippedCustom, skippedForeign,
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     // ── rename_area (mig 00094) ──────────────────────────────────────────────
     //
     // Rename a painted area and cascade to every auto-named bin inside it,
@@ -524,71 +820,22 @@ serve(async (req: Request) => {
         objectType: o.object_type, floor: o.floor, x: o.x, y: o.y, w: o.w, h: o.h, meta: o.meta ?? null,
       })))
 
-      // 3. Placements — this is the join.
-      const { data: placementRows, error: plErr } = await admin.from('layout_placements')
-        .select('location_id, floor, x, y, w, h')
-        .eq('layout_id', layoutId)
-      if (plErr) throw new EdgeFunctionError('INTERNAL', `Could not read placements: ${plErr.message}`)
-      const placements = (placementRows ?? []) as any[]
-
-      // 4. The locations behind them, plus every rack PARENT: a levelled rack
-      //    holds no placement row of its own — its SHELF levels do — so rolling
-      //    up to the parent is what makes a rack nameable at all.
-      const placementIds = [...new Set(placements.map((p) => Number(p.location_id)))]
-      const locById = await loadLocationsForNaming(admin, placementIds)
-      const parentIds = [...new Set(
-        [...locById.values()]
-          .filter((l) => l.kind === 'SHELF' && l.parentId != null)
-          .map((l) => l.parentId as number),
-      )].filter((id) => !locById.has(id))
-      for (const [id, row] of await loadLocationsForNaming(admin, parentIds)) locById.set(id, row)
-
-      // Scope check. Every id above came from client-supplied geometry, and an
-      // UPDATE must not be the first operation to take that on trust — the same
-      // guard mutate-layout applies to a repoint.
-      for (const loc of locById.values()) {
-        if (loc.path !== whPath && !loc.path.startsWith(`${whPath}/`)) {
-          throw new EdgeFunctionError('INVALID_INPUT', 'A placement resolved outside this warehouse')
-        }
-      }
-
-      // 5. One naming unit per RACK/BIN, with its levels attached.
-      const levelsByParent = new Map<number, Array<{ id: number; levelIndex: number }>>()
-      const unitGeometry = new Map<number, { floor: number; x: number; y: number; w: number; h: number }>()
-      for (const p of placements) {
-        const loc = locById.get(Number(p.location_id))
-        if (!loc) continue
-        const geo = { floor: Number(p.floor), x: Number(p.x), y: Number(p.y), w: Number(p.w), h: Number(p.h) }
-        if (loc.kind === 'SHELF' && loc.parentId != null) {
-          const bucket = levelsByParent.get(loc.parentId) ?? []
-          bucket.push({ id: loc.id, levelIndex: loc.levelIndex ?? bucket.length + 1 })
-          levelsByParent.set(loc.parentId, bucket)
-          // Levels are co-located; any of them gives the rack its geometry.
-          if (!unitGeometry.has(loc.parentId)) unitGeometry.set(loc.parentId, geo)
-        } else {
-          unitGeometry.set(loc.id, geo)
-        }
-      }
-
-      const units: NamingUnit[] = [...unitGeometry.entries()].map(([id, geo]) => {
-        const loc = locById.get(id)!
-        return {
-          ref: `loc:${id}`,
-          ...geo,
-          name: loc.name,
-          nameIsAuto: loc.nameIsAuto,
-          nameSeq: loc.nameSeq,
-          nameArea: loc.nameArea,
-          levelIndexes: (levelsByParent.get(id) ?? []).map((l) => l.levelIndex),
-        }
-      })
+      // 3-5. Placements → locations → rack-parent rollup → one naming unit per
+      //      RACK/BIN with its levels attached. Shared with paint_areas.
+      const { units, locById, levelsByParent, unitGeometry } =
+        await loadLayoutNamingUnits(admin, layoutId, whPath)
 
       const result = assignAutoNames(units, areaIndex, {
         rename: { from, to },
         includeCustom: input.include_custom === true,
         // Numbers spoken for anywhere in this warehouse, including on racks that
         // have left the layout but whose labels are still on the racking.
-        minSeq: await loadAreaHighWater(admin, whPath),
+        minSeq: (await loadAreaSeqClaims(admin, whPath)).high,
+        // Deliberately NOT passing claimedInTarget. A rename moves a whole pool
+        // at once, so the only numbers arriving in `to` are the ones leaving
+        // `from`, which the high-water fold already reconciles. paint_areas is
+        // the caller that needs it, because a moved BOUNDARY can sweep a rack
+        // into a pool whose incumbent holding that number stays put.
       })
 
       // 6. Turn that into writes, and count what was deliberately left alone.

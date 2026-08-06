@@ -165,7 +165,24 @@ export interface EditorState {
    * two number ranges the operator never sees. Consumers key off `seq`.
    */
   lastFill: { count: number; ranges: string; seq: number } | null
+  /**
+   * Which tools the reducer honours (mig 00095).
+   *
+   * `'all'` is the draft case and is unchanged. `'areas'` is a PUBLISHED layout,
+   * where only select / area / erase-an-area are live and Save routes to
+   * `paint_areas` instead of `save_geometry`.
+   *
+   * The guard lives HERE and not in the toolbar because a keyboard shortcut, a
+   * stale render or a canvas drag must be refused by the same thing that refuses
+   * a bad co-occupancy. A published layout's placements are frozen geometry: the
+   * routing graph, every edge weight and every access offset were computed from
+   * them, and an area is the one object type that carries none of that.
+   */
+  editScope: 'all' | 'areas'
 }
+
+/** The only tools that make sense on a published layout. */
+const AREA_SCOPE_TOOLS: readonly EditorTool[] = ['select', 'area', 'erase']
 
 export interface BlockedPaint {
   x: number
@@ -210,9 +227,15 @@ export type EditorAction =
   // Rack levels (mig 00072).
   | { type: 'set_rack_levels'; ref: string; levels: RackLevel[] }
   | { type: 'apply_levels_to_selection'; levels: RackLevel[] }
+  // Live area painting (mig 00095).
+  | { type: 'set_edit_scope'; scope: EditorState['editScope'] }
+  // Adopt the PUBLISHED layout's areas into this draft, discarding whatever this
+  // draft was carrying. The one-click fix for a draft cloned before somebody
+  // relabelled the live site.
+  | { type: 'replace_areas'; objects: Array<Pick<EditorObject, 'floor' | 'x' | 'y'> & Partial<Pick<EditorObject, 'meta'>>> }
 
 export function initialEditorState(codePrefix = 'W'): EditorState {
-  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, selectedRefs: new Set(), dirty: false, seq: 1, codePrefix, activeForm: null, activeArea: null, blockedAt: null, pendingRenames: [], lastFill: null, seqFloor: {} }
+  return { tool: 'select', floor: 0, placements: [], objects: [], selectedRef: null, selectedRefs: new Set(), dirty: false, seq: 1, codePrefix, activeForm: null, activeArea: null, blockedAt: null, pendingRenames: [], lastFill: null, seqFloor: {}, editScope: 'all' }
 }
 
 /** `EditorState.seqFloor` as the naming module wants it. */
@@ -451,10 +474,68 @@ function withoutRef(refs: Set<string>, ref: string): Set<string> {
   return next
 }
 
+/**
+ * May this action run while the editor is scoped to areas only?
+ *
+ * Anything that touches a PLACEMENT is out: on a published layout those rows
+ * carry the frozen routing graph. Anything that touches a non-area OBJECT is out
+ * too — a wall is subtracted from the walk graph, so moving one silently
+ * invalidates travel distances that publishing froze. An `area` carries none of
+ * that, which is the whole reason this scope can exist at all.
+ */
+function allowedInAreaScope(state: EditorState, action: EditorAction): boolean {
+  switch (action.type) {
+    case 'set_tool':
+      return AREA_SCOPE_TOOLS.includes(action.tool)
+    case 'update_object':
+      return state.objects.find((o) => o.clientRef === action.ref)?.objectType === 'area'
+    case 'delete_selected':
+      return state.objects.find((o) => o.clientRef === state.selectedRef)?.objectType === 'area'
+    case 'set_storage_form':
+    case 'update_placement':
+    case 'set_rack_levels':
+    case 'apply_levels_to_selection':
+    case 'generate_bins':
+    case 'apply_auto_connect':
+    case 'apply_overlap_repair':
+      return false
+    default:
+      return true
+  }
+}
+
 export function layoutEditorReducer(state: EditorState, action: EditorAction): EditorState {
+  if (state.editScope === 'areas' && !allowedInAreaScope(state, action)) return state
+  return editorReducerCore(state, action)
+}
+
+function editorReducerCore(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
     case 'set_tool':
       return { ...state, tool: action.tool }
+
+    case 'set_edit_scope':
+      return {
+        ...state,
+        editScope: action.scope,
+        // A tool the new scope does not honour would leave the operator holding
+        // a brush that silently does nothing.
+        tool: action.scope === 'areas' && !AREA_SCOPE_TOOLS.includes(state.tool) ? 'select' : state.tool,
+      }
+
+    case 'replace_areas': {
+      const objects = state.objects.filter((o) => o.objectType !== 'area')
+      let seq = state.seq
+      for (const cell of action.objects) {
+        objects.push({
+          clientRef: `o${seq++}`, objectType: 'area', floor: cell.floor, x: cell.x, y: cell.y,
+          w: 1, h: 1, meta: cell.meta,
+        })
+      }
+      // A pending rename was recorded against the area set being discarded, so
+      // replaying it over the adopted one would rename something else.
+      return { ...state, objects, seq, pendingRenames: [], ...singleSelect(null), dirty: true }
+    }
 
     case 'set_storage_form':
       // Selecting a form activates the storage-paint tool bound to that form.
@@ -511,9 +592,24 @@ export function layoutEditorReducer(state: EditorState, action: EditorAction): E
       const { x, y } = action
 
       if (state.tool === 'erase') {
-        const obj = objectAt(state, x, y)
-        const place = placementAt(state, x, y)
-        if (!obj && !place) return state
+        // In area scope the eraser is an AREA eraser and nothing else. Note it
+        // must look for an area SPECIFICALLY rather than take objectAt's topmost
+        // hit: areas co-occupy with everything (they name the ground the racks
+        // stand on), so over a wall the topmost object is the wall.
+        const areasOnly = state.editScope === 'areas'
+        const obj = areasOnly
+          ? state.objects.find((o) => o.floor === state.floor && o.objectType === 'area' && covers(o, x, y))
+          : objectAt(state, x, y)
+        const place = areasOnly ? undefined : placementAt(state, x, y)
+        if (!obj && !place) {
+          if (!areasOnly) return state
+          // Say why, through the same channel a blocked paint uses — silently
+          // doing nothing reads to the operator as "the tool is broken".
+          const other: OccupantKind | undefined = placementAt(state, x, y)
+            ? 'storage'
+            : objectAt(state, x, y)?.objectType
+          return other ? refuse(state, x, y, other) : state
+        }
         // An object erases PER CELL: a multi-cell rect is rebuilt as 1×1
         // fragments minus this cell, so clicking the middle of an imported wall
         // opens a doorway instead of deleting the whole run. A PLACEMENT erases

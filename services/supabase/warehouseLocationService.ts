@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { toInventoryLocation } from '@/lib/adapters'
 import { describeValidationIssues, extractFunctionErrorDetails, extractFunctionErrorMessage } from '@/lib/functionError'
+import { packAreaRuns, type AreaPaintSpec } from '@/lib/areaPaint'
 import type { InventoryLocation, LevelRole, LocationKind } from '@/types'
 
 /**
@@ -212,6 +213,101 @@ export async function renameRack(
   )
   if (error) await rethrowWithServerMessage(error, 'Could not rename the location')
   return Number((data as any)?.renamed ?? 0)
+}
+
+// ── Live area painting (mig 00095) ───────────────────────────────────────────
+
+export interface AreaPaintPreview {
+  created: string[]
+  erased: string[]
+  resized: Array<{ name: string; before: number; after: number; added: number; removed: number }>
+  reprofiled: Array<{ name: string; before: number | null; after: number | null }>
+  cellsAfter: number
+  unchanged: boolean
+  /** Locations that will actually change name. 0 unless the cascade is armed. */
+  willRename: number
+  racks: number
+  levels: number
+  /** Hand-named locations the cascade would have taken. Reported, never silent. */
+  skippedCustom: number
+  /** Locations whose carried pool already disagreed with where they sat. This
+   *  paint did not make them inconsistent, so it does not repair them either. */
+  skippedForeign: number
+  examples: Array<{ code: string; from: string; to: string }>
+}
+
+export interface AreaPaintResult {
+  fingerprint: string
+  cells: number
+  areas: number
+  renamed: number
+  racks: number
+  levels: number
+  skippedCustom: number
+  skippedForeign: number
+}
+
+export interface PaintAreasArgs {
+  warehouseId: number
+  /** The layout the operator was looking at. Refused if a publish has landed. */
+  layoutId: number
+  /** areaCellsFingerprint over the rows this working set was built from. */
+  baseFingerprint: string
+  /** The COMPLETE set. An area left out is erased; `[]` erases every area. */
+  areas: AreaPaintSpec[]
+  cascadeNames?: boolean
+  includeCustom?: boolean
+}
+
+/** One body builder for both the preview and the write, so they cannot drift. */
+function paintAreasBody(args: PaintAreasArgs, dryRun: boolean) {
+  return {
+    action: 'paint_areas',
+    warehouse_id: args.warehouseId,
+    layout_id: args.layoutId,
+    base_fingerprint: args.baseFingerprint,
+    // An area with no cells has been erased, and the wire schema requires at
+    // least one run per area — dropping it here IS how an erase is expressed.
+    areas: args.areas
+      .filter((a) => a.cells.length > 0)
+      .map((a) => ({
+        name: a.name,
+        // `?? null`, never omitted: the server declares this .nullish() and null
+        // is the honest wire value for "no profile".
+        zone_profile_id: a.zoneProfileId ?? null,
+        runs: packAreaRuns(a.cells),
+      })),
+    cascade_names: args.cascadeNames === true,
+    include_custom: args.includeCustom === true,
+    ...(dryRun ? { dry_run: true } : {}),
+  }
+}
+
+/**
+ * What this paint would do — computed by the SERVER, running the same pure
+ * module the summary panel does.
+ *
+ * A `dry_run` flag on the real action rather than a separate preview endpoint,
+ * so the count in the button is the count that moves. Writes nothing, audits
+ * nothing, and still charges the rate bucket because it does the whole read.
+ */
+export async function previewPaintAreas(args: PaintAreasArgs): Promise<AreaPaintPreview> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; preview: AreaPaintPreview }>(
+    'mutate-warehouse-location',
+    { body: paintAreasBody(args, true) },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not check the areas')
+  return (data as any).preview as AreaPaintPreview
+}
+
+/** Replace every named area on a LIVE warehouse, optionally cascading names. */
+export async function paintAreas(args: PaintAreasArgs): Promise<AreaPaintResult> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true } & AreaPaintResult>(
+    'mutate-warehouse-location',
+    { body: paintAreasBody(args, false) },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not save the areas')
+  return data as AreaPaintResult
 }
 
 export async function deactivateWarehouseLocation(id: number): Promise<void> {

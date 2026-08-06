@@ -16,7 +16,7 @@
 // gives it text wrapping and shadows that an SVG <text> cannot. The canvas also
 // emits a plain <title> per bin as the no-pointer/assistive fallback.
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { WarehouseLayout, LayoutPlacement, LayoutObject, InventoryLocation } from '@/types'
 import { WarehouseCanvas, type BinInfo, type BinHover } from './WarehouseCanvas'
 import { MapControls } from './MapControls'
@@ -52,6 +52,21 @@ export interface MapStageProps {
    *  straight through; the canvas routes it via `guardClick` so a pan that ends
    *  over the label does not open a dialog. */
   onRenameArea?: (areaName: string) => void
+  /**
+   * Area paint mode (mig 00095).
+   *
+   * The cell is derived HERE rather than in the canvas because this component
+   * owns `viewport`, and WarehouseCanvas's scene memo deliberately excludes
+   * `viewport.tx/ty` so a pan is a single `<g transform>` update — threading the
+   * viewport through `renderOverlay` would drag the whole 189-bay scene into
+   * every drag frame.
+   */
+  paint?: {
+    active: boolean
+    /** One undo snapshot per stroke, so a 60-cell drag is one Ctrl+Z. */
+    onStrokeStart: () => void
+    onPaintCell: (floor: number, x: number, y: number) => void
+  }
 }
 
 export function MapStage({
@@ -73,6 +88,7 @@ export function MapStage({
   renderOverlay,
   locationsById,
   onRenameArea,
+  paint,
 }: MapStageProps) {
   const { viewport, containerRef, handlers, fit, zoomIn, zoomOut, isPanning, didDrag, gesturesEnabled } = useMapViewport({
     placements,
@@ -101,6 +117,36 @@ export function MapStage({
     setHover(next)
   }, [])
 
+  // ── Area paint mode (mig 00095) ───────────────────────────────────────────
+  const paintingRef = useRef<number | null>(null)
+  const painting = paint?.active === true
+
+  /** Screen point → grid cell. Mirrors LayoutCanvas.cellFromEvent, but subtracts
+   *  the viewport offset where that one subtracts RULER_PX — get this wrong and
+   *  every stroke lands one cell off. */
+  const cellFromEvent = useCallback((e: ReactPointerEvent<HTMLElement>) => {
+    const el = containerRef.current
+    if (!el) return null
+    const rect = el.getBoundingClientRect()
+    const px = BASE_CELL * viewport.scale
+    const x = Math.floor((e.clientX - rect.left - viewport.tx) / px)
+    const y = Math.floor((e.clientY - rect.top - viewport.ty) / px)
+    if (x < 0 || y < 0 || x >= layout.gridWidth || y >= layout.gridHeight) return null
+    return { x, y }
+  }, [containerRef, viewport.scale, viewport.tx, viewport.ty, layout.gridWidth, layout.gridHeight])
+
+  const paintAt = useCallback((e: ReactPointerEvent<HTMLElement>) => {
+    const cell = cellFromEvent(e)
+    if (cell) paint?.onPaintCell(floor, cell.x, cell.y)
+  }, [cellFromEvent, paint, floor])
+
+  const endPaint = useCallback((e: ReactPointerEvent<HTMLElement>): boolean => {
+    if (paintingRef.current !== e.pointerId) return false
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+    paintingRef.current = null
+    return true
+  }, [])
+
   // First-hover hint pill: appears once on the first pointer-enter of the
   // stage, then auto-dismisses after HINT_AUTO_DISMISS_MS or on the first
   // pan/zoom gesture, and never returns for this mount (idle -> shown ->
@@ -121,8 +167,9 @@ export function MapStage({
     setHintPhase((p) => (p === 'shown' ? 'dismissed' : p))
   }, [])
 
-  // Dragging the map past a bin shouldn't flash a card at every bin it crosses.
-  const hoverInfo = !isPanning && hover ? binInfo?.get(hover.locationId) : undefined
+  // Dragging the map past a bin shouldn't flash a card at every bin it crosses,
+  // and neither should painting over one.
+  const hoverInfo = !isPanning && !painting && hover ? binInfo?.get(hover.locationId) : undefined
 
   return (
     <div
@@ -131,17 +178,44 @@ export function MapStage({
       tabIndex={0}
       aria-label="Warehouse floor plan — arrow keys pan, plus and minus zoom, 0 to fit"
       className={`relative isolate h-full w-full overflow-hidden rounded-lg border border-stone-200 bg-stone-50 outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue/40 ${
-        gesturesEnabled ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''
+        painting ? 'cursor-crosshair' : gesturesEnabled ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''
       }`}
       style={{ touchAction: gesturesEnabled ? 'none' : undefined }}
       onPointerEnter={gesturesEnabled ? showHint : undefined}
       onPointerDown={(e) => {
         dismissHint()
+        // Alt falls through to the pan path, which is how the operator still
+        // reaches the rest of the floor while painting — useMapViewport only
+        // pans on button 0, so there is no middle-drag to fall back on.
+        if (painting && !e.altKey && (e.pointerType !== 'mouse' || e.button === 0)) {
+          // Eager capture is correct HERE AND ONLY HERE. The lazy capture in
+          // useMapViewport exists to preserve the trailing `click` on a child
+          // bin; in paint mode there is no child click to preserve, and routing
+          // the click to the container is exactly what stops a stroke from also
+          // selecting a bin. Do not port this into useMapViewport.
+          e.currentTarget.setPointerCapture(e.pointerId)
+          paintingRef.current = e.pointerId
+          paint?.onStrokeStart()
+          paintAt(e)
+          return
+        }
         handlers.onPointerDown(e)
       }}
-      onPointerMove={handlers.onPointerMove}
-      onPointerUp={handlers.onPointerUp}
-      onPointerCancel={handlers.onPointerCancel}
+      onPointerMove={(e) => {
+        if (paintingRef.current === e.pointerId) {
+          paintAt(e)
+          return
+        }
+        handlers.onPointerMove(e)
+      }}
+      onPointerUp={(e) => {
+        if (endPaint(e)) return
+        handlers.onPointerUp(e)
+      }}
+      onPointerCancel={(e) => {
+        if (endPaint(e)) return
+        handlers.onPointerCancel(e)
+      }}
       onPointerLeave={() => setHover(null)}
       onWheel={(e) => {
         if (e.ctrlKey || e.metaKey) dismissHint()
