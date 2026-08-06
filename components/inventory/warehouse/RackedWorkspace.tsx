@@ -14,7 +14,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import type { InventoryLocation, LayoutPlacement, VelocityClass } from '@/types'
-import { useLayoutDetail } from '@/hooks/queries/useLayouts'
+import { useLayoutDetail, useLayouts } from '@/hooks/queries/useLayouts'
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
 import { useZoneProfiles } from '@/hooks/queries/useZoneProfiles'
@@ -27,6 +27,10 @@ import { FloatingPanel } from './FloatingPanel'
 import { WarehouseTreePanel } from './WarehouseTreePanel'
 import { BinDetailPanel } from './BinDetailPanel'
 import { RenameAreaModal } from './RenameAreaModal'
+import { AreaPaintToolbar } from './AreaPaintToolbar'
+import { AreaPaintSummaryModal } from './AreaPaintSummaryModal'
+import { useAreaPaintState } from './useAreaPaintState'
+import { areaCellsFingerprint } from '@/lib/areaPaint'
 import { OverlayControls } from './OverlayControls'
 import { AskEnginePanel } from './AskEnginePanel'
 import { slottingArrows, routePath, putawayMarkers } from './warehouseMarkers'
@@ -59,6 +63,28 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null)
   /** Area whose name is being edited (mig 00094); null = dialog closed. */
   const [renamingArea, setRenamingArea] = useState<string | null>(null)
+
+  // ── Area painting (mig 00095) ─────────────────────────────────────────────
+  const paint = useAreaPaintState()
+  const [confirmingPaint, setConfirmingPaint] = useState(false)
+  /**
+   * The fingerprint of the picture this session was built from, captured ONCE at
+   * paint-mode entry.
+   *
+   * Held in a ref rather than recomputed from `detail`, because a background
+   * refetch would otherwise move the baseline under the operator and the
+   * conflict check would compare the server's picture against itself — silently
+   * disabling the only protection against two people painting at once.
+   */
+  const baseFingerprintRef = useRef<string>('')
+  const { data: layouts = [] } = useLayouts(warehouseId)
+  const draftLayout = layouts.find((l) => l.status === 'draft')
+
+  const beginPaint = () => {
+    if (!detail) return
+    baseFingerprintRef.current = areaCellsFingerprint(detail.objects as any)
+    paint.dispatch({ type: 'begin', objects: detail.objects })
+  }
   const [floor, setFloor] = useState(0)
   const [overlay, setOverlay] = useState<OverlayKind>('none')
   // Dry-run test-bench outputs drawn on the grid.
@@ -374,6 +400,13 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     )
   }
 
+  // While painting, the canvas draws the WORKING SET in place of the stored
+  // areas — through the very same shape the stored rows have, so the preview and
+  // the saved result cannot look different. Every other object is untouched.
+  const canvasObjects = paint.state.active
+    ? [...detail.objects.filter((o) => o.objectType !== 'area'), ...paint.previewObjects]
+    : detail.objects
+
   return (
     <div className="flex flex-col gap-4">
       {/* The tree (not the map) is the keyboard/AT selection path — this
@@ -387,11 +420,48 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           : ''}
       </div>
 
+      {/* Painting is a pointer-drag on a pan/zoom surface, which has no honest
+          one-finger equivalent — MapStage disables gestures below md anyway, so
+          the entry point is desktop-only rather than ambiguous on a phone. */}
+      {canRename && !paint.state.active && (
+        <div className="hidden md:flex md:justify-end">
+          <button
+            type="button"
+            onClick={beginPaint}
+            className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
+          >
+            Paint areas
+          </button>
+        </div>
+      )}
+
+      {paint.state.active && (
+        <AreaPaintToolbar
+          brush={paint.state.brush}
+          mode={paint.state.mode}
+          areaNames={paint.names}
+          zoneProfiles={zoneProfiles}
+          dirty={paint.state.dirty}
+          canUndo={paint.state.undo.length > 0}
+          saving={confirmingPaint}
+          draftWarning={draftLayout
+            ? `A draft of this layout exists (“${draftLayout.name}”). Publishing it will replace these areas.`
+            : null}
+          onBrushName={(name) => paint.dispatch({ type: 'set_brush_name', name })}
+          onBrushProfile={(zoneProfileId) => paint.dispatch({ type: 'set_brush_profile', zoneProfileId })}
+          onMode={(mode) => paint.dispatch({ type: 'set_mode', mode })}
+          onEraseArea={(name) => paint.dispatch({ type: 'erase_area', name })}
+          onUndo={() => paint.dispatch({ type: 'undo' })}
+          onCancel={() => paint.dispatch({ type: 'cancel' })}
+          onSave={() => setConfirmingPaint(true)}
+        />
+      )}
+
       <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65vh] md:min-h-[420px]">
         <MapStage
           layout={detail.layout}
           placements={detail.placements}
-          objects={detail.objects}
+          objects={canvasObjects}
           floor={floor}
           onFloorChange={setFloor}
           selectedLocationId={selectedLocationId}
@@ -406,7 +476,16 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           zoneTypeByProfileId={zoneTypeByProfileId}
           renderOverlay={renderMarkers}
           locationsById={model.locationsById}
-          onRenameArea={canRename ? setRenamingArea : undefined}
+          // The pencil and paint mode must never be live together: both rewrite
+          // the same rows, and a rename applied against a working set that has
+          // not been saved would be computed from a picture the server has
+          // never seen.
+          onRenameArea={canRename && !paint.state.active ? setRenamingArea : undefined}
+          paint={{
+            active: paint.state.active,
+            onStrokeStart: () => paint.dispatch({ type: 'stroke_start' }),
+            onPaintCell: paint.paintCell,
+          }}
         />
       </div>
 
@@ -415,6 +494,25 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           warehouseId={warehouseId}
           areaName={renamingArea}
           onClose={() => setRenamingArea(null)}
+        />
+      )}
+
+      {confirmingPaint && (
+        <AreaPaintSummaryModal
+          warehouseId={warehouseId}
+          layoutId={layoutId}
+          baseFingerprint={baseFingerprintRef.current}
+          specs={paint.specs}
+          floorCount={detail.layout.floorCount}
+          onClose={() => setConfirmingPaint(false)}
+          onSaved={() => {
+            setConfirmingPaint(false)
+            // Leave paint mode outright rather than re-hydrating: the mutation
+            // has invalidated layout-detail, and the next `detail` to arrive is
+            // the server's answer. Staying in with a stale baseFingerprint would
+            // make the very next save 409.
+            paint.dispatch({ type: 'cancel' })
+          }}
         />
       )}
 
