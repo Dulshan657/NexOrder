@@ -26,6 +26,7 @@ import { MapStage } from './MapStage'
 import { FloatingPanel } from './FloatingPanel'
 import { WarehouseTreePanel } from './WarehouseTreePanel'
 import { BinDetailPanel } from './BinDetailPanel'
+import { buildHeldLocationIds } from '@/lib/heldLocations'
 import { RenameAreaModal } from './RenameAreaModal'
 import { BindZonesModal } from './BindZonesModal'
 import { EditSignModal } from './EditSignModal'
@@ -381,6 +382,25 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     return map
   }, [rackLevelLocations, model.binFillPct])
 
+  // Which locations are HELD (mig 00101). Recomputed from the zone tree because
+  // v_held_locations — what allocation actually reads — is service_role-only;
+  // lib/heldLocations.ts carries the same rule so the two cannot disagree.
+  const heldLocationIds = useMemo(
+    () => buildHeldLocationIds([...model.locationsById.values()], zoneProfiles),
+    [model.locationsById, zoneProfiles],
+  )
+
+  /** Where released stock may go: any stock-holding location on this site that
+   *  is NOT itself held. The server refuses a held destination anyway (releasing
+   *  into another quarantine bay would report the hold as ended while it is
+   *  not), so this only spares the operator the round trip. */
+  const releaseDestinations = useMemo(
+    () => [...model.locationsById.values()]
+      .filter((l) => !heldLocationIds.has(l.id) && l.kind !== 'ZONE' && l.kind !== 'RACK' && l.isActive)
+      .sort((a, b) => a.code.localeCompare(b.code)),
+    [model.locationsById, heldLocationIds],
+  )
+
   const zoneName = useMemo(() => {
     if (!selectedLocation) return undefined
     let cur: InventoryLocation | undefined = selectedLocation
@@ -616,6 +636,8 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
             placement={selectedPlacement}
             nodeVisits={nodeVisits}
             zoneName={zoneName}
+            isHeld={selectedLocationId != null && heldLocationIds.has(selectedLocationId)}
+            releaseDestinations={releaseDestinations}
             rackLevelLocations={rackLevelLocations}
             rackFillByLevel={rackFillByLevel}
             onSelectLevel={setSelectedLocationId}

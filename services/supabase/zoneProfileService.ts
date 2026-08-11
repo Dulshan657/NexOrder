@@ -19,6 +19,9 @@ export interface ZoneProfileInput {
   priorityWeight: number
   allowedCategories?: string[] | null
   maxUtilizationPct?: number | null
+  /** Stock here is held — not allocatable, not an ordinary putaway target
+   *  (mig 00101). */
+  isHold?: boolean
 }
 
 export async function createZoneProfile(input: ZoneProfileInput): Promise<ZoneProfile> {
@@ -31,6 +34,7 @@ export async function createZoneProfile(input: ZoneProfileInput): Promise<ZonePr
         priority_weight: input.priorityWeight,
         allowed_categories: input.allowedCategories ?? null,
         max_utilization_pct: input.maxUtilizationPct ?? null,
+        is_hold: input.isHold ?? false,
       },
     },
   })
@@ -45,6 +49,7 @@ export async function updateZoneProfile(id: number, patch: Partial<ZoneProfileIn
   if (patch.priorityWeight !== undefined) data.priority_weight = patch.priorityWeight
   if (patch.allowedCategories !== undefined) data.allowed_categories = patch.allowedCategories
   if (patch.maxUtilizationPct !== undefined) data.max_utilization_pct = patch.maxUtilizationPct
+  if (patch.isHold !== undefined) data.is_hold = patch.isHold
   const { data: res, error } = await supabase.functions.invoke<{ ok: true; zone_profile: unknown }>('mutate-zone-profile', {
     body: { action: 'update', id, data },
   })

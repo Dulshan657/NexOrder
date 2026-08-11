@@ -13,6 +13,11 @@ export interface ReceiptLine {
   /** Which plate in `plates` this line lands on (mig 00075). Omitted = the
    *  server mints a plate for the line, so every receipt line ends up on one. */
   plate_key?: string
+  /** Hold this line (mig 00101): it is routed to a quarantine bin and cannot be
+   *  allocated until it is released by moving it out. Per line, so one suspect
+   *  product can be held while the rest of the delivery goes to ordinary stock;
+   *  the header flag sets every line at once. */
+  quarantine?: boolean
 }
 
 /** A pallet or carton built at the dock. The CODE is minted server-side; `key`
@@ -34,6 +39,10 @@ export interface ReceiptHeader {
   received_date?: string
   received_by?: string
   location_id?: number
+  /** Hold the WHOLE delivery (mig 00101). The server resolves this onto every
+   *  line, so nothing downstream has to rank header against line: a line saying
+   *  false for itself stays false. */
+  quarantine?: boolean
 }
 
 /** Putaway tasks the server generated for this receipt. Racked, published

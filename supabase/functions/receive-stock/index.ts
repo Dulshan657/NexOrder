@@ -41,6 +41,10 @@ const receiptLineSchema = z.object({
   // an id: plate codes are minted server-side by hu_next_code() so they cannot
   // be guessed or spoofed by the caller.
   plate_key: z.string().min(1).max(64).optional(),
+  // Hold this line (mig 00101). Per LINE so a single suspect product can be held
+  // while the rest of the delivery goes to ordinary stock; the header flag below
+  // is what makes "hold the whole delivery" one click.
+  quarantine: z.boolean().optional(),
 })
 
 // A pallet or carton the operator built at the dock (mig 00075).
@@ -61,6 +65,10 @@ const receiptHeaderSchema = z.object({
   // Warehouse to receive into (mig 00038). Defaults to the actor's home warehouse,
   // then the system default. Warehouse-role staff may only receive at their site.
   location_id: z.number().int().positive().optional(),
+  // Hold the WHOLE delivery (mig 00101). Resolved to the per-line flag below, so
+  // nothing downstream ever has to decide which of the two wins: the header sets
+  // every line, and a line that says false for itself stays false.
+  quarantine: z.boolean().optional(),
 })
 
 const inputSchema = z.object({
@@ -327,7 +335,15 @@ serve(async (req: Request) => {
       resource: 'inventory_receipt',
       resourceId: null,
       after: { supplier_id: supplierId, reference: receipt?.reference ?? null, lines },
-      metadata: { result },
+      // Holding a delivery is a decision worth being able to answer for later —
+      // who held it, and was it the whole delivery or one line (mig 00101).
+      metadata: {
+        result,
+        quarantine: receipt?.quarantine === true
+          || lines.some((l) => l.quarantine === true)
+          ? { header: receipt?.quarantine === true, lines: lines.filter((l) => l.quarantine === true).length }
+          : undefined,
+      },
     })
 
     // Generate putaway tasks server-side. This is what makes putaway work for
@@ -359,6 +375,10 @@ serve(async (req: Request) => {
             // keeps the pre-00078 per-unit treatment for those lines.
             hu_type: lines[i].plate_key ? typeByKey.get(lines[i].plate_key!) : undefined,
             hu_id: (platedLines[i] as any)?.handling_unit_id as number | undefined,
+            // The header flag sets every line; a line may opt itself out by
+            // saying false explicitly (mig 00101). `?? ` and not `||`, so an
+            // explicit false on the line is honoured rather than swallowed.
+            quarantine: lines[i].quarantine ?? receipt?.quarantine ?? false,
           })),
           actorId: auth.userId,
           goodsReceiptId: (result as any)?.receipt_id as number | undefined,

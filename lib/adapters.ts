@@ -970,6 +970,8 @@ export function toZoneProfile(row: ZoneProfileRow): ZoneProfile {
       : undefined,
     maxUtilizationPct: row.max_utilization_pct != null ? Number(row.max_utilization_pct) : undefined,
     isActive: row.is_active,
+    // mig 00101. Defaults false — a row predating the column holds nothing.
+    isHold: (row as ZoneProfileRow & { is_hold?: boolean }).is_hold === true,
   }
 }
 
