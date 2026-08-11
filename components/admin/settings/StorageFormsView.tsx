@@ -46,13 +46,17 @@ interface FormState {
   // form inherits. Opt-in — meaningless for Bulk Floor / Staging Area.
   hasLevels: boolean
   levelTemplate: RackLevel[]
+  // Floor storage (mig 00100). Separate from hasLevels on purpose: that means
+  // "carries a standard level layout" and is false on real racking that has no
+  // template yet, so it cannot say whether levels are POSSIBLE.
+  isFloor: boolean
 }
 
 const emptyForm: FormState = {
   code: '', name: '', slotUnit: 'pallet', capacityMode: 'structured',
   levels: '', positionsPerLevel: '', flatSlots: '', weightCapacityKg: '',
   lengthCm: '', widthCm: '', heightCm: '', color: PRESET_COLORS[0], isDrawable: true, isCold: false, sortOrder: '100',
-  hasLevels: false, levelTemplate: [],
+  hasLevels: false, levelTemplate: [], isFloor: false,
 }
 
 function toForm(t: StorageType): FormState {
@@ -77,6 +81,7 @@ function toForm(t: StorageType): FormState {
     // 00072 lands them on `storage_types`) — default to "no levels" until then.
     hasLevels: t.hasLevels ?? false,
     levelTemplate: t.levelTemplate ?? [],
+    isFloor: t.isFloor ?? false,
   }
 }
 
@@ -142,6 +147,7 @@ const StorageFormsView: React.FC = () => {
       sortOrder: Number(form.sortOrder) || 100,
       hasLevels: form.hasLevels,
       levelTemplate: form.hasLevels && form.levelTemplate.length > 0 ? form.levelTemplate : null,
+      isFloor: form.isFloor,
     }
   }
 
@@ -414,10 +420,20 @@ const StorageFormsView: React.FC = () => {
                   <input type="checkbox" checked={form.isCold} onChange={(e) => setForm({ ...form, isCold: e.target.checked })} />
                   Cold storage
                 </label>
+                {/* mig 00100. Sits with the other physical facts rather than in
+                    the levels box below: it is a statement about the building,
+                    and it is what makes the levels question moot. */}
+                <label className="flex items-center gap-2 text-xs text-stone-600" title="Stock stands on the slab — there is no upright to hang a beam from, so bins of this form can never be split into levels.">
+                  <input type="checkbox" checked={form.isFloor} onChange={(e) => setForm({ ...form, isFloor: e.target.checked, hasLevels: e.target.checked ? false : form.hasLevels, levelTemplate: e.target.checked ? [] : form.levelTemplate })} />
+                  Floor storage (no racking)
+                </label>
               </div>
             </div>
 
-            {/* Rack levels (mig 00072) */}
+            {/* Rack levels (mig 00072). Hidden entirely for a floor form — the
+                question does not arise on a slab, and leaving the toggle there
+                invites the contradiction of a floor with a level template. */}
+            {!form.isFloor && (
             <div className="rounded-lg border border-stone-200 p-3 space-y-3">
               <div data-testid="has-levels-toggle">
                 <Toggle
@@ -449,6 +465,7 @@ const StorageFormsView: React.FC = () => {
                 </div>
               )}
             </div>
+            )}
           </div>
       </Modal>
 

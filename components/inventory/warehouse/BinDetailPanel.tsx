@@ -176,11 +176,26 @@ export function BinDetailPanel({
     )
   }
 
+  const form = storageTypes.data?.find((t) => t.id === location.storageTypeId)
+  const formTemplate = form?.levelTemplate
+
   // A flat bin that could become a levelled rack: it must be a real BIN (not
   // already a level) and be placed in a published layout, since every level
   // inherits the rack's geometry and graph anchor.
-  const canConvert = location.kind === 'BIN' && !hasRackLevels && placement != null
-  const formTemplate = storageTypes.data?.find((t) => t.id === location.storageTypeId)?.levelTemplate
+  //
+  // ...and its storage form must not be a FLOOR (mig 00100). A Floor Pallet or
+  // a Bulk Floor cell is a marked-out spot on the slab — there is no upright to
+  // hang a beam from, so offering to split it is offering something that cannot
+  // be built.
+  //
+  // `isFloor`, emphatically not `!hasLevels`. The latter means "carries a
+  // standard level layout", which is false on MAIN's own bay forms purely
+  // because nobody has measured a template for them (00072 left them that way
+  // deliberately) — gating on it would take this action away from all 189 of
+  // MAIN's bays. A form with no `isFloor` at all defaults to false, which is
+  // the permissive answer and the right one for anything predating the column.
+  const canConvert =
+    location.kind === 'BIN' && !hasRackLevels && placement != null && form?.isFloor !== true
   const startConvert = () =>
     setDraftLevels(
       // Seed from the form's standard layout when it has one; otherwise a

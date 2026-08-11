@@ -1026,7 +1026,7 @@ function toRackLevelTemplate(raw: unknown): RackLevel[] | undefined {
 export function toStorageType(row: StorageTypeRow): StorageType {
   // Rack levels (mig 00072). Cast: database.types.ts hasn't been regenerated
   // for this migration yet — see the LocationRow cast note above.
-  const leveled = row as StorageTypeRow & { has_levels?: boolean; level_template?: unknown }
+  const leveled = row as StorageTypeRow & { has_levels?: boolean; level_template?: unknown; is_floor?: boolean }
   return {
     id: row.id,
     code: row.code,
@@ -1045,6 +1045,9 @@ export function toStorageType(row: StorageTypeRow): StorageType {
     color: row.color ?? undefined,
     isDrawable: row.is_drawable,
     hasLevels: leveled.has_levels ?? false,
+    // mig 00100. Defaults false, which is the permissive answer: a row that
+    // predates the column keeps its Split into levels action.
+    isFloor: leveled.is_floor ?? false,
     levelTemplate: toRackLevelTemplate(leveled.level_template),
   }
 }

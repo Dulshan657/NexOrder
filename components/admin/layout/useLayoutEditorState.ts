@@ -263,7 +263,11 @@ export type EditorAction =
   | { type: 'update_placement'; ref: string; patch: Partial<Omit<EditorPlacement, 'clientRef'>> }
   | { type: 'update_object'; ref: string; patch: { meta?: Record<string, unknown> } }
   | { type: 'delete_selected' }
-  | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number; levelTemplate?: RackLevel[] }
+  // `capacitySlots: null` is the operator saying UNCOUNTED — a floor stack with
+  // no slot ceiling, which is what a form like Bulk Floor means by a NULL
+  // `default_capacity_slots`. Distinct from omitting the field, which means "the
+  // caller had no opinion" and still takes the generic 10.
+  | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number | null; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number; levelTemplate?: RackLevel[] }
   | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number; nameSeq?: number | null; nameArea?: string | null; nameIsAuto?: boolean }> }
   // `level_location_ids` is present only for a levelled rack: level_index -> the
   // SHELF location id the server created/kept for it (mig 00072).
@@ -818,7 +822,19 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
           clientRef: ref, floor: state.floor, x, y, w: 1, h: 1, rotation: 0,
           kind: 'BIN', code, name: composeName(nameArea, nameSeq),
           nameSeq, nameArea, nameIsAuto: true,
-          capacitySlots: f?.capacitySlots ?? 10, slotKind: f?.slotKind ?? 'pallet',
+          // A SELECTED form's values win outright — including the ones it
+          // deliberately leaves unset. `default_capacity_slots` NULL means
+          // "uncounted, no slot ceiling" (BULK_FLOOR, AMD_BULK), and `?? 10`
+          // silently overrode exactly that, so every cell painted with a Bulk
+          // Floor brush was stored as a 10-pallet bin. The server only consults
+          // the form when the field arrives null (mutate-layout), so the form's
+          // own default never got a chance to apply. PlacementInspector has
+          // always passed these straight through; it is the precedent.
+          //
+          // The 10 / 'pallet' pair is the NO-FORM-SELECTED fallback, and only
+          // that — see EditorState.activeForm ("null = generic bin").
+          capacitySlots: f ? f.capacitySlots : 10,
+          slotKind: f ? f.slotKind : 'pallet',
           weightCapacityKg: f?.weightCapacityKg, storageTypeId: f?.storageTypeId,
           // A form with a standard level layout hands every rack it paints that
           // layout (recoded to this new rack's own code); a form without one
@@ -909,7 +925,10 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
             clientRef: `p${seq++}`, floor: state.floor, x, y, w: 1, h: 1, rotation: 0,
             kind: 'BIN', code, name: composeName(nameArea, nameSeq),
             nameSeq, nameArea, nameIsAuto: true,
-            capacitySlots: action.capacitySlots ?? 10, slotKind: action.slotKind ?? 'pallet',
+            // See the action type: an explicit null is "uncounted" and must
+            // survive, where an omitted field still means the generic 10.
+            capacitySlots: action.capacitySlots === null ? undefined : action.capacitySlots ?? 10,
+            slotKind: action.slotKind ?? 'pallet',
             weightCapacityKg: action.weightCapacityKg,
             zoneProfileId: action.zoneProfileId, storageTypeId: action.storageTypeId,
             levels: action.levelTemplate ? applyTemplate(action.levelTemplate, code) : undefined,

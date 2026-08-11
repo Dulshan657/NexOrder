@@ -25,7 +25,10 @@ const DEFAULTS = {
   startY: 0,
   cols: 4,
   rows: 3,
-  capacity: 10,
+  // '' is UNCOUNTED — a floor stack with no slot ceiling. The field has to be
+  // able to hold it, or a form whose `default_capacity_slots` is NULL silently
+  // generates 10-slot bins instead (which is what it used to do).
+  capacity: 10 as number | '',
   slotKind: 'pallet' as 'pallet' | 'carton',
   weightCap: '' as number | '',
   zoneProfileId: '' as number | '',
@@ -37,7 +40,7 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
   const [startY, setStartY] = useState(DEFAULTS.startY)
   const [cols, setCols] = useState(DEFAULTS.cols)
   const [rows, setRows] = useState(DEFAULTS.rows)
-  const [capacity, setCapacity] = useState(DEFAULTS.capacity)
+  const [capacity, setCapacity] = useState<number | ''>(DEFAULTS.capacity)
   const [slotKind, setSlotKind] = useState<'pallet' | 'carton'>(DEFAULTS.slotKind)
   const [weightCap, setWeightCap] = useState<number | ''>(DEFAULTS.weightCap)
   const [zoneProfileId, setZoneProfileId] = useState<number | ''>(DEFAULTS.zoneProfileId)
@@ -73,7 +76,10 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
     setStorageTypeId(id)
     const st = storageTypes.find((s) => s.id === id)
     if (st) {
-      if (st.defaultCapacitySlots != null) setCapacity(st.defaultCapacitySlots)
+      // A form that states NO capacity means uncounted, and that has to reach the
+      // field: leaving the previous number in place is how every cell drawn with
+      // a Bulk Floor form came to claim ten pallet slots.
+      setCapacity(st.defaultCapacitySlots ?? '')
       if (st.slotUnit === 'pallet' || st.slotUnit === 'carton') setSlotKind(st.slotUnit)
       setWeightCap(st.weightCapacityKg ?? '')
       setLevelTemplate(st.hasLevels ? st.levelTemplate : undefined)
@@ -86,7 +92,9 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
     dispatch({
       type: 'generate_bins',
       startX, startY, cols, rows,
-      capacitySlots: capacity,
+      // null, not undefined: the reducer reads an omitted field as "no opinion"
+      // and applies the generic 10.
+      capacitySlots: capacity === '' ? null : capacity,
       slotKind,
       weightCapacityKg: weightCap === '' ? undefined : weightCap,
       zoneProfileId: zoneProfileId === '' ? undefined : zoneProfileId,
@@ -146,7 +154,19 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
           {numField('Start Y', startY, setStartY, gridHeight - 1)}
           {numField('Columns', cols, setCols, gridWidth)}
           {numField('Rows', rows, setRows, gridHeight)}
-          {numField('Capacity (slots)', capacity, setCapacity, 100000)}
+          {/* Not numField: this one field can legitimately be BLANK, meaning the
+              bins have no slot ceiling at all. numField coerces to a number and
+              would turn that into 0, which is a full bin, not an uncounted one. */}
+          <label className="block text-xs text-stone-500">
+            Capacity (slots)
+            <input
+              type="number" min={1} max={100000}
+              placeholder="Uncounted"
+              className="mt-1 w-full text-xs border border-stone-200 rounded px-2 py-1"
+              value={capacity}
+              onChange={(e) => setCapacity(e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0))}
+            />
+          </label>
           <label className="block text-xs text-stone-500">
             Slot kind
             <select
