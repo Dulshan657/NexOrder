@@ -111,7 +111,9 @@ export function setLevelRole(levels: RackLevel[], levelIndex: number, role: Leve
   )
 }
 
-/** Sets one level's capacity/weight (only the keys present in `patch` change). */
+/** Sets one level's capacity/slot kind/weight (only the keys present in `patch`
+ *  change; a key present as `undefined` CLEARS it, which is how the editor
+ *  spells "inherit the storage form's default"). */
 export function setLevelCapacity(
   levels: RackLevel[],
   levelIndex: number,

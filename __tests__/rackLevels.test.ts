@@ -70,6 +70,19 @@ describe('rackLevels', () => {
       const levels = applyTemplate(withIds, 'A-01')
       expect(levels.every((l) => l.locationId === undefined)).toBe(true)
     })
+
+    // Amadiya's bay (mig 00098): carton pick-zone levels below, pallet positions
+    // above. This is the draw-time half of the chain — the form's template is
+    // read by toRackLevelTemplate, applied here, and sent by savePayload. Drop
+    // slotKind at any of the three and every level silently inherits the form's
+    // single slot_unit, which is what picks the fill formula.
+    it('carries each level\'s own slotKind, so a mixed-unit bay survives being drawn', () => {
+      const mixed: RackLevel[] = [
+        { levelIndex: 1, role: 'pick', capacitySlots: 36, slotKind: 'carton' },
+        { levelIndex: 2, role: 'reserve', capacitySlots: 2, slotKind: 'pallet' },
+      ]
+      expect(applyTemplate(mixed, 'A-01').map((l) => l.slotKind)).toEqual(['carton', 'pallet'])
+    })
   })
 
   describe('matchesTemplate', () => {

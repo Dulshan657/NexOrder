@@ -67,9 +67,18 @@ interface LevelRowProps {
   onSelect: () => void
   onSetRole: (role: LevelRole) => void
   onSetCapacity: (capacitySlots?: number) => void
+  onSetSlotKind: (slotKind?: SlotKind) => void
   onSetWeight: (weightCapacityKg?: number) => void
   onRemove: () => void
 }
+
+/** The unit a level's capacity is counted in. Per LEVEL, not per rack: a bay can
+ *  be carton pick-zone levels below and pallet positions above, and `slot_kind`
+ *  is what picks the fill formula (_shared/wie/capacity.ts) — loose stock costs
+ *  `qty × size_factor` slots, a pallet costs exactly one position. Leaving it
+ *  unset inherits the storage form's own `slot_unit`, which is what every level
+ *  did before this control existed. */
+type SlotKind = NonNullable<RackLevel['slotKind']>
 
 // A plain function, not a JSX-invoked component: `RackLevelEditor` calls it
 // directly inside `.map()` and puts `key` on the intrinsic `<div>` it returns.
@@ -81,9 +90,10 @@ interface LevelRowProps {
 // instead of calling `useId()` per row, which a variable-length `.map()`
 // cannot do without breaking the rules of hooks.
 function levelRow(props: LevelRowProps) {
-  const { idPrefix, mode, level, roles, tint, code, fill, selected, readOnly, onSelect, onSetRole, onSetCapacity, onSetWeight, onRemove } = props
+  const { idPrefix, mode, level, roles, tint, code, fill, selected, readOnly, onSelect, onSetRole, onSetCapacity, onSetSlotKind, onSetWeight, onRemove } = props
   const roleId = `${idPrefix}-role-${level.levelIndex}`
   const capId = `${idPrefix}-cap-${level.levelIndex}`
+  const kindId = `${idPrefix}-kind-${level.levelIndex}`
   const weightId = `${idPrefix}-weight-${level.levelIndex}`
   const displayCode = code ?? level.code ?? `L${level.levelIndex}`
   // A level may still carry a role an operator has since deactivated. Keep that
@@ -126,7 +136,10 @@ function levelRow(props: LevelRowProps) {
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-2" onClick={(e) => e.stopPropagation()}>
+      {/* Two columns, not four: the two dropdowns pair on top and the two
+          numbers below, which stays readable in the designer's narrow
+          inspector where four ~60px columns would not. */}
+      <div className="grid grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
         <Field label="Role" htmlFor={roleId}>
           <Select
             id={roleId}
@@ -141,6 +154,20 @@ function levelRow(props: LevelRowProps) {
                 {r.displayName}{r.isActive ? '' : ' (retired)'}
               </option>
             ))}
+          </Select>
+        </Field>
+        <Field label="Counted in" htmlFor={kindId}>
+          <Select
+            id={kindId}
+            dense
+            value={level.slotKind ?? ''}
+            disabled={readOnly}
+            onChange={(e) => onSetSlotKind(e.target.value === '' ? undefined : (e.target.value as SlotKind))}
+            data-testid={`level-slot-kind-select-${mode}-${level.levelIndex}`}
+          >
+            <option value="">Form default</option>
+            <option value="carton">Cartons</option>
+            <option value="pallet">Pallet positions</option>
           </Select>
         </Field>
         <Field label="Capacity" htmlFor={capId}>
@@ -244,6 +271,7 @@ export function RackLevelEditor(props: RackLevelEditorProps) {
           onSelect: () => onSelectLevel?.(level.levelIndex),
           onSetRole: (role) => emit(setLevelRole(levels, level.levelIndex, role)),
           onSetCapacity: (capacitySlots) => emit(setLevelCapacity(levels, level.levelIndex, { capacitySlots })),
+          onSetSlotKind: (slotKind) => emit(setLevelCapacity(levels, level.levelIndex, { slotKind })),
           onSetWeight: (weightCapacityKg) => emit(setLevelCapacity(levels, level.levelIndex, { weightCapacityKg })),
           onRemove: () => emit(removeLevel(levels, level.levelIndex)),
         }))}

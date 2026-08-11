@@ -1,8 +1,8 @@
 // Pure helpers for a storage form's level template (mig 00072).
 //
 // `storage_types.level_template` is a POSITIONAL jsonb array —
-// `[{role, capacity_slots, weight_capacity_kg}, …]` where index + 1 is the
-// level_index and L1 is the bottom level. This module resolves what that
+// `[{role, capacity_slots, slot_kind, weight_capacity_kg}, …]` where index + 1
+// is the level_index and L1 is the bottom level. This module resolves what that
 // standard implies for the levels of racks already drawn with the form, which
 // is what `mutate-storage-type`'s retro-apply ("Apply to all units") needs.
 //
@@ -20,14 +20,22 @@ import type { LevelRole } from './wie/types.ts'
 export interface LevelTemplateEntry {
   role: LevelRole
   capacity_slots?: number | null
+  /** This level's own slot unit. A rack can carry two — carton pick-zone levels
+   *  below, pallet positions above — so it cannot live on the form alone. */
+  slot_kind?: SlotKind | null
   weight_capacity_kg?: number | null
 }
 
-/** The capacity/weight a single existing level should be set to. */
+/** The two slot units `locations.slot_kind` accepts; anything else is NULL. */
+export type SlotKind = 'pallet' | 'carton'
+
+/** The capacity/weight/kind a single existing level should be set to. */
 export interface LevelRetroPatch {
   levelIndex: number
   /** null means uncapped — never the whole-rack figure. */
   capacitySlots: number | null
+  /** null means "inherit the form's slot_unit", matching the column default. */
+  slotKind: SlotKind | null
   weightCapacityKg: number | null
 }
 
@@ -37,6 +45,13 @@ function toNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
   const n = Number(value)
   return Number.isFinite(n) ? n : null
+}
+
+/** `locations.slot_kind` has a CHECK on these two values, so anything else in
+ *  the jsonb — including a stale 'each' from a form's slot_unit — must land as
+ *  NULL rather than being written through and rejected by the constraint. */
+function toSlotKindOrNull(value: unknown): SlotKind | null {
+  return value === 'pallet' || value === 'carton' ? value : null
 }
 
 /**
@@ -51,6 +66,12 @@ function toNumberOrNull(value: unknown): number | null {
  * null resolves to `null` (uncapped). It deliberately does NOT fall back to
  * the form's whole-unit figure: that fallback is exactly the bug this replaces,
  * where "Apply to all units" gave every level the whole rack's capacity.
+ *
+ * `slot_kind` follows the same rule for the same reason, and it MUST be part of
+ * the retro-apply: correcting a mis-typed level on the form (a pallet position
+ * saved as `carton`) would otherwise reach only racks drawn afterwards, leaving
+ * every existing one counting loose units against a two-slot limit while the
+ * form claims to have been applied to all of them.
  */
 export function levelRetroPatches(
   template: unknown,
@@ -67,6 +88,7 @@ export function levelRetroPatches(
     return {
       levelIndex,
       capacitySlots: toNumberOrNull(entry.capacity_slots),
+      slotKind: toSlotKindOrNull(entry.slot_kind),
       weightCapacityKg: toNumberOrNull(entry.weight_capacity_kg),
     }
   })
