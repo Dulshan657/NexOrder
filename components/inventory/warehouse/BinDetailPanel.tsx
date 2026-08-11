@@ -17,6 +17,7 @@ import { defaultRoleKey } from '@/lib/levelRoles'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
 import { convertRackToLevels } from '@/services/supabase/warehouseLocationService'
 import { ConfirmDialog } from '@/components/ui'
+import { ReleaseQuarantineModal } from './ReleaseQuarantineModal'
 import type { InventoryLocation, LayoutPlacement, RackLevel } from '@/types'
 import { RackLevelEditor } from '@/components/warehouse/levels/RackLevelEditor'
 import { applyTemplate, totalCapacity } from '@/components/warehouse/levels/rackLevels'
@@ -43,6 +44,12 @@ interface BinDetailPanelProps {
    *  pencil is hidden otherwise: the function refuses anyway, and a button that
    *  always errors is worse than no button. */
   canRename?: boolean
+  /** This location sits under a hold zone (mig 00101): its stock is on hand but
+   *  cannot be allocated. Derived by the caller from the zone tree. */
+  isHeld?: boolean
+  /** Where released stock may go — every stock-holding location on this site
+   *  that is not itself held. */
+  releaseDestinations?: InventoryLocation[]
 }
 
 /**
@@ -117,7 +124,10 @@ export function BinDetailPanel({
   rackFillByLevel,
   onSelectLevel,
   canRename = false,
+  isHeld = false,
+  releaseDestinations = [],
 }: BinDetailPanelProps) {
+  const [releasing, setReleasing] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const { addToast } = useToasts()
   const setLevels = useSetRackLevels(warehouseId)
@@ -327,6 +337,40 @@ export function BinDetailPanel({
             onChange={handleLevelsChange}
           />
         </div>
+      )}
+
+      {/* Quarantine (mig 00101). Stock here is on hand and NOT sellable — the
+          hold is on the place, so moving it out is the whole release. */}
+      {isHeld && (
+        <div className="border-t border-stone-200 pt-3">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+            <p className="text-xs font-semibold text-amber-900">On hold — not available to sell</p>
+            <p className="mt-0.5 text-[11px] text-amber-800">
+              Anything in this location is counted in stock but cannot be allocated to an order.
+              Releasing it means moving it to an ordinary location.
+            </p>
+            {contents.length > 0 && (
+              <button
+                type="button"
+                data-testid="release-quarantine-button"
+                onClick={() => setReleasing(true)}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 btn-press"
+              >
+                Release from quarantine
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {isHeld && location && (
+        <ReleaseQuarantineModal
+          open={releasing}
+          onClose={() => setReleasing(false)}
+          from={location}
+          contents={contents}
+          destinations={releaseDestinations}
+        />
       )}
 
       {canConvert && (

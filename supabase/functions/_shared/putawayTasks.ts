@@ -45,6 +45,18 @@ export interface PutawayLineInput {
    *  charges the warehouse a position per line instead of per pallet (mig
    *  00078). Omitted = plan this line on its own, exactly as before. */
   hu_id?: number
+  /**
+   * Route this line into a HOLD zone instead of ordinary storage (mig 00101).
+   *
+   * Per LINE, not per receipt, and that is what makes "flag the whole delivery,
+   * with a per-line override" a UI concern rather than a precedence puzzle here:
+   * the checkbox writes the flag onto every line, and unticking one line clears
+   * it. The server never has to decide which of two answers wins.
+   *
+   * It flips `wie_putaway_candidates`' `p_hold_only`, so a quarantined line can
+   * ONLY be offered a hold bin and an ordinary line can never be offered one.
+   */
+  quarantine?: boolean
 }
 
 /**
@@ -270,6 +282,9 @@ export async function generatePutawayTasks(
 
     const { data: candRows, error: cErr } = await admin.rpc('wie_putaway_candidates', {
       p_layout_id: layoutId, p_product_id: line.product_id, p_limit: CANDIDATE_LIMIT, p_roles: effectiveRoles,
+      // A switch, not a filter to relax: a held line may ONLY be offered a hold
+      // bin, and an ordinary one may never be (mig 00101).
+      p_hold_only: line.quarantine === true,
     })
     if (cErr) throw new Error(`candidate load failed: ${cErr.message}`)
 

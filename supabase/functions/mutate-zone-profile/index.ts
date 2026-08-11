@@ -24,6 +24,9 @@ const createSchema = z.object({
   priority_weight: z.number().min(0).max(1),
   allowed_categories: z.array(z.string().min(1).max(120)).nullable().optional(),
   max_utilization_pct: z.number().min(0).max(1).nullable().optional(),
+  // mig 00101 — stock in this zone is held: on hand, not allocatable, and not a
+  // putaway target for ordinary receipts.
+  is_hold: z.boolean().optional(),
 })
 
 const updateSchema = z.object({
@@ -32,6 +35,7 @@ const updateSchema = z.object({
   priority_weight: z.number().min(0).max(1).optional(),
   allowed_categories: z.array(z.string().min(1).max(120)).nullable().optional(),
   max_utilization_pct: z.number().min(0).max(1).nullable().optional(),
+  is_hold: z.boolean().optional(),
   is_active: z.boolean().optional(),
 }).refine((d) => Object.keys(d).length > 0, { message: 'At least one field must be provided for update' })
 
@@ -68,6 +72,7 @@ serve(async (req: Request) => {
         priority_weight: input.data.priority_weight,
         allowed_categories: input.data.allowed_categories ?? null,
         max_utilization_pct: input.data.max_utilization_pct ?? null,
+        is_hold: input.data.is_hold ?? false,
       }
       if (!row.zone_type) throw new EdgeFunctionError('INVALID_INPUT', 'Zone type must contain a letter or digit')
 

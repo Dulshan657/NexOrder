@@ -202,6 +202,11 @@ interface DraftLine {
   barcode: string;
   /** The plate (mig 00075) this line lands on. Every line has one. */
   plateKey: string;
+  /** Hold this line (mig 00101). The header checkbox writes it onto every line
+   *  rather than being sent separately, so what the operator sees ticked in the
+   *  grid IS what is submitted — there is no second, invisible source of truth
+   *  for the server to rank against it. */
+  quarantine: boolean;
 }
 
 /** A pallet or carton being built at the dock. The CODE is minted server-side
@@ -219,7 +224,7 @@ const newPlate = (huType: 'pallet' | 'carton' = 'pallet'): DraftPlate => ({
   huType,
 });
 
-const newDraft = (plateKey: string): DraftLine => ({
+const newDraft = (plateKey: string, quarantine = false): DraftLine => ({
   key: `d${draftSeq++}`,
   productId: null,
   quantity: '',
@@ -228,6 +233,9 @@ const newDraft = (plateKey: string): DraftLine => ({
   expiryDate: '',
   barcode: '',
   plateKey,
+  // A line added while the delivery is flagged inherits the flag — otherwise
+  // "hold this delivery" quietly stops applying to anything typed after it.
+  quarantine,
 });
 
 /** Display label for a plate: "Pallet 1", "Carton 3" — numbered by position so
@@ -303,6 +311,9 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   const [supplierId, setSupplierId] = useState<number | null>(null);
   const [supplierName, setSupplierName] = useState('');
   const [reference, setReference] = useState('');
+  // Not submitted directly: ticking it writes `quarantine` onto every line
+  // (see DraftLine.quarantine). Purely a bulk control over the grid below.
+  const [quarantineAll, setQuarantineAll] = useState(false);
   const [receivedDate, setReceivedDate] = useState(todayIso());
   // Destination warehouse the goods land in. Defaults to the user's home site
   // (server applies the same fallback when omitted); null until warehouses load.
@@ -388,7 +399,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   const addProduct = (product: Product) => {
     const { plate, next } = ensurePlate();
     setPlates(next);
-    setPicked(prev => [...prev, { ...newDraft(plate.key), productId: product.id }]);
+    setPicked(prev => [...prev, { ...newDraft(plate.key, quarantineAll), productId: product.id }]);
     setSearch('');
   };
 
@@ -454,6 +465,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       ...(l.expiryDate ? { expiry_date: l.expiryDate } : {}),
       ...(l.barcode.trim() ? { barcode: l.barcode.trim() } : {}),
       plate_key: l.plateKey,
+      ...(l.quarantine ? { quarantine: true } : {}),
     }));
     // Only plates carrying a VALID line: a plate whose only line was left
     // incomplete would arrive empty and be rejected server-side.
@@ -466,6 +478,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       setPicked([]);
       setPlates([]);
       setReference('');
+      setQuarantineAll(false);
       setSupplierId(null);
       setSupplierName('');
 
@@ -527,6 +540,26 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               placeholder="Invoice / docket / PO no."
               className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
             />
+            {/* Quarantine (mig 00101). Bulk control only: it writes the flag onto
+                every line in the grid, so what is ticked below IS what is sent. */}
+            <label className="mt-2 flex items-start gap-2 text-xs text-stone-600 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={quarantineAll}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setQuarantineAll(next);
+                  setPicked(prev => prev.map(l => ({ ...l, quarantine: next })));
+                }}
+              />
+              <span>
+                <span className="font-semibold text-stone-700">Quarantine this delivery</span>
+                <span className="block text-stone-400">
+                  Goes to a quarantine bay. It cannot be sold until you release it by moving it out.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div>
@@ -697,6 +730,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Expiry</th>
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Barcode</th>
                   <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-44">Pallet / carton</th>
+                  <th scope="col" className="px-4 py-3 text-center text-xs font-semibold text-stone-500 uppercase tracking-wider w-20">Hold</th>
                   <th scope="col" className="px-4 py-3 w-10"></th>
                 </tr>
               </thead>
@@ -816,6 +850,16 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                           <option value="carton">{plateDestinationLabel('carton')}</option>
                         </select>
                       </td>
+                      <td className="px-4 py-3 text-center">
+                        {/* The per-line override. Unticking one line of a held
+                            delivery releases just that line to ordinary stock. */}
+                        <input
+                          type="checkbox"
+                          aria-label={`Quarantine line ${line.key}`}
+                          checked={line.quarantine}
+                          onChange={e => updateLine(line.key, { quarantine: e.target.checked })}
+                        />
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <button
                           onClick={() => removeLine(line.key)}
@@ -838,7 +882,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               onClick={() => {
                 const plate = newPlate();
                 setPlates(prev => [...prev, plate]);
-                setPicked(prev => [...prev, newDraft(plate.key)]);
+                setPicked(prev => [...prev, newDraft(plate.key, quarantineAll)]);
               }}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press"
             >

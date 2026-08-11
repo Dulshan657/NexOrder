@@ -270,6 +270,11 @@ export interface ZoneProfile {
     allowedCategories?: string[];
     maxUtilizationPct?: number;
     isActive: boolean;
+    /** Stock in a zone of this profile is HELD (mig 00101): on hand, but not
+     *  allocatable, and not a putaway target for ordinary receipts. Moving it
+     *  out is the release. Never inferred from `zoneType` — that is free text an
+     *  operator can invent. */
+    isHold: boolean;
 }
 
 /**
