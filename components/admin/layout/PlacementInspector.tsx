@@ -6,6 +6,7 @@ import { useState } from 'react'
 import type { Dispatch } from 'react'
 import type { StorageType, ZoneProfile } from '@/types'
 import type { EditorAction, EditorPlacement } from './useLayoutEditorState'
+import { unitNoun } from '@/lib/locationNaming'
 import { RackLevelEditor } from '@/components/warehouse/levels/RackLevelEditor'
 import { applyTemplate } from '@/components/warehouse/levels/rackLevels'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
@@ -42,7 +43,12 @@ export function PlacementInspector({ placement, dispatch, zoneProfiles, storageT
   // Choosing a storage type prefills capacity + slot kind from the type's
   // defaults (still editable below). 'each'/'uncounted' units clear slot kind.
   const onStorageType = (val: string) => {
-    if (val === '') { patch({ storageTypeId: undefined }); return }
+    // The noun travels with the form (mig 00100), and the reducer recomposes an
+    // auto name from it — without this a cell switched to a floor form keeps
+    // previewing `· Rack N` for a pallet standing on a slab. Sent explicitly on
+    // BOTH branches: dropping the form means the unit is a plain Rack again, and
+    // an omitted field reads as "no opinion", which would leave the old word.
+    if (val === '') { patch({ storageTypeId: undefined, nameNoun: unitNoun(null) }); return }
     const id = Number(val)
     const st = storageTypes.find((s) => s.id === id)
     patch({
@@ -50,6 +56,7 @@ export function PlacementInspector({ placement, dispatch, zoneProfiles, storageT
       capacitySlots: st?.defaultCapacitySlots,
       slotKind: st && (st.slotUnit === 'pallet' || st.slotUnit === 'carton') ? st.slotUnit : undefined,
       weightCapacityKg: st?.weightCapacityKg,
+      nameNoun: unitNoun(st),
     })
   }
   // Existing bins own their metadata in the locations table; the designer only

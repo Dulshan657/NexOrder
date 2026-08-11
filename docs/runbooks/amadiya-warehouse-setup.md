@@ -31,7 +31,12 @@ Count **levels, not bays**: a levelled rack holds no placement row of its own, i
 | Form | | |
 |---|---|---|
 | **Amadiya Rack** (`AMD_RACK`) | 5 levels, 112 slots, 5000 kg | L1–L3 `pick` / carton / 36 · L4 `reserve` / pallet / 2 · L5 `bulk` / pallet / 2 |
-| **Amadiya Bulk Floor** (`AMD_BULK`) | flat, `pallet`, **uncounted** | no levels, no weight limit |
+| **Amadiya Bulk Floor** (`AMD_BULK`) | flat, `pallet`, **1 slot** | one cell = one marked pallet spot; no levels, no weight limit |
+
+`AMD_BULK` was uncounted until mig `00103`. It is now **one pallet per cell**, which is what makes
+the floor countable at all: an uncounted bin short-circuits the capacity gate and scores a flat
+`uncapped bin`, so the engine would offer the same spot a second pallet, a third and a tenth. The
+floor's capacity is therefore *the number of cells you draw* — 21 today, plus 2 in quarantine.
 
 No level roles and no zone profiles were created — the seeded `pick` / `reserve` / `bulk` fit this
 rack exactly, and the site is ambient-only.
@@ -99,8 +104,17 @@ can put a tape on) and keep every other dimension consistent with it.
 4. **The `AMD_BULK` floor area** in the middle.
 5. **Walkways** connecting every bin to a dock.
 
-**Staging, returns and quarantine are `label` objects over walkway — never bins.** Anything placed
-becomes a putaway target the engine will fill.
+**Staging and returns are `label` objects over walkway — never bins.** Anything placed becomes a
+putaway target the engine will fill.
+
+**Quarantine is the exception, and must be bins.** Mig `00101` holds stock by PLACE: a bin standing
+under a zone whose profile has `is_hold` cannot be allocated to an order, and moving the pallet out
+IS the release. A label holds nothing, so a quarantine drawn as one would leave held stock with
+nowhere to sit. Draw the quarantine spots as `AMD_BULK` cells like any other floor spot, then paint a
+`Quarantine` area over them and give it the **Quarantine** zone profile — that painting is what binds
+them (00096), and `is_hold` does the rest. Ordinary receipts can never be routed there
+(`p_hold_only` is a switch, not a filter), so they are not the putaway target the rule above warns
+about.
 
 ## 4. Check one bay before drawing all 17
 
@@ -125,8 +139,16 @@ This was verified end to end on 2026-08-11: one `AMD_RACK` bay drawn on a scratc
 ## 5. Paint the named areas
 
 Paint the bulk floor and any wayfinding regions as named areas, set each one's zone profile
-(`Bulk Storage` for the floor, `Fast Moving` for the racked core). Painting an area is what binds
-the bins standing on it to a ZONE — the area wins over any per-bin dropdown.
+(`Bulk Storage` for the floor, `Fast Moving` for the racked core, `Quarantine` for the hold spots).
+Painting an area is what binds the bins standing on it to a ZONE — the area wins over any per-bin
+dropdown.
+
+**An area's zone profile must be the same on every one of its cells.** An area's identity is its
+NAME, so one profile wins for the whole area and the rest are silently ignored. Amadiya's
+`Fast Movers` was painted half on `Slow Moving` and half on `Fast Moving`, and the result was all 17
+racks bound to the Slow Moving zone — visible nowhere except in the scoring. Repaint the whole area
+with one profile, then run **Bind zones** with its dry run: it must report **zero** moves. That
+idempotence is the only proof the binding is right.
 
 ## 6. Publish
 
@@ -147,15 +169,17 @@ scan-enforced picking (M5 in the onboarding plan).
 
 ---
 
-## Before the count — the three figures still to set
+## Before the count — the two figures still to set
 
 Each one is currently a placeholder that is honest but not final.
 
-### `AMD_BULK` capacity — currently NULL (uncounted)
+### ~~`AMD_BULK` capacity~~ — settled at 1 by mig `00103`
 
-Measure how many pallet positions the middle floor actually holds and set
-`default_capacity_slots` in Settings → Warehouse → Storage Forms. While it is NULL the engine will
-offer that area forever and never call it full.
+One cell, one pallet. To change it, edit the form in Settings → Warehouse → Storage Forms and save
+with **"Apply to all existing units"**, which reaches the cells already drawn — and, since `00103`,
+also restamps their names if the change moves the noun (`is_floor` + `pallet` ⇒ "Pallet", anything
+else ⇒ "Rack"). To change the floor's *total* capacity, draw or erase cells: the total is the count
+of them.
 
 ### Carton slots per pick level — currently 36
 

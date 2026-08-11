@@ -18,6 +18,11 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { levelRetroPatches } from '../_shared/storageFormLevels.ts'
 import { assertValidRoles, loadActiveRoleKeys } from '../_shared/levelRoleLookup.ts'
+// A unit is called what its FORM says it is (mig 00100), so editing the form can
+// leave every unit wearing it called the wrong thing. The rule is pure and shared
+// with the designer; the I/O sits beside it, outside the wie/ purity contract.
+import { unitNoun } from '../_shared/wie/locationNaming.ts'
+import { restampFormNames } from '../_shared/locationNamingWrite.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const SLOT_UNITS = ['pallet', 'carton', 'each', 'uncounted'] as const
@@ -297,8 +302,34 @@ serve(async (req: Request) => {
         auditMeta.leveled = false
       }
 
+      // ── The names, once the figures have landed ─────────────────────────────
+      //
+      // `is_floor` and `slot_unit` are what decide a unit's NOUN (unitNoun), and
+      // both are editable right here — so a form edit can leave 23 pallet spots
+      // on a slab called `· Rack N`. `assignAutoNames` already recomposes on
+      // every naming pass, but the only passes that run are `save_geometry`
+      // (drafts) and the opt-in area cascades: on a PUBLISHED layout nothing
+      // reaches them, and that is exactly how one bin sat reading "Rack" beside
+      // 22 siblings reading "Pallet" (mig 00103).
+      //
+      // Deliberately inside `apply_to_existing`, and not run unconditionally:
+      // this is the one branch where the operator has said "reach the units
+      // already drawn with this", and it is the branch the save prompt describes.
+      // Untick it and the names stay as they are until the next save that ticks
+      // it — which is a re-runnable, idempotent repair rather than a lost one.
+      //
+      // Nothing is renumbered and no pool moves: `name_area`/`name_seq` are
+      // echoed back unchanged, and `locations.code` — the QR payload and the
+      // scan identity — is not in this write at all.
+      const restamped = await restampFormNames(
+        admin,
+        input.id,
+        unitNoun({ isFloor: u.is_floor === true, slotUnit: (u.slot_unit as string | null) ?? null }),
+      )
+      if (restamped > 0) auditMeta.names_restamped = restamped
+
       auditMeta.units_updated = appliedCount
-      if (appliedCount > 0) {
+      if (appliedCount > 0 || restamped > 0) {
         await logAuditEvent(admin, {
           actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
           resourceId: String(input.id),

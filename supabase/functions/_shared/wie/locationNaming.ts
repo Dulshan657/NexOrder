@@ -251,6 +251,73 @@ export function composeName(
   return levelIndex == null ? base : `${base}${NAME_SEP}L${levelIndex}`
 }
 
+// ── Noun drift ──────────────────────────────────────────────────────────────
+//
+// A unit's noun follows its FORM (unitNoun), and a form is operator-managed data
+// that can be edited years after the units were drawn. When it is, every unit
+// wearing it is suddenly called the wrong thing — `Bulk Storage · Rack 7` for a
+// pallet on a slab. `assignAutoNames` already fixes that, but only for units a
+// naming PASS reaches, and the only passes that run are `save_geometry` (drafts)
+// and the opt-in area cascades (units whose area moved). On a published layout
+// that is nothing at all, which is how `Quarantine · Rack 2` survived beside 22
+// siblings reading `· Pallet`.
+//
+// This is the same recomposition with none of the assignment. NO NUMBER IS
+// ISSUED and no pool is decided: `name_area` and `name_seq` are stored columns
+// (00094) precisely so the name can be rebuilt from them, and a restamp changes
+// the WORD and nothing else. That is what makes it safe on live racking whose
+// labels are already printed — the printed thing is the CODE, and the code is
+// untouched.
+
+/** An auto-named unit, with the levels hanging off it, for a noun restamp. */
+export interface RestampUnit {
+  id: number
+  /** The name stored today — a write is emitted only if it actually differs. */
+  name: string
+  nameArea: string | null
+  nameSeq: number
+  /** A levelled rack's SHELF rows. A level carries no number of its own: it is
+   *  composed from its PARENT's pool plus its own index, exactly as
+   *  mutate-layout composes one. Hand-named levels are filtered by the caller. */
+  levels?: ReadonlyArray<{ id: number; name: string; levelIndex: number }>
+}
+
+/** One row to rewrite. `nameSeq`/`nameArea` are echoed back UNCHANGED so the
+ *  write cannot quietly move a unit between pools. */
+export interface RestampWrite {
+  id: number
+  name: string
+  nameSeq: number | null
+  nameArea: string | null
+}
+
+/**
+ * Recompose every auto name for a new noun, and return only what changed.
+ *
+ * Emitting only differences is not an optimisation: a form edit that does not
+ * move the noun (a colour, a weight limit) must write no names at all, or every
+ * such save would churn `locations` and read as a rename in the audit log.
+ */
+export function restampNames(units: readonly RestampUnit[], noun: string): RestampWrite[] {
+  const out: RestampWrite[] = []
+  for (const unit of units) {
+    const area = unit.nameArea ?? ''
+    const name = composeName(area, unit.nameSeq, null, noun)
+    if (name !== unit.name) {
+      out.push({ id: unit.id, name, nameSeq: unit.nameSeq, nameArea: unit.nameArea })
+    }
+    for (const level of unit.levels ?? []) {
+      const levelName = composeName(area, unit.nameSeq, level.levelIndex, noun)
+      if (levelName !== level.name) {
+        // A level's stored `name_seq` is null and its `name_area` is the rack's
+        // — mutate-layout's own level write, restated so the two agree.
+        out.push({ id: level.id, name: levelName, nameSeq: null, nameArea: unit.nameArea })
+      }
+    }
+  }
+  return out
+}
+
 /** Trim, collapse runs of whitespace, and cap. What the server stores and what
  *  the designer previews must agree byte-for-byte, so both call this. */
 export function sanitizeAreaName(raw: string): string {
