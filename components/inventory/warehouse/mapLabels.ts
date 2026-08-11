@@ -179,3 +179,33 @@ export function fitName(name: string, widthPx: number, fontPx: number): string {
   if (maxChars < 3) return ''
   return `${name.slice(0, maxChars - 1)}…`
 }
+
+/** How far a region label may run past a NARROW region, in cells. */
+const MIN_REGION_LABEL_CELLS = 6
+
+/**
+ * How much width a region's name (an area, a zone) is allowed to occupy.
+ *
+ * Not simply the region's own width, and the exception is the whole point. An
+ * area is routinely ONE rack column wide — a floor with "Slow Moving" and
+ * "Quarantine" down one side is the normal case, not a pathological one — and
+ * clipping to that leaves "Sl…" and "Qu…", which name nothing. What such a
+ * label overruns is the aisle beside it, which is empty floor.
+ *
+ * So the rule is a FLOOR, not a cap: a name may always use a few cells' worth of
+ * room, and a wide region may use all of its own. What this stops is the
+ * unbounded case — a long name in a small area running clear across the floor
+ * and over its neighbours' racks and labels, which is what made one area's name
+ * look like it had been printed twice.
+ *
+ * `cellPx` must be a 1:1 cell (BASE_CELL), never a zoomed one: the question is
+ * whether the name is too long for the shape it names, which is a fact about the
+ * drawing. Measured on screen, every label would be eaten as you zoomed out —
+ * exactly when the wayfinding layer is the only thing left that can label
+ * anything.
+ */
+export function regionLabelBudget(widthInCells: number, cellPx: number): number {
+  const cells = Math.max(widthInCells, MIN_REGION_LABEL_CELLS)
+  // The same 3px inset the label is drawn at, taken off both ends.
+  return cells * cellPx - 6
+}

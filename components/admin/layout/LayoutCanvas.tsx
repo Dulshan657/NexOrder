@@ -11,7 +11,7 @@ import { placementAt } from './useLayoutEditorState'
 import { BASE_CELL, levelRoleFill, levelRoleLabel, levelRoleStroke, OBJECT_FILL, OBJECT_STROKE, PLACEMENT_FILL } from './layoutPalette'
 import { MERGED_OBJECT_TYPES, objectRegions, regionBounds, regionFillPath, regionOutlinePath } from './objectRegions'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
-import { labelTier, fitCode, fitName } from '@/components/inventory/warehouse/mapLabels'
+import { labelTier, fitCode, fitName, regionLabelBudget } from '@/components/inventory/warehouse/mapLabels'
 import { isUninformativeName, nameTail } from '@/lib/locationDisplay'
 import { zoneTint, ZONE_FILL_OPACITY, ZONE_STROKE_OPACITY } from '@/components/inventory/warehouse/zoneTints'
 import { defaultRoleKey } from '@/lib/levelRoles'
@@ -483,27 +483,6 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, cellSizeM
             )
           })}
 
-          {/* Area names — one per merged region, anchored to its top-left cell.
-              Deliberately NOT driven by NAMED_OBJECT_TYPES like the block above:
-              an area is painted cell-by-cell, so that path would stamp the name
-              onto every one of its cells. */}
-          {areaRegions.map((region) => {
-            const name = typeof region.meta?.name === 'string' ? region.meta.name : ''
-            const anchor = region.cells[0]
-            if (!name || !anchor) return null
-            return (
-              <text
-                key={`area-name-${region.key}`}
-                x={anchor.x * cell + 3}
-                y={Math.max(11, anchor.y * cell - 3)}
-                fontSize={12} fontWeight={700} fill={areaFill(region)}
-                fontFamily="sans-serif" pointerEvents="none"
-              >
-                {name}
-              </text>
-            )
-          })}
-
           {/* Storage bins — one rect per (floor,x,y) group, not per placement
               row, so a levelled rack never paints overlapping cells (see
               groupPlacementsByCell above). A legacy single-bin group renders
@@ -562,6 +541,43 @@ export function LayoutCanvas({ state, dispatch, gridWidth, gridHeight, cellSizeM
                   </text>
                 )}
               </g>
+            )
+          })}
+
+          {/* Area names — one per merged region, anchored INSIDE its top-left
+              cell. Deliberately NOT driven by NAMED_OBJECT_TYPES like the block
+              above: an area is painted cell-by-cell, so that path would stamp
+              the name onto every one of its cells.
+
+              Drawn here, after the bins, and not up with the area washes where
+              it used to sit. Anchoring the text inside the region is what stops
+              it printing across the neighbouring area above (see WarehouseCanvas
+              for the collision this fixes) — but inside means over this region's
+              own bins, and text drawn before them is text nobody sees. The two
+              changes only work together, which is why the block moved rather
+              than just changing its `y`. */}
+          {areaRegions.map((region) => {
+            const name = typeof region.meta?.name === 'string' ? region.meta.name : ''
+            const anchor = region.cells[0]
+            if (!name || !anchor) return null
+            // Bounded exactly as the viewer bounds it. The designer used to
+            // truncate nothing here, so the same floor read differently in the
+            // two surfaces. BASE_CELL, not `cell`: here `cell` already carries
+            // the zoom, and the budget is deliberately zoom-independent (see
+            // regionLabelBudget).
+            const fitted = fitName(name, regionLabelBudget(regionBounds(region).w, BASE_CELL), 12)
+            if (!fitted) return null
+            return (
+              <text
+                key={`area-name-${region.key}`}
+                x={anchor.x * cell + 3}
+                y={anchor.y * cell + 11}
+                fontSize={12} fontWeight={700} fill={areaFill(region)}
+                stroke="#fff" strokeWidth={3} paintOrder="stroke" strokeLinejoin="round"
+                fontFamily="sans-serif" pointerEvents="none"
+              >
+                {fitted}
+              </text>
             )
           })}
 

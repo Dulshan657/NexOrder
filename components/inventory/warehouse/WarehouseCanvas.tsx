@@ -30,7 +30,7 @@ import { MERGED_OBJECT_TYPES, objectRegions, regionBounds, regionFillPath, regio
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { groupPlacementsByCell } from '@/components/admin/layout/LayoutCanvas'
 import { DEFAULT_BIN_FILL, DEFAULT_BIN_STROKE } from './warehouseOverlays'
-import { labelTier, screenFont, fitCode, fitName, commonCodePrefix, shortCode, coarseCode } from './mapLabels'
+import { labelTier, screenFont, fitCode, fitName, regionLabelBudget, commonCodePrefix, shortCode, coarseCode } from './mapLabels'
 import { isUninformativeName, locationOneLine, nameTail } from '@/lib/locationDisplay'
 import { spineRows, spineFits, rollupFill } from './levelSpine'
 import { zoneTint, zoneTypeLabel, ZONE_FILL_OPACITY, ZONE_STROKE_OPACITY } from './zoneTints'
@@ -276,6 +276,17 @@ export function WarehouseCanvas({
     }
     const areaName = (region: (typeof areaRegions)[number]): string =>
       typeof region.meta?.name === 'string' ? region.meta.name : ''
+
+    /** Zone profiles a NAMED area on this floor already speaks for — the zone
+     *  label pass below skips them. Keyed on the profile rather than on which
+     *  cells overlap, because the profile IS the binding: `meta.zoneProfileId`
+     *  is the field mig 00096 reads to decide which ZONE a bin is re-parented
+     *  under. An unnamed area speaks for nothing and is not counted. */
+    const areaNamedProfileIds = new Set<number>()
+    for (const region of areaRegions) {
+      const zp = region.meta?.zoneProfileId
+      if (areaName(region).trim() && typeof zp === 'number') areaNamedProfileIds.add(zp)
+    }
 
     return (
       <>
@@ -574,7 +585,13 @@ export function WarehouseCanvas({
         {/* Area names — same wayfinding layer as the zone names below, and for
             the same reason: an area label matters MOST when zoomed out, where no
             individual bin can label itself. Anchored to the region's top-left
-            cell (cells are (y,x)-sorted, so [0] never lands in an L's notch). */}
+            cell (cells are (y,x)-sorted, so [0] never lands in an L's notch).
+
+            INSIDE that cell, not in the row above it. Anchoring above put the
+            label in a row this region does not own, so a "Slow Movers" area
+            drawn under a "Fast Movers" one printed its name across the Fast
+            Movers bays. Drawn after the bins, so sitting on them is fine; the
+            halo below is what keeps it readable over a dark rack. */}
         {areaRegions.map((region) => {
           const name = areaName(region)
           const anchor = region.cells[0]
@@ -583,13 +600,24 @@ export function WarehouseCanvas({
           // the racks with pointerEvents="none" precisely so it cannot steal
           // their hit tests; giving it a click handler would fight that.
           const clickable = Boolean(onRenameArea)
+          // Bounded to roughly the region's own width, so an un-clipped name
+          // cannot run sideways over its neighbours and read as a second label.
+          // See regionLabelBudget for why a NARROW region is allowed to overrun
+          // a little, and why this one measurement is not counter-scaled.
+          const fitted = fitName(
+            clickable ? `${name} ✎` : name,
+            regionLabelBudget(regionBounds(region).w, cell),
+            12,
+          )
+          if (!fitted) return null
           return (
             <text
               key={`area-name-${region.key}`}
               x={anchor.x * cell + u(3)}
-              y={Math.max(u(11), anchor.y * cell - u(3))}
+              y={anchor.y * cell + u(11)}
               fontSize={u(12)} fontWeight={700} fontFamily="sans-serif"
               fill={areaFill(region)}
+              stroke="#fff" strokeWidth={u(3)} paintOrder="stroke" strokeLinejoin="round"
               pointerEvents={clickable ? 'auto' : 'none'}
               style={clickable ? { cursor: 'pointer' } : undefined}
               onClick={clickable ? (e: { stopPropagation: () => void }) => {
@@ -599,7 +627,7 @@ export function WarehouseCanvas({
                 guard(() => onRenameArea!(name))
               } : undefined}
             >
-              {name}{clickable ? ' ✎' : ''}
+              {fitted}
               {clickable && <title>Rename “{name}” and the bins inside it</title>}
             </text>
           )
@@ -638,7 +666,12 @@ export function WarehouseCanvas({
                 guard(() => onEditSign!(name))
               } : undefined}
             >
-              {fitCode(clickable ? `${name} ✎` : name, b.w * cell, u(10))}
+              {/* fitName, not fitCode: a sign's text is operator prose set in a
+                  sans face, so it needs SANS_ADVANCE and it must keep its HEAD.
+                  fitCode preserves the tail — right for a code whose last
+                  segment identifies it, but it turned "Inbound Staging" into
+                  "…bound Staging". */}
+              {fitName(clickable ? `${name} ✎` : name, b.w * cell, u(10))}
               {clickable && <title>Edit or remove the sign “{name}”</title>}
             </text>
           )
@@ -648,21 +681,46 @@ export function WarehouseCanvas({
             Deliberately NOT gated on how legible an individual bin is: an area
             name is the wayfinding layer, and it matters MOST at the zoomed-out
             view where no bin can label itself. Being counter-scaled, it stays
-            the same size on screen however far out you go. */}
+            the same size on screen however far out you go.
+
+            SUPPRESSED where a named area already carries this zone's profile.
+            Since mig 00096 painting an area with a `zoneProfileId` is what
+            CREATES that ZONE (`resolveZone`), and the row it creates is named
+            after the profile — so the two labels are two spellings of one fact
+            about one patch of floor. Worse, they are anchored by the same
+            arithmetic from two different corners (the area's top-left CELL, the
+            zone's top-left BIN), so they print side by side on one line and read
+            as the name repeated. 00096's own rule decides which survives: the
+            AREA wins over the per-bin dropdown, because the area is what the
+            operator drew and named.
+
+            A zone reached the OTHER way — PlacementInspector's per-bin dropdown,
+            with no area over it — has nothing else naming it, and still draws. */}
         {zoneRegions?.map((region) => {
+          if (region.zoneProfileId != null && areaNamedProfileIds.has(region.zoneProfileId)) return null
           const type = region.zoneProfileId != null ? zoneTypeByProfileId?.get(region.zoneProfileId) : null
+          // Same budget as the area names above.
+          const fitted = fitName(
+            `${region.name} · ${zoneTypeLabel(type)}`,
+            regionLabelBudget(regionBounds(region).w, cell),
+            12,
+          )
+          if (!fitted) return null
           return (
             <text
               key={`zone-name-${region.zoneId}`}
               x={region.labelAt.x * cell + u(3)}
-              // Above the region, but never off the top of the grid — `fit()`
-              // measures content bounds from placements and objects, so a label
-              // at negative y would sit outside the fitted view.
-              y={Math.max(u(11), region.labelAt.y * cell - u(3))}
+              // Inside the region's own first row, for the same reason the area
+              // names above are: the row above belongs to whatever is drawn
+              // there. This also keeps the label inside the content bounds
+              // `fit()` measures, which the old negative-y clamp existed to do.
+              y={region.labelAt.y * cell + u(11)}
               fontSize={u(12)} fontWeight={700} fontFamily="sans-serif"
-              fill={zoneTint(type)} pointerEvents="none"
+              fill={zoneTint(type)}
+              stroke="#fff" strokeWidth={u(3)} paintOrder="stroke" strokeLinejoin="round"
+              pointerEvents="none"
             >
-              {region.name} · {zoneTypeLabel(type)}
+              {fitted}
             </text>
           )
         })}

@@ -207,3 +207,85 @@ describe('WarehouseCanvas — areas', () => {
     expect(titles.some((t) => t?.includes('MAIN-F01-L01') && t.includes('50% full'))).toBe(true)
   })
 })
+
+// An area and the ZONE it created (mig 00096) are two spellings of one fact, and
+// they used to be drawn by the same arithmetic from two different corners — the
+// area's top-left CELL and the zone's top-left BIN — so both appeared, side by
+// side, on one line. That is what "the name is printed twice" was.
+describe('WarehouseCanvas — area vs zone label collision', () => {
+  const texts = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('text')).map((t) => t.textContent ?? '')
+
+  /** A painted area, stored the way the editor stores one: N 1x1 cells. */
+  function area(name: string, cells: { x: number; y: number }[], zoneProfileId?: number): LayoutObject[] {
+    return cells.map((c, i) => ({
+      id: 300 + i, layoutId: 1, objectType: 'area', floor: 0, x: c.x, y: c.y, w: 1, h: 1,
+      meta: zoneProfileId != null ? { name, zoneProfileId } : { name },
+    })) as LayoutObject[]
+  }
+
+  const row = (y: number, x0: number, len: number) =>
+    Array.from({ length: len }, (_, i) => ({ x: x0 + i, y }))
+
+  it('drops the zone label when a named area already carries its profile', () => {
+    // Profile 9 is the fixture zone's own profile, so this area is what created it.
+    const { container } = renderCanvas(1, { objects: area('Chiller', row(1, 1, 8), 9) })
+    const drawn = texts(container)
+    expect(drawn).toContain('Chiller')
+    // "Cold room ·" is the zone label's own shape — the separator is what makes
+    // it distinguishable from the bare area/sign name.
+    expect(drawn.some((t) => t.includes('Cold room ·'))).toBe(false)
+  })
+
+  it('keeps the zone label when the area over it names no profile', () => {
+    // An area painted for wayfinding only did not create the zone and cannot
+    // speak for it — over-suppressing here would lose the zone entirely.
+    const { container } = renderCanvas(1, { objects: area('Chiller', row(1, 1, 8)) })
+    const drawn = texts(container)
+    expect(drawn).toContain('Chiller')
+    expect(drawn.some((t) => t.includes('Cold room ·'))).toBe(true)
+  })
+
+  it('anchors an area name inside its own region, never the row above', () => {
+    // Anchoring above put the label in a row the region does not own — which is
+    // how "Slow Movers" came to be printed across the Fast Movers bays.
+    const { container } = renderCanvas(1, { objects: area('Chiller', row(12, 2, 8)) })
+    const label = texts(container).indexOf('Chiller')
+    const y = Number(Array.from(container.querySelectorAll('text'))[label].getAttribute('y'))
+    expect(y).toBeGreaterThanOrEqual(12 * 26) // BASE_CELL
+    expect(y).toBeLessThan(13 * 26)
+  })
+
+  it('clips a name to its own region rather than running it over the neighbours', () => {
+    const long = 'Slow Moving Overflow Consolidation'
+    const wide = renderCanvas(1, { objects: area(long, row(12, 2, 14)) })
+    expect(texts(wide.container)).toContain(long)
+    cleanup()
+    const narrow = renderCanvas(1, { objects: area(long, row(12, 2, 2)) })
+    const drawn = texts(narrow.container).find((t) => t.startsWith('Slow'))
+    expect(drawn).toBeTruthy()
+    expect(drawn).not.toBe(long)
+    expect(drawn!.endsWith('…')).toBe(true)
+  })
+
+  // Amadiya has "Slow Moving" and "Quarantine" as single rack columns down one
+  // side. Clipping those to their own width leaves "Sl…" and "Qu…", which name
+  // nothing — and what they overrun is the aisle, which is empty floor.
+  it('lets a name overrun a one-column area rather than clipping it to nothing', () => {
+    const { container } = renderCanvas(1, { objects: area('Slow Moving', row(12, 2, 1)) })
+    expect(texts(container)).toContain('Slow Moving')
+  })
+
+  // The clip asks "is this name too long for the shape it names" — a fact about
+  // the drawing. Measured on screen it would eat every label as you zoomed out,
+  // which is exactly when the wayfinding layer is all that is left.
+  it('clips identically at every zoom', () => {
+    const long = 'Slow Moving Overflow Consolidation'
+    const near = texts(renderCanvas(3, { objects: area(long, row(12, 2, 2)) }).container)
+      .find((t) => t.startsWith('Slow'))
+    cleanup()
+    const far = texts(renderCanvas(0.4, { objects: area(long, row(12, 2, 2)) }).container)
+      .find((t) => t.startsWith('Slow'))
+    expect(near).toBe(far)
+  })
+})
