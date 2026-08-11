@@ -243,6 +243,38 @@ Fix reuses what exists rather than adding a parallel path: extend `RecoveryLink`
 
 There is no wizard today; a new admin lands on an empty dashboard with no idea of the required order, and the ordering genuinely matters (warehouse → storage forms → layout → publish → products → stock → putaway). Build a dismissible admin-only checklist modelled on `components/inventory/warehouse/WarehouseEmptyState.tsx`, which already deep-links via `?designer=<id>&import=1` (consumed at `components/admin/WarehousesSettingsSection.tsx:36-53`). Steps derive from live counts, so it self-completes: Company details → Warehouse → *(racked only)* Layout published → Products → Opening stock → Users.
 
+### A6.5 · Auth emails — custom SMTP is not optional
+
+**Done 2026-08-11:** the recovery and invite templates moved off
+`{{ .ConfirmationURL }}` to `{{ .SiteURL }}/?token_hash={{ .TokenHash }}&type=…`, so the link a
+client clicks reads `nexorder.com.au`, not `<ref>.supabase.co`. They live in
+`apply-auth-config.mjs`'s `buildDesired()`, applied and verified idempotent on dev, and
+end-to-end verified by a real email and a real browser round trip.
+
+**Still outstanding, discovered by that verification:** Supabase's **built-in** mailer
+appends its own footer to every auth email —
+
+```
+<a href="https://supabase.com/opt-out/lsgkznyiabqitqfpveey">Opt out of these emails</a>
+```
+
+— and sends from `noreply@mail.app.supabase.io`. So on the built-in mailer the project ref is
+*still* in the email and the sender is still not the client's, no matter what the template says.
+Fixing the template got the link; only **custom SMTP** gets the rest.
+
+**This is a different switch from A7's `RESEND_API_KEY`.** That secret is read by the app's own
+`send-email` Edge Function (order confirmations). Supabase Auth does not use it — auth mail is
+sent by Supabase, and pointing it at Resend means filling in **Auth → SMTP Settings** on the
+project (host `smtp.resend.com`, port 465, user `resend`, password = the same Resend API key,
+sender on the verified domain). Both are needed and neither implies the other.
+
+Two further reasons this is not cosmetic: the built-in mailer is **rate-limited** to a handful
+of messages per hour, which is not enough to onboard a team; and a client who sees a
+`supabase.io` sender on their password reset has reasonable grounds to ask what it is.
+
+Add to Gate C: the recovery email's **sender** is on `nexorder.com.au` and the body contains no
+`supabase.co` / `supabase.com` string at all.
+
 ### A7 · Email + monitoring
 
 Set `RESEND_API_KEY` (procedure in `docs/runbooks/enable-email.md` — note its five hardcoded refs need updating as you follow it). `EMAIL_FROM` on `nexorder.com.au` once DNS verifies — **leaving it unset falls back to `onboarding@resend.dev`, which Resend delivers only to the account owner, while the response still says `sent: true`**. Set `ALERT_EMAIL`, and point an external monitor (UptimeRobot free) at `GET /functions/v1/health` with SMS escalation — the in-DB health check cannot report a total DB outage.
