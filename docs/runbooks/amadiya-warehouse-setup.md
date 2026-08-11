@@ -40,36 +40,62 @@ rack exactly, and the site is ambient-only.
 
 ## 1. Create the warehouse
 
-Admin → Warehouse tab → **Add Warehouse**. Code `AMADIYA`. It starts as `bulk`; publishing a layout
-flips it to `racked`. Do not hand-build a location tree — publishing creates the bins.
+**Already done** — `AMADIYA` exists on dev as a `bulk` site with no layout. Publishing a layout
+flips it to `racked`. Do not hand-build a location tree; publishing creates the bins.
 
-## 2. Set the grid **before** drawing anything
+## 2. Set the grid **before** drawing anything — and read this first
 
-Designer → new layout → **Properties**. Enter the building's real outside length × width and set the
-resolution to **0.90 m/cell**.
+Designer → new layout → **Properties** takes the building's real outside length × width plus a
+resolution, and derives the grid. It is a **one-shot decision**: changing the resolution afterwards
+is refused unless the new one divides evenly into everything already drawn, and on a published
+layout the change stays inert until you publish again.
 
-- A bay is then exactly **3 × 1 cells**. Bay width — the dimension that repeats 17 times — is exact.
-- Rack depth reads 0.90 m against a real 1.0 m (−10%). Unavoidable: `cell_size_m` is `NUMERIC(6,2)`,
-  so both 2.7 and 1.0 land on whole cells only at 0.10 m/cell, which the 200-cell cap limits to a
-  20 m building.
-- Expect roughly a **34 × 16 cell** grid (the top wall is ≥ 27 m for 10 bays, the right wall ≥ 10.8 m
-  for 4). 0.90 m/cell spans up to 180 m per axis, so there is plenty of headroom.
-- Aisles must be multiples of 0.9 m — 3 cells = 2.7 m, 4 cells = 3.6 m.
+**The constraint that decides it: a hand-drawn bin is always ONE CELL.** Both the rack tool and
+*Generate racks* create 1 × 1 placements — there is no footprint control anywhere in the designer,
+and MAIN's 189 bays are one cell each for the same reason. So the cell size is not "how finely can
+I draw", it is **how much floor one bay occupies**.
 
-**This is a one-shot decision.** Changing the resolution afterwards is refused unless the new one
-divides evenly into everything already drawn, and on a published layout the change stays inert until
-you publish again.
+That leaves two coherent choices, and they are genuinely different jobs:
 
-Establish the dimensions from **one physically measured reference** — a bay you can put a tape on —
-and keep every other dimension consistent with it.
+### Option A — import the sketch, then 0.90 m/cell
+
+`extract-floorplan` sets `w`/`h` per placement, so an imported rack row can be several cells wide
+even though a hand-drawn one cannot. This is the path `WAREHOUSE-ONBOARDING-PLAN.md` Phase 1
+already assumes, and you have a sketch.
+
+- A bay is **3 × 1 cells**, geometrically true.
+- Aisles, doors and the bulk floor land within 0.9 m of reality.
+- Rack depth reads 0.90 m against a real 1.0 m (−10%). Unavoidable — `cell_size_m` is
+  `NUMERIC(6,2)`, so 2.7 and 1.0 both land on whole cells only at 0.10 m/cell, which the 200-cell
+  cap limits to a 20 m building.
+- A 30 × 15 m building gives a 34 × 17 cell grid. Verified: the dialog reports
+  *"1 cell = 0.9 m · drawn area 30.6 × 15.3 m"*.
+
+### Option B — hand-draw, and set the cell to the bay pitch: 2.70 m/cell
+
+One click, one bay, one cell — on both axes, since the side-wall racks run along the depth.
+
+- Run lengths are exact: the 10-bay top wall is 10 cells = 27 m.
+- Rack depth reads 2.7 m against a real 1.0 m, so the floor looks far more congested than it is and
+  the middle bulk area looks smaller than it is.
+- Aisles quantise to 2.7 m. You cannot draw a 1.5 m walkway or a doorway.
+- A 30 × 15 m building gives a 12 × 6 cell grid.
+
+**Do not hand-draw adjacent bays at 0.90 m/cell.** A 10-bay run would then draw as 9 m of wall
+instead of 27 m, and every travel distance along it — which is what the routing graph is made of —
+would be understated threefold.
+
+Whichever you choose, establish the dimensions from **one physically measured reference** (a bay you
+can put a tape on) and keep every other dimension consistent with it.
 
 ## 3. Draw, in this order
 
 1. **Docks on the bottom wall.** A dock is a publish gate and the anchor every travel distance is
    measured from, so place it before the racks or the layout will not read correctly as you go.
 2. **A walkway apron** along the dock wall.
-3. **The 17 `AMD_RACK` bays** — 3 on the left wall, 10 along the top, 4 on the right. Each is a
-   3 × 1 cell rect. Each one fans out at save time into a RACK parent plus five SHELF levels.
+3. **The 17 `AMD_RACK` bays** — 3 on the left wall, 10 along the top, 4 on the right. Each fans out
+   at save time into a RACK parent (which holds no capacity of its own) plus five SHELF levels.
+   Their size on the grid follows from the option you took in step 2.
 4. **The `AMD_BULK` floor area** in the middle.
 5. **Walkways** connecting every bin to a dock.
 
@@ -91,6 +117,10 @@ L1  Pick Zone Cartons           36    1000 kg
 If **Counted in** reads *Cartons* on L4/L5, stop — the mixed template did not come through, and
 every pallet put there will be counted as loose units against a limit of 2. Nothing downstream is
 recoverable from that without recounting.
+
+This was verified end to end on 2026-08-11: one `AMD_RACK` bay drawn on a scratch layout produced
+`AMADIYA-B-6-2` (RACK, no capacity) plus `…-L1`–`L5` carrying `pick`/carton/36 on L1–L3 and
+`reserve`,`bulk`/pallet/2 on L4–L5. The scratch layout was deleted afterwards.
 
 ## 5. Paint the named areas
 
