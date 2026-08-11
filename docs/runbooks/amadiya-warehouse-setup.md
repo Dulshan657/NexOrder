@@ -155,6 +155,29 @@ Repaint the whole area with one profile, then run **Bind zones** with its dry ru
 **zero** moves. That idempotence is the only proof the binding is right — and it is worth running
 once on any site painted before mig `00096`.
 
+**Only a storage region gets a profile.** A `Dock` or `Staging Area` region is wayfinding: it names
+ground people walk on, and giving it a storage profile tints the map wrongly and would bind the first
+bin ever drawn there. Amadiya's `Dock` carried `Slow Moving` until 2026-08-11; it now carries none,
+like `Staging Area` always did.
+
+### Housekeeping the map earns as it is redrawn
+
+Two kinds of debris accumulate, and neither is visible on the map:
+
+- **Bins left behind by a superseded layout.** Publishing never retires a bin, so a bin dropped from
+  the new picture stays an active `locations` row: out of WIE's reach (putaway candidates come from
+  the *placements of one layout*) but still in every location picker, the Stocktake list and every
+  transfer destination. Amadiya carried three `Staging Area · Rack 2–4` bins from archived layout 82,
+  while the live layout stages through `AMADIYA-STG-L83` — the location its three `staging` objects
+  actually point at. **Deactivate** them (the map's bin panel, or `mutate-warehouse-location`
+  `deactivate`, which refuses while stock remains); never delete, since history references the row.
+  Find them by asking which active bins carry no placement on the published layout.
+- **Stale draft clones.** A draft cloned from the live layout stops tracking it the moment the live
+  one is edited, and publishing it silently reverts every difference. Amadiya's `Amadiya DC copy copy`
+  had gone stale enough to drop a quarantine bin and undo three repairs; it was deleted. Either delete
+  a draft you are not actively working, or open it and use **adopt the published layout's areas**
+  before saving.
+
 ## 6. Publish
 
 Four gates, shown live in the designer: a dock exists, walkways remain, at least one bin is placed,
