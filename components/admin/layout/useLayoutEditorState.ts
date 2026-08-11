@@ -19,6 +19,7 @@ import {
   describeSeqRanges,
   highWaterFromRows,
   nextSeqForArea,
+  RACK_WORD,
   sanitizeAreaName,
   type NamingUnit,
 } from '@/lib/locationNaming'
@@ -52,6 +53,9 @@ export interface ActiveStorageForm {
   capacitySlots?: number
   slotKind?: 'pallet' | 'carton'
   weightCapacityKg?: number
+  /** `unitNoun` of this form (mig 00100) — what a unit painted with it is
+   *  called. Resolved by the toolbar, which has the catalogue. */
+  nameNoun?: string
   /** Standard level layout (mig 00072); a placement painted with this form
    *  inherits these levels (recoded to the new placement's own code). */
   levelTemplate?: RackLevel[]
@@ -90,6 +94,12 @@ export interface EditorPlacement {
   nameArea?: string | null
   /** false = a human typed this name; an area rename must leave it alone. */
   nameIsAuto?: boolean
+  /** What this unit is CALLED — "Rack", or "Pallet" for a floor spot (mig
+   *  00100). Snapshotted from the storage form the same way `capacitySlots` and
+   *  `slotKind` are, rather than re-derived here: the reducer is pure and holds
+   *  no form catalogue. Set at paint time from the active form and at `load`
+   *  from the location's own form. Absent = "Rack". */
+  nameNoun?: string
 }
 
 export interface EditorObject {
@@ -267,8 +277,8 @@ export type EditorAction =
   // no slot ceiling, which is what a form like Bulk Floor means by a NULL
   // `default_capacity_slots`. Distinct from omitting the field, which means "the
   // caller had no opinion" and still takes the generic 10.
-  | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number | null; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number; levelTemplate?: RackLevel[] }
-  | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number; nameSeq?: number | null; nameArea?: string | null; nameIsAuto?: boolean }> }
+  | { type: 'generate_bins'; startX: number; startY: number; cols: number; rows: number; capacitySlots?: number | null; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; zoneProfileId?: number; storageTypeId?: number; levelTemplate?: RackLevel[]; nameNoun?: string }
+  | { type: 'load'; placements: LayoutPlacement[]; objects: LayoutObject[]; codeByLocation: Record<number, { code: string; name: string; kind: EditorPlacement['kind']; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number; nameSeq?: number | null; nameArea?: string | null; nameIsAuto?: boolean; nameNoun?: string }> }
   // `level_location_ids` is present only for a levelled rack: level_index -> the
   // SHELF location id the server created/kept for it (mig 00072).
   // `name`/`name_seq`/`name_area` are the SERVER's answer, which is authoritative:
@@ -318,6 +328,7 @@ export function editorUnits(placements: readonly EditorPlacement[]): NamingUnit[
     nameSeq: p.nameSeq ?? null,
     nameArea: p.nameArea ?? null,
     levelIndexes: p.levels?.map((l) => l.levelIndex),
+    noun: p.nameNoun,
   }))
 }
 
@@ -820,8 +831,8 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
         const nameSeq = nextSeqForArea(editorUnits(state.placements), nameArea, seqFloorMap(state))
         const placement: EditorPlacement = {
           clientRef: ref, floor: state.floor, x, y, w: 1, h: 1, rotation: 0,
-          kind: 'BIN', code, name: composeName(nameArea, nameSeq),
-          nameSeq, nameArea, nameIsAuto: true,
+          kind: 'BIN', code, name: composeName(nameArea, nameSeq, null, f?.nameNoun),
+          nameSeq, nameArea, nameIsAuto: true, nameNoun: f?.nameNoun,
           // A SELECTED form's values win outright — including the ones it
           // deliberately leaves unset. `default_capacity_slots` NULL means
           // "uncounted, no slot ceiling" (BULK_FLOOR, AMD_BULK), and `?? 10`
@@ -923,8 +934,8 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
           highWater.set(nameArea, nameSeq)
           added.push({
             clientRef: `p${seq++}`, floor: state.floor, x, y, w: 1, h: 1, rotation: 0,
-            kind: 'BIN', code, name: composeName(nameArea, nameSeq),
-            nameSeq, nameArea, nameIsAuto: true,
+            kind: 'BIN', code, name: composeName(nameArea, nameSeq, null, action.nameNoun),
+            nameSeq, nameArea, nameIsAuto: true, nameNoun: action.nameNoun,
             // See the action type: an explicit null is "uncounted" and must
             // survive, where an omitted field still means the generic 10.
             capacitySlots: action.capacitySlots === null ? undefined : action.capacitySlots ?? 10,
@@ -946,6 +957,7 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
       const ranges = describeSeqRanges(
         added.map((p) => ({
           ref: p.clientRef, areaName: p.nameArea ?? '', seq: p.nameSeq ?? 0, name: p.name,
+          noun: p.nameNoun ?? RACK_WORD,
           levelNames: {}, assigned: true, restamped: false, isAuto: true,
         })),
       )
@@ -993,7 +1005,7 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
           name: meta?.name ?? `Bin ${p.locationId}`, capacitySlots: meta?.capacitySlots, slotKind: meta?.slotKind,
           weightCapacityKg: meta?.weightCapacityKg, storageTypeId: meta?.storageTypeId,
           nameSeq: meta?.nameSeq ?? null, nameArea: meta?.nameArea ?? null,
-          nameIsAuto: meta?.nameIsAuto ?? false,
+          nameIsAuto: meta?.nameIsAuto ?? false, nameNoun: meta?.nameNoun,
         }
       })
 
@@ -1026,7 +1038,7 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
           rotation: g.rotation, kind: 'RACK', code: rackMeta?.code ?? `R${rackId}`,
           name: rackMeta?.name ?? `Rack ${rackId}`, storageTypeId: rackMeta?.storageTypeId,
           nameSeq: rackMeta?.nameSeq ?? null, nameArea: rackMeta?.nameArea ?? null,
-          nameIsAuto: rackMeta?.nameIsAuto ?? false,
+          nameIsAuto: rackMeta?.nameIsAuto ?? false, nameNoun: rackMeta?.nameNoun,
           levels,
         })
       }

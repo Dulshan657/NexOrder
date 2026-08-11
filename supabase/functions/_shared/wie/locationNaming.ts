@@ -54,8 +54,41 @@
 export const NAME_SEP = ' · '
 
 /** The word used for a numbered unit. A drawn cell is a bay/rack/bin depending
- *  on who you ask; "Rack" is what operators on this site say. */
+ *  on who you ask; "Rack" is what operators on this site say. The default, and
+ *  what every unit got before nouns were derived at all. */
 export const RACK_WORD = 'Rack'
+
+/** …and what a marked-out spot on the slab is called instead. */
+export const PALLET_WORD = 'Pallet'
+
+/** The two fields of a storage form that decide a unit's noun. Camel-cased, so
+ *  the Edge Functions map their snake_case rows before calling in — the same
+ *  shape both runtimes already use for a form elsewhere. */
+export interface NamingForm {
+  isFloor?: boolean | null
+  slotUnit?: string | null
+}
+
+/**
+ * What to call a unit drawn with this form.
+ *
+ * "Bulk · Rack 3" is a lie about a pallet painted onto a concrete slab, and it
+ * is what an operator standing in the bulk area reads off the map. A form that
+ * is a FLOOR (mig 00100) and is denominated in PALLETS holds exactly one thing,
+ * a pallet, so that is the word.
+ *
+ * Everything else stays "Rack", INCLUDING a floor denominated in cartons or in
+ * nothing (MAIN_BULK_FLOOR, BULK_FLOOR). There is no better word for a
+ * carton-counted floor block that would not be invented vocabulary, and — the
+ * reason this is safe rather than merely arbitrary — no such unit is auto-named
+ * anywhere today, so nothing is renamed by leaving them alone.
+ *
+ * A missing form also means "Rack": a bin drawn before storage forms existed
+ * keeps the only name it has ever had.
+ */
+export function unitNoun(form?: NamingForm | null): string {
+  return form?.isFloor === true && form.slotUnit === 'pallet' ? PALLET_WORD : RACK_WORD
+}
 
 /** Longest area name we accept. 60 + `${NAME_SEP}Rack 999${NAME_SEP}L99` = 76,
  *  comfortably inside the 120-char cap on `locations.name`. */
@@ -207,9 +240,14 @@ export function areaForRect(index: AreaIndex, rect: NamedRect): string {
  * all point at the SHELF row directly and would otherwise each need a parent
  * lookup to say where the operator should stand.
  */
-export function composeName(areaName: string, seq: number, levelIndex?: number | null): string {
+export function composeName(
+  areaName: string,
+  seq: number,
+  levelIndex?: number | null,
+  noun: string = RACK_WORD,
+): string {
   const area = areaName.trim()
-  const base = area ? `${area}${NAME_SEP}${RACK_WORD} ${seq}` : `${RACK_WORD} ${seq}`
+  const base = area ? `${area}${NAME_SEP}${noun} ${seq}` : `${noun} ${seq}`
   return levelIndex == null ? base : `${base}${NAME_SEP}L${levelIndex}`
 }
 
@@ -300,6 +338,18 @@ export interface NamingUnit extends NamedRect {
   nameArea: string | null
   /** 1-based level indexes, for a levelled rack. Empty/absent for a flat bin. */
   levelIndexes?: readonly number[]
+  /**
+   * What this unit is CALLED — `unitNoun` of its own storage form (mig 00100).
+   *
+   * Per unit, not per pass: two units in one area can carry different forms, and
+   * a floor pallet standing beside a rack must not be renamed to match it. It
+   * follows the unit's FORM, so the only names this ever rewrites are those of
+   * units whose form actually changed — which is a deliberate act, and
+   * restamping then is the point.
+   *
+   * Absent = RACK_WORD, which is what every unit composed before this existed.
+   */
+  noun?: string
 }
 
 export interface NamingOptions {
@@ -345,6 +395,10 @@ export interface NamedUnit {
   areaName: string
   /** null for a hand-named unit, which holds no claim on any pool. */
   seq: number | null
+  /** The noun this unit was composed with — echoed back so a caller composing a
+   *  LEVEL name later (mutate-layout, mutate-warehouse-location) uses the same
+   *  word as its rack, rather than silently falling back to the default. */
+  noun: string
   name: string
   /** levelIndex → composed name. Empty for a flat bin, and empty for a
    *  hand-named rack — see `isAuto`. */
@@ -462,6 +516,7 @@ export function assignAutoNames(
         ref: unit.ref,
         areaName: carried,
         seq: unit.nameSeq,
+        noun: unit.noun ?? RACK_WORD,
         name: unit.name ?? '',
         levelNames: {},
         assigned: false,
@@ -512,16 +567,20 @@ export function assignAutoNames(
       assigned = true
     }
 
-    const name = composeName(areaName, seq)
+    // The unit's OWN noun, from its own storage form. Never the pass's, and
+    // never its neighbours' — see NamingUnit.noun.
+    const noun = unit.noun ?? RACK_WORD
+    const name = composeName(areaName, seq, null, noun)
     const levelNames: Record<number, string> = {}
     for (const levelIndex of unit.levelIndexes ?? []) {
-      levelNames[levelIndex] = composeName(areaName, seq, levelIndex)
+      levelNames[levelIndex] = composeName(areaName, seq, levelIndex, noun)
     }
 
     out.push({
       ref: unit.ref,
       areaName,
       seq,
+      noun,
       name,
       levelNames,
       assigned,

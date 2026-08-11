@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import type { Dispatch } from 'react'
 import type { RackLevel, StorageType, ZoneProfile } from '@/types'
 import { Button, Modal } from '@/components/ui'
+import { unitNoun } from '@/lib/locationNaming'
 import type { EditorAction } from './useLayoutEditorState'
 
 interface RackWizardProps {
@@ -100,6 +101,10 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
       zoneProfileId: zoneProfileId === '' ? undefined : zoneProfileId,
       storageTypeId: storageTypeId === '' ? undefined : storageTypeId,
       levelTemplate,
+      // What the generated units are CALLED (mig 00100). Resolved here, where
+      // the catalogue is; "Custom (set manually)" has no form and so no noun,
+      // which unitNoun reads as the default "Rack".
+      nameNoun: unitNoun(storageTypes.find((s) => s.id === storageTypeId)),
     })
     onClose()
   }

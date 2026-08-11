@@ -53,6 +53,7 @@ import {
   loadAreaHighWater,
   loadLocationsForNaming,
   loadNameState,
+  loadUnitNouns,
   nameWriteNeeded,
   type NameWrite,
 } from '../_shared/locationNamingWrite.ts'
@@ -970,11 +971,22 @@ serve(async (req: Request) => {
       const fromArea = targets.get(p.client_ref)?.profileId ?? null
       return fromArea ?? p.new_bin?.zone_profile_id ?? null
     }
+    // What each unit is CALLED (mig 00100) — from its own storage form: the one
+    // the client sent for a new bin, the one already stored for an existing one.
+    const namingNouns = await loadUnitNouns(
+      admin,
+      input.placements.map((p) => (
+        p.new_bin?.storage_type_id
+        ?? (p.location_id !== undefined ? storedNames.get(p.location_id)?.storageTypeId : null)
+      )),
+    )
     let namingUnits: NamingUnit[] = input.placements.map((p) => {
       const stored = p.location_id !== undefined ? storedNames.get(p.location_id) : undefined
+      const formId = p.new_bin?.storage_type_id ?? stored?.storageTypeId ?? null
       return {
         ref: p.client_ref,
         floor: p.floor, x: p.x, y: p.y, w: p.w, h: p.h,
+        noun: formId != null ? namingNouns.get(formId) : undefined,
         name: stored?.name ?? p.new_bin?.name ?? null,
         // A brand-new bin the operator already named in the inspector arrives
         // with name_is_auto:false and is stored verbatim — nothing may overwrite
@@ -1006,8 +1018,10 @@ serve(async (req: Request) => {
      *  about which rack it belongs to. */
     const levelNameFor = (ref: string, levelIndex: number): string => {
       const named = namedByRef.get(ref)
+      // `named.noun`, so a level is called what its rack is called — recomposing
+      // with the default would name L1 of a floor pallet after a rack.
       return named && named.isAuto && named.seq != null
-        ? composeName(named.areaName, named.seq, levelIndex)
+        ? composeName(named.areaName, named.seq, levelIndex, named.noun)
         : `Level ${levelIndex}`
     }
 
@@ -1277,7 +1291,7 @@ serve(async (req: Request) => {
           if (stored && !stored.nameIsAuto) continue
           const levelWrite: NameWrite = {
             id: levelId,
-            name: composeName(named.areaName, named.seq, Number(levelIndex)),
+            name: composeName(named.areaName, named.seq, Number(levelIndex), named.noun),
             name_seq: null,
             name_area: named.areaName || null,
             name_is_auto: true,

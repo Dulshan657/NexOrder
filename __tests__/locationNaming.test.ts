@@ -10,6 +10,7 @@ import {
   assignAutoNames,
   buildAreaIndex,
   composeName,
+  unitNoun,
   describeSeqRanges,
   highWaterFromRows,
   isUninformativeName,
@@ -86,9 +87,85 @@ describe('composeName', () => {
     expect(NAME_SEP).not.toContain('-')
   })
 
+  it('composes with the noun it is given (mig 00100)', () => {
+    expect(composeName('Bulk Storage', 3, null, 'Pallet')).toBe('Bulk Storage · Pallet 3')
+    expect(composeName('', 3, null, 'Pallet')).toBe('Pallet 3')
+    // A floor spot has no levels, but the composition must still agree if one
+    // is ever asked for — a level named after a different noun than its parent
+    // is the bug this parameter exists to prevent.
+    expect(composeName('Bulk Storage', 3, 1, 'Pallet')).toBe('Bulk Storage · Pallet 3 · L1')
+  })
+
   it('stays inside the 120-char cap on locations.name at the extremes', () => {
     const longest = composeName('x'.repeat(MAX_AREA_NAME), 999, 99)
     expect(longest.length).toBeLessThanOrEqual(120)
+  })
+})
+
+// A unit's noun follows its OWN storage form, so the only names this ever
+// rewrites belong to units whose form actually changed.
+describe('unitNoun', () => {
+  it('calls a pallet-denominated floor a Pallet', () => {
+    expect(unitNoun({ isFloor: true, slotUnit: 'pallet' })).toBe('Pallet')
+  })
+
+  it('calls everything else a Rack', () => {
+    // Racking, however it is denominated.
+    expect(unitNoun({ isFloor: false, slotUnit: 'pallet' })).toBe('Rack')
+    expect(unitNoun({ isFloor: false, slotUnit: 'carton' })).toBe('Rack')
+    // A floor counted in something other than pallets. There is no better word
+    // that would not be invented, and nothing is auto-named with one today.
+    expect(unitNoun({ isFloor: true, slotUnit: 'carton' })).toBe('Rack')
+    expect(unitNoun({ isFloor: true, slotUnit: 'uncounted' })).toBe('Rack')
+    // No form at all — a bin drawn before storage forms existed.
+    expect(unitNoun(null)).toBe('Rack')
+    expect(unitNoun(undefined)).toBe('Rack')
+  })
+
+  it('never treats a missing is_floor as a floor', () => {
+    // MAIN_PALLET_BAY is real racking sitting at is_floor false; reading a
+    // missing flag as true would rename all 189 of MAIN's bays.
+    expect(unitNoun({ slotUnit: 'pallet' })).toBe('Rack')
+    expect(unitNoun({ isFloor: null, slotUnit: 'pallet' })).toBe('Rack')
+  })
+})
+
+// The whole point of carrying the noun per UNIT rather than per pass.
+describe('assignAutoNames — per-unit nouns', () => {
+  const AREA = area('Bulk Storage', 0, 0, 4, 1)
+
+  it('names a floor spot and a rack in one area with their own words', () => {
+    const units = [
+      unit({ ref: 'floor', x: 0, y: 0, noun: 'Pallet' }),
+      unit({ ref: 'rack', x: 1, y: 0 }),
+    ]
+    const named = assignAutoNames(units, buildAreaIndex(AREA)).units
+    expect(named.find((u) => u.ref === 'floor')!.name).toBe('Bulk Storage · Pallet 1')
+    expect(named.find((u) => u.ref === 'rack')!.name).toBe('Bulk Storage · Rack 2')
+  })
+
+  it('gives a levelled unit levels that match its own noun', () => {
+    const units = [unit({ ref: 'r', x: 0, y: 0, noun: 'Pallet', levelIndexes: [1, 2] })]
+    const named = assignAutoNames(units, buildAreaIndex(AREA)).units[0]
+    expect(named.levelNames[1]).toBe('Bulk Storage · Pallet 1 · L1')
+    expect(named.noun).toBe('Pallet')
+  })
+
+  it('leaves a unit with no noun composing exactly as it always did', () => {
+    const units = [unit({ ref: 'r', x: 0, y: 0 })]
+    expect(assignAutoNames(units, buildAreaIndex(AREA)).units[0].name).toBe('Bulk Storage · Rack 1')
+  })
+
+  it('shares one number pool across nouns, so two units never collide', () => {
+    // The pool is the AREA, not the word — "Pallet 1" and "Rack 1" standing in
+    // one area would read as two different things with the same number.
+    const units = [
+      unit({ ref: 'a', x: 0, y: 0, noun: 'Pallet' }),
+      unit({ ref: 'b', x: 1, y: 0, noun: 'Pallet' }),
+      unit({ ref: 'c', x: 2, y: 0 }),
+    ]
+    const seqs = assignAutoNames(units, buildAreaIndex(AREA)).units.map((u) => u.seq)
+    expect(new Set(seqs).size).toBe(3)
   })
 })
 

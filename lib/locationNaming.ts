@@ -12,6 +12,8 @@
 export {
   NAME_SEP,
   RACK_WORD,
+  PALLET_WORD,
+  unitNoun,
   MAX_AREA_NAME,
   areaNameOf,
   buildAreaIndex,
@@ -33,6 +35,7 @@ export type {
   AreaCellSource,
   AreaIndex,
   NamedRect,
+  NamingForm,
   NamingUnit,
   NamingOptions,
   NamedUnit,
