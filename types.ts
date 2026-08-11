@@ -240,9 +240,15 @@ export interface StorageType {
     color?: string;
     /** Whether this form appears as a drawable tool in the Layout Designer. */
     isDrawable: boolean;
-    /** Whether racks of this form are split into addressable levels (mig 00072).
-     *  False for forms where levels are meaningless (Bulk Floor, Staging Area). */
+    /** Whether this form carries a STANDARD level layout (mig 00072) — a
+     *  non-empty `levelTemplate` is a system invariant of it being true.
+     *  False on plenty of real racking that simply has no template configured
+     *  (MAIN's own bay forms), so it is NOT the test for "can be levelled";
+     *  see `isFloor`. */
     hasLevels: boolean;
+    /** Stock stands on the slab: no upright, no beam, so a bin of this form can
+     *  never be split into addressable levels (mig 00100). Operator-set. */
+    isFloor: boolean;
     /** The STANDARD level layout every rack drawn with this form inherits.
      *  Individual racks override it; see `RackLevel`. */
     levelTemplate?: RackLevel[];

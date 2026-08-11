@@ -35,6 +35,8 @@ export interface StorageTypeInput {
   // drawn with this form inherits it, individual racks may override.
   hasLevels?: boolean
   levelTemplate?: RackLevel[] | null
+  // mig 00100. Not derivable from the fields above — see the migration.
+  isFloor?: boolean
 }
 
 /** [{levelIndex, role, capacitySlots, slotKind, weightCapacityKg}] -> the
@@ -68,6 +70,7 @@ function toFormColumns(input: Partial<StorageTypeInput>): Record<string, unknown
   if (input.color !== undefined) data.color = input.color
   if (input.isDrawable !== undefined) data.is_drawable = input.isDrawable
   if (input.hasLevels !== undefined) data.has_levels = input.hasLevels
+  if (input.isFloor !== undefined) data.is_floor = input.isFloor
   if (input.levelTemplate !== undefined) {
     data.level_template = input.levelTemplate ? toLevelTemplateColumn(input.levelTemplate) : null
   }

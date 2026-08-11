@@ -522,6 +522,48 @@ describe('layoutEditorReducer', () => {
       expect(s.placements[0].levels).toBeUndefined()
     })
 
+    // A form whose `default_capacity_slots` is NULL means UNCOUNTED — no slot
+    // ceiling. `?? 10` overrode exactly that, so every cell painted with a Bulk
+    // Floor brush was stored as a 10-pallet bin and the form's own default never
+    // reached the server (which only consults the form when the field is null).
+    it('a form that states no capacity paints an UNCOUNTED bin, not a 10-slot one', () => {
+      const withForm = layoutEditorReducer(initialEditorState(), {
+        type: 'set_storage_form',
+        form: { label: 'Amadiya Bulk Floor', storageTypeId: 7, slotKind: 'pallet' },
+      })
+      const s = layoutEditorReducer(withForm, { type: 'paint_cell', x: 0, y: 0 })
+      expect(s.placements[0].capacitySlots).toBeUndefined()
+      expect(s.placements[0].slotKind).toBe('pallet')
+    })
+
+    it('a single-pallet form paints exactly one slot', () => {
+      const withForm = layoutEditorReducer(initialEditorState(), {
+        type: 'set_storage_form',
+        form: { label: 'Floor Pallet', storageTypeId: 8, capacitySlots: 1, slotKind: 'pallet' },
+      })
+      const s = layoutEditorReducer(withForm, { type: 'paint_cell', x: 0, y: 0 })
+      expect(s.placements[0]).toMatchObject({ capacitySlots: 1, slotKind: 'pallet', kind: 'BIN' })
+      expect(s.placements[0].levels).toBeUndefined()
+    })
+
+    // The generic fallback is for NO form selected, and only that.
+    it('paints the generic 10-pallet bin when no form is armed', () => {
+      const s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 })
+      expect(s.placements[0]).toMatchObject({ capacitySlots: 10, slotKind: 'pallet' })
+    })
+
+    it('generate_bins treats a null capacity as uncounted and an absent one as generic', () => {
+      const uncounted = layoutEditorReducer(initialEditorState(), {
+        type: 'generate_bins', startX: 0, startY: 0, cols: 1, rows: 1, capacitySlots: null,
+      })
+      expect(uncounted.placements[0].capacitySlots).toBeUndefined()
+
+      const generic = layoutEditorReducer(initialEditorState(), {
+        type: 'generate_bins', startX: 0, startY: 0, cols: 1, rows: 1,
+      })
+      expect(generic.placements[0].capacitySlots).toBe(10)
+    })
+
     it('generate_bins inherits a level template onto every generated bin, each recoded to its own code', () => {
       const s = layoutEditorReducer(initialEditorState(), {
         type: 'generate_bins', startX: 0, startY: 0, cols: 2, rows: 1, levelTemplate: PALLET_RACK_TEMPLATE,

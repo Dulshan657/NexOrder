@@ -59,6 +59,10 @@ const formFields = {
   // per-level locations; level_template is its standard layout.
   has_levels: z.boolean().optional(),
   level_template: z.array(levelTemplateEntrySchema).max(50).nullable().optional(),
+  // Floor storage (mig 00100). Deliberately independent of has_levels: that one
+  // means "carries a standard level layout" and is false on real racking with
+  // no template yet, so it cannot answer "can this be levelled at all".
+  is_floor: z.boolean().optional(),
 }
 
 /** A form with has_levels=true needs a non-empty template — this is a system
@@ -162,6 +166,7 @@ serve(async (req: Request) => {
         is_drawable: input.data.is_drawable ?? true,
         has_levels: input.data.has_levels ?? false,
         level_template: input.data.level_template ?? null,
+        is_floor: input.data.is_floor ?? false,
       }
       if (!row.code) throw new EdgeFunctionError('INVALID_INPUT', 'Code must contain a letter or digit')
       validateLevelTemplate(row.has_levels, row.level_template, await loadActiveRoleKeys(admin))

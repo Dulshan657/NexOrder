@@ -42,8 +42,15 @@ describe('toStorageType', () => {
       color: undefined,
       isDrawable: true,
       hasLevels: false,
+      // mig 00100. A row predating the column reads as NOT a floor, which is
+      // the permissive answer: it keeps its Split into levels action.
+      isFloor: false,
       levelTemplate: undefined,
     })
+  })
+
+  it('reads is_floor when the row carries it', () => {
+    expect(toStorageType({ ...row, is_floor: true } as never).isFloor).toBe(true)
   })
 
   it('maps a null default_capacity_slots to undefined (uncounted)', () => {
