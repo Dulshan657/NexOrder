@@ -20,10 +20,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      # 24 to match the Vercel project's runtime (.vercel/project.json says
+      # "24.x"), so CI exercises the same Node the deploy actually runs on.
+      # Also required, not merely tidy: `check:csp` imports vercel.ts, and
+      # native TypeScript type-stripping only arrives in Node 22.18+/23.6+.
+      # On 20 that step dies with "Unknown file extension .ts".
+      - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
@@ -35,7 +40,7 @@ jobs:
       - name: Overlay guard (no raw `fixed inset-0` outside components/ui)
         run: node scripts/check-overlays.mjs
 
-      - name: CSP guard (vercel.json covers every provisioned environment)
+      - name: CSP guard (vercel.ts CSP + image-proxy ordering, per target)
         run: node scripts/check-csp.mjs
 
       - name: Type check

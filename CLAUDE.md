@@ -44,7 +44,7 @@ npm run test:coverage              # vitest + coverage report
 npm run test:integration           # vitest against live pg — dev only, throws on a prod URL
 npm run test:e2e                   # Playwright (:ui / :headed variants) — dev only
 npm run check:overlays             # no raw `fixed inset-0` outside components/ui
-npm run check:csp                  # vercel.json CSP covers every provisioned environment
+npm run check:csp                  # vercel.ts: per-target CSP + /storage rewrite ordering
 
 # Type-check before deploy (no CI block-on-red yet)
 npx tsc --noEmit

@@ -5,6 +5,16 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { visualizer } from 'rollup-plugin-visualizer';
 
+import { TARGETS, isProvisioned } from './config/environments.mjs';
+
+// Dev-server fallback for the /storage image proxy (see `server.proxy` below).
+// Resolved from NEXORDER_ENV the same way vercel.ts does, so one variable
+// describes the target everywhere. Never a typed ref — the registry owns those.
+const proxyTarget = TARGETS[process.env.NEXORDER_ENV?.trim() ?? ''] ?? TARGETS.dev;
+const storageProxyTarget = isProvisioned(proxyTarget)
+    ? proxyTarget.supabaseUrl
+    : TARGETS.dev.supabaseUrl;
+
 // Bundle analysis is opt-in via ANALYZE=1 (`npm run build:analyze`) so that CI
 // and Vercel builds stay byte-identical to what they produced before the
 // analyzer was added. rollup-plugin-visualizer is a devDependency and must
@@ -53,6 +63,22 @@ export default defineConfig(() => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        // Mirror vercel.ts's /storage rewrite so `lib/imageUrl.ts`'s
+        // same-origin image paths resolve in dev too. Without it every image
+        // 404s once before <OptimizedImage> falls back to the direct Supabase
+        // URL — images would still appear, but the console would be full of
+        // failures that mean nothing.
+        //
+        // The build's own VITE_SUPABASE_URL wins over the registry: a dev
+        // server started against a different project should proxy to THAT
+        // project. The registry entry is the fallback — and it is imported,
+        // never typed, because that file is the only place a ref may appear.
+        proxy: {
+          '/storage': {
+            target: process.env.VITE_SUPABASE_URL?.trim() || storageProxyTarget,
+            changeOrigin: true,
+          },
+        },
       },
       plugins: [
         react(),
