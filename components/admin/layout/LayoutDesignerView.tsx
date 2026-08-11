@@ -46,7 +46,7 @@ import { LayoutPropertiesModal, type LayoutPropertiesValues, type PreviewItem } 
 import { SimulationResultCard } from './SimulationResultCard'
 import { OCCUPANT_LABEL, STORAGE_UNIT, TOOL_LABEL } from './labels'
 import { editorUnits, useLayoutEditorState } from './useLayoutEditorState'
-import { composeName, nextSeqForArea, sanitizeAreaName } from '@/lib/locationNaming'
+import { composeName, nextSeqForArea, sanitizeAreaName, unitNoun } from '@/lib/locationNaming'
 import { areaCellsFingerprint, areaSpecsFromObjects } from '@/lib/areaPaint'
 import { sanitizeSignNameInput, signCellsFingerprint, signSpecsFromObjects } from '@/lib/signPaint'
 // The same confirm panel the live map uses. Deliberately not forked: the counts
@@ -139,15 +139,26 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
    *  hint cannot drift from what actually gets stored. */
   const nextRackName = useMemo(() => {
     const areaName = sanitizeAreaName(state.activeArea?.name ?? '')
-    return composeName(areaName, nextSeqForArea(editorUnits(state.placements), areaName))
-  }, [state.activeArea, state.placements])
+    return composeName(
+      areaName,
+      nextSeqForArea(editorUnits(state.placements), areaName),
+      null,
+      state.activeForm?.nameNoun,
+    )
+  }, [state.activeArea, state.activeForm, state.placements])
 
   const codeByLocation = useMemo(() => {
-    const map: Record<number, { code: string; name: string; kind: never; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number; nameSeq?: number | null; nameArea?: string | null; nameIsAuto?: boolean }> = {}
+    const map: Record<number, { code: string; name: string; kind: never; capacitySlots?: number; slotKind?: 'pallet' | 'carton'; weightCapacityKg?: number; storageTypeId?: number; parentId?: number; levelRole?: LevelRole; levelIndex?: number; nameSeq?: number | null; nameArea?: string | null; nameIsAuto?: boolean; nameNoun?: string }> = {}
+    const formById = new Map((storageTypesQuery.data ?? []).map((t) => [t.id, t]))
     for (const l of locationsQuery.data ?? []) {
       map[l.id] = {
         code: l.code, name: l.name, kind: l.kind as never,
         capacitySlots: l.capacitySlots, slotKind: l.slotKind, weightCapacityKg: l.weightCapacityKg, storageTypeId: l.storageTypeId,
+        // Re-derived from the location's OWN form, not carried on the row: the
+        // noun is a property of the form, so a form edited in Settings is
+        // reflected the next time the layout is opened rather than frozen at
+        // draw time (mig 00100).
+        nameNoun: unitNoun(l.storageTypeId != null ? formById.get(l.storageTypeId) : null),
         // Level metadata so the reducer's `load` can rebuild a levelled rack's
         // embedded levels[] instead of falling back to the form standard.
         parentId: l.parentId, levelRole: l.levelRole, levelIndex: l.levelIndex,
@@ -157,7 +168,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
       }
     }
     return map
-  }, [locationsQuery.data])
+  }, [locationsQuery.data, storageTypesQuery.data])
 
   // Which unit the drawn bins measure capacity in. A layout of pallet bays is
   // counted in POSITIONS (a pallet takes one, mig 00078), so the advisor must
@@ -203,6 +214,9 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
         // (mig 00072); individual racks override it in the inspector. Only
         // forms that opted into levels carry one.
         levelTemplate: t.hasLevels ? t.levelTemplate : undefined,
+        // What a unit painted with this form is CALLED (mig 00100) — resolved
+        // here because the reducer is pure and holds no form catalogue.
+        nameNoun: unitNoun(t),
       },
     })
   }

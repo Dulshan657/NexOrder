@@ -11,7 +11,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { EdgeFunctionError } from './errors.ts'
-import { type NamingUnit } from './wie/locationNaming.ts'
+import { type NamingUnit, unitNoun } from './wie/locationNaming.ts'
 
 /** supabase-js `.in()` list size. Matches the chunking used by the repoint read
  *  in mutate-layout and the location read in count-bin. */
@@ -24,6 +24,37 @@ export interface StoredNaming {
   nameIsAuto: boolean
   nameSeq: number | null
   nameArea: string | null
+  /** Which storage form this row wears — resolved to a NOUN (mig 00100) by
+   *  `loadUnitNouns`. Null on a bin drawn before forms, which reads as "Rack". */
+  storageTypeId: number | null
+}
+
+/**
+ * storage_type_id -> the word a unit of that form is called (mig 00100).
+ *
+ * One small read, cached by the caller for the length of a request. The rule
+ * itself is `unitNoun` in the pure module, so the designer's preview and this
+ * agree by construction rather than by inspection.
+ */
+export async function loadUnitNouns(
+  admin: SupabaseClient,
+  ids: ReadonlyArray<number | null | undefined>,
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>()
+  const unique = [...new Set(ids.filter((id): id is number => Number.isFinite(id as number) && (id as number) > 0))]
+  for (let i = 0; i < unique.length; i += CHUNK) {
+    const { data, error } = await admin
+      .from('storage_types')
+      .select('id, is_floor, slot_unit')
+      .in('id', unique.slice(i, i + CHUNK))
+    // Fails CLOSED like every other read here: guessing "Rack" for a form we
+    // could not read would restamp a floor pallet's name on the next save.
+    if (error) throw new EdgeFunctionError('INTERNAL', `Could not read storage forms: ${error.message}`)
+    for (const r of (data ?? []) as any[]) {
+      out.set(Number(r.id), unitNoun({ isFloor: r.is_floor === true, slotUnit: r.slot_unit ?? null }))
+    }
+  }
+  return out
 }
 
 /** One row to write back. Mirrors wie_rename_locations_tx's recordset. */
@@ -42,6 +73,7 @@ function toStored(r: any): StoredNaming {
     nameIsAuto: r.name_is_auto === true,
     nameSeq: r.name_seq != null ? Number(r.name_seq) : null,
     nameArea: r.name_area ?? null,
+    storageTypeId: r.storage_type_id != null ? Number(r.storage_type_id) : null,
   }
 }
 
@@ -62,7 +94,7 @@ export async function loadNameState(
   for (let i = 0; i < unique.length; i += CHUNK) {
     const { data, error } = await admin
       .from('locations')
-      .select('id, name, name_is_auto, name_seq, name_area')
+      .select('id, name, name_is_auto, name_seq, name_area, storage_type_id')
       .in('id', unique.slice(i, i + CHUNK))
     if (error) {
       throw new EdgeFunctionError('INTERNAL', `Could not read location names: ${error.message}`)
@@ -201,6 +233,8 @@ export interface NamingLocation {
   nameIsAuto: boolean
   nameSeq: number | null
   nameArea: string | null
+  /** The form this row wears; resolved to a noun by loadUnitNouns (mig 00100). */
+  storageTypeId: number | null
 }
 
 /** Chunked read, keyed by id. `.in()` caps out around 200, and a 189-bay
@@ -214,7 +248,7 @@ export async function loadLocationsForNaming(
   for (let i = 0; i < unique.length; i += CHUNK) {
     const { data, error } = await admin
       .from('locations')
-      .select('id, code, name, kind, parent_id, level_index, materialized_path, name_is_auto, name_seq, name_area')
+      .select('id, code, name, kind, parent_id, level_index, materialized_path, name_is_auto, name_seq, name_area, storage_type_id')
       .in('id', unique.slice(i, i + CHUNK))
     if (error) throw new EdgeFunctionError('INTERNAL', `Could not read locations: ${error.message}`)
     for (const r of (data ?? []) as any[]) {
@@ -229,6 +263,7 @@ export async function loadLocationsForNaming(
         nameIsAuto: r.name_is_auto === true,
         nameSeq: r.name_seq != null ? Number(r.name_seq) : null,
         nameArea: r.name_area ?? null,
+        storageTypeId: r.storage_type_id != null ? Number(r.storage_type_id) : null,
       })
     }
   }
@@ -308,6 +343,13 @@ export async function loadLayoutNamingUnits(
     }
   }
 
+  // A unit's noun follows its OWN form (mig 00100), so a floor pallet standing
+  // beside a rack keeps its word through an area rename.
+  const nounByForm = await loadUnitNouns(
+    admin,
+    [...unitGeometry.keys()].map((id) => locById.get(id)?.storageTypeId),
+  )
+
   const units: NamingUnit[] = [...unitGeometry.entries()].map(([id, geo]) => {
     const loc = locById.get(id)!
     return {
@@ -318,6 +360,7 @@ export async function loadLayoutNamingUnits(
       nameSeq: loc.nameSeq,
       nameArea: loc.nameArea,
       levelIndexes: (levelsByParent.get(id) ?? []).map((l) => l.levelIndex),
+      noun: loc.storageTypeId != null ? nounByForm.get(loc.storageTypeId) : undefined,
     }
   })
 

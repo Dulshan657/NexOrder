@@ -885,7 +885,9 @@ serve(async (req: Request) => {
             // survives its rack being renamed around it.
             if (!levelLoc || (!levelLoc.nameIsAuto && !includeCustom)) continue
             const levelWrite: NameWrite = {
-              id: lvl.id, name: composeName(named.areaName, named.seq, lvl.levelIndex),
+              // `named.noun` so a level is called what its rack is called
+              // (mig 00100) — the default would rename it back to "Rack".
+              id: lvl.id, name: composeName(named.areaName, named.seq, lvl.levelIndex, named.noun),
               name_seq: null, name_area: named.areaName || null, name_is_auto: true,
             }
             if (nameWriteNeeded(levelLoc, levelWrite)) writes.push(levelWrite)
@@ -1287,7 +1289,7 @@ serve(async (req: Request) => {
           // A level carries its OWN provenance, so one an operator hand-named
           // survives its rack being renamed around it.
           if (!levelLoc || (!levelLoc.nameIsAuto && input.include_custom !== true)) continue
-          const levelName = composeName(named.areaName, named.seq, lvl.levelIndex)
+          const levelName = composeName(named.areaName, named.seq, lvl.levelIndex, named.noun)
           if (levelLoc.name === levelName) continue
           writes.push({
             id: lvl.id, name: levelName, name_seq: null,
