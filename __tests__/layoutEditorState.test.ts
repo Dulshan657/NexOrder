@@ -546,6 +546,37 @@ describe('layoutEditorReducer', () => {
       expect(s.placements[0].levels).toBeUndefined()
     })
 
+    // Changing the form changes what the unit is CALLED (mig 00100). The
+    // catalogue is not in the pure reducer, so the noun rides in on the patch;
+    // the recomposition is here so no call site can patch the form and forget.
+    it('recomposes an auto name when the placement changes storage form', () => {
+      const painted = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 })
+      const ref = painted.placements[0].clientRef
+      expect(painted.placements[0].name).toBe('Rack 1')
+
+      const s = layoutEditorReducer(painted, {
+        type: 'update_placement', ref, patch: { storageTypeId: 7, nameNoun: 'Pallet' },
+      })
+      expect(s.placements[0].name).toBe('Pallet 1')
+      expect(s.placements[0].nameSeq).toBe(1)
+      expect(s.placements[0].nameIsAuto).toBe(true)
+    })
+
+    it('never recomposes over a name a human typed', () => {
+      const painted = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 })
+      const ref = painted.placements[0].clientRef
+      // Typing a name clears the number and the provenance — there is nothing
+      // left to compose from, and nothing may overwrite it anyway.
+      const named = layoutEditorReducer(painted, {
+        type: 'update_placement', ref, patch: { name: 'Overflow bay' },
+      })
+      const s = layoutEditorReducer(named, {
+        type: 'update_placement', ref, patch: { storageTypeId: 7, nameNoun: 'Pallet' },
+      })
+      expect(s.placements[0].name).toBe('Overflow bay')
+      expect(s.placements[0].nameIsAuto).toBe(false)
+    })
+
     // The generic fallback is for NO form selected, and only that.
     it('paints the generic 10-pallet bin when no form is armed', () => {
       const s = layoutEditorReducer(withTool('rack'), { type: 'paint_cell', x: 0, y: 0 })

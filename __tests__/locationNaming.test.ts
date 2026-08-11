@@ -15,6 +15,7 @@ import {
   highWaterFromRows,
   isUninformativeName,
   nextSeqForArea,
+  restampNames,
   sanitizeAreaName,
   type AreaCellSource,
   type NamingUnit,
@@ -127,6 +128,74 @@ describe('unitNoun', () => {
     // missing flag as true would rename all 189 of MAIN's bays.
     expect(unitNoun({ slotUnit: 'pallet' })).toBe('Rack')
     expect(unitNoun({ isFloor: null, slotUnit: 'pallet' })).toBe('Rack')
+  })
+})
+
+// Recomposition with NO assignment: the pool and the number are stored columns,
+// so a form edit that moves the noun can rebuild every name from the row itself.
+// This is the repair for units no naming pass reaches — the ones that exist only
+// on a published layout (mig 00103).
+describe('restampNames', () => {
+  const unitRow = (over: Partial<Parameters<typeof restampNames>[0][number]> = {}) => ({
+    id: 1,
+    name: 'Quarantine · Rack 2',
+    nameArea: 'Quarantine',
+    nameSeq: 2,
+    ...over,
+  })
+
+  it('rewrites the word and nothing else', () => {
+    expect(restampNames([unitRow()], 'Pallet')).toEqual([
+      { id: 1, name: 'Quarantine · Pallet 2', nameSeq: 2, nameArea: 'Quarantine' },
+    ])
+  })
+
+  it('emits nothing when the noun has not moved', () => {
+    // A form edit that changes a colour or a weight limit must write no names at
+    // all, or every such save churns `locations` and reads as a rename.
+    expect(restampNames([unitRow()], 'Rack')).toEqual([])
+  })
+
+  it('composes an area-less unit without a stray separator', () => {
+    const [write] = restampNames([unitRow({ nameArea: null, name: 'Rack 2' })], 'Pallet')
+    expect(write.name).toBe('Pallet 2')
+    expect(write.nameArea).toBeNull()
+  })
+
+  it('takes a level from its PARENT pool, keeping its own index', () => {
+    const writes = restampNames([unitRow({
+      name: 'Bulk · Rack 3',
+      nameArea: 'Bulk',
+      nameSeq: 3,
+      levels: [
+        { id: 11, name: 'Bulk · Rack 3 · L1', levelIndex: 1 },
+        { id: 12, name: 'Bulk · Rack 3 · L2', levelIndex: 2 },
+      ],
+    })], 'Pallet')
+    expect(writes).toEqual([
+      { id: 1, name: 'Bulk · Pallet 3', nameSeq: 3, nameArea: 'Bulk' },
+      // A level carries no number of its own — mutate-layout writes name_seq
+      // null and the rack's area, and this must agree byte-for-byte.
+      { id: 11, name: 'Bulk · Pallet 3 · L1', nameSeq: null, nameArea: 'Bulk' },
+      { id: 12, name: 'Bulk · Pallet 3 · L2', nameSeq: null, nameArea: 'Bulk' },
+    ])
+  })
+
+  it('rewrites a level whose parent is already correct', () => {
+    // The half most likely to be missing: the rack was restamped by some earlier
+    // pass and its levels were not.
+    const writes = restampNames([unitRow({
+      name: 'Bulk · Pallet 3',
+      nameArea: 'Bulk',
+      nameSeq: 3,
+      levels: [{ id: 11, name: 'Bulk · Rack 3 · L1', levelIndex: 1 }],
+    })], 'Pallet')
+    expect(writes).toEqual([{ id: 11, name: 'Bulk · Pallet 3 · L1', nameSeq: null, nameArea: 'Bulk' }])
+  })
+
+  it('agrees with composeName, which is what the naming pass uses', () => {
+    const [write] = restampNames([unitRow()], 'Pallet')
+    expect(write.name).toBe(composeName('Quarantine', 2, null, 'Pallet'))
   })
 })
 

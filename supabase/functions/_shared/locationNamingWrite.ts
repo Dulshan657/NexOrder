@@ -11,7 +11,12 @@
 // deno-lint-ignore-file no-explicit-any
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { EdgeFunctionError } from './errors.ts'
-import { type NamingUnit, unitNoun } from './wie/locationNaming.ts'
+import {
+  type NamingUnit,
+  type RestampUnit,
+  restampNames,
+  unitNoun,
+} from './wie/locationNaming.ts'
 
 /** supabase-js `.in()` list size. Matches the chunking used by the repoint read
  *  in mutate-layout and the location read in count-bin. */
@@ -217,6 +222,138 @@ export function nameWriteNeeded(stored: StoredNaming | undefined, next: NameWrit
     (stored.nameArea ?? null) !== (next.name_area ?? null) ||
     stored.nameIsAuto !== next.name_is_auto
   )
+}
+
+// ── Restamping a form's units after its noun changed ────────────────────────
+//
+// The counterpart to the naming pass, for the case a naming pass cannot reach: a
+// STORAGE FORM was edited, so every unit wearing it is now called the wrong
+// thing, wherever it is and whatever layout it sits on. No geometry is involved
+// and none is read — the pool and the number are stored columns, so the name
+// rebuilds from the row itself (see restampNames).
+
+/** supabase-js caps a select at 1000 rows. MAIN's biggest form is 189 bays and
+ *  AMD_RACK is 17 racks + 85 levels, so one page is enough today — paging is
+ *  here because "enough today" is how a silent truncation gets written. */
+const PAGE = 1000
+
+/** One `locations` row of the form being restamped. */
+interface FormNamingRow {
+  id: number
+  kind: string
+  parentId: number | null
+  levelIndex: number | null
+  name: string
+  nameIsAuto: boolean
+  nameSeq: number | null
+  nameArea: string | null
+  path: string
+}
+
+async function loadFormNamingRows(
+  admin: SupabaseClient,
+  storageTypeId: number,
+): Promise<FormNamingRow[]> {
+  const out: FormNamingRow[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await admin
+      .from('locations')
+      .select('id, kind, parent_id, level_index, name, name_is_auto, name_seq, name_area, materialized_path')
+      .eq('storage_type_id', storageTypeId)
+      .order('id')
+      .range(from, from + PAGE - 1)
+    if (error) throw new EdgeFunctionError('INTERNAL', `Could not read this form's units: ${error.message}`)
+    const rows = (data ?? []) as any[]
+    for (const r of rows) {
+      out.push({
+        id: Number(r.id),
+        kind: String(r.kind),
+        parentId: r.parent_id != null ? Number(r.parent_id) : null,
+        levelIndex: r.level_index != null ? Number(r.level_index) : null,
+        name: String(r.name ?? ''),
+        nameIsAuto: r.name_is_auto === true,
+        nameSeq: r.name_seq != null ? Number(r.name_seq) : null,
+        nameArea: r.name_area ?? null,
+        path: String(r.materialized_path ?? ''),
+      })
+    }
+    if (rows.length < PAGE) return out
+  }
+}
+
+/**
+ * Rewrite every auto name of one storage form for a new noun.
+ *
+ * Returns how many rows changed — zero being the overwhelmingly common answer,
+ * since most form edits (a colour, a weight limit) do not move the noun at all.
+ *
+ * Writes go through `wie_rename_locations_tx` like every other naming write, and
+ * that RPC is scoped to ONE warehouse — while a form is a tenant-global
+ * catalogue row whose units may stand in several. So the batch is grouped by
+ * warehouse and applied per group: the scope backstop stays meaningful instead
+ * of being handed a path that half the rows fail.
+ */
+export async function restampFormNames(
+  admin: SupabaseClient,
+  storageTypeId: number,
+  noun: string,
+): Promise<number> {
+  const rows = await loadFormNamingRows(admin, storageTypeId)
+  if (rows.length === 0) return 0
+
+  // Levels first: a SHELF carries no number of its own, so it is composed from
+  // its RACK parent. A hand-named level is dropped here rather than inside the
+  // pure rule, which is the same order assignAutoNames applies its guards in.
+  //
+  // A level whose parent wears a DIFFERENT form is left alone, and that is
+  // correct rather than a gap: a level is called what its rack is called
+  // (mutate-layout composes it from the rack's noun), so it moves when the
+  // rack's form moves and not when its own does.
+  const levelsByParent = new Map<number, Array<{ id: number; name: string; levelIndex: number }>>()
+  for (const r of rows) {
+    if (r.kind !== 'SHELF' || !r.nameIsAuto || r.parentId == null || r.levelIndex == null) continue
+    const bucket = levelsByParent.get(r.parentId) ?? []
+    bucket.push({ id: r.id, name: r.name, levelIndex: r.levelIndex })
+    levelsByParent.set(r.parentId, bucket)
+  }
+
+  const units: RestampUnit[] = rows
+    .filter((r) => r.kind !== 'SHELF' && r.nameIsAuto && r.nameSeq != null)
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      nameArea: r.nameArea,
+      nameSeq: r.nameSeq as number,
+      levels: levelsByParent.get(r.id),
+    }))
+
+  const writes = restampNames(units, noun)
+  if (writes.length === 0) return 0
+
+  // The warehouse is the first segment of the materialized path — that IS the
+  // root's own path (a root is `AMADIYA`, a bin under it `AMADIYA/…`).
+  const pathById = new Map(rows.map((r) => [r.id, r.path]))
+  const byWarehouse = new Map<string, NameWrite[]>()
+  for (const w of writes) {
+    const whPath = (pathById.get(w.id) ?? '').split('/')[0]
+    if (!whPath) {
+      throw new EdgeFunctionError('INTERNAL', `Location ${w.id} has no warehouse path and cannot be renamed safely`)
+    }
+    const bucket = byWarehouse.get(whPath) ?? []
+    bucket.push({
+      id: w.id,
+      name: w.name,
+      name_seq: w.nameSeq,
+      name_area: w.nameArea,
+      // Only auto rows reach here, and a restamp does not change provenance.
+      name_is_auto: true,
+    })
+    byWarehouse.set(whPath, bucket)
+  }
+
+  let applied = 0
+  for (const [whPath, batch] of byWarehouse) applied += await applyNameWrites(admin, whPath, batch)
+  return applied
 }
 
 // ── Resolving a layout's nameable units ─────────────────────────────────────

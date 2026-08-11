@@ -875,7 +875,26 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
         : action.patch
       return {
         ...state,
-        placements: state.placements.map((p) => (p.clientRef === action.ref ? { ...p, ...patch } : p)),
+        placements: state.placements.map((p) => {
+          if (p.clientRef !== action.ref) return p
+          const next = { ...p, ...patch }
+          // Changing the FORM changes what the unit is CALLED (mig 00100): a
+          // cell switched from a rack form to a floor one is a Pallet, not a
+          // Rack. The catalogue is not in this pure reducer, so the noun rides
+          // in on the patch exactly as capacitySlots and slotKind already do —
+          // and the recomposition happens HERE rather than at the call site so a
+          // future caller cannot patch the form and forget the name.
+          //
+          // Display only: mutate-layout re-derives the noun from the form on
+          // every save and its answer wins. But a preview that says `· Rack 7`
+          // for a floor pallet is how the floor and the map came to disagree in
+          // the first place, and the operator has no other way to see it.
+          if (patch.name === undefined && patch.nameNoun !== undefined
+              && next.nameIsAuto && next.nameSeq != null) {
+            next.name = composeName(next.nameArea ?? '', next.nameSeq, null, next.nameNoun)
+          }
+          return next
+        }),
         dirty: true,
       }
     }
