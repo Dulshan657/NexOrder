@@ -146,9 +146,14 @@ dropdown.
 **An area's zone profile must be the same on every one of its cells.** An area's identity is its
 NAME, so one profile wins for the whole area and the rest are silently ignored. Amadiya's
 `Fast Movers` was painted half on `Slow Moving` and half on `Fast Moving`, and the result was all 17
-racks bound to the Slow Moving zone — visible nowhere except in the scoring. Repaint the whole area
-with one profile, then run **Bind zones** with its dry run: it must report **zero** moves. That
-idempotence is the only proof the binding is right.
+racks bound to the Slow Moving zone — visible nowhere except in the scoring, since every
+`allowed_categories` is NULL so nothing was actually refused. **Repaired 2026-08-11**: repainting the
+area with one profile re-parented its 14 racks and their 70 levels under `AMADIYA-Z1` (Fast Moving);
+the three genuinely slow-moving racks stayed in `AMADIYA-Z5`.
+
+Repaint the whole area with one profile, then run **Bind zones** with its dry run: it must report
+**zero** moves. That idempotence is the only proof the binding is right — and it is worth running
+once on any site painted before mig `00096`.
 
 ## 6. Publish
 
