@@ -1,12 +1,12 @@
 // config/environments.mjs
 //
-// THE environment registry. This is the only file in the repo where a Supabase
-// project ref is allowed to appear. If you find yourself typing a ref anywhere
-// else — a script, a test, a config, a comment — import it from here instead.
+// THE deployment-target registry. This is the only file in the repo where a
+// Supabase project ref is allowed to appear. If you find yourself typing a ref
+// anywhere else — a script, a test, a config, a comment — import it from here.
 //
 // Everything below is PUBLIC. Refs, URLs and origins all ship in the browser
-// bundle already. Credentials live in `.env.dev.local` / `.env.prod.local`,
-// which are gitignored (`.env.*.local`) and are read by scripts/lib/env.mjs.
+// bundle already. Credentials live in `.env.<target>.local`, which are
+// gitignored (`.env.*.local`) and are read by scripts/lib/env.mjs.
 //
 // Why the split exists at all: until 2026-07 there was one environment, and
 // five copy-pasted `loadEnv()` implementations each defaulting to the Singapore
@@ -14,10 +14,49 @@
 // to whatever that file pointed at, silently. Now every script must name its
 // target and every credential set is asserted against the entry below.
 //
-// See PRODUCTION-LAUNCH-PLAN.md §A1.
+// ── WHY THESE ARE "TARGETS" AND NOT "ENVIRONMENTS" ──────────────────────────
+//
+// The word `prod` used to mean "Amadiya", because Amadiya was the only client.
+// From the second tenant onward that word is a lie: every tenant is production,
+// and "which production?" has no answer. So a target is named for WHAT IT IS —
+// `dev` is the demo, `amadiya` is a tenant — and `kind` carries the distinction
+// that `prod` used to smuggle.
+//
+// The filename stays `environments.mjs` deliberately. It is referenced from
+// CLAUDE.md, from three migration headers (00086, 00098) and from
+// _shared/cors.ts, and those are comments in already-applied, checksummed
+// migrations. Renaming the file would buy nothing and break the paper trail.
+//
+// See MULTI-TENANT-ARCHITECTURE.md for the isolation decision this shape
+// encodes, and PRODUCTION-LAUNCH-PLAN.md §A1 for how it came about.
 
-/** Valid `--env=` values, in the order they should be offered to a human. */
-export const ENV_NAMES = ['dev', 'prod']
+/**
+ * Every optional module, in the order they should be offered to a human.
+ *
+ * A module is a whole surface that a tenant may not have bought: nav entries,
+ * routes, and Edge Functions together. The CORE surfaces — auth, dashboard,
+ * products, customers, orders, users, settings, audit — are not listed because
+ * they are not gateable; an ordering system without them is not the product.
+ *
+ * NOTHING READS THIS YET, and that is intentional. Amadiya has every module
+ * enabled, so a gate would be dead code with no way to tell whether it worked.
+ * The field exists so the seam is real and so a second tenant is a config
+ * change rather than a refactor. The mechanism that will consume it — one
+ * build-time boolean per module, NOT an array, because `arr.includes(x)` is a
+ * runtime call that survives tree-shaking and would ship every byte of a
+ * disabled module — is specified in MULTI-TENANT-ARCHITECTURE.md.
+ */
+export const ALL_MODULES = [
+  'warehouse',
+  'po_inbox',
+  'field_sales',
+  'customer_portal',
+  'purchasing',
+  'invoicing',
+  'promotions',
+  'analytics',
+  'email',
+]
 
 /**
  * Placeholder ref used by unit tests. Never resolves to a real project — it
@@ -27,10 +66,28 @@ export const TEST_PROJECT_REF = 'testref'
 
 const DEV_REF = 'lsgkznyiabqitqfpveey'
 
-export const ENVIRONMENTS = {
+/**
+ * Target names that were renamed, mapped to what they are now.
+ *
+ * `--env=prod` keeps working for one release and prints a warning, so a
+ * half-updated runbook, a shell alias or a stale CI job fails LOUDLY on the
+ * next line instead of silently doing nothing. Delete this map once nothing
+ * references the old spelling.
+ */
+export const DEPRECATED_TARGET_ALIASES = {
+  prod: 'amadiya',
+}
+
+export const TARGETS = {
   dev: {
     name: 'dev',
     label: 'Development / sales demo (Singapore)',
+
+    /**
+     * 'demo' — NexGen's own. Fixtures allowed, demo logins shown, seeded data
+     * expected. 'tenant' — a paying client's. None of the above, ever.
+     */
+    kind: 'demo',
 
     projectRef: DEV_REF,
     supabaseUrl: `https://${DEV_REF}.supabase.co`,
@@ -70,15 +127,30 @@ export const ENVIRONMENTS = {
     vercel: {
       teamSlug: 'dulshan657s-projects',
       /**
-       * TODAY: `main` deploys to production and carries this alias.
-       * A8 flips this entry to `target: 'preview'` on the `develop` branch,
-       * at which point `nexorder.vercel.app` becomes the dev/demo URL and
-       * `nexorder.com.au` becomes production. Do not flip it early — deploy.mjs
-       * reads this and would start shipping previews instead of the demo.
+       * One Vercel PROJECT per target — see MULTI-TENANT-ARCHITECTURE.md.
+       *
+       * READ BY NOTHING YET. `deploy.mjs` still runs a bare `vercel deploy`,
+       * which resolves the project from `.vercel/project.json`. That works
+       * while there is one project and stops working the moment there are two;
+       * the fix (pass VERCEL_PROJECT_ID/VERCEL_ORG_ID in the child env) is
+       * five lines and is deliberately deferred until Amadiya's project
+       * exists, rather than changing a working deploy path for no gain.
        */
+      projectId: 'prj_DdZRpjyAQKwmL6MiCKmbO9I7zhiI',
       target: 'production',
       alias: 'nexorder.vercel.app',
     },
+
+    /**
+     * What `migrate.mjs --stamp` writes into `environment_marker.name`.
+     *
+     * NOT the same thing as `name`, and it must not be derived from it:
+     * migration 00086 constrains the column to CHECK (name IN ('dev','prod')),
+     * and 00086 is applied and checksummed, so the database's vocabulary is
+     * frozen at two values while target names are now open-ended. Stamping
+     * `'amadiya'` there would fail the CHECK on the first production run.
+     */
+    markerName: 'dev',
 
     /** Stamped into `environment_marker.tenant_key`; see migration 00087. */
     tenantKey: 'ayam',
@@ -86,22 +158,25 @@ export const ENVIRONMENTS = {
     /** Seed / demo / reset scripts may run here. */
     allowFixtures: true,
 
+    /** Everything on. See ALL_MODULES — read by nothing yet, by design. */
+    modules: [...ALL_MODULES],
+
     envFile: '.env.dev.local',
   },
 
-  prod: {
-    name: 'prod',
-    label: 'Production — Amadiya Agro Products (Sydney)',
+  amadiya: {
+    name: 'amadiya',
+    label: 'Amadiya Agro Products (Sydney)',
+    kind: 'tenant',
 
     /**
      * NOT YET PROVISIONED. Fill these three in the moment the Sydney project
      * exists (PRODUCTION-LAUNCH-PLAN.md §A0.3) — resolveTarget() throws a
      * pointed error until then, which is deliberate: it is better for every
-     * prod-targeted command to refuse than for one of them to guess.
+     * tenant-targeted command to refuse than for one of them to guess.
      *
-     * Also fill the prod Supabase host into vercel.json's CSP `img-src`,
-     * `connect-src` and `frame-src` at the same time. That is tracked as a
-     * Gate B assertion.
+     * Fill `vercel.projectId` at the same time, and the prod Supabase host into
+     * the CSP. Both are Gate B assertions.
      */
     projectRef: null,
     supabaseUrl: null,
@@ -128,28 +203,84 @@ export const ENVIRONMENTS = {
 
     vercel: {
       teamSlug: 'dulshan657s-projects',
+      /** Created with the Sydney project. Null until then — see above. */
+      projectId: null,
       target: 'production',
       alias: 'nexorder.com.au',
     },
+
+    /** See dev's note. The database's vocabulary is 'dev' | 'prod', frozen. */
+    markerName: 'prod',
 
     tenantKey: 'amadiya',
 
     /** Never. There is no `--force`. */
     allowFixtures: false,
 
-    envFile: '.env.prod.local',
+    modules: [...ALL_MODULES],
+
+    envFile: '.env.amadiya.local',
   },
 }
 
 /**
+ * Valid `--env=` values, in the order they should be offered to a human.
+ * Derived, so adding a tenant is one edit rather than two that can disagree.
+ */
+export const ENV_NAMES = Object.keys(TARGETS)
+
+/** Targets where seed / demo / reset scripts are permitted. Guard #1's list. */
+export function fixtureTargets() {
+  return Object.entries(TARGETS)
+    .filter(([, config]) => config.allowFixtures)
+    .map(([name]) => name)
+}
+
+/**
+ * Every paying client's target.
+ *
+ * Test harnesses use this to fail closed. They used to name `ENVIRONMENTS.prod`
+ * directly, which protected exactly one client and would have gone on quietly
+ * protecting only that one after a second was added — the failure being that
+ * nothing anywhere would have said so.
+ *
+ * @returns {Array<typeof TARGETS[keyof typeof TARGETS]>}
+ */
+export function tenantTargets() {
+  return Object.values(TARGETS).filter((config) => config.kind === 'tenant')
+}
+
+const warnedAliases = new Set()
+
+/**
+ * Map a possibly-deprecated target name onto its canonical one, warning once.
+ *
  * @param {string} name
- * @returns {typeof ENVIRONMENTS[keyof typeof ENVIRONMENTS]}
+ * @returns {string}
+ */
+export function canonicalTargetName(name) {
+  const canonical = DEPRECATED_TARGET_ALIASES[name]
+  if (!canonical) return name
+
+  if (!warnedAliases.has(name)) {
+    warnedAliases.add(name)
+    console.warn(
+      `[config] "--env=${name}" is deprecated and now means "--env=${canonical}". ` +
+        `Update the caller — this alias is removed next release.`,
+    )
+  }
+  return canonical
+}
+
+/**
+ * @param {string} name
+ * @returns {typeof TARGETS[keyof typeof TARGETS]}
  */
 export function getEnvironment(name) {
-  const config = ENVIRONMENTS[name]
+  const config = TARGETS[canonicalTargetName(name)]
   if (!config) {
     throw new Error(
-      `Unknown environment "${name}". Valid values: ${ENV_NAMES.join(', ')}.`,
+      `Unknown target "${name}". Valid values: ${ENV_NAMES.join(', ')}.`,
     )
   }
   return config

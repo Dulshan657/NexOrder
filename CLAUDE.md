@@ -8,24 +8,29 @@ Nex Order — B2B order management for food and general distribution. Sales reps
 
 > The app directory was renamed `copy-of-curatif-order-system-v1.3/` → `NexOrder/`. The Vercel **project** still carries the old name — don't "fix" it.
 
-## ⚠️ Two environments. Nothing defaults.
+## ⚠️ Two deployment targets. Nothing defaults.
 
-There are **two** Supabase projects. Read this before running anything that writes.
+There are **two** Supabase projects, one per target. Read this before running anything that writes.
 
-| | dev / sales demo | production |
+| | `dev` | `amadiya` |
 |---|---|---|
+| Kind | demo (NexGen's own) | **tenant** (a paying client's) |
 | Supabase | `lsgkznyiabqitqfpveey` (Singapore) | Sydney (`ap-southeast-2`) — **see `config/environments.mjs`** |
 | App | https://nexorder.vercel.app | https://nexorder.com.au |
 | Holds | AYAM seed data, Tridon + V2food demo tenants, WIE-DEMO, MAIN | **Amadiya Agro Products' real business data** |
 | `tenant` tag | `ayam` | `amadiya` |
+| `environment_marker.name` | `dev` | `prod` |
 | Fixtures / seeds | yes | **never** |
-| Credentials | `.env.dev.local` | `.env.prod.local` |
+| Credentials | `.env.dev.local` | `.env.amadiya.local` |
 
-- **`config/environments.mjs` is the only file where a project ref belongs.** Import from it; never type a ref.
-- **Every script takes `--env=<dev|prod>`, equals-form only, and hard-fails without one.** `--env prod` (space) is rejected on purpose — `apply-sql.mjs` reads the first non-`--` argument as a filename.
-- **Seed / demo / reset scripts are dev-only and there is no `--force`.** Three guards (`scripts/lib/fixtureGuard.mjs`): the named target, a credential-vs-registry assertion, and `environment_marker` in the database itself.
-- **`.mcp.json` is pinned to dev, permanently.** Never add a prod entry — an agent session with MCP write access to the client's database is the single largest unforced risk in this repo.
-- Prod is not provisioned yet (`projectRef: null`), so every `--env=prod` command refuses until `PRODUCTION-LAUNCH-PLAN.md` §A0.3 is done. That refusal is the feature.
+- **The target is named `amadiya`, not `prod`.** From tenant #2 onward every tenant is production, so "prod" names nothing. `--env=prod` still resolves, warns, and is removed next release.
+- **`config/environments.mjs` is the only file where a project ref belongs.** Import from it; never type a ref. `ENV_NAMES`, `fixtureTargets()` and `tenantTargets()` are all derived from it — don't hardcode a target list anywhere.
+- **Every script takes `--env=<dev|amadiya>`, equals-form only, and hard-fails without one.** `--env amadiya` (space) is rejected on purpose — `apply-sql.mjs` reads the first non-`--` argument as a filename.
+- **Seed / demo / reset scripts are dev-only and there is no `--force`.** Three guards (`scripts/lib/fixtureGuard.mjs`): the named target (from `allowFixtures`), a credential-vs-registry assertion, and `environment_marker` in the database itself. Guard #3 compares against the **literal** `'dev'` and reads nothing from the registry — that independence is the whole point of having three.
+- **`environment_marker.name` is `dev`/`prod`, NOT the target name.** Migration `00086` constrains it with `CHECK (name IN ('dev','prod'))` and is applied and checksummed, so the database's vocabulary is frozen while target names are open-ended. The registry carries `markerName` for exactly this; `migrate.mjs --stamp` writes that, never `name`.
+- **`.mcp.json` is pinned to dev, permanently.** Never add a tenant entry — an agent session with MCP write access to the client's database is the single largest unforced risk in this repo.
+- Amadiya is not provisioned yet (`projectRef: null`), so every `--env=amadiya` command refuses until `PRODUCTION-LAUNCH-PLAN.md` §A0.3 is done. That refusal is the feature.
+- **Tenancy is decided: project-per-tenant, one `main`, module flags.** See `MULTI-TENANT-ARCHITECTURE.md` before adding a client or a per-client feature. There is never a per-tenant branch. `ALL_MODULES` in the registry is the module vocabulary and is **read by nothing yet** — that is deliberate, not an oversight.
 
 ## Commands
 
@@ -39,31 +44,31 @@ npm run test:coverage              # vitest + coverage report
 npm run test:integration           # vitest against live pg — dev only, throws on a prod URL
 npm run test:e2e                   # Playwright (:ui / :headed variants) — dev only
 npm run check:overlays             # no raw `fixed inset-0` outside components/ui
-npm run check:csp                  # vercel.json CSP covers every provisioned environment
+npm run check:csp                  # vercel.ts: per-target CSP + /storage rewrite ordering
 
 # Type-check before deploy (no CI block-on-red yet)
 npx tsc --noEmit
 
 # Deploy: builds, aliases, verifies /version.json AND /functions/v1/health
 npm run deploy:dev                 # -> nexorder.vercel.app
-npm run deploy:prod                # -> nexorder.com.au
+npm run deploy:amadiya             # -> nexorder.com.au
 
 # Migrations — ledgered in public.schema_migrations, checksummed, transactional
 node supabase/migrate.mjs --env=dev --dry-run    # what would run, in order
 npm run migrate:dev                              # apply everything pending
-npm run migrate:prod
+npm run migrate:amadiya
 
 # Edge Functions (never pass --no-verify-jwt; config.toml governs the gate)
 npm run fn:deploy:dev              # all; append a name for one
-npm run fn:deploy:prod
+npm run fn:deploy:amadiya
 
 # Raw SQL (Management API — the direct DB host is unreachable on Windows)
 node supabase/apply-sql.mjs --env=dev --query "SELECT ..."
 node supabase/apply-sql.mjs --env=dev <file.sql>
 
 # Supabase Auth config (site URL, redirect allow-list, password rules, disable_signup)
-npm run auth:config:dev / :prod          # diff, then PATCH if it differs
-npm run auth:config:check:dev / :prod    # diff only, exit 1 on drift
+npm run auth:config:dev / :amadiya          # diff, then PATCH if it differs
+npm run auth:config:check:dev / :amadiya    # diff only, exit 1 on drift
 
 # Seed / fixtures — DEV ONLY, guarded three ways, no override
 npx tsx supabase/seed.ts --env=dev
@@ -71,7 +76,7 @@ npm run warehouse:main:seed / :reset     # MAIN floor plan + engine slotting of 
 npm run demo:wie:seed / :reset           # standalone WIE-DEMO racked warehouse
 ```
 
-**Never run `vercel deploy --prod` directly** — it won't move the alias, and users will report fixes as "not live". Always use `npm run deploy:<env>` (wraps deploy + alias + verification).
+**Never run `vercel deploy --prod` directly** — it won't move the alias, and users will report fixes as "not live". Always use `npm run deploy:<target>` (wraps deploy + alias + verification).
 
 `supabase/run-migration.mjs` is legacy and cannot reach the DB host from this box. Use `supabase/migrate.mjs`.
 
@@ -81,8 +86,8 @@ npm run demo:wie:seed / :reset           # standalone WIE-DEMO racked warehouse
 |-----|-------|
 | Dev project ref | `lsgkznyiabqitqfpveey` |
 | Dev URL | `https://lsgkznyiabqitqfpveey.supabase.co` |
-| Prod project ref | _not yet created — `config/environments.mjs` → `ENVIRONMENTS.prod`_ |
-| Anon / publishable key | _see `.env.dev.local` / `.env.prod.local` → `VITE_SUPABASE_ANON_KEY`_ |
+| Amadiya project ref | _not yet created — `config/environments.mjs` → `TARGETS.amadiya`_ |
+| Anon / publishable key | _see `.env.dev.local` / `.env.amadiya.local` → `VITE_SUPABASE_ANON_KEY`_ |
 | Service role / secret key | _same files → `SUPABASE_SERVICE_ROLE_KEY`_ |
 | DB password | _same files → `SUPABASE_DB_PASSWORD`_ |
 | Seeded user password (dev only) | `Password123!` (all seeded users) |
@@ -375,7 +380,7 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 - **RLS is enabled** (mig `00008` re-enables; `00009`+ lock down individual table mutations to Edge Functions). Direct INSERT/UPDATE/DELETE from `authenticated` is blocked for the tables in the lockdown table; mutations must go through Edge Functions.
 - **Edge Function deploy order matters.** When wiring the client to a new function: deploy the function FIRST (`npx supabase functions deploy <name>`), then push the frontend, then apply any RLS lockdown migration LAST. Reversing the order breaks admin UIs.
 - **Migrations are ledgered and checksummed** (`public.schema_migrations`, written by `supabase/migrate.mjs`). An applied file whose bytes change is a hard error, not a re-run — **edit forward with a new migration**. Ordering is (numeric prefix, full filename); `00022` and `00081` are each a duplicated-number pair of mutually independent files, so **do not renumber them** — a rename makes an applied migration look unapplied forever. Each file commits together with its ledger row (the `INSERT` is spliced before the single `COMMIT;`, or the file is wrapped in `BEGIN…COMMIT`).
-- **The `tenant` tag is environment-derived, and `ayam` must never appear in prod.** `00087` re-points the eight `00042` column defaults and both derivation triggers at `public.default_tenant()`, which reads `environment_marker.tenant_key` — `ayam` on dev, `amadiya` on prod. It is `SECURITY DEFINER` with a pinned `search_path` because a column DEFAULT evaluates as the *inserting* role and `environment_marker` is service_role-only. On an unstamped database it returns NULL and the `NOT NULL` tenant columns reject the insert — that is intended, not a bug. The column is still **read by nothing**; it is written correctly so a future read-side filter has something true to filter on.
+- **The `tenant` tag is environment-derived, and `ayam` must never appear in prod.** `00087` re-points the eight `00042` column defaults and both derivation triggers at `public.default_tenant()`, which reads `environment_marker.tenant_key` — `ayam` on dev, `amadiya` on prod. It is `SECURITY DEFINER` with a pinned `search_path` because a column DEFAULT evaluates as the *inserting* role and `environment_marker` is service_role-only. On an unstamped database it returns NULL and the `NOT NULL` tenant columns reject the insert — that is intended, not a bug. The column is **read by nothing, and as of 2026-08-11 that is permanent** — under project-per-tenant (`MULTI-TENANT-ARCHITECTURE.md`) a database holds exactly one tenant, so `WHERE tenant = …` could only ever be a tautology. Do not build a read side for it; wanting one means you have taken the shared-database path by accident. It stays as row-level provenance and because `environment_marker.tenant_key` feeds it, and that marker is fixture guard #3.
 - **`APP_URL`, `ALLOWED_ORIGINS` and `PO_OAUTH_APP_BASE` have no defaults and fail closed.** Each previously fell back to the demo origin, and each failed *silently and successfully*: `send-email` would send a customer real links to the wrong app while answering `sent: true`, and `health` would probe the demo's `version.json` so prod reported `ok` while prod was down. **Set `ALLOWED_ORIGINS` on a project before deploying `_shared/cors.ts` to it** — `cors.ts` and `callbackCommon.ts` both read it, so the ordering breaks browser calls and OAuth callbacks together.
 - **A missing `ALLOWED_ORIGINS` fails the fleet *gradually*, and reads as a client bug.** `cors.ts:53` reads the secret **once per isolate at module load**, so functions whose isolates are still warm keep serving the value they booted with while anything that cold-boots gets nothing. On 2026-07-29 the secret went missing from dev and only the three most recently deployed functions lost CORS — the browser reported `FunctionsFetchError` / **"Failed to send a request to the Edge Function"** (fetch rejected, no response ever reaches JS) on those, and worked everywhere else. Symptoms to recognise: that string; a preflight that returns `200` with `Access-Control-Allow-Headers` but **no `Access-Control-Allow-Origin`**; different functions disagreeing. Check with `npx supabase secrets list --project-ref <ref>` — it prints names, not values, so absence is the signal. After setting it, **redeploy** — a warm isolate does not re-read secrets. `curl -X OPTIONS -H "Origin: …"` across a few functions is the fastest confirmation, and a hostile origin must still get nothing.
 - **Type-check** with `npx tsc --noEmit` before deploy (CI runs it but block-on-red isn't enforced on `main` yet).

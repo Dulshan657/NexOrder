@@ -67,11 +67,51 @@ export function getOptimizedImageUrl(url: string, transform: ImageTransform): st
 }
 
 /**
- * Ordered candidate sources for `<OptimizedImage>`: the optimized URL first,
- * then the raw URL as a fallback when they differ. Lets the component retry
- * the original before giving up and showing a placeholder.
+ * Rewrite a Supabase Storage URL to a same-origin path.
+ *
+ * WHY: image columns store ABSOLUTE Supabase URLs containing the project ref,
+ * so `<img src>` advertises `lsgkznyiabqitqfpveey.supabase.co` to anyone who
+ * opens devtools or copies an image address. The ref is immutable and cannot be
+ * renamed. `vercel.ts` rewrites `/storage/:path*` back to the Supabase host, so
+ * returning a RELATIVE path is enough to hide it.
+ *
+ * Relative, not absolute-with-app-origin, deliberately: the same string then
+ * works on localhost, on a preview deployment and in production with nothing to
+ * configure and no origin to get wrong.
+ *
+ * Only the ORIGIN is replaced. The path is untouched, which is what lets one
+ * rewrite rule serve both `/storage/v1/object/public/…` and the transform
+ * endpoint `/storage/v1/render/image/public/…` — and it is why this composes
+ * with `buildSupabaseRenderUrl` in either order.
+ *
+ * Returns the input unchanged for anything that is not a Supabase Storage URL
+ * (external CDN, `data:`, already-relative).
+ */
+export function publicImageUrl(url: string): string {
+  const marker = url.indexOf('/storage/');
+  if (marker < 0) return url;
+  if (!/^https?:\/\//.test(url)) return url;
+  // Guard against a path that merely CONTAINS "/storage/" further along:
+  // the marker must be the start of the path, i.e. the next "/" after the host.
+  const pathStart = url.indexOf('/', url.indexOf('://') + 3);
+  if (pathStart !== marker) return url;
+  return url.slice(marker);
+}
+
+/**
+ * Ordered candidate sources for `<OptimizedImage>`: the same-origin proxied URL
+ * first, then the direct Supabase URL, then the raw one.
+ *
+ * The direct URL is retained ON PURPOSE. `<OptimizedImage>` retries the next
+ * candidate on load error, so if the `/storage` rewrite is ever missing —
+ * a Vercel config that did not take, a preview built without it, `vite preview`
+ * — the images still load from Supabase directly after one failed request.
+ * That turns "every image in the app is broken" into "one wasted round trip",
+ * which is the difference between a bad config being a page-one incident and
+ * being a line in the network tab.
  */
 export function optimizedImageSources(url: string, transform: ImageTransform): string[] {
   const optimized = getOptimizedImageUrl(url, transform);
-  return optimized === url ? [url] : [optimized, url];
+  const candidates = [publicImageUrl(optimized), optimized, url];
+  return candidates.filter((candidate, i) => candidates.indexOf(candidate) === i);
 }

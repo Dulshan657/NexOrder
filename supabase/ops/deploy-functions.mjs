@@ -10,9 +10,12 @@
 // downstream misbehaves.
 //
 // NEVER pass --no-verify-jwt here. `supabase/config.toml` governs the JWT gate
-// per function, and the eight `verify_jwt = false` entries there each
+// per function, and the nine `verify_jwt = false` entries there each
 // re-implement auth in-body. Overriding on the command line silently diverges
 // the deployed state from the file that documents it.
+//
+// Nine, not eight: `embed-products` was added after this comment was written,
+// and the count is a Gate A assertion — count it, don't remember it.
 
 import { spawnSync } from 'node:child_process'
 

@@ -5,6 +5,7 @@ import {
   buildSupabaseRenderUrl,
   getOptimizedImageUrl,
   optimizedImageSources,
+  publicImageUrl,
 } from '../lib/imageUrl';
 
 const STORAGE_URL =
@@ -70,19 +71,64 @@ describe('getOptimizedImageUrl (flag-gated)', () => {
   });
 });
 
+describe('publicImageUrl', () => {
+  it('strips the Supabase origin, leaving a same-origin path', () => {
+    expect(publicImageUrl(STORAGE_URL)).toBe(
+      '/storage/v1/object/public/product-images/products/abc.webp',
+    );
+  });
+
+  it('works on the transform endpoint too, so one rewrite serves both', () => {
+    const render = buildSupabaseRenderUrl(STORAGE_URL, { width: 600 });
+    expect(publicImageUrl(render)).toBe(
+      '/storage/v1/render/image/public/product-images/products/abc.webp?width=600&quality=75',
+    );
+  });
+
+  it('leaves external CDN, data and already-relative URLs alone', () => {
+    expect(publicImageUrl(EXTERNAL_URL)).toBe(EXTERNAL_URL);
+    expect(publicImageUrl(DATA_URL)).toBe(DATA_URL);
+    expect(publicImageUrl('/storage/v1/object/public/x.webp')).toBe(
+      '/storage/v1/object/public/x.webp',
+    );
+  });
+
+  it('does not match "/storage/" appearing later in the path', () => {
+    const decoy = 'https://cdn.example.com/assets/storage/v1/object/public/x.webp';
+    expect(publicImageUrl(decoy)).toBe(decoy);
+  });
+});
+
 describe('optimizedImageSources', () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it('returns a single source when no transform applies', () => {
+  it('leaves a non-Supabase URL as a single source', () => {
     expect(optimizedImageSources(EXTERNAL_URL, { width: 600 })).toEqual([EXTERNAL_URL]);
-    expect(optimizedImageSources(STORAGE_URL, { width: 600 })).toEqual([STORAGE_URL]);
   });
 
-  it('returns [optimized, raw] for storage URLs when enabled', () => {
+  // The direct Supabase URL is deliberately kept as a fallback candidate:
+  // <OptimizedImage> retries the next source on error, so a missing /storage
+  // rewrite costs one failed request instead of breaking every image.
+  it('proxies a storage URL first and keeps the direct URL as fallback', () => {
+    const sources = optimizedImageSources(STORAGE_URL, { width: 600 });
+    expect(sources).toEqual([
+      '/storage/v1/object/public/product-images/products/abc.webp',
+      STORAGE_URL,
+    ]);
+  });
+
+  it('returns [proxied-transform, transform, raw] when transforms are enabled', () => {
     vi.stubEnv('VITE_SUPABASE_IMAGE_TRANSFORMS', 'true');
     const sources = optimizedImageSources(STORAGE_URL, { width: 600 });
-    expect(sources).toHaveLength(2);
-    expect(sources[0]).toContain('/render/image/public/');
-    expect(sources[1]).toBe(STORAGE_URL);
+    expect(sources).toHaveLength(3);
+    expect(sources[0]).toMatch(/^\/storage\/v1\/render\/image\/public\//);
+    expect(sources[1]).toContain('/render/image/public/');
+    expect(sources[1]).toContain('https://');
+    expect(sources[2]).toBe(STORAGE_URL);
+  });
+
+  it('never repeats a candidate', () => {
+    const sources = optimizedImageSources(EXTERNAL_URL, { width: 600 });
+    expect(new Set(sources).size).toBe(sources.length);
   });
 });

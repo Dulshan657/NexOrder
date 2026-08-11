@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Deploy + alias + verification + recording, for one named environment.
 //
-//   node scripts/deploy.mjs --env=dev     (npm run deploy:dev)
-//   node scripts/deploy.mjs --env=prod    (npm run deploy:prod)
+//   node scripts/deploy.mjs --env=dev       (npm run deploy:dev)
+//   node scripts/deploy.mjs --env=amadiya   (npm run deploy:amadiya)
 //
 //   1. Capture the local commit sha/branch and pass GIT_COMMIT_SHA to the
 //      remote build (Vercel CLI builds without .git, so vite.config.ts can't

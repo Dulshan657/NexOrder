@@ -14,11 +14,86 @@
 import { resolveTarget, orExit } from '../scripts/lib/env.mjs'
 
 /**
+ * The link an auth email points at.
+ *
+ * WHY NOT `{{ .ConfirmationURL }}` (the Supabase default): that URL is
+ * `https://<project-ref>.supabase.co/auth/v1/verify?…`, so the one place a
+ * CLIENT actually reads a URL out of this system shows them a random
+ * twenty-character project ref on a domain they have never heard of. The ref is
+ * immutable and cannot be renamed; the link can.
+ *
+ * `{{ .TokenHash }}` is the supported way to point the link at your own app
+ * instead. `lib/auth/recoveryLink.ts` has parsed exactly this shape —
+ * `?token_hash=…&type=recovery|invite` — since the auth-link work, and its own
+ * comment notes the project was still on the default template. This closes that.
+ *
+ * `{{ .SiteURL }}` and not `{{ .RedirectTo }}`, deliberately:
+ *  - `invite-user` passes NO redirectTo (that is why it needs no allow-list
+ *    entry), so `.RedirectTo` is empty for the invite flow and the link would
+ *    have to be built through a Go-template conditional to cover both.
+ *  - The cost is that a forgot-password started on `localhost:3000` mails a
+ *    link to the DEPLOYED dev app rather than back to localhost. The token is
+ *    still valid, so the reset completes — it just completes over there.
+ *
+ * `&amp;` rather than a bare `&` so the value is well-formed HTML regardless of
+ * which template engine renders it; a parser hands `&` back to the browser.
+ */
+function authLink(type) {
+  return `{{ .SiteURL }}/?token_hash={{ .TokenHash }}&amp;type=${type}`
+}
+
+/**
+ * Email bodies are assembled from parts and joined with '' so the value sent
+ * over the wire contains NO newlines.
+ *
+ * That is not cosmetic. `drift()` below compares live-vs-desired with a plain
+ * string !==, and the Management API is free to normalise whitespace in a
+ * multi-line HTML body. If it did, every run would report drift on a template
+ * nobody had touched, and `auth:config:check` — which CI and Gate A both read
+ * as a boolean — would be permanently red. A single line cannot be reflowed.
+ */
+const html = (...parts) => parts.join('')
+
+const BODY_STYLE = 'font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#1e293b;line-height:1.6'
+const BUTTON_STYLE =
+  'display:inline-block;background:#2988de;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600'
+const MUTED_STYLE = 'color:#64748b;font-size:13px'
+
+function recoveryEmail() {
+  return html(
+    `<div style="${BODY_STYLE}">`,
+    '<h2 style="margin:0 0 16px">Reset your password</h2>',
+    '<p>Choose a new password for your Nex Order account.</p>',
+    `<p style="margin:24px 0"><a href="${authLink('recovery')}" style="${BUTTON_STYLE}">Choose a new password</a></p>`,
+    // The hour is mailer_otp_exp below, and is stated as prose in
+    // ForgotPasswordDialog too. Three copies now; change one, change all three.
+    `<p style="${MUTED_STYLE}">This link expires in 1 hour and can be used once.</p>`,
+    `<p style="${MUTED_STYLE}">If you did not ask for this, ignore this email — your password will not change.</p>`,
+    '</div>',
+  )
+}
+
+function inviteEmail() {
+  return html(
+    `<div style="${BODY_STYLE}">`,
+    '<h2 style="margin:0 0 16px">You have been invited to Nex Order</h2>',
+    // Not "reset your password" — an invited user has never had one. The auth
+    // row exists with no password, so this link is the ONLY way they can ever
+    // sign in.
+    '<p>An administrator has created an account for you. Set a password to sign in for the first time.</p>',
+    `<p style="margin:24px 0"><a href="${authLink('invite')}" style="${BUTTON_STYLE}">Set your password</a></p>`,
+    `<p style="${MUTED_STYLE}">This link expires in 1 hour and can be used once. If it lapses, use “Forgot password” on the sign-in page.</p>`,
+    '</div>',
+  )
+}
+
+/**
  * The desired auth config for one environment.
  *
- * site_url is load-bearing twice over: Supabase substitutes it whenever a
- * requested redirectTo is NOT in the allow list, and `invite-user` passes no
- * redirectTo at all, so it falls back to this.
+ * site_url is load-bearing three times over: Supabase substitutes it whenever a
+ * requested redirectTo is NOT in the allow list, `invite-user` passes no
+ * redirectTo at all so it falls back to this, and the email templates above
+ * build their links from it.
  *
  * Allow-list entries are matched as GLOBS; `*` does not cross a `/`, and `**`
  * matches the rest of the path (including an empty one). ForgotPasswordDialog
@@ -31,6 +106,11 @@ import { resolveTarget, orExit } from '../scripts/lib/env.mjs'
  */
 function buildDesired(config) {
   return {
+    mailer_subjects_recovery: 'Reset your Nex Order password',
+    mailer_templates_recovery_content: recoveryEmail(),
+    mailer_subjects_invite: 'You have been invited to Nex Order',
+    mailer_templates_invite_content: inviteEmail(),
+
     site_url: config.appOrigin,
     uri_allow_list: config.authRedirectAllowList.join(','),
 
@@ -85,11 +165,20 @@ function drift(live) {
   return Object.keys(DESIRED).filter(key => String(live[key] ?? '') !== String(DESIRED[key]))
 }
 
+// The email bodies are ~800 characters of HTML on one line. Printed whole they
+// bury the four settings a human is actually scanning for.
+const MAX_PREVIEW = 110
+
+function preview(value) {
+  const s = JSON.stringify(value ?? null)
+  return s.length > MAX_PREVIEW ? `${s.slice(0, MAX_PREVIEW)}… (${s.length} chars)` : s
+}
+
 function report(live, keys) {
   for (const key of keys) {
     console.log(`  ${key}`)
-    console.log(`    live:    ${JSON.stringify(live[key] ?? null)}`)
-    console.log(`    desired: ${JSON.stringify(DESIRED[key])}`)
+    console.log(`    live:    ${preview(live[key])}`)
+    console.log(`    desired: ${preview(DESIRED[key])}`)
   }
 }
 
@@ -130,7 +219,7 @@ async function main() {
   }
 
   for (const key of Object.keys(DESIRED)) {
-    console.log(`  ${key} = ${JSON.stringify(after[key])}`)
+    console.log(`  ${key} = ${preview(after[key])}`)
   }
   console.log('Done.')
   return 0

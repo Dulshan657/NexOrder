@@ -4,7 +4,7 @@
 //   node supabase/migrate.mjs --env=dev --dry-run        # what would run, in order
 //   node supabase/migrate.mjs --env=dev --baseline=00085 # record 00001..00085 as applied, run the rest
 //   node supabase/migrate.mjs --env=dev                  # apply everything pending
-//   node supabase/migrate.mjs --env=prod                  # ditto, on the client's project
+//   node supabase/migrate.mjs --env=amadiya               # ditto, on the client's project
 //   node supabase/migrate.mjs --env=dev --stamp-only      # just rewrite environment_marker
 //
 // Why this exists: until now "which migrations has this database had?" was
@@ -145,9 +145,14 @@ function buildStatement({ filename, body, checksum }, appliedBy) {
 
 async function stampMarker() {
   const { config } = target
+  // `markerName`, NOT `name`. Migration 00086 constrains this column to
+  // CHECK (name IN ('dev','prod')) and is applied and checksummed, so the
+  // database's vocabulary is frozen at two values while target names are now
+  // open-ended (`dev`, `amadiya`, …). Stamping the target name here would fail
+  // the CHECK on the first production run — and nowhere earlier.
   const sql = `
 INSERT INTO public.environment_marker (id, name, tenant_key)
-VALUES (1, ${lit(config.name)}, ${lit(config.tenantKey)})
+VALUES (1, ${lit(config.markerName)}, ${lit(config.tenantKey)})
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, tenant_key = EXCLUDED.tenant_key;
 SELECT name, tenant_key FROM public.environment_marker WHERE id = 1;`
 
@@ -155,7 +160,7 @@ SELECT name, tenant_key FROM public.environment_marker WHERE id = 1;`
     const rows = await runSql(target, sql)
     const row = Array.isArray(rows) ? rows[rows.length - 1] : null
     console.log(
-      `[migrate] environment_marker = ${JSON.stringify(row ?? { name: config.name, tenant_key: config.tenantKey })}`,
+      `[migrate] environment_marker = ${JSON.stringify(row ?? { name: config.markerName, tenant_key: config.tenantKey })}`,
     )
   } catch (e) {
     if (e instanceof SqlError && /environment_marker/.test(e.body ?? '')) {
