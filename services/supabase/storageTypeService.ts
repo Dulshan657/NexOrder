@@ -37,16 +37,21 @@ export interface StorageTypeInput {
   levelTemplate?: RackLevel[] | null
 }
 
-/** [{levelIndex, role, capacitySlots, weightCapacityKg}] -> the positionally-
- *  ordered [{role, capacity_slots, weight_capacity_kg}] the server stores
- *  (level_index is implicit = array position; see toRackLevelTemplate in
- *  lib/adapters.ts for the read-side inverse). */
+/** [{levelIndex, role, capacitySlots, slotKind, weightCapacityKg}] -> the
+ *  positionally-ordered [{role, capacity_slots, slot_kind, weight_capacity_kg}]
+ *  the server stores (level_index is implicit = array position; see
+ *  toRackLevelTemplate in lib/adapters.ts for the read-side inverse).
+ *
+ *  `?? null`, never omitted, for the same reason the rest of this file uses it:
+ *  the columns are nullable and null is the honest wire value for "no limit" /
+ *  "inherit the form's slot_unit". The server declares each field nullish. */
 function toLevelTemplateColumn(levels: RackLevel[]): Array<Record<string, unknown>> {
   return [...levels]
     .sort((a, b) => a.levelIndex - b.levelIndex)
     .map((l) => ({
       role: l.role,
       capacity_slots: l.capacitySlots ?? null,
+      slot_kind: l.slotKind ?? null,
       weight_capacity_kg: l.weightCapacityKg ?? null,
     }))
 }

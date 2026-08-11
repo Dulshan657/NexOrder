@@ -81,10 +81,10 @@ describe('toStorageType', () => {
 
     expect(t.hasLevels).toBe(true)
     expect(t.levelTemplate).toEqual([
-      { levelIndex: 1, role: 'pick', capacitySlots: 24, weightCapacityKg: 1000 },
-      { levelIndex: 2, role: 'pick', capacitySlots: 24, weightCapacityKg: 1000 },
-      { levelIndex: 3, role: 'reserve', capacitySlots: 24, weightCapacityKg: 1000 },
-      { levelIndex: 4, role: 'bulk', capacitySlots: 24, weightCapacityKg: 1000 },
+      { levelIndex: 1, role: 'pick', capacitySlots: 24, slotKind: undefined, weightCapacityKg: 1000 },
+      { levelIndex: 2, role: 'pick', capacitySlots: 24, slotKind: undefined, weightCapacityKg: 1000 },
+      { levelIndex: 3, role: 'reserve', capacitySlots: 24, slotKind: undefined, weightCapacityKg: 1000 },
+      { levelIndex: 4, role: 'bulk', capacitySlots: 24, slotKind: undefined, weightCapacityKg: 1000 },
     ])
     // Σ level shares == the whole-rack figures the form advertises.
     expect(t.levelTemplate!.reduce((s, l) => s + (l.capacitySlots ?? 0), 0)).toBe(t.defaultCapacitySlots)
@@ -98,8 +98,34 @@ describe('toStorageType', () => {
       level_template: [{ role: 'pick' }],
     } as never)
     expect(t.levelTemplate).toEqual([
-      { levelIndex: 1, role: 'pick', capacitySlots: undefined, weightCapacityKg: undefined },
+      { levelIndex: 1, role: 'pick', capacitySlots: undefined, slotKind: undefined, weightCapacityKg: undefined },
     ])
+  })
+
+  // Amadiya's bay (mig 00098). One rack, two slot units — and `slot_kind` is
+  // what picks the fill formula (_shared/wie/capacity.ts), so dropping it here
+  // silently gave every level the form's single slot_unit.
+  it('carries a per-level slot_kind through, so a mixed-unit bay survives the read', () => {
+    const t = toStorageType({
+      ...row,
+      code: 'AMD_RACK',
+      slot_unit: 'carton' as const,
+      has_levels: true,
+      level_template: [
+        { role: 'pick', capacity_slots: 36, slot_kind: 'carton', weight_capacity_kg: 1000 },
+        { role: 'reserve', capacity_slots: 2, slot_kind: 'pallet', weight_capacity_kg: 1000 },
+      ],
+    } as never)
+    expect(t.levelTemplate!.map((l) => l.slotKind)).toEqual(['carton', 'pallet'])
+  })
+
+  it('drops a slot_kind locations.slot_kind would reject, rather than reading it through', () => {
+    const t = toStorageType({
+      ...row,
+      has_levels: true,
+      level_template: [{ role: 'pick', slot_kind: 'each' }, { role: 'bulk', slot_kind: 'Pallet' }],
+    } as never)
+    expect(t.levelTemplate!.map((l) => l.slotKind)).toEqual([undefined, undefined])
   })
 
   it('maps the storage-forms capacity fields (levels × positions, weight, dims, color)', () => {

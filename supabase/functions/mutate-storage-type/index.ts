@@ -31,6 +31,16 @@ const levelTemplateEntrySchema = z.object({
   // does not exist.
   role: z.string().min(1).max(32),
   capacity_slots: z.number().nonnegative().nullable().optional(),
+  // A level names its OWN slot unit, because one rack can carry two of them:
+  // Amadiya's bays are carton pick-zone levels below and pallet positions above.
+  // Without this the whole rack inherits the form's single `slot_unit`, and
+  // `slot_kind` is what picks the fill formula (_shared/wie/capacity.ts) — a
+  // pallet level labelled `carton` counts 130 loose units against 2 slots, the
+  // exact arithmetic mig 00078 was written to stop. Nullish, like every other
+  // per-level field: the column is nullable and null is the honest wire value
+  // for "inherit the form's slot_unit", which is what every pre-existing
+  // template says by saying nothing.
+  slot_kind: z.enum(['pallet', 'carton']).nullable().optional(),
   weight_capacity_kg: z.number().nonnegative().nullable().optional(),
 })
 
@@ -238,7 +248,11 @@ serve(async (req: Request) => {
         for (const patch of patches) {
           const { data: affectedLevels, error: patchErr } = await admin
             .from('locations')
-            .update({ capacity_slots: patch.capacitySlots, weight_capacity_kg: patch.weightCapacityKg })
+            .update({
+              capacity_slots: patch.capacitySlots,
+              slot_kind: patch.slotKind,
+              weight_capacity_kg: patch.weightCapacityKg,
+            })
             .eq('storage_type_id', input.id).eq('kind', 'SHELF').eq('level_index', patch.levelIndex)
             .select('id')
           if (patchErr) {

@@ -997,16 +997,27 @@ export function toLevelRole(raw: unknown): LevelRoleRecord {
   }
 }
 
-/** storage_types.level_template is [{role, capacity_slots, weight_capacity_kg}],
- *  positionally ordered (mig 00072) — 1-based level_index is the array index. */
+/** storage_types.level_template is
+ *  [{role, capacity_slots, slot_kind, weight_capacity_kg}], positionally ordered
+ *  (mig 00072) — 1-based level_index is the array index.
+ *
+ *  `slot_kind` is per LEVEL, not per form, because one rack can carry two slot
+ *  units: Amadiya's bays are carton pick-zone levels below and pallet positions
+ *  above. Dropping it here used to be invisible — `RackLevel.slotKind` existed
+ *  and `rackLevels.ts` carried it — but the template arrived without one, so
+ *  every drawn level fell back to the form's single `slot_unit`. */
 function toRackLevelTemplate(raw: unknown): RackLevel[] | undefined {
   if (!Array.isArray(raw)) return undefined
   return raw.map((entry, i): RackLevel => {
     const e = (entry ?? {}) as Record<string, unknown>
+    // Only the two values locations.slot_kind's CHECK accepts survive; anything
+    // else (a stale 'each', a typo) reads as "inherit the form's slot_unit".
+    const kind = e.slot_kind === 'pallet' || e.slot_kind === 'carton' ? e.slot_kind : undefined
     return {
       levelIndex: i + 1,
       role: e.role as LevelRole,
       capacitySlots: e.capacity_slots != null ? Number(e.capacity_slots as number) : undefined,
+      slotKind: kind,
       weightCapacityKg: e.weight_capacity_kg != null ? Number(e.weight_capacity_kg as number) : undefined,
     }
   })
