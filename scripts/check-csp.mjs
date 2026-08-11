@@ -21,7 +21,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { ENVIRONMENTS, isProvisioned } from '../config/environments.mjs'
+import { TARGETS, isProvisioned } from '../config/environments.mjs'
 import { ROOT } from './lib/env.mjs'
 
 const REQUIRED_DIRECTIVES = ['img-src', 'connect-src', 'frame-src']
@@ -54,7 +54,7 @@ for (const directive of REQUIRED_DIRECTIVES) {
   }
 }
 
-for (const [name, config] of Object.entries(ENVIRONMENTS)) {
+for (const [name, config] of Object.entries(TARGETS)) {
   if (!isProvisioned(config)) {
     console.log(`[check-csp] ${name}: not provisioned yet — skipping.`)
     continue

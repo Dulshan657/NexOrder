@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ENVIRONMENTS } from '../../config/environments.mjs';
+import { tenantTargets } from '../../config/environments.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // __tests__/support -> project root (NexOrder/)
@@ -53,15 +53,18 @@ try {
   // No .env.dev.local (e.g. CI) — the integration test self-skips when creds are absent.
 }
 
-// Fail closed if anything pointed this suite at production.
-const prodUrl = ENVIRONMENTS.prod.supabaseUrl;
-const prodRef = ENVIRONMENTS.prod.projectRef;
+// Fail closed if anything pointed this suite at a client's project. Every
+// tenant is checked, not one named entry — see tenantTargets().
 const loadedUrl = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL ?? '';
 const loadedRef = process.env.SUPABASE_PROJECT_REF ?? '';
 
-if ((prodUrl && loadedUrl.startsWith(prodUrl)) || (prodRef && loadedRef === prodRef)) {
-  throw new Error(
-    'The integration suite is pointed at the PRODUCTION Supabase project. ' +
-      'It writes to the database it connects to. Refusing to run.',
-  );
+for (const tenant of tenantTargets()) {
+  const byUrl = tenant.supabaseUrl && loadedUrl.startsWith(tenant.supabaseUrl);
+  const byRef = tenant.projectRef && loadedRef === tenant.projectRef;
+  if (byUrl || byRef) {
+    throw new Error(
+      `The integration suite is pointed at the ${tenant.label} Supabase project. ` +
+        'It writes to the database it connects to. Refusing to run.',
+    );
+  }
 }

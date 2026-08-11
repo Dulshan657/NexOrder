@@ -10,7 +10,7 @@
 // space-separated value would be swallowed as a filename. scripts/lib/env.mjs
 // raises that as an error instead of guessing.
 //
-// Credentials come from .env.dev.local / .env.prod.local and are asserted
+// Credentials come from .env.<target>.local (see the registry) and are asserted
 // against config/environments.mjs.
 
 import { readFileSync } from 'node:fs'

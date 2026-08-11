@@ -1,6 +1,6 @@
 # NexOrder → Production for Amadiya Agro Products
 
-**Status:** Phase A in progress · **Written:** 2026-07-27 · **Last updated:** 2026-07-28 · **Companion docs:** `PRODUCTION-READINESS-AUDIT.md`, `HOSTING-PLAN.md`, `ONBOARDING-AUDIT.md`
+**Status:** Phase A in progress · **Written:** 2026-07-27 · **Last updated:** 2026-08-11 · **Companion docs:** `MULTI-TENANT-ARCHITECTURE.md`, `PRODUCTION-READINESS-AUDIT.md`, `HOSTING-PLAN.md`, `ONBOARDING-AUDIT.md`
 
 **Progress:** `nexorder.com.au` registered (A0.1 done). A1 + A2 under way. Vercel Pro and the
 Sydney Supabase project not yet purchased — A3 onwards is blocked on them.
@@ -26,9 +26,11 @@ The outcome this plan delivers: a **clean-slate production tenant in Sydney** on
 | | |
 |---|---|
 | Hosting | Option 1 — stay Supabase + Vercel, DB in Sydney, one Vercel bill |
-| Topology | **New** `ap-southeast-2` project = PROD (empty). Existing `lsgkznyiabqitqfpveey` = DEV/demo. No data migration. |
-| Domains | `nexorder.com.au` → prod · `nexorder.vercel.app` → dev/demo |
-| Vercel | One project. `main` → Production env → Sydney. `develop` → Preview env → Singapore. |
+| Topology | **New** `ap-southeast-2` project = Amadiya (empty). Existing `lsgkznyiabqitqfpveey` = DEV/demo. No data migration. |
+| Domains | `nexorder.com.au` → Amadiya · `nexorder.vercel.app` → dev/demo |
+| Vercel | **One Vercel project per target** — see §A8. Revised 2026-08-11; this row previously read "one project, `main` → Production, `develop` → Preview". |
+| Tenancy | **Project-per-tenant**, decided 2026-08-11 — `MULTI-TENANT-ARCHITECTURE.md`. Not shared-DB-with-RLS. |
+| Target name | The deployment target is **`amadiya`**, not `prod`. `--env=prod` is a deprecated alias for one release. |
 | Starting data | Empty + in-app setup checklist; Amadiya enter their own data |
 | Identity | `app_settings` = Amadiya (documents/invoices). App chrome, login, favicon = NexOrder. |
 | Tenant tag | Prod stamps `tenant = 'amadiya'`. **The string `ayam` must not appear in the prod database.** NexGen owns the NexOrder application; Amadiya is a tenant of it. Mechanism in A2.4. |
@@ -94,7 +96,7 @@ split in A8 needs a paid team.
 Steps: create the project in the chosen org, name `nexorder-prod`, region **`ap-southeast-2`
 (Sydney)**, plan **Pro from the outset** — region cannot be changed later, and discovering the
 restore drill is impossible after the client has data is the failure mode being avoided. Capture
-the ref, DB password, `sb_publishable_*` and `sb_secret_*` straight into `.env.prod.local`, never
+the ref, DB password, `sb_publishable_*` and `sb_secret_*` straight into `.env.amadiya.local`, never
 into `CLAUDE.md`. Pre-enable **`pg_cron`** and **`pg_net`** in Database → Extensions
 (`00020:62` needs them and the Management API sometimes refuses to create extensions). Do not run
 migrations here — that is A3, through `migrate.mjs`, not `apply-sql.mjs`.
@@ -105,9 +107,23 @@ migrations here — that is A3, through `migrate.mjs`, not `apply-sql.mjs`.
 
 **New `scripts/lib/env.mjs`** — `resolveTarget({ allow, argv })`, replacing the five copy-pasted `loadEnv()` implementations in `supabase/apply-sql.mjs:17`, `supabase/apply-auth-config.mjs:53`, `scripts/deploy.mjs:46`, `wie-demo/lib.mjs:14`, `warehouse-main/lib.mjs`.
 
-- Target comes from `--env=<dev|prod>` (equals-form only — `apply-sql.mjs:49` picks its SQL file as `args.find(a => !a.startsWith('--'))`, so `--env prod` would be read as a filename), else `NEXORDER_ENV`, else **hard fail**. No default anywhere — that alone kills the `|| 'lsgkznyiabqitqfpveey'` fallback class.
-- Credentials from `.env.dev.local` / `.env.prod.local`. Both already match `.gitignore`'s `.env.*.local`, and critically **Vite never loads them** (it reads `.env.production.local`, a different name) — so a laptop build cannot silently repoint at the client's database.
+- Target comes from `--env=<dev|amadiya>` (equals-form only — `apply-sql.mjs:49` picks its SQL file as `args.find(a => !a.startsWith('--'))`, so `--env amadiya` would be read as a filename), else `NEXORDER_ENV`, else **hard fail**. No default anywhere — that alone kills the `|| 'lsgkznyiabqitqfpveey'` fallback class.
+- Credentials from `.env.dev.local` / `.env.amadiya.local`. Both already match `.gitignore`'s `.env.*.local`, and critically **Vite never loads them** (it reads `.env.production.local`, a different name) — so a laptop build cannot silently repoint at the client's database.
 - Asserts the loaded `SUPABASE_URL` matches the registry entry for the target.
+
+**Added 2026-08-11, when the registry was generalised for multiple tenants:**
+
+- `ENV_NAMES` is **derived** from the registry keys; `fixtureTargets()` and `tenantTargets()`
+  replace two hardcoded lists. The `allowFixtures` field, declared since A1 and read by nothing,
+  is now guard #1's actual source — so a tenant cannot become a fixture target by omission.
+- **`markerName` is a separate field from `name`.** `environment_marker.name` is constrained by
+  `00086` to `CHECK (name IN ('dev','prod'))` and `00086` is applied and checksummed, so the
+  database's vocabulary is frozen at two values while target names are open-ended. `migrate.mjs
+  --stamp` writes `markerName`; stamping the target name would fail the CHECK on the first
+  production run and nowhere earlier.
+- **`vercel.ts` is now a prerequisite, not a Phase C nicety.** `vercel.json` is static and the
+  platform reads it *before* the build, so no prebuild step can generate it — which means one
+  file cannot express a per-target CSP host or a per-target image rewrite. See §A8.
 
 **De-hardcode these** (mechanism per site):
 
@@ -124,7 +140,7 @@ migrations here — that is A3, through `migrate.mjs`, not `apply-sql.mjs`.
 | `.mcp.json:5` | pin to **dev, permanently**. Never add a prod entry — an agent session with MCP write access to the client's DB is the largest unforced risk here. |
 | `__tests__/imageUrl.test.ts:11`, `lazyWithRetry.test.ts:12`, `tests/e2e/fixtures/env.ts:37` | fixture refs → `testref`; make `adminEmail` required (the default `alice@nexorder.com.au` won't exist in Sydney) |
 
-**`package.json`:** delete plain `deploy` / `auth:config`; add `:dev` / `:prod` pairs for `deploy`, `auth:config`, `migrate`, `fn:deploy`, `secrets`. Muscle memory is the threat model.
+**`package.json`:** delete plain `deploy` / `auth:config`; add `:dev` / `:amadiya` pairs for `deploy`, `auth:config`, `migrate`, `fn:deploy`, `secrets`. Muscle memory is the threat model — which is also why the second half of each pair is the tenant's name and not `prod`.
 
 **Rewrite `CLAUDE.md` in the same PR.** It is loaded into every agent session and currently states production is `nexorder.vercel.app`, that there is no staging project, and that the warehouse fixtures "both write to PROD". Left stale, an agent will seed over the client's database *while following instructions*. Same for `playwright.config.ts:3-6`.
 
@@ -198,12 +214,12 @@ and the header comments in `00001` / `00042` / `00083`. **Sweep the migration he
 
 1. Create the project (`ap-southeast-2`, Pro). Capture ref, DB password, `sb_publishable_*`, `sb_secret_*`.
 2. **Canary first:** deploy one trivial function and print the injected env names. `invite-user/index.ts:74` reads `SUPABASE_ANON_KEY`; Supabase has been migrating that toward `SUPABASE_PUBLISHABLE_KEY`. If it's absent, `invite-user` throws and you cannot onboard a single user.
-3. `npm run migrate:prod` — 89 files (87 existing + `00086`/`00087` from A2), then `--stamp` writes `environment_marker = ('prod','amadiya')`. Note `00020:62` needs `pg_cron`/`pg_net` (enable in Dashboard first if the API refuses); `00027:184` creates the `MAIN` warehouse, which `inv_default_location()` requires. Bootstrap config arrives free: `app_settings` id=1, 4 storage forms, 3 level roles, 8 zone profiles, 9 buckets.
+3. `npm run migrate:amadiya` — **count the files, do not trust this number** (105 as of 2026-08-11; it was 89 when this plan was written and it grows every week). Then `--stamp` writes `environment_marker = ('prod','amadiya')` — note `'prod'`, the frozen database vocabulary, not the target name. Note `00020:62` needs `pg_cron`/`pg_net` (enable in Dashboard first if the API refuses); `00027:184` creates the `MAIN` warehouse, which `inv_default_location()` requires. Bootstrap config arrives free: `app_settings` id=1, 4 storage forms, 3 level roles, 8 zone profiles, 9 buckets.
 4. **Prove the schema matches dev** — diff an `information_schema.columns` digest, the `pg_proc` count, the `pg_policies` per-table counts and `storage.buckets`. This is the only signal you get that 85 migrations really landed.
-5. `npm run fn:deploy:prod` (~67 functions). **Verify** the 8 `verify_jwt=false` entries in `config.toml` were honoured — wrong in either direction is silent and severe (`true` on `send-email`/`poll-inbox` breaks order emails and PO polling, because the `sb_secret_*` service key is non-JWT and the gateway 401s it).
+5. `npm run fn:deploy:amadiya` (71 deployable — 72 directories under `supabase/functions/` less `_shared/`). **Verify** the **9** `verify_jwt=false` entries in `config.toml` were honoured — nine, not eight: `embed-products` was added after this plan and after `deploy-functions.mjs`'s own comment. Count them; the header comments have been wrong twice — wrong in either direction is silent and severe (`true` on `send-email`/`poll-inbox` breaks order emails and PO polling, because the `sb_secret_*` service key is non-JWT and the gateway 401s it).
 6. **Secrets** — new `supabase/ops/secrets.mjs` holding the required/optional name lists + `--check`. Set: `PO_ENCRYPTION_KEY` (**generate fresh — never copy dev's**; it cannot be rotated without re-consenting every mailbox), `POLL_INBOX_CRON_TOKEN`, `HEALTH_CRON_TOKEN`, `OPENAI_API_KEY`, `PO_OAUTH_APP_BASE`, `APP_URL`, `ALLOWED_ORIGINS`, `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `ALERT_EMAIL`. Do **not** set `PO_ENCRYPTION_KEY_ALLOW_RESET`. OAuth client secrets deferred with the PO Inbox.
    **Sequencing trap:** set `ALLOWED_ORIGINS` on *both* projects before deploying the new fail-closed `cors.ts`.
-7. `npm run auth:config:prod`. Extend `DESIRED` with **`disable_signup: true`** — a fresh Supabase project ships with signup *enabled*, and `handle_new_user()` (`00001:1050`, SECURITY DEFINER) would hand any stranger a working Customer account inside Amadiya's system. Also `mailer_autoconfirm: false`, `mailer_otp_exp: 3600`, refresh-token rotation. Check the same on dev.
+7. `npm run auth:config:amadiya`. Extend `DESIRED` with **`disable_signup: true`** — a fresh Supabase project ships with signup *enabled*, and `handle_new_user()` (`00001:1050`, SECURITY DEFINER) would hand any stranger a working Customer account inside Amadiya's system. Also `mailer_autoconfirm: false`, `mailer_otp_exp: 3600`, refresh-token rotation. Check the same on dev.
 8. **New `supabase/ops/schedule-crons.mjs`** — recreates `po-poll-inbox` and `health-check`, which today exist only as commented snippets in `00020`/`00059` and live nowhere but the old database. Definitions in version control, tokens from `.env.<t>.local`. Don't schedule `health-check` until `nexorder.com.au/version.json` is live. Expect 7 jobs total.
 9. **New `supabase/ops/bootstrap-admin.mjs`** — resolves the chicken-and-egg (`invite-user` needs an existing Admin; direct `profiles` INSERT is RLS-blocked) via `auth.admin.createUser({ user_metadata: { role: 'Admin' } })`, letting the `handle_new_user` trigger write the profile. Throwaway temp password, then immediately drive Forgot-password so no plaintext credential sits in a file.
 
@@ -216,7 +232,8 @@ Fix reuses what exists rather than adding a parallel path: extend `RecoveryLink`
 ### A5 · Tenant identity, branding and demo shutdown
 
 - Set prod `app_settings`: `company_name = 'Amadiya Agro Products Pty Ltd'`, address `1 Furlong Street, Cranbourne West VIC 3977`, logo, `currency AUD`. ABN column arrives in Phase B.
-- **`_shared/orderDocuments.ts:158` hardcodes `companyName: 'Nex Order'`** — every pick slip and dispatch advice would print the wrong company. Read `app_settings` instead. Same gap for `company_logo_url`, which is uploadable today and rendered nowhere.
+- **`_shared/orderDocuments.ts:158` hardcodes `companyName: 'Nex Order'`** — every pick slip and dispatch advice would print the wrong company. Read `app_settings` instead.
+- **It is worse than one field.** Audited 2026-08-11: **six** `app_settings` columns are stored, editable in Settings, and rendered *nowhere* — `company_name`, `company_address`, `company_phone`, `company_email`, `currency`, `company_logo_url`. The operator fills in the General tab, saves, and nothing anywhere changes. Two consequences: the tenant-identity story is weaker than `MULTI-TENANT-ARCHITECTURE.md` §2 layer 1 assumes, and `currency` being unread is why `AUD` is hardcoded at ~15 sites (Phase B). The sidebar and both auth screens use the static `/assets/Nex-Order-no-bg-logo.png`, not the uploaded logo.
 - `VITE_SHOW_DEMO_LOGINS=false` in the Vercel **Production** env, `true` in Preview.
 - **Split `constants.ts`** — `App.tsx:8` imports from it, so its seed `USERS` array ships to the browser and `alice@nexorder.com.au` stays in the bundle even with the flag off. On Sydney that account doesn't exist, so click-to-fill would 400 and look broken. Move the seed arrays to `tests/fixtures/`, keep `CATEGORIES`/`UOM_CODES`/`DEFAULT_SETTINGS`/status maps.
 - **Rotate all seven seeded passwords on dev.** Turning the flag off stops advertising the credential; it does not invalidate it. `alice@` signed in 2026-07-26 — it is a live admin.
@@ -232,11 +249,39 @@ Set `RESEND_API_KEY` (procedure in `docs/runbooks/enable-email.md` — note its 
 
 ### A8 · Vercel wiring and switchover
 
-`develop` branch off `main`; Production Branch = `main`. Production env → Sydney + demo logins off; Preview env → Singapore + demo logins on. Add `nexorder.com.au` + `www` redirect.
+**Revised 2026-08-11.** This section previously specified one Vercel project with `main` →
+Production → Sydney and a new `develop` branch → Preview → Singapore. That is replaced by
+**one Vercel project per target**, for two reasons:
 
-**`nexorder.vercel.app` is currently the production alias.** Reassign it as a branch alias for `develop` **only after** prod passes its gates — and tell anyone holding the bookmark that it now lands on dev.
+1. It is what project-per-tenant requires (`MULTI-TENANT-ARCHITECTURE.md`). Vercel env vars are
+   per-*environment*, not per-domain, so one project cannot hold two tenants' Supabase
+   credentials. Deferring the split to tenant #2 means doing it under time pressure.
+2. **It removes this section's own admitted flaw.** The one-project shape meant no preview ever
+   exercised production config, so the first execution of production config was the production
+   deploy itself. Separate projects make Amadiya's project exercise Amadiya's config on every
+   deploy to it.
 
-Structural caveat of one-project: Preview env vars apply to all previews, so no preview ever exercises prod config and the first execution of prod config is the production deploy. Mitigate by having `deploy.mjs` assert `GET <prod>/functions/v1/health` returns 200 after aliasing.
+Both projects build the same `main`, so **`develop` is no longer needed and is not created.**
+Each project sets `NEXORDER_ENV` as a build env var (`dev` / `amadiya`); `vite.config.ts` and
+`vercel.ts` both read it, so one variable determines Supabase credentials, CSP hosts, the image
+rewrite and (later) the module flags.
+
+| | dev/demo project | Amadiya project |
+|---|---|---|
+| `NEXORDER_ENV` | `dev` | `amadiya` |
+| Supabase | Singapore | Sydney |
+| Domain | `nexorder.vercel.app` | `nexorder.com.au` + `www` redirect |
+| `VITE_SHOW_DEMO_LOGINS` | `true` | `false` |
+
+**`nexorder.vercel.app` is currently the production alias of the existing project.** It stays
+exactly where it is — the existing project simply *becomes* the demo project, which is a
+rename and an env-var change, not a migration. Amadiya's is the new project. Nothing about the
+demo's URL changes, so no bookmark breaks and there is nothing to announce.
+
+`deploy.mjs` must pin the project once there are two: pass `VERCEL_PROJECT_ID`/`VERCEL_ORG_ID`
+from `config.vercel.projectId` (the field exists, read by nothing yet), or a bare
+`vercel deploy` resolves whichever project `.vercel/project.json` happens to name. Keep the
+existing post-alias `GET /functions/v1/health` assertion regardless.
 
 ---
 
@@ -256,15 +301,15 @@ Everything here was gated on "real stock" in the email to Peter. Nothing below b
 
 ## Phase C — release engineering and the deferred surfaces (weeks 3–4)
 
-- **GitHub Pro (~$4/mo)** + require the `typecheck · test · build` check. With `develop → main` promoting straight to a client, red-CI-merges-silently stops being hygiene. Runbook at `~/.claude/plans/add-branch-protection-generic-zebra.md`. Move `npm audit` (`ci.yml:33`) to a non-blocking job first, or an unrelated transitive advisory turns every promotion red.
-- **`npm run rollback:prod`** — re-alias to the previous verified `deployments` row. Frontend only; migrations and Edge Functions have no rollback, which upgrades CLAUDE.md's deploy-order rule (function → frontend → lockdown migration) from advice to a hard rule. Add branch/clean-tree/green-test guards to `deploy.mjs`.
+- **GitHub Pro (~$4/mo)** + require the `typecheck · test · build` check. With `main` deploying straight to a client — and, per §A8, to *every* client at once — red-CI-merges-silently stops being hygiene. Runbook at `~/.claude/plans/add-branch-protection-generic-zebra.md`. Move `npm audit` (`ci.yml:33`) to a non-blocking job first, or an unrelated transitive advisory turns every promotion red.
+- **`npm run rollback:<target>`** — re-alias to the previous verified `deployments` row. Frontend only; migrations and Edge Functions have no rollback, which upgrades CLAUDE.md's deploy-order rule (function → frontend → lockdown migration) from advice to a hard rule. Add branch/clean-tree/green-test guards to `deploy.mjs`.
 - **Session persistence** (`lib/supabase.ts:47-48`) — `persistSession:false` *and* `autoRefreshToken:false` means the 1-hour token simply expires; warehouse staff get 401s mid-shift. A custom `storage` adapter plus `{ auth: { lock: (_n,_a,fn) => fn() } }` bypasses the Web Locks hang that forced this.
 - **`vercel.ts`** replacing `vercel.json`, CSP derived from `VITE_SUPABASE_URL`.
 - **Sentry** with the commit SHA as release tag (`vite.config.ts:52` already exposes it).
 - **E2E in CI against the dev preview**; `test.fixme` the unshipped specs.
 - **PO Inbox for production** — register prod Google Cloud + Azure OAuth clients against the Sydney ref (`https://<prodref>.supabase.co/functions/v1/{gmail,outlook}-oauth-callback`); use separate clients from dev so the client's mailbox grants aren't entangled with the demo test-user roster. Add an `OAUTH_CALLBACK_BASE` override to `buildCallbackUri()` now (three lines, honoured in **both** `start-po-oauth:111` and `callbackCommon:224` or the token exchange 400s) so fronting the callback with `nexorder.com.au` — the actual blocker on Google verification — is later a config change, not a code change under pressure. **Never copy `email_accounts` rows between projects**; refresh tokens are encrypted with each project's own key.
 - **Fix `approve-po`** (`_shared/poInbox/orderTotals.ts:76-84`) — bills catalogue price, ignores `horeca_pricing` and promotions, and writes no invoice, so those orders bypass credit limits entirely. Must land before Amadiya uses the PO Inbox.
-- **Tenancy decision** for client #2 (audit §4). Dev/prod is *not* project-per-client; Amadiya on Sydney is single-tenant. As of A2.4 the `tenant` column is *stamped* correctly (`amadiya` on prod, `ayam` on dev) but still **read by nothing** — the decision left open is whether client #2 is a second project or a read-side filter on this column. Make it explicit with a documented trigger.
+- ~~**Tenancy decision** for client #2 (audit §4).~~ **DECIDED 2026-08-11 — `MULTI-TENANT-ARCHITECTURE.md`.** Project-per-tenant, one Vercel project per tenant, one `main`, module flags for per-tenant surfaces. The `tenant` column stays **read by nothing, permanently**: under project-per-tenant a `WHERE tenant = …` predicate could only be a tautology. The documented trigger for revisiting is in §1 of that document (a tenant too small to cover a dedicated project). What remains here is build work, not decision work — the fleet gaps are listed in §4 of that document, and none blocks Amadiya.
 
 ---
 
@@ -272,7 +317,7 @@ Everything here was gated on "real stock" in the email to Peter. Nothing below b
 
 Gates run in order; each must pass before the next.
 
-**Gate A — infrastructure.** `schema_migrations` = 89 rows; schema digest matches dev; 9 buckets and `anon_write%` = 0; 67 functions with the right 8 at `verify_jwt=false`; every secret in A3.6 present; 7 cron jobs; `auth:config:prod --check` exits 0 with `disable_signup = true`; `GET /functions/v1/health` → 200.
+**Gate A — infrastructure.** `schema_migrations` row count equals `ls supabase/migrations/*.sql | wc -l` **measured at the time you run it** (105 on 2026-08-11) — the two must be compared, never checked against a number written down here; schema digest matches dev; 9 buckets and `anon_write%` = 0; 71 functions with the right **9** at `verify_jwt=false`; every secret in A3.6 present; 7 cron jobs; `auth:config:check:amadiya` exits 0 with `disable_signup = true`; `GET /functions/v1/health` → 200.
 
 **Tenant assertions, same gate.** `SELECT public.default_tenant()` → `'amadiya'`;
 `environment_marker` = exactly one row `('prod','amadiya')`; and the count of `tenant = 'ayam'`
@@ -288,7 +333,7 @@ two separate mechanisms and only the order exercises the trigger.
 
 **Gate E — recovery drill**, done in Phase A while only the bootstrap admin exists and it is risk-free. **Pro gives daily backups, not PITR** (see A0.3) — so: confirm a daily backup exists and note its timestamp; `DELETE FROM app_settings`; restore that backup; confirm the row returns and the admin can still authenticate (proves the `auth.users` bcrypt hashes survive). Record the actual RPO the drill demonstrates — with daily backups it is up to 24 hours, and that number is what the client is really being offered. Write the runbook from what happened, not from the docs.
 
-Throughout: `npx tsc --noEmit` and `npm test` (1662 tests) green before any deploy; `node scripts/check-overlays.mjs` for the A4 dialog fix.
+Throughout: `npx tsc --noEmit` and `npm test` (2557 tests in 172 files as of 2026-08-11 — it was 1662 when this was written; the count is context, not an assertion) green before any deploy; `node scripts/check-overlays.mjs` for the A4 dialog fix and `node scripts/check-csp.mjs` for the CSP hosts.
 
 ---
 

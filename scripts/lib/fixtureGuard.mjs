@@ -4,17 +4,21 @@
 // rolling its own env loading. Applies all three guards from
 // PRODUCTION-LAUNCH-PLAN.md §A2.3, in increasing order of cost:
 //
-//   1. resolveTarget({ allow: ['dev'] })  — argv/NEXORDER_ENV says dev.
+//   1. resolveTarget({ allow: fixtureTargets() }) — argv/NEXORDER_ENV names a
+//      target whose registry entry sets `allowFixtures`.
 //   2. the registry credential assertion  — the loaded creds really are dev's.
-//   3. environment_marker.name !== 'prod' — the DATABASE ITSELF says dev.
+//   3. environment_marker.name !== 'dev'  — the DATABASE ITSELF says dev.
 //
 // Three, because any one of them can be defeated by a single mistake. #3 is the
 // only one that survives both a mis-set env file and a mis-edited registry: it
-// asks the database it is about to write to what it is.
+// asks the database it is about to write to what it is. That is precisely why
+// guard #3 compares against the LITERAL 'dev' and reads nothing from the
+// registry — deriving it would collapse three guards into two.
 //
 // There is no --force. A script that needs to write to production is not a
 // fixture script.
 
+import { fixtureTargets } from '../../config/environments.mjs'
 import { resolveTarget, TargetError } from './env.mjs'
 import { runSql } from './managementApi.mjs'
 
@@ -29,8 +33,10 @@ const MARKER_SQL = `SELECT name, tenant_key FROM public.environment_marker WHERE
  * @returns {Promise<{ name: string, config: any, env: Record<string,string>, marker: {name:string, tenant_key:string} }>}
  */
 export async function requireDevTarget(options = {}) {
-  // Guards #1 and #2.
-  const target = resolveTarget({ ...options, allow: ['dev'] })
+  // Guards #1 and #2. The allow-list is derived from `allowFixtures` rather
+  // than hardcoded, so a second demo target is a registry edit and a second
+  // TENANT can never become one by forgetting to update this line.
+  const target = resolveTarget({ ...options, allow: fixtureTargets() })
 
   // Guard #3.
   let rows

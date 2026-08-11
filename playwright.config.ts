@@ -15,19 +15,23 @@
 // tests/e2e/fixtures/auth.ts for the per-test login helper used instead.
 import { defineConfig, devices } from '@playwright/test'
 
-import { ENVIRONMENTS } from './config/environments.mjs'
+import { tenantTargets } from './config/environments.mjs'
 
 const PORT = 3000
 const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`
 const isCI = !!process.env.CI
 
-// Fail closed rather than quietly exercising the client's system.
-const PROD_ORIGIN = ENVIRONMENTS.prod.appOrigin
-if (PROD_ORIGIN && BASE_URL.startsWith(PROD_ORIGIN)) {
-  throw new Error(
-    `E2E_BASE_URL points at production (${PROD_ORIGIN}). The E2E suite creates and ` +
-      'mutates data. Point it at the dev deployment or a local dev server.',
-  )
+// Fail closed rather than quietly exercising a client's system. Checks EVERY
+// tenant, not one named entry — a guard that protects only the first client is
+// worse than none, because it reads as though it protects all of them.
+for (const tenant of tenantTargets()) {
+  if (tenant.appOrigin && BASE_URL.startsWith(tenant.appOrigin)) {
+    throw new Error(
+      `E2E_BASE_URL points at the ${tenant.label} deployment (${tenant.appOrigin}). ` +
+        'The E2E suite creates and mutates data. Point it at the dev deployment ' +
+        'or a local dev server.',
+    )
+  }
 }
 
 export default defineConfig({

@@ -14,7 +14,12 @@ import { readFileSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { ENV_NAMES, getEnvironment, isProvisioned } from '../../config/environments.mjs'
+import {
+  ENV_NAMES,
+  canonicalTargetName,
+  getEnvironment,
+  isProvisioned,
+} from '../../config/environments.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 export const ROOT = resolve(HERE, '..', '..') // NexOrder/
@@ -88,7 +93,10 @@ export function readTargetName(argv) {
  */
 export function resolveTarget(options = {}) {
   const argv = options.argv ?? process.argv.slice(2)
-  const name = readTargetName(argv)
+  // Canonicalise BEFORE the allow-check: a deprecated alias must be judged as
+  // the target it actually resolves to, or `--env=prod` would slip past an
+  // `allow: ['dev']` guard that was written against the new name.
+  const name = canonicalTargetName(readTargetName(argv))
   const config = getEnvironment(name)
 
   if (options.allow && !options.allow.includes(name)) {
@@ -100,7 +108,7 @@ export function resolveTarget(options = {}) {
 
   if (!isProvisioned(config)) {
     throw new TargetError(
-      `Environment "${name}" has no project ref yet.\n` +
+      `Target "${name}" has no project ref yet.\n` +
         `Create the project (PRODUCTION-LAUNCH-PLAN.md §A0.3) and fill projectRef/supabaseUrl ` +
         `into config/environments.mjs before targeting it.`,
     )
