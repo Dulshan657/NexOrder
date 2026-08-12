@@ -40,3 +40,8 @@ supabase/.temp/
 
 # Superpowers brainstorming session artifacts (mockups, server state)
 .superpowers/
+
+# Demo database export (supabase/ops/export-demo.mjs). Holds the whole demo
+# dataset and every storage object — never commit it, and copy it off this
+# machine rather than relying on it living here.
+/demo-export/
