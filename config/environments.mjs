@@ -220,12 +220,12 @@ export const TARGETS = {
     vercel: {
       teamSlug: 'dulshan657s-projects',
       /**
-       * Fill both when the Amadiya Vercel project is created. `deploy.mjs`
-       * warns loudly and falls back to `.vercel/project.json` while they are
-       * null — which, with two projects on the team, means it would deploy
-       * Amadiya's build into whichever project was last linked.
+       * `nexorder-amadiya`, created 2026-08-12. Both ids are passed into the
+       * `vercel` child env by `deploy.mjs`, so `--env=amadiya` alone decides
+       * which project is built — `.vercel/project.json` still names the old
+       * demo project and must never be what resolves a tenant deploy.
        */
-      projectId: null,
+      projectId: 'prj_6EWD3FTyT4o6R4UvDCks2Phccfnd',
       orgId: 'team_evk2SaoAF3naWcjrBdCo1gbL',
       target: 'production',
       alias: 'nexorder.com.au',
