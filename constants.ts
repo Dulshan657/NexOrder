@@ -1,19 +1,14 @@
 // Nex Order — application-wide lookup tables.
 //
-// Demo seed data (products, venues, orders, routes, ...) lives in
+// Demo seed data (users, products, venues, orders, routes, ...) lives in
 // supabase/seedData/ and is imported only by supabase/seed.ts. Keep it that
 // way: anything added here reaches every browser.
-import type { User, Category, AppSettings, OrderStatus, DeliveryTimeSlot } from './types';
-import { UserRole } from './types';
-
-export const USERS: User[] = [
-  { id: 1, name: 'Alice Johnson', email: 'alice@nexorder.com.au', role: UserRole.ADMIN, avatarUrl: 'https://i.pravatar.cc/150?u=1' },
-  { id: 2, name: 'Bob Williams', email: 'bob@nexorder.com.au', role: UserRole.MANAGER, avatarUrl: 'https://i.pravatar.cc/150?u=2' },
-  { id: 3, name: 'Charlie Brown', email: 'charlie@nexorder.com.au', role: UserRole.FIELD_REP, avatarUrl: 'https://i.pravatar.cc/150?u=3' },
-  { id: 4, name: 'David Lee', email: 'david@seasidebistro.com', role: UserRole.CUSTOMER, avatarUrl: 'https://i.pravatar.cc/150?u=4', hoReCaId: 2 },
-  { id: 5, name: 'Emma Chen', email: 'emma@nexorder.com.au', role: UserRole.OFFICE_REP, avatarUrl: 'https://i.pravatar.cc/150?u=5' },
-  { id: 6, name: 'Mei Lin', email: 'mei@lotusgarden.com.au', role: UserRole.CUSTOMER, avatarUrl: 'https://i.pravatar.cc/150?u=6', hoReCaId: 4 },
-];
+//
+// The demo USERS roster used to live here and did exactly that — App.tsx
+// imports this file, so six seeded accounts including a live Admin were bundled
+// into every browser regardless of VITE_SHOW_DEMO_LOGINS. It now lives in
+// supabase/seedData/users.ts. Do not bring it back.
+import type { Category, AppSettings, OrderStatus, DeliveryTimeSlot } from './types';
 
 /**
  * Built-in category suggestions. Since mig 00069 categories are open-ended

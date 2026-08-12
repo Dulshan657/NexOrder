@@ -82,8 +82,11 @@ function readError(params: URLSearchParams): AuthLink | null {
  * Note on PKCE `?code=…` links: they are deliberately NOT claimed here, because
  * `?code=` is what the PO-Inbox OAuth popup uses — claiming it would hijack a
  * mailbox connection and drop the admin on a password screen. The project's
- * recovery and invite templates are the default `{{ .ConfirmationURL }}`, which
- * never emits one, so nothing is lost by leaving it alone.
+ * recovery and invite templates emit `?token_hash=…&type=…` — see
+ * `supabase/apply-auth-config.mjs` `authLink()`, which moved them off
+ * `{{ .ConfirmationURL }}` so the link a client clicks reads nexorder.com.au
+ * rather than a project ref — and neither shape produces a `?code=`, so
+ * nothing is lost by leaving it alone.
  */
 export function parseAuthLink(hash: string, search: string): AuthLink {
     const hashParams = toParams(hash)

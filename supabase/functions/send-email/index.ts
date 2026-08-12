@@ -19,7 +19,10 @@
 //   EMAIL_FROM      — verified sender, e.g. "Nex Order <orders@example.com>"
 //                     defaults to Resend's onboarding@resend.dev test sender
 //   EMAIL_REPLY_TO  — optional reply-to address
-//   APP_URL         — root for deep links (defaults to nexorder.vercel.app)
+//   APP_URL         — root for deep links. REQUIRED; requireAppUrl() throws if
+//                     unset. It used to default to the demo origin, which meant
+//                     an unset value sent a client's customers links to a
+//                     different deployment while answering `sent: true`.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'

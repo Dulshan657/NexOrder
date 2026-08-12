@@ -7,6 +7,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'https://esm.sh/pdf-lib@1.17.1'
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { EdgeFunctionError } from './errors.ts'
+import { fetchLogoImage, loadCompanyIdentity, type LogoImage } from './companyIdentity.ts'
 
 export type OrderDocKind = 'pick_slip' | 'dispatch_advice'
 
@@ -29,7 +30,14 @@ export interface OrderDocData {
   deliveryDate: string | null
   horecaName: string
   horecaAddress: string
+  /** The OPERATOR of this deployment, from app_settings — not the product name.
+   *  Empty when unset; see _shared/companyIdentity.ts for why there is no
+   *  fallback. */
   companyName: string
+  companyAddress: string
+  companyContact: string
+  /** null when unset, unreachable, or in a format pdf-lib cannot embed. */
+  companyLogo: LogoImage | null
   lines: DocLine[]
 }
 
@@ -148,6 +156,10 @@ export async function loadOrderForDoc(
       }))
     })
 
+  // The operator's own identity, not the product's. Loaded last so a settings
+  // read can never cost us the order lookup that actually matters.
+  const company = await loadCompanyIdentity(admin)
+
   return {
     orderId: o.id,
     status: o.status,
@@ -155,7 +167,12 @@ export async function loadOrderForDoc(
     deliveryDate: o.delivery_date ?? null,
     horecaName: o.horecas?.name ?? '—',
     horecaAddress: o.horecas?.address ?? '',
-    companyName: 'Nex Order',
+    companyName: company.name,
+    companyAddress: company.address,
+    // Phone and email share a line — a pick slip has one header, and two
+    // half-empty rows read worse than one that adapts to what is filled in.
+    companyContact: [company.phone, company.email].filter(Boolean).join('  ·  '),
+    companyLogo: await fetchLogoImage(company.logoUrl),
     lines,
   }
 }
@@ -166,6 +183,10 @@ const A4: [number, number] = [595.28, 841.89]
 const MARGIN = 48
 const INK = rgb(0.12, 0.1, 0.09)       // stone-900-ish
 const MUTED = rgb(0.45, 0.43, 0.4)
+// The operator's logo is fitted INSIDE this box, aspect preserved, so a tall
+// portrait mark and a wide horizontal one both stay inside the header band.
+const LOGO_MAX_W = 96
+const LOGO_MAX_H = 34
 
 export async function buildOrderDocPdf(kind: OrderDocKind, data: OrderDocData): Promise<Uint8Array> {
   const pdf = await PDFDocument.create()
@@ -180,10 +201,44 @@ export async function buildOrderDocPdf(kind: OrderDocKind, data: OrderDocData): 
   const text = (s: string, x: number, yy: number, size: number, f: PDFFont = font, color = INK) =>
     page.drawText(s ?? '', { x, y: yy, size, font: f, color })
 
-  // Header
-  text(data.companyName, MARGIN, y, 11, bold)
+  // Header. The company block is the operator's, from app_settings, and every
+  // part of it is optional — a site that has not filled in Settings → General
+  // gets a thinner header rather than a wrong one, and the layout closes up
+  // instead of leaving a gap where a name should be.
+  let blockX = MARGIN
+  let logoBottom = y
+  if (data.companyLogo) {
+    try {
+      const img =
+        data.companyLogo.format === 'png'
+          ? await pdf.embedPng(data.companyLogo.bytes)
+          : await pdf.embedJpg(data.companyLogo.bytes)
+      const scaled = img.scaleToFit(LOGO_MAX_W, LOGO_MAX_H)
+      // Hang the logo from the same top edge as the company name — `y` is a
+      // text BASELINE, and 11pt Helvetica caps rise about 8pt above it.
+      logoBottom = y + 8 - scaled.height
+      page.drawImage(img, { x: MARGIN, y: logoBottom, width: scaled.width, height: scaled.height })
+      blockX = MARGIN + scaled.width + 12
+    } catch (e) {
+      // Sniffed as PNG/JPEG but pdf-lib still refused it — a truncated upload,
+      // or an interlaced PNG. One bad picture must not cost the warehouse its
+      // pick slip, so fall through to the text-only header.
+      console.error('[orderDocuments] logo embed failed:', e instanceof Error ? e.message : e)
+    }
+  }
+
+  text(data.companyName, blockX, y, 11, bold)
   text(title, width - MARGIN - bold.widthOfTextAtSize(title, 18), y - 2, 18, bold)
-  y -= 18
+  y -= 13
+  for (const line of [data.companyAddress, data.companyContact]) {
+    if (!line) continue
+    text(truncate(line, 72), blockX, y, 8, font, MUTED)
+    y -= 11
+  }
+  // A tall logo beside a one-line company block would otherwise have the rule
+  // drawn straight through it.
+  y = Math.min(y, logoBottom - 6)
+  y -= 5
   text(`Order ${data.orderId}`, MARGIN, y, 10, font, MUTED)
   y -= 24
   page.drawLine({ start: { x: MARGIN, y }, end: { x: width - MARGIN, y }, thickness: 1, color: rgb(0.86, 0.84, 0.82) })
