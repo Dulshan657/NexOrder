@@ -64,7 +64,16 @@ export const ALL_MODULES = [
  */
 export const TEST_PROJECT_REF = 'testref'
 
-const DEV_REF = 'lsgkznyiabqitqfpveey'
+/**
+ * `lsgkznyiabqitqfpveey` — Amadiya's production project since 2026-08-12.
+ *
+ * It was the demo until then. It is not a new Sydney project because it was
+ * already IN ap-southeast-2 (this file said `ap-southeast-1` for months and was
+ * simply wrong — the Management API disagrees), its organisation was already on
+ * Pro, and Amadiya's 134-location warehouse was already drawn in it. The demo
+ * data was exported to disk and deleted; see `supabase/ops/purge-demo.mjs`.
+ */
+const AMADIYA_REF = 'lsgkznyiabqitqfpveey'
 
 /**
  * Target names that were renamed, mapped to what they are now.
@@ -81,7 +90,7 @@ export const DEPRECATED_TARGET_ALIASES = {
 export const TARGETS = {
   dev: {
     name: 'dev',
-    label: 'Development / sales demo (Singapore)',
+    label: 'Development / sales demo (NOT PROVISIONED)',
 
     /**
      * 'demo' — NexGen's own. Fixtures allowed, demo logins shown, seeded data
@@ -89,9 +98,21 @@ export const TARGETS = {
      */
     kind: 'demo',
 
-    projectRef: DEV_REF,
-    supabaseUrl: `https://${DEV_REF}.supabase.co`,
-    region: 'ap-southeast-1',
+    /**
+     * DELIBERATELY NULL as of 2026-08-12. The project this used to name became
+     * Amadiya's production database; the demo is being rebuilt on a separate
+     * Supabase + Vercel account, and its ref goes here when it exists.
+     *
+     * Until then every `--env=dev` command refuses, and — because
+     * `fixtureTargets()` is derived from `allowFixtures` and this is the only
+     * entry carrying it — every seed, demo and reset script in the repo refuses
+     * with it. That is the correct state, not a regression: there is currently
+     * nowhere it is safe to run a fixture, and the alternative to refusing is
+     * running one against a client.
+     */
+    projectRef: null,
+    supabaseUrl: null,
+    region: 'ap-southeast-2',
 
     /** Where the app is served. Also the auth Site URL. */
     appOrigin: 'https://nexorder.vercel.app',
@@ -170,16 +191,11 @@ export const TARGETS = {
     kind: 'tenant',
 
     /**
-     * NOT YET PROVISIONED. Fill these three in the moment the Sydney project
-     * exists (PRODUCTION-LAUNCH-PLAN.md §A0.3) — resolveTarget() throws a
-     * pointed error until then, which is deliberate: it is better for every
-     * tenant-targeted command to refuse than for one of them to guess.
-     *
-     * Fill `vercel.projectId` at the same time, and the prod Supabase host into
-     * the CSP. Both are Gate B assertions.
+     * PROVISIONED 2026-08-12 — see AMADIYA_REF above for why this is the
+     * project that used to be the demo rather than a new one.
      */
-    projectRef: null,
-    supabaseUrl: null,
+    projectRef: AMADIYA_REF,
+    supabaseUrl: `https://${AMADIYA_REF}.supabase.co`,
     region: 'ap-southeast-2',
 
     appOrigin: 'https://nexorder.com.au',
