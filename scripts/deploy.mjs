@@ -32,8 +32,42 @@ const target = orExit(() => resolveTarget())
 const { config } = target
 const ALIAS = config.vercel.alias
 
+/**
+ * Environment handed to every `vercel` invocation.
+ *
+ * Pinning the project is the one hard blocker MULTI-TENANT-ARCHITECTURE.md §4
+ * names on the Vercel side. A bare `vercel deploy` resolves whichever project
+ * `.vercel/project.json` happens to name — a single file, holding a single id,
+ * checked into nothing. With one Vercel project per tenant that means
+ * `deploy:amadiya` would cheerfully build the client's branch into whatever
+ * project was last linked, and the first sign of it would be the alias landing
+ * on the wrong deployment.
+ *
+ * Both ids come from the registry so the target named on the command line is
+ * the only thing that decides where this goes. Until a target's ids are filled
+ * in we fall through to the CLI's own resolution, which is today's behaviour —
+ * the guard below is what stops that being silent.
+ */
+function vercelEnv() {
+  const { projectId, orgId } = config.vercel
+  if (!projectId || !orgId) {
+    console.warn(
+      `[deploy] ⚠ ${target.name} has no vercel.${!projectId ? 'projectId' : 'orgId'} in the registry.\n` +
+        `[deploy]   Falling back to .vercel/project.json, which names ONE project regardless of --env.\n` +
+        `[deploy]   Fill it in before there is a second Vercel project to confuse this with.`,
+    )
+    return process.env
+  }
+  return { ...process.env, VERCEL_PROJECT_ID: projectId, VERCEL_ORG_ID: orgId }
+}
+
 function run(cmd, args, opts = {}) {
-  const result = spawnSync(cmd, args, { stdio: ['inherit', 'pipe', 'inherit'], shell: true, ...opts })
+  const result = spawnSync(cmd, args, {
+    stdio: ['inherit', 'pipe', 'inherit'],
+    shell: true,
+    env: vercelEnv(),
+    ...opts,
+  })
   if (result.status !== 0) {
     console.error(`\n[deploy] "${cmd} ${args.join(' ')}" exited with code ${result.status}`)
     process.exit(result.status ?? 1)

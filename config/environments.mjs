@@ -129,14 +129,14 @@ export const TARGETS = {
       /**
        * One Vercel PROJECT per target — see MULTI-TENANT-ARCHITECTURE.md.
        *
-       * READ BY NOTHING YET. `deploy.mjs` still runs a bare `vercel deploy`,
-       * which resolves the project from `.vercel/project.json`. That works
-       * while there is one project and stops working the moment there are two;
-       * the fix (pass VERCEL_PROJECT_ID/VERCEL_ORG_ID in the child env) is
-       * five lines and is deliberately deferred until Amadiya's project
-       * exists, rather than changing a working deploy path for no gain.
+       * READ, as of the Amadiya cutover: `deploy.mjs` passes both into the
+       * `vercel` child env, so `--env=` alone decides which project is built.
+       * A bare `vercel deploy` resolves whichever project
+       * `.vercel/project.json` names — one file, one id — which is fine with
+       * one project and silently wrong with two.
        */
       projectId: 'prj_DdZRpjyAQKwmL6MiCKmbO9I7zhiI',
+      orgId: 'team_evk2SaoAF3naWcjrBdCo1gbL',
       target: 'production',
       alias: 'nexorder.vercel.app',
     },
@@ -203,8 +203,14 @@ export const TARGETS = {
 
     vercel: {
       teamSlug: 'dulshan657s-projects',
-      /** Created with the Sydney project. Null until then — see above. */
+      /**
+       * Fill both when the Amadiya Vercel project is created. `deploy.mjs`
+       * warns loudly and falls back to `.vercel/project.json` while they are
+       * null — which, with two projects on the team, means it would deploy
+       * Amadiya's build into whichever project was last linked.
+       */
       projectId: null,
+      orgId: 'team_evk2SaoAF3naWcjrBdCo1gbL',
       target: 'production',
       alias: 'nexorder.com.au',
     },
