@@ -1,8 +1,67 @@
 # NexOrder → Production for Amadiya Agro Products
 
-**Status:** Phase A in progress · **Written:** 2026-07-27 · **Last updated:** 2026-08-11 · **Companion docs:** `MULTI-TENANT-ARCHITECTURE.md`, `PRODUCTION-READINESS-AUDIT.md`, `HOSTING-PLAN.md`, `ONBOARDING-AUDIT.md`
+**Status:** database cut over; front end outstanding · **Written:** 2026-07-27 · **Last updated:** 2026-08-12 · **Companion docs:** `MULTI-TENANT-ARCHITECTURE.md`, `PRODUCTION-READINESS-AUDIT.md`, `HOSTING-PLAN.md`, `ONBOARDING-AUDIT.md`
 
-**Progress:** `nexorder.com.au` registered (A0.1 done). A1 + A2 under way. Vercel Pro and the
+---
+
+## ⚠️ Four decisions taken on 2026-08-12 supersede parts of this plan
+
+Read these before following any section below. Where they conflict, these win;
+the original text is left in place because the reasoning still explains *why*
+each piece exists.
+
+**1. There is no new Sydney project. `lsgkznyiabqitqfpveey` IS Amadiya's
+production database.** The plan assumed a clean-slate project in
+`ap-southeast-2`. It turned out the existing project was *already* in
+`ap-southeast-2` — this document and `config/environments.mjs` both said
+Singapore and were simply wrong, per the Management API — its organisation was
+already on Pro, and Amadiya's 134-location warehouse was already drawn in it.
+The region and plan rationale for a second project had evaporated. So §A0.3 and
+§A3.1 do not apply, and the "clean slate, no data migration" premise is replaced
+by a purge.
+
+**2. The demo was exported to disk, not rehomed.** `supabase/ops/export-demo.mjs`
+wrote 68 tables, 102,426 rows and 223 storage objects to `demo-export/`
+(archived at `../backup/demo-export-2026-08-12/`). It is rebuilt later on a
+separate Vercel + Supabase account. **Until that exists there is no
+non-production environment at all** — the single biggest cost of this decision,
+and the reason everything that needed the demo data to prove it was done first.
+
+**3. The purge took the history with it, because it had to.** `profiles` has 36
+inbound foreign keys, 35 at NO ACTION. There is no order in which the seeded
+demo accounts — including `alice@nexorder.com.au`, a live Admin on a password
+printed in these docs — can be deleted while their audit events, ledger
+movements and orders exist. Either they stay in a client's user list forever or
+the history goes. It went. `supabase/ops/purge-demo.mjs`.
+
+**4. Phase B's read-side security landed early**, in migrations `00104`/`00105`,
+*before* the purge — because the demo customer logins were the only way to prove
+a customer predicate, and they were about to be deleted. Eight of the nine
+`USING (true)` policies are closed. `app_settings` is not, and that is argued
+out in `00105`'s header rather than papered over.
+
+### What is done
+
+- Demo exported and archived · read policies closed and verified against real
+  customer sessions · tenant identity read by the documents · demo credentials
+  out of the bundle · `secrets`/`schedule-crons`/`bootstrap-admin`/`tenantGuard`
+  written · Vercel project pinning · database purged, re-badged
+  `('prod','amadiya')`, secrets and auth config applied, 71 functions deployed,
+  7 crons scheduled.
+- **Gate A passes.** Gate B's isolation half passes: `nexorder.vercel.app` is
+  refused by CORS, which is the proof the old demo alias can no longer reach
+  this database.
+
+### What is left
+
+Phase 3 of the working plan: the Amadiya **Vercel project** and
+`nexorder.com.au`, retiring the old alias, `info@amadiya.com.au`'s account,
+Amadiya's phone/email/logo, `RESEND_API_KEY` + Auth SMTP, UptimeRobot, and Gates
+B–E. Then rebuild the demo elsewhere.
+
+---
+
+**Original progress note (2026-08-11):** `nexorder.com.au` registered (A0.1 done). A1 + A2 under way. Vercel Pro and the
 Sydney Supabase project not yet purchased — A3 onwards is blocked on them.
 
 ---

@@ -15,9 +15,18 @@ why the `tenant` column is read by nothing, or reach for a branch named after a 
 
 **One Supabase project per tenant. One Vercel project per tenant. One `main`, always.**
 
-Amadiya Agro Products is tenant #1, on its own Sydney project. NexGen's Singapore project is
-the demo and stays that way. There is no shared database, and there never was one to migrate
-away from — which is the entire reason this was cheap to decide now.
+Amadiya Agro Products is tenant #1. There is no shared database, and there never was one to
+migrate away from — which is the entire reason this was cheap to decide now.
+
+> **Correction, 2026-08-12.** This section used to say "on its own Sydney project. NexGen's
+> Singapore project is the demo and stays that way." Both halves turned out to be wrong. The
+> existing project was already in `ap-southeast-2` (the registry's `ap-southeast-1` was simply
+> incorrect), so there was no latency argument for a second one, and Amadiya's warehouse was
+> already drawn in it. It **became** Amadiya's production database: the demo was exported to
+> disk and deleted (`supabase/ops/purge-demo.mjs`), and the demo is rebuilt later on a separate
+> Supabase + Vercel account. The decision above is unchanged — one project per tenant — but the
+> fleet currently has **one project and no demo**, and therefore no environment to rehearse a
+> migration in. Standing that back up is the outstanding cost.
 
 ### What was rejected, and why
 
@@ -173,15 +182,20 @@ the wrong region with a client's data in it.
 
 Small, named, and none of it urgent while there is one tenant:
 
-- **`deploy.mjs` must pin the Vercel project.** It runs a bare `vercel deploy`, which resolves
-  the project from `.vercel/project.json` — a single pinned id. Pass
-  `VERCEL_PROJECT_ID`/`VERCEL_ORG_ID` in the child env from `config.vercel.projectId`
-  (the field exists and is read by nothing yet). **This is the one hard blocker** to
-  project-per-tenant on the Vercel side.
+- ~~**`deploy.mjs` must pin the Vercel project.**~~ **Done 2026-08-12.** Both
+  `VERCEL_PROJECT_ID` and `VERCEL_ORG_ID` ride in the `vercel` child env from the registry;
+  `orgId` is a new field, because `projectId` alone does not resolve. Amadiya's `projectId` is
+  still null until its Vercel project exists, and `deploy.mjs` warns loudly on that path rather
+  than silently falling back to `.vercel/project.json`.
 - **`<cmd>:all` fan-out scripts** — iterate the registry, report a per-target table, exit
   non-zero if any target failed. Never let a partial fleet update report success.
-- **`supabase/ops/secrets.mjs`** — the required/optional secret name lists plus `--check`, still
-  outstanding from launch-plan §A3.6, and the natural home for `ENABLED_MODULES`.
+- ~~**`supabase/ops/secrets.mjs`**~~ **Done 2026-08-12**, with `--check` as a Gate A assertion,
+  and still the natural home for `ENABLED_MODULES`. Note the design choice: `ALLOWED_ORIGINS`,
+  `APP_URL` and `PO_OAUTH_APP_BASE` are **derived from the registry and re-applied every run**,
+  not read from an env file — each has already caused a silent-and-successful outage by being
+  wrong for the target it was set on. `schedule-crons.mjs` and `bootstrap-admin.mjs` shipped
+  alongside it, plus `scripts/lib/tenantGuard.mjs` (the inverse of `fixtureGuard`: registry says
+  tenant, marker agrees, `--confirm=<projectRef>` typed out).
 
 Already done, and worth knowing why:
 
@@ -216,14 +230,20 @@ Already done, and worth knowing why:
 
 Not blockers, but the design reads better than the code does until these land:
 
-- **Six `app_settings` fields are written and rendered nowhere** — `companyName`,
-  `companyAddress`, `companyPhone`, `companyEmail`, `currency`, `companyLogoUrl`. Layer 1 of §2
-  ("express it as data") is therefore weaker than it looks. `_shared/orderDocuments.ts`
-  hardcodes `companyName: 'Nex Order'` onto every pick slip and dispatch advice. Tracked in
-  launch-plan §A5.
+- ~~**Six `app_settings` fields are written and rendered nowhere.**~~ **Four of six now read**
+  (2026-08-12): `_shared/companyIdentity.ts` loads them and the pick slip / dispatch advice
+  header renders name, address, phone·email and the logo. There is deliberately **no fallback
+  to 'Nex Order'** — a blank header is noticed, a confidently wrong one is not. `currency` is
+  still unread (it rides with the GST work). `companyLogoUrl` renders only as PNG or JPEG:
+  pdf-lib supports no others, and the logo upload does not compress, so an SVG is skipped and
+  the header goes text-only. Layer 1 of §2 now does what it claims.
 - **`AUD` is hardcoded at ~15 sites** while `app_settings.currency` is stored and edited. A
   tenant outside Australia is a code change today. Tracked in launch-plan Phase B.
-- **The nine `USING (true)` read policies.** Harmless-ish per-tenant, disqualifying for shared
-  tenancy. See §1.
+- ~~**The nine `USING (true)` read policies.**~~ **Eight closed** by `00105` (2026-08-12),
+  keyed on a new `public.user_is_staff()`. The ninth, `app_settings`, is a singleton and cannot
+  be fixed with a row predicate — closing it means splitting the internal thresholds into their
+  own table. So the §1 prerequisite for shared tenancy is *nearly* met; that one table would
+  still leak an operator's own config across tenants in a pooled database, and would have to be
+  dealt with before pooling anyone.
 - **`00042` does not cover `locations` / `warehouse_layouts`.** Irrelevant under
   project-per-tenant; it would matter immediately under a shared database.

@@ -3,7 +3,6 @@ import { configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-// @ts-expect-error — .mjs registry, no types, and `allowJs` is off.
 import { TEST_PROJECT_REF } from './config/environments.mjs';
 
 const alias = { '@': path.resolve(__dirname, '.') };

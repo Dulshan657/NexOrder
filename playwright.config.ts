@@ -1,10 +1,14 @@
 // Playwright E2E harness for NexOrder.
 //
-// E2E runs against the DEV/demo environment (nexorder.vercel.app, the Singapore
-// Supabase project). Production is a separate project serving nexorder.com.au
-// and is asserted out below — specs write data, and a client's database is not
-// a test fixture. Keep specs read-mostly regardless; anything that must write
-// should be clearly named, idempotent, and clean up after itself.
+// ⚠ AS OF 2026-08-12 THERE IS NOWHERE TO RUN THIS. The project these specs used
+// to target became Amadiya's production database in the cutover, and the demo
+// has not been rebuilt on its own account yet. Every tenant origin is asserted
+// out below — specs write data, and a client's database is not a test fixture —
+// so pointing E2E_BASE_URL at nexorder.com.au is refused, and there is no other
+// deployment to point it at. Restore this when the demo environment exists.
+//
+// Keep specs read-mostly regardless; anything that must write should be clearly
+// named, idempotent, and clean up after itself.
 //
 // Auth: the app runs Supabase with `persistSession: false` (lib/supabase.ts)
 // because session persistence hung `getSession()` on Windows. That means
