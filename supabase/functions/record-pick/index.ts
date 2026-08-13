@@ -19,6 +19,7 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { isLocationFullyPicked, recomputeOrderStatus } from '../_shared/fulfillment.ts'
 import { checkPickScan } from '../_shared/pickScanCheck.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
@@ -48,6 +49,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
     const rl = await checkRateLimit(`record-pick:${auth.userId}`, { windowMs: 60_000, max: 120 })

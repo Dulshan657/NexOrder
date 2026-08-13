@@ -24,6 +24,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { isAuthorizedCronCall } from '../_shared/poInbox/pollDispatch.ts'
 import { type AccountRow, processAccount } from '../_shared/poInbox/pollAccount.ts'
+import { isModuleEnabled } from '../_shared/modules.ts'
 
 serve(async (req: Request) => {
   const corsHeaders = corsHeadersFor(req)
@@ -40,6 +41,26 @@ serve(async (req: Request) => {
       JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'Cron token required' } }),
       { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
+  }
+
+  // The module gate, and the ONE place it is a no-op rather than a refusal.
+  //
+  // Every other function in this module calls `requireModule`, which throws an
+  // EdgeFunctionError that its try/catch turns into a 403. This one has no
+  // try/catch — it composes raw Responses — so a throw would surface as an
+  // unhandled 500. More to the point, it is a CRON: it fires every minute
+  // whether or not the tenant bought PO Inbox, and a 403 a minute is a log full
+  // of errors describing a deployment working exactly as configured.
+  //
+  // Reporting success having done nothing is the honest answer to "poll the
+  // mailboxes" when there are no mailboxes to poll. It sits AFTER the cron-token
+  // gate on purpose: an unauthenticated caller learns nothing about which
+  // modules this deployment has.
+  if (!isModuleEnabled('sales_orders')) {
+    return new Response(JSON.stringify({ ok: true, skipped: 'module_disabled', accounts: [] }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!

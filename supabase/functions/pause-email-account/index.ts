@@ -22,6 +22,7 @@ import { EdgeFunctionError, errorResponse } from '../_shared/errors.ts'
 import { requireAuth } from '../_shared/auth.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 interface PauseRequest {
   emailAccountId: string
@@ -36,6 +37,7 @@ serve(async (req: Request) => {
   }
 
   try {
+    requireModule('sales_orders')
     const ctx = await requireAuth(req, { allowedRoles: ['Admin', 'Manager'] })
 
     const rl = await checkRateLimit(`pause-email-account:${ctx.userId}`, {

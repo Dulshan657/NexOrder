@@ -52,11 +52,25 @@ const PLATFORM_INJECTED = [
   'SUPABASE_SECRET_KEYS',
 ]
 
-/** Computed from the registry. Always re-applied. */
+/**
+ * Computed from the registry. Always re-applied.
+ *
+ * `ENABLED_MODULES` joined the other three in 2026-08 for the same reason they
+ * are here rather than in an env file: it must agree with what the frontend was
+ * BUILT with, and the frontend gets it from this same registry via
+ * `vite.config.ts`. Two hand-typed copies of one fact is how a tenant ends up
+ * with a nav entry whose Edge Function returns 403.
+ *
+ * Note the direction of the failure if it goes missing: `_shared/modules.ts`
+ * treats unset as everything-enabled, so drift here opens a surface rather than
+ * closing one. That is deliberate (see that file), and it is also why this is
+ * re-applied on every run instead of only when absent.
+ */
 const DERIVED = {
   ALLOWED_ORIGINS: (c) => c.corsOrigins.join(','),
   APP_URL: (c) => c.appOrigin,
   PO_OAUTH_APP_BASE: (c) => c.appOrigin,
+  ENABLED_MODULES: (c) => c.modules.join(','),
 }
 
 /** Must be present for the fleet to work. Values come from the target's env file. */

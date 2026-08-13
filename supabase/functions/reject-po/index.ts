@@ -17,6 +17,7 @@ import { requireAuth, type AuthContext } from '../_shared/auth.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { sanitizeForLog } from '../_shared/poInbox/env.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 interface RejectRequest {
   pendingPoId: string
@@ -31,6 +32,7 @@ serve(async (req: Request) => {
   }
 
   try {
+    requireModule('sales_orders')
     const ctx = await requireAuth(req, { allowedRoles: ['Admin', 'Manager'] })
 
     const rl = await checkRateLimit(`reject-po:${ctx.userId}`, { windowMs: 60_000, max: 30 })

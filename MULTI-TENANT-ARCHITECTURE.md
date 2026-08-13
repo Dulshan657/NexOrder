@@ -100,44 +100,100 @@ exhaust each before reaching for the next:
 Core surfaces are **not gateable**: auth, dashboard, products, customers (HoReCa), orders,
 users, settings, audit. An ordering system without them is not the product.
 
-Nine optional modules. The list lives in code as `ALL_MODULES` in `config/environments.mjs`;
-this table is what each one actually means.
+**THREE optional modules, and they are the three group headings the sidebar already
+draws.** BUILT 2026-08-13; this section described nine finer slugs, unimplemented, until
+then. The list lives in code as `ALL_MODULES` in `config/environments.mjs`; the
+function-by-function assignment is `config/moduleOwnership.mjs`.
 
 | slug | surfaces | Edge Functions |
 |---|---|---|
-| `warehouse` | Warehouse (designer/map), Stock, Stocktake, Putaway, Replenishment, Pick Queue, Dispatched, Receive Stock, Documents, and the Warehouse role itself | ~35 — `receive-stock`, `adjust-stock`, `transfer-stock`, `record-pick`, `decide-`/`complete-putaway`, `count-bin`, `mutate-layout`, `publish-layout`, `generate-labels`, `*-replenishment`, `mutate-wie-rule`, `mutate-zone-profile`, `mutate-storage-type`, `mutate-scoring-profile`, `mutate-wms-attributes`, `mutate-product-home-bin`, `mutate-level-role`, `mutate-warehouse`, `mutate-warehouse-location`, `mutate-warehouse-setup-ack`, `recommend-*` |
-| `po_inbox` | PO Inbox (queue, aliases, mailboxes) | `start-po-oauth`, `gmail-oauth-callback`, `outlook-oauth-callback`, `poll-inbox`, `extract-po`, `approve-po`, `reject-po`, `create-po-document-url`, `mutate-po-alias`, `pause-`/`disconnect-`/`retry-email-account` |
-| `field_sales` | Routes, Visits, Rep Dashboard; the two Sales Rep roles | read-mostly |
-| `customer_portal` | HoReCa logins, Shop, Pantry, customer Order History; the Customer role | `mutate-pantry-item`, the customer path of `place-order` |
-| `purchasing` | Suppliers, multi-supplier products | `mutate-supplier`, `mutate-purchase-order` |
-| `invoicing` | Invoicing, credit limits, accounts aging | `mutate-invoice-status` |
-| `promotions` | Promotions, bundles | `mutate-promotion` |
-| `analytics` | performance panels, sales targets, semantic layer | `mutate-sales-target`, `embed-products` |
-| `email` | outbound transactional mail | `send-email` |
+| `sales_orders` | Shop, Order Import, PO Inbox, Accounts, Promotions; customer Order History and Pantry | 16 — `place-order`, `update-order-status`, `mutate-promotion`, `mutate-invoice-status`, `mutate-purchase-order`, `mutate-pantry-item`, and the PO-Inbox set (`approve-`/`reject-po`, `extract-po`, `poll-inbox`, `mutate-po-alias`, `start-po-oauth`, `create-po-document-url`, `pause-`/`disconnect-`/`retry-email-account`) |
+| `field_ops` | HoReCa Insights, Scheduled Visits, Walk-in Review | 1 — `mutate-sales-target`. Thin because these surfaces are RLS-scoped table access; the frontend gate is the whole gate, and it is no weaker for it |
+| `inventory_dispatch` | Stock, Receive Stock, Putaway, Replenishment, Stocktake, Pick Queue, Dispatched, Documents, Warehouse; **and the Warehouse role itself** | 40 — the warehouse programme end to end |
+
+> **Why three and not nine.** The nine (`warehouse`, `po_inbox`, `field_sales`,
+> `customer_portal`, `purchasing`, `invoicing`, `promotions`, `analytics`, `email`) were
+> finer than the product is actually sold. `po_inbox` without ordering has nowhere to put an
+> approved PO; `analytics` without the surface it reports on draws empty charts. Splitting a
+> module later is easy; un-splitting one a tenant has already bought is not. Three also means
+> the gate is something an operator can point at on screen, which is what makes it reviewable.
+
+**Two surfaces sit under a module's heading and are CORE anyway**, and both are load-bearing:
+`Products` is drawn under "Inventory & Dispatch" but Sales & Orders reads its prices, and
+`HoReCa` is drawn under "Field Ops" but is where orders come from at all. Grouping is a UI
+fact; licensing is a commercial one. `HoReCa Insights` — the analytics on top of the customer
+list — *is* Field Ops. See `TAB_MODULES` in `lib/adminTabUrl.ts`.
+
+**A module that empties a role must also withhold the role.** With `inventory_dispatch` off
+the Warehouse role has no nav, no landing view and nothing to render, so
+`lib/assignableRoles.ts` removes it from the invite form — otherwise an admin creates an
+account that logs in successfully to a blank page, with no error anywhere to explain it. The
+Field Sales Rep is deliberately NOT withheld when `field_ops` is off: they keep the Shop,
+Order Import, Accounts and the customer list. Only remove a role when the module takes away
+everything it could do.
 
 ### The mechanism — three layers
 
 **Layer A · Frontend, build time.** `vite.config.ts` imports the registry, resolves the target
 from `NEXORDER_ENV` (one build-env var per Vercel project — already an accepted target source,
 `scripts/lib/env.mjs`), and `define`s **one boolean constant per module**:
-`__MODULE_WAREHOUSE__`, `__MODULE_PO_INBOX__`, … `lib/modules.ts` wraps them.
+`__MODULE_SALES_ORDERS__`, `__MODULE_FIELD_OPS__`, `__MODULE_INVENTORY_DISPATCH__`.
+`lib/modules.ts` wraps them and is the only file that should read them raw.
 
 > **One boolean per module, never an array.** `MODULES.includes('warehouse')` is a runtime
 > method call: Vite's `define` will substitute the array literal, but no bundler can fold the
 > call, so the branch survives and every byte of WIE ships to a tenant who did not buy it. A
-> bare `__MODULE_WAREHOUSE__` substituted to `false` folds the branch and drops the lazy chunk.
-> This is the difference between *hidden* and *not shipped*, and it is the one detail here that
-> is easy to get wrong and invisible when you do.
+> bare `__MODULE_INVENTORY_DISPATCH__` substituted to `false` folds the branch and drops the
+> lazy chunk. This is the difference between *hidden* and *not shipped*, and it is the one
+> detail here that is easy to get wrong and invisible when you do.
 
-Gates go in two places, and both are required:
+Gates go in **four** places. The first two were in the original design; the last two were
+found by building with a module off and grepping the output, which is the only check that can
+tell "not rendered" from "not shipped":
+
 - `components/AppShell.tsx` — the nav.
 - `lib/adminTabUrl.ts` — `adminTabFromSearch` already role-validates `?tab=`; a disabled
   module's tab must be rejected by exactly the same path. Skipping this is how a deep link
   renders a blank page, which is the existing failure mode that validation was added to stop.
+- **The `lazyWithRetry(() => import(...))` DECLARATIONS**, in `AdminView.tsx` *and*
+  `AppShell.tsx`. A JSX gate stops the view rendering, but the `import()` runs at module scope
+  and Rollup still emits the chunk. `const X = MODULE_Y ? lazyWithRetry(...) : null` puts it
+  in a branch that folds away.
+- **Both files, for anything either can reach.** `StockView` and `ReceiveStockView` are
+  declared in AppShell *and* AdminView; gating one left the chunk alive through the other.
+  That is exactly how `putawayService` survived the first attempt.
+
+> **Verify by building, not by reading.** `NEXORDER_ENV=dev npm run build` with a module
+> removed from its registry entry, then grep `dist/` for that module's symbols
+> (`PutawayQueuePage`, `WarehouseCanvas`, `decide-putaway`, …). Measured on the first pass:
+> 95 assets / 3044 kB with all three on, 47 assets / 2574 kB with only `sales_orders`.
+> Tab-name strings like `'Putaway'` legitimately remain — they live in the core `AdminTab`
+> union — so grep for code symbols, not for labels.
 
 **Layer B · Server, runtime.** An `ENABLED_MODULES` Edge Function secret, comma-separated,
-written from the same registry entry. `_shared/modules.ts` exports `requireModule(slug)`,
-called beside `requireAuth` at the top of each gated function.
+derived from the same registry entry by `supabase/ops/secrets.mjs` and re-applied on every run
+alongside `ALLOWED_ORIGINS`/`APP_URL` — drift between the registry and the project IS the bug.
+`_shared/modules.ts` exports `requireModule(slug)`, called beside `requireAuth` at the top of
+each of the 57 owned functions.
+
+Two details worth knowing before touching it:
+
+- **`supabase/functions` is type-checked by nothing** (excluded from `tsc`, nothing imports it,
+  and `functions deploy` without Docker only uploads). `__tests__/moduleOwnership.test.ts`
+  therefore parses every owned function with the TypeScript compiler and asserts the gate is
+  imported, correctly spelled, and **inside a try block** — `requireModule` throws, and outside
+  a try that is an unhandled 500 rather than a 403.
+- **`poll-inbox` is the one exception and uses `isModuleEnabled` instead.** It is a cron with
+  no try/catch that composes raw Responses, and it fires every minute whether or not the tenant
+  bought PO Inbox — a 403 a minute is a log full of errors describing a deployment working as
+  configured. It returns `{ ok: true, skipped: 'module_disabled' }`, *after* the cron-token
+  gate so an unauthenticated caller learns nothing about which modules exist.
+
+**`supabase/ops/deploy-functions.mjs` also refuses to deploy a disabled module's functions at
+all**, which gives the server the same "absent, not merely refusing" property the frontend has.
+It will not *retire* one already deployed to a project whose module was later switched off —
+deleting a live function is not a decision a deploy script should take — so it reports that
+case with the command to run.
 
 > **Unset must mean all-modules-enabled — fail OPEN.** This is deliberate and it is the
 > opposite of the rule for `ALLOWED_ORIGINS`. A fail-closed module gate deployed before its

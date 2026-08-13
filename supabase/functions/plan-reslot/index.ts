@@ -30,6 +30,7 @@ import { planReslot, warehouseStockScope, type ReslotDemand } from '../_shared/w
 import { DEFAULT_WEIGHTS } from '../_shared/wie/types.ts'
 import { positionsUsed, type OccupancyRow } from '../_shared/wie/capacity.ts'
 import type { CandidateBin, CompatibilityRule, RuleDefinition, ScoringWeights, SkuProfile } from '../_shared/wie/types.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -49,6 +50,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
     const rl = await checkRateLimit(`plan-reslot:${auth.userId}`, { windowMs: 60_000, max: 20 })
     if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')

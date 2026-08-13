@@ -20,6 +20,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -40,6 +41,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
     const rl = await checkRateLimit(`commit-reslot-plan:${auth.userId}`, { windowMs: 60_000, max: 20 })
     if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')

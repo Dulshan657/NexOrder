@@ -35,28 +35,34 @@
  *
  * A module is a whole surface that a tenant may not have bought: nav entries,
  * routes, and Edge Functions together. The CORE surfaces — auth, dashboard,
- * products, customers, orders, users, settings, audit — are not listed because
- * they are not gateable; an ordering system without them is not the product.
+ * products, customers (HoReCa), suppliers, users, settings, audit, system
+ * health — are not listed because they are not gateable; an ordering system
+ * without them is not the product.
  *
- * NOTHING READS THIS YET, and that is intentional. Amadiya has every module
- * enabled, so a gate would be dead code with no way to tell whether it worked.
- * The field exists so the seam is real and so a second tenant is a config
- * change rather than a refactor. The mechanism that will consume it — one
- * build-time boolean per module, NOT an array, because `arr.includes(x)` is a
- * runtime call that survives tree-shaking and would ship every byte of a
- * disabled module — is specified in MULTI-TENANT-ARCHITECTURE.md.
+ * ── THESE ARE THE THREE THE SIDEBAR ALREADY DRAWS ───────────────────────────
+ *
+ * This list held nine finer-grained slugs (warehouse, po_inbox, field_sales,
+ * customer_portal, purchasing, invoicing, promotions, analytics, email) from
+ * the day the seam was designed until 2026-08-13, while nothing read it. It is
+ * now three, and they are deliberately the three group headings in
+ * `components/AppShell.tsx` — "Sales & Orders", "Field Ops", "Inventory &
+ * Dispatch" — because that is what a customer is actually sold, and a gate the
+ * operator cannot point at on screen is a gate nobody can reason about.
+ *
+ * The nine were also finer than the product: `po_inbox` without `sales_orders`
+ * has nowhere to put an approved order, and `analytics` without the surface it
+ * reports on shows empty charts. Splitting further is easy later; un-splitting
+ * after a tenant has bought one of the nine is not.
+ *
+ * ONE BOOLEAN PER MODULE, NEVER AN ARRAY, on the consuming side — `arr
+ * .includes(x)` is a runtime call that survives tree-shaking and would ship
+ * every byte of a disabled module. The array lives here, where it is
+ * configuration; `lib/modules.ts` turns it into constants Vite can fold. That
+ * is the difference between *hidden* and *not shipped*.
+ *
+ * See MULTI-TENANT-ARCHITECTURE.md §3 for the three layers.
  */
-export const ALL_MODULES = [
-  'warehouse',
-  'po_inbox',
-  'field_sales',
-  'customer_portal',
-  'purchasing',
-  'invoicing',
-  'promotions',
-  'analytics',
-  'email',
-]
+export const ALL_MODULES = ['sales_orders', 'field_ops', 'inventory_dispatch']
 
 /**
  * Placeholder ref used by unit tests. Never resolves to a real project — it
@@ -249,7 +255,11 @@ export const TARGETS = {
      */
     authEmailTemplates: false,
 
-    /** Everything on. See ALL_MODULES — read by nothing yet, by design. */
+    /**
+     * Everything on, and on dev that is not negotiable: the demo has to be able
+     * to show any module to a prospect, and dev is where a module gate is
+     * proven to work before it decides what a paying tenant sees.
+     */
     modules: [...ALL_MODULES],
 
     envFile: '.env.dev.local',
@@ -312,6 +322,13 @@ export const TARGETS = {
     /** Pro plan — custom auth email templates are accepted. See dev's note. */
     authEmailTemplates: true,
 
+    /**
+     * Everything on: Amadiya bought all three. The gate ships in the all-on
+     * state ON PURPOSE — it has to be proven inert against a live tenant before
+     * it is ever the thing withholding a surface from one. Removing a slug here
+     * is how a module is turned off, and it takes a rebuild, because the
+     * frontend half is compiled out rather than hidden.
+     */
     modules: [...ALL_MODULES],
 
     envFile: '.env.amadiya.local',

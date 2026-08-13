@@ -40,6 +40,7 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { MAX_BULK_REPLEN_ROWS, validateReplenRow } from '../_shared/wie/replenPolicy.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -101,6 +102,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
     // The body is read before the limiter because the bucket depends on the

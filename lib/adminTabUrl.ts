@@ -9,6 +9,12 @@
 // what makes a setup-checklist link survive being pasted, and it closes that
 // orphan-param class of bug rather than adding to it.
 
+import {
+  MODULE_FIELD_OPS,
+  MODULE_INVENTORY_DISPATCH,
+  MODULE_SALES_ORDERS,
+} from './modules'
+
 /** The admin/staff view identifiers. Owned here so URL parsing can validate
  *  against them without importing a component; re-exported by AdminView.tsx so
  *  existing `import type { AdminTab } from './AdminView'` call sites still work. */
@@ -87,6 +93,66 @@ export function parseAdminTab(search: string): AdminTab | null {
 }
 
 /**
+ * Which module owns each tab. Tabs absent from this map are CORE and always
+ * available: Dashboard, Products, HoReCa, Users, Suppliers, Settings, Audit
+ * Log, System Health. You cannot sell a catalogue-less ordering system, and a
+ * tenant with one module still needs a customer list and a way to add staff.
+ *
+ * Note the two that look like they belong to a module and do not:
+ *
+ *   - `HoReCa` is core while `HoReCa Insights` is Field Ops. The customer list
+ *     is how orders get placed at all; the analytics on top of it is the thing
+ *     being sold.
+ *   - `Products` is core although the sidebar draws it under "Inventory &
+ *     Dispatch". The heading is where an operator looks for it; the catalogue
+ *     itself is what Sales & Orders reads prices from. Grouping is a UI fact,
+ *     licensing is a commercial one, and this is the seam where they differ.
+ */
+const TAB_MODULES: Partial<Record<AdminTab, ModuleName>> = {
+  Shop: 'sales_orders',
+  'Order Import': 'sales_orders',
+  'PO Inbox': 'sales_orders',
+  Accounts: 'sales_orders',
+  Promotions: 'sales_orders',
+
+  'HoReCa Insights': 'field_ops',
+  'Scheduled Visits': 'field_ops',
+  'Walk-in Review': 'field_ops',
+
+  Stock: 'inventory_dispatch',
+  Receiving: 'inventory_dispatch',
+  Putaway: 'inventory_dispatch',
+  Replenishment: 'inventory_dispatch',
+  Stocktake: 'inventory_dispatch',
+  'Pick Queue': 'inventory_dispatch',
+  Dispatched: 'inventory_dispatch',
+  Documents: 'inventory_dispatch',
+  Warehouse: 'inventory_dispatch',
+}
+
+export type ModuleName = 'sales_orders' | 'field_ops' | 'inventory_dispatch'
+
+/** The module a tab needs, or `null` when the tab is core. */
+export function moduleForTab(tab: AdminTab): ModuleName | null {
+  return TAB_MODULES[tab] ?? null
+}
+
+/**
+ * Is this tab's module enabled in this build?
+ *
+ * Reads the folded constants rather than an array, so a disabled module's
+ * branch is removed at build time — see lib/modules.ts for why that distinction
+ * is the whole mechanism.
+ */
+export function tabModuleEnabled(tab: AdminTab): boolean {
+  const module = moduleForTab(tab)
+  if (module === null) return true
+  if (module === 'sales_orders') return MODULE_SALES_ORDERS
+  if (module === 'field_ops') return MODULE_FIELD_OPS
+  return MODULE_INVENTORY_DISPATCH
+}
+
+/**
  * Which tabs a role may actually render. AdminView role-gates each branch and
  * silently renders NOTHING when a gate fails, so an unvalidated `?tab=` is a
  * blank page rather than an error. Every deep link is therefore checked against
@@ -131,8 +197,18 @@ const TABS_BY_ROLE: Record<string, ReadonlyArray<AdminTab>> = {
   ],
 }
 
-/** True when `role` can render `tab`. Unknown roles get nothing. */
+/**
+ * True when `role` can render `tab` in THIS build. Unknown roles get nothing.
+ *
+ * The module check is not optional decoration. `AdminView` renders nothing when
+ * a gate fails, so an un-checked `?tab=Warehouse` on a build without Inventory
+ * & Dispatch is a blank page — the exact failure `?tab=` was added to stop,
+ * arriving by a new route. A link to a module the tenant does not have degrades
+ * to their normal landing view, the same as a link to a tab their role cannot
+ * open.
+ */
 export function roleCanOpenTab(role: string, tab: AdminTab): boolean {
+  if (!tabModuleEnabled(tab)) return false
   return (TABS_BY_ROLE[role] ?? []).includes(tab)
 }
 

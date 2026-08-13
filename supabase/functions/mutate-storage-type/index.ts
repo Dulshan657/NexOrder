@@ -23,6 +23,7 @@ import { assertValidRoles, loadActiveRoleKeys } from '../_shared/levelRoleLookup
 // with the designer; the I/O sits beside it, outside the wie/ purity contract.
 import { unitNoun } from '../_shared/wie/locationNaming.ts'
 import { restampFormNames } from '../_shared/locationNamingWrite.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const SLOT_UNITS = ['pallet', 'carton', 'each', 'uncounted'] as const
@@ -138,6 +139,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
     const rl = await checkRateLimit(`mutate-storage-type:${auth.userId}`, { windowMs: 60_000, max: 60 })
     if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')

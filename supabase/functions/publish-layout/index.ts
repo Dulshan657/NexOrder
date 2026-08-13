@@ -28,6 +28,7 @@ import {
   type ReadinessObject,
   type ReadinessPlacement,
 } from '../_shared/wie/publishReadiness.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 
@@ -44,6 +45,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
     const rl = await checkRateLimit(`publish-layout:${auth.userId}`, { windowMs: 60_000, max: 20 })
     if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')

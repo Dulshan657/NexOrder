@@ -5,12 +5,37 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { visualizer } from 'rollup-plugin-visualizer';
 
-import { TARGETS, isProvisioned } from './config/environments.mjs';
+import { TARGETS, ALL_MODULES, isProvisioned } from './config/environments.mjs';
 
 // Dev-server fallback for the /storage image proxy (see `server.proxy` below).
 // Resolved from NEXORDER_ENV the same way vercel.ts does, so one variable
 // describes the target everywhere. Never a typed ref — the registry owns those.
 const proxyTarget = TARGETS[process.env.NEXORDER_ENV?.trim() ?? ''] ?? TARGETS.dev;
+
+// ── MODULE FLAGS: ONE BOOLEAN PER MODULE, NEVER AN ARRAY ────────────────────
+//
+// Layer A of MULTI-TENANT-ARCHITECTURE.md §3. `__MODULE_SALES_ORDERS__` and
+// friends are substituted as the literals `true`/`false`, so `if (!X) return`
+// folds away and Rollup drops the whole branch — including any `import()` only
+// that branch reaches. THAT is what makes a disabled module absent from the
+// tenant's bundle rather than merely hidden behind a check.
+//
+// An array would defeat it completely: `MODULES.includes('warehouse')` is a
+// runtime call on a runtime value, nothing folds, and every byte of every
+// disabled module ships to a tenant who did not buy it — reachable by anyone
+// who opens devtools. The array lives in the registry, where it is config; it
+// becomes constants here, at the only point that can act on it.
+//
+// Same NEXORDER_ENV that already picks the storage proxy and the CSP, so one
+// variable per Vercel project decides everything about which deployment this
+// build is. `lib/modules.ts` is the only thing that should read these.
+const moduleTarget = TARGETS[process.env.NEXORDER_ENV?.trim() ?? ''] ?? TARGETS.dev;
+const moduleDefines = Object.fromEntries(
+    ALL_MODULES.map((slug: string) => [
+        `__MODULE_${slug.toUpperCase()}__`,
+        JSON.stringify(moduleTarget.modules.includes(slug)),
+    ]),
+);
 const storageProxyTarget = isProvisioned(proxyTarget)
     ? proxyTarget.supabaseUrl
     : TARGETS.dev.supabaseUrl;
@@ -131,6 +156,7 @@ export default defineConfig(() => {
       define: {
         __APP_VERSION__: JSON.stringify(sha),
         __BUILD_TIME__: JSON.stringify(builtAt),
+        ...moduleDefines,
       },
       resolve: {
         alias: {

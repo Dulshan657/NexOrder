@@ -28,6 +28,7 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { loadWalkGraph } from '../_shared/loadWalkGraph.ts'
 import { sequencePickRoute, type PickStop } from '../_shared/wie/picking.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
@@ -40,6 +41,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
     const rl = await checkRateLimit(`recommend-replen-route:${auth.userId}`, { windowMs: 60_000, max: 60 })
     if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')

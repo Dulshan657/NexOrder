@@ -21,6 +21,7 @@ import { requireAuth, type UserRole } from '../_shared/auth.ts'
 import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const BUCKET = 'floorplan-scans'
@@ -43,6 +44,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
     const rl = await checkRateLimit(`create-floorplan-upload-url:${auth.userId}`, { windowMs: 60_000, max: 60 })
     if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')

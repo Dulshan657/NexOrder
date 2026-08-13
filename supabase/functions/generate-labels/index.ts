@@ -50,6 +50,7 @@ import {
   type LabelTargetRow,
   type SheetGroup,
 } from '../_shared/labels/layoutLabelPlan.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 const BUCKET = 'warehouse-labels'
@@ -406,6 +407,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
     // 10/min/user — rendering a 900-label PDF is by far the heaviest thing an

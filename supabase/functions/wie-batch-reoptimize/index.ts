@@ -20,6 +20,7 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { filterCandidates } from '../_shared/wie/scoring.ts'
 import type { CandidateBin, CompatibilityRule, LevelRole, RuleDefinition, SkuProfile } from '../_shared/wie/types.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 /** Floor on how much travel a re-slot must save before it's worth suggesting.
@@ -90,6 +91,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
     const rl = await checkRateLimit(`wie-batch-reoptimize:${auth.userId}`, { windowMs: 60_000, max: 6 })
     if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')

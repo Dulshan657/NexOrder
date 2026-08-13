@@ -26,6 +26,7 @@ import { buildWalkGraph, snapPlacementToNode } from '../_shared/wie/graph.ts'
 import { simulateLayout, diffKpis, type SimBin, type SimOrder, type SimStop } from '../_shared/wie/simulate.ts'
 import { positionsUsed, type OccupancyRow, type SlotKind } from '../_shared/wie/capacity.ts'
 import type { GraphEdge, GraphNode, WalkCell, WarehouseGraph } from '../_shared/wie/types.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 const PAGE = 1000
@@ -195,6 +196,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
     const rl = await checkRateLimit(`wie-simulate:${auth.userId}`, { windowMs: 60_000, max: 20 })
     if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')

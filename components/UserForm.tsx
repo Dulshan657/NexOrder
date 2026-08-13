@@ -7,6 +7,7 @@ import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/
 import OptimizedImage from './OptimizedImage';
 import { useWarehouses } from '../hooks/queries/useWarehouses';
 import { Button, Field, Input, Modal, Select } from './ui';
+import { assignableRoles } from '../lib/assignableRoles';
 
 interface UserFormProps {
     userToEdit: User | null;
@@ -180,7 +181,7 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
                         required
                         className="capitalize"
                     >
-                        {Object.values(UserRole).map(role => (
+                        {assignableRoles.map(role => (
                             <option key={role} value={role}>{role}</option>
                         ))}
                     </Select>
