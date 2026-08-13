@@ -217,6 +217,35 @@ export const TARGETS = {
       'https://www.nexorder.com.au/**',
     ],
 
+    /**
+     * Custom SMTP for Supabase Auth (password reset + invite).
+     *
+     * Without this the project uses Supabase's BUILT-IN mailer, which sends from
+     * `noreply@mail.app.supabase.io`, appends its own
+     * `supabase.com/opt-out/<projectRef>` footer — so the ref reaches a client's
+     * inbox no matter what the email template says — and is capped at 2 messages
+     * an hour, which cannot onboard a team.
+     *
+     * The sender is on the PRODUCT domain, not the tenant's. It matches
+     * `appOrigin` and therefore the link inside the email, so SPF/DKIM/DMARC all
+     * align on one domain. `amadiya.com.au` would not work even if we wanted it:
+     * a sending domain must be DNS-verified at the provider, and NexGen does not
+     * control the client's DNS.
+     *
+     * `passEnv` NAMES the credential; it is never stored here. Everything in this
+     * file is public.
+     */
+    authSmtp: {
+      senderEmail: 'noreply@nexorder.com.au',
+      senderName: 'Nex Order',
+      host: 'smtp.resend.com',
+      port: 465,
+      user: 'resend',
+      passEnv: 'RESEND_API_KEY',
+      /** Per hour. Supabase's built-in default is 2 — see above. */
+      ratePerHour: 30,
+    },
+
     vercel: {
       teamSlug: 'dulshan657s-projects',
       /**

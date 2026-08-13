@@ -2,6 +2,7 @@
 //
 //   node supabase/apply-auth-config.mjs --env=dev           # diff, then PATCH
 //   node supabase/apply-auth-config.mjs --env=dev --check   # diff only, exit 1 on drift
+//   node supabase/apply-auth-config.mjs --env=dev --force   # PATCH even with no drift
 //
 // Why this exists: the redirect allow-list is what makes the password-reset
 // round trip land back on the app. It used to be a dashboard-only setting, so
@@ -10,6 +11,10 @@
 //
 // Only the keys it returns are sent. The GET response is never echoed back as
 // a PATCH body — that would re-assert settings nobody reviewed.
+//
+// --force exists for ONE case: rotating the SMTP password. `smtp_pass` is
+// write-only (see WRITE_ONLY below), so it is invisible to drift() and a new key
+// alone would never trigger a PATCH. --force sends DESIRED regardless.
 
 import { resolveTarget, orExit } from '../scripts/lib/env.mjs'
 
@@ -104,8 +109,8 @@ function inviteEmail() {
  * the DEV entry only. It must never reach production: it would make any preview
  * deployment a valid password-reset landing page for a client account.
  */
-function buildDesired(config) {
-  return {
+function buildDesired(config, env) {
+  const desired = {
     mailer_subjects_recovery: 'Reset your Nex Order password',
     mailer_templates_recovery_content: recoveryEmail(),
     mailer_subjects_invite: 'You have been invited to Nex Order',
@@ -145,18 +150,57 @@ function buildDesired(config) {
     refresh_token_rotation_enabled: true,
     security_refresh_token_reuse_interval: 10,
   }
+
+  // A target with no authSmtp keeps Supabase's built-in mailer, and none of the
+  // smtp_* keys are emitted at all — so this cannot disturb a project that has
+  // never declared one.
+  const smtp = config.authSmtp
+  if (!smtp) return desired
+
+  const pass = env[smtp.passEnv]
+  if (!pass) {
+    // Deliberately fatal rather than "skip the SMTP block and carry on". Skipping
+    // would leave a client on the built-in mailer — leaking the project ref in
+    // the opt-out footer and capped at 2 sends an hour — while this script
+    // reported success. That silent-and-successful shape is the same one
+    // ALLOWED_ORIGINS and EMAIL_FROM have each already cost us.
+    throw new ConfigError(
+      `${config.name} declares authSmtp but ${smtp.passEnv} is missing from ${config.envFile}.\n` +
+        `  Refusing to apply: without it this project stays on Supabase's built-in mailer.`,
+    )
+  }
+
+  return {
+    ...desired,
+    smtp_host: smtp.host,
+    smtp_port: smtp.port,
+    smtp_user: smtp.user,
+    smtp_pass: pass,
+    // The From address. Supabase calls it "admin email"; it is what a client sees.
+    smtp_admin_email: smtp.senderEmail,
+    smtp_sender_name: smtp.senderName,
+    // The built-in mailer's cap is 2/hour and applies project-wide. Raising it is
+    // half the point of moving off it — a cap this low cannot onboard a team.
+    rate_limit_email_sent: smtp.ratePerHour,
+  }
 }
+
+class RequestFailed extends Error {}
+class ConfigError extends Error {}
 
 const target = orExit(() => resolveTarget({ require: ['SUPABASE_ACCESS_TOKEN'] }))
 
 const TOKEN = target.env.SUPABASE_ACCESS_TOKEN
 const REF = target.config.projectRef
-const DESIRED = buildDesired(target.config)
 
-const CHECK_ONLY = process.argv.slice(2).includes('--check')
+const argv = process.argv.slice(2)
+const CHECK_ONLY = argv.includes('--check')
+const FORCE = argv.includes('--force')
 const ENDPOINT = `https://api.supabase.com/v1/projects/${REF}/config/auth`
 
-class RequestFailed extends Error {}
+// Assigned inside the try at the bottom, so a ConfigError surfaces as a readable
+// message rather than an unhandled module-level stack trace.
+let DESIRED
 
 async function request(method, body) {
   const resp = await fetch(ENDPOINT, {
@@ -174,9 +218,26 @@ async function request(method, body) {
   return JSON.parse(text)
 }
 
+/**
+ * Keys the API accepts but never gives back — it returns them masked, empty or
+ * not at all.
+ *
+ * These MUST be excluded from drift(). The comparison below is a plain string
+ * !== against the live value, so a write-only key can never match and would
+ * report drift on every single run. `auth:config:check` is read as a boolean by
+ * CI and Gate A, so that would leave it permanently red — the same failure the
+ * one-line email bodies exist to avoid, arrived at from the other direction.
+ *
+ * The cost is that a CHANGED password is invisible here too, which is exactly
+ * what --force is for.
+ */
+const WRITE_ONLY = new Set(['smtp_pass'])
+
 // Returns the keys of DESIRED whose live value differs.
 function drift(live) {
-  return Object.keys(DESIRED).filter(key => String(live[key] ?? '') !== String(DESIRED[key]))
+  return Object.keys(DESIRED)
+    .filter(key => !WRITE_ONLY.has(key))
+    .filter(key => String(live[key] ?? '') !== String(DESIRED[key]))
 }
 
 // The email bodies are ~800 characters of HTML on one line. Printed whole they
@@ -205,13 +266,17 @@ async function main() {
   const before = await request('GET')
   const stale = drift(before)
 
-  if (stale.length === 0) {
+  if (stale.length === 0 && !(FORCE && !CHECK_ONLY)) {
     console.log('Already correct — no changes needed.')
     return 0
   }
 
-  console.log(`${stale.length} setting(s) differ:`)
-  report(before, stale)
+  if (stale.length === 0) {
+    console.log('No drift, but --force was passed — re-sending every setting.')
+  } else {
+    console.log(`${stale.length} setting(s) differ:`)
+    report(before, stale)
+  }
 
   if (CHECK_ONLY) {
     console.error(`\nDrift detected (--check). Run \`npm run auth:config:${target.name}\` to apply.`)
@@ -233,15 +298,18 @@ async function main() {
   }
 
   for (const key of Object.keys(DESIRED)) {
-    console.log(`  ${key} = ${preview(after[key])}`)
+    // Never echo a credential to a terminal or a CI log, even though what we hold
+    // here is the live (masked) value rather than the one we sent.
+    console.log(`  ${key} = ${WRITE_ONLY.has(key) ? '<write-only, not read back>' : preview(after[key])}`)
   }
   console.log('Done.')
   return 0
 }
 
 try {
+  DESIRED = buildDesired(target.config, target.env)
   process.exitCode = await main()
 } catch (err) {
-  console.error(err instanceof RequestFailed ? err.message : err)
+  console.error(err instanceof RequestFailed || err instanceof ConfigError ? err.message : err)
   process.exitCode = 1
 }

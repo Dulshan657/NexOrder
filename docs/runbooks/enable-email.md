@@ -8,13 +8,20 @@
 > one, and prefer `npm run secrets:amadiya`, which sets `APP_URL` and
 > `ALLOWED_ORIGINS` from the registry so they cannot be wrong for the target.
 >
-> Two switches, not one, and neither implies the other: `RESEND_API_KEY` is read
-> by the app's own `send-email` function; **Supabase Auth mail is separate** and
-> needs Auth → SMTP Settings filled in (host `smtp.resend.com`, port 465, user
-> `resend`, password = the same key). Until that is done, password-reset and
-> invite emails come from `noreply@mail.app.supabase.io`, carry a
-> `supabase.com/opt-out/<ref>` footer, and are rate-limited to a handful an hour
-> — not enough to onboard a team.
+> Two switches, not one, and neither implies the other: `RESEND_API_KEY` as an
+> **Edge Function secret** is read by the app's own `send-email` function;
+> **Supabase Auth mail is separate**. Until Auth SMTP is configured,
+> password-reset and invite emails come from `noreply@mail.app.supabase.io`,
+> carry a `supabase.com/opt-out/<ref>` footer, and are capped at 2 an hour — not
+> enough to onboard a team.
+>
+> **Auth SMTP is no longer a dashboard task.** It is declared per target as
+> `authSmtp` in `config/environments.mjs` (sender, host, port, user, and the NAME
+> of the env var holding the password) and applied with
+> `npm run auth:config:<env>`. Set `RESEND_API_KEY` in `.env.<env>.local` and the
+> same key serves both switches. Note the password is write-only — the API never
+> returns it — so **rotating it needs `--force`**, since with no other drift the
+> script would otherwise PATCH nothing.
 
 `send-email` is deployed and fully wired. It is dormant for exactly one reason: `RESEND_API_KEY` is not set. Setting it is the whole switch — no code change, no redeploy.
 
