@@ -8,6 +8,39 @@ Nex Order — B2B order management for food and general distribution. Sales reps
 
 > The app directory was renamed `copy-of-curatif-order-system-v1.3/` → `NexOrder/`. The Vercel **project** still carries the old name — don't "fix" it.
 
+## 🔴 TWO workspaces. This one is DEVELOPMENT. Tenant ops happen elsewhere.
+
+**Split 2026-08-13.** Same repository, two checkouts, and which one you are in
+decides what you are allowed to touch.
+
+| | this checkout | the tenant checkout |
+|---|---|---|
+| Path | `…/OneDrive/…/OrderSystem/NexOrder` | `C:\Users\dulsh\nexorder-amadiya` |
+| Git | `main`, or a `feat/`/`fix/` branch | **detached**, at a release tag |
+| Holds | `.env.dev.local` **only** | `.env.amadiya.local` **only** |
+| For | **all code editing**, dev deploys, migrations rehearsed on dev | running migrations / deploys / SQL against Amadiya |
+| Code edits | yes — this is the only place | **no.** Changes arrive by checking out a newer tag |
+
+- **The wall is the credential file, not the rules.** `.env.amadiya.local` is not
+  here, so `--env=amadiya` cannot authenticate from this folder no matter what
+  else fails. `scripts/lib/env.mjs` `assertEnvFilePresent` turns that into a
+  named refusal rather than a confusing failure five frames later. Everything
+  below is defence in depth on top of it.
+- **`scripts/claude/guard-workspace.mjs`** is a `PreToolUse` hook
+  (`.claude/settings.json`) that refuses tenant-targeting shell commands here.
+  It exists because permission rules match by PREFIX and every dangerous command
+  is dangerous because of its MIDDLE (`node supabase/migrate.mjs --env=amadiya`).
+  It also blocks bare `supabase`/`vercel` CLI calls, which read
+  `supabase/.temp/linked-project.json` and `.vercel/project.json` — two files no
+  `--env` flag can influence, and both of which pointed at Amadiya until the
+  cutover. It derives "am I a tenant workspace" from whether a `kind: 'tenant'`
+  env file is present, so the tenant checkout runs the same hook unaffected and
+  nothing is hardcoded.
+- **Editing a tenant script here is fine and expected.** Only *running* one
+  against a tenant is blocked. The refusal message says so.
+- The third worktree, `C:\Users\dulsh\nexwt`, holds `main` for merges. It is not
+  a workspace; do not work in it.
+
 ## 🔴 TWO databases, on TWO separate accounts. One is a client's.
 
 **Cutover done 2026-08-12; demo rebuilt 2026-08-13.**
