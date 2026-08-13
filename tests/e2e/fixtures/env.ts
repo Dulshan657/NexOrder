@@ -33,7 +33,10 @@ function requireEnv(name: string): string {
 export function getE2eEnv(): E2eEnv {
   return {
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3000',
-    adminEmail: process.env.E2E_ADMIN_EMAIL ?? 'alice@nexorder.com.au',
+    // Required, not defaulted. The old default named a seeded demo admin that
+    // exists on exactly one database; anywhere else the suite would log in as
+    // nobody and fail with something that looks like a UI bug.
+    adminEmail: requireEnv('E2E_ADMIN_EMAIL'),
     adminPassword: requireEnv('E2E_ADMIN_PASSWORD'),
   }
 }

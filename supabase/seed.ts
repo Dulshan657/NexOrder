@@ -13,7 +13,8 @@
  */
 
 import { createDevClient } from '../scripts/lib/devClient.mjs'
-import { USERS, DEFAULT_SETTINGS } from '../constants'
+import { DEFAULT_SETTINGS } from '../constants'
+import { USERS } from './seedData/users'
 import {
   SUPPLIERS,
   PRODUCTS,

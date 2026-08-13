@@ -1,5 +1,21 @@
 # Runbook — turn on transactional email
 
+> **Updated 2026-08-12.** Every project ref below was the literal
+> `lsgkznyiabqitqfpveey` and is now written `<AMADIYA_REF>`. That project is
+> Amadiya's PRODUCTION database as of the cutover, so following this runbook
+> sends real mail from a client's system. Get the ref from
+> `config/environments.mjs` (`TARGETS.amadiya.projectRef`) rather than pasting
+> one, and prefer `npm run secrets:amadiya`, which sets `APP_URL` and
+> `ALLOWED_ORIGINS` from the registry so they cannot be wrong for the target.
+>
+> Two switches, not one, and neither implies the other: `RESEND_API_KEY` is read
+> by the app's own `send-email` function; **Supabase Auth mail is separate** and
+> needs Auth → SMTP Settings filled in (host `smtp.resend.com`, port 465, user
+> `resend`, password = the same key). Until that is done, password-reset and
+> invite emails come from `noreply@mail.app.supabase.io`, carry a
+> `supabase.com/opt-out/<ref>` footer, and are rate-limited to a handful an hour
+> — not enough to onboard a team.
+
 `send-email` is deployed and fully wired. It is dormant for exactly one reason: `RESEND_API_KEY` is not set. Setting it is the whole switch — no code change, no redeploy.
 
 **Time:** ~10 minutes, most of it waiting on DNS.
@@ -39,7 +55,7 @@ Only `order_confirmation` and `system_alert` fire today.
 Required:
 
 ```bash
-npx supabase secrets set RESEND_API_KEY=re_xxxxxxxx --project-ref lsgkznyiabqitqfpveey
+npx supabase secrets set RESEND_API_KEY=re_xxxxxxxx --project-ref <AMADIYA_REF>
 ```
 
 Recommended once your domain is verified — otherwise every email comes from `onboarding@resend.dev`, which Resend will only deliver to you:
@@ -49,13 +65,13 @@ npx supabase secrets set \
   EMAIL_FROM="Nex Order <orders@yourdomain.com.au>" \
   EMAIL_REPLY_TO="support@yourdomain.com.au" \
   APP_URL="https://nexorder.vercel.app" \
-  --project-ref lsgkznyiabqitqfpveey
+  --project-ref <AMADIYA_REF>
 ```
 
 Optional, to also switch on health alerts:
 
 ```bash
-npx supabase secrets set ALERT_EMAIL="ops@yourdomain.com.au" --project-ref lsgkznyiabqitqfpveey
+npx supabase secrets set ALERT_EMAIL="ops@yourdomain.com.au" --project-ref <AMADIYA_REF>
 ```
 
 Secrets apply to the next invocation. **No redeploy is needed.**
@@ -63,7 +79,7 @@ Secrets apply to the next invocation. **No redeploy is needed.**
 Confirm they landed (values are shown as digests, never plaintext):
 
 ```bash
-npx supabase secrets list --project-ref lsgkznyiabqitqfpveey
+npx supabase secrets list --project-ref <AMADIYA_REF>
 ```
 
 ### 3. Send a test
@@ -80,7 +96,7 @@ The honest end-to-end test is a real order, because that is the only path that f
 If you'd rather not place an order, invoke the function directly with the service-role key — this is the same call `place-order` makes:
 
 ```bash
-curl -X POST "https://lsgkznyiabqitqfpveey.supabase.co/functions/v1/send-email" \
+curl -X POST "https://<AMADIYA_REF>.supabase.co/functions/v1/send-email" \
   -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
   -H "Content-Type: application/json" \
   -d '{"template":"order_confirmation","orderId":"<a real order id>"}'
@@ -106,7 +122,7 @@ Function logs: Supabase Dashboard → Edge Functions → `send-email` → Logs.
 Unset the key. The function immediately returns to `reason: 'not_configured'` and nothing else changes:
 
 ```bash
-npx supabase secrets unset RESEND_API_KEY --project-ref lsgkznyiabqitqfpveey
+npx supabase secrets unset RESEND_API_KEY --project-ref <AMADIYA_REF>
 ```
 
 No redeploy, no migration, no code change. Order placement is unaffected in either direction.

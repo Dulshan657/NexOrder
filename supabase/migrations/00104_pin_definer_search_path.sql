@@ -1,0 +1,53 @@
+-- =============================================================================
+-- Pin search_path on the two functions every RLS policy is built out of
+-- Migration: 00104_pin_definer_search_path.sql
+-- =============================================================================
+-- `public.user_role()` and `public.user_horeca_id()` (`00001:429,438`) are
+-- SECURITY DEFINER and do not pin `search_path`. Measured on dev before writing
+-- this: `public` holds 39 definer functions and these are the ONLY two that do
+-- not pin it. (PRODUCTION-READINESS-AUDIT.md says "the other 53 definer
+-- functions" — that count is wrong; the conclusion it draws is not.) Fixed here
+-- deliberately BEFORE `00105`, because `00105` makes these two functions the
+-- basis of read authorisation on eight more tables. Widening what they decide
+-- while leaving them resolvable through a caller-controlled search_path is the
+-- wrong order to do it in. Tracked as Phase B item 5 of
+-- PRODUCTION-LAUNCH-PLAN.md.
+--
+-- ── WHY THIS MATTERS FOR A DEFINER FUNCTION SPECIFICALLY ────────────────────
+--
+-- A SECURITY DEFINER function runs as its owner (postgres here — the superuser
+-- that created the schema). Unqualified names inside its body are resolved
+-- against the CALLER's `search_path`. `user_role()`'s body reads
+-- `public.profiles`, which is schema-qualified and therefore already safe from
+-- the classic shadowing attack — but the operators, casts and the `auth.uid()`
+-- lookup are not, and `SET search_path` is the only thing that makes that
+-- guarantee structural rather than a property of the current body text. A later
+-- edit that drops the qualification would silently reintroduce the hole.
+--
+-- `pg_temp` is listed LAST and explicitly. If it is omitted entirely Postgres
+-- still searches it implicitly for functions in some paths; naming it at the
+-- end is the documented way to ensure a temp object can never win resolution.
+--
+-- ── WHAT THIS DOES NOT CHANGE ───────────────────────────────────────────────
+--
+-- Signature, return type, volatility, owner and body are all identical, so
+-- every policy that calls them is untouched and nothing needs re-granting.
+-- ALTER FUNCTION ... SET is a catalogue change, not a redefinition — this is
+-- specifically NOT `CREATE OR REPLACE`, which would risk the changed-signature
+-- overload trap documented in CLAUDE.md.
+--
+-- ── VERIFY ──────────────────────────────────────────────────────────────────
+--
+--   SELECT p.proname, p.proconfig
+--     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--    WHERE n.nspname = 'public' AND p.proname IN ('user_role','user_horeca_id');
+--   -- both rows must show {"search_path=public, pg_temp"}
+--
+--   SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--    WHERE n.nspname = 'public' AND p.prosecdef AND p.proconfig IS NULL;
+--   -- 0. Every definer function in public now pins it.
+-- =============================================================================
+
+ALTER FUNCTION public.user_role() SET search_path = public, pg_temp;
+
+ALTER FUNCTION public.user_horeca_id() SET search_path = public, pg_temp;

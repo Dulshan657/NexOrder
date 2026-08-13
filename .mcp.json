@@ -1,8 +1,15 @@
 {
-  "mcpServers": {
-    "supabase": {
-      "type": "http",
-      "url": "https://mcp.supabase.com/mcp?project_ref=lsgkznyiabqitqfpveey"
-    }
-  }
+  "_comment": [
+    "DELIBERATELY EMPTY as of 2026-08-12.",
+    "",
+    "This used to hold a Supabase MCP server pinned to lsgkznyiabqitqfpveey on",
+    "the grounds that it was the dev project. That project is now Amadiya's",
+    "PRODUCTION database, and CLAUDE.md already names an agent session with MCP",
+    "write access to a client's database as the single largest unforced risk in",
+    "this repo.",
+    "",
+    "Re-add a server only when a genuine non-production project exists, and pin",
+    "it to that. Never add a tenant entry."
+  ],
+  "mcpServers": {}
 }

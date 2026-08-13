@@ -8,29 +8,77 @@ Nex Order — B2B order management for food and general distribution. Sales reps
 
 > The app directory was renamed `copy-of-curatif-order-system-v1.3/` → `NexOrder/`. The Vercel **project** still carries the old name — don't "fix" it.
 
-## ⚠️ Two deployment targets. Nothing defaults.
+## 🔴 There is exactly ONE database and it is a client's. Read this first.
 
-There are **two** Supabase projects, one per target. Read this before running anything that writes.
+**Cutover done 2026-08-12.** `lsgkznyiabqitqfpveey` **is Amadiya Agro Products'
+production database.** It used to be the demo. It is not one any more: the demo
+data was exported to `demo-export/` and **deleted**, the marker says
+`('prod','amadiya')`, and the whole project — schema, storage, auth users, cron
+jobs — now belongs to a paying client.
+
+Everything in this file that used to say "dev is Singapore, prod does not exist
+yet" was true until that day and is false now. If you are reading a runbook, an
+older plan or a migration comment that assumes otherwise, the file is stale, not
+the database.
 
 | | `dev` | `amadiya` |
 |---|---|---|
 | Kind | demo (NexGen's own) | **tenant** (a paying client's) |
-| Supabase | `lsgkznyiabqitqfpveey` (Singapore) | Sydney (`ap-southeast-2`) — **see `config/environments.mjs`** |
-| App | https://nexorder.vercel.app | https://nexorder.com.au |
-| Holds | AYAM seed data, Tridon + V2food demo tenants, WIE-DEMO, MAIN | **Amadiya Agro Products' real business data** |
+| Supabase | **NOT PROVISIONED** (`projectRef: null`) | `lsgkznyiabqitqfpveey`, `ap-southeast-2` |
+| App | — (demo moves to a separate account) | https://nexorder.com.au |
+| Holds | nothing | **Amadiya's real business data** |
 | `tenant` tag | `ayam` | `amadiya` |
 | `environment_marker.name` | `dev` | `prod` |
-| Fixtures / seeds | yes | **never** |
-| Credentials | `.env.dev.local` | `.env.amadiya.local` |
+| Fixtures / seeds | yes — but nowhere to run them | **never** |
+| Credentials | `.env.dev.local` (absent) | `.env.amadiya.local` |
 
-- **The target is named `amadiya`, not `prod`.** From tenant #2 onward every tenant is production, so "prod" names nothing. `--env=prod` still resolves, warns, and is removed next release.
-- **`config/environments.mjs` is the only file where a project ref belongs.** Import from it; never type a ref. `ENV_NAMES`, `fixtureTargets()` and `tenantTargets()` are all derived from it — don't hardcode a target list anywhere.
-- **Every script takes `--env=<dev|amadiya>`, equals-form only, and hard-fails without one.** `--env amadiya` (space) is rejected on purpose — `apply-sql.mjs` reads the first non-`--` argument as a filename.
-- **Seed / demo / reset scripts are dev-only and there is no `--force`.** Three guards (`scripts/lib/fixtureGuard.mjs`): the named target (from `allowFixtures`), a credential-vs-registry assertion, and `environment_marker` in the database itself. Guard #3 compares against the **literal** `'dev'` and reads nothing from the registry — that independence is the whole point of having three.
-- **`environment_marker.name` is `dev`/`prod`, NOT the target name.** Migration `00086` constrains it with `CHECK (name IN ('dev','prod'))` and is applied and checksummed, so the database's vocabulary is frozen while target names are open-ended. The registry carries `markerName` for exactly this; `migrate.mjs --stamp` writes that, never `name`.
-- **`.mcp.json` is pinned to dev, permanently.** Never add a tenant entry — an agent session with MCP write access to the client's database is the single largest unforced risk in this repo.
-- Amadiya is not provisioned yet (`projectRef: null`), so every `--env=amadiya` command refuses until `PRODUCTION-LAUNCH-PLAN.md` §A0.3 is done. That refusal is the feature.
-- **Tenancy is decided: project-per-tenant, one `main`, module flags.** See `MULTI-TENANT-ARCHITECTURE.md` before adding a client or a per-client feature. There is never a per-tenant branch. `ALL_MODULES` in the registry is the module vocabulary and is **read by nothing yet** — that is deliberate, not an oversight.
+- **There is no non-production environment.** Every migration, function deploy
+  and auth-config change lands directly on a client's live database with no
+  rehearsal. Rehearse destructive SQL with `BEGIN … ROLLBACK` through
+  `scripts/lib/managementApi.mjs` `runSqlRolledBack` — that is how the purge was
+  proved before it was run, and it is the only rehearsal available.
+- **`npm run dev` has no credentials and will throw.** `.env.local` was deleted
+  in the cutover; Vite loads it for every mode, so it was pointing a developer's
+  browser at what is now a client's production database. Do not recreate it
+  against `lsgkznyiabqitqfpveey`. The unit suite no longer needs it either —
+  `vitest.config.ts` pins `TEST_PROJECT_REF`.
+- **Every seed / demo / reset script refuses, everywhere, right now.**
+  `fixtureTargets()` derives from `allowFixtures`, `dev` is the only entry
+  carrying it, and `dev` has no project ref. That is correct: there is nowhere
+  it is safe to run a fixture. Three guards (`scripts/lib/fixtureGuard.mjs`):
+  the named target, a credential-vs-registry assertion, and `environment_marker`
+  in the database itself. Guard #3 compares against the **literal** `'dev'` and
+  reads nothing from the registry — that independence is the point of having
+  three.
+- **Scripts that must write to the client use `scripts/lib/tenantGuard.mjs`**
+  (registry says tenant + marker agrees + `--confirm=<projectRef>` typed out).
+  Do not widen `fixtureGuard` to cover them; the two guards are deliberately
+  mirror images.
+- **`config/environments.mjs` is the only file where a project ref belongs.**
+  Import from it; never type a ref. `ENV_NAMES`, `fixtureTargets()` and
+  `tenantTargets()` are all derived from it.
+- **Every script takes `--env=<dev|amadiya>`, equals-form only, and hard-fails
+  without one.** `--env amadiya` (space) is rejected on purpose —
+  `apply-sql.mjs` reads the first non-`--` argument as a filename.
+- **`environment_marker.name` is `dev`/`prod`, NOT the target name.** Migration
+  `00086` constrains it with `CHECK (name IN ('dev','prod'))` and is applied and
+  checksummed, so the database's vocabulary is frozen while target names are
+  open-ended. The registry carries `markerName` for exactly this;
+  `migrate.mjs --stamp` writes that, never `name`.
+- **`.mcp.json` is EMPTY and stays that way** until a real non-production
+  project exists. An agent session with MCP write access to a client's database
+  is the single largest unforced risk in this repo, and the entry that used to
+  be there named this exact ref.
+- **The demo is not gone, it is on disk.** `demo-export/` (gitignored) and
+  `../backup/demo-export-2026-08-12/` hold 68 tables, 102k rows and 223 storage
+  objects, plus a manifest with the FK-deferral list an importer needs. It is
+  rebuilt on a separate Supabase + Vercel account when that exists; the ref then
+  goes into the `dev` entry.
+- **Tenancy is decided: project-per-tenant, one `main`, module flags.** See
+  `MULTI-TENANT-ARCHITECTURE.md` before adding a client or a per-client feature.
+  There is never a per-tenant branch. `ALL_MODULES` in the registry is the
+  module vocabulary and is **read by nothing yet** — deliberate, not an
+  oversight.
 
 ## Commands
 
@@ -50,30 +98,35 @@ npm run check:csp                  # vercel.ts: per-target CSP + /storage rewrit
 npx tsc --noEmit
 
 # Deploy: builds, aliases, verifies /version.json AND /functions/v1/health
-npm run deploy:dev                 # -> nexorder.vercel.app
 npm run deploy:amadiya             # -> nexorder.com.au
+# `deploy:dev` exists but refuses — dev has no project.
 
 # Migrations — ledgered in public.schema_migrations, checksummed, transactional
-node supabase/migrate.mjs --env=dev --dry-run    # what would run, in order
-npm run migrate:dev                              # apply everything pending
-npm run migrate:amadiya
+node supabase/migrate.mjs --env=amadiya --dry-run   # what would run, in order
+npm run migrate:amadiya                             # apply everything pending
+node supabase/migrate.mjs --env=amadiya --stamp-only
 
 # Edge Functions (never pass --no-verify-jwt; config.toml governs the gate)
-npm run fn:deploy:dev              # all; append a name for one
-npm run fn:deploy:amadiya
+npm run fn:deploy:amadiya          # all 71; append a name for one
+
+# Secrets and crons (supabase/ops/)
+npm run secrets:check:amadiya      # Gate A assertion; exit 1 if incomplete
+npm run secrets:amadiya            # set what is missing (--overwrite to replace)
+npm run crons:list:amadiya         # what is scheduled (expect 7)
+npm run crons:amadiya              # (re)create po-poll-inbox + health-check
 
 # Raw SQL (Management API — the direct DB host is unreachable on Windows)
-node supabase/apply-sql.mjs --env=dev --query "SELECT ..."
-node supabase/apply-sql.mjs --env=dev <file.sql>
+node supabase/apply-sql.mjs --env=amadiya --query "SELECT ..."
+node supabase/apply-sql.mjs --env=amadiya <file.sql>
 
 # Supabase Auth config (site URL, redirect allow-list, password rules, disable_signup)
-npm run auth:config:dev / :amadiya          # diff, then PATCH if it differs
-npm run auth:config:check:dev / :amadiya    # diff only, exit 1 on drift
+npm run auth:config:amadiya         # diff, then PATCH if it differs
+npm run auth:config:check:amadiya   # diff only, exit 1 on drift
 
-# Seed / fixtures — DEV ONLY, guarded three ways, no override
-npx tsx supabase/seed.ts --env=dev
-npm run warehouse:main:seed / :reset     # MAIN floor plan + engine slotting of all stock
-npm run demo:wie:seed / :reset           # standalone WIE-DEMO racked warehouse
+# Demo lifecycle
+npm run export:demo                # refuses — nothing left to export
+# Seed / fixture scripts all still exist and ALL refuse: `dev` has no project.
+# supabase/ops/purge-demo.mjs has locked itself out too, by design.
 ```
 
 **Never run `vercel deploy --prod` directly** — it won't move the alias, and users will report fixes as "not live". Always use `npm run deploy:<target>` (wraps deploy + alias + verification).
@@ -84,13 +137,14 @@ npm run demo:wie:seed / :reset           # standalone WIE-DEMO racked warehouse
 
 | Key | Value |
 |-----|-------|
-| Dev project ref | `lsgkznyiabqitqfpveey` |
-| Dev URL | `https://lsgkznyiabqitqfpveey.supabase.co` |
-| Amadiya project ref | _not yet created — `config/environments.mjs` → `TARGETS.amadiya`_ |
-| Anon / publishable key | _see `.env.dev.local` / `.env.amadiya.local` → `VITE_SUPABASE_ANON_KEY`_ |
-| Service role / secret key | _same files → `SUPABASE_SERVICE_ROLE_KEY`_ |
-| DB password | _same files → `SUPABASE_DB_PASSWORD`_ |
-| Seeded user password (dev only) | `Password123!` (all seeded users) |
+| Amadiya (production) project ref | `lsgkznyiabqitqfpveey` |
+| Amadiya URL | `https://lsgkznyiabqitqfpveey.supabase.co` |
+| Region / plan | `ap-southeast-2` (Sydney), org on Pro — daily backups, 7-day retention, **no PITR** |
+| Dev project ref | _none. `config/environments.mjs` → `TARGETS.dev.projectRef` is null._ |
+| Anon / publishable key | _`.env.amadiya.local` → `VITE_SUPABASE_ANON_KEY`_ |
+| Service role / secret key | _same file → `SUPABASE_SERVICE_ROLE_KEY`_ |
+| DB password | _same file → `SUPABASE_DB_PASSWORD`_ |
+| Seeded user password | **gone.** Every seeded account was deleted in the cutover; `Password123!` opens nothing. |
 
 **Note:** Credentials use Supabase's `sb_publishable_*` / `sb_secret_*` API key format (rotated 2026-05-18; legacy JWT-format keys are revoked). Never paste live credentials into this file — it's loaded into every Claude session and ends up in transcripts. Edge Function reads of `SUPABASE_SERVICE_ROLE_KEY` use the platform-injected value.
 
@@ -360,6 +414,8 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 - **Client error log** → `client_errors` (mig `00014`), written by `log-client-error`. Admin-only SELECT; service_role-only INSERT. `actor_id` nullable so pre-auth crashes are captured.
 - **`verify_jwt = false` functions must gate themselves.** The eight functions listed in `supabase/config.toml` bypass the platform JWT check, so each re-implements auth in-body: cron callers via `isAuthorizedCronCall` (`_shared/cronToken.ts`), server-to-server callers via `isServiceRoleCall`, OAuth callbacks via state consumption. `send-email` had no gate at all until mig-era 2026-07 — it was world-callable and leaked order-ID existence through its `sent` vs `recipient_unresolved` response. Never add a `verify_jwt = false` entry without an in-body gate.
 - **Storage buckets:** public read, `authenticated` write. The dev-only `anon_write_*` policies from `00004`/`00024` were dropped in `00081` — do not reintroduce anonymous writes; `FOR ALL TO anon` includes DELETE.
+- **Read policies are closed as of `00105`.** Eight of the nine `USING (true)` SELECT policies now read `staff OR <own scope>`, via `public.user_is_staff()` — the one definition of "internal", covering Admin/Manager/both Reps/Warehouse. `suppliers` and `product_suppliers` (which carries `cost_price`) are staff-only; `horeca_pricing`, `horeca_payment_methods` and `pantry_items` are own-HoReCa; `products`/`product_uoms` hide inactive lines from customers; `promotions` shows customers only live, in-window rows. **Never compare a role to a literal to decide read access — call `user_is_staff()`.** `00104` pins `search_path` on `user_role()`/`user_horeca_id()` first, since everything now rests on them.
+- **`app_settings` is STILL `USING (true)`, deliberately.** It is a singleton, so no row predicate can give a customer the identity and pricing fields the Shop needs while withholding `default_credit_limit` and the `po_auto_approve_*` flags. RLS filters rows; that needs columns. Closing it means splitting the internal thresholds into their own table. Don't "fix" it with a policy that changes nothing.
 - **Rate limiting** (`_shared/rateLimit.ts`): `place-order` 10/min/user, `invite-user` 5/min/admin, `mutate-pantry-item` 60/min/user, `log-client-error` 30/min/IP, `send-email` 20/min/IP, `count-bin` 20/min/user (a whole location per call), `mutate-product-home-bin` 30/min/user but **10/min on its own `:bulk` bucket** (up to 200 slots per call), `mutate-warehouse-location` 30/min/user with **four separate 10/min buckets, `:area:`, `:paint:`, `:bind:` and `:sign:`** (the first three can each touch 1100+ rows; keeping them apart is what stops a burst of paints locking the operator out of fixing a spelling — or out of the one action that repairs a site's parentage wholesale. `:sign:` is separate for the inverse reason: signage is the cheap, safe edit made repeatedly while walking the floor, and it must not spend the budget the corrective actions need) → 429 `TOO_MANY_REQUESTS`. Cross-isolate global cap via the `rate_limit_hit()` Postgres RPC + `rate_limit_counters` table (mig `00026`, fixed-window, hourly `pg_cron` cleanup); fails open to a per-isolate in-memory counter if the DB call errors.
 
 ## Role-Based Views
@@ -396,6 +452,19 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 Ordered by impact; one-line scope each so future agents don't drift.
 
 **High**
+0. **Finish the cutover.** The database is Amadiya's; the front end is not there
+   yet. Outstanding, in order: create the Amadiya **Vercel project**
+   (`NEXORDER_ENV=amadiya`, Sydney creds, `VITE_SHOW_DEMO_LOGINS=false`), fill
+   `vercel.projectId` in the registry, attach `nexorder.com.au` + `www`,
+   `npm run deploy:amadiya`, then **remove the `nexorder.vercel.app` alias from
+   the old project and stop its deploys** — it builds the same `main` against
+   this database with a demo-login panel. Then `bootstrap:admin:amadiya` for
+   `info@amadiya.com.au` (deferred until the domain resolves, because the reset
+   link points at it), Amadiya's phone/email/logo into `app_settings`, and
+   Gates B–E. Full sequence: `PRODUCTION-LAUNCH-PLAN.md` Phase 3.
+0b. **Rebuild the demo on its own account.** `demo-export/` is the input, and
+   until it exists there is no environment to rehearse anything in. This is the
+   real cost of the in-place cutover and it should not sit for long.
 1. **Branch protection** — CI's `verify` job runs on every PR but `main` doesn't yet *require* it. **Blocked by plan tier (2026-05-21):** GitHub's Free plan disallows branch protection *and* rulesets on **private** repos — both `PUT …/branches/main/protection` and `POST …/rulesets` return `403 "Upgrade to GitHub Pro or make this repository public"`. To unblock, either upgrade to **GitHub Pro** (~$4/mo) or make the repo public, then require the status-check context **`typecheck · test · build`** (= the `verify` job's `name:` in `ci.yml`) via Settings → Branches or the API. Ready-to-run payload + commands saved in `~/.claude/plans/add-branch-protection-generic-zebra.md`.
 2. **Email setup (operator)** — `send-email` is live, gated and rate-limited; it is dormant only because `RESEND_API_KEY` is unset, and setting that one secret is the entire switch (no redeploy). Full procedure, test call, response table and rollback: **`docs/runbooks/enable-email.md`**. The trap worth knowing up front: leaving `EMAIL_FROM` unset falls back to `onboarding@resend.dev`, which Resend delivers *only* to the account owner — so customers get nothing while the response still says `sent: true`.
 
@@ -406,7 +475,7 @@ Ordered by impact; one-line scope each so future agents don't drift.
 6. **Test coverage expansion** — strong PO-inbox, pricing, scan, auth-link and WIE-engine coverage; PO-inbox matching resolvers use the `__tests__/support/fakeSupabase.ts` harness. Gaps: cart submission flow, pantry add/remove, HoReCa reason-prompt gate, role-based routing.
 
 **Lower**
-7. **Dead code sweep** — the original three-item list was two-thirds wrong; this is what's actually left. `components/SalesDashboard.tsx` and the root `CustomerForm.tsx` stub were deleted 2026-07-31 after a one-off `npx knip` run confirmed both (knip is *not* a dependency — write a throwaway `knip.json` at the repo root, run it, delete it). **`hooks/useLocalStorage.ts` is LIVE — do not delete it.** It is imported by `components/ActionItemsBoard.tsx:4,423`, which is mounted on both `AdminDashboard` and `RepDashboardV2`; the "zero imports" claim predates that board and has already survived one correction attempt (`PRODUCTION-READINESS-AUDIT.md:318`). **`constants.ts` is done** — commit `f631198` moved the demo seed data to `supabase/seedData/`; the file is 85 lines and all 9 exports are live, and "move to `supabase/seed.ts`" would *duplicate*, not move, since `supabase/seed.ts:16` already imports `USERS`/`DEFAULT_SETTINGS` **from** it. The one real residue is bundle hygiene, not deadness: `USERS` (6 demo records incl. `alice@nexorder.com.au`) reaches the browser via `App.tsx:8` — tracked at `PRODUCTION-LAUNCH-PLAN.md:221`, which wants it in `tests/fixtures/`, **not** under `supabase/`. Still-unswept candidates knip flagged, each needing its own check: `components/{Header,HoReCaAdmin,InvoiceAdmin,RoleSelector,UserSelector}.tsx`, `components/dashboard/AlertBanner.tsx`, `components/performance/{ProductMovementSection,TargetProjectionCard,VelocityBar}.tsx`, `hooks/{usePromotionStatus,useScheduledVisitLifecycle}.ts`, `hooks/queries/usePurchaseOrders.ts`, `services/supabase/purchaseOrderService.ts` (the last two are likely fallout from removing the manual Purchase Orders view).
+7. **Dead code sweep** — the original three-item list was two-thirds wrong; this is what's actually left. `components/SalesDashboard.tsx` and the root `CustomerForm.tsx` stub were deleted 2026-07-31 after a one-off `npx knip` run confirmed both (knip is *not* a dependency — write a throwaway `knip.json` at the repo root, run it, delete it). **`hooks/useLocalStorage.ts` is LIVE — do not delete it.** It is imported by `components/ActionItemsBoard.tsx:4,423`, which is mounted on both `AdminDashboard` and `RepDashboardV2`; the "zero imports" claim predates that board and has already survived one correction attempt (`PRODUCTION-READINESS-AUDIT.md:318`). **`constants.ts` is done** — commit `f631198` moved the demo seed data to `supabase/seedData/`; the file is 85 lines and all 9 exports are live, and "move to `supabase/seed.ts`" would *duplicate*, not move, since `supabase/seed.ts:16` already imports `USERS`/`DEFAULT_SETTINGS` **from** it. ~~The one real residue is bundle hygiene: `USERS` reaches the browser via `App.tsx:8`.~~ **Fixed in the cutover** — `USERS` moved to `supabase/seedData/users.ts` (beside the seed data that needs it; the launch plan suggested `tests/fixtures/`, but `supabase/seedData/orders.ts` consumes it and a `supabase/ → tests/` import is the wrong direction). Verified by building and grepping: `alice@nexorder.com.au`, `Password123!` and the demo customer domains are all absent — **but only with `VITE_SHOW_DEMO_LOGINS=false` as well**, because `LoginPage.tsx` carries its own `DEMO_ACCOUNTS` copy. The move and the flag each remove a different one; neither is sufficient alone. Still-unswept candidates knip flagged, each needing its own check: `components/{Header,HoReCaAdmin,InvoiceAdmin,RoleSelector,UserSelector}.tsx`, `components/dashboard/AlertBanner.tsx`, `components/performance/{ProductMovementSection,TargetProjectionCard,VelocityBar}.tsx`, `hooks/{usePromotionStatus,useScheduledVisitLifecycle}.ts`, `hooks/queries/usePurchaseOrders.ts`, `services/supabase/purchaseOrderService.ts` (the last two are likely fallout from removing the manual Purchase Orders view).
 8. **Inventory automation** — restock alerts are read-only. Add "generate PO from low-stock alerts", soft stock reservations on order confirmation, expiry/FIFO for perishables.
 9. **Reports export** — add CSV/PDF download on accounts-aging, sales-by-rep, stock-status, promotion-ROI panels (CSV helper exists at `lib/csvExport.ts`).
 10. **i18n** — UI is English-only; currency hardcoded `AUD`. Wire `react-i18next` before strings calcify if non-English markets are in scope.

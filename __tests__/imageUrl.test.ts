@@ -7,9 +7,13 @@ import {
   optimizedImageSources,
   publicImageUrl,
 } from '../lib/imageUrl';
+import { TEST_PROJECT_REF } from '../config/environments.mjs';
 
+// A fixture must not name a real project. `TEST_PROJECT_REF` is the registry's
+// own placeholder, so a grep for a live ref across the repo returns only the
+// registry itself.
 const STORAGE_URL =
-  'https://lsgkznyiabqitqfpveey.supabase.co/storage/v1/object/public/product-images/products/abc.webp';
+  `https://${TEST_PROJECT_REF}.supabase.co/storage/v1/object/public/product-images/products/abc.webp`;
 const EXTERNAL_URL =
   'https://cdn.example.com/images/thumbnails/263x263f/9311627603729-1.png';
 const DATA_URL = 'data:image/png;base64,iVBORw0KGgo=';

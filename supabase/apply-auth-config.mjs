@@ -130,6 +130,20 @@ function buildDesired(config) {
     // 1 hour"). Change one, change the other.
     mailer_autoconfirm: false,
     mailer_otp_exp: 3600,
+
+    // Rotate the refresh token on every use, so a stolen one is good for one
+    // request rather than indefinitely.
+    //
+    // The reuse interval is NOT optional alongside it. `lib/supabase.ts` runs
+    // `persistSession` + `autoRefreshToken` with an in-process lock
+    // (`lib/auth/inProcessLock.ts`) that deliberately does not serialise across
+    // TABS — the Web Locks API never resolved on Windows and that is what the
+    // replacement gave up. So two tabs can genuinely refresh at once, and with
+    // a zero interval the loser's token is already revoked and the user is
+    // signed out for having the app open twice. Ten seconds is Supabase's own
+    // default for exactly this.
+    refresh_token_rotation_enabled: true,
+    security_refresh_token_reuse_interval: 10,
   }
 }
 

@@ -6,7 +6,7 @@ import type {
   HoReCa, Order, PurchaseOrder, PantryLists, Invoice, OrderStatus,
   DeliveryTimeSlot, OrderVerification,
 } from '../../types';
-import { USERS } from '../../constants';
+import { USERS } from './users';
 import { PRODUCTS, SUPPLIERS } from './products';
 
 export const HORECAS: HoReCa[] = [

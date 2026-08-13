@@ -4,8 +4,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from './hooks/useAuth';
 import { useToasts } from './hooks/useToasts';
-import { profileToUser } from './lib/profileToUser';
-import { USERS, DEFAULT_SETTINGS } from './constants';
+import { numericIdForProfile, profileToUser } from './lib/profileToUser';
+import { DEFAULT_SETTINGS } from './constants';
 import AppShell from './components/AppShell';
 
 // ── Query hooks ───────────────────────────────────────────────────────────────
@@ -76,14 +76,29 @@ const App: React.FC = () => {
     const { data: rawNotifications = [] } = useNotifications(currentUserUuid, currentUser.role);
 
     // Populate the numeric-id → real-profile-UUID registry used by adapters.
-    // Falls back to deterministic UUIDs if profiles haven't loaded yet.
+    //
+    // Built from EVERY profile, using the same derivation profileToUser() uses.
+    // It previously walked the seeded USERS roster and matched by email, which
+    // registered only accounts that happened to be seeded — so on any database
+    // without them (i.e. a client's) the registry was empty and every
+    // numericIdToUuid() call fell through to the 00000000-… placeholder.
     useEffect(() => {
         if (!rawProfiles.length) return;
-        const byEmail = new Map(rawProfiles.map(p => [p.email, p.id]));
         const entries: Array<[number, string]> = [];
-        for (const u of USERS) {
-            const uuid = byEmail.get(u.email);
-            if (uuid) entries.push([u.id, uuid]);
+        const seen = new Map<number, string>();
+        for (const p of rawProfiles) {
+            const id = numericIdForProfile(p.id);
+            const clash = seen.get(id);
+            if (clash) {
+                // Two UUIDs hashed into the same slot. Rare (10,000 slots), but
+                // it would silently merge two people, so say so rather than let
+                // it be discovered as "the audit log blames the wrong user".
+                // eslint-disable-next-line no-console
+                console.error(`[userIdMap] numeric id ${id} collides: ${clash} and ${p.id}`);
+                continue;
+            }
+            seen.set(id, p.id);
+            entries.push([id, p.id]);
         }
         setUserIdMap(entries);
     }, [rawProfiles]);
@@ -128,12 +143,10 @@ const App: React.FC = () => {
         console.groupEnd();
     }, [currentUser, currentUserUuid, horecasQuery.status, horecasQuery.fetchStatus, horecasQuery.isError, horecasQuery.error, rawHoReCas, hoReCas]);
 
-    // Users are derived from real profiles. Falls back to mock USERS during
-    // the brief boot window before profiles have loaded.
-    const users = useMemo(
-        () => (rawProfiles.length > 0 ? rawProfiles.map(profileToUser) : USERS),
-        [rawProfiles],
-    );
+    // Users are derived from real profiles. Empty during the brief boot window
+    // before profiles load — it used to fall back to the seeded demo roster,
+    // which on a client's deployment named six people who do not work there.
+    const users = useMemo(() => rawProfiles.map(profileToUser), [rawProfiles]);
 
     // Orders embed hoReCa, user, and product objects
     const allOrders = useMemo(
