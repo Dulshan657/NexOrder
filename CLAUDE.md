@@ -46,10 +46,14 @@ environment", the file is stale, not the database.
   in-place cutover cost for a day and what the rebuild bought back. Destructive
   SQL still deserves `BEGIN … ROLLBACK` via `scripts/lib/managementApi.mjs`
   `runSqlRolledBack` — but it is no longer the *only* rehearsal available.
-- **`npm run dev` works again, against `.env.dev.local`.** Do NOT recreate
-  `.env.local`: Vite loads it for every mode regardless of target, which is
-  exactly how a developer's browser ended up pointed at what is now a client's
-  production database. The unit suite needs neither — `vitest.config.ts` pins
+- **`npm run dev` is `vite --mode dev`, and the mode flag is load-bearing.**
+  Vite only reads `.env.<mode>.local`, so a bare `vite` (mode `development`)
+  loads *no* env file here and the app throws `Missing VITE_SUPABASE_URL` —
+  which is what it did from the rebuild until 2026-08-13, while this entry
+  claimed otherwise. Do NOT "fix" that by recreating `.env.local`: Vite loads
+  that one for every mode regardless of target, which is exactly how a
+  developer's browser ended up pointed at what is now a client's production
+  database. The unit suite needs neither — `vitest.config.ts` pins
   `TEST_PROJECT_REF`.
 - **Seed / demo / reset scripts run again, on `dev` only.** `fixtureTargets()`
   derives from `allowFixtures`, and `dev` is the only entry carrying it. Three
@@ -155,7 +159,7 @@ npm run demo:import:dev            # restore demo-export/ (clears first — idem
 | Amadiya (production) project ref | `lsgkznyiabqitqfpveey` |
 | Amadiya URL | `https://lsgkznyiabqitqfpveey.supabase.co` |
 | Region / plan | `ap-southeast-2` (Sydney), org on Pro — daily backups, 7-day retention, **no PITR** |
-| Dev project ref | _none. `config/environments.mjs` → `TARGETS.dev.projectRef` is null._ |
+| Dev (demo) project ref | `uqvekvavkjjurpqtovbq` — **a different Supabase account and org.** Free tier, same region. Rebuilt 2026-08-13; this row said "none" until then. |
 | Anon / publishable key | _`.env.amadiya.local` → `VITE_SUPABASE_ANON_KEY`_ |
 | Service role / secret key | _same file → `SUPABASE_SERVICE_ROLE_KEY`_ |
 | DB password | _same file → `SUPABASE_DB_PASSWORD`_ |
