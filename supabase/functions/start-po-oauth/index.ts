@@ -25,6 +25,7 @@ import {
   randomState,
   type Provider,
 } from '../_shared/poInbox/oauthUrls.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 interface StartOAuthRequest {
   provider: Provider
@@ -44,6 +45,7 @@ serve(async (req: Request) => {
   }
 
   try {
+    requireModule('sales_orders')
     const ctx = await requireAuth(req, { allowedRoles: ['Admin', 'Manager'] })
 
     const rl = await checkRateLimit(`start-po-oauth:${ctx.userId}`, {

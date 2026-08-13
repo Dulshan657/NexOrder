@@ -69,6 +69,7 @@ import {
   type BindingUnit,
 } from '../_shared/wie/zoneBinding.ts'
 import { applyReparents, makeZoneResolver, resolveZones } from '../_shared/zoneResolve.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const BIN_KINDS = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN'] as const
@@ -304,6 +305,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
     const rl = await checkRateLimit(`mutate-layout:${auth.userId}`, { windowMs: 60_000, max: 120 })
     if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')

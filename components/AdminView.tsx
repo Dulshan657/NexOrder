@@ -3,6 +3,11 @@ import { UserRole, User, Product, ProductSupplierLink, HoReCa, Supplier, Order, 
 import { LoadingSkeleton } from './Skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
+import {
+    MODULE_FIELD_OPS,
+    MODULE_INVENTORY_DISPATCH,
+    MODULE_SALES_ORDERS,
+} from '../lib/modules';
 import type { AdminTab } from '../lib/adminTabUrl';
 import type { NavTarget as SetupNavTarget } from '../lib/warehouseSetup/steps';
 import ProductAdmin from './ProductAdmin';
@@ -15,23 +20,39 @@ import WalkInReviewTab from './admin/WalkInReviewTab';
 
 // Heavy admin views — lazy-loaded so rep/customer paths don't pull them in.
 // lazyWithRetry recovers from stale chunk hashes after a redeploy.
+//
+// ── THE MODULE GATE HAS TO BE ON THE DECLARATION, NOT ONLY THE JSX ──────────
+//
+// `{MODULE_X && props.activeTab === 'Stock' && <StockView/>}` stops the view
+// RENDERING, but the `import()` below runs at module scope and Rollup would
+// still emit the chunk — so a tenant without the module would be served every
+// byte of it, one devtools Network tab away. Wrapping the declaration puts the
+// `import()` inside a branch that folds to `false`, and the chunk is never
+// emitted. Hidden vs not shipped, again; see lib/modules.ts.
+//
+// `__moduleOff` is a typed `null` so the JSX below stays valid — there is no
+// @types/react here, so components are `any` and React never sees it, because
+// the same constant gates the render.
 const AdminDashboard = lazyWithRetry(() => import('./AdminDashboard'));
-const PromotionAdmin = lazyWithRetry(() => import('./PromotionAdmin'));
-const HoReCaInsightsPanel = lazyWithRetry(() => import('./HoReCaInsightsPanel'));
-const ScheduledVisitsAdmin = lazyWithRetry(() => import('./admin/ScheduledVisitsAdmin'));
-const StockView = lazyWithRetry(() => import('./StockView'));
-const ReceiveStockView = lazyWithRetry(() => import('./inventory/ReceiveStockView'));
-const PickQueueView = lazyWithRetry(() => import('./inventory/PickQueueView'));
-const PutawayQueuePage = lazyWithRetry(() => import('./inventory/PutawayQueuePage'));
-const ReplenQueuePage = lazyWithRetry(() => import('./inventory/ReplenQueuePage'));
-const StocktakePage = lazyWithRetry(() => import('./inventory/StocktakePage'));
-const DispatchedOrdersView = lazyWithRetry(() => import('./inventory/DispatchedOrdersView'));
-const DocumentsView = lazyWithRetry(() => import('./inventory/DocumentsView'));
-const WarehousePage = lazyWithRetry(() => import('./inventory/warehouse/WarehousePage'));
 const AuditLogTab = lazyWithRetry(() => import('./admin/AuditLogTab'));
 const SystemHealthTab = lazyWithRetry(() => import('./admin/SystemHealthTab'));
-const POInboxView = lazyWithRetry(() => import('./admin/POInboxView'));
 const SettingsView = lazyWithRetry(() => import('./admin/settings/SettingsView'));
+
+const PromotionAdmin = MODULE_SALES_ORDERS ? lazyWithRetry(() => import('./PromotionAdmin')) : null;
+const POInboxView = MODULE_SALES_ORDERS ? lazyWithRetry(() => import('./admin/POInboxView')) : null;
+
+const HoReCaInsightsPanel = MODULE_FIELD_OPS ? lazyWithRetry(() => import('./HoReCaInsightsPanel')) : null;
+const ScheduledVisitsAdmin = MODULE_FIELD_OPS ? lazyWithRetry(() => import('./admin/ScheduledVisitsAdmin')) : null;
+
+const StockView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./StockView')) : null;
+const ReceiveStockView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/ReceiveStockView')) : null;
+const PickQueueView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/PickQueueView')) : null;
+const PutawayQueuePage = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/PutawayQueuePage')) : null;
+const ReplenQueuePage = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/ReplenQueuePage')) : null;
+const StocktakePage = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/StocktakePage')) : null;
+const DispatchedOrdersView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/DispatchedOrdersView')) : null;
+const DocumentsView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/DocumentsView')) : null;
+const WarehousePage = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/warehouse/WarehousePage')) : null;
 
 interface AdminViewProps {
     currentUser: User;
@@ -128,25 +149,25 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {isDashboard && <AdminDashboard allOrders={props.allOrders} products={props.products} hoReCas={props.hoReCas} users={props.users} lowStockThreshold={props.appSettings.lowStockThreshold} invoices={props.invoices} salesTargets={props.salesTargets} onUpdateSalesTargets={props.onUpdateSalesTargets} currentUser={props.currentUser} promotions={props.promotions} visits={props.visits} routes={props.routes} onNavigateTab={props.onSetAdminView ? (tab: string) => props.onSetAdminView!(tab as AdminTab) : undefined} />}
                 {props.activeTab === 'Products' && <ProductAdmin products={props.products} suppliers={props.suppliers} onAddProduct={props.onAddProduct} onUpdateProduct={props.onUpdateProduct} onDeleteProduct={props.onDeleteProduct} addToast={props.addToast} />}
                 {props.activeTab === 'HoReCa' && <HoReCaListView hoReCas={props.hoReCas} orders={props.allOrders} invoices={props.invoices} currentUser={props.currentUser} visits={props.visits} onAddHoReCa={props.onAddHoReCa} onUpdateHoReCa={props.onUpdateHoReCa} onDeleteHoReCa={props.onDeleteHoReCa} />}
-                {props.activeTab === 'HoReCa Insights' && <HoReCaInsightsPanel allOrders={props.allOrders} hoReCas={props.hoReCas} products={props.products} />}
-                {props.activeTab === 'Order Import' && <OrderImportPage orders={props.allOrders} invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} onReorder={props.onReorder} onViewDetail={props.onViewOrderDetail} onUpdateStatus={props.onUpdateOrderStatus} onBack={() => {}} highlightOrderId={props.highlightOrderId ?? null} onClearHighlightOrderId={props.onClearHighlightOrderId} />}
-                {props.activeTab === 'Promotions' && props.currentUser.role === UserRole.ADMIN && props.promotions && props.onAddPromotion && props.onUpdatePromotion && props.onDeletePromotion && (
+                {MODULE_FIELD_OPS && props.activeTab === 'HoReCa Insights' && <HoReCaInsightsPanel allOrders={props.allOrders} hoReCas={props.hoReCas} products={props.products} />}
+                {MODULE_SALES_ORDERS && props.activeTab === 'Order Import' && <OrderImportPage orders={props.allOrders} invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} onReorder={props.onReorder} onViewDetail={props.onViewOrderDetail} onUpdateStatus={props.onUpdateOrderStatus} onBack={() => {}} highlightOrderId={props.highlightOrderId ?? null} onClearHighlightOrderId={props.onClearHighlightOrderId} />}
+                {MODULE_SALES_ORDERS && props.activeTab === 'Promotions' && props.currentUser.role === UserRole.ADMIN && props.promotions && props.onAddPromotion && props.onUpdatePromotion && props.onDeletePromotion && (
                     <PromotionAdmin promotions={props.promotions} products={props.products} hoReCas={props.hoReCas} users={props.users} onAdd={props.onAddPromotion} onUpdate={props.onUpdatePromotion} onDelete={props.onDeletePromotion} />
                 )}
-                {props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
-                {props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} addToast={props.addToast} />}
-                {props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} onOpenPutaway={openPutaway} />}
-                {props.activeTab === 'Putaway' && <PutawayQueuePage currentUser={props.currentUser} />}
-                {props.activeTab === 'Replenishment' && <ReplenQueuePage currentUser={props.currentUser} />}
-                {props.activeTab === 'Stocktake' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <StocktakePage currentUser={props.currentUser} products={props.products} />}
-                {props.activeTab === 'Pick Queue' && <PickQueueView currentUser={props.currentUser} />}
-                {props.activeTab === 'Dispatched' && <DispatchedOrdersView orders={props.allOrders} onViewDetail={props.onViewOrderDetail} />}
-                {props.activeTab === 'Documents' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <DocumentsView />}
-                {props.activeTab === 'Warehouse' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <WarehousePage currentUser={props.currentUser} onOpenDesigner={props.currentUser.role === UserRole.ADMIN ? openDesigner : undefined} onNavigateSetup={openSetupTarget} />}
-                {props.activeTab === 'Scheduled Visits' && props.routes && props.onSetRoutes && props.addToast && (
+                {MODULE_SALES_ORDERS && props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
+                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} addToast={props.addToast} />}
+                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} onOpenPutaway={openPutaway} />}
+                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Putaway' && <PutawayQueuePage currentUser={props.currentUser} />}
+                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Replenishment' && <ReplenQueuePage currentUser={props.currentUser} />}
+                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Stocktake' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <StocktakePage currentUser={props.currentUser} products={props.products} />}
+                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Pick Queue' && <PickQueueView currentUser={props.currentUser} />}
+                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Dispatched' && <DispatchedOrdersView orders={props.allOrders} onViewDetail={props.onViewOrderDetail} />}
+                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Documents' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <DocumentsView />}
+                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Warehouse' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <WarehousePage currentUser={props.currentUser} onOpenDesigner={props.currentUser.role === UserRole.ADMIN ? openDesigner : undefined} onNavigateSetup={openSetupTarget} />}
+                {MODULE_FIELD_OPS && props.activeTab === 'Scheduled Visits' && props.routes && props.onSetRoutes && props.addToast && (
                     <ScheduledVisitsAdmin routes={props.routes} users={props.users} hoReCas={props.hoReCas} visits={props.visits ?? []} currentUser={props.currentUser} onSetRoutes={props.onSetRoutes} addToast={props.addToast} />
                 )}
-                {props.activeTab === 'Walk-in Review' && (
+                {MODULE_FIELD_OPS && props.activeTab === 'Walk-in Review' && (
                     <WalkInReviewTab hoReCas={props.hoReCas} users={props.users} currentUser={props.currentUser} addToast={props.addToast} />
                 )}
                 {props.activeTab === 'Users' && props.currentUser.role === UserRole.ADMIN && <UserAdmin users={props.users} onAddUser={props.onAddUser} onUpdateUser={props.onUpdateUser} onDeleteUser={props.onDeleteUser} />}
@@ -158,7 +179,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                         onUpdateHoReCa={props.onUpdateHoReCa}
                     />
                 )}
-                {props.activeTab === 'PO Inbox' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER) && (
+                {MODULE_SALES_ORDERS && props.activeTab === 'PO Inbox' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER) && (
                     <POInboxView
                         hoReCas={props.hoReCas}
                         products={props.products}

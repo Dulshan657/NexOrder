@@ -20,6 +20,7 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { generatePutawayTasks, type GeneratePutawayResult } from '../_shared/putawayTasks.ts'
 import { resolveReceiveDestination } from '../_shared/receiveDestination.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
@@ -241,6 +242,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
     // 30 receipts/min/user — well above interactive pace, throttles scripted abuse.

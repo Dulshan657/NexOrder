@@ -125,9 +125,36 @@ environment", the file is stale, not the database.
   it, and re-run `npm run export:demo` after any demo work worth keeping.
 - **Tenancy is decided: project-per-tenant, one `main`, module flags.** See
   `MULTI-TENANT-ARCHITECTURE.md` before adding a client or a per-client feature.
-  There is never a per-tenant branch. `ALL_MODULES` in the registry is the
-  module vocabulary and is **read by nothing yet** — deliberate, not an
-  oversight.
+  There is never a per-tenant branch.
+- **Module flags are BUILT as of 2026-08-13, and there are three of them:**
+  `sales_orders`, `field_ops`, `inventory_dispatch` — deliberately the three
+  group headings the sidebar already draws. `ALL_MODULES` in the registry held
+  nine finer slugs, read by nothing, until then; both targets have all three on,
+  and the gate shipped in the all-on state on purpose so it could be proven
+  inert against a live tenant first.
+  - **A disabled module is NOT SHIPPED, not hidden.** `vite.config.ts` defines
+    one boolean per module and Rollup folds the branch away, so the chunks never
+    reach the tenant. That only works if the `lazyWithRetry(() => import(...))`
+    **declaration** is gated, not just the JSX — and in **both** `AdminView.tsx`
+    and `AppShell.tsx`, which declare some of the same views. Gating one leaves
+    the chunk alive through the other.
+  - **Verify by building and grepping `dist/`, never by reading.** A module off
+    took the build from 95 assets / 3044 kB to 47 / 2574 kB. Tab-name strings
+    like `'Putaway'` legitimately survive — they live in the core `AdminTab`
+    union — so grep for code symbols.
+  - Server half: `_shared/modules.ts` `requireModule`, **fails OPEN** (unset
+    `ENABLED_MODULES` = everything on) because a module gate is a *commercial*
+    control and roles/RLS are the security ones. `config/moduleOwnership.mjs`
+    maps 57 functions to modules; `deploy-functions.mjs` will not deploy a
+    disabled module's functions at all. `poll-inbox` uses `isModuleEnabled` and
+    no-ops instead of throwing — it is a cron with no try/catch.
+  - **Products and HoReCa are CORE despite where the sidebar files them.**
+    Sales & Orders reads product prices; orders come from the customer list.
+    `HoReCa Insights` *is* Field Ops. See `TAB_MODULES` in `lib/adminTabUrl.ts`.
+  - With `inventory_dispatch` off the **Warehouse role is empty**, so
+    `lib/assignableRoles.ts` withholds it from the invite form. The Field Sales
+    Rep is *not* withheld when `field_ops` is off — they keep Shop, Order
+    Import, Accounts and the customer list.
 
 ## Commands
 

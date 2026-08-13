@@ -18,6 +18,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -104,6 +105,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('field_ops')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
     // Per-user rate limit: 30/min/user. Matches other admin mutate functions.

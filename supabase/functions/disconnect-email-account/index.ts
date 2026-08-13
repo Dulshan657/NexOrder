@@ -27,6 +27,7 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { decryptToken } from '../_shared/poInbox/encryption.ts'
 import { sanitizeForLog } from '../_shared/poInbox/env.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 interface DisconnectRequest {
   emailAccountId: string
@@ -44,6 +45,7 @@ serve(async (req: Request) => {
   }
 
   try {
+    requireModule('sales_orders')
     const ctx = await requireAuth(req, { allowedRoles: ['Admin', 'Manager'] })
 
     const rl = await checkRateLimit(`disconnect-email-account:${ctx.userId}`, {

@@ -51,6 +51,7 @@ import { detectCustomerNameMismatch } from '../_shared/poInbox/customerNameMatch
 import { detectSenderMismatch } from '../_shared/poInbox/senderTrust.ts'
 import { selectAttachments, type AttachmentMeta } from '../_shared/poInbox/attachmentSelect.ts'
 import { archivePrefixCandidates, isSafeStoredName } from '../_shared/poInbox/archivePaths.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 interface ExtractRequest {
   inboundMessageId: string
@@ -102,6 +103,7 @@ serve(async (req: Request) => {
 
   let body: ExtractRequest
   try {
+    requireModule('sales_orders')
     body = await req.json()
   } catch {
     return json({ error: { code: 'INVALID_INPUT', message: 'Body must be JSON' } }, 400, corsHeaders)

@@ -31,6 +31,7 @@ import {
   releaseResidualOnDispatch,
   recomputeOrderStatus,
 } from '../_shared/fulfillment.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 type OrderStatus = 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
 
@@ -100,6 +101,7 @@ serve(async (req: Request) => {
 
   let body: UpdateOrderStatusRequest
   try {
+    requireModule('sales_orders')
     body = await req.json()
   } catch {
     return errorResponse('INVALID_JSON', 'Body must be JSON')

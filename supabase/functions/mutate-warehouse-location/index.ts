@@ -86,6 +86,7 @@ import {
   makeZoneResolver,
   resolveZones,
 } from '../_shared/zoneResolve.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 const NODE_KINDS = ['ZONE', 'BIN', 'SHELF'] as const
@@ -455,6 +456,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
     // Per-user rate limit: 30/min/user. Matches other admin mutate functions.

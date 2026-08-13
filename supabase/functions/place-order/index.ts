@@ -22,6 +22,7 @@ import {
   type UserContext,
 } from '../_shared/pricing.ts'
 import { orderedWarehousesFor } from '../_shared/warehouseRouting.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 // A product's UOM rows, trimmed to what pricing needs (mig 00067).
 interface LineUom {
@@ -234,6 +235,7 @@ serve(async (req: Request) => {
 
   let body: PlaceOrderRequest
   try {
+    requireModule('sales_orders')
     body = await req.json()
   } catch {
     return errorResponse('INVALID_JSON', 'Body must be JSON')

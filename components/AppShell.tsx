@@ -73,6 +73,15 @@ import { getDemoPersona } from '../lib/demoAccounts';
 
 import { type AdminTab } from './AdminView';
 import { adminTabFromSearch } from '../lib/adminTabUrl';
+// Build-time constants, NOT state. `{MODULE_X && <>…</>}` folds to `{false && …}`
+// for a tenant without the module, and Rollup drops the branch and every lazy
+// import only it reaches. See lib/modules.ts — this is what makes a disabled
+// module absent from the bundle rather than hidden inside it.
+import {
+    MODULE_FIELD_OPS,
+    MODULE_INVENTORY_DISPATCH,
+    MODULE_SALES_ORDERS,
+} from '../lib/modules';
 import UserProfile from './UserProfile';
 import MobileCheckoutButton from './MobileCheckoutButton';
 import OrderSummary from './OrderSummary';
@@ -92,17 +101,21 @@ const AdminView = lazyWithRetry(() => import('./AdminView'));
 const OrderDetailView = lazyWithRetry(() => import('./OrderDetailView'));
 const OrderVerificationModal = lazyWithRetry(() => import('./OrderVerificationModal'));
 const BundleSelectModal = lazyWithRetry(() => import('./BundleSelectModal'));
-const StockView = lazyWithRetry(() => import('./StockView'));
-const ReceiveStockView = lazyWithRetry(() => import('./inventory/ReceiveStockView'));
-const ScheduledVisitsView = lazyWithRetry(() => import('./scheduled-visits/ScheduledVisitsView'));
+// Module-gated on the DECLARATION, not just where they render: the `import()`
+// runs at module scope, so a JSX gate alone would still emit the chunk and ship
+// it to a tenant without the module. AdminView declares its own copies of these
+// two — both sides must be gated or the chunk survives through the other.
+const StockView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./StockView')) : null;
+const ReceiveStockView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/ReceiveStockView')) : null;
+const ScheduledVisitsView = MODULE_FIELD_OPS ? lazyWithRetry(() => import('./scheduled-visits/ScheduledVisitsView')) : null;
 
 // Each of these renders behind a single `view === ...` branch, so none of them
 // is on the initial paint path for any role. ShopView deliberately stays eager
 // — it is the landing view for both reps and customers.
-const OrdersHistoryView = lazyWithRetry(() => import('../views/OrdersHistoryView'));
+const OrdersHistoryView = MODULE_SALES_ORDERS ? lazyWithRetry(() => import('../views/OrdersHistoryView')) : null;
 const RepDashboardView = lazyWithRetry(() => import('../views/RepDashboardView'));
 const HoReCaListView = lazyWithRetry(() => import('./HoReCaListView'));
-const AccountsAgingTable = lazyWithRetry(() => import('./AccountsAgingTable'));
+const AccountsAgingTable = MODULE_SALES_ORDERS ? lazyWithRetry(() => import('./AccountsAgingTable')) : null;
 
 import { inviteUser, updateUserProfile } from '../services/supabase/inviteUserService';
 import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit } from '../lib/adapters';
@@ -650,28 +663,32 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 </button>
                             )}
 
-                            <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Orders</p>
-                            <button
-                                onClick={() => {
-                                    if (view !== 'ordering') { resetOrder(); setView('ordering'); }
-                                    setIsSidebarOpen(false);
-                                }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'ordering' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <ShoppingCart className="w-5 h-5 mr-3" /> Shop
-                            </button>
-                            <button
-                                onClick={() => { setView('orders'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'orders' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <History className="w-5 h-5 mr-3" /> Order Import
-                            </button>
-                            <button
-                                onClick={() => { setView('accounts'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <Wallet className="w-5 h-5 mr-3" /> Accounts
-                            </button>
+                            {MODULE_SALES_ORDERS && (
+                                <>
+                                    <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Orders</p>
+                                    <button
+                                        onClick={() => {
+                                            if (view !== 'ordering') { resetOrder(); setView('ordering'); }
+                                            setIsSidebarOpen(false);
+                                        }}
+                                        className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'ordering' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                    >
+                                        <ShoppingCart className="w-5 h-5 mr-3" /> Shop
+                                    </button>
+                                    <button
+                                        onClick={() => { setView('orders'); setIsSidebarOpen(false); }}
+                                        className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'orders' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                    >
+                                        <History className="w-5 h-5 mr-3" /> Order Import
+                                    </button>
+                                    <button
+                                        onClick={() => { setView('accounts'); setIsSidebarOpen(false); }}
+                                        className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                    >
+                                        <Wallet className="w-5 h-5 mr-3" /> Accounts
+                                    </button>
+                                </>
+                            )}
 
                             {isRep && (
                                 <>
@@ -682,7 +699,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     >
                                         <UsersIcon className="w-5 h-5 mr-3" /> HoReCa
                                     </button>
-                                    {isFieldRep && (
+                                    {isFieldRep && MODULE_FIELD_OPS && (
                                         <button
                                             onClick={() => { setView('scheduled_visits'); setIsSidebarOpen(false); }}
                                             className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'scheduled_visits' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
@@ -698,7 +715,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 </>
                             )}
 
-                            {showStockTab && (
+                            {MODULE_INVENTORY_DISPATCH && showStockTab && (
                                 <>
                                     <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
                                     <button
@@ -716,7 +733,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             {/* Demo persona: lead with the PO-Inbox story, then fall through
                                 to the normal admin nav (PO Inbox / Order Import omitted below
                                 to avoid duplicates; Shop hidden too when the persona opts out). */}
-                            {demoPersona?.leadWithPoInbox && (
+                            {MODULE_SALES_ORDERS && demoPersona?.leadWithPoInbox && (
                                 <>
                                     {adminPoInboxNavButton}
                                     {adminOrderImportNavButton}
@@ -729,23 +746,31 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 <LayoutDashboard className="w-5 h-5 mr-3" /> Dashboard
                             </button>
 
-                            <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Sales & Orders</p>
-                            {!demoPersona?.hideShop && adminShopNavButton}
-                            {!demoPersona?.leadWithPoInbox && adminOrderImportNavButton}
-                            {!demoPersona?.leadWithPoInbox && adminPoInboxNavButton}
-                            <button
-                                onClick={() => { setAdminView('Accounts'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <Wallet className="w-5 h-5 mr-3" /> Accounts
-                            </button>
-                            <button
-                                onClick={() => { setAdminView('Promotions'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Promotions' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <Tag className="w-5 h-5 mr-3" /> Promotions
-                            </button>
+                            {MODULE_SALES_ORDERS && (
+                                <>
+                                    <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Sales & Orders</p>
+                                    {!demoPersona?.hideShop && adminShopNavButton}
+                                    {!demoPersona?.leadWithPoInbox && adminOrderImportNavButton}
+                                    {!demoPersona?.leadWithPoInbox && adminPoInboxNavButton}
+                                    <button
+                                        onClick={() => { setAdminView('Accounts'); setIsSidebarOpen(false); }}
+                                        className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                    >
+                                        <Wallet className="w-5 h-5 mr-3" /> Accounts
+                                    </button>
+                                    <button
+                                        onClick={() => { setAdminView('Promotions'); setIsSidebarOpen(false); }}
+                                        className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Promotions' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                    >
+                                        <Tag className="w-5 h-5 mr-3" /> Promotions
+                                    </button>
+                                </>
+                            )}
 
+                            {/* The heading and HoReCa stay whatever Field Ops is: the customer
+                                list is CORE (orders need somewhere to come from) and this is
+                                where an operator looks for it. Only the three surfaces that
+                                are actually sold as Field Ops are gated. */}
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Field Ops</p>
                             <button
                                 onClick={() => { setAdminView('HoReCa'); setIsSidebarOpen(false); }}
@@ -753,31 +778,38 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             >
                                 <UsersIcon className="w-5 h-5 mr-3" /> HoReCa
                             </button>
-                            <button
-                                onClick={() => { setAdminView('HoReCa Insights'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'HoReCa Insights' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <BarChart3 className="w-5 h-5 mr-3" /> HoReCa Insights
-                            </button>
-                            <button
-                                onClick={() => { setAdminView('Scheduled Visits'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Scheduled Visits' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <MapPin className="w-5 h-5 mr-3" /> Scheduled Visits
-                            </button>
-                            <button
-                                onClick={() => { setAdminView('Walk-in Review'); setIsSidebarOpen(false); }}
-                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Walk-in Review' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                            >
-                                <UserPlus className="w-5 h-5 mr-3" />
-                                <span className="flex-1 text-left">Walk-in Review</span>
-                                {walkInReviewCount > 0 && (
-                                    <span className="text-[10px] font-bold bg-amber-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-                                        {walkInReviewCount}
-                                    </span>
-                                )}
-                            </button>
+                            {MODULE_FIELD_OPS && (
+                                <>
+                                    <button
+                                        onClick={() => { setAdminView('HoReCa Insights'); setIsSidebarOpen(false); }}
+                                        className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'HoReCa Insights' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                    >
+                                        <BarChart3 className="w-5 h-5 mr-3" /> HoReCa Insights
+                                    </button>
+                                    <button
+                                        onClick={() => { setAdminView('Scheduled Visits'); setIsSidebarOpen(false); }}
+                                        className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Scheduled Visits' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                    >
+                                        <MapPin className="w-5 h-5 mr-3" /> Scheduled Visits
+                                    </button>
+                                    <button
+                                        onClick={() => { setAdminView('Walk-in Review'); setIsSidebarOpen(false); }}
+                                        className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Walk-in Review' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                    >
+                                        <UserPlus className="w-5 h-5 mr-3" />
+                                        <span className="flex-1 text-left">Walk-in Review</span>
+                                        {walkInReviewCount > 0 && (
+                                            <span className="text-[10px] font-bold bg-amber-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                                                {walkInReviewCount}
+                                            </span>
+                                        )}
+                                    </button>
+                                </>
+                            )}
 
+                            {/* Same shape: Products is CORE — Sales & Orders reads its prices —
+                                even though the sidebar files it under this heading. Grouping is
+                                a UI fact, licensing is a commercial one, and they differ here. */}
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
                             <button
                                 onClick={() => { setAdminView('Products'); setIsSidebarOpen(false); }}
@@ -785,6 +817,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             >
                                 <Package className="w-5 h-5 mr-3" /> Products
                             </button>
+                            {MODULE_INVENTORY_DISPATCH && (<>
                             <button
                                 onClick={() => { setAdminView('Stock'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Stock' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
@@ -851,6 +884,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             >
                                 <LayoutGrid className="w-5 h-5 mr-3" /> Warehouse
                             </button>
+                            </>)}
 
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">System</p>
                             <button
@@ -891,7 +925,11 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             )}
                         </>
                     )}
-                    {isWarehouse && (
+                    {/* The Warehouse role's ENTIRE nav is this module. With it off the
+                        role has nothing to render at all — which is why `useRoleOptions`
+                        also withholds Warehouse from the invite form, rather than letting
+                        an admin create a user who logs in to a blank page. */}
+                    {isWarehouse && MODULE_INVENTORY_DISPATCH && (
                         <>
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
                             <button
@@ -1273,7 +1311,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         onUpdatePantryItem={handleUpdatePantryItem}
                                     />
                                 )}
-                                {view === 'orders' && (
+                                {MODULE_SALES_ORDERS && view === 'orders' && (
                                     <ErrorBoundary label="Order history">
                                         <Suspense fallback={<LoadingSkeleton />}>
                                             <OrdersHistoryView
@@ -1313,7 +1351,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     </Suspense>
                                     </ErrorBoundary>
                                 )}
-                                {view === 'stock' && (
+                                {MODULE_INVENTORY_DISPATCH && view === 'stock' && (
                                     <ErrorBoundary label="Stock view">
                                         <Suspense fallback={<LoadingSkeleton />}>
                                             <StockView
@@ -1323,14 +1361,14 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         </Suspense>
                                     </ErrorBoundary>
                                 )}
-                                {view === 'accounts' && (
+                                {MODULE_SALES_ORDERS && view === 'accounts' && (
                                     <ErrorBoundary label="Accounts aging">
                                         <Suspense fallback={<LoadingSkeleton />}>
                                             <AccountsAgingTable invoices={invoices} hoReCas={hoReCas} currentUser={currentUser} />
                                         </Suspense>
                                     </ErrorBoundary>
                                 )}
-                                {view === 'scheduled_visits' && isFieldRep && (
+                                {MODULE_FIELD_OPS && view === 'scheduled_visits' && isFieldRep && (
                                     <ErrorBoundary label="Scheduled visits">
                                         <Suspense fallback={<LoadingSkeleton />}>
                                             <ScheduledVisitsView

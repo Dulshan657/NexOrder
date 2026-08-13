@@ -30,6 +30,7 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { type AccountRow, processAccount } from '../_shared/poInbox/pollAccount.ts'
 import { deriveRetryOutcome } from '../_shared/poInbox/retryOutcome.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 interface RetryRequest {
   emailAccountId: string
@@ -43,6 +44,7 @@ serve(async (req: Request) => {
   }
 
   try {
+    requireModule('sales_orders')
     const ctx = await requireAuth(req, { allowedRoles: ['Admin', 'Manager'] })
 
     // On-demand provider polls are heavier than a status toggle — keep the

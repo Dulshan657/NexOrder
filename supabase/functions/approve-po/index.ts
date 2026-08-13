@@ -47,6 +47,7 @@ import { isServiceRoleBearer } from '../_shared/poInbox/dispatch.ts'
 import { findStockShortages, type StockShortage } from '../_shared/poInbox/stockCheck.ts'
 import { buildOrderItems } from '../_shared/poInbox/orderTotals.ts'
 import { orderedWarehousesFor } from '../_shared/warehouseRouting.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 type ApproveMode = 'auto' | 'human'
 
@@ -137,6 +138,7 @@ serve(async (req: Request) => {
   })
 
   try {
+    requireModule('sales_orders')
     let body: ApproveRequest
     try {
       body = await req.json()

@@ -45,6 +45,7 @@ import {
 } from '../_shared/floorplan/extractionSchema.ts'
 import { mergeExtractions, type FidelityMode } from '../_shared/floorplan/multiPass.ts'
 import { autoConnectLayout, type ConnectObject, type ConnectPlacement } from '../_shared/wie/autoConnect.ts'
+import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin']
 const BUCKET = 'floorplan-scans'
@@ -139,6 +140,7 @@ serve(async (req: Request) => {
   let importId: string | null = null
 
   try {
+    requireModule('inventory_dispatch')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
     const rl = await checkRateLimit(`extract-floorplan:${auth.userId}`, { windowMs: 60_000, max: 5 })
     if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')
