@@ -62,9 +62,19 @@ const ALIAS = config.vercel.alias
  * the project together — the same property `SUPABASE_ACCESS_TOKEN` already has
  * on the Supabase side, and for the same reason.
  *
- * Absent, we say so and fall through to the global login. That is deliberately
- * NOT an error: `.env.amadiya.local` has no `VERCEL_TOKEN` and the global login
- * is Amadiya's account, so the existing tenant deploy keeps working unchanged.
+ * ── AND FOR A TENANT IT IS NOW A REFUSAL, NOT A WARNING (2026-08-13) ────────
+ *
+ * The paragraph that used to sit here said falling through to the global login
+ * was "deliberately NOT an error", because `.env.amadiya.local` had no
+ * `VERCEL_TOKEN` and the global login happened to be Amadiya's account. That
+ * reasoning only held while the coincidence held. It is exactly one
+ * `vercel login` away from being false, and the failure it produces is a
+ * client's production alias pointed at a build from the wrong account — the
+ * single most expensive outcome this script can have.
+ *
+ * So: a `kind: 'tenant'` target must have its ids AND its token, or we stop.
+ * A demo target still warns and falls through, because the worst case there is
+ * a demo deployed to the wrong demo.
  */
 let vercelEnvCache = null
 
@@ -79,10 +89,21 @@ function vercelEnv() {
 function buildVercelEnv() {
   const { projectId, orgId } = config.vercel
   const token = target.env.VERCEL_TOKEN
+  const isTenant = config.kind === 'tenant'
 
   if (!projectId || !orgId) {
+    const missing = !projectId ? 'projectId' : 'orgId'
+    if (isTenant) {
+      console.error(
+        `[deploy] ✖ ${target.name} is a TENANT and has no vercel.${missing} in the registry.\n` +
+          `[deploy]   Without it the CLI resolves whichever project .vercel/project.json names,\n` +
+          `[deploy]   which is not decided by --env and is not decided by you.\n` +
+          `[deploy]   Fill in config/environments.mjs → TARGETS.${target.name}.vercel.${missing}.`,
+      )
+      process.exit(1)
+    }
     console.warn(
-      `[deploy] ⚠ ${target.name} has no vercel.${!projectId ? 'projectId' : 'orgId'} in the registry.\n` +
+      `[deploy] ⚠ ${target.name} has no vercel.${missing} in the registry.\n` +
         `[deploy]   Falling back to .vercel/project.json, which names ONE project regardless of --env.\n` +
         `[deploy]   Fill it in before there is a second Vercel project to confuse this with.`,
     )
@@ -90,6 +111,20 @@ function buildVercelEnv() {
   }
 
   if (!token) {
+    if (isTenant) {
+      console.error(
+        `[deploy] ✖ ${target.name} is a TENANT and has no VERCEL_TOKEN in ${config.envFile}.\n` +
+          `[deploy]   The CLI would fall back to its global login — whichever account you last\n` +
+          `[deploy]   ran \`vercel login\` against. That is not a property of this command line,\n` +
+          `[deploy]   and getting it wrong points a client's production alias at another\n` +
+          `[deploy]   account's build.\n` +
+          `[deploy]\n` +
+          `[deploy]   Fix: create a token on the Vercel account that owns\n` +
+          `[deploy]   ${config.vercel.teamSlug} (vercel.com → Settings → Tokens), then add\n` +
+          `[deploy]   VERCEL_TOKEN=... to ${config.envFile}.`,
+      )
+      process.exit(1)
+    }
     console.warn(
       `[deploy] ⚠ ${target.name} has no VERCEL_TOKEN in ${config.envFile}.\n` +
         `[deploy]   Using the CLI's global login, which belongs to whichever account\n` +
@@ -208,6 +243,12 @@ console.log(
     `[deploy] Alias ${ALIAS} · Vercel target ${config.vercel.target}\n` +
     `[deploy] sha ${sha?.slice(0, 7) ?? 'unknown'}, branch ${branch ?? 'unknown'}`,
 )
+
+// Resolve (and for a tenant, VALIDATE) the Vercel credentials now, before the
+// first spawn rather than lazily inside it. The refusal above is only worth
+// having if it fires while nothing has happened yet — memoised, so the demo
+// warning still prints exactly once.
+vercelEnv()
 
 const deployArgs = ['deploy', '--yes']
 if (config.vercel.target === 'production') deployArgs.push('--prod')

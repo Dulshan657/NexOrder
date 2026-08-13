@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "DELIBERATELY EMPTY as of 2026-08-12.",
+    "DELIBERATELY EMPTY. Emptied 2026-08-12; reviewed 2026-08-13.",
     "",
     "This used to hold a Supabase MCP server pinned to lsgkznyiabqitqfpveey on",
     "the grounds that it was the dev project. That project is now Amadiya's",
@@ -8,8 +8,14 @@
     "write access to a client's database as the single largest unforced risk in",
     "this repo.",
     "",
-    "Re-add a server only when a genuine non-production project exists, and pin",
-    "it to that. Never add a tenant entry."
+    "A genuine non-production project DOES exist again as of the demo rebuild:",
+    "uqvekvavkjjurpqtovbq, on NexGen's own Supabase account. So the condition",
+    "for re-adding a server is now met. It is still empty only because this file",
+    "is COMMITTED and a Supabase MCP server needs an access token — which must",
+    "never live here. If you add one, pin it to uqvekvavkjjurpqtovbq, use the",
+    "nexgen13 account's token, and source that token from the environment rather",
+    "than typing it into this file. A token from the other account reaches",
+    "Amadiya. Never add a tenant entry."
   ],
   "mcpServers": {}
 }
