@@ -189,6 +189,38 @@ for (const r of pkRows) {
   primaryKeys.get(r.tbl).push(r.col)
 }
 
+// GENERATED ALWAYS columns must not be written. The export is a `SELECT *`, so
+// it carries their VALUES — and Postgres rejects the insert outright rather
+// than ignoring them:
+//
+//   cannot insert a non-DEFAULT value into column "available"
+//
+// Today that is only `inventory_balances.available` (on_hand - allocated), but
+// it is read from the schema rather than hardcoded so a future generated column
+// does not fail this the same way a year from now. Dropping the value loses
+// nothing: Postgres recomputes it from the columns we do write.
+const generatedRows = await runSql(
+  target,
+  `SELECT c.relname AS tbl, a.attname AS col
+     FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+    WHERE c.relkind = 'r' AND a.attgenerated <> ''`,
+)
+
+/** table -> Set(generated column) */
+const generated = new Map()
+for (const r of generatedRows) {
+  if (!generated.has(r.tbl)) generated.set(r.tbl, new Set())
+  generated.get(r.tbl).add(r.col)
+}
+if (generated.size) {
+  console.log(
+    `[import] stripping generated column(s): ` +
+      [...generated].map(([t, cols]) => `${t}.${[...cols].join(', ')}`).join(' · '),
+  )
+}
+
 let plan
 try {
   plan = planInsertOrder(wanted, fks)
@@ -248,6 +280,15 @@ console.log(
  * ARE the PO Inbox demo.
  */
 function applyTableFixups(table, rows) {
+  const gen = generated.get(table)
+  if (gen) {
+    rows = rows.map((r) => {
+      const copy = { ...r }
+      for (const c of gen) delete copy[c]
+      return copy
+    })
+  }
+
   if (table !== 'email_accounts') return rows
   const at = new Date().toISOString()
   return rows.map((r) => ({
@@ -276,11 +317,12 @@ if (nonEmpty.length) {
     console.log(`           ${t.padEnd(32)} ${String(liveCounts[t]).padStart(6)} live, ${expected} in the export`)
   }
   console.log(
-    `[import]   Rows are written with UPSERT on the primary key, so migration-seeded\n` +
-      `[import]   reference data (storage_types, zone_profiles, level_roles, app_settings)\n` +
-      `[import]   is overwritten by the export's version rather than duplicated. A row that\n` +
-      `[import]   exists here but NOT in the export survives, and the verification below\n` +
-      `[import]   reports it as a count mismatch rather than hiding it.`,
+    `[import]   These are migration seeds. They are DELETED before pass A, not merged:\n` +
+      `[import]   the seed and the export disagree about surrogate ids for the same\n` +
+      `[import]   natural key (storage_types.code, zone_profiles.name), so an upsert on\n` +
+      `[import]   the primary key hits the OTHER unique constraint. A restore has one\n` +
+      `[import]   right answer and it is the export. profiles is never deleted — its rows\n` +
+      `[import]   belong to auth.users and no re-run could recreate them.`,
   )
 }
 
@@ -289,6 +331,61 @@ if (checkOnly) {
   await verify()
   await settle()
   process.exit(process.exitCode ?? 0)
+}
+
+// ---------------------------------------------------------------------------
+// Clear — the export is the snapshot, so anything else in these tables is noise
+// ---------------------------------------------------------------------------
+
+// ── WHY UPSERT ON THE PRIMARY KEY IS NOT ENOUGH ────────────────────────────
+//
+// Seven tables arrive pre-seeded by migrations, and the first attempt at this
+// import upserted onto the primary key expecting that to merge them. It does
+// not, because reference tables carry a SECOND unique constraint on a natural
+// key and the seed does not use the export's surrogate ids:
+//
+//   duplicate key value violates unique constraint "storage_types_code_key"
+//   Key (code)=(AMD_RACK) already exists.
+//
+// The upsert saw no conflict on `id` — the export's id for AMD_RACK differs
+// from the seeded one — so it tried a plain INSERT and hit `code`. Upserting on
+// the natural key instead would be worse: it would rewrite a live row's PRIMARY
+// KEY to the export's value, while other tables reference it.
+//
+// A restore has one right answer: the export is the snapshot, so the seed is
+// discarded. Clearing also makes the whole import idempotent — a failed run is
+// re-run rather than unpicked, which matters on a free project with no backups.
+//
+// `profiles` is the exception and is never deleted: its rows are owned by
+// `auth.users` via `handle_new_user`, so deleting them orphans eleven logins
+// that no re-run can recreate. Its deferred columns are nulled instead, which
+// is the same treatment pass A gives them and is what lets `horecas` and
+// `locations` be deleted underneath it.
+const clearable = order.filter((t) => t !== 'profiles')
+
+if (clearable.length) {
+  const profileDeferred = deferred.get('profiles') ?? []
+  const statements = []
+  if (profileDeferred.length) {
+    statements.push(
+      `UPDATE public.profiles SET ${profileDeferred.map((c) => `"${c}" = NULL`).join(', ')};`,
+    )
+  }
+  // Reverse insert order: children before the parents they point at.
+  for (const t of [...clearable].reverse()) statements.push(`DELETE FROM public."${t}";`)
+
+  const before = order.reduce((a, t) => a + (liveCounts[t] ?? 0), 0)
+  console.log(`\n[import] clearing ${clearable.length} table(s) (${before} pre-existing row(s))`)
+  try {
+    await runSql(target, statements.join('\n'))
+  } catch (e) {
+    console.error(
+      `\n[import] ✗ could not clear: ${e.message}\n` +
+        `  Deletes run children-first in reverse insert order, so a foreign key\n` +
+        `  failure here means the computed order is wrong, not the data.\n`,
+    )
+    process.exit(1)
+  }
 }
 
 // ---------------------------------------------------------------------------

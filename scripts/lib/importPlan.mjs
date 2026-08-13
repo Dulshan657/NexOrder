@@ -90,14 +90,40 @@ export function planInsertOrder(tables, fks) {
       continue
     }
 
-    // Stalled: everything left is in or behind a cycle. Break the cheapest one,
-    // and break it on a nullable column — never on the table with the fewest
-    // parents, which is what the exporter did and which says nothing about
-    // whether the break is legal.
+    // Stalled. Everything left is either IN a cycle or merely waiting BEHIND
+    // one, and the difference matters enormously: breaking an edge on a table
+    // that is only downstream nulls a column for no reason at all.
+    //
+    // That is not a tidiness point. `pending_pos` sits behind the
+    // profiles<->horecas cycle, and nulling its `approved_order_id` — nullable
+    // at the column level — violates `chk_pending_pos_approved_has_order`,
+    // which requires an approved row to name its order. A CHECK constraint
+    // cannot be seen from `attnotnull`, so the only defence is to never null a
+    // column we did not have to.
+    //
+    // So candidates are restricted to edges INSIDE a strongly connected
+    // component. Those are the only edges whose removal can un-stall anything.
     const stuck = tables.filter((t) => !emitted.has(t))
+    const components = stronglyConnected(stuck, deps)
+    const cyclic = components.filter((c) => c.length > 1)
+
+    if (!cyclic.length) {
+      throw new Error(
+        `Stalled on [${stuck.sort().join(', ')}] with no cycle among them. ` +
+          `This is a bug in planInsertOrder, not a property of the schema.`,
+      )
+    }
+
+    // Smallest component first: the least entangled knot, and the fewest
+    // columns put at risk. Alphabetical tie-break keeps the plan reproducible.
+    cyclic.sort((a, b) => a.length - b.length || a[0].localeCompare(b[0]))
+    const component = cyclic[0]
+    const inComponent = new Set(component)
+
     const candidates = []
-    for (const t of stuck.sort()) {
+    for (const t of [...component].sort()) {
       for (const parent of [...deps.get(t)].sort()) {
+        if (!inComponent.has(parent)) continue
         const cols = crossEdges.filter(
           (f) => f.child === t && f.parent === parent && f.nullable,
         )
@@ -107,7 +133,7 @@ export function planInsertOrder(tables, fks) {
 
     if (!candidates.length) {
       throw new Error(
-        `Cycle among [${stuck.sort().join(', ')}] has no nullable foreign key to break on. ` +
+        `Cycle among [${component.sort().join(', ')}] has no nullable foreign key to break on. ` +
           `A two-pass import cannot resolve this.`,
       )
     }
@@ -120,6 +146,47 @@ export function planInsertOrder(tables, fks) {
   }
 
   return { order, deferred }
+}
+
+/**
+ * Group nodes into strongly connected components.
+ *
+ * Reachability-closure rather than Tarjan: `u` and `v` share a component when
+ * each can reach the other. At 68 tables the O(N²) cost is nothing, and the
+ * definition is legible enough to check by eye — which matters more here,
+ * because a wrong component means nulling a column that did not need it.
+ *
+ * @param {string[]} nodes
+ * @param {Map<string, Set<string>>} edges  node -> nodes it depends on
+ * @returns {string[][]} components, each sorted; singletons included
+ */
+function stronglyConnected(nodes, edges) {
+  const present = new Set(nodes)
+  const reaches = new Map()
+
+  for (const start of nodes) {
+    const seen = new Set()
+    const stack = [start]
+    while (stack.length) {
+      const cur = stack.pop()
+      for (const next of edges.get(cur) ?? []) {
+        if (!present.has(next) || seen.has(next)) continue
+        seen.add(next)
+        stack.push(next)
+      }
+    }
+    reaches.set(start, seen)
+  }
+
+  const components = []
+  const assigned = new Set()
+  for (const n of [...nodes].sort()) {
+    if (assigned.has(n)) continue
+    const group = [n, ...nodes.filter((m) => m !== n && reaches.get(n).has(m) && reaches.get(m).has(n))]
+    for (const m of group) assigned.add(m)
+    components.push(group.sort())
+  }
+  return components
 }
 
 /**

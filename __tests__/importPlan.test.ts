@@ -99,6 +99,55 @@ describe('planInsertOrder', () => {
     expect(deferred.get('profiles')).toEqual(['primary_account_id']);
   });
 
+  // The real bug this caught: pending_pos merely sits BEHIND the
+  // profiles <-> horecas cycle. Nulling its approved_order_id is unnecessary,
+  // and it violates chk_pending_pos_approved_has_order — a table CHECK, which
+  // no amount of column nullability can warn you about. Only edges inside a
+  // strongly connected component may be broken.
+  it('never defers a column on a table that is merely downstream of a cycle', () => {
+    const edges = [
+      fk('profiles', 'horecas', 'horeca_id'),
+      fk('horecas', 'profiles', 'created_by_user_id'),
+      // Downstream of the cycle, and every column nullable — so a naive
+      // "cheapest candidate anywhere" rule finds these first.
+      fk('pending_pos', 'orders', 'approved_order_id'),
+      fk('pending_pos', 'horecas', 'matched_horeca_id'),
+      fk('pending_pos', 'profiles', 'reviewed_by'),
+      fk('orders', 'profiles', 'created_by'),
+    ];
+
+    const { order, deferred } = planInsertOrder(
+      ['pending_pos', 'orders', 'profiles', 'horecas'],
+      edges,
+    );
+
+    expect(deferred.get('pending_pos')).toBeUndefined();
+    expect(deferred.get('orders')).toBeUndefined();
+    // Either side of the two-node cycle is a legitimate break; what matters is
+    // that the break lands INSIDE it and costs exactly one column.
+    expect([...deferred.keys()]).toHaveLength(1);
+    expect(['profiles', 'horecas']).toContain([...deferred.keys()][0]);
+    assertParentsFirst(order, edges, deferred);
+  });
+
+  it('breaks the smallest cycle when several are stalled together', () => {
+    const edges = [
+      // Two-node cycle.
+      fk('a', 'b', 'b_id'),
+      fk('b', 'a', 'a_id'),
+      // Three-node cycle, independent of the first.
+      fk('x', 'y', 'y_id'),
+      fk('y', 'z', 'z_id'),
+      fk('z', 'x', 'x_id'),
+    ];
+
+    const { order, deferred } = planInsertOrder(['a', 'b', 'x', 'y', 'z'], edges);
+
+    // One break per cycle, never more.
+    expect([...deferred.values()].flat()).toHaveLength(2);
+    assertParentsFirst(order, edges, deferred);
+  });
+
   it('throws when a cycle has only NOT NULL edges to break on', () => {
     expect(() =>
       planInsertOrder(
