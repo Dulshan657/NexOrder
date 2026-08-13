@@ -220,6 +220,30 @@ export const TARGETS = {
     /** Seed / demo / reset scripts may run here. */
     allowFixtures: true,
 
+    /**
+     * FALSE — this project cannot accept custom auth email templates.
+     *
+     * Supabase refuses `mailer_subjects_*` / `mailer_templates_*` on a FREE
+     * project using the built-in email provider: "Email template modification
+     * is not available for free tier projects using the default email
+     * provider." Discovered on the first `auth:config:dev` run, 2026-08-13.
+     *
+     * The reason this is a registry flag rather than a try/catch is that the
+     * PATCH is ALL-OR-NOTHING. Sending the templates alongside the real
+     * settings meant `site_url`, `uri_allow_list`, `password_min_length` and
+     * `disable_signup` were rejected too — so a cosmetic limitation silently
+     * left the project accepting 6-character passwords, allowing public signup,
+     * and pointing password resets at `localhost:3000`. Declaring the
+     * capability keeps `--check` honest as well: it reports drift on settings
+     * that CAN be applied, instead of failing forever on four that cannot.
+     *
+     * Flip to true when this project gets custom SMTP or a paid plan. The
+     * built-in mailer is also what stamps a `supabase.io` sender and exposes
+     * the project ref in auth mail, so custom SMTP is worth doing for its own
+     * sake — it just is not worth blocking the demo rebuild on.
+     */
+    authEmailTemplates: false,
+
     /** Everything on. See ALL_MODULES — read by nothing yet, by design. */
     modules: [...ALL_MODULES],
 
@@ -279,6 +303,9 @@ export const TARGETS = {
 
     /** Never. There is no `--force`. */
     allowFixtures: false,
+
+    /** Pro plan — custom auth email templates are accepted. See dev's note. */
+    authEmailTemplates: true,
 
     modules: [...ALL_MODULES],
 
