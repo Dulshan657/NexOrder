@@ -193,7 +193,11 @@ export default function LoginPage() {
           className={`mt-12 flex items-center justify-between ${EYEBROW_CLASS} text-stone-300 auth-in`}
           style={authStagger(4)}
         >
-          <span>v1.3 · demo build</span>
+          {/* Gated on the same flag as the credentials below. This said
+              "v1.3 · demo build" unconditionally, so the first thing a paying
+              client saw on their own login page was the word DEMO. Caught on
+              nexorder.com.au the day it went live. */}
+          <span>{SHOW_DEMO_LOGINS ? 'v1.3 · demo build' : ''}</span>
           <span>Sydney · 2026</span>
         </footer>
       </aside>
@@ -223,11 +227,13 @@ export default function LoginPage() {
                 <img src={brand.logoSrc} alt={brand.displayName} className="h-8 w-auto object-contain" />
               </div>
             )}
-            <span
-              className={`shrink-0 rounded-full border border-white/20 px-2.5 py-1 ${EYEBROW_CLASS} text-stone-300`}
-            >
-              Demo build
-            </span>
+            {SHOW_DEMO_LOGINS && (
+              <span
+                className={`shrink-0 rounded-full border border-white/20 px-2.5 py-1 ${EYEBROW_CLASS} text-stone-300`}
+              >
+                Demo build
+              </span>
+            )}
           </div>
           <p className="mt-5 max-w-[22ch] font-display text-2xl leading-tight tracking-tighter text-stone-50">
             From the order email to the loading dock.
