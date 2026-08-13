@@ -458,15 +458,34 @@ Ordered by impact; one-line scope each so future agents don't drift.
    `vercel.projectId` in the registry, attach `nexorder.com.au` + `www`,
    `npm run deploy:amadiya`, then **remove the `nexorder.vercel.app` alias from
    the old project and stop its deploys** — it builds the same `main` against
-   this database with a demo-login panel. Then `bootstrap:admin:amadiya` for
-   `info@amadiya.com.au` (deferred until the domain resolves, because the reset
-   link points at it), Amadiya's phone/email/logo into `app_settings`, and
-   Gates B–E. Full sequence: `PRODUCTION-LAUNCH-PLAN.md` Phase 3.
+   this database with a demo-login panel. Then Amadiya's phone/email/logo into
+   `app_settings`, and Gates B–E. Full sequence:
+   `PRODUCTION-LAUNCH-PLAN.md` Phase 3.
+   - **The admin bootstrap is DONE (2026-08-13), but not as the plan wrote it.**
+     Production holds **exactly one account**: `dulshanb@nexgeninnovations.com.au`
+     (`NexGen Support`, Admin, `e9e64dd1-…`) — NexGen's own operator login, not
+     the client's. The plan's `info@amadiya.com.au` was **not** created;
+     `dulshan37gt@gmail.com`, a personal Gmail left over from the cutover, was
+     deleted. Creating Amadiya's own login is still open and should go through
+     the product's **Add User** flow now that an Admin exists — `bootstrap-admin`
+     refuses a second bootstrap on purpose, and `--anyway` is not the answer.
+   - **Deleting a user is FK-blocked, never destructive.** Every business table
+     referencing `auth.users`/`profiles` is `ON DELETE NO ACTION`, so a delete
+     errors rather than cascading; only auth-internal tables and `profiles`
+     itself cascade. Count the referencing rows first — `warehouse_layouts.
+     created_by` was the sole blocker here and was reassigned. `audit_events.
+     actor_id` is `NOT NULL` with no cascade, so an account that has *done*
+     anything cannot be deleted at all without dealing with its audit trail.
 0b. **Rebuild the demo on its own account.** `demo-export/` is the input, and
    until it exists there is no environment to rehearse anything in. This is the
    real cost of the in-place cutover and it should not sit for long.
 1. **Branch protection** — CI's `verify` job runs on every PR but `main` doesn't yet *require* it. **Blocked by plan tier (2026-05-21):** GitHub's Free plan disallows branch protection *and* rulesets on **private** repos — both `PUT …/branches/main/protection` and `POST …/rulesets` return `403 "Upgrade to GitHub Pro or make this repository public"`. To unblock, either upgrade to **GitHub Pro** (~$4/mo) or make the repo public, then require the status-check context **`typecheck · test · build`** (= the `verify` job's `name:` in `ci.yml`) via Settings → Branches or the API. Ready-to-run payload + commands saved in `~/.claude/plans/add-branch-protection-generic-zebra.md`.
-2. **Email setup (operator)** — `send-email` is live, gated and rate-limited; it is dormant only because `RESEND_API_KEY` is unset, and setting that one secret is the entire switch (no redeploy). Full procedure, test call, response table and rollback: **`docs/runbooks/enable-email.md`**. The trap worth knowing up front: leaving `EMAIL_FROM` unset falls back to `onboarding@resend.dev`, which Resend delivers *only* to the account owner — so customers get nothing while the response still says `sent: true`.
+2. **Email setup (operator) — CODE IS DONE; BLOCKED ON THE REGISTRAR PUBLISHING DNS (2026-08-13).** Branch `feat/auth-smtp-resend` (commit `3c41e72`, pushed, **not merged** — merging is pointless until it can be applied). Auth SMTP is no longer a dashboard task: `TARGETS.amadiya.authSmtp` in `config/environments.mjs` declares sender `noreply@nexorder.com.au`, `smtp.resend.com:465`, user `resend`, `ratePerHour: 30`, and the NAME of the env var holding the password; `apply-auth-config.mjs` emits the `smtp_*` block from it. `npx tsc --noEmit` clean, 2563 tests pass, and `--check` was proven against prod (drifts on exactly 6 keys, `smtp_pass` correctly absent).
+   - **The blocker is `nameserver.net.au`, not us.** All four records are entered correctly in its panel and survive a reload, but three were never written to the published zone. ns1/ns2/ns3 all serve SOA serial `2026081313` containing **only** the `send` TXT (SPF); `TXT resend._domainkey`, `MX send`, and `TXT _dmarc` return NXDOMAIN authoritatively. Ruled out: propagation (authoritative, not a resolver cache), inter-NS replication lag (all three identical), and a doubled `.nexorder.com.au` suffix (tested explicitly). Values are correct — DKIM ends `…IDAQAB`, region `ap-northeast-1`. **DKIM is mandatory for Resend to verify; `_dmarc` is optional.**
+   - **Diagnose with the SOA serial, not with `dig` on the record.** A registrar panel showing a row proves nothing; the serial is what says whether the zone was regenerated. Query `ns1.nameserver.net.au` directly — a public resolver conflates "absent" with "not yet cached".
+   - Next: force a regeneration (change the SPF row's TTL) → registrar support → last resort move DNS to Cloudflare/Vercel (the domain already resolves to Vercel `76.76.21.21`; copy the A/www records first so the site never drops).
+   - **Two switches, still neither implying the other.** Auth SMTP is project *auth config*; `RESEND_API_KEY` as an **Edge Function secret** is what wakes `send-email`. The same Resend key serves both. Setting the secret makes order confirmations go to Amadiya's real customers — deliberate go-live, never a side effect. Full procedure: **`docs/runbooks/enable-email.md`**.
+   - Traps: `smtp_pass` is **write-only**, so it is exempt from `drift()` (including it would make `auth:config:check` permanently red — a signal CI and Gate A read as a boolean) and **rotating the key therefore needs `--force`**. And leaving `EMAIL_FROM` unset falls back to `onboarding@resend.dev`, which Resend delivers *only* to the account owner — customers get nothing while the response still says `sent: true`.
 
 **Medium**
 3. **Desktop entry point for a stocktake** — `count-bin` and the Stocktake page ship phone-first (scan a bin, count it). The office-side case — reconciling against a paper count, or correcting one bin noticed while looking at the map — still has only `AdjustStockModal`. Scope it as a "Count this bin" action on `BinDetailPanel` (`components/inventory/warehouse/BinDetailPanel.tsx`) and on the Stock page, opening the same `CountSheet` in a `<Modal>`. No server work: `count-bin` already takes any location.
