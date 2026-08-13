@@ -47,18 +47,64 @@ const ALIAS = config.vercel.alias
  * the only thing that decides where this goes. Until a target's ids are filled
  * in we fall through to the CLI's own resolution, which is today's behaviour —
  * the guard below is what stops that being silent.
+ *
+ * ── AND THE ACCOUNT, AS OF THE DEMO REBUILD (2026-08-13) ────────────────────
+ *
+ * The ids alone are not enough once the fleet spans two Vercel ACCOUNTS. The
+ * CLI authenticates from a single global login in `~/.local/share/com.vercel.
+ * cli`, so whichever account you last ran `vercel login` against is the one
+ * every deploy uses — and a project id from the other account does not resolve
+ * there. The failure is not a wrong deploy but a confusing one: the CLI reports
+ * the project does not exist, on a command line that names it explicitly.
+ *
+ * `VERCEL_TOKEN` is account-scoped and overrides the global login, so putting
+ * it in the target's env file makes `--env=` decide the account, the org and
+ * the project together — the same property `SUPABASE_ACCESS_TOKEN` already has
+ * on the Supabase side, and for the same reason.
+ *
+ * Absent, we say so and fall through to the global login. That is deliberately
+ * NOT an error: `.env.amadiya.local` has no `VERCEL_TOKEN` and the global login
+ * is Amadiya's account, so the existing tenant deploy keeps working unchanged.
  */
+let vercelEnvCache = null
+
 function vercelEnv() {
+  // Memoised because run() calls this for BOTH `vercel deploy` and
+  // `vercel alias`, and a warning printed twice reads as two problems.
+  if (vercelEnvCache) return vercelEnvCache
+  vercelEnvCache = buildVercelEnv()
+  return vercelEnvCache
+}
+
+function buildVercelEnv() {
   const { projectId, orgId } = config.vercel
+  const token = target.env.VERCEL_TOKEN
+
   if (!projectId || !orgId) {
     console.warn(
       `[deploy] ⚠ ${target.name} has no vercel.${!projectId ? 'projectId' : 'orgId'} in the registry.\n` +
         `[deploy]   Falling back to .vercel/project.json, which names ONE project regardless of --env.\n` +
         `[deploy]   Fill it in before there is a second Vercel project to confuse this with.`,
     )
-    return process.env
+    return token ? { ...process.env, VERCEL_TOKEN: token } : process.env
   }
-  return { ...process.env, VERCEL_PROJECT_ID: projectId, VERCEL_ORG_ID: orgId }
+
+  if (!token) {
+    console.warn(
+      `[deploy] ⚠ ${target.name} has no VERCEL_TOKEN in ${config.envFile}.\n` +
+        `[deploy]   Using the CLI's global login, which belongs to whichever account\n` +
+        `[deploy]   you last ran \`vercel login\` against. With one Vercel account in the\n` +
+        `[deploy]   fleet that is fine; with two, the project ids below will not resolve.`,
+    )
+    return { ...process.env, VERCEL_PROJECT_ID: projectId, VERCEL_ORG_ID: orgId }
+  }
+
+  return {
+    ...process.env,
+    VERCEL_PROJECT_ID: projectId,
+    VERCEL_ORG_ID: orgId,
+    VERCEL_TOKEN: token,
+  }
 }
 
 function run(cmd, args, opts = {}) {

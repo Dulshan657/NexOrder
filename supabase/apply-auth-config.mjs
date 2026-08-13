@@ -106,10 +106,28 @@ function inviteEmail() {
  */
 function buildDesired(config) {
   return {
-    mailer_subjects_recovery: 'Reset your Nex Order password',
-    mailer_templates_recovery_content: recoveryEmail(),
-    mailer_subjects_invite: 'You have been invited to Nex Order',
-    mailer_templates_invite_content: inviteEmail(),
+    // ── Branded auth email, ONLY where the project can accept it ────────────
+    //
+    // Supabase rejects these four on a free project using the built-in email
+    // provider, and the PATCH is all-or-nothing — so including them on such a
+    // project does not merely fail to brand the email, it takes `site_url`,
+    // `uri_allow_list`, `password_min_length` and `disable_signup` down with
+    // them. That failure is silent in the worst way: the run reports an error,
+    // but what it actually left behind is a project accepting 6-character
+    // passwords with public signup enabled.
+    //
+    // `authEmailTemplates` is declared per target rather than discovered by
+    // catching the 400, so `--check` stays meaningful: it reports drift on
+    // settings that can be applied instead of failing forever on four that
+    // cannot.
+    ...(config.authEmailTemplates
+      ? {
+          mailer_subjects_recovery: 'Reset your Nex Order password',
+          mailer_templates_recovery_content: recoveryEmail(),
+          mailer_subjects_invite: 'You have been invited to Nex Order',
+          mailer_templates_invite_content: inviteEmail(),
+        }
+      : {}),
 
     site_url: config.appOrigin,
     uri_allow_list: config.authRedirectAllowList.join(','),
@@ -201,6 +219,12 @@ function report(live, keys) {
 // Windows, which looks like a crash on an otherwise successful run.
 async function main() {
   console.log(`Supabase auth config for ${target.name} — project ${REF} (${target.config.label})`)
+  if (!target.config.authEmailTemplates) {
+    console.log(
+      'Custom auth email templates are NOT managed on this target ' +
+        '(free tier + built-in mailer refuses them). Auth mail uses Supabase defaults.',
+    )
+  }
 
   const before = await request('GET')
   const stale = drift(before)

@@ -76,6 +76,21 @@ export const TEST_PROJECT_REF = 'testref'
 const AMADIYA_REF = 'lsgkznyiabqitqfpveey'
 
 /**
+ * `uqvekvavkjjurpqtovbq` — the rebuilt demo, provisioned 2026-08-13.
+ *
+ * On a SEPARATE Supabase account and organisation from Amadiya's, which is the
+ * point: the old arrangement put the demo and the client in one org, one
+ * dashboard and one blast radius, and the cutover resolved that by deleting the
+ * demo. Separate accounts means a mis-clicked dashboard action, a leaked
+ * personal access token or a billing lapse on one side cannot reach the other.
+ *
+ * Consequently `SUPABASE_ACCESS_TOKEN` differs per target. That already works —
+ * every Management API script reads it from the target's env file — but the
+ * Vercel CLI does not, which is why `deploy.mjs` now threads `VERCEL_TOKEN`.
+ */
+const DEMO_REF = 'uqvekvavkjjurpqtovbq'
+
+/**
  * Target names that were renamed, mapped to what they are now.
  *
  * `--env=prod` keeps working for one release and prints a warning, so a
@@ -90,7 +105,7 @@ export const DEPRECATED_TARGET_ALIASES = {
 export const TARGETS = {
   dev: {
     name: 'dev',
-    label: 'Development / sales demo (NOT PROVISIONED)',
+    label: 'Development / sales demo (NexGen account)',
 
     /**
      * 'demo' — NexGen's own. Fixtures allowed, demo logins shown, seeded data
@@ -99,19 +114,28 @@ export const TARGETS = {
     kind: 'demo',
 
     /**
-     * DELIBERATELY NULL as of 2026-08-12. The project this used to name became
-     * Amadiya's production database; the demo is being rebuilt on a separate
-     * Supabase + Vercel account, and its ref goes here when it exists.
+     * PROVISIONED 2026-08-13 on a separate account — see DEMO_REF above.
      *
-     * Until then every `--env=dev` command refuses, and — because
-     * `fixtureTargets()` is derived from `allowFixtures` and this is the only
-     * entry carrying it — every seed, demo and reset script in the repo refuses
-     * with it. That is the correct state, not a regression: there is currently
-     * nowhere it is safe to run a fixture, and the alternative to refusing is
-     * running one against a client.
+     * This was `null` between the 2026-08-12 cutover and that date, and while it
+     * was, every `--env=dev` command refused — including every seed, demo and
+     * reset script, because `fixtureTargets()` derives from `allowFixtures` and
+     * this is the only entry carrying it. That was correct while it lasted:
+     * there was nowhere it was safe to run a fixture, and the alternative to
+     * refusing was running one against a client. Filling this in is what turns
+     * the fixture scripts back on, and it is the ONLY thing that does.
+     *
+     * It also restores the fleet's only rehearsal environment. Every migration
+     * between 2026-08-12 and today landed on a paying client with no dry run.
      */
-    projectRef: null,
-    supabaseUrl: null,
+    projectRef: DEMO_REF,
+    supabaseUrl: `https://${DEMO_REF}.supabase.co`,
+
+    /**
+     * Deliberately the same region as Amadiya. A rehearsal in a different region
+     * is a less faithful rehearsal, and this entry claimed `ap-southeast-1` for
+     * months while pointing at a project that was actually in `ap-southeast-2` —
+     * so this value is ASSERTED against the Management API, not trusted.
+     */
     region: 'ap-southeast-2',
 
     /** Where the app is served. Also the auth Site URL. */
@@ -142,22 +166,39 @@ export const TARGETS = {
     authRedirectAllowList: [
       'https://nexorder.vercel.app/**',
       'http://localhost:*/**',
-      'https://*-dulshan657s-projects.vercel.app/**',
+      // The preview glob is DELIBERATELY absent until the new Vercel project
+      // exists. It used to read `https://*-dulshan657s-projects.vercel.app/**`,
+      // which is the OLD account's team slug — an allow-list entry naming a team
+      // this deployment no longer belongs to is not merely stale, it grants
+      // password-reset landing rights to every preview build on someone else's
+      // account. Re-add it with the new slug in the same commit that fills in
+      // `vercel.teamSlug`, then re-run `npm run auth:config:dev`.
     ],
 
     vercel: {
-      teamSlug: 'dulshan657s-projects',
       /**
-       * One Vercel PROJECT per target — see MULTI-TENANT-ARCHITECTURE.md.
+       * NULLED 2026-08-13, and this is not the same thing as "not filled in yet".
        *
-       * READ, as of the Amadiya cutover: `deploy.mjs` passes both into the
-       * `vercel` child env, so `--env=` alone decides which project is built.
-       * A bare `vercel deploy` resolves whichever project
-       * `.vercel/project.json` names — one file, one id — which is fine with
-       * one project and silently wrong with two.
+       * These three used to name `prj_DdZRpjyAQKwmL6MiCKmbO9I7zhiI` on
+       * `team_evk2SaoAF3naWcjrBdCo1gbL` — the ORIGINAL demo Vercel project, on
+       * the account that also holds Amadiya's. That project survived the cutover
+       * still building `main` with `VITE_SHOW_DEMO_LOGINS` on and its frontend
+       * env pointed at what is now a client's production database.
+       *
+       * Leaving its ids here while `projectRef` above points at the NEW Supabase
+       * project would make `npm run deploy:dev` push a demo build to the old
+       * account — the one thing this whole exercise exists to stop. So they are
+       * null until the new Vercel project exists, `deploy.mjs` warns loudly on
+       * that path, and the warning is the intended behaviour rather than a gap.
+       *
+       * `teamSlug` matters beyond cosmetics: `deploy.mjs` picks the deployment
+       * URL out of the CLI's stdout by matching `-<teamSlug>.vercel.app`, so a
+       * stale slug fails the ALIAS step after a successful build. Fill all four
+       * together or none.
        */
-      projectId: 'prj_DdZRpjyAQKwmL6MiCKmbO9I7zhiI',
-      orgId: 'team_evk2SaoAF3naWcjrBdCo1gbL',
+      teamSlug: null,
+      projectId: null,
+      orgId: null,
       target: 'production',
       alias: 'nexorder.vercel.app',
     },
@@ -178,6 +219,30 @@ export const TARGETS = {
 
     /** Seed / demo / reset scripts may run here. */
     allowFixtures: true,
+
+    /**
+     * FALSE — this project cannot accept custom auth email templates.
+     *
+     * Supabase refuses `mailer_subjects_*` / `mailer_templates_*` on a FREE
+     * project using the built-in email provider: "Email template modification
+     * is not available for free tier projects using the default email
+     * provider." Discovered on the first `auth:config:dev` run, 2026-08-13.
+     *
+     * The reason this is a registry flag rather than a try/catch is that the
+     * PATCH is ALL-OR-NOTHING. Sending the templates alongside the real
+     * settings meant `site_url`, `uri_allow_list`, `password_min_length` and
+     * `disable_signup` were rejected too — so a cosmetic limitation silently
+     * left the project accepting 6-character passwords, allowing public signup,
+     * and pointing password resets at `localhost:3000`. Declaring the
+     * capability keeps `--check` honest as well: it reports drift on settings
+     * that CAN be applied, instead of failing forever on four that cannot.
+     *
+     * Flip to true when this project gets custom SMTP or a paid plan. The
+     * built-in mailer is also what stamps a `supabase.io` sender and exposes
+     * the project ref in auth mail, so custom SMTP is worth doing for its own
+     * sake — it just is not worth blocking the demo rebuild on.
+     */
+    authEmailTemplates: false,
 
     /** Everything on. See ALL_MODULES — read by nothing yet, by design. */
     modules: [...ALL_MODULES],
@@ -238,6 +303,9 @@ export const TARGETS = {
 
     /** Never. There is no `--force`. */
     allowFixtures: false,
+
+    /** Pro plan — custom auth email templates are accepted. See dev's note. */
+    authEmailTemplates: true,
 
     modules: [...ALL_MODULES],
 

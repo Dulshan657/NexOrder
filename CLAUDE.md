@@ -8,48 +8,55 @@ Nex Order — B2B order management for food and general distribution. Sales reps
 
 > The app directory was renamed `copy-of-curatif-order-system-v1.3/` → `NexOrder/`. The Vercel **project** still carries the old name — don't "fix" it.
 
-## 🔴 There is exactly ONE database and it is a client's. Read this first.
+## 🔴 TWO databases, on TWO separate accounts. One is a client's.
 
-**Cutover done 2026-08-12.** `lsgkznyiabqitqfpveey` **is Amadiya Agro Products'
-production database.** It used to be the demo. It is not one any more: the demo
-data was exported to `demo-export/` and **deleted**, the marker says
-`('prod','amadiya')`, and the whole project — schema, storage, auth users, cron
-jobs — now belongs to a paying client.
+**Cutover done 2026-08-12; demo rebuilt 2026-08-13.**
+`lsgkznyiabqitqfpveey` **is Amadiya Agro Products' production database.** It used
+to be the demo. It is not one any more: the demo data was exported to
+`demo-export/` and **deleted**, the marker says `('prod','amadiya')`, and the
+whole project — schema, storage, auth users, cron jobs — belongs to a paying
+client.
 
-Everything in this file that used to say "dev is Singapore, prod does not exist
-yet" was true until that day and is false now. If you are reading a runbook, an
-older plan or a migration comment that assumes otherwise, the file is stale, not
-the database.
+The demo now lives at `uqvekvavkjjurpqtovbq`, on a **different Supabase account
+and organisation**. That separation is the point, and it is verifiable: the
+`SUPABASE_ACCESS_TOKEN` in `.env.dev.local` lists exactly one project and cannot
+see Amadiya's at all. A personal access token reaches every org you belong to,
+so two orgs is the only thing that makes it a boundary rather than a convention.
+
+If you are reading a runbook, an older plan or a migration comment that says
+"dev is Singapore", "prod does not exist yet", or "there is no non-production
+environment", the file is stale, not the database.
 
 | | `dev` | `amadiya` |
 |---|---|---|
 | Kind | demo (NexGen's own) | **tenant** (a paying client's) |
-| Supabase | **NOT PROVISIONED** (`projectRef: null`) | `lsgkznyiabqitqfpveey`, `ap-southeast-2` |
-| App | — (demo moves to a separate account) | https://nexorder.com.au |
-| Holds | nothing | **Amadiya's real business data** |
+| Supabase | `uqvekvavkjjurpqtovbq`, `ap-southeast-2`, **free tier** | `lsgkznyiabqitqfpveey`, `ap-southeast-2`, Pro |
+| Account | NexGen's own — **separate login and org** | the account holding the client |
+| App | https://nexorder.vercel.app | https://nexorder.com.au |
+| Holds | the exported demo (92k rows) | **Amadiya's real business data** |
 | `tenant` tag | `ayam` | `amadiya` |
 | `environment_marker.name` | `dev` | `prod` |
-| Fixtures / seeds | yes — but nowhere to run them | **never** |
-| Credentials | `.env.dev.local` (absent) | `.env.amadiya.local` |
+| Fixtures / seeds | **yes** | **never** |
+| Auth email templates | no — free tier refuses them | yes |
+| Backups | **none** — free tier. `demo-export/` is the backup | daily, 7-day retention, no PITR |
+| Credentials | `.env.dev.local` | `.env.amadiya.local` |
 
-- **There is no non-production environment.** Every migration, function deploy
-  and auth-config change lands directly on a client's live database with no
-  rehearsal. Rehearse destructive SQL with `BEGIN … ROLLBACK` through
-  `scripts/lib/managementApi.mjs` `runSqlRolledBack` — that is how the purge was
-  proved before it was run, and it is the only rehearsal available.
-- **`npm run dev` has no credentials and will throw.** `.env.local` was deleted
-  in the cutover; Vite loads it for every mode, so it was pointing a developer's
-  browser at what is now a client's production database. Do not recreate it
-  against `lsgkznyiabqitqfpveey`. The unit suite no longer needs it either —
-  `vitest.config.ts` pins `TEST_PROJECT_REF`.
-- **Every seed / demo / reset script refuses, everywhere, right now.**
-  `fixtureTargets()` derives from `allowFixtures`, `dev` is the only entry
-  carrying it, and `dev` has no project ref. That is correct: there is nowhere
-  it is safe to run a fixture. Three guards (`scripts/lib/fixtureGuard.mjs`):
-  the named target, a credential-vs-registry assertion, and `environment_marker`
-  in the database itself. Guard #3 compares against the **literal** `'dev'` and
-  reads nothing from the registry — that independence is the point of having
-  three.
+- **There IS a non-production environment again, and it is the same region.**
+  Rehearse a migration on `dev` before it touches a client. This is what the
+  in-place cutover cost for a day and what the rebuild bought back. Destructive
+  SQL still deserves `BEGIN … ROLLBACK` via `scripts/lib/managementApi.mjs`
+  `runSqlRolledBack` — but it is no longer the *only* rehearsal available.
+- **`npm run dev` works again, against `.env.dev.local`.** Do NOT recreate
+  `.env.local`: Vite loads it for every mode regardless of target, which is
+  exactly how a developer's browser ended up pointed at what is now a client's
+  production database. The unit suite needs neither — `vitest.config.ts` pins
+  `TEST_PROJECT_REF`.
+- **Seed / demo / reset scripts run again, on `dev` only.** `fixtureTargets()`
+  derives from `allowFixtures`, and `dev` is the only entry carrying it. Three
+  guards (`scripts/lib/fixtureGuard.mjs`): the named target, a
+  credential-vs-registry assertion, and `environment_marker` in the database
+  itself. Guard #3 compares against the **literal** `'dev'` and reads nothing
+  from the registry — that independence is the point of having three.
 - **Scripts that must write to the client use `scripts/lib/tenantGuard.mjs`**
   (registry says tenant + marker agrees + `--confirm=<projectRef>` typed out).
   Do not widen `fixtureGuard` to cover them; the two guards are deliberately
@@ -65,15 +72,20 @@ the database.
   checksummed, so the database's vocabulary is frozen while target names are
   open-ended. The registry carries `markerName` for exactly this;
   `migrate.mjs --stamp` writes that, never `name`.
-- **`.mcp.json` is EMPTY and stays that way** until a real non-production
-  project exists. An agent session with MCP write access to a client's database
-  is the single largest unforced risk in this repo, and the entry that used to
-  be there named this exact ref.
-- **The demo is not gone, it is on disk.** `demo-export/` (gitignored) and
-  `../backup/demo-export-2026-08-12/` hold 68 tables, 102k rows and 223 storage
-  objects, plus a manifest with the FK-deferral list an importer needs. It is
-  rebuilt on a separate Supabase + Vercel account when that exists; the ref then
-  goes into the `dev` entry.
+- **`.mcp.json` may name `dev` and must NEVER name a tenant.** It was emptied in
+  the cutover because the only project left was a client's, and an agent session
+  with MCP write access to a client's database is the single largest unforced
+  risk in this repo. A demo on a separate account is the case it was waiting
+  for. If you add a server, pin it to `uqvekvavkjjurpqtovbq` and use that
+  account's token — a token from the other account would reach Amadiya.
+- **The demo was restored from disk, and the disk copy is still the backup.**
+  `demo-export/` (gitignored) and `../backup/demo-export-2026-08-12/` hold 68
+  tables, 102k rows and 223 storage objects. `supabase/ops/import-demo.mjs`
+  restores it; `mint-demo-users.mjs` re-creates the 11 logins first, because the
+  export carries no password hashes but everything references those uuids. On
+  the free tier there are **no database backups**, so this folder is not an
+  archive of a past state — it is the demo's only recovery path. Do not delete
+  it, and re-run `npm run export:demo` after any demo work worth keeping.
 - **Tenancy is decided: project-per-tenant, one `main`, module flags.** See
   `MULTI-TENANT-ARCHITECTURE.md` before adding a client or a per-client feature.
   There is never a per-tenant branch. `ALL_MODULES` in the registry is the
@@ -123,10 +135,13 @@ node supabase/apply-sql.mjs --env=amadiya <file.sql>
 npm run auth:config:amadiya         # diff, then PATCH if it differs
 npm run auth:config:check:amadiya   # diff only, exit 1 on drift
 
-# Demo lifecycle
-npm run export:demo                # refuses — nothing left to export
-# Seed / fixture scripts all still exist and ALL refuse: `dev` has no project.
-# supabase/ops/purge-demo.mjs has locked itself out too, by design.
+# Demo lifecycle — dev only, behind the three fixture guards
+npm run export:demo                # snapshot dev to demo-export/ (the ONLY backup on free tier)
+npm run demo:users:dev             # re-mint the 11 logins with their ORIGINAL uuids
+npm run demo:import:check:dev      # preflight + verify, writes nothing
+npm run demo:import:dev            # restore demo-export/ (clears first — idempotent)
+# Seed / fixture scripts work again now that `dev` has a project.
+# Order matters: users BEFORE import, or every uuid reference dangles.
 ```
 
 **Never run `vercel deploy --prod` directly** — it won't move the alias, and users will report fixes as "not live". Always use `npm run deploy:<target>` (wraps deploy + alias + verification).
@@ -462,9 +477,18 @@ Ordered by impact; one-line scope each so future agents don't drift.
    `info@amadiya.com.au` (deferred until the domain resolves, because the reset
    link points at it), Amadiya's phone/email/logo into `app_settings`, and
    Gates B–E. Full sequence: `PRODUCTION-LAUNCH-PLAN.md` Phase 3.
-0b. **Rebuild the demo on its own account.** `demo-export/` is the input, and
-   until it exists there is no environment to rehearse anything in. This is the
-   real cost of the in-place cutover and it should not sit for long.
+0b. ~~**Rebuild the demo on its own account.**~~ **Database done 2026-08-13** —
+   `uqvekvavkjjurpqtovbq`, separate account, schema + secrets + 71 functions +
+   7 crons + 11 users + the full `demo-export/` restored. **The Vercel side is
+   NOT done**, and until it is there is no demo *site*: create the project on
+   the new Vercel account (`NEXORDER_ENV=dev`, `VITE_SHOW_DEMO_LOGINS=true`,
+   `VITE_SUPABASE_IMAGE_TRANSFORMS=false` — transforms are a paid feature),
+   free `nexorder.vercel.app` from the OLD project **and disconnect its Git**,
+   then fill `vercel.{teamSlug,projectId,orgId}` + the preview glob in the
+   registry, put a `VERCEL_TOKEN` in `.env.dev.local`, re-run
+   `npm run auth:config:dev` (the allow-list changed) and `npm run deploy:dev`.
+   All four registry fields are deliberately `null` until then so a stray
+   `deploy:dev` cannot push a demo build to the account holding the client.
 1. **Branch protection** — CI's `verify` job runs on every PR but `main` doesn't yet *require* it. **Blocked by plan tier (2026-05-21):** GitHub's Free plan disallows branch protection *and* rulesets on **private** repos — both `PUT …/branches/main/protection` and `POST …/rulesets` return `403 "Upgrade to GitHub Pro or make this repository public"`. To unblock, either upgrade to **GitHub Pro** (~$4/mo) or make the repo public, then require the status-check context **`typecheck · test · build`** (= the `verify` job's `name:` in `ci.yml`) via Settings → Branches or the API. Ready-to-run payload + commands saved in `~/.claude/plans/add-branch-protection-generic-zebra.md`.
 2. **Email setup (operator)** — `send-email` is live, gated and rate-limited; it is dormant only because `RESEND_API_KEY` is unset, and setting that one secret is the entire switch (no redeploy). Full procedure, test call, response table and rollback: **`docs/runbooks/enable-email.md`**. The trap worth knowing up front: leaving `EMAIL_FROM` unset falls back to `onboarding@resend.dev`, which Resend delivers *only* to the account owner — so customers get nothing while the response still says `sent: true`.
 
