@@ -166,6 +166,105 @@ function gitInfo() {
   }
 }
 
+/**
+ * A TENANT DEPLOYS FROM A RELEASE TAG. NOT FROM WHATEVER IS CHECKED OUT.
+ *
+ * Module flags stop a tenant seeing a surface they did not buy. They do nothing
+ * about a surface that exists, is theirs, and is half-finished — and with one
+ * `main` and a manual tenant deploy, "everything merged since last time" is
+ * exactly what a tenant deploy shipped. Those are two different problems and
+ * this is the second one.
+ *
+ * The release train it creates has no branches in it: work merges to `main`,
+ * dev deploys from `main`, you verify there, you tag, and the tenant checkout
+ * moves to the tag. A tag is a claim that a specific commit was looked at.
+ *
+ * Three conditions, and each rules out a different way of shipping something
+ * nobody verified:
+ *
+ *   1. a clean tree      — an uncommitted edit is in the build and in no tag
+ *   2. HEAD is at a tag  — the commit was deliberately marked, not merely current
+ *   3. tag is on main    — it went through whatever `main` requires; a tag on an
+ *                          unmerged branch is a private commit with a label
+ *
+ * `dev` is deliberately exempt (`kind: 'demo'`): deploying whatever is checked
+ * out is the entire point of a demo environment, and it is where a release
+ * candidate is verified before it is ever tagged.
+ */
+function requireReleaseTag() {
+  if (config.kind !== 'tenant') return
+
+  const git = (cmd) => execSync(cmd, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim()
+  const fail = (problem, fix) => {
+    console.error(`\n[deploy] ✖ ${target.name} is a TENANT: ${problem}\n[deploy]   ${fix}\n`)
+    process.exit(1)
+  }
+
+  let dirty
+  try {
+    dirty = git('git status --porcelain')
+  } catch {
+    fail('this is not a git checkout, so nothing can be verified.', 'Deploy a tenant from a checkout of this repository.')
+    return
+  }
+  if (dirty) {
+    fail(
+      'the working tree has uncommitted changes.',
+      'Whatever is uncommitted would be built and is in no tag. Commit or stash it first.',
+    )
+  }
+
+  let tags = ''
+  try {
+    tags = git('git tag --points-at HEAD')
+  } catch {
+    /* no tags at all — handled below */
+  }
+  const release = tags.split('\n').map((t) => t.trim()).filter((t) => /^rel-/.test(t))
+  if (!release.length) {
+    fail(
+      'HEAD is not at a release tag.',
+      'Verify the build on dev first, then tag the commit you verified:\n' +
+        '[deploy]     git tag -a rel-YYYY-MM-DD -m "what is in this release"\n' +
+        '[deploy]     git push origin rel-YYYY-MM-DD\n' +
+        '[deploy]   then check that tag out in this workspace and deploy again.',
+    )
+  }
+
+  // `main` may legitimately be absent locally (this workspace is a detached
+  // worktree), so prefer the remote-tracking ref and fall back rather than
+  // refusing a deploy over a missing local branch.
+  let mainRef = null
+  for (const ref of ['origin/main', 'main']) {
+    try {
+      git(`git rev-parse --verify --quiet ${ref}`)
+      mainRef = ref
+      break
+    } catch {
+      /* try the next */
+    }
+  }
+  if (!mainRef) {
+    console.warn(
+      `[deploy] ⚠ neither origin/main nor main is present here, so "${release[0]}" could not be\n` +
+        `[deploy]   confirmed as merged. Proceeding on the tag alone. Run \`git fetch origin\`\n` +
+        `[deploy]   in this workspace to restore the check.`,
+    )
+  } else {
+    try {
+      git(`git merge-base --is-ancestor HEAD ${mainRef}`)
+    } catch {
+      fail(
+        `"${release[0]}" is not an ancestor of ${mainRef}.`,
+        'A tag on an unmerged branch is a private commit with a label on it.\n' +
+          '[deploy]   Merge to main, push, and tag the merged commit.',
+      )
+    }
+  }
+
+  console.log(`[deploy] release ${release.join(', ')} — clean tree, on ${mainRef ?? 'an unverified base'}`)
+}
+
 async function pollVersion(sha) {
   const deadline = Date.now() + VERIFY_BUDGET_MS
   while (Date.now() < deadline) {
@@ -244,10 +343,12 @@ console.log(
     `[deploy] sha ${sha?.slice(0, 7) ?? 'unknown'}, branch ${branch ?? 'unknown'}`,
 )
 
-// Resolve (and for a tenant, VALIDATE) the Vercel credentials now, before the
-// first spawn rather than lazily inside it. The refusal above is only worth
-// having if it fires while nothing has happened yet — memoised, so the demo
-// warning still prints exactly once.
+// Both tenant gates fire here, before the first spawn rather than lazily inside
+// it — a refusal is only worth having while nothing has happened yet.
+// Release tag first: "you are deploying the wrong commit" is a more fundamental
+// objection than "this target has no token", and hearing it first is the more
+// useful order when both are true.
+requireReleaseTag()
 vercelEnv()
 
 const deployArgs = ['deploy', '--yes']
