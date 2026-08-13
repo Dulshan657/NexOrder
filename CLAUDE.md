@@ -174,8 +174,8 @@ npm run check:csp                  # vercel.ts: per-target CSP + /storage rewrit
 npx tsc --noEmit
 
 # Deploy: builds, aliases, verifies /version.json AND /functions/v1/health
-npm run deploy:amadiya             # -> nexorder.com.au
-# `deploy:dev` exists but refuses — dev has no project.
+npm run deploy:dev                 # -> nexorder.vercel.app, from whatever is checked out
+npm run deploy:amadiya             # -> nexorder.com.au, ONLY from a rel-* tag (see below)
 
 # Migrations — ledgered in public.schema_migrations, checksummed, transactional
 node supabase/migrate.mjs --env=amadiya --dry-run   # what would run, in order
@@ -209,6 +209,34 @@ npm run demo:import:dev            # restore demo-export/ (clears first — idem
 ```
 
 **Never run `vercel deploy --prod` directly** — it won't move the alias, and users will report fixes as "not live". Always use `npm run deploy:<target>` (wraps deploy + alias + verification).
+
+### Releasing to a tenant
+
+A tenant deploys from a **release tag**, never from whatever is checked out
+(`requireReleaseTag` in `scripts/deploy.mjs`; the decision is pure and tested in
+`scripts/lib/releaseTag.mjs`). Module flags stop a tenant seeing a surface they
+did not buy; this stops them getting one that is theirs and half-finished.
+
+```bash
+# 1. merge to main and let dev deploy; verify it on nexorder.vercel.app
+# 2. tag the commit you actually verified
+git tag -a rel-2026-08-20 -m "what is in this release"
+git push origin rel-2026-08-20
+# 3. in the TENANT workspace (C:\Users\dulsh\nexorder-amadiya):
+git fetch origin --tags && git checkout --detach rel-2026-08-20
+npm run migrate:amadiya            # if the release carries migrations
+npm run fn:deploy:amadiya
+npm run deploy:amadiya
+```
+
+Three conditions, each ruling out a different way of shipping something nobody
+looked at: a **clean tree** (an uncommitted edit is in the build and in no tag),
+**HEAD at a `rel-*` tag** (marked deliberately, not merely current), and that tag
+being an **ancestor of main** (a tag on an unmerged branch is a private commit
+with a label on it). A missing `main` **warns** rather than refuses — the tenant
+workspace is a detached worktree and may legitimately have none, and refusing a
+deploy over a missing ref would be the gate failing at its own job. `dev` is
+exempt: deploying whatever is checked out is the point of a demo environment.
 
 `supabase/run-migration.mjs` is legacy and cannot reach the DB host from this box. Use `supabase/migrate.mjs`.
 

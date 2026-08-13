@@ -24,6 +24,7 @@ import { spawnSync, execSync } from 'node:child_process'
 import os from 'node:os'
 
 import { resolveTarget, orExit, ROOT } from './lib/env.mjs'
+import { checkReleaseTag } from './lib/releaseTag.mjs'
 
 const VERIFY_INTERVAL_MS = 5_000
 const VERIFY_BUDGET_MS = 120_000
@@ -191,49 +192,26 @@ function gitInfo() {
  * out is the entire point of a demo environment, and it is where a release
  * candidate is verified before it is ever tagged.
  */
-function requireReleaseTag() {
-  if (config.kind !== 'tenant') return
+function gitFacts() {
+  const git = (cmd) =>
+    execSync(cmd, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim()
 
-  const git = (cmd) => execSync(cmd, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim()
-  const fail = (problem, fix) => {
-    console.error(`\n[deploy] ✖ ${target.name} is a TENANT: ${problem}\n[deploy]   ${fix}\n`)
-    process.exit(1)
-  }
-
-  let dirty
+  let dirty = false
   try {
-    dirty = git('git status --porcelain')
+    dirty = git('git status --porcelain').length > 0
   } catch {
-    fail('this is not a git checkout, so nothing can be verified.', 'Deploy a tenant from a checkout of this repository.')
-    return
-  }
-  if (dirty) {
-    fail(
-      'the working tree has uncommitted changes.',
-      'Whatever is uncommitted would be built and is in no tag. Commit or stash it first.',
-    )
+    return { kind: config.kind, isRepo: false, dirty: false, tagsAtHead: [], mainRef: null, onMain: false }
   }
 
-  let tags = ''
+  let tagsAtHead = []
   try {
-    tags = git('git tag --points-at HEAD')
+    tagsAtHead = git('git tag --points-at HEAD').split('\n').map((t) => t.trim()).filter(Boolean)
   } catch {
-    /* no tags at all — handled below */
-  }
-  const release = tags.split('\n').map((t) => t.trim()).filter((t) => /^rel-/.test(t))
-  if (!release.length) {
-    fail(
-      'HEAD is not at a release tag.',
-      'Verify the build on dev first, then tag the commit you verified:\n' +
-        '[deploy]     git tag -a rel-YYYY-MM-DD -m "what is in this release"\n' +
-        '[deploy]     git push origin rel-YYYY-MM-DD\n' +
-        '[deploy]   then check that tag out in this workspace and deploy again.',
-    )
+    /* a repo with no tags at all */
   }
 
-  // `main` may legitimately be absent locally (this workspace is a detached
-  // worktree), so prefer the remote-tracking ref and fall back rather than
-  // refusing a deploy over a missing local branch.
+  // Prefer the remote-tracking ref: the tenant workspace is a detached worktree
+  // and may have no local `main` at all.
   let mainRef = null
   for (const ref of ['origin/main', 'main']) {
     try {
@@ -244,25 +222,39 @@ function requireReleaseTag() {
       /* try the next */
     }
   }
-  if (!mainRef) {
-    console.warn(
-      `[deploy] ⚠ neither origin/main nor main is present here, so "${release[0]}" could not be\n` +
-        `[deploy]   confirmed as merged. Proceeding on the tag alone. Run \`git fetch origin\`\n` +
-        `[deploy]   in this workspace to restore the check.`,
-    )
-  } else {
+
+  let onMain = false
+  if (mainRef) {
     try {
       git(`git merge-base --is-ancestor HEAD ${mainRef}`)
+      onMain = true
     } catch {
-      fail(
-        `"${release[0]}" is not an ancestor of ${mainRef}.`,
-        'A tag on an unmerged branch is a private commit with a label on it.\n' +
-          '[deploy]   Merge to main, push, and tag the merged commit.',
-      )
+      onMain = false
     }
   }
 
-  console.log(`[deploy] release ${release.join(', ')} — clean tree, on ${mainRef ?? 'an unverified base'}`)
+  return { kind: config.kind, isRepo: true, dirty, tagsAtHead, mainRef, onMain }
+}
+
+function requireReleaseTag() {
+  const verdict = checkReleaseTag(gitFacts())
+
+  if (!verdict.ok) {
+    console.error(
+      `\n[deploy] ✖ ${target.name} is a TENANT: ${verdict.problem}\n` +
+        `[deploy]   ${verdict.fix.replace(/\n/g, '\n[deploy] ')}\n`,
+    )
+    process.exit(1)
+  }
+
+  if (verdict.warning) {
+    console.warn(`[deploy] ⚠ ${verdict.warning.replace(/\n/g, '\n[deploy] ')}`)
+  }
+  if (verdict.tags.length) {
+    console.log(
+      `[deploy] release ${verdict.tags.join(', ')} — clean tree, on ${verdict.mainRef ?? 'an unverified base'}`,
+    )
+  }
 }
 
 async function pollVersion(sha) {
