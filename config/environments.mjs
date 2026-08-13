@@ -166,39 +166,44 @@ export const TARGETS = {
     authRedirectAllowList: [
       'https://nexorder.vercel.app/**',
       'http://localhost:*/**',
-      // The preview glob is DELIBERATELY absent until the new Vercel project
-      // exists. It used to read `https://*-dulshan657s-projects.vercel.app/**`,
-      // which is the OLD account's team slug — an allow-list entry naming a team
-      // this deployment no longer belongs to is not merely stale, it grants
-      // password-reset landing rights to every preview build on someone else's
-      // account. Re-add it with the new slug in the same commit that fills in
-      // `vercel.teamSlug`, then re-run `npm run auth:config:dev`.
+      // The preview glob follows `vercel.teamSlug` and nothing else. It read
+      // `https://*-dulshan657s-projects.vercel.app/**` until 2026-08-13 — the
+      // OLD account's slug. An allow-list entry naming a team this deployment
+      // no longer belongs to is not merely stale: it grants password-reset
+      // landing rights to every preview build on someone else's account.
+      // Change it in the same commit as `teamSlug`, then re-run
+      // `npm run auth:config:dev` — the list lives in Supabase, not here.
+      'https://*-nexgen13.vercel.app/**',
     ],
 
     vercel: {
       /**
-       * NULLED 2026-08-13, and this is not the same thing as "not filled in yet".
+       * `nexorder-demo` on the `nexgen13` team, created 2026-08-13 — a
+       * DIFFERENT Vercel account from the one holding Amadiya, matching the
+       * Supabase split above.
        *
-       * These three used to name `prj_DdZRpjyAQKwmL6MiCKmbO9I7zhiI` on
-       * `team_evk2SaoAF3naWcjrBdCo1gbL` — the ORIGINAL demo Vercel project, on
-       * the account that also holds Amadiya's. That project survived the cutover
-       * still building `main` with `VITE_SHOW_DEMO_LOGINS` on and its frontend
-       * env pointed at what is now a client's production database.
-       *
-       * Leaving its ids here while `projectRef` above points at the NEW Supabase
-       * project would make `npm run deploy:dev` push a demo build to the old
-       * account — the one thing this whole exercise exists to stop. So they are
-       * null until the new Vercel project exists, `deploy.mjs` warns loudly on
-       * that path, and the warning is the intended behaviour rather than a gap.
+       * These four were briefly null on purpose. They used to name
+       * `prj_DdZRpjyAQKwmL6MiCKmbO9I7zhiI` on `team_evk2SaoAF3naWcjrBdCo1gbL`
+       * — the ORIGINAL demo project, on the account that also holds Amadiya's,
+       * which survived the cutover still building `main` with demo logins
+       * against what had become a client's production database. Leaving those
+       * ids beside a `projectRef` pointing at the new Supabase project would
+       * have made `deploy:dev` push a demo build to the client's account.
        *
        * `teamSlug` matters beyond cosmetics: `deploy.mjs` picks the deployment
        * URL out of the CLI's stdout by matching `-<teamSlug>.vercel.app`, so a
-       * stale slug fails the ALIAS step after a successful build. Fill all four
-       * together or none.
+       * stale slug fails the ALIAS step AFTER a successful build — the site
+       * stays on the old deployment while the deploy reports success. Fill all
+       * four together or none.
+       *
+       * There is deliberately NO Git integration on this project. `deploy.mjs`
+       * is the only sanctioned path because it aliases and then verifies both
+       * `/version.json` and `/functions/v1/health`; a Git connection would add
+       * a second, unverified one and re-create the old project's failure mode.
        */
-      teamSlug: null,
-      projectId: null,
-      orgId: null,
+      teamSlug: 'nexgen13',
+      projectId: 'prj_304AOnH18ynYP1WsEO5wRTWeUif1',
+      orgId: 'team_OzW1Ry9bFz67QReqkvBcQIyb',
       target: 'production',
       alias: 'nexorder.vercel.app',
     },
