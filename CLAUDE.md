@@ -481,19 +481,12 @@ Ordered by impact; one-line scope each so future agents don't drift.
    `info@amadiya.com.au` (deferred until the domain resolves, because the reset
    link points at it), Amadiya's phone/email/logo into `app_settings`, and
    Gates B–E. Full sequence: `PRODUCTION-LAUNCH-PLAN.md` Phase 3.
-0b. ~~**Rebuild the demo on its own account.**~~ **Database done 2026-08-13** —
-   `uqvekvavkjjurpqtovbq`, separate account, schema + secrets + 71 functions +
-   7 crons + 11 users + the full `demo-export/` restored. **The Vercel side is
-   NOT done**, and until it is there is no demo *site*: create the project on
-   the new Vercel account (`NEXORDER_ENV=dev`, `VITE_SHOW_DEMO_LOGINS=true`,
-   `VITE_SUPABASE_IMAGE_TRANSFORMS=false` — transforms are a paid feature) and
-   claim `nexorder.vercel.app`, which is already free (see item 0) but is a
-   globally first-come name. Then fill `vercel.{teamSlug,projectId,orgId}` +
-   the preview glob in the registry, put a `VERCEL_TOKEN` in `.env.dev.local`,
-   re-run
-   `npm run auth:config:dev` (the allow-list changed) and `npm run deploy:dev`.
-   All four registry fields are deliberately `null` until then so a stray
-   `deploy:dev` cannot push a demo build to the account holding the client.
+0b. ~~**Rebuild the demo on its own account.**~~ **DONE 2026-08-13.** Database
+   `uqvekvavkjjurpqtovbq` + site `nexorder-demo` on the `nexgen13` Vercel team,
+   both on NexGen's own accounts, live at https://nexorder.vercel.app. Isolation
+   verified in both directions: each project's Edge Functions return an ACAO
+   header for their own origin and **none** for the other's. Remaining demo work
+   is small and listed under "Recently shipped".
 1. **Branch protection** — CI's `verify` job runs on every PR but `main` doesn't yet *require* it. **Blocked by plan tier (2026-05-21):** GitHub's Free plan disallows branch protection *and* rulesets on **private** repos — both `PUT …/branches/main/protection` and `POST …/rulesets` return `403 "Upgrade to GitHub Pro or make this repository public"`. To unblock, either upgrade to **GitHub Pro** (~$4/mo) or make the repo public, then require the status-check context **`typecheck · test · build`** (= the `verify` job's `name:` in `ci.yml`) via Settings → Branches or the API. Ready-to-run payload + commands saved in `~/.claude/plans/add-branch-protection-generic-zebra.md`.
 2. **Email setup (operator)** — `send-email` is live, gated and rate-limited; it is dormant only because `RESEND_API_KEY` is unset, and setting that one secret is the entire switch (no redeploy). Full procedure, test call, response table and rollback: **`docs/runbooks/enable-email.md`**. The trap worth knowing up front: leaving `EMAIL_FROM` unset falls back to `onboarding@resend.dev`, which Resend delivers *only* to the account owner — so customers get nothing while the response still says `sent: true`.
 
@@ -513,6 +506,22 @@ Ordered by impact; one-line scope each so future agents don't drift.
 ## Recently shipped
 
 git history is the changelog. Only the items below carry something the sections above don't.
+
+- **The demo rebuild (2026-08-13) left four things worth knowing.** (1) A new
+  Vercel project ships with `ssoProtection: 'all_except_custom_domains'`, so a
+  `*.vercel.app` alias 302s to `vercel.com/sso-api` — `deploy.mjs` then reports
+  `TIMEOUT` on `version.json` while the build is perfectly fine, because the
+  poller is parsing an SSO redirect page as JSON. Clear it via
+  `PATCH /v9/projects/<id> {"ssoProtection":null}`. (2) The Vercel CLI's global
+  login is still Amadiya's account; `deploy:dev` works only because
+  `VERCEL_TOKEN` rides in `.env.dev.local`. Do not run `vercel login` to "fix"
+  anything — it would swap the account under `deploy:amadiya`, which has no
+  token. (3) `npm run auth:config:dev` cannot manage email templates on a free
+  project, and the PATCH is all-or-nothing, so `authEmailTemplates: false` in
+  the registry is what stops four cosmetic keys taking `disable_signup` and
+  `password_min_length` down with them. (4) Demo email works but has **no
+  `EMAIL_FROM`**, so Resend delivers only to the account owner — deliberate on
+  a demo, and a trap to remember before demoing an emailed order confirmation.
 
 - **`00083` (order allocation prefers the pick zone) is APPLIED as of 2026-07-27.** Its gate — one replenishment task driven `suggested → assigned → accepted` with the stock actually moving — was satisfied on WIE-DEMO first; `supabase/exercise-replen-gate.mjs` reproduces it and re-runs idempotently. All four of the header's verify steps were run against prod (one overload; pick zone wins on an expiry tie; **FEFO still beats the preference**; a bulk warehouse's ordering is provably unchanged — 0 of its 7 candidate locations carry a `level_role`, so the new CASE has exactly 1 distinct value). Rollback is `00075`'s body.
 - **`00085` fixes a real bug that gate exercise uncovered.** `wie_convert_rack_to_levels_tx` (mig `00072`) moves a flat bin's stock onto L1 when it is first levelled, but it predates handling units (`00075`) and never passed `p_handling_unit_id`. It therefore read the plate's balance row and wrote the delta to the **loose (`NULL`-HU) slot**, driving it negative until `inventory_balances_alloc_bound` rejected the whole transaction. Since `receive-stock` creates a plate per receipt, that is the normal case — converting essentially any stocked bin failed. The CHECK constraint is what prevented silent duplication; treat it as load-bearing, not decorative.
