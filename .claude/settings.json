@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": [
+    "There is DELIBERATELY no permissions.deny list here for tenant commands.",
+    "",
+    "This file is committed, so it is read by every checkout of this repo —",
+    "including the tenant ops worktree, whose entire job is running those very",
+    "commands. A deny rule cannot tell the two apart: it is static, it matches",
+    "by prefix, and deny beats allow, so `Bash(npm run migrate:amadiya)` here",
+    "would block the one workspace that is supposed to run it, while still",
+    "missing `node supabase/migrate.mjs --env=amadiya` in this one (the danger",
+    "is in the MIDDLE of that command, and prefix rules cannot see it).",
+    "",
+    "The PreToolUse hook below does both jobs properly: it matches on patterns",
+    "rather than prefixes, and it derives which workspace it is running in from",
+    "whether a kind:'tenant' env file is present. See CLAUDE.md, first section.",
+    "",
+    "Neither is the actual boundary. The boundary is that .env.amadiya.local",
+    "does not exist in the development checkout, so nothing there can",
+    "authenticate as the tenant however many rules are bypassed."
+  ],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/claude/guard-workspace.mjs\"",
+            "shell": "bash",
+            "timeout": 15,
+            "statusMessage": "Checking workspace boundary"
+          }
+        ]
+      }
+    ]
+  }
+}

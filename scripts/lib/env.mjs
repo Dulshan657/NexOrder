@@ -116,13 +116,15 @@ export function resolveTarget(options = {}) {
 
   // process.env wins over the file, so CI can inject without rewriting files.
   // The assertion below is what stops that from becoming a foot-gun.
-  const fromFile = parseEnvFile(resolve(ROOT, config.envFile))
+  const envFilePath = resolve(ROOT, config.envFile)
+  const fromFile = parseEnvFile(envFilePath)
   /** @type {Record<string,string>} */
   const env = { ...fromFile }
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined && v !== '') env[k] = v
   }
 
+  assertEnvFilePresent(name, config, envFilePath, env)
   assertCredentialsMatch(name, config, env)
 
   for (const key of options.require ?? []) {
@@ -134,6 +136,38 @@ export function resolveTarget(options = {}) {
   }
 
   return { name, config, env }
+}
+
+/**
+ * A target whose env file is absent is refused HERE, by name, rather than left
+ * to fail somewhere downstream.
+ *
+ * This is what makes the workspace split legible. Each checkout carries only
+ * the credentials for the environments it is allowed to touch — the dev folder
+ * has `.env.dev.local`, the tenant worktree has `.env.amadiya.local` — so
+ * naming the wrong target from the wrong folder is *already* impossible. What
+ * was missing was being told why: `parseEnvFile` returns `{}` for a missing
+ * file, `assertCredentialsMatch` only compares values it actually has, and the
+ * run therefore died several frames later on a missing service key, which reads
+ * as "the credentials are wrong" rather than "you are in the wrong folder".
+ *
+ * CI is unaffected: it injects through `process.env` and never writes a file,
+ * so the check passes as soon as the URL arrived by any route.
+ */
+function assertEnvFilePresent(name, config, envFilePath, env) {
+  if (existsSync(envFilePath)) return
+  if (env.VITE_SUPABASE_URL || env.SUPABASE_URL) return // injected, e.g. CI
+
+  throw new TargetError(
+    `No credentials for "${name}" in this checkout.\n` +
+      `  expected ${config.envFile}\n` +
+      `  looked in ${ROOT}\n\n` +
+      `Each workspace holds only the environments it may touch, so this is\n` +
+      `probably the right refusal rather than a missing file: run ${name} work\n` +
+      `from the checkout that owns it. If this IS that checkout, restore\n` +
+      `${config.envFile} from your password manager — it is gitignored and has\n` +
+      `never been in the repository.`,
+  )
 }
 
 /**
