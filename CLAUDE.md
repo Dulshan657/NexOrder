@@ -471,9 +471,13 @@ Ordered by impact; one-line scope each so future agents don't drift.
    yet. Outstanding, in order: create the Amadiya **Vercel project**
    (`NEXORDER_ENV=amadiya`, Sydney creds, `VITE_SHOW_DEMO_LOGINS=false`), fill
    `vercel.projectId` in the registry, attach `nexorder.com.au` + `www`,
-   `npm run deploy:amadiya`, then **remove the `nexorder.vercel.app` alias from
-   the old project and stop its deploys** — it builds the same `main` against
-   this database with a demo-login panel. Then `bootstrap:admin:amadiya` for
+   `npm run deploy:amadiya`. ~~then remove the `nexorder.vercel.app` alias from
+   the old project and stop its deploys~~ — **done in the cutover**: the old
+   project is retired, its alias removed and its Supabase env vars stripped, so
+   `https://nexorder.vercel.app` currently answers `DEPLOYMENT_NOT_FOUND` and
+   the hostname is **unclaimed**. It is reserved for the rebuilt demo (0b) and
+   a `*.vercel.app` name is globally first-come, so do not leave it long. Then
+   `bootstrap:admin:amadiya` for
    `info@amadiya.com.au` (deferred until the domain resolves, because the reset
    link points at it), Amadiya's phone/email/logo into `app_settings`, and
    Gates B–E. Full sequence: `PRODUCTION-LAUNCH-PLAN.md` Phase 3.
@@ -482,10 +486,11 @@ Ordered by impact; one-line scope each so future agents don't drift.
    7 crons + 11 users + the full `demo-export/` restored. **The Vercel side is
    NOT done**, and until it is there is no demo *site*: create the project on
    the new Vercel account (`NEXORDER_ENV=dev`, `VITE_SHOW_DEMO_LOGINS=true`,
-   `VITE_SUPABASE_IMAGE_TRANSFORMS=false` — transforms are a paid feature),
-   free `nexorder.vercel.app` from the OLD project **and disconnect its Git**,
-   then fill `vercel.{teamSlug,projectId,orgId}` + the preview glob in the
-   registry, put a `VERCEL_TOKEN` in `.env.dev.local`, re-run
+   `VITE_SUPABASE_IMAGE_TRANSFORMS=false` — transforms are a paid feature) and
+   claim `nexorder.vercel.app`, which is already free (see item 0) but is a
+   globally first-come name. Then fill `vercel.{teamSlug,projectId,orgId}` +
+   the preview glob in the registry, put a `VERCEL_TOKEN` in `.env.dev.local`,
+   re-run
    `npm run auth:config:dev` (the allow-list changed) and `npm run deploy:dev`.
    All four registry fields are deliberately `null` until then so a stray
    `deploy:dev` cannot push a demo build to the account holding the client.
