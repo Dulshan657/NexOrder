@@ -503,15 +503,12 @@ async function buildCalibrationPdf(code: string): Promise<Uint8Array> {
       continue
     }
 
-    page.drawText(`${widthMm.toFixed(2)} mm bars`, {
-      x: margin,
-      y: y - 10,
-      size: 11,
-      font: bold,
-      color: ink,
-    })
+    const heading = `${widthMm.toFixed(2)} mm bars`
+    page.drawText(heading, { x: margin, y: y - 10, size: 11, font: bold, color: ink })
+    // Measured rather than a fixed offset: at 11pt Helvetica-Bold the heading is
+    // ~62pt and a hard-coded 70 left the two strings touching.
     page.drawText(`symbol ${(barsWidth / MM).toFixed(0)} mm wide`, {
-      x: margin + 70,
+      x: margin + bold.widthOfTextAtSize(heading, 11) + 10,
       y: y - 10,
       size: 9,
       font: body,
