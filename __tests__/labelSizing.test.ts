@@ -14,8 +14,10 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
+  CALIBRATION_WIDTHS_MM,
   MIN_X_DIMENSION_MM,
   MIN_X_FOR_DISTANCE,
+  calibrationRowFits,
   fitCode,
   fitRun,
   recommendPresets,
@@ -177,6 +179,45 @@ describe('recommendPresets', () => {
     // a 13-character code cannot get there on any sheet that fits on A4 twice.
     const ranked = recommendPresets({ codes: [LONG_BIN], distance: 'down_an_aisle' })
     expect(ranked.filter((r) => r.verdict === 'good')).toHaveLength(0)
+  })
+})
+
+describe('the calibration sheet', () => {
+  // A4 minus the 15mm margins the sheet uses either side.
+  const PRINTABLE_MM = 210 - 30
+
+  it('spans the ISO floor to comfortably wide', () => {
+    expect(CALIBRATION_WIDTHS_MM[0]).toBe(MIN_X_DIMENSION_MM)
+    expect(Math.max(...CALIBRATION_WIDTHS_MM)).toBeGreaterThanOrEqual(0.5)
+    // Ascending, so the sheet reads narrow-to-wide down the page.
+    for (let i = 1; i < CALIBRATION_WIDTHS_MM.length; i++) {
+      expect(CALIBRATION_WIDTHS_MM[i]).toBeGreaterThan(CALIBRATION_WIDTHS_MM[i - 1])
+    }
+  })
+
+  it('brackets what the two stocks actually yield', () => {
+    // The sheet is useless if every row passes or every row fails. It has to
+    // straddle the real figures: ~0.31mm on the 24-up, ~0.48mm on the 14-up.
+    const onSmall = fitCode(BIN, 'a4-24', 'arms_length').xDimensionMm
+    const onLarge = fitCode(BIN, 'a4-14', 'arms_length').xDimensionMm
+    expect(Math.min(...CALIBRATION_WIDTHS_MM)).toBeLessThan(onSmall)
+    expect(Math.max(...CALIBRATION_WIDTHS_MM)).toBeGreaterThan(onLarge)
+  })
+
+  it('fits every row on the page for the codes this system prints', () => {
+    for (const code of [BIN, LONG_BIN, PLATE]) {
+      const modules = fitCode(code, 'a4-14', 'arms_length').modules!
+      for (const width of CALIBRATION_WIDTHS_MM) {
+        expect(calibrationRowFits(modules, width, PRINTABLE_MM), `${code} @ ${width}mm`).toBe(true)
+      }
+    }
+  })
+
+  it('drops a row rather than squeezing it when a code is too long', () => {
+    // Squeezing would print a bar width the row's own label denies, which makes
+    // the whole measurement worthless.
+    expect(calibrationRowFits(600, 0.55, PRINTABLE_MM)).toBe(false)
+    expect(calibrationRowFits(600, 0.25, PRINTABLE_MM)).toBe(true)
   })
 })
 

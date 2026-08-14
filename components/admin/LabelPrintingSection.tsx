@@ -1,8 +1,8 @@
 // Settings → Warehouse → Print labels.
 //
-// Turns locations and products into a printable A4 sticker sheet of QR labels.
-// Every label carries the bare code in the QR plus the same code in large mono
-// type, so a scuffed or badly-lit label can still be read and typed.
+// Turns locations and products into a printable A4 sticker sheet of barcode labels.
+// Every label carries the bare code in the barcode plus the same code in large
+// mono type, so a scuffed or badly-lit label can still be read and typed.
 //
 // The generated PDF lands in the private warehouse-labels bucket (mig 00074);
 // this downloads it through a short-lived signed URL. Past runs are listed so a
@@ -15,13 +15,14 @@
 
 import React, { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Printer, QrCode, Download, AlertTriangle } from 'lucide-react'
+import { Printer, Barcode, Download, AlertTriangle, Ruler } from 'lucide-react'
 import { useWarehouses } from '../../hooks/queries/useWarehouses'
 import { useLayouts } from '@/hooks/queries/useLayouts'
 import LayoutLabelJobModal from '@/components/admin/labels/LayoutLabelJobModal'
 import { downloadSignedDoc } from '@/lib/openSignedDoc'
 import { labelSheetFileName } from '@/lib/labelFileName'
 import {
+  generateCalibrationSheet,
   generateLabels,
   listLabelPrintLog,
   signLabelSheet,
@@ -82,6 +83,7 @@ const LabelPrintingSection: React.FC = () => {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastRun, setLastRun] = useState<{ count: number } | null>(null)
+  const [calibratedCode, setCalibratedCode] = useState<string | null>(null)
 
   const logQuery = useQuery({ queryKey: ['label-print-log'], queryFn: () => listLabelPrintLog(10) })
 
@@ -125,6 +127,39 @@ const LabelPrintingSection: React.FC = () => {
     }
   }
 
+  /**
+   * Print one code at a range of bar widths, to find where this printer and
+   * this gun stop agreeing.
+   *
+   * Worth doing once per printer, BEFORE a labelling pass: every sizing verdict
+   * assumes a printer that holds the bar width it is given, and a laser that
+   * over-inks breaks that assumption invisibly.
+   */
+  const runCalibration = async () => {
+    setBusy(true)
+    setError(null)
+    setLastRun(null)
+    try {
+      const result = await generateCalibrationSheet({
+        warehouseId: warehouseId !== '' ? Number(warehouseId) : undefined,
+      })
+      setCalibratedCode(result.code)
+      await downloadSignedDoc(
+        async () => {
+          const url = await signLabelSheet(result.storagePath)
+          if (!url) throw new Error('That sheet is no longer available in storage.')
+          return url
+        },
+        'barcode-calibration.pdf',
+        { onError: (err) => setError(err instanceof Error ? err.message : 'Could not download the sheet.') },
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not generate the calibration sheet.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const download = async (row: { labelKind: LabelKind; storagePath: string }) => {
     setError(null)
     await downloadSignedDoc(
@@ -142,12 +177,12 @@ const LabelPrintingSection: React.FC = () => {
     <section className="glass-panel rounded-2xl p-5 sm:p-6">
       <header className="flex items-start gap-3 mb-5">
         <span className="shrink-0 w-9 h-9 rounded-xl bg-nexgen-blue/10 flex items-center justify-center">
-          <QrCode className="w-5 h-5 text-nexgen-blue" aria-hidden="true" />
+          <Barcode className="w-5 h-5 text-nexgen-blue" aria-hidden="true" />
         </span>
         <div className="min-w-0">
           <h3 className="font-display font-semibold text-stone-900">Print labels</h3>
           <p className="text-sm text-stone-500">
-            QR stickers for locations and products. Scanning one anywhere in the app resolves it to
+            Barcode stickers for locations and products. Scanning one anywhere in the app resolves it to
             that exact bin or SKU.
           </p>
         </div>
@@ -310,6 +345,32 @@ const LabelPrintingSection: React.FC = () => {
             <Printer className="w-4 h-4" aria-hidden="true" />
             {busy ? 'Generating…' : 'Generate sheet'}
           </button>
+        )}
+      </div>
+
+      <div className="mt-6 pt-5 border-t border-stone-200/70">
+        <h4 className="text-xs font-semibold text-stone-600">Before a labelling pass</h4>
+        <p className="mt-1 text-xs text-stone-500 max-w-prose">
+          Bar width is the one thing a printer can quietly ruin — a laser that over-inks turns a
+          legal barcode into an unreadable one without changing anything you can see. This prints
+          the longest code on the site at six bar widths. Scan down it with the gun you will
+          actually use; the narrowest row that reads first-time every time is this printer&rsquo;s
+          real limit.
+        </p>
+        <button
+          type="button"
+          onClick={runCalibration}
+          disabled={busy}
+          className="mt-3 inline-flex items-center gap-2 px-3 py-2 border border-stone-300 text-stone-700 text-sm font-medium rounded-lg btn-press disabled:opacity-50"
+        >
+          <Ruler className="w-4 h-4" aria-hidden="true" />
+          {busy ? 'Generating…' : 'Print calibration sheet'}
+        </button>
+        {calibratedCode && (
+          <p className="mt-2 text-xs text-emerald-700">
+            Calibration sheet generated for <span className="font-mono">{calibratedCode}</span> —
+            the longest code on this site, so it is the one most at risk.
+          </p>
         )}
       </div>
 

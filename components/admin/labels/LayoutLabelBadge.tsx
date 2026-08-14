@@ -7,7 +7,7 @@
 // than buried in Settings.
 
 import React, { useState } from 'react'
-import { QrCode, CheckCircle2 } from 'lucide-react'
+import { Barcode, CheckCircle2 } from 'lucide-react'
 import { useLayoutLabelStatus } from '@/hooks/queries/useLabelJobs'
 import LayoutLabelJobModal from './LayoutLabelJobModal'
 
@@ -45,7 +45,7 @@ export function LayoutLabelBadge({ layoutId, layoutName, dense = false }: Layout
         title={
           complete
             ? `All ${total} locations on this layout are labelled`
-            : `${outstanding} of ${total} locations have no QR label yet`
+            : `${outstanding} of ${total} locations have no barcode label yet`
         }
       >
         {complete ? (
@@ -55,7 +55,7 @@ export function LayoutLabelBadge({ layoutId, layoutName, dense = false }: Layout
           </>
         ) : (
           <>
-            <QrCode className="w-3.5 h-3.5" aria-hidden="true" />
+            <Barcode className="w-3.5 h-3.5" aria-hidden="true" />
             <span>
               {outstanding} location{outstanding === 1 ? '' : 's'} need
               {outstanding === 1 ? 's' : ''} a label

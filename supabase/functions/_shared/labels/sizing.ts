@@ -14,6 +14,7 @@
 import {
   MIN_BAR_HEIGHT_PT,
   MM,
+  QUIET_ZONE_MODULES,
   type SheetPresetName,
   SHEET_PRESETS,
   SHEET_PRESET_INFO,
@@ -57,6 +58,30 @@ export const SCAN_DISTANCE_LABELS: Record<ScanDistance, string> = {
 }
 
 export type Verdict = 'good' | 'marginal' | 'fail'
+
+/**
+ * Bar widths the calibration sheet prints, in millimetres.
+ *
+ * Every threshold above assumes a printer that holds the bar width it is given,
+ * and bar width is the one thing a printer can silently ruin — a laser that
+ * over-inks turns a legal symbol into an unreadable one without changing
+ * anything visible at arm's length. This range spans the ISO floor (0.25) to
+ * comfortably wide (0.55), passing through what the 24-up sticker yields for a
+ * real location code (~0.31) and what the 14-up yields (~0.48), because the
+ * interesting values are the ones near the edge.
+ */
+export const CALIBRATION_WIDTHS_MM = [0.25, 0.3, 0.35, 0.43, 0.5, 0.55]
+
+/**
+ * The widest symbol a calibration row can hold on A4 at a given bar width.
+ *
+ * A long code at a wide bar outgrows the page, and squeezing the row would
+ * print a width the row's own label denies. The sheet skips such rows and says
+ * so instead.
+ */
+export function calibrationRowFits(modules: number, widthMm: number, printableMm: number): boolean {
+  return modules * widthMm + 2 * QUIET_ZONE_MODULES * widthMm <= printableMm
+}
 
 export interface CodeFit {
   code: string

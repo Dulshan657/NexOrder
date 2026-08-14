@@ -88,7 +88,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
   // resolving — the row is rejected by name instead.
   const { data: warehouseLocations } = useWarehouseLocations(warehouseId);
 
-  // Ordering guardrail: a count by bin only works once the QR labels are
+  // Ordering guardrail: a count by bin only works once the barcode labels are
   // physically on the racking, and `label_printed` is only set by the explicit
   // confirm step — generating the sheets does not set it. `byGroup.slots` is
   // exactly the bins (BIN/SHELF/BAY); the wayfinding and staging labels don't
@@ -400,7 +400,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
                 <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" strokeWidth={2.5} />
                 <span>
                   {unconfirmedLabelCount} bin{unconfirmedLabelCount === 1 ? '' : 's'} here still show as
-                  unlabelled. Counting by <strong>bin_code</strong> before the QR labels are on the racking
+                  unlabelled. Counting by <strong>bin_code</strong> before the barcode labels are on the racking
                   produces a count nobody can transcribe — confirm the label run first (Settings → Warehouse
                   → Print labels).
                 </span>

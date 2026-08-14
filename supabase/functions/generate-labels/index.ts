@@ -41,6 +41,10 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import {
+  A4_HEIGHT,
+  A4_WIDTH,
+  MM,
+  QUIET_ZONE_MODULES,
   fitFontSize,
   fitText,
   labelArtwork,
@@ -53,11 +57,17 @@ import {
   type SheetPresetName,
 } from '../_shared/labelSheet.ts'
 import {
+  Code128EncodeError,
   darkRuns,
   encodeCode128,
   type Code128Symbol,
 } from '../_shared/labels/code128.ts'
-import { fitRun, refuseRun } from '../_shared/labels/sizing.ts'
+import {
+  CALIBRATION_WIDTHS_MM,
+  calibrationRowFits,
+  fitRun,
+  refuseRun,
+} from '../_shared/labels/sizing.ts'
 import {
   planLabelJob,
   presetForGroup,
@@ -75,7 +85,12 @@ const SIGNED_URL_TTL_SECONDS = 600
 const MAX_LABELS = 2000
 
 const inputSchema = z.object({
-  kind: z.enum(['location', 'product', 'handling_unit']),
+  // 'calibration' is not a label run: it prints one code at a range of bar
+  // widths so an operator can find where their printer and gun stop agreeing.
+  // It writes no stickers and is deliberately kept out of label_print_log.
+  kind: z.enum(['location', 'product', 'handling_unit', 'calibration']),
+  /** calibration only: which code to print. Defaults to the site's longest. */
+  code: z.string().min(1).max(120).optional(),
   // Derived from the preset library rather than restated, so adding a stock is
   // one edit. Default is the 99x38mm sheet: a 13-character location code gets
   // 0.48mm bars there and only 0.31mm on the 24-up.
@@ -384,6 +399,143 @@ async function buildLabelPdf(
   return { bytes: await pdf.save(), warnings }
 }
 
+// ── Calibration sheet ─────────────────────────────────────────────
+
+/**
+ * One page, one code, printed at a range of bar widths.
+ *
+ * Bar width is the single thing a printer can silently ruin: a laser that
+ * over-inks turns a legal symbol into an unreadable one without changing
+ * anything you can see at arm's length. Every threshold in
+ * `_shared/labels/sizing.ts` assumes a printer that holds the width it is
+ * given, and this is what turns that assumption into a measurement — before
+ * anyone starts sticking labels on racking rather than after.
+ *
+ * Deliberately NOT recorded in label_print_log: no sticker from this sheet goes
+ * on a location, and `codes` would be the same code six times. It is a
+ * diagnostic, not a label run.
+ */
+async function buildCalibrationPdf(code: string): Promise<Uint8Array> {
+  const symbol = encodeCode128(code)
+
+  const pdf = await PDFDocument.create()
+  const page = pdf.addPage([A4_WIDTH, A4_HEIGHT])
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const body = await pdf.embedFont(StandardFonts.Helvetica)
+  const mono = await pdf.embedFont(StandardFonts.CourierBold)
+
+  const margin = 15 * MM
+  const ink = rgb(0, 0, 0)
+  const grey = rgb(0.42, 0.4, 0.38)
+  const printable = A4_WIDTH - 2 * margin
+
+  let y = A4_HEIGHT - margin - 14
+  page.drawText('Barcode calibration sheet', { x: margin, y, size: 16, font: bold, color: ink })
+
+  y -= 20
+  for (const line of [
+    `Code: ${code}  ·  ${symbol.modules} modules  ·  Code 128`,
+    'Scan each row with the gun you will use on the floor. Ten times, at arm\u2019s length.',
+    'The narrowest row that reads first-time every time is your printer\u2019s real limit.',
+    'If a row fails, every label at or below that bar width will fail on the racking too.',
+  ]) {
+    page.drawText(line, { x: margin, y, size: 9, font: body, color: grey })
+    y -= 12
+  }
+
+  y -= 10
+  const barHeight = 16 * MM
+  const skipped: number[] = []
+
+  for (const widthMm of CALIBRATION_WIDTHS_MM) {
+    const moduleWidth = widthMm * MM
+    const barsWidth = symbol.modules * moduleWidth
+    const quiet = QUIET_ZONE_MODULES * moduleWidth
+
+    // A wide bar and a long code can outgrow the page. Skipping is honest;
+    // squeezing the row would print a width the row's own label denies.
+    if (!calibrationRowFits(symbol.modules, widthMm, printable / MM)) {
+      skipped.push(widthMm)
+      continue
+    }
+
+    page.drawText(`${widthMm.toFixed(2)} mm bars`, {
+      x: margin,
+      y: y - 10,
+      size: 11,
+      font: bold,
+      color: ink,
+    })
+    page.drawText(`symbol ${(barsWidth / MM).toFixed(0)} mm wide`, {
+      x: margin + 70,
+      y: y - 10,
+      size: 9,
+      font: body,
+      color: grey,
+    })
+
+    const barsY = y - 16 - barHeight
+    for (const run of darkRuns(symbol)) {
+      page.drawRectangle({
+        x: margin + quiet + run.start * moduleWidth,
+        y: barsY,
+        width: run.width * moduleWidth,
+        height: barHeight,
+        color: ink,
+      })
+    }
+
+    page.drawText(code, { x: margin + quiet, y: barsY - 11, size: 9, font: mono, color: ink })
+    y = barsY - 26
+  }
+
+  if (skipped.length > 0) {
+    page.drawText(
+      `Not shown: ${skipped.map((w) => `${w.toFixed(2)}mm`).join(', ')} — too wide for A4 at this code length.`,
+      { x: margin, y: y - 4, size: 8, font: body, color: grey },
+    )
+  }
+
+  return await pdf.save()
+}
+
+/**
+ * The code to calibrate against: the LONGEST active location code on the site.
+ *
+ * The longest code encodes to the widest symbol and therefore the narrowest
+ * bars, so it is the one label at risk. Calibrating against a short code would
+ * pass a printer that cannot manage the sheet you actually need to run.
+ */
+async function loadCalibrationCode(admin: any, warehouseId: number | null): Promise<string> {
+  let query = admin.from('locations').select('code, materialized_path').eq('is_active', true)
+
+  if (warehouseId != null) {
+    const { data: root } = await admin
+      .from('locations')
+      .select('materialized_path')
+      .eq('id', warehouseId)
+      .maybeSingle()
+    const rootPath = (root as any)?.materialized_path as string | undefined
+    if (rootPath) {
+      query = query.like('materialized_path', `${rootPath.replace(/([\\%_])/g, '\\$1')}/%`)
+    }
+  }
+
+  const { data } = await query.limit(5000)
+  const codes = ((data ?? []) as any[]).map((r) => r.code as string).filter(Boolean)
+  if (codes.length === 0) return 'AMD-B-12-7-L3'
+
+  // Longest by ENCODED width, not character count — Code Set C packs digits, so
+  // the longest string is not always the widest symbol.
+  return codes.reduce((worst, c) => {
+    try {
+      return encodeCode128(c).modules > encodeCode128(worst).modules ? c : worst
+    } catch {
+      return worst
+    }
+  }, codes[0])
+}
+
 function drawLabel(
   page: PDFPage,
   cell: LabelCell,
@@ -472,6 +624,54 @@ serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { persistSession: false } },
     )
+
+    // A calibration sheet answers a different question from every other run —
+    // "can this printer hold a bar width", not "which locations need stickers"
+    // — so it shares only the auth, the bucket and the signed URL.
+    if (input.kind === 'calibration') {
+      const code = input.code ?? (await loadCalibrationCode(admin, input.warehouseId ?? null))
+      let bytes: Uint8Array
+      try {
+        bytes = await buildCalibrationPdf(code)
+      } catch (e) {
+        if (e instanceof Code128EncodeError) {
+          throw new EdgeFunctionError('INVALID_INPUT', `Cannot calibrate against ${code}: ${e.message}`)
+        }
+        throw e
+      }
+
+      const storagePath = `calibration/calibration-${Date.now()}.pdf`
+      const { error: calUploadError } = await admin.storage
+        .from(BUCKET)
+        .upload(storagePath, bytes, { contentType: 'application/pdf', upsert: false })
+      if (calUploadError) {
+        throw new EdgeFunctionError('INTERNAL', `upload failed: ${calUploadError.message}`)
+      }
+
+      const { data: calSigned } = await admin.storage
+        .from(BUCKET)
+        .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS)
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId,
+        actorRole: auth.role,
+        action: 'create',
+        resource: 'label_calibration_sheet',
+        resourceId: storagePath,
+        after: { code, warehouse_id: input.warehouseId ?? null, widths_mm: CALIBRATION_WIDTHS_MM },
+      })
+
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          storagePath,
+          signedUrl: calSigned?.signedUrl ?? null,
+          code,
+          widthsMm: CALIBRATION_WIDTHS_MM,
+        }),
+        { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
 
     const isLayoutRun = input.layoutId != null
     const { items, warehouseId, markPrintedIds, preset } = isLayoutRun

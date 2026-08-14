@@ -321,7 +321,7 @@ serve(async (req: Request) => {
       // it — which is a re-runnable, idempotent repair rather than a lost one.
       //
       // Nothing is renumbered and no pool moves: `name_area`/`name_seq` are
-      // echoed back unchanged, and `locations.code` — the QR payload and the
+      // echoed back unchanged, and `locations.code` — the barcode payload and the
       // scan identity — is not in this write at all.
       const restamped = await restampFormNames(
         admin,

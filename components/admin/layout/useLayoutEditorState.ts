@@ -176,7 +176,7 @@ export interface EditorState {
    *
    * Seeded by `load` from the warehouse's locations. Deleting a saved rack drops
    * its placement row but not its `locations` row — publishing never retires a
-   * bin and its QR label is still on the racking — so without this floor the
+   * bin and its barcode label is still on the racking — so without this floor the
    * next rack drawn would take a number that is live on the floor.
    */
   seqFloor: Record<string, number>
@@ -821,7 +821,7 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
         const ref = `p${state.seq}`
         const f = state.activeForm
         const code = `${state.codePrefix}-B-${x}-${y}`
-        // The code stays a grid coordinate — it is the QR payload and the scan
+        // The code stays a grid coordinate — it is the barcode payload and the scan
         // identity. The NAME is what the operator reads, so it comes from the
         // area they painted plus the next free number in that area's pool.
         // `areaNameAt` (linear) rather than buildAreaIndex: rasterizing a

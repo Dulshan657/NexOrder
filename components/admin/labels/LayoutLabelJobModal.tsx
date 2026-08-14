@@ -2,8 +2,8 @@
 //
 // A published layout needs three different kinds of sticker and they cannot come
 // off the same stock: bin and rack-level labels are read at arm's length on a
-// 24-up sheet, zone and aisle signs are read from across the floor on an 8-up
-// sheet, staging sits between. So this renders one PDF per stock and presents
+// 14-up sheet, zone and aisle signs are read from across the floor on an 8-up
+// sheet. So this renders one PDF per stock and presents
 // them as one set — the whole point being that an operator can see they have
 // everything, which is exactly what the old kind-at-a-time picker could not tell
 // them.
@@ -192,8 +192,8 @@ export function LayoutLabelJobModal({
       title="Print labels for this layout"
       description={
         layoutName
-          ? `Every QR ${layoutName} needs — bins, rack levels, aisle signs and staging.`
-          : 'Every QR this layout needs — bins, rack levels, aisle signs and staging.'
+          ? `Every label ${layoutName} needs — bins, rack levels, aisle signs and staging.`
+          : 'Every label this layout needs — bins, rack levels, aisle signs and staging.'
       }
       // An unconfirmed job is not unsaved work: the PDFs are stored and listed in
       // Recent runs, and the backlog is deliberately unchanged until confirm. So

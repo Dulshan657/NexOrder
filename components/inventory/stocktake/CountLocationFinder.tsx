@@ -3,7 +3,7 @@
 // Two entry points, and both are necessary. Scanning is how the floor works and
 // is the fast path for the racked core. But a BULK area's stock sits on the
 // warehouse ROOT, and a root is not a physical shelf — there is nothing to put a
-// QR sticker on. On a mixed site like Amadiya's, offering only the scanner would
+// barcode sticker on. On a mixed site like Amadiya's, offering only the scanner would
 // leave half the building uncountable, so the list below the scanner is not a
 // fallback for convenience; it is the only way to reach a bulk area at all.
 

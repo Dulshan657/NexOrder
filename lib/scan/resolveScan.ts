@@ -1,6 +1,6 @@
 // What did the operator just scan?
 //
-// The QR payload is deliberately BARE TEXT — a locations.code, a product SKU, or
+// The barcode payload is deliberately BARE TEXT — a locations.code, a product SKU, or
 // a handling-unit code — with no URL wrapper and no namespace prefix, so a
 // third-party scanner app reads something meaningful and so the same label works
 // if this system is ever replaced. The cost of that choice is that one string

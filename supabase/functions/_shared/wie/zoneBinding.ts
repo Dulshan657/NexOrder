@@ -45,7 +45,7 @@ export interface BindingUnit extends NamedRect {
   /** Stable identity for grouping. `loc:<id>` server-side. */
   ref: string
   id: number
-  /** The last segment of materialized_path. Never changes — it is the QR payload. */
+  /** The last segment of materialized_path. Never changes — it is the barcode payload. */
   code: string
   /** As stored right now. */
   parentId: number | null

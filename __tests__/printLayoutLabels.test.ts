@@ -1,7 +1,7 @@
 // A layout label job is three sequential Edge Function calls. What matters here
 // is that one failing group does not discard the sheets that already rendered:
 // those PDFs are in the bucket and logged against the job, so throwing them away
-// would make the operator re-render a thousand QR codes to recover finished work.
+// would make the operator re-render a thousand barcodes to recover finished work.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 

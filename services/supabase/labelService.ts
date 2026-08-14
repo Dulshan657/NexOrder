@@ -81,6 +81,37 @@ export async function generateLabels(input: GenerateLabelsInput): Promise<Genera
   }
 }
 
+// ── Calibration ──────────────────────────────────────────────────────────────
+
+export interface CalibrationSheetResult {
+  storagePath: string
+  signedUrl: string | null
+  /** The code that was printed — the site's longest unless one was given. */
+  code: string
+  widthsMm: number[]
+}
+
+/**
+ * One page, one code, printed at a range of bar widths.
+ *
+ * Every sizing verdict the wizard shows assumes a printer that holds the bar
+ * width it is given, and that is the one thing a printer can silently ruin.
+ * Print this once, scan down it, and the narrowest row that reads first-time
+ * every time is a measured fact rather than an assumption.
+ */
+export async function generateCalibrationSheet(input: {
+  warehouseId?: number
+  code?: string
+}): Promise<CalibrationSheetResult> {
+  const { data, error } = await supabase.functions.invoke<CalibrationSheetResult>(
+    'generate-labels',
+    { body: { kind: 'calibration', warehouseId: input.warehouseId, code: input.code } },
+  )
+  if (error) throw error
+  if (!data) throw new Error('Calibration sheet returned no result')
+  return data
+}
+
 // ── Layout runs (mig 00084) ──────────────────────────────────────────────────
 
 // lib/database.types.ts is stale and regenerating it is its own job (it emits
@@ -183,7 +214,7 @@ export interface PrintLayoutLabelsInput {
  * Render every sheet one layout run needs, as one job.
  *
  * SEQUENTIAL on purpose. Three concurrent calls would each render up to a
- * thousand QR codes, which finds the per-user rate limit (10/min) and the 90s
+ * thousand barcodes, which finds the per-user rate limit (10/min) and the 90s
  * invoke ceiling at the same time — and a job that fails halfway leaves the
  * operator holding two of three sheets with no way to tell which.
  *
@@ -193,7 +224,7 @@ export interface PrintLayoutLabelsInput {
  *
  * A failing group does NOT abandon the ones already rendered. Those PDFs exist
  * in the bucket and are logged against this job, so throwing them away would
- * leave the operator re-rendering a thousand QR codes to recover work that is
+ * leave the operator re-rendering a thousand barcodes to recover work that is
  * already done. Only a job where nothing rendered is an outright failure.
  */
 export async function printLayoutLabels(input: PrintLayoutLabelsInput): Promise<LayoutLabelJob> {
