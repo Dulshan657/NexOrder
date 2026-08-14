@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest'
 import {
   barcodeVariants,
   buildScanIndex,
+  codeMatchesProduct,
   describeScanMatch,
+  gtin14Base,
+  gtinCheckDigit,
+  hasValidGtinCheckDigit,
   normalizeScan,
   resolveScan,
   type ScanIndexSources,
@@ -55,6 +59,78 @@ describe('barcodeVariants', () => {
 
   it('leaves non-numeric codes alone', () => {
     expect(barcodeVariants('AYM-COC-003')).toEqual(['AYM-COC-003'])
+  })
+
+  it('offers the EAN-13 form of a GTIN-14 whose indicator is zero', () => {
+    // Zero-padding a GTIN is an identity, not a convention: the check digit
+    // weights digits from the right, so a leading zero leaves the weighted sum
+    // untouched and the check digit still valid.
+    expect(barcodeVariants('09310072011691')).toContain('9310072011691')
+    expect(barcodeVariants('9310072011691')).toContain('09310072011691')
+  })
+
+  it('does NOT equate a case pack with the unit inside it', () => {
+    // 19310072011698 is an outer carton of 9310072011691. They are different
+    // items — folding them together is exactly what would destroy the quantity.
+    expect(barcodeVariants('19310072011698')).not.toContain('9310072011691')
+    expect(barcodeVariants('9310072011691')).not.toContain('19310072011698')
+  })
+})
+
+describe('gtinCheckDigit', () => {
+  it('matches the published check digit at every GTIN length', () => {
+    // Verified by hand against codes already used as fixtures in this file.
+    expect(gtinCheckDigit('931007201169')).toBe(1) // EAN-13  9310072011691
+    expect(gtinCheckDigit('01234567890')).toBe(5) // UPC-A   012345678905
+    expect(gtinCheckDigit('1931007201169')).toBe(8) // ITF-14 19310072011698
+  })
+
+  it('accepts a valid code and rejects a corrupted one', () => {
+    expect(hasValidGtinCheckDigit('9310072011691')).toBe(true)
+    expect(hasValidGtinCheckDigit('9310072011690')).toBe(false)
+    expect(hasValidGtinCheckDigit('19310072011698')).toBe(true)
+    expect(hasValidGtinCheckDigit('not-a-number')).toBe(false)
+  })
+})
+
+describe('gtin14Base — Phase 2 groundwork, deliberately unwired', () => {
+  it('recovers the unit EAN-13 from an outer carton code', () => {
+    // The unit's own check digit does NOT appear in the ITF-14, so recovering
+    // it means dropping the last digit and RECOMPUTING. Simply stripping the
+    // indicator would give 9310072011698, which is not a valid code at all.
+    expect(gtin14Base('19310072011698')).toEqual({ base: '9310072011691', indicator: 1 })
+  })
+
+  it('carries the indicator, which is what says how big the pack is', () => {
+    // The digit itself is a packaging level, not a quantity — the quantity comes
+    // from product_uoms. But without it there is nothing to look the pack up by.
+    expect(gtin14Base('19310072011698')!.indicator).toBe(1)
+  })
+
+  it('refuses a code with a bad check digit rather than inventing a base', () => {
+    // Any 14 digits could be an internal serial. Without this guard one would
+    // fold into a 13-digit code that might collide with a real product.
+    expect(gtin14Base('19310072011690')).toBeNull()
+  })
+
+  it('returns null for indicator zero — that is a padded unit, not a case', () => {
+    // barcodeVariants already handles that as plain equality.
+    expect(gtin14Base('09310072011691')).toBeNull()
+  })
+
+  it('returns null for anything that is not fourteen digits', () => {
+    expect(gtin14Base('9310072011691')).toBeNull()
+    expect(gtin14Base('AYM-COC-003')).toBeNull()
+  })
+
+  it('is NOT consulted by codeMatchesProduct', () => {
+    // The load-bearing assertion of this whole group. Scanning a carton must not
+    // resolve to "one unit of X" -- that is the bug the per-pack-size design in
+    // Phase 2 exists to avoid, and wiring this in would bake it in early.
+    const product = { sku: 'AYM-COC-003', barcode: '9310072011691' }
+    expect(codeMatchesProduct('19310072011698', product)).toBe(false)
+    expect(codeMatchesProduct('9310072011691', product)).toBe(true)
+    expect(codeMatchesProduct('09310072011691', product)).toBe(true)
   })
 })
 

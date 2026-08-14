@@ -16,7 +16,14 @@
 // IDENTICALLY. If they ever diverged, a scan the client accepted could be
 // rejected by the server, or vice versa. Re-exported here so existing importers
 // of this module are unaffected.
-export { barcodeVariants, codeMatchesProduct, normalizeScan } from '@/supabase/functions/_shared/scanNormalize'
+export {
+  barcodeVariants,
+  codeMatchesProduct,
+  gtin14Base,
+  gtinCheckDigit,
+  hasValidGtinCheckDigit,
+  normalizeScan,
+} from '@/supabase/functions/_shared/scanNormalize'
 import { barcodeVariants, normalizeScan } from '@/supabase/functions/_shared/scanNormalize'
 
 export type ProductMatchSource = 'sku' | 'barcode' | 'batchBarcode'
