@@ -21,6 +21,8 @@ export type LabelPreset = SheetPresetName
 export interface GenerateLabelsInput {
   kind: LabelKind
   preset?: LabelPreset
+  /** Layout runs only: override the resolved stock for this run, without saving it. */
+  presetOverride?: LabelPreset
   /** Skip N cells on the first page so a part-used sticker sheet can be reused. */
   startOffset?: number
   warehouseId?: number
@@ -54,6 +56,7 @@ export async function generateLabels(input: GenerateLabelsInput): Promise<Genera
       // Must match the server's own default, or "unspecified" means two
       // different sheet sizes depending on which side you ask.
       preset: input.preset ?? 'a4-14',
+      presetOverride: input.presetOverride,
       startOffset: input.startOffset ?? 0,
       warehouseId: input.warehouseId,
       locationKinds: input.locationKinds,
@@ -79,6 +82,45 @@ export async function generateLabels(input: GenerateLabelsInput): Promise<Genera
     preset: (data as { preset?: LabelPreset }).preset,
     sheetGroup: (data as { sheetGroup?: SheetGroup | null }).sheetGroup ?? null,
   }
+}
+
+// ── Sticker stock, saved per site (mig 00106) ────────────────────────────────
+
+export interface WarehouseLabelPref {
+  sheetGroup: SheetGroup
+  /** null means "use the built-in default" — the row simply is not there. */
+  preset: LabelPreset | null
+}
+
+/**
+ * What stock this site prints each sheet group on.
+ *
+ * A read-only table query rather than a function call: RLS already limits it to
+ * ops roles, and there is no decision to make server-side. An absent row is not
+ * an error — it means the built-in default, which is why the result is sparse
+ * rather than padded out to three entries here.
+ */
+export async function getWarehouseLabelPrefs(warehouseId: number): Promise<WarehouseLabelPref[]> {
+  const { data, error } = await supabase
+    .from('warehouse_label_prefs')
+    .select('sheet_group, preset')
+    .eq('warehouse_id', warehouseId)
+  if (error) throw error
+  return ((data ?? []) as Array<{ sheet_group: string; preset: string }>).map((r) => ({
+    sheetGroup: r.sheet_group as SheetGroup,
+    preset: r.preset as LabelPreset,
+  }))
+}
+
+/** Save (or, with a null preset, clear) this site's stock for one or more groups. */
+export async function setWarehouseLabelPrefs(input: {
+  warehouseId: number
+  prefs: WarehouseLabelPref[]
+}): Promise<void> {
+  const { error } = await supabase.functions.invoke('mutate-warehouse', {
+    body: { action: 'set_label_prefs', data: input },
+  })
+  if (error) throw error
 }
 
 // ── Calibration ──────────────────────────────────────────────────────────────
@@ -208,6 +250,11 @@ export interface PrintLayoutLabelsInput {
   rootLocationId?: number | null
   onlyUnprinted?: boolean
   startOffset?: number
+  /**
+   * Print one or more groups on a different stock for THIS run only, leaving
+   * the site's saved default alone. Absent groups resolve normally.
+   */
+  presetOverrides?: Partial<Record<SheetGroup, LabelPreset>>
 }
 
 /**
@@ -247,6 +294,7 @@ export async function printLayoutLabels(input: PrintLayoutLabelsInput): Promise<
         kind: 'location',
         layoutId: input.layoutId,
         sheetGroup: sheet.group,
+        presetOverride: input.presetOverrides?.[sheet.group],
         rootLocationId: input.rootLocationId ?? undefined,
         onlyUnprinted,
         jobId,

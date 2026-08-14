@@ -70,7 +70,7 @@ import {
 } from '../_shared/labels/sizing.ts'
 import {
   planLabelJob,
-  presetForGroup,
+  resolvePreset,
   type LabelTargetRow,
   type SheetGroup,
 } from '../_shared/labels/layoutLabelPlan.ts'
@@ -121,6 +121,17 @@ const inputSchema = z.object({
   layoutId: z.number().int().positive().optional(),
   /** Which sheet of stock this call renders. Required alongside layoutId. */
   sheetGroup: z.enum(['wayfinding', 'slots', 'staging']).optional(),
+  /**
+   * Print this run on a different stock, without changing the site's default.
+   *
+   * Distinct from `preset`, which carries a default and so cannot say whether
+   * the caller meant it. A layout run otherwise re-derives its stock the same
+   * way it re-derives WHICH locations it covers — the client picks the group,
+   * never what is in it — and this is the one deliberate exception.
+   */
+  presetOverride: z
+    .enum(Object.keys(SHEET_PRESETS) as [SheetPresetName, ...SheetPresetName[]])
+    .optional(),
   /** Narrow to one subtree — "reprint aisle A3". Includes that root's own sign. */
   rootLocationId: z.number().int().positive().optional(),
   /** Default: only locations with no sticker yet. */
@@ -190,6 +201,33 @@ const DEFAULT_LOCATION_KINDS = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN', 
  * ids from the client: the client picks WHICH group to render, never WHAT is in
  * it.
  */
+/**
+ * The sticker stock this site chose for this sheet group (mig 00106), or null
+ * to fall through to the built-in default.
+ *
+ * A stored preset that is no longer in the library returns null rather than
+ * throwing: a preset can be renamed or dropped in TypeScript while old rows sit
+ * in the table, and a stale preference should quietly stop applying rather than
+ * block every print run on the site.
+ */
+async function loadLabelPref(
+  admin: any,
+  warehouseId: number | null,
+  group: SheetGroup,
+): Promise<SheetPresetName | null> {
+  if (warehouseId == null) return null
+  const { data } = await admin
+    .from('warehouse_label_prefs')
+    .select('preset')
+    .eq('warehouse_id', warehouseId)
+    .eq('sheet_group', group)
+    .maybeSingle()
+
+  const preset = (data as any)?.preset as string | undefined
+  if (!preset || !(preset in SHEET_PRESETS)) return null
+  return preset as SheetPresetName
+}
+
 async function loadLayoutItems(
   admin: any,
   input: z.infer<typeof inputSchema>,
@@ -236,15 +274,21 @@ async function loadLayoutItems(
   }))
 
   const sheet = planLabelJob(rows).find((s) => s.group === (group as SheetGroup))
+  const warehouseId = ((layout as any).warehouse_id as number | null) ?? null
 
   return {
     items: (sheet?.items ?? []).map((i) => ({ code: i.code, context: i.context })),
-    warehouseId: (layout as any).warehouse_id ?? null,
-    // The stock a group prints on is a property of the group, never of the
-    // request — a bin sticker rendered at aisle-sign size wastes a sheet. The
-    // fallback derives from SHEET_GROUPS rather than naming a preset, so an
-    // empty group and a populated one can never disagree about the stock.
-    preset: sheet?.preset ?? presetForGroup(group as SheetGroup),
+    warehouseId,
+    // The stock a group prints on is a property of the SITE and the group,
+    // never of the request — a bin sticker rendered at aisle-sign size wastes a
+    // sheet. Resolution order is the site's saved preference (mig 00106), then
+    // the built-in default, which derives from SHEET_GROUPS rather than naming
+    // a preset so an empty group and a populated one cannot disagree.
+    preset:
+      input.presetOverride ??
+      resolvePreset(group as SheetGroup, {
+        [group as SheetGroup]: await loadLabelPref(admin, warehouseId, group as SheetGroup),
+      }),
   }
 }
 

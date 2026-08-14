@@ -380,6 +380,8 @@ const LabelPrintingSection: React.FC = () => {
           onClose={() => setJobOpen(false)}
           layoutId={publishedLayout.id}
           layoutName={publishedLayout.name}
+          warehouseId={warehouseId === '' ? undefined : Number(warehouseId)}
+          onCalibrate={runCalibration}
         />
       )}
 

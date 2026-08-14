@@ -86,6 +86,21 @@ export function presetForGroup(group: SheetGroup): SheetPresetName {
   return SHEET_GROUPS.find((g) => g.group === group)!.preset
 }
 
+/** A site's saved stock choice per sheet group (mig 00106). Sparse: absent = default. */
+export type LabelPresetPrefs = Partial<Record<SheetGroup, SheetPresetName | null>>
+
+/**
+ * The stock a group actually prints on: the site's saved preference, else the
+ * built-in default.
+ *
+ * One line, and it still earns its own function — the browser shows this in the
+ * job preview and generate-labels renders with it, and if the two ever
+ * disagreed the operator would be told one sheet size and handed another.
+ */
+export function resolvePreset(group: SheetGroup, prefs?: LabelPresetPrefs): SheetPresetName {
+  return prefs?.[group] ?? presetForGroup(group)
+}
+
 /**
  * The most a 63×34 mm sticker's context line holds at a legible size.
  *

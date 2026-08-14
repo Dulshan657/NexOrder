@@ -29,14 +29,22 @@
 // and it matches the floor anyway, where each sheet goes on different stock.
 
 import React, { useMemo, useState } from 'react'
-import { Printer, Download, AlertTriangle, CheckCircle2, Undo2 } from 'lucide-react'
+import { Printer, Download, AlertTriangle, CheckCircle2, Undo2, Ruler } from 'lucide-react'
 import { Modal, Button, Field, Select, NumberInput, Toggle } from '@/components/ui'
 import { downloadSignedDoc } from '@/lib/openSignedDoc'
 import { GROUP_LABEL, labelSheetFileName } from '@/lib/labelFileName'
+import LabelSizeWizard from '@/components/admin/labels/LabelSizeWizard'
+import {
+  resolvePreset,
+  type LabelPresetPrefs,
+  type SheetGroup,
+} from '@/supabase/functions/_shared/labels/layoutLabelPlan'
 import {
   useConfirmLabelPrint,
   useLayoutLabelTargets,
   usePrintLayoutLabels,
+  useSetWarehouseLabelPrefs,
+  useWarehouseLabelPrefs,
 } from '@/hooks/queries/useLabelJobs'
 import {
   signLabelSheet,
@@ -61,6 +69,9 @@ export interface LayoutLabelJobModalProps {
   onClose: () => void
   layoutId: number
   layoutName?: string
+  /** Needed to read and save this site's sticker stock. Omit and sizing is per-run. */
+  warehouseId?: number
+  onCalibrate?: () => void
 }
 
 export function LayoutLabelJobModal({
@@ -68,6 +79,8 @@ export function LayoutLabelJobModal({
   onClose,
   layoutId,
   layoutName,
+  warehouseId,
+  onCalibrate,
 }: LayoutLabelJobModalProps) {
   const [onlyUnprinted, setOnlyUnprinted] = useState(true)
   const [rootLocationId, setRootLocationId] = useState<number | ''>('')
@@ -101,6 +114,32 @@ export function LayoutLabelJobModal({
 
   const printJob = usePrintLayoutLabels()
   const confirmJob = useConfirmLabelPrint(layoutId)
+
+  // The stock this site has chosen (mig 00106). The preview must apply it, or
+  // it would show the built-in default while the server rendered something
+  // else — `resolvePreset` is the one definition both sides use.
+  const prefs = useWarehouseLabelPrefs(warehouseId ?? null)
+  const savePrefs = useSetWarehouseLabelPrefs(warehouseId ?? null)
+  const [sizingFor, setSizingFor] = useState<SheetGroup | null>(null)
+  // Chosen for this run only. Cleared when a choice is saved as the site's
+  // stock instead, so there is never both an override and a matching default.
+  const [overrides, setOverrides] = useState<LabelPresetPrefs>({})
+
+  const prefMap = useMemo(() => {
+    const map: LabelPresetPrefs = {}
+    for (const p of prefs.data ?? []) map[p.sheetGroup] = p.preset
+    return map
+  }, [prefs.data])
+
+  const plannedSheets = useMemo(
+    () =>
+      (plan.data ?? []).map((s) => ({
+        ...s,
+        preset: overrides[s.group] ?? resolvePreset(s.group, prefMap),
+        overridden: overrides[s.group] != null,
+      })),
+    [plan.data, prefMap, overrides],
+  )
 
   const plannedTotal = (plan.data ?? []).reduce((n, s) => n + s.items.length, 0)
   const jobTotal = (job?.sheets ?? []).reduce((n, s) => n + s.labelCount, 0)
@@ -152,6 +191,7 @@ export function LayoutLabelJobModal({
         rootLocationId: rootId,
         onlyUnprinted,
         startOffset,
+        presetOverrides: overrides as Record<SheetGroup, never>,
       })
       setJob(result)
       setConfirmed(false)
@@ -182,6 +222,41 @@ export function LayoutLabelJobModal({
   }
 
   const busy = printJob.isPending || confirmJob.isPending || downloading
+
+  /**
+   * Adopt a stock for one sheet group.
+   *
+   * Saving is the only way this sticks — a per-run choice would have to ride on
+   * the print request, and the server deliberately re-derives the stock rather
+   * than trusting the client with it (same reasoning as re-deriving WHICH
+   * locations are in a group). So an unsaved choice is offered as a preview
+   * only, and the button says so.
+   */
+  const chooseSize = async (preset: string, saveAsDefault: boolean) => {
+    if (!sizingFor) return
+    setError(null)
+    try {
+      if (saveAsDefault && warehouseId != null) {
+        await savePrefs.mutateAsync([{ sheetGroup: sizingFor, preset: preset as never }])
+        // Saved as the site's stock, so the run resolves to it normally and
+        // carrying an override too would just be a second way to say the same
+        // thing — and a way for the two to disagree.
+        setOverrides((prev) => {
+          const next = { ...prev }
+          delete next[sizingFor]
+          return next
+        })
+      } else {
+        setOverrides((prev) => ({ ...prev, [sizingFor]: preset as never }))
+      }
+      setSizingFor(null)
+      reset()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save that label size.')
+    }
+  }
+
+  const sizingSheet = plannedSheets.find((s) => s.group === sizingFor) ?? null
 
   return (
     <Modal
@@ -287,17 +362,31 @@ export function LayoutLabelJobModal({
                     : 'This selection contains no locations to label.'}
                 </p>
               )}
-              {(plan.data ?? []).map((sheet) => (
+              {plannedSheets.map((sheet) => (
                 <div key={sheet.group} className="flex items-center gap-3 p-3">
                   <span className="text-sm text-stone-700 flex-1 min-w-0">
                     {GROUP_LABEL[sheet.group]}
                     <span className="block text-xs text-stone-400">
                       {PRESET_LABEL[sheet.preset] ?? sheet.preset}
+                      {sheet.overridden
+                        ? ' · this run only'
+                        : prefs.data?.some((p) => p.sheetGroup === sheet.group)
+                          ? ' · site default'
+                          : ''}
                     </span>
                   </span>
                   <span className="text-sm font-semibold text-stone-900 tabular-nums shrink-0">
                     {sheet.items.length}
                   </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSizingFor(sheet.group)}
+                    disabled={busy}
+                  >
+                    <Ruler className="w-3.5 h-3.5" aria-hidden="true" />
+                    Size
+                  </Button>
                 </div>
               ))}
             </div>
@@ -380,6 +469,19 @@ export function LayoutLabelJobModal({
           </p>
         )}
       </div>
+
+      {sizingSheet && (
+        <LabelSizeWizard
+          open
+          onClose={() => setSizingFor(null)}
+          codes={sizingSheet.items.map((i) => i.code)}
+          group={sizingSheet.group}
+          currentPreset={sizingSheet.preset}
+          canSaveDefault={warehouseId != null}
+          onChoose={chooseSize}
+          onCalibrate={onCalibrate}
+        />
+      )}
     </Modal>
   )
 }

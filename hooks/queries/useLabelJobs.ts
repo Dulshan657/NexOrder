@@ -3,9 +3,12 @@ import {
   confirmLabelPrint,
   getLayoutLabelStatus,
   getLayoutLabelTargets,
+  getWarehouseLabelPrefs,
   printLayoutLabels,
+  setWarehouseLabelPrefs,
   type LayoutLabelJob,
   type PrintLayoutLabelsInput,
+  type WarehouseLabelPref,
 } from '@/services/supabase/labelService'
 import { groupForKind, type SheetGroup } from '@/supabase/functions/_shared/labels/layoutLabelPlan'
 
@@ -13,6 +16,27 @@ export const labelJobKeys = {
   status: (layoutId: number | null) => ['layout-label-status', layoutId] as const,
   targets: (layoutId: number | null, rootId: number | null, onlyUnprinted: boolean) =>
     ['layout-label-targets', layoutId, rootId, onlyUnprinted] as const,
+  prefs: (warehouseId: number | null) => ['warehouse-label-prefs', warehouseId] as const,
+}
+
+/** The sticker stock this site has chosen, by sheet group (mig 00106). */
+export function useWarehouseLabelPrefs(warehouseId: number | null) {
+  return useQuery({
+    queryKey: labelJobKeys.prefs(warehouseId),
+    queryFn: () => getWarehouseLabelPrefs(warehouseId as number),
+    enabled: warehouseId != null,
+  })
+}
+
+export function useSetWarehouseLabelPrefs(warehouseId: number | null) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (prefs: WarehouseLabelPref[]) =>
+      setWarehouseLabelPrefs({ warehouseId: warehouseId as number, prefs }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: labelJobKeys.prefs(warehouseId) })
+    },
+  })
 }
 
 /**
