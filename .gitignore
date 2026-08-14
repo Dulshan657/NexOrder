@@ -45,3 +45,7 @@ supabase/.temp/
 # dataset and every storage object — never commit it, and copy it off this
 # machine rather than relying on it living here.
 /demo-export/
+
+# Written by `deno check` when type-checking Edge Functions locally.
+# Deploys go through the Supabase CLI, which does not read it.
+deno.lock
