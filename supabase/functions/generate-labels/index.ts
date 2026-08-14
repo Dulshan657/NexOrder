@@ -1,18 +1,24 @@
 // generate-labels Edge Function
 //
-// Renders an N-up A4 sheet of scannable QR labels — for locations (bins, rack
-// levels, aisle/zone wayfinding signs), for products, or for handling units —
-// stores it in the private `warehouse-labels` bucket (mig 00074), records the
+// Renders an N-up A4 sheet of scannable Code 128 labels — for locations (bins,
+// rack levels, aisle/zone wayfinding signs), for products, or for handling units
+// — stores it in the private `warehouse-labels` bucket (mig 00074), records the
 // run in label_print_log, and returns a short-lived signed URL.
 //
-// The QR payload is BARE TEXT (the locations.code / product SKU / HU code) with
-// no URL wrapper and no prefix, so any third-party scanner reads something
+// The barcode payload is BARE TEXT (the locations.code / product SKU / HU code)
+// with no URL wrapper and no prefix, so any third-party scanner reads something
 // meaningful. Every label also prints the code in large mono type underneath:
-// a QR-only label is useless the moment it is scuffed or badly lit, and an
+// a barcode-only label is useless the moment it is scuffed or badly lit, and an
 // operator who cannot read the code cannot type it either.
 //
-// Geometry lives in _shared/labelSheet.ts, which is pure and unit-tested by
-// vitest in the frontend — this file only does I/O and drawing.
+// Code 128 rather than a QR because operators scan with a hand-held gun rather
+// than a phone — a laser reads a linear symbol faster, further away and at worse
+// angles than any camera reads a QR.
+//
+// Encoding lives in _shared/labels/code128.ts, geometry in _shared/labelSheet.ts
+// and the will-it-scan judgement in _shared/labels/sizing.ts. All three are pure
+// and unit-tested by vitest in the frontend — this file only does I/O and
+// drawing, and is the one place that knows both modules and points.
 //
 // Two selection modes:
 //   * warehouse + kind (original) — ad-hoc runs, products, handling units.
@@ -29,24 +35,42 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { z } from 'https://esm.sh/zod@3.23.8'
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'https://esm.sh/pdf-lib@1.17.1'
-import QRCode from 'https://esm.sh/qrcode@1.5.4'
 import { requireAuth, type UserRole } from '../_shared/auth.ts'
 import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import {
+  A4_HEIGHT,
+  A4_WIDTH,
+  MM,
+  QUIET_ZONE_MODULES,
   fitFontSize,
   fitText,
   labelArtwork,
   layoutLabels,
   sheetSpec,
+  SHEET_PRESETS,
+  type BarcodeFit,
   type LabelCell,
   type LabelTextSlot,
   type SheetPresetName,
 } from '../_shared/labelSheet.ts'
 import {
+  Code128EncodeError,
+  darkRuns,
+  encodeCode128,
+  type Code128Symbol,
+} from '../_shared/labels/code128.ts'
+import {
+  CALIBRATION_WIDTHS_MM,
+  calibrationRowFits,
+  fitRun,
+  refuseRun,
+} from '../_shared/labels/sizing.ts'
+import {
   planLabelJob,
+  resolvePreset,
   type LabelTargetRow,
   type SheetGroup,
 } from '../_shared/labels/layoutLabelPlan.ts'
@@ -61,10 +85,26 @@ const SIGNED_URL_TTL_SECONDS = 600
 const MAX_LABELS = 2000
 
 const inputSchema = z.object({
-  kind: z.enum(['location', 'product', 'handling_unit']),
-  preset: z.enum(['a4-24', 'a4-14', 'a4-8']).default('a4-24'),
-  /** Skip N cells on the first page, to reuse a part-used sticker sheet. */
-  startOffset: z.number().int().min(0).max(47).default(0),
+  // 'calibration' is not a label run: it prints one code at a range of bar
+  // widths so an operator can find where their printer and gun stop agreeing.
+  // It writes no stickers and is deliberately kept out of label_print_log.
+  kind: z.enum(['location', 'product', 'handling_unit', 'calibration']),
+  /** calibration only: which code to print. Defaults to the site's longest. */
+  code: z.string().min(1).max(120).optional(),
+  // Derived from the preset library rather than restated, so adding a stock is
+  // one edit. Default is the 99x38mm sheet: a 13-character location code gets
+  // 0.48mm bars there and only 0.31mm on the 24-up.
+  preset: z
+    .enum(Object.keys(SHEET_PRESETS) as [SheetPresetName, ...SheetPresetName[]])
+    .default('a4-14'),
+  /**
+   * Skip N cells on the first page, to reuse a part-used sticker sheet.
+   *
+   * The ceiling is the largest sheet in the library, not a fixed 47 — that was
+   * sized for a 24-up sheet and silently clamped on anything denser.
+   * `layoutLabels` clamps to the chosen preset's own capacity anyway.
+   */
+  startOffset: z.number().int().min(0).max(64).default(0),
   /** location kind: restrict to one warehouse subtree. */
   warehouseId: z.number().int().positive().optional(),
   /** location kind: which location kinds to print. Defaults to storable ones. */
@@ -81,6 +121,17 @@ const inputSchema = z.object({
   layoutId: z.number().int().positive().optional(),
   /** Which sheet of stock this call renders. Required alongside layoutId. */
   sheetGroup: z.enum(['wayfinding', 'slots', 'staging']).optional(),
+  /**
+   * Print this run on a different stock, without changing the site's default.
+   *
+   * Distinct from `preset`, which carries a default and so cannot say whether
+   * the caller meant it. A layout run otherwise re-derives its stock the same
+   * way it re-derives WHICH locations it covers — the client picks the group,
+   * never what is in it — and this is the one deliberate exception.
+   */
+  presetOverride: z
+    .enum(Object.keys(SHEET_PRESETS) as [SheetPresetName, ...SheetPresetName[]])
+    .optional(),
   /** Narrow to one subtree — "reprint aisle A3". Includes that root's own sign. */
   rootLocationId: z.number().int().positive().optional(),
   /** Default: only locations with no sticker yet. */
@@ -96,50 +147,40 @@ interface LabelItem {
   context: string
 }
 
-// ── QR rendering ──────────────────────────────────────────────────
-
-interface QrMatrix {
-  size: number
-  /** Row-major, 1 = dark. */
-  data: Uint8Array
-}
-
-function qrMatrix(text: string): QrMatrix {
-  // 'M' recovery: readable through the scuffing a warehouse label collects,
-  // without inflating the module count the way 'H' does on long codes.
-  const qr = (QRCode as any).create(text, { errorCorrectionLevel: 'M' })
-  return { size: qr.modules.size, data: qr.modules.data }
-}
+// ── Barcode rendering ─────────────────────────────────────────────
 
 /**
- * Draw a QR by merging horizontal runs of dark modules into single rectangles.
+ * Ink-spread compensation, in points.
  *
- * A 25x25 QR is 625 modules; drawing one rect per dark module across 24 labels
- * per page is ~7,500 PDF operators per page. Run-merging cuts that by roughly
- * 3-4x and costs ten lines.
+ * A laser prints bars slightly wider than nominal, which narrows the spaces and
+ * shifts the ratios a decoder measures. If the gun reads marginally at the
+ * physical verification pass this is the first knob to turn — but it stays at
+ * zero until there is evidence, because guessing at bar-width reduction is how
+ * you make a good symbol worse.
  */
-function drawQr(page: PDFPage, matrix: QrMatrix, x: number, y: number, size: number): void {
-  const module = size / matrix.size
-  const ink = rgb(0, 0, 0)
+const BAR_WIDTH_REDUCTION_PT = 0
 
-  for (let row = 0; row < matrix.size; row++) {
-    let runStart = -1
-    for (let col = 0; col <= matrix.size; col++) {
-      const dark = col < matrix.size && matrix.data[row * matrix.size + col] === 1
-      if (dark && runStart === -1) {
-        runStart = col
-      } else if (!dark && runStart !== -1) {
-        page.drawRectangle({
-          x: x + runStart * module,
-          // Matrix row 0 is the TOP row; PDF y grows upward.
-          y: y + size - (row + 1) * module,
-          width: (col - runStart) * module,
-          height: module,
-          color: ink,
-        })
-        runStart = -1
-      }
-    }
+/**
+ * Draw a Code 128 symbol as one rectangle per dark bar.
+ *
+ * Each bar is positioned by an exact multiplication from the symbol's left edge
+ * rather than by accumulating widths as it goes. A 97-element symbol summed in
+ * floating point would place its last bars fractionally off, and the ratio
+ * between adjacent bars and spaces is precisely what a decoder measures.
+ *
+ * No `borderColor`/`borderWidth`: a stroked rectangle adds half the line width
+ * to EACH side of every bar, which would destroy those ratios wholesale.
+ */
+function drawBarcode(page: PDFPage, symbol: Code128Symbol, slot: BarcodeFit): void {
+  const ink = rgb(0, 0, 0)
+  for (const run of darkRuns(symbol)) {
+    page.drawRectangle({
+      x: slot.x + run.start * slot.moduleWidth,
+      y: slot.y,
+      width: run.width * slot.moduleWidth - BAR_WIDTH_REDUCTION_PT,
+      height: slot.height,
+      color: ink,
+    })
   }
 }
 
@@ -160,6 +201,33 @@ const DEFAULT_LOCATION_KINDS = ['ZONE', 'AISLE', 'RACK', 'BAY', 'SHELF', 'BIN', 
  * ids from the client: the client picks WHICH group to render, never WHAT is in
  * it.
  */
+/**
+ * The sticker stock this site chose for this sheet group (mig 00106), or null
+ * to fall through to the built-in default.
+ *
+ * A stored preset that is no longer in the library returns null rather than
+ * throwing: a preset can be renamed or dropped in TypeScript while old rows sit
+ * in the table, and a stale preference should quietly stop applying rather than
+ * block every print run on the site.
+ */
+async function loadLabelPref(
+  admin: any,
+  warehouseId: number | null,
+  group: SheetGroup,
+): Promise<SheetPresetName | null> {
+  if (warehouseId == null) return null
+  const { data } = await admin
+    .from('warehouse_label_prefs')
+    .select('preset')
+    .eq('warehouse_id', warehouseId)
+    .eq('sheet_group', group)
+    .maybeSingle()
+
+  const preset = (data as any)?.preset as string | undefined
+  if (!preset || !(preset in SHEET_PRESETS)) return null
+  return preset as SheetPresetName
+}
+
 async function loadLayoutItems(
   admin: any,
   input: z.infer<typeof inputSchema>,
@@ -206,13 +274,21 @@ async function loadLayoutItems(
   }))
 
   const sheet = planLabelJob(rows).find((s) => s.group === (group as SheetGroup))
+  const warehouseId = ((layout as any).warehouse_id as number | null) ?? null
 
   return {
     items: (sheet?.items ?? []).map((i) => ({ code: i.code, context: i.context })),
-    warehouseId: (layout as any).warehouse_id ?? null,
-    // The stock a group prints on is a property of the group, never of the
-    // request — a bin sticker rendered at aisle-sign size wastes a sheet.
-    preset: sheet?.preset ?? 'a4-24',
+    warehouseId,
+    // The stock a group prints on is a property of the SITE and the group,
+    // never of the request — a bin sticker rendered at aisle-sign size wastes a
+    // sheet. Resolution order is the site's saved preference (mig 00106), then
+    // the built-in default, which derives from SHEET_GROUPS rather than naming
+    // a preset so an empty group and a populated one cannot disagree.
+    preset:
+      input.presetOverride ??
+      resolvePreset(group as SheetGroup, {
+        [group as SheetGroup]: await loadLabelPref(admin, warehouseId, group as SheetGroup),
+      }),
   }
 }
 
@@ -325,12 +401,30 @@ async function buildLabelPdf(
   items: LabelItem[],
   preset: SheetPresetName,
   startOffset: number,
-): Promise<Uint8Array> {
+): Promise<{ bytes: Uint8Array; warnings: string[] }> {
+  // Pre-flight, BEFORE a PDFDocument exists. A sheet of unscannable stickers is
+  // worse than no sheet at all: the failure surfaces on a ladder, after four
+  // hundred of them are stuck down. Refusing here costs nothing and leaves no
+  // half-built document behind.
+  const codes = items.map((i) => i.code)
+  const refusal = refuseRun({ codes, preset })
+  if (refusal) {
+    throw new EdgeFunctionError('INVALID_INPUT', refusal.message, {
+      codes: refusal.codes,
+      suggestedPreset: refusal.suggestion,
+    })
+  }
+
+  // Anything that will print but sits below what a comfortable scan wants comes
+  // back to the operator rather than being swallowed — "check one with the gun
+  // before you run the sheet" is a cheap instruction and a costly omission.
+  const assessment = fitRun({ codes, preset, distance: 'arms_length' })
+  const warnings = assessment.marginal.map((f) => `${f.code} — ${f.reason}`)
+
   const spec = sheetSpec(preset)
   const pages = layoutLabels(items.length, spec, startOffset)
 
   const pdf = await PDFDocument.create()
-  const mono = await pdf.embedFont(StandardFonts.Courier)
   const monoBold = await pdf.embedFont(StandardFonts.CourierBold)
   const body = await pdf.embedFont(StandardFonts.Helvetica)
 
@@ -346,7 +440,144 @@ async function buildLabelPdf(
     }
   }
 
+  return { bytes: await pdf.save(), warnings }
+}
+
+// ── Calibration sheet ─────────────────────────────────────────────
+
+/**
+ * One page, one code, printed at a range of bar widths.
+ *
+ * Bar width is the single thing a printer can silently ruin: a laser that
+ * over-inks turns a legal symbol into an unreadable one without changing
+ * anything you can see at arm's length. Every threshold in
+ * `_shared/labels/sizing.ts` assumes a printer that holds the width it is
+ * given, and this is what turns that assumption into a measurement — before
+ * anyone starts sticking labels on racking rather than after.
+ *
+ * Deliberately NOT recorded in label_print_log: no sticker from this sheet goes
+ * on a location, and `codes` would be the same code six times. It is a
+ * diagnostic, not a label run.
+ */
+async function buildCalibrationPdf(code: string): Promise<Uint8Array> {
+  const symbol = encodeCode128(code)
+
+  const pdf = await PDFDocument.create()
+  const page = pdf.addPage([A4_WIDTH, A4_HEIGHT])
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const body = await pdf.embedFont(StandardFonts.Helvetica)
+  const mono = await pdf.embedFont(StandardFonts.CourierBold)
+
+  const margin = 15 * MM
+  const ink = rgb(0, 0, 0)
+  const grey = rgb(0.42, 0.4, 0.38)
+  const printable = A4_WIDTH - 2 * margin
+
+  let y = A4_HEIGHT - margin - 14
+  page.drawText('Barcode calibration sheet', { x: margin, y, size: 16, font: bold, color: ink })
+
+  y -= 20
+  for (const line of [
+    `Code: ${code}  ·  ${symbol.modules} modules  ·  Code 128`,
+    'Scan each row with the gun you will use on the floor. Ten times, at arm\u2019s length.',
+    'The narrowest row that reads first-time every time is your printer\u2019s real limit.',
+    'If a row fails, every label at or below that bar width will fail on the racking too.',
+  ]) {
+    page.drawText(line, { x: margin, y, size: 9, font: body, color: grey })
+    y -= 12
+  }
+
+  y -= 10
+  const barHeight = 16 * MM
+  const skipped: number[] = []
+
+  for (const widthMm of CALIBRATION_WIDTHS_MM) {
+    const moduleWidth = widthMm * MM
+    const barsWidth = symbol.modules * moduleWidth
+    const quiet = QUIET_ZONE_MODULES * moduleWidth
+
+    // A wide bar and a long code can outgrow the page. Skipping is honest;
+    // squeezing the row would print a width the row's own label denies.
+    if (!calibrationRowFits(symbol.modules, widthMm, printable / MM)) {
+      skipped.push(widthMm)
+      continue
+    }
+
+    page.drawText(`${widthMm.toFixed(2)} mm bars`, {
+      x: margin,
+      y: y - 10,
+      size: 11,
+      font: bold,
+      color: ink,
+    })
+    page.drawText(`symbol ${(barsWidth / MM).toFixed(0)} mm wide`, {
+      x: margin + 70,
+      y: y - 10,
+      size: 9,
+      font: body,
+      color: grey,
+    })
+
+    const barsY = y - 16 - barHeight
+    for (const run of darkRuns(symbol)) {
+      page.drawRectangle({
+        x: margin + quiet + run.start * moduleWidth,
+        y: barsY,
+        width: run.width * moduleWidth,
+        height: barHeight,
+        color: ink,
+      })
+    }
+
+    page.drawText(code, { x: margin + quiet, y: barsY - 11, size: 9, font: mono, color: ink })
+    y = barsY - 26
+  }
+
+  if (skipped.length > 0) {
+    page.drawText(
+      `Not shown: ${skipped.map((w) => `${w.toFixed(2)}mm`).join(', ')} — too wide for A4 at this code length.`,
+      { x: margin, y: y - 4, size: 8, font: body, color: grey },
+    )
+  }
+
   return await pdf.save()
+}
+
+/**
+ * The code to calibrate against: the LONGEST active location code on the site.
+ *
+ * The longest code encodes to the widest symbol and therefore the narrowest
+ * bars, so it is the one label at risk. Calibrating against a short code would
+ * pass a printer that cannot manage the sheet you actually need to run.
+ */
+async function loadCalibrationCode(admin: any, warehouseId: number | null): Promise<string> {
+  let query = admin.from('locations').select('code, materialized_path').eq('is_active', true)
+
+  if (warehouseId != null) {
+    const { data: root } = await admin
+      .from('locations')
+      .select('materialized_path')
+      .eq('id', warehouseId)
+      .maybeSingle()
+    const rootPath = (root as any)?.materialized_path as string | undefined
+    if (rootPath) {
+      query = query.like('materialized_path', `${rootPath.replace(/([\\%_])/g, '\\$1')}/%`)
+    }
+  }
+
+  const { data } = await query.limit(5000)
+  const codes = ((data ?? []) as any[]).map((r) => r.code as string).filter(Boolean)
+  if (codes.length === 0) return 'AMD-B-12-7-L3'
+
+  // Longest by ENCODED width, not character count — Code Set C packs digits, so
+  // the longest string is not always the widest symbol.
+  return codes.reduce((worst, c) => {
+    try {
+      return encodeCode128(c).modules > encodeCode128(worst).modules ? c : worst
+    } catch {
+      return worst
+    }
+  }, codes[0])
 }
 
 function drawLabel(
@@ -357,9 +588,12 @@ function drawLabel(
   contextFont: PDFFont,
   measure: (font: PDFFont) => (s: string, size: number) => number,
 ): void {
-  const art = labelArtwork(cell, { withContext: !!item.context })
+  // Safe to encode without a try: the pre-flight already refused the whole run
+  // if any code here were un-encodable.
+  const symbol = encodeCode128(item.code)
+  const art = labelArtwork(cell, { modules: symbol.modules, withContext: !!item.context })
 
-  drawQr(page, qrMatrix(item.code), art.qr.x, art.qr.y, art.qr.size)
+  drawBarcode(page, symbol, art.barcode)
 
   drawCentred(page, art.code, item.code, codeFont, measure(codeFont), rgb(0, 0, 0))
 
@@ -435,6 +669,54 @@ serve(async (req: Request) => {
       { auth: { persistSession: false } },
     )
 
+    // A calibration sheet answers a different question from every other run —
+    // "can this printer hold a bar width", not "which locations need stickers"
+    // — so it shares only the auth, the bucket and the signed URL.
+    if (input.kind === 'calibration') {
+      const code = input.code ?? (await loadCalibrationCode(admin, input.warehouseId ?? null))
+      let bytes: Uint8Array
+      try {
+        bytes = await buildCalibrationPdf(code)
+      } catch (e) {
+        if (e instanceof Code128EncodeError) {
+          throw new EdgeFunctionError('INVALID_INPUT', `Cannot calibrate against ${code}: ${e.message}`)
+        }
+        throw e
+      }
+
+      const storagePath = `calibration/calibration-${Date.now()}.pdf`
+      const { error: calUploadError } = await admin.storage
+        .from(BUCKET)
+        .upload(storagePath, bytes, { contentType: 'application/pdf', upsert: false })
+      if (calUploadError) {
+        throw new EdgeFunctionError('INTERNAL', `upload failed: ${calUploadError.message}`)
+      }
+
+      const { data: calSigned } = await admin.storage
+        .from(BUCKET)
+        .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS)
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId,
+        actorRole: auth.role,
+        action: 'create',
+        resource: 'label_calibration_sheet',
+        resourceId: storagePath,
+        after: { code, warehouse_id: input.warehouseId ?? null, widths_mm: CALIBRATION_WIDTHS_MM },
+      })
+
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          storagePath,
+          signedUrl: calSigned?.signedUrl ?? null,
+          code,
+          widthsMm: CALIBRATION_WIDTHS_MM,
+        }),
+        { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+
     const isLayoutRun = input.layoutId != null
     const { items, warehouseId, markPrintedIds, preset } = isLayoutRun
       ? { ...(await loadLayoutItems(admin, input)), markPrintedIds: undefined }
@@ -450,7 +732,7 @@ serve(async (req: Request) => {
       )
     }
 
-    const bytes = await buildLabelPdf(items, preset, input.startOffset)
+    const { bytes, warnings } = await buildLabelPdf(items, preset, input.startOffset)
 
     const stamp = Date.now()
     const storagePath = isLayoutRun
@@ -504,6 +786,9 @@ serve(async (req: Request) => {
         layout_id: isLayoutRun ? input.layoutId : null,
         sheet_group: isLayoutRun ? input.sheetGroup : null,
         job_id: input.jobId ?? null,
+        // Recorded so "why did that bin never scan" is answerable months later
+        // from the audit trail rather than from memory.
+        marginal_labels: warnings.length,
       },
     })
 
@@ -516,6 +801,7 @@ serve(async (req: Request) => {
         preset,
         sheetGroup: isLayoutRun ? input.sheetGroup : null,
         jobId: input.jobId ?? null,
+        warnings,
       }),
       { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )

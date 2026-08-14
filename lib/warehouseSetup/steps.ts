@@ -5,7 +5,7 @@
 //
 //   storage forms + level roles + zone profiles   (before racks are drawn)
 //           -> layout drawn -> published          (publishing creates the bins)
-//           -> QR labels generated and applied
+//           -> barcode labels generated and applied
 //           -> count BY BIN
 //           -> opening-stock CSV with bin_code
 //           -> directed picking / replenishment become meaningful
@@ -173,7 +173,7 @@ export const SETUP_STEPS: readonly SetupStep[] = [
   {
     key: 'labels_confirmed',
     phase: 'map',
-    title: 'QR labels printed, applied and confirmed',
+    title: 'barcode labels printed, applied and confirmed',
     why:
       'Confirming is a statement that the stickers are physically on the racking — generating the sheets does not set it. A count by bin before this produces numbers nobody can transcribe.',
     appliesTo: 'racked',

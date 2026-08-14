@@ -15,7 +15,7 @@
 // place it already exists is the named `area` they painted over the racks (00090)
 // — which until now nothing read.
 //
-// THE CODE IS NEVER TOUCHED. It is the QR payload, the scan identity, a
+// THE CODE IS NEVER TOUCHED. It is the barcode payload, the scan identity, a
 // materialized_path segment and the CSV `bin_code` column. This module composes
 // display text and hands out numbers; it must never emit anything code-shaped.
 //
@@ -430,7 +430,7 @@ export interface NamingOptions {
    *
    * Load-bearing, and the units alone cannot supply it. Delete a saved rack and
    * its placement row goes, but its `locations` row survives — publishing never
-   * retires a bin, and its QR label is still on the racking. Derive the pool
+   * retires a bin, and its barcode label is still on the racking. Derive the pool
    * from the units and that number looks free, so the next rack drawn takes it
    * and two racks on the same floor answer to one name. The caller loads this
    * from the warehouse: MAX(name_seq) per name_area over `locations`.

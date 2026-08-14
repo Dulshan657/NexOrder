@@ -245,7 +245,7 @@ export function BinDetailPanel({
     <div className="glass-card rounded-xl p-4 space-y-4">
       <div>
         {/* Name over code (mig 00094), the same order every other surface uses.
-            The code stays visible in mono: it is what the QR prints, what a scan
+            The code stays visible in mono: it is what the barcode prints, what a scan
             matches, and what someone quotes when reporting a problem. */}
         <div className="mb-3 flex items-start justify-between gap-2">
           <div className="min-w-0">

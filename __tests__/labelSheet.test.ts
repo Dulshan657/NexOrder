@@ -9,9 +9,18 @@ import {
   layoutLabels,
   sheetSpec,
   MIN_CODE_FONT_SIZE,
+  MIN_BAR_HEIGHT_PT,
+  MIN_QUIET_ZONE_PT,
+  MAX_X_DIMENSION_PT,
+  QUIET_ZONE_MODULES,
+  SHEET_PRESET_INFO,
+  SHEET_PRESETS,
+  MM,
 } from '@/supabase/functions/_shared/labelSheet'
+import { encodeCode128 } from '@/supabase/functions/_shared/labels/code128'
 
 const spec = sheetSpec('a4-24')
+const PRESETS = Object.keys(SHEET_PRESETS) as (keyof typeof SHEET_PRESETS)[]
 
 describe('sheetSpec', () => {
   it('is A4', () => {
@@ -103,82 +112,197 @@ describe('layoutLabels', () => {
 describe('labelArtwork', () => {
   const [page] = layoutLabels(1, spec)
   const cell = page.cells[0]
+  // A real Amadiya location code, encoded. 13 characters, no digit run long
+  // enough to reach Code Set C, so it is start + 13 + checksum + stop.
+  const BIN = encodeCode128('AMD-B-12-7-L3').modules
+  const art = (c = cell, o: { modules?: number; withContext?: boolean } = {}) =>
+    labelArtwork(c, { modules: o.modules ?? BIN, withContext: o.withContext })
 
-  it('puts a square QR inside the cell', () => {
-    const art = labelArtwork(cell)
-    expect(art.qr.size).toBeGreaterThan(0)
-    expect(art.qr.size).toBeLessThanOrEqual(cell.inner.height + 0.001)
-    expect(art.qr.x).toBeGreaterThanOrEqual(cell.inner.x)
-    expect(art.qr.y).toBeGreaterThanOrEqual(cell.inner.y - 0.001)
+  it('lays the bars across the top of the cell', () => {
+    const a = art()
+    expect(a.barcode.width).toBeGreaterThan(0)
+    expect(a.barcode.height).toBeGreaterThan(0)
+    expect(a.barcode.x).toBeGreaterThanOrEqual(cell.inner.x - 0.001)
+    expect(a.barcode.x + a.barcode.width).toBeLessThanOrEqual(
+      cell.inner.x + cell.inner.width + 0.001,
+    )
+    expect(a.barcode.y + a.barcode.height).toBeCloseTo(cell.inner.y + cell.inner.height, 6)
   })
 
-  it('stacks the code below the QR, sharing its centre', () => {
-    const art = labelArtwork(cell)
-    // Top of the code's glyphs clears the bottom of the QR.
-    expect(art.code.y + art.code.fontSize).toBeLessThanOrEqual(art.qr.y + 0.001)
-    expect(art.code.centerX).toBeCloseTo(art.qr.x + art.qr.size / 2, 6)
-    expect(art.context!.centerX).toBeCloseTo(art.code.centerX, 6)
-    expect(art.context!.y).toBeLessThan(art.code.y)
+  it('stacks the code below the bars, sharing their centre', () => {
+    const a = art()
+    expect(a.code.y + a.code.fontSize).toBeLessThanOrEqual(a.barcode.y + 0.001)
+    expect(a.code.centerX).toBeCloseTo(a.barcode.x + a.barcode.width / 2, 6)
+    expect(a.context!.centerX).toBeCloseTo(a.code.centerX, 6)
+    expect(a.context!.y).toBeLessThan(a.code.y)
   })
 
   it('gives the text the full inner width — the bug this layout exists to fix', () => {
-    const art = labelArtwork(cell)
-    expect(art.code.maxWidth).toBe(cell.inner.width)
+    const a = art()
+    expect(a.code.maxWidth).toBe(cell.inner.width)
     // MAIN's bin codes are 12 chars; Courier-Bold costs 0.6em each, so at the
     // 15pt this cell yields a code needs 108pt. The old side-by-side column was
     // 97.5pt, which is why every sticker printed `MAIN-O01-…`.
-    const needed = 'MAIN-F03-L12'.length * 0.6 * art.code.fontSize
+    const needed = 'MAIN-F03-L12'.length * 0.6 * a.code.fontSize
     expect(needed).toBeGreaterThan(97.5)
-    expect(art.code.maxWidth).toBeGreaterThan(needed)
+    expect(a.code.maxWidth).toBeGreaterThan(needed)
   })
 
-  it('reserves a quiet zone between the QR and the code', () => {
-    // qrcode's create() emits the bare symbol, so nothing else supplies one.
-    const art = labelArtwork(cell)
-    const gap = art.qr.y - (art.code.y + art.code.fontSize)
-    expect(gap).toBeGreaterThanOrEqual(art.qr.size * 0.1)
+  it('grants at least 10 modules of quiet zone either side', () => {
+    // The commonest cause of a barcode that "scans sometimes". Nothing else
+    // supplies it: the symbol runs edge to edge of its own width.
+    for (const preset of PRESETS) {
+      const c = layoutLabels(1, sheetSpec(preset))[0].cells[0]
+      const a = art(c)
+      expect(a.barcode.quietZone, preset).toBeGreaterThanOrEqual(
+        QUIET_ZONE_MODULES * a.barcode.moduleWidth - 0.001,
+      )
+      expect(a.barcode.quietZone, preset).toBeGreaterThanOrEqual(MIN_QUIET_ZONE_PT - 0.001)
+    }
   })
 
-  it('keeps every piece of artwork inside the cell, on all presets', () => {
-    for (const preset of ['a4-24', 'a4-14', 'a4-8'] as const) {
+  it('clears the bars from the code beneath them', () => {
+    // A scan line that drifts low must read white, not the top of a glyph.
+    const a = art()
+    expect(a.barcode.y - (a.code.y + a.code.fontSize)).toBeGreaterThan(0)
+  })
+
+  it('caps the module width so a short code does not print as giant stripes', () => {
+    // A 7-character aisle code on a full-page sign would otherwise be handed a
+    // module wider than GS1 permits.
+    const big = layoutLabels(1, sheetSpec('a4-1'))[0].cells[0]
+    const a = art(big, { modules: encodeCode128('AMD-A03').modules })
+    expect(a.barcode.moduleWidth).toBeLessThanOrEqual(MAX_X_DIMENSION_PT + 0.001)
+    // The slack lands in the quiet zone, centred — which reads as deliberate.
+    expect(a.barcode.quietZone).toBeGreaterThan(a.barcode.moduleWidth * QUIET_ZONE_MODULES)
+  })
+
+  it('keeps the bars tall enough for a scan line to cross', () => {
+    // Never the binding constraint at our stocks — width always is — but a
+    // future preset could break it silently, so it is pinned.
+    for (const preset of PRESETS) {
+      const c = layoutLabels(1, sheetSpec(preset))[0].cells[0]
+      expect(art(c).barcode.height, preset).toBeGreaterThanOrEqual(MIN_BAR_HEIGHT_PT)
+    }
+  })
+
+  it('keeps bar height at or above 15% of symbol width on the stocks we print', () => {
+    // The usual rule of thumb for a scannable linear symbol. Asserted rather
+    // than enforced in the formula, so it is a proven property of the actual
+    // stock rather than a runtime clamp that could mask a bad preset.
+    for (const preset of ['a4-24', 'a4-21', 'a4-14', 'a4-12', 'a4-8'] as const) {
+      const c = layoutLabels(1, sheetSpec(preset))[0].cells[0]
+      const a = art(c)
+      expect(a.barcode.height, preset).toBeGreaterThanOrEqual(a.barcode.width * 0.15)
+    }
+  })
+
+  it('keeps every piece of artwork inside the cell, on every preset', () => {
+    for (const preset of PRESETS) {
       for (const withContext of [true, false]) {
         const c = layoutLabels(1, sheetSpec(preset))[0].cells[0]
-        const art = labelArtwork(c, { withContext })
+        const a = art(c, { withContext })
         const { inner } = c
-        expect(art.qr.x).toBeGreaterThanOrEqual(inner.x - 0.001)
-        expect(art.qr.x + art.qr.size).toBeLessThanOrEqual(inner.x + inner.width + 0.001)
-        expect(art.qr.y + art.qr.size).toBeLessThanOrEqual(inner.y + inner.height + 0.001)
-        expect(art.qr.y).toBeGreaterThanOrEqual(inner.y - 0.001)
-        const lowest = art.context ?? art.code
-        expect(lowest.y).toBeGreaterThanOrEqual(inner.y - 0.001)
+        expect(a.barcode.x, preset).toBeGreaterThanOrEqual(inner.x - 0.001)
+        expect(a.barcode.x + a.barcode.width, preset).toBeLessThanOrEqual(
+          inner.x + inner.width + 0.001,
+        )
+        expect(a.barcode.y + a.barcode.height, preset).toBeLessThanOrEqual(
+          inner.y + inner.height + 0.001,
+        )
+        expect(a.barcode.y, preset).toBeGreaterThanOrEqual(inner.y - 0.001)
+        const lowest = a.context ?? a.code
+        expect(lowest.y, preset).toBeGreaterThanOrEqual(inner.y - 0.001)
       }
     }
+  })
+
+  it('gives a longer code narrower bars — the whole reason sizing has to be checked', () => {
+    const short = art(cell, { modules: encodeCode128('AMD-A03').modules })
+    const long = art(cell, { modules: encodeCode128('MAIN-B-189-5-L5').modules })
+    expect(long.barcode.moduleWidth).toBeLessThan(short.barcode.moduleWidth)
   })
 
   it('scales the code with the label — a big sign prints big text', () => {
     // Regression guard for the old clamp ceiling of 15pt, which was tuned for
     // the 24-up bin sticker and left a 99x67mm aisle sign no larger.
-    const bin = labelArtwork(layoutLabels(1, sheetSpec('a4-24'))[0].cells[0])
-    const sign = labelArtwork(layoutLabels(1, sheetSpec('a4-8'))[0].cells[0])
+    const bin = art(layoutLabels(1, sheetSpec('a4-24'))[0].cells[0])
+    const sign = art(layoutLabels(1, sheetSpec('a4-8'))[0].cells[0])
     expect(sign.code.fontSize).toBeGreaterThan(bin.code.fontSize * 1.5)
-    expect(sign.qr.size).toBeGreaterThan(bin.qr.size)
+    expect(sign.barcode.moduleWidth).toBeGreaterThan(bin.barcode.moduleWidth)
   })
 
   it('drops the context line when there is no context', () => {
-    expect(labelArtwork(cell, { withContext: false }).context).toBeNull()
+    expect(art(cell, { withContext: false }).context).toBeNull()
   })
 
   it('keeps the code legible — never smaller than the floor', () => {
     const tiny = layoutLabels(1, { ...spec, rows: 20 })[0].cells[0]
-    expect(labelArtwork(tiny).code.fontSize).toBeGreaterThanOrEqual(MIN_CODE_FONT_SIZE)
+    expect(art(tiny).code.fontSize).toBeGreaterThanOrEqual(MIN_CODE_FONT_SIZE)
   })
 
   it('lets the context shrink further than the code before giving up', () => {
-    // The code is what gets typed when a QR won't scan, so it stops shrinking
-    // sooner and takes the ellipsis instead.
-    const art = labelArtwork(cell)
-    expect(art.code.minFontSize).toBe(MIN_CODE_FONT_SIZE)
-    expect(art.context!.minFontSize).toBeLessThan(art.code.minFontSize)
+    // The code is what gets typed when the bars will not scan, so it stops
+    // shrinking sooner and takes the ellipsis instead.
+    const a = art()
+    expect(a.code.minFontSize).toBe(MIN_CODE_FONT_SIZE)
+    expect(a.context!.minFontSize).toBeLessThan(a.code.minFontSize)
+  })
+})
+
+describe('the preset library', () => {
+  it('describes every preset it offers', () => {
+    for (const preset of PRESETS) {
+      expect(SHEET_PRESET_INFO[preset], preset).toBeDefined()
+    }
+    expect(Object.keys(SHEET_PRESET_INFO).sort()).toEqual([...PRESETS].sort())
+  })
+
+  it('lays out exactly as many labels per sheet as it claims', () => {
+    for (const preset of PRESETS) {
+      expect(labelsPerPage(sheetSpec(preset)), preset).toBe(SHEET_PRESET_INFO[preset].perSheet)
+    }
+  })
+
+  it('produces cells the exact size of the Avery die-cut it names', () => {
+    // Every preset must land on stock you can actually buy, and the tolerance is
+    // tight on purpose: with no vertical gutter the rows tile contiguously, so a
+    // per-row error COMPOUNDS. `a4-8` was 0.55mm out per row, which by the
+    // bottom row of a sheet is 2.2mm — enough to walk the artwork off its
+    // die-cut. It survived only because the 10pt padding absorbed it.
+    for (const preset of PRESETS) {
+      const cell = layoutLabels(1, sheetSpec(preset))[0].cells[0]
+      const info = SHEET_PRESET_INFO[preset]
+      expect(cell.width / MM, `${preset} width`).toBeCloseTo(info.widthMm, 1)
+      expect(cell.height / MM, `${preset} height`).toBeCloseTo(info.heightMm, 1)
+    }
+  })
+
+  it('never lets accumulated row drift walk a label off the page', () => {
+    for (const preset of PRESETS) {
+      const spec = sheetSpec(preset)
+      const info = SHEET_PRESET_INFO[preset]
+      const cells = layoutLabels(labelsPerPage(spec), spec)[0].cells
+      const last = cells[cells.length - 1]
+      // Bottom edge of the final row, measured from the top of the page.
+      const consumed = (A4_HEIGHT - last.y) / MM
+      expect(consumed, preset).toBeLessThanOrEqual(297 - spec.marginY / MM + 0.05)
+      expect(last.height / MM, preset).toBeCloseTo(info.heightMm, 1)
+    }
+  })
+
+  it('fits every preset on the page', () => {
+    for (const preset of PRESETS) {
+      const spec = sheetSpec(preset)
+      const pages = layoutLabels(labelsPerPage(spec), spec)
+      expect(pages, preset).toHaveLength(1)
+      for (const c of pages[0].cells) {
+        expect(c.x, preset).toBeGreaterThanOrEqual(0)
+        expect(c.y, preset).toBeGreaterThanOrEqual(0)
+        expect(c.x + c.width, preset).toBeLessThanOrEqual(A4_WIDTH + 0.001)
+        expect(c.y + c.height, preset).toBeLessThanOrEqual(A4_HEIGHT + 0.001)
+      }
+    }
   })
 })
 

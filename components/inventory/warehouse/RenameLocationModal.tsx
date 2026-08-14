@@ -2,7 +2,7 @@
 //
 // The code is shown read-only and captioned, because "can I change this?" is the
 // first question a rename dialog raises and the answer is load-bearing: the code
-// is the QR payload, what every scan matches, a materialized_path segment and
+// is the barcode payload, what every scan matches, a materialized_path segment and
 // the CSV `bin_code` column. Nothing here can change it.
 //
 // Renaming here marks the location CUSTOM (mig 00094) — the server forces that,
@@ -104,7 +104,7 @@ export function RenameLocationModal({
           <p className="mb-1 text-xs font-medium text-stone-500">Code</p>
           <p className="rounded-lg bg-stone-50 px-3 py-2 font-mono text-sm text-stone-600">{location.code}</p>
           <p className="mt-1 text-[11px] text-stone-400">
-            The code never changes — it is what the QR label prints and what every scan matches.
+            The code never changes — it is what the barcode label prints and what every scan matches.
           </p>
         </div>
 

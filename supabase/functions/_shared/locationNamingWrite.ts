@@ -117,7 +117,7 @@ export async function loadNameState(
  *
  * Read from `locations`, not from the layout, and that is the whole point:
  * deleting a rack removes its placement row but NOT its location row —
- * publishing never retires a bin, and its QR label is still on the racking. A
+ * publishing never retires a bin, and its barcode label is still on the racking. A
  * high-water mark derived only from the layout would offer that number to the
  * next rack drawn, putting two racks on one name.
  *

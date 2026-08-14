@@ -1,6 +1,6 @@
 // What did the operator just scan?
 //
-// The QR payload is deliberately BARE TEXT — a locations.code, a product SKU, or
+// The barcode payload is deliberately BARE TEXT — a locations.code, a product SKU, or
 // a handling-unit code — with no URL wrapper and no namespace prefix, so a
 // third-party scanner app reads something meaningful and so the same label works
 // if this system is ever replaced. The cost of that choice is that one string
@@ -16,7 +16,14 @@
 // IDENTICALLY. If they ever diverged, a scan the client accepted could be
 // rejected by the server, or vice versa. Re-exported here so existing importers
 // of this module are unaffected.
-export { barcodeVariants, codeMatchesProduct, normalizeScan } from '@/supabase/functions/_shared/scanNormalize'
+export {
+  barcodeVariants,
+  codeMatchesProduct,
+  gtin14Base,
+  gtinCheckDigit,
+  hasValidGtinCheckDigit,
+  normalizeScan,
+} from '@/supabase/functions/_shared/scanNormalize'
 import { barcodeVariants, normalizeScan } from '@/supabase/functions/_shared/scanNormalize'
 
 export type ProductMatchSource = 'sku' | 'barcode' | 'batchBarcode'

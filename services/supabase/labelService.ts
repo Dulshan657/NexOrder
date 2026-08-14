@@ -5,17 +5,24 @@ import {
   type PlannedSheet,
   type SheetGroup,
 } from '@/supabase/functions/_shared/labels/layoutLabelPlan'
+import type { SheetPresetName } from '@/supabase/functions/_shared/labelSheet'
 
 // Thin client over the generate-labels Edge Function (mig 00074 bucket +
 // label_print_log). All the work is server-side; this only shapes the request
 // and hands back the signed URL the UI opens for printing.
 
 export type LabelKind = 'location' | 'product' | 'handling_unit'
-export type LabelPreset = 'a4-24' | 'a4-14' | 'a4-8'
+/**
+ * Derived from the preset library, never restated. A hand-written union here
+ * silently excluded every stock added to `SHEET_PRESETS` and would do so again.
+ */
+export type LabelPreset = SheetPresetName
 
 export interface GenerateLabelsInput {
   kind: LabelKind
   preset?: LabelPreset
+  /** Layout runs only: override the resolved stock for this run, without saving it. */
+  presetOverride?: LabelPreset
   /** Skip N cells on the first page so a part-used sticker sheet can be reused. */
   startOffset?: number
   warehouseId?: number
@@ -46,7 +53,10 @@ export async function generateLabels(input: GenerateLabelsInput): Promise<Genera
   }>('generate-labels', {
     body: {
       kind: input.kind,
-      preset: input.preset ?? 'a4-24',
+      // Must match the server's own default, or "unspecified" means two
+      // different sheet sizes depending on which side you ask.
+      preset: input.preset ?? 'a4-14',
+      presetOverride: input.presetOverride,
       startOffset: input.startOffset ?? 0,
       warehouseId: input.warehouseId,
       locationKinds: input.locationKinds,
@@ -57,8 +67,8 @@ export async function generateLabels(input: GenerateLabelsInput): Promise<Genera
       onlyUnprinted: input.onlyUnprinted,
       jobId: input.jobId,
     },
-    // Rendering a full-warehouse sheet (MAIN is ~945 levels) embeds a QR per
-    // label and can outrun the global 20s fetch ceiling in lib/supabase.ts.
+    // Rendering a full-warehouse sheet (MAIN is ~945 levels) encodes a barcode
+    // per label and can outrun the global 20s fetch ceiling in lib/supabase.ts.
     // functions-js attaches its own AbortSignal, which bypasses that ceiling
     // and enforces this bound instead (same reasoning as extractFloorplan).
     timeout: 90_000,
@@ -72,6 +82,76 @@ export async function generateLabels(input: GenerateLabelsInput): Promise<Genera
     preset: (data as { preset?: LabelPreset }).preset,
     sheetGroup: (data as { sheetGroup?: SheetGroup | null }).sheetGroup ?? null,
   }
+}
+
+// ── Sticker stock, saved per site (mig 00106) ────────────────────────────────
+
+export interface WarehouseLabelPref {
+  sheetGroup: SheetGroup
+  /** null means "use the built-in default" — the row simply is not there. */
+  preset: LabelPreset | null
+}
+
+/**
+ * What stock this site prints each sheet group on.
+ *
+ * A read-only table query rather than a function call: RLS already limits it to
+ * ops roles, and there is no decision to make server-side. An absent row is not
+ * an error — it means the built-in default, which is why the result is sparse
+ * rather than padded out to three entries here.
+ */
+export async function getWarehouseLabelPrefs(warehouseId: number): Promise<WarehouseLabelPref[]> {
+  const { data, error } = await supabase
+    .from('warehouse_label_prefs')
+    .select('sheet_group, preset')
+    .eq('warehouse_id', warehouseId)
+  if (error) throw error
+  return ((data ?? []) as Array<{ sheet_group: string; preset: string }>).map((r) => ({
+    sheetGroup: r.sheet_group as SheetGroup,
+    preset: r.preset as LabelPreset,
+  }))
+}
+
+/** Save (or, with a null preset, clear) this site's stock for one or more groups. */
+export async function setWarehouseLabelPrefs(input: {
+  warehouseId: number
+  prefs: WarehouseLabelPref[]
+}): Promise<void> {
+  const { error } = await supabase.functions.invoke('mutate-warehouse', {
+    body: { action: 'set_label_prefs', data: input },
+  })
+  if (error) throw error
+}
+
+// ── Calibration ──────────────────────────────────────────────────────────────
+
+export interface CalibrationSheetResult {
+  storagePath: string
+  signedUrl: string | null
+  /** The code that was printed — the site's longest unless one was given. */
+  code: string
+  widthsMm: number[]
+}
+
+/**
+ * One page, one code, printed at a range of bar widths.
+ *
+ * Every sizing verdict the wizard shows assumes a printer that holds the bar
+ * width it is given, and that is the one thing a printer can silently ruin.
+ * Print this once, scan down it, and the narrowest row that reads first-time
+ * every time is a measured fact rather than an assumption.
+ */
+export async function generateCalibrationSheet(input: {
+  warehouseId?: number
+  code?: string
+}): Promise<CalibrationSheetResult> {
+  const { data, error } = await supabase.functions.invoke<CalibrationSheetResult>(
+    'generate-labels',
+    { body: { kind: 'calibration', warehouseId: input.warehouseId, code: input.code } },
+  )
+  if (error) throw error
+  if (!data) throw new Error('Calibration sheet returned no result')
+  return data
 }
 
 // ── Layout runs (mig 00084) ──────────────────────────────────────────────────
@@ -170,13 +250,18 @@ export interface PrintLayoutLabelsInput {
   rootLocationId?: number | null
   onlyUnprinted?: boolean
   startOffset?: number
+  /**
+   * Print one or more groups on a different stock for THIS run only, leaving
+   * the site's saved default alone. Absent groups resolve normally.
+   */
+  presetOverrides?: Partial<Record<SheetGroup, LabelPreset>>
 }
 
 /**
  * Render every sheet one layout run needs, as one job.
  *
  * SEQUENTIAL on purpose. Three concurrent calls would each render up to a
- * thousand QR codes, which finds the per-user rate limit (10/min) and the 90s
+ * thousand barcodes, which finds the per-user rate limit (10/min) and the 90s
  * invoke ceiling at the same time — and a job that fails halfway leaves the
  * operator holding two of three sheets with no way to tell which.
  *
@@ -186,7 +271,7 @@ export interface PrintLayoutLabelsInput {
  *
  * A failing group does NOT abandon the ones already rendered. Those PDFs exist
  * in the bucket and are logged against this job, so throwing them away would
- * leave the operator re-rendering a thousand QR codes to recover work that is
+ * leave the operator re-rendering a thousand barcodes to recover work that is
  * already done. Only a job where nothing rendered is an outright failure.
  */
 export async function printLayoutLabels(input: PrintLayoutLabelsInput): Promise<LayoutLabelJob> {
@@ -209,6 +294,7 @@ export async function printLayoutLabels(input: PrintLayoutLabelsInput): Promise<
         kind: 'location',
         layoutId: input.layoutId,
         sheetGroup: sheet.group,
+        presetOverride: input.presetOverrides?.[sheet.group],
         rootLocationId: input.rootLocationId ?? undefined,
         onlyUnprinted,
         jobId,

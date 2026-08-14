@@ -914,7 +914,7 @@ describe('draw-time naming', () => {
     expect(s.placements.map((p) => p.name)).toEqual(['Chiller · Rack 1', 'Chiller · Rack 2'])
     expect(s.placements.map((p) => p.nameSeq)).toEqual([1, 2])
     expect(s.placements.every((p) => p.nameArea === 'Chiller' && p.nameIsAuto)).toBe(true)
-    // The CODE is untouched — it is the QR payload and the scan identity.
+    // The CODE is untouched — it is the barcode payload and the scan identity.
     expect(s.placements.map((p) => p.code)).toEqual(['NEXG-B-0-0', 'NEXG-B-1-0'])
   })
 

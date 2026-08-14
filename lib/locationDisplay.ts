@@ -5,7 +5,7 @@
 // location also carries a composed NAME — "Chiller · Rack 7 · L4" — drawn from
 // the area the operator painted over the racks.
 //
-// THE CODE IS STILL THE IDENTITY. It is the QR payload, what `resolveScan`
+// THE CODE IS STILL THE IDENTITY. It is the barcode payload, what `resolveScan`
 // matches, a `materialized_path` segment and the CSV `bin_code` column. So it
 // never disappears: it moves to a second line in small mono type, where it is
 // still there to cross-check against a sticker and still there to search. This

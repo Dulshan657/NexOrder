@@ -5,6 +5,7 @@ import {
   labelContext,
   MAX_CONTEXT_CHARS,
   planLabelJob,
+  resolvePreset,
   type LabelTargetRow,
 } from '@/supabase/functions/_shared/labels/layoutLabelPlan'
 
@@ -58,7 +59,36 @@ describe('groupForKind', () => {
 describe('SHEET_GROUPS', () => {
   it('pairs each group with the stock it prints on', () => {
     const byGroup = Object.fromEntries(SHEET_GROUPS.map((g) => [g.group, g.preset]))
-    expect(byGroup).toEqual({ wayfinding: 'a4-8', slots: 'a4-24', staging: 'a4-14' })
+    // Slots print on the 99x38mm sheet, not the cheaper 63x34mm one: a
+    // 13-character location code encodes to 0.31mm bars there and 0.48mm here.
+    expect(byGroup).toEqual({ wayfinding: 'a4-8', slots: 'a4-14', staging: 'a4-14' })
+  })
+})
+
+describe('resolvePreset', () => {
+  // Both runtimes call this: the job modal to preview the stock, and
+  // generate-labels to render on it. If they ever disagreed the operator would
+  // be told one sheet size and handed another.
+  it('falls back to the built-in default when the site has no preference', () => {
+    expect(resolvePreset('slots')).toBe('a4-14')
+    expect(resolvePreset('wayfinding')).toBe('a4-8')
+    expect(resolvePreset('slots', {})).toBe('a4-14')
+  })
+
+  it('uses the site preference when there is one', () => {
+    expect(resolvePreset('slots', { slots: 'a4-12' })).toBe('a4-12')
+  })
+
+  it('treats a null preference as absent, not as a value', () => {
+    // Clearing a preference deletes the row; null is what a sparse map yields
+    // for a group nobody has chosen, and must mean "default" not "nothing".
+    expect(resolvePreset('slots', { slots: null })).toBe('a4-14')
+  })
+
+  it('does not let one group\'s preference leak into another', () => {
+    const prefs = { slots: 'a4-12' as const }
+    expect(resolvePreset('wayfinding', prefs)).toBe('a4-8')
+    expect(resolvePreset('staging', prefs)).toBe('a4-14')
   })
 })
 
@@ -151,7 +181,7 @@ describe('planLabelJob', () => {
   it('splits a job into one sheet per stock, signs first', () => {
     const sheets = planLabelJob(rows)
     expect(sheets.map((s) => s.group)).toEqual(['wayfinding', 'slots', 'staging'])
-    expect(sheets.map((s) => s.preset)).toEqual(['a4-8', 'a4-24', 'a4-14'])
+    expect(sheets.map((s) => s.preset)).toEqual(['a4-8', 'a4-14', 'a4-14'])
     expect(sheets.map((s) => s.items.length)).toEqual([2, 2, 1])
   })
 

@@ -16,6 +16,7 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { requireModule } from '../_shared/modules.ts'
+import { SHEET_PRESETS, type SheetPresetName } from '../_shared/labelSheet.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -49,10 +50,34 @@ const warehouseUpdateSchema = z
     message: 'At least one field must be provided for update',
   })
 
+/**
+ * Which sticker stock this site prints each sheet group on (mig 00106).
+ *
+ * `preset` is validated against the preset library rather than a restated list,
+ * so adding a stock is one edit. A null clears the preference and restores the
+ * built-in default from SHEET_GROUPS — deleting the row rather than writing a
+ * sentinel, so "unset" has exactly one representation.
+ */
+const labelPrefsSchema = z.object({
+  warehouseId: z.number().int().positive(),
+  prefs: z
+    .array(
+      z.object({
+        sheetGroup: z.enum(['wayfinding', 'slots', 'staging']),
+        preset: z
+          .enum(Object.keys(SHEET_PRESETS) as [SheetPresetName, ...SheetPresetName[]])
+          .nullable(),
+      }),
+    )
+    .min(1)
+    .max(3),
+})
+
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: warehouseCreateSchema }),
   z.object({ action: z.literal('update'), id: z.number().int().positive(), data: warehouseUpdateSchema }),
   z.object({ action: z.literal('deactivate'), id: z.number().int().positive() }),
+  z.object({ action: z.literal('set_label_prefs'), data: labelPrefsSchema }),
 ])
 
 /** True when the warehouse (or any descendant location) still holds on_hand stock. */
@@ -118,6 +143,62 @@ serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { persistSession: false } },
     )
+
+    if (input.action === 'set_label_prefs') {
+      const { warehouseId, prefs } = input.data
+
+      const { data: warehouse } = await admin
+        .from('locations')
+        .select('id, kind, name')
+        .eq('id', warehouseId)
+        .maybeSingle()
+      if (!warehouse || (warehouse as any).kind !== 'WAREHOUSE') {
+        throw new EdgeFunctionError('INVALID_INPUT', 'That id is not a warehouse.')
+      }
+
+      // A null preset clears the row rather than storing a sentinel, so "use
+      // the built-in default" has exactly one representation in the table.
+      const cleared = prefs.filter((p) => p.preset === null).map((p) => p.sheetGroup)
+      const set = prefs.filter((p) => p.preset !== null)
+
+      if (cleared.length > 0) {
+        const { error } = await admin
+          .from('warehouse_label_prefs')
+          .delete()
+          .eq('warehouse_id', warehouseId)
+          .in('sheet_group', cleared)
+        if (error) throw new EdgeFunctionError('INTERNAL', error.message)
+      }
+
+      if (set.length > 0) {
+        const { error } = await admin.from('warehouse_label_prefs').upsert(
+          set.map((p) => ({
+            warehouse_id: warehouseId,
+            sheet_group: p.sheetGroup,
+            preset: p.preset,
+            updated_at: new Date().toISOString(),
+            updated_by: auth.userId,
+          })),
+          { onConflict: 'warehouse_id,sheet_group' },
+        )
+        if (error) throw new EdgeFunctionError('INTERNAL', error.message)
+      }
+
+      // One event per call, not one per group: the operator made one decision.
+      await logAuditEvent(admin, {
+        actorId: auth.userId,
+        actorRole: auth.role,
+        action: 'update',
+        resource: 'warehouse_label_prefs',
+        resourceId: String(warehouseId),
+        after: { warehouse: (warehouse as any).name, prefs },
+      })
+
+      return new Response(JSON.stringify({ ok: true, warehouseId, prefs }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     if (input.action === 'create') {
       const row = {

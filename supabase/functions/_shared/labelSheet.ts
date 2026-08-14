@@ -46,20 +46,56 @@ export interface LabelPage {
 }
 
 /**
- * Sheet presets. Sizes are chosen to land on common Avery-style A4 die-cuts;
- * `a4-24` (63.5 x 33.9mm) is the default because it is the cheapest widely
- * stocked sticker sheet and a bin label does not need to be bigger.
+ * Sheet presets — every one a die-cut you can actually buy.
  *
- * `a4-8` exists for aisle/zone wayfinding signs, which are read from across a
- * warehouse rather than at arm's length.
+ * That constraint is the whole point of a fixed list rather than free
+ * millimetres: a mistyped margin does not print a slightly odd label, it prints
+ * every sticker half off its backing and wastes the sheet. Sizes here are the
+ * Avery A4 range, which is what is stocked in Australia.
+ *
+ * Which one a given job should use is NOT decided here — see
+ * `_shared/labels/sizing.ts`, which is the only file holding a threshold. A
+ * bin sticker's size depends on how long its code encodes and how far away it
+ * gets scanned, and neither is a property of the paper.
  */
 export const SHEET_PRESETS = {
-  'a4-24': { columns: 3, rows: 8, marginX: 7 * MM, marginY: 13 * MM, gutterX: 2.5 * MM, gutterY: 0, padding: 4 },
-  'a4-14': { columns: 2, rows: 7, marginX: 5 * MM, marginY: 15 * MM, gutterX: 2.5 * MM, gutterY: 0, padding: 6 },
-  'a4-8':  { columns: 2, rows: 4, marginX: 5 * MM, marginY: 12 * MM, gutterX: 2.5 * MM, gutterY: 0, padding: 10 },
+  'a4-65': { columns: 5, rows: 13, marginX: 4.75 * MM, marginY: 10.7 * MM, gutterX: 2.5 * MM, gutterY: 0, padding: 3 },
+  'a4-40': { columns: 4, rows: 10, marginX: 9.85 * MM, marginY: 21.5 * MM, gutterX: 2.5 * MM, gutterY: 0, padding: 3 },
+  'a4-24': { columns: 3, rows: 8, marginX: 7.25 * MM, marginY: 12.9 * MM, gutterX: 2.5 * MM, gutterY: 0, padding: 4 },
+  'a4-21': { columns: 3, rows: 7, marginX: 7.25 * MM, marginY: 15.15 * MM, gutterX: 2.5 * MM, gutterY: 0, padding: 4 },
+  'a4-14': { columns: 2, rows: 7, marginX: 4.65 * MM, marginY: 15.15 * MM, gutterX: 2.5 * MM, gutterY: 0, padding: 6 },
+  'a4-12': { columns: 2, rows: 6, marginX: 4.65 * MM, marginY: 21.6 * MM, gutterX: 2.5 * MM, gutterY: 0, padding: 6 },
+  'a4-8':  { columns: 2, rows: 4, marginX: 4.65 * MM, marginY: 13.1 * MM, gutterX: 2.5 * MM, gutterY: 0, padding: 10 },
+  'a4-4':  { columns: 2, rows: 2, marginX: 4.65 * MM, marginY: 9.5 * MM, gutterX: 2.5 * MM, gutterY: 0, padding: 10 },
+  'a4-2':  { columns: 1, rows: 2, marginX: 5.2 * MM, marginY: 5 * MM, gutterX: 0, gutterY: 0, padding: 12 },
+  'a4-1':  { columns: 1, rows: 1, marginX: 5.2 * MM, marginY: 3.95 * MM, gutterX: 0, gutterY: 0, padding: 14 },
 } as const
 
 export type SheetPresetName = keyof typeof SHEET_PRESETS
+
+/**
+ * What to call each stock, and what it is good for.
+ *
+ * Kept beside the geometry but separate from it so `sheetSpec` stays a pure
+ * `LabelSheetSpec` — and so the UI stops hard-coding size strings that go stale
+ * the moment a preset moves. `bestFor` is a hint for the sizing wizard's list,
+ * never a rule: the verdict comes from the code length and the scan distance.
+ */
+export const SHEET_PRESET_INFO: Record<
+  SheetPresetName,
+  { perSheet: number; widthMm: number; heightMm: number; averyCode: string; averyLabel: string; bestFor: string }
+> = {
+  'a4-65': { perSheet: 65, widthMm: 38.1, heightMm: 21.2, averyCode: 'L7651', averyLabel: '65 per sheet, 38x21mm', bestFor: 'Very short codes only' },
+  'a4-40': { perSheet: 40, widthMm: 45.7, heightMm: 25.4, averyCode: 'L7654', averyLabel: '40 per sheet, 46x25mm', bestFor: 'Short codes, carton plates' },
+  'a4-24': { perSheet: 24, widthMm: 63.5, heightMm: 33.9, averyCode: 'L7159', averyLabel: '24 per sheet, 64x34mm', bestFor: 'Pallet and carton plates' },
+  'a4-21': { perSheet: 21, widthMm: 63.5, heightMm: 38.1, averyCode: 'L7160', averyLabel: '21 per sheet, 64x38mm', bestFor: 'Pallet plates, taller face' },
+  'a4-14': { perSheet: 14, widthMm: 99.1, heightMm: 38.1, averyCode: 'L7163', averyLabel: '14 per sheet, 99x38mm', bestFor: 'Bins and rack levels' },
+  'a4-12': { perSheet: 12, widthMm: 99.1, heightMm: 42.3, averyCode: 'L7164', averyLabel: '12 per sheet, 99x42mm', bestFor: 'Bins with a long context line' },
+  'a4-8':  { perSheet: 8, widthMm: 99.1, heightMm: 67.7, averyCode: 'L7165', averyLabel: '8 per sheet, 99x68mm', bestFor: 'Aisle and zone signs' },
+  'a4-4':  { perSheet: 4, widthMm: 99.1, heightMm: 139, averyCode: 'L7169', averyLabel: '4 per sheet, 99x139mm', bestFor: 'Large wayfinding signs' },
+  'a4-2':  { perSheet: 2, widthMm: 199.6, heightMm: 143.5, averyCode: 'L7168', averyLabel: '2 per sheet, 200x144mm', bestFor: 'Aisle-end signage' },
+  'a4-1':  { perSheet: 1, widthMm: 199.6, heightMm: 289.1, averyCode: 'L7167', averyLabel: '1 per sheet, 200x289mm', bestFor: 'Full-page dock signage' },
+}
 
 export function sheetSpec(preset: SheetPresetName): LabelSheetSpec {
   const p = SHEET_PRESETS[preset]
@@ -137,20 +173,20 @@ export function layoutLabels(count: number, spec: LabelSheetSpec, startOffset = 
 }
 
 /**
- * Geometry for one label's contents: a square QR on top, the human-readable code
- * and context text centred beneath it.
+ * Geometry for one label's contents: a Code 128 barcode across the top, the
+ * human-readable code and context text centred beneath it.
  *
- * A QR-only label is unreadable the moment it is scuffed, wet or badly lit, and
- * an operator who cannot read the code cannot type it either — so the text is
+ * A barcode-only label is unreadable the moment it is scuffed, wet or badly lit,
+ * and an operator who cannot read the code cannot type it either — so the text is
  * not decoration, it is the fallback path. Which is exactly why the text used to
- * sit in a column beside the QR and no longer does: on the 24-up bin sheet that
- * column was 97.5pt, and a code in Courier-Bold at 15pt costs 9pt per character,
- * so it held 10.8 of them. MAIN's bin codes are 11-12 characters. Every sticker
- * printed `MAIN-O01-…`, and half a code is not a fallback.
+ * sit in a column beside the symbol and no longer does: on the 24-up bin sheet
+ * that column was 97.5pt, and a code in Courier-Bold at 15pt costs 9pt per
+ * character, so it held 10.8 of them. MAIN's bin codes are 11-12 characters.
+ * Every sticker printed `MAIN-O01-…`, and half a code is not a fallback.
  *
- * Stacked, the text gets the whole inner width — 172.5pt on that sheet, 77% more
- * — at the cost of a QR that shrinks from 24mm to 18mm, which is still a 0.72mm
- * module at 25 modules and far inside what a warehouse scanner reads.
+ * Stacked, the text gets the whole inner width — 172.5pt on that sheet, 77% more.
+ * The symbol wants that width even more than the text does: a linear barcode's
+ * readability IS its width, so the two wants point the same way.
  */
 export interface LabelTextSlot {
   /** Horizontal centre of the text column; the caller measures and centres on it. */
@@ -164,10 +200,94 @@ export interface LabelTextSlot {
   minFontSize: number
 }
 
+/** Where the bars go, and how wide a single module ended up. */
+export interface BarcodeFit {
+  /** Left edge of the FIRST BAR — the quiet zone is already excluded. */
+  x: number
+  /** Bottom of the bars. */
+  y: number
+  /** modules * moduleWidth. Excludes the quiet zones. */
+  width: number
+  height: number
+  /** The X-dimension, in points. This is the number that decides readability. */
+  moduleWidth: number
+  /** Blank granted either side, in points. */
+  quietZone: number
+}
+
 export interface LabelArtwork {
-  qr: { x: number; y: number; size: number }
+  barcode: BarcodeFit
   code: LabelTextSlot
   context: LabelTextSlot | null
+}
+
+/**
+ * Blank margin either side of the symbol, in modules — ISO 15417's requirement
+ * for Code 128. Note this is NOT the 6.35mm figure quoted for UPC/EAN, which is
+ * a different symbology's convention. Too little quiet zone is the commonest
+ * cause of a barcode that "scans sometimes".
+ */
+export const QUIET_ZONE_MODULES = 10
+
+/** A floor under the quiet zone so a very short symbol still gets a visible gutter. */
+export const MIN_QUIET_ZONE_PT = 2.54 * MM
+
+/**
+ * GS1's ceiling on the X-dimension. Without it a two-character aisle code on a
+ * 99x67mm sign would be handed a 1.2mm module and print as a handful of enormous
+ * stripes. Capped, it sits centred with generous white either side, which reads
+ * as deliberate because it is.
+ */
+export const MAX_X_DIMENSION_PT = 1.016 * MM
+
+/**
+ * Bar height bounds. The floor is the usual 6.35mm minimum; the ceiling stops a
+ * tall sign spending its whole face on bars when the extra height buys nothing —
+ * a scan line only needs to cross the symbol once.
+ */
+export const MIN_BAR_HEIGHT_PT = 6.35 * MM
+export const MAX_BAR_HEIGHT_PT = 25 * MM
+
+/**
+ * Fit a symbol of `modules` modules into `inner`, given the vertical room left
+ * over after the text.
+ *
+ * Closed form, no iteration: whichever of the three constraints binds is the one
+ * `Math.min` picks. The quiet zone then falls out as the leftover width, split
+ * evenly, and satisfies both its floors by construction.
+ *
+ * The real quiet zone on a printed sheet is larger than this computes, and
+ * deliberately so — the inner box already sits inside the cell's `padding`, and
+ * the neighbouring label reserves its own margin symmetrically, so between two
+ * columns the actual white gutter is `2 x quietZone + 2 x padding + gutterX`.
+ * This is the conservative floor, not the achieved figure.
+ */
+export function fitBarcode(
+  inner: LabelCell['inner'],
+  modules: number,
+  availableHeight: number,
+): BarcodeFit {
+  const byQuietRatio = inner.width / (modules + 2 * QUIET_ZONE_MODULES)
+  const byQuietFloor = (inner.width - 2 * MIN_QUIET_ZONE_PT) / modules
+  const moduleWidth = Math.max(0, Math.min(byQuietRatio, byQuietFloor, MAX_X_DIMENSION_PT))
+
+  const width = modules * moduleWidth
+  const quietZone = (inner.width - width) / 2
+
+  // Clearance between the bars and the code beneath them, so a scan line that
+  // drifts low reads white rather than the top of a glyph.
+  const gap = Math.max(2, 2 * moduleWidth)
+  const height = Math.min(Math.max(0, availableHeight - gap), MAX_BAR_HEIGHT_PT)
+
+  return {
+    x: inner.x + quietZone,
+    // Bars sit flush to the top of the cell, where the QR did.
+    y: inner.y + inner.height - height,
+    width,
+    height,
+    moduleWidth,
+    quietZone,
+  }
 }
 
 /**
@@ -179,9 +299,17 @@ export interface LabelArtwork {
 export const MIN_CODE_FONT_SIZE = 7
 export const MIN_CONTEXT_FONT_SIZE = 5
 
-export function labelArtwork(cell: LabelCell, opts?: { withContext?: boolean }): LabelArtwork {
+/**
+ * `modules` is the encoded symbol's width — see `_shared/labels/code128.ts`.
+ * The X-dimension depends on the CODE, not just the cell, which is why this
+ * needs it and why the sizing wizard can predict a bar width without rendering.
+ */
+export function labelArtwork(
+  cell: LabelCell,
+  opts: { modules: number; withContext?: boolean },
+): LabelArtwork {
   const { inner } = cell
-  const withContext = opts?.withContext ?? true
+  const withContext = opts.withContext ?? true
 
   // Sizes scale with the label. The previous ceilings (15pt code, 8pt context)
   // were tuned for the smallest sheet and never revisited, so a 99x67mm aisle
@@ -196,17 +324,13 @@ export function labelArtwork(cell: LabelCell, opts?: { withContext?: boolean }):
     ? 1.22 * codeFontSize + 1.25 * contextFontSize
     : 1.25 * codeFontSize
 
-  // The QR takes what is left, and the /1.16 reserves the rest as its quiet
-  // zone. That divisor is load-bearing: qrcode's create() returns the bare
-  // symbol with NO quiet zone (its `margin` option belongs to the renderers),
-  // which the old layout got for free from the cell padding and the gutter to
-  // the text beside it. With text directly underneath, it has to be deliberate.
-  // 16% of the symbol is the standard 4 modules at 25 modules across.
+  // The bars take what the text leaves. A linear symbol has no VERTICAL quiet
+  // zone requirement — only horizontal — so unlike the QR this reserves nothing
+  // above or below; fitBarcode handles the two side margins.
   const available = Math.max(0, inner.height - textZone)
-  const qrSize = Math.max(0, Math.min(inner.width, available / 1.16))
+  const barcode = fitBarcode(inner, opts.modules, available)
 
   const centerX = inner.x + inner.width / 2
-  const qr = { x: centerX - qrSize / 2, y: inner.y + inner.height - qrSize, size: qrSize }
 
   // Baselines are measured up from the bottom of the inner box so the text
   // block sits on the floor of the cell and the slack lands in the quiet zone.
@@ -232,7 +356,7 @@ export function labelArtwork(cell: LabelCell, opts?: { withContext?: boolean }):
       }
     : null
 
-  return { qr, code, context }
+  return { barcode, code, context }
 }
 
 function clamp(value: number, min: number, max: number): number {
