@@ -5,13 +5,18 @@ import {
   type PlannedSheet,
   type SheetGroup,
 } from '@/supabase/functions/_shared/labels/layoutLabelPlan'
+import type { SheetPresetName } from '@/supabase/functions/_shared/labelSheet'
 
 // Thin client over the generate-labels Edge Function (mig 00074 bucket +
 // label_print_log). All the work is server-side; this only shapes the request
 // and hands back the signed URL the UI opens for printing.
 
 export type LabelKind = 'location' | 'product' | 'handling_unit'
-export type LabelPreset = 'a4-24' | 'a4-14' | 'a4-8'
+/**
+ * Derived from the preset library, never restated. A hand-written union here
+ * silently excluded every stock added to `SHEET_PRESETS` and would do so again.
+ */
+export type LabelPreset = SheetPresetName
 
 export interface GenerateLabelsInput {
   kind: LabelKind
@@ -46,7 +51,9 @@ export async function generateLabels(input: GenerateLabelsInput): Promise<Genera
   }>('generate-labels', {
     body: {
       kind: input.kind,
-      preset: input.preset ?? 'a4-24',
+      // Must match the server's own default, or "unspecified" means two
+      // different sheet sizes depending on which side you ask.
+      preset: input.preset ?? 'a4-14',
       startOffset: input.startOffset ?? 0,
       warehouseId: input.warehouseId,
       locationKinds: input.locationKinds,
@@ -57,8 +64,8 @@ export async function generateLabels(input: GenerateLabelsInput): Promise<Genera
       onlyUnprinted: input.onlyUnprinted,
       jobId: input.jobId,
     },
-    // Rendering a full-warehouse sheet (MAIN is ~945 levels) embeds a QR per
-    // label and can outrun the global 20s fetch ceiling in lib/supabase.ts.
+    // Rendering a full-warehouse sheet (MAIN is ~945 levels) encodes a barcode
+    // per label and can outrun the global 20s fetch ceiling in lib/supabase.ts.
     // functions-js attaches its own AbortSignal, which bypasses that ceiling
     // and enforces this bound instead (same reasoning as extractFloorplan).
     timeout: 90_000,

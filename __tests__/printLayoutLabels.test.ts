@@ -31,7 +31,7 @@ function okSheet(group: string) {
       storagePath: `location/layout-7-${group}-123.pdf`,
       signedUrl: `https://signed/${group}`,
       labelCount: 1,
-      preset: group === 'slots' ? 'a4-24' : group === 'staging' ? 'a4-14' : 'a4-8',
+      preset: group === 'wayfinding' ? 'a4-8' : 'a4-14',
       sheetGroup: group,
     },
     error: null,

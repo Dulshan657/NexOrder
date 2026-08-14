@@ -58,7 +58,9 @@ describe('groupForKind', () => {
 describe('SHEET_GROUPS', () => {
   it('pairs each group with the stock it prints on', () => {
     const byGroup = Object.fromEntries(SHEET_GROUPS.map((g) => [g.group, g.preset]))
-    expect(byGroup).toEqual({ wayfinding: 'a4-8', slots: 'a4-24', staging: 'a4-14' })
+    // Slots print on the 99x38mm sheet, not the cheaper 63x34mm one: a
+    // 13-character location code encodes to 0.31mm bars there and 0.48mm here.
+    expect(byGroup).toEqual({ wayfinding: 'a4-8', slots: 'a4-14', staging: 'a4-14' })
   })
 })
 
@@ -151,7 +153,7 @@ describe('planLabelJob', () => {
   it('splits a job into one sheet per stock, signs first', () => {
     const sheets = planLabelJob(rows)
     expect(sheets.map((s) => s.group)).toEqual(['wayfinding', 'slots', 'staging'])
-    expect(sheets.map((s) => s.preset)).toEqual(['a4-8', 'a4-24', 'a4-14'])
+    expect(sheets.map((s) => s.preset)).toEqual(['a4-8', 'a4-14', 'a4-14'])
     expect(sheets.map((s) => s.items.length)).toEqual([2, 2, 1])
   })
 

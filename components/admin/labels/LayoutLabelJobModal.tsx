@@ -43,12 +43,18 @@ import {
   type LayoutLabelJob,
   type LayoutLabelSheet,
 } from '@/services/supabase/labelService'
+import { SHEET_PRESET_INFO } from '@/supabase/functions/_shared/labelSheet'
 
-const PRESET_LABEL: Record<string, string> = {
-  'a4-24': '24 per sheet · 63×34mm',
-  'a4-14': '14 per sheet · 99×38mm',
-  'a4-8': '8 per sheet · 99×67mm',
-}
+/**
+ * Read from the preset library rather than restated. The previous hand-written
+ * map listed only three stocks and described one of them at the wrong size.
+ */
+const PRESET_LABEL: Record<string, string> = Object.fromEntries(
+  Object.entries(SHEET_PRESET_INFO).map(([preset, info]) => [
+    preset,
+    info.averyLabel.replace(', ', ' · '),
+  ]),
+)
 
 export interface LayoutLabelJobModalProps {
   open: boolean

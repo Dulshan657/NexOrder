@@ -3,10 +3,16 @@
 // PURE — no Deno, no I/O — so the generate-labels Edge Function and vitest run
 // the identical module (same contract as _shared/wie/* and _shared/labelSheet.ts).
 //
-// Why a job is several PDFs rather than one: a bin sticker (63x34mm) and an
-// aisle sign (99x67mm) come off different die-cut sheets. You cannot feed both
+// Why a job is several PDFs rather than one: a bin sticker (99x38mm) and an
+// aisle sign (99x68mm) come off different die-cut sheets. You cannot feed both
 // through a printer in one pass, so "print everything this layout needs" has to
 // resolve to one file per stock. The grouping is data, below.
+//
+// Slots print on the 99x38mm sheet rather than the cheaper 63x34mm one because
+// a 13-character location code encodes to 0.31mm bars at that size and 0.48mm
+// at this one. The cost is real -- 945 slots is 68 sheets instead of 40 -- and
+// it buys a symbol that survives a scuffed sticker. `_shared/labels/sizing.ts`
+// is where that judgement is made and is the only file holding a threshold.
 //
 // The row shape is what wie_layout_label_targets returns (mig 00084). Context is
 // composed HERE rather than in SQL so the wording is unit-testable without a
@@ -64,7 +70,7 @@ export const SHEET_GROUPS: ReadonlyArray<{
   kinds: readonly string[]
 }> = [
   { group: 'wayfinding', preset: 'a4-8', kinds: ['ZONE', 'AISLE', 'RACK'] },
-  { group: 'slots', preset: 'a4-24', kinds: ['BIN', 'SHELF', 'BAY'] },
+  { group: 'slots', preset: 'a4-14', kinds: ['BIN', 'SHELF', 'BAY'] },
   { group: 'staging', preset: 'a4-14', kinds: ['STAGING'] },
 ]
 

@@ -28,6 +28,7 @@ import {
   type LabelKind,
   type LabelPreset,
 } from '@/services/supabase/labelService'
+import { SHEET_PRESET_INFO } from '@/supabase/functions/_shared/labelSheet'
 
 /** Location kinds offered for printing, grouped by what they are physically for. */
 const KIND_GROUPS: Array<{ label: string; helper: string; kinds: string[] }> = [
@@ -48,11 +49,20 @@ const KIND_GROUPS: Array<{ label: string; helper: string; kinds: string[] }> = [
   },
 ]
 
-const PRESETS: Array<{ value: LabelPreset; label: string }> = [
-  { value: 'a4-24', label: '24 per sheet — 63×34mm (bins)' },
-  { value: 'a4-14', label: '14 per sheet — 99×38mm' },
-  { value: 'a4-8', label: '8 per sheet — 99×67mm (aisle signs)' },
-]
+/**
+ * Built from the preset library rather than written out, so a stock added to
+ * `SHEET_PRESETS` appears here and its size can never be described wrongly.
+ * Largest sticker first — the list reads from "most room for a barcode" down.
+ */
+const PRESETS: Array<{ value: LabelPreset; label: string }> = (
+  Object.keys(SHEET_PRESET_INFO) as LabelPreset[]
+)
+  .map((value) => ({ value, info: SHEET_PRESET_INFO[value] }))
+  .sort((a, b) => a.info.perSheet - b.info.perSheet)
+  .map(({ value, info }) => ({
+    value,
+    label: `${info.averyLabel} — ${info.bestFor} (${info.averyCode})`,
+  }))
 
 /** 'layout' is not a LabelKind — it opens the layout job modal instead of
  *  calling generate-labels directly, because one layout run is several sheets. */
@@ -67,7 +77,7 @@ const LabelPrintingSection: React.FC = () => {
   const kind: LabelKind = mode === 'layout' ? 'location' : mode
   const [warehouseId, setWarehouseId] = useState<number | ''>('')
   const [groupIndex, setGroupIndex] = useState(0)
-  const [preset, setPreset] = useState<LabelPreset>('a4-24')
+  const [preset, setPreset] = useState<LabelPreset>('a4-14')
   const [startOffset, setStartOffset] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)

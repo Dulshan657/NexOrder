@@ -1,18 +1,24 @@
 // generate-labels Edge Function
 //
-// Renders an N-up A4 sheet of scannable QR labels — for locations (bins, rack
-// levels, aisle/zone wayfinding signs), for products, or for handling units —
-// stores it in the private `warehouse-labels` bucket (mig 00074), records the
+// Renders an N-up A4 sheet of scannable Code 128 labels — for locations (bins,
+// rack levels, aisle/zone wayfinding signs), for products, or for handling units
+// — stores it in the private `warehouse-labels` bucket (mig 00074), records the
 // run in label_print_log, and returns a short-lived signed URL.
 //
-// The QR payload is BARE TEXT (the locations.code / product SKU / HU code) with
-// no URL wrapper and no prefix, so any third-party scanner reads something
+// The barcode payload is BARE TEXT (the locations.code / product SKU / HU code)
+// with no URL wrapper and no prefix, so any third-party scanner reads something
 // meaningful. Every label also prints the code in large mono type underneath:
-// a QR-only label is useless the moment it is scuffed or badly lit, and an
+// a barcode-only label is useless the moment it is scuffed or badly lit, and an
 // operator who cannot read the code cannot type it either.
 //
-// Geometry lives in _shared/labelSheet.ts, which is pure and unit-tested by
-// vitest in the frontend — this file only does I/O and drawing.
+// Code 128 rather than a QR because operators scan with a hand-held gun rather
+// than a phone — a laser reads a linear symbol faster, further away and at worse
+// angles than any camera reads a QR.
+//
+// Encoding lives in _shared/labels/code128.ts, geometry in _shared/labelSheet.ts
+// and the will-it-scan judgement in _shared/labels/sizing.ts. All three are pure
+// and unit-tested by vitest in the frontend — this file only does I/O and
+// drawing, and is the one place that knows both modules and points.
 //
 // Two selection modes:
 //   * warehouse + kind (original) — ad-hoc runs, products, handling units.
@@ -29,7 +35,6 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { z } from 'https://esm.sh/zod@3.23.8'
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'https://esm.sh/pdf-lib@1.17.1'
-import QRCode from 'https://esm.sh/qrcode@1.5.4'
 import { requireAuth, type UserRole } from '../_shared/auth.ts'
 import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
@@ -41,12 +46,21 @@ import {
   labelArtwork,
   layoutLabels,
   sheetSpec,
+  SHEET_PRESETS,
+  type BarcodeFit,
   type LabelCell,
   type LabelTextSlot,
   type SheetPresetName,
 } from '../_shared/labelSheet.ts'
 import {
+  darkRuns,
+  encodeCode128,
+  type Code128Symbol,
+} from '../_shared/labels/code128.ts'
+import { fitRun, refuseRun } from '../_shared/labels/sizing.ts'
+import {
   planLabelJob,
+  presetForGroup,
   type LabelTargetRow,
   type SheetGroup,
 } from '../_shared/labels/layoutLabelPlan.ts'
@@ -62,9 +76,20 @@ const MAX_LABELS = 2000
 
 const inputSchema = z.object({
   kind: z.enum(['location', 'product', 'handling_unit']),
-  preset: z.enum(['a4-24', 'a4-14', 'a4-8']).default('a4-24'),
-  /** Skip N cells on the first page, to reuse a part-used sticker sheet. */
-  startOffset: z.number().int().min(0).max(47).default(0),
+  // Derived from the preset library rather than restated, so adding a stock is
+  // one edit. Default is the 99x38mm sheet: a 13-character location code gets
+  // 0.48mm bars there and only 0.31mm on the 24-up.
+  preset: z
+    .enum(Object.keys(SHEET_PRESETS) as [SheetPresetName, ...SheetPresetName[]])
+    .default('a4-14'),
+  /**
+   * Skip N cells on the first page, to reuse a part-used sticker sheet.
+   *
+   * The ceiling is the largest sheet in the library, not a fixed 47 — that was
+   * sized for a 24-up sheet and silently clamped on anything denser.
+   * `layoutLabels` clamps to the chosen preset's own capacity anyway.
+   */
+  startOffset: z.number().int().min(0).max(64).default(0),
   /** location kind: restrict to one warehouse subtree. */
   warehouseId: z.number().int().positive().optional(),
   /** location kind: which location kinds to print. Defaults to storable ones. */
@@ -96,50 +121,40 @@ interface LabelItem {
   context: string
 }
 
-// ── QR rendering ──────────────────────────────────────────────────
-
-interface QrMatrix {
-  size: number
-  /** Row-major, 1 = dark. */
-  data: Uint8Array
-}
-
-function qrMatrix(text: string): QrMatrix {
-  // 'M' recovery: readable through the scuffing a warehouse label collects,
-  // without inflating the module count the way 'H' does on long codes.
-  const qr = (QRCode as any).create(text, { errorCorrectionLevel: 'M' })
-  return { size: qr.modules.size, data: qr.modules.data }
-}
+// ── Barcode rendering ─────────────────────────────────────────────
 
 /**
- * Draw a QR by merging horizontal runs of dark modules into single rectangles.
+ * Ink-spread compensation, in points.
  *
- * A 25x25 QR is 625 modules; drawing one rect per dark module across 24 labels
- * per page is ~7,500 PDF operators per page. Run-merging cuts that by roughly
- * 3-4x and costs ten lines.
+ * A laser prints bars slightly wider than nominal, which narrows the spaces and
+ * shifts the ratios a decoder measures. If the gun reads marginally at the
+ * physical verification pass this is the first knob to turn — but it stays at
+ * zero until there is evidence, because guessing at bar-width reduction is how
+ * you make a good symbol worse.
  */
-function drawQr(page: PDFPage, matrix: QrMatrix, x: number, y: number, size: number): void {
-  const module = size / matrix.size
-  const ink = rgb(0, 0, 0)
+const BAR_WIDTH_REDUCTION_PT = 0
 
-  for (let row = 0; row < matrix.size; row++) {
-    let runStart = -1
-    for (let col = 0; col <= matrix.size; col++) {
-      const dark = col < matrix.size && matrix.data[row * matrix.size + col] === 1
-      if (dark && runStart === -1) {
-        runStart = col
-      } else if (!dark && runStart !== -1) {
-        page.drawRectangle({
-          x: x + runStart * module,
-          // Matrix row 0 is the TOP row; PDF y grows upward.
-          y: y + size - (row + 1) * module,
-          width: (col - runStart) * module,
-          height: module,
-          color: ink,
-        })
-        runStart = -1
-      }
-    }
+/**
+ * Draw a Code 128 symbol as one rectangle per dark bar.
+ *
+ * Each bar is positioned by an exact multiplication from the symbol's left edge
+ * rather than by accumulating widths as it goes. A 97-element symbol summed in
+ * floating point would place its last bars fractionally off, and the ratio
+ * between adjacent bars and spaces is precisely what a decoder measures.
+ *
+ * No `borderColor`/`borderWidth`: a stroked rectangle adds half the line width
+ * to EACH side of every bar, which would destroy those ratios wholesale.
+ */
+function drawBarcode(page: PDFPage, symbol: Code128Symbol, slot: BarcodeFit): void {
+  const ink = rgb(0, 0, 0)
+  for (const run of darkRuns(symbol)) {
+    page.drawRectangle({
+      x: slot.x + run.start * slot.moduleWidth,
+      y: slot.y,
+      width: run.width * slot.moduleWidth - BAR_WIDTH_REDUCTION_PT,
+      height: slot.height,
+      color: ink,
+    })
   }
 }
 
@@ -211,8 +226,10 @@ async function loadLayoutItems(
     items: (sheet?.items ?? []).map((i) => ({ code: i.code, context: i.context })),
     warehouseId: (layout as any).warehouse_id ?? null,
     // The stock a group prints on is a property of the group, never of the
-    // request — a bin sticker rendered at aisle-sign size wastes a sheet.
-    preset: sheet?.preset ?? 'a4-24',
+    // request — a bin sticker rendered at aisle-sign size wastes a sheet. The
+    // fallback derives from SHEET_GROUPS rather than naming a preset, so an
+    // empty group and a populated one can never disagree about the stock.
+    preset: sheet?.preset ?? presetForGroup(group as SheetGroup),
   }
 }
 
@@ -325,12 +342,30 @@ async function buildLabelPdf(
   items: LabelItem[],
   preset: SheetPresetName,
   startOffset: number,
-): Promise<Uint8Array> {
+): Promise<{ bytes: Uint8Array; warnings: string[] }> {
+  // Pre-flight, BEFORE a PDFDocument exists. A sheet of unscannable stickers is
+  // worse than no sheet at all: the failure surfaces on a ladder, after four
+  // hundred of them are stuck down. Refusing here costs nothing and leaves no
+  // half-built document behind.
+  const codes = items.map((i) => i.code)
+  const refusal = refuseRun({ codes, preset })
+  if (refusal) {
+    throw new EdgeFunctionError('INVALID_INPUT', refusal.message, {
+      codes: refusal.codes,
+      suggestedPreset: refusal.suggestion,
+    })
+  }
+
+  // Anything that will print but sits below what a comfortable scan wants comes
+  // back to the operator rather than being swallowed — "check one with the gun
+  // before you run the sheet" is a cheap instruction and a costly omission.
+  const assessment = fitRun({ codes, preset, distance: 'arms_length' })
+  const warnings = assessment.marginal.map((f) => `${f.code} — ${f.reason}`)
+
   const spec = sheetSpec(preset)
   const pages = layoutLabels(items.length, spec, startOffset)
 
   const pdf = await PDFDocument.create()
-  const mono = await pdf.embedFont(StandardFonts.Courier)
   const monoBold = await pdf.embedFont(StandardFonts.CourierBold)
   const body = await pdf.embedFont(StandardFonts.Helvetica)
 
@@ -346,7 +381,7 @@ async function buildLabelPdf(
     }
   }
 
-  return await pdf.save()
+  return { bytes: await pdf.save(), warnings }
 }
 
 function drawLabel(
@@ -357,9 +392,12 @@ function drawLabel(
   contextFont: PDFFont,
   measure: (font: PDFFont) => (s: string, size: number) => number,
 ): void {
-  const art = labelArtwork(cell, { withContext: !!item.context })
+  // Safe to encode without a try: the pre-flight already refused the whole run
+  // if any code here were un-encodable.
+  const symbol = encodeCode128(item.code)
+  const art = labelArtwork(cell, { modules: symbol.modules, withContext: !!item.context })
 
-  drawQr(page, qrMatrix(item.code), art.qr.x, art.qr.y, art.qr.size)
+  drawBarcode(page, symbol, art.barcode)
 
   drawCentred(page, art.code, item.code, codeFont, measure(codeFont), rgb(0, 0, 0))
 
@@ -450,7 +488,7 @@ serve(async (req: Request) => {
       )
     }
 
-    const bytes = await buildLabelPdf(items, preset, input.startOffset)
+    const { bytes, warnings } = await buildLabelPdf(items, preset, input.startOffset)
 
     const stamp = Date.now()
     const storagePath = isLayoutRun
@@ -504,6 +542,9 @@ serve(async (req: Request) => {
         layout_id: isLayoutRun ? input.layoutId : null,
         sheet_group: isLayoutRun ? input.sheetGroup : null,
         job_id: input.jobId ?? null,
+        // Recorded so "why did that bin never scan" is answerable months later
+        // from the audit trail rather than from memory.
+        marginal_labels: warnings.length,
       },
     })
 
@@ -516,6 +557,7 @@ serve(async (req: Request) => {
         preset,
         sheetGroup: isLayoutRun ? input.sheetGroup : null,
         jobId: input.jobId ?? null,
+        warnings,
       }),
       { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
