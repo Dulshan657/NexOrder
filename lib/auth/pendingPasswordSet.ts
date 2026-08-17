@@ -68,19 +68,23 @@ export function isExpired(marker: PendingPasswordSet, now: number): boolean {
  * what lets a dead link explain itself instead of dropping the user on a bare
  * sign-in page.
  *
- * An EXPIRED marker reads as absent. It is deliberately not a third answer:
- * the caller cannot be trusted to remember to sign out, so `ResetPasswordView`
- * owns that — it re-reads the marker on mount, finds it stale, and signs out
- * there. Routing an expired marker to the app instead would be the original bug
- * with a delay on it.
+ * EXPIRY IS NOT DECIDED HERE, and that is deliberate — an earlier cut of this
+ * treated a stale marker as absent and sent it to the app tree "to be signed
+ * out there". Nothing in the app tree signs anything out: `AuthGate` sees a
+ * perfectly good persisted session and renders the app. Verified against the
+ * live demo, where an aged marker put a recovery session straight into the
+ * admin UI — the original bug with an hour's delay on it.
+ *
+ * So ANY marker routes to the set-password screen, and `ResetPasswordView` —
+ * the one place that can actually end a session — reads `isExpired` on mount
+ * and turns a stale one into a sign-out plus a dead end.
  */
 export function decideAuthScreen(
     linkKind: AuthLink['kind'],
     marker: PendingPasswordSet | null,
-    now: number,
 ): AuthScreen {
     if (linkKind !== 'none') return 'set-password'
-    if (marker !== null && !isExpired(marker, now)) return 'set-password'
+    if (marker !== null) return 'set-password'
     return 'app'
 }
 

@@ -136,7 +136,6 @@ function Root() {
     decideAuthScreen(
       parseAuthLink(window.location.hash, window.location.search).kind,
       readPendingPasswordSet(),
-      Date.now(),
     ),
   );
 
