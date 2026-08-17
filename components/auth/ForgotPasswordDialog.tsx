@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Button, Modal } from '@/components/ui'
+import { PASSWORD_SET_WINDOW_LABEL } from '@/lib/auth/pendingPasswordSet'
 import { AuthAlert, AuthField } from './authChrome'
 
 interface ForgotPasswordDialogProps {
@@ -94,9 +95,12 @@ export default function ForgotPasswordDialog({
                         <span className="font-mono font-semibold">{email}</span>. Click the link in
                         the email to set a new password.
                     </AuthAlert>
+                    {/* The window is Supabase's `mailer_otp_exp`. Read from the
+                        one constant rather than restated here, so the prose
+                        cannot drift from what the server actually enforces. */}
                     <p className="text-xs leading-relaxed text-stone-500">
-                        The link is single-use and expires in 1 hour. Didn't get the email? Check
-                        your spam folder, or send it again.
+                        The link is single-use and expires in {PASSWORD_SET_WINDOW_LABEL}. Didn't
+                        get the email? Check your spam folder, or send it again.
                     </p>
                 </div>
             ) : (
