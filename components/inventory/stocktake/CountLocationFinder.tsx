@@ -10,6 +10,8 @@
 import React, { useMemo, useState } from 'react'
 import { Package, ScanLine, Search } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
+import { useScanFlash } from '@/lib/scan/useScanFlash'
+import { useWedgeScanner } from '@/lib/scan/useWedgeScanner'
 import { buildScanIndex, resolveScan, type ScanMatch } from '@/lib/scan/resolveScan'
 import type { InventoryLocation } from '@/types'
 import { locationSubtitle, locationTitle } from '@/lib/locationDisplay'
@@ -41,6 +43,7 @@ const MAX_LISTED = 40
 export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locations, onPick }) => {
   const [code, setCode] = useState('')
   const [note, setNote] = useState<string | null>(null)
+  const { flash, signal: signalFlash } = useScanFlash()
 
   const countable = useMemo(() => locations.filter(isCountableLocation), [locations])
 
@@ -73,6 +76,7 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
 
     if (result.kind === 'unknown') {
       setNote(`No location in this warehouse matches ${result.normalized}.`)
+      signalFlash('reject')
       return
     }
 
@@ -80,16 +84,19 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
     const locationMatch = candidates.find((c) => c.kind === 'location')
     if (!locationMatch || locationMatch.kind !== 'location') {
       setNote('That code names a product or a pallet. Scan a bin label instead.')
+      signalFlash('reject')
       return
     }
 
     const target = locations.find((l) => l.id === locationMatch.location.id)
     if (!target) {
       setNote('That bin is not in the warehouse you have selected.')
+      signalFlash('reject')
       return
     }
     if (!target.isActive) {
       setNote(`${target.code} is not active, so it cannot be counted.`)
+      signalFlash('reject')
       return
     }
     if (!isCountableLocation(target)) {
@@ -97,13 +104,20 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
         `${target.code} is a ${target.kind} — a container, not a place stock sits. ` +
         'Scan one of the bins or levels inside it.',
       )
+      signalFlash('reject')
       return
     }
 
     setNote(null)
     setCode('')
+    signalFlash('ok')
     onPick(target)
   }
+
+  // The desktop safety net. On a phone the field is focused and the gun feeds
+  // it directly; on a PC the operator has usually just clicked something, and
+  // without this the scan goes to the body and is lost in silence.
+  useWedgeScanner({ active: true, onScan: handleScan })
 
   return (
     <div className="space-y-4">
@@ -112,6 +126,7 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
         value={code}
         onChange={(v) => { setCode(v); if (note) setNote(null) }}
         onScan={handleScan}
+        flash={flash}
         placeholder="A bin code, or type to search"
         cameraTitle="Scan the bin you are counting"
         autoFocus

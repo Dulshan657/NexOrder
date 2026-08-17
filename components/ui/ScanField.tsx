@@ -48,6 +48,12 @@ export interface ScanFieldProps {
    */
   onScan?: (raw: string) => void
   label?: string
+  /**
+   * Accessible name when there is no visible `label` — a table cell, or a box
+   * whose purpose is already obvious from its surroundings to a sighted user.
+   * Without one, such a field is unnamed to a screen reader.
+   */
+  ariaLabel?: string
   placeholder?: string
   helper?: string
   error?: string
@@ -100,6 +106,7 @@ export function ScanField({
   onChange,
   onScan,
   label,
+  ariaLabel,
   placeholder = 'Scan or type a code',
   helper,
   error,
@@ -258,6 +265,7 @@ export function ScanField({
             autoCapitalize="characters"
             spellCheck={false}
             list={listId}
+            aria-label={ariaLabel}
             data-scan-field=""
             className={`${inputClass(!!error)} pl-9 font-mono ${compact ? 'py-1.5' : ''} ${pulseClass(pulse)}`}
             aria-invalid={error ? true : undefined}
