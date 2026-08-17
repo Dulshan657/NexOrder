@@ -68,33 +68,33 @@ describe('decideAuthScreen', () => {
     it.each(['tokens', 'token_hash', 'error'] as const)(
         'routes a %s link to the set-password screen with no marker',
         (kind) => {
-            expect(decideAuthScreen(kind, null, NOW)).toBe('set-password')
+            expect(decideAuthScreen(kind, null)).toBe('set-password')
         },
     )
 
     it('routes an ordinary load with no marker to the app', () => {
-        expect(decideAuthScreen('none', null, NOW)).toBe('app')
+        expect(decideAuthScreen('none', null)).toBe('app')
     })
 
     // The regression under test: the URL is stripped the moment the session
     // exists, so from then until the password is typed this is ALL there is.
     it('keeps a stripped URL on the set-password screen while a marker is live', () => {
-        expect(decideAuthScreen('none', marker(), NOW + 1000)).toBe('set-password')
+        expect(decideAuthScreen('none', marker())).toBe('set-password')
     })
 
-    it('sends an expired marker to the app tree, which signs it out', () => {
-        expect(decideAuthScreen('none', marker(), NOW + PASSWORD_SET_WINDOW_MS)).toBe('app')
-    })
-
-    it('still honours a fresh link when a stale marker is lying around', () => {
-        const stale = marker({ issuedAt: NOW - PASSWORD_SET_WINDOW_MS * 2 })
-        expect(decideAuthScreen('token_hash', stale, NOW)).toBe('set-password')
+    // An earlier cut treated a stale marker as absent and let it through to the
+    // app "to be signed out there". Nothing in the app tree signs anything out
+    // — AuthGate just renders. Caught on the live demo: an aged marker put a
+    // recovery session straight into the admin UI.
+    it('does NOT let an expired marker through to the app', () => {
+        const stale = marker({ issuedAt: NOW - PASSWORD_SET_WINDOW_MS - 1 })
+        expect(decideAuthScreen('none', stale)).toBe('set-password')
     })
 
     it.each(['tokens', 'token_hash', 'error', 'none'] as const)(
-        'a live marker never routes a %s load to the app',
+        'a marker never routes a %s load to the app',
         (kind) => {
-            expect(decideAuthScreen(kind, marker(), NOW)).toBe('set-password')
+            expect(decideAuthScreen(kind, marker())).toBe('set-password')
         },
     )
 })
