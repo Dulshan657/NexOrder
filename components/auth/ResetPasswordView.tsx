@@ -2,6 +2,13 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { AuthLinkFlow } from '@/lib/auth/recoveryLink'
 import { DEFAULT_RECOVERY_ERROR, RESET_REQUEST_PARAM, parseAuthLink } from '@/lib/auth/recoveryLink'
+import {
+    PASSWORD_SET_WINDOW_LABEL,
+    clearPendingPasswordSet,
+    isExpired,
+    readPendingPasswordSet,
+    writePendingPasswordSet,
+} from '@/lib/auth/pendingPasswordSet'
 import { AuthAlert, AuthEyebrow, AuthField, AuthSubmit, authStagger } from './authChrome'
 
 // The same screen serves a forgotten password and a fresh invitation. Only the
@@ -38,6 +45,18 @@ function getErrorMessage(error: unknown): string {
     return 'Could not reset password. Please request a new recovery link.'
 }
 
+// Shown when a flow was started but abandoned for longer than the link itself
+// would have lived. Says the window out loud so "but I opened it this morning"
+// has an answer.
+const EXPIRED_MESSAGE =
+    `This password setup was started more than ${PASSWORD_SET_WINDOW_LABEL} ago and has expired. ` +
+    'Request a new link from the sign-in page.'
+
+// The half-finished session could not be ended, so we must not hand the user to
+// the app — that is precisely the hole this screen exists to close.
+const RELEASE_FAILED_MESSAGE =
+    'Could not sign out of the unfinished password setup. Check your connection and try again.'
+
 interface ResetPasswordViewProps {
     onComplete: () => void
 }
@@ -53,43 +72,99 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
 
     useEffect(() => {
         const link = parseAuthLink(window.location.hash, window.location.search)
-
-        if (link.kind === 'none') {
-            setPhase('invalid')
-            return
-        }
+        const marker = readPendingPasswordSet()
 
         // Supabase already told us why the link failed (expired, already used,
         // wrong project). Show its reason rather than dropping the user on a
         // bare login page, which is what happened before this branch existed.
+        // Checked before `none` because a failed link carries no token either.
         if (link.kind === 'error') {
             setError(link.description)
             setPhase('invalid')
             return
         }
 
-        setFlow(link.flow)
-
         let cancelled = false
+
+        // RESUME. No token on the URL, but a marker says a flow is in progress.
+        // Three ways here, all the same situation: the user refreshed, the tab
+        // was discarded and restored, or StrictMode mounted us twice. The token
+        // was consumed on the first pass, so re-calling verifyOtp would be
+        // refused and would show "invalid" over a perfectly live session — which
+        // is the dev-only flash this branch also fixes.
+        if (link.kind === 'none') {
+            if (marker === null) {
+                setPhase('invalid')
+                return
+            }
+
+            setFlow(marker.flow)
+            ;(async () => {
+                const stale = isExpired(marker, Date.now())
+                const { data } = await supabase.auth.getSession()
+                const sessionUserId = data.session?.user?.id ?? null
+
+                if (!stale && sessionUserId !== null && sessionUserId === marker.userId) {
+                    if (!cancelled) setPhase('ready')
+                    return
+                }
+
+                // Expired, signed out underneath us, or a different user
+                // altogether. Either way the session must not go on to serve as
+                // an ordinary login, so end it before showing the dead end.
+                await supabase.auth.signOut()
+                clearPendingPasswordSet()
+                if (!cancelled) {
+                    setError(stale ? EXPIRED_MESSAGE : DEFAULT_RECOVERY_ERROR)
+                    setPhase('invalid')
+                }
+            })()
+
+            return () => {
+                cancelled = true
+            }
+        }
+
+        setFlow(link.flow)
         ;(async () => {
             try {
+                let userId: string | null = null
+
                 if (link.kind === 'tokens') {
-                    const { error: sessionError } = await supabase.auth.setSession({
+                    const { data, error: sessionError } = await supabase.auth.setSession({
                         access_token: link.accessToken,
                         refresh_token: link.refreshToken,
                     })
                     if (sessionError) throw sessionError
-                } else if (link.kind === 'token_hash') {
-                    // verifyOtp needs no PKCE verifier, so it works even though
-                    // the client runs with persistSession:false and no storage.
-                    // `type` must match the token that was issued — sending
-                    // 'recovery' for an invite token is refused server-side.
-                    const { error: verifyError } = await supabase.auth.verifyOtp({
+                    userId = data.session?.user?.id ?? data.user?.id ?? null
+                } else {
+                    // verifyOtp needs no PKCE verifier, which is why the project's
+                    // templates use it. `type` must match the token that was
+                    // issued — sending 'recovery' for an invite token is refused
+                    // server-side.
+                    const { data, error: verifyError } = await supabase.auth.verifyOtp({
                         token_hash: link.tokenHash,
                         type: link.flow,
                     })
                     if (verifyError) throw verifyError
+                    userId = data.session?.user?.id ?? data.user?.id ?? null
                 }
+
+                // A session we cannot identify is a session we cannot guard, and
+                // it is already persisted by now. Refuse rather than carry on
+                // with the URL as the only record of the flow.
+                if (userId === null) {
+                    await supabase.auth.signOut()
+                    throw new Error(
+                        'The link was accepted but no account came back with it. Please request a new one.',
+                    )
+                }
+
+                // Record the flow BEFORE the URL stops being a record of it.
+                // This ordering is the entire fix: between replaceState and the
+                // user typing a password there is otherwise nothing anywhere
+                // that says this session has not chosen one.
+                writePendingPasswordSet({ userId, flow: link.flow, issuedAt: Date.now() })
 
                 // Strip the credentials from the URL before the user can refresh
                 // or share it. One shape carries them in the hash, the other in
@@ -110,12 +185,48 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
         }
     }, [])
 
+    /**
+     * Leaving this screen without having set a password. `onComplete` renders
+     * the normal app tree, so any session still lying around becomes an
+     * ordinary login — the bug in a different door.
+     *
+     * Only a session WE established is ours to end: a dead link opened in a
+     * browser already signed in as somebody else has no marker, and that person
+     * is left exactly where they were.
+     *
+     * Confirms rather than assumes. Clearing the marker while the session
+     * survives would re-open the hole, so a sign-out that did not take leaves
+     * the marker in place and the user on this screen.
+     */
+    const releaseRecoverySession = async (): Promise<boolean> => {
+        if (readPendingPasswordSet() === null) return true
+
+        await supabase.auth.signOut()
+        const { data } = await supabase.auth.getSession()
+        if (data.session !== null) return false
+
+        clearPendingPasswordSet()
+        return true
+    }
+
     // A dead recovery link is the one moment the user definitely wants a fresh
     // one, but the request dialog lives on LoginPage. Leave a marker in the URL
     // and let LoginPage open it on arrival, rather than plumbing a callback up
     // through Root → AuthGate.
-    const handleRequestNewLink = () => {
+    const handleRequestNewLink = async () => {
+        if (!(await releaseRecoverySession())) {
+            setError(RELEASE_FAILED_MESSAGE)
+            return
+        }
         window.history.replaceState(null, '', `${window.location.pathname}?${RESET_REQUEST_PARAM}=1`)
+        onComplete()
+    }
+
+    const handleBackToSignIn = async () => {
+        if (!(await releaseRecoverySession())) {
+            setError(RELEASE_FAILED_MESSAGE)
+            return
+        }
         onComplete()
     }
 
@@ -136,6 +247,11 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
         try {
             const { error: updateError } = await supabase.auth.updateUser({ password })
             if (updateError) throw updateError
+            // The marker has done its job. Clear it before the sign-out so a
+            // reload racing that round trip cannot land back on this screen.
+            clearPendingPasswordSet()
+            // Global scope on purpose: changing a password should end that
+            // user's sessions everywhere, not just this tab.
             await supabase.auth.signOut()
             setPhase('success')
         } catch (err) {
@@ -186,7 +302,7 @@ export default function ResetPasswordView({ onComplete }: ResetPasswordViewProps
                         </AuthSubmit>
                         <button
                             type="button"
-                            onClick={onComplete}
+                            onClick={handleBackToSignIn}
                             className="w-full text-center text-sm text-stone-500 underline-offset-4 hover:text-stone-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue focus-visible:ring-offset-2 rounded"
                         >
                             Back to sign in

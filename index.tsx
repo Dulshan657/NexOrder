@@ -12,15 +12,18 @@ import { ErrorBoundary, FullPageErrorFallback } from './components/ErrorBoundary
 import { installGlobalErrorHandlers } from './lib/errorReporter';
 import { registerChunkErrorReload } from './lib/lazyWithRetry';
 import ResetPasswordView from './components/auth/ResetPasswordView';
-import { isAuthLinkUrl } from './lib/auth/recoveryLink';
+import { parseAuthLink } from './lib/auth/recoveryLink';
+import type { AuthScreen } from './lib/auth/pendingPasswordSet';
+import { decideAuthScreen, readPendingPasswordSet } from './lib/auth/pendingPasswordSet';
 
 // Popup OAuth completion handshake.
 //
 // When the operator clicks "Connect Gmail" on the Email Accounts tab we
 // open a popup pointed at Google's authorize URL. The provider chain
 // (Google → Supabase callback → /admin/email-accounts?connected=1) lands
-// inside the *popup*. Because `lib/supabase.ts` has persistSession:false,
-// letting the SPA mount here would render the LoginPage inside the popup.
+// inside the *popup*. Letting the SPA mount here would render a second copy
+// of the app — and, back when `lib/supabase.ts` ran with persistSession:false,
+// a LoginPage — inside the popup.
 //
 // Detect the OAuth completion via the URL params (always reliable — they
 // were written by the Supabase callback) and short-circuit React entirely.
@@ -112,17 +115,33 @@ installGlobalErrorHandlers();
 // guarded reload pulls a fresh index.html with the current chunk hashes.
 registerChunkErrorReload();
 
-// Top-level switch: when arriving via a Supabase password recovery link,
-// render the dedicated reset view instead of the normal AuthGate → App tree.
-// This covers FAILED links too (expired, already used) — they carry an
+// Top-level switch: when arriving via a Supabase recovery or invite link,
+// render the dedicated set-password view instead of the normal AuthGate → App
+// tree. This covers FAILED links too (expired, already used) — they carry an
 // error in the URL, and routing them here is what lets the reason be shown
-// instead of a bare login page. After the reset completes, flip a one-shot
+// instead of a bare login page. After the password lands, flip a one-shot
 // flag so the app falls through to LoginPage.
+//
+// TWO signals, not one. The URL alone was the bug: `ResetPasswordView` strips
+// the token the instant the session exists, so from then until the password is
+// typed the URL is a bare `/` — and with persistSession on, a refresh restored
+// the recovery session and rendered the whole app for someone who had not
+// chosen a password. The marker survives that refresh; see
+// `lib/auth/pendingPasswordSet.ts`.
+//
+// Evaluated once per page load, which is exactly right: a reload is the event
+// being defended against, and every reload re-runs this.
 function Root() {
-  const [recovering, setRecovering] = useState<boolean>(() => isAuthLinkUrl());
+  const [screen, setScreen] = useState<AuthScreen>(() =>
+    decideAuthScreen(
+      parseAuthLink(window.location.hash, window.location.search).kind,
+      readPendingPasswordSet(),
+      Date.now(),
+    ),
+  );
 
-  if (recovering) {
-    return <ResetPasswordView onComplete={() => setRecovering(false)} />;
+  if (screen === 'set-password') {
+    return <ResetPasswordView onComplete={() => setScreen('app')} />;
   }
 
   return (
