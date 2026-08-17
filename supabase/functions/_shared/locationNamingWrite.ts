@@ -372,6 +372,13 @@ export interface NamingLocation {
   nameArea: string | null
   /** The form this row wears; resolved to a noun by loadUnitNouns (mig 00100). */
   storageTypeId: number | null
+  /** Code provenance (mig 00107). Carried here rather than by a second loader so a
+   *  recode and a naming pass can never disagree about which units exist — the
+   *  SHELF-to-rack rollup below is the part that would drift. */
+  codeBlock: string | null
+  codeSeq: number | null
+  /** A sticker is physically on this location (mig 00084). A recode resets it. */
+  labelPrinted: boolean
 }
 
 /** Chunked read, keyed by id. `.in()` caps out around 200, and a 189-bay
@@ -385,7 +392,7 @@ export async function loadLocationsForNaming(
   for (let i = 0; i < unique.length; i += CHUNK) {
     const { data, error } = await admin
       .from('locations')
-      .select('id, code, name, kind, parent_id, level_index, materialized_path, name_is_auto, name_seq, name_area, storage_type_id')
+      .select('id, code, name, kind, parent_id, level_index, materialized_path, name_is_auto, name_seq, name_area, storage_type_id, code_block, code_seq, label_printed')
       .in('id', unique.slice(i, i + CHUNK))
     if (error) throw new EdgeFunctionError('INTERNAL', `Could not read locations: ${error.message}`)
     for (const r of (data ?? []) as any[]) {
@@ -401,6 +408,9 @@ export async function loadLocationsForNaming(
         nameSeq: r.name_seq != null ? Number(r.name_seq) : null,
         nameArea: r.name_area ?? null,
         storageTypeId: r.storage_type_id != null ? Number(r.storage_type_id) : null,
+        codeBlock: r.code_block ?? null,
+        codeSeq: r.code_seq != null ? Number(r.code_seq) : null,
+        labelPrinted: r.label_printed === true,
       })
     }
   }

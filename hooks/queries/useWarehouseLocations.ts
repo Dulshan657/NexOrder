@@ -7,11 +7,13 @@ import {
   deactivateWarehouseLocation,
   paintAreas,
   paintSigns,
+  recodeLocations,
   renameArea,
   renameRack,
   type CreateLocationInput,
   type PaintAreasArgs,
   type PaintSignsArgs,
+  type RecodeArgs,
   type UpdateLocationInput,
 } from '@/services/supabase/warehouseLocationService'
 
@@ -105,6 +107,36 @@ export function usePaintSigns(warehouseId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['layout-detail'] })
       qc.invalidateQueries({ queryKey: ['layouts', warehouseId] })
+    },
+  })
+}
+
+// ── Code sweeps (mig 00107) ──────────────────────────────────────────────────
+
+/**
+ * Rewrite the codes of a selected block of bins.
+ *
+ * FIVE keys, and the last two are the ones easy to miss. The locations key
+ * because the codes and paths just changed; the two layout keys because the map
+ * labels every bin by its code; and then:
+ *
+ *  - the label keys, because the sweep RESET `label_printed` on every row it
+ *    touched. Miss these and the print-backlog badge reads zero outstanding for a
+ *    week while every sticker on the racking names a code no row holds — which is
+ *    exactly the failure mig 00084 added the column to prevent.
+ *  - the setup-checklist key, because its label step reads that same backlog.
+ */
+export function useRecodeLocations(warehouseId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args: Omit<RecodeArgs, 'warehouseId'>) => recodeLocations({ ...args, warehouseId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) })
+      qc.invalidateQueries({ queryKey: ['layout-detail'] })
+      qc.invalidateQueries({ queryKey: ['layouts', warehouseId] })
+      qc.invalidateQueries({ queryKey: ['layout-label-targets'] })
+      qc.invalidateQueries({ queryKey: ['label-print-log'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-setup'] })
     },
   })
 }

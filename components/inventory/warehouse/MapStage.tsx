@@ -70,6 +70,23 @@ export interface MapStageProps {
     onStrokeStart: () => void
     onPaintCell: (floor: number, x: number, y: number) => void
   }
+  /**
+   * Marquee selection for a code sweep (mig 00107).
+   *
+   * Cells derived here for the same reason paint's are — this component owns the
+   * viewport. Mutually exclusive with `paint`: both rewrite `locations` rows, and a
+   * sweep computed against an unsaved area working set would be computed from a
+   * picture the server has never seen. The caller enforces that by passing only one.
+   */
+  marquee?: {
+    active: boolean
+    /** Shift unions with the existing selection instead of replacing it. */
+    onDragStart: (floor: number, x: number, y: number, additive: boolean) => void
+    onDragMove: (x: number, y: number) => void
+    onDragEnd: () => void
+    /** The band being dragged, in grid cells. Null between drags. */
+    rect: { floor: number; x0: number; y0: number; x1: number; y1: number } | null
+  }
 }
 
 export function MapStage({
@@ -93,6 +110,7 @@ export function MapStage({
   onRenameArea,
   onEditSign,
   paint,
+  marquee,
 }: MapStageProps) {
   const { viewport, containerRef, handlers, fit, zoomIn, zoomOut, isPanning, didDrag, gesturesEnabled } = useMapViewport({
     placements,
@@ -151,6 +169,36 @@ export function MapStage({
     return true
   }, [])
 
+  // ── Marquee selection (mig 00107) ─────────────────────────────────────────
+  const marqueeRef = useRef<number | null>(null)
+  const sweeping = marquee?.active === true
+
+  /** Like cellFromEvent but CLAMPED instead of null out of bounds. Paint wants the
+   *  null — a stroke past the edge must not wrap to the last valid cell. A band
+   *  wants the clamp, or dragging one pixel outside the grid freezes it mid-drag. */
+  const clampedCellFromEvent = useCallback((e: ReactPointerEvent<HTMLElement>) => {
+    const el = containerRef.current
+    if (!el) return null
+    const rect = el.getBoundingClientRect()
+    const px = BASE_CELL * viewport.scale
+    const raw = {
+      x: Math.floor((e.clientX - rect.left - viewport.tx) / px),
+      y: Math.floor((e.clientY - rect.top - viewport.ty) / px),
+    }
+    return {
+      x: Math.max(0, Math.min(layout.gridWidth - 1, raw.x)),
+      y: Math.max(0, Math.min(layout.gridHeight - 1, raw.y)),
+    }
+  }, [containerRef, viewport.scale, viewport.tx, viewport.ty, layout.gridWidth, layout.gridHeight])
+
+  const endMarquee = useCallback((e: ReactPointerEvent<HTMLElement>): boolean => {
+    if (marqueeRef.current !== e.pointerId) return false
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+    marqueeRef.current = null
+    marquee?.onDragEnd()
+    return true
+  }, [marquee])
+
   // First-hover hint pill: appears once on the first pointer-enter of the
   // stage, then auto-dismisses after HINT_AUTO_DISMISS_MS or on the first
   // pan/zoom gesture, and never returns for this mount (idle -> shown ->
@@ -173,7 +221,7 @@ export function MapStage({
 
   // Dragging the map past a bin shouldn't flash a card at every bin it crosses,
   // and neither should painting over one.
-  const hoverInfo = !isPanning && !painting && hover ? binInfo?.get(hover.locationId) : undefined
+  const hoverInfo = !isPanning && !painting && !sweeping && hover ? binInfo?.get(hover.locationId) : undefined
 
   return (
     <div
@@ -182,7 +230,7 @@ export function MapStage({
       tabIndex={0}
       aria-label="Warehouse floor plan — arrow keys pan, plus and minus zoom, 0 to fit"
       className={`relative isolate h-full w-full overflow-hidden rounded-lg border border-stone-200 bg-stone-50 outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue/40 ${
-        painting ? 'cursor-crosshair' : gesturesEnabled ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''
+        painting || sweeping ? 'cursor-crosshair' : gesturesEnabled ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''
       }`}
       style={{ touchAction: gesturesEnabled ? 'none' : undefined }}
       onPointerEnter={gesturesEnabled ? showHint : undefined}
@@ -203,6 +251,20 @@ export function MapStage({
           paintAt(e)
           return
         }
+        // A marquee is the paint case, not the pan case: eager capture, because
+        // there is no child click to preserve and routing the click to the
+        // container is exactly what stops a band that ends over a bin from also
+        // selecting it and scrolling Bin detail into view. Alt still falls through
+        // to pan, so the operator can reach the rest of the floor mid-selection.
+        if (sweeping && !e.altKey && (e.pointerType !== 'mouse' || e.button === 0)) {
+          const cell = clampedCellFromEvent(e)
+          if (cell) {
+            e.currentTarget.setPointerCapture(e.pointerId)
+            marqueeRef.current = e.pointerId
+            marquee?.onDragStart(floor, cell.x, cell.y, e.shiftKey)
+            return
+          }
+        }
         handlers.onPointerDown(e)
       }}
       onPointerMove={(e) => {
@@ -210,14 +272,21 @@ export function MapStage({
           paintAt(e)
           return
         }
+        if (marqueeRef.current === e.pointerId) {
+          const cell = clampedCellFromEvent(e)
+          if (cell) marquee?.onDragMove(cell.x, cell.y)
+          return
+        }
         handlers.onPointerMove(e)
       }}
       onPointerUp={(e) => {
         if (endPaint(e)) return
+        if (endMarquee(e)) return
         handlers.onPointerUp(e)
       }}
       onPointerCancel={(e) => {
         if (endPaint(e)) return
+        if (endMarquee(e)) return
         handlers.onPointerCancel(e)
       }}
       onPointerLeave={() => setHover(null)}
@@ -252,6 +321,13 @@ export function MapStage({
       {hover && hoverInfo && (
         <BinHoverCard hover={hover} info={hoverInfo} viewport={viewport} />
       )}
+      {/* The rubber band. Plain HTML off the viewport transform, the same
+          arithmetic BinHoverCard uses — deliberately NOT an SVG element in the
+          scene, whose memo excludes viewport.tx/ty and must not start seeing a
+          shape that changes on every pointer move. */}
+      {marquee?.rect && marquee.rect.floor === floor && (
+        <MarqueeBand rect={marquee.rect} viewport={viewport} />
+      )}
       <MapControls
         scale={viewport.scale}
         onZoomIn={zoomIn}
@@ -277,6 +353,35 @@ export function MapStage({
         </div>
       )}
     </div>
+  )
+}
+
+interface MarqueeBandProps {
+  rect: { floor: number; x0: number; y0: number; x1: number; y1: number }
+  viewport: { scale: number; tx: number; ty: number }
+}
+
+/** The rubber band, drawn from the normalised cell rect so it looks the same
+ *  whichever direction the operator dragged. `pointer-events-none` because the
+ *  container holds the pointer capture and the band must not intercept anything. */
+function MarqueeBand({ rect, viewport }: MarqueeBandProps) {
+  const px = BASE_CELL * viewport.scale
+  const x0 = Math.min(rect.x0, rect.x1)
+  const y0 = Math.min(rect.y0, rect.y1)
+  const x1 = Math.max(rect.x0, rect.x1)
+  const y1 = Math.max(rect.y0, rect.y1)
+
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute z-30 rounded-[2px] border-2 border-dashed border-nexgen-blue bg-nexgen-blue/10"
+      style={{
+        left: viewport.tx + x0 * px,
+        top: viewport.ty + y0 * px,
+        width: (x1 - x0 + 1) * px,
+        height: (y1 - y0 + 1) * px,
+      }}
+    />
   )
 }
 

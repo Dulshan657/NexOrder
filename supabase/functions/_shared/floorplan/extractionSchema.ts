@@ -384,9 +384,15 @@ export interface NormalizeOptions {
   maxFloors?: number
 }
 
-/** Sanitize a raw discriminator into a short alphanumeric code segment. */
+/** Sanitize a raw discriminator into a short alphanumeric code segment.
+ *
+ *  UPPERCASE, and that is not cosmetic. `normalizeScan` folds every scan to upper,
+ *  so a lowercase slug makes `WH-B-a1b2-3-4` and `WH-B-A1B2-3-4` two rows to the
+ *  global UNIQUE constraint and one key to `resolveScan` — which never guesses and
+ *  would return `ambiguous` forever. It also put imported codes outside the shared
+ *  `codeIssue` charset, which is how this was found. */
 function toCodeSlug(raw: string | undefined): string {
-  return (raw ?? '').replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase()
+  return (raw ?? '').replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase()
 }
 
 const clampInt = (v: number, lo: number, hi: number): number => {

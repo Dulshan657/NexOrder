@@ -213,7 +213,9 @@ describe('normalizeFloorplan', () => {
         extraction({ racks: [{ code: 'A', x: 3, y: 4, floor: 0, storageTypeHint: '' }] }),
         { ...opts, codeSlug: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
       )
-      expect(d.placements[0].new_bin.code).toBe('WH5-B-a1b2c3d4-3-4')
+      // UPPERCASE: `normalizeScan` folds case, so a lowercase slug would let one
+      // import mint a code that scans identically to another's.
+      expect(d.placements[0].new_bin.code).toBe('WH5-B-A1B2C3D4-3-4')
     })
 
     it('dedupes racks sharing a cell and clamps out-of-bounds coords', () => {
