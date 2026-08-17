@@ -56,30 +56,43 @@ export async function loadTakenCodes(admin: SupabaseClient): Promise<Map<string,
 }
 
 /**
- * Pool → the highest number handed out in it, within this warehouse.
+ * Pool → the highest number handed out in it, within this warehouse, EXCLUDING the
+ * rows this sweep is about to rewrite.
  *
- * Mirrors `loadAreaSeqClaims`, and scoped the same way. Unlike the naming pass this
- * needs only the high-water mark: a code pool has no boundary that can move a
- * number between pools behind the operator's back, because the block is typed at
- * the moment of the sweep rather than derived from geometry. That is one of the
- * things `{block}` buys over `{area}`.
+ * Mirrors `loadAreaSeqClaims` and is scoped the same way, but the exclusion is the
+ * part that matters and it is not optional. A sweep's start is derived as
+ * high-water + 1 so two sweeps over adjacent aisles do not both mint 01. Counting
+ * the selection's OWN rows in that high-water makes re-running the identical sweep
+ * start where the last one finished — the second pass renumbers 01..06 to 07..12
+ * and the operator's "did that work?" click has silently moved every code. Verified
+ * on dev before this argument was written.
+ *
+ * "Continue past what is already there" has to mean what is already there AND
+ * STAYING. With the selection excluded, re-running is a no-op, which is the
+ * idempotence the pure planner promises and the server has to preserve.
+ *
+ * A deleted bin's `locations` row survives (publishing never retires a bin), so its
+ * claim survives with it — the same property loadAreaHighWater relies on.
  *
  * Fails CLOSED: offering a number that is already live is exactly what this stops.
  */
 export async function loadCodeHighWater(
   admin: SupabaseClient,
   warehousePath: string,
+  excludeIds: readonly number[] = [],
 ): Promise<Map<string, number>> {
   const { data, error } = await admin
     .from('locations')
-    .select('code_block, code_seq')
+    .select('id, code_block, code_seq')
     .not('code_seq', 'is', null)
     .or(`materialized_path.eq.${warehousePath},materialized_path.like.${warehousePath}/%`)
   if (error) {
     throw new EdgeFunctionError('INTERNAL', `Could not read code numbering: ${error.message}`)
   }
+  const excluded = new Set(excludeIds)
   const high = new Map<string, number>()
   for (const row of (data ?? []) as any[]) {
+    if (excluded.has(Number(row.id))) continue
     const seq = Number(row.code_seq)
     if (!Number.isFinite(seq)) continue
     const pool = String(row.code_block ?? '').trim()

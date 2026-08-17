@@ -1627,10 +1627,17 @@ serve(async (req: Request) => {
       })
 
       // A fresh block starts at 1; an existing one continues past its high-water
-      // mark, so two sweeps over adjacent aisles do not both mint 01. A deleted
-      // bin's `locations` row survives (publishing never retires a bin), so its
-      // claim survives with it — the property loadAreaHighWater relies on too.
-      const highWater = await loadCodeHighWater(admin, whPath)
+      // mark, so two sweeps over adjacent aisles do not both mint 01.
+      //
+      // THE SELECTION IS EXCLUDED FROM THAT HIGH-WATER, and it has to be. Counting
+      // the rows this sweep is about to rewrite makes re-running the identical
+      // sweep start where the last one finished — 01..06 becomes 07..12 and the
+      // operator's "did that work?" click has silently moved every code. Caught on
+      // dev doing exactly that.
+      const sweptIds = [...unitIds, ...[...unitIds].flatMap(
+        (id) => (resolved.levelsByParent.get(id) ?? []).map((l) => l.id),
+      )]
+      const highWater = await loadCodeHighWater(admin, whPath, sweptIds)
       const start = input.start_at ?? (highWater.get(block) ?? 0) + 1
 
       const takenCodes = await loadTakenCodes(admin)
