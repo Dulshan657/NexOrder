@@ -19,6 +19,9 @@ export interface SelectStepProps {
   spannedAreas: readonly string[]
   /** Blocks already swept on this site, for growing one. */
   blocks: readonly BlockCensusRow[]
+  /** How much of the site has been swept, from `code_block` provenance. */
+  swept: number
+  total: number
   onTool: (tool: RecodeTool) => void
   onMode: (mode: 'add' | 'erase') => void
   onUndo: () => void
@@ -38,11 +41,31 @@ const chip =
   'rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-medium text-stone-600 btn-press hover:bg-stone-50'
 
 export function SelectStep({
-  tool, mode, selectedCount, canUndo, areaNames, spannedAreas, blocks,
+  tool, mode, selectedCount, canUndo, areaNames, spannedAreas, blocks, swept, total,
   onTool, onMode, onUndo, onClear, onSelectArea, onSelectBlock,
 }: SelectStepProps) {
   return (
     <div className="flex flex-col gap-3">
+      {/* The map is tinted to match while this panel is open, so the number and the
+          picture are the same fact. `code_block IS NULL` is provenance, not a guess
+          about the string. */}
+      {total > 0 && (
+        <div>
+          <div className="flex items-baseline justify-between text-[11px]">
+            <span className="font-medium text-stone-600">
+              {swept} of {total} recoded
+            </span>
+            <span className="text-stone-400">{total - swept} to go</span>
+          </div>
+          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-stone-200">
+            <div
+              className="h-full rounded-full bg-emerald-400"
+              style={{ width: `${Math.round((swept / total) * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <p className="text-xs text-stone-500">
         Drag on the map to pick the bins you want to recode. Hold <kbd className="rounded border border-stone-300 px-1 font-mono text-[10px]">Alt</kbd> to pan instead.
       </p>

@@ -82,6 +82,11 @@ import {
 } from '../_shared/wie/codePattern.ts'
 import {
   applyRecodeWrites,
+  buildRevertRows,
+  loadLatestSweep,
+  markSweepReverted,
+  recordSweep,
+  sweptRowsFrom,
   buildRecodeRows,
   loadCodeHighWater,
   loadCodePattern,
@@ -339,12 +344,25 @@ const recodeSchema = z.object({
   dry_run: z.boolean().optional(),
 })
 
+// ── revert_code_sweep (mig 00108) ────────────────────────────────────────────
+//
+// Put the most recent sweep back. Only the newest un-reverted one is reachable:
+// reverting an older sweep would collide with every newer one, and resolving that
+// is a worse tool than saying "sweep it again". No `sweep_id` for the same reason —
+// there is exactly one answer, and letting the client name it would only create a
+// way to ask for the wrong one.
+const revertSweepSchema = z.object({
+  action: z.literal('revert_code_sweep'),
+  warehouse_id: z.number().int().positive(),
+})
+
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: createSchema }),
   paintAreasSchema,
   paintLabelsSchema,
   bindZonesSchema,
   recodeSchema,
+  revertSweepSchema,
   z.object({ action: z.literal('update'), id: z.number().int().positive(), data: updateSchema }),
   renameAreaSchema,
   renameRackSchema,
@@ -1759,6 +1777,21 @@ serve(async (req: Request) => {
       const rows = buildRecodeRows(plan.writes, resolved.locById, parentPaths)
       const recoded = await applyRecodeWrites(admin, whPath, rows)
 
+      // Record what moved, so the operator can put it back after a reload. NOT
+      // fatal if it fails: the sweep has already committed, and reporting a write
+      // that did happen as an error is far worse than losing an undo affordance.
+      // The response says whether the record was kept and the panel only offers
+      // Revert when it was.
+      const prevProvenance = new Map(
+        units.map((u) => [u.id, { block: u.codeBlock, seq: u.codeSeq }]),
+      )
+      const recordedSweep = await recordSweep(admin, {
+        warehouseId: input.warehouse_id,
+        block, template, origin, order,
+        rows: sweptRowsFrom(plan.writes, prevProvenance),
+        actorId: auth.userId,
+      })
+
       // No warehouse_layouts.updated_at bump, for the reason rename_area gives: a
       // code contributes no graph node, no edge weight and no access_offset_m, so
       // demanding a republish for it would be a lie.
@@ -1788,7 +1821,64 @@ serve(async (req: Request) => {
         unchanged: plan.unchanged,
         nextCounter: plan.nextCounter,
         labelPrintedReset: plan.labelPrinted.length,
+        canRevert: recordedSweep,
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── revert_code_sweep (mig 00108) ────────────────────────────────────────
+    if (input.action === 'revert_code_sweep') {
+      // Shares the `:recode:` bucket deliberately: a revert rewrites exactly the
+      // same rows a sweep did, and giving it its own budget would let a loop of
+      // sweep/revert/sweep spend twice what one of them can.
+      const revertRl = await checkRateLimit(`mutate-warehouse-location:recode:${auth.userId}`, {
+        windowMs: 60_000,
+        max: 10,
+      })
+      if (!revertRl.ok) {
+        throw new EdgeFunctionError(
+          'TOO_MANY_REQUESTS',
+          `Rate limit exceeded; try again in ${Math.ceil(revertRl.resetMs / 1000)}s`,
+        )
+      }
+
+      const { data: whRow } = await admin.from('locations')
+        .select('id, kind, materialized_path, active_layout_id')
+        .eq('id', input.warehouse_id).maybeSingle()
+      if (!whRow || (whRow as any).kind !== 'WAREHOUSE') {
+        throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
+      }
+      const whPath = (whRow as any).materialized_path as string
+      const layoutId = (whRow as any).active_layout_id as number | null
+      if (!layoutId) throw new EdgeFunctionError('CONFLICT', 'This site has no published layout')
+
+      const sweep = await loadLatestSweep(admin, input.warehouse_id)
+      if (!sweep) throw new EdgeFunctionError('NOT_FOUND', 'There is no sweep to revert')
+
+      // Resolved through the SAME loader the sweep used, so a revert and a recode
+      // cannot disagree about what a row is or where it sits.
+      const resolved = await loadLayoutNamingUnits(admin, layoutId, whPath)
+      const parentIds = sweep.rows
+        .map((r) => resolved.locById.get(r.id)?.parentId)
+        .filter((id): id is number => id != null)
+      const parentPaths = await loadParentPaths(admin, parentIds)
+      // Throws CONFLICT naming the row if anything has been recoded again since.
+      const revertRows = buildRevertRows(sweep.rows, resolved.locById, parentPaths)
+
+      const reverted = await applyRecodeWrites(admin, whPath, revertRows)
+      await markSweepReverted(admin, sweep.id, auth.userId)
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
+        resourceId: String(input.warehouse_id),
+        metadata: {
+          recode_revert: true, sweep_id: sweep.id, block: sweep.block, reverted,
+          first: sweep.rows[0] ? `${sweep.rows[0].to}→${sweep.rows[0].from}` : null,
+        },
+      })
+
+      return new Response(JSON.stringify({ ok: true, reverted, block: sweep.block }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     // ── rename_rack (mig 00094) ──────────────────────────────────────────────

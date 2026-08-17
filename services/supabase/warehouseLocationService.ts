@@ -526,6 +526,10 @@ export interface RecodeResult {
   unchanged: number
   nextCounter: number
   labelPrintedReset: number
+  /** False when the sweep applied but its before/after record could not be kept —
+   *  the write is not undone by that, so the panel simply withholds Revert rather
+   *  than offering one that would fail. */
+  canRevert?: boolean
 }
 
 export interface RecodeArgs {
@@ -589,6 +593,22 @@ export async function recodeLocations(args: RecodeArgs): Promise<RecodeResult> {
   )
   if (error) await rethrowWithServerMessage(error, 'Could not apply the new codes')
   return data as RecodeResult
+}
+
+/**
+ * Put the most recent sweep back.
+ *
+ * No sweep id: only the newest un-reverted one is reachable, because reverting an
+ * older sweep would collide with every newer one. Letting the client name one would
+ * only create a way to ask for the wrong answer.
+ */
+export async function revertCodeSweep(warehouseId: number): Promise<{ reverted: number; block: string }> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; reverted: number; block: string }>(
+    'mutate-warehouse-location',
+    { body: { action: 'revert_code_sweep', warehouse_id: warehouseId } },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not revert the sweep')
+  return data as { reverted: number; block: string }
 }
 
 export async function deactivateWarehouseLocation(id: number): Promise<void> {

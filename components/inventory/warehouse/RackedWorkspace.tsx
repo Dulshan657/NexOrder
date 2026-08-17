@@ -42,7 +42,7 @@ import {
 } from './recode/recodeGeometry'
 import { ghostLabels, visibleControls, type GhostLabel } from './recode/recodePlanView'
 import { WIZARD_DEFAULT_PATTERN, planRecode, sanitizeBlock } from '@/lib/codePattern'
-import { useRecodeLocations } from '@/hooks/queries/useWarehouseLocations'
+import { useRecodeLocations, useRevertCodeSweep } from '@/hooks/queries/useWarehouseLocations'
 import { useWarehouseCodePattern, useSetWarehouseCodePattern } from '@/hooks/queries/useWarehouses'
 import { previewRecode, type RecodePreview } from '@/services/supabase/warehouseLocationService'
 import { useAreaPaintState } from './useAreaPaintState'
@@ -153,6 +153,11 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     { recoded: number; levels: number; labelPrintedReset: number; block: string } | null
   >(null)
   const recodeMutation = useRecodeLocations(warehouseId)
+  const revertMutation = useRevertCodeSweep(warehouseId)
+  /** False when the sweep applied but its before/after record could not be kept.
+   *  The write stands either way; withholding the button is the honest response to
+   *  not being able to undo it. */
+  const [canRevertSweep, setCanRevertSweep] = useState(false)
   /** The site's stored pattern (mig 00108). No row = the built-in default, so this
    *  legitimately resolves to undefined and the wizard's own default takes over. */
   const codePattern = useWarehouseCodePattern(warehouseId)
@@ -171,6 +176,9 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
 
   const [floor, setFloor] = useState(0)
   const [overlay, setOverlay] = useState<OverlayKind>('none')
+  /** What the operator was looking at before the sweep armed the code tint, so
+   *  cancelling puts the map back rather than leaving it amber. */
+  const overlayBeforeRecodeRef = useRef<OverlayKind>('none')
   // Dry-run test-bench outputs drawn on the grid.
   const [putawayResult, setPutawayResult] = useState<PutawayResponse | null>(null)
   const [routeOrderIds, setRouteOrderIds] = useState<string[]>([])
@@ -413,6 +421,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
         ...recodeUnits.map((u) => u.id),
         ...recodeUnits.flatMap((u) => (u.levels ?? []).map((l) => l.id)),
       ])
+      setCanRevertSweep(res.canRevert !== false)
       setRecodeApplied({
         recoded: res.units,
         levels: res.levels,
@@ -625,7 +634,16 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
               the barcode payload of every bin in the band. */}
           <button
             type="button"
-            onClick={() => recode.dispatch({ type: 'begin' })}
+            onClick={() => {
+              overlayBeforeRecodeRef.current = overlay
+              setOverlay('unswept')
+              recode.dispatch({
+                type: 'begin',
+                origin: codePattern.data?.origin,
+                order: codePattern.data?.order,
+                template: codePattern.data?.template ?? null,
+              })
+            }}
             className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
           >
             Recode bins
@@ -755,15 +773,17 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           areaNames={floorAreaNames}
           spannedAreas={spannedAreas}
           blocks={recodeCensus.blocks}
+          swept={recodeCensus.swept}
+          total={recodeCensus.total}
           blockSuggestion={blockSuggestion}
           incumbentCount={recodeIncumbents.length}
           levelCodes={recodeLevelCodes}
           preview={recodePreview}
           previewing={previewingRecode}
           applying={recodeMutation.isPending}
-          reverting={false}
+          reverting={revertMutation.isPending}
           applied={recodeApplied}
-          canRevert={false}
+          canRevert={canRevertSweep}
           preset={recodeLabelPreset}
           ackPrinted={ackPrinted}
           onTool={(tool) => recode.dispatch({ type: 'set_tool', tool })}
@@ -817,11 +837,26 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           onRenumberBlock={() => recode.dispatch({ type: 'set_renumber_block', renumberBlock: true })}
           onApply={runRecode}
           onPrintLabels={() => setPrintingRecodedLabels(true)}
-          onRevert={() => {}}
+          onRevert={async () => {
+            try {
+              const res = await revertMutation.mutateAsync()
+              setCanRevertSweep(false)
+              setRecodedIds([])
+              addToast(
+                `Put ${res.reverted} code${res.reverted === 1 ? '' : 's'} back`,
+                'success',
+              )
+              recode.dispatch({ type: 'cancel' })
+              setRecodeApplied(null)
+            } catch (err) {
+              addToast(err instanceof Error ? err.message : 'Could not revert the sweep', 'error')
+            }
+          }}
           onSweepAnother={() => recode.dispatch({ type: 'goto_step', step: 1 })}
           onCancel={() => {
             setRecodePreview(null)
             setRecodeApplied(null)
+            setOverlay(overlayBeforeRecodeRef.current)
             recode.dispatch({ type: 'cancel' })
           }}
         />

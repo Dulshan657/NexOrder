@@ -17,7 +17,10 @@ import type { LayoutObject, LayoutPlacement, VelocityClass } from '@/types'
 import type { BinInfo } from './WarehouseCanvas'
 import type { useWarehouseViewerModel } from './useWarehouseViewerModel'
 import { zoneRegions as computeZoneRegions } from './zoneRegions'
-import { occupancyFill, velocityFill, congestionFill, type OverlayKind, type LegendEntry } from './warehouseOverlays'
+import {
+  occupancyFill, velocityFill, congestionFill, unsweptFill,
+  type OverlayKind, type LegendEntry,
+} from './warehouseOverlays'
 import { zoneTint, zoneTypeLabel } from './zoneTints'
 import { OBJECT_FILL } from '@/components/admin/layout/layoutPalette'
 import { roleLabel, sortedRoles } from '@/lib/levelRoles'
@@ -68,10 +71,23 @@ export function useWarehouseMapLayers(args: WarehouseMapLayersArgs): WarehouseMa
       } else if (overlay === 'congestion' && p.graphNodeId != null) {
         const c = congestionFill(model.visitsByNode.get(p.graphNodeId) ?? 0, model.maxVisits)
         if (c) map.set(p.locationId, c)
+      } else if (overlay === 'unswept') {
+        // Read off the LOCATION, not the placement: `code_block` is provenance on
+        // the row, and a levelled rack's levels each carry null by design (see
+        // buildRecodeRows) — so a level asks its rack, which is the unit a sweep
+        // actually numbers.
+        const loc = model.locationsById.get(p.locationId)
+        const owner = loc?.kind === 'SHELF' && loc.parentId != null
+          ? model.locationsById.get(loc.parentId)
+          : loc
+        map.set(p.locationId, unsweptFill(owner?.codeBlock))
       }
     }
     return map
-  }, [overlay, placements, model.binFillPct, model.binVelocityClass, model.visitsByNode, model.maxVisits])
+  }, [
+    overlay, placements, model.binFillPct, model.binVelocityClass,
+    model.visitsByNode, model.maxVisits, model.locationsById,
+  ])
 
   // "×N" badge on multi-product bins while the velocity overlay is active.
   const binBadges = useMemo(() => {
@@ -161,6 +177,8 @@ export function useWarehouseMapLayers(args: WarehouseMapLayersArgs): WarehouseMa
           if (cls && (best == null || order.indexOf(cls) < order.indexOf(best))) best = cls
         }
         map.set(rackId, velocityFill(best))
+      } else if (overlay === 'unswept') {
+        map.set(rackId, unsweptFill(model.locationsById.get(rackId)?.codeBlock))
       } else if (overlay === 'congestion') {
         let peak = 0
         for (const lv of levels) {
@@ -174,7 +192,7 @@ export function useWarehouseMapLayers(args: WarehouseMapLayersArgs): WarehouseMa
     return map
   }, [
     overlay, model.levelsByRackId, model.binFillPct, model.binVelocityClass,
-    model.visitsByNode, model.maxVisits, placementByLocation,
+    model.visitsByNode, model.maxVisits, placementByLocation, model.locationsById,
   ])
 
   /** Zones have no geometry of their own (see zoneRegions.ts) — recover the area
