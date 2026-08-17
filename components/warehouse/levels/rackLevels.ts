@@ -4,11 +4,15 @@
 // `RackLevelEditor`'s documented prop contract. The editor renders it top-first.
 
 import type { LevelRole, RackLevel } from '@/types'
+import { levelCodeFor } from '@/lib/codePattern'
 
-/** `<rack-code>-L<n>`, e.g. `levelCode('MAIN-B-4-2', 2)` -> `'MAIN-B-4-2-L2'`. */
-export function levelCode(rackCode: string, levelIndex: number): string {
-  return `${rackCode}-L${levelIndex}`
-}
+/** `<rack-code>-L<n>`, e.g. `levelCode('MAIN-B-4-2', 2)` -> `'MAIN-B-4-2-L2'`.
+ *
+ *  Re-exported from the pure shared module rather than defined here: the recode
+ *  sweep derives level codes from a rack's NEW code and the server does the same,
+ *  so a second copy of this one line would eventually leave a rack and its levels
+ *  under two different code families. Same rule as `scanNormalize.ts`. */
+export const levelCode = levelCodeFor
 
 /** Extracts the rack code a level's own `code` was derived from (the `-L<n>`
  *  suffix stripped), so callers can re-derive sibling codes without threading
