@@ -12,16 +12,16 @@
 // except MapControls and the hint pill, both inside MapStage's own stacking
 // context — this component no longer needs one of its own.
 
-import { useMemo, useRef, useState } from 'react'
-import type { InventoryLocation, LayoutPlacement, VelocityClass } from '@/types'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import type { InventoryLocation, LayoutObject, LayoutPlacement } from '@/types'
 import { useLayoutDetail, useLayouts } from '@/hooks/queries/useLayouts'
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
 import { useZoneProfiles } from '@/hooks/queries/useZoneProfiles'
 import type { PutawayResponse } from '@/services/supabase/putawayService'
 import { useWarehouseViewerModel } from './useWarehouseViewerModel'
-import { zoneRegions as computeZoneRegions } from './zoneRegions'
-import type { BinInfo } from './WarehouseCanvas'
+import { useWarehouseMapLayers } from './useWarehouseMapLayers'
+import { deriveMapMode, modeGuards } from './mapMode'
 import { MapStage } from './MapStage'
 import { FloatingPanel } from './FloatingPanel'
 import { WarehouseTreePanel } from './WarehouseTreePanel'
@@ -43,18 +43,17 @@ import { signCellsFingerprint } from '@/lib/signPaint'
 import { OverlayControls } from './OverlayControls'
 import { AskEnginePanel } from './AskEnginePanel'
 import { slottingArrows, routePath, putawayMarkers } from './warehouseMarkers'
-import { occupancyFill, velocityFill, congestionFill, type OverlayKind, type LegendEntry } from './warehouseOverlays'
-import { zoneTint, zoneTypeLabel } from './zoneTints'
-import { OBJECT_FILL } from '@/components/admin/layout/layoutPalette'
-import { roleLabel, sortedRoles } from '@/lib/levelRoles'
+import type { OverlayKind } from './warehouseOverlays'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { useToasts } from '@/hooks/useToasts'
 import { useWarehouseLabelPrefs } from '@/hooks/queries/useLabelJobs'
 import { resolvePreset } from '@/supabase/functions/_shared/labels/layoutLabelPlan'
 
-/** Swatch for an area with no zone profile — the same neutral both canvases
- *  paint it with, so the legend never promises a colour the map doesn't use. */
-const AREA_LEGEND_FALLBACK = OBJECT_FILL.area
+/** Module-level for the same identity reason as NOOP below. An inline empty-array
+ *  fallback mints a fresh array on every render while the layout is loading, and
+ *  both of these feed the map-layer memos, which are scene-memo dependencies. */
+const EMPTY_OBJECTS: LayoutObject[] = []
+const EMPTY_PLACEMENTS: LayoutPlacement[] = []
 
 /** Module-level so its identity is stable. An inline `() => {}` here re-mints on
  *  every render, which busts MapStage's `guardedSelectBin` useCallback and through
@@ -158,198 +157,28 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const routeQuery = usePickRoute(warehouseId, routeOrderIds)
   const routeStops = routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : []
 
-  const placements = detail?.placements ?? []
+  const placements = detail?.placements ?? EMPTY_PLACEMENTS
   const placementByLocation = useMemo(() => {
     const map = new Map<number, LayoutPlacement>()
     placements.forEach((p) => map.set(p.locationId, p))
     return map
   }, [placements])
 
-  // Overlay fill per bin. Slotting draws arrows instead of fills.
-  const binColors = useMemo(() => {
-    if (overlay === 'none' || overlay === 'slotting') return undefined
-    const map = new Map<number, string>()
-    for (const p of placements) {
-      if (overlay === 'occupancy') {
-        map.set(p.locationId, occupancyFill(model.binFillPct.get(p.locationId)))
-      } else if (overlay === 'velocity') {
-        map.set(p.locationId, velocityFill(model.binVelocityClass.get(p.locationId)))
-      } else if (overlay === 'congestion' && p.graphNodeId != null) {
-        const c = congestionFill(model.visitsByNode.get(p.graphNodeId) ?? 0, model.maxVisits)
-        if (c) map.set(p.locationId, c)
-      }
-    }
-    return map
-  }, [overlay, placements, model.binFillPct, model.binVelocityClass, model.visitsByNode, model.maxVisits])
-
-  // "×N" badge on multi-product bins while the velocity overlay is active.
-  const binBadges = useMemo(() => {
-    if (overlay !== 'velocity') return undefined
-    const map = new Map<number, string>()
-    for (const p of placements) {
-      const n = model.binContents.get(p.locationId)?.length ?? 0
-      if (n > 1) map.set(p.locationId, `×${n}`)
-    }
-    return map
-  }, [overlay, placements, model.binContents])
-
-  // ── Map labelling data ─────────────────────────────────────────────────────
-  // All of this is a reshape of queries already in memory (locations, storage
-  // types, the viewer model) — the map used to receive only a flat colour per
-  // bin, so it could not draw a code, a capacity or a form.
-
-  const formColorById = useMemo(() => {
-    const map = new Map<number, string>()
-    for (const st of storageTypes) if (st.color) map.set(st.id, st.color)
-    return map
-  }, [storageTypes])
-
-  const zoneTypeByProfileId = useMemo(() => {
-    const map = new Map<number, string>()
-    for (const zp of zoneProfiles) map.set(zp.id, zp.zoneType)
-    return map
-  }, [zoneProfiles])
-
-  /** Per-location display record for on-map labels, spines and the hover card.
-   *  Covers RACK parents too: a rack owns no stock itself, but it owns the code
-   *  the map labels the cell with, and its capacity is the sum of its levels'. */
-  const binInfo = useMemo(() => {
-    const map = new Map<number, BinInfo>()
-    for (const loc of model.locationsById.values()) {
-      const contents = model.binContents.get(loc.id) ?? []
-      // Dominant SKU by slots occupied — the same rule the tree and the detail
-      // panel use to pick a bin's headline product.
-      let top: (typeof contents)[number] | null = null
-      for (const row of contents) if (!top || row.slots > top.slots) top = row
-
-      let capacitySlots = loc.capacitySlots
-      if (loc.kind === 'RACK') {
-        const levels = model.levelsByRackId.get(loc.id) ?? []
-        const summed = levels.reduce((acc, lv) => acc + (lv.capacitySlots ?? 0), 0)
-        capacitySlots = summed > 0 ? summed : undefined
-      }
-
-      map.set(loc.id, {
-        code: loc.code,
-        // Already on the client: getWarehouseLocations does select('*'), so the
-        // friendly name (mig 00094) arrives with no new query.
-        name: loc.name,
-        capacitySlots,
-        slotKind: loc.slotKind,
-        contentsCount: contents.length,
-        topSku: top?.productName ?? undefined,
-        formColor: loc.storageTypeId != null ? formColorById.get(loc.storageTypeId) : undefined,
-      })
-    }
-    return map
-  }, [model.locationsById, model.binContents, model.levelsByRackId, formColorById])
-
-  /** Overlay colour for a whole rack, for the zoomed-out case where the cell is
-   *  too small to draw a per-level spine.
-   *
-   *  This replaces the canvas's old "colour of whichever level happened to be
-   *  first", which could paint a rack white when its pick face was jammed and
-   *  its bulk level empty. Occupancy rolls up weighted by capacity; velocity
-   *  reports the fastest class present and congestion the busiest node, since
-   *  those are the levels an operator needs to notice. */
-  const rackColors = useMemo(() => {
-    if (overlay === 'none' || overlay === 'slotting') return undefined
-    const map = new Map<number, string>()
-    for (const [rackId, levels] of model.levelsByRackId) {
-      if (overlay === 'occupancy') {
-        let used = 0
-        let capacity = 0
-        for (const lv of levels) {
-          const pct = model.binFillPct.get(lv.id)
-          const cap = lv.capacitySlots
-          if (pct == null || cap == null || cap <= 0) continue
-          used += pct * cap
-          capacity += cap
-        }
-        map.set(rackId, occupancyFill(capacity > 0 ? used / capacity : null))
-      } else if (overlay === 'velocity') {
-        const order: VelocityClass[] = ['A', 'B', 'C']
-        let best: VelocityClass | null = null
-        for (const lv of levels) {
-          const cls = model.binVelocityClass.get(lv.id)
-          if (cls && (best == null || order.indexOf(cls) < order.indexOf(best))) best = cls
-        }
-        map.set(rackId, velocityFill(best))
-      } else if (overlay === 'congestion') {
-        let peak = 0
-        for (const lv of levels) {
-          const node = placementByLocation.get(lv.id)?.graphNodeId
-          if (node != null) peak = Math.max(peak, model.visitsByNode.get(node) ?? 0)
-        }
-        const c = congestionFill(peak, model.maxVisits)
-        if (c) map.set(rackId, c)
-      }
-    }
-    return map
-  }, [
-    overlay, model.levelsByRackId, model.binFillPct, model.binVelocityClass,
-    model.visitsByNode, model.maxVisits, placementByLocation,
-  ])
-
-  /** Zones have no geometry of their own (see zoneRegions.ts) — recover the area
-   *  each one covers from the cells of the bins parented under it. */
-  const zoneAreas = useMemo(
-    () => computeZoneRegions(placements, model.locationsById, floor),
-    [placements, model.locationsById, floor],
-  )
-
-  /** Legend rows for the map's own colours, restricted to what this warehouse
-   *  actually contains. Storage forms are omitted while an overlay is active
-   *  because the overlay has recoloured those very bins — showing the form
-   *  swatches then would explain a colour that is no longer on screen. */
-  const legendExtras = useMemo(() => {
-    const entries: LegendEntry[] = []
-
-    if (overlay === 'none') {
-      const usedFormIds = new Set<number>()
-      for (const loc of model.locationsById.values()) {
-        if (loc.storageTypeId != null) usedFormIds.add(loc.storageTypeId)
-      }
-      for (const st of storageTypes) {
-        if (st.color && usedFormIds.has(st.id)) entries.push({ color: st.color, label: st.name })
-      }
-    }
-
-    const usedRoleKeys = new Set<string>()
-    for (const loc of model.locationsById.values()) {
-      if (loc.levelRole) usedRoleKeys.add(loc.levelRole)
-    }
-    for (const role of sortedRoles(levelRoles)) {
-      if (usedRoleKeys.has(role.key)) {
-        entries.push({ color: role.colorFill, label: roleLabel(levelRoles, role.key) })
-      }
-    }
-
-    // Named areas (mig 00090). Listed before the derived zone rows because an
-    // area is what the operator actually drew and named; a zone region is
-    // inferred from bin ancestry. Deduped by name — an area is many 1×1 cells.
-    const seenAreas = new Set<string>()
-    for (const o of detail?.objects ?? []) {
-      if (o.objectType !== 'area' || o.floor !== floor) continue
-      const name = typeof o.meta?.name === 'string' ? o.meta.name : ''
-      if (!name || seenAreas.has(name)) continue
-      seenAreas.add(name)
-      const zp = o.meta?.zoneProfileId
-      const zoneType = typeof zp === 'number' ? zoneTypeByProfileId.get(zp) : undefined
-      entries.push({ color: zoneType ? zoneTint(zoneType) : AREA_LEGEND_FALLBACK, label: name })
-    }
-
-    const seenZoneTypes = new Set<string>()
-    for (const area of zoneAreas) {
-      const type = area.zoneProfileId != null ? zoneTypeByProfileId.get(area.zoneProfileId) : undefined
-      const key = type ?? ''
-      if (seenZoneTypes.has(key)) continue
-      seenZoneTypes.add(key)
-      entries.push({ color: zoneTint(type), label: `${zoneTypeLabel(type)} zone` })
-    }
-
-    return entries
-  }, [overlay, model.locationsById, storageTypes, levelRoles, zoneAreas, zoneTypeByProfileId, detail?.objects, floor])
+  // Every colour and label the canvas draws, derived once and memoized for
+  // IDENTITY as much as for cost — they are all scene-memo dependencies.
+  const {
+    binColors, rackColors, binBadges, binInfo, zoneAreas, zoneTypeByProfileId, legendExtras,
+  } = useWarehouseMapLayers({
+    model,
+    placements,
+    placementByLocation,
+    objects: detail?.objects ?? EMPTY_OBJECTS,
+    storageTypes,
+    zoneProfiles,
+    levelRoles,
+    overlay,
+    floor,
+  })
 
   // ── Code sweep derivations (mig 00107) ────────────────────────────────────
 
@@ -515,14 +344,51 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
 
   // Compose the marker layers: dry-run route + putaway always show; slotting
   // arrows only when its overlay is active.
+  // What the map is FOR right now, and what that forbids. Derived once so a new
+  // mode cannot be forgotten at one of the several call sites that must exclude it
+  // — see mapMode.ts for why that was worth extracting.
+  const mode = deriveMapMode({
+    paintActive: paint.state.active,
+    recodeActive: recode.state.active,
+  })
+  const guards = modeGuards(mode, canRename)
+
   const putawayRec = putawayResult?.mode === 'engine' ? putawayResult.recommendations[0] : null
-  const renderMarkers = (cell: number) => (
+  /**
+   * useCallback is LOAD-BEARING, not tidiness.
+   *
+   * `renderOverlay` is a dependency of WarehouseCanvas's `scene` memo, and this
+   * component re-renders on every frame of a pan or a stroke. As a plain inline
+   * function it re-minted each time, busting the memo and re-rendering all 945 bins
+   * per frame — the same class of mistake the NOOP above documents, and the reason a
+   * marquee drag was already janky before anything was painted.
+   */
+  const renderMarkers = useCallback((cell: number) => (
     <g>
       {routeStops.length > 0 && routePath(cell, routeStops, placementByLocation, floor)}
       {putawayRec && putawayMarkers(cell, putawayRec, placementByLocation, floor)}
       {overlay === 'slotting' && slottingArrows(cell, model.slotting, placementByLocation, floor)}
     </g>
-  )
+  ), [routeStops, putawayRec, overlay, model.slotting, placementByLocation, floor])
+
+  /**
+   * While annotating, the canvas draws the WORKING SET in place of the stored areas
+   * AND signs — through the very same shape the stored rows have, so the preview and
+   * the saved result cannot look different. Every other object is untouched.
+   *
+   * Memoized, and hoisted ABOVE the loading guard so it stays an unconditional hook:
+   * a fresh array here is another scene-memo bust on every render.
+   */
+  const canvasObjects = useMemo(() => (
+    paint.state.active
+      ? [
+          ...(detail?.objects ?? EMPTY_OBJECTS).filter(
+            (o) => o.objectType !== 'area' && o.objectType !== 'label',
+          ),
+          ...paint.previewObjects,
+        ]
+      : detail?.objects ?? EMPTY_OBJECTS
+  ), [paint.state.active, paint.previewObjects, detail?.objects])
 
   // Skeleton mirrors the loaded shape (a tall map slot) so the tab doesn't
   // reflow when the layout lands — this is the first frame of every demo.
@@ -549,17 +415,6 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     )
   }
 
-  // While annotating, the canvas draws the WORKING SET in place of the stored
-  // areas AND signs — through the very same shape the stored rows have, so the
-  // preview and the saved result cannot look different. Every other object is
-  // untouched.
-  const canvasObjects = paint.state.active
-    ? [
-        ...detail.objects.filter((o) => o.objectType !== 'area' && o.objectType !== 'label'),
-        ...paint.previewObjects,
-      ]
-    : detail.objects
-
   return (
     <div className="flex flex-col gap-4">
       {/* The tree (not the map) is the keyboard/AT selection path — this
@@ -576,7 +431,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
       {/* Painting is a pointer-drag on a pan/zoom surface, which has no honest
           one-finger equivalent — MapStage disables gestures below md anyway, so
           the entry point is desktop-only rather than ambiguous on a phone. */}
-      {canRename && !paint.state.active && !recode.state.active && (
+      {guards.showModeButtons && (
         <div className="hidden md:flex md:justify-end md:gap-2">
           {/* A sweep is a pointer-drag on a pan/zoom surface, so desktop-only on
               the same terms as annotate. Its own button rather than a third
@@ -692,7 +547,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           // capture already routes the click to the container — this is the
           // belt-and-braces half, and it also keeps Bin detail from scrolling
           // into view behind the toolbar mid-selection.
-          onSelectBin={recode.state.active ? NOOP : selectFromMap}
+          onSelectBin={guards.canSelectBin ? selectFromMap : NOOP}
           binColors={binColors}
           rackColors={rackColors}
           binBadges={binBadges}
@@ -706,11 +561,11 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           // the same rows, and a rename applied against a working set that has
           // not been saved would be computed from a picture the server has
           // never seen.
-          onRenameArea={canRename && !paint.state.active ? setRenamingArea : undefined}
+          onRenameArea={guards.canRenameArea ? setRenamingArea : undefined}
           // Same mutual exclusion as the area pencil, and for the same reason:
           // clicking a sign ENTERS annotate mode, so offering it while already
           // in one would re-hydrate the working set and discard unsaved edits.
-          onEditSign={canRename && !paint.state.active ? beginSignEdit : undefined}
+          onEditSign={guards.canEditSign ? beginSignEdit : undefined}
           paint={{
             active: paint.state.active,
             onStrokeStart: () => paint.dispatch({ type: 'stroke_start' }),
