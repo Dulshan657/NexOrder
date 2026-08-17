@@ -10,7 +10,8 @@
 
 import type { VelocityClass } from '@/types'
 
-export type OverlayKind = 'none' | 'occupancy' | 'velocity' | 'congestion' | 'slotting'
+export type OverlayKind =
+  | 'none' | 'occupancy' | 'velocity' | 'congestion' | 'slotting' | 'unswept'
 
 export interface LegendEntry {
   color: string
@@ -127,12 +128,35 @@ export const SLOTTING_LEGEND: LegendEntry[] = [
   { color: '#8b5cf6', label: 'Suggested move (from → to)' },
 ]
 
+/**
+ * Which bins still carry a code no operator chose (migs 00107 / 00108).
+ *
+ * `code_block IS NULL` is the provenance signal 00107 added and it means exactly
+ * "this code was not minted by a pattern" — true of every bin drawn before the
+ * sweep tool existed. So this is a FACT about the row, not a heuristic about the
+ * string, which is why it can be trusted to tell an operator which parts of a site
+ * they have not got to yet.
+ */
+export function unsweptFill(codeBlock: string | null | undefined): string {
+  return codeBlock ? SWEPT_FILL : UNSWEPT_FILL
+}
+
+/** Amber for outstanding, the same reading as the label backlog's. */
+const UNSWEPT_FILL = '#fcd34d'
+const SWEPT_FILL = '#d1fae5'
+
+export const UNSWEPT_LEGEND: LegendEntry[] = [
+  { color: UNSWEPT_FILL, label: 'Still to recode' },
+  { color: SWEPT_FILL, label: 'Recoded' },
+]
+
 export function legendFor(overlay: OverlayKind): LegendEntry[] {
   switch (overlay) {
     case 'occupancy': return OCCUPANCY_LEGEND
     case 'velocity': return VELOCITY_LEGEND
     case 'congestion': return CONGESTION_LEGEND
     case 'slotting': return SLOTTING_LEGEND
+    case 'unswept': return UNSWEPT_LEGEND
     default: return []
   }
 }

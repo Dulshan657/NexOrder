@@ -12,16 +12,16 @@
 // except MapControls and the hint pill, both inside MapStage's own stacking
 // context — this component no longer needs one of its own.
 
-import { useMemo, useRef, useState } from 'react'
-import type { InventoryLocation, LayoutPlacement, VelocityClass } from '@/types'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { InventoryLocation, LayoutObject, LayoutPlacement } from '@/types'
 import { useLayoutDetail, useLayouts } from '@/hooks/queries/useLayouts'
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
 import { useZoneProfiles } from '@/hooks/queries/useZoneProfiles'
 import type { PutawayResponse } from '@/services/supabase/putawayService'
 import { useWarehouseViewerModel } from './useWarehouseViewerModel'
-import { zoneRegions as computeZoneRegions } from './zoneRegions'
-import type { BinInfo } from './WarehouseCanvas'
+import { useWarehouseMapLayers } from './useWarehouseMapLayers'
+import { deriveMapMode, modeGuards } from './mapMode'
 import { MapStage } from './MapStage'
 import { FloatingPanel } from './FloatingPanel'
 import { WarehouseTreePanel } from './WarehouseTreePanel'
@@ -32,10 +32,18 @@ import { BindZonesModal } from './BindZonesModal'
 import { EditSignModal } from './EditSignModal'
 import { AreaPaintToolbar } from './AreaPaintToolbar'
 import { AreaPaintSummaryModal } from './AreaPaintSummaryModal'
-import { RecodeToolbar } from './RecodeToolbar'
-import { RecodeSummaryModal } from './RecodeSummaryModal'
-import { placementsInRect, useRecodeSelection } from './useRecodeSelection'
-import { useRecodeLocations } from '@/hooks/queries/useWarehouseLocations'
+import { LayoutLabelJobModal } from '@/components/admin/labels/LayoutLabelJobModal'
+import { RecodePanel } from './recode/RecodePanel'
+import { useRecodeSelection, type MarqueeRect, type RecodeStep } from './recode/useRecodeSelection'
+import {
+  areasOfSelection, blockCensus, buildLevelIdsByRack, buildUnitPlacements,
+  incumbentsOfBlock, takenCodesFromLocations, unitsAtCell, unitsFromSelection,
+  unitsInArea, unitsInRect, warehouseCodeOf,
+} from './recode/recodeGeometry'
+import { ghostLabels, visibleControls, type GhostLabel } from './recode/recodePlanView'
+import { WIZARD_DEFAULT_PATTERN, planRecode, sanitizeBlock } from '@/lib/codePattern'
+import { useLatestCodeSweep, useRecodeLocations, useRevertCodeSweep } from '@/hooks/queries/useWarehouseLocations'
+import { useWarehouseCodePattern, useSetWarehouseCodePattern } from '@/hooks/queries/useWarehouses'
 import { previewRecode, type RecodePreview } from '@/services/supabase/warehouseLocationService'
 import { useAreaPaintState } from './useAreaPaintState'
 import { areaCellsFingerprint } from '@/lib/areaPaint'
@@ -43,18 +51,19 @@ import { signCellsFingerprint } from '@/lib/signPaint'
 import { OverlayControls } from './OverlayControls'
 import { AskEnginePanel } from './AskEnginePanel'
 import { slottingArrows, routePath, putawayMarkers } from './warehouseMarkers'
-import { occupancyFill, velocityFill, congestionFill, type OverlayKind, type LegendEntry } from './warehouseOverlays'
-import { zoneTint, zoneTypeLabel } from './zoneTints'
-import { OBJECT_FILL } from '@/components/admin/layout/layoutPalette'
-import { roleLabel, sortedRoles } from '@/lib/levelRoles'
+import type { OverlayKind } from './warehouseOverlays'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { useToasts } from '@/hooks/useToasts'
 import { useWarehouseLabelPrefs } from '@/hooks/queries/useLabelJobs'
 import { resolvePreset } from '@/supabase/functions/_shared/labels/layoutLabelPlan'
 
-/** Swatch for an area with no zone profile — the same neutral both canvases
- *  paint it with, so the legend never promises a colour the map doesn't use. */
-const AREA_LEGEND_FALLBACK = OBJECT_FILL.area
+/** Module-level for the same identity reason as NOOP below. An inline empty-array
+ *  fallback mints a fresh array on every render while the layout is loading, and
+ *  both of these feed the map-layer memos, which are scene-memo dependencies. */
+const EMPTY_OBJECTS: LayoutObject[] = []
+const EMPTY_PLACEMENTS: LayoutPlacement[] = []
+const EMPTY_GHOSTS: GhostLabel[] = []
+const EMPTY_STRINGS: string[] = []
 
 /** Module-level so its identity is stable. An inline `() => {}` here re-mints on
  *  every render, which busts MapStage's `guardedSelectBin` useCallback and through
@@ -137,7 +146,23 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const recode = useRecodeSelection()
   const [recodePreview, setRecodePreview] = useState<RecodePreview | null>(null)
   const [previewingRecode, setPreviewingRecode] = useState(false)
+  const [ackPrinted, setAckPrinted] = useState(false)
+  const [printingRecodedLabels, setPrintingRecodedLabels] = useState(false)
+  const [recodedIds, setRecodedIds] = useState<number[]>([])
+  const [recodeApplied, setRecodeApplied] = useState<
+    { recoded: number; levels: number; labelPrintedReset: number; block: string } | null
+  >(null)
   const recodeMutation = useRecodeLocations(warehouseId)
+  const revertMutation = useRevertCodeSweep(warehouseId)
+  const latestSweep = useLatestCodeSweep(warehouseId)
+  /** False when the sweep applied but its before/after record could not be kept.
+   *  The write stands either way; withholding the button is the honest response to
+   *  not being able to undo it. */
+  const [canRevertSweep, setCanRevertSweep] = useState(false)
+  /** The site's stored pattern (mig 00108). No row = the built-in default, so this
+   *  legitimately resolves to undefined and the wizard's own default takes over. */
+  const codePattern = useWarehouseCodePattern(warehouseId)
+  const savePattern = useSetWarehouseCodePattern(warehouseId)
   const { addToast } = useToasts()
 
   /** The stock this site prints SLOT labels on (mig 00106). The confirm dialog
@@ -152,259 +177,166 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
 
   const [floor, setFloor] = useState(0)
   const [overlay, setOverlay] = useState<OverlayKind>('none')
+  /** What the operator was looking at before the sweep armed the code tint, so
+   *  cancelling puts the map back rather than leaving it amber. */
+  const overlayBeforeRecodeRef = useRef<OverlayKind>('none')
   // Dry-run test-bench outputs drawn on the grid.
   const [putawayResult, setPutawayResult] = useState<PutawayResponse | null>(null)
   const [routeOrderIds, setRouteOrderIds] = useState<string[]>([])
   const routeQuery = usePickRoute(warehouseId, routeOrderIds)
   const routeStops = routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : []
 
-  const placements = detail?.placements ?? []
+  const placements = detail?.placements ?? EMPTY_PLACEMENTS
   const placementByLocation = useMemo(() => {
     const map = new Map<number, LayoutPlacement>()
     placements.forEach((p) => map.set(p.locationId, p))
     return map
   }, [placements])
 
-  // Overlay fill per bin. Slotting draws arrows instead of fills.
-  const binColors = useMemo(() => {
-    if (overlay === 'none' || overlay === 'slotting') return undefined
-    const map = new Map<number, string>()
-    for (const p of placements) {
-      if (overlay === 'occupancy') {
-        map.set(p.locationId, occupancyFill(model.binFillPct.get(p.locationId)))
-      } else if (overlay === 'velocity') {
-        map.set(p.locationId, velocityFill(model.binVelocityClass.get(p.locationId)))
-      } else if (overlay === 'congestion' && p.graphNodeId != null) {
-        const c = congestionFill(model.visitsByNode.get(p.graphNodeId) ?? 0, model.maxVisits)
-        if (c) map.set(p.locationId, c)
-      }
-    }
-    return map
-  }, [overlay, placements, model.binFillPct, model.binVelocityClass, model.visitsByNode, model.maxVisits])
+  // Every colour and label the canvas draws, derived once and memoized for
+  // IDENTITY as much as for cost — they are all scene-memo dependencies.
+  const {
+    binColors, rackColors, binBadges, binInfo, zoneAreas, zoneTypeByProfileId, legendExtras,
+  } = useWarehouseMapLayers({
+    model,
+    placements,
+    placementByLocation,
+    objects: detail?.objects ?? EMPTY_OBJECTS,
+    storageTypes,
+    zoneProfiles,
+    levelRoles,
+    overlay,
+    floor,
+  })
 
-  // "×N" badge on multi-product bins while the velocity overlay is active.
-  const binBadges = useMemo(() => {
-    if (overlay !== 'velocity') return undefined
-    const map = new Map<number, string>()
-    for (const p of placements) {
-      const n = model.binContents.get(p.locationId)?.length ?? 0
-      if (n > 1) map.set(p.locationId, `×${n}`)
-    }
-    return map
-  }, [overlay, placements, model.binContents])
+  // ── Code sweep derivations (migs 00107 / 00108) ───────────────────────────
+  //
+  // Everything below is computed from data the tab has ALREADY fetched. That is
+  // deliberate: the ghost numbers on the map redraw as the operator clicks through
+  // four origin corners, and the `:recode:` bucket is 10/min — a round trip per
+  // keystroke would spend the whole budget in seconds. The server re-derives all of
+  // it for the Review step's `dry_run`, which is the authority before any write.
 
-  // ── Map labelling data ─────────────────────────────────────────────────────
-  // All of this is a reshape of queries already in memory (locations, storage
-  // types, the viewer model) — the map used to receive only a flat colour per
-  // bin, so it could not draw a code, a capacity or a form.
-
-  const formColorById = useMemo(() => {
-    const map = new Map<number, string>()
-    for (const st of storageTypes) if (st.color) map.set(st.id, st.color)
-    return map
-  }, [storageTypes])
-
-  const zoneTypeByProfileId = useMemo(() => {
-    const map = new Map<number, string>()
-    for (const zp of zoneProfiles) map.set(zp.id, zp.zoneType)
-    return map
-  }, [zoneProfiles])
-
-  /** Per-location display record for on-map labels, spines and the hover card.
-   *  Covers RACK parents too: a rack owns no stock itself, but it owns the code
-   *  the map labels the cell with, and its capacity is the sum of its levels'. */
-  const binInfo = useMemo(() => {
-    const map = new Map<number, BinInfo>()
-    for (const loc of model.locationsById.values()) {
-      const contents = model.binContents.get(loc.id) ?? []
-      // Dominant SKU by slots occupied — the same rule the tree and the detail
-      // panel use to pick a bin's headline product.
-      let top: (typeof contents)[number] | null = null
-      for (const row of contents) if (!top || row.slots > top.slots) top = row
-
-      let capacitySlots = loc.capacitySlots
-      if (loc.kind === 'RACK') {
-        const levels = model.levelsByRackId.get(loc.id) ?? []
-        const summed = levels.reduce((acc, lv) => acc + (lv.capacitySlots ?? 0), 0)
-        capacitySlots = summed > 0 ? summed : undefined
-      }
-
-      map.set(loc.id, {
-        code: loc.code,
-        // Already on the client: getWarehouseLocations does select('*'), so the
-        // friendly name (mig 00094) arrives with no new query.
-        name: loc.name,
-        capacitySlots,
-        slotKind: loc.slotKind,
-        contentsCount: contents.length,
-        topSku: top?.productName ?? undefined,
-        formColor: loc.storageTypeId != null ? formColorById.get(loc.storageTypeId) : undefined,
-      })
-    }
-    return map
-  }, [model.locationsById, model.binContents, model.levelsByRackId, formColorById])
-
-  /** Overlay colour for a whole rack, for the zoomed-out case where the cell is
-   *  too small to draw a per-level spine.
-   *
-   *  This replaces the canvas's old "colour of whichever level happened to be
-   *  first", which could paint a rack white when its pick face was jammed and
-   *  its bulk level empty. Occupancy rolls up weighted by capacity; velocity
-   *  reports the fastest class present and congestion the busiest node, since
-   *  those are the levels an operator needs to notice. */
-  const rackColors = useMemo(() => {
-    if (overlay === 'none' || overlay === 'slotting') return undefined
-    const map = new Map<number, string>()
-    for (const [rackId, levels] of model.levelsByRackId) {
-      if (overlay === 'occupancy') {
-        let used = 0
-        let capacity = 0
-        for (const lv of levels) {
-          const pct = model.binFillPct.get(lv.id)
-          const cap = lv.capacitySlots
-          if (pct == null || cap == null || cap <= 0) continue
-          used += pct * cap
-          capacity += cap
-        }
-        map.set(rackId, occupancyFill(capacity > 0 ? used / capacity : null))
-      } else if (overlay === 'velocity') {
-        const order: VelocityClass[] = ['A', 'B', 'C']
-        let best: VelocityClass | null = null
-        for (const lv of levels) {
-          const cls = model.binVelocityClass.get(lv.id)
-          if (cls && (best == null || order.indexOf(cls) < order.indexOf(best))) best = cls
-        }
-        map.set(rackId, velocityFill(best))
-      } else if (overlay === 'congestion') {
-        let peak = 0
-        for (const lv of levels) {
-          const node = placementByLocation.get(lv.id)?.graphNodeId
-          if (node != null) peak = Math.max(peak, model.visitsByNode.get(node) ?? 0)
-        }
-        const c = congestionFill(peak, model.maxVisits)
-        if (c) map.set(rackId, c)
-      }
-    }
-    return map
-  }, [
-    overlay, model.levelsByRackId, model.binFillPct, model.binVelocityClass,
-    model.visitsByNode, model.maxVisits, placementByLocation,
-  ])
-
-  /** Zones have no geometry of their own (see zoneRegions.ts) — recover the area
-   *  each one covers from the cells of the bins parented under it. */
-  const zoneAreas = useMemo(
-    () => computeZoneRegions(placements, model.locationsById, floor),
-    [placements, model.locationsById, floor],
+  /** The site code, its rack→levels index, and a placement for every sweepable
+   *  unit (a levelled rack borrows its lowest level's, having none of its own). */
+  const warehouseCode = useMemo(() => warehouseCodeOf(model.locationsById), [model.locationsById])
+  const levelIdsByRack = useMemo(() => buildLevelIdsByRack(model.locationsById), [model.locationsById])
+  const unitPlacements = useMemo(
+    () => buildUnitPlacements(placements, model.locationsById),
+    [placements, model.locationsById],
   )
 
-  /** Legend rows for the map's own colours, restricted to what this warehouse
-   *  actually contains. Storage forms are omitted while an overlay is active
-   *  because the overlay has recoloured those very bins — showing the form
-   *  swatches then would explain a colour that is no longer on screen. */
-  const legendExtras = useMemo(() => {
-    const entries: LegendEntry[] = []
-
-    if (overlay === 'none') {
-      const usedFormIds = new Set<number>()
-      for (const loc of model.locationsById.values()) {
-        if (loc.storageTypeId != null) usedFormIds.add(loc.storageTypeId)
-      }
-      for (const st of storageTypes) {
-        if (st.color && usedFormIds.has(st.id)) entries.push({ color: st.color, label: st.name })
-      }
-    }
-
-    const usedRoleKeys = new Set<string>()
-    for (const loc of model.locationsById.values()) {
-      if (loc.levelRole) usedRoleKeys.add(loc.levelRole)
-    }
-    for (const role of sortedRoles(levelRoles)) {
-      if (usedRoleKeys.has(role.key)) {
-        entries.push({ color: role.colorFill, label: roleLabel(levelRoles, role.key) })
-      }
-    }
-
-    // Named areas (mig 00090). Listed before the derived zone rows because an
-    // area is what the operator actually drew and named; a zone region is
-    // inferred from bin ancestry. Deduped by name — an area is many 1×1 cells.
-    const seenAreas = new Set<string>()
-    for (const o of detail?.objects ?? []) {
-      if (o.objectType !== 'area' || o.floor !== floor) continue
-      const name = typeof o.meta?.name === 'string' ? o.meta.name : ''
-      if (!name || seenAreas.has(name)) continue
-      seenAreas.add(name)
-      const zp = o.meta?.zoneProfileId
-      const zoneType = typeof zp === 'number' ? zoneTypeByProfileId.get(zp) : undefined
-      entries.push({ color: zoneType ? zoneTint(zoneType) : AREA_LEGEND_FALLBACK, label: name })
-    }
-
-    const seenZoneTypes = new Set<string>()
-    for (const area of zoneAreas) {
-      const type = area.zoneProfileId != null ? zoneTypeByProfileId.get(area.zoneProfileId) : undefined
-      const key = type ?? ''
-      if (seenZoneTypes.has(key)) continue
-      seenZoneTypes.add(key)
-      entries.push({ color: zoneTint(type), label: `${zoneTypeLabel(type)} zone` })
-    }
-
-    return entries
-  }, [overlay, model.locationsById, storageTypes, levelRoles, zoneAreas, zoneTypeByProfileId, detail?.objects, floor])
-
-  // ── Code sweep derivations (mig 00107) ────────────────────────────────────
-
-  /** The warehouse's own code — the first segment of any descendant's path. No
-   *  extra query: `materialized_path` is `<WH>/<...>` by construction. */
-  const warehouseCode = useMemo(() => {
-    for (const loc of model.locationsById.values()) {
-      const head = loc.materializedPath.split('/')[0]
-      if (head) return head
-    }
-    return ''
-  }, [model.locationsById])
-
-  /** rack id → its SHELF children. A levelled rack holds no placement row of its
-   *  own, so this is both how the marquee rolls a hit up and how the highlight
-   *  gets back down to something the canvas actually draws. */
-  const levelIdsByRack = useMemo(() => {
-    const map = new Map<number, number[]>()
-    for (const loc of model.locationsById.values()) {
-      if (loc.kind !== 'SHELF' || loc.parentId == null) continue
-      const bucket = map.get(loc.parentId) ?? []
-      bucket.push(loc.id)
-      map.set(loc.parentId, bucket)
-    }
-    return map
-  }, [model.locationsById])
-
-  /** Placements the band touches, rolled up to the unit that owns them. The
-   *  server re-does this fold from the database — this copy is what lets the
-   *  operator SEE the selection, not what the sweep is planned from. */
-  const collectRecodeHits = (rect: NonNullable<typeof recode.state.rect>): number[] => {
-    const hits = new Set<number>()
-    for (const p of placementsInRect(detail?.placements ?? [], rect)) {
-      const loc = model.locationsById.get(p.locationId)
-      if (!loc) continue
-      const unitId = loc.kind === 'SHELF' && loc.parentId != null ? loc.parentId : loc.id
-      const unit = model.locationsById.get(unitId)
-      // ZONE/AISLE are not sweepable; the server refuses them, and letting the
-      // band appear to grab one would only make that refusal confusing.
-      if (!unit || unit.kind === 'WAREHOUSE' || unit.kind === 'ZONE' || unit.kind === 'AISLE') continue
-      hits.add(unitId)
-    }
-    return [...hits]
-  }
+  /** The pattern this sweep is using: the operator's override, else the site's
+   *  stored default, else the wizard's. NOT `BUILTIN_PATTERN` — that one renders
+   *  absolute grid coordinates and is the compatibility fallback, never an arm. */
+  const recodeTemplate = recode.state.template
+    ?? codePattern.data?.template
+    ?? WIZARD_DEFAULT_PATTERN.template
+  const recodeControls = useMemo(() => visibleControls(recodeTemplate), [recodeTemplate])
 
   const recodeUnits = useMemo(
-    () => [...recode.state.selected]
-      .map((id) => model.locationsById.get(id))
-      .filter((loc): loc is NonNullable<typeof loc> => !!loc)
-      .map((loc) => ({ locationId: loc.id, expectedCode: loc.code })),
-    [recode.state.selected, model.locationsById],
+    () => unitsFromSelection(recode.state.selected, model.locationsById, unitPlacements, levelIdsByRack),
+    [recode.state.selected, model.locationsById, unitPlacements, levelIdsByRack],
   )
 
-  /** What the canvas should light up: the selected units, plus every level of a
-   *  levelled rack — the rack itself draws nothing, its shelves do. */
+  /** Members of this block that are NOT selected. Their codes must not move. */
+  const recodeIncumbents = useMemo(
+    () => (recode.state.renumberBlock
+      ? []
+      : incumbentsOfBlock(recode.state.block, recode.state.selected, model.locationsById, unitPlacements, levelIdsByRack)),
+    [recode.state.block, recode.state.renumberBlock, recode.state.selected, model.locationsById, unitPlacements, levelIdsByRack],
+  )
+
+  /** The client's copy of the plan, for the ghost numbers and the live sample. See
+   *  recodePlanView's header for the one way it differs from the server's. */
+  const recodePlan = useMemo(() => {
+    if (!recode.state.active || recodeUnits.length === 0) return null
+    const units = recode.state.renumberBlock
+      ? [...recodeUnits, ...incumbentsOfBlock(recode.state.block, recode.state.selected, model.locationsById, unitPlacements, levelIdsByRack)]
+      : recodeUnits
+    return planRecode(units, {
+      template: recodeTemplate,
+      block: recode.state.block || 'B',
+      start: recode.state.startAt ?? 1,
+      order: recode.state.order,
+      origin: recode.state.origin,
+      wh: warehouseCode,
+      takenCodes: takenCodesFromLocations(model.locationsById),
+      frameCells: [...units, ...recodeIncumbents],
+      incumbents: recodeIncumbents,
+    })
+  }, [
+    recode.state.active, recode.state.block, recode.state.startAt, recode.state.order,
+    recode.state.origin, recode.state.renumberBlock, recode.state.selected,
+    recodeUnits, recodeIncumbents, recodeTemplate, warehouseCode, model.locationsById,
+    unitPlacements, levelIdsByRack,
+  ])
+
+  const recodeGhosts = useMemo(
+    () => (recodePlan
+      ? ghostLabels({
+          units: recodeUnits, placements: unitPlacements, plan: recodePlan,
+          template: recodeTemplate, wh: warehouseCode, block: recode.state.block || 'B',
+        })
+      : EMPTY_GHOSTS),
+    [recodePlan, recodeUnits, unitPlacements, recodeTemplate, warehouseCode, recode.state.block],
+  )
+
+  /** The first few codes, as the operator will actually get them. */
+  const recodeSamples = useMemo(
+    () => (recodePlan?.allCodes ?? []).slice(0, 3),
+    [recodePlan],
+  )
+
+  /** Level codes, listed rather than summarised — they are derived rather than
+   *  chosen, so they are the half most likely to surprise. */
+  const recodeLevelCodes = useMemo(
+    () => (recodePlan?.writes ?? []).flatMap((w) => w.levels.map((l) => l.to)),
+    [recodePlan],
+  )
+
+  /** What has been swept so far. `code_block IS NULL` is 00107's provenance
+   *  signal and means exactly "not minted by a pattern". */
+  const sweepableIds = useMemo(() => new Set(unitPlacements.keys()), [unitPlacements])
+  const recodeCensus = useMemo(
+    () => blockCensus(model.locationsById, sweepableIds),
+    [model.locationsById, sweepableIds],
+  )
+
+  /** Areas on this floor, for the one-click shortcut and the crossing warning. */
+  const floorAreaNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const o of detail?.objects ?? EMPTY_OBJECTS) {
+      if (o.objectType !== 'area' || o.floor !== floor) continue
+      const name = typeof o.meta?.name === 'string' ? o.meta.name : ''
+      if (name) names.add(name)
+    }
+    return [...names].sort()
+  }, [detail?.objects, floor])
+
+  const spannedAreas = useMemo(
+    () => (recode.state.active
+      ? areasOfSelection(recode.state.selected, unitPlacements, detail?.objects ?? EMPTY_OBJECTS)
+      : EMPTY_STRINGS),
+    [recode.state.active, recode.state.selected, unitPlacements, detail?.objects],
+  )
+
+  /** A code-safe suggestion from the area the selection sits in — a PREFILL the
+   *  operator can overtype, never a derivation. The code must not come from the
+   *  area name; see the engine header for why. */
+  const blockSuggestion = useMemo(
+    () => (spannedAreas.length === 1 ? sanitizeBlock(spannedAreas[0]) || null : null),
+    [spannedAreas],
+  )
+
+  /** Units under one painted cell / inside a band. Plain functions, not memos —
+   *  they are only ever read at dispatch time, so they feed no memo boundary. */
+  const resolveCell = (f: number, x: number, y: number) =>
+    unitsAtCell(placements, model.locationsById, f, x, y)
+  const resolveRect = (r: MarqueeRect) => unitsInRect(placements, model.locationsById, r)
+
+  /** What the canvas lights up: the selected units, plus every level of a levelled
+   *  rack — the rack itself draws nothing, its shelves do. */
   const recodeHighlight = useMemo(() => {
     if (!recode.state.active) return undefined
     const set = new Set<number>()
@@ -415,6 +347,103 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     }
     return set
   }, [recode.state.active, recode.state.selected, levelIdsByRack])
+
+
+  /**
+   * Ask the server what this sweep would do.
+   *
+   * Fires ONCE on entering Review and again only when the plan's inputs change —
+   * never per keystroke, because the `:recode:` bucket is 10/min and the live ghost
+   * numbers already answer the per-keystroke question client-side. Cancellable, so
+   * a fast Back/Next cannot land a stale answer on a newer selection.
+   */
+  useEffect(() => {
+    if (!recode.state.active || recode.state.step !== 4) return
+    if (recodeUnits.length === 0 || !recode.state.block.trim()) return
+    let cancelled = false
+    setPreviewingRecode(true)
+    previewRecode({
+      warehouseId,
+      units: recodeUnits.map((u) => ({ locationId: u.id, expectedCode: u.code })),
+      block: recode.state.block,
+      startAt: recode.state.startAt,
+      // The template the client PLANNED with, not the raw override. The ghost
+      // numbers on the map are computed from this, so sending anything else lets
+      // the server answer a different question from the one the operator was
+      // looking at — which is exactly how `-1-1` came back as `-3-3` on dev.
+      templateOverride: recodeTemplate,
+      order: recode.state.order,
+      origin: recode.state.origin,
+      renumberBlock: recode.state.renumberBlock,
+    })
+      .then((p) => { if (!cancelled) setRecodePreview(p) })
+      .catch((err) => {
+        if (cancelled) return
+        setRecodePreview(null)
+        addToast(err instanceof Error ? err.message : 'Could not check the new codes', 'error')
+      })
+      .finally(() => { if (!cancelled) setPreviewingRecode(false) })
+    return () => { cancelled = true }
+    // `recodeUnits` is derived from the selection, so listing both would re-fire on
+    // every identity change of a value that did not semantically move.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    recode.state.active, recode.state.step, recode.state.selected, recode.state.block,
+    recode.state.startAt, recode.state.template, recode.state.order, recode.state.origin,
+    recode.state.renumberBlock, warehouseId,
+  ])
+
+  /** A fresh preview must never inherit the previous one's acknowledgement — the
+   *  set of already-labelled bins is exactly what may have changed. */
+  useEffect(() => { setAckPrinted(false) }, [recodePreview])
+
+  /**
+   * Apply.
+   *
+   * From any step: if the operator presses it before reviewing, take them to Review
+   * rather than refusing. The button is never a lie and never a dead end — which is
+   * the entire point of it being visible at every step.
+   */
+  const runRecode = async () => {
+    if (recode.state.step !== 4 || !recodePreview) {
+      recode.dispatch({ type: 'goto_step', step: 4 })
+      return
+    }
+    try {
+      const res = await recodeMutation.mutateAsync({
+        units: recodeUnits.map((u) => ({ locationId: u.id, expectedCode: u.code })),
+        block: recode.state.block,
+        startAt: recode.state.startAt,
+        templateOverride: recodeTemplate,
+        order: recode.state.order,
+        origin: recode.state.origin,
+        renumberBlock: recode.state.renumberBlock,
+      })
+      // Captured BEFORE `applied` clears the selection: the label hand-off has to
+      // name exactly the bins that were swept, and their levels, which is knowledge
+      // that only exists at this moment.
+      setRecodedIds([
+        ...recodeUnits.map((u) => u.id),
+        ...recodeUnits.flatMap((u) => (u.levels ?? []).map((l) => l.id)),
+      ])
+      setCanRevertSweep(res.canRevert !== false)
+      setRecodeApplied({
+        recoded: res.units,
+        levels: res.levels,
+        labelPrintedReset: res.labelPrintedReset,
+        block: sanitizeBlock(recode.state.block),
+      })
+      setRecodePreview(null)
+      recode.dispatch({ type: 'applied' })
+      addToast(
+        `Recoded ${res.units} location${res.units === 1 ? '' : 's'}` +
+        (res.levels > 0 ? ` and ${res.levels} rack levels` : ''),
+        'success',
+      )
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Could not apply the new codes', 'error')
+    }
+  }
 
   // Highlight the descendant bins of a selected non-bin (zone/aisle/rack).
   const highlightedLocationIds = useMemo(() => {
@@ -515,14 +544,51 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
 
   // Compose the marker layers: dry-run route + putaway always show; slotting
   // arrows only when its overlay is active.
+  // What the map is FOR right now, and what that forbids. Derived once so a new
+  // mode cannot be forgotten at one of the several call sites that must exclude it
+  // — see mapMode.ts for why that was worth extracting.
+  const mode = deriveMapMode({
+    paintActive: paint.state.active,
+    recodeActive: recode.state.active,
+  })
+  const guards = modeGuards(mode, canRename)
+
   const putawayRec = putawayResult?.mode === 'engine' ? putawayResult.recommendations[0] : null
-  const renderMarkers = (cell: number) => (
+  /**
+   * useCallback is LOAD-BEARING, not tidiness.
+   *
+   * `renderOverlay` is a dependency of WarehouseCanvas's `scene` memo, and this
+   * component re-renders on every frame of a pan or a stroke. As a plain inline
+   * function it re-minted each time, busting the memo and re-rendering all 945 bins
+   * per frame — the same class of mistake the NOOP above documents, and the reason a
+   * marquee drag was already janky before anything was painted.
+   */
+  const renderMarkers = useCallback((cell: number) => (
     <g>
       {routeStops.length > 0 && routePath(cell, routeStops, placementByLocation, floor)}
       {putawayRec && putawayMarkers(cell, putawayRec, placementByLocation, floor)}
       {overlay === 'slotting' && slottingArrows(cell, model.slotting, placementByLocation, floor)}
     </g>
-  )
+  ), [routeStops, putawayRec, overlay, model.slotting, placementByLocation, floor])
+
+  /**
+   * While annotating, the canvas draws the WORKING SET in place of the stored areas
+   * AND signs — through the very same shape the stored rows have, so the preview and
+   * the saved result cannot look different. Every other object is untouched.
+   *
+   * Memoized, and hoisted ABOVE the loading guard so it stays an unconditional hook:
+   * a fresh array here is another scene-memo bust on every render.
+   */
+  const canvasObjects = useMemo(() => (
+    paint.state.active
+      ? [
+          ...(detail?.objects ?? EMPTY_OBJECTS).filter(
+            (o) => o.objectType !== 'area' && o.objectType !== 'label',
+          ),
+          ...paint.previewObjects,
+        ]
+      : detail?.objects ?? EMPTY_OBJECTS
+  ), [paint.state.active, paint.previewObjects, detail?.objects])
 
   // Skeleton mirrors the loaded shape (a tall map slot) so the tab doesn't
   // reflow when the layout lands — this is the first frame of every demo.
@@ -549,17 +615,6 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     )
   }
 
-  // While annotating, the canvas draws the WORKING SET in place of the stored
-  // areas AND signs — through the very same shape the stored rows have, so the
-  // preview and the saved result cannot look different. Every other object is
-  // untouched.
-  const canvasObjects = paint.state.active
-    ? [
-        ...detail.objects.filter((o) => o.objectType !== 'area' && o.objectType !== 'label'),
-        ...paint.previewObjects,
-      ]
-    : detail.objects
-
   return (
     <div className="flex flex-col gap-4">
       {/* The tree (not the map) is the keyboard/AT selection path — this
@@ -576,7 +631,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
       {/* Painting is a pointer-drag on a pan/zoom surface, which has no honest
           one-finger equivalent — MapStage disables gestures below md anyway, so
           the entry point is desktop-only rather than ambiguous on a phone. */}
-      {canRename && !paint.state.active && !recode.state.active && (
+      {guards.showModeButtons && (
         <div className="hidden md:flex md:justify-end md:gap-2">
           {/* A sweep is a pointer-drag on a pan/zoom surface, so desktop-only on
               the same terms as annotate. Its own button rather than a third
@@ -584,7 +639,16 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
               the barcode payload of every bin in the band. */}
           <button
             type="button"
-            onClick={() => recode.dispatch({ type: 'begin' })}
+            onClick={() => {
+              overlayBeforeRecodeRef.current = overlay
+              setOverlay('unswept')
+              recode.dispatch({
+                type: 'begin',
+                origin: codePattern.data?.origin,
+                order: codePattern.data?.order,
+                template: codePattern.data?.template ?? null,
+              })
+            }}
             className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
           >
             Recode bins
@@ -641,42 +705,11 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
         />
       )}
 
-      {recode.state.active && (
-        <RecodeToolbar
-          warehouseCode={warehouseCode}
-          block={recode.state.block}
-          startAt={recode.state.startAt}
-          order={recode.state.order}
-          templateOverride={recode.state.templateOverride}
-          storedTemplate={null}
-          selectedCount={recode.state.selected.size}
-          busy={previewingRecode}
-          onBlock={(block) => recode.dispatch({ type: 'set_block', block })}
-          onStart={(startAt) => recode.dispatch({ type: 'set_start', startAt })}
-          onOrder={(order) => recode.dispatch({ type: 'set_order', order })}
-          onTemplate={(template) => recode.dispatch({ type: 'set_template', template })}
-          onClearSelection={() => recode.dispatch({ type: 'clear_selection' })}
-          onCancel={() => { setRecodePreview(null); recode.dispatch({ type: 'cancel' }) }}
-          onPreview={async () => {
-            setPreviewingRecode(true)
-            try {
-              setRecodePreview(await previewRecode({
-                warehouseId,
-                units: recodeUnits,
-                block: recode.state.block,
-                startAt: recode.state.startAt,
-                templateOverride: recode.state.templateOverride,
-                order: recode.state.order,
-              }))
-            } catch (err) {
-              addToast(err instanceof Error ? err.message : 'Could not check the new codes', 'error')
-            } finally {
-              setPreviewingRecode(false)
-            }
-          }}
-        />
-      )}
-
+      {/* The panel is a GRID SIBLING of the map, not an overlay: the map has to
+          stay live and paintable while the operator works through the steps, which
+          is the whole reason for stepping rather than modalling. It also means this
+          never trips `npm run check:overlays`. */}
+      <div className={recode.state.active ? 'grid gap-3 lg:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
       <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65vh] md:min-h-[420px]">
         <MapStage
           layout={detail.layout}
@@ -692,7 +725,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           // capture already routes the click to the container — this is the
           // belt-and-braces half, and it also keeps Bin detail from scrolling
           // into view behind the toolbar mid-selection.
-          onSelectBin={recode.state.active ? NOOP : selectFromMap}
+          onSelectBin={guards.canSelectBin ? selectFromMap : NOOP}
           binColors={binColors}
           rackColors={rackColors}
           binBadges={binBadges}
@@ -706,62 +739,147 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           // the same rows, and a rename applied against a working set that has
           // not been saved would be computed from a picture the server has
           // never seen.
-          onRenameArea={canRename && !paint.state.active ? setRenamingArea : undefined}
+          onRenameArea={guards.canRenameArea ? setRenamingArea : undefined}
           // Same mutual exclusion as the area pencil, and for the same reason:
           // clicking a sign ENTERS annotate mode, so offering it while already
           // in one would re-hydrate the working set and discard unsaved edits.
-          onEditSign={canRename && !paint.state.active ? beginSignEdit : undefined}
+          onEditSign={guards.canEditSign ? beginSignEdit : undefined}
           paint={{
             active: paint.state.active,
             onStrokeStart: () => paint.dispatch({ type: 'stroke_start' }),
             onPaintCell: paint.paintCell,
           }}
-          marquee={{
+          select={{
             active: recode.state.active,
+            tool: recode.state.tool,
             rect: recode.state.rect,
+            ghosts: recodeGhosts,
+            onStrokeStart: () => recode.dispatch({ type: 'stroke_start' }),
+            onSelectCell: (f, x, y) =>
+              recode.dispatch({ type: 'select_cell', floor: f, x, y, resolve: resolveCell }),
             onDragStart: (f, x, y, additive) =>
               recode.dispatch({ type: 'drag_start', floor: f, x, y, additive }),
             onDragMove: (x, y) => recode.dispatch({ type: 'drag_move', x, y }),
             // The reducer resolves against its OWN rect — see the note on
-            // `drag_end`. Passing `collectRecodeHits(recode.state.rect)` here reads
-            // a rect that a fast drag has not re-rendered yet, and the band selects
+            // `drag_end`. Passing `resolveRect(recode.state.rect)` here reads a rect
+            // that a fast drag has not re-rendered yet, and the band selects
             // nothing. Found in a real browser; no test reproduced it.
-            onDragEnd: () => recode.dispatch({ type: 'drag_end', resolve: collectRecodeHits }),
+            onDragEnd: () => recode.dispatch({ type: 'drag_end', resolve: resolveRect }),
           }}
         />
       </div>
 
-      {recodePreview && (
-        <RecodeSummaryModal
+      {recode.state.active && (
+        <RecodePanel
+          state={recode.state}
+          template={recodeTemplate}
+          controls={recodeControls}
+          samples={recodeSamples}
+          areaNames={floorAreaNames}
+          spannedAreas={spannedAreas}
+          blocks={recodeCensus.blocks}
+          swept={recodeCensus.swept}
+          total={recodeCensus.total}
+          lastSweep={latestSweep.data ?? null}
+          blockSuggestion={blockSuggestion}
+          incumbentCount={recodeIncumbents.length}
+          levelCodes={recodeLevelCodes}
           preview={recodePreview}
+          previewing={previewingRecode}
+          applying={recodeMutation.isPending}
+          reverting={revertMutation.isPending}
+          applied={recodeApplied}
+          canRevert={canRevertSweep && !!latestSweep.data}
           preset={recodeLabelPreset}
-          saving={recodeMutation.isPending}
-          onClose={() => setRecodePreview(null)}
-          onConfirm={async () => {
+          ackPrinted={ackPrinted}
+          onTool={(tool) => recode.dispatch({ type: 'set_tool', tool })}
+          onMode={(mode) => recode.dispatch({ type: 'set_mode', mode })}
+          onUndo={() => recode.dispatch({ type: 'undo' })}
+          onClear={() => recode.dispatch({ type: 'clear_selection' })}
+          onSelectArea={(name) => recode.dispatch({
+            type: 'select_ids',
+            ids: unitsInArea(placements, model.locationsById, detail.objects, name),
+          })}
+          onSelectBlock={(block) => {
+            const row = recodeCensus.blocks.find((b) => b.block === block)
+            if (!row) return
+            recode.dispatch({ type: 'select_ids', ids: row.ids })
+            recode.dispatch({ type: 'set_block', block })
+          }}
+          onBlock={(block) => recode.dispatch({ type: 'set_block', block })}
+          onTemplate={(template) => recode.dispatch({ type: 'set_template', template })}
+          onOrigin={(origin) => recode.dispatch({ type: 'set_origin', origin })}
+          onOrder={(order) => recode.dispatch({ type: 'set_order', order })}
+          onStart={(startAt) => recode.dispatch({ type: 'set_start', startAt })}
+          onAdvanced={(advanced) => recode.dispatch({ type: 'set_advanced', advanced })}
+          onSaveDefault={() => {
+            savePattern.mutate({
+              template: recodeTemplate,
+              defaultBlock: sanitizeBlock(recode.state.block) || WIZARD_DEFAULT_PATTERN.defaultBlock,
+              start: recode.state.startAt ?? 1,
+              order: recode.state.order,
+              origin: recode.state.origin,
+            }, {
+              onSuccess: () => addToast('Saved as this site’s default pattern', 'success'),
+              onError: (err) => addToast(
+                err instanceof Error ? err.message : 'Could not save the pattern', 'error',
+              ),
+            })
+          }}
+          savingDefault={savePattern.isPending}
+          isSiteDefault={
+            codePattern.data?.template === recodeTemplate
+            && codePattern.data?.order === recode.state.order
+            && codePattern.data?.origin === recode.state.origin
+          }
+          onAckPrinted={setAckPrinted}
+          onGotoStep={(step) => recode.dispatch({ type: 'goto_step', step })}
+          onUseSuggestedOrigin={() => {
+            const f = recodePreview?.suggestedFraming
+            if (!f) return
+            recode.dispatch({ type: 'set_origin', origin: f.origin })
+            recode.dispatch({ type: 'set_order', order: f.order })
+          }}
+          onRenumberBlock={() => recode.dispatch({ type: 'set_renumber_block', renumberBlock: true })}
+          onApply={runRecode}
+          onPrintLabels={() => setPrintingRecodedLabels(true)}
+          onRevert={async () => {
             try {
-              const res = await recodeMutation.mutateAsync({
-                units: recodeUnits,
-                block: recode.state.block,
-                startAt: recode.state.startAt,
-                templateOverride: recode.state.templateOverride,
-                order: recode.state.order,
-              })
-              setRecodePreview(null)
-              recode.dispatch({ type: 'applied' })
+              const res = await revertMutation.mutateAsync()
+              setCanRevertSweep(false)
+              setRecodedIds([])
               addToast(
-                `Recoded ${res.units} location${res.units === 1 ? '' : 's'}` +
-                (res.levels > 0 ? ` and ${res.levels} rack levels` : '') +
-                (res.labelPrintedReset > 0
-                  ? ` · ${res.labelPrintedReset} back in the label backlog`
-                  : ''),
+                `Put ${res.reverted} code${res.reverted === 1 ? '' : 's'} back`,
                 'success',
               )
+              recode.dispatch({ type: 'cancel' })
+              setRecodeApplied(null)
             } catch (err) {
-              addToast(err instanceof Error ? err.message : 'Could not apply the new codes', 'error')
+              addToast(err instanceof Error ? err.message : 'Could not revert the sweep', 'error')
             }
+          }}
+          onSweepAnother={() => recode.dispatch({ type: 'goto_step', step: 1 })}
+          onCancel={() => {
+            setRecodePreview(null)
+            setRecodeApplied(null)
+            setOverlay(overlayBeforeRecodeRef.current)
+            recode.dispatch({ type: 'cancel' })
           }}
         />
       )}
+      </div>
+
+      {/* "Print the new labels" from the success step. The run is NARROWED to the
+          bins just swept — `ids` restricts what wie_layout_label_targets already
+          chose, so the server still decides what a label target is. */}
+      <LayoutLabelJobModal
+        open={printingRecodedLabels}
+        onClose={() => setPrintingRecodedLabels(false)}
+        layoutId={layoutId}
+        warehouseId={warehouseId}
+        locationIds={recodedIds}
+        contextNote={`The ${recodedIds.length} location${recodedIds.length === 1 ? '' : 's'} you just recoded. Their old stickers name codes that no longer exist.`}
+      />
 
       {renamingArea && (
         <RenameAreaModal

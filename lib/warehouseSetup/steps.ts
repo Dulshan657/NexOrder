@@ -84,6 +84,7 @@ export const SETTINGS_SECTION_IDS = {
   levelRoles: 'settings-wh-level-roles',
   zoneProfiles: 'settings-wh-zone-profiles',
   labelPrinting: 'settings-wh-label-printing',
+  codePattern: 'settings-wh-code-pattern',
 } as const
 
 export const SETUP_STEPS: readonly SetupStep[] = [

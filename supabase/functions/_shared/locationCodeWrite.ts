@@ -233,6 +233,9 @@ export interface StoredCodePattern {
   defaultBlock: string
   start: number
   order: string
+  /** Which corner of a block is 1-1 (mig 00108). `'nw'` on every pre-existing row
+   *  by column default, which is the historical ascending walk. */
+  origin: string
 }
 
 export async function loadCodePattern(
@@ -241,7 +244,7 @@ export async function loadCodePattern(
 ): Promise<StoredCodePattern | null> {
   const { data, error } = await admin
     .from('warehouse_code_patterns')
-    .select('template, default_block, start_at, fill_order')
+    .select('template, default_block, start_at, fill_order, origin')
     .eq('warehouse_id', warehouseId)
     .maybeSingle()
   if (error) {
@@ -254,5 +257,157 @@ export async function loadCodePattern(
     defaultBlock: String(row.default_block),
     start: Number(row.start_at),
     order: String(row.fill_order),
+    origin: String(row.origin ?? 'nw'),
   }
+}
+
+// ───────────────────────────────────────── sweep history / revert (mig 00108) ──
+
+/**
+ * One row of a recorded sweep — everything needed to put it back.
+ *
+ * `prevBlock`/`prevSeq` are the PROVENANCE the row carried before, not the one it
+ * was given. Restoring the code alone would leave `code_block`/`code_seq` still
+ * claiming the sweep happened, which would then feed the next sweep's high-water
+ * mark and quietly renumber the block after it.
+ */
+export interface SweptRow {
+  id: number
+  from: string
+  to: string
+  prevBlock: string | null
+  prevSeq: number | null
+}
+
+export interface RecordedSweep {
+  id: number
+  block: string
+  rows: SweptRow[]
+}
+
+/** Flatten a plan's writes (and their level rows) into the recorded shape. */
+export function sweptRowsFrom(
+  writes: readonly RecodeWrite[],
+  prevProvenance: ReadonlyMap<number, { block: string | null; seq: number | null }>,
+): SweptRow[] {
+  const rows: SweptRow[] = []
+  for (const w of writes) {
+    const prev = prevProvenance.get(w.id)
+    rows.push({
+      id: w.id, from: w.from, to: w.to,
+      prevBlock: prev?.block ?? null, prevSeq: prev?.seq ?? null,
+    })
+    // A level's provenance is always null (see buildRecodeRows), so there is
+    // nothing to remember for it beyond its code.
+    for (const l of w.levels) {
+      rows.push({ id: l.id, from: l.from, to: l.to, prevBlock: null, prevSeq: null })
+    }
+  }
+  return rows
+}
+
+/**
+ * Record an applied sweep so it can be reverted after a reload.
+ *
+ * Deliberately NOT fatal. The sweep itself has already committed by the time this
+ * runs, and failing the request afterwards would report a write that did happen as
+ * an error — far worse than losing the undo affordance. The caller reports whether
+ * the record was kept, and the panel only offers Revert when it was.
+ */
+export async function recordSweep(
+  admin: SupabaseClient,
+  input: {
+    warehouseId: number
+    block: string
+    template: string
+    origin: string
+    order: string
+    rows: SweptRow[]
+    actorId: string
+  },
+): Promise<boolean> {
+  const { error } = await admin.from('location_code_sweeps').insert({
+    warehouse_id: input.warehouseId,
+    block: input.block,
+    template: input.template,
+    origin: input.origin,
+    fill_order: input.order,
+    rows: input.rows,
+    swept_by: input.actorId,
+  })
+  return !error
+}
+
+/** The newest un-reverted sweep for a site, or null. Only ever ONE is offered —
+ *  reverting an older sweep would collide with every newer one, and resolving that
+ *  is a worse tool than saying "sweep it again". */
+export async function loadLatestSweep(
+  admin: SupabaseClient,
+  warehouseId: number,
+): Promise<RecordedSweep | null> {
+  const { data, error } = await admin
+    .from('location_code_sweeps')
+    .select('id, block, rows')
+    .eq('warehouse_id', warehouseId)
+    .is('reverted_at', null)
+    .order('swept_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw new EdgeFunctionError('INTERNAL', `Could not read the sweep history: ${error.message}`)
+  if (!data) return null
+  const row = data as { id: number; block: string; rows: SweptRow[] }
+  return { id: row.id, block: row.block, rows: row.rows ?? [] }
+}
+
+/**
+ * Rebuild the write rows that put a sweep back.
+ *
+ * Every path is composed from the row's CURRENT parent, exactly as
+ * `buildRecodeRows` does and for the same reason — on MAIN, 378 rows carry a
+ * `-X<id>` suffix in the code that never reached the path, so patching the last
+ * segment is not a safe shortcut. A revert moves nothing, so parentage is unchanged
+ * and the parent's own path is still correct.
+ */
+export function buildRevertRows(
+  rows: readonly SweptRow[],
+  locById: ReadonlyMap<number, NamingLocation>,
+  parentPathById: ReadonlyMap<number, string>,
+): RecodeRow[] {
+  return rows.map((r) => {
+    const loc = locById.get(r.id)
+    if (!loc) throw new EdgeFunctionError('CONFLICT', `Location ${r.id} no longer exists`)
+    // The compare-and-swap of a revert: if the row does not still carry the code
+    // this sweep gave it, something else has moved it since and putting the old one
+    // back would silently discard that work.
+    if (loc.code !== r.to) {
+      throw new EdgeFunctionError(
+        'CONFLICT',
+        `${loc.code} has been recoded again since this sweep; it can no longer be reverted`,
+      )
+    }
+    const parentPath = loc.parentId != null ? parentPathById.get(loc.parentId) : undefined
+    if (!parentPath) {
+      throw new EdgeFunctionError('INVALID_INPUT', `Location ${loc.code} has no resolvable parent`)
+    }
+    return {
+      id: r.id,
+      code: r.from,
+      materialized_path: `${parentPath}/${r.from}`,
+      code_block: r.prevBlock,
+      code_seq: r.prevSeq,
+    }
+  })
+}
+
+/** Mark a sweep reverted so it is never offered twice. */
+export async function markSweepReverted(
+  admin: SupabaseClient,
+  sweepId: number,
+  actorId: string,
+): Promise<void> {
+  const { error } = await admin
+    .from('location_code_sweeps')
+    .update({ reverted_at: new Date().toISOString(), reverted_by: actorId })
+    .eq('id', sweepId)
+  if (error) throw new EdgeFunctionError('INTERNAL', error.message)
 }

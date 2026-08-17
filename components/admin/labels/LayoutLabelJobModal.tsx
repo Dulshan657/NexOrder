@@ -72,6 +72,12 @@ export interface LayoutLabelJobModalProps {
   /** Needed to read and save this site's sticker stock. Omit and sizing is per-run. */
   warehouseId?: number
   onCalibrate?: () => void
+  /** Restrict the run to these locations. Set by the recode hand-off so "print the
+   *  new labels" prints exactly the bins that were just swept, and nothing else. */
+  locationIds?: readonly number[] | null
+  /** One line saying where a restricted run came from — a narrowed job that does
+   *  not explain itself looks like a broken area filter. */
+  contextNote?: string
 }
 
 export function LayoutLabelJobModal({
@@ -81,6 +87,8 @@ export function LayoutLabelJobModal({
   layoutName,
   warehouseId,
   onCalibrate,
+  locationIds = null,
+  contextNote,
 }: LayoutLabelJobModalProps) {
   const [onlyUnprinted, setOnlyUnprinted] = useState(true)
   const [rootLocationId, setRootLocationId] = useState<number | ''>('')
@@ -96,9 +104,11 @@ export function LayoutLabelJobModal({
   const rootId = rootLocationId === '' ? null : Number(rootLocationId)
 
   // What this run would print, right now.
+  const narrowed = !!locationIds && locationIds.length > 0
   const plan = useLayoutLabelTargets(layoutId, {
     rootLocationId: rootId,
     onlyUnprinted,
+    locationIds,
     enabled: open,
   })
 
@@ -191,6 +201,7 @@ export function LayoutLabelJobModal({
         rootLocationId: rootId,
         onlyUnprinted,
         startOffset,
+        locationIds,
         presetOverrides: overrides as Record<SheetGroup, never>,
       })
       setJob(result)
@@ -266,9 +277,13 @@ export function LayoutLabelJobModal({
       icon={<Printer className="w-5 h-5 text-nexgen-blue" aria-hidden="true" />}
       title="Print labels for this layout"
       description={
-        layoutName
-          ? `Every label ${layoutName} needs — bins, rack levels, aisle signs and staging.`
-          : 'Every label this layout needs — bins, rack levels, aisle signs and staging.'
+        // A narrowed run must SAY it is narrowed. Otherwise the operator reads
+        // "every label this layout needs", counts far fewer sheets than they
+        // expect, and concludes the area filter is broken.
+        contextNote
+          ?? (layoutName
+            ? `Every label ${layoutName} needs — bins, rack levels, aisle signs and staging.`
+            : 'Every label this layout needs — bins, rack levels, aisle signs and staging.')
       }
       // An unconfirmed job is not unsaved work: the PDFs are stored and listed in
       // Recent runs, and the backlog is deliberately unchanged until confirm. So
@@ -311,6 +326,10 @@ export function LayoutLabelJobModal({
                 <Select
                   id="label-area"
                   value={rootLocationId}
+                  // A narrowed run already names its locations; letting the area
+                  // filter also apply would silently intersect two selections and
+                  // print neither of them.
+                  disabled={narrowed}
                   onChange={(e: { target: { value: string } }) => {
                     setRootLocationId(e.target.value === '' ? '' : Number(e.target.value))
                     reset()

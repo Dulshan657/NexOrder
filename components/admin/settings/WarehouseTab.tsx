@@ -13,6 +13,7 @@ import StorageFormsView from './StorageFormsView'
 import LevelRolesSection from '../LevelRolesSection'
 import ZoneProfilesSection from '../ZoneProfilesSection'
 import LabelPrintingSection from '../LabelPrintingSection'
+import CodePatternSection from '../CodePatternSection'
 import { SETTINGS_SECTION_IDS } from '../../../lib/warehouseSetup/steps'
 import { useSectionDeepLink } from './useSectionDeepLink'
 
@@ -37,6 +38,9 @@ const WarehouseTab: React.FC = () => {
       </section>
       <section id={SETTINGS_SECTION_IDS.zoneProfiles}>
         <ZoneProfilesSection />
+      </section>
+      <section id={SETTINGS_SECTION_IDS.codePattern}>
+        <CodePatternSection />
       </section>
       <section id={SETTINGS_SECTION_IDS.labelPrinting}>
         <LabelPrintingSection />

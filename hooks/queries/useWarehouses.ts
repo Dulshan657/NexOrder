@@ -8,6 +8,9 @@ import {
   type WarehouseCreateInput,
   type WarehouseUpdateInput,
   type TransferStockInput,
+  getWarehouseCodePattern,
+  setWarehouseCodePattern,
+  type WarehouseCodePattern,
 } from '@/services/supabase/warehouseService'
 import { putawayKeys } from './putawayKeys'
 import { inventoryKeys } from './useInventoryBalances'
@@ -67,6 +70,33 @@ export function useTransferStock() {
       // destination when it's a racked warehouse's root.
       qc.invalidateQueries({ queryKey: putawayKeys.all })
       qc.invalidateQueries({ queryKey: putawayKeys.counts })
+    },
+  })
+}
+
+// ─────────────────────────────────────── code patterns (migs 00107 / 00108) ──
+
+export const codePatternKeys = {
+  one: (warehouseId: number | null) => ['warehouse-code-pattern', warehouseId] as const,
+}
+
+/** This site's code pattern. `undefined` while loading, `null` once loaded and
+ *  found to have no row — which is the built-in default, not an error. */
+export function useWarehouseCodePattern(warehouseId: number | null) {
+  return useQuery({
+    queryKey: codePatternKeys.one(warehouseId),
+    queryFn: () => getWarehouseCodePattern(warehouseId as number),
+    enabled: warehouseId != null,
+  })
+}
+
+export function useSetWarehouseCodePattern(warehouseId: number | null) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (pattern: WarehouseCodePattern | null) =>
+      setWarehouseCodePattern({ warehouseId: warehouseId as number, pattern }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: codePatternKeys.one(warehouseId) })
     },
   })
 }

@@ -3,7 +3,7 @@ import { toInventoryLocation } from '@/lib/adapters'
 import { describeValidationIssues, extractFunctionErrorDetails, extractFunctionErrorMessage } from '@/lib/functionError'
 import { packAreaRuns, type AreaPaintSpec } from '@/lib/areaPaint'
 import { packSignRuns, type SignSpec } from '@/lib/signPaint'
-import type { CodeOrder } from '@/lib/codePattern'
+import type { CodeOrder, CodeOrigin } from '@/lib/codePattern'
 import type { InventoryLocation, LevelRole, LocationKind } from '@/types'
 
 /**
@@ -503,6 +503,20 @@ export interface RecodePreview {
   /** Every code the sweep would produce — fed to the label sizing wizard so the
    *  physical cost of a longer pattern is visible BEFORE it is paid. */
   codes: string[]
+  // ── growth reporting (mig 00108) ──
+  /** How deep and wide the frame ran. */
+  frame: { rows: number; cols: number }
+  /** Block members this framing would MOVE. Non-empty means the batch is refused:
+   *  growing a block must never renumber bins already labelled for it. */
+  drift: Array<{ id: number; code: string; would: string }>
+  driftTotal: number
+  /** How many bins are already in this block and are not in the selection. */
+  incumbents: number
+  origin: CodeOrigin
+  order: CodeOrder
+  /** The framing that DOES reproduce the incumbents' codes, recovered from the
+   *  floor. Null when none does, or when there was no drift to explain. */
+  suggestedFraming: { origin: CodeOrigin; order: CodeOrder } | null
 }
 
 export interface RecodeResult {
@@ -512,6 +526,10 @@ export interface RecodeResult {
   unchanged: number
   nextCounter: number
   labelPrintedReset: number
+  /** False when the sweep applied but its before/after record could not be kept —
+   *  the write is not undone by that, so the panel simply withholds Revert rather
+   *  than offering one that would fail. */
+  canRevert?: boolean
 }
 
 export interface RecodeArgs {
@@ -524,6 +542,11 @@ export interface RecodeArgs {
   startAt?: number | null
   templateOverride?: string | null
   order?: CodeOrder | null
+  /** Which corner of the painted block is 1-1 (mig 00108). */
+  origin?: CodeOrigin | null
+  /** Relay the WHOLE block rather than appending to it. The operator's explicit
+   *  second answer to a drift refusal, never a default. */
+  renumberBlock?: boolean
 }
 
 function recodeBody(args: RecodeArgs, dryRun: boolean) {
@@ -537,6 +560,10 @@ function recodeBody(args: RecodeArgs, dryRun: boolean) {
     start_at: args.startAt ?? null,
     template_override: args.templateOverride ?? null,
     order: args.order ?? null,
+    origin: args.origin ?? null,
+    // Omitted rather than sent false: the server reads it as `.optional()`, and a
+    // flag that only ever means "yes, deliberately" should not appear otherwise.
+    ...(args.renumberBlock ? { renumber_block: true } : {}),
     ...(dryRun ? { dry_run: true } : {}),
   }
 }
@@ -566,6 +593,58 @@ export async function recodeLocations(args: RecodeArgs): Promise<RecodeResult> {
   )
   if (error) await rethrowWithServerMessage(error, 'Could not apply the new codes')
   return data as RecodeResult
+}
+
+export interface LatestCodeSweep {
+  id: number
+  block: string
+  /** How many rows it moved — units and their levels together. */
+  rows: number
+  sweptAt: string
+}
+
+/**
+ * The newest un-reverted sweep for a site, or null.
+ *
+ * A direct table read: RLS already limits `location_code_sweeps` to ops roles and
+ * there is no decision to make server-side. This is what makes the undo offer
+ * SURVIVE A RELOAD — holding it in component state would lose it the moment the
+ * operator refreshed, which is exactly when they are most likely to want it.
+ */
+export async function getLatestCodeSweep(warehouseId: number): Promise<LatestCodeSweep | null> {
+  const { data, error } = await supabase
+    .from('location_code_sweeps')
+    .select('id, block, rows, swept_at')
+    .eq('warehouse_id', warehouseId)
+    .is('reverted_at', null)
+    .order('swept_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const row = data as { id: number; block: string; rows: unknown[]; swept_at: string }
+  return {
+    id: row.id,
+    block: row.block,
+    rows: Array.isArray(row.rows) ? row.rows.length : 0,
+    sweptAt: row.swept_at,
+  }
+}
+
+/**
+ * Put the most recent sweep back.
+ *
+ * No sweep id: only the newest un-reverted one is reachable, because reverting an
+ * older sweep would collide with every newer one. Letting the client name one would
+ * only create a way to ask for the wrong answer.
+ */
+export async function revertCodeSweep(warehouseId: number): Promise<{ reverted: number; block: string }> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; reverted: number; block: string }>(
+    'mutate-warehouse-location',
+    { body: { action: 'revert_code_sweep', warehouse_id: warehouseId } },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not revert the sweep')
+  return data as { reverted: number; block: string }
 }
 
 export async function deactivateWarehouseLocation(id: number): Promise<void> {

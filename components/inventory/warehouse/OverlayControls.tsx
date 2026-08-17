@@ -9,6 +9,7 @@ const OPTIONS: { kind: OverlayKind; label: string }[] = [
   { kind: 'velocity', label: 'Velocity' },
   { kind: 'congestion', label: 'Congestion' },
   { kind: 'slotting', label: 'Slotting' },
+  { kind: 'unswept', label: 'Codes' },
 ]
 
 interface OverlayControlsProps {

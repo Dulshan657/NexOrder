@@ -24,6 +24,8 @@ import { useMapViewport } from './useMapViewport'
 import { BASE_CELL } from '@/components/admin/layout/layoutPalette'
 import { ScaleIndicator } from '@/components/admin/layout/ScaleIndicator'
 import type { ZoneRegion } from './zoneRegions'
+import { MapSelectionLayer } from './MapSelectionLayer'
+import type { GhostLabel } from './recode/recodePlanView'
 
 const HINT_AUTO_DISMISS_MS = 4000
 
@@ -71,21 +73,33 @@ export interface MapStageProps {
     onPaintCell: (floor: number, x: number, y: number) => void
   }
   /**
-   * Marquee selection for a code sweep (mig 00107).
+   * Selection for a code sweep (migs 00107 / 00108).
    *
    * Cells derived here for the same reason paint's are — this component owns the
    * viewport. Mutually exclusive with `paint`: both rewrite `locations` rows, and a
    * sweep computed against an unsaved area working set would be computed from a
-   * picture the server has never seen. The caller enforces that by passing only one.
+   * picture the server has never seen. RackedWorkspace enforces that structurally,
+   * via mapMode.ts, rather than by remembering to pass only one.
    */
-  marquee?: {
+  select?: {
     active: boolean
-    /** Shift unions with the existing selection instead of replacing it. */
+    /** Which brush is armed. `paint` walks cells; `rect` drags a band. */
+    tool: 'paint' | 'rect'
+    /** One undo snapshot per stroke, so a 60-cell drag is one Ctrl+Z. */
+    onStrokeStart: () => void
+    /** The brush. Uses the NULLING cell helper — a stroke past the edge must not
+     *  wrap onto the last valid cell. */
+    onSelectCell: (floor: number, x: number, y: number) => void
+    /** The band. Uses the CLAMPING helper — dragging one pixel outside the grid
+     *  must not freeze the rectangle mid-drag. */
     onDragStart: (floor: number, x: number, y: number, additive: boolean) => void
     onDragMove: (x: number, y: number) => void
     onDragEnd: () => void
     /** The band being dragged, in grid cells. Null between drags. */
     rect: { floor: number; x0: number; y0: number; x1: number; y1: number } | null
+    /** Proposed code per selected unit, drawn by MapSelectionLayer — a SIBLING of
+     *  the canvas, never a prop of it. See that file for why. */
+    ghosts: readonly GhostLabel[]
   }
 }
 
@@ -110,7 +124,7 @@ export function MapStage({
   onRenameArea,
   onEditSign,
   paint,
-  marquee,
+  select,
 }: MapStageProps) {
   const { viewport, containerRef, handlers, fit, zoomIn, zoomOut, isPanning, didDrag, gesturesEnabled } = useMapViewport({
     placements,
@@ -169,9 +183,28 @@ export function MapStage({
     return true
   }, [])
 
-  // ── Marquee selection (mig 00107) ─────────────────────────────────────────
+  // ── Sweep selection (migs 00107 / 00108) ──────────────────────────────────
+  //
+  // Two gestures, one mode. The brush is the primary one — a band could not express
+  // the shape of a real bulk block without swallowing its neighbours — and the
+  // rectangle is kept for the cases that genuinely are rectangular.
   const marqueeRef = useRef<number | null>(null)
-  const sweeping = marquee?.active === true
+  const brushRef = useRef<number | null>(null)
+  const sweeping = select?.active === true
+  const brushing = sweeping && select?.tool === 'paint'
+  const banding = sweeping && select?.tool === 'rect'
+
+  const selectAt = useCallback((e: ReactPointerEvent<HTMLElement>) => {
+    const cell = cellFromEvent(e)
+    if (cell) select?.onSelectCell(floor, cell.x, cell.y)
+  }, [cellFromEvent, select, floor])
+
+  const endBrush = useCallback((e: ReactPointerEvent<HTMLElement>): boolean => {
+    if (brushRef.current !== e.pointerId) return false
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+    brushRef.current = null
+    return true
+  }, [])
 
   /** Like cellFromEvent but CLAMPED instead of null out of bounds. Paint wants the
    *  null — a stroke past the edge must not wrap to the last valid cell. A band
@@ -195,9 +228,9 @@ export function MapStage({
     if (marqueeRef.current !== e.pointerId) return false
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
     marqueeRef.current = null
-    marquee?.onDragEnd()
+    select?.onDragEnd()
     return true
-  }, [marquee])
+  }, [select])
 
   // First-hover hint pill: appears once on the first pointer-enter of the
   // stage, then auto-dismisses after HINT_AUTO_DISMISS_MS or on the first
@@ -256,12 +289,19 @@ export function MapStage({
         // container is exactly what stops a band that ends over a bin from also
         // selecting it and scrolling Bin detail into view. Alt still falls through
         // to pan, so the operator can reach the rest of the floor mid-selection.
-        if (sweeping && !e.altKey && (e.pointerType !== 'mouse' || e.button === 0)) {
+        if (brushing && !e.altKey && (e.pointerType !== 'mouse' || e.button === 0)) {
+          e.currentTarget.setPointerCapture(e.pointerId)
+          brushRef.current = e.pointerId
+          select?.onStrokeStart()
+          selectAt(e)
+          return
+        }
+        if (banding && !e.altKey && (e.pointerType !== 'mouse' || e.button === 0)) {
           const cell = clampedCellFromEvent(e)
           if (cell) {
             e.currentTarget.setPointerCapture(e.pointerId)
             marqueeRef.current = e.pointerId
-            marquee?.onDragStart(floor, cell.x, cell.y, e.shiftKey)
+            select?.onDragStart(floor, cell.x, cell.y, e.shiftKey)
             return
           }
         }
@@ -272,20 +312,26 @@ export function MapStage({
           paintAt(e)
           return
         }
+        if (brushRef.current === e.pointerId) {
+          selectAt(e)
+          return
+        }
         if (marqueeRef.current === e.pointerId) {
           const cell = clampedCellFromEvent(e)
-          if (cell) marquee?.onDragMove(cell.x, cell.y)
+          if (cell) select?.onDragMove(cell.x, cell.y)
           return
         }
         handlers.onPointerMove(e)
       }}
       onPointerUp={(e) => {
         if (endPaint(e)) return
+        if (endBrush(e)) return
         if (endMarquee(e)) return
         handlers.onPointerUp(e)
       }}
       onPointerCancel={(e) => {
         if (endPaint(e)) return
+        if (endBrush(e)) return
         if (endMarquee(e)) return
         handlers.onPointerCancel(e)
       }}
@@ -321,12 +367,17 @@ export function MapStage({
       {hover && hoverInfo && (
         <BinHoverCard hover={hover} info={hoverInfo} viewport={viewport} />
       )}
+      {/* The selection and its proposed codes. Same argument as the band below,
+          only stronger: this changes on every painted cell. */}
+      {sweeping && select && (
+        <MapSelectionLayer ghosts={select.ghosts} floor={floor} viewport={viewport} />
+      )}
       {/* The rubber band. Plain HTML off the viewport transform, the same
           arithmetic BinHoverCard uses — deliberately NOT an SVG element in the
           scene, whose memo excludes viewport.tx/ty and must not start seeing a
           shape that changes on every pointer move. */}
-      {marquee?.rect && marquee.rect.floor === floor && (
-        <MarqueeBand rect={marquee.rect} viewport={viewport} />
+      {select?.rect && select.rect.floor === floor && (
+        <MarqueeBand rect={select.rect} viewport={viewport} />
       )}
       <MapControls
         scale={viewport.scale}

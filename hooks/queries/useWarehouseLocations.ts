@@ -8,6 +8,8 @@ import {
   paintAreas,
   paintSigns,
   recodeLocations,
+  getLatestCodeSweep,
+  revertCodeSweep,
   renameArea,
   renameRack,
   type CreateLocationInput,
@@ -137,6 +139,39 @@ export function useRecodeLocations(warehouseId: number) {
       qc.invalidateQueries({ queryKey: ['layout-label-targets'] })
       qc.invalidateQueries({ queryKey: ['label-print-log'] })
       qc.invalidateQueries({ queryKey: ['warehouse-setup'] })
+      qc.invalidateQueries({ queryKey: ['location-code-sweep', warehouseId] })
+    },
+  })
+}
+
+/** The undo offer, read from the server so it survives a reload. */
+export function useLatestCodeSweep(warehouseId: number | null) {
+  return useQuery({
+    queryKey: ['location-code-sweep', warehouseId] as const,
+    queryFn: () => getLatestCodeSweep(warehouseId as number),
+    enabled: warehouseId != null,
+  })
+}
+
+/**
+ * Put the most recent sweep back (mig 00108).
+ *
+ * The SAME six invalidations as the sweep itself, because a revert moves exactly
+ * the same rows in exactly the same ways — including `label_printed`, which the
+ * RPC resets unconditionally on both passes.
+ */
+export function useRevertCodeSweep(warehouseId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => revertCodeSweep(warehouseId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) })
+      qc.invalidateQueries({ queryKey: ['layout-detail'] })
+      qc.invalidateQueries({ queryKey: ['layouts', warehouseId] })
+      qc.invalidateQueries({ queryKey: ['layout-label-targets'] })
+      qc.invalidateQueries({ queryKey: ['label-print-log'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-setup'] })
+      qc.invalidateQueries({ queryKey: ['location-code-sweep', warehouseId] })
     },
   })
 }

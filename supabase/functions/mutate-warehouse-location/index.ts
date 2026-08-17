@@ -69,16 +69,23 @@ import {
 // Operator-controlled codes (mig 00107). Pure planner + I/O beside it, the same
 // split as naming — the marquee's preview IS this function's dry_run.
 import {
-  BUILTIN_PATTERN,
   MAX_BLOCK_LENGTH,
   planRecode,
   sanitizeBlock,
+  solveBlockFraming,
+  WIZARD_DEFAULT_PATTERN,
   templateIssue,
   type CodeOrder,
+  type CodeOrigin,
   type RecodeUnit,
 } from '../_shared/wie/codePattern.ts'
 import {
   applyRecodeWrites,
+  buildRevertRows,
+  loadLatestSweep,
+  markSweepReverted,
+  recordSweep,
+  sweptRowsFrom,
   buildRecodeRows,
   loadCodeHighWater,
   loadCodePattern,
@@ -325,7 +332,27 @@ const recodeSchema = z.object({
   // a default cannot say whether the caller meant it.
   template_override: z.string().min(1).max(64).nullish(),
   order: z.enum(['row', 'column', 'serpentine-row', 'serpentine-column']).nullish(),
+  // Which corner of the painted block is 1-1. Only meaningful to a template that
+  // carries {row}/{col} or a counter, which is exactly what `usedTokens` decides on
+  // the client before the control is even rendered.
+  origin: z.enum(['nw', 'ne', 'sw', 'se']).nullish(),
+  // Opt in to relaying the WHOLE block rather than appending to it. Off by default:
+  // growing a block must never renumber bins whose stickers are already on the
+  // racking, so the default answer to drift is a refusal, not a silent rewrite.
+  renumber_block: z.boolean().optional(),
   dry_run: z.boolean().optional(),
+})
+
+// ── revert_code_sweep (mig 00108) ────────────────────────────────────────────
+//
+// Put the most recent sweep back. Only the newest un-reverted one is reachable:
+// reverting an older sweep would collide with every newer one, and resolving that
+// is a worse tool than saying "sweep it again". No `sweep_id` for the same reason —
+// there is exactly one answer, and letting the client name it would only create a
+// way to ask for the wrong one.
+const revertSweepSchema = z.object({
+  action: z.literal('revert_code_sweep'),
+  warehouse_id: z.number().int().positive(),
 })
 
 const inputSchema = z.discriminatedUnion('action', [
@@ -334,6 +361,7 @@ const inputSchema = z.discriminatedUnion('action', [
   paintLabelsSchema,
   bindZonesSchema,
   recodeSchema,
+  revertSweepSchema,
   z.object({ action: z.literal('update'), id: z.number().int().positive(), data: updateSchema }),
   renameAreaSchema,
   renameRackSchema,
@@ -1564,13 +1592,25 @@ serve(async (req: Request) => {
       }
 
       const stored = await loadCodePattern(admin, input.warehouse_id)
-      const template = input.template_override ?? stored?.template ?? BUILTIN_PATTERN.template
+      // WIZARD_DEFAULT, not BUILTIN. BUILTIN renders absolute GRID coordinates and
+      // exists to keep draw-time minting byte-identical to the historical code; it
+      // is not a sweep's default and never was. This endpoint is only ever called by
+      // the recode wizard, so falling back to anything the wizard does not arm makes
+      // the server disagree with the preview the operator just approved — which is
+      // precisely the reported bug (`AMADIYA-BULK-3-3` where `-1-1` was expected)
+      // arriving through a second door. Caught in a browser on dev, after the pure
+      // engine and the wire body had each been tested in isolation and agreed.
+      //
+      // The client also sends the template it PLANNED with, so this is a backstop
+      // rather than the mechanism.
+      const template = input.template_override ?? stored?.template ?? WIZARD_DEFAULT_PATTERN.template
       const tmplIssue = templateIssue(template)
       if (tmplIssue) throw new EdgeFunctionError('INVALID_INPUT', tmplIssue)
 
       const block = sanitizeBlock(input.block)
       if (!block) throw new EdgeFunctionError('INVALID_INPUT', 'Give the block a name')
-      const order = (input.order ?? stored?.order ?? BUILTIN_PATTERN.order) as CodeOrder
+      const order = (input.order ?? stored?.order ?? WIZARD_DEFAULT_PATTERN.order) as CodeOrder
+      const origin = (input.origin ?? stored?.origin ?? WIZARD_DEFAULT_PATTERN.origin) as CodeOrigin
 
       // Resolve the selection through the SAME loader the naming pass uses. The
       // client rolled its SHELF hits up to their rack parents already; doing it
@@ -1606,8 +1646,32 @@ serve(async (req: Request) => {
         })
       }
 
-      const stocked = await loadStockedLocations(admin, [...unitIds, ...requested.keys()])
-      const units: RecodeUnit[] = [...unitIds].map((id) => {
+      // Everything already carrying this block that is NOT in the selection. Free —
+      // loadLayoutNamingUnits has already loaded every placed unit on the layout, so
+      // "who else is in BULK" costs no query. These are PLANNED but never written:
+      // they exist so the framing can be checked against the codes already on the
+      // racking (see `drift`).
+      const incumbentIds = [...resolved.unitGeometry.keys()].filter((id) => {
+        const loc = resolved.locById.get(id)
+        return !!loc && loc.codeBlock === block && !unitIds.has(id)
+      })
+
+      // Renumbering the whole block is the operator's explicit second answer to
+      // drift, and it simply makes the incumbents part of the selection.
+      if (input.renumber_block) for (const id of incumbentIds) unitIds.add(id)
+      const incumbentsRemaining = input.renumber_block ? [] : incumbentIds
+      if (unitIds.size > 500) {
+        throw new EdgeFunctionError(
+          'INVALID_INPUT',
+          `Renumbering all of "${block}" would rewrite ${unitIds.size} locations; the limit is 500 per sweep`,
+        )
+      }
+
+      const stocked = await loadStockedLocations(
+        admin,
+        [...unitIds, ...incumbentsRemaining, ...requested.keys()],
+      )
+      const buildUnit = (id: number): RecodeUnit => {
         const loc = resolved.locById.get(id)!
         const geo = resolved.unitGeometry.get(id)!
         const levels = (resolved.levelsByParent.get(id) ?? []).map((l) => {
@@ -1624,7 +1688,9 @@ serve(async (req: Request) => {
           hasStock: stocked.has(id) || levels.some((l) => stocked.has(l.id)),
           levels: levels.length > 0 ? levels : undefined,
         }
-      })
+      }
+      const units: RecodeUnit[] = [...unitIds].map(buildUnit)
+      const incumbents: RecodeUnit[] = incumbentsRemaining.map(buildUnit)
 
       // A fresh block starts at 1; an existing one continues past its high-water
       // mark, so two sweeps over adjacent aisles do not both mint 01.
@@ -1641,7 +1707,20 @@ serve(async (req: Request) => {
       const start = input.start_at ?? (highWater.get(block) ?? 0) + 1
 
       const takenCodes = await loadTakenCodes(admin)
-      const plan = planRecode(units, { template, block, start, order, wh: whCode, takenCodes })
+      // The frame spans the UNION, so a bin painted onto the end of an existing run
+      // continues it instead of restarting at 1-1. With no incumbents this is just
+      // the selection, which is the ordinary first-sweep case.
+      const frameCells = [...units, ...incumbents]
+      const plan = planRecode(units, {
+        template, block, start, order, wh: whCode, takenCodes, origin,
+        frameCells, incumbents,
+      })
+
+      // When a framing does not fit, the useful thing to say is which one WOULD —
+      // recovered from the codes already on the racking rather than remembered.
+      const suggestedFraming = plan.drift.length > 0
+        ? solveBlockFraming(incumbents, { template, block, wh: whCode })
+        : null
 
       const examples = plan.writes.slice(0, 5).map((w) => ({ from: w.from, to: w.to }))
       const levelCount = plan.writes.reduce((n, w) => n + w.levels.length, 0)
@@ -1669,6 +1748,16 @@ serve(async (req: Request) => {
             labelPrinted: plan.labelPrinted.length,
             holdingStock: plan.holdingStock.length,
             codes: plan.allCodes,
+            // Growth reporting. `drift` is the list of block members this framing
+            // would move; non-empty means the batch is refused, and
+            // `suggestedFraming` is the origin/order that DOES reproduce them.
+            frame: plan.frame,
+            drift: plan.drift.slice(0, 20),
+            driftTotal: plan.drift.length,
+            incumbents: incumbents.length,
+            origin,
+            order,
+            suggestedFraming,
           },
         }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
@@ -1677,6 +1766,9 @@ serve(async (req: Request) => {
         throw new EdgeFunctionError('CONFLICT', plan.refusals[0].detail, {
           refusals: plan.refusals.slice(0, 20),
           refusedTotal: plan.refusals.length,
+          drift: plan.drift.slice(0, 20),
+          driftTotal: plan.drift.length,
+          suggestedFraming,
         })
       }
       if (plan.writes.length === 0) {
@@ -1695,6 +1787,21 @@ serve(async (req: Request) => {
       const rows = buildRecodeRows(plan.writes, resolved.locById, parentPaths)
       const recoded = await applyRecodeWrites(admin, whPath, rows)
 
+      // Record what moved, so the operator can put it back after a reload. NOT
+      // fatal if it fails: the sweep has already committed, and reporting a write
+      // that did happen as an error is far worse than losing an undo affordance.
+      // The response says whether the record was kept and the panel only offers
+      // Revert when it was.
+      const prevProvenance = new Map(
+        units.map((u) => [u.id, { block: u.codeBlock, seq: u.codeSeq }]),
+      )
+      const recordedSweep = await recordSweep(admin, {
+        warehouseId: input.warehouse_id,
+        block, template, origin, order,
+        rows: sweptRowsFrom(plan.writes, prevProvenance),
+        actorId: auth.userId,
+      })
+
       // No warehouse_layouts.updated_at bump, for the reason rename_area gives: a
       // code contributes no graph node, no edge weight and no access_offset_m, so
       // demanding a republish for it would be a lie.
@@ -1703,7 +1810,9 @@ serve(async (req: Request) => {
         actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
         resourceId: String(input.warehouse_id),
         metadata: {
-          recode: true, layout_id: layoutId, block, template, start_at: start, order,
+          recode: true, layout_id: layoutId, block, template, start_at: start, order, origin,
+          renumber_block: input.renumber_block === true,
+          incumbents: incumbents.length,
           units: units.length, levels: levelCount, recoded, unchanged: plan.unchanged,
           label_printed_reset: plan.labelPrinted.length,
           holding_stock: plan.holdingStock.length,
@@ -1722,7 +1831,64 @@ serve(async (req: Request) => {
         unchanged: plan.unchanged,
         nextCounter: plan.nextCounter,
         labelPrintedReset: plan.labelPrinted.length,
+        canRevert: recordedSweep,
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── revert_code_sweep (mig 00108) ────────────────────────────────────────
+    if (input.action === 'revert_code_sweep') {
+      // Shares the `:recode:` bucket deliberately: a revert rewrites exactly the
+      // same rows a sweep did, and giving it its own budget would let a loop of
+      // sweep/revert/sweep spend twice what one of them can.
+      const revertRl = await checkRateLimit(`mutate-warehouse-location:recode:${auth.userId}`, {
+        windowMs: 60_000,
+        max: 10,
+      })
+      if (!revertRl.ok) {
+        throw new EdgeFunctionError(
+          'TOO_MANY_REQUESTS',
+          `Rate limit exceeded; try again in ${Math.ceil(revertRl.resetMs / 1000)}s`,
+        )
+      }
+
+      const { data: whRow } = await admin.from('locations')
+        .select('id, kind, materialized_path, active_layout_id')
+        .eq('id', input.warehouse_id).maybeSingle()
+      if (!whRow || (whRow as any).kind !== 'WAREHOUSE') {
+        throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
+      }
+      const whPath = (whRow as any).materialized_path as string
+      const layoutId = (whRow as any).active_layout_id as number | null
+      if (!layoutId) throw new EdgeFunctionError('CONFLICT', 'This site has no published layout')
+
+      const sweep = await loadLatestSweep(admin, input.warehouse_id)
+      if (!sweep) throw new EdgeFunctionError('NOT_FOUND', 'There is no sweep to revert')
+
+      // Resolved through the SAME loader the sweep used, so a revert and a recode
+      // cannot disagree about what a row is or where it sits.
+      const resolved = await loadLayoutNamingUnits(admin, layoutId, whPath)
+      const parentIds = sweep.rows
+        .map((r) => resolved.locById.get(r.id)?.parentId)
+        .filter((id): id is number => id != null)
+      const parentPaths = await loadParentPaths(admin, parentIds)
+      // Throws CONFLICT naming the row if anything has been recoded again since.
+      const revertRows = buildRevertRows(sweep.rows, resolved.locById, parentPaths)
+
+      const reverted = await applyRecodeWrites(admin, whPath, revertRows)
+      await markSweepReverted(admin, sweep.id, auth.userId)
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
+        resourceId: String(input.warehouse_id),
+        metadata: {
+          recode_revert: true, sweep_id: sweep.id, block: sweep.block, reverted,
+          first: sweep.rows[0] ? `${sweep.rows[0].to}→${sweep.rows[0].from}` : null,
+        },
+      })
+
+      return new Response(JSON.stringify({ ok: true, reverted, block: sweep.block }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     // ── rename_rack (mig 00094) ──────────────────────────────────────────────

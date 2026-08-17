@@ -90,12 +90,45 @@ export const CODE_ORDER_LABELS: Record<CodeOrder, string> = {
   'serpentine-column': 'Serpentine by column (walk order)',
 }
 
+/**
+ * Which corner of a painted block is `1-1`, and therefore which way the numbers run.
+ *
+ * Decomposes into two INDEPENDENT axis directions — `ne` is "y ascending, x
+ * descending" — and each axis takes its direction from its own letter regardless of
+ * which axis is primary. That one rule serves both `buildSelectionFrame` and
+ * `orderCells`, which is what keeps `{n}` starting at the same bin `{row}`/`{col}`
+ * call 1-1. Two separate rules would let the counter walk one way and the
+ * coordinates the other, and nothing downstream would notice.
+ */
+export type CodeOrigin = 'nw' | 'ne' | 'sw' | 'se'
+
+export const CODE_ORIGINS: readonly CodeOrigin[] = ['nw', 'ne', 'sw', 'se']
+
+export const CODE_ORIGIN_LABELS: Record<CodeOrigin, string> = {
+  nw: 'Top-left',
+  ne: 'Top-right',
+  sw: 'Bottom-left',
+  se: 'Bottom-right',
+}
+
+/** Ascending on both axes — the historical behaviour, so it is the safe default. */
+export const DEFAULT_ORIGIN: CodeOrigin = 'nw'
+
+/** `true` = that axis counts downwards from its maximum. */
+function originDirections(origin: CodeOrigin): { xDesc: boolean; yDesc: boolean } {
+  return {
+    xDesc: origin === 'ne' || origin === 'se',
+    yDesc: origin === 'sw' || origin === 'se',
+  }
+}
+
 export interface CodePattern {
   template: string
   /** What `{block}` resolves to when the operator has not armed one. */
   defaultBlock: string
   start: number
   order: CodeOrder
+  origin: CodeOrigin
 }
 
 /**
@@ -104,12 +137,35 @@ export interface CodePattern {
  * THIS MUST FORMAT BYTE-FOR-BYTE IDENTICALLY TO THE HISTORICAL GRID CODE. "No row =
  * built-in default" is what lets the table ship empty with nothing backfilled, and
  * it is only safe while this is a no-op on every existing site. A test pins it.
+ *
+ * It is the COMPATIBILITY FALLBACK and nothing else. What the wizard arms is
+ * `WIZARD_DEFAULT_PATTERN` below. Do not "improve" this one — the two are separate
+ * precisely so a better default cannot reach a site nobody swept.
  */
 export const BUILTIN_PATTERN: CodePattern = {
   template: '{wh}-{block}-{x}-{y}',
   defaultBlock: 'B',
   start: 1,
   order: 'row',
+  origin: DEFAULT_ORIGIN,
+}
+
+/**
+ * What the recode wizard opens on.
+ *
+ * `{x}`/`{y}` are absolute GRID coordinates, so the built-in pattern renders a bin's
+ * map position — an operator who painted one bin, typed BULK and expected
+ * `AMADIYA-BULK-1-1` got `AMADIYA-BULK-3-3`. Worse, that template carries no counter
+ * at all, so `start` and `order` were controls wired to nothing. `{row}`/`{col}`
+ * count within the painted selection instead, which is what an operator means by
+ * "the first bin of this block".
+ */
+export const WIZARD_DEFAULT_PATTERN: CodePattern = {
+  template: '{wh}-{block}-{row}-{col}',
+  defaultBlock: 'B',
+  start: 1,
+  order: 'row',
+  origin: DEFAULT_ORIGIN,
 }
 
 // ─────────────────────────────────────────────────────────────────── templates ──
@@ -120,8 +176,14 @@ const TOKEN_KIND: Record<string, 'text' | 'number'> = {
   wh: 'text',
   block: 'text',
   n: 'number',
+  // ABSOLUTE grid coordinates — where the cell sits on the map. Kept for the
+  // built-in pattern and for anyone who genuinely wants map position in the code.
   x: 'number',
   y: 'number',
+  // SELECTION-RELATIVE coordinates — where the unit sits inside the painted block,
+  // counted densely from the chosen origin. The first bin of every block is 1-1.
+  row: 'number',
+  col: 'number',
   floor: 'number',
 }
 
@@ -141,10 +203,20 @@ export interface CodeBindings {
   wh: string
   /** The armed or stored block. Empty renders nothing. */
   block: string
-  x: number
-  y: number
+  /** Absolute grid coordinates. Nullable for the same reason `n` is — rendering
+   *  with every number absent yields the constant half of a code, which is how both
+   *  a pool key and the map's ghost-label prefix are derived. Every real call binds
+   *  them. */
+  x: number | null
+  y: number | null
   /** The counter. NULL suppresses the token. */
   n: number | null
+  /** Position inside the painted block, 1-based and dense. Optional and NULL-able
+   *  for the same reason `n` is: a caller with no frame renders the token away
+   *  rather than inventing a coordinate. Every pre-existing call site binds
+   *  neither, which is what keeps this change additive. */
+  row?: number | null
+  col?: number | null
   floor?: number | null
 }
 
@@ -228,6 +300,51 @@ export function templateIssue(template: string): string | null {
 }
 
 /**
+ * Every token a template actually carries.
+ *
+ * This is what makes a control honest. The reported bug was not that the numbering
+ * was wrong — it was that `Start at` and `Order` were RENDERED while the armed
+ * template held no `{n}`, so the operator changed them, saw nothing happen, and had
+ * no way to find out why. A control may only be shown when its token is present, and
+ * this is the one question that answers.
+ */
+export function usedTokens(template: string): Set<string> {
+  const found = new Set<string>()
+  // A fresh regex: TOKEN_RE is global and shared, and matchAll on the shared one
+  // would be one lastIndex bug away from a token going missing.
+  const re = new RegExp(TOKEN_RE.source, 'g')
+  for (const m of (template ?? '').matchAll(re)) found.add(m[1])
+  return found
+}
+
+/** The numbering shapes the wizard's form can express. Anything else is `custom` and
+ *  is only reachable through the advanced template field. */
+export type NumberingStyle = 'row-col' | 'sequence' | 'custom'
+
+/** DERIVED from the template, never stored. Two representations of one fact is two
+ *  ways to disagree — the reason `numbering_style` is not a column. */
+export function styleOfTemplate(template: string): NumberingStyle {
+  const used = usedTokens(template)
+  if (used.has('row') && used.has('col')) return 'row-col'
+  if (used.has('n') && !used.has('row') && !used.has('col')) return 'sequence'
+  return 'custom'
+}
+
+/** The inverse, for the form's own controls. `pad: 0` means no padding spec. */
+export function templateForStyle(
+  style: NumberingStyle,
+  opts: { pad: number; colFirst: boolean },
+): string {
+  const tok = (name: string) => (opts.pad > 0 ? `{${name}:0${opts.pad}}` : `{${name}}`)
+  if (style === 'sequence') return `{wh}-{block}-${tok('n')}`
+  if (style === 'row-col') {
+    const [a, b] = opts.colFirst ? ['col', 'row'] : ['row', 'col']
+    return `{wh}-{block}-${tok(a)}-${tok(b)}`
+  }
+  return BUILTIN_PATTERN.template
+}
+
+/**
  * Render one code.
  *
  * A token whose value is absent renders empty and its neighbouring separator is
@@ -242,8 +359,10 @@ export function formatCode(template: string, b: CodeBindings): string {
       case 'wh': return sanitizeBlock(b.wh ?? '')
       case 'block': return b.block ? sanitizeBlock(b.block) : ''
       case 'n': return b.n === null || b.n === undefined ? '' : padNumber(b.n, width)
-      case 'x': return padNumber(b.x, width)
-      case 'y': return padNumber(b.y, width)
+      case 'x': return b.x === null || b.x === undefined ? '' : padNumber(b.x, width)
+      case 'y': return b.y === null || b.y === undefined ? '' : padNumber(b.y, width)
+      case 'row': return b.row === null || b.row === undefined ? '' : padNumber(b.row, width)
+      case 'col': return b.col === null || b.col === undefined ? '' : padNumber(b.col, width)
       case 'floor': return b.floor === null || b.floor === undefined ? '' : padNumber(b.floor, width)
       default: return ''
     }
@@ -293,7 +412,8 @@ export function codeIssue(code: string): CodeIssueKind | null {
   return null
 }
 
-export type RecodeRefusalKind = CodeIssueKind | 'duplicate' | 'collision' | 'kind' | 'template'
+export type RecodeRefusalKind =
+  | CodeIssueKind | 'duplicate' | 'collision' | 'kind' | 'template' | 'drift'
 
 export function describeCodeIssue(kind: RecodeRefusalKind, code: string): string {
   switch (kind) {
@@ -308,6 +428,7 @@ export function describeCodeIssue(kind: RecodeRefusalKind, code: string): string
     case 'collision': return `"${code}" is already in use by another location`
     case 'kind': return `"${code}" is not a storage location — recoding it would rewrite every path beneath it`
     case 'template': return code
+    case 'drift': return code
   }
 }
 
@@ -327,30 +448,101 @@ export interface RecodeCell {
  * consecutive codes being adjacent bays and being opposite ends of the building.
  * Floors sort outermost — a walk cannot cross one.
  */
-export function orderCells<T extends RecodeCell>(items: readonly T[], order: CodeOrder): T[] {
+export function orderCells<T extends RecodeCell>(
+  items: readonly T[],
+  order: CodeOrder,
+  origin: CodeOrigin = DEFAULT_ORIGIN,
+): T[] {
   const rows = order === 'row' || order === 'serpentine-row'
   const serpentine = order === 'serpentine-row' || order === 'serpentine-column'
+  const dir = originDirections(origin)
 
-  // Primary axis = the one that changes slowest (the "line" being walked).
+  // Primary axis = the one that changes slowest (the "line" being walked). Each axis
+  // takes its direction from its own component of the origin, so `nw` reproduces the
+  // historical ascending/ascending walk exactly.
   const primary = (c: RecodeCell) => (rows ? c.y : c.x)
   const secondary = (c: RecodeCell) => (rows ? c.x : c.y)
+  const primaryDesc = rows ? dir.yDesc : dir.xDesc
+  const secondaryDesc = rows ? dir.xDesc : dir.yDesc
 
   // Serpentine alternates by POSITION IN THE SORTED SEQUENCE of lines, not by the
   // raw coordinate's parity: a selection starting at y=7 must still begin forwards.
+  // That stays true under a reversed origin, where the first line is the LAST
+  // coordinate — which is precisely why this indexes the sorted sequence.
   const byFloor = new Map<number, Map<number, number>>()
   for (const floor of new Set(items.map((i) => i.floor))) {
-    const lines = [...new Set(items.filter((i) => i.floor === floor).map(primary))].sort((a, b) => a - b)
+    const lines = [...new Set(items.filter((i) => i.floor === floor).map(primary))]
+      .sort((a, b) => (primaryDesc ? b - a : a - b))
     byFloor.set(floor, new Map(lines.map((v, i) => [v, i])))
   }
 
   return [...items].sort((a, b) => {
     if (a.floor !== b.floor) return a.floor - b.floor
     const pa = primary(a); const pb = primary(b)
-    if (pa !== pb) return pa - pb
-    const reversed = serpentine && (byFloor.get(a.floor)!.get(pa)! % 2 === 1)
+    if (pa !== pb) return primaryDesc ? pb - pa : pa - pb
+    const reversed = (serpentine && (byFloor.get(a.floor)!.get(pa)! % 2 === 1)) !== secondaryDesc
     const sa = secondary(a); const sb = secondary(b)
     return reversed ? sb - sa : sa - sb
   })
+}
+
+// ─────────────────────────────────────────────────────── selection coordinates ──
+
+export interface GridIndex {
+  row: number
+  col: number
+}
+
+export interface SelectionFrame {
+  /** `frameKey(cell)` → its 1-based position inside the block. */
+  index: ReadonlyMap<string, GridIndex>
+  /** The deepest and widest any floor of the selection runs, for the UI's preview. */
+  rows: number
+  cols: number
+}
+
+export function frameKey(c: RecodeCell): string {
+  return `${c.floor}:${c.x}:${c.y}`
+}
+
+/**
+ * Rank a painted selection into 1-based (row, col) from the chosen origin.
+ *
+ * DENSE ON BOTH AXES. Only lines that actually hold a unit are ranked, so the
+ * walkway between two rack runs does not burn a row number and a hole in a run does
+ * not burn a column. That is the operator's call and it is the whole difference from
+ * `{x}`/`{y}`: a coordinate here counts things, not cells.
+ *
+ * Contiguity of the COUNTER is a separate question and stays `{n}`'s job — `{n}`
+ * never skips, whatever the geometry does.
+ *
+ * Floors are ranked independently. A walk cannot cross one, so neither can a frame.
+ */
+export function buildSelectionFrame(
+  cells: readonly RecodeCell[],
+  origin: CodeOrigin = DEFAULT_ORIGIN,
+): SelectionFrame {
+  const dir = originDirections(origin)
+  const index = new Map<string, GridIndex>()
+  let rows = 0
+  let cols = 0
+
+  for (const floor of new Set(cells.map((c) => c.floor))) {
+    const onFloor = cells.filter((c) => c.floor === floor)
+    const rank = (values: number[], desc: boolean) => {
+      const sorted = [...new Set(values)].sort((a, b) => (desc ? b - a : a - b))
+      return new Map(sorted.map((v, i) => [v, i + 1]))
+    }
+    const rowRank = rank(onFloor.map((c) => c.y), dir.yDesc)
+    const colRank = rank(onFloor.map((c) => c.x), dir.xDesc)
+    rows = Math.max(rows, rowRank.size)
+    cols = Math.max(cols, colRank.size)
+    for (const c of onFloor) {
+      index.set(frameKey(c), { row: rowRank.get(c.y)!, col: colRank.get(c.x)! })
+    }
+  }
+
+  return { index, rows, cols }
 }
 
 // ──────────────────────────────────────────────────────────────────── planning ──
@@ -396,6 +588,32 @@ export interface RecodeOptions {
    *  rows included — they still own their codes. A code held by a unit in this batch
    *  is not a collision, it is a swap, which the two-phase write handles. */
   takenCodes: ReadonlyMap<string, number>
+  /** Which corner of the block is 1-1. Defaults to the historical ascending walk. */
+  origin?: CodeOrigin
+  /** The cells the frame is ranked over, when that is wider than what is being
+   *  written. Growing a block frames over the UNION of the block's existing members
+   *  and the newly painted units, so a bin added to the end of a run gets the next
+   *  column rather than restarting at 1. Defaults to the units' own cells. */
+  frameCells?: readonly RecodeCell[]
+  /** Units already carrying this block that are NOT being written. They are planned
+   *  anyway, purely to check they still render the code they already hold — see
+   *  `RecodePlan.drift`. */
+  incumbents?: readonly RecodeUnit[]
+}
+
+/** What a unit WOULD be called, whether or not the sweep is allowed to do it. */
+export interface RecodeProposal {
+  id: number
+  to: string
+}
+
+/** An existing member of the block whose code this sweep would move. */
+export interface RecodeDrift {
+  id: number
+  /** What it carries today. */
+  code: string
+  /** What this framing would give it. */
+  would: string
 }
 
 export interface RecodeLevelWrite {
@@ -443,6 +661,24 @@ export interface RecodePlan {
   /** Every code this sweep would produce, in order — hand to `fitRun` to size the
    *  barcode before the operator commits to a pattern they cannot print. */
   allCodes: string[]
+  /** How deep and wide the frame ran, for the panel's preview. */
+  frame: { rows: number; cols: number }
+  /**
+   * Every unit's rendered code, ALWAYS — including when the batch is refused and
+   * `writes` is therefore empty.
+   *
+   * The map's ghost numbers need "what would this give me" independently of
+   * "is this allowed", and reading them off `writes` gets that wrong in exactly
+   * the case where the operator most needs to see it: a refused plan showed the
+   * offending bins' new codes and every other bin its OLD one, which reads as
+   * "only those few are changing". Found in a browser on dev.
+   */
+  proposed: RecodeProposal[]
+  /** Existing block members this framing would move. Non-empty raises a `drift`
+   *  refusal, which voids the batch like any other — growing a block must never
+   *  renumber the bins already labelled for it. The operator's way past it is to
+   *  re-frame, or to say explicitly that the whole block is being renumbered. */
+  drift: RecodeDrift[]
 }
 
 const lower = (s: string) => s.toLowerCase()
@@ -464,7 +700,8 @@ const lower = (s: string) => s.toLowerCase()
 export function planRecode(units: readonly RecodeUnit[], opts: RecodeOptions): RecodePlan {
   const empty: RecodePlan = {
     writes: [], unchanged: 0, refusals: [], labelPrinted: [], holdingStock: [],
-    nextCounter: opts.start, allCodes: [],
+    nextCounter: opts.start, allCodes: [], frame: { rows: 0, cols: 0 }, drift: [],
+    proposed: [],
   }
 
   const bad = templateIssue(opts.template)
@@ -473,7 +710,12 @@ export function planRecode(units: readonly RecodeUnit[], opts: RecodeOptions): R
   }
 
   const block = sanitizeBlock(opts.block)
-  const ordered = orderCells(units, opts.order)
+  const origin = opts.origin ?? DEFAULT_ORIGIN
+  // The frame spans the union when growing a block, so an appended bin continues the
+  // run instead of restarting it. With no `frameCells` it is just the selection.
+  const frame = buildSelectionFrame(opts.frameCells ?? units, origin)
+  const at = (c: RecodeCell) => frame.index.get(frameKey(c)) ?? null
+  const ordered = orderCells(units, opts.order, origin)
   const refusals: RecodeRefusal[] = []
   const labelPrinted: number[] = []
   const holdingStock: number[] = []
@@ -499,8 +741,10 @@ export function planRecode(units: readonly RecodeUnit[], opts: RecodeOptions): R
 
   let seq = opts.start
   for (const unit of ordered) {
+    const cell = at(unit)
     const to = formatCode(opts.template, {
       wh: opts.wh, block, x: unit.x, y: unit.y, n: seq, floor: unit.floor,
+      row: cell?.row ?? null, col: cell?.col ?? null,
     })
     claim(to, unit.id)
     allCodes.push(to)
@@ -554,8 +798,38 @@ export function planRecode(units: readonly RecodeUnit[], opts: RecodeOptions): R
     }
   }
 
+  // ── would this framing move a bin that is already in the block? ──
+  //
+  // An incumbent keeps its own `code_seq`, so a pure-{n} template can never drift —
+  // only a coordinate template can, and only when the painted cells change the shape
+  // of the frame. That asymmetry is the point: it is exactly the case where the codes
+  // already on the racking would stop matching the geometry.
+  const drift: RecodeDrift[] = []
+  for (const inc of opts.incumbents ?? []) {
+    const cell = at(inc)
+    const would = formatCode(opts.template, {
+      wh: opts.wh, block, x: inc.x, y: inc.y, n: inc.codeSeq, floor: inc.floor,
+      row: cell?.row ?? null, col: cell?.col ?? null,
+    })
+    if (would !== inc.code) drift.push({ id: inc.id, code: inc.code, would })
+  }
+  if (drift.length > 0) {
+    const names = drift.slice(0, 3).map((d) => `${d.code}→${d.would}`).join(', ')
+    refusals.push({
+      id: 0, from: '', to: '', kind: 'drift',
+      detail: `${drift.length} location(s) already in "${block}" would be renumbered (${names}${
+        drift.length > 3 ? ', …' : ''
+      }). Re-frame the block, or renumber all of it deliberately.`,
+    })
+  }
+
+  const proposed: RecodeProposal[] = drafts.map((d) => ({ id: d.unit.id, to: d.to }))
+
   if (refusals.length > 0) {
-    return { ...empty, refusals, labelPrinted, holdingStock, nextCounter: seq, allCodes }
+    return {
+      ...empty, refusals, labelPrinted, holdingStock, nextCounter: seq, allCodes,
+      frame: { rows: frame.rows, cols: frame.cols }, drift, proposed,
+    }
   }
 
   const writes: RecodeWrite[] = []
@@ -580,5 +854,45 @@ export function planRecode(units: readonly RecodeUnit[], opts: RecodeOptions): R
     })
   }
 
-  return { writes, unchanged, refusals, labelPrinted, holdingStock, nextCounter: seq, allCodes }
+  return {
+    writes, unchanged, refusals, labelPrinted, holdingStock, nextCounter: seq, allCodes,
+    frame: { rows: frame.rows, cols: frame.cols }, drift, proposed,
+  }
+}
+
+/**
+ * Which (origin, order) reproduces a block's existing codes — null when none does.
+ *
+ * A block's framing is RECOVERABLE, so it is not stored. Storing `(row, col)` on
+ * `locations` would be a third hand-maintained copy of geometry beside `parent_id`
+ * and `materialized_path`, which mig 00096 is a monument to the cost of; and a stored
+ * high-water gets growth wrong anyway, because a row painted NORTH of a north-origin
+ * block has to become row 1 and push the rest down. Solving reads the answer off the
+ * floor instead, and when nothing reproduces the incumbents — a hand-typed block, or
+ * one swept under a template since changed — it says so rather than guessing a frame
+ * that would silently renumber real racking.
+ *
+ * 16 candidates over a few hundred units of pure arithmetic.
+ */
+export function solveBlockFraming(
+  incumbents: readonly RecodeUnit[],
+  opts: Pick<RecodeOptions, 'template' | 'block' | 'wh'>,
+): { origin: CodeOrigin; order: CodeOrder } | null {
+  if (incumbents.length === 0) return null
+  const block = sanitizeBlock(opts.block)
+
+  for (const origin of CODE_ORIGINS) {
+    const frame = buildSelectionFrame(incumbents, origin)
+    for (const order of CODE_ORDERS) {
+      const fits = incumbents.every((inc) => {
+        const cell = frame.index.get(frameKey(inc)) ?? null
+        return formatCode(opts.template, {
+          wh: opts.wh, block, x: inc.x, y: inc.y, n: inc.codeSeq, floor: inc.floor,
+          row: cell?.row ?? null, col: cell?.col ?? null,
+        }) === inc.code
+      })
+      if (fits) return { origin, order }
+    }
+  }
+  return null
 }
