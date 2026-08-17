@@ -21,6 +21,7 @@
 import React, { useState } from 'react'
 import { AlertTriangle, ArrowRight, Check, MapPin, Undo2, X, Layers } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
+import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkReplenScan } from '@/supabase/functions/_shared/replenScanCheck'
 import { useCompleteReplenishment, useUnassignReplenishment } from '@/hooks/queries/useReplenishment'
 import { useToasts } from '@/hooks/useToasts'
@@ -63,6 +64,7 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
   const [qty, setQty] = useState('')
   const [toCode, setToCode] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const { flash, signal: signalFlash } = useScanFlash()
 
   const name = stop.productName ?? `Product #${stop.productId}`
   const movedQty = qty.trim() === '' ? stop.qtyBase : Number(qty)
@@ -83,6 +85,30 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
     movedQty > 0 ? movedQty : stop.qtyBase,
   )
   const pulledElsewhere = verdict.ok === true && verdict.pulledElsewhere
+
+  /**
+   * Ask the same checker about a value the operator has only just scanned.
+   *
+   * `verdict` above is computed from state and so is always one render behind a
+   * scan. Every other walk surface clears its field on a refusal; this one did
+   * not, so a rejected code stayed in the box and the next scan appended to it
+   * — building a string that matched nothing and reported the wrong reason.
+   */
+  const verdictFor = (patch: {
+    fromLocationCode?: string
+    toLocationCode?: string
+    handlingUnitCode?: string
+  }) =>
+    checkReplenScan(
+      task,
+      {
+        fromLocationCode: fromCode,
+        toLocationCode: toCode,
+        handlingUnitCode: plateCode,
+        ...patch,
+      },
+      movedQty > 0 ? movedQty : stop.qtyBase,
+    )
 
   const start = () => {
     if (disabled) return
@@ -192,7 +218,15 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
               label="Scan the bin you are pulling from"
               value={fromCode}
               onChange={setFromCode}
-              onScan={(raw) => { setFromCode(raw); setStep(stop.huCode ? 'plate' : 'qty') }}
+              onScan={(raw) => {
+                // A different source bin is deliberately allowed — the assigned
+                // bay is often empty and the operator pulls from the next one.
+                // It gets recorded as `pulledElsewhere`, not refused.
+                setFromCode(raw)
+                signalFlash('ok')
+                setStep(stop.huCode ? 'plate' : 'qty')
+              }}
+              flash={step === 'source' ? flash : null}
               placeholder={stop.code}
               helper={`Assigned: ${stop.code}. A different bin is fine — it gets recorded.`}
               autoFocus
@@ -205,7 +239,18 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
               label="Scan the pallet or carton label"
               value={plateCode}
               onChange={setPlateCode}
-              onScan={(raw) => { setPlateCode(raw); setStep('qty') }}
+              onScan={(raw) => {
+                const v = verdictFor({ handlingUnitCode: raw })
+                if (v.ok === false && v.code === 'WRONG_PLATE') {
+                  setPlateCode('')
+                  signalFlash('reject')
+                  return
+                }
+                setPlateCode(raw)
+                signalFlash('ok')
+                setStep('qty')
+              }}
+              flash={step === 'plate' ? flash : null}
               placeholder={stop.huCode ?? 'HU-000000'}
               helper={pulledElsewhere
                 ? 'You pulled from a different bin, so any plate there is fine.'
@@ -249,7 +294,21 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
               label="Scan the pick zone you are placing into"
               value={toCode}
               onChange={setToCode}
-              onScan={(raw) => setToCode(raw)}
+              onScan={(raw) => {
+                // The one thing replenishment REFUSES. Placing the top-up
+                // anywhere else leaves the short slot short while the paperwork
+                // says the work was done, so a wrong destination must not be
+                // left sitting in the box looking accepted.
+                const v = verdictFor({ toLocationCode: raw })
+                if (v.ok === false && v.code === 'WRONG_DESTINATION') {
+                  setToCode('')
+                  signalFlash('reject')
+                  return
+                }
+                setToCode(raw)
+                signalFlash('ok')
+              }}
+              flash={step === 'destination' ? flash : null}
               placeholder={stop.toCode}
               helper={`This top-up refills ${stop.toCode}.`}
               error={verdict.ok === false && verdict.code === 'WRONG_DESTINATION' ? verdict.message : undefined}

@@ -11,6 +11,11 @@ import type { ReceiptHeader, ReceiptLine, ReceiptPlate } from '../../services/su
 import { useToasts } from '../../hooks/useToasts';
 import { receivableUoms, deriveDefaultUoms, baseUom } from '../../lib/uom';
 import { productsForSupplier, supplierSkuFor, matchesProductQuery } from '../../lib/productSuppliers';
+import { ScanField } from '../ui/ScanField';
+import { buildScanIndex, normalizeScan } from '../../lib/scan/resolveScan';
+import { describeReceiveRefusal, resolveReceiveScan } from '../../lib/scan/receiveScan';
+import { useScanFlash } from '../../lib/scan/useScanFlash';
+import { useWedgeScanner } from '../../lib/scan/useWedgeScanner';
 import { PutawayPanel } from './PutawayPanel';
 import {
   PackagePlus, Plus, Trash2, Search, X, Boxes, History, Clock,
@@ -344,6 +349,8 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   // ── Receipt lines ──────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
   const [picked, setPicked] = useState<DraftLine[]>([]);
+  const [scanNote, setScanNote] = useState<string | null>(null);
+  const { flash, signal: signalFlash } = useScanFlash();
 
   const productById = useMemo(() => {
     const m = new Map<number, Product>();
@@ -402,6 +409,60 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
     setPicked(prev => [...prev, { ...newDraft(plate.key, quarantineAll), productId: product.id }]);
     setSearch('');
   };
+
+  // ── Scanning at the dock ───────────────────────────────────────────────────
+  //
+  // This screen had no scan affordance at all, which is odd for the one place
+  // in the building where someone is definitely holding a barcode. Three things
+  // are scannable and they resolve through one pure module, `receiveScan.ts`.
+  //
+  // The index is built over the FULL catalogue, never `searchPool`. The
+  // supplier narrowing is a soft convenience (see showAllProducts above), and
+  // refusing a scanned carton because a supplier link has not been configured
+  // would block a real delivery for a data-entry reason.
+  const scanIndex = useMemo(
+    () => buildScanIndex({
+      products: products.map(p => ({ id: p.id, sku: p.sku, name: p.name, barcode: p.barcode ?? null })),
+    }),
+    [products],
+  );
+
+  // Site roots only — this is what lets a warehouse be told from a bin without
+  // a second query, since both are `locations` rows.
+  const warehouseIdByCode = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const w of activeWarehouses) m.set(normalizeScan(w.code), w.id);
+    return m;
+  }, [activeWarehouses]);
+
+  const handleDockScan = (raw: string) => {
+    const target = resolveReceiveScan(raw, scanIndex, warehouseIdByCode);
+
+    if (target.kind === 'product') {
+      const product = productById.get(target.product.id);
+      if (product) {
+        addProduct(product);
+        setScanNote(null);
+        signalFlash('ok');
+        return;
+      }
+    }
+
+    if (target.kind === 'warehouse' && !isLocked) {
+      setDestinationId(target.warehouseId);
+      setScanNote(null);
+      signalFlash('ok');
+      return;
+    }
+
+    setScanNote(describeReceiveRefusal(target));
+    signalFlash('reject');
+  };
+
+  // The desktop safety net. Receiving is a long form full of quantity and date
+  // boxes, so focus is rarely where the next scan needs it — this is the screen
+  // the global capture was really written for.
+  useWedgeScanner({ active: true, onScan: handleDockScan });
 
   const updateLine = (key: string, patch: Partial<DraftLine>) => {
     setPicked(prev => prev.map(l => (l.key === key ? { ...l, ...patch } : l)));
@@ -621,24 +682,30 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
         </div>
       </div>
 
-      {/* Product search */}
+      {/* Product search / dock scan */}
+      {/* One box for both jobs, deliberately. Typing still drives the substring
+          search and its dropdown exactly as before; a SCAN (camera, wedge gun,
+          or Enter) goes through `handleDockScan` and adds the line outright.
+          Splitting them into two inputs would mean the operator has to decide
+          which one to aim at before they know what the label is. */}
       <div className="max-w-xl space-y-1.5">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-          <input
-            type="text"
+          <ScanField
+            ariaLabel="Search products"
             value={search}
-            onChange={e => setSearch(e.target.value)}
-            aria-label="Search products"
+            onChange={(v) => { setSearch(v); if (scanNote) setScanNote(null); }}
+            onScan={handleDockScan}
+            flash={flash}
+            error={scanNote ?? undefined}
             placeholder={
               isFiltered
-                ? `Search ${supplierName}’s products by name, SKU, or their part no.…`
-                : 'Search a product by name, SKU, or barcode to add a line…'
+                ? `Scan a carton, or search ${supplierName}’s products…`
+                : 'Scan a carton, or search by name, SKU or barcode…'
             }
-            className="w-full pl-10 pr-9 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+            cameraTitle="Scan a carton"
           />
           {search && (
-            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer">
+            <button onClick={() => setSearch('')} className="absolute right-3 top-[38px] -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer">
               <X className="w-4 h-4" />
             </button>
           )}
@@ -812,11 +879,18 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <input
-                          type="text"
+                        {/* Normalised on scan, not just stored raw. Whatever
+                            lands here becomes `stock_batches.barcode`, which
+                            `resolveScan` indexes as `batchesByBarcode` — so a
+                            trailing control character saved now is a batch that
+                            can never be scanned again. */}
+                        <ScanField
+                          compact
+                          refocusAfterScan={false}
+                          ariaLabel={`Batch barcode for line ${line.key}`}
                           value={line.barcode}
-                          onChange={e => updateLine(line.key, { barcode: e.target.value })}
-                          className="w-full px-2 py-1.5 font-mono text-sm bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+                          onChange={v => updateLine(line.key, { barcode: v })}
+                          onScan={v => updateLine(line.key, { barcode: normalizeScan(v) })}
                           placeholder="optional"
                         />
                       </td>
