@@ -3,6 +3,7 @@ import { toInventoryLocation } from '@/lib/adapters'
 import { describeValidationIssues, extractFunctionErrorDetails, extractFunctionErrorMessage } from '@/lib/functionError'
 import { packAreaRuns, type AreaPaintSpec } from '@/lib/areaPaint'
 import { packSignRuns, type SignSpec } from '@/lib/signPaint'
+import type { CodeOrder } from '@/lib/codePattern'
 import type { InventoryLocation, LevelRole, LocationKind } from '@/types'
 
 /**
@@ -464,6 +465,107 @@ export async function bindZones(warehouseId: number): Promise<ZoneBindingResult>
   )
   if (error) await rethrowWithServerMessage(error, 'Could not bind the areas to their zones')
   return data as ZoneBindingResult
+}
+
+// ── Code sweeps (mig 00107) ──────────────────────────────────────────────────
+//
+// One body builder shared by the preview and the write, for the reason
+// paintAreasBody exists: the previewed count has to be the count that moves, and
+// two builders drift.
+
+export interface RecodeRefusalRow {
+  id: number
+  from: string
+  to: string
+  kind: string
+  detail: string
+  heldBy?: number
+}
+
+export interface RecodePreview {
+  willRecode: number
+  units: number
+  levels: number
+  unchanged: number
+  nextCounter: number
+  /** Where the counter actually started — the block's high-water + 1 unless the
+   *  operator typed one. Worth showing: it is the surprising half. */
+  startedAt: number
+  block: string
+  template: string
+  examples: Array<{ from: string; to: string }>
+  refusals: RecodeRefusalRow[]
+  refusedTotal: number
+  /** Locations whose sticker is already on the racking. The sweep resets their
+   *  label_printed, putting them back in the print backlog. */
+  labelPrinted: number
+  holdingStock: number
+  /** Every code the sweep would produce — fed to the label sizing wizard so the
+   *  physical cost of a longer pattern is visible BEFORE it is paid. */
+  codes: string[]
+}
+
+export interface RecodeResult {
+  recoded: number
+  units: number
+  levels: number
+  unchanged: number
+  nextCounter: number
+  labelPrintedReset: number
+}
+
+export interface RecodeArgs {
+  warehouseId: number
+  /** Each id with the code the operator was looking at. A per-row
+   *  compare-and-swap, not a fingerprint — see the note on recodeSchema. */
+  units: Array<{ locationId: number; expectedCode: string }>
+  block: string
+  /** Null lets the server continue past the block's high-water mark. */
+  startAt?: number | null
+  templateOverride?: string | null
+  order?: CodeOrder | null
+}
+
+function recodeBody(args: RecodeArgs, dryRun: boolean) {
+  return {
+    action: 'recode_locations',
+    warehouse_id: args.warehouseId,
+    units: args.units.map((u) => ({ location_id: u.locationId, expected_code: u.expectedCode })),
+    block: args.block,
+    // `?? null`, never omitted: the server declares these .nullish() and null is
+    // the honest wire value for "let the server decide".
+    start_at: args.startAt ?? null,
+    template_override: args.templateOverride ?? null,
+    order: args.order ?? null,
+    ...(dryRun ? { dry_run: true } : {}),
+  }
+}
+
+/**
+ * What this sweep would do — computed by the SERVER, running the same pure module
+ * the summary modal renders.
+ *
+ * Unlike the paint previews this can come back with a populated `refusals` list
+ * and still be a 200: the refusals are a list the operator has to work through,
+ * and one per round trip would be a bad tool.
+ */
+export async function previewRecode(args: RecodeArgs): Promise<RecodePreview> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; preview: RecodePreview }>(
+    'mutate-warehouse-location',
+    { body: recodeBody(args, true) },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not check the new codes')
+  return (data as any).preview as RecodePreview
+}
+
+/** Rewrite the codes of a selected block of bins on a LIVE warehouse. */
+export async function recodeLocations(args: RecodeArgs): Promise<RecodeResult> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true } & RecodeResult>(
+    'mutate-warehouse-location',
+    { body: recodeBody(args, false) },
+  )
+  if (error) await rethrowWithServerMessage(error, 'Could not apply the new codes')
+  return data as RecodeResult
 }
 
 export async function deactivateWarehouseLocation(id: number): Promise<void> {
