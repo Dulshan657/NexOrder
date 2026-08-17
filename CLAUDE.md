@@ -461,6 +461,79 @@ The largest subsystem after ordering, and about half the Edge Functions. Migrati
 - **Never render a per-row `<select>` of bins.** 158 rows × ~400 locations froze the tab hard enough that Chrome could not be scripted; the grid renders ONE `<datalist>` and every row's bin input points at it.
 - The setup checklist's `replen_min_max` step counts **armed** rows only (`countReplenConfigured`), so saving figures does not tick it — which is the honest test of whether replenishment is on.
 
+**Location code sweeps** (migs `00107`–`00108`) — the operator paints a block of bins on
+the live map, names it, and every bin in it is recoded. `locations.code` was a grid
+coordinate (`AMADIYA-B-3-4`) because that is where the cell happened to sit; this lets
+the operator state the scheme instead.
+
+- **`{row}`/`{col}` are SELECTION-RELATIVE; `{x}`/`{y}` are ABSOLUTE GRID.** That
+  distinction is the whole feature. `{row}`/`{col}` count within the painted block, so
+  the first bin of every block is `1-1` wherever it stands — which is what an operator
+  means. Dense on both axes: a walkway between two rack runs burns no row number and a
+  hole in a run burns no column. **Contiguity is `{n}`'s job; coordinates count things,
+  not cells.**
+- **`BUILTIN_PATTERN` and `WIZARD_DEFAULT_PATTERN` are two different jobs and must not
+  be conflated.** BUILTIN (`{wh}-{block}-{x}-{y}`) keeps DRAW-TIME minting
+  byte-identical to the historical code and must never change. A SWEEP's default is the
+  wizard's (`{wh}-{block}-{row}-{col}`). They drifted apart once — the client planned
+  `-1-1` and the server returned `-3-3`, reproducing the original bug through a second
+  door — because each half was correct in isolation and only the FALLBACK CHAINS
+  disagreed. The client now sends the template it planned with; the server's fallback is
+  a backstop. Caught in a browser, not by tests.
+- **A control may only be rendered when its token is in the template** (`usedTokens`).
+  The original defect was not wrong numbering, it was that `Start at` and `Order` were
+  shown against a pattern with no `{n}`: the operator set them, nothing happened, and
+  there was no way from inside the UI to find out why. `visibleControls` makes that
+  class of bug impossible rather than fixing one instance of it.
+- **Selection is a BRUSH, with the rectangle demoted to a secondary tool that hit-tests
+  by `contain`.** The rectangle tested INTERSECT, and a rack is `w×h` cells, so a band
+  round the bulk block clipped one cell of the neighbouring fast-mover racks and
+  swallowed them — with no shape the operator could draw that avoided it, because real
+  blocks are not rectangles. Bands ACCUMULATE like strokes; one undo frame per stroke.
+- **The origin is operator-chosen (`nw|ne|sw|se`) and decomposes into two INDEPENDENT
+  axis directions**, shared by `buildSelectionFrame` and `orderCells` — so the counter
+  starts at the same bin the coordinates call `1-1`. Two rules would let the walk go one
+  way and the numbers the other with nothing downstream noticing.
+- **Growing a block frames over the UNION and writes only the new units.** Members
+  already in the block are planned but never written, purely to check they still render
+  the code they hold; if a framing would move one that is a **`drift` refusal voiding the
+  batch**, answered by re-framing or by opting into `renumber_block`. The origin that
+  WOULD fit is **solved from the floor** (`solveBlockFraming`), never stored — storing
+  `(row,col)` on `locations` would be a third hand-kept copy of geometry beside
+  `parent_id` and `materialized_path`, and a stored high-water gets growth wrong anyway
+  (a row added north of a north-origin block must become row 1 and push the rest down).
+- **Ghost numbers are planned CLIENT-SIDE** from the same pure module (`plan.proposed`,
+  which carries every unit's code even when the batch is refused — reading them off
+  `writes` made a refused plan show only the offenders' new codes and everything else its
+  OLD one). The `:recode:` bucket is 10/min, so four origin clicks would spend it. The
+  server's `dry_run` fires ONCE on entering Review and is the authority. The client's
+  `takenCodes` is SITE-scoped where the server's is GLOBAL — stated in
+  `recodePlanView.ts` rather than left to be discovered.
+- **`MapSelectionLayer` is a SIBLING of `WarehouseCanvas`, never a prop of it.** The
+  canvas memoizes its whole scene; a value changing per painted cell would rebuild 945
+  bins per cell. `renderMarkers`/`canvasObjects`/`placements` were already unmemoized
+  scene deps busting it on every marquee frame — `__tests__/mapSceneIsolation.test.ts` is
+  a source assertion because the failure mode is a tab that merely gets slow.
+- **A sweep is revertible and the offer survives a reload** (`location_code_sweeps`).
+  Only the newest un-reverted sweep is reachable and the action takes no sweep id —
+  reverting an older one would collide with every newer one. Revert restores
+  `code_block`/`code_seq` as well as the code, or the provenance would still claim the
+  sweep happened and feed the next high-water mark. `recordSweep` is deliberately NOT
+  fatal: the sweep has already committed, so the response carries `canRevert` and the
+  panel withholds the button rather than reporting a successful write as an error.
+- Panel is a **grid sibling of the map, not an overlay** (`components/inventory/warehouse/recode/`),
+  so the map stays paintable and `check:overlays` is untouched. **Apply is visible at
+  every step** with a one-line reason when disabled — the reported complaint was "I only
+  see a Preview button and no button to apply", and the button existed.
+- The `unswept` overlay tints bins whose `code_block IS NULL` — 00107's provenance
+  signal, a fact about the row rather than a guess about the string. Arms on entering
+  the panel, restored on cancel.
+- Settings → Warehouse → **Bin code pattern** writes `warehouse_code_patterns`
+  (`set_code_pattern` on **`mutate-warehouse`**, the sibling of `set_label_prefs` — not
+  on `mutate-warehouse-location`, whose buckets are for actions rewriting hundreds of
+  rows). Clearing DELETES the row: "no row = the built-in default" must have one
+  representation. **Read by the sweep only** — drawing a new bin still mints a grid code.
+
 **Scan tracking & handling units** (migs `00074`–`00078`, `00106`).
 - **Scan identity.** The barcode payload is **bare text** — a `locations.code`, a product SKU, or a handling-unit code — with no URL wrapper and no namespace prefix, so third-party scanner apps read something meaningful. The cost is that one string could name two things: `lib/scan/resolveScan.ts` returns `ambiguous` with every candidate and the UI asks the operator. **It never guesses.** Labels are rendered by `generate-labels` (`_shared/labelSheet.ts`) and logged to `label_print_log`; print UI is `components/admin/LabelPrintingSection.tsx`, input primitive is `components/ui/ScanField.tsx` (+ `lib/scan/useBarcodeScanner.ts`).
 - **Labels are Code 128, not QR, as of 2026-08-14.** Operators scan with a hand-held gun rather than a phone, and a laser reads a linear symbol faster, further and at worse angles than any camera reads a QR. Nothing was stranded — no QR label had reached a floor. `qrcode` was an esm.sh import, so the swap removed nothing from `package.json`. The camera path (`useBarcodeScanner.ts`) still decodes QR; there was no reason to stop.
@@ -522,6 +595,9 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 | `warehouse_layouts`, `layout_*` | `mutate-layout`, `publish-layout` | Admin | `00045`, `00046` |
 | ↳ `layout_objects` (AREA rows: geometry + `meta`) | `mutate-warehouse-location` `rename_area` / `paint_areas` | Admin, Manager | `00094`, `00095` |
 | ↳ `layout_objects` (LABEL rows: floor signs) | `mutate-warehouse-location` `paint_labels` | Admin, Manager | `00097` |
+| `locations.code` (+ `code_block`/`code_seq`/`materialized_path`) | `mutate-warehouse-location` `recode_locations` / `revert_code_sweep` | Admin, Manager | `00107`, `00108` |
+| `warehouse_code_patterns` | `mutate-warehouse` `set_code_pattern` | Admin, Manager | `00107`, `00108` |
+| `location_code_sweeps` | written as a side effect of `recode_locations` | Admin, Manager | `00108` |
 | ↳ `locations.parent_id` + `.materialized_path` (zone binding) | `mutate-warehouse-location` `bind_zones`, and as a side effect of `paint_areas` / `rename_area` / `mutate-layout` `save_geometry` | Admin, Manager | `00096` |
 | `wie_rules`, `zone_profiles`, `storage_types`, `wie_scoring_profiles`, `product_wms_attributes` | `mutate-wie-rule`, `mutate-zone-profile`, `mutate-storage-type`, `mutate-scoring-profile`, `mutate-wms-attributes` | Admin | `00045`–`00061` |
 | `product_home_bins` (incl. replenishment min/max) | `mutate-product-home-bin` (`set` / `clear` / `bulkSet`) | Admin, Manager | `00045`–`00061`, `00082` |
