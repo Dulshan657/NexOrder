@@ -104,6 +104,30 @@ describe('ghostLabels', () => {
     expect('AMADIYA-BULK'.endsWith(texts[0])).toBe(true)
   })
 
+  /**
+   * Found in a browser on dev, and the reason `plan.proposed` exists.
+   *
+   * A refused batch writes NOTHING, so reading the labels off `plan.writes` left
+   * every non-offending unit with no proposed code — it fell back to its CURRENT
+   * one. The map then showed a mix: the two colliding bins in their new scheme and
+   * all the rest in the old, which reads as "only those two are changing" when in
+   * fact none of them are. Exactly backwards, in the one case the operator most
+   * needs to understand.
+   */
+  it('labels EVERY unit with what it would get, even when the batch is refused', () => {
+    // A collision the batch cannot have: something outside it already owns 1-1.
+    const taken = new Map([['amadiya-bulk-1-1', 999]])
+    const plan = planRecode(units, { ...opts, takenCodes: taken })
+    expect(plan.writes).toEqual([])
+    expect(plan.refusals.some((r) => r.kind === 'collision')).toBe(true)
+
+    const texts = ghostLabels({
+      units, placements, plan, template: opts.template, wh: opts.wh, block: opts.block,
+    }).map((l) => l.text)
+    // Both proposed codes, not one proposal and one stale code.
+    expect(texts).toEqual(['1-1', '1-2'])
+  })
+
   // An already-settled bin produces no write and no refusal, so its own code IS the
   // answer — and it must read like its neighbours, not stand out with a full code
   // just because this sweep would leave it alone.

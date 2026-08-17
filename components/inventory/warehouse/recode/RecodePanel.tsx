@@ -54,6 +54,7 @@ export interface RecodePanelProps {
   blocks: readonly BlockCensusRow[]
   swept: number
   total: number
+  lastSweep: { block: string; rows: number } | null
   blockSuggestion: string | null
   incumbentCount: number
   levelCodes: readonly string[]
@@ -197,6 +198,9 @@ export function RecodePanel(props: RecodePanelProps) {
             blocks={props.blocks}
             swept={props.swept}
             total={props.total}
+            lastSweep={props.lastSweep}
+            reverting={props.reverting}
+            onRevert={props.onRevert}
             onTool={props.onTool}
             onMode={props.onMode}
             onUndo={props.onUndo}

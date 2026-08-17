@@ -601,6 +601,12 @@ export interface RecodeOptions {
   incumbents?: readonly RecodeUnit[]
 }
 
+/** What a unit WOULD be called, whether or not the sweep is allowed to do it. */
+export interface RecodeProposal {
+  id: number
+  to: string
+}
+
 /** An existing member of the block whose code this sweep would move. */
 export interface RecodeDrift {
   id: number
@@ -657,6 +663,17 @@ export interface RecodePlan {
   allCodes: string[]
   /** How deep and wide the frame ran, for the panel's preview. */
   frame: { rows: number; cols: number }
+  /**
+   * Every unit's rendered code, ALWAYS — including when the batch is refused and
+   * `writes` is therefore empty.
+   *
+   * The map's ghost numbers need "what would this give me" independently of
+   * "is this allowed", and reading them off `writes` gets that wrong in exactly
+   * the case where the operator most needs to see it: a refused plan showed the
+   * offending bins' new codes and every other bin its OLD one, which reads as
+   * "only those few are changing". Found in a browser on dev.
+   */
+  proposed: RecodeProposal[]
   /** Existing block members this framing would move. Non-empty raises a `drift`
    *  refusal, which voids the batch like any other — growing a block must never
    *  renumber the bins already labelled for it. The operator's way past it is to
@@ -684,6 +701,7 @@ export function planRecode(units: readonly RecodeUnit[], opts: RecodeOptions): R
   const empty: RecodePlan = {
     writes: [], unchanged: 0, refusals: [], labelPrinted: [], holdingStock: [],
     nextCounter: opts.start, allCodes: [], frame: { rows: 0, cols: 0 }, drift: [],
+    proposed: [],
   }
 
   const bad = templateIssue(opts.template)
@@ -805,10 +823,12 @@ export function planRecode(units: readonly RecodeUnit[], opts: RecodeOptions): R
     })
   }
 
+  const proposed: RecodeProposal[] = drafts.map((d) => ({ id: d.unit.id, to: d.to }))
+
   if (refusals.length > 0) {
     return {
       ...empty, refusals, labelPrinted, holdingStock, nextCounter: seq, allCodes,
-      frame: { rows: frame.rows, cols: frame.cols }, drift,
+      frame: { rows: frame.rows, cols: frame.cols }, drift, proposed,
     }
   }
 
@@ -836,7 +856,7 @@ export function planRecode(units: readonly RecodeUnit[], opts: RecodeOptions): R
 
   return {
     writes, unchanged, refusals, labelPrinted, holdingStock, nextCounter: seq, allCodes,
-    frame: { rows: frame.rows, cols: frame.cols }, drift,
+    frame: { rows: frame.rows, cols: frame.cols }, drift, proposed,
   }
 }
 

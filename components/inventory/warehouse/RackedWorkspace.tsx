@@ -42,7 +42,7 @@ import {
 } from './recode/recodeGeometry'
 import { ghostLabels, visibleControls, type GhostLabel } from './recode/recodePlanView'
 import { WIZARD_DEFAULT_PATTERN, planRecode, sanitizeBlock } from '@/lib/codePattern'
-import { useRecodeLocations, useRevertCodeSweep } from '@/hooks/queries/useWarehouseLocations'
+import { useLatestCodeSweep, useRecodeLocations, useRevertCodeSweep } from '@/hooks/queries/useWarehouseLocations'
 import { useWarehouseCodePattern, useSetWarehouseCodePattern } from '@/hooks/queries/useWarehouses'
 import { previewRecode, type RecodePreview } from '@/services/supabase/warehouseLocationService'
 import { useAreaPaintState } from './useAreaPaintState'
@@ -154,6 +154,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   >(null)
   const recodeMutation = useRecodeLocations(warehouseId)
   const revertMutation = useRevertCodeSweep(warehouseId)
+  const latestSweep = useLatestCodeSweep(warehouseId)
   /** False when the sweep applied but its before/after record could not be kept.
    *  The write stands either way; withholding the button is the honest response to
    *  not being able to undo it. */
@@ -366,7 +367,11 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
       units: recodeUnits.map((u) => ({ locationId: u.id, expectedCode: u.code })),
       block: recode.state.block,
       startAt: recode.state.startAt,
-      templateOverride: recode.state.template,
+      // The template the client PLANNED with, not the raw override. The ghost
+      // numbers on the map are computed from this, so sending anything else lets
+      // the server answer a different question from the one the operator was
+      // looking at — which is exactly how `-1-1` came back as `-3-3` on dev.
+      templateOverride: recodeTemplate,
       order: recode.state.order,
       origin: recode.state.origin,
       renumberBlock: recode.state.renumberBlock,
@@ -409,7 +414,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
         units: recodeUnits.map((u) => ({ locationId: u.id, expectedCode: u.code })),
         block: recode.state.block,
         startAt: recode.state.startAt,
-        templateOverride: recode.state.template,
+        templateOverride: recodeTemplate,
         order: recode.state.order,
         origin: recode.state.origin,
         renumberBlock: recode.state.renumberBlock,
@@ -775,6 +780,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           blocks={recodeCensus.blocks}
           swept={recodeCensus.swept}
           total={recodeCensus.total}
+          lastSweep={latestSweep.data ?? null}
           blockSuggestion={blockSuggestion}
           incumbentCount={recodeIncumbents.length}
           levelCodes={recodeLevelCodes}
@@ -783,7 +789,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           applying={recodeMutation.isPending}
           reverting={revertMutation.isPending}
           applied={recodeApplied}
-          canRevert={canRevertSweep}
+          canRevert={canRevertSweep && !!latestSweep.data}
           preset={recodeLabelPreset}
           ackPrinted={ackPrinted}
           onTool={(tool) => recode.dispatch({ type: 'set_tool', tool })}

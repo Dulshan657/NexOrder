@@ -22,6 +22,12 @@ export interface SelectStepProps {
   /** How much of the site has been swept, from `code_block` provenance. */
   swept: number
   total: number
+  /** The newest un-reverted sweep on this site, read from the server so the offer
+   *  survives a reload — component state would lose it exactly when the operator
+   *  most wants it, which is after refreshing to look at what they just did. */
+  lastSweep: { block: string; rows: number } | null
+  reverting: boolean
+  onRevert: () => void
   onTool: (tool: RecodeTool) => void
   onMode: (mode: 'add' | 'erase') => void
   onUndo: () => void
@@ -42,6 +48,7 @@ const chip =
 
 export function SelectStep({
   tool, mode, selectedCount, canUndo, areaNames, spannedAreas, blocks, swept, total,
+  lastSweep, reverting, onRevert,
   onTool, onMode, onUndo, onClear, onSelectArea, onSelectBlock,
 }: SelectStepProps) {
   return (
@@ -131,6 +138,23 @@ export function SelectStep({
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {lastSweep && (
+        <div className="flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 p-2">
+          <p className="min-w-0 flex-1 text-[11px] text-stone-600">
+            Last sweep: <span className="font-mono font-semibold">{lastSweep.block}</span>,{' '}
+            {lastSweep.rows} code{lastSweep.rows === 1 ? '' : 's'}.
+          </p>
+          <button
+            type="button"
+            onClick={onRevert}
+            disabled={reverting}
+            className="shrink-0 rounded-lg border border-stone-200 bg-white px-2 py-1 text-[11px] font-medium text-stone-600 btn-press hover:bg-stone-50 disabled:opacity-40"
+          >
+            {reverting ? 'Reverting…' : 'Undo it'}
+          </button>
         </div>
       )}
 

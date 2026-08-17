@@ -69,12 +69,11 @@ import {
 // Operator-controlled codes (mig 00107). Pure planner + I/O beside it, the same
 // split as naming — the marquee's preview IS this function's dry_run.
 import {
-  BUILTIN_PATTERN,
-  DEFAULT_ORIGIN,
   MAX_BLOCK_LENGTH,
   planRecode,
   sanitizeBlock,
   solveBlockFraming,
+  WIZARD_DEFAULT_PATTERN,
   templateIssue,
   type CodeOrder,
   type CodeOrigin,
@@ -1593,14 +1592,25 @@ serve(async (req: Request) => {
       }
 
       const stored = await loadCodePattern(admin, input.warehouse_id)
-      const template = input.template_override ?? stored?.template ?? BUILTIN_PATTERN.template
+      // WIZARD_DEFAULT, not BUILTIN. BUILTIN renders absolute GRID coordinates and
+      // exists to keep draw-time minting byte-identical to the historical code; it
+      // is not a sweep's default and never was. This endpoint is only ever called by
+      // the recode wizard, so falling back to anything the wizard does not arm makes
+      // the server disagree with the preview the operator just approved — which is
+      // precisely the reported bug (`AMADIYA-BULK-3-3` where `-1-1` was expected)
+      // arriving through a second door. Caught in a browser on dev, after the pure
+      // engine and the wire body had each been tested in isolation and agreed.
+      //
+      // The client also sends the template it PLANNED with, so this is a backstop
+      // rather than the mechanism.
+      const template = input.template_override ?? stored?.template ?? WIZARD_DEFAULT_PATTERN.template
       const tmplIssue = templateIssue(template)
       if (tmplIssue) throw new EdgeFunctionError('INVALID_INPUT', tmplIssue)
 
       const block = sanitizeBlock(input.block)
       if (!block) throw new EdgeFunctionError('INVALID_INPUT', 'Give the block a name')
-      const order = (input.order ?? stored?.order ?? BUILTIN_PATTERN.order) as CodeOrder
-      const origin = (input.origin ?? stored?.origin ?? DEFAULT_ORIGIN) as CodeOrigin
+      const order = (input.order ?? stored?.order ?? WIZARD_DEFAULT_PATTERN.order) as CodeOrder
+      const origin = (input.origin ?? stored?.origin ?? WIZARD_DEFAULT_PATTERN.origin) as CodeOrigin
 
       // Resolve the selection through the SAME loader the naming pass uses. The
       // client rolled its SHELF hits up to their rack parents already; doing it

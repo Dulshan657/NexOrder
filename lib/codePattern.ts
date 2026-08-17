@@ -57,5 +57,6 @@ export type {
   RecodeRefusal,
   RecodeRefusalKind,
   RecodeDrift,
+  RecodeProposal,
   RecodePlan,
 } from '@/supabase/functions/_shared/wie/codePattern'

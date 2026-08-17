@@ -86,9 +86,11 @@ export function ghostLabels(args: {
   // A refused plan writes nothing, but its rendered codes are still the best answer
   // to "what would this give me" — showing them is how the operator sees WHY it was
   // refused (two bins reading the same number, say).
-  const codeById = new Map<number, string>()
-  for (const w of plan.writes) codeById.set(w.id, w.to)
-  for (const r of plan.refusals) if (r.id !== 0 && r.to) codeById.set(r.id, r.to)
+  // `proposed` carries EVERY unit's rendered code, refused or not. Reading these
+  // off `writes` instead was wrong in exactly the case that matters most: a refused
+  // batch writes nothing, so only the offending bins had a new code and every other
+  // bin fell back to its OLD one — which reads as "just those few are changing".
+  const codeById = new Map(plan.proposed.map((p) => [p.id, p.to]))
 
   const prefix = sweepPrefix(args.template, args.wh, args.block)
 

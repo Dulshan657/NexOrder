@@ -595,6 +595,42 @@ export async function recodeLocations(args: RecodeArgs): Promise<RecodeResult> {
   return data as RecodeResult
 }
 
+export interface LatestCodeSweep {
+  id: number
+  block: string
+  /** How many rows it moved — units and their levels together. */
+  rows: number
+  sweptAt: string
+}
+
+/**
+ * The newest un-reverted sweep for a site, or null.
+ *
+ * A direct table read: RLS already limits `location_code_sweeps` to ops roles and
+ * there is no decision to make server-side. This is what makes the undo offer
+ * SURVIVE A RELOAD — holding it in component state would lose it the moment the
+ * operator refreshed, which is exactly when they are most likely to want it.
+ */
+export async function getLatestCodeSweep(warehouseId: number): Promise<LatestCodeSweep | null> {
+  const { data, error } = await supabase
+    .from('location_code_sweeps')
+    .select('id, block, rows, swept_at')
+    .eq('warehouse_id', warehouseId)
+    .is('reverted_at', null)
+    .order('swept_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const row = data as { id: number; block: string; rows: unknown[]; swept_at: string }
+  return {
+    id: row.id,
+    block: row.block,
+    rows: Array.isArray(row.rows) ? row.rows.length : 0,
+    sweptAt: row.swept_at,
+  }
+}
+
 /**
  * Put the most recent sweep back.
  *

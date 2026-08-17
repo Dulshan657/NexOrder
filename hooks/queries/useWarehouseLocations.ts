@@ -8,6 +8,7 @@ import {
   paintAreas,
   paintSigns,
   recodeLocations,
+  getLatestCodeSweep,
   revertCodeSweep,
   renameArea,
   renameRack,
@@ -138,7 +139,17 @@ export function useRecodeLocations(warehouseId: number) {
       qc.invalidateQueries({ queryKey: ['layout-label-targets'] })
       qc.invalidateQueries({ queryKey: ['label-print-log'] })
       qc.invalidateQueries({ queryKey: ['warehouse-setup'] })
+      qc.invalidateQueries({ queryKey: ['location-code-sweep', warehouseId] })
     },
+  })
+}
+
+/** The undo offer, read from the server so it survives a reload. */
+export function useLatestCodeSweep(warehouseId: number | null) {
+  return useQuery({
+    queryKey: ['location-code-sweep', warehouseId] as const,
+    queryFn: () => getLatestCodeSweep(warehouseId as number),
+    enabled: warehouseId != null,
   })
 }
 
@@ -160,6 +171,7 @@ export function useRevertCodeSweep(warehouseId: number) {
       qc.invalidateQueries({ queryKey: ['layout-label-targets'] })
       qc.invalidateQueries({ queryKey: ['label-print-log'] })
       qc.invalidateQueries({ queryKey: ['warehouse-setup'] })
+      qc.invalidateQueries({ queryKey: ['location-code-sweep', warehouseId] })
     },
   })
 }

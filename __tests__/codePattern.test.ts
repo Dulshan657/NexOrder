@@ -577,6 +577,28 @@ describe('usedTokens / styleOfTemplate / templateForStyle', () => {
     expect(styleOfTemplate(WIZARD_DEFAULT_PATTERN.template)).toBe('row-col')
     expect(BUILTIN_PATTERN.template).toBe('{wh}-{block}-{x}-{y}')
   })
+
+  /**
+   * The two patterns exist for DIFFERENT jobs, and a sweep must never fall back to
+   * the wrong one.
+   *
+   * Found in a browser on dev: the client planned `AMADIYA-BULK-1-1` and the server
+   * returned `AMADIYA-BULK-3-3`, because the client fell back to the wizard default
+   * while `recode_locations` fell back to BUILTIN — whose `{x}`/`{y}` are absolute
+   * grid coordinates. That is the originally reported bug arriving through a second
+   * door, and neither the engine tests nor the wire-body tests could see it, because
+   * each half was correct in isolation and only the FALLBACK CHAINS disagreed.
+   *
+   * BUILTIN keeps draw-time minting byte-identical to the historical code. A sweep's
+   * default is the wizard's. Anything that resolves a sweep's template must land on
+   * a selection-relative pattern.
+   */
+  it('keeps a sweep default selection-relative and a draw-time default grid-absolute', () => {
+    expect(usedTokens(WIZARD_DEFAULT_PATTERN.template).has('x')).toBe(false)
+    expect(usedTokens(WIZARD_DEFAULT_PATTERN.template).has('row')).toBe(true)
+    expect(usedTokens(BUILTIN_PATTERN.template).has('x')).toBe(true)
+    expect(WIZARD_DEFAULT_PATTERN.template).not.toBe(BUILTIN_PATTERN.template)
+  })
 })
 
 describe('planRecode — selection-relative numbering', () => {
