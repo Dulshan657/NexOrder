@@ -12,7 +12,7 @@
 // except MapControls and the hint pill, both inside MapStage's own stacking
 // context — this component no longer needs one of its own.
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InventoryLocation, LayoutObject, LayoutPlacement } from '@/types'
 import { useLayoutDetail, useLayouts } from '@/hooks/queries/useLayouts'
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
@@ -32,10 +32,17 @@ import { BindZonesModal } from './BindZonesModal'
 import { EditSignModal } from './EditSignModal'
 import { AreaPaintToolbar } from './AreaPaintToolbar'
 import { AreaPaintSummaryModal } from './AreaPaintSummaryModal'
-import { RecodeToolbar } from './RecodeToolbar'
-import { RecodeSummaryModal } from './RecodeSummaryModal'
-import { placementsInRect, useRecodeSelection } from './useRecodeSelection'
+import { RecodePanel } from './recode/RecodePanel'
+import { useRecodeSelection, type MarqueeRect, type RecodeStep } from './recode/useRecodeSelection'
+import {
+  areasOfSelection, blockCensus, buildLevelIdsByRack, buildUnitPlacements,
+  incumbentsOfBlock, takenCodesFromLocations, unitsAtCell, unitsFromSelection,
+  unitsInArea, unitsInRect, warehouseCodeOf,
+} from './recode/recodeGeometry'
+import { ghostLabels, visibleControls, type GhostLabel } from './recode/recodePlanView'
+import { WIZARD_DEFAULT_PATTERN, planRecode, sanitizeBlock } from '@/lib/codePattern'
 import { useRecodeLocations } from '@/hooks/queries/useWarehouseLocations'
+import { useWarehouseCodePattern } from '@/hooks/queries/useWarehouses'
 import { previewRecode, type RecodePreview } from '@/services/supabase/warehouseLocationService'
 import { useAreaPaintState } from './useAreaPaintState'
 import { areaCellsFingerprint } from '@/lib/areaPaint'
@@ -54,6 +61,8 @@ import { resolvePreset } from '@/supabase/functions/_shared/labels/layoutLabelPl
  *  both of these feed the map-layer memos, which are scene-memo dependencies. */
 const EMPTY_OBJECTS: LayoutObject[] = []
 const EMPTY_PLACEMENTS: LayoutPlacement[] = []
+const EMPTY_GHOSTS: GhostLabel[] = []
+const EMPTY_STRINGS: string[] = []
 
 /** Module-level so its identity is stable. An inline `() => {}` here re-mints on
  *  every render, which busts MapStage's `guardedSelectBin` useCallback and through
@@ -136,7 +145,15 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const recode = useRecodeSelection()
   const [recodePreview, setRecodePreview] = useState<RecodePreview | null>(null)
   const [previewingRecode, setPreviewingRecode] = useState(false)
+  const [ackPrinted, setAckPrinted] = useState(false)
+  const [printingRecodedLabels, setPrintingRecodedLabels] = useState(false)
+  const [recodeApplied, setRecodeApplied] = useState<
+    { recoded: number; levels: number; labelPrintedReset: number; block: string } | null
+  >(null)
   const recodeMutation = useRecodeLocations(warehouseId)
+  /** The site's stored pattern (mig 00108). No row = the built-in default, so this
+   *  legitimately resolves to undefined and the wizard's own default takes over. */
+  const codePattern = useWarehouseCodePattern(warehouseId)
   const { addToast } = useToasts()
 
   /** The stock this site prints SLOT labels on (mig 00106). The confirm dialog
@@ -180,60 +197,134 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     floor,
   })
 
-  // ── Code sweep derivations (mig 00107) ────────────────────────────────────
+  // ── Code sweep derivations (migs 00107 / 00108) ───────────────────────────
+  //
+  // Everything below is computed from data the tab has ALREADY fetched. That is
+  // deliberate: the ghost numbers on the map redraw as the operator clicks through
+  // four origin corners, and the `:recode:` bucket is 10/min — a round trip per
+  // keystroke would spend the whole budget in seconds. The server re-derives all of
+  // it for the Review step's `dry_run`, which is the authority before any write.
 
-  /** The warehouse's own code — the first segment of any descendant's path. No
-   *  extra query: `materialized_path` is `<WH>/<...>` by construction. */
-  const warehouseCode = useMemo(() => {
-    for (const loc of model.locationsById.values()) {
-      const head = loc.materializedPath.split('/')[0]
-      if (head) return head
-    }
-    return ''
-  }, [model.locationsById])
-
-  /** rack id → its SHELF children. A levelled rack holds no placement row of its
-   *  own, so this is both how the marquee rolls a hit up and how the highlight
-   *  gets back down to something the canvas actually draws. */
-  const levelIdsByRack = useMemo(() => {
-    const map = new Map<number, number[]>()
-    for (const loc of model.locationsById.values()) {
-      if (loc.kind !== 'SHELF' || loc.parentId == null) continue
-      const bucket = map.get(loc.parentId) ?? []
-      bucket.push(loc.id)
-      map.set(loc.parentId, bucket)
-    }
-    return map
-  }, [model.locationsById])
-
-  /** Placements the band touches, rolled up to the unit that owns them. The
-   *  server re-does this fold from the database — this copy is what lets the
-   *  operator SEE the selection, not what the sweep is planned from. */
-  const collectRecodeHits = (rect: NonNullable<typeof recode.state.rect>): number[] => {
-    const hits = new Set<number>()
-    for (const p of placementsInRect(detail?.placements ?? [], rect)) {
-      const loc = model.locationsById.get(p.locationId)
-      if (!loc) continue
-      const unitId = loc.kind === 'SHELF' && loc.parentId != null ? loc.parentId : loc.id
-      const unit = model.locationsById.get(unitId)
-      // ZONE/AISLE are not sweepable; the server refuses them, and letting the
-      // band appear to grab one would only make that refusal confusing.
-      if (!unit || unit.kind === 'WAREHOUSE' || unit.kind === 'ZONE' || unit.kind === 'AISLE') continue
-      hits.add(unitId)
-    }
-    return [...hits]
-  }
-
-  const recodeUnits = useMemo(
-    () => [...recode.state.selected]
-      .map((id) => model.locationsById.get(id))
-      .filter((loc): loc is NonNullable<typeof loc> => !!loc)
-      .map((loc) => ({ locationId: loc.id, expectedCode: loc.code })),
-    [recode.state.selected, model.locationsById],
+  /** The site code, its rack→levels index, and a placement for every sweepable
+   *  unit (a levelled rack borrows its lowest level's, having none of its own). */
+  const warehouseCode = useMemo(() => warehouseCodeOf(model.locationsById), [model.locationsById])
+  const levelIdsByRack = useMemo(() => buildLevelIdsByRack(model.locationsById), [model.locationsById])
+  const unitPlacements = useMemo(
+    () => buildUnitPlacements(placements, model.locationsById),
+    [placements, model.locationsById],
   )
 
-  /** What the canvas should light up: the selected units, plus every level of a
-   *  levelled rack — the rack itself draws nothing, its shelves do. */
+  /** The pattern this sweep is using: the operator's override, else the site's
+   *  stored default, else the wizard's. NOT `BUILTIN_PATTERN` — that one renders
+   *  absolute grid coordinates and is the compatibility fallback, never an arm. */
+  const recodeTemplate = recode.state.template
+    ?? codePattern.data?.template
+    ?? WIZARD_DEFAULT_PATTERN.template
+  const recodeControls = useMemo(() => visibleControls(recodeTemplate), [recodeTemplate])
+
+  const recodeUnits = useMemo(
+    () => unitsFromSelection(recode.state.selected, model.locationsById, unitPlacements, levelIdsByRack),
+    [recode.state.selected, model.locationsById, unitPlacements, levelIdsByRack],
+  )
+
+  /** Members of this block that are NOT selected. Their codes must not move. */
+  const recodeIncumbents = useMemo(
+    () => (recode.state.renumberBlock
+      ? []
+      : incumbentsOfBlock(recode.state.block, recode.state.selected, model.locationsById, unitPlacements, levelIdsByRack)),
+    [recode.state.block, recode.state.renumberBlock, recode.state.selected, model.locationsById, unitPlacements, levelIdsByRack],
+  )
+
+  /** The client's copy of the plan, for the ghost numbers and the live sample. See
+   *  recodePlanView's header for the one way it differs from the server's. */
+  const recodePlan = useMemo(() => {
+    if (!recode.state.active || recodeUnits.length === 0) return null
+    const units = recode.state.renumberBlock
+      ? [...recodeUnits, ...incumbentsOfBlock(recode.state.block, recode.state.selected, model.locationsById, unitPlacements, levelIdsByRack)]
+      : recodeUnits
+    return planRecode(units, {
+      template: recodeTemplate,
+      block: recode.state.block || 'B',
+      start: recode.state.startAt ?? 1,
+      order: recode.state.order,
+      origin: recode.state.origin,
+      wh: warehouseCode,
+      takenCodes: takenCodesFromLocations(model.locationsById),
+      frameCells: [...units, ...recodeIncumbents],
+      incumbents: recodeIncumbents,
+    })
+  }, [
+    recode.state.active, recode.state.block, recode.state.startAt, recode.state.order,
+    recode.state.origin, recode.state.renumberBlock, recode.state.selected,
+    recodeUnits, recodeIncumbents, recodeTemplate, warehouseCode, model.locationsById,
+    unitPlacements, levelIdsByRack,
+  ])
+
+  const recodeGhosts = useMemo(
+    () => (recodePlan
+      ? ghostLabels({
+          units: recodeUnits, placements: unitPlacements, plan: recodePlan,
+          template: recodeTemplate, wh: warehouseCode, block: recode.state.block || 'B',
+        })
+      : EMPTY_GHOSTS),
+    [recodePlan, recodeUnits, unitPlacements, recodeTemplate, warehouseCode, recode.state.block],
+  )
+
+  /** The first few codes, as the operator will actually get them. */
+  const recodeSamples = useMemo(
+    () => (recodePlan?.allCodes ?? []).slice(0, 3),
+    [recodePlan],
+  )
+
+  /** Level codes, listed rather than summarised — they are derived rather than
+   *  chosen, so they are the half most likely to surprise. */
+  const recodeLevelCodes = useMemo(
+    () => (recodePlan?.writes ?? []).flatMap((w) => w.levels.map((l) => l.to)),
+    [recodePlan],
+  )
+
+  /** What has been swept so far. `code_block IS NULL` is 00107's provenance
+   *  signal and means exactly "not minted by a pattern". */
+  const sweepableIds = useMemo(() => new Set(unitPlacements.keys()), [unitPlacements])
+  const recodeCensus = useMemo(
+    () => blockCensus(model.locationsById, sweepableIds),
+    [model.locationsById, sweepableIds],
+  )
+
+  /** Areas on this floor, for the one-click shortcut and the crossing warning. */
+  const floorAreaNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const o of detail?.objects ?? EMPTY_OBJECTS) {
+      if (o.objectType !== 'area' || o.floor !== floor) continue
+      const name = typeof o.meta?.name === 'string' ? o.meta.name : ''
+      if (name) names.add(name)
+    }
+    return [...names].sort()
+  }, [detail?.objects, floor])
+
+  const spannedAreas = useMemo(
+    () => (recode.state.active
+      ? areasOfSelection(recode.state.selected, unitPlacements, detail?.objects ?? EMPTY_OBJECTS)
+      : EMPTY_STRINGS),
+    [recode.state.active, recode.state.selected, unitPlacements, detail?.objects],
+  )
+
+  /** A code-safe suggestion from the area the selection sits in — a PREFILL the
+   *  operator can overtype, never a derivation. The code must not come from the
+   *  area name; see the engine header for why. */
+  const blockSuggestion = useMemo(
+    () => (spannedAreas.length === 1 ? sanitizeBlock(spannedAreas[0]) || null : null),
+    [spannedAreas],
+  )
+
+  /** Units under one painted cell / inside a band. Plain functions, not memos —
+   *  they are only ever read at dispatch time, so they feed no memo boundary. */
+  const resolveCell = (f: number, x: number, y: number) =>
+    unitsAtCell(placements, model.locationsById, f, x, y)
+  const resolveRect = (r: MarqueeRect) => unitsInRect(placements, model.locationsById, r)
+
+  /** What the canvas lights up: the selected units, plus every level of a levelled
+   *  rack — the rack itself draws nothing, its shelves do. */
   const recodeHighlight = useMemo(() => {
     if (!recode.state.active) return undefined
     const set = new Set<number>()
@@ -244,6 +335,91 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     }
     return set
   }, [recode.state.active, recode.state.selected, levelIdsByRack])
+
+
+  /**
+   * Ask the server what this sweep would do.
+   *
+   * Fires ONCE on entering Review and again only when the plan's inputs change —
+   * never per keystroke, because the `:recode:` bucket is 10/min and the live ghost
+   * numbers already answer the per-keystroke question client-side. Cancellable, so
+   * a fast Back/Next cannot land a stale answer on a newer selection.
+   */
+  useEffect(() => {
+    if (!recode.state.active || recode.state.step !== 4) return
+    if (recodeUnits.length === 0 || !recode.state.block.trim()) return
+    let cancelled = false
+    setPreviewingRecode(true)
+    previewRecode({
+      warehouseId,
+      units: recodeUnits.map((u) => ({ locationId: u.id, expectedCode: u.code })),
+      block: recode.state.block,
+      startAt: recode.state.startAt,
+      templateOverride: recode.state.template,
+      order: recode.state.order,
+      origin: recode.state.origin,
+      renumberBlock: recode.state.renumberBlock,
+    })
+      .then((p) => { if (!cancelled) setRecodePreview(p) })
+      .catch((err) => {
+        if (cancelled) return
+        setRecodePreview(null)
+        addToast(err instanceof Error ? err.message : 'Could not check the new codes', 'error')
+      })
+      .finally(() => { if (!cancelled) setPreviewingRecode(false) })
+    return () => { cancelled = true }
+    // `recodeUnits` is derived from the selection, so listing both would re-fire on
+    // every identity change of a value that did not semantically move.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    recode.state.active, recode.state.step, recode.state.selected, recode.state.block,
+    recode.state.startAt, recode.state.template, recode.state.order, recode.state.origin,
+    recode.state.renumberBlock, warehouseId,
+  ])
+
+  /** A fresh preview must never inherit the previous one's acknowledgement — the
+   *  set of already-labelled bins is exactly what may have changed. */
+  useEffect(() => { setAckPrinted(false) }, [recodePreview])
+
+  /**
+   * Apply.
+   *
+   * From any step: if the operator presses it before reviewing, take them to Review
+   * rather than refusing. The button is never a lie and never a dead end — which is
+   * the entire point of it being visible at every step.
+   */
+  const runRecode = async () => {
+    if (recode.state.step !== 4 || !recodePreview) {
+      recode.dispatch({ type: 'goto_step', step: 4 })
+      return
+    }
+    try {
+      const res = await recodeMutation.mutateAsync({
+        units: recodeUnits.map((u) => ({ locationId: u.id, expectedCode: u.code })),
+        block: recode.state.block,
+        startAt: recode.state.startAt,
+        templateOverride: recode.state.template,
+        order: recode.state.order,
+        origin: recode.state.origin,
+        renumberBlock: recode.state.renumberBlock,
+      })
+      setRecodeApplied({
+        recoded: res.units,
+        levels: res.levels,
+        labelPrintedReset: res.labelPrintedReset,
+        block: sanitizeBlock(recode.state.block),
+      })
+      setRecodePreview(null)
+      recode.dispatch({ type: 'applied' })
+      addToast(
+        `Recoded ${res.units} location${res.units === 1 ? '' : 's'}` +
+        (res.levels > 0 ? ` and ${res.levels} rack levels` : ''),
+        'success',
+      )
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Could not apply the new codes', 'error')
+    }
+  }
 
   // Highlight the descendant bins of a selected non-bin (zone/aisle/rack).
   const highlightedLocationIds = useMemo(() => {
@@ -496,42 +672,11 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
         />
       )}
 
-      {recode.state.active && (
-        <RecodeToolbar
-          warehouseCode={warehouseCode}
-          block={recode.state.block}
-          startAt={recode.state.startAt}
-          order={recode.state.order}
-          templateOverride={recode.state.templateOverride}
-          storedTemplate={null}
-          selectedCount={recode.state.selected.size}
-          busy={previewingRecode}
-          onBlock={(block) => recode.dispatch({ type: 'set_block', block })}
-          onStart={(startAt) => recode.dispatch({ type: 'set_start', startAt })}
-          onOrder={(order) => recode.dispatch({ type: 'set_order', order })}
-          onTemplate={(template) => recode.dispatch({ type: 'set_template', template })}
-          onClearSelection={() => recode.dispatch({ type: 'clear_selection' })}
-          onCancel={() => { setRecodePreview(null); recode.dispatch({ type: 'cancel' }) }}
-          onPreview={async () => {
-            setPreviewingRecode(true)
-            try {
-              setRecodePreview(await previewRecode({
-                warehouseId,
-                units: recodeUnits,
-                block: recode.state.block,
-                startAt: recode.state.startAt,
-                templateOverride: recode.state.templateOverride,
-                order: recode.state.order,
-              }))
-            } catch (err) {
-              addToast(err instanceof Error ? err.message : 'Could not check the new codes', 'error')
-            } finally {
-              setPreviewingRecode(false)
-            }
-          }}
-        />
-      )}
-
+      {/* The panel is a GRID SIBLING of the map, not an overlay: the map has to
+          stay live and paintable while the operator works through the steps, which
+          is the whole reason for stepping rather than modalling. It also means this
+          never trips `npm run check:overlays`. */}
+      <div className={recode.state.active ? 'grid gap-3 lg:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
       <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65vh] md:min-h-[420px]">
         <MapStage
           layout={detail.layout}
@@ -571,52 +716,87 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
             onStrokeStart: () => paint.dispatch({ type: 'stroke_start' }),
             onPaintCell: paint.paintCell,
           }}
-          marquee={{
+          select={{
             active: recode.state.active,
+            tool: recode.state.tool,
             rect: recode.state.rect,
+            ghosts: recodeGhosts,
+            onStrokeStart: () => recode.dispatch({ type: 'stroke_start' }),
+            onSelectCell: (f, x, y) =>
+              recode.dispatch({ type: 'select_cell', floor: f, x, y, resolve: resolveCell }),
             onDragStart: (f, x, y, additive) =>
               recode.dispatch({ type: 'drag_start', floor: f, x, y, additive }),
             onDragMove: (x, y) => recode.dispatch({ type: 'drag_move', x, y }),
             // The reducer resolves against its OWN rect — see the note on
-            // `drag_end`. Passing `collectRecodeHits(recode.state.rect)` here reads
-            // a rect that a fast drag has not re-rendered yet, and the band selects
+            // `drag_end`. Passing `resolveRect(recode.state.rect)` here reads a rect
+            // that a fast drag has not re-rendered yet, and the band selects
             // nothing. Found in a real browser; no test reproduced it.
-            onDragEnd: () => recode.dispatch({ type: 'drag_end', resolve: collectRecodeHits }),
+            onDragEnd: () => recode.dispatch({ type: 'drag_end', resolve: resolveRect }),
           }}
         />
       </div>
 
-      {recodePreview && (
-        <RecodeSummaryModal
+      {recode.state.active && (
+        <RecodePanel
+          state={recode.state}
+          template={recodeTemplate}
+          controls={recodeControls}
+          samples={recodeSamples}
+          areaNames={floorAreaNames}
+          spannedAreas={spannedAreas}
+          blocks={recodeCensus.blocks}
+          blockSuggestion={blockSuggestion}
+          incumbentCount={recodeIncumbents.length}
+          levelCodes={recodeLevelCodes}
           preview={recodePreview}
+          previewing={previewingRecode}
+          applying={recodeMutation.isPending}
+          reverting={false}
+          applied={recodeApplied}
+          canRevert={false}
           preset={recodeLabelPreset}
-          saving={recodeMutation.isPending}
-          onClose={() => setRecodePreview(null)}
-          onConfirm={async () => {
-            try {
-              const res = await recodeMutation.mutateAsync({
-                units: recodeUnits,
-                block: recode.state.block,
-                startAt: recode.state.startAt,
-                templateOverride: recode.state.templateOverride,
-                order: recode.state.order,
-              })
-              setRecodePreview(null)
-              recode.dispatch({ type: 'applied' })
-              addToast(
-                `Recoded ${res.units} location${res.units === 1 ? '' : 's'}` +
-                (res.levels > 0 ? ` and ${res.levels} rack levels` : '') +
-                (res.labelPrintedReset > 0
-                  ? ` · ${res.labelPrintedReset} back in the label backlog`
-                  : ''),
-                'success',
-              )
-            } catch (err) {
-              addToast(err instanceof Error ? err.message : 'Could not apply the new codes', 'error')
-            }
+          ackPrinted={ackPrinted}
+          onTool={(tool) => recode.dispatch({ type: 'set_tool', tool })}
+          onMode={(mode) => recode.dispatch({ type: 'set_mode', mode })}
+          onUndo={() => recode.dispatch({ type: 'undo' })}
+          onClear={() => recode.dispatch({ type: 'clear_selection' })}
+          onSelectArea={(name) => recode.dispatch({
+            type: 'select_ids',
+            ids: unitsInArea(placements, model.locationsById, detail.objects, name),
+          })}
+          onSelectBlock={(block) => {
+            const row = recodeCensus.blocks.find((b) => b.block === block)
+            if (!row) return
+            recode.dispatch({ type: 'select_ids', ids: row.ids })
+            recode.dispatch({ type: 'set_block', block })
+          }}
+          onBlock={(block) => recode.dispatch({ type: 'set_block', block })}
+          onTemplate={(template) => recode.dispatch({ type: 'set_template', template })}
+          onOrigin={(origin) => recode.dispatch({ type: 'set_origin', origin })}
+          onOrder={(order) => recode.dispatch({ type: 'set_order', order })}
+          onStart={(startAt) => recode.dispatch({ type: 'set_start', startAt })}
+          onAdvanced={(advanced) => recode.dispatch({ type: 'set_advanced', advanced })}
+          onAckPrinted={setAckPrinted}
+          onGotoStep={(step) => recode.dispatch({ type: 'goto_step', step })}
+          onUseSuggestedOrigin={() => {
+            const f = recodePreview?.suggestedFraming
+            if (!f) return
+            recode.dispatch({ type: 'set_origin', origin: f.origin })
+            recode.dispatch({ type: 'set_order', order: f.order })
+          }}
+          onRenumberBlock={() => recode.dispatch({ type: 'set_renumber_block', renumberBlock: true })}
+          onApply={runRecode}
+          onPrintLabels={() => setPrintingRecodedLabels(true)}
+          onRevert={() => {}}
+          onSweepAnother={() => recode.dispatch({ type: 'goto_step', step: 1 })}
+          onCancel={() => {
+            setRecodePreview(null)
+            setRecodeApplied(null)
+            recode.dispatch({ type: 'cancel' })
           }}
         />
       )}
+      </div>
 
       {renamingArea && (
         <RenameAreaModal
