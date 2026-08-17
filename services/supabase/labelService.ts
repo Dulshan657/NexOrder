@@ -182,7 +182,14 @@ const rpc = supabase.rpc.bind(supabase) as unknown as UntypedRpc
  */
 export async function getLayoutLabelTargets(
   layoutId: number,
-  opts: { rootLocationId?: number | null; onlyUnprinted?: boolean } = {},
+  opts: {
+    rootLocationId?: number | null
+    onlyUnprinted?: boolean
+    /** NARROWS the server's selection, never supplies one — the RPC still decides
+     *  what a label target is. Mirrors the same filter in generate-labels, so the
+     *  preview and the PDF agree on the run. */
+    locationIds?: readonly number[] | null
+  } = {},
 ): Promise<PlannedSheet[]> {
   const { data, error } = await rpc('wie_layout_label_targets', {
     p_layout_id: layoutId,
@@ -203,7 +210,11 @@ export async function getLayoutLabelTargets(
     labelPrinted: !!r.label_printed,
   }))
 
-  return planLabelJob(rows)
+  const narrowed = opts.locationIds && opts.locationIds.length > 0
+    ? rows.filter((r) => opts.locationIds!.includes(r.locationId))
+    : rows
+
+  return planLabelJob(narrowed)
 }
 
 export interface LayoutLabelStatusRow {
@@ -255,6 +266,10 @@ export interface PrintLayoutLabelsInput {
    * the site's saved default alone. Absent groups resolve normally.
    */
   presetOverrides?: Partial<Record<SheetGroup, LabelPreset>>
+  /** Restrict the run to these locations — the recode hand-off's "print exactly the
+   *  bins I just swept". Narrows the server's own selection; see the note on
+   *  getLayoutLabelTargets. */
+  locationIds?: readonly number[] | null
 }
 
 /**
@@ -279,6 +294,7 @@ export async function printLayoutLabels(input: PrintLayoutLabelsInput): Promise<
   const planned = await getLayoutLabelTargets(input.layoutId, {
     rootLocationId: input.rootLocationId,
     onlyUnprinted,
+    locationIds: input.locationIds,
   })
   if (planned.length === 0) {
     throw new Error('Nothing to print — every location in that selection already has a label.')
@@ -297,6 +313,7 @@ export async function printLayoutLabels(input: PrintLayoutLabelsInput): Promise<
         presetOverride: input.presetOverrides?.[sheet.group],
         rootLocationId: input.rootLocationId ?? undefined,
         onlyUnprinted,
+        ids: input.locationIds ? [...input.locationIds] : undefined,
         jobId,
         // Only the FIRST sheet honours a part-used stock offset: each group
         // prints onto its own fresh sheet of a different die-cut, so carrying

@@ -109,7 +109,9 @@ const inputSchema = z.object({
   warehouseId: z.number().int().positive().optional(),
   /** location kind: which location kinds to print. Defaults to storable ones. */
   locationKinds: z.array(z.string()).optional(),
-  /** Explicit id list, for reprinting a specific handful. */
+  /** Explicit id list. On the `location` kind it SELECTS the rows; on a layout run
+   *  it NARROWS what the RPC already chose (see the filter at the target query).
+   *  A recode's label hand-off uses the latter. */
   ids: z.array(z.number().int().positive()).optional(),
 
   // ── Layout run (mig 00084) ──
@@ -273,7 +275,17 @@ async function loadLayoutItems(
     labelPrinted: !!r.label_printed,
   }))
 
-  const sheet = planLabelJob(rows).find((s) => s.group === (group as SheetGroup))
+  // `ids` NARROWS the server's own selection; it never supplies one. The RPC still
+  // decides what a label target IS -- which kinds, which levels, what context each
+  // sticker carries -- so a caller cannot smuggle in a location the layout does not
+  // own, and an id that has since been deactivated simply drops out. This is what
+  // lets a recode hand off "print exactly the bins I just swept" with no SQL change
+  // and no second definition of a print run.
+  const narrowed = input.ids && input.ids.length > 0
+    ? rows.filter((r) => (input.ids as number[]).includes(r.locationId))
+    : rows
+
+  const sheet = planLabelJob(narrowed).find((s) => s.group === (group as SheetGroup))
   const warehouseId = ((layout as any).warehouse_id as number | null) ?? null
 
   return {

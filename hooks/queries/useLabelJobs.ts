@@ -89,14 +89,27 @@ export function useLayoutLabelStatus(layoutId: number | null) {
 /** Preview of exactly what a run would print, grouped by sheet of stock. */
 export function useLayoutLabelTargets(
   layoutId: number | null,
-  opts: { rootLocationId?: number | null; onlyUnprinted?: boolean; enabled?: boolean } = {},
+  opts: {
+    rootLocationId?: number | null
+    onlyUnprinted?: boolean
+    enabled?: boolean
+    locationIds?: readonly number[] | null
+  } = {},
 ) {
   const rootId = opts.rootLocationId ?? null
   const onlyUnprinted = opts.onlyUnprinted ?? true
+  const idKey = opts.locationIds && opts.locationIds.length > 0
+    // Part of the cache key, or a narrowed run would serve the whole layout's
+    // cached plan. Sorted and joined so the key is stable across re-renders that
+    // produce the same set in a different order.
+    ? [...opts.locationIds].sort((a, b) => a - b).join(',')
+    : null
   return useQuery({
-    queryKey: labelJobKeys.targets(layoutId, rootId, onlyUnprinted),
+    queryKey: [...labelJobKeys.targets(layoutId, rootId, onlyUnprinted), idKey] as const,
     queryFn: () =>
-      getLayoutLabelTargets(layoutId as number, { rootLocationId: rootId, onlyUnprinted }),
+      getLayoutLabelTargets(layoutId as number, {
+        rootLocationId: rootId, onlyUnprinted, locationIds: opts.locationIds,
+      }),
     enabled: Boolean(layoutId) && (opts.enabled ?? true),
     staleTime: 30_000,
   })

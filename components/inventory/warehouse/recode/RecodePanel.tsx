@@ -76,6 +76,9 @@ export interface RecodePanelProps {
   onOrder: (order: CodeOrder) => void
   onStart: (startAt: number | null) => void
   onAdvanced: (advanced: boolean) => void
+  onSaveDefault: () => void
+  savingDefault: boolean
+  isSiteDefault: boolean
   onAckPrinted: (ack: boolean) => void
   onGotoStep: (step: RecodeStep) => void
   onUseSuggestedOrigin: () => void
@@ -219,6 +222,9 @@ export function RecodePanel(props: RecodePanelProps) {
             onOrder={props.onOrder}
             onStart={props.onStart}
             onAdvanced={props.onAdvanced}
+            onSaveDefault={props.onSaveDefault}
+            savingDefault={props.savingDefault}
+            isSiteDefault={props.isSiteDefault}
           />
         ) : (
           <ReviewStep

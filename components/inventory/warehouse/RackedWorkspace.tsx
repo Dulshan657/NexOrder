@@ -32,6 +32,7 @@ import { BindZonesModal } from './BindZonesModal'
 import { EditSignModal } from './EditSignModal'
 import { AreaPaintToolbar } from './AreaPaintToolbar'
 import { AreaPaintSummaryModal } from './AreaPaintSummaryModal'
+import { LayoutLabelJobModal } from '@/components/admin/labels/LayoutLabelJobModal'
 import { RecodePanel } from './recode/RecodePanel'
 import { useRecodeSelection, type MarqueeRect, type RecodeStep } from './recode/useRecodeSelection'
 import {
@@ -42,7 +43,7 @@ import {
 import { ghostLabels, visibleControls, type GhostLabel } from './recode/recodePlanView'
 import { WIZARD_DEFAULT_PATTERN, planRecode, sanitizeBlock } from '@/lib/codePattern'
 import { useRecodeLocations } from '@/hooks/queries/useWarehouseLocations'
-import { useWarehouseCodePattern } from '@/hooks/queries/useWarehouses'
+import { useWarehouseCodePattern, useSetWarehouseCodePattern } from '@/hooks/queries/useWarehouses'
 import { previewRecode, type RecodePreview } from '@/services/supabase/warehouseLocationService'
 import { useAreaPaintState } from './useAreaPaintState'
 import { areaCellsFingerprint } from '@/lib/areaPaint'
@@ -147,6 +148,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const [previewingRecode, setPreviewingRecode] = useState(false)
   const [ackPrinted, setAckPrinted] = useState(false)
   const [printingRecodedLabels, setPrintingRecodedLabels] = useState(false)
+  const [recodedIds, setRecodedIds] = useState<number[]>([])
   const [recodeApplied, setRecodeApplied] = useState<
     { recoded: number; levels: number; labelPrintedReset: number; block: string } | null
   >(null)
@@ -154,6 +156,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   /** The site's stored pattern (mig 00108). No row = the built-in default, so this
    *  legitimately resolves to undefined and the wizard's own default takes over. */
   const codePattern = useWarehouseCodePattern(warehouseId)
+  const savePattern = useSetWarehouseCodePattern(warehouseId)
   const { addToast } = useToasts()
 
   /** The stock this site prints SLOT labels on (mig 00106). The confirm dialog
@@ -403,6 +406,13 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
         origin: recode.state.origin,
         renumberBlock: recode.state.renumberBlock,
       })
+      // Captured BEFORE `applied` clears the selection: the label hand-off has to
+      // name exactly the bins that were swept, and their levels, which is knowledge
+      // that only exists at this moment.
+      setRecodedIds([
+        ...recodeUnits.map((u) => u.id),
+        ...recodeUnits.flatMap((u) => (u.levels ?? []).map((l) => l.id)),
+      ])
       setRecodeApplied({
         recoded: res.units,
         levels: res.levels,
@@ -776,6 +786,26 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           onOrder={(order) => recode.dispatch({ type: 'set_order', order })}
           onStart={(startAt) => recode.dispatch({ type: 'set_start', startAt })}
           onAdvanced={(advanced) => recode.dispatch({ type: 'set_advanced', advanced })}
+          onSaveDefault={() => {
+            savePattern.mutate({
+              template: recodeTemplate,
+              defaultBlock: sanitizeBlock(recode.state.block) || WIZARD_DEFAULT_PATTERN.defaultBlock,
+              start: recode.state.startAt ?? 1,
+              order: recode.state.order,
+              origin: recode.state.origin,
+            }, {
+              onSuccess: () => addToast('Saved as this site’s default pattern', 'success'),
+              onError: (err) => addToast(
+                err instanceof Error ? err.message : 'Could not save the pattern', 'error',
+              ),
+            })
+          }}
+          savingDefault={savePattern.isPending}
+          isSiteDefault={
+            codePattern.data?.template === recodeTemplate
+            && codePattern.data?.order === recode.state.order
+            && codePattern.data?.origin === recode.state.origin
+          }
           onAckPrinted={setAckPrinted}
           onGotoStep={(step) => recode.dispatch({ type: 'goto_step', step })}
           onUseSuggestedOrigin={() => {
@@ -797,6 +827,18 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
         />
       )}
       </div>
+
+      {/* "Print the new labels" from the success step. The run is NARROWED to the
+          bins just swept — `ids` restricts what wie_layout_label_targets already
+          chose, so the server still decides what a label target is. */}
+      <LayoutLabelJobModal
+        open={printingRecodedLabels}
+        onClose={() => setPrintingRecodedLabels(false)}
+        layoutId={layoutId}
+        warehouseId={warehouseId}
+        locationIds={recodedIds}
+        contextNote={`The ${recodedIds.length} location${recodedIds.length === 1 ? '' : 's'} you just recoded. Their old stickers name codes that no longer exist.`}
+      />
 
       {renamingArea && (
         <RenameAreaModal

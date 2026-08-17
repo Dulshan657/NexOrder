@@ -40,6 +40,11 @@ export interface NumberingStepProps {
   onOrder: (order: CodeOrder) => void
   onStart: (startAt: number | null) => void
   onAdvanced: (advanced: boolean) => void
+  /** Store this scheme as the site's default, so the next sweep opens on it. */
+  onSaveDefault: () => void
+  savingDefault: boolean
+  /** True once this scheme IS the stored default — nothing to save. */
+  isSiteDefault: boolean
 }
 
 const STYLES: Array<{ key: NumberingStyle; label: string; hint: string }> = [
@@ -53,6 +58,7 @@ const CORNERS: CodeOrigin[][] = [['nw', 'ne'], ['sw', 'se']]
 export function NumberingStep({
   template, origin, order, startAt, advanced, controls, samples,
   onTemplate, onOrigin, onOrder, onStart, onAdvanced,
+  onSaveDefault, savingDefault, isSiteDefault,
 }: NumberingStepProps) {
   const style = styleOfTemplate(template)
   const issue = templateIssue(template)
@@ -175,6 +181,22 @@ export function NumberingStep({
           {controls.note}
         </p>
       )}
+
+      {/* A SEPARATE act with its own audit row, never folded into the sweep that
+          suggested it: one records a decision about the site, the other records a
+          rewrite of its bins. */}
+      <button
+        type="button"
+        onClick={onSaveDefault}
+        disabled={savingDefault || isSiteDefault || !!issue}
+        className="self-start rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-stone-600 btn-press hover:bg-stone-50 disabled:opacity-40"
+      >
+        {savingDefault
+          ? 'Saving…'
+          : isSiteDefault
+            ? 'This is the site default'
+            : "Save as this site's default"}
+      </button>
 
       <button
         type="button"

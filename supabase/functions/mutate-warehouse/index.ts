@@ -17,6 +17,7 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { SHEET_PRESETS, type SheetPresetName } from '../_shared/labelSheet.ts'
+import { MAX_BLOCK_LENGTH, sanitizeBlock, templateIssue } from '../_shared/wie/codePattern.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -73,11 +74,38 @@ const labelPrefsSchema = z.object({
     .max(3),
 })
 
+// ── set_code_pattern (migs 00107 / 00108) ────────────────────────────────────
+//
+// The site's default code pattern. On THIS function rather than
+// mutate-warehouse-location, deliberately: `warehouse_code_patterns` is keyed by
+// warehouse and is the exact sibling of `warehouse_label_prefs`, which
+// `set_label_prefs` above already writes with the same role gate and the same
+// delete-rather-than-sentinel clearing rule. mutate-warehouse-location's five rate
+// buckets exist for actions that rewrite hundreds of `locations` rows; a config
+// write does not belong among them.
+//
+// `template` carries NO regex here. Its grammar lives in TypeScript
+// (`templateIssue`, imported above and shared with the browser) and a second
+// definition in zod would be one more thing to keep in step — the same argument
+// 00107 makes for leaving the column unconstrained in SQL.
+const codePatternSchema = z.object({
+  warehouseId: z.number().int().positive(),
+  // null CLEARS the row, so "the built-in default" has exactly one representation.
+  pattern: z.object({
+    template: z.string().min(1).max(64),
+    defaultBlock: z.string().min(1).max(MAX_BLOCK_LENGTH),
+    start: z.number().int().min(1).max(9999),
+    order: z.enum(['row', 'column', 'serpentine-row', 'serpentine-column']),
+    origin: z.enum(['nw', 'ne', 'sw', 'se']),
+  }).nullable(),
+})
+
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: warehouseCreateSchema }),
   z.object({ action: z.literal('update'), id: z.number().int().positive(), data: warehouseUpdateSchema }),
   z.object({ action: z.literal('deactivate'), id: z.number().int().positive() }),
   z.object({ action: z.literal('set_label_prefs'), data: labelPrefsSchema }),
+  z.object({ action: z.literal('set_code_pattern'), data: codePatternSchema }),
 ])
 
 /** True when the warehouse (or any descendant location) still holds on_hand stock. */
@@ -143,6 +171,62 @@ serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { persistSession: false } },
     )
+
+    if (input.action === 'set_code_pattern') {
+      const { warehouseId, pattern } = input.data
+
+      const { data: warehouse } = await admin
+        .from('locations')
+        .select('id, kind, name')
+        .eq('id', warehouseId)
+        .maybeSingle()
+      if (!warehouse || (warehouse as any).kind !== 'WAREHOUSE') {
+        throw new EdgeFunctionError('INVALID_INPUT', 'That id is not a warehouse.')
+      }
+
+      if (pattern === null) {
+        // Clearing is a DELETE, never a sentinel row — see the note on the schema.
+        const { error } = await admin
+          .from('warehouse_code_patterns')
+          .delete()
+          .eq('warehouse_id', warehouseId)
+        if (error) throw new EdgeFunctionError('INTERNAL', error.message)
+      } else {
+        const issue = templateIssue(pattern.template)
+        if (issue) throw new EdgeFunctionError('INVALID_INPUT', issue)
+        const block = sanitizeBlock(pattern.defaultBlock)
+        if (!block) throw new EdgeFunctionError('INVALID_INPUT', 'Give the default block a name')
+
+        const { error } = await admin.from('warehouse_code_patterns').upsert({
+          warehouse_id: warehouseId,
+          template: pattern.template,
+          default_block: block,
+          start_at: pattern.start,
+          fill_order: pattern.order,
+          origin: pattern.origin,
+          updated_at: new Date().toISOString(),
+          updated_by: auth.userId,
+        }, { onConflict: 'warehouse_id' })
+        if (error) throw new EdgeFunctionError('INTERNAL', error.message)
+      }
+
+      // Saving the default is its OWN act with its own audit row, never folded
+      // into the sweep that happened to suggest it — one records a decision about
+      // the site, the other records a rewrite of its bins.
+      await logAuditEvent(admin, {
+        actorId: auth.userId,
+        actorRole: auth.role,
+        action: 'update',
+        resource: 'warehouse_code_patterns',
+        resourceId: String(warehouseId),
+        after: { warehouse: (warehouse as any).name, pattern },
+      })
+
+      return new Response(JSON.stringify({ ok: true, warehouseId, pattern }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     if (input.action === 'set_label_prefs') {
       const { warehouseId, prefs } = input.data
