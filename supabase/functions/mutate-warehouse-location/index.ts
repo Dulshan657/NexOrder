@@ -66,6 +66,26 @@ import {
   nameWriteNeeded,
   type NameWrite,
 } from '../_shared/locationNamingWrite.ts'
+// Operator-controlled codes (mig 00107). Pure planner + I/O beside it, the same
+// split as naming — the marquee's preview IS this function's dry_run.
+import {
+  BUILTIN_PATTERN,
+  MAX_BLOCK_LENGTH,
+  planRecode,
+  sanitizeBlock,
+  templateIssue,
+  type CodeOrder,
+  type RecodeUnit,
+} from '../_shared/wie/codePattern.ts'
+import {
+  applyRecodeWrites,
+  buildRecodeRows,
+  loadCodeHighWater,
+  loadCodePattern,
+  loadParentPaths,
+  loadStockedLocations,
+  loadTakenCodes,
+} from '../_shared/locationCodeWrite.ts'
 // Zone binding (mig 00096) — what finally reads an area's meta.zoneProfileId.
 // Pure rule + I/O beside it, the same split as naming. resolveZone is shared with
 // mutate-layout: two find-or-create implementations racing on one
@@ -277,11 +297,43 @@ const bindZonesSchema = z.object({
   dry_run: z.boolean().optional(),
 })
 
+// ── recode_locations (mig 00107) ─────────────────────────────────────────────
+//
+// Rewrite the CODE of a marquee-selected block of bins, from a pattern and a block
+// the operator typed. The one action in this function that touches
+// `locations.code`, which until 00107 nothing could touch at all.
+//
+// STALENESS IS A PER-ROW COMPARE-AND-SWAP, NOT A FINGERPRINT. paint_areas needs
+// `base_fingerprint` because areas live in layout_objects and NOTHING moves a
+// timestamp when they change — there is no other signal. Here the code IS the thing
+// being rewritten and the client already knows every code it is about to overwrite,
+// so `expected_code` per row is strictly better: it invalidates one rack rather than
+// the whole sweep, there is no shared hash that has to agree byte-for-byte across
+// two runtimes, and it composes with idempotence — a re-run whose expectations match
+// the NEW codes is a no-op rather than a conflict.
+const recodeSchema = z.object({
+  action: z.literal('recode_locations'),
+  warehouse_id: z.number().int().positive(),
+  units: z.array(z.object({
+    location_id: z.number().int().positive(),
+    expected_code: z.string().min(1).max(48),
+  })).min(1).max(500),
+  block: z.string().min(1).max(MAX_BLOCK_LENGTH),
+  start_at: z.number().int().min(1).max(9999).nullish(),
+  // This sweep only. Deliberately separate from the stored pattern, exactly as
+  // `presetOverride` is separate from `preset` in layoutLabelPlan: a field carrying
+  // a default cannot say whether the caller meant it.
+  template_override: z.string().min(1).max(64).nullish(),
+  order: z.enum(['row', 'column', 'serpentine-row', 'serpentine-column']).nullish(),
+  dry_run: z.boolean().optional(),
+})
+
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: createSchema }),
   paintAreasSchema,
   paintLabelsSchema,
   bindZonesSchema,
+  recodeSchema,
   z.object({ action: z.literal('update'), id: z.number().int().positive(), data: updateSchema }),
   renameAreaSchema,
   renameRackSchema,
@@ -1478,6 +1530,191 @@ serve(async (req: Request) => {
         unbound: binding.plan.toRoot,
         unchanged: binding.plan.unchanged,
         categoryWarnings,
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // ── recode_locations (mig 00107) ─────────────────────────────────────────
+    if (input.action === 'recode_locations') {
+      // Its own bucket, and the fifth. Same argument as :bind: — one call rewrites
+      // up to 500 units plus their levels — and the exact inverse of :sign:'s: this
+      // is the expensive, dangerous edit, and it must not spend the budget the
+      // cheap corrective ones need.
+      const recodeRl = await checkRateLimit(`mutate-warehouse-location:recode:${auth.userId}`, {
+        windowMs: 60_000,
+        max: 10,
+      })
+      if (!recodeRl.ok) {
+        throw new EdgeFunctionError(
+          'TOO_MANY_REQUESTS',
+          `Rate limit exceeded; try again in ${Math.ceil(recodeRl.resetMs / 1000)}s`,
+        )
+      }
+
+      const { data: whRow } = await admin.from('locations')
+        .select('id, kind, code, materialized_path, location_type, active_layout_id')
+        .eq('id', input.warehouse_id).maybeSingle()
+      if (!whRow || (whRow as any).kind !== 'WAREHOUSE') {
+        throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
+      }
+      const whPath = (whRow as any).materialized_path as string
+      const whCode = (whRow as any).code as string
+      const layoutId = (whRow as any).active_layout_id as number | null
+      if ((whRow as any).location_type !== 'racked' || !layoutId) {
+        throw new EdgeFunctionError('CONFLICT', 'This site has no published layout, so it has no drawn bins to recode')
+      }
+
+      const stored = await loadCodePattern(admin, input.warehouse_id)
+      const template = input.template_override ?? stored?.template ?? BUILTIN_PATTERN.template
+      const tmplIssue = templateIssue(template)
+      if (tmplIssue) throw new EdgeFunctionError('INVALID_INPUT', tmplIssue)
+
+      const block = sanitizeBlock(input.block)
+      if (!block) throw new EdgeFunctionError('INVALID_INPUT', 'Give the block a name')
+      const order = (input.order ?? stored?.order ?? BUILTIN_PATTERN.order) as CodeOrder
+
+      // Resolve the selection through the SAME loader the naming pass uses. The
+      // client rolled its SHELF hits up to their rack parents already; doing it
+      // again here is what protects a stale tab, and reusing loadLayoutNamingUnits
+      // is what stops a recode and a rename disagreeing about what a unit even is.
+      // It also applies the warehouse scope check on every id it resolves.
+      const resolved = await loadLayoutNamingUnits(admin, layoutId, whPath)
+      const requested = new Map(input.units.map((u) => [u.location_id, u.expected_code]))
+
+      // Fold every requested id to the unit that owns it: a SHELF id becomes its
+      // rack, and two levels of one rack become one unit.
+      const unitIds = new Set<number>()
+      for (const id of requested.keys()) {
+        const loc = resolved.locById.get(id)
+        if (!loc) throw new EdgeFunctionError('NOT_FOUND', `Location ${id} is not on this layout`)
+        const unitId = loc.kind === 'SHELF' && loc.parentId != null ? loc.parentId : loc.id
+        if (!resolved.unitGeometry.has(unitId)) {
+          throw new EdgeFunctionError('INVALID_INPUT', `Location ${loc.code} is not a placed unit`)
+        }
+        unitIds.add(unitId)
+      }
+
+      // Compare-and-swap, before anything is planned. An id whose code has moved
+      // under the operator voids the batch — see the note on recodeSchema.
+      const stale: Array<{ code: string; expected: string }> = []
+      for (const [id, expected] of requested) {
+        const loc = resolved.locById.get(id)!
+        if (loc.code !== expected) stale.push({ code: loc.code, expected })
+      }
+      if (stale.length > 0) {
+        throw new EdgeFunctionError('CONFLICT', 'Some of these locations were recoded while you were selecting', {
+          stale: stale.slice(0, 5),
+        })
+      }
+
+      const stocked = await loadStockedLocations(admin, [...unitIds, ...requested.keys()])
+      const units: RecodeUnit[] = [...unitIds].map((id) => {
+        const loc = resolved.locById.get(id)!
+        const geo = resolved.unitGeometry.get(id)!
+        const levels = (resolved.levelsByParent.get(id) ?? []).map((l) => {
+          const levelLoc = resolved.locById.get(l.id)!
+          return {
+            id: l.id, levelIndex: l.levelIndex, code: levelLoc.code,
+            labelPrinted: levelLoc.labelPrinted,
+          }
+        }).sort((a, b) => a.levelIndex - b.levelIndex)
+        return {
+          id, floor: geo.floor, x: geo.x, y: geo.y,
+          code: loc.code, codeBlock: loc.codeBlock, codeSeq: loc.codeSeq, kind: loc.kind,
+          labelPrinted: loc.labelPrinted,
+          hasStock: stocked.has(id) || levels.some((l) => stocked.has(l.id)),
+          levels: levels.length > 0 ? levels : undefined,
+        }
+      })
+
+      // A fresh block starts at 1; an existing one continues past its high-water
+      // mark, so two sweeps over adjacent aisles do not both mint 01. A deleted
+      // bin's `locations` row survives (publishing never retires a bin), so its
+      // claim survives with it — the property loadAreaHighWater relies on too.
+      const highWater = await loadCodeHighWater(admin, whPath)
+      const start = input.start_at ?? (highWater.get(block) ?? 0) + 1
+
+      const takenCodes = await loadTakenCodes(admin)
+      const plan = planRecode(units, { template, block, start, order, wh: whCode, takenCodes })
+
+      const examples = plan.writes.slice(0, 5).map((w) => ({ from: w.from, to: w.to }))
+      const levelCount = plan.writes.reduce((n, w) => n + w.levels.length, 0)
+
+      // dry_run returns HERE — before any write and before the audit — so the
+      // previewed count is provably the count that moves. Note this REPORTS the
+      // refusal list rather than throwing on the first offender, unlike
+      // paint_areas: a malformed payload there is one bug, whereas these are a list
+      // the operator has to act on and one per round trip is a bad tool.
+      if (input.dry_run) {
+        return new Response(JSON.stringify({
+          ok: true,
+          preview: {
+            willRecode: plan.writes.length,
+            units: units.length,
+            levels: levelCount,
+            unchanged: plan.unchanged,
+            nextCounter: plan.nextCounter,
+            startedAt: start,
+            block,
+            template,
+            examples,
+            refusals: plan.refusals.slice(0, 20),
+            refusedTotal: plan.refusals.length,
+            labelPrinted: plan.labelPrinted.length,
+            holdingStock: plan.holdingStock.length,
+            codes: plan.allCodes,
+          },
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      if (plan.refusals.length > 0) {
+        throw new EdgeFunctionError('CONFLICT', plan.refusals[0].detail, {
+          refusals: plan.refusals.slice(0, 20),
+          refusedTotal: plan.refusals.length,
+        })
+      }
+      if (plan.writes.length === 0) {
+        return new Response(JSON.stringify({ ok: true, recoded: 0, unchanged: plan.unchanged }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Every new path is rebuilt from its PARENT's path, never by patching the old
+      // path's last segment — on MAIN, 378 rows carry a `-X<id>` suffix in the code
+      // that never reached the path, so the last segment is not the code there.
+      const parentIds = plan.writes
+        .map((w) => resolved.locById.get(w.id)?.parentId)
+        .filter((id): id is number => id != null)
+      const parentPaths = await loadParentPaths(admin, parentIds)
+      const rows = buildRecodeRows(plan.writes, resolved.locById, parentPaths)
+      const recoded = await applyRecodeWrites(admin, whPath, rows)
+
+      // No warehouse_layouts.updated_at bump, for the reason rename_area gives: a
+      // code contributes no graph node, no edge weight and no access_offset_m, so
+      // demanding a republish for it would be a lie.
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
+        resourceId: String(input.warehouse_id),
+        metadata: {
+          recode: true, layout_id: layoutId, block, template, start_at: start, order,
+          units: units.length, levels: levelCount, recoded, unchanged: plan.unchanged,
+          label_printed_reset: plan.labelPrinted.length,
+          holding_stock: plan.holdingStock.length,
+          first: examples[0] ? `${examples[0].from}→${examples[0].to}` : null,
+          last: plan.writes.length > 0
+            ? `${plan.writes[plan.writes.length - 1].from}→${plan.writes[plan.writes.length - 1].to}`
+            : null,
+        },
+      })
+
+      return new Response(JSON.stringify({
+        ok: true,
+        recoded,
+        units: plan.writes.length,
+        levels: levelCount,
+        unchanged: plan.unchanged,
+        nextCounter: plan.nextCounter,
+        labelPrintedReset: plan.labelPrinted.length,
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
