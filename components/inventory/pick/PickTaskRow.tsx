@@ -14,6 +14,7 @@
 import React, { useMemo, useState } from 'react'
 import { Check, MapPin, PackageCheck, ScanLine, X } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
+import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkPickScan } from '@/supabase/functions/_shared/pickScanCheck'
 import { useRecordPick } from '@/hooks/queries/usePickQueue'
 import { useToasts } from '@/hooks/useToasts'
@@ -43,6 +44,7 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
   const recordPick = useRecordPick()
 
   const [step, setStep] = useState<Step>('idle')
+  const { flash, signal: signalFlash } = useScanFlash()
   const [binCode, setBinCode] = useState('')
   const [itemCode, setItemCode] = useState('')
   const [qty, setQty] = useState('')
@@ -83,9 +85,11 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
     if (verdict.ok === false) {
       setError(verdict.message)
       setBinCode('')
+      signalFlash('reject')
       return
     }
     setError(null)
+    signalFlash('ok')
     setStep('item')
   }
 
@@ -94,9 +98,11 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
     if (verdict.ok === false) {
       setError(verdict.message)
       setItemCode('')
+      signalFlash('reject')
       return
     }
     setError(null)
+    signalFlash('ok')
     setStep('qty')
   }
 
@@ -182,6 +188,7 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
           value={binCode}
           onChange={setBinCode}
           onScan={onBinScan}
+          flash={step === 'bin' ? flash : null}
           placeholder={task.code}
           cameraTitle="Scan the bin label"
           autoFocus
@@ -195,6 +202,7 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
           value={itemCode}
           onChange={setItemCode}
           onScan={onItemScan}
+          flash={step === 'item' ? flash : null}
           placeholder={line.productSku}
           cameraTitle="Scan the product"
           autoFocus

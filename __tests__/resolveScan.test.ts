@@ -240,3 +240,86 @@ describe('describeScanMatch', () => {
     ).toContain('Coconut Milk')
   })
 })
+
+// ── COLLISIONS WITHIN ONE NAMESPACE ─────────────────────────────────────────
+//
+// The index buckets were single-valued until 2026-08-17, so `Map.set` silently
+// dropped one of any colliding pair and the operator was handed the survivor
+// with full confidence. Ambiguity was only ever detected ACROSS namespaces,
+// which is the case least likely to happen.
+describe('resolveScan — intra-namespace collisions', () => {
+  it('reports two products sharing a barcode rather than picking one', () => {
+    const index = buildScanIndex({
+      products: [
+        { id: 1, sku: 'SKU-ONE', name: 'First', barcode: '9310072011691' },
+        { id: 2, sku: 'SKU-TWO', name: 'Second', barcode: '9310072011691' },
+      ],
+    })
+    const result = resolveScan('9310072011691', index)
+    expect(result.kind).toBe('ambiguous')
+    if (result.kind === 'ambiguous') {
+      expect(result.candidates).toHaveLength(2)
+      expect(result.candidates.every((c) => c.kind === 'product')).toBe(true)
+    }
+  })
+
+  it('reports a collision reached through DIFFERENT GTIN spellings of one code', () => {
+    // One product stores UPC-A, the other the equivalent EAN-13. They are the
+    // same number, so a single scan reaches both.
+    const index = buildScanIndex({
+      products: [
+        { id: 1, sku: 'UPC-STORED', name: 'Stored as UPC-A', barcode: '012345678905' },
+        { id: 2, sku: 'EAN-STORED', name: 'Stored as EAN-13', barcode: '0012345678905' },
+      ],
+    })
+    const result = resolveScan('012345678905', index)
+    expect(result.kind).toBe('ambiguous')
+    if (result.kind === 'ambiguous') expect(result.candidates).toHaveLength(2)
+  })
+
+  it('counts one product once even when several of its variants match', () => {
+    // The failure this guards: collecting per-variant without de-duplicating
+    // would make every GTIN-foldable product look like an ambiguity with itself.
+    const index = buildScanIndex({
+      products: [{ id: 1, sku: 'ONLY', name: 'Sole', barcode: '012345678905' }],
+    })
+    const result = resolveScan('012345678905', index)
+    expect(result.kind).toBe('product')
+  })
+
+  it('reports two locations normalising to the same string', () => {
+    const index = buildScanIndex({
+      locations: [
+        { id: 1, code: 'MAIN-B-1', name: 'One', isActive: true },
+        { id: 2, code: 'main-b-1', name: 'Two', isActive: true },
+      ],
+    })
+    const result = resolveScan('MAIN-B-1', index)
+    expect(result.kind).toBe('ambiguous')
+    if (result.kind === 'ambiguous') expect(result.candidates).toHaveLength(2)
+  })
+
+  it('still lets a SKU beat a barcode on a different product', () => {
+    // The confidence order is unchanged: our own identifier on our own label
+    // outranks a supplier's number, so this is NOT an ambiguity.
+    const index = buildScanIndex({
+      products: [
+        { id: 1, sku: '9310072011691', name: 'SKU-shaped', barcode: null },
+        { id: 2, sku: 'OTHER', name: 'Barcode holder', barcode: '9310072011691' },
+      ],
+    })
+    const result = resolveScan('9310072011691', index)
+    expect(result.kind).toBe('product')
+    if (result.kind === 'product') expect(result.product.id).toBe(1)
+  })
+
+  it('reports two products sharing a SKU', () => {
+    const index = buildScanIndex({
+      products: [
+        { id: 1, sku: 'DUPE-1', name: 'First', barcode: null },
+        { id: 2, sku: 'DUPE-1', name: 'Second', barcode: null },
+      ],
+    })
+    expect(resolveScan('DUPE-1', index).kind).toBe('ambiguous')
+  })
+})

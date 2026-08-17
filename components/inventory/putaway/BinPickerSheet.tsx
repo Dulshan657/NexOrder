@@ -18,6 +18,8 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ArrowRight, MapPin, Search } from 'lucide-react'
 import { Sheet } from '@/components/ui/Sheet'
 import { ScanField } from '@/components/ui/ScanField'
+import { normalizeScan } from '@/lib/scan/resolveScan'
+import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
 import { useBalancesByWarehouse } from '@/hooks/queries/useInventoryBalances'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
@@ -77,6 +79,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
   const [code, setCode] = useState('')
   const [count, setCount] = useState('')
   const [uomId, setUomId] = useState<number | null>(null)
+  const { flash, signal: signalFlash } = useScanFlash()
 
   const uoms = useMemo(() => uomsForProduct(row.product), [row.product])
   const selectedUom = useMemo(
@@ -127,9 +130,15 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
 
   // A typed or scanned code resolves against every active location, including
   // staging — locations.code is globally unique, so an exact match is safe.
-  const typedCode = code.trim().toLowerCase()
+  //
+  // Folded with `normalizeScan`, NOT `toLowerCase`. A wedge gun can append a
+  // NUL or a zero-width mark that `String.trim()` leaves in place, and the
+  // effect of comparing those raw was that a perfectly good label read as "No
+  // active location with that code" — the operator's own eyes disagreeing with
+  // the screen, with nothing on screen to explain it.
+  const typedCode = normalizeScan(code)
   const typedMatch = useMemo(
-    () => (typedCode ? locations.find((l) => l.isActive && l.code.toLowerCase() === typedCode) : undefined),
+    () => (typedCode ? locations.find((l) => l.isActive && normalizeScan(l.code) === typedCode) : undefined),
     [locations, typedCode],
   )
   useEffect(() => {
@@ -300,11 +309,21 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
 
         {/* Scan / type ----------------------------------------------------- */}
         {/* Camera scan, wedge-gun scan and typing all land in the same `code`
-            state; the typedMatch effect above selects the bin either way. */}
+            state; the typedMatch effect above selects the bin either way.
+            `onScan` adds nothing to the selection — it exists so the operator
+            hears whether the code landed, which is the only thing the gun's own
+            beep cannot tell them. */}
         <ScanField
           label="Scan or type a bin code"
           value={code}
           onChange={setCode}
+          onScan={(raw) => {
+            const hit = locations.find(
+              (l) => l.isActive && normalizeScan(l.code) === normalizeScan(raw),
+            )
+            signalFlash(hit ? 'ok' : 'reject')
+          }}
+          flash={flash}
           placeholder="e.g. A-01-02-B"
           cameraTitle="Scan a bin label"
           error={typedCode && !typedMatch ? 'No active location with that code in this warehouse.' : undefined}
