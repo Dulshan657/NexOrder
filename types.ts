@@ -178,6 +178,20 @@ export interface InventoryLocation {
     nameArea?: string | null;
     /** false = a human typed this name, so an area rename must leave it alone. */
     nameIsAuto?: boolean;
+    // Code provenance (mig 00107). The mirror of the naming triple above, for the
+    // scan identity rather than the display name — and deliberately only a pair,
+    // because a code has no "custom vs auto" distinction: a code either came from a
+    // sweep or predates one.
+    /** The block a sweep minted this code under. NULL = not minted by a pattern,
+     *  which is true of every code drawn before 00107 — and is exactly what the map
+     *  tints to show which parts of a site are still un-swept. Stored rather than
+     *  parsed back out of the code, since a block may itself contain the separator
+     *  (`AMD-COLD-A` + `-01` is ambiguous to any regex). */
+    codeBlock?: string | null;
+    /** Its number within that block. UNLIKE `nameSeq` this may be reassigned —
+     *  rewriting codes is the entire purpose of a sweep. What is preserved instead
+     *  is idempotence: re-running the same sweep must write nothing. */
+    codeSeq?: number | null;
 }
 
 /** What one "slot" of a storage type counts. 'each'/'uncounted' don't map onto

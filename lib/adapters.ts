@@ -720,6 +720,15 @@ export function toInventoryLocation(row: LocationRow): InventoryLocation {
     nameSeq: (row as LocationRow & { name_seq?: number | null }).name_seq ?? null,
     nameArea: (row as LocationRow & { name_area?: string | null }).name_area ?? null,
     nameIsAuto: (row as LocationRow & { name_is_auto?: boolean | null }).name_is_auto ?? false,
+    // Code provenance (mig 00107), same cast and same `?? null` reasoning as the
+    // naming columns. `getWarehouseLocations` already does select('*'), so these
+    // arrive with no new query — which is what lets the map tint un-swept bins and
+    // the panel build its block census entirely client-side.
+    //
+    // Unlike `nameSeq`, `codeSeq` MAY be reassigned: a printed sign cannot be
+    // un-printed, whereas rewriting codes is the whole purpose of a sweep.
+    codeBlock: (row as LocationRow & { code_block?: string | null }).code_block ?? null,
+    codeSeq: (row as LocationRow & { code_seq?: number | null }).code_seq ?? null,
   }
 }
 

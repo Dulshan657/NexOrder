@@ -70,11 +70,14 @@ import {
 // split as naming — the marquee's preview IS this function's dry_run.
 import {
   BUILTIN_PATTERN,
+  DEFAULT_ORIGIN,
   MAX_BLOCK_LENGTH,
   planRecode,
   sanitizeBlock,
+  solveBlockFraming,
   templateIssue,
   type CodeOrder,
+  type CodeOrigin,
   type RecodeUnit,
 } from '../_shared/wie/codePattern.ts'
 import {
@@ -325,6 +328,14 @@ const recodeSchema = z.object({
   // a default cannot say whether the caller meant it.
   template_override: z.string().min(1).max(64).nullish(),
   order: z.enum(['row', 'column', 'serpentine-row', 'serpentine-column']).nullish(),
+  // Which corner of the painted block is 1-1. Only meaningful to a template that
+  // carries {row}/{col} or a counter, which is exactly what `usedTokens` decides on
+  // the client before the control is even rendered.
+  origin: z.enum(['nw', 'ne', 'sw', 'se']).nullish(),
+  // Opt in to relaying the WHOLE block rather than appending to it. Off by default:
+  // growing a block must never renumber bins whose stickers are already on the
+  // racking, so the default answer to drift is a refusal, not a silent rewrite.
+  renumber_block: z.boolean().optional(),
   dry_run: z.boolean().optional(),
 })
 
@@ -1571,6 +1582,7 @@ serve(async (req: Request) => {
       const block = sanitizeBlock(input.block)
       if (!block) throw new EdgeFunctionError('INVALID_INPUT', 'Give the block a name')
       const order = (input.order ?? stored?.order ?? BUILTIN_PATTERN.order) as CodeOrder
+      const origin = (input.origin ?? stored?.origin ?? DEFAULT_ORIGIN) as CodeOrigin
 
       // Resolve the selection through the SAME loader the naming pass uses. The
       // client rolled its SHELF hits up to their rack parents already; doing it
@@ -1606,8 +1618,32 @@ serve(async (req: Request) => {
         })
       }
 
-      const stocked = await loadStockedLocations(admin, [...unitIds, ...requested.keys()])
-      const units: RecodeUnit[] = [...unitIds].map((id) => {
+      // Everything already carrying this block that is NOT in the selection. Free —
+      // loadLayoutNamingUnits has already loaded every placed unit on the layout, so
+      // "who else is in BULK" costs no query. These are PLANNED but never written:
+      // they exist so the framing can be checked against the codes already on the
+      // racking (see `drift`).
+      const incumbentIds = [...resolved.unitGeometry.keys()].filter((id) => {
+        const loc = resolved.locById.get(id)
+        return !!loc && loc.codeBlock === block && !unitIds.has(id)
+      })
+
+      // Renumbering the whole block is the operator's explicit second answer to
+      // drift, and it simply makes the incumbents part of the selection.
+      if (input.renumber_block) for (const id of incumbentIds) unitIds.add(id)
+      const incumbentsRemaining = input.renumber_block ? [] : incumbentIds
+      if (unitIds.size > 500) {
+        throw new EdgeFunctionError(
+          'INVALID_INPUT',
+          `Renumbering all of "${block}" would rewrite ${unitIds.size} locations; the limit is 500 per sweep`,
+        )
+      }
+
+      const stocked = await loadStockedLocations(
+        admin,
+        [...unitIds, ...incumbentsRemaining, ...requested.keys()],
+      )
+      const buildUnit = (id: number): RecodeUnit => {
         const loc = resolved.locById.get(id)!
         const geo = resolved.unitGeometry.get(id)!
         const levels = (resolved.levelsByParent.get(id) ?? []).map((l) => {
@@ -1624,7 +1660,9 @@ serve(async (req: Request) => {
           hasStock: stocked.has(id) || levels.some((l) => stocked.has(l.id)),
           levels: levels.length > 0 ? levels : undefined,
         }
-      })
+      }
+      const units: RecodeUnit[] = [...unitIds].map(buildUnit)
+      const incumbents: RecodeUnit[] = incumbentsRemaining.map(buildUnit)
 
       // A fresh block starts at 1; an existing one continues past its high-water
       // mark, so two sweeps over adjacent aisles do not both mint 01.
@@ -1641,7 +1679,20 @@ serve(async (req: Request) => {
       const start = input.start_at ?? (highWater.get(block) ?? 0) + 1
 
       const takenCodes = await loadTakenCodes(admin)
-      const plan = planRecode(units, { template, block, start, order, wh: whCode, takenCodes })
+      // The frame spans the UNION, so a bin painted onto the end of an existing run
+      // continues it instead of restarting at 1-1. With no incumbents this is just
+      // the selection, which is the ordinary first-sweep case.
+      const frameCells = [...units, ...incumbents]
+      const plan = planRecode(units, {
+        template, block, start, order, wh: whCode, takenCodes, origin,
+        frameCells, incumbents,
+      })
+
+      // When a framing does not fit, the useful thing to say is which one WOULD —
+      // recovered from the codes already on the racking rather than remembered.
+      const suggestedFraming = plan.drift.length > 0
+        ? solveBlockFraming(incumbents, { template, block, wh: whCode })
+        : null
 
       const examples = plan.writes.slice(0, 5).map((w) => ({ from: w.from, to: w.to }))
       const levelCount = plan.writes.reduce((n, w) => n + w.levels.length, 0)
@@ -1669,6 +1720,16 @@ serve(async (req: Request) => {
             labelPrinted: plan.labelPrinted.length,
             holdingStock: plan.holdingStock.length,
             codes: plan.allCodes,
+            // Growth reporting. `drift` is the list of block members this framing
+            // would move; non-empty means the batch is refused, and
+            // `suggestedFraming` is the origin/order that DOES reproduce them.
+            frame: plan.frame,
+            drift: plan.drift.slice(0, 20),
+            driftTotal: plan.drift.length,
+            incumbents: incumbents.length,
+            origin,
+            order,
+            suggestedFraming,
           },
         }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
@@ -1677,6 +1738,9 @@ serve(async (req: Request) => {
         throw new EdgeFunctionError('CONFLICT', plan.refusals[0].detail, {
           refusals: plan.refusals.slice(0, 20),
           refusedTotal: plan.refusals.length,
+          drift: plan.drift.slice(0, 20),
+          driftTotal: plan.drift.length,
+          suggestedFraming,
         })
       }
       if (plan.writes.length === 0) {
@@ -1703,7 +1767,9 @@ serve(async (req: Request) => {
         actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'locations',
         resourceId: String(input.warehouse_id),
         metadata: {
-          recode: true, layout_id: layoutId, block, template, start_at: start, order,
+          recode: true, layout_id: layoutId, block, template, start_at: start, order, origin,
+          renumber_block: input.renumber_block === true,
+          incumbents: incumbents.length,
           units: units.length, levels: levelCount, recoded, unchanged: plan.unchanged,
           label_printed_reset: plan.labelPrinted.length,
           holding_stock: plan.holdingStock.length,

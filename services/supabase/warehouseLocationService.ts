@@ -3,7 +3,7 @@ import { toInventoryLocation } from '@/lib/adapters'
 import { describeValidationIssues, extractFunctionErrorDetails, extractFunctionErrorMessage } from '@/lib/functionError'
 import { packAreaRuns, type AreaPaintSpec } from '@/lib/areaPaint'
 import { packSignRuns, type SignSpec } from '@/lib/signPaint'
-import type { CodeOrder } from '@/lib/codePattern'
+import type { CodeOrder, CodeOrigin } from '@/lib/codePattern'
 import type { InventoryLocation, LevelRole, LocationKind } from '@/types'
 
 /**
@@ -503,6 +503,20 @@ export interface RecodePreview {
   /** Every code the sweep would produce — fed to the label sizing wizard so the
    *  physical cost of a longer pattern is visible BEFORE it is paid. */
   codes: string[]
+  // ── growth reporting (mig 00108) ──
+  /** How deep and wide the frame ran. */
+  frame: { rows: number; cols: number }
+  /** Block members this framing would MOVE. Non-empty means the batch is refused:
+   *  growing a block must never renumber bins already labelled for it. */
+  drift: Array<{ id: number; code: string; would: string }>
+  driftTotal: number
+  /** How many bins are already in this block and are not in the selection. */
+  incumbents: number
+  origin: CodeOrigin
+  order: CodeOrder
+  /** The framing that DOES reproduce the incumbents' codes, recovered from the
+   *  floor. Null when none does, or when there was no drift to explain. */
+  suggestedFraming: { origin: CodeOrigin; order: CodeOrder } | null
 }
 
 export interface RecodeResult {
@@ -524,6 +538,11 @@ export interface RecodeArgs {
   startAt?: number | null
   templateOverride?: string | null
   order?: CodeOrder | null
+  /** Which corner of the painted block is 1-1 (mig 00108). */
+  origin?: CodeOrigin | null
+  /** Relay the WHOLE block rather than appending to it. The operator's explicit
+   *  second answer to a drift refusal, never a default. */
+  renumberBlock?: boolean
 }
 
 function recodeBody(args: RecodeArgs, dryRun: boolean) {
@@ -537,6 +556,10 @@ function recodeBody(args: RecodeArgs, dryRun: boolean) {
     start_at: args.startAt ?? null,
     template_override: args.templateOverride ?? null,
     order: args.order ?? null,
+    origin: args.origin ?? null,
+    // Omitted rather than sent false: the server reads it as `.optional()`, and a
+    // flag that only ever means "yes, deliberately" should not appear otherwise.
+    ...(args.renumberBlock ? { renumber_block: true } : {}),
     ...(dryRun ? { dry_run: true } : {}),
   }
 }

@@ -233,6 +233,9 @@ export interface StoredCodePattern {
   defaultBlock: string
   start: number
   order: string
+  /** Which corner of a block is 1-1 (mig 00108). `'nw'` on every pre-existing row
+   *  by column default, which is the historical ascending walk. */
+  origin: string
 }
 
 export async function loadCodePattern(
@@ -241,7 +244,7 @@ export async function loadCodePattern(
 ): Promise<StoredCodePattern | null> {
   const { data, error } = await admin
     .from('warehouse_code_patterns')
-    .select('template, default_block, start_at, fill_order')
+    .select('template, default_block, start_at, fill_order, origin')
     .eq('warehouse_id', warehouseId)
     .maybeSingle()
   if (error) {
@@ -254,5 +257,6 @@ export async function loadCodePattern(
     defaultBlock: String(row.default_block),
     start: Number(row.start_at),
     order: String(row.fill_order),
+    origin: String(row.origin ?? 'nw'),
   }
 }

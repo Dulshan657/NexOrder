@@ -203,8 +203,12 @@ export interface CodeBindings {
   wh: string
   /** The armed or stored block. Empty renders nothing. */
   block: string
-  x: number
-  y: number
+  /** Absolute grid coordinates. Nullable for the same reason `n` is — rendering
+   *  with every number absent yields the constant half of a code, which is how both
+   *  a pool key and the map's ghost-label prefix are derived. Every real call binds
+   *  them. */
+  x: number | null
+  y: number | null
   /** The counter. NULL suppresses the token. */
   n: number | null
   /** Position inside the painted block, 1-based and dense. Optional and NULL-able
@@ -355,8 +359,8 @@ export function formatCode(template: string, b: CodeBindings): string {
       case 'wh': return sanitizeBlock(b.wh ?? '')
       case 'block': return b.block ? sanitizeBlock(b.block) : ''
       case 'n': return b.n === null || b.n === undefined ? '' : padNumber(b.n, width)
-      case 'x': return padNumber(b.x, width)
-      case 'y': return padNumber(b.y, width)
+      case 'x': return b.x === null || b.x === undefined ? '' : padNumber(b.x, width)
+      case 'y': return b.y === null || b.y === undefined ? '' : padNumber(b.y, width)
       case 'row': return b.row === null || b.row === undefined ? '' : padNumber(b.row, width)
       case 'col': return b.col === null || b.col === undefined ? '' : padNumber(b.col, width)
       case 'floor': return b.floor === null || b.floor === undefined ? '' : padNumber(b.floor, width)
