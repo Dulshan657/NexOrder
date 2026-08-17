@@ -33,6 +33,8 @@
     "crons:list:dev": "node supabase/ops/schedule-crons.mjs --env=dev --list",
     "crons:list:amadiya": "node supabase/ops/schedule-crons.mjs --env=amadiya --list",
     "bootstrap:admin:amadiya": "node supabase/ops/bootstrap-admin.mjs --env=amadiya",
+    "password:set:amadiya": "node supabase/ops/set-user-password.mjs --env=amadiya",
+    "password:list:amadiya": "node supabase/ops/set-user-password.mjs --env=amadiya --list",
     "export:demo": "node supabase/ops/export-demo.mjs --env=dev",
     "demo:users:dev": "node supabase/ops/mint-demo-users.mjs --env=dev",
     "demo:import:dev": "node supabase/ops/import-demo.mjs --env=dev",
