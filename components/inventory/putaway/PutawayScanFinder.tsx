@@ -17,6 +17,8 @@
 import React, { useMemo, useState } from 'react'
 import { ScanLine } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
+import { useScanFlash } from '@/lib/scan/useScanFlash'
+import { useWedgeScanner } from '@/lib/scan/useWedgeScanner'
 import { buildScanIndex, resolveScan, type ScanMatch } from '@/lib/scan/resolveScan'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import type { InventoryLocation } from '@/types'
@@ -39,6 +41,7 @@ export const PutawayScanFinder: React.FC<PutawayScanFinderProps> = ({
 }) => {
   const [code, setCode] = useState('')
   const [note, setNote] = useState<string | null>(null)
+  const { flash, signal: signalFlash } = useScanFlash()
 
   const index = useMemo(
     () =>
@@ -90,6 +93,7 @@ export const PutawayScanFinder: React.FC<PutawayScanFinderProps> = ({
     if (result.kind === 'unknown') {
       setNote(`Nothing here matches ${result.normalized}.`)
       onFilter('')
+      signalFlash('reject')
       return
     }
 
@@ -103,18 +107,23 @@ export const PutawayScanFinder: React.FC<PutawayScanFinderProps> = ({
       const what = candidates.map(describe).join(' or ')
       setNote(`That's ${what}, but nothing here is waiting on it.`)
       onFilter('')
+      signalFlash('reject')
       return
     }
 
     if (hit.matched.length === 1) {
       setNote(null)
       setCode('')
+      signalFlash('ok')
       onFound(hit.matched[0].id)
       return
     }
 
     // Several lines share the plate (a mixed pallet) or the SKU. Narrow rather
     // than guessing which one the operator means.
+    // Narrowing IS progress — the code was recognised and the queue moved. It
+    // is not the refusal tone, which would say the label was no good.
+    signalFlash('ok')
     setNote(`${hit.matched.length} lines on ${describe(hit.c)}.`)
     onFilter(
       hit.c.kind === 'handlingUnit'
@@ -125,6 +134,11 @@ export const PutawayScanFinder: React.FC<PutawayScanFinderProps> = ({
     )
   }
 
+  // Desktop safety net — see useWedgeScanner. The finder is the right place to
+  // arm it: it is on screen for the whole walk, and its handler already knows
+  // how to deal with a plate, a SKU or a bin.
+  useWedgeScanner({ active: true, onScan: handleScan })
+
   return (
     <div>
       <ScanField
@@ -132,6 +146,7 @@ export const PutawayScanFinder: React.FC<PutawayScanFinderProps> = ({
         value={code}
         onChange={(v) => { setCode(v); if (note) setNote(null) }}
         onScan={handleScan}
+        flash={flash}
         placeholder="HU-000123, a SKU, or a bin code"
         cameraTitle="Scan to find the line"
       />

@@ -7,7 +7,9 @@
 // passed inspection.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Modal, Button } from '@/components/ui'
+import { Modal, Button, ScanField } from '@/components/ui'
+import { normalizeScan } from '@/lib/scan/resolveScan'
+import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { useToasts } from '@/hooks/useToasts'
 import { useReleaseQuarantine } from '@/hooks/queries/useReleaseQuarantine'
 import { locationOneLine } from '@/lib/locationDisplay'
@@ -32,6 +34,7 @@ export function ReleaseQuarantineModal({ open, onClose, from, contents, destinat
   const { addToast } = useToasts()
   const release = useReleaseQuarantine()
   const [destinationCode, setDestinationCode] = useState('')
+  const { flash, signal: signalFlash } = useScanFlash()
   const [qtyByProduct, setQtyByProduct] = useState<Record<number, string>>({})
   const [error, setError] = useState<string | null>(null)
 
@@ -49,8 +52,13 @@ export function ReleaseQuarantineModal({ open, onClose, from, contents, destinat
 
   // Matched on CODE, which is what is printed on the rack and what a scanner
   // reads — the same identity contract everywhere else in the warehouse uses.
+  //
+  // Folded with `normalizeScan` rather than `toUpperCase`, so this agrees with
+  // the rest of the app about what a scanned string IS. Upper-casing alone
+  // leaves a wedge gun's trailing NUL or zero-width mark in place, and the
+  // operator is then told there is no such location while holding the label.
   const destination = useMemo(
-    () => destinations.find((d) => d.code.toUpperCase() === destinationCode.trim().toUpperCase()) ?? null,
+    () => destinations.find((d) => normalizeScan(d.code) === normalizeScan(destinationCode)) ?? null,
     [destinations, destinationCode],
   )
 
@@ -118,27 +126,41 @@ export function ReleaseQuarantineModal({ open, onClose, from, contents, destinat
           the moment it lands.
         </p>
 
-        <label className="block text-xs text-stone-500">
-          Move to
+        <div className="text-xs text-stone-500">
           {/* ONE datalist for every destination, never a per-row select: a site
               with hundreds of bins renders hundreds of option lists otherwise,
-              which is what froze the replenishment grid. */}
-          <input
-            list="release-destinations"
+              which is what froze the replenishment grid.
+
+              A ScanField rather than a bare input, for a reason specific to this
+              dialog: it sits inside a Modal whose footer submits, and a wedge
+              gun's terminating Enter used to reach that footer. The gun could
+              therefore RELEASE THE STOCK while the operator was still scanning
+              where to put it. ScanField preventDefaults Enter, so that is gone. */}
+          <ScanField
+            label="Move to"
             value={destinationCode}
-            onChange={(e) => setDestinationCode(e.target.value)}
+            onChange={setDestinationCode}
+            onScan={(raw) =>
+              signalFlash(
+                destinations.some((d) => normalizeScan(d.code) === normalizeScan(raw))
+                  ? 'ok'
+                  : 'reject',
+              )
+            }
+            flash={flash}
+            listId="release-destinations"
             placeholder="Scan or type a location code"
-            className="mt-1 w-full rounded border border-stone-200 px-2 py-1.5 font-mono text-xs"
+            cameraTitle="Scan the destination bin"
+            error={
+              destinationCode.trim() !== '' && !destination
+                ? 'No location here with that code.'
+                : undefined
+            }
           />
           <datalist id="release-destinations">
             {destinations.map((d) => <option key={d.id} value={d.code}>{d.name}</option>)}
           </datalist>
-          {destinationCode.trim() !== '' && !destination && (
-            <span className="mt-1 block text-[11px] text-red-600">
-              No location here with that code.
-            </span>
-          )}
-        </label>
+        </div>
 
         <div className="rounded-lg border border-stone-200">
           <table className="w-full text-xs">

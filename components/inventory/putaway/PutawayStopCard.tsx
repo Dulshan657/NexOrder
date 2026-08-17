@@ -17,6 +17,7 @@
 import React, { useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, Check, MapPin, PackageCheck, Undo2, X } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
+import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkPutawayScan } from '@/supabase/functions/_shared/putawayScanCheck'
 import { useCompletePutaway, useUnassignPutaway } from '@/hooks/queries/usePutawayWalk'
 import { useToasts } from '@/hooks/useToasts'
@@ -56,6 +57,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   const unassign = useUnassignPutaway()
 
   const [step, setStep] = useState<Step>('idle')
+  const { flash, signal: signalFlash } = useScanFlash()
   const [plateCode, setPlateCode] = useState('')
   const [scannedBin, setScannedBin] = useState('')
   const [qty, setQty] = useState('')
@@ -106,9 +108,11 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     if (verdict.ok === false) {
       setError(verdict.message)
       setPlateCode('')
+      signalFlash('reject')
       return
     }
     setError(null)
+    signalFlash('ok')
     setStep('bin')
   }
 
@@ -121,9 +125,14 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     if (verdict.ok === false) {
       setError(verdict.message)
       setScannedBin('')
+      signalFlash('reject')
       return
     }
     setError(null)
+    // A DIFFERENT bin is accepted here on purpose — the operator is standing at
+    // the rack and the assigned bay may be full. It is recorded as
+    // `placedElsewhere`, so this is an accept, not a refusal.
+    signalFlash('ok')
     setStep('qty')
   }
 
@@ -278,6 +287,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           value={plateCode}
           onChange={setPlateCode}
           onScan={onPlateScan}
+          flash={step === 'plate' ? flash : null}
           placeholder={row.huCode ?? ''}
           cameraTitle="Scan the plate label"
           autoFocus
@@ -296,6 +306,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           value={scannedBin}
           onChange={setScannedBin}
           onScan={onBinScan}
+          flash={step === 'bin' ? flash : null}
           placeholder={binCode}
           cameraTitle="Scan the bin label"
           autoFocus
