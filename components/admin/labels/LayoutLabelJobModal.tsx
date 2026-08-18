@@ -28,7 +28,7 @@
 // — it is the only shape that reliably puts every sheet on the operator's disk,
 // and it matches the floor anyway, where each sheet goes on different stock.
 
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Printer, Download, AlertTriangle, CheckCircle2, Undo2, Ruler } from 'lucide-react'
 import { Modal, Button, Field, Select, NumberInput, Toggle } from '@/components/ui'
 import { downloadSignedDoc } from '@/lib/openSignedDoc'
@@ -51,7 +51,11 @@ import {
   type LayoutLabelJob,
   type LayoutLabelSheet,
 } from '@/services/supabase/labelService'
-import { SHEET_PRESET_INFO } from '@/supabase/functions/_shared/labelSheet'
+import {
+  MAX_START_OFFSET,
+  maxStartOffset,
+  SHEET_PRESET_INFO,
+} from '@/supabase/functions/_shared/labelSheet'
 
 /**
  * Read from the preset library rather than restated. The previous hand-written
@@ -150,6 +154,25 @@ export function LayoutLabelJobModal({
       })),
     [plan.data, prefMap, overrides],
   )
+
+  /**
+   * The offset only ever reaches the FIRST sheet that renders — see
+   * labelService's `startOffset: sheets.length === 0 ? … : 0`, which is keyed on
+   * sheets already rendered precisely so a failed first sheet passes the
+   * part-used stock on to whichever sheet actually meets it. So the ceiling is
+   * that sheet's stock, post-override and post-site-preference.
+   *
+   * Best-effort by construction, then: which sheet renders first is only knowable
+   * ex ante. The server clamps regardless — this exists so the clamp is not the
+   * operator's first news of it. Permissive while the plan is in flight, then the
+   * effect below pulls the value down once the real ceiling is known.
+   */
+  const firstSheet = plannedSheets.length > 0 ? plannedSheets[0] : null
+  const offsetCeiling = firstSheet ? maxStartOffset(firstSheet.preset) : MAX_START_OFFSET
+
+  useEffect(() => {
+    setStartOffset((n) => Math.min(n, offsetCeiling))
+  }, [offsetCeiling])
 
   const plannedTotal = (plan.data ?? []).reduce((n, s) => n + s.items.length, 0)
   const jobTotal = (job?.sheets ?? []).reduce((n, s) => n + s.labelCount, 0)
@@ -348,15 +371,25 @@ export function LayoutLabelJobModal({
               <Field
                 label="Skip first labels"
                 htmlFor="label-offset"
-                helper="Reusing a part-used sticker sheet — applies to the first sheet only."
+                helper={
+                  firstSheet
+                    ? `Reusing a part-used sticker sheet — applies to the ${GROUP_LABEL[
+                        firstSheet.group
+                      ].toLowerCase()} sheet only, which holds ${
+                        SHEET_PRESET_INFO[firstSheet.preset].perSheet
+                      }. Most you can skip: ${offsetCeiling}.`
+                    : 'Reusing a part-used sticker sheet — applies to the first sheet only.'
+                }
               >
+                {/* Clamped on both sides: NumberInput is a bare pass-through, so
+                    `max` bounds the spinner and nothing else. */}
                 <NumberInput
                   id="label-offset"
                   min={0}
-                  max={47}
+                  max={offsetCeiling}
                   value={startOffset}
                   onChange={(e: { target: { value: string } }) =>
-                    setStartOffset(Math.max(0, Number(e.target.value) || 0))
+                    setStartOffset(Math.min(offsetCeiling, Math.max(0, Number(e.target.value) || 0)))
                   }
                 />
               </Field>

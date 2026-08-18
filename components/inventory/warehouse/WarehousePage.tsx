@@ -126,6 +126,7 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
             <LayoutLabelBadge
               layoutId={publishedLayout.id}
               layoutName={selectedWarehouse?.name}
+              warehouseId={effectiveWarehouseId ?? undefined}
               dense
             />
           )}

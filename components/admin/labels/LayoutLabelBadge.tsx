@@ -14,11 +14,24 @@ import LayoutLabelJobModal from './LayoutLabelJobModal'
 export interface LayoutLabelBadgeProps {
   layoutId: number
   layoutName?: string
+  /**
+   * The site this layout belongs to. Optional only because the type cannot force
+   * it, but every mount should pass it: without it the job modal resolves sheet
+   * stocks from the built-in defaults while the server applies the site's saved
+   * `warehouse_label_prefs`, so the preview and the offset ceiling describe a
+   * different sheet from the one that prints.
+   */
+  warehouseId?: number
   /** Compact rendering for a toolbar row. */
   dense?: boolean
 }
 
-export function LayoutLabelBadge({ layoutId, layoutName, dense = false }: LayoutLabelBadgeProps) {
+export function LayoutLabelBadge({
+  layoutId,
+  layoutName,
+  warehouseId,
+  dense = false,
+}: LayoutLabelBadgeProps) {
   const [open, setOpen] = useState(false)
   const status = useLayoutLabelStatus(layoutId)
 
@@ -70,6 +83,7 @@ export function LayoutLabelBadge({ layoutId, layoutName, dense = false }: Layout
           onClose={() => setOpen(false)}
           layoutId={layoutId}
           layoutName={layoutName}
+          warehouseId={warehouseId}
         />
       )}
     </>

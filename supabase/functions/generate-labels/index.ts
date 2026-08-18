@@ -49,6 +49,7 @@ import {
   fitText,
   labelArtwork,
   layoutLabels,
+  MAX_START_OFFSET,
   sheetSpec,
   SHEET_PRESETS,
   type BarcodeFit,
@@ -100,11 +101,16 @@ const inputSchema = z.object({
   /**
    * Skip N cells on the first page, to reuse a part-used sticker sheet.
    *
-   * The ceiling is the largest sheet in the library, not a fixed 47 — that was
-   * sized for a 24-up sheet and silently clamped on anything denser.
-   * `layoutLabels` clamps to the chosen preset's own capacity anyway.
+   * The ceiling is DERIVED from the largest sheet in the library, never typed —
+   * a fixed 47 was sized for a 24-up sheet and outlived it, and a fixed 64 would
+   * go the same way the moment an eleventh preset lands. It is deliberately the
+   * library-wide maximum rather than this request's preset: on a layout run the
+   * preset is resolved per group from the site's saved stock, after validation.
+   * `layoutLabels` clamps to the chosen preset's own capacity anyway; both UI
+   * inputs bound themselves to `maxStartOffset(preset)` so that clamp is never
+   * the operator's first news of it.
    */
-  startOffset: z.number().int().min(0).max(64).default(0),
+  startOffset: z.number().int().min(0).max(MAX_START_OFFSET).default(0),
   /** location kind: restrict to one warehouse subtree. */
   warehouseId: z.number().int().positive().optional(),
   /** location kind: which location kinds to print. Defaults to storable ones. */

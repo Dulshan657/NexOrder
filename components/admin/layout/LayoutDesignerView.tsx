@@ -803,6 +803,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
                   <LayoutLabelBadge
                     layoutId={selectedLayout.id}
                     layoutName={selectedLayout.name}
+                    warehouseId={warehouse.id}
                     dense
                   />
                 )}
