@@ -118,7 +118,7 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
 
   return (
     <div className="bg-white min-h-screen">
-      <div className="px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8">
+      <div className="pl-16 pr-4 sm:pr-6 md:pl-6 lg:pl-8 lg:pr-8 pt-4 sm:pt-6 lg:pt-8">
         <label className="inline-flex items-center gap-2 text-sm text-stone-600">
           <span className="font-medium">Warehouse</span>
           <select

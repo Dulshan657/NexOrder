@@ -29,6 +29,16 @@
 //   * VERDICT. The gun's own beep means "I decoded a barcode", never "the app
 //     accepted it". It sounds identical for the right bin and the wrong one, so
 //     the app has to answer in its own voice.
+//
+// ── AND ON ANDROID, KEYDOWN MAY CARRY NOTHING AT ALL ────────────────────────
+//
+// The device in use is a CipherLab RS35 (Android 10). Its ReaderConfig ships
+// with Keyboard Emulation = "Input Method", which injects scans through an IME:
+// Chrome reports every keydown as `key: 'Unidentified'` / `keyCode 229`, and the
+// text arrives only as `input` events. So the character timing lives in
+// `noteArrival`, driven by onChange, which behaves the same under that mode and
+// under "Key Event". Do not move it back to onKeyDown, and do not run it in
+// both — see the note on the keydown handler.
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { Camera, ScanLine, X } from 'lucide-react'
@@ -87,6 +97,16 @@ export interface ScanFieldProps {
 }
 
 /**
+ * How long an identical code is ignored on the keyboard path.
+ *
+ * Sized for one thing only: swallowing the second half of a `CRLF` terminator.
+ * The camera's equivalent guard is 1500 ms because a camera re-reads the same
+ * label many times a second; a person deliberately re-scanning a bin is nowhere
+ * near this fast, so the window must stay small.
+ */
+const DUPLICATE_COMMIT_MS = 250
+
+/**
  * The verdict as a border colour.
  *
  * Static ring rather than a keyframe animation, and the transition is dropped
@@ -132,11 +152,20 @@ export function ScanField({
   // whether a Tab was sent by a gun or pressed by a person, and to spot a gun
   // with no suffix at all. Refs, not state: a 13-character burst must not
   // re-render the page 13 times.
-  const lastKeyAtRef = useRef(0)
+  const lastArrivalRef = useRef(0)
+  const lastLengthRef = useRef(value.length)
   const machineRunRef = useRef(false)
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastCommitRef = useRef<{ code: string; at: number }>({ code: '', at: 0 })
   const valueRef = useRef(value)
   valueRef.current = value
+
+  // A consumer clearing the field (every walk surface does, on a refusal) must
+  // not read as a shrink on the next character — that would make the following
+  // scan look like ordinary typing and never arm the flush.
+  useEffect(() => {
+    if (value.length < lastLengthRef.current) lastLengthRef.current = value.length
+  }, [value])
 
   const clearIdle = () => {
     if (idleTimerRef.current !== null) {
@@ -145,9 +174,68 @@ export function ScanField({
     }
   }
 
+  /**
+   * Characters arrived. Called from `onChange`, NOT from `onKeyDown`, and that
+   * is the whole point.
+   *
+   * CipherLab's Android default (ReaderConfig → Data Output → Keyboard Emulation
+   * = **Input Method**) injects scans through an IME. Chrome then reports every
+   * keydown as `key: 'Unidentified'` with `keyCode 229` and delivers the real
+   * text only as `input` events — so timing read off keydown sees nothing at
+   * all, and the Tab terminator and the no-suffix flush both go dead on the
+   * device's out-of-the-box configuration. `onChange` fires identically under
+   * that mode and under `Key Event`, so measuring here covers both.
+   *
+   * A jump of SEVERAL characters at once also counts as machine input: that is
+   * an IME committing a whole scan in one event, and in Input Method mode it is
+   * the strongest signal available.
+   */
+  const noteArrival = (next: string, at: number) => {
+    const previousLength = lastLengthRef.current
+    const grew = next.length > previousLength
+    // Some browsers report timeStamp 0 on synthesised input events.
+    const now = at > 0 ? at : performance.now()
+    const gap = now - lastArrivalRef.current
+
+    machineRunRef.current =
+      grew &&
+      (next.length - previousLength > 1 ||
+        (lastArrivalRef.current > 0 && gap <= WEDGE_MAX_INTERKEY_MS))
+
+    lastArrivalRef.current = now
+    lastLengthRef.current = next.length
+
+    // The gun with no suffix at all: once the burst goes quiet, the run is the
+    // code. Only ever armed for a machine-speed run, so ordinary typing never
+    // self-commits.
+    clearIdle()
+    if (machineRunRef.current) {
+      idleTimerRef.current = setTimeout(() => {
+        idleTimerRef.current = null
+        if (machineRunRef.current && valueRef.current.trim().length >= WEDGE_MIN_SCAN_LENGTH) {
+          commit(valueRef.current)
+        }
+      }, WEDGE_FLUSH_IDLE_MS)
+    }
+  }
+
   const commit = (raw: string) => {
     const trimmed = raw.trim()
     if (!trimmed) return
+
+    // A duplicated terminator must not commit twice. ReaderConfig offers
+    // `CRLF Character` as an Auto Enter option, and `refocusAfterScan` leaves
+    // the committed value SELECTED rather than cleared — so a CR followed by an
+    // LF would commit the same code twice. Harmless on a stocktake; on Receive
+    // Stock it adds the product line twice. The window is far too short to block
+    // a deliberate re-scan of the same bin, unlike the camera's 1500 ms guard.
+    const now = performance.now()
+    if (trimmed === lastCommitRef.current.code
+        && now - lastCommitRef.current.at < DUPLICATE_COMMIT_MS) {
+      return
+    }
+    lastCommitRef.current = { code: trimmed, at: now }
+
     clearIdle()
     machineRunRef.current = false
     onChange(trimmed)
@@ -215,7 +303,10 @@ export function ScanField({
             id={inputId}
             ref={inputRef}
             value={value}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => {
+              noteArrival(e.target.value, e.timeStamp)
+              onChange(e.target.value)
+            }}
             onKeyDown={(e) => {
               // A wedge gun's terminating Enter must never submit the
               // surrounding form — it means "code finished", not "save".
@@ -238,25 +329,10 @@ export function ScanField({
                 return
               }
 
-              if (e.key.length !== 1) return
-
-              const gap = e.timeStamp - lastKeyAtRef.current
-              machineRunRef.current = lastKeyAtRef.current > 0 && gap <= WEDGE_MAX_INTERKEY_MS
-              lastKeyAtRef.current = e.timeStamp
-
-              // The gun with no suffix at all: once the burst goes quiet, the
-              // run is the code. Only ever armed for a machine-speed run, so
-              // ordinary typing never self-commits.
-              clearIdle()
-              if (machineRunRef.current) {
-                idleTimerRef.current = setTimeout(() => {
-                  idleTimerRef.current = null
-                  if (machineRunRef.current
-                      && valueRef.current.trim().length >= WEDGE_MIN_SCAN_LENGTH) {
-                    commit(valueRef.current)
-                  }
-                }, WEDGE_FLUSH_IDLE_MS)
-              }
+              // Deliberately NO character timing here — see noteArrival. Running
+              // it in both places double-counts: keydown records a 140 ms human
+              // gap, then onChange records ~0 ms in the same tick and flips the
+              // run to machine-speed for a slow typist.
             }}
             placeholder={placeholder}
             disabled={disabled}
@@ -267,7 +343,7 @@ export function ScanField({
             list={listId}
             aria-label={ariaLabel}
             data-scan-field=""
-            className={`${inputClass(!!error)} pl-9 font-mono ${compact ? 'py-1.5' : ''} ${pulseClass(pulse)}`}
+            className={`${inputClass(!!error)} pl-9 font-mono ${compact ? 'py-1.5' : 'min-h-[44px]'} ${pulseClass(pulse)}`}
             aria-invalid={error ? true : undefined}
           />
         </div>
@@ -279,7 +355,7 @@ export function ScanField({
             disabled={disabled}
             // 44px min touch target: this button gets pressed with a gloved
             // thumb at a rack face, not a mouse.
-            className="shrink-0 inline-flex items-center justify-center gap-1.5 min-w-[44px] px-3 rounded-lg border border-stone-300 bg-white text-stone-600 hover:bg-stone-50 btn-press disabled:opacity-40"
+            className="shrink-0 inline-flex items-center justify-center gap-1.5 min-w-[44px] min-h-[44px] px-3 rounded-lg border border-stone-300 bg-white text-stone-600 hover:bg-stone-50 btn-press disabled:opacity-40"
             aria-label="Scan with camera"
           >
             <Camera className="w-4 h-4" aria-hidden="true" />

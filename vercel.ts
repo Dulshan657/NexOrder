@@ -101,8 +101,22 @@ export const config: VercelConfig = {
         { key: 'X-Content-Type-Options', value: 'nosniff' },
         { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
         {
+          // `camera=(self)`, NOT `camera=()`. An empty allowlist denies the
+          // feature to the document's OWN origin, which silently killed the
+          // camera scan fallback on every deployed build: `getUserMedia`
+          // rejects with NotAllowedError, and because Permissions-Policy does
+          // not remove the API, `isCameraScanAvailable()` still returned true —
+          // so ScanField rendered the camera button, opened the sheet, and told
+          // the operator to "allow camera access for this site", which is advice
+          // nobody can act on because the denial is a response header and not a
+          // permission prompt.
+          //
+          // The hand-held imager is the primary reader (see CLAUDE.md — Code 128
+          // over QR precisely because a laser beats a camera), so this is the
+          // fallback for a torn or unreachable label. `microphone`, `payment`
+          // and `usb` stay fully denied; nothing in the app asks for them.
           key: 'Permissions-Policy',
-          value: 'geolocation=(self), camera=(), microphone=(), payment=(), usb=()',
+          value: 'geolocation=(self), camera=(self), microphone=(), payment=(), usb=()',
         },
       ],
     },
