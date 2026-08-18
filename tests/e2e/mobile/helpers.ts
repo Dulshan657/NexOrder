@@ -23,7 +23,12 @@ export const MIN_TOUCH_PX = 44
  */
 export async function navigateTo(page: Page, item: string): Promise<void> {
   await page.getByRole('button', { name: 'Open menu' }).click()
-  await page.getByRole('button', { name: item, exact: true }).click()
+  // NOT `exact: true`. Putaway and Replenishment render a pending-count badge
+  // inside the button, so their accessible names are "Putaway 44" and
+  // "Replenishment 1" — and the count is live data, so it cannot be written
+  // into the matcher either. Anchored at the start so "Stock" cannot match
+  // "Stocktake".
+  await page.getByRole('button', { name: new RegExp(`^${item}(\\s+\\d+)?$`) }).click()
   // The sidebar closes itself on selection (setIsSidebarOpen(false)); waiting
   // for that rather than for the destination keeps this helper generic.
   await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible()

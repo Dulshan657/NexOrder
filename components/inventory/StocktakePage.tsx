@@ -88,12 +88,20 @@ const StocktakePage: React.FC<StocktakePageProps> = ({ currentUser, products }) 
   return (
     <div className="min-h-screen bg-white">
       <div className="flex flex-wrap items-center gap-3 pl-16 pr-4 pt-4 sm:pr-6 sm:pt-6 md:pl-6 lg:pl-8 lg:pr-8 lg:pt-8">
-        <label className="inline-flex items-center gap-2 text-sm text-stone-600">
-          <span className="font-medium">Warehouse</span>
+        {/* A native <select> sizes itself to its WIDEST OPTION, not to its box.
+            At 360px that made this 267px starting at x=146 — 53px off the side
+            of the screen — and it got worse with every warehouse added, since
+            the culprit is whichever site has the longest name. Invisible on a
+            desktop, which is why it survived until the 360px Playwright
+            project existed to measure it. `min-w-0` is load-bearing: without
+            it the flex item refuses to shrink below its content and
+            `max-w-full` does nothing at all. */}
+        <label className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm text-stone-600">
+          <span className="shrink-0 font-medium">Warehouse</span>
           <select
             value={effectiveWarehouseId ?? ''}
             onChange={(e) => e.target.value && changeWarehouse(Number(e.target.value))}
-            className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+            className="min-w-0 max-w-full truncate rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
           >
             <option value="">Select a warehouse…</option>
             {activeWarehouses.map((w) => (

@@ -119,12 +119,16 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
   return (
     <div className="bg-white min-h-screen">
       <div className="pl-16 pr-4 sm:pr-6 md:pl-6 lg:pl-8 lg:pr-8 pt-4 sm:pt-6 lg:pt-8">
-        <label className="inline-flex items-center gap-2 text-sm text-stone-600">
-          <span className="font-medium">Warehouse</span>
+        {/* Clamped for the reason spelled out in StocktakePage: a native
+            <select> sizes to its widest OPTION, so this ran 53px off a 360px
+            screen and worsened with every site added. `min-w-0` is what lets
+            `max-w-full` bite. */}
+        <label className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm text-stone-600">
+          <span className="shrink-0 font-medium">Warehouse</span>
           <select
             value={effectiveWarehouseId ?? ''}
             onChange={(e) => pickWarehouse(e.target.value ? Number(e.target.value) : null)}
-            className="text-sm rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+            className="min-w-0 max-w-full truncate text-sm rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
           >
             <option value="">Select a warehouse…</option>
             {activeWarehouses.map((w) => (
