@@ -82,6 +82,7 @@ import {
     MODULE_INVENTORY_DISPATCH,
     MODULE_SALES_ORDERS,
 } from '../lib/modules';
+import StrayScanListener from './StrayScanListener';
 import UserProfile from './UserProfile';
 import MobileCheckoutButton from './MobileCheckoutButton';
 import OrderSummary from './OrderSummary';
@@ -1588,6 +1589,11 @@ const AppShell: React.FC<AppShellProps> = props => {
 
     return (
         <WarehouseScopeProvider currentUser={currentUser}>
+            {/* Renders nothing. Gives a scan fired at a screen that is not
+                listening a voice, instead of the silence every surface outside
+                Receive / Stocktake / Putaway used to answer with. It stands
+                down automatically whenever one of those claims capture. */}
+            <StrayScanListener />
             <OrderProvider
                 currentUser={currentUser}
                 products={products}

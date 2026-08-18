@@ -51,6 +51,7 @@ import {
   WEDGE_FLUSH_IDLE_MS,
   type WedgeBuffer,
 } from './wedgeBuffer'
+import { registerWedgeConsumer } from './wedgeRegistry'
 
 export interface UseWedgeScannerOptions {
   /**
@@ -61,6 +62,16 @@ export interface UseWedgeScannerOptions {
   active: boolean
   /** A code arrived while no field was ready for it. */
   onScan: (code: string) => void
+  /**
+   * Announce to `wedgeRegistry` that this surface is handling stray scans.
+   *
+   * True for every real scanning surface, and that is the default. The ONLY
+   * caller that passes false is the app-wide fallback in
+   * `components/StrayScanListener.tsx`, whose whole job is to notice that
+   * nobody claimed the scan — if it claimed capture itself it would suppress
+   * exactly the condition it is watching for.
+   */
+  claim?: boolean
 }
 
 function isTypingTarget(el: Element | null): boolean {
@@ -70,12 +81,24 @@ function isTypingTarget(el: Element | null): boolean {
   return (el as HTMLElement).isContentEditable === true
 }
 
-export function useWedgeScanner({ active, onScan }: UseWedgeScannerOptions): void {
+export function useWedgeScanner({ active, onScan, claim = true }: UseWedgeScannerOptions): void {
   // Held in a ref so a parent re-render between the first character and the
   // terminator cannot tear the listener down mid-burst — the same discipline
   // `useBarcodeScanner` uses for its decode callback.
   const onScanRef = useRef(onScan)
   onScanRef.current = onScan
+
+  // Claim registered in its OWN effect, deliberately.
+  //
+  // React runs child effects before parent effects, so a scanning surface deep
+  // in the tree claims before the app-level fallback's effect reads the count —
+  // which is the ordering the fallback depends on. Keeping the claim separate
+  // from the listener means that ordering holds even if the listener effect
+  // later grows dependencies that make it re-run.
+  useEffect(() => {
+    if (!active || !claim) return
+    return registerWedgeConsumer()
+  }, [active, claim])
 
   useEffect(() => {
     if (!active) return
