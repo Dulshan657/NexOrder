@@ -8,7 +8,11 @@
 //    field is strict-validated as a full string BEFORE it reaches the
 //    delegate.
 //  - bug S6: category matching is case-folded against the caller-supplied
-//    canonical set (so "coconut" in a CSV resolves to "Coconut").
+//    canonical set (so "coconut" in a CSV resolves to "Coconut"). A category
+//    that matches NOTHING is created rather than rejected — the DB constraint
+//    has been a length bound, not an enum, since mig 00069, and rejecting made
+//    a first catalogue load impossible on an empty tenant database. See
+//    `resolveCategory`.
 //  - bug C1: supplier lookup is folded (trim + lowercase) against a
 //    caller-supplied name->id map. An unknown supplier is not a row error —
 //    it's flagged so the caller can create it and re-link the row.
@@ -23,6 +27,15 @@ export interface CatalogImportContext {
   suppliersByName: Map<string, number>
   /** Canonical category values (e.g. `constants.CATEGORIES`), case-sensitive. */
   categories: Set<string>
+  /**
+   * Canonical spellings for categories THIS FILE introduces, already folded
+   * across rows by the caller. Rows validate independently, so without a
+   * file-wide fold a CSV containing both "BEAM" and "Beam" would send two
+   * different strings and create two categories. The caller pre-scans and
+   * picks one spelling; every row then resolves to it. Optional — omitting it
+   * just means a new category keeps whatever spelling its own row used.
+   */
+  newCategories?: Set<string>
 }
 
 export type RowResult =
@@ -33,6 +46,8 @@ export type RowResult =
       supplierWillBeCreated: boolean
       /** Every supplier on this row (primary + additional) that doesn't exist yet. */
       newSupplierNames: string[]
+      /** Set when this row's category doesn't exist yet and will be created with it. */
+      newCategoryName?: string
     }
   | { ok: false; error: string; field?: string }
 
@@ -66,6 +81,40 @@ function isStrictNumeric(value: string): boolean {
  * numeric-id check passes; the resulting `supplier_id` is discarded afterward. */
 const UNKNOWN_SUPPLIER_SENTINEL_ID = -1
 
+/**
+ * The database's actual limit on a category — `products_category_length_check`
+ * (mig 00069) is `char_length(btrim(category)) BETWEEN 1 AND 60`, and the Edge
+ * Function mirrors it as `z.string().trim().min(1).max(60)`. Mig 00069 dropped
+ * the category ENUM, so a length bound is the only rule there is.
+ */
+export const MAX_CATEGORY_LENGTH = 60
+
+/**
+ * Resolve a CSV category to the spelling that should be sent.
+ *
+ * An unrecognised category is CREATED, not rejected. The importer used to
+ * reject anything outside `categoryOptions(catalog)` — the 13 built-ins plus
+ * whatever the catalog already used — which is strictly narrower than the
+ * column it writes to, and on an EMPTY tenant database rejects every category
+ * in the file. That made a first catalogue load impossible through this screen
+ * for any operator whose categories aren't the demo's (all 27 of Amadiya's
+ * brands failed with `Unknown category:`).
+ *
+ * Existing spellings win, so "coconut" resolves to "Coconut" rather than
+ * creating a duplicate; `ctx.newCategories` does the same job for categories
+ * this file is introducing.
+ */
+function resolveCategory(
+  input: string,
+  ctx: CatalogImportContext,
+): { value: string; isNew: boolean } {
+  const folded = input.toLowerCase()
+  const known = [...ctx.categories].find(c => c.toLowerCase() === folded)
+  if (known !== undefined) return { value: known, isNew: false }
+  const pending = ctx.newCategories && [...ctx.newCategories].find(c => c.toLowerCase() === folded)
+  return { value: pending ?? input, isNew: true }
+}
+
 export function validateCatalogRow(rec: Record<string, string>, ctx: CatalogImportContext): RowResult {
   const price = (rec.price ?? '').trim()
   if (!price) return { ok: false, error: 'Price is required.', field: 'price' }
@@ -98,10 +147,15 @@ export function validateCatalogRow(rec: Record<string, string>, ctx: CatalogImpo
   }
 
   const categoryInput = (rec.category ?? '').trim()
-  const canonicalCategory = [...ctx.categories].find((c) => c.toLowerCase() === categoryInput.toLowerCase())
-  if (!canonicalCategory) {
-    return { ok: false, error: `Unknown category: ${rec.category}`, field: 'category' }
+  if (!categoryInput) return { ok: false, error: 'Category is required.', field: 'category' }
+  if (categoryInput.length > MAX_CATEGORY_LENGTH) {
+    return {
+      ok: false,
+      error: `Category must be ${MAX_CATEGORY_LENGTH} characters or fewer, got ${categoryInput.length}.`,
+      field: 'category',
+    }
   }
+  const { value: canonicalCategory, isNew: categoryWillBeCreated } = resolveCategory(categoryInput, ctx)
 
   const unit = (rec.unit ?? '').trim()
   if (!unit) return { ok: false, error: 'Unit is required.', field: 'unit' }
@@ -195,5 +249,12 @@ export function validateCatalogRow(rec: Record<string, string>, ctx: CatalogImpo
     row.supplier_skus = supplierSkus.map(s => (s === '' ? null : s))
   }
 
-  return { ok: true, row, supplierName: supplierNameInput, supplierWillBeCreated, newSupplierNames }
+  return {
+    ok: true,
+    row,
+    supplierName: supplierNameInput,
+    supplierWillBeCreated,
+    newSupplierNames,
+    ...(categoryWillBeCreated ? { newCategoryName: canonicalCategory } : {}),
+  }
 }

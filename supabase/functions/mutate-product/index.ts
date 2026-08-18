@@ -94,6 +94,17 @@ const productBodySchema = z.object({
   // '' would trip the unique index the moment a second product cleared theirs,
   // so empty string is normalised to null rather than accepted.
   barcode: z.string().trim().min(1).max(64).nullable().optional(),
+  // Catalogued but not sellable (mig 00027; column is NOT NULL DEFAULT true, so
+  // omitting this still creates an active product). This is the only way to
+  // load a product that must exist without being orderable — a line whose price
+  // the operator does not know yet would otherwise have to be created at $0.00
+  // and corrected afterwards, and `price >= 0` means the server would accept
+  // that as a perfectly orderable free product in the meantime.
+  //
+  // It is also load-bearing for visibility, not just ordering: mig 00105's
+  // customer SELECT policy on `products` filters on is_active, so a false here
+  // hides the row from HoReCa logins entirely while staff still see it.
+  is_active: z.boolean().optional(),
   // inventory intentionally excluded
 })
 

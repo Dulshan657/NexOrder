@@ -4,15 +4,29 @@
 // update that keeps sibling rows' object identity stable across edits.
 import React, { useMemo } from 'react';
 import { CheckCircle2, XCircle } from 'lucide-react';
-import { TextInput, NumberInput, SelectInput } from '@/components/admin/settings/primitives';
+import { TextInput, NumberInput } from '@/components/admin/settings/primitives';
 import { validateCatalogRow, type CatalogImportContext } from '@/lib/productImportRow';
 import { stripRowId } from '@/components/admin/import/csvImportShared';
-import { CATEGORIES } from '@/constants';
 
 export interface ProductServerError {
   error: string;
   code?: string;
 }
+
+/**
+ * Id of the ONE `<datalist>` of known categories, rendered once by the modal
+ * and pointed at by every row.
+ *
+ * Deliberately not a per-row `<select>`: the replenishment min/max grid proved
+ * that 158 rows each rendering a few hundred `<option>`s froze Chrome hard
+ * enough that the tab could not even be scripted, and the fix there was a
+ * single shared `<datalist>`. This grid goes to MAX_IMPORT_ROWS (2000).
+ *
+ * A free-text input is also now required rather than merely cheaper — a
+ * category the catalog has never seen is legal (see `resolveCategory`), and a
+ * `<select>` cannot express one.
+ */
+export const CATEGORY_DATALIST_ID = 'product-import-categories';
 
 interface ProductPreviewRowProps {
   index: number;
@@ -55,17 +69,13 @@ function ProductPreviewRowImpl({ index, record, ctx, onChange, serverError }: Pr
         <NumberInput dense value={record.price ?? ''} onChange={set('price')} invalid={invalidField === 'price'} />
       </td>
       <td className={`${cellClass} min-w-[140px]`}>
-        <SelectInput
+        <TextInput
           dense
+          list={CATEGORY_DATALIST_ID}
           value={record.category ?? ''}
           onChange={set('category')}
           invalid={invalidField === 'category'}
-        >
-          <option value="">Select…</option>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </SelectInput>
+        />
       </td>
       <td className={`${cellClass} min-w-[90px]`}>
         <TextInput dense value={record.unit ?? ''} onChange={set('unit')} invalid={invalidField === 'unit'} />

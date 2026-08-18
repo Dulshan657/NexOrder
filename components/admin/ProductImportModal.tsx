@@ -7,7 +7,12 @@ import type { Product, Supplier } from '@/types';
 import { Button, Modal } from '@/components/ui';
 import { categoryOptions } from '@/lib/productTaxonomy';
 import { downloadCsv } from '@/lib/csvExport';
-import { validateCatalogRow, type CatalogImportContext, type RowResult } from '@/lib/productImportRow';
+import {
+  validateCatalogRow,
+  MAX_CATEGORY_LENGTH,
+  type CatalogImportContext,
+  type RowResult,
+} from '@/lib/productImportRow';
 import { useBulkCreateProducts } from '@/hooks/queries/useProducts';
 import {
   MAX_IMPORT_ROWS,
@@ -17,7 +22,11 @@ import {
   ImportErrorBanner,
   ImportResultStatGrid,
 } from '@/components/admin/import/csvImportShared';
-import { ProductPreviewRow, type ProductServerError } from '@/components/admin/import/ProductPreviewRow';
+import {
+  ProductPreviewRow,
+  CATEGORY_DATALIST_ID,
+  type ProductServerError,
+} from '@/components/admin/import/ProductPreviewRow';
 
 interface ProductImportModalProps {
   suppliers: Supplier[];
@@ -44,6 +53,10 @@ interface ImportOutcomeSummary {
   total: number;
 }
 
+/** Joins the new-category list into one memo key. NUL, because a category is
+ *  free text and any printable separator could legitimately occur inside one. */
+const CATEGORY_KEY_SEPARATOR = '\u0000';
+
 export function ProductImportModal({ suppliers, catalog, onClose, addToast }: ProductImportModalProps) {
   const bulkCreate = useBulkCreateProducts();
 
@@ -58,12 +71,37 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
   // Guards a fast double-click of Import from firing two overlapping mutations.
   const creatingRef = useRef(false);
 
+  // Built-in categories plus every one already in use, so an inline-created
+  // category doesn't get rejected on the next CSV import.
+  const knownCategories = useMemo(() => categoryOptions(catalog), [catalog]);
+
+  // The categories THIS FILE introduces, folded case-insensitively across all
+  // rows so that "BEAM" on row 1 and "Beam" on row 40 resolve to one spelling
+  // and create one category. Rows validate independently and can't do this for
+  // themselves, so the fold has to happen here and ride in on the context.
+  //
+  // Joined into a key first so the Set keeps its identity while the set of
+  // categories is unchanged — `ctx` feeds every memoized row, and rebuilding it
+  // on each keystroke would re-render the whole grid.
+  const newCategoryKey = useMemo(() => {
+    if (!records) return '';
+    const known = new Set(knownCategories.map((c) => c.toLowerCase()));
+    const firstSpelling = new Map<string, string>();
+    for (const rec of records) {
+      const raw = (rec.category ?? '').trim();
+      if (!raw || raw.length > MAX_CATEGORY_LENGTH) continue;
+      const folded = raw.toLowerCase();
+      if (known.has(folded) || firstSpelling.has(folded)) continue;
+      firstSpelling.set(folded, raw);
+    }
+    return [...firstSpelling.values()].sort().join(CATEGORY_KEY_SEPARATOR);
+  }, [records, knownCategories]);
+
   const ctx = useMemo<CatalogImportContext>(() => ({
     suppliersByName: new Map(suppliers.map((s) => [s.name.trim().toLowerCase(), s.id])),
-    // Built-in categories plus every one already in use, so an inline-created
-    // category doesn't get rejected on the next CSV import.
-    categories: new Set(categoryOptions(catalog)),
-  }), [suppliers, catalog]);
+    categories: new Set(knownCategories),
+    newCategories: new Set(newCategoryKey ? newCategoryKey.split(CATEGORY_KEY_SEPARATOR) : []),
+  }), [suppliers, knownCategories, newCategoryKey]);
 
   const resetOutcome = () => {
     setServerErrors(null);
@@ -115,17 +153,28 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
     let valid = 0;
     let invalid = 0;
     const creatingSuppliers = new Set<string>();
+    // Counted from VALID rows only, like suppliers: a category sitting on a row
+    // that won't be sent isn't going to be created either. Note this is a
+    // narrower set than `ctx.newCategories`, which has to span every row so the
+    // spellings agree.
+    const creatingCategories = new Set<string>();
     for (const rec of records) {
       const result = validateCatalogRow(stripRowId(rec), ctx);
       if (result.ok) {
         valid++;
         // Counts every new supplier on the row, primary or additional.
         for (const name of result.newSupplierNames) creatingSuppliers.add(name);
+        if (result.newCategoryName) creatingCategories.add(result.newCategoryName);
       } else {
         invalid++;
       }
     }
-    return { valid, invalid, creatingSuppliers: [...creatingSuppliers] };
+    return {
+      valid,
+      invalid,
+      creatingSuppliers: [...creatingSuppliers],
+      creatingCategories: [...creatingCategories].sort(),
+    };
   }, [records, ctx]);
 
   const handleDownloadTemplate = () => {
@@ -224,7 +273,7 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-stone-500">
-            Upload a CSV of products to create in bulk. Unknown suppliers are created automatically.
+            Upload a CSV of products to create in bulk. Unknown suppliers and categories are created automatically.
             For an item you buy from several suppliers, list the others in <code className="font-mono">additional_suppliers</code> (separated by <code className="font-mono">;</code>)
             and their part numbers in <code className="font-mono">supplier_skus</code>, in the same order.
           </p>
@@ -271,6 +320,20 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
                 {summary.creatingSuppliers.join(', ')}
               </div>
             )}
+
+            {summary.creatingCategories.length > 0 && (
+              <div className="rounded-lg bg-stone-50 border border-stone-200 px-3 py-2 text-xs text-stone-600">
+                Will create {summary.creatingCategories.length} new categor{summary.creatingCategories.length === 1 ? 'y' : 'ies'}:{' '}
+                {summary.creatingCategories.join(', ')}
+              </div>
+            )}
+
+            {/* ONE datalist for the whole grid — see CATEGORY_DATALIST_ID. */}
+            <datalist id={CATEGORY_DATALIST_ID}>
+              {[...knownCategories, ...ctx.newCategories].map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
 
             <div className="rounded-xl border border-stone-200 overflow-x-auto max-h-[45vh] overflow-y-auto">
               <table className="min-w-full text-sm">
