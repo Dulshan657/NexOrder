@@ -295,3 +295,61 @@ describe('real codes from the demo site', () => {
     }
   })
 })
+
+// ── ANDROID IME INPUT ───────────────────────────────────────────────────────
+//
+// The CipherLab RS35 ships with ReaderConfig → Keyboard Emulation = "Input
+// Method", which injects scans through an IME. Chrome then reports EVERY
+// keydown as `key: 'Unidentified'` (keyCode 229) and delivers the text only as
+// `input` events. These cases pin what this module does with that, so the
+// behaviour is documented rather than incidental — `ScanField` compensates via
+// `noteArrival`, and `useWedgeScanner` cannot (an IME needs a focused editable,
+// so with nothing focused there are no characters at all).
+describe('IME keydowns', () => {
+  it('ignores an Unidentified keydown without touching the run', () => {
+    const { buffer, at } = type('MAIN-F01', GUN_GAP)
+    const step = press(buffer, 'Unidentified', at)
+    expect(step.outcome).toEqual({ action: 'ignore' })
+    expect(step.next).toBe(buffer)
+  })
+
+  it('does not let an IME keydown advance the clock', () => {
+    // If `Unidentified` recorded a timestamp, the gap to the NEXT real character
+    // would be measured from it — and a burst punctuated by IME events would
+    // read as fast even when it is not, or vice versa.
+    const { buffer, at } = type('AB', GUN_GAP)
+    const before = buffer.lastAt
+    const step = press(buffer, 'Unidentified', at + 5000)
+    expect(step.next.lastAt).toBe(before)
+  })
+
+  it('still commits a run that is interleaved with IME keydowns', () => {
+    let buffer = emptyWedgeBuffer
+    let at = 1000
+    for (const key of ['M', 'Unidentified', 'A', 'Unidentified', 'I', 'N']) {
+      const step = press(buffer, key, at)
+      buffer = step.next
+      if (key !== 'Unidentified') at += GUN_GAP
+    }
+    expect(press(buffer, 'Enter', at).outcome).toMatchObject({ action: 'commit', code: 'MAIN' })
+  })
+
+  it('treats Process the same way', () => {
+    const { buffer } = type('ABC', GUN_GAP)
+    expect(press(buffer, 'Process', 2000).outcome).toEqual({ action: 'ignore' })
+  })
+
+  it('produces NOTHING useful from an IME-only burst, which is the honest result', () => {
+    // Not a bug being papered over: with only Unidentified keydowns there is no
+    // text in the event stream at all, so a global listener has nothing to work
+    // with. This is why the guide recommends "Key Event" mode.
+    let buffer = emptyWedgeBuffer
+    let at = 1000
+    for (let i = 0; i < 12; i++) {
+      buffer = press(buffer, 'Unidentified', at).next
+      at += GUN_GAP
+    }
+    expect(buffer.chars).toEqual([])
+    expect(press(buffer, 'Enter', at).outcome).toEqual({ action: 'discard', reason: 'too-short' })
+  })
+})

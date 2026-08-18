@@ -28,6 +28,20 @@
 // which risks swallowing genuine keystrokes. It is not worth it. The mitigation
 // is that `ScanField` now refocuses itself, so focus lives in the scan box by
 // default, and a misdirected scan is audible.
+//
+// ── ON ANDROID THIS REQUIRES "Key Event" MODE, AND CANNOT BE MADE NOT TO ────
+//
+// The CipherLab RS35 ships with ReaderConfig → Data Output → Keyboard Emulation
+// = "Input Method", which delivers scans through an IME. An IME types into the
+// FOCUSED EDITABLE and nothing else — so when nothing is focused, which is the
+// entire case this hook exists for, no characters are produced anywhere and
+// there is nothing to listen to. That is a property of Android text input, not
+// a gap in this file, and no amount of code here changes it.
+//
+// `ScanField` still works under Input Method (its timing moved to onChange for
+// exactly this reason). It is only the stray-scan net that needs "Key Event".
+// Do not try to "fix" this; recommend the mode instead — SCAN-GUN-TEST-GUIDE.md
+// does, and says why.
 
 import { useEffect, useRef } from 'react'
 import {

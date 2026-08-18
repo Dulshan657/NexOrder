@@ -15,11 +15,67 @@
 // Synthesised rather than shipped as audio files: two tones are a few lines of
 // WebAudio, and an asset would need hosting, a CSP entry and a cache story.
 //
+// On a hand-held there is a third channel that beats both: VIBRATION. It works
+// through ear defenders, over a forklift, and with the media volume down, and
+// the device is already in the operator's hand. It has its own mute, separate
+// from the audio one, because the room that wants silence is exactly the room
+// that still wants the buzz.
+//
 // EVERYTHING HERE MUST FAIL SILENTLY. These calls sit inside scan handlers. A
 // browser with no AudioContext, a suspended context, a locked-down iframe or a
 // full-up audio device must cost the operator a sound, never the scan.
 
 const MUTE_KEY = 'nexorder.scan.muted'
+const HAPTICS_KEY = 'nexorder.scan.hapticsOff'
+
+/**
+ * Vibration patterns, in ms. Distinguished by SHAPE, not just length — the same
+ * rule the two tones follow, because a wrist cannot judge duration precisely but
+ * can tell one buzz from three.
+ */
+const VIBRATE_ACCEPT = 35
+const VIBRATE_REJECT = [60, 50, 60, 50, 60]
+
+/**
+ * Buzz the device.
+ *
+ * On a handheld in a warehouse this is the channel that actually lands: it works
+ * through ear defenders, over a forklift, and with the media volume muted — and
+ * the CipherLab RS35 this was written for is held in the hand at all times. On a
+ * desktop `navigator.vibrate` is absent and every call here is a no-op, so it
+ * costs nothing there.
+ *
+ * Deliberately NOT gated on the audio mute. Muting the beep in a quiet office is
+ * exactly the moment the buzz should still arrive; they are different channels
+ * for different rooms, so they get different switches.
+ */
+function vibrate(pattern: number | readonly number[]): void {
+  if (areScanHapticsMuted()) return
+  try {
+    // Chrome refuses vibration without a prior user gesture and logs an
+    // "Intervention" warning; a scan is a keystroke, so in practice there is one.
+    navigator.vibrate?.(pattern as number | number[])
+  } catch {
+    // A device that cannot vibrate simply does not.
+  }
+}
+
+export function areScanHapticsMuted(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(HAPTICS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function setScanHapticsMuted(muted: boolean): void {
+  try {
+    if (muted) globalThis.localStorage?.setItem(HAPTICS_KEY, '1')
+    else globalThis.localStorage?.removeItem(HAPTICS_KEY)
+  } catch {
+    // Storage disabled — the preference simply is not remembered.
+  }
+}
 
 type AudioContextCtor = new () => AudioContext
 
@@ -129,9 +185,10 @@ function play(tones: readonly Tone[]): void {
   }
 }
 
-/** The app accepted the code. One short, clean, high blip. */
+/** The app accepted the code. One short, clean, high blip and one short buzz. */
 export function playScanAccept(): void {
   play([{ from: 1320, to: 1320, durationMs: 70, type: 'sine', delayS: 0, gain: 0.16 }])
+  vibrate(VIBRATE_ACCEPT)
 }
 
 /**
@@ -144,6 +201,7 @@ export function playScanReject(): void {
     { from: 240, to: 180, durationMs: 120, type: 'square', delayS: 0, gain: 0.1 },
     { from: 190, to: 130, durationMs: 160, type: 'square', delayS: 0.13, gain: 0.1 },
   ])
+  vibrate(VIBRATE_REJECT)
 }
 
 /**
@@ -156,6 +214,7 @@ export function playScanStray(): void {
     { from: 660, to: 660, durationMs: 60, type: 'triangle', delayS: 0, gain: 0.12 },
     { from: 660, to: 660, durationMs: 60, type: 'triangle', delayS: 0.09, gain: 0.12 },
   ])
+  vibrate([25, 40, 25])
 }
 
 /**

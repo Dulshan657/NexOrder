@@ -218,7 +218,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
             {row.huCode && <span className="font-mono"> · {row.huCode}</span>}
           </span>
         </span>
-        <span className="shrink-0 text-right">
+        <span className="shrink-0 text-right max-w-[45%] sm:max-w-none">
           <span className="block text-sm font-medium text-emerald-600 truncate">{locationTitle(bin)}</span>
           {locationSubtitle(bin) && (
             <span className="block font-mono text-[10px] text-emerald-600/60">{locationSubtitle(bin)}</span>
@@ -388,7 +388,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       <button
         onClick={putBack}
         disabled={unassign.isPending}
-        className="inline-flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-800 btn-press disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 min-h-[44px] py-2 text-xs text-stone-500 hover:text-stone-800 btn-press disabled:opacity-50"
       >
         <Undo2 className="w-3.5 h-3.5" aria-hidden="true" />
         Can't place this — put it back on the queue

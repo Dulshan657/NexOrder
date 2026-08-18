@@ -87,7 +87,7 @@ const StocktakePage: React.FC<StocktakePageProps> = ({ currentUser, products }) 
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="flex flex-wrap items-center gap-3 px-4 pt-4 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">
+      <div className="flex flex-wrap items-center gap-3 pl-16 pr-4 pt-4 sm:pr-6 sm:pt-6 md:pl-6 lg:pl-8 lg:pr-8 lg:pt-8">
         <label className="inline-flex items-center gap-2 text-sm text-stone-600">
           <span className="font-medium">Warehouse</span>
           <select
