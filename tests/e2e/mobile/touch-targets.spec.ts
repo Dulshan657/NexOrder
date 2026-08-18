@@ -42,7 +42,17 @@ test.describe('F16 / F17 — walk cards', () => {
       // that was 16 px tall.
       const escape = page.getByRole('button', { name: /put (it )?back|unassign|hand back/i })
       const count = await escape.count()
-      test.skip(count === 0, `no ${queue.toLowerCase()} work queued on this environment — nothing to measure`)
+      // Read this skip literally: it does NOT mean the queue is empty. The stop
+      // cards live in the WALK view, which is reached by assigning work — a
+      // write, and this suite is read-mostly. So F16/F17 stay unguarded until
+      // someone decides that assigning a task in a spec is acceptable. Recorded
+      // that way rather than deleted, because a skip that explains itself is
+      // worth more than a green run that measured nothing.
+      test.skip(
+        count === 0,
+        `no ${queue.toLowerCase()} stop cards on the queue page — they are in the walk view, ` +
+          'which this read-mostly suite does not enter because starting a walk assigns work',
+      )
 
       for (let i = 0; i < count; i += 1) {
         await expectTouchTarget(escape.nth(i), `${queue} escape hatch #${i}`)

@@ -172,12 +172,16 @@ async function main() {
 
 async function verifyMoved(task, pick, reserve) {
   step(7, 'Prove the stock actually moved (the real gate condition)')
-  // TRACEABILITY GAP, worth knowing: complete-replenishment moves stock through
-  // inv_transfer_stock, which writes GENERIC legs — ref_type 'transfer' and a
-  // NULL ref_id. Nothing on the ledger names the replenishment task, so "which
-  // task moved this stock?" is not answerable from inventory_movements alone;
-  // you have to correlate on (product, from, to, qty, time). Hence the match
-  // below is on the leg pair rather than on a task id.
+  // The traceability gap this used to describe is CLOSED (mig 00109, register
+  // row O13): both legs now carry ref_type 'replen_task' and the completion
+  // record's id, so "which task moved this stock?" is answerable from
+  // inventory_movements alone.
+  //
+  // The match below still pairs on quantity rather than on the ref, and that is
+  // deliberate: legs written BEFORE 00109 carry ('transfer', NULL), and this
+  // script's whole job is to be re-runnable against a warehouse that may
+  // already hold them. Matching on the ref would make it report a pass as a
+  // failure on any pre-migration history.
   const { data: legs } = await supa
     .from('inventory_movements')
     .select('id, movement_type, location_id, qty_delta, ref_type, ref_id, handling_unit_id')
