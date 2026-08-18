@@ -7,7 +7,26 @@
          NexOrder even on a tenant deployment — the product is ours, the
          documents are theirs (PRODUCTION-LAUNCH-PLAN.md, "Identity"). -->
     <link rel="icon" type="image/png" href="/assets/Nex-Order-no-bg-logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `interactive-widget=resizes-content` is load-bearing on a handheld and
+         is NOT the browser default (that is `resizes-visual`).
+
+         The AppShell root is `h-screen overflow-hidden` and `document.body`
+         never scrolls; the only scroller is `<main data-scroll-container>`. Under
+         the default, opening Android's soft keyboard shrinks only the VISUAL
+         viewport, so `h-screen` keeps its full height and anything anchored to
+         the bottom of the layout viewport sits behind the keyboard — including
+         the stocktake count sheet's `sticky bottom-0` action bar, which carries
+         the Post button, and every Sheet/Modal footer. Because those footers are
+         `shrink-0` outside the scrolling body by design, there is nothing to
+         scroll and the operator has to dismiss the keyboard to find the button.
+
+         `resizes-content` shrinks the layout viewport instead, so `h-screen`
+         means "the part you can actually see" and those footers stay reachable.
+         No `user-scalable=no`: pinch-zoom matters on a 5.5-inch screen. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content"
+    />
     <title>Nex Order</title>
     <style>
       /* Custom Scrollbar Styles for a more minimalistic and consistent theme */

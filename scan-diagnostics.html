@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
+<title>Nex Order — scanner diagnostics</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 12px;
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: #fafaf9; color: #1c1917; font-size: 15px;
+  }
+  h1 { font-size: 17px; margin: 0 0 2px; }
+  .sub { color: #57534e; font-size: 12px; margin: 0 0 12px; }
+  .card { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .card h2 { font-size: 13px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; color: #78716c; }
+  input {
+    width: 100%; padding: 12px; min-height: 48px; font-size: 16px;
+    font-family: ui-monospace, Consolas, monospace;
+    border: 2px solid #d6d3d1; border-radius: 8px; background: #fff;
+  }
+  input:focus { outline: none; border-color: #2988de; }
+  .verdict { margin-top: 10px; padding: 10px; border-radius: 8px; font-size: 14px; line-height: 1.45; }
+  .ok   { background: #ecfdf5; border: 1px solid #6ee7b7; color: #065f46; }
+  .bad  { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+  .warn { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+  .idle { background: #f5f5f4; border: 1px solid #e7e5e4; color: #57534e; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #f5f5f4; white-space: nowrap; }
+  th { color: #a8a29e; font-weight: 600; }
+  .scroll { max-height: 240px; overflow: auto; -webkit-overflow-scrolling: touch; }
+  .slow { color: #b91c1c; font-weight: 700; }
+  .fast { color: #047857; }
+  button {
+    min-height: 48px; padding: 0 14px; font-size: 14px; border-radius: 8px;
+    border: 1px solid #d6d3d1; background: #fff; color: #44403c; margin: 0 6px 6px 0;
+  }
+  button:active { background: #f5f5f4; }
+  dl { margin: 0; font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+  dt { color: #a8a29e; margin-top: 6px; }
+  dd { margin: 0; word-break: break-all; }
+  code { background: #f5f5f4; padding: 0 3px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<h1>Scanner diagnostics</h1>
+<p class="sub">No login needed. Put the cursor in the box and pull the trigger.</p>
+
+<div class="card">
+  <h2>1 · Scan here</h2>
+  <input id="box" autocomplete="off" autocapitalize="characters" spellcheck="false"
+         placeholder="Tap here, then scan" aria-label="Scan target">
+  <div id="verdict" class="verdict idle">Waiting for a scan…</div>
+  <div style="margin-top:10px">
+    <button type="button" id="clear">Clear log</button>
+    <button type="button" id="buzz">Test vibration</button>
+    <button type="button" id="beep">Test sound</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>2 · Raw events</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>#</th><th>type</th><th>key / delta</th><th>code</th><th>gap</th></tr></thead>
+      <tbody id="log"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>3 · This device</h2>
+  <dl id="env"></dl>
+</div>
+
+<script>
+const C = {"maxInterKeyMs":50,"minLength":3,"maxLength":64,"flushIdleMs":120};
+const box = document.getElementById('box');
+const log = document.getElementById('log');
+const verdict = document.getElementById('verdict');
+
+// TWO clocks, deliberately. `lastAt` is for the display column (gap since the
+// previous event of any kind); `lastCharAt` advances ONLY on characters and is
+// what the machine-speed verdict is measured from. Sharing one clock times the
+// keydown-to-input latency instead of the character-to-character gap, which is
+// always ~0 and would report every scan as fast — the same double-clock trap
+// ScanField's noteArrival exists to avoid.
+let n = 0, lastAt = 0, lastCharAt = 0, lastLen = 0;
+let run = { chars: 0, slowest: 0, sawRealKey: false, sawImeKey: false, terminator: null };
+
+function row(type, detail, code, gap) {
+  const tr = document.createElement('tr');
+  const gapText = gap === null ? '—' : gap.toFixed(0) + 'ms';
+  const cls = gap === null ? '' : (gap <= C.maxInterKeyMs ? 'fast' : 'slow');
+  tr.innerHTML = '<td>' + (++n) + '</td><td>' + type + '</td><td>' +
+    detail + '</td><td>' + (code === null ? '—' : code) +
+    '</td><td class="' + cls + '">' + gapText + '</td>';
+  log.prepend(tr);
+  while (log.children.length > 60) log.lastChild.remove();
+}
+
+function say(kind, html) { verdict.className = 'verdict ' + kind; verdict.innerHTML = html; }
+
+function report() {
+  if (run.chars === 0) return;
+  const tooShort = run.chars < C.minLength;
+  const tooSlow = run.slowest > C.maxInterKeyMs;
+
+  let mode;
+  if (run.sawRealKey) mode = '<b>Key Event</b> — real key events. Everything works, including the stray-scan net.';
+  else if (run.sawImeKey) mode = '<b>Input Method</b> (the factory default) — keydown reports <code>Unidentified</code>/229. Typing into a focused box works; scanning with <i>nothing</i> focused cannot. Switch ReaderConfig to <b>Key Event</b>.';
+  else mode = 'No key events at all — text appeared without them.';
+
+  if (tooSlow) {
+    say('bad', 'Characters arrived up to <b>' + run.slowest.toFixed(0) + 'ms</b> apart, over the <b>' +
+      C.maxInterKeyMs + 'ms</b> limit, so this does not read as a machine burst.<br><br>' +
+      'Set the inter-character delay to 0 in ReaderConfig (<i>Timeout between Input Method</i> or ' +
+      '<i>KeyEvent Delay Time</i>).<br><br>' + mode);
+  } else if (tooShort) {
+    say('warn', 'Only ' + run.chars + ' characters — under the ' + C.minLength +
+      '-character minimum, so this would be ignored as a stray keypress.<br><br>' + mode);
+  } else {
+    say('ok', '<b>Good scan.</b> ' + run.chars + ' characters, worst gap <b>' +
+      run.slowest.toFixed(0) + 'ms</b> (limit ' + C.maxInterKeyMs + 'ms). Terminator: <b>' +
+      (run.terminator || 'none — the ' + C.flushIdleMs + 'ms quiet-time flush would commit it') +
+      '</b>.<br><br>' + mode);
+  }
+  run = { chars: 0, slowest: 0, sawRealKey: false, sawImeKey: false, terminator: null };
+}
+
+let settle;
+function bump() { clearTimeout(settle); settle = setTimeout(report, 400); }
+
+box.addEventListener('keydown', (e) => {
+  const now = e.timeStamp || performance.now();
+  const gap = lastAt ? now - lastAt : null;
+
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    if (e.key === 'Tab') e.preventDefault();
+    run.terminator = e.key;
+    row('key', e.key, e.keyCode, gap);
+    lastAt = now;
+    bump();
+    return;
+  }
+  if (e.key === 'Unidentified' || e.keyCode === 229) run.sawImeKey = true;
+  else if (e.key.length === 1) run.sawRealKey = true;
+
+  row('key', e.key === ' ' ? '(space)' : e.key, e.keyCode, gap);
+  lastAt = now;
+});
+
+box.addEventListener('input', (e) => {
+  const now = e.timeStamp || performance.now();
+  const gap = lastAt ? now - lastAt : null;
+  const v = box.value;
+  const delta = v.length - lastLen;
+
+  if (delta > 0) {
+    const charGap = lastCharAt ? now - lastCharAt : null;
+    run.chars += delta;
+    if (charGap !== null && charGap > run.slowest) run.slowest = charGap;
+    lastCharAt = now;
+  } else if (delta < 0) {
+    run = { chars: 0, slowest: 0, sawRealKey: false, sawImeKey: false, terminator: null };
+  }
+
+  row('input', (delta >= 0 ? '+' : '') + delta + ' → "' + v.slice(-14) + '"',
+      null, delta > 0 && run.chars > delta ? run.slowest : gap);
+  lastAt = now;
+  lastLen = v.length;
+  bump();
+});
+
+document.getElementById('clear').addEventListener('click', () => {
+  log.innerHTML = ''; n = 0; lastAt = 0; lastCharAt = 0; lastLen = 0; box.value = '';
+  run = { chars: 0, slowest: 0, sawRealKey: false, sawImeKey: false, terminator: null };
+  say('idle', 'Waiting for a scan…');
+  box.focus();
+});
+
+document.getElementById('buzz').addEventListener('click', () => {
+  const ok = typeof navigator.vibrate === 'function' && navigator.vibrate([60, 50, 60]);
+  say(ok ? 'ok' : 'bad', ok ? 'Vibration fired. Did you feel it?' : 'This device reports no vibration support.');
+});
+
+document.getElementById('beep').addEventListener('click', () => {
+  try {
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return say('bad', 'No AudioContext — scan tones will be silent here.');
+    const ctx = new Ctor();
+    if (ctx.state === 'suspended') ctx.resume();
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.setValueAtTime(1320, ctx.currentTime);
+    g.gain.setValueAtTime(0, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.16, ctx.currentTime + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.07);
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.09);
+    say('ok', 'Tone played. If you heard nothing, check the MEDIA volume — not the ringer.');
+  } catch (err) {
+    say('bad', 'Audio failed: ' + err);
+  }
+});
+
+// Device readout. The Chrome major version matters: the app's CSS (Tailwind v4)
+// needs Chrome 111 or newer, and a locked-down handheld can ship older — in
+// which case the app looks broken and the scanner is entirely innocent.
+(function () {
+  const ua = navigator.userAgent;
+  const m = ua.match(/Chrom(?:e|ium)\/(\d+)/);
+  const major = m ? parseInt(m[1], 10) : null;
+  const rows = [
+    ['Chrome version', major === null ? 'not Chrome — ' + ua : major + (major < 111
+      ? '  ⚠ TOO OLD — the app needs 111+ for its CSS' : '  ✓')],
+    ['CSS viewport', window.innerWidth + ' × ' + window.innerHeight + ' px'],
+    ['Device pixel ratio', String(window.devicePixelRatio)],
+    ['Vibration', typeof navigator.vibrate === 'function' ? 'supported' : 'NOT supported'],
+    ['AudioContext', (window.AudioContext || window.webkitAudioContext) ? 'supported' : 'NOT supported'],
+    ['BarcodeDetector', 'BarcodeDetector' in window ? 'supported (camera fallback)' : 'absent — camera falls back to zxing'],
+    ['Secure context', window.isSecureContext ? 'yes' : 'NO — camera and clipboard will be blocked'],
+    ['Touch points', String(navigator.maxTouchPoints)],
+    ['User agent', ua],
+  ];
+  document.getElementById('env').innerHTML =
+    rows.map((r) => '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>').join('');
+})();
+
+box.focus();
+</script>
+</body>
+</html>

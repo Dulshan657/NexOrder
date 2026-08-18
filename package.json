@@ -38,6 +38,7 @@
     "export:demo": "node supabase/ops/export-demo.mjs --env=dev",
     "seed:barcodes:dev": "node scripts/seed-demo-barcodes.mjs --env=dev",
     "scan:sheet": "tsx scripts/build-scan-test-sheet.ts --env=dev",
+    "scan:diagnostics": "tsx scripts/build-scan-diagnostics.ts",
     "demo:users:dev": "node supabase/ops/mint-demo-users.mjs --env=dev",
     "demo:import:dev": "node supabase/ops/import-demo.mjs --env=dev",
     "demo:import:check:dev": "node supabase/ops/import-demo.mjs --env=dev --check",

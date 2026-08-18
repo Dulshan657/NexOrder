@@ -358,7 +358,7 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
                 .then(() => { reset(); onDone() })
                 .catch((e) => setError(e instanceof Error ? e.message : 'Could not put it back'))}
               disabled={unassign.isPending}
-              className="ml-auto text-xs text-stone-500 hover:text-stone-700 btn-press inline-flex items-center gap-1 disabled:opacity-50"
+              className="ml-auto min-h-[44px] py-2 text-xs text-stone-500 hover:text-stone-700 btn-press inline-flex items-center gap-1 disabled:opacity-50"
             >
               <Undo2 className="w-3.5 h-3.5" aria-hidden="true" />
               Can't do this one — put it back
