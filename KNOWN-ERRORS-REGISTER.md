@@ -1,0 +1,93 @@
+# Known errors register
+
+Defects found in this codebase, what happened to each, and — for the ones still
+open — what it costs and why it has not been fixed.
+
+**Scope.** Opened 2026-08-18 during the scan-gun work, so it is currently
+scanning-heavy. It is meant to outlive that: add to it whenever a real defect is
+found, whether or not it gets fixed the same day.
+
+**Rules for entries.**
+- One row per defect, with the **symptom an operator would report**, not just the
+  code smell. A register nobody can match against a bug report is useless.
+- Cite the file and, where it helps, the line.
+- An entry only leaves the OPEN table when the fix is **live**, not when it is
+  committed.
+- "Won't fix" is a legitimate outcome, but it must say *why*, and what the
+  operator should do instead.
+
+**Severity**
+| | |
+|---|---|
+| **S1** | Silent wrong data, or a privileged action fires that nobody asked for |
+| **S2** | A workflow is blocked or unusable |
+| **S3** | Works, but wastes the operator's time or misleads them |
+| **S4** | Cosmetic, or a latent trap with no current symptom |
+
+---
+
+## Open
+
+| # | Sev | Defect | Symptom | Where | Why still open |
+|---|---|---|---|---|---|
+| O1 | S2 | **Receive Stock's line table is ~1100 px wide** — `w-28` + 3×`w-40` + `w-44` + `w-20` + `w-10` = 888 px of fixed columns plus an unbounded Product column and padding. No card layout below `sm`. | On the RS35 (≈360 px) the receipt table is ~3× the screen, scrolled sideways; the batch-barcode box and the Hold checkbox are off to the right. | `components/inventory/ReceiveStockView.tsx:789-951` | Needs a real card layout below `sm`, which is a redesign of the densest surface in the app, not a patch. Receiving is genuinely a desk job; the guide says so. Revisit if receiving moves to the floor. |
+| O2 | S3 | **Global stray-scan capture cannot work under CipherLab `Input Method` mode.** An Android IME types into the focused editable and nowhere else, so with nothing focused no characters exist to listen for. | On a device left in the factory default, scanning works only after tapping the box. | `lib/scan/useWedgeScanner.ts` (documented in-file) | **Won't fix — not fixable.** It is a property of Android text input. Mitigation: use `Key Event` mode. Your RS35 is already set that way. |
+| O3 | S3 | **A scan fired while focus sits in some *other* input lands in that input.** The global capture stands down whenever focus is in any editable. | Scan a bin while the cursor is in a quantity box → the code is typed into the quantity box. | `lib/scan/useWedgeScanner.ts` | **Won't fix by design.** Catching it means `preventDefault` on characters not yet classified as a scan, which risks eating genuine keystrokes. The stand-down rule is the entire reason this cannot corrupt typing or double-commit. Mitigated by ScanField's refocus. |
+| O4 | S4 | **First scan after a page load is silent.** Browsers refuse to start audio before a user gesture. | No beep on the very first scan of a session. | `lib/scan/scanFeedback.ts` | **Won't fix.** Any workaround is autoplay abuse. The buzz and the border ring both still fire — which is exactly why the visual channel is never suppressed under reduced motion. |
+| O5 | S2 | **Tailwind v4 requires Chrome ≥ 111**; Vite's JS target is ~107. A locked-down or frozen handheld browser below 111 renders the app essentially unstyled. | "The app looks completely broken" on a managed device — and the scanner is innocent. | `package.json` (`tailwindcss ^4.2.2`), `vite.config.ts` (no `build.target`) | No action until a device actually fails. `scan-diagnostics.html` now reports the Chrome major version and flags <111, so this is diagnosable in seconds instead of an afternoon. |
+| O6 | S3 | **Session persistence over a full shift has never been verified on a phone.** The `navigatorLock` fix re-enabled `persistSession`/`autoRefreshToken`, but the ~1-hour token refresh is untested on a real handheld. | Operator is logged out mid-shift; scan picking becomes unusable. This is the exact symptom the fix was for. | `lib/auth/inProcessLock.ts`; flagged in `CLAUDE.md` and `docs/runbooks/amadiya-warehouse-setup.md` | Needs a soak test, which the RS35 finally makes possible. **Do this: leave the device logged in for 90 minutes, then scan.** |
+| O7 | S4 | **No small-screen regression coverage at all.** The only Playwright project is `devices['Desktop Chrome']`. | A layout regression at 360 px ships unnoticed. | `playwright.config.ts:65-66` | The E2E suite has nowhere to run since the cutover (its own header says so). Adding a mobile project without a runner buys nothing. |
+| O8 | S4 | **`CountSheet`'s sticky action bar has no `flex-wrap`**, unlike the header two blocks above it. | At 360 px the summary text and the Clear/Post buttons share 328 px; the Post label wraps inside its own button. Cramped, not broken. | `components/inventory/stocktake/CountSheet.tsx:221` | Cosmetic. Worth doing next time that file is open — the header already shows the fix. |
+| O9 | S4 | **`backdrop-blur` on a `sticky` element** repaints on every scroll frame. | Slightly janky scrolling on a low-end SoC like the RS35's. | `components/inventory/stocktake/CountSheet.tsx:221` | Unmeasured. Do not optimise before someone reports it on the device. |
+| O10 | S4 | **`startOffset` bounds disagree**: the UI caps at 47, the server accepts 0–64. 47 was sized for a 24-up sheet. | Cannot start a label run past position 47 on a denser sheet, with no explanation. | `components/admin/LabelPrintingSection.tsx:301` vs `supabase/functions/generate-labels/index.ts:107` | Harmless (UI is the stricter of the two) but a stale bound. One-line fix whenever labels are next touched. |
+| O11 | S4 | **`QUIET_ZONE_MODULES = 10` is defined twice** — deliberately, so the two modules need not import each other, but nothing stops them drifting. | A silent quiet-zone mismatch between geometry and encoder would degrade scan reliability with no error. | `_shared/labels/code128.ts:65` and `_shared/labelSheet.ts:230` | Intentional decoupling. Would be caught by a test asserting the two are equal — cheap, not yet written. |
+| O12 | S4 | **`BAR_WIDTH_REDUCTION_PT = 0`** — ink-spread compensation is wired but never calibrated. | On a printer that spreads toner, bars print fractionally wide and narrow-x labels get harder to read. | `supabase/functions/generate-labels/index.ts:163` | Deliberately zero pending physical evidence. **The calibration ladder in `scan-gun-test-sheet.html` §8 is how that evidence gets collected.** |
+| O13 | S3 | **Replenishment ledger legs are not attributable to their task.** `complete-replenishment` moves stock via `inv_transfer_stock`, which writes `ref_type='transfer'`, `ref_id=NULL`. | "Which task moved this stock?" cannot be answered from `inventory_movements`; you must correlate on product/from/to/qty/time. | `supabase/functions/complete-replenishment`; noted in `CLAUDE.md` | Pre-existing. Only worth fixing if traceability is actually needed. |
+
+### Environment, not code
+
+| # | Defect | Symptom | Fix |
+|---|---|---|---|
+| E1 | **Both demo Warehouse accounts have `home_warehouse_id = NULL`**, and `StocktakePage` gates its Post button on that matching the selected site. | Log in as Warehouse on the demo → everything works until Post, which is disabled with no explanation. | Test as Admin (`alice@nexorder.com.au`), or set a home warehouse on the account. |
+| E2 | **The demo has 0 open replenishment tasks** and only 3 armed configs. | Nothing to walk on the Replenishment queue. | Arm min/max in Replenishment → Setup, then run Detect. Guide §5.3. |
+
+---
+
+## Fixed
+
+Newest first. Every one of these is live on the demo.
+
+| # | Sev | Defect | Symptom before | Fix |
+|---|---|---|---|---|
+| F1 | **S1** | **`Permissions-Policy: camera=()` denied the camera to our own origin.** An empty allowlist is a denial, not "unrestricted". | Camera scanning was dead on **every deployed build**, on every device. Worse: `isCameraScanAvailable()` only checks the API exists — which the header does not remove — so the button rendered, the sheet opened, and the operator was told to "allow camera access for this site", which is unactionable because a header is not a prompt. | `camera=(self)` — `vercel.ts` |
+| F2 | **S1** | **`ReleaseQuarantineModal` used a bare `<input>` inside a `Modal` whose footer submits.** | A wedge gun's terminating Enter reached the footer button, so the scanner could **release quarantined stock** while the operator was still scanning where to put it. | Replaced with `ScanField`, which `preventDefault`s Enter |
+| F3 | **S1** | **`buildScanIndex` was last-writer-wins on `Map.set`.** | Two products behind one barcode silently overwrote each other and the operator was handed the survivor with full confidence — breaking `resolveScan`'s own documented promise never to guess. Detected ambiguity *across* namespaces only, never within one. | Every bucket is a list; real collisions now report `ambiguous` — `lib/scan/resolveScan.ts` |
+| F4 | **S1** | **A duplicated terminator committed the same code twice.** ReaderConfig offers `CRLF Character`, and a committed value is left *selected* rather than cleared. | Two receipt lines for one carton on Receive Stock. | 250 ms same-code guard on the keyboard path — `components/ui/ScanField.tsx` |
+| F5 | **S2** | **CipherLab's default `Input Method` mode made keydown carry nothing** (`key:'Unidentified'`, `keyCode 229`); text arrives only via `input` events. | On the RS35's **factory-default configuration**, the Tab terminator and the no-suffix idle flush were both dead. | Character timing moved from `onKeyDown` to `onChange` (`noteArrival`) — deliberately not both, or a 140 ms human gap followed by a same-tick ~0 ms reading flips a slow typist to machine-speed |
+| F6 | **S2** | **`ReceiveStockView` had no `ScanField` anywhere.** | The one place in the building where someone is certainly holding a barcode had no scan affordance. | Product / site-root / batch-barcode scanning via the pure `lib/scan/receiveScan.ts` |
+| F7 | **S2** | **`BinPickerSheet`'s `ScanField` had no `onScan` prop at all**, and matched with `toLowerCase`. | A valid bin label read as "No active location with that code" — `String.trim()` leaves NUL and zero-width marks in place. The operator's eyes disagreed with the screen and nothing explained why. | `normalizeScan` on both sides, plus a real `onScan` |
+| F8 | **S2** | **The mobile ☰ button sat on top of the warehouse selector.** `fixed top-4 left-4`, `md:hidden`, and no inventory page reserved space for it. | On the RS35 the site selector was unreachable on Stocktake, Putaway, Replenishment and Receive. | Explicit left clearance on the four page headers |
+| F9 | **S2** | **No global wedge capture.** | A scan fired while focus was elsewhere was discarded in total silence — no beep, no error, no trace. The dominant desktop failure mode. | `lib/scan/useWedgeScanner.ts`, opt-in per surface, standing down on editable focus |
+| F10 | **S3** | **Only `Enter` terminated a code.** | A scanner with a Tab suffix — or none — never committed. | Tab (gated on machine speed) plus a 120 ms quiet-time flush |
+| F11 | **S3** | **No success feedback anywhere.** The scanner's own beep is identical for the right bin and the wrong one. | Operators learn to trust the beep and walk away from refused scans believing the work is recorded. | Accept/reject tone, border ring, and vibration — `lib/scan/scanFeedback.ts` |
+| F12 | **S3** | **`ScanField.inputRef` was declared and never read.** | No refocus after a commit and no focus restore after the camera sheet closed, so every scan after the first needed a click — and the one after *that* went to the body and vanished. | The ref is used |
+| F13 | **S3** | **`ReplenStopCard` never cleared the field on a refused scan**, unlike pick and putaway. | A rejected code stayed in the box and the next scan appended to it, producing a string that matched nothing and reported the wrong reason. | Clears on refusal; wrong destination is refused, wrong source recorded |
+| F14 | **S3** | **The soft keyboard hid the stocktake Post bar.** AppShell is `h-screen overflow-hidden` and the bar is `sticky bottom-0`, so there was nothing to scroll. | On Android the Post button sat behind the keyboard and could only be reached by dismissing it. | `interactive-widget=resizes-content` on the viewport meta — `index.html` |
+| F15 | **S3** | **`ScanField`'s input was 38 px and its camera button 44×38**, despite an in-file comment claiming a 44 px target for gloved thumbs. | The most-pressed control in the product was under-size on a touch device. | `min-h-[44px]` on both |
+| F16 | **S3** | **The two "put it back" escape hatches were ~16 px tall** — the smallest targets on their cards, and what an operator reaches for when something has *already* gone wrong. | Hard to hit with a gloved thumb at a rack face. | `min-h-[44px]` — `PutawayStopCard`, `ReplenStopCard` |
+| F17 | **S3** | **`PutawayStopCard`'s right-hand column was `shrink-0` with no width cap**, so `truncate` on its child could never fire. | At 360 px a long location name starved the product name — the one thing the walker is scanning the list for. | `max-w-[45%]` below `sm` |
+| F18 | **S4** | **Demo had 0 product barcodes**, so `barcodeVariants` / GTIN folding had never met a real beam. | The most intricate branch in the resolver was untestable. | `npm run seed:barcodes:dev` mints check-digit-correct EAN-13/UPC-A |
+| F19 | **S4** | **Diagnostics page measured the wrong gap** — `run.slowest` came off a clock the keydown handler also wrote, so it timed keydown→input latency. | A 90 ms inter-character delay reported as "worst gap 0 ms", i.e. the tool lied in exactly the case it exists to catch. | Separate character-only clock — the same two-clock trap `ScanField` already avoids |
+| F20 | **S4** | **Clear-✕ misaligned after the touch-target fix.** `top-[38px]` was sized for the old 38 px input. | The ✕ sat near the bottom edge of the now-44 px field. | `top-[22px]`, tied to the input height, with the reason recorded |
+| F21 | **S4** | **Product search lost its accessible name** when the bare `<input>` became a `ScanField`. | The field was unnamed to a screen reader. Caught by the existing suite. | `ariaLabel` prop on `ScanField` |
+
+---
+
+## How to add an entry
+
+Append to **Open** with the next `O` number. When it ships, move the row to
+**Fixed** with the next `F` number and record what the fix was — keep the
+symptom text, because that is what makes it searchable later.
+
+Do not delete rows. A defect that was fixed and came back is much easier to
+recognise when the original entry is still there.

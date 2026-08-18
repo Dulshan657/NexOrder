@@ -26,18 +26,28 @@ completely from a USB gun. **Do this before opening the app.**
 Open **ReaderConfig** on the device (it is a built-in CipherLab app), then
 **Data Output**.
 
-### 0.1 First, write down what it currently says
+### 0.1 Confirmed configuration — this device is already correct
 
-Record these before changing anything, so you can put it back:
+Read off the device on 2026-08-18:
 
-| Setting | Currently |
-|---|---|
-| Keyboard Emulation | ______ |
-| Auto Enter | ______ |
-| Terminating / Auto Enter character | ______ |
-| Timeout between Input Method / KeyEvent Delay Time | ______ ms |
+| Setting | This device | |
+|---|---|---|
+| Keyboard Emulation | **Key Event** | ✅ the recommended mode, not the factory default |
+| Auto Enter | **decode data + Enter char** | ✅ |
+| Terminating / Auto Enter character | **Carriage Return** | ✅ |
+| Timeout between Input Method / KeyEvent Delay Time | **0 ms** | ✅ |
 
-### 0.2 Keyboard Emulation — set it to **Key Event**
+**Nothing needs changing.** Because this is on `Key Event` rather than the
+factory default, real key events reach the browser — so **everything works,
+including the stray-scan capture**: a scan fired with no field focused still gets
+routed to the right place.
+
+§0.2–§0.5 below explain what each setting does and what breaks if it drifts.
+Read them only if a scan misbehaves — and re-check this table first, because a
+factory reset or a swapped device brings Keyboard Emulation back as
+**Input Method**, which is the one setting that degrades things silently.
+
+### 0.2 Keyboard Emulation — why **Key Event** matters
 
 This is the single most important setting on the device. The options are:
 
@@ -60,7 +70,7 @@ events regardless of focus, and the app's stray-scan recovery then works.
 If you are stuck on `Input Method` for some other reason, everything still works
 — you just have to tap the scan box first, every time.
 
-### 0.3 Auto Enter — on, **Carriage Return**
+### 0.3 Auto Enter — **Carriage Return**
 
 The default is already `Carriage Return`, which is what you want. Notes on the
 other options:
@@ -314,7 +324,7 @@ across a pallet, 1.00 mm down an aisle, and refuses anything below 0.25 mm.
 
 | # | Check | Pass? | Notes |
 |---|---|---|---|
-| 0 | ReaderConfig recorded, then set to Key Event / CR / 0 ms | | |
+| 0 | ReaderConfig still reads Key Event / CR / 0 ms (§0.1) | | |
 | 1.1 | Diagnostics reports **Key Event** and a good scan | | worst gap: ____ ms |
 | 1.2 | Chrome version ≥ 111 | | version: ____ |
 | 1.3 | Vibration and sound both testable | | |
@@ -330,6 +340,13 @@ across a pallet, 1.00 mm down an aisle, and refuses anything below 0.25 mm.
 ---
 
 ## 8 · When something fails
+
+Check **[KNOWN-ERRORS-REGISTER.md](KNOWN-ERRORS-REGISTER.md)** first — several
+things you might hit are already recorded there as known and open (the Receive
+Stock table on a small screen, the silent first scan, the Chrome 111 floor). If
+what you find is not in either table below or in the register, it is new: add it
+to the register's **Open** section.
+
 
 | Symptom | Almost certainly |
 |---|---|
