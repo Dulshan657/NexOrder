@@ -13,7 +13,7 @@
 // a tab opened after an await is outside the click gesture and gets blocked
 // silently. See lib/openSignedDoc.ts.
 
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Printer, Barcode, Download, AlertTriangle, Ruler } from 'lucide-react'
 import { useWarehouses } from '../../hooks/queries/useWarehouses'
@@ -29,7 +29,7 @@ import {
   type LabelKind,
   type LabelPreset,
 } from '@/services/supabase/labelService'
-import { SHEET_PRESET_INFO } from '@/supabase/functions/_shared/labelSheet'
+import { maxStartOffset, SHEET_PRESET_INFO } from '@/supabase/functions/_shared/labelSheet'
 
 /** Location kinds offered for printing, grouped by what they are physically for. */
 const KIND_GROUPS: Array<{ label: string; helper: string; kinds: string[] }> = [
@@ -81,9 +81,19 @@ const LabelPrintingSection: React.FC = () => {
   const [preset, setPreset] = useState<LabelPreset>('a4-14')
   const [startOffset, setStartOffset] = useState(0)
   const [busy, setBusy] = useState(false)
+  // The last slot on the chosen stock. Derived, because the bound is a property
+  // of the sheet and not of this component — see `maxStartOffset`.
+  const offsetCeiling = maxStartOffset(preset)
   const [error, setError] = useState<string | null>(null)
   const [lastRun, setLastRun] = useState<{ count: number } | null>(null)
   const [calibratedCode, setCalibratedCode] = useState<string | null>(null)
+
+  // Switching from a dense stock to a sparse one must move the number the
+  // operator can SEE. `layoutLabels` would clamp it either way, but silently —
+  // leaving 60 on screen while the sheet prints from slot 13 is the whole bug.
+  useEffect(() => {
+    setStartOffset((n) => Math.min(n, offsetCeiling))
+  }, [offsetCeiling])
 
   const logQuery = useQuery({ queryKey: ['label-print-log'], queryFn: () => listLabelPrintLog(10) })
 
@@ -294,17 +304,24 @@ const LabelPrintingSection: React.FC = () => {
             <label htmlFor="label-offset" className="block text-xs font-semibold text-stone-600 mb-1.5">
               Skip first labels
             </label>
+            {/* Clamped on BOTH sides. `max` alone is decorative on a number
+                input outside a validating form — a typed 200 used to reach the
+                server and come back as the generic "Invalid label request". */}
             <input
               id="label-offset"
               type="number"
               min={0}
-              max={47}
+              max={offsetCeiling}
               value={startOffset}
-              onChange={(e) => setStartOffset(Math.max(0, Number(e.target.value) || 0))}
+              onChange={(e) =>
+                setStartOffset(Math.min(offsetCeiling, Math.max(0, Number(e.target.value) || 0)))
+              }
               className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-white text-sm tabular-nums"
             />
             <p className="text-xs text-stone-400 mt-1">
-              For reusing a part-used sticker sheet — leaves that many cells blank on page 1.
+              For reusing a part-used sticker sheet — leaves that many cells blank on page 1. This
+              stock holds {SHEET_PRESET_INFO[preset].perSheet}, so the most you can skip is{' '}
+              {offsetCeiling}.
             </p>
           </div>
         )}

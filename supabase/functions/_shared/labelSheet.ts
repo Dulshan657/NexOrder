@@ -97,6 +97,31 @@ export const SHEET_PRESET_INFO: Record<
   'a4-1':  { perSheet: 1, widthMm: 199.6, heightMm: 289.1, averyCode: 'L7167', averyLabel: '1 per sheet, 200x289mm', bestFor: 'Full-page dock signage' },
 }
 
+/**
+ * The last usable slot on one sheet of a given stock, and therefore the largest
+ * `startOffset` that means anything on it.
+ *
+ * Every bound on the offset — both inputs and the server's schema — derives from
+ * here. A hand-typed literal is exactly how the UI cap of 47 outlived the 24-up
+ * sheet it was sized for: it was simultaneously too LOW for `a4-65` and three to
+ * six times too HIGH for `a4-14` and `a4-8`, the two stocks the system actually
+ * defaults to. `layoutLabels` clamps silently, so an operator who typed 20 onto a
+ * 14-up sheet found out at the printer.
+ */
+export function maxStartOffset(preset: SheetPresetName): number {
+  return SHEET_PRESET_INFO[preset].perSheet - 1
+}
+
+/**
+ * The largest legal offset anywhere in the library — the server's ceiling, where
+ * the preset is not yet known at validation time.
+ *
+ * Derived, never typed: an eleventh preset must not leave a stale literal behind.
+ */
+export const MAX_START_OFFSET: number = Math.max(
+  ...(Object.keys(SHEET_PRESET_INFO) as SheetPresetName[]).map(maxStartOffset),
+)
+
 export function sheetSpec(preset: SheetPresetName): LabelSheetSpec {
   const p = SHEET_PRESETS[preset]
   return { pageWidth: A4_WIDTH, pageHeight: A4_HEIGHT, ...p }

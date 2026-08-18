@@ -218,7 +218,19 @@ export const CountSheet: React.FC<CountSheetProps> = ({ location, products, canW
             <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{postError}</p>
           )}
 
-          <div className="sticky bottom-0 -mx-4 flex items-center justify-between gap-3 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-xl sm:border">
+          {/* `flex-wrap` + `ml-auto` on the button group, NOT `justify-between`:
+              `justify-content` applies per flex LINE, so once the buttons wrap
+              to a second row `justify-between` drops them hard-left. At 360px
+              the summary and the two buttons share 328px and the Post label
+              wraps inside its own button. Same shape as ReplenSetupView's
+              sticky bar.
+
+              `backdrop-blur-sm` (4px), not `backdrop-blur` (8px), to match every
+              other piece of scroll chrome in the app — over `bg-white/95` the
+              extra radius is invisible and the radius is what a low-end SoC
+              pays for on every scroll frame. `transform-gpu` is belt-and-braces:
+              backdrop-filter already forces its own compositing layer. */}
+          <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center gap-3 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur-sm transform-gpu sm:mx-0 sm:rounded-xl sm:border">
             <div className="text-xs text-stone-500">
               <span className="font-semibold text-stone-800">{summary.variances}</span> variance
               {summary.variances === 1 ? '' : 's'}
@@ -233,7 +245,7 @@ export const CountSheet: React.FC<CountSheetProps> = ({ location, products, canW
               )}
               {summary.blank > 0 && <> · {summary.blank} not counted</>}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               {(summary.variances > 0 || Object.keys(results).length > 0) && (
                 <button
                   type="button"

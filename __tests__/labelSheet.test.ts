@@ -13,6 +13,8 @@ import {
   MIN_QUIET_ZONE_PT,
   MAX_X_DIMENSION_PT,
   QUIET_ZONE_MODULES,
+  MAX_START_OFFSET,
+  maxStartOffset,
   SHEET_PRESET_INFO,
   SHEET_PRESETS,
   MM,
@@ -261,6 +263,55 @@ describe('the preset library', () => {
   it('lays out exactly as many labels per sheet as it claims', () => {
     for (const preset of PRESETS) {
       expect(labelsPerPage(sheetSpec(preset)), preset).toBe(SHEET_PRESET_INFO[preset].perSheet)
+    }
+  })
+
+  // The UI cap on `startOffset` was a hand-typed 47, sized for a 24-up sheet and
+  // never revisited when the library grew to ten die-cuts. It was simultaneously
+  // too LOW for a4-65 and three to six times too HIGH for a4-14 and a4-8 — the
+  // two stocks the system defaults to — where `layoutLabels` clamped it silently
+  // and the operator found out at the printer. These pin the bound to the
+  // library so no literal can go stale again.
+  it('bounds startOffset at the last slot of each stock', () => {
+    for (const preset of PRESETS) {
+      expect(maxStartOffset(preset), preset).toBe(SHEET_PRESET_INFO[preset].perSheet - 1)
+    }
+  })
+
+  it('derives the library-wide ceiling from the densest stock', () => {
+    const densest = Math.max(...PRESETS.map((p) => SHEET_PRESET_INFO[p].perSheet))
+    expect(MAX_START_OFFSET).toBe(densest - 1)
+    // a4-65 is the densest die-cut in the library. Stated as a number so a
+    // preset added ABOVE it is a deliberate decision rather than a silent one.
+    expect(MAX_START_OFFSET).toBe(64)
+  })
+
+  it('starts on the very last slot at maxStartOffset, on every stock', () => {
+    for (const preset of PRESETS) {
+      const spec = sheetSpec(preset)
+      const perSheet = labelsPerPage(spec)
+      const full = layoutLabels(perSheet, spec)[0].cells
+      const lastSlot = full[perSheet - 1]
+
+      const pages = layoutLabels(1, spec, maxStartOffset(preset))
+      expect(pages, preset).toHaveLength(1)
+      expect(pages[0].cells, preset).toHaveLength(1)
+      expect(pages[0].cells[0].x, `${preset} x`).toBeCloseTo(lastSlot.x, 5)
+      expect(pages[0].cells[0].y, `${preset} y`).toBeCloseTo(lastSlot.y, 5)
+    }
+  })
+
+  it('clamps one past maxStartOffset to that same last slot, never to a new page', () => {
+    // This is where the UI bound has to sit: one past it is not an error and not
+    // a page break, it is the SAME sticker. Anything the UI let through above
+    // the bound would print somewhere the operator did not ask for.
+    for (const preset of PRESETS) {
+      const spec = sheetSpec(preset)
+      const atBound = layoutLabels(1, spec, maxStartOffset(preset))[0].cells[0]
+      const past = layoutLabels(1, spec, maxStartOffset(preset) + 1)
+      expect(past, preset).toHaveLength(1)
+      expect(past[0].cells[0].x, `${preset} x`).toBeCloseTo(atBound.x, 5)
+      expect(past[0].cells[0].y, `${preset} y`).toBeCloseTo(atBound.y, 5)
     }
   })
 
