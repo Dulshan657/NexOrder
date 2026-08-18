@@ -17,14 +17,17 @@ import {
   CALIBRATION_WIDTHS_MM,
   MIN_X_DIMENSION_MM,
   MIN_X_FOR_DISTANCE,
+  BAR_WIDTH_REDUCTION_MODULE_FRACTION,
+  MAX_BAR_WIDTH_REDUCTION_PT,
   calibrationRowFits,
+  effectiveBarWidthReduction,
   fitCode,
   fitRun,
   recommendPresets,
   refuseRun,
   type ScanDistance,
 } from '@/supabase/functions/_shared/labels/sizing'
-import { SHEET_PRESET_INFO, SHEET_PRESETS } from '@/supabase/functions/_shared/labelSheet'
+import { MM, SHEET_PRESET_INFO, SHEET_PRESETS } from '@/supabase/functions/_shared/labelSheet'
 
 /** A real Amadiya bin code: 13 characters, no digit run long enough for Set C. */
 const BIN = 'AMD-B-12-7-L3'
@@ -270,5 +273,53 @@ describe('refuseRun — the gate generate-labels calls before rendering', () => 
     const refusal = refuseRun({ codes: [absurd], preset: 'a4-14' })
     expect(refusal!.suggestion).toBeNull()
     expect(refusal!.message).toMatch(/No available sheet size/)
+  })
+})
+
+/**
+ * Ink-spread compensation (mig 00110, register row O12).
+ *
+ * The clamp is the whole reason this is a function rather than a stored number
+ * multiplied into the renderer, so it is what these pin. A reduction is
+ * subtracted from EVERY bar, and the narrowest bar in a Code 128 symbol is one
+ * module — so an unclamped value does not narrow a symbol, it erases it, on a
+ * sheet whose every other check passed.
+ */
+describe('effectiveBarWidthReduction', () => {
+  // A module at the ISO floor: 0.25mm in points.
+  const FLOOR_MODULE_PT = MIN_X_DIMENSION_MM * MM
+
+  it('passes through a realistic printer reduction untouched', () => {
+    // 0.05mm of spread on a comfortable 0.5mm bar — the normal case.
+    const module = 0.5 * MM
+    const requested = 0.05 * MM
+    expect(effectiveBarWidthReduction(module, requested)).toBeCloseTo(requested, 10)
+  })
+
+  it('never lets the reduction eat more than a quarter of one module', () => {
+    const capped = effectiveBarWidthReduction(FLOOR_MODULE_PT, MAX_BAR_WIDTH_REDUCTION_PT)
+    expect(capped).toBeLessThanOrEqual(FLOOR_MODULE_PT * BAR_WIDTH_REDUCTION_MODULE_FRACTION)
+    // And the bar that survives is still most of a module — the property that
+    // actually matters is that the symbol is narrowed, not destroyed.
+    expect(FLOOR_MODULE_PT - capped).toBeGreaterThan(FLOOR_MODULE_PT * 0.7)
+  })
+
+  it('is zero for anything that is not a positive width', () => {
+    for (const bad of [0, -0.1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(effectiveBarWidthReduction(FLOOR_MODULE_PT, bad)).toBe(0)
+    }
+    // A missing or nonsensical module width means we cannot bound the
+    // reduction, so we apply none rather than guess.
+    for (const badModule of [0, -1, Number.NaN]) {
+      expect(effectiveBarWidthReduction(badModule, 0.05)).toBe(0)
+    }
+  })
+
+  it('caps at the stored ceiling even on a very wide bar', () => {
+    // A 2mm module could absorb far more than 0.5pt by the fraction rule; the
+    // absolute ceiling is what stops it, and it is the same number the Edge
+    // Function validates against so a saved value can never exceed it.
+    const wide = 2 * MM
+    expect(effectiveBarWidthReduction(wide, 5)).toBe(MAX_BAR_WIDTH_REDUCTION_PT)
   })
 })

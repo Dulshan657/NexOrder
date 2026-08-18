@@ -19,6 +19,7 @@ import { Printer, Barcode, Download, AlertTriangle, Ruler } from 'lucide-react'
 import { useWarehouses } from '../../hooks/queries/useWarehouses'
 import { useLayouts } from '@/hooks/queries/useLayouts'
 import LayoutLabelJobModal from '@/components/admin/labels/LayoutLabelJobModal'
+import PrintCalibrationControl from '@/components/admin/labels/PrintCalibrationControl'
 import { downloadSignedDoc } from '@/lib/openSignedDoc'
 import { labelSheetFileName } from '@/lib/labelFileName'
 import {
@@ -389,6 +390,10 @@ const LabelPrintingSection: React.FC = () => {
             the longest code on this site, so it is the one most at risk.
           </p>
         )}
+
+        <PrintCalibrationControl
+          warehouseId={warehouseId === '' ? null : Number(warehouseId)}
+        />
       </div>
 
       {jobOpen && publishedLayout && (

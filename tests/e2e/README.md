@@ -1,11 +1,16 @@
 # E2E tests (Playwright)
 
-There is no staging database for NexOrder — every run, local or CI, talks to
-the same Supabase project the production app uses (see root `CLAUDE.md`).
-Keep specs read-mostly. Anything that must write data should be clearly
-named, idempotent, and clean up after itself (see `tests/e2e/rack-levels/`
-for examples: an ephemeral, permanently-named fixture warehouse; `finally`
-blocks that restore edited product attributes / delete draft layouts).
+**Run this against the demo, never against a tenant.** Since the 2026-08-12
+cutover there are two databases on two separate Supabase accounts: the demo
+(`nexorder.vercel.app`) and Amadiya's production system (`nexorder.com.au`).
+`playwright.config.ts` refuses to start if `E2E_BASE_URL` names *any* tenant
+origin — it checks every entry in the registry, not one named client.
+
+Keep specs read-mostly regardless. Anything that must write data should be
+clearly named, idempotent, and clean up after itself (see
+`tests/e2e/rack-levels/` for examples: an ephemeral, permanently-named fixture
+warehouse; `finally` blocks that restore edited product attributes / delete
+draft layouts).
 
 ## Setup
 
@@ -18,7 +23,7 @@ npx playwright install chromium   # one-time browser download
 
 ```bash
 # Boots the Vite dev server automatically (see playwright.config.ts webServer)
-E2E_ADMIN_PASSWORD=... npm run test:e2e
+E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... npm run test:e2e
 
 npm run test:e2e:ui       # interactive UI mode
 npm run test:e2e:headed   # see the browser
@@ -26,32 +31,78 @@ npx playwright test tests/e2e/smoke.spec.ts   # a single file
 npx playwright show-report
 ```
 
+Against the deployed demo instead of a local dev server:
+
+```bash
+E2E_BASE_URL=https://nexorder.vercel.app \
+E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... \
+npx playwright test --project=chromium
+```
+
+`webServer` still points at `E2E_BASE_URL`, and `reuseExistingServer` is true
+outside CI — so with the URL pointed at the demo, Playwright polls the deployed
+site, finds it up, and never boots Vite. It is not hanging; it is checking.
+
+### The 360 px project
+
+```bash
+E2E_BASE_URL=https://nexorder.vercel.app \
+E2E_WAREHOUSE_EMAIL=... E2E_WAREHOUSE_PASSWORD=... \
+npx playwright test --project=mobile
+```
+
+`--project=chromium` never runs these (`testIgnore: '**/mobile/**'`) and the
+mobile project never runs anything else. That separation is deliberate: half of
+what the mobile specs assert — a collapsed card tier, a wrapped action bar — is
+false at desktop width *by design*, so running them in both projects would fail
+for the correct behaviour.
+
 ## Required env vars
 
 | Var | Required? | Default | Notes |
 |---|---|---|---|
-| `E2E_ADMIN_PASSWORD` | **Yes** | — | Password for the seeded Admin demo account. Never hardcode this — read it from `NexOrder/.env.local` / your password manager and export it in the shell that runs Playwright. |
-| `E2E_ADMIN_EMAIL` | No | `alice@nexorder.com.au` | The seeded Admin demo account listed on the login screen. Not a secret. |
-| `E2E_BASE_URL` | No | `http://localhost:3000` | Point at a preview deployment for CI if you don't want Playwright to boot `npm run dev` itself. |
+| `E2E_ADMIN_EMAIL` | **Yes** | — | The Admin demo account. Required rather than defaulted: the old default named an account that exists on exactly one database, and anywhere else the suite logged in as nobody and failed like a UI bug. |
+| `E2E_ADMIN_PASSWORD` | **Yes** | — | Never hardcode this — read it from your password manager and export it in the shell that runs Playwright. |
+| `E2E_WAREHOUSE_EMAIL` | `mobile` only | — | A Warehouse-role account. Read lazily by the `warehousePage` fixture, so the desktop suite runs without it. |
+| `E2E_WAREHOUSE_PASSWORD` | `mobile` only | — | As above. |
+| `E2E_BASE_URL` | No | `http://localhost:3000` | The demo deployment, or a local dev server. A tenant origin is refused outright. |
 | `CI` | No | unset | Set by CI runners; toggles retries, worker count, and JUnit/GitHub reporters. |
+
+The mobile specs sign in as **Warehouse**, not Admin, and the role is as much
+the subject as the width: several of the surfaces they cover are gated on
+`profiles.home_warehouse_id` matching the selected site. An account with that
+column NULL renders the same layout and can post nothing — which is what
+register row E1 recorded, and why the demo accounts were homed at MAIN before
+these specs were written.
 
 ## Auth: why there's no `storageState` reuse
 
-The app runs its Supabase client with `persistSession: false`
-(`lib/supabase.ts`) — enabling persistence (localStorage or sessionStorage)
-made `getSession()` hang indefinitely on Windows, so the team turned it off.
-That means a successful sign-in leaves nothing durable in
-localStorage/sessionStorage/cookies: a fresh page load always renders
-`<LoginPage>` no matter what a saved `storageState.json` contains. Rather
-than ship a `storageState` fixture that silently degrades to "always shows
-the login form," `tests/e2e/fixtures/auth.ts` drives the real login form once
-per test via an `adminPage` fixture. It costs a few seconds per test, which
-is an acceptable tradeoff for a suite this size.
+This section used to say the app ran with `persistSession: false`, so there was
+nothing durable for Playwright to snapshot. **That reason has expired.**
+`lib/auth/inProcessLock.ts` replaced supabase-js's `navigatorLock` — which was
+the actual cause of the Windows `getSession()` hang, not the storage — and both
+`persistSession` and `autoRefreshToken` have been on since the
+warehouse-onboarding branch.
+
+The conclusion survives for a better reason: a `storageState` snapshot pins one
+captured access token, and this app now rotates refresh tokens. A replayed state
+may already have been rotated out from under it, and that fails as an
+unexplained mid-spec sign-out rather than as a login error.
+`tests/e2e/fixtures/auth.ts` therefore drives the real login form once per test,
+via an `adminPage` or `warehousePage` fixture. It costs a few seconds per test
+and cannot go stale.
 
 ## Suites
 
 - `smoke.spec.ts` — harness health check (login, app loads, Warehouse tab
   navigates). Independent of any in-flight feature; should always be green.
+- `mobile/*.spec.ts` — the 360 px suite, run only by the `mobile` project.
+  Registered as **O7**: until 2026-08-18 the only Playwright project was Desktop
+  Chrome, so every fix the known-errors register lists at phone width could
+  regress unnoticed. Each spec names the row it guards (F8, F15/F16/F17, F24,
+  F25, E1) so a failure says what it was for. Two of them skip with a stated
+  reason when a queue has no work — a skip that explains itself beats a green
+  run that measured nothing.
 - `rack-levels/*.spec.ts` — specs for the "rack levels" feature described in
   `~/.claude/plans/warehouse-tab-after-clicking-floofy-bumblebee.md`. This note
   used to say migration `00072` was unapplied; it has since shipped and is live

@@ -293,3 +293,52 @@ export function refuseRun(args: {
     suggestion,
   }
 }
+
+// ── Ink-spread compensation ───────────────────────────────────────────────────
+
+/**
+ * The ceiling on a stored bar-width reduction, in points.
+ *
+ * A point is 0.353mm and a realistic bar-width reduction is 0.02–0.08mm, i.e.
+ * 0.06–0.23pt. 0.5pt is therefore already far past anything a printer needs and
+ * exists only as a bound on what may be typed — the clamp below is what makes a
+ * wrong value survivable rather than this.
+ */
+export const MAX_BAR_WIDTH_REDUCTION_PT = 0.5
+
+/**
+ * How much of ONE MODULE the reduction may eat.
+ *
+ * This is the safety property, and it is why compensation cannot live as a bare
+ * constant multiplied into the renderer. The reduction is subtracted from every
+ * bar, and the narrowest bar in a Code 128 symbol is exactly one module wide. At
+ * the ISO floor a module is 0.25mm ≈ 0.709pt, so an unclamped 0.5pt reduction
+ * would leave 0.2pt of ink where the decoder expects a full module — it would
+ * not narrow the symbol, it would destroy it, and on a sheet whose every other
+ * check passed.
+ *
+ * A quarter is well past what any real printer spreads and still leaves three
+ * quarters of the narrowest bar standing.
+ */
+export const BAR_WIDTH_REDUCTION_MODULE_FRACTION = 0.25
+
+/**
+ * What to actually subtract from each bar, given the site's setting.
+ *
+ * Fails soft in both directions: a negative or non-finite value is 0 (a
+ * reduction that ADDS width is not compensation, it is the defect it exists to
+ * fix), and an over-large one is capped rather than refused. Refusing here would
+ * mean a site with one bad number in a config table cannot print labels at all,
+ * which is a worse outcome than printing them at a safe reduction.
+ *
+ * Note what this does NOT do: it does not feed back into `fitCode`'s verdicts.
+ * Compensation exists so the PRINTED bar lands on nominal, so judging the
+ * compensated figure against the ISO floor would count the same allowance
+ * twice and refuse sheets that print perfectly.
+ */
+export function effectiveBarWidthReduction(moduleWidthPt: number, requestedPt: number): number {
+  if (!Number.isFinite(requestedPt) || requestedPt <= 0) return 0
+  if (!Number.isFinite(moduleWidthPt) || moduleWidthPt <= 0) return 0
+  const ceiling = Math.min(MAX_BAR_WIDTH_REDUCTION_PT, moduleWidthPt * BAR_WIDTH_REDUCTION_MODULE_FRACTION)
+  return Math.min(requestedPt, ceiling)
+}

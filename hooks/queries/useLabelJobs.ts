@@ -4,8 +4,10 @@ import {
   getLayoutLabelStatus,
   getLayoutLabelTargets,
   getWarehouseLabelPrefs,
+  getWarehousePrintCalibration,
   printLayoutLabels,
   setWarehouseLabelPrefs,
+  setWarehousePrintCalibration,
   type LayoutLabelJob,
   type PrintLayoutLabelsInput,
   type WarehouseLabelPref,
@@ -17,6 +19,7 @@ export const labelJobKeys = {
   targets: (layoutId: number | null, rootId: number | null, onlyUnprinted: boolean) =>
     ['layout-label-targets', layoutId, rootId, onlyUnprinted] as const,
   prefs: (warehouseId: number | null) => ['warehouse-label-prefs', warehouseId] as const,
+  calibration: (warehouseId: number | null) => ['warehouse-print-calibration', warehouseId] as const,
 }
 
 /** The sticker stock this site has chosen, by sheet group (mig 00106). */
@@ -35,6 +38,27 @@ export function useSetWarehouseLabelPrefs(warehouseId: number | null) {
       setWarehouseLabelPrefs({ warehouseId: warehouseId as number, prefs }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: labelJobKeys.prefs(warehouseId) })
+    },
+  })
+}
+
+/** This site's ink-spread compensation (mig 00110). `undefined` while loading,
+ *  `null` once loaded and unmeasured — the two are not the same thing. */
+export function useWarehousePrintCalibration(warehouseId: number | null) {
+  return useQuery({
+    queryKey: labelJobKeys.calibration(warehouseId),
+    queryFn: () => getWarehousePrintCalibration(warehouseId as number),
+    enabled: warehouseId != null,
+  })
+}
+
+export function useSetWarehousePrintCalibration(warehouseId: number | null) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { barWidthReductionPt: number | null; note?: string | null }) =>
+      setWarehousePrintCalibration({ warehouseId: warehouseId as number, ...input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: labelJobKeys.calibration(warehouseId) })
     },
   })
 }
