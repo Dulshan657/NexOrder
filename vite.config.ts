@@ -120,6 +120,22 @@ export default defineConfig(() => {
           : []),
       ],
       build: {
+        // ── THE BROWSER FLOOR, STATED ONCE ──────────────────────────────────
+        //
+        // Tailwind v4 needs Chrome 111 / Safari 16.4 / Firefox 128 — it emits
+        // `color-mix()`, `@property` and cascade layers unconditionally. Vite's
+        // default target is roughly Chrome 107, so the JS floor sat BELOW the
+        // CSS floor: an older handheld parsed the bundle, ran the app, and
+        // rendered it with no styles at all. That reads as "the app is broken",
+        // and on a warehouse device the scanner gets blamed first.
+        //
+        // Matching the two makes the failure honest rather than silent — but it
+        // changes the failure, so it is only half the fix. Below the floor the
+        // bundle now fails to PARSE, which is a white screen. `index.html` +
+        // `public/browser-check.js` are the other half: a plain-HTML notice,
+        // feature-detected, outside Tailwind and outside the module graph.
+        // Do not raise this without keeping that check in step.
+        target: ['chrome111', 'edge111', 'safari16.4', 'firefox128'],
         // 'hidden' keeps attribution accurate for the treemap without shipping
         // a sourceMappingURL comment to production.
         sourcemap: ANALYZE ? 'hidden' as const : false,

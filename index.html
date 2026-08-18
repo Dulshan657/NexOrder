@@ -57,6 +57,49 @@
 </head>
   <body class="bg-stone-50 text-stone-900">
     <div id="root"></div>
+
+    <!-- Shown only by /browser-check.js, on a browser below Tailwind v4's floor
+         (Chrome 111 / Safari 16.4 / Firefox 128).
+
+         Styled with a `style` attribute and nothing else, on purpose. Tailwind
+         is exactly what does not work on the device this is for, so a class name
+         here would render as unstyled text — the very failure being explained.
+         `style-src` carries 'unsafe-inline'; `script-src` does not, which is why
+         the logic sits in its own file. Web-safe font stack only: the display
+         font is loaded by the stylesheet this device cannot use. -->
+    <div
+      id="unsupported-browser"
+      style="display:none;max-width:34rem;margin:0 auto;padding:3rem 1.5rem;font-family:system-ui,-apple-system,'Segoe UI',Arial,sans-serif;color:#1c1917;line-height:1.55;"
+    >
+      <h1 style="font-size:1.25rem;font-weight:700;margin:0 0 0.75rem;">
+        This browser is too old to run Nex Order
+      </h1>
+      <p style="margin:0 0 0.75rem;color:#57534e;">
+        The app needs a browser released after early 2023. On an older one it
+        cannot load its styles, so it would appear as plain unformatted text
+        rather than failing outright.
+      </p>
+      <p
+        id="unsupported-browser-detected"
+        style="margin:0 0 0.75rem;color:#57534e;font-weight:600;"
+      ></p>
+      <p style="margin:0 0 0.75rem;color:#57534e;">
+        On an Android handheld, update <strong>Chrome</strong> and
+        <strong>Android System WebView</strong> from the Play Store, then reopen
+        this page.
+      </p>
+      <p
+        style="margin:1.25rem 0 0;padding-top:1rem;border-top:1px solid #e7e5e4;color:#78716c;font-size:0.875rem;"
+      >
+        If you are here because scanning stopped working: the scanner is not the
+        problem. Nothing on this page is, until the browser is updated.
+      </p>
+    </div>
+
+    <!-- Classic script, deliberately not a module: module scripts are deferred,
+         and a browser old enough to need this would skip `type="module"`
+         entirely. Sits after the notice markup so the DOM it reveals exists. -->
+    <script src="/browser-check.js"></script>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>
