@@ -225,12 +225,17 @@ export const CountSheet: React.FC<CountSheetProps> = ({ location, products, canW
               wraps inside its own button. Same shape as ReplenSetupView's
               sticky bar.
 
-              `backdrop-blur-sm` (4px), not `backdrop-blur` (8px), to match every
-              other piece of scroll chrome in the app — over `bg-white/95` the
-              extra radius is invisible and the radius is what a low-end SoC
-              pays for on every scroll frame. `transform-gpu` is belt-and-braces:
-              backdrop-filter already forces its own compositing layer. */}
-          <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center gap-3 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur-sm transform-gpu sm:mx-0 sm:rounded-xl sm:border">
+              `backdrop-blur-XS` (4px), NOT `-sm`. Tailwind v4 renumbered the
+              blur scale: `blur-sm` is 8px here and bare `blur` is its compat
+              alias for the same 8px, so swapping one for the other is a no-op —
+              verified against the deployed build, where both computed to
+              `blur(8px)`. `-xs` is the only class that actually halves it. Every
+              other piece of scroll chrome in the app is still at 8px for exactly
+              this reason; blur radius is what a low-end SoC pays for on every
+              scroll frame, and over `bg-white/95` the difference is invisible.
+              `transform-gpu` is belt-and-braces: backdrop-filter already forces
+              its own compositing layer. */}
+          <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center gap-3 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur-xs transform-gpu sm:mx-0 sm:rounded-xl sm:border">
             <div className="text-xs text-stone-500">
               <span className="font-semibold text-stone-800">{summary.variances}</span> variance
               {summary.variances === 1 ? '' : 's'}
