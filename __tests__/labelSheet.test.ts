@@ -19,7 +19,10 @@ import {
   SHEET_PRESETS,
   MM,
 } from '@/supabase/functions/_shared/labelSheet'
-import { encodeCode128 } from '@/supabase/functions/_shared/labels/code128'
+import {
+  encodeCode128,
+  QUIET_ZONE_MODULES as ENCODER_QUIET_ZONE_MODULES,
+} from '@/supabase/functions/_shared/labels/code128'
 
 const spec = sheetSpec('a4-24')
 const PRESETS = Object.keys(SHEET_PRESETS) as (keyof typeof SHEET_PRESETS)[]
@@ -108,6 +111,31 @@ describe('layoutLabels', () => {
 
   it('rejects a spec with no columns', () => {
     expect(() => layoutLabels(1, { ...spec, columns: 0 })).toThrow(/positive/)
+  })
+})
+
+// ── THE ONE THING THE TWO MODULES MUST AGREE ON ─────────────────────────────
+//
+// `QUIET_ZONE_MODULES` is defined twice, deliberately: code128.ts knows only
+// integers and modules, labelSheet.ts knows only points and millimetres, and
+// neither imports the other so the sizing wizard can predict a bar width in the
+// browser without rendering anything. That decoupling is worth keeping.
+//
+// What it costs is a silent failure mode. The encoder reserves the quiet zone in
+// MODULES and the geometry converts a module COUNT into points; if the two
+// numbers drifted apart, every label would still render, still pass every other
+// test, and simply scan worse — the one defect class with no error to read. This
+// test is the whole safety net for that, and it is why the duplication is safe.
+describe('the quiet zone', () => {
+  it('is the same in the encoder and in the geometry', () => {
+    expect(QUIET_ZONE_MODULES).toBe(ENCODER_QUIET_ZONE_MODULES)
+  })
+
+  it('is the 10 modules ISO 15417 requires, not a UPC/EAN millimetre figure', () => {
+    // Stated as a literal so that changing it is a decision, not a drift. 6.35mm
+    // is the number people reach for by mistake; it belongs to a different
+    // symbology and is not expressible in modules at all.
+    expect(QUIET_ZONE_MODULES).toBe(10)
   })
 })
 

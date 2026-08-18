@@ -1,0 +1,215 @@
+// The receipt line stopped being a 1100px table row and became a two-tier card
+// below `xl`. That buys a usable screen on the RS35 and introduces exactly one
+// new way to be wrong: a field the operator cannot see because it is collapsed.
+//
+// Hold is the field that matters. It decides whether the stock lands in
+// quarantine or on the shelf, it lives in the collapsed tier, and an operator
+// who cannot tell a held line from an ordinary one while scrolling a receipt is
+// worse off than they were with the horizontal scroll. Most of what follows is
+// about that.
+//
+// Note on what CANNOT be asserted here: jsdom applies no Tailwind, so `hidden`
+// and `xl:contents` have no computed effect and `toBeVisible()` would pass for
+// everything. The class list IS the mechanism, so it is asserted directly; the
+// real rendering is checked in a browser at 360px.
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { ReceiveLineCard } from '@/components/inventory/receive/ReceiveLineCard'
+import { newDraft, newPlate, type DraftLine, type DraftPlate } from '@/components/inventory/receive/receiveDraft'
+import type { Product } from '@/types'
+
+afterEach(cleanup)
+
+const plate: DraftPlate = newPlate('pallet')
+
+function product(overrides: Partial<Product> = {}): Product {
+  return {
+    id: 1, sku: 'AYM-COC-001', name: 'Coconut Milk', description: '', price: 1,
+    category: 'Other', inventory: 0, available: 0, unit: 'each', cartonSize: 1,
+    supplierId: 1,
+    suppliers: [{ supplierId: 1, supplierSku: 'ACME-77', isPrimary: true, sortOrder: 0 }],
+    ...overrides,
+  } as Product
+}
+
+function renderCard(line: Partial<DraftLine> = {}, onUpdate = vi.fn()) {
+  const draft: DraftLine = { ...newDraft(plate.key), productId: 1, ...line }
+  const utils = render(
+    <ReceiveLineCard
+      line={draft}
+      product={product()}
+      supplierId={1}
+      referencedPlates={[plate]}
+      plates={[plate]}
+      plateDestinationLabel={(hu) => (hu === 'pallet' ? 'Pallet — reserve' : 'Carton — pick face')}
+      onUpdate={onUpdate}
+      onRemove={vi.fn()}
+      onAssignPlate={vi.fn()}
+      onSetPlateType={vi.fn()}
+    />,
+  )
+  return { ...utils, onUpdate, draft }
+}
+
+const toggle = () => screen.getByRole('button', { name: /lot, expiry, barcode, pallet/i })
+
+describe('the always-visible tier', () => {
+  it('shows the product, its SKU and the supplier part number', () => {
+    renderCard()
+    expect(screen.getByText('Coconut Milk')).toBeTruthy()
+    expect(screen.getByText(/AYM-COC-001/)).toBeTruthy()
+    expect(screen.getByText(/their ACME-77/)).toBeTruthy()
+  })
+
+  it('puts quantity where it never needs a tap to reach', () => {
+    // The one field of the eight that must never be behind the disclosure.
+    renderCard()
+    expect(screen.getByPlaceholderText('0')).toBeTruthy()
+  })
+
+  it('keeps remove reachable while collapsed', () => {
+    renderCard()
+    expect(screen.getByRole('button', { name: 'Remove line' })).toBeTruthy()
+  })
+})
+
+describe('the disclosure', () => {
+  it('starts collapsed', () => {
+    renderCard()
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('opens and closes', () => {
+    renderCard()
+    fireEvent.click(toggle())
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(toggle())
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('hides the secondary tier below xl and flattens it into cells at xl', () => {
+    // `hidden` is what collapses it; `xl:contents` is what makes the SAME nodes
+    // become grid cells of the row at desk width, which is the whole reason
+    // there is one render here rather than two.
+    const { container } = renderCard()
+    // getElementById, not querySelector: React's useId emits ids like `:r0:`,
+    // which are not valid CSS selectors without escaping.
+    const details = container.ownerDocument.getElementById(
+      toggle().getAttribute('aria-controls')!,
+    )!
+    expect(details.className).toContain('hidden')
+    expect(details.className).toContain('xl:contents')
+
+    fireEvent.click(toggle())
+    expect(details.className).toContain('grid')
+    expect(details.className).not.toMatch(/(^|\s)hidden(\s|$)/)
+  })
+
+  it('leaves every secondary control in the DOM and labelled at both widths', () => {
+    // They are only ever hidden by CSS, never unmounted — so a scan, a screen
+    // reader or a form submit finds the same controls at any width.
+    renderCard()
+    for (const name of [
+      /Lot code for line/i,
+      /Expiry for line/i,
+      /Batch barcode for line/i,
+      /Pallet or carton for line/i,
+      /Unit type for line/i,
+      /Quarantine line/i,
+    ]) {
+      expect(screen.getByLabelText(name)).toBeTruthy()
+    }
+  })
+})
+
+describe('nothing hides silently', () => {
+  it('says Hold on the collapsed summary, and says it FIRST', () => {
+    // The only one of the five with a consequence for the stock.
+    renderCard({ quarantine: true })
+    expect(toggle().textContent).toMatch(/^Hold/)
+  })
+
+  it('does not say Hold when the line is not held', () => {
+    renderCard({ quarantine: false })
+    expect(toggle().textContent).not.toMatch(/Hold/)
+  })
+
+  it('tints a held line so it is recognisable while scrolling past', () => {
+    const { container } = renderCard({ quarantine: true })
+    expect(container.firstElementChild!.className).toContain('bg-amber-50')
+  })
+
+  it('does not tint an ordinary line', () => {
+    const { container } = renderCard({ quarantine: false })
+    expect(container.firstElementChild!.className).not.toContain('bg-amber-50')
+  })
+
+  it('names the plate the line will land on', () => {
+    renderCard()
+    expect(toggle().textContent).toMatch(/Pallet 1/)
+  })
+
+  it('surfaces a lot code, an expiry and a barcode that are set', () => {
+    renderCard({ lotCode: 'L-4471', expiryDate: '2027-03-01', barcode: '9312345678907' })
+    const text = toggle().textContent ?? ''
+    expect(text).toMatch(/Lot L-4471/)
+    expect(text).toMatch(/Exp 2027-03-01/)
+    expect(text).toMatch(/Barcode set/)
+  })
+
+  it('ignores whitespace-only values rather than claiming they are set', () => {
+    renderCard({ lotCode: '   ', barcode: '  ' })
+    const text = toggle().textContent ?? ''
+    expect(text).not.toMatch(/Lot/)
+    expect(text).not.toMatch(/Barcode set/)
+  })
+})
+
+describe('touch targets', () => {
+  // Every control on this card gets pressed with a gloved thumb at a dock. The
+  // batch barcode field was the worst offender: it used ScanField's `compact`
+  // variant, which drops the 44px floor to py-1.5 AND suppresses the camera
+  // button outright — on the one screen where someone is certainly holding a
+  // barcode.
+  it('gives the barcode field a full-height control, i.e. is not `compact`', () => {
+    // ScanField picks exactly one of `py-1.5` (compact) or `min-h-[44px]`, so
+    // the floor being present IS the proof the compact variant was dropped —
+    // and with it the suppressed camera button, which jsdom cannot show either
+    // way since it exposes neither BarcodeDetector nor getUserMedia.
+    renderCard()
+    expect(screen.getByLabelText(/Batch barcode for line/i).className).toContain('min-h-[44px]')
+  })
+
+  it('gives quantity, lot, expiry and the selects a 44px floor', () => {
+    renderCard()
+    for (const el of [
+      screen.getByPlaceholderText('0'),
+      screen.getByLabelText(/Lot code for line/i),
+      screen.getByLabelText(/Expiry for line/i),
+      screen.getByLabelText(/Pallet or carton for line/i),
+    ]) {
+      expect(el.className).toContain('min-h-[44px]')
+    }
+  })
+
+  it('wraps the Hold checkbox in a full-height label instead of a 16px box', () => {
+    renderCard()
+    const label = screen.getByLabelText(/Quarantine line/i).closest('label')!
+    expect(label.className).toContain('min-h-[44px]')
+  })
+})
+
+describe('editing', () => {
+  it('reports a quantity change', () => {
+    const { onUpdate } = renderCard()
+    fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '12' } })
+    expect(onUpdate).toHaveBeenCalledWith({ quantity: '12' })
+  })
+
+  it('reports a hold toggle', () => {
+    const { onUpdate } = renderCard()
+    fireEvent.click(screen.getByLabelText(/Quarantine line/i))
+    expect(onUpdate).toHaveBeenCalledWith({ quarantine: true })
+  })
+})

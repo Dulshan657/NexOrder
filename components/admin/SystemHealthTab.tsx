@@ -4,7 +4,7 @@
 // list with verified badges. Footer shows the build this client is running.
 
 import React from 'react';
-import { Activity, CheckCircle2, AlertTriangle, Rocket } from 'lucide-react';
+import { Activity, CheckCircle2, AlertTriangle, Rocket, KeyRound } from 'lucide-react';
 import {
   useLatestHealthCheck,
   useHealthChecks,
@@ -12,8 +12,65 @@ import {
   useRecentClientErrorCount,
 } from '@/hooks/queries/useSystemHealth';
 import { uptimePercent, latencySeries, formatSha, statusTone } from './systemHealthFormat';
+import { readSessionBreadcrumbs } from '@/lib/auth/sessionBreadcrumbs';
+import { describeSession } from './sessionHealthFormat';
 
 const SPARK_POINTS = 48;
+
+/**
+ * Did the session survive a shift?
+ *
+ * This exists for one specific unanswered question. `persistSession` and
+ * `autoRefreshToken` were re-enabled to stop warehouse staff being signed out
+ * roughly hourly on a phone, mid-pick — and that fix has never been verified
+ * over a real shift, because nothing observed a refresh. The test is "leave the
+ * device logged in for 90 minutes, then scan", and without this its only
+ * outcomes were "it worked" and "it didn't", neither of which says whether a
+ * refresh ever happened.
+ *
+ * Ticks on a timer rather than on an auth event: the interesting reading is
+ * "how long until this expires", which changes with the clock and not with
+ * anything React would otherwise re-render for.
+ */
+function SessionPanel() {
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const session = describeSession(readSessionBreadcrumbs(), Date.now());
+
+  return (
+    <div className="glass-panel rounded-2xl border border-stone-200 p-5">
+      <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold text-stone-700">
+        <KeyRound className="h-4 w-4" /> This session
+      </h3>
+      <p className="mb-3 text-xs text-stone-400">
+        For the shift-long soak test — leave a handheld logged in for 90 minutes, then
+        scan. A refresh count above zero is the thing being checked.
+      </p>
+      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {[
+          { label: 'Signed in', value: session.age, sub: session.signedInAtLabel },
+          { label: 'Refreshes', value: session.refreshCount, sub: session.refreshHint },
+          { label: 'Last refresh', value: session.lastRefresh, sub: session.lastRefreshAtLabel },
+          { label: 'Token expires', value: session.expiresIn, sub: session.expiresAtLabel },
+        ].map((row) => (
+          <div key={row.label}>
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+              {row.label}
+            </dt>
+            <dd className="mt-1 font-mono text-lg font-bold tabular-nums text-stone-900">
+              {row.value}
+            </dd>
+            {row.sub && <p className="mt-0.5 text-xs text-stone-500">{row.sub}</p>}
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
 
 function LatencySparkline({ points }: { points: ReturnType<typeof latencySeries> }) {
   const width = 480;
@@ -114,6 +171,9 @@ const SystemHealthTab: React.FC = () => {
         <h3 className="mb-3 text-sm font-semibold text-stone-700">DB latency — last 7 days</h3>
         <LatencySparkline points={spark} />
       </div>
+
+      {/* Session — the readout the shift-long soak test is run against */}
+      <SessionPanel />
 
       {/* Recent deployments */}
       <div className="glass-panel rounded-2xl border border-stone-200 p-5">

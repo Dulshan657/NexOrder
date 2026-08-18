@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
+import { recordAuthEvent } from '@/lib/auth/sessionBreadcrumbs'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
 type UserRole = Profile['role']
@@ -86,9 +87,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     //
     // So: synchronous state updates inline, every await deferred to a fresh
     // task that runs after the lock is released.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const sessionUser = session?.user ?? null
       setUser(sessionUser)
+
+      // Record that a refresh happened, for the shift-long soak test.
+      //
+      // The event name used to be discarded here (`_event`), which is why
+      // TOKEN_REFRESHED appeared nowhere in the repo and the persistSession fix
+      // could not be verified over a real shift. Nothing downstream branches on
+      // it — this is diagnostic only, read by the System Health tab.
+      //
+      // Safe inside this callback, and the reason matters: the rule above is
+      // "no AWAIT", not "no work". supabase-js dispatches this while holding
+      // its auth lock; a localStorage write is synchronous and takes no lock,
+      // so it cannot deadlock the way a PostgREST query would. Nothing is
+      // awaited and no supabase call is added.
+      recordAuthEvent(event, session?.expires_at ?? null)
 
       if (sessionUser === null) {
         setProfile(null)

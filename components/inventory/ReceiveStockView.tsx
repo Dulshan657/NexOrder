@@ -12,6 +12,14 @@ import { useToasts } from '../../hooks/useToasts';
 import { receivableUoms, deriveDefaultUoms, baseUom } from '../../lib/uom';
 import { productsForSupplier, supplierSkuFor, matchesProductQuery } from '../../lib/productSuppliers';
 import { ScanField } from '../ui/ScanField';
+import ReceiveLineCard, { RECEIVE_ROW_COLUMNS } from './receive/ReceiveLineCard';
+import {
+  newDraft,
+  newPlate,
+  plateLabel,
+  type DraftLine,
+  type DraftPlate,
+} from './receive/receiveDraft';
 import { buildScanIndex, normalizeScan } from '../../lib/scan/resolveScan';
 import { describeReceiveRefusal, resolveReceiveScan } from '../../lib/scan/receiveScan';
 import { useScanFlash } from '../../lib/scan/useScanFlash';
@@ -197,61 +205,11 @@ interface ReceiveStockViewProps {
   onOpenPutaway?: (warehouseId: number) => void;
 }
 
-interface DraftLine {
-  key: string;
-  productId: number | null;
-  quantity: string;
-  uomId: number | null; // received UOM (mig 00067); null = base unit
-  lotCode: string;
-  expiryDate: string;
-  barcode: string;
-  /** The plate (mig 00075) this line lands on. Every line has one. */
-  plateKey: string;
-  /** Hold this line (mig 00101). The header checkbox writes it onto every line
-   *  rather than being sent separately, so what the operator sees ticked in the
-   *  grid IS what is submitted — there is no second, invisible source of truth
-   *  for the server to rank against it. */
-  quarantine: boolean;
-}
-
-/** A pallet or carton being built at the dock. The CODE is minted server-side
- *  on receipt — this key only groups lines onto the same physical unit. */
-interface DraftPlate {
-  key: string;
-  huType: 'pallet' | 'carton';
-}
-
-let draftSeq = 0;
-let plateSeq = 0;
-
-const newPlate = (huType: 'pallet' | 'carton' = 'pallet'): DraftPlate => ({
-  key: `p${plateSeq++}`,
-  huType,
-});
-
-const newDraft = (plateKey: string, quarantine = false): DraftLine => ({
-  key: `d${draftSeq++}`,
-  productId: null,
-  quantity: '',
-  uomId: null,
-  lotCode: '',
-  expiryDate: '',
-  barcode: '',
-  plateKey,
-  // A line added while the delivery is flagged inherits the flag — otherwise
-  // "hold this delivery" quietly stops applying to anything typed after it.
-  quarantine,
-});
-
-/** Display label for a plate: "Pallet 1", "Carton 3" — numbered by position so
- *  the operator can match a row to the physical unit in front of them before
- *  any real code exists. */
-export function plateLabel(plates: readonly DraftPlate[], key: string): string {
-  const index = plates.findIndex((p) => p.key === key);
-  if (index < 0) return 'Plate';
-  const plate = plates[index];
-  return `${plate.huType === 'carton' ? 'Carton' : 'Pallet'} ${index + 1}`;
-}
+// `DraftLine`, `DraftPlate`, `newDraft`, `newPlate` and `plateLabel` moved to
+// ./receive/receiveDraft.ts when the line row was extracted — both files need
+// them, and importing them back from here would have made the cycle.
+// Re-exported because `plateLabel` was part of this module's public surface.
+export { plateLabel };
 
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
@@ -556,7 +514,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   };
 
   return (
-    <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="bg-white min-h-screen p-4 sm:p-6 xl:p-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3 pl-12 md:pl-0">
         <div className="p-2 rounded-lg bg-nexgen-blue/10">
@@ -572,8 +530,8 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
 
       {/* Receipt header — who supplied this delivery */}
       <div className="glass-card rounded-xl p-4 sm:p-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          <div className="lg:col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+          <div className="xl:col-span-2">
             <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
               Supplier <span className="text-red-500">*</span>
             </label>
@@ -656,7 +614,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 lg:col-span-1 lg:grid-cols-1 lg:gap-4">
+          <div className="grid grid-cols-2 gap-3 xl:col-span-1 xl:grid-cols-1 xl:gap-4">
             <div>
               <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
                 <CalendarDays className="w-3.5 h-3.5 text-stone-400" /> Received
@@ -791,171 +749,58 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
         </div>
       ) : (
         <div className="glass-card rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b border-stone-200">
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider">Product</th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-stone-500 uppercase tracking-wider w-28">Qty</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Lot code</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Expiry</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-40">Barcode</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider w-44">Pallet / carton</th>
-                  <th scope="col" className="px-4 py-3 text-center text-xs font-semibold text-stone-500 uppercase tracking-wider w-20">Hold</th>
-                  <th scope="col" className="px-4 py-3 w-10"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {picked.map(line => {
-                  const product = line.productId != null ? productById.get(line.productId) : undefined;
-                  return (
-                    <tr key={line.key} className="hover:bg-stone-50/50">
-                      <td className="px-4 py-3">
-                        <p className="text-sm font-medium text-stone-900">{product?.name ?? '—'}</p>
-                        <p className="text-xs text-stone-400 font-mono">
-                          {product?.sku}
-                          {/* The supplier's own part number, so the line can be
-                              ticked off against their docket. */}
-                          {product && supplierSkuFor(product, supplierId)
-                            ? ` · their ${supplierSkuFor(product, supplierId)}`
-                            : ''}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="number"
-                          min={1}
-                          inputMode="numeric"
-                          value={line.quantity}
-                          onChange={e => updateLine(line.key, { quantity: e.target.value })}
-                          className="w-full px-2 py-1.5 text-right font-mono text-sm bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
-                          placeholder="0"
-                        />
-                        {product && (() => {
-                          // Receivable UOMs (mig 00067): the product's own list, or a
-                          // base+carton default. Only show the picker when there's a
-                          // choice beyond the base unit.
-                          const own = receivableUoms(product.uoms);
-                          const uoms = own.length > 0 ? own : receivableUoms(deriveDefaultUoms(product.unit, product.price, product.cartonSize));
-                          if (uoms.length <= 1) return null;
-                          const sel = uoms.find(u => u.id === line.uomId) ?? uoms.find(u => u.isBase) ?? uoms[0];
-                          const baseCode = baseUom(uoms)?.code ?? product.unit;
-                          const baseQty = (Number(line.quantity) || 0) * (sel.isBase ? 1 : sel.factorToBase);
-                          return (
-                            <div className="mt-1.5 space-y-0.5">
-                              <select
-                                aria-label={`Unit for ${product.name}`}
-                                value={sel.id}
-                                onChange={e => {
-                                  const next = uoms.find(u => u.id === Number(e.target.value));
-                                  updateLine(line.key, { uomId: next && !next.isBase ? next.id : null });
-                                }}
-                                className="w-full px-2 py-1 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
-                              >
-                                {uoms.map(u => (
-                                  <option key={`${u.id}-${u.code}`} value={u.id}>
-                                    {u.code}{u.isBase ? '' : ` (×${u.factorToBase})`}
-                                  </option>
-                                ))}
-                              </select>
-                              {!sel.isBase && (
-                                <p className="text-[11px] text-stone-400 text-right tabular-nums">= {baseQty} {baseCode}</p>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="text"
-                          value={line.lotCode}
-                          onChange={e => updateLine(line.key, { lotCode: e.target.value })}
-                          className="w-full px-2 py-1.5 text-sm bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
-                          placeholder="optional"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="date"
-                          value={line.expiryDate}
-                          onChange={e => updateLine(line.key, { expiryDate: e.target.value })}
-                          className="w-full px-2 py-1.5 text-sm bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        {/* Normalised on scan, not just stored raw. Whatever
-                            lands here becomes `stock_batches.barcode`, which
-                            `resolveScan` indexes as `batchesByBarcode` — so a
-                            trailing control character saved now is a batch that
-                            can never be scanned again. */}
-                        <ScanField
-                          compact
-                          refocusAfterScan={false}
-                          ariaLabel={`Batch barcode for line ${line.key}`}
-                          value={line.barcode}
-                          onChange={v => updateLine(line.key, { barcode: v })}
-                          onScan={v => updateLine(line.key, { barcode: normalizeScan(v) })}
-                          placeholder="optional"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        {/* Which physical unit this line sits on. Defaults to a
-                            plate of its own; reassign to build a mixed pallet. */}
-                        <select
-                          aria-label={`Pallet or carton for line ${line.key}`}
-                          value={line.plateKey}
-                          onChange={e => assignPlate(line.key, e.target.value)}
-                          className="w-full px-2 py-1.5 text-sm bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
-                        >
-                          {referencedPlates.map(p => (
-                            <option key={p.key} value={p.key}>
-                              {plateLabel(referencedPlates, p.key)}
-                            </option>
-                          ))}
-                          <option value="__new">+ New unit…</option>
-                        </select>
-                        <select
-                          aria-label={`Unit type for line ${line.key}`}
-                          value={plates.find(p => p.key === line.plateKey)?.huType ?? 'pallet'}
-                          onChange={e => setPlateType(line.plateKey, e.target.value as 'pallet' | 'carton')}
-                          className="mt-1.5 w-full px-2 py-1 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
-                        >
-                          {/* The destination shown here IS the routing: since
-                              mig 00081 each level role declares which plate
-                              types belong on it, so an operator who moves
-                              pallets to a different role sees it change. */}
-                          <option value="pallet">{plateDestinationLabel('pallet')}</option>
-                          <option value="carton">{plateDestinationLabel('carton')}</option>
-                        </select>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {/* The per-line override. Unticking one line of a held
-                            delivery releases just that line to ordinary stock. */}
-                        <input
-                          type="checkbox"
-                          aria-label={`Quarantine line ${line.key}`}
-                          checked={line.quarantine}
-                          onChange={e => updateLine(line.key, { quarantine: e.target.checked })}
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => removeLine(line.key)}
-                          className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-md btn-press"
-                          aria-label="Remove line"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          {/*
+            Column headings. Hidden below `xl`, where each control carries its
+            own micro-label instead — see `ReceiveLineCard`. The template is
+            imported rather than restated, so the headings can never drift out
+            of alignment with the cells beneath them.
+          */}
+          <div
+            className={`hidden border-b border-stone-200 px-4 py-3 xl:grid xl:gap-x-4 ${RECEIVE_ROW_COLUMNS}`}
+          >
+            {['Product', 'Qty', 'Lot code', 'Expiry', 'Barcode', 'Pallet / carton', 'Hold', ''].map(
+              (heading, i) => (
+                <span
+                  key={heading || `spacer-${i}`}
+                  className={`text-xs font-semibold uppercase tracking-wider text-stone-500 ${
+                    heading === 'Qty' ? 'text-right' : heading === 'Hold' ? 'text-center' : 'text-left'
+                  }`}
+                >
+                  {heading}
+                </span>
+              ),
+            )}
+          </div>
+
+          {/* `divide-y` rather than a card per line: the lines already sit
+              inside one `glass-card`, and boxing each of them again would be a
+              second surface saying nothing the divider does not. */}
+          <div className="divide-y divide-stone-100">
+            {picked.map(line => (
+              // `key` on a typed local component is a type error here: with no
+              // @types/react there is no global JSX namespace, so `key` is
+              // checked against the component's own props. Fragment carries it
+              // instead, and renders no DOM node — so the card's root stays a
+              // direct child of `divide-y`. See CLAUDE.md, "Types gotcha".
+              <React.Fragment key={line.key}>
+              <ReceiveLineCard
+                line={line}
+                product={line.productId != null ? productById.get(line.productId) : undefined}
+                supplierId={supplierId}
+                referencedPlates={referencedPlates}
+                plates={plates}
+                plateDestinationLabel={plateDestinationLabel}
+                onUpdate={patch => updateLine(line.key, patch)}
+                onRemove={() => removeLine(line.key)}
+                onAssignPlate={target => assignPlate(line.key, target)}
+                onSetPlateType={huType => setPlateType(line.plateKey, huType)}
+              />
+              </React.Fragment>
+            ))}
           </div>
 
           {/* Footer actions */}
-          <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-stone-200 bg-stone-50/50">
+          <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-t border-stone-200 bg-stone-50/50">
             <button
               onClick={() => {
                 const plate = newPlate();
@@ -966,7 +811,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
             >
               <Plus className="w-4 h-4" /> Add blank line
             </button>
-            <div className="flex items-center gap-3">
+            <div className="ml-auto flex flex-wrap items-center gap-3">
               {!hasSupplier && validLines.length > 0 && (
                 <span className="text-xs text-amber-600">Choose a supplier to receive</span>
               )}

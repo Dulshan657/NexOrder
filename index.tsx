@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
@@ -15,6 +15,7 @@ import ResetPasswordView from './components/auth/ResetPasswordView';
 import { parseAuthLink } from './lib/auth/recoveryLink';
 import type { AuthScreen } from './lib/auth/pendingPasswordSet';
 import { decideAuthScreen, readPendingPasswordSet } from './lib/auth/pendingPasswordSet';
+import { primeScanAudio } from './lib/scan/scanFeedback';
 
 // Popup OAuth completion handshake.
 //
@@ -138,6 +139,35 @@ function Root() {
       readPendingPasswordSet(),
     ),
   );
+
+  // Wake the scan tones on the first real user gesture of the page.
+  //
+  // Browsers refuse to start audio before the user has interacted, so the very
+  // first scan of a session was silent — the operator's introduction to the
+  // accept/reject tones was their absence. `primeScanAudio` was written for
+  // exactly this and its docstring has always said to call it from a
+  // pointerdown/keydown listener; nothing ever did.
+  //
+  // This is not autoplay abuse. It resumes a suspended AudioContext inside a
+  // genuine gesture and plays nothing — which is the sanctioned unlock, and the
+  // opposite of starting sound the user did not ask for.
+  //
+  // It lives in `Root`, not `AppShell`, because the first gesture of a session
+  // is usually the login button, before AppShell exists. `once` on both, each
+  // removing the other, so it costs one listener pair and fires exactly once.
+  useEffect(() => {
+    const prime = () => {
+      primeScanAudio();
+      window.removeEventListener('pointerdown', prime, true);
+      window.removeEventListener('keydown', prime, true);
+    };
+    window.addEventListener('pointerdown', prime, { capture: true, once: true, passive: true });
+    window.addEventListener('keydown', prime, { capture: true, once: true, passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', prime, true);
+      window.removeEventListener('keydown', prime, true);
+    };
+  }, []);
 
   if (screen === 'set-password') {
     return <ResetPasswordView onComplete={() => setScreen('app')} />;
