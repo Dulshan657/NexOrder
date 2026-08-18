@@ -704,8 +704,12 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
             }
             cameraTitle="Scan a carton"
           />
+          {/* 22px = half of ScanField's 44px input. NOT `top-1/2`: this wrapper
+              also contains the error line, so a percentage drifts downward the
+              moment a refusal message appears. Tied to the input height, so it
+              moves if that does. */}
           {search && (
-            <button onClick={() => setSearch('')} className="absolute right-3 top-[38px] -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer">
+            <button onClick={() => setSearch('')} className="absolute right-3 top-[22px] -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer">
               <X className="w-4 h-4" />
             </button>
           )}
