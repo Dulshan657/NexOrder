@@ -12,22 +12,39 @@
 import { expect, test } from '../fixtures/auth'
 import { navigateTo, overlaps, warehouseSelect } from './helpers'
 
-const PAGES = ['Receive Stock', 'Putaway', 'Replenishment', 'Stocktake'] as const
+/**
+ * What the ☰ must not cover, per page.
+ *
+ * Receive Stock is the odd one out and deliberately so: for a Warehouse-role
+ * account the destination is LOCKED to their own site ("You can only receive at
+ * your site"), so there is no selector there to collide with — the thing the
+ * clearance protects is the page's own heading block. Asserting a selector
+ * there would fail for a correct page.
+ */
+const PAGES: ReadonlyArray<{ item: string; target: 'warehouse-select' | 'heading' }> = [
+  { item: 'Receive Stock', target: 'heading' },
+  { item: 'Putaway', target: 'warehouse-select' },
+  { item: 'Replenishment', target: 'warehouse-select' },
+  { item: 'Stocktake', target: 'warehouse-select' },
+]
 
-test.describe('F8 — the ☰ does not cover the site selector', () => {
-  for (const item of PAGES) {
-    test(`${item}: menu button clears the warehouse selector`, async ({ warehousePage: page }) => {
+test.describe('F8 — the ☰ does not cover the page controls', () => {
+  for (const { item, target } of PAGES) {
+    test(`${item}: menu button clears the header`, async ({ warehousePage: page }) => {
       await navigateTo(page, item)
 
       const menu = page.getByRole('button', { name: 'Open menu' })
       await expect(menu).toBeVisible()
 
-      const selector = warehouseSelect(page)
-      await expect(selector).toBeVisible()
+      const subject =
+        target === 'warehouse-select'
+          ? warehouseSelect(page)
+          : page.getByRole('heading', { name: item }).first()
+      await expect(subject).toBeVisible()
 
       expect(
-        await overlaps(menu, selector),
-        `the ☰ overlaps the warehouse selector on ${item}`,
+        await overlaps(menu, subject),
+        `the ☰ overlaps the header content on ${item}`,
       ).toBe(false)
     })
   }

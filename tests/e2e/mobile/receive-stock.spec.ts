@@ -34,6 +34,16 @@ test.describe('F25 — Receive Stock fits a 360 px screen', () => {
     await expect(firstMatch).toBeVisible({ timeout: 10_000 })
     await firstMatch.click()
 
+    // Below `xl` the secondary fields live behind a disclosure — that IS the
+    // card layout F25 introduced, so opening it is part of what this guards.
+    // The toggle is `xl:hidden`; at desktop width every field it hides is
+    // already a visible column.
+    const disclosure = page.locator('button[aria-expanded][aria-controls]').first()
+    await expect(disclosure).toBeVisible()
+    await expectTouchTarget(disclosure, 'line disclosure toggle')
+    await disclosure.click()
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+
     // The line's own controls, each of which used to sit off-screen right.
     // Matched by the aria-labels ReceiveLineCard sets per line, so this cannot
     // accidentally assert against the receipt-level barcode or Quarantine
