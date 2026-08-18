@@ -1,22 +1,21 @@
 // Playwright E2E harness for NexOrder.
 //
-// ⚠ AS OF 2026-08-12 THERE IS NOWHERE TO RUN THIS. The project these specs used
-// to target became Amadiya's production database in the cutover, and the demo
-// has not been rebuilt on its own account yet. Every tenant origin is asserted
-// out below — specs write data, and a client's database is not a test fixture —
-// so pointing E2E_BASE_URL at nexorder.com.au is refused, and there is no other
-// deployment to point it at. Restore this when the demo environment exists.
+// WHERE THIS RUNS. The demo was rebuilt on NexGen's own Supabase account and
+// Vercel team on 2026-08-13, so there is somewhere to point this again:
+// E2E_BASE_URL=https://nexorder.vercel.app, or a local dev server. (This header
+// said "there is nowhere to run this" from the cutover until 2026-08-18, which
+// is most of why the small-screen gap below went uncovered.) Every tenant
+// origin is still asserted out — specs write data, and a client's database is
+// not a test fixture — so nexorder.com.au is refused, permanently.
 //
 // Keep specs read-mostly regardless; anything that must write should be clearly
 // named, idempotent, and clean up after itself.
 //
-// Auth: the app runs Supabase with `persistSession: false` (lib/supabase.ts)
-// because session persistence hung `getSession()` on Windows. That means
-// there is nothing durable in localStorage/sessionStorage/cookies for
-// Playwright's `storageState` to capture — a fresh page load always renders
-// the login form regardless of what a saved state.json contains. So this
-// harness does NOT use storageState-based auth reuse; see
-// tests/e2e/fixtures/auth.ts for the per-test login helper used instead.
+// Auth: this harness does NOT use storageState-based auth reuse — see
+// tests/e2e/fixtures/auth.ts for the per-test login helper used instead, and
+// for why the reason it does not is no longer the one this comment used to
+// give. (`persistSession` is ON as of the warehouse-onboarding branch; the
+// conclusion is unchanged, the justification is not.)
 import { defineConfig, devices } from '@playwright/test'
 
 import { tenantTargets } from './config/environments.mjs'
@@ -63,7 +62,26 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      // The mobile specs are EXCLUDED here, not merely duplicated there. Half
+      // of what they assert (a collapsed card tier, a wrapped action bar) is
+      // false at desktop width by design, so running them in both projects
+      // would fail for the correct behaviour.
+      testIgnore: '**/mobile/**',
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      // 360 px, the RS35's width. Registered as O7: until now the only project
+      // was Desktop Chrome, so every fix the register lists at 360 px — the
+      // Receive Stock card tier, the stocktake action bar, the 44 px touch
+      // targets, the ☰ clearance — could regress with nothing to catch it.
+      //
+      // Pixel 5 is 393×851; `viewport` narrows it to the real device. Keeping
+      // the rest of the descriptor (touch, mobile UA, deviceScaleFactor) is the
+      // point — `hasTouch` is what makes the pointer-driven surfaces behave as
+      // they do on the handheld.
+      name: 'mobile',
+      testMatch: '**/mobile/**/*.spec.ts',
+      use: { ...devices['Pixel 5'], viewport: { width: 360, height: 780 } },
     },
   ],
   // Boots the Vite dev server for local runs. In CI, set E2E_BASE_URL to a

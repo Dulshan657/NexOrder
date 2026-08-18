@@ -86,9 +86,70 @@ describe('validateCatalogRow', () => {
     expect(result.row.category).toBe('Coconut')
   })
 
-  it('rejects an unknown category', () => {
-    const result = validateCatalogRow({ ...validRec, category: 'Bogus' }, ctx())
-    expect(result).toEqual({ ok: false, error: 'Unknown category: Bogus', field: 'category' })
+  // A category nobody has used before is CREATED, not rejected. The old
+  // behaviour made a first catalogue load impossible on an empty tenant
+  // database, where by definition every category is unknown.
+  it('accepts an unknown category and reports it as new', () => {
+    const result = validateCatalogRow({ ...validRec, category: 'Sri Lankan Spices' }, ctx())
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.row.category).toBe('Sri Lankan Spices')
+    expect(result.newCategoryName).toBe('Sri Lankan Spices')
+  })
+
+  it('does not flag a known category as new', () => {
+    const result = validateCatalogRow(validRec, ctx())
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.newCategoryName).toBeUndefined()
+  })
+
+  // The caller pre-folds the categories a file introduces; a row spelling one
+  // differently must resolve to that spelling rather than create a second.
+  it('folds a new category onto the spelling the caller chose for the file', () => {
+    const result = validateCatalogRow(
+      { ...validRec, category: 'beam' },
+      ctx({ newCategories: new Set(['BEAM']) }),
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.row.category).toBe('BEAM')
+    expect(result.newCategoryName).toBe('BEAM')
+  })
+
+  it('prefers an existing catalog category over a file-introduced spelling', () => {
+    const result = validateCatalogRow(
+      { ...validRec, category: 'COCONUT' },
+      ctx({ newCategories: new Set(['Coconut ']) }),
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('expected ok result')
+    expect(result.row.category).toBe('Coconut')
+    expect(result.newCategoryName).toBeUndefined()
+  })
+
+  it('rejects a blank category', () => {
+    const result = validateCatalogRow({ ...validRec, category: '   ' }, ctx())
+    expect(result).toEqual({ ok: false, error: 'Category is required.', field: 'category' })
+  })
+
+  // The DB constraint is `char_length(btrim(category)) BETWEEN 1 AND 60`
+  // (mig 00069), so the importer stops at the same place rather than letting
+  // the server reject a whole 100-row chunk member.
+  it('rejects a category longer than the column allows', () => {
+    const result = validateCatalogRow({ ...validRec, category: 'x'.repeat(61) }, ctx())
+    // Asserted whole-object rather than by property: without `strictNullChecks`
+    // TS won't narrow this union through `if (result.ok) throw`.
+    expect(result).toEqual({
+      ok: false,
+      error: 'Category must be 60 characters or fewer, got 61.',
+      field: 'category',
+    })
+  })
+
+  it('accepts a category exactly at the length limit', () => {
+    const result = validateCatalogRow({ ...validRec, category: 'x'.repeat(60) }, ctx())
+    expect(result.ok).toBe(true)
   })
 
   it('rejects a missing price', () => {

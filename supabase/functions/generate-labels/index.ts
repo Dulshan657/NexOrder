@@ -65,7 +65,9 @@ import {
 } from '../_shared/labels/code128.ts'
 import {
   CALIBRATION_WIDTHS_MM,
+  MAX_BAR_WIDTH_REDUCTION_PT,
   calibrationRowFits,
+  effectiveBarWidthReduction,
   fitRun,
   refuseRun,
 } from '../_shared/labels/sizing.ts'
@@ -158,17 +160,6 @@ interface LabelItem {
 // ── Barcode rendering ─────────────────────────────────────────────
 
 /**
- * Ink-spread compensation, in points.
- *
- * A laser prints bars slightly wider than nominal, which narrows the spaces and
- * shifts the ratios a decoder measures. If the gun reads marginally at the
- * physical verification pass this is the first knob to turn — but it stays at
- * zero until there is evidence, because guessing at bar-width reduction is how
- * you make a good symbol worse.
- */
-const BAR_WIDTH_REDUCTION_PT = 0
-
-/**
  * Draw a Code 128 symbol as one rectangle per dark bar.
  *
  * Each bar is positioned by an exact multiplication from the symbol's left edge
@@ -178,14 +169,30 @@ const BAR_WIDTH_REDUCTION_PT = 0
  *
  * No `borderColor`/`borderWidth`: a stroked rectangle adds half the line width
  * to EACH side of every bar, which would destroy those ratios wholesale.
+ *
+ * INK-SPREAD COMPENSATION (`reductionPt`) used to be a constant here, pinned at
+ * zero pending evidence nobody could collect without a function deploy — the
+ * known-errors register carried it as O12. It is now the site's
+ * `warehouse_print_calibration` row, resolved by the caller, and clamped by
+ * `effectiveBarWidthReduction` against the module width of THIS symbol on THIS
+ * stock: the narrowest bar is one module wide, so an unclamped reduction does
+ * not narrow a symbol, it erases it. Note `slot.moduleWidth` is the right
+ * argument — the ceiling depends on the label being printed, which is exactly
+ * what a constant could never know.
  */
-function drawBarcode(page: PDFPage, symbol: Code128Symbol, slot: BarcodeFit): void {
+function drawBarcode(
+  page: PDFPage,
+  symbol: Code128Symbol,
+  slot: BarcodeFit,
+  reductionPt: number,
+): void {
   const ink = rgb(0, 0, 0)
+  const reduction = effectiveBarWidthReduction(slot.moduleWidth, reductionPt)
   for (const run of darkRuns(symbol)) {
     page.drawRectangle({
       x: slot.x + run.start * slot.moduleWidth,
       y: slot.y,
-      width: run.width * slot.moduleWidth - BAR_WIDTH_REDUCTION_PT,
+      width: run.width * slot.moduleWidth - reduction,
       height: slot.height,
       color: ink,
     })
@@ -234,6 +241,34 @@ async function loadLabelPref(
   const preset = (data as any)?.preset as string | undefined
   if (!preset || !(preset in SHEET_PRESETS)) return null
   return preset as SheetPresetName
+}
+
+/**
+ * Ink-spread compensation for this site's printer (mig 00110), in points.
+ *
+ * Absent row = 0, which is what every site did before the table existed. Fails
+ * soft for the same reason `loadLabelPref` does, and more so: this one is a
+ * cosmetic correction, and refusing to print because a config row is unreadable
+ * would trade a slightly-wide bar for no sticker at all.
+ *
+ * Un-scoped runs (product and handling-unit labels carry no warehouse unless
+ * one is passed) get 0. That is the honest answer — compensation belongs to a
+ * printer, and a run with no site named has not said which printer it is for.
+ */
+async function loadPrintCalibration(admin: any, warehouseId: number | null): Promise<number> {
+  if (warehouseId == null) return 0
+  const { data, error } = await admin
+    .from('warehouse_print_calibration')
+    .select('bar_width_reduction_pt')
+    .eq('warehouse_id', warehouseId)
+    .maybeSingle()
+  if (error) return 0
+
+  const pt = Number((data as any)?.bar_width_reduction_pt)
+  if (!Number.isFinite(pt) || pt <= 0) return 0
+  // The CHECK already bounds this, but a table constraint is not a contract the
+  // renderer can rely on across a restore or a hand-edited row.
+  return Math.min(pt, MAX_BAR_WIDTH_REDUCTION_PT)
 }
 
 async function loadLayoutItems(
@@ -419,6 +454,7 @@ async function buildLabelPdf(
   items: LabelItem[],
   preset: SheetPresetName,
   startOffset: number,
+  barWidthReductionPt: number,
 ): Promise<{ bytes: Uint8Array; warnings: string[] }> {
   // Pre-flight, BEFORE a PDFDocument exists. A sheet of unscannable stickers is
   // worse than no sheet at all: the failure surfaces on a ladder, after four
@@ -454,7 +490,7 @@ async function buildLabelPdf(
     for (const cell of pageLayout.cells) {
       const item = items[cell.index]
       if (!item) continue
-      drawLabel(page, cell, item, monoBold, body, measure)
+      drawLabel(page, cell, item, monoBold, body, measure, barWidthReductionPt)
     }
   }
 
@@ -534,6 +570,12 @@ async function buildCalibrationPdf(code: string): Promise<Uint8Array> {
     })
 
     const barsY = y - 16 - barHeight
+    // NOMINAL widths, with NO ink-spread compensation applied — deliberately,
+    // and it must stay that way. This sheet is how the compensation figure is
+    // discovered in the first place (see
+    // docs/runbooks/calibrate-label-bar-width.md); a ladder printed through the
+    // correction would be measuring the correction rather than the printer, and
+    // every rung would read as though the press were already true.
     for (const run of darkRuns(symbol)) {
       page.drawRectangle({
         x: margin + quiet + run.start * moduleWidth,
@@ -602,13 +644,14 @@ function drawLabel(
   codeFont: PDFFont,
   contextFont: PDFFont,
   measure: (font: PDFFont) => (s: string, size: number) => number,
+  barWidthReductionPt: number,
 ): void {
   // Safe to encode without a try: the pre-flight already refused the whole run
   // if any code here were un-encodable.
   const symbol = encodeCode128(item.code)
   const art = labelArtwork(cell, { modules: symbol.modules, withContext: !!item.context })
 
-  drawBarcode(page, symbol, art.barcode)
+  drawBarcode(page, symbol, art.barcode, barWidthReductionPt)
 
   drawCentred(page, art.code, item.code, codeFont, measure(codeFont), rgb(0, 0, 0))
 
@@ -747,7 +790,12 @@ serve(async (req: Request) => {
       )
     }
 
-    const { bytes, warnings } = await buildLabelPdf(items, preset, input.startOffset)
+    const { bytes, warnings } = await buildLabelPdf(
+      items,
+      preset,
+      input.startOffset,
+      await loadPrintCalibration(admin, warehouseId),
+    )
 
     const stamp = Date.now()
     const storagePath = isLayoutRun

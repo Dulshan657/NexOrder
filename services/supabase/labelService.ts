@@ -123,6 +123,55 @@ export async function setWarehouseLabelPrefs(input: {
   if (error) throw error
 }
 
+// ── Ink-spread compensation, saved per site (mig 00110) ──────────────────────
+
+export interface WarehousePrintCalibration {
+  /** Points subtracted from every dark bar. */
+  barWidthReductionPt: number
+  /** What was measured, and with what — a bare number ages badly. */
+  note: string | null
+  updatedAt: string | null
+}
+
+/**
+ * This site's printer calibration, or null when nobody has measured it.
+ *
+ * NULL and 0 are different answers and are kept different all the way down:
+ * "no compensation because this press is true" is a result, and "nobody has
+ * looked" is not. Read directly like the label prefs — RLS limits the table to
+ * ops roles and there is no server-side decision to make.
+ */
+export async function getWarehousePrintCalibration(
+  warehouseId: number,
+): Promise<WarehousePrintCalibration | null> {
+  const { data, error } = await supabase
+    .from('warehouse_print_calibration')
+    .select('bar_width_reduction_pt, note, updated_at')
+    .eq('warehouse_id', warehouseId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const row = data as { bar_width_reduction_pt: number | string; note: string | null; updated_at: string }
+  return {
+    // NUMERIC comes back as a string from PostgREST.
+    barWidthReductionPt: Number(row.bar_width_reduction_pt),
+    note: row.note,
+    updatedAt: row.updated_at,
+  }
+}
+
+/** Save it, or with a null reduction clear the row back to "unmeasured". */
+export async function setWarehousePrintCalibration(input: {
+  warehouseId: number
+  barWidthReductionPt: number | null
+  note?: string | null
+}): Promise<void> {
+  const { error } = await supabase.functions.invoke('mutate-warehouse', {
+    body: { action: 'set_print_calibration', data: input },
+  })
+  if (error) throw error
+}
+
 // ── Calibration ──────────────────────────────────────────────────────────────
 
 export interface CalibrationSheetResult {

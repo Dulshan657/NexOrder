@@ -17,6 +17,7 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { SHEET_PRESETS, type SheetPresetName } from '../_shared/labelSheet.ts'
+import { MAX_BAR_WIDTH_REDUCTION_PT } from '../_shared/labels/sizing.ts'
 import { MAX_BLOCK_LENGTH, sanitizeBlock, templateIssue } from '../_shared/wie/codePattern.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
@@ -100,12 +101,34 @@ const codePatternSchema = z.object({
   }).nullable(),
 })
 
+// ── set_print_calibration (mig 00110) ────────────────────────────────────────
+//
+// Ink-spread compensation for the site's printer. On this function for the same
+// reason `set_label_prefs` and `set_code_pattern` are: it is a config write
+// keyed by warehouse, and mutate-warehouse-location's rate buckets exist for
+// actions that rewrite hundreds of `locations` rows.
+//
+// A NULL clears the row rather than storing 0. Those are the same number and
+// different statements — "no compensation because this printer is true" versus
+// "nobody has measured this printer" — and the second is what the setup
+// checklist and the runbook need to be able to see.
+//
+// The ceiling is imported, not restated: `MAX_BAR_WIDTH_REDUCTION_PT` lives in
+// _shared/labels/sizing.ts beside the per-module clamp that actually protects
+// the symbol, and a second copy here is one more thing to keep in step.
+const printCalibrationSchema = z.object({
+  warehouseId: z.number().int().positive(),
+  barWidthReductionPt: z.number().min(0).max(MAX_BAR_WIDTH_REDUCTION_PT).nullable(),
+  note: z.string().max(300).nullish(),
+})
+
 const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), data: warehouseCreateSchema }),
   z.object({ action: z.literal('update'), id: z.number().int().positive(), data: warehouseUpdateSchema }),
   z.object({ action: z.literal('deactivate'), id: z.number().int().positive() }),
   z.object({ action: z.literal('set_label_prefs'), data: labelPrefsSchema }),
   z.object({ action: z.literal('set_code_pattern'), data: codePatternSchema }),
+  z.object({ action: z.literal('set_print_calibration'), data: printCalibrationSchema }),
 ])
 
 /** True when the warehouse (or any descendant location) still holds on_hand stock. */
@@ -279,6 +302,57 @@ serve(async (req: Request) => {
       })
 
       return new Response(JSON.stringify({ ok: true, warehouseId, prefs }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (input.action === 'set_print_calibration') {
+      const { warehouseId, barWidthReductionPt, note } = input.data
+
+      const { data: warehouse } = await admin
+        .from('locations')
+        .select('id, kind, name')
+        .eq('id', warehouseId)
+        .maybeSingle()
+      if (!warehouse || (warehouse as any).kind !== 'WAREHOUSE') {
+        throw new EdgeFunctionError('INVALID_INPUT', 'That id is not a warehouse.')
+      }
+
+      if (barWidthReductionPt === null) {
+        const { error } = await admin
+          .from('warehouse_print_calibration')
+          .delete()
+          .eq('warehouse_id', warehouseId)
+        if (error) throw new EdgeFunctionError('INTERNAL', error.message)
+      } else {
+        const { error } = await admin.from('warehouse_print_calibration').upsert(
+          {
+            warehouse_id: warehouseId,
+            bar_width_reduction_pt: barWidthReductionPt,
+            note: note ?? null,
+            updated_at: new Date().toISOString(),
+            updated_by: auth.userId,
+          },
+          { onConflict: 'warehouse_id' },
+        )
+        if (error) throw new EdgeFunctionError('INTERNAL', error.message)
+      }
+
+      await logAuditEvent(admin, {
+        actorId: auth.userId,
+        actorRole: auth.role,
+        action: 'update',
+        resource: 'warehouse_print_calibration',
+        resourceId: String(warehouseId),
+        after: {
+          warehouse: (warehouse as any).name,
+          barWidthReductionPt,
+          note: note ?? null,
+        },
+      })
+
+      return new Response(JSON.stringify({ ok: true, warehouseId, barWidthReductionPt }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })

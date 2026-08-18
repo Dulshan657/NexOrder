@@ -216,6 +216,29 @@ describe('mutate-product bulk-create: bulkCreateProducts', () => {
     expect(uoms[1]).toMatchObject({ code: 'carton', factor_to_base: 12, is_base: false, price: 114 })
   })
 
+  // `is_active` is a real `products` column (mig 00027) that stripNonColumns
+  // deliberately leaves alone, so it rides the `...rest` spread onto the insert.
+  // This is how a catalogued-but-not-sellable line (e.g. one whose price the
+  // operator doesn't know yet) is loaded without being orderable at $0.00.
+  it('passes is_active through to the insert when a row sends it', async () => {
+    const fake = new FakeAdmin()
+    const rows = [
+      makeRow({ sku: 'SKU-INACTIVE', supplier_id: 1, price: 0, is_active: false }),
+      makeRow({ sku: 'SKU-NORMAL', supplier_id: 1 }),
+    ]
+
+    const results = await bulkCreateProducts(fake as any, rows as any)
+
+    expect(results[0].ok).toBe(true)
+    expect(results[1].ok).toBe(true)
+    expect(fake.insertedProducts[0].is_active).toBe(false)
+    // Omitting it must not write `false` — the column defaults to true, and an
+    // undefined here would silently hide every ordinary imported product.
+    expect(fake.insertedProducts[1].is_active).toBeUndefined()
+    // Still never accepts stock, whatever else the row carries.
+    expect(fake.insertedProducts[0].inventory).toBe(0)
+  })
+
   it('marks a later occurrence of an intra-batch duplicate SKU as failed (S5)', async () => {
     const fake = new FakeAdmin()
     const rows = [

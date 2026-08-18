@@ -4,18 +4,22 @@
 // against `undefined`/`undefined`.
 //
 // Required (see tests/e2e/README.md):
-//   E2E_ADMIN_PASSWORD   — password for the seeded Admin demo account.
+//   E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD  — the seeded Admin demo account.
+// Required only by the `mobile` project:
+//   E2E_WAREHOUSE_EMAIL / E2E_WAREHOUSE_PASSWORD — a Warehouse-role account.
 // Optional:
 //   E2E_BASE_URL          — defaults to http://localhost:3000 (also the
 //                           default in playwright.config.ts).
-//   E2E_ADMIN_EMAIL       — defaults to alice@nexorder.com.au (the seeded
-//                           Admin demo account listed on the login screen —
-//                           not a secret, just an identifier).
 
 export interface E2eEnv {
   baseURL: string
   adminEmail: string
   adminPassword: string
+}
+
+export interface E2eWarehouseEnv {
+  warehouseEmail: string
+  warehousePassword: string
 }
 
 function requireEnv(name: string): string {
@@ -38,5 +42,24 @@ export function getE2eEnv(): E2eEnv {
     // nobody and fail with something that looks like a UI bug.
     adminEmail: requireEnv('E2E_ADMIN_EMAIL'),
     adminPassword: requireEnv('E2E_ADMIN_PASSWORD'),
+  }
+}
+
+/**
+ * The Warehouse-role account the mobile specs sign in as.
+ *
+ * Read separately from `getE2eEnv` on purpose: the desktop suite must not start
+ * demanding two more variables because a phone-width suite exists beside it.
+ *
+ * The role matters as much as the width. Several of the surfaces these specs
+ * cover are gated on `profiles.home_warehouse_id` matching the selected site —
+ * Stocktake's Post button is the one the register logged as E1 — so signing in
+ * as Admin would render the same layout while proving nothing about the person
+ * who actually walks the floor with the handheld.
+ */
+export function getE2eWarehouseEnv(): E2eWarehouseEnv {
+  return {
+    warehouseEmail: requireEnv('E2E_WAREHOUSE_EMAIL'),
+    warehousePassword: requireEnv('E2E_WAREHOUSE_PASSWORD'),
   }
 }
