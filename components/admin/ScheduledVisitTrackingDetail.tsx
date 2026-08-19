@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { ScheduledVisit, HoReCa, User, Visit, MockRepPosition, VisitOutcome } from '../../types';
 import { ArrowLeft, CheckCircle2, XCircle, Clock, MapPin, Activity, ChevronDown, ChevronUp, Navigation, Image } from 'lucide-react';
-import OptimizedImage from '../OptimizedImage';
+import VisitPhotoStrip from '../visits/VisitPhotoStrip';
 
 interface RouteTrackingDetailProps {
   route: ScheduledVisit;
@@ -212,11 +212,7 @@ const ScheduledVisitTrackingDetail: React.FC<RouteTrackingDetailProps> = ({ rout
                             {stop.visit.competitorNotes && <p><span className="text-stone-500">Competitor:</span> {stop.visit.competitorNotes}</p>}
                             {stop.visit.stockCheckNotes && <p><span className="text-stone-500">Stock:</span> {stop.visit.stockCheckNotes}</p>}
                             {stop.visit.photos && stop.visit.photos.length > 0 && (
-                              <div className="flex gap-1 flex-wrap pt-1">
-                                {stop.visit.photos.map((photo, pi) => (
-                                  <OptimizedImage key={pi} src={photo} alt="" className="w-10 h-10 rounded border border-stone-200" transformWidth={96} />
-                                ))}
-                              </div>
+                              <VisitPhotoStrip visitId={stop.visit.id} photos={stop.visit.photos} thumbClassName="w-10 h-10" />
                             )}
                           </div>
                         )}

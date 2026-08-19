@@ -1,9 +1,25 @@
 import { supabase } from '@/lib/supabase';
 
+/**
+ * The buckets a signed-in browser may still write to directly.
+ *
+ * `signatures` and `visit-photos` were removed from this union by mig 00113
+ * (security-audit findings STOR-1 / STOR-2). Both are now private and carry no
+ * client policy at all, so every read and write goes through an Edge Function
+ * as service_role — see `services/supabase/signatureService.ts` and
+ * `visitPhotoService.ts`. Do not add them back: the direct-upload capability
+ * and the "any customer can list and delete every object" hole were the same
+ * `FOR ALL TO authenticated` policy.
+ *
+ * The three that remain are public BY DESIGN — the operator logo is on every
+ * page and every generated PDF, product images are on the customer Shop, and
+ * an avatar sits in the header of every session — so a public URL is the right
+ * return value for them. What 00113 changed is who may write: Admin for
+ * `company-assets` and `avatars`, Admin/Manager for `product-images`, matching
+ * the Edge Function that owns the column pointing at each.
+ */
 export type StorageBucket =
     | 'company-assets'
-    | 'visit-photos'
-    | 'signatures'
     | 'product-images'
     | 'avatars';
 

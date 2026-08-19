@@ -192,12 +192,19 @@ function stronglyConnected(nodes, edges) {
 /**
  * Replace every occurrence of a Supabase project ref inside exported rows.
  *
- * Done over the serialised row rather than on named columns on purpose. In this
- * export the only hits are eight `orders.verification.signatureDataUrl` values —
- * buried inside a JSONB blob, which a column-name-based rewrite would never have
- * found. A ref is a 20-character opaque string that appears in no other role, so
- * a blind replace cannot damage anything, and the count is reported so a
- * surprise is visible rather than silent.
+ * Done over the serialised row rather than on named columns on purpose. When
+ * this was written the only hits were eight `orders.verification.signatureDataUrl`
+ * values — buried inside a JSONB blob, which a column-name-based rewrite would
+ * never have found. A ref is a 20-character opaque string that appears in no
+ * other role, so a blind replace cannot damage anything, and the count is
+ * reported so a surprise is visible rather than silent.
+ *
+ * MIG 00113 REMOVED THOSE EIGHT. Signature and visit-photo values are bare
+ * storage keys now that both buckets are private, so they carry no project ref
+ * and this returns zero replacements for them. That is not a reason to delete
+ * this: an export taken before 00113 still holds the absolute URLs, and
+ * `demo-export/` on disk is exactly such an export. A zero count on a fresh
+ * export is the expected result, not a sign the rewrite stopped working.
  *
  * @param {any[]} rows
  * @param {string} oldRef

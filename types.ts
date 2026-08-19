@@ -12,7 +12,19 @@ export type OrderVerificationMethod = 'signature' | 'call_reference' | 'choose';
 
 export interface SignatureVerification {
     method: 'signature';
-    signatureDataUrl: string; // base64 PNG of the signature
+    /**
+     * A storage KEY in the private `signatures` bucket, e.g. `orders/<uuid>.png`.
+     *
+     * The field name is historical and kept deliberately: it held a base64 data
+     * URL originally, then an absolute public CDN URL, and mig 00113 normalised
+     * every stored value to a key when the bucket went private. Renaming it
+     * would rewrite a JSONB key across every order row for no gain.
+     *
+     * Three shapes are still reachable in practice, so never assume: pass the
+     * value through `lib/storageKey.ts` `toStorageRef`, which is the same module
+     * the Edge Function uses to decide what it will sign.
+     */
+    signatureDataUrl: string;
     timestamp: string;
 }
 

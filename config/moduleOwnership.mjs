@@ -55,14 +55,25 @@ export const FUNCTION_MODULES = {
   'pause-email-account': 'sales_orders',
   'disconnect-email-account': 'sales_orders',
   'retry-email-account': 'sales_orders',
+  // The order-verification signature, private since mig 00113. Both halves sit
+  // here rather than in core because the canvas is in the cart: with ordering
+  // off there is nothing to sign and nothing signed to read back.
+  'upload-signature': 'sales_orders',
+  'create-signature-url': 'sales_orders',
 
   // ── field_ops ─────────────────────────────────────────────────────────────
-  // Thin on purpose. Scheduled visits, walk-in review and HoReCa insights are
+  // Still thin. Scheduled visits, walk-in review and HoReCa insights are mostly
   // RLS-scoped table reads and writes with no Edge Function of their own, so
-  // this module's gate is almost entirely the frontend one. That is a fact
-  // about where the code happens to live, not a weaker guarantee: the surface
-  // is compiled out of the bundle either way.
+  // this module's gate is largely the frontend one. That is a fact about where
+  // the code happens to live, not a weaker guarantee: the surface is compiled
+  // out of the bundle either way.
   'mutate-sales-target': 'field_ops',
+  // Visit photographs, private since mig 00113. `visits` is the only table
+  // that references this bucket and every surface reading it — VisitTimeline,
+  // the visit modal, and Routes' scheduled-visit tracking — is a Field Ops
+  // surface, including the Admin-facing one.
+  'mutate-visit-photo': 'field_ops',
+  'create-visit-photo-urls': 'field_ops',
 
   // ── inventory_dispatch ────────────────────────────────────────────────────
   // The warehouse programme end to end: stock, putaway, replenishment,

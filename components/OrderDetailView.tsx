@@ -9,6 +9,7 @@ import PaymentActionModal from './PaymentActionModal';
 import CancelOrderModal from './CancelOrderModal';
 import OrderSourceBadge from './OrderSourceBadge';
 import OrderFulfillmentsPanel from './OrderFulfillmentsPanel';
+import OrderSignature from './OrderSignature';
 import { getInboundApproval } from '../lib/orderSource';
 import { orderDeliveryAddress } from '../lib/orderDeliveryAddress';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
@@ -451,9 +452,7 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                             {order.verification.method === 'signature' && (
                                 <div>
                                     <p className="text-xs text-stone-500 mb-2">HoReCa Signature — {new Date(order.verification.timestamp).toLocaleString()}</p>
-                                    <div className="bg-white border border-stone-200 rounded-lg p-2 inline-block">
-                                        <img src={order.verification.signatureDataUrl} alt="HoReCa signature" className="h-20 object-contain" />
-                                    </div>
+                                    <OrderSignature orderId={order.id} stored={order.verification.signatureDataUrl} />
                                 </div>
                             )}
                             {order.verification.method === 'call_reference' && (

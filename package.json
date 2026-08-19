@@ -16,6 +16,8 @@
     "check:overlays": "node scripts/check-overlays.mjs",
     "check:grants:dev": "node scripts/check-grants.mjs --env=dev",
     "check:grants:amadiya": "node scripts/check-grants.mjs --env=amadiya",
+    "check:storage:dev": "node scripts/check-storage.mjs --env=dev",
+    "check:storage:amadiya": "node scripts/check-storage.mjs --env=amadiya",
     "deploy:dev": "node scripts/deploy.mjs --env=dev",
     "deploy:amadiya": "node scripts/deploy.mjs --env=amadiya",
     "migrate:dev": "node supabase/migrate.mjs --env=dev",

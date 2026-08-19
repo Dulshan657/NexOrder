@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import type { OrderVerification, OrderVerificationMethod } from '../types';
 import { UserRole } from '../types';
 import { PenLine, Phone } from 'lucide-react';
-import { uploadToBucket, dataUrlToBlob } from '../services/supabase/storageService';
+import { uploadSignature } from '../services/supabase/signatureService';
 import { useToasts } from '../hooks/useToasts';
 import { Button, Modal } from './ui';
 
@@ -116,9 +116,13 @@ const OrderVerificationModal: React.FC<OrderVerificationModalProps> = ({ userRol
             if (!dataUrl) return;
             setIsUploading(true);
             try {
-                const blob = dataUrlToBlob(dataUrl);
-                const url = await uploadToBucket('signatures', blob, { prefix: 'orders', contentType: 'image/png', ext: 'png' });
-                onConfirm({ method: 'signature', signatureDataUrl: url, timestamp: now });
+                // Stores a bare storage KEY, not a URL. The `signatures` bucket
+                // is private as of mig 00113 and the browser cannot write to it
+                // at all -- upload-signature does it as service_role and hands
+                // the key back. The field name is unchanged so nothing
+                // downstream has to care which shape it is holding.
+                const key = await uploadSignature(dataUrl);
+                onConfirm({ method: 'signature', signatureDataUrl: key, timestamp: now });
             } catch (err) {
                 addToast(err instanceof Error ? `Signature upload failed: ${err.message}` : 'Signature upload failed', 'error');
             } finally {

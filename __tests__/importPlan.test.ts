@@ -193,8 +193,10 @@ describe('rewriteProjectRef', () => {
   const OLD = 'lsgkznyiabqitqfpveey';
 
   it('rewrites a ref buried inside a JSONB blob', () => {
-    // Exactly the shape of the eight real hits: not a column, a value inside
-    // orders.verification. A column-name-based rewrite would miss it.
+    // Exactly the shape of the eight hits this was written for: not a column, a
+    // value inside orders.verification. A column-name-based rewrite would miss
+    // it. Mig 00113 normalised these to bare keys, but demo-export/ on disk
+    // still holds this spelling, so the case is live rather than historical.
     const rows = [
       {
         id: 1,
@@ -211,6 +213,22 @@ describe('rewriteProjectRef', () => {
     expect(out[0].verification.signatureDataUrl).toBe(
       `https://${TEST_PROJECT_REF}.supabase.co/storage/v1/object/public/signatures/orders/x.png`,
     );
+  });
+
+  it('leaves a post-00113 bare storage key alone', () => {
+    // Once signatures went private the stored value became `orders/<uuid>.png`
+    // with no host and no project ref, so there is nothing here to rewrite.
+    // Zero replacements on a fresh export is the correct answer, not a
+    // regression in the rewrite.
+    const rows = [
+      { id: 1, verification: { method: 'signature', signatureDataUrl: 'orders/x.png' } },
+      { id: 2, photos: ['visits/a.jpg', 'visits/b.jpg'] },
+    ];
+
+    const { rows: out, replacements } = rewriteProjectRef(rows, OLD, TEST_PROJECT_REF);
+
+    expect(replacements).toBe(0);
+    expect(out).toEqual(rows);
   });
 
   it('counts every occurrence, including several in one row', () => {
