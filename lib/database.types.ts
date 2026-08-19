@@ -257,13 +257,16 @@ export type Database = {
           total: number
           order_date: string
           notes: string | null
-          status: 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
+          status: 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered' | 'cancelled'
           status_history: Json
           delivery_date: string | null
           delivery_time_slot: 'Morning (8am-12pm)' | 'Afternoon (12pm-4pm)' | 'Evening (4pm-8pm)' | null
           verification: Json | null
           applied_promotions: Json | null
           created_at: string
+          cancelled_at: string | null
+          cancelled_by: string | null
+          cancel_reason: string | null
         }
         Insert: {
           id?: string
@@ -272,13 +275,16 @@ export type Database = {
           total: number
           order_date: string
           notes?: string | null
-          status: 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
+          status: 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered' | 'cancelled'
           status_history: Json
           delivery_date?: string | null
           delivery_time_slot?: 'Morning (8am-12pm)' | 'Afternoon (12pm-4pm)' | 'Evening (4pm-8pm)' | null
           verification?: Json | null
           applied_promotions?: Json | null
           created_at?: string
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancel_reason?: string | null
         }
         Update: {
           id?: string
@@ -287,13 +293,16 @@ export type Database = {
           total?: number
           order_date?: string
           notes?: string | null
-          status?: 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
+          status?: 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered' | 'cancelled'
           status_history?: Json
           delivery_date?: string | null
           delivery_time_slot?: 'Morning (8am-12pm)' | 'Afternoon (12pm-4pm)' | 'Evening (4pm-8pm)' | null
           verification?: Json | null
           applied_promotions?: Json | null
           created_at?: string
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancel_reason?: string | null
         }
         Relationships: []
       }
@@ -341,7 +350,7 @@ export type Database = {
           horeca_name: string
           amount: number
           due_date: string
-          status: 'pending' | 'paid' | 'overdue'
+          status: 'pending' | 'paid' | 'overdue' | 'cancelled'
           paid_date: string | null
           created_date: string
         }
@@ -352,7 +361,7 @@ export type Database = {
           horeca_name: string
           amount: number
           due_date: string
-          status: 'pending' | 'paid' | 'overdue'
+          status: 'pending' | 'paid' | 'overdue' | 'cancelled'
           paid_date?: string | null
           created_date: string
         }
@@ -363,7 +372,7 @@ export type Database = {
           horeca_name?: string
           amount?: number
           due_date?: string
-          status?: 'pending' | 'paid' | 'overdue'
+          status?: 'pending' | 'paid' | 'overdue' | 'cancelled'
           paid_date?: string | null
           created_date?: string
         }

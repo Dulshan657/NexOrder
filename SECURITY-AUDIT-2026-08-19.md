@@ -149,6 +149,30 @@ concrete failure mode, the fix, and its risk-register mapping.
 
 **`[source]` · Register: new (proposed R-28) · Contradicts `CLAUDE.md`**
 
+> **REMEDIATED 2026-08-19** — migrations `00111_order_cancellation.sql` and
+> `00112_lockdown_order_writes.sql`, applied to `dev`. The three policies are
+> dropped and the grants revoked; `authenticated` holds `SELECT` only and `anon`
+> holds nothing. `CLAUDE.md`'s lockdown table is corrected, and
+> `npm run check:grants:<target>` now asserts the claim against
+> `information_schema` from `config/lockedTables.mjs` rather than leaving it in
+> prose.
+>
+> Two things the finding did not say, both found by running its own Appendix A
+> step 2 before writing the fix. **`anon` held the same INSERT/UPDATE/DELETE**,
+> not just `authenticated` — every REVOKE since `00009` names `authenticated`
+> alone while this project's `ALTER DEFAULT PRIVILEGES` grants all three roles.
+> And **both roles held `TRUNCATE` on all 71 public tables**, which no migration
+> has ever revoked from anyone; RLS cannot constrain `TRUNCATE`, so it sat
+> outside every row-level lockdown claim in the repo. `00112` takes all of it
+> for these two tables. The other ~35 are DB-3 and are recorded in
+> `config/grantBaseline.mjs`, which the check prints on every run and fails on
+> any addition to.
+>
+> The capability the revoke removes is replaced rather than dropped: `00111`
+> adds a terminal `cancelled` status and the **`cancel-order`** Edge Function —
+> Admin-only, reason mandatory, reservation released through the ledger, one
+> audit event, refused if the order has been picked or its invoice paid.
+
 `00001_initial_schema.sql:1084` grants `SELECT, INSERT, UPDATE, DELETE` on `orders` and
 `order_items` to `authenticated`. The lockdown migrations then removed policies **selectively**
 and never touched the grants:
@@ -612,7 +636,7 @@ Ordered by exposure reduced per unit of work. Items 1–3 are the ones a client 
 |---|---|---|---|
 | 0 | **Decide on deploying `rel-2026-08-17-auth`.** Frontend-only, seven files, against the commit already live | minutes | §1 |
 | 1 | Run **Appendix A** in the tenant workspace. Steps 3 and 4 change the severity of DB-3 and STOR-2 | ~30 min | evidence for all `[source]` findings |
-| 2 | One migration: drop the three order policies, revoke the two grants | small | DB-1 |
+| 2 | ~~One migration: drop the three order policies, revoke the two grants~~ **DONE 2026-08-19** (`00111` + `00112`; the revoke also covers `anon` and `TRUNCATE`, and `cancel-order` replaces the removed capability) | small | DB-1 |
 | 3 | One migration: per-verb, role-gated storage policies; `signatures` + `visit-photos` to private | small | STOR-1, STOR-2, R-02 |
 | 4 | `send-email` gate ordering; XFF derivation in `rateLimit.ts` | small | FN-1, FN-2 |
 | 5 | `security_invoker` on `handling_unit_anomalies`; staff check on the two `00084` functions; NULL-fails-closed in `wie_replen_config_rows` | small | DB-2, DB-4, DB-5 |

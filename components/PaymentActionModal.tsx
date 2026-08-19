@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import type { InvoiceStatus } from '../types';
+import type { InvoicePaymentAction } from '../types';
 import { Button, Modal, Textarea, type ButtonVariant } from './ui';
 
 export interface PaymentActionModalProps {
   isOpen: boolean;
   orderId: string;
-  targetStatus: InvoiceStatus;
+  targetStatus: InvoicePaymentAction;
   reasonRequired: boolean;
   isSubmitting?: boolean;
   errorMessage?: string;
@@ -13,7 +13,7 @@ export interface PaymentActionModalProps {
   onCancel: () => void;
 }
 
-const ACTION_LABELS: Record<InvoiceStatus, { title: string; verb: string; variant: ButtonVariant }> = {
+const ACTION_LABELS: Record<InvoicePaymentAction, { title: string; verb: string; variant: ButtonVariant }> = {
   paid:    { title: 'Mark as Paid',    verb: 'paid',    variant: 'primary' },
   overdue: { title: 'Mark as Overdue', verb: 'overdue', variant: 'danger'  },
   pending: { title: 'Mark as Pending', verb: 'pending', variant: 'primary' },

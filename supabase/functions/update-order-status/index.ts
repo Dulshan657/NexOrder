@@ -44,6 +44,19 @@ const STATUS_ORDER: OrderStatus[] = [
   'delivered',
 ]
 
+/** Mig 00111's seventh value. Deliberately NOT in STATUS_ORDER: that array is a
+ *  ladder and this is a terminal side-state, so it has no position on it. Kept
+ *  as a named constant rather than an inline literal so the guard that depends
+ *  on it is greppable from here. */
+const CANCELLED_STATUS = 'cancelled'
+
+/** What `orders.status` may hold, as opposed to what a REQUEST may name.
+ *  `OrderStatus` above is the settable set and must stay that way — the body
+ *  validator rejects anything outside it, and cancelling goes through
+ *  cancel-order. The stored value can additionally be 'cancelled', so the row is
+ *  read as this wider type and narrowed by the terminal guard below. */
+type StoredOrderStatus = OrderStatus | typeof CANCELLED_STATUS
+
 interface UpdateOrderStatusRequest {
   orderId: string
   status: OrderStatus
@@ -155,7 +168,23 @@ serve(async (req: Request) => {
   if (orderError || !order) {
     return errorResponse('ORDER_NOT_FOUND', `Order ${body.orderId} not found`, 404)
   }
-  const currentOrderStatus = (order as { status: OrderStatus }).status
+  const currentOrderStatus = (order as { status: StoredOrderStatus }).status
+
+  // `cancelled` is TERMINAL and has no rung on STATUS_ORDER (mig 00111). That is
+  // deliberate — it is not a seventh step after `delivered` — but it means the
+  // forward-only guards below cannot see it: `STATUS_ORDER.indexOf('cancelled')`
+  // is -1, which compares as "before everything", so EVERY status would pass
+  // `newIdx < currentIdx` and a cancelled order could be advanced straight to
+  // delivered. This check is what stops that, and it must stay ahead of all
+  // three paths (Mode A, the per-warehouse mode, and the legacy tail) because
+  // each has its own comparison.
+  if (currentOrderStatus === CANCELLED_STATUS) {
+    return errorResponse(
+      'INVALID_TRANSITION',
+      'This order was cancelled. A cancelled order cannot be moved to another status.',
+      422,
+    )
+  }
 
   const nowIso = new Date().toISOString()
 

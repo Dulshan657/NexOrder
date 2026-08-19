@@ -131,3 +131,57 @@ export async function updateOrderStatus(
   if (!data?.order) throw new Error('Status update returned no order')
   return data.order
 }
+
+/**
+ * How many units have been picked against this order, across every warehouse.
+ *
+ * Needed because an order's status is the ROLLUP of its per-warehouse
+ * fulfilments and takes the LOWEST rung, so an order reading `processed` may
+ * already have a site that has picked its share. Cancelling one of those would
+ * release only the unpicked remainder and strand what is off the shelf, so the
+ * Cancel action has to ask the physical record rather than the summary.
+ *
+ * `pick_progress` is SELECT-able by Admin/Manager/Warehouse (mig 00027), which
+ * covers everyone who can see this control.
+ */
+export async function getPickedUnits(orderId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('pick_progress')
+    .select('picked_qty')
+    .eq('order_id', orderId)
+  if (error) throw new Error(error.message)
+  return (data ?? []).reduce((sum, row) => sum + Number((row as { picked_qty: number }).picked_qty ?? 0), 0)
+}
+
+export interface CancelOrderResult {
+  ok: true
+  orderId: string
+  status: 'cancelled'
+  previousStatus: OrderStatus
+  cancelledAt: string
+  invoiceId: string | null
+  invoiceCancelled: boolean
+}
+
+/**
+ * Cancel a placed order. Admin only; the reason is mandatory and is stored on
+ * the order as well as in the audit log.
+ *
+ * There is no deleteOrder to sit beside this, and there never was one that
+ * worked through the app: until mig 00112 an Admin could DELETE an order
+ * straight over PostgREST, with no audit trail and no ledger correction. This
+ * is the replacement — the order survives, its reservation goes back, and the
+ * record says who and why.
+ */
+export async function cancelOrder(id: string, reason: string): Promise<CancelOrderResult> {
+  const { data, error } = await supabase.functions.invoke<CancelOrderResult>('cancel-order', {
+    body: { orderId: id, reason },
+  })
+  if (error) {
+    const ctx = (error as { context?: { error?: { code?: string; message?: string } } }).context
+    const msg = ctx?.error?.message ?? error.message ?? 'Cancelling the order failed'
+    throw new Error(msg)
+  }
+  if (!data?.ok) throw new Error('Cancelling the order returned no result')
+  return data
+}

@@ -5,18 +5,22 @@ import {
   getOrdersByUser,
   placeOrder,
   updateOrderStatus,
+  cancelOrder,
+  getPickedUnits,
 } from '@/services/supabase/orderService'
 import type { OrderFilters, PlaceOrderInput, PlaceOrderResult } from '@/services/supabase/orderService'
 import type { OrderStatus } from '@/types'
 import { productKeys } from './useProducts'
 import { pickKeys } from './usePickQueue'
 import { orderDocumentKeys } from './useOrderDocuments'
+import { invoiceKeys } from './useInvoices'
 
 export const orderKeys = {
   all: ['orders'] as const,
   filtered: (filters: OrderFilters) => ['orders', filters] as const,
   byHoReCa: (horecaId: number) => ['orders', 'horeca', horecaId] as const,
   byUser: (userId: string) => ['orders', 'user', userId] as const,
+  pickedUnits: (orderId: string) => ['orders', 'pickedUnits', orderId] as const,
 } as const
 
 export function useOrders(filters: OrderFilters = {}) {
@@ -80,5 +84,44 @@ export function useUpdateOrderStatus() {
         qc.invalidateQueries({ queryKey: orderDocumentKeys.all })
       }
     },
+  })
+}
+
+/**
+ * Cancel a placed order (Admin only, reason mandatory).
+ *
+ * Invalidates the pick queue and the invoice cache as well as the order list:
+ * cancelling releases the order's reservation and cancels its unpaid invoice,
+ * so a stale Pick Queue would keep offering work that must not be done and a
+ * stale Orders tab would keep showing the invoice as payable.
+ */
+export function useCancelOrder() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => cancelOrder(id, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orderKeys.all })
+      qc.invalidateQueries({ queryKey: pickKeys.queue })
+      qc.invalidateQueries({ queryKey: invoiceKeys.all })
+      // The released reservation changes products.available (inv_apply_leg
+      // maintains the cache), so the Shop and Stock surfaces are stale too.
+      qc.invalidateQueries({ queryKey: productKeys.all })
+    },
+  })
+}
+
+/**
+ * Units picked against an order, for the Cancel action's precondition.
+ *
+ * `enabled` is the point: this is an extra round trip and it is only ever asked
+ * when someone can actually cancel. While it is loading the caller must treat
+ * the answer as unknown rather than as zero, or the button would offer to
+ * cancel a part-picked order that the server then refuses.
+ */
+export function useOrderPickedUnits(orderId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: orderKeys.pickedUnits(orderId),
+    queryFn: () => getPickedUnits(orderId),
+    enabled: enabled && Boolean(orderId),
   })
 }

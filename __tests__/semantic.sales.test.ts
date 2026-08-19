@@ -263,3 +263,52 @@ describe('computeTargetAchieved', () => {
     expect(computeTargetAchieved(target, ctx)).toBe(1)
   })
 })
+
+describe('cancelled orders (mig 00111)', () => {
+  // A cancelled order was placed and then voided before anything shipped: no
+  // revenue was earned and its reservation went back. Excluding it belongs in
+  // filterOrders rather than in each metric's compute body, or one omission
+  // would leave revenue and order count disagreeing about the same set.
+  const cancelled = makeOrder({
+    id: 'ORD-CANCELLED',
+    orderDate: '2026-07-11T09:00:00.000Z',
+    hoReCa: cafe,
+    submittedBy: repA,
+    status: 'cancelled',
+    total: 1_000_000,
+    items: [makeItem({ id: 99, name: 'Rice', category: 'Dry Goods', price: 10, quantity: 10 })],
+  })
+  const withCancelled: MetricContext = { ...ctx, orders: [...orders, cancelled] }
+
+  it('does not count toward revenue', () => {
+    expect(evaluateMetric('sales.revenue', withCancelled, {})).toBe(
+      evaluateMetric('sales.revenue', ctx, {}),
+    )
+  })
+
+  it('does not count toward the order count', () => {
+    expect(evaluateMetric('sales.orderCount', withCancelled, {})).toBe(
+      evaluateMetric('sales.orderCount', ctx, {}),
+    )
+  })
+
+  it('does not skew the average order value', () => {
+    expect(evaluateMetric('sales.averageOrderValue', withCancelled, {})).toBe(
+      evaluateMetric('sales.averageOrderValue', ctx, {}),
+    )
+  })
+
+  it('is still visible when a status filter names it explicitly', () => {
+    // The exclusion is a DEFAULT, not a blind spot — otherwise there would be no
+    // way to ask how many orders were cancelled.
+    const rows = evaluateMetric('sales.ordersByStatus', withCancelled, {
+      statuses: ['cancelled'],
+    }) as Array<{ status: string; count: number }>
+    expect(rows.find(r => r.status === 'cancelled')?.count).toBe(1)
+  })
+
+  it('adds no empty cancelled stage when nothing in scope is cancelled', () => {
+    const rows = evaluateMetric('sales.ordersByStatus', ctx, {}) as Array<{ status: string }>
+    expect(rows.map(r => r.status)).not.toContain('cancelled')
+  })
+})

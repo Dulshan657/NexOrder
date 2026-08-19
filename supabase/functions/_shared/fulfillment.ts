@@ -159,6 +159,16 @@ export async function recomputeOrderStatus(
     .eq('id', orderId)
     .single()
   if (!order) return null
+
+  // A cancelled order is terminal (mig 00111) and must not be rolled back to a
+  // fulfilment status. `order_fulfillments.status` has no `cancelled` value on
+  // purpose — a site cannot be cancelled independently of the order it serves —
+  // so its rows keep whatever they last held, and without this guard the next
+  // pick or status change anywhere would recompute the order back to `processed`
+  // and quietly un-cancel it. The fulfilments are left as they are: they are the
+  // record of what each warehouse had done when the order was cancelled.
+  if ((order as any).status === 'cancelled') return 'cancelled'
+
   if ((order as any).status === rolled) return rolled
 
   const history = Array.isArray((order as any).status_history) ? (order as any).status_history : []

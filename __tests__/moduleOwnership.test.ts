@@ -9,7 +9,7 @@ import { FUNCTION_MODULES, disabledFunctionsFor } from '../config/moduleOwnershi
 import { TARGETS } from '../config/environments.mjs'
 
 /**
- * The module gate on the server is spread across 57 Edge Functions, and
+ * The module gate on the server is spread across 58 Edge Functions, and
  * `supabase/functions` is excluded from `npx tsc --noEmit` (tsconfig.json),
  * nothing imports those files, and `supabase functions deploy` without Docker
  * only uploads. Their call sites are therefore type-checked by NOTHING — the

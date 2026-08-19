@@ -97,7 +97,14 @@ export function groupOrdersByStatus(orders: readonly Order[]): StatusCount[] {
   for (const order of orders) {
     counts.set(order.status, (counts.get(order.status) ?? 0) + 1)
   }
-  return ORDER_STATUS_SEQUENCE.map(status => ({
+  // The ladder, plus cancelled ONLY when some order in scope actually is. It is
+  // not a rung, so it never appears as an empty stage on a funnel; but a scope
+  // that explicitly asked for cancelled orders must not render six zeroes and
+  // silently drop the rows it was asked about.
+  const stages: OrderStatus[] = (counts.get('cancelled') ?? 0) > 0
+    ? [...ORDER_STATUS_SEQUENCE, 'cancelled']
+    : ORDER_STATUS_SEQUENCE
+  return stages.map(status => ({
     status,
     label: ORDER_STATUS_LABELS[status],
     count: counts.get(status) ?? 0,
@@ -109,7 +116,7 @@ export const SALES_METRICS: readonly MetricDef[] = [
     id: 'sales.revenue',
     label: 'Revenue',
     description:
-      'Sum of the stored order total for every order placed in scope. The stored total is what the customer was invoiced, including promotions and header-level adjustments. All six fulfilment statuses count, recognised on the placement date — nothing is excluded by status because no status means cancelled.',
+      'Sum of the stored order total for every order placed in scope. The stored total is what the customer was invoiced, including promotions and header-level adjustments. All six fulfilment statuses count, recognised on the placement date. Cancelled orders (mig 00111) are excluded — they were voided before anything shipped and no revenue was earned — unless a status filter names them explicitly.',
     unit: 'currency',
     shape: 'scalar',
     requires: ['orders'],

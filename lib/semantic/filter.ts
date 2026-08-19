@@ -107,7 +107,20 @@ export function filterOrders(
     if (filter.horecaId !== undefined && order.hoReCa?.id !== filter.horecaId) continue
     if (filter.repId !== undefined && order.submittedBy?.id !== filter.repId) continue
     if (filter.userRole !== undefined && order.submittedBy?.role !== filter.userRole) continue
-    if (filter.statuses !== undefined && !filter.statuses.includes(order.status)) continue
+    if (filter.statuses !== undefined) {
+      if (!filter.statuses.includes(order.status)) continue
+    } else if (order.status === 'cancelled') {
+      // A cancelled order (mig 00111) was placed and then voided: no revenue was
+      // earned, no goods left the building, and its reservation was released. It
+      // is excluded from every metric by DEFAULT, here rather than in each of the
+      // twelve `compute` bodies, because one omission would leave revenue and
+      // order count disagreeing about the same set of orders.
+      //
+      // An EXPLICIT `statuses` filter still wins, so a caller can ask for
+      // cancelled orders deliberately -- that is what makes this a default and
+      // not a blind spot.
+      continue
+    }
 
     if (filter.category !== undefined) {
       const items = (order.items ?? []).filter(item => item.category === filter.category)

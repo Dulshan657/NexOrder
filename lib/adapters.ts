@@ -416,6 +416,9 @@ export function toOrder(
       : undefined,
     inboundMessageId: pendingPo?.inbound_message_id ?? undefined,
     autoApproved: pendingPo ? pendingPo.status === 'auto_approved' : undefined,
+    cancelledAt: row.cancelled_at ?? undefined,
+    cancelledBy: row.cancelled_by ?? undefined,
+    cancelReason: row.cancel_reason ?? undefined,
     fulfillments: Array.isArray(row.order_fulfillments)
       ? row.order_fulfillments.map(toOrderFulfillment)
       : undefined,

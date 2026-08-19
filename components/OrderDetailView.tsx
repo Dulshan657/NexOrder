@@ -1,19 +1,22 @@
 import React, { useState } from 'react';
-import type { Order, OrderStatus, User, Invoice, InvoiceStatus } from '../types';
+import type { Order, OrderStatus, User, Invoice, InvoicePaymentAction } from '../types';
 import { UserRole } from '../types';
 import { ORDER_STATUS_SEQUENCE } from '../constants';
 import StatusBadge from './StatusBadge';
 import StatusTimeline from './StatusTimeline';
 import PaymentStatusBadge from './PaymentStatusBadge';
 import PaymentActionModal from './PaymentActionModal';
+import CancelOrderModal from './CancelOrderModal';
 import OrderSourceBadge from './OrderSourceBadge';
 import OrderFulfillmentsPanel from './OrderFulfillmentsPanel';
 import { getInboundApproval } from '../lib/orderSource';
 import { orderDeliveryAddress } from '../lib/orderDeliveryAddress';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
+import { useCancelOrder, useOrderPickedUnits } from '../hooks/queries/useOrders';
+import { cancelUnavailableReason } from '../lib/orderCancel';
 import { useToasts } from '../hooks/useToasts';
 import { Modal } from './ui';
-import { Package, Truck, Calendar, FileText } from 'lucide-react';
+import { Package, Truck, Calendar, FileText, Ban } from 'lucide-react';
 
 interface OrderDetailViewProps {
     order: Order;
@@ -31,7 +34,7 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
 
     const updateInvoiceStatus = useUpdateInvoiceStatus();
     const { addToast } = useToasts();
-    const [paymentAction, setPaymentAction] = useState<InvoiceStatus | null>(null);
+    const [paymentAction, setPaymentAction] = useState<InvoicePaymentAction | null>(null);
     const [paymentError, setPaymentError] = useState<string | undefined>(undefined);
 
     const submitPaymentAction = (reason?: string) => {
@@ -51,8 +54,59 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
         );
     };
 
+    // ORDER_STATUS_SEQUENCE is the six-rung ladder and 'cancelled' is NOT on it
+    // (mig 00111), so indexOf returns -1 for a cancelled order and `currentIdx + 1`
+    // would resolve to 'processing' -- offering to advance an order that has been
+    // voided. Guarding on the index rather than on the status keeps the rule where
+    // the arithmetic is.
     const currentIdx = ORDER_STATUS_SEQUENCE.indexOf(order.status);
-    const nextStatus = currentIdx < ORDER_STATUS_SEQUENCE.length - 1 ? ORDER_STATUS_SEQUENCE[currentIdx + 1] : null;
+    const nextStatus =
+        currentIdx >= 0 && currentIdx < ORDER_STATUS_SEQUENCE.length - 1
+            ? ORDER_STATUS_SEQUENCE[currentIdx + 1]
+            : null;
+
+    // ── Cancellation ──────────────────────────────────────────────────────────
+    // Admin only, and only while the order can still be cancelled. cancelBlocker
+    // in lib/orderCancel.ts is the SAME module the Edge Function runs, so the
+    // tooltip below is the refusal the server would give, not a guess at it.
+    const isAdminOnly = currentUser.role === UserRole.ADMIN;
+    const cancelMutation = useCancelOrder();
+    const [cancelOpen, setCancelOpen] = useState(false);
+    const [cancelError, setCancelError] = useState<string | undefined>(undefined);
+
+    // Only asked when someone could actually act on the answer. While it loads,
+    // pickedUnits is unknown -- treated as "not yet cancellable" rather than as
+    // zero, because zero is the answer that would wrongly enable the button.
+    const pickedQuery = useOrderPickedUnits(order.id, isAdminOnly);
+    const pickedUnitsKnown = isAdminOnly && pickedQuery.isSuccess;
+    const cancelBlockedBy = pickedUnitsKnown
+        ? cancelUnavailableReason(order, invoice, currentUser.role, pickedQuery.data ?? 0)
+        : null;
+    // A blocker whose code is NOT_CANCELLABLE / ALREADY_CANCELLED means this
+    // order is simply past the point of cancelling; there is nothing useful to
+    // show and the control is hidden entirely. Everything else is a state the
+    // operator might fix, so the button stays visible and explains itself.
+    const cancelSectionVisible =
+        isAdminOnly &&
+        order.status !== 'cancelled' &&
+        cancelBlockedBy?.code !== 'NOT_CANCELLABLE' &&
+        cancelBlockedBy?.code !== 'FORBIDDEN';
+
+    const submitCancel = (reason: string) => {
+        setCancelError(undefined);
+        cancelMutation.mutate(
+            { id: order.id, reason },
+            {
+                onSuccess: () => {
+                    addToast(`Order ${order.id} cancelled`, 'success');
+                    setCancelOpen(false);
+                },
+                onError: (err) => {
+                    setCancelError(err instanceof Error ? err.message : 'Failed to cancel the order');
+                },
+            },
+        );
+    };
 
     const handleAdvanceStatus = () => {
         if (nextStatus && onUpdateStatus) {
@@ -183,6 +237,55 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                                     Mark as {nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}
                                 </button>
                             </div>
+                        </div>
+                    )}
+
+                    {/* Cancel order — Admin only. Sits after Update Status because
+                        it is the exception, not the routine action, and above the
+                        invoice because cancelling takes the invoice with it. */}
+                    {cancelSectionVisible && (
+                        <div className="bg-rose-50/60 rounded-xl p-4 border border-rose-200">
+                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                                <div className="min-w-0">
+                                    <h3 className="text-sm font-semibold text-stone-700 flex items-center gap-2">
+                                        <Ban className="w-4 h-4 text-rose-600" />
+                                        Cancel order
+                                    </h3>
+                                    <p className="text-xs text-stone-600 mt-1 max-w-prose">
+                                        {cancelBlockedBy
+                                            ? cancelBlockedBy.message
+                                            : 'Releases the reserved stock, cancels the unpaid invoice and marks the order Cancelled. The order itself is kept.'}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => { setCancelError(undefined); setCancelOpen(true); }}
+                                    disabled={Boolean(cancelBlockedBy) || !pickedUnitsKnown}
+                                    title={cancelBlockedBy?.message ?? undefined}
+                                    className="px-4 py-2 bg-white border border-rose-300 text-rose-700 text-sm font-medium rounded-lg hover:bg-rose-50 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Cancel order
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Why this order was cancelled. The reason is the record, so it
+                        belongs on the order, not only in the Admin-only audit log. */}
+                    {order.status === 'cancelled' && (
+                        <div className="bg-stone-100 rounded-xl p-4 border border-stone-300">
+                            <h3 className="text-sm font-semibold text-stone-700 flex items-center gap-2">
+                                <Ban className="w-4 h-4 text-stone-500" />
+                                Cancelled
+                            </h3>
+                            {order.cancelReason && (
+                                <p className="text-sm text-stone-700 mt-1">{order.cancelReason}</p>
+                            )}
+                            {order.cancelledAt && (
+                                <p className="text-xs text-stone-500 mt-1">
+                                    {new Date(order.cancelledAt).toLocaleString('en-AU', { dateStyle: 'long', timeStyle: 'short' })}
+                                </p>
+                            )}
                         </div>
                     )}
 
@@ -380,6 +483,20 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                     errorMessage={paymentError}
                     onConfirm={submitPaymentAction}
                     onCancel={() => { setPaymentAction(null); setPaymentError(undefined); }}
+                />
+            )}
+
+            {cancelOpen && (
+                <CancelOrderModal
+                    isOpen
+                    orderId={order.id}
+                    orderTotal={order.total ?? 0}
+                    customerName={order.hoReCa?.name}
+                    invoiceWillCancel={Boolean(invoice) && invoice?.status !== 'paid'}
+                    isSubmitting={cancelMutation.isPending}
+                    errorMessage={cancelError}
+                    onConfirm={submitCancel}
+                    onCancel={() => { setCancelOpen(false); setCancelError(undefined); }}
                 />
             )}
         </>

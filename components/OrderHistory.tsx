@@ -19,6 +19,9 @@ const PAYMENT_SORT_RANK: Record<PaymentDisplayState, number> = {
   pending: 1,
   not_invoiced: 2,
   paid: 3,
+  // Last: a cancelled invoice is owed by nobody, so it never competes for
+  // attention with one that is merely unpaid.
+  cancelled: 4,
 };
 
 const PAYMENT_FILTER_OPTIONS: ReadonlyArray<{ value: PaymentFilterValue; label: string }> = [

@@ -773,7 +773,11 @@ export interface OrderItem extends Product {
     uomId?: number;    // chosen UOM (mig 00067); undefined/base = per-unit line
 }
 
-export type OrderStatus = 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered';
+// 'cancelled' is TERMINAL and off the ladder (mig 00111) -- it is not a
+// seventh step after 'delivered'. FulfillmentStatus deliberately does NOT
+// carry it: a warehouse's share of an order cannot be cancelled
+// independently of the order, and rollupOrderStatus has no rung for it.
+export type OrderStatus = 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered' | 'cancelled';
 
 export interface StatusHistoryEntry {
     status: OrderStatus;
@@ -814,6 +818,13 @@ export interface Order {
     deliveryAddress?: OrderDeliveryAddress;
     verification?: OrderVerification;
     appliedPromotions?: AppliedPromotion[];
+    // Cancellation record (mig 00111). Present exactly when status is
+    // 'cancelled' -- orders_cancelled_fields_check makes cancelledAt and
+    // cancelReason mandatory for that status, so a cancelled order can always
+    // say when and why. Written only by the cancel-order Edge Function.
+    cancelledAt?: string;
+    cancelledBy?: string;
+    cancelReason?: string;
     // Set by the data adapter when this order was created from an inbound email PO.
     // Drives the "Email PO" source badge. Joined via pending_pos.approved_order_id;
     // see lib/orderSource.ts and the approve-po Edge Function (Stream F).
@@ -829,7 +840,15 @@ export interface Order {
     fulfillments?: OrderFulfillment[];
 }
 
-export type InvoiceStatus = 'pending' | 'paid' | 'overdue';
+// 'cancelled' is set only by cancel-order, never by mutate-invoice-status: an
+// invoice is cancelled because its order was, never on its own (mig 00111).
+export type InvoiceStatus = 'pending' | 'paid' | 'overdue' | 'cancelled';
+
+/** The statuses mutate-invoice-status will actually set, and therefore the only
+ *  ones the payment actions may target. 'cancelled' is excluded deliberately:
+ *  an invoice is cancelled because its order was (cancel-order, mig 00111),
+ *  never as a payment decision of its own. */
+export type InvoicePaymentAction = Exclude<InvoiceStatus, 'cancelled'>;
 
 export interface Invoice {
     id: string;

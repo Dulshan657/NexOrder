@@ -58,6 +58,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
     packed: 'Packed',
     dispatched: 'Dispatched',
     delivered: 'Delivered',
+    cancelled: 'Cancelled',
 };
 
 export const ORDER_STATUS_COLORS: Record<OrderStatus, { bg: string; text: string; border: string }> = {
@@ -67,8 +68,14 @@ export const ORDER_STATUS_COLORS: Record<OrderStatus, { bg: string; text: string
     packed: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
     dispatched: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' },
     delivered: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+    // Stone, not red. A cancelled order is closed, not an error, and every
+    // other badge on the row is already carrying colour that means something.
+    cancelled: { bg: 'bg-stone-100', text: 'text-stone-600', border: 'border-stone-300' },
 };
 
+// The fulfilment LADDER, and deliberately still six: 'cancelled' is a terminal
+// side-state with no position on it. Anything walking this array to find
+// "the next status" must never offer cancellation as a step forward.
 export const ORDER_STATUS_SEQUENCE: OrderStatus[] = ['processing', 'processed', 'picked', 'packed', 'dispatched', 'delivered'];
 
 export const DELIVERY_TIME_SLOTS: DeliveryTimeSlot[] = [

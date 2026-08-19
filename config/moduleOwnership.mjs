@@ -40,6 +40,7 @@ export const FUNCTION_MODULES = {
   // order: with ordering off it would have nowhere to land.
   'place-order': 'sales_orders',
   'update-order-status': 'sales_orders',
+  'cancel-order': 'sales_orders',
   'mutate-promotion': 'sales_orders',
   'mutate-invoice-status': 'sales_orders',
   'mutate-purchase-order': 'sales_orders',

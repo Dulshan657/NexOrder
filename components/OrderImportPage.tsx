@@ -79,6 +79,9 @@ const PAYMENT_SORT_RANK: Record<PaymentDisplayState, number> = {
   pending: 1,
   not_invoiced: 2,
   paid: 3,
+  // Last: a cancelled invoice is owed by nobody, so it never competes for
+  // attention with one that is merely unpaid.
+  cancelled: 4,
 };
 
 const PAYMENT_FILTER_OPTIONS: ReadonlyArray<{ value: PaymentFilterValue; label: string }> = [
@@ -98,7 +101,9 @@ const ITEMS_PER_PAGE = 20;
 const TAB_STATUSES: Record<ActiveTab, OrderStatus[]> = {
   received: ['processing'],
   inProgress: ['processed', 'picked', 'packed'],
-  completed: ['dispatched', 'delivered'],
+  // Cancelled sits with Completed, never with In Progress: the tab name is a
+  // claim about whether anyone still owes work on the order, and nobody does.
+  completed: ['dispatched', 'delivered', 'cancelled'],
 };
 
 const TAB_LABELS: Record<ActiveTab, string> = {

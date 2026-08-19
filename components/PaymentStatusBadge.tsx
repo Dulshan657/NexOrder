@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Invoice } from '../types';
 
-export type PaymentDisplayState = 'not_invoiced' | 'pending' | 'paid' | 'overdue';
+export type PaymentDisplayState = 'not_invoiced' | 'pending' | 'paid' | 'overdue' | 'cancelled';
 
 interface PaymentStatusBadgeProps {
   invoice: Invoice | undefined;
@@ -25,6 +25,12 @@ const STATE_STYLES: Record<PaymentDisplayState, { container: string; dot: string
   overdue: {
     container: 'bg-rose-50 text-rose-800 border-rose-200',
     dot: 'bg-rose-500',
+  },
+  // Same stone as the cancelled order badge, and for the same reason: nothing is
+  // owed and nothing went wrong. It must not read as overdue.
+  cancelled: {
+    container: 'bg-stone-100 text-stone-600 border-stone-300',
+    dot: 'bg-stone-400',
   },
 };
 
@@ -61,6 +67,10 @@ export function getPaymentLabel(invoice: Invoice | undefined, compact = false): 
       const daysLate = daysBetween(invoice.dueDate, today);
       return daysLate > 0 ? `${base} (${daysLate}d late)` : base;
     }
+    case 'cancelled':
+      // No due date: the invoice was cancelled with its order, so quoting a date
+      // it will never come due on would only invite someone to chase it.
+      return 'Cancelled';
     case 'pending':
     default:
       return `Pending · due ${formatShortDate(invoice.dueDate)}`;

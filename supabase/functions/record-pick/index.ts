@@ -184,6 +184,30 @@ serve(async (req: Request) => {
       }
     }
 
+    // ── Cancelled orders cannot be picked ─────────────────────────────────
+    // Runs BEFORE the RPC, for the same reason the scan check does: a pick that
+    // must not happen must not decrement anything. cancel-order has already
+    // released this order's reservation (mig 00111), so picking against it would
+    // take stock off the shelf for an order that no longer wants it, and the
+    // units would be allocated to nothing. The Pick Queue filters cancelled
+    // orders out already — this catches the phone that loaded the queue before
+    // the cancel landed, which is exactly when it happens.
+    {
+      const { data: itemOrder } = await admin
+        .from('order_items')
+        .select('orders(status)')
+        .eq('id', orderItemId)
+        .maybeSingle()
+      const orderStatus = (itemOrder as any)?.orders?.status
+      if (orderStatus === 'cancelled') {
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          'This order was cancelled. Stop picking it and put anything already taken back.',
+          { reason: 'ORDER_CANCELLED' },
+        )
+      }
+    }
+
     const { data: pickResult, error: rpcError } = await admin.rpc('inv_pick_order_line', {
       p_order_item_id: orderItemId,
       p_picked_qty: pickedQty,
