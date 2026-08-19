@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-// @ts-expect-error — .mjs config module, no types
 import { findStorageViolations, expectedBucketIds } from '../scripts/lib/storageExpectations.mjs'
-// @ts-expect-error — .mjs config module, no types
 import { STORAGE_BUCKETS } from '../config/storageBuckets.mjs'
+
+interface BucketRow { id: string; public: boolean }
 
 /**
  * The pure half of `check:storage` (security-audit STOR-1 / STOR-2, mig 00113).
@@ -16,8 +16,8 @@ import { STORAGE_BUCKETS } from '../config/storageBuckets.mjs'
  */
 
 /** The world as 00113 leaves it. */
-function goodBuckets() {
-  return STORAGE_BUCKETS.map((e: { id: string; public: boolean }) => ({ id: e.id, public: e.public }))
+function goodBuckets(): BucketRow[] {
+  return STORAGE_BUCKETS.map((e: BucketRow) => ({ id: e.id, public: e.public }))
 }
 
 const GOOD_POLICIES = [
@@ -32,7 +32,7 @@ describe('findStorageViolations', () => {
   })
 
   it('catches a bucket that is still public — STOR-2 as it actually stood', () => {
-    const buckets = goodBuckets().map((b: { id: string }) =>
+    const buckets: BucketRow[] = goodBuckets().map((b) =>
       b.id === 'signatures' ? { id: 'signatures', public: true } : b,
     )
     const findings = findStorageViolations(buckets, GOOD_POLICIES)
@@ -107,7 +107,7 @@ describe('findStorageViolations', () => {
   })
 
   it('reports a declared bucket that is absent rather than passing it', () => {
-    const buckets = goodBuckets().filter((b: { id: string }) => b.id !== 'visit-photos')
+    const buckets = goodBuckets().filter((b) => b.id !== 'visit-photos')
     const findings = findStorageViolations(buckets, GOOD_POLICIES)
     expect(findings).toHaveLength(1)
     expect(findings[0].kind).toBe('missing_bucket')
@@ -124,7 +124,7 @@ describe('findStorageViolations', () => {
   })
 
   it('reports a public-by-design bucket that has been closed by mistake', () => {
-    const buckets = goodBuckets().map((b: { id: string }) =>
+    const buckets: BucketRow[] = goodBuckets().map((b) =>
       b.id === 'product-images' ? { id: 'product-images', public: false } : b,
     )
     const findings = findStorageViolations(buckets, GOOD_POLICIES)
