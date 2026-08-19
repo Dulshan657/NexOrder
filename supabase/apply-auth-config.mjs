@@ -100,7 +100,7 @@ function inviteEmail() {
  * sends `${window.location.origin}/` — note the trailing slash — so every entry
  * needs a path wildcard or it will not match.
  *
- * The preview glob (`https://*-dulshan657s-projects.vercel.app/**`) appears in
+ * The preview glob (`https://*-nexgen13.vercel.app/**`) appears in
  * the DEV entry only. It must never reach production: it would make any preview
  * deployment a valid password-reset landing page for a client account.
  */

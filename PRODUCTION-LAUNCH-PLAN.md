@@ -130,8 +130,11 @@ with a certificate error.
 **A0.2 · Vercel Pro (US$20/mo).** Hobby prohibits commercial use, and the Production/Preview
 split in A8 needs a paid team.
 
-1. `vercel.com/dashboard` → switch to the **`dulshan657s-projects`** team, not your personal
-   scope. Upgrading the personal account does nothing for the project.
+1. `vercel.com/dashboard` → switch to the **`nexgen14`** team (NexGen's own), not your
+   personal scope. Superseded 2026-08-19: this step originally named
+   `dulshan657s-projects`, and `nexorder-amadiya` WAS created there. It has since been
+   transferred to `nexgen14` — a tenant's hosting belongs on a NexGen-owned scope, the
+   same rule the demo follows on `nexgen13`. Do not re-provision into a personal scope.
 2. Settings → Billing → Upgrade to **Pro**. Pro is **per seat**; at one member that is US$20/mo.
 3. Set a **Spend Management** pause threshold while you are there — not just a notification.
 4. **Install the CLI:** `npm i -g vercel`, then `vercel whoami`. It is not currently installed on

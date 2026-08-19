@@ -668,11 +668,18 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 Ordered by impact; one-line scope each so future agents don't drift.
 
 **High**
-0. **Finish the cutover.** The database is Amadiya's; the front end is not there
-   yet. Outstanding, in order: create the Amadiya **Vercel project**
+0. **Finish the cutover.** ~~create the Amadiya **Vercel project**
    (`NEXORDER_ENV=amadiya`, Sydney creds, `VITE_SHOW_DEMO_LOGINS=false`), fill
    `vercel.projectId` in the registry, attach `nexorder.com.au` + `www`,
-   `npm run deploy:amadiya`. ~~then remove the `nexorder.vercel.app` alias from
+   `npm run deploy:amadiya`~~ — **all DONE.** The project exists, both domains
+   are attached and verified, and `rel-2026-08-19` is live on
+   `https://nexorder.com.au` (sha `78a4d2a`), with migrations `00106`–`00113`
+   applied — closing audit findings DB-1, STOR-1 and STOR-2 on production
+   evidence. **The project was created on `dulshan657s-projects` (a personal
+   scope) and TRANSFERRED to the `nexgen14` team on 2026-08-19**; a tenant's
+   hosting belongs on a NexGen-owned scope, as the demo already does on
+   `nexgen13`. The transfer-request API preserved `projectId`, so only
+   `teamSlug`/`orgId` changed in the registry. ~~then remove the `nexorder.vercel.app` alias from
    the old project and stop its deploys~~ — **done in the cutover**: the old
    project is retired, its alias removed and its Supabase env vars stripped, so
    `https://nexorder.vercel.app` currently answers `DEPLOYMENT_NOT_FOUND` and
@@ -681,7 +688,8 @@ Ordered by impact; one-line scope each so future agents don't drift.
    `bootstrap:admin:amadiya` for
    `info@amadiya.com.au` (deferred until the domain resolves, because the reset
    link points at it), Amadiya's phone/email/logo into `app_settings`, and
-   Gates B–E. Full sequence: `PRODUCTION-LAUNCH-PLAN.md` Phase 3.
+   Gates C and E (B passed on the 2026-08-19 deploy). Full sequence:
+   `PRODUCTION-LAUNCH-PLAN.md` Phase 3.
 0b. ~~**Rebuild the demo on its own account.**~~ **DONE 2026-08-13.** Database
    `uqvekvavkjjurpqtovbq` + site `nexorder-demo` on the `nexgen13` Vercel team,
    both on NexGen's own accounts, live at https://nexorder.vercel.app. Isolation

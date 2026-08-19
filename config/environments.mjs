@@ -288,7 +288,7 @@ export const TARGETS = {
     ],
 
     /**
-     * Production only. The `https://*-dulshan657s-projects.vercel.app/**`
+     * Production only. The `https://*-nexgen14.vercel.app/**`
      * preview glob must NEVER appear here — it would make any preview build a
      * valid password-reset landing page for a client account.
      */
@@ -298,15 +298,23 @@ export const TARGETS = {
     ],
 
     vercel: {
-      teamSlug: 'dulshan657s-projects',
+      teamSlug: 'nexgen14',
       /**
-       * `nexorder-amadiya`, created 2026-08-12. Both ids are passed into the
-       * `vercel` child env by `deploy.mjs`, so `--env=amadiya` alone decides
-       * which project is built — `.vercel/project.json` still names the old
-       * demo project and must never be what resolves a tenant deploy.
+       * `nexorder-amadiya`, created 2026-08-12 on `dulshan657s-projects` and
+       * TRANSFERRED to `nexgen14` on 2026-08-19 — NexGen owns its tenants'
+       * hosting, matching the Supabase/account split above. The transfer-request
+       * API (`POST /projects/:id/transfer-request` + `PUT` to accept) PRESERVES
+       * `projectId`; the dashboard flow mints a new one. No DNS was touched.
+       *
+       * Both ids ride in the `vercel` child env from `deploy.mjs`, so
+       * `--env=amadiya` alone decides which project is built. `teamSlug` is
+       * load-bearing too: deploy.mjs finds the deployment URL by matching
+       * `-<teamSlug>.vercel.app` and FALLS BACK to the first URL it saw, so a
+       * stale slug aliases the wrong deployment and still reports success.
+       * Nothing tests this block — change all three together.
        */
       projectId: 'prj_6EWD3FTyT4o6R4UvDCks2Phccfnd',
-      orgId: 'team_evk2SaoAF3naWcjrBdCo1gbL',
+      orgId: 'team_8Kerf4Faozhn5Sze7yOuH5bf',
       target: 'production',
       alias: 'nexorder.com.au',
     },
