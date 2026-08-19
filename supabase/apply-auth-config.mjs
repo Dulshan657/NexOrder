@@ -149,6 +149,22 @@ function buildDesired(config) {
     mailer_autoconfirm: false,
     mailer_otp_exp: 3600,
 
+    // Access-token lifetime, and Supabase's own default.
+    //
+    // Declared here for one specific reason: `scripts/session-soak.mjs` lowers
+    // it to 300s so the O6 session soak takes twelve minutes instead of ninety,
+    // and restores it afterwards. That restore is guarded twice over — a
+    // `finally`, a SIGINT handler, and a re-read — but a process killed outright
+    // defeats all three, and a demo left on five-minute tokens would otherwise
+    // be discoverable only by noticing the symptom. `auth:config:check` is the
+    // backstop that turns it into a reported drift.
+    //
+    // Read live as 3600 on dev, 2026-08-19. Amadiya is NOT readable from this
+    // workspace (its credentials live in the tenant checkout, deliberately), so
+    // run `npm run auth:config:check:amadiya` there before `auth:config:amadiya`
+    // if you want to see the diff before it is applied.
+    jwt_exp: 3600,
+
     // Rotate the refresh token on every use, so a stolen one is good for one
     // request rather than indefinitely.
     //

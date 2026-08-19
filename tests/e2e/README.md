@@ -12,6 +12,49 @@ clearly named, idempotent, and clean up after itself (see
 warehouse; `finally` blocks that restore edited product attributes / delete
 draft layouts).
 
+## Two projects that are instruments, not regression tests
+
+Both are excluded from `npm run test:e2e`. Neither guards anything; each
+exists to produce a reading that a register row was missing.
+
+### `soak` — does a session survive a shift? (`tests/soak/`)
+
+```bash
+E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... npm run soak:session:dev
+```
+
+**Run it through that script, not `--project=soak` directly.** supabase-js
+renews a token when it expires within 90 seconds, so how long the soak takes is
+set entirely by the project's `jwt_exp`. `scripts/session-soak.mjs` lowers
+dev's to 300s, runs the spec, and restores it — in a `finally`, on SIGINT, and
+by re-reading. Invoked by hand against a one-hour token the spec fails
+immediately and tells you so, rather than sitting there for an hour.
+
+It **mutates dev auth config** for the duration, and is guarded by
+`requireDevTarget` — the same three guards the fixture scripts use — because a
+shortened token lifetime on a client's system would be a real security-posture
+change made by a test. If a run is killed outright,
+`npm run auth:config:check:dev` reports the leftover.
+
+What it proves: the lock, the refresh, rotation and persistence, over repeated
+cycles. What it does not: the handheld. It is Chromium on a desktop, not an
+RS35, and not Android's tab-discard behaviour.
+
+### `perf` — what does `backdrop-blur` cost? (`tests/perf/`)
+
+```bash
+E2E_BASE_URL=https://nexorder.vercel.app \
+E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... npm run test:e2e:perf
+```
+
+Opens a **visible window** and scrolls it for about five minutes. Leave it in
+the foreground: the spec measures an idle second first and refuses to report
+numbers if it finds itself throttled, which is the failure that left this
+question unanswered for months.
+
+Full procedure, the pre-registered decision rule and the 2026-08-19 results:
+`docs/runbooks/measure-backdrop-blur.md`.
+
 ## Setup
 
 ```bash

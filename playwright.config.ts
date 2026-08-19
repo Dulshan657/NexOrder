@@ -66,7 +66,12 @@ export default defineConfig({
       // of what they assert (a collapsed card tier, a wrapped action bar) is
       // false at desktop width by design, so running them in both projects
       // would fail for the correct behaviour.
-      testIgnore: '**/mobile/**',
+      //
+      // `soak` and `perf` are excluded for a blunter reason: one waits twelve
+      // minutes and the other opens a visible window and asks for the machine's
+      // full attention. Neither belongs in the suite somebody runs before a
+      // commit, and neither is a regression test — they are instruments.
+      testIgnore: ['**/mobile/**', '**/soak/**', '**/perf/**'],
       use: { ...devices['Desktop Chrome'] },
     },
     {
@@ -82,6 +87,72 @@ export default defineConfig({
       name: 'mobile',
       testMatch: '**/mobile/**/*.spec.ts',
       use: { ...devices['Pixel 5'], viewport: { width: 360, height: 780 } },
+    },
+    {
+      // O6 — the shift-long session soak. NOT a regression test: it runs for
+      // twelve minutes, and it only means anything once the project it points
+      // at has been put on a short-lived JWT. `scripts/session-soak.mjs` is
+      // what does that, and `npm run soak:session:dev` is how to run this.
+      // Invoking `--project=soak` by hand against a one-hour token makes the
+      // spec fail immediately and say so, rather than sit there for an hour.
+      name: 'soak',
+      testDir: './tests/soak',
+      testMatch: '**/*.spec.ts',
+      // The subject IS elapsed time, so the suite-wide 30s is nowhere near
+      // enough; the spec raises it again for its own run.
+      timeout: 25 * 60_000,
+      // A retry would silently double a twelve-minute run and, worse, hide an
+      // intermittent refresh failure — which is the defect being measured.
+      retries: 0,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      // O14 — the backdrop-blur measurement harness. HEADED, deliberately.
+      // The previous attempt ran in a browser-automation tab that is always
+      // `document.hidden`, where requestAnimationFrame is throttled to about
+      // 1fps and every frame time is scheduler noise rather than paint cost.
+      // A foregrounded window with backgrounding disabled is the only way
+      // this measures anything; the spec re-checks that at runtime and
+      // refuses to report numbers if it finds itself throttled regardless.
+      name: 'perf',
+      testDir: './tests/perf',
+      testMatch: '**/*.spec.ts',
+      timeout: 15 * 60_000,
+      retries: 0,
+      // One at a time. Two browsers competing for the CPU would be measuring
+      // each other rather than the thing under test.
+      workers: 1,
+      fullyParallel: false,
+      use: {
+        ...devices['Pixel 5'],
+        viewport: { width: 360, height: 780 },
+        headless: false,
+        launchOptions: {
+          args: [
+            // Chromium throttles timers and rAF in a window it believes is
+            // hidden or occluded. All three are needed, because the window
+            // can lose focus to whatever else is on the desktop mid-run.
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-background-timer-throttling',
+            '--window-position=0,0',
+            // Software compositing, and this is the closest thing here to an
+            // RS35. A desktop's discrete GPU rasterises an 8px backdrop-filter
+            // for nothing, so on hardware the shipped condition reads as free
+            // no matter how much CPU throttling is applied — the cost is simply
+            // not on the thread being throttled. It also made the first run
+            // useless in a second way: with the GPU in the loop the baseline
+            // wandered by 4x between trials, from causes that had nothing to do
+            // with blur. Software raster puts the work on the CPU, where the
+            // throttle can reach it and where it is stable enough to compare.
+            // Toggled off with PERF_GPU=1, which is worth doing at least once:
+            // an RS35 does have a GPU, so software raster is a HARSHER proxy
+            // than the device, not a neutral one. Reporting only the software
+            // figure would overstate the case.
+            ...(process.env.PERF_GPU ? [] : ['--disable-gpu']),
+          ],
+        },
+      },
     },
   ],
   // Boots the Vite dev server for local runs. In CI, set E2E_BASE_URL to a

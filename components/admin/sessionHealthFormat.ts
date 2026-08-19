@@ -24,6 +24,21 @@ export interface SessionReading {
 
 const DASH = '—'
 
+/**
+ * How close to expiry supabase-js lets a token get before it renews it.
+ *
+ * `AUTO_REFRESH_TICK_THRESHOLD` (3) × `AUTO_REFRESH_TICK_DURATION_MS` (30 s) in
+ * `@supabase/auth-js/lib/constants` — ninety seconds, not the "roughly ten
+ * minutes" this file asserted until 2026-08-19. That mistake was not academic:
+ * it put the "one was due" boundary at 50 minutes on a one-hour token, when the
+ * real one is ~58.5, so between those two figures the panel reported a failure
+ * for a session behaving exactly as designed — in the window a 90-minute soak
+ * actually lands in, which is the one reading this whole panel exists to give.
+ *
+ * Exported so a test can pin the boundary rather than restate the number.
+ */
+export const AUTO_REFRESH_MARGIN_MS = 90_000
+
 export function describeSession(crumbs: SessionBreadcrumbs, now: number): SessionReading {
   return {
     age: crumbs.signedInAt == null ? DASH : formatDuration(now - crumbs.signedInAt),
@@ -47,16 +62,21 @@ export function describeSession(crumbs: SessionBreadcrumbs, now: number): Sessio
 /**
  * The line that actually answers the soak.
  *
- * Zero refreshes is only meaningful once the session is old enough to have
- * needed one. Supabase renews roughly ten minutes before a one-hour token
- * expires, so anything under about fifty minutes proves nothing either way, and
- * saying so is the difference between a result and a shrug.
+ * Zero refreshes is only meaningful once one was DUE, and "due" is a fact about
+ * the token, not about the clock: supabase renews when expiry comes within
+ * AUTO_REFRESH_MARGIN_MS. Reading it off `expiresAt` rather than off session age
+ * is what makes this correct at any token lifetime — the soak harness runs the
+ * dev project at a five-minute one, where an age-based rule calibrated for an
+ * hour would say "too soon to tell" for the entire run.
+ *
+ * A missing expiry is reported as such and never guessed at. The guess is the
+ * defect being removed here; substituting a different one would keep it.
  */
 function refreshHint(crumbs: SessionBreadcrumbs, now: number): string {
   if (crumbs.refreshCount > 0) return 'auto-refresh is working'
   if (crumbs.signedInAt == null) return 'nothing recorded yet'
-  const minutes = (now - crumbs.signedInAt) / 60_000
-  if (minutes < 50) return 'too soon to tell — none due yet'
+  if (crumbs.expiresAt == null) return 'no expiry recorded — cannot tell'
+  if (crumbs.expiresAt - now > AUTO_REFRESH_MARGIN_MS) return 'too soon to tell — none due yet'
   return 'none yet, and one was due'
 }
 

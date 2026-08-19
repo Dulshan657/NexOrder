@@ -12,7 +12,7 @@ import {
   recordRefresh,
   recordSignIn,
 } from '@/lib/auth/sessionBreadcrumbs'
-import { describeSession } from '@/components/admin/sessionHealthFormat'
+import { AUTO_REFRESH_MARGIN_MS, describeSession } from '@/components/admin/sessionHealthFormat'
 
 const KEY = 'nexorder.auth.breadcrumbs'
 
@@ -198,17 +198,50 @@ describe('describeSession', () => {
   })
 
   it('will not call a young session a failure', () => {
-    // Supabase renews about ten minutes before a one-hour token expires, so
-    // zero refreshes at 20 minutes proves nothing. Saying so is the difference
-    // between a result and a shrug.
-    const r = describeSession(at({ signedInAt: 0 }), 20 * MINUTE)
+    // Zero refreshes proves nothing until one was DUE, and due is a fact about
+    // the token: supabase renews once expiry is within AUTO_REFRESH_MARGIN_MS.
+    // Saying so is the difference between a result and a shrug.
+    const r = describeSession(at({ signedInAt: 0, expiresAt: HOUR }), 20 * MINUTE)
     expect(r.age).toBe('20m')
     expect(r.refreshHint).toBe('too soon to tell — none due yet')
   })
 
-  it('calls out a session old enough to have refreshed and not have', () => {
-    const r = describeSession(at({ signedInAt: 0 }), 75 * MINUTE)
+  it('calls out a session whose token was due for renewal and did not get one', () => {
+    const r = describeSession(at({ signedInAt: 0, expiresAt: HOUR }), 75 * MINUTE)
     expect(r.refreshHint).toBe('none yet, and one was due')
+  })
+
+  it('reads "due" off the token, not off a 50-minute rule of thumb', () => {
+    // The defect this pins: the boundary used to be session age >= 50 minutes,
+    // from a belief that supabase renews ten minutes early. It renews ninety
+    // SECONDS early — so at 55 minutes into a one-hour token nothing is due
+    // yet, and the panel used to report a failure there. That window is
+    // exactly where a 90-minute soak takes its reading.
+    const fiftyFive = describeSession(at({ signedInAt: 0, expiresAt: HOUR }), 55 * MINUTE)
+    expect(fiftyFive.refreshHint).toBe('too soon to tell — none due yet')
+
+    const justInsideTheMargin = describeSession(
+      at({ signedInAt: 0, expiresAt: HOUR }),
+      HOUR - AUTO_REFRESH_MARGIN_MS + 1_000,
+    )
+    expect(justInsideTheMargin.refreshHint).toBe('none yet, and one was due')
+  })
+
+  it('is correct at a five-minute token, which is what the soak harness runs', () => {
+    // `scripts/session-soak.mjs` drops dev's jwt_exp to 300s so three refresh
+    // cycles fit in twelve minutes. An age-based rule calibrated for an hour
+    // would say "too soon to tell" for the whole run.
+    const lifetime = 5 * MINUTE
+    const young = describeSession(at({ signedInAt: 0, expiresAt: lifetime }), 60_000)
+    expect(young.refreshHint).toBe('too soon to tell — none due yet')
+
+    const due = describeSession(at({ signedInAt: 0, expiresAt: lifetime }), 4 * MINUTE)
+    expect(due.refreshHint).toBe('none yet, and one was due')
+  })
+
+  it('says it cannot tell rather than guessing when no expiry was recorded', () => {
+    const r = describeSession(at({ signedInAt: 0 }), 75 * MINUTE)
+    expect(r.refreshHint).toBe('no expiry recorded — cannot tell')
   })
 
   it('reports a working auto-refresh', () => {
