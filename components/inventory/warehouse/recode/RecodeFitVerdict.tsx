@@ -11,6 +11,7 @@
 
 import { useMemo } from 'react'
 import { Barcode } from 'lucide-react'
+import { Callout } from '@/components/ui'
 import { MIN_X_DIMENSION_MM, fitRun, recommendPresets, type SheetPresetName } from '@/lib/labels/sizing'
 
 export interface RecodeFitVerdictProps {
@@ -38,23 +39,21 @@ export function RecodeFitVerdict({ codes, preset }: RecodeFitVerdictProps) {
   if (!fit) return null
 
   return (
-    <section
-      className={`rounded-lg border p-3 ${
-        fit.verdict === 'good'
-          ? 'border-stone-200 bg-stone-50'
-          : fit.verdict === 'marginal'
-            ? 'border-amber-200 bg-amber-50/70'
-            : 'border-rose-200 bg-rose-50/70'
-      }`}
+    /* The tone map lives in Callout now. It used to be a three-branch inline ternary
+       here, which is precisely the shape a fourth verdict would have drifted into. */
+    <Callout
+      tone={fit.verdict === 'good' ? 'neutral' : fit.verdict === 'marginal' ? 'warning' : 'danger'}
+      icon={<Barcode className="h-4 w-4" strokeWidth={2.5} aria-hidden="true" />}
+      title={
+        <>
+          {fit.xDimensionMm.toFixed(2)} mm bars on your {preset} stock
+          {fit.verdict === 'good' && ' — fine'}
+          {fit.verdict === 'marginal' && ' — readable up close only'}
+          {fit.verdict === 'fail' && ` — below the ${MIN_X_DIMENSION_MM} mm floor`}
+        </>
+      }
     >
-      <p className="flex items-center gap-1.5 text-xs font-semibold text-stone-700">
-        <Barcode className="h-4 w-4 shrink-0" strokeWidth={2.5} />
-        {fit.xDimensionMm.toFixed(2)} mm bars on your {preset} stock
-        {fit.verdict === 'good' && ' — fine'}
-        {fit.verdict === 'marginal' && ' — readable up close only'}
-        {fit.verdict === 'fail' && ` — below the ${MIN_X_DIMENSION_MM} mm floor`}
-      </p>
-      <p className="mt-1 text-xs text-stone-600">
+      <p>
         Longest code <span className="font-mono">{fit.worstCode}</span> · {fit.sheets} sheet
         {fit.sheets === 1 ? '' : 's'}
         {better && better.preset !== preset && (
@@ -66,11 +65,11 @@ export function RecodeFitVerdict({ codes, preset }: RecodeFitVerdictProps) {
           it would only stop a site regularising them. The refusal that matters
           happens at print time, where a shorter run or different stock can fix it. */}
       {fit.verdict === 'fail' && (
-        <p className="mt-1 text-xs text-rose-700">
+        <p className="mt-1 font-medium">
           These codes can be applied, but a label run at this size will be refused.
           Shorten the block or change the sheet stock in Settings → Warehouse.
         </p>
       )}
-    </section>
+    </Callout>
   )
 }

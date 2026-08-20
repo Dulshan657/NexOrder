@@ -754,7 +754,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           stay live and paintable while the operator works through the steps, which
           is the whole reason for stepping rather than modalling. It also means this
           never trips `npm run check:overlays`. */}
-      <div className={recode.state.active ? 'grid gap-3 lg:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
+      <div className={recode.state.active ? 'grid gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem]' : ''}>
       <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65vh] md:min-h-[420px]">
         <MapStage
           layout={detail.layout}
@@ -985,11 +985,22 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
         />
       )}
 
-      <div className="glass-card rounded-xl p-3">
+      {/* Hidden below `lg` while sweeping, and the reason is structural rather than
+          taste: the panel is `sticky bottom-0` down there, and sticky un-pins the
+          moment its container scrolls past — so anything below the map would carry
+          the operator away from the footer holding Apply. Nothing is lost: mapMode
+          already sets `canSelectBin: false` for the whole sweep, so Bin detail is
+          inert, and the overlay is pinned to `unswept` until the sweep ends. Desktop
+          is untouched. */}
+      <div className={`glass-card rounded-xl p-3 ${recode.state.active ? 'hidden lg:block' : ''}`}>
         <OverlayControls overlay={overlay} onChange={setOverlay} extraEntries={legendExtras} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)]">
+      <div
+        className={`gap-4 lg:grid lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)] ${
+          recode.state.active ? 'hidden lg:grid' : 'grid'
+        }`}
+      >
         <FloatingPanel id="wh-tree" title="Locations" className="max-h-[70vh]">
           <WarehouseTreePanel
             tree={model.tree}

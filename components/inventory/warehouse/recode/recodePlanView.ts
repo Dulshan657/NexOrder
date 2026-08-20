@@ -19,8 +19,11 @@
 
 import type { LayoutPlacement } from '@/types'
 import {
+  blockIssue,
   describeCodeIssue,
   formatCode,
+  sanitizeBlock,
+  templateIssue,
   usedTokens,
   type RecodePlan,
   type RecodeRefusal,
@@ -196,5 +199,35 @@ export function refusalRemedy(refusal: RecodeRefusal): RefusalRemedy {
         step: 2,
         action: null,
       }
+  }
+}
+
+/** Whether each step's own question has been answered. */
+export type StepSatisfaction = Record<1 | 2 | 3 | 4, boolean>
+
+/**
+ * SATISFACTION, NOT VISITEDNESS — and that distinction is forced on us rather than
+ * chosen. Every step in this flow is reachable at any time (the rail is four
+ * buttons, not a gate), so "have you been here" says nothing useful: an operator who
+ * clicked straight to Review has visited it and answered nothing. What a tick can
+ * honestly mean here is that the step's own question is settled.
+ *
+ * Step 4 is settled only when the server has ANSWERED and the answer is actionable —
+ * a preview full of refusals is a visited step, not a finished one.
+ */
+export function stepSatisfaction(args: {
+  selectedCount: number
+  block: string
+  template: string
+  hasPreview: boolean
+  refusedTotal: number
+  willRecode: number
+}): StepSatisfaction {
+  const clean = sanitizeBlock(args.block)
+  return {
+    1: args.selectedCount > 0,
+    2: clean.length > 0 && !blockIssue(clean),
+    3: !templateIssue(args.template),
+    4: args.hasPreview && args.refusedTotal === 0 && args.willRecode > 0,
   }
 }

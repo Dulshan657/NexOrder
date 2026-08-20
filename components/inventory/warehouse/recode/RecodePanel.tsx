@@ -16,25 +16,20 @@
 // and paintable throughout, which is the whole point of stepping rather than
 // modalling. It therefore never trips `npm run check:overlays`.
 
+import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, ArrowRight, Info, Loader2, X } from 'lucide-react'
 import type { RecodePreview } from '@/services/supabase/warehouseLocationService'
 import type { SheetPresetName } from '@/lib/labels/sizing'
 import type { CodeOrder, CodeOrigin } from '@/lib/codePattern'
 import type { RecodeSelectionState, RecodeStep, RecodeTool } from './useRecodeSelection'
 import type { BlockCensusRow } from './recodeGeometry'
-import type { VisibleControls } from './recodePlanView'
+import { stepSatisfaction, type VisibleControls } from './recodePlanView'
+import { RecodeStepRail } from './RecodeStepRail'
 import { SelectStep } from './steps/SelectStep'
 import { BlockStep } from './steps/BlockStep'
 import { NumberingStep } from './steps/NumberingStep'
 import { ReviewStep } from './steps/ReviewStep'
 import { RecodeSuccessPanel } from './RecodeSuccessPanel'
-
-const STEPS: Array<{ n: 1 | 2 | 3 | 4; label: string }> = [
-  { n: 1, label: 'Select' },
-  { n: 2, label: 'Block' },
-  { n: 3, label: 'Numbering' },
-  { n: 4, label: 'Review' },
-]
 
 export interface RecodeApplied {
   recoded: number
@@ -178,47 +173,119 @@ export function RecodePanel(props: RecodePanelProps) {
   const navigable = !!blocked && blocked.step !== null && blocked.step !== state.step
   const applyDisabled = !!blocked && !navigable
 
+  const satisfaction = stepSatisfaction({
+    selectedCount: state.selected.size,
+    block: state.block,
+    template: props.template,
+    hasPreview: !!preview,
+    refusedTotal: preview?.refusedTotal ?? 0,
+    willRecode: preview?.willRecode ?? 0,
+  })
+
+  /* Which way the body should slide. A ref rather than state: it is read during the
+     render that follows a step change and must never itself cause one. */
+  const prevStep = useRef<number>(typeof state.step === 'number' ? state.step : 4)
+  const stepNum = typeof state.step === 'number' ? state.step : 5
+  const dir = stepNum >= prevStep.current ? 1 : -1
+  prevStep.current = stepNum
+
+  /* Below `lg` the panel is a docked sheet, and a collapsed one still has to show
+     where you are and why Apply is blocked — so only the rail and the body collapse.
+     Re-opened on every step change so navigating always reveals what it landed on,
+     and never inside a step, so it does not fight a deliberate collapse. */
+  const [open, setOpen] = useState(true)
+  useEffect(() => { setOpen(true) }, [state.step])
+
+  const pct = props.total > 0 ? Math.round((props.swept / props.total) * 100) : 0
+
   return (
     <aside
       aria-label="Recode bins"
-      className="glass-panel flex max-h-full min-h-0 flex-col overflow-hidden rounded-lg border border-stone-200"
+      className={
+        'rc-panel-in flex min-h-0 flex-col overflow-hidden border border-stone-200/80 shadow-elevated ' +
+        // Mobile: a sheet docked to the bottom of the viewport. `sticky`, never
+        // `fixed` — so check:overlays stays green honestly rather than by dodging
+        // its regex, and so the map above stays live and paintable, which a scrim
+        // and a focus trap (i.e. components/ui/Sheet) would both destroy.
+        // `svh` so a collapsing mobile URL bar cannot clip the footer.
+        'sticky bottom-0 z-20 max-h-[68svh] rounded-t-2xl bg-white/95 backdrop-blur-md ' +
+        'lg:static lg:z-auto lg:max-h-full lg:rounded-xl lg:bg-white/80 lg:shadow-card'
+      }
     >
-      <header className="flex shrink-0 items-center gap-2 border-b border-stone-200 px-3 py-2">
-        <h2 className="text-sm font-semibold text-stone-800">Recode bins</h2>
+      {/* Grab handle — mobile only; on desktop the panel is a column that is always
+          open, so `lg:grid-rows-[1fr]` below forces it regardless of this state. */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls="recode-body"
+        className="group flex w-full shrink-0 justify-center py-2 btn-press lg:hidden"
+      >
+        <span className="sr-only">{open ? 'Collapse the recode panel' : 'Expand the recode panel'}</span>
+        <span className="h-1 w-9 rounded-full bg-stone-300 transition-colors group-hover:bg-stone-400" />
+      </button>
+
+      <header className="flex shrink-0 items-start gap-3 px-4 pb-3 pt-1 lg:pt-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="font-display text-[15px] font-semibold leading-tight tracking-tight text-stone-900">
+            Recode bins
+          </h2>
+          {/* Standing site context — true on all four steps, so it belongs to the
+              panel and not to step 1, where it used to compete with the selection
+              count for the same glance. */}
+          {props.total > 0 && (
+            <p className="mt-0.5 text-xs text-stone-500">
+              <span className="font-medium tabular-nums text-stone-600">{props.swept}</span>
+              {' of '}
+              <span className="tabular-nums">{props.total}</span> recoded
+              <span className="text-stone-400"> &middot; {props.total - props.swept} to go</span>
+            </p>
+          )}
+        </div>
         <button
           type="button"
           onClick={props.onCancel}
           aria-label="Close recode"
-          className="ml-auto rounded p-1 text-stone-400 btn-press hover:bg-stone-100 hover:text-stone-600"
+          className="-mr-1 shrink-0 rounded-lg p-1.5 text-stone-400 btn-press hover:bg-stone-100 hover:text-stone-600"
         >
           <X className="h-4 w-4" strokeWidth={2} />
         </button>
       </header>
 
-      {!done && (
-        <nav aria-label="Steps" className="flex shrink-0 gap-1 border-b border-stone-200 px-3 py-2">
-          {STEPS.map((s) => (
-            <button
-              key={s.n}
-              type="button"
-              onClick={() => props.onGotoStep(s.n)}
-              aria-current={state.step === s.n ? 'step' : undefined}
-              className={`flex-1 rounded px-1.5 py-1 text-[11px] font-medium btn-press ${
-                state.step === s.n
-                  ? 'bg-nexgen-blue/10 text-nexgen-blue'
-                  : 'text-stone-500 hover:bg-stone-50'
-              }`}
-            >
-              <span className="tabular-nums">{s.n}</span> {s.label}
-            </button>
-          ))}
-        </nav>
+      {props.total > 0 && (
+        <div className="h-1 w-full shrink-0 bg-stone-100" aria-hidden="true">
+          <div className="rc-rail-fill h-full bg-emerald-400/80" style={{ width: `${pct}%` }} />
+        </div>
       )}
+
+      {/* min-h-0 on BOTH this and the body: without it here the 0fr row cannot
+          collapse a flex child, and without it below flexbox refuses to shrink the
+          scroller. */}
+      <div
+        className={`grid min-h-0 rc-sheet-collapsible lg:grid-rows-[1fr] ${
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        }`}
+      >
+        <div className="flex min-h-0 flex-col overflow-hidden">
+          {!done ? (
+            <RecodeStepRail step={state.step} satisfaction={satisfaction} onGotoStep={props.onGotoStep} />
+          ) : (
+            /* Not hidden on `done` — dropping the rail entirely made the panel
+               visibly collapse at the moment it should feel finished. */
+            <div className="shrink-0 border-b border-stone-200/80 px-4 pb-3 pt-2.5">
+              <div className="h-0.5 w-full rounded-full bg-emerald-400" aria-hidden="true" />
+            </div>
+          )}
 
       {/* The overlay rule applies here too even though this is not an overlay: the
           body is the only scroller, so the footer can never be pushed out of reach.
           min-h-0 is load-bearing — without it flexbox refuses to shrink the body. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <div
+        id="recode-body"
+        key={String(state.step)}
+        style={{ '--rc-dir': dir } as any}
+        className="rc-step-in min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4"
+      >
         {done && props.applied ? (
           <RecodeSuccessPanel
             recoded={props.applied.recoded}
@@ -241,8 +308,6 @@ export function RecodePanel(props: RecodePanelProps) {
             areaNames={props.areaNames}
             spannedAreas={props.spannedAreas}
             blocks={props.blocks}
-            swept={props.swept}
-            total={props.total}
             lastSweep={props.lastSweep}
             reverting={props.reverting}
             onRevert={props.onRevert}
@@ -257,6 +322,7 @@ export function RecodePanel(props: RecodePanelProps) {
           <BlockStep
             block={state.block}
             suggestion={props.blockSuggestion}
+            blocks={props.blocks}
             samples={props.samples}
             incumbentCount={props.incumbentCount}
             onBlock={props.onBlock}
@@ -296,9 +362,11 @@ export function RecodePanel(props: RecodePanelProps) {
           />
         )}
       </div>
+        </div>
+      </div>
 
       {!done && (
-        <footer className="shrink-0 border-t border-stone-200 px-3 py-2">
+        <footer className="shrink-0 border-t border-stone-200/80 bg-white/70 px-4 py-3 backdrop-blur-sm">
           {blocked && (
             /* The signpost. Above the buttons and full width rather than an 11px
                right-aligned afterthought, tinted by what KIND of blocker it is, and
