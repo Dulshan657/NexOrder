@@ -436,6 +436,7 @@ export function RecodePanel(props: RecodePanelProps) {
                 stopped disabling it everywhere but step 4. */}
             <button
               type="button"
+              data-testid="recode-apply"
               onClick={props.onApply}
               disabled={applyDisabled}
               aria-describedby={blocked ? 'recode-apply-reason' : undefined}

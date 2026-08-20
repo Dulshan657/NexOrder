@@ -495,28 +495,30 @@ export function MapStage({
       {/* The live count, on the map rather than only in the panel — during a sweep
           the operator's eyes are here, not there. `aria-hidden` deliberately: it
           changes on every painted cell and a live region would machine-gun a screen
-          reader. The accessible count is the panel's. Top-LEFT so it clears
-          MapControls (bottom-left) and the scale bar (bottom-right). */}
+          reader. The accessible count is the panel's.
+          TOP-RIGHT, not top-left: MapControls owns bottom-left and the scale bar
+          bottom-right, but on a phone the AppShell's own menu button floats over the
+          map's top-left corner, which is where this sat until a screenshot showed it
+          half-hidden underneath. */}
       {sweeping && select && (
-        <div className="map-panel-pill pointer-events-none absolute left-3 top-3 z-20 px-3 py-1.5 text-[11px] font-medium" aria-hidden="true">
+        <div className="map-panel-pill pointer-events-none absolute right-3 top-3 z-20 px-3 py-1.5 text-[11px] font-medium" aria-hidden="true">
           <span className="font-semibold tabular-nums text-nexgen-blue">{select.selectedCount}</span>
           <span className="text-stone-600"> bin{select.selectedCount === 1 ? '' : 's'} selected</span>
         </div>
       )}
-      <div
-        aria-hidden="true"
-        className={`map-panel-pill pointer-events-none absolute right-3 top-3 z-20 px-3 py-1.5 text-[11px] font-medium text-stone-600 transition-opacity duration-300 motion-reduce:duration-0 ${
-          hintPhase === 'shown' ? 'opacity-100' : 'opacity-0'
-        }`}
-      >
-        {sweeping
-          ? coarsePointer
-            ? 'Tap a bin to select · drag the floor to move · two fingers to zoom'
-            : 'Drag a bin to select · drag the floor to move · Alt to pan anywhere'
-          : coarsePointer
-            ? 'Drag to pan · pinch to zoom'
-            : 'Drag to pan · Ctrl/⌘ + scroll to zoom'}
-      </div>
+      {/* Suppressed while sweeping — the panel beside the map says the same thing at
+          greater length, and two pills in the same corner saying it twice is worse
+          than either alone. */}
+      {!sweeping && (
+        <div
+          aria-hidden="true"
+          className={`map-panel-pill pointer-events-none absolute right-3 top-3 z-20 px-3 py-1.5 text-[11px] font-medium text-stone-600 transition-opacity duration-300 motion-reduce:duration-0 ${
+            hintPhase === 'shown' ? 'opacity-100' : 'opacity-0'
+          }`}
+        >
+          {coarsePointer ? 'Drag to pan · pinch to zoom' : 'Drag to pan · Ctrl/⌘ + scroll to zoom'}
+        </div>
+      )}
     </div>
   )
 }
