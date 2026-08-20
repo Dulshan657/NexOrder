@@ -269,6 +269,8 @@ npm run demo:import:dev            # restore demo-export/ (clears first — idem
 
 **Never run `vercel deploy --prod` directly** — it won't move the alias, and users will report fixes as "not live". Always use `npm run deploy:<target>` (wraps deploy + alias + verification).
 
+**The alias step is NOT the deploy's verdict; `/version.json` is.** `vercel alias set` fails outright when the DOMAIN sits in a different Vercel scope from the project — `nexorder.com.au` is reachable only under `dulshan657s-projects` while the project moved to `nexgen14` on 2026-08-19, so every Amadiya deploy hits `You don't have access to the domain nexorder.com.au under nexgen14`. **It is harmless**: a production deploy serves the project's attached domain regardless, which is why the site was already live at the new sha when the script reported failure. That cost two releases before `scripts/deploy.mjs` stopped treating the exit code as fatal — it now warns and defers to the sha check. Moving the domain into `nexgen14` would remove the warning and is worth doing; until then, **check `/version.json` before believing a deploy failed**.
+
 ### Releasing to a tenant
 
 A tenant deploys from a **release tag**, never from whatever is checked out
@@ -726,18 +728,17 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 Ordered by impact; one-line scope each so future agents don't drift.
 
 **High**
-0a. **Ship the warehouse-only rollout to Amadiya.** The code is on `main` and
-   verified on dev; the registry already says
-   `modules: ['sales_orders', 'inventory_dispatch']`, so it takes effect the
-   moment Amadiya is rebuilt. Order, in the tenant workspace, from a `rel-*`
-   tag: `npm run secrets:amadiya` (re-derives `ENABLED_MODULES` from the
-   registry) → `npm run fn:deploy:amadiya` (secrets are read once per isolate,
-   so this must follow) → `npm run deploy:amadiya`. No migrations — module
-   flags never branch the schema. **`place-order` must be among the functions
-   deployed**: without the draw-locations fix Amadiya cannot place a single
-   order against a racked site. Then delete the 19 functions belonging to
-   disabled modules (`deploy-functions.mjs` skips them but never retires them;
-   they would sit there answering 403) and drop the `po-poll-inbox` cron.
+0a. ~~**Ship the warehouse-only rollout to Amadiya.**~~ **DONE 2026-08-20**,
+   tag `rel-2026-08-20` (`e2afb8e`), live on nexorder.com.au. Amadiya runs
+   `['sales_orders', 'inventory_dispatch']`: warehouse management plus orders
+   keyed in by their own office. 57 functions deployed, the **19 belonging to
+   disabled modules deleted** from the project, `po-poll-inbox` unscheduled
+   (6 crons now, not 7). `check:grants` and `check:storage` clean. Two things
+   the release itself taught are folded into the scripts — see "the alias step
+   is not the verdict" below and `schedule-crons.mjs`'s derived job count.
+   **Amadiya is not yet usable**: 0 products, 0 customers, and one Admin login
+   with no Warehouse staff. The converted catalogue in `Amadiya/` still needs
+   importing and staff inviting; that is the next job, not this one.
 0. **Finish the cutover.** ~~create the Amadiya **Vercel project**
    (`NEXORDER_ENV=amadiya`, Sydney creds, `VITE_SHOW_DEMO_LOGINS=false`), fill
    `vercel.projectId` in the registry, attach `nexorder.com.au` + `www`,
