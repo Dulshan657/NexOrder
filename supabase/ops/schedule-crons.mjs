@@ -196,7 +196,12 @@ SELECT cron.schedule(
 
 if (!dryRun) {
   const after = await runSql(target, `SELECT count(*)::int AS n FROM cron.job`)
-  console.log(`\n[crons] ${after[0].n} job(s) scheduled. Gate A expects 7.`)
+  // Five migration-created jobs, plus one per job above whose module this
+  // target has. Printing a flat "expects 7" on a target that correctly has 6
+  // reads as a failed run — which is exactly what it did on Amadiya.
+  const expected = 5 + JOBS.filter((j) => !j.module || config.modules.includes(j.module)).length
+  const verdict = after[0].n === expected ? 'as expected' : `EXPECTED ${expected}`
+  console.log(`\n[crons] ${after[0].n} job(s) scheduled — ${verdict}.`)
   console.log('[crons]   Runs: SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 20;')
 }
 
