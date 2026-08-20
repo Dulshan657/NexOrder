@@ -21,11 +21,23 @@
 // business — `rate-limit-cleanup` (00026), `inventory-cache-reconcile`
 // (00027/00041), `wie_refresh_velocity` and `wie_refresh_location_traffic`
 // (00049), `health-checks-retention` (00059). They call SQL, not HTTP, so they
-// need no URL and no secret. Gate A expects 7 jobs in total: those five plus
-// these two.
+// need no URL and no secret.
+//
+// ── A JOB CAN BELONG TO A MODULE, AND THEN IT IS UNSCHEDULED ────────────────
+//
+// `po-poll-inbox` calls `poll-inbox`, which `deploy-functions.mjs` does not
+// deploy to a target without `po_inbox` — and which the operator is told to
+// DELETE from a project that already had it. A cron pointed at a function that
+// no longer exists fails once a minute, forever, and re-running this script
+// would put it straight back. So a job whose module is off is unscheduled and
+// skipped, which also makes that cleanup idempotent rather than a one-off
+// hand-typed `cron.unschedule`.
+//
+// Gate A therefore expects 7 jobs on a target with `po_inbox` and 6 without.
 
 import { resolveTarget, orExit } from '../../scripts/lib/env.mjs'
 import { runSql } from '../../scripts/lib/managementApi.mjs'
+import { TARGETS, canonicalTargetName } from '../../config/environments.mjs'
 
 const JOBS = [
   {
@@ -33,6 +45,8 @@ const JOBS = [
     schedule: '* * * * *',
     fn: 'poll-inbox',
     tokenEnv: 'POLL_INBOX_CRON_TOKEN',
+    /** Off ⇒ unscheduled, never created. See the header. */
+    module: 'po_inbox',
     note: 'Polls every connected mailbox. The token only proves the call is a real cron tick — poll-inbox reads its own service-role key for database access.',
   },
   {
@@ -40,6 +54,7 @@ const JOBS = [
     schedule: '*/5 * * * *',
     fn: 'health',
     tokenEnv: 'HEALTH_CRON_TOKEN',
+    /** No module: `health` is core and every target is monitored. */
     note: 'Do not schedule before the target domain serves /version.json, or the first ticks log false `degraded` alerts.',
   },
 ]
@@ -48,10 +63,26 @@ const argv = process.argv.slice(2)
 const listOnly = argv.includes('--list')
 const dryRun = argv.includes('--dry-run')
 
+// Resolved before the target so the token requirement can be narrowed to the
+// jobs that will actually be scheduled — demanding POLL_INBOX_CRON_TOKEN from a
+// target that will never poll a mailbox is a refusal with nothing behind it.
+const targetNameArg = argv.find((a) => a.startsWith('--env='))?.slice('--env='.length)?.trim()
+const plannedModules = (() => {
+  try {
+    return TARGETS[canonicalTargetName(targetNameArg ?? '')]?.modules ?? null
+  } catch {
+    return null
+  }
+})()
+const jobIsEnabled = (job) =>
+  !job.module || plannedModules === null || plannedModules.includes(job.module)
+
 const target = orExit(() =>
   resolveTarget({
     argv,
-    require: listOnly ? ['SUPABASE_ACCESS_TOKEN'] : ['SUPABASE_ACCESS_TOKEN', ...JOBS.map((j) => j.tokenEnv)],
+    require: listOnly
+      ? ['SUPABASE_ACCESS_TOKEN']
+      : ['SUPABASE_ACCESS_TOKEN', ...JOBS.filter(jobIsEnabled).map((j) => j.tokenEnv)],
   }),
 )
 const { config, env } = target
@@ -92,6 +123,33 @@ console.log()
 for (const job of JOBS) {
   const url = `${config.supabaseUrl}/functions/v1/${job.fn}`
   const token = env[job.tokenEnv]
+
+  // A job whose module the target does not have is REMOVED, not merely skipped.
+  // Skipping alone would leave a live cron calling a function that is about to
+  // be deleted, ticking and failing every minute.
+  if (job.module && !config.modules.includes(job.module)) {
+    if (dryRun) {
+      console.log(`  would UNSCHEDULE ${job.name.padEnd(20)} (${job.module} not enabled)`)
+      continue
+    }
+    try {
+      await runSql(
+        target,
+        `DO $ops$
+BEGIN
+    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = ${lit(job.name)}) THEN
+        PERFORM cron.unschedule(${lit(job.name)});
+    END IF;
+END
+$ops$;`,
+      )
+      console.log(`  – ${job.name.padEnd(20)} unscheduled — ${job.module} not enabled here`)
+    } catch (e) {
+      console.error(`  ✗ ${job.name}: ${e.message}`)
+      process.exitCode = 1
+    }
+    continue
+  }
 
   if (dryRun) {
     console.log(`  would schedule ${job.name.padEnd(20)} ${job.schedule}  -> ${url}`)

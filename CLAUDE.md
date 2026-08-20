@@ -246,8 +246,9 @@ npm run fn:deploy:amadiya          # all 71; append a name for one
 # Secrets and crons (supabase/ops/)
 npm run secrets:check:amadiya      # Gate A assertion; exit 1 if incomplete
 npm run secrets:amadiya            # set what is missing (--overwrite to replace)
-npm run crons:list:amadiya         # what is scheduled (expect 7)
-npm run crons:amadiya              # (re)create po-poll-inbox + health-check
+npm run crons:list:amadiya         # what is scheduled (7 with po_inbox, 6 without)
+npm run crons:amadiya              # (re)create health-check; UNSCHEDULES po-poll-inbox
+                                   # where po_inbox is off, so the cleanup is idempotent
 
 # Raw SQL (Management API — the direct DB host is unreachable on Windows)
 node supabase/apply-sql.mjs --env=amadiya --query "SELECT ..."
