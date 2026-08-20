@@ -164,6 +164,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                         products={props.products}
                         hoReCas={props.hoReCas}
                         currentUser={props.currentUser}
+                        promotions={props.promotions}
                         addToast={props.addToast}
                         onViewInOrderImport={props.onViewInOrderImport}
                     />

@@ -2,22 +2,31 @@
 //
 // Read-only because prices are the server's: `place-order` recomputes every
 // line and persists its own total, so a figure typed here would be a number the
-// operator believes and the order does not carry. What is shown is the same
-// resolution the cart uses (`resolveHoReCaPrice`), evaluated early.
+// operator believes and the order does not carry.
+//
+// It must nonetheless be the SAME resolution, which means `resolvePromotionPrice`
+// and not `resolveHoReCaPrice`. The latter knows about a customer's tier and
+// per-product overrides but nothing about promotions, so on a tenant carrying
+// any it previewed list price and the order came back cheaper — caught in a
+// browser, where a $3.30 preview became a $2.97 order. The total still reads
+// "estimated": the server is the authority on carton rounding, BOGO free lines
+// and the cart-level discount, none of which a per-line figure can show.
 
 import React from 'react'
 import { Trash2, Plus } from 'lucide-react'
 
 import { Button, NumberInput } from '../../ui'
 import ProductSearchDropdown from '../ProductSearchDropdown'
-import { resolveHoReCaPrice } from '../../../pricing'
+import { resolvePromotionPrice } from '../../../pricing'
 import type { ParsedOrderLine } from '../../../lib/newOrder/resolveOrderLines'
-import type { HoReCa, Product } from '../../../types'
+import type { HoReCa, Product, Promotion, User } from '../../../types'
 
 interface OrderLinesGridProps {
   lines: ParsedOrderLine[]
   products: Product[]
   customer: HoReCa | null
+  currentUser: User
+  promotions: Promotion[]
   onChangeQuantity: (productId: number, quantity: number) => void
   onRemove: (productId: number) => void
   onAddProduct: (productId: number) => void
@@ -29,6 +38,8 @@ const OrderLinesGrid: React.FC<OrderLinesGridProps> = ({
   lines,
   products,
   customer,
+  currentUser,
+  promotions,
   onChangeQuantity,
   onRemove,
   onAddProduct,
@@ -36,7 +47,8 @@ const OrderLinesGrid: React.FC<OrderLinesGridProps> = ({
   const byId = new Map<number, Product>(products.map((p): [number, Product] => [p.id, p]))
   const priceOf = (productId: number) => {
     const product = byId.get(productId)
-    return product ? resolveHoReCaPrice(product, customer) : 0
+    if (!product) return 0
+    return resolvePromotionPrice(product, customer, currentUser, promotions).finalPrice
   }
   const total = lines.reduce((sum, l) => sum + priceOf(l.productId) * l.quantity, 0)
 

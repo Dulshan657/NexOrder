@@ -23,12 +23,14 @@ import OrderLinesGrid from './newOrder/OrderLinesGrid'
 import CsvPastePanel from './newOrder/CsvPastePanel'
 import { usePlaceOrder } from '../../hooks/queries/useOrders'
 import type { ParsedOrderLine } from '../../lib/newOrder/resolveOrderLines'
-import type { HoReCa, Product, User } from '../../types'
+import type { HoReCa, Product, Promotion, User } from '../../types'
 
 interface NewOrderViewProps {
   products: Product[]
   hoReCas: HoReCa[]
   currentUser: User
+  /** Live promotions, so the preview prices the way `place-order` will. */
+  promotions?: Promotion[]
   addToast?: (message: string, type: 'success' | 'error' | 'info') => void
   /** Jump to Order Import with the new order highlighted. */
   onViewInOrderImport?: (orderId: string) => void
@@ -38,6 +40,7 @@ const NewOrderView: React.FC<NewOrderViewProps> = ({
   products,
   hoReCas,
   currentUser,
+  promotions,
   addToast,
   onViewInOrderImport,
 }) => {
@@ -56,6 +59,7 @@ const NewOrderView: React.FC<NewOrderViewProps> = ({
   const orderable = useMemo(() => products.filter((p) => p.isActive !== false), [products])
 
   const addLines = (incoming: ParsedOrderLine[]) => {
+    setSubmitError(null)
     setLines((current) => {
       // Merge rather than append: the same product arriving twice is one line
       // of the total, exactly as `resolveOrderLines` treats a repeated SKU.
@@ -76,6 +80,7 @@ const NewOrderView: React.FC<NewOrderViewProps> = ({
   }
 
   const setQuantity = (productId: number, quantity: number) => {
+    setSubmitError(null)
     // A cleared box is mid-edit, not zero. Hold the row and let the submit
     // guard below refuse it while it is still not a quantity.
     setLines((current) =>
@@ -84,6 +89,7 @@ const NewOrderView: React.FC<NewOrderViewProps> = ({
   }
 
   const removeLine = (productId: number) => {
+    setSubmitError(null)
     setLines((current) => current.filter((l) => l.productId !== productId))
   }
 
@@ -167,6 +173,8 @@ const NewOrderView: React.FC<NewOrderViewProps> = ({
           lines={lines}
           products={orderable}
           customer={customer}
+          currentUser={currentUser}
+          promotions={promotions ?? []}
           onChangeQuantity={setQuantity}
           onRemove={removeLine}
           onAddProduct={addProduct}

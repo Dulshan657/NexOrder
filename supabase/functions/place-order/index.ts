@@ -131,6 +131,41 @@ async function loadLocationPref(
   return orderedWarehousesFor(coords, warehouses)
 }
 
+/**
+ * Every location an order may draw from, for the given warehouses.
+ *
+ * Delegates to `inv_warehouse_draw_locations` per warehouse — one definition,
+ * shared with `inv_reserve_order`, rather than a materialized-path prefix
+ * rebuilt in TypeScript that would drift the first time the rule changed. The
+ * list is one entry per active warehouse, so the fan-out is small and runs
+ * concurrently.
+ *
+ * Returns [] when the preference is empty, which the caller reads as
+ * "unscoped" exactly as before.
+ */
+async function expandDrawLocations(
+  serviceClient: SupabaseClient,
+  warehouseIds: number[],
+): Promise<number[]> {
+  if (warehouseIds.length === 0) return []
+  const results = await Promise.all(
+    warehouseIds.map((id) =>
+      serviceClient.rpc('inv_warehouse_draw_locations', { p_warehouse_id: id }),
+    ),
+  )
+  const ids = new Set<number>()
+  for (const { data } of results) {
+    for (const row of (data ?? []) as Array<{ location_id: number }>) {
+      ids.add(Number(row.location_id))
+    }
+  }
+  // A warehouse whose expansion came back empty (an RPC error, say) must not
+  // silently narrow the check to nothing — fall back to the warehouse itself,
+  // which is what the old code checked and is never wrong, only incomplete.
+  for (const id of warehouseIds) if (!ids.has(id)) ids.add(id)
+  return [...ids]
+}
+
 async function loadProducts(serviceClient: SupabaseClient, productIds: number[]): Promise<Map<number, PricedProduct>> {
   const { data, error } = await serviceClient
     .from('products')
@@ -349,12 +384,23 @@ serve(async (req: Request) => {
   // then fail reservation with a misleading "Stock changed" race error when the
   // shortfall was really stock already allocated to other open orders. Scope to
   // the preferred warehouses so it matches exactly what the RPC will reserve.
+  //
+  // SCOPE TO THE DRAW LOCATIONS, NOT THE WAREHOUSE IDS. `locationPref` holds
+  // WAREHOUSE rows, but stock that has been put away lives on the BIN, and a
+  // bin's `location_id` is its own id — not its warehouse's. Filtering on the
+  // warehouse ids alone therefore counted only what was still sitting at the
+  // warehouse root, and answered "0 available" for a racked site with a full
+  // rack. `inv_warehouse_draw_locations` is the same expansion
+  // `inv_reserve_order` uses (mig 00040: racked ⇒ root + descendants, bulk ⇒
+  // root), and it has to be THAT function rather than a path prefix rebuilt
+  // here, or the check and the reservation can disagree again later.
   const pids = [...totalsByProduct.keys()]
+  const drawLocations = await expandDrawLocations(serviceClient, locationPref)
   let balQuery = serviceClient
     .from('inventory_balances')
     .select('product_id, available')
     .in('product_id', pids)
-  if (locationPref.length > 0) balQuery = balQuery.in('location_id', locationPref)
+  if (drawLocations.length > 0) balQuery = balQuery.in('location_id', drawLocations)
   const { data: balRows } = await balQuery
   const availByProduct = new Map<number, number>()
   for (const r of (balRows ?? []) as Array<{ product_id: number; available: number }>) {
