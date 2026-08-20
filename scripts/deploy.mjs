@@ -8,7 +8,7 @@
 //      remote build (Vercel CLI builds without .git, so vite.config.ts can't
 //      resolve it there).
 //   2. `vercel deploy` at the target's Vercel target, then re-point that
-//      target's alias (NEVER skip the alias — a bare deploy leaves users
+//      target's alias (never SKIP the alias — a bare deploy leaves users
 //      testing the old build and reporting fixes as "not live").
 //   3. Poll https://<alias>/version.json until it serves the deployed sha
 //      (5s interval, 120s budget) → VERIFIED / TIMEOUT.
@@ -141,6 +141,21 @@ function buildVercelEnv() {
     VERCEL_ORG_ID: orgId,
     VERCEL_TOKEN: token,
   }
+}
+
+/**
+ * Like `run`, but a non-zero exit is reported and returned rather than fatal.
+ *
+ * For steps where the COMMAND is a means and something else is the actual test.
+ */
+function runAllowFail(cmd, args, opts = {}) {
+  const result = spawnSync(cmd, args, {
+    stdio: ['inherit', 'pipe', 'inherit'],
+    shell: true,
+    env: vercelEnv(),
+    ...opts,
+  })
+  return { ok: result.status === 0, stdout: (result.stdout ?? '').toString() }
 }
 
 function run(cmd, args, opts = {}) {
@@ -367,7 +382,30 @@ if (!deploymentUrl) {
 
 console.log(`\n[deploy] Deployment URL: ${deploymentUrl}`)
 console.log(`[deploy] Aliasing ${ALIAS} -> ${deploymentUrl}`)
-run('vercel', ['alias', 'set', deploymentUrl, ALIAS])
+// ── THE ALIAS COMMAND IS NOT THE TEST. `version.json` IS. ───────────────────
+//
+// A production deploy already serves the project's attached domain, so this
+// call is usually redundant — and it FAILS outright on a project whose domain
+// lives in a different Vercel scope from the project itself ("You don't have
+// access to the domain X under Y"). Amadiya is exactly that: the project moved
+// to nexgen14 and the domain did not follow. Treating that exit code as fatal
+// aborted a deploy that was ALREADY LIVE and skipped the verification below —
+// the only step that actually knows whether users are on the new build. It has
+// now reported a false failure on two separate releases.
+//
+// So: still always attempt it, because a bare deploy really can leave users on
+// the old build — but let the sha check be the authority. If the alias genuinely
+// did not move, version.json keeps serving the old sha and this exits 1 there,
+// complaining about the thing that matters.
+const aliased = runAllowFail('vercel', ['alias', 'set', deploymentUrl, ALIAS])
+if (!aliased.ok) {
+  console.error('')
+  console.error('[deploy] ⚠ "vercel alias set" failed.')
+  console.error(`[deploy]   Expected when ${ALIAS} sits in a different Vercel scope from the`)
+  console.error('[deploy]   project, and harmless when the domain is already attached — a')
+  console.error('[deploy]   production deploy serves it either way.')
+  console.error('[deploy]   Deferring to the /version.json check below, which is the real gate.')
+}
 
 console.log(`\n[deploy] Done. https://${ALIAS} is now live on ${deploymentUrl}`)
 
