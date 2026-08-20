@@ -57,7 +57,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    requireModule('sales_orders')
+    requireModule('shop')
     // No allowedRoles — see the header. `orders` RLS is the authority.
     const auth = await requireAuth(req)
 

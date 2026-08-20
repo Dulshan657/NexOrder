@@ -12,7 +12,11 @@
 import {
   MODULE_FIELD_OPS,
   MODULE_INVENTORY_DISPATCH,
+  MODULE_INVOICING,
+  MODULE_PO_INBOX,
+  MODULE_PROMOTIONS,
   MODULE_SALES_ORDERS,
+  MODULE_SHOP,
 } from './modules'
 
 /** The admin/staff view identifiers. Owned here so URL parsing can validate
@@ -27,6 +31,7 @@ export type AdminTab =
   | 'Order Import'
   | 'Promotions'
   | 'Accounts'
+  | 'New Order'
   | 'Stock'
   | 'Receiving'
   | 'Putaway'
@@ -51,6 +56,7 @@ export const ADMIN_TABS: ReadonlyArray<AdminTab> = [
   'Products',
   'HoReCa',
   'HoReCa Insights',
+  'New Order',
   'Order Import',
   'Promotions',
   'Accounts',
@@ -109,11 +115,15 @@ export function parseAdminTab(search: string): AdminTab | null {
  *     licensing is a commercial one, and this is the seam where they differ.
  */
 const TAB_MODULES: Partial<Record<AdminTab, ModuleName>> = {
-  Shop: 'sales_orders',
+  // The four that used to be 'sales_orders' with these two. A tenant can key
+  // orders in and run a warehouse while buying none of them.
+  Shop: 'shop',
+  'PO Inbox': 'po_inbox',
+  Accounts: 'invoicing',
+  Promotions: 'promotions',
+
+  'New Order': 'sales_orders',
   'Order Import': 'sales_orders',
-  'PO Inbox': 'sales_orders',
-  Accounts: 'sales_orders',
-  Promotions: 'sales_orders',
 
   'HoReCa Insights': 'field_ops',
   'Scheduled Visits': 'field_ops',
@@ -130,7 +140,14 @@ const TAB_MODULES: Partial<Record<AdminTab, ModuleName>> = {
   Warehouse: 'inventory_dispatch',
 }
 
-export type ModuleName = 'sales_orders' | 'field_ops' | 'inventory_dispatch'
+export type ModuleName =
+  | 'sales_orders'
+  | 'shop'
+  | 'po_inbox'
+  | 'promotions'
+  | 'invoicing'
+  | 'field_ops'
+  | 'inventory_dispatch'
 
 /** The module a tab needs, or `null` when the tab is core. */
 export function moduleForTab(tab: AdminTab): ModuleName | null {
@@ -148,6 +165,10 @@ export function tabModuleEnabled(tab: AdminTab): boolean {
   const module = moduleForTab(tab)
   if (module === null) return true
   if (module === 'sales_orders') return MODULE_SALES_ORDERS
+  if (module === 'shop') return MODULE_SHOP
+  if (module === 'po_inbox') return MODULE_PO_INBOX
+  if (module === 'promotions') return MODULE_PROMOTIONS
+  if (module === 'invoicing') return MODULE_INVOICING
   if (module === 'field_ops') return MODULE_FIELD_OPS
   return MODULE_INVENTORY_DISPATCH
 }
@@ -169,6 +190,7 @@ const TABS_BY_ROLE: Record<string, ReadonlyArray<AdminTab>> = {
     'Products',
     'HoReCa',
     'HoReCa Insights',
+    'New Order',
     'Order Import',
     'Accounts',
     'Stock',

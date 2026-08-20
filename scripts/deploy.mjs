@@ -346,6 +346,14 @@ vercelEnv()
 const deployArgs = ['deploy', '--yes']
 if (config.vercel.target === 'production') deployArgs.push('--prod')
 if (sha) deployArgs.push('--build-env', `GIT_COMMIT_SHA=${sha}`)
+// NEXORDER_ENV decides which target's MODULE SET the bundle is compiled with,
+// and until 2026-08-20 it was set only in the Vercel project's dashboard, where
+// nothing in this repo could see it. Both are still true of the project-level
+// variable — this one rides with the deploy and takes precedence, so `--env=`
+// names the target exactly once and the two cannot drift. `vite.config.ts`
+// throws on a value naming no target rather than falling back to dev's
+// everything-on set.
+deployArgs.push('--build-env', `NEXORDER_ENV=${target.name}`)
 const stdout = run('vercel', deployArgs)
 process.stdout.write(stdout)
 

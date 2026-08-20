@@ -167,9 +167,32 @@ describe('ungated functions are ungated on purpose', () => {
 })
 
 describe('disabledFunctionsFor', () => {
-  it('returns nothing while a target has every module', () => {
-    for (const target of Object.values(TARGETS)) {
-      expect(disabledFunctionsFor(target), `${target.name} has all modules`).toEqual([])
+  it('returns nothing for the demo, which has every module', () => {
+    expect(disabledFunctionsFor(TARGETS.dev)).toEqual([])
+  })
+
+  it('disables exactly the five non-warehouse modules for Amadiya', () => {
+    // The first target to carry a real subset. This asserts the CONSEQUENCE of
+    // the registry rather than restating it: every function withheld belongs to
+    // a module Amadiya does not have, and every function they DO need to run a
+    // warehouse against keyed-in orders survives.
+    const disabled = disabledFunctionsFor(TARGETS.amadiya)
+    const enabled = new Set(TARGETS.amadiya.modules)
+
+    expect(disabled.every((fn) => !enabled.has(FUNCTION_MODULES[fn]))).toBe(true)
+
+    for (const fn of ['place-order', 'update-order-status', 'cancel-order']) {
+      expect(disabled, `${fn} is how an order exists at all`).not.toContain(fn)
+    }
+    for (const fn of ['record-pick', 'receive-stock', 'count-bin', 'generate-pick-slip']) {
+      expect(disabled, `${fn} is the warehouse they bought`).not.toContain(fn)
+    }
+    for (const fn of ['approve-po', 'mutate-promotion', 'mutate-invoice-status', 'mutate-pantry-item']) {
+      expect(disabled, `${fn} belongs to a module they did not buy`).toContain(fn)
+    }
+    // Core is never withheld, whatever the module set.
+    for (const fn of ['health', 'invite-user', 'mutate-product', 'mutate-supplier']) {
+      expect(disabled, `${fn} is core`).not.toContain(fn)
     }
   })
 

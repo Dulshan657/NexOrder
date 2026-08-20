@@ -1,9 +1,11 @@
 import React from 'react';
-import type { Order } from '../../types';
+import type { Order, User } from '../../types';
 import { Truck, PackageCheck, Clock, ChevronRight } from 'lucide-react';
+import { canSeeOrderValue } from '../../lib/canSeeOrderValue';
 
 interface DispatchedOrdersViewProps {
   orders: Order[];
+  currentUser?: User;
   onViewDetail?: (orderId: string) => void;
 }
 
@@ -13,7 +15,7 @@ function dispatchedAt(order: Order): string {
   return entry?.timestamp ?? order.orderDate;
 }
 
-const OrderRow: React.FC<{ order: Order; onOpen?: () => void }> = ({ order, onOpen }) => {
+const OrderRow: React.FC<{ order: Order; showValue: boolean; onOpen?: () => void }> = ({ order, showValue, onOpen }) => {
   const itemCount = order.items.length;
   return (
     <button
@@ -40,7 +42,7 @@ const OrderRow: React.FC<{ order: Order; onOpen?: () => void }> = ({ order, onOp
         </span>
       </div>
       <div className="shrink-0 w-28 text-right">
-        <span className="font-mono text-sm text-stone-900">${order.total.toFixed(2)}</span>
+        {showValue && <span className="font-mono text-sm text-stone-900">${order.total.toFixed(2)}</span>}
         <p className="text-[11px] text-stone-400">
           {itemCount} line{itemCount === 1 ? '' : 's'}
         </p>
@@ -50,7 +52,8 @@ const OrderRow: React.FC<{ order: Order; onOpen?: () => void }> = ({ order, onOp
   );
 };
 
-const DispatchedOrdersView: React.FC<DispatchedOrdersViewProps> = ({ orders, onViewDetail }) => {
+const DispatchedOrdersView: React.FC<DispatchedOrdersViewProps> = ({ orders, currentUser, onViewDetail }) => {
+  const showValue = canSeeOrderValue(currentUser?.role);
   const dispatched = orders
     .filter((o) => o.status === 'dispatched')
     .sort((a, b) => dispatchedAt(b).localeCompare(dispatchedAt(a)));
@@ -79,6 +82,7 @@ const DispatchedOrdersView: React.FC<DispatchedOrdersViewProps> = ({ orders, onV
             <OrderRow
               key={order.id}
               order={order}
+              showValue={showValue}
               onOpen={onViewDetail ? () => onViewDetail(order.id) : undefined}
             />
           ))}

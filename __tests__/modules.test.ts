@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { ALL_MODULES, TARGETS } from '../config/environments.mjs'
+import { ALL_MODULES, MODULE_REQUIRES, TARGETS, assertModuleSet } from '../config/environments.mjs'
 import {
   ADMIN_TABS,
   moduleForTab,
@@ -9,7 +9,15 @@ import {
   tabModuleEnabled,
   type AdminTab,
 } from '../lib/adminTabUrl'
-import { MODULE_FIELD_OPS, MODULE_INVENTORY_DISPATCH, MODULE_SALES_ORDERS } from '../lib/modules'
+import {
+  MODULE_FIELD_OPS,
+  MODULE_INVENTORY_DISPATCH,
+  MODULE_INVOICING,
+  MODULE_PO_INBOX,
+  MODULE_PROMOTIONS,
+  MODULE_SALES_ORDERS,
+  MODULE_SHOP,
+} from '../lib/modules'
 import { assignableRoles } from '../lib/assignableRoles'
 import { UserRole } from '../types'
 
@@ -26,20 +34,65 @@ import { UserRole } from '../types'
  */
 
 describe('module vocabulary', () => {
-  it('is exactly the three surfaces the sidebar groups by', () => {
-    expect(ALL_MODULES).toEqual(['sales_orders', 'field_ops', 'inventory_dispatch'])
+  it('is the two whole sidebar headings plus the five "Sales & Orders" splits', () => {
+    expect(ALL_MODULES).toEqual([
+      'sales_orders',
+      'shop',
+      'po_inbox',
+      'promotions',
+      'invoicing',
+      'field_ops',
+      'inventory_dispatch',
+    ])
   })
 
-  it('is all-on for every target, so the gate ships proven inert', () => {
+  it('gives the demo every module — a demo that cannot show a surface is not one', () => {
+    expect(TARGETS.dev.modules).toEqual([...ALL_MODULES])
+  })
+
+  it('only ever lets a target name modules that exist', () => {
+    // This replaced an "all-on for every target" assertion, which was a
+    // tripwire for the gate never having been used in anger. It has now: a
+    // tenant may legitimately carry a subset, so the invariant that survives
+    // is that a subset is all it can be.
     for (const target of Object.values(TARGETS)) {
-      expect(target.modules, `${target.name}`).toEqual([...ALL_MODULES])
+      for (const slug of target.modules) {
+        expect(ALL_MODULES, `${target.name}`).toContain(slug)
+      }
+      expect(new Set(target.modules).size, `${target.name} has duplicates`).toBe(
+        target.modules.length,
+      )
     }
+  })
+
+  it('refuses a module set that omits a module its members stand on', () => {
+    // The four surfaces carved out of sales_orders each need the order object
+    // behind them. Enabling one without it renders a nav entry whose Edge
+    // Function 403s, which reads as a bug rather than as a licensing decision.
+    for (const [slug, deps] of Object.entries(MODULE_REQUIRES)) {
+      for (const dep of deps) {
+        expect(() => assertModuleSet('t', [slug])).toThrow(dep)
+      }
+    }
+    expect(() => assertModuleSet('t', ['not_a_module'])).toThrow(/unknown module/)
+    // The set Amadiya actually ships must pass.
+    expect(() => assertModuleSet('t', ['sales_orders', 'inventory_dispatch'])).not.toThrow()
   })
 
   it('exposes one boolean per module — never an array', () => {
     // An array would be read at runtime, nothing would fold, and every byte of
     // a disabled module would ship. See lib/modules.ts.
-    for (const flag of [MODULE_SALES_ORDERS, MODULE_FIELD_OPS, MODULE_INVENTORY_DISPATCH]) {
+    const flags = [
+      MODULE_SALES_ORDERS,
+      MODULE_SHOP,
+      MODULE_PO_INBOX,
+      MODULE_PROMOTIONS,
+      MODULE_INVOICING,
+      MODULE_FIELD_OPS,
+      MODULE_INVENTORY_DISPATCH,
+    ]
+    expect(flags).toHaveLength(ALL_MODULES.length)
+    for (const flag of flags) {
       expect(typeof flag).toBe('boolean')
     }
   })
@@ -65,11 +118,14 @@ describe('tab → module mapping', () => {
   })
 
   it.each([
-    ['Shop', 'sales_orders'],
+    // 'Order Import' and 'New Order' are the order object; the other four were
+    // split out of sales_orders when a tenant wanted the first two alone.
+    ['New Order', 'sales_orders'],
     ['Order Import', 'sales_orders'],
-    ['PO Inbox', 'sales_orders'],
-    ['Accounts', 'sales_orders'],
-    ['Promotions', 'sales_orders'],
+    ['Shop', 'shop'],
+    ['PO Inbox', 'po_inbox'],
+    ['Accounts', 'invoicing'],
+    ['Promotions', 'promotions'],
     ['HoReCa Insights', 'field_ops'],
     ['Scheduled Visits', 'field_ops'],
     ['Walk-in Review', 'field_ops'],
@@ -138,6 +194,13 @@ describe('assignable roles', () => {
     // render — an admin could otherwise create an account that logs in
     // successfully to a blank page, with no error anywhere to explain it.
     expect(assignableRoles.includes(UserRole.WAREHOUSE)).toBe(MODULE_INVENTORY_DISPATCH)
+  })
+
+  it('includes the Customer exactly when the Shop is on', () => {
+    // A customer login is the Shop and their own order history, and both are
+    // self-service ordering. A tenant whose office staff key the orders in has
+    // no customer logins at all.
+    expect(assignableRoles.includes(UserRole.CUSTOMER)).toBe(MODULE_SHOP)
   })
 
   it('keeps the field rep even though Field Ops can be off', () => {

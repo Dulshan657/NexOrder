@@ -10,6 +10,8 @@ import CancelOrderModal from './CancelOrderModal';
 import OrderSourceBadge from './OrderSourceBadge';
 import OrderFulfillmentsPanel from './OrderFulfillmentsPanel';
 import OrderSignature from './OrderSignature';
+import { canSeeOrderValue } from '../lib/canSeeOrderValue';
+import { MODULE_SHOP } from '../lib/modules';
 import { getInboundApproval } from '../lib/orderSource';
 import { orderDeliveryAddress } from '../lib/orderDeliveryAddress';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
@@ -71,6 +73,9 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
     // in lib/orderCancel.ts is the SAME module the Edge Function runs, so the
     // tooltip below is the refusal the server would give, not a guess at it.
     const isAdminOnly = currentUser.role === UserRole.ADMIN;
+    // Warehouse staff pick, pack and dispatch — product, quantity and bin, no
+    // money. See lib/canSeeOrderValue.ts; it is a display rule, not a control.
+    const showValue = canSeeOrderValue(currentUser.role);
     const cancelMutation = useCancelOrder();
     const [cancelOpen, setCancelOpen] = useState(false);
     const [cancelError, setCancelError] = useState<string | undefined>(undefined);
@@ -152,10 +157,12 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                             <p className="text-xs text-stone-500 uppercase tracking-wider">HoReCa</p>
                             <p className="text-sm font-semibold text-stone-900 mt-1">{order.hoReCa.name}</p>
                         </div>
+                        {showValue && (
                         <div className="bg-stone-50 rounded-lg p-3">
                             <p className="text-xs text-stone-500 uppercase tracking-wider">Total</p>
                             <p className="text-sm font-semibold text-emerald-700 mt-1">${order.total.toFixed(2)}</p>
                         </div>
+                        )}
                         <div className="bg-stone-50 rounded-lg p-3">
                             {(() => {
                                 const approval = getInboundApproval(order);
@@ -305,10 +312,12 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                                     <p className="text-xs text-stone-500">Invoice ID</p>
                                     <p className="font-medium text-stone-900">{invoice.id}</p>
                                 </div>
+                                {showValue && (
                                 <div>
                                     <p className="text-xs text-stone-500">Amount</p>
                                     <p className="font-medium text-stone-900">${invoice.amount.toFixed(2)}</p>
                                 </div>
+                                )}
                                 <div>
                                     <p className="text-xs text-stone-500">Due Date</p>
                                     <p className="font-medium text-stone-900">{new Date(invoice.dueDate).toLocaleDateString('en-AU')}</p>
@@ -387,9 +396,9 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                                 <thead className="bg-stone-50">
                                     <tr>
                                         <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Product</th>
-                                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Price</th>
+                                        {showValue && <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Price</th>}
                                         <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Qty</th>
-                                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Subtotal</th>
+                                        {showValue && <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Subtotal</th>}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-stone-100">
@@ -399,18 +408,20 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                                                 <p className="font-medium text-stone-900">{item.name}</p>
                                                 <p className="text-xs text-stone-400">{item.sku} &middot; {item.unit}</p>
                                             </td>
-                                            <td className="px-4 py-3 text-right text-stone-700">${item.price.toFixed(2)}</td>
+                                            {showValue && <td className="px-4 py-3 text-right text-stone-700">${item.price.toFixed(2)}</td>}
                                             <td className="px-4 py-3 text-right text-stone-700">{item.quantity}</td>
-                                            <td className="px-4 py-3 text-right font-medium text-stone-900">${(item.price * item.quantity).toFixed(2)}</td>
+                                            {showValue && <td className="px-4 py-3 text-right font-medium text-stone-900">${(item.price * item.quantity).toFixed(2)}</td>}
                                         </tr>
                                     ))}
                                 </tbody>
+                                {showValue && (
                                 <tfoot className="bg-stone-50">
                                     <tr>
                                         <td colSpan={3} className="px-4 py-3 text-right font-semibold text-stone-700">Total</td>
                                         <td className="px-4 py-3 text-right font-bold text-stone-900">${order.total.toFixed(2)}</td>
                                     </tr>
                                 </tfoot>
+                                )}
                             </table>
                         </div>
                     </div>
@@ -449,7 +460,7 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                     {order.verification && (
                         <div className="bg-stone-50 rounded-xl p-4">
                             <p className="text-xs text-stone-500 uppercase tracking-wider mb-2">Order Verification</p>
-                            {order.verification.method === 'signature' && (
+                            {MODULE_SHOP && order.verification.method === 'signature' && (
                                 <div>
                                     <p className="text-xs text-stone-500 mb-2">HoReCa Signature — {new Date(order.verification.timestamp).toLocaleString()}</p>
                                     <OrderSignature orderId={order.id} stored={order.verification.signatureDataUrl} />

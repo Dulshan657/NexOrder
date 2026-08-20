@@ -9,10 +9,22 @@ import type { ActionItemColumn, ActionItem } from './ActionItemsBoard';
 import TimePeriodToggle from './dashboard/TimePeriodToggle';
 import ExpandableSection from './dashboard/ExpandableSection';
 import SalesLineChart from './charts/SalesLineChart';
-import POInboxStatsTile from './admin/POInboxStatsTile';
 import InventoryDispatchSection from './admin/InventoryDispatchSection';
 import HorizontalBarChart from './charts/HorizontalBarChart';
-import SalesTargetModal from './SalesTargetModal';
+import { MODULE_FIELD_OPS, MODULE_INVOICING, MODULE_PO_INBOX, MODULE_PROMOTIONS } from '../lib/modules';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
+// The Dashboard is CORE — every tenant lands on it — but four of its panels
+// report on modules a tenant may not have. Gated on the DECLARATION as well as
+// the render, or the chunk ships to someone who can never see the panel.
+//
+// What is deliberately NOT gated: Revenue, Orders, Average Order Value, the
+// sales trend, top products and top customers. Those are order analytics, and
+// a tenant who takes orders has orders — including one on a single flat price
+// list, where the figures are exactly right. Only the panels that report on a
+// surface the tenant does not own come out.
+const POInboxStatsTile = MODULE_PO_INBOX ? lazyWithRetry(() => import('./admin/POInboxStatsTile')) : null;
+const SalesTargetModal = MODULE_FIELD_OPS ? lazyWithRetry(() => import('./SalesTargetModal')) : null;
 import SegmentBadge from './SegmentBadge';
 import { getAllOutstanding, getOverduePaymentsSummary } from '../services/accountingService';
 import { getRestockAlerts, getDaysToStockout } from '../services/productMovementService';
@@ -324,20 +336,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       />
 
       {/* C. Revenue Snapshot KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-2 gap-4 ${MODULE_INVOICING ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
         <KPICard icon={DollarSign} label="Revenue" value={`$${metrics.revenue.toFixed(2)}`} delta={metrics.revenueDelta} />
         <KPICard icon={ShoppingBag} label="Orders" value={String(metrics.orders)} delta={metrics.ordersDelta} />
         <KPICard icon={BarChart3} label="Avg Order Value" value={`$${metrics.aov.toFixed(2)}`} delta={metrics.aovDelta} />
+        {MODULE_INVOICING && (
         <KPICard icon={Wallet} label="Collection Rate" value={`${metrics.collectionRate.toFixed(0)}%`}
           subtitle={metrics.totalOverdue > 0 ? `$${metrics.totalOverdue.toFixed(2)} overdue` : undefined} />
+        )}
       </div>
 
       {/* PO Inbox health tile — visible to Admin + Manager */}
+      {MODULE_PO_INBOX && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-1">
           <POInboxStatsTile onNavigate={onNavigateTab ? () => onNavigateTab('PO Inbox') : undefined} />
         </div>
       </div>
+      )}
 
       {/* C2. Inventory & Dispatch visualisations */}
       <InventoryDispatchSection
@@ -349,10 +365,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* D. Sales Trend + Team Performance */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 glass-card rounded-xl p-5">
+        <div className={`glass-card rounded-xl p-5 ${MODULE_FIELD_OPS ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
           <h3 className="text-sm font-semibold text-stone-900 mb-4">Sales Trend</h3>
           <SalesLineChart data={salesOverTimeData} />
         </div>
+        {MODULE_FIELD_OPS && (
         <div className="glass-card rounded-xl p-5 space-y-5">
           <div>
             <h3 className="text-sm font-semibold text-stone-900 mb-3">Top Reps</h3>
@@ -387,6 +404,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* E. Product & Customer Intelligence */}
@@ -422,7 +440,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* F. Promotional ROI */}
-      {promoROI.length > 0 && (
+      {MODULE_PROMOTIONS && promoROI.length > 0 && (
         <ExpandableSection title="Promotional ROI" defaultExpanded>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -460,7 +478,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* G. Sales Targets */}
-      {currentUser && onUpdateSalesTargets && (
+      {MODULE_FIELD_OPS && currentUser && onUpdateSalesTargets && (
         <ExpandableSection title="Sales Targets" defaultExpanded={myTargets.length > 0}>
           <div className="flex items-center justify-between mb-4">
             <h4 className="text-sm font-semibold text-stone-900">My Targets</h4>
@@ -514,7 +532,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </ExpandableSection>
       )}
 
-      {showTargetModal && onUpdateSalesTargets && (
+      {MODULE_FIELD_OPS && showTargetModal && onUpdateSalesTargets && (
         <SalesTargetModal
           currentUser={currentUser}
           salesTargets={salesTargets}

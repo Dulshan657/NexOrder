@@ -35,31 +35,61 @@ import { ALL_MODULES } from './environments.mjs'
 /** @type {Record<string, typeof ALL_MODULES[number]>} */
 export const FUNCTION_MODULES = {
   // ── sales_orders ──────────────────────────────────────────────────────────
-  // Ordering, the money surfaces, and PO Inbox. PO Inbox belongs here rather
-  // than in its own module because an approved purchase order becomes an
-  // order: with ordering off it would have nowhere to land.
+  // The ORDER ITSELF and nothing else: create it, advance it along the status
+  // ladder, cancel it. This module used to hold all nineteen functions below;
+  // it was split on 2026-08-20 when Amadiya turned out to want orders and a
+  // warehouse without a Shop, a PO Inbox, Promotions or Accounts.
+  //
+  // `update-order-status` sits here even though pick → pack → dispatch is
+  // warehouse work driven by a Warehouse login. It is one function with one
+  // gate, and its other half (processing → processed) is what CREATES the
+  // fulfilment rows a pick needs. A tenant running a warehouse is a tenant
+  // with orders, so `sales_orders` is on wherever `inventory_dispatch` does
+  // anything — see MODULE_REQUIRES' note in config/environments.mjs on why the
+  // dependency is not encoded in the other direction.
   'place-order': 'sales_orders',
   'update-order-status': 'sales_orders',
   'cancel-order': 'sales_orders',
-  'mutate-promotion': 'sales_orders',
-  'mutate-invoice-status': 'sales_orders',
-  'mutate-purchase-order': 'sales_orders',
-  'mutate-pantry-item': 'sales_orders',
-  'approve-po': 'sales_orders',
-  'reject-po': 'sales_orders',
-  'extract-po': 'sales_orders',
-  'poll-inbox': 'sales_orders',
-  'mutate-po-alias': 'sales_orders',
-  'start-po-oauth': 'sales_orders',
-  'create-po-document-url': 'sales_orders',
-  'pause-email-account': 'sales_orders',
-  'disconnect-email-account': 'sales_orders',
-  'retry-email-account': 'sales_orders',
-  // The order-verification signature, private since mig 00113. Both halves sit
-  // here rather than in core because the canvas is in the cart: with ordering
-  // off there is nothing to sign and nothing signed to read back.
-  'upload-signature': 'sales_orders',
-  'create-signature-url': 'sales_orders',
+
+  // ── shop ──────────────────────────────────────────────────────────────────
+  // Self-service ordering: the catalogue browse, the cart, the pantry, and the
+  // signature captured at placement. The signature's BOTH halves live here —
+  // the canvas is in the cart, so with the Shop off there is nothing to sign
+  // and nothing signed to read back.
+  'mutate-pantry-item': 'shop',
+  'upload-signature': 'shop',
+  'create-signature-url': 'shop',
+
+  // ── po_inbox ──────────────────────────────────────────────────────────────
+  // Inbound-PO email triage end to end: the mailbox connections, the poll, the
+  // extraction, and the approve/reject that turns a parsed PO into a real
+  // order. Requires `sales_orders` — an approved PO has nowhere to land
+  // without it, which is the dependency `assertModuleSet()` enforces.
+  //
+  // `mutate-purchase-order` is here and not in inventory: "PO" in this
+  // codebase means an INBOUND CUSTOMER purchase order, never procurement.
+  // Receiving stock needs a supplier, not a PO.
+  'mutate-purchase-order': 'po_inbox',
+  'approve-po': 'po_inbox',
+  'reject-po': 'po_inbox',
+  'extract-po': 'po_inbox',
+  'poll-inbox': 'po_inbox',
+  'mutate-po-alias': 'po_inbox',
+  'start-po-oauth': 'po_inbox',
+  'create-po-document-url': 'po_inbox',
+  'pause-email-account': 'po_inbox',
+  'disconnect-email-account': 'po_inbox',
+  'retry-email-account': 'po_inbox',
+
+  // ── promotions ────────────────────────────────────────────────────────────
+  // With this off, `pricing.ts` resolves every line at the product's list
+  // price, which is what a tenant on a single flat price list wants.
+  'mutate-promotion': 'promotions',
+
+  // ── invoicing ─────────────────────────────────────────────────────────────
+  // Invoices and the Accounts (aging) tab. Off for a tenant that bills
+  // somewhere else entirely.
+  'mutate-invoice-status': 'invoicing',
 
   // ── field_ops ─────────────────────────────────────────────────────────────
   // Still thin. Scheduled visits, walk-in review and HoReCa insights are mostly

@@ -11,6 +11,7 @@ import React, { Suspense, useCallback, useEffect, useState } from 'react'
 import { LoadingSkeleton } from '../../Skeleton'
 import { lazyWithRetry } from '../../../lib/lazyWithRetry'
 import { settingsSubtabFromSearch, type SettingsSubTab } from '../../../lib/subtabUrl'
+import { MODULE_PO_INBOX } from '../../../lib/modules'
 import { SubtabButton } from './primitives'
 import type { HoReCa, Product } from '../../../types'
 
@@ -19,7 +20,13 @@ const OrdersPricingTab = lazyWithRetry(() => import('./OrdersPricingTab'))
 const InventoryTab = lazyWithRetry(() => import('./InventoryTab'))
 const WarehouseTab = lazyWithRetry(() => import('./WarehouseTab'))
 const CustomersTab = lazyWithRetry(() => import('./CustomersTab'))
-const AutomationTab = lazyWithRetry(() => import('./AutomationTab'))
+// The only sub-tab that belongs to a module. Everything else here — company
+// profile, order prefix, minimum order value, currency, carton discount,
+// inventory thresholds, warehouses, customer defaults — is configuration a
+// tenant needs whatever they bought. "Orders & Pricing" in particular looks
+// like a promotions surface and is not: it is the order NUMBERING and the
+// carton discount, which a warehouse-only tenant still sets.
+const AutomationTab = MODULE_PO_INBOX ? lazyWithRetry(() => import('./AutomationTab')) : null
 
 export interface SettingsViewProps {
   hoReCas: HoReCa[]
@@ -33,12 +40,17 @@ const TABS: ReadonlyArray<{ id: SettingsSubTab; label: string }> = [
   { id: 'inventory', label: 'Inventory' },
   { id: 'warehouse', label: 'Warehouse' },
   { id: 'customers', label: 'Customers' },
-  { id: 'automation', label: 'Automation' },
+  ...(MODULE_PO_INBOX ? [{ id: 'automation' as SettingsSubTab, label: 'Automation' }] : []),
 ]
 
 function readInitialSubtab(): SettingsSubTab {
   if (typeof window === 'undefined') return 'general'
-  return settingsSubtabFromSearch(window.location.search)
+  const requested = settingsSubtabFromSearch(window.location.search)
+  // A `?subtab=automation` link outliving the module it names would otherwise
+  // select a tab with no button and no panel — a blank Settings page. Degrade
+  // to General, the same way `?tab=` degrades to the role's landing view.
+  if (!TABS.some(t => t.id === requested)) return 'general'
+  return requested
 }
 
 function writeSubtabToUrl(next: SettingsSubTab): void {
@@ -130,7 +142,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ hoReCas, products, onUpdate
               <CustomersTab hoReCas={hoReCas} products={products} onUpdateHoReCa={onUpdateHoReCa} />
             </div>
           )}
-          {visited.has('automation') && (
+          {MODULE_PO_INBOX && visited.has('automation') && (
             <div hidden={subtab !== 'automation'}>
               <AutomationTab />
             </div>

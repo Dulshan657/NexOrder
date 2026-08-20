@@ -37,7 +37,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    requireModule('sales_orders')
+    requireModule('po_inbox')
     const ctx = await requireAuth(req, { allowedRoles: ['Admin', 'Manager'] })
 
     const rl = await checkRateLimit(`pause-email-account:${ctx.userId}`, {

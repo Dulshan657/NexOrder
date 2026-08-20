@@ -7,10 +7,36 @@ import { visualizer } from 'rollup-plugin-visualizer';
 
 import { TARGETS, ALL_MODULES, isProvisioned } from './config/environments.mjs';
 
+// ── NEXORDER_ENV IS RESOLVED ONCE, AND A WRONG VALUE IS FATAL ───────────────
+//
+// Unset falls back to `dev`, which is what makes a bare `vite build` and a
+// local dev server work. A value that is SET but names no target does NOT fall
+// back: it throws.
+//
+// That distinction became load-bearing on 2026-08-20, when targets stopped
+// sharing a module set. NEXORDER_ENV lives in the Vercel project's build
+// environment and nothing in the repo asserts it, so a typo used to mean a
+// tenant silently built with `dev`'s modules — which is every module, i.e. the
+// client is served the surfaces they did not buy, with no error anywhere. A
+// missing variable is a mistake; a misspelled one is the same mistake wearing
+// a disguise, and only the second is detectable here.
+function resolveBuildTarget() {
+    const raw = process.env.NEXORDER_ENV?.trim();
+    if (!raw) return TARGETS.dev;
+    const target = TARGETS[raw];
+    if (!target) {
+        throw new Error(
+            `NEXORDER_ENV="${raw}" names no target. Valid values: ${Object.keys(TARGETS).join(', ')}. ` +
+                `Refusing to fall back to 'dev' — that would build this deployment with dev's module set.`,
+        );
+    }
+    return target;
+}
+
 // Dev-server fallback for the /storage image proxy (see `server.proxy` below).
 // Resolved from NEXORDER_ENV the same way vercel.ts does, so one variable
 // describes the target everywhere. Never a typed ref — the registry owns those.
-const proxyTarget = TARGETS[process.env.NEXORDER_ENV?.trim() ?? ''] ?? TARGETS.dev;
+const proxyTarget = resolveBuildTarget();
 
 // ── MODULE FLAGS: ONE BOOLEAN PER MODULE, NEVER AN ARRAY ────────────────────
 //
@@ -29,7 +55,7 @@ const proxyTarget = TARGETS[process.env.NEXORDER_ENV?.trim() ?? ''] ?? TARGETS.d
 // Same NEXORDER_ENV that already picks the storage proxy and the CSP, so one
 // variable per Vercel project decides everything about which deployment this
 // build is. `lib/modules.ts` is the only thing that should read these.
-const moduleTarget = TARGETS[process.env.NEXORDER_ENV?.trim() ?? ''] ?? TARGETS.dev;
+const moduleTarget = resolveBuildTarget();
 const moduleDefines = Object.fromEntries(
     ALL_MODULES.map((slug: string) => [
         `__MODULE_${slug.toUpperCase()}__`,

@@ -45,7 +45,15 @@ import { EdgeFunctionError } from './errors.ts'
  * which is what turns a typo in the secret into a loud failure instead of a
  * module that quietly never gates.
  */
-export const MODULE_SLUGS = ['sales_orders', 'field_ops', 'inventory_dispatch'] as const
+export const MODULE_SLUGS = [
+  'sales_orders',
+  'shop',
+  'po_inbox',
+  'promotions',
+  'invoicing',
+  'field_ops',
+  'inventory_dispatch',
+] as const
 
 export type ModuleSlug = (typeof MODULE_SLUGS)[number]
 
