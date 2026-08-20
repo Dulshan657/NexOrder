@@ -262,3 +262,85 @@ describe('recodeSelectionReducer', () => {
     expect(recodeSelectionReducer(s, { type: 'cancel' })).toEqual(initialRecodeSelection)
   })
 })
+
+// The right-drag erase path (recode UI polish pass).
+//
+// A right-drag must subtract WITHOUT dispatching `set_mode`: that would flip the
+// toolbar toggle under the operator mid-gesture and, on a pointercancel, strand the
+// tool in Erase with nothing on screen explaining why. So both applying actions take
+// an optional per-action override instead, and the armed mode is left alone.
+describe('recodeSelectionReducer — per-action erase', () => {
+  const withSelection = (...ids: number[]): RecodeSelectionState =>
+    ({ ...active, selected: new Set(ids) })
+
+  it('subtracts for this action only, leaving the armed mode untouched', () => {
+    const before = withSelection(1, 2, 3)
+    const after = recodeSelectionReducer(before, {
+      type: 'select_cell', floor: 0, x: 0, y: 0, erase: true, resolve: () => [2],
+    })
+    expect([...after.selected]).toEqual([1, 3])
+    expect(after.mode).toBe('add')
+  })
+
+  it('does the same for a band', () => {
+    const before = { ...withSelection(1, 2, 3), rect: rect(0, 0, 4, 4) }
+    const after = recodeSelectionReducer(before, {
+      type: 'drag_end', erase: true, resolve: () => [1, 3],
+    })
+    expect([...after.selected]).toEqual([2])
+    expect(after.mode).toBe('add')
+    expect(after.rect).toBeNull()
+  })
+
+  // Strictly additive: every pre-existing caller omits the field and must behave
+  // exactly as it did.
+  it('falls back to the armed mode when the field is absent', () => {
+    const add = recodeSelectionReducer(withSelection(1), {
+      type: 'select_cell', floor: 0, x: 0, y: 0, resolve: () => [2],
+    })
+    expect([...add.selected]).toEqual([1, 2])
+
+    const erasing = { ...withSelection(1, 2), mode: 'erase' as const }
+    const removed = recodeSelectionReducer(erasing, {
+      type: 'select_cell', floor: 0, x: 0, y: 0, resolve: () => [2],
+    })
+    expect([...removed.selected]).toEqual([1])
+  })
+
+  // `erase: false` is not the same as absent — it must not override an armed Erase
+  // back into Add, or the toolbar toggle would stop working the moment the map
+  // started passing the field.
+  it('treats erase:false as "use the armed mode", not as "add"', () => {
+    const erasing = { ...withSelection(1, 2), mode: 'erase' as const }
+    const after = recodeSelectionReducer(erasing, {
+      type: 'select_cell', floor: 0, x: 0, y: 0, erase: false, resolve: () => [2],
+    })
+    expect([...after.selected]).toEqual([1])
+  })
+})
+
+// A band abandoned by a pointercancel — or by a second finger arriving to pinch —
+// must apply NOTHING, rather than resolving to whatever rectangle the interruption
+// happened to freeze. That needs no new action: a resolver returning [] applies
+// nothing, and because applyIds reports "nothing moved" it leaves no undo frame
+// either, which is right for a gesture that was interrupted rather than made.
+describe('recodeSelectionReducer — abandoning a band', () => {
+  it('clears the rect, applies nothing and leaves no undo frame', () => {
+    const before: RecodeSelectionState = {
+      ...active, selected: new Set([7]), rect: rect(0, 0, 9, 9), undo: [],
+    }
+    const after = recodeSelectionReducer(before, { type: 'drag_end', resolve: () => [] })
+    expect(after.rect).toBeNull()
+    expect([...after.selected]).toEqual([7])
+    expect(after.undo).toHaveLength(0)
+  })
+
+  it('still pushes one frame for a band that actually applied something', () => {
+    const before: RecodeSelectionState = {
+      ...active, selected: new Set([7]), rect: rect(0, 0, 9, 9), undo: [],
+    }
+    const after = recodeSelectionReducer(before, { type: 'drag_end', resolve: () => [8] })
+    expect([...after.selected]).toEqual([7, 8])
+    expect(after.undo).toHaveLength(1)
+  })
+})

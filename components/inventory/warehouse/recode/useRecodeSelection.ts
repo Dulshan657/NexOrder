@@ -95,14 +95,24 @@ export type RecodeSelectionAction =
   // Carries a RESOLVER for the same reason `drag_end` does: the reducer must never
   // be handed a list computed from a rect or a cell read out of a caller's render
   // closure. Both resolvers are pure selectors, so the reducer stays pure.
-  | { type: 'select_cell'; floor: number; x: number; y: number; resolve: (floor: number, x: number, y: number) => number[] }
+  //
+  // `erase` overrides the armed mode for THIS action only. It exists so a right-drag
+  // can subtract without dispatching `set_mode`, which would flicker the toolbar and,
+  // on a pointercancel, strand the tool in Erase. Absent means "use the armed mode",
+  // which is every pre-existing caller unchanged.
+  | { type: 'select_cell'; floor: number; x: number; y: number; erase?: boolean; resolve: (floor: number, x: number, y: number) => number[] }
   | { type: 'drag_start'; floor: number; x: number; y: number; additive: boolean }
   | { type: 'drag_move'; x: number; y: number }
   // See the note on select_cell. A drag fast enough that React has not re-rendered
   // between pointerdown and pointerup sees `rect: null` in its own closure, and the
   // whole band silently selects nothing. Found in a real browser; no test reproduced
   // it, which is why the resolver-in-action shape is kept rather than simplified.
-  | { type: 'drag_end'; resolve: (rect: MarqueeRect) => number[] }
+  //
+  // An ABANDONED band — a second finger landing, or a pointercancel — resolves to
+  // nothing rather than to whatever rectangle the interruption happened to freeze.
+  // That needs no separate action: a resolver returning [] applies nothing, and
+  // because `applyIds` reports "nothing moved" it also leaves no undo frame behind.
+  | { type: 'drag_end'; erase?: boolean; resolve: (rect: MarqueeRect) => number[] }
   | { type: 'select_ids'; ids: number[]; replace?: boolean }
   | { type: 'clear_selection' }
   | { type: 'undo' }
@@ -260,7 +270,7 @@ export function recodeSelectionReducer(
       const next = applyIds(
         state.selected,
         action.resolve(action.floor, action.x, action.y),
-        state.mode,
+        action.erase === true ? 'erase' : state.mode,
       )
       return next ? { ...state, selected: next } : state
     }
@@ -289,7 +299,11 @@ export function recodeSelectionReducer(
     // hand-painted bins would be the worst kind of surprise. Erase mode subtracts.
     case 'drag_end': {
       if (!state.rect) return state
-      const next = applyIds(state.selected, action.resolve(state.rect), state.mode)
+      const next = applyIds(
+        state.selected,
+        action.resolve(state.rect),
+        action.erase === true ? 'erase' : state.mode,
+      )
       return {
         ...state,
         rect: null,

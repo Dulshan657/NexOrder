@@ -7,6 +7,7 @@ import {
   zoomAtPoint,
   zoomByFactor,
   panBy,
+  applyPinch,
   contentBounds,
   fitToBounds,
   type Viewport,
@@ -270,5 +271,57 @@ describe('fitToBounds', () => {
     expect(Number.isFinite(vp.scale)).toBe(true)
     expect(Number.isFinite(vp.tx)).toBe(true)
     expect(Number.isFinite(vp.ty)).toBe(true)
+  })
+})
+
+describe('applyPinch', () => {
+  const vp: Viewport = { scale: 1, tx: 30, ty: -12 }
+
+  it('keeps the world point under the midpoint fixed when the fingers only spread', () => {
+    const before = worldPoint(vp, 200, 140)
+    const after = applyPinch(vp, { targetScale: 1.8, midX: 200, midY: 140, dMidX: 0, dMidY: 0 })
+    const nowAt = worldPoint(after, 200, 140)
+    expect(after.scale).toBeCloseTo(1.8)
+    expect(nowAt.x).toBeCloseTo(before.x)
+    expect(nowAt.y).toBeCloseTo(before.y)
+  })
+
+  it('follows the midpoint, so a pinch that slides also pans', () => {
+    const after = applyPinch(vp, { targetScale: 1, midX: 100, midY: 100, dMidX: 25, dMidY: -8 })
+    expect(after.scale).toBe(1)
+    expect(after.tx).toBeCloseTo(vp.tx + 25)
+    expect(after.ty).toBeCloseTo(vp.ty - 8)
+  })
+
+  it('clamps the scale at both limits', () => {
+    expect(applyPinch(vp, { targetScale: 99, midX: 10, midY: 10, dMidX: 0, dMidY: 0 }).scale)
+      .toBe(MAX_SCALE)
+    expect(applyPinch(vp, { targetScale: 0.001, midX: 10, midY: 10, dMidX: 0, dMidY: 0 }).scale)
+      .toBe(MIN_SCALE)
+  })
+
+  // Why applyPinch pans AFTER zooming rather than before: zoomAtPoint returns the
+  // viewport UNCHANGED once the scale has clamped, so a pan folded into the zoom
+  // would be swallowed and a two-finger drag would go dead at the limits — with the
+  // fingers still moving, which reads as the map having frozen.
+  it('keeps panning once the zoom has clamped', () => {
+    const atLimit: Viewport = { scale: MAX_SCALE, tx: 0, ty: 0 }
+    const after = applyPinch(atLimit, { targetScale: MAX_SCALE * 4, midX: 50, midY: 50, dMidX: 12, dMidY: 9 })
+    expect(after.scale).toBe(MAX_SCALE)
+    expect(after.tx).toBeCloseTo(12)
+    expect(after.ty).toBeCloseTo(9)
+  })
+
+  it('does not mutate its input', () => {
+    const input: Viewport = { scale: 1, tx: 5, ty: 5 }
+    applyPinch(input, { targetScale: 2, midX: 1, midY: 1, dMidX: 3, dMidY: 3 })
+    expect(input).toEqual({ scale: 1, tx: 5, ty: 5 })
+  })
+
+  it('produces no NaN from a degenerate step', () => {
+    const after = applyPinch(vp, { targetScale: 1, midX: 0, midY: 0, dMidX: 0, dMidY: 0 })
+    expect(Number.isFinite(after.scale)).toBe(true)
+    expect(Number.isFinite(after.tx)).toBe(true)
+    expect(Number.isFinite(after.ty)).toBe(true)
   })
 })

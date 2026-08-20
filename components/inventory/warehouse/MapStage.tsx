@@ -25,6 +25,7 @@ import { BASE_CELL } from '@/components/admin/layout/layoutPalette'
 import { ScaleIndicator } from '@/components/admin/layout/ScaleIndicator'
 import type { ZoneRegion } from './zoneRegions'
 import { MapSelectionLayer, type SelectionCell } from './MapSelectionLayer'
+import { decidePointerDown, type StrokeKind } from './mapGesture'
 
 const HINT_AUTO_DISMISS_MS = 4000
 
@@ -86,14 +87,32 @@ export interface MapStageProps {
     tool: 'paint' | 'rect'
     /** One undo snapshot per stroke, so a 60-cell drag is one Ctrl+Z. */
     onStrokeStart: () => void
+    /**
+     * Does this cell hold anything a sweep can recode?
+     *
+     * THE hit test, and the reason the headline rule exists: a drag that starts on
+     * storage paints, and one that starts on open floor moves the map. Must be
+     * cheap — it runs on every pointerdown.
+     */
+    hasUnitsAt: (floor: number, x: number, y: number) => boolean
     /** The brush. Uses the NULLING cell helper — a stroke past the edge must not
-     *  wrap onto the last valid cell. */
-    onSelectCell: (floor: number, x: number, y: number) => void
+     *  wrap onto the last valid cell. `erase` subtracts for THIS call only, without
+     *  touching the armed mode, which is how a right-drag erases without flipping
+     *  the toolbar under the operator. */
+    onSelectCell: (floor: number, x: number, y: number, erase?: boolean) => void
     /** The band. Uses the CLAMPING helper — dragging one pixel outside the grid
      *  must not freeze the rectangle mid-drag. */
     onDragStart: (floor: number, x: number, y: number, additive: boolean) => void
     onDragMove: (x: number, y: number) => void
-    onDragEnd: () => void
+    onDragEnd: (erase?: boolean) => void
+    /** Abandon the band without applying it — a pointercancel, or a second finger
+     *  arriving. Resolving to the frozen rectangle instead would select whatever the
+     *  interruption happened to be covering. */
+    onDragCancel: () => void
+    /** Ctrl+Z. The same dispatch the panel's Undo button uses. */
+    onUndo: () => void
+    /** For the on-map count pill. */
+    selectedCount: number
     /** The band being dragged, in grid cells. Null between drags. */
     rect: { floor: number; x0: number; y0: number; x1: number; y1: number } | null
     /** One box per selected unit, drawn by MapSelectionLayer — a SIBLING of the
@@ -129,7 +148,7 @@ export function MapStage({
   paint,
   select,
 }: MapStageProps) {
-  const { viewport, containerRef, handlers, fit, zoomIn, zoomOut, isPanning, didDrag, gesturesEnabled } = useMapViewport({
+  const { viewport, containerRef, handlers, fit, zoomIn, zoomOut, isPanning, didDrag, coarsePointer, track, startPinch } = useMapViewport({
     placements,
     objects,
     floor,
@@ -156,8 +175,17 @@ export function MapStage({
     setHover(next)
   }, [])
 
-  // ── Area paint mode (mig 00095) ───────────────────────────────────────────
-  const paintingRef = useRef<number | null>(null)
+  // ── Strokes: one slot, whatever kind ──────────────────────────────────────
+  //
+  // paintingRef / brushRef / marqueeRef used to be three separate refs. Collapsing
+  // them is not tidying: only one stroke can be in flight at a time, and one slot is
+  // what makes handing a stroke off to a pinch a single call site instead of three
+  // that have to agree.
+  type Stroke = { pointerId: number; kind: StrokeKind; erase: boolean }
+  const strokeRef = useRef<Stroke | null>(null)
+  /** Only so the band can draw itself red. A ref cannot repaint, and this is set
+   *  once per stroke rather than per move. */
+  const [eraseStroke, setEraseStroke] = useState(false)
   const painting = paint?.active === true
 
   /** Screen point → grid cell. Mirrors LayoutCanvas.cellFromEvent, but subtracts
@@ -179,35 +207,12 @@ export function MapStage({
     if (cell) paint?.onPaintCell(floor, cell.x, cell.y)
   }, [cellFromEvent, paint, floor])
 
-  const endPaint = useCallback((e: ReactPointerEvent<HTMLElement>): boolean => {
-    if (paintingRef.current !== e.pointerId) return false
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
-    paintingRef.current = null
-    return true
-  }, [])
-
   // ── Sweep selection (migs 00107 / 00108) ──────────────────────────────────
   //
   // Two gestures, one mode. The brush is the primary one — a band could not express
   // the shape of a real bulk block without swallowing its neighbours — and the
   // rectangle is kept for the cases that genuinely are rectangular.
-  const marqueeRef = useRef<number | null>(null)
-  const brushRef = useRef<number | null>(null)
   const sweeping = select?.active === true
-  const brushing = sweeping && select?.tool === 'paint'
-  const banding = sweeping && select?.tool === 'rect'
-
-  const selectAt = useCallback((e: ReactPointerEvent<HTMLElement>) => {
-    const cell = cellFromEvent(e)
-    if (cell) select?.onSelectCell(floor, cell.x, cell.y)
-  }, [cellFromEvent, select, floor])
-
-  const endBrush = useCallback((e: ReactPointerEvent<HTMLElement>): boolean => {
-    if (brushRef.current !== e.pointerId) return false
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
-    brushRef.current = null
-    return true
-  }, [])
 
   /** Like cellFromEvent but CLAMPED instead of null out of bounds. Paint wants the
    *  null — a stroke past the edge must not wrap to the last valid cell. A band
@@ -227,11 +232,54 @@ export function MapStage({
     }
   }, [containerRef, viewport.scale, viewport.tx, viewport.ty, layout.gridWidth, layout.gridHeight])
 
-  const endMarquee = useCallback((e: ReactPointerEvent<HTMLElement>): boolean => {
-    if (marqueeRef.current !== e.pointerId) return false
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
-    marqueeRef.current = null
-    select?.onDragEnd()
+  const beginStroke = useCallback((
+    e: ReactPointerEvent<HTMLElement>, kind: StrokeKind, erase: boolean,
+  ) => {
+    // Eager capture is correct HERE AND ONLY HERE. The lazy capture in
+    // useMapViewport exists to preserve the trailing `click` on a child bin; in a
+    // stroke there is no child click to preserve, and routing the click to the
+    // container is exactly what stops a stroke from also selecting a bin. Do not
+    // port this into useMapViewport.
+    e.currentTarget.setPointerCapture(e.pointerId)
+    // Kills the native text selection this drag would otherwise run across the SVG's
+    // <text> nodes — bin codes, area names, floor signs. Native selection is a
+    // DOCUMENT-ORDER RANGE, so it smeared a contiguous run of labels from wherever
+    // the pointer went down to wherever it was now, which read as the brush
+    // selecting things it had never touched. `select-none` on the container is the
+    // other half and the one that covers the pan path; this half also closes the
+    // case where a selection anchor already exists in the panel beside the map, and
+    // suppresses the iOS long-press callout mid-stroke.
+    e.preventDefault()
+    // preventDefault costs us the implicit focus that comes with a pointerdown, and
+    // this container is the Ctrl+Z listener — so take it deliberately.
+    e.currentTarget.focus({ preventScroll: true })
+    strokeRef.current = { pointerId: e.pointerId, kind, erase }
+    setEraseStroke(erase)
+  }, [])
+
+  /**
+   * End the stroke this pointer owns. `commit` on pointerup, `abandon` on
+   * pointercancel and when a second finger takes over.
+   *
+   * Only the band branches. A band applies nothing until drag_end, so an abandoned
+   * one must resolve to NOTHING rather than to whatever rectangle the interruption
+   * happened to freeze. A brush applied every cell as it crossed it and pushed
+   * exactly one undo frame, so an interrupted brush is already committed and one
+   * Ctrl+Z still takes the whole partial stroke back. That asymmetry belongs to the
+   * reducer, not to this decision.
+   */
+  const endStrokeById = useCallback((
+    el: HTMLElement, pointerId: number, outcome: 'commit' | 'abandon',
+  ): boolean => {
+    const stroke = strokeRef.current
+    if (!stroke || stroke.pointerId !== pointerId) return false
+    if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId)
+    strokeRef.current = null
+    setEraseStroke(false)
+    if (stroke.kind === 'band') {
+      if (outcome === 'commit') select?.onDragEnd(stroke.erase)
+      else select?.onDragCancel()
+    }
     return true
   }, [select])
 
@@ -265,84 +313,132 @@ export function MapStage({
       role="application"
       tabIndex={0}
       aria-label="Warehouse floor plan — arrow keys pan, plus and minus zoom, 0 to fit"
-      className={`relative isolate h-full w-full overflow-hidden rounded-lg border border-stone-200 bg-stone-50 outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue/40 ${
-        painting || sweeping ? 'cursor-crosshair' : gesturesEnabled ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''
+      className={`relative isolate h-full w-full select-none overflow-hidden rounded-lg border border-stone-200 bg-stone-50 outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue/40 ${
+        painting || sweeping ? 'cursor-crosshair' : coarsePointer ? '' : isPanning ? 'cursor-grabbing' : 'cursor-grab'
       }`}
-      style={{ touchAction: gesturesEnabled ? 'none' : undefined }}
-      onPointerEnter={gesturesEnabled ? showHint : undefined}
+      // `touch-action: none` is required for any of this to work on a phone —
+      // without it the browser owns one-finger drags and answers our pointerdown
+      // with a pointercancel mid-stroke. The cost, stated rather than discovered: a
+      // thumb landing on the map no longer scrolls the page. The map is a bounded
+      // box with scrollable page above and below it, which is how every embedded map
+      // behaves, so it is the right trade — but it IS a trade.
+      style={{ touchAction: 'none' }}
+      onPointerEnter={showHint}
+      onContextMenu={(e) => {
+        // Right-drag erases, so the menu would eat the gesture. Only claimed while
+        // sweeping; everywhere else the operator keeps their browser.
+        if (sweeping) e.preventDefault()
+      }}
       onPointerDown={(e) => {
         dismissHint()
-        // Alt falls through to the pan path, which is how the operator still
-        // reaches the rest of the floor while painting — useMapViewport only
-        // pans on button 0, so there is no middle-drag to fall back on.
-        if (painting && !e.altKey && (e.pointerType !== 'mouse' || e.button === 0)) {
-          // Eager capture is correct HERE AND ONLY HERE. The lazy capture in
-          // useMapViewport exists to preserve the trailing `click` on a child
-          // bin; in paint mode there is no child click to preserve, and routing
-          // the click to the container is exactly what stops a stroke from also
-          // selecting a bin. Do not port this into useMapViewport.
-          e.currentTarget.setPointerCapture(e.pointerId)
-          paintingRef.current = e.pointerId
-          paint?.onStrokeStart()
-          paintAt(e)
-          return
-        }
-        // A marquee is the paint case, not the pan case: eager capture, because
-        // there is no child click to preserve and routing the click to the
-        // container is exactly what stops a band that ends over a bin from also
-        // selecting it and scrolling Bin detail into view. Alt still falls through
-        // to pan, so the operator can reach the rest of the floor mid-selection.
-        if (brushing && !e.altKey && (e.pointerType !== 'mouse' || e.button === 0)) {
-          e.currentTarget.setPointerCapture(e.pointerId)
-          brushRef.current = e.pointerId
-          select?.onStrokeStart()
-          selectAt(e)
-          return
-        }
-        if (banding && !e.altKey && (e.pointerType !== 'mouse' || e.button === 0)) {
-          const cell = clampedCellFromEvent(e)
-          if (cell) {
-            e.currentTarget.setPointerCapture(e.pointerId)
-            marqueeRef.current = e.pointerId
-            select?.onDragStart(floor, cell.x, cell.y, e.shiftKey)
+        // Bookkeeping FIRST and unconditionally, including on the paths a stroke
+        // swallows below — see the contract on useMapViewport.track.
+        const downCount = track(e)
+
+        // Mouse chording: pressing the right button during a left drag re-fires
+        // pointerdown with the SAME pointerId. Never start a second stroke on it.
+        if (strokeRef.current?.pointerId === e.pointerId) return
+
+        const cell = painting || sweeping ? cellFromEvent(e) : null
+        const decision = decidePointerDown({
+          pointerType: e.pointerType,
+          button: e.button,
+          altKey: e.altKey,
+          downCount,
+          paintArmed: painting,
+          selectArmed: sweeping,
+          tool: select?.tool ?? null,
+          cell,
+          cellHasUnits: cell != null && select?.hasUnitsAt(floor, cell.x, cell.y) === true,
+        })
+
+        switch (decision.kind) {
+          case 'pinch': {
+            // Hand the stroke off BEFORE the pinch reads the pointer map.
+            const inFlight = strokeRef.current
+            if (inFlight) endStrokeById(e.currentTarget, inFlight.pointerId, 'abandon')
+            startPinch(e)
             return
           }
+          case 'stroke': {
+            beginStroke(e, decision.stroke, decision.erase)
+            if (decision.stroke === 'paint') {
+              paint?.onStrokeStart()
+              paintAt(e)
+              return
+            }
+            if (decision.stroke === 'brush') {
+              select?.onStrokeStart()
+              // Non-null by construction: the brush branch is only reachable with a
+              // cell that holds units.
+              if (cell) select?.onSelectCell(floor, cell.x, cell.y, decision.erase)
+              return
+            }
+            // The band takes the CLAMPING helper — dragging one pixel outside the
+            // grid must not freeze the rectangle mid-drag.
+            const banded = clampedCellFromEvent(e)
+            if (banded) select?.onDragStart(floor, banded.x, banded.y, e.shiftKey)
+            return
+          }
+          case 'pan':
+            handlers.onPointerDown(e)
+            return
+          case 'none':
+            return
         }
-        handlers.onPointerDown(e)
       }}
       onPointerMove={(e) => {
-        if (paintingRef.current === e.pointerId) {
-          paintAt(e)
-          return
-        }
-        if (brushRef.current === e.pointerId) {
-          selectAt(e)
-          return
-        }
-        if (marqueeRef.current === e.pointerId) {
-          const cell = clampedCellFromEvent(e)
-          if (cell) select?.onDragMove(cell.x, cell.y)
+        track(e)
+        const stroke = strokeRef.current
+        if (stroke && stroke.pointerId === e.pointerId) {
+          if (stroke.kind === 'paint') {
+            paintAt(e)
+          } else if (stroke.kind === 'brush') {
+            const cell = cellFromEvent(e)
+            if (cell) select?.onSelectCell(floor, cell.x, cell.y, stroke.erase)
+          } else {
+            const cell = clampedCellFromEvent(e)
+            if (cell) select?.onDragMove(cell.x, cell.y)
+          }
           return
         }
         handlers.onPointerMove(e)
       }}
       onPointerUp={(e) => {
-        if (endPaint(e)) return
-        if (endBrush(e)) return
-        if (endMarquee(e)) return
+        track(e)
+        endStrokeById(e.currentTarget, e.pointerId, 'commit')
+        // Not an `else`: endPan only acts on the pointer it owns and setIsPanning
+        // bails when already false, so this is a no-op unless a pan was in flight.
+        // It has to run either way, or the finger left over from a pinch never
+        // releases.
         handlers.onPointerUp(e)
       }}
       onPointerCancel={(e) => {
-        if (endPaint(e)) return
-        if (endBrush(e)) return
-        if (endMarquee(e)) return
+        track(e)
+        endStrokeById(e.currentTarget, e.pointerId, 'abandon')
         handlers.onPointerCancel(e)
       }}
       onPointerLeave={() => setHover(null)}
       onWheel={(e) => {
         if (e.ctrlKey || e.metaKey) dismissHint()
       }}
-      onKeyDown={handlers.onKeyDown}
+      onKeyDown={(e) => {
+        // Windows conventions: Ctrl is the documented key. Meta is accepted so ⌘Z is
+        // not dead on a Mac, but nothing in the UI promises it. No redo — the
+        // reducer has no redo stack, so Ctrl+Y stays the browser's.
+        //
+        // This lives on the container rather than on `document` because the recode
+        // panel is a grid SIBLING of the map: React events from its block-name and
+        // pattern inputs never reach here, so native undo keeps working in them for
+        // free, with no isEditable sniffing — and nothing is stolen from the modals
+        // that can be open over this surface.
+        if (sweeping && (e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'z' || e.key === 'Z')) {
+          e.preventDefault()
+          select?.onUndo()
+          return
+        }
+        handlers.onKeyDown(e)
+      }}
     >
       <WarehouseCanvas
         layout={layout}
@@ -380,7 +476,7 @@ export function MapStage({
           scene, whose memo excludes viewport.tx/ty and must not start seeing a
           shape that changes on every pointer move. */}
       {select?.rect && select.rect.floor === floor && (
-        <MarqueeBand rect={select.rect} viewport={viewport} />
+        <MarqueeBand rect={select.rect} viewport={viewport} erase={eraseStroke} />
       )}
       <MapControls
         scale={viewport.scale}
@@ -396,16 +492,31 @@ export function MapStage({
       <div className="map-panel-pill pointer-events-none absolute bottom-3 right-3 z-20 px-3 py-1.5">
         <ScaleIndicator pxPerCell={BASE_CELL * viewport.scale} cellSizeM={layout.cellSizeM} />
       </div>
-      {gesturesEnabled && (
-        <div
-          aria-hidden="true"
-          className={`map-panel-pill pointer-events-none absolute right-3 top-3 z-20 px-3 py-1.5 text-[11px] font-medium text-stone-600 transition-opacity duration-300 motion-reduce:duration-0 ${
-            hintPhase === 'shown' ? 'opacity-100' : 'opacity-0'
-          }`}
-        >
-          Drag to pan · Ctrl/⌘ + scroll to zoom
+      {/* The live count, on the map rather than only in the panel — during a sweep
+          the operator's eyes are here, not there. `aria-hidden` deliberately: it
+          changes on every painted cell and a live region would machine-gun a screen
+          reader. The accessible count is the panel's. Top-LEFT so it clears
+          MapControls (bottom-left) and the scale bar (bottom-right). */}
+      {sweeping && select && (
+        <div className="map-panel-pill pointer-events-none absolute left-3 top-3 z-20 px-3 py-1.5 text-[11px] font-medium" aria-hidden="true">
+          <span className="font-semibold tabular-nums text-nexgen-blue">{select.selectedCount}</span>
+          <span className="text-stone-600"> bin{select.selectedCount === 1 ? '' : 's'} selected</span>
         </div>
       )}
+      <div
+        aria-hidden="true"
+        className={`map-panel-pill pointer-events-none absolute right-3 top-3 z-20 px-3 py-1.5 text-[11px] font-medium text-stone-600 transition-opacity duration-300 motion-reduce:duration-0 ${
+          hintPhase === 'shown' ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        {sweeping
+          ? coarsePointer
+            ? 'Tap a bin to select · drag the floor to move · two fingers to zoom'
+            : 'Drag a bin to select · drag the floor to move · Alt to pan anywhere'
+          : coarsePointer
+            ? 'Drag to pan · pinch to zoom'
+            : 'Drag to pan · Ctrl/⌘ + scroll to zoom'}
+      </div>
     </div>
   )
 }
@@ -413,12 +524,15 @@ export function MapStage({
 interface MarqueeBandProps {
   rect: { floor: number; x0: number; y0: number; x1: number; y1: number }
   viewport: { scale: number; tx: number; ty: number }
+  /** A subtracting band reads red. There is no equivalent for the brush — the
+   *  toolbar toggle and the boxes vanishing under it are the feedback there. */
+  erase?: boolean
 }
 
 /** The rubber band, drawn from the normalised cell rect so it looks the same
  *  whichever direction the operator dragged. `pointer-events-none` because the
  *  container holds the pointer capture and the band must not intercept anything. */
-function MarqueeBand({ rect, viewport }: MarqueeBandProps) {
+function MarqueeBand({ rect, viewport, erase = false }: MarqueeBandProps) {
   const px = BASE_CELL * viewport.scale
   const x0 = Math.min(rect.x0, rect.x1)
   const y0 = Math.min(rect.y0, rect.y1)
@@ -428,7 +542,9 @@ function MarqueeBand({ rect, viewport }: MarqueeBandProps) {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute z-30 rounded-[2px] border-2 border-dashed border-nexgen-blue bg-nexgen-blue/10"
+      className={`pointer-events-none absolute z-30 rounded-[2px] border-2 border-dashed ${
+        erase ? 'border-rose-500 bg-rose-500/10' : 'border-nexgen-blue bg-nexgen-blue/10'
+      }`}
       style={{
         left: viewport.tx + x0 * px,
         top: viewport.ty + y0 * px,

@@ -79,6 +79,10 @@ const EMPTY_STOPS: PickRouteStop[] = []
  *  Same class of mistake as the per-row <select> in the replenishment grid. */
 const NOOP = () => {}
 
+/** An abandoned band resolves to nothing. Module-level for the same identity reason
+ *  as everything above it. */
+const NO_UNITS = () => []
+
 export interface RackedWorkspaceProps {
   warehouseId: number
   layoutId: number
@@ -664,15 +668,14 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           : ''}
       </div>
 
-      {/* Painting is a pointer-drag on a pan/zoom surface, which has no honest
-          one-finger equivalent — MapStage disables gestures below md anyway, so
-          the entry point is desktop-only rather than ambiguous on a phone. */}
       {guards.showModeButtons && (
-        <div className="hidden md:flex md:justify-end md:gap-2">
-          {/* A sweep is a pointer-drag on a pan/zoom surface, so desktop-only on
-              the same terms as annotate. Its own button rather than a third
-              annotate layer: annotating puts words on the floor, this rewrites
-              the barcode payload of every bin in the band. */}
+        <div className="flex flex-wrap justify-end gap-2">
+          {/* A sweep works on a phone now. What made that possible is the hit test:
+              a drag that starts on a bin selects, a drag that starts on open floor
+              moves the map, and two fingers always zoom — so one finger is never
+              ambiguous and no modifier is required. Its own button rather than a
+              third annotate layer: annotating puts words on the floor, this
+              rewrites the barcode payload of every bin in the band. */}
           <button
             type="button"
             onClick={() => {
@@ -702,11 +705,17 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           {/* One entry point for both annotation layers (mig 00097). A third
               header button would imply areas and signs are different errands;
               they are the same errand with different consequences, and the
-              toolbar's Areas | Signs toggle is where that distinction belongs. */}
+              toolbar's Areas | Signs toggle is where that distinction belongs.
+              
+              Still desktop-only, and NOT an oversight left behind by the sweep
+              going mobile. An area is painted ON open floor — that is what an area
+              is — so the hit test that makes one finger unambiguous for a sweep has
+              nothing to test here, and annotate has no honest one-finger form.
+              mapGesture rule 5 is the same statement in code. */}
           <button
             type="button"
             onClick={beginPaint}
-            className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
+            className="hidden rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50 md:inline-flex"
           >
             Annotate
           </button>
@@ -794,9 +803,14 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
             rect: recode.state.rect,
             cells: selectionCells,
             ghosts: ghostTextById,
+            selectedCount: recode.state.selected.size,
+            // The hit test behind "drag over storage paints, drag over open floor
+            // moves the map". Same selector the brush resolves with, so the two can
+            // never disagree about what counts as storage.
+            hasUnitsAt: (f, x, y) => resolveCell(f, x, y).length > 0,
             onStrokeStart: () => recode.dispatch({ type: 'stroke_start' }),
-            onSelectCell: (f, x, y) =>
-              recode.dispatch({ type: 'select_cell', floor: f, x, y, resolve: resolveCell }),
+            onSelectCell: (f, x, y, erase) =>
+              recode.dispatch({ type: 'select_cell', floor: f, x, y, erase, resolve: resolveCell }),
             onDragStart: (f, x, y, additive) =>
               recode.dispatch({ type: 'drag_start', floor: f, x, y, additive }),
             onDragMove: (x, y) => recode.dispatch({ type: 'drag_move', x, y }),
@@ -804,7 +818,12 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
             // `drag_end`. Passing `resolveRect(recode.state.rect)` here reads a rect
             // that a fast drag has not re-rendered yet, and the band selects
             // nothing. Found in a real browser; no test reproduced it.
-            onDragEnd: () => recode.dispatch({ type: 'drag_end', resolve: resolveRect }),
+            onDragEnd: (erase) => recode.dispatch({ type: 'drag_end', erase, resolve: resolveRect }),
+            // An abandoned band applies nothing. NO_UNITS rather than a new action:
+            // a resolver returning [] leaves no undo frame either, which is exactly
+            // right for a gesture that was interrupted rather than made.
+            onDragCancel: () => recode.dispatch({ type: 'drag_end', resolve: NO_UNITS }),
+            onUndo: () => recode.dispatch({ type: 'undo' }),
           }}
         />
       </div>

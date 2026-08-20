@@ -72,6 +72,35 @@ export function panBy(vp: Viewport, dx: number, dy: number): Viewport {
   }
 }
 
+/** One frame of a two-finger gesture, in container-local pixels. */
+export interface PinchStep {
+  /** Where the pinch has stretched to, as an absolute scale — derived from the
+   *  distance ratio against the scale the gesture STARTED at, never accumulated
+   *  frame to frame, so a pinch out and back returns to exactly where it began. */
+  targetScale: number
+  /** The two fingers' midpoint now. */
+  midX: number
+  midY: number
+  /** How far that midpoint itself moved since the last frame. */
+  dMidX: number
+  dMidY: number
+}
+
+/**
+ * Zoom to `targetScale` anchored at the fingers' midpoint, then follow the midpoint
+ * — so a pinch that also slides pans while it zooms, which is what a hand actually
+ * does.
+ *
+ * ORDER MATTERS. `zoomAtPoint` returns the viewport UNCHANGED once the scale has
+ * clamped, so panning after it is what keeps a two-finger drag alive at MIN_SCALE
+ * and MAX_SCALE. Doing it the other way round would work too, but this way the pan
+ * is never scaled by a zoom that did not happen.
+ */
+export function applyPinch(vp: Viewport, step: PinchStep): Viewport {
+  const zoomed = zoomAtPoint(vp, step.targetScale, step.midX, step.midY)
+  return panBy(zoomed, step.dMidX, step.dMidY)
+}
+
 /**
  * Content bounds in PIXEL units (already multiplied by `cell`) for one floor,
  * across both storage placements and layout objects (walls/docks/etc). Returns
