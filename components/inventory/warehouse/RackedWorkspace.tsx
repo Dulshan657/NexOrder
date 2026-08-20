@@ -13,7 +13,7 @@
 // context — this component no longer needs one of its own.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { InventoryLocation, LayoutObject, LayoutPlacement } from '@/types'
+import type { InventoryLocation, LayoutObject, LayoutPlacement, PickRouteStop } from '@/types'
 import { useLayoutDetail, useLayouts } from '@/hooks/queries/useLayouts'
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
@@ -23,6 +23,7 @@ import { useWarehouseViewerModel } from './useWarehouseViewerModel'
 import { useWarehouseMapLayers } from './useWarehouseMapLayers'
 import { deriveMapMode, modeGuards } from './mapMode'
 import { MapStage } from './MapStage'
+import type { SelectionCell } from './MapSelectionLayer'
 import { FloatingPanel } from './FloatingPanel'
 import { WarehouseTreePanel } from './WarehouseTreePanel'
 import { BinDetailPanel } from './BinDetailPanel'
@@ -64,6 +65,12 @@ const EMPTY_OBJECTS: LayoutObject[] = []
 const EMPTY_PLACEMENTS: LayoutPlacement[] = []
 const EMPTY_GHOSTS: GhostLabel[] = []
 const EMPTY_STRINGS: string[] = []
+/** EMPTY_STOPS is the same rule reaching one line further than anyone noticed.
+ *  `routeStops` fed `renderMarkers`, whose useCallback comment below calls itself
+ *  LOAD-BEARING — and an inline `: []` fallback defeated it on every site with no
+ *  active pick route, which is every site nearly all of the time. So the scene memo
+ *  was being busted on every painted cell regardless of the guards around it. */
+const EMPTY_STOPS: PickRouteStop[] = []
 
 /** Module-level so its identity is stable. An inline `() => {}` here re-mints on
  *  every render, which busts MapStage's `guardedSelectBin` useCallback and through
@@ -71,6 +78,10 @@ const EMPTY_STRINGS: string[] = []
  *  marquee drag, which froze the tab hard enough that Chrome could not be scripted.
  *  Same class of mistake as the per-row <select> in the replenishment grid. */
 const NOOP = () => {}
+
+/** An abandoned band resolves to nothing. Module-level for the same identity reason
+ *  as everything above it. */
+const NO_UNITS = () => []
 
 export interface RackedWorkspaceProps {
   warehouseId: number
@@ -146,6 +157,11 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const recode = useRecodeSelection()
   const [recodePreview, setRecodePreview] = useState<RecodePreview | null>(null)
   const [previewingRecode, setPreviewingRecode] = useState(false)
+  /** Why the dry run failed, kept as STATE rather than only a toast. A toast is gone
+   *  in four seconds and the step it explains is still on screen. */
+  const [recodePreviewError, setRecodePreviewError] = useState<string | null>(null)
+  /** Bumped to re-run the preview effect on the same inputs, for `Try again`. */
+  const [recodePreviewNonce, setRecodePreviewNonce] = useState(0)
   const [ackPrinted, setAckPrinted] = useState(false)
   const [printingRecodedLabels, setPrintingRecodedLabels] = useState(false)
   const [recodedIds, setRecodedIds] = useState<number[]>([])
@@ -184,7 +200,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const [putawayResult, setPutawayResult] = useState<PutawayResponse | null>(null)
   const [routeOrderIds, setRouteOrderIds] = useState<string[]>([])
   const routeQuery = usePickRoute(warehouseId, routeOrderIds)
-  const routeStops = routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : []
+  const routeStops = routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : EMPTY_STOPS
 
   const placements = detail?.placements ?? EMPTY_PLACEMENTS
   const placementByLocation = useMemo(() => {
@@ -282,6 +298,14 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     [recodePlan, recodeUnits, unitPlacements, recodeTemplate, warehouseCode, recode.state.block],
   )
 
+  /** Ghost codes by unit, for the overlay's TEXT only. The boxes come from
+   *  `selectionCells` and must keep drawing when this is empty. */
+  const ghostTextById = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const g of recodeGhosts) m.set(g.locationId, g.text)
+    return m
+  }, [recodeGhosts])
+
   /** The first few codes, as the operator will actually get them. */
   const recodeSamples = useMemo(
     () => (recodePlan?.allCodes ?? []).slice(0, 3),
@@ -335,18 +359,31 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     unitsAtCell(placements, model.locationsById, f, x, y)
   const resolveRect = (r: MarqueeRect) => unitsInRect(placements, model.locationsById, r)
 
-  /** What the canvas lights up: the selected units, plus every level of a levelled
-   *  rack — the rack itself draws nothing, its shelves do. */
-  const recodeHighlight = useMemo(() => {
-    if (!recode.state.active) return undefined
-    const set = new Set<number>()
+  /**
+   * What the SELECTION OVERLAY draws — one box per selected unit, straight off the
+   * selection.
+   *
+   * This used to be a `highlightedLocationIds` Set handed to WarehouseCanvas, which
+   * meant the picture of what you had selected was a scene-memo dependency: 945 bins
+   * re-rendered on every painted cell, the exact failure MapSelectionLayer exists to
+   * prevent, arriving through a door its own header did not name. It was also a
+   * DUPLICATE — the overlay has drawn a filled box per selected unit since it
+   * shipped — so all the canvas copy ever bought was a stroke-colour swap.
+   *
+   * Deriving it here is free of the plan on purpose (see MapSelectionLayer's header)
+   * and needs no rack→levels expansion: a levelled rack draws nothing in the canvas,
+   * which is why the old Set had to fan out to its shelves, but an overlay box is
+   * ours to place and a rack is ONE unit to a sweep.
+   */
+  const selectionCells = useMemo(() => {
+    const out: SelectionCell[] = []
+    if (!recode.state.active) return out
     for (const id of recode.state.selected) {
-      const levels = levelIdsByRack.get(id)
-      if (levels?.length) for (const l of levels) set.add(l)
-      else set.add(id)
+      const p = unitPlacements.get(id)
+      if (p) out.push({ locationId: id, floor: p.floor ?? 0, x: p.x, y: p.y, w: p.w ?? 1, h: p.h ?? 1 })
     }
-    return set
-  }, [recode.state.active, recode.state.selected, levelIdsByRack])
+    return out
+  }, [recode.state.active, recode.state.selected, unitPlacements])
 
 
   /**
@@ -362,6 +399,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     if (recodeUnits.length === 0 || !recode.state.block.trim()) return
     let cancelled = false
     setPreviewingRecode(true)
+    setRecodePreviewError(null)
     previewRecode({
       warehouseId,
       units: recodeUnits.map((u) => ({ locationId: u.id, expectedCode: u.code })),
@@ -380,7 +418,9 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
       .catch((err) => {
         if (cancelled) return
         setRecodePreview(null)
-        addToast(err instanceof Error ? err.message : 'Could not check the new codes', 'error')
+        const message = err instanceof Error ? err.message : 'Could not check the new codes'
+        setRecodePreviewError(message)
+        addToast(message, 'error')
       })
       .finally(() => { if (!cancelled) setPreviewingRecode(false) })
     return () => { cancelled = true }
@@ -390,7 +430,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   }, [
     recode.state.active, recode.state.step, recode.state.selected, recode.state.block,
     recode.state.startAt, recode.state.template, recode.state.order, recode.state.origin,
-    recode.state.renumberBlock, warehouseId,
+    recode.state.renumberBlock, warehouseId, recodePreviewNonce,
   ])
 
   /** A fresh preview must never inherit the previous one's acknowledgement — the
@@ -628,15 +668,14 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           : ''}
       </div>
 
-      {/* Painting is a pointer-drag on a pan/zoom surface, which has no honest
-          one-finger equivalent — MapStage disables gestures below md anyway, so
-          the entry point is desktop-only rather than ambiguous on a phone. */}
       {guards.showModeButtons && (
-        <div className="hidden md:flex md:justify-end md:gap-2">
-          {/* A sweep is a pointer-drag on a pan/zoom surface, so desktop-only on
-              the same terms as annotate. Its own button rather than a third
-              annotate layer: annotating puts words on the floor, this rewrites
-              the barcode payload of every bin in the band. */}
+        <div className="flex flex-wrap justify-end gap-2">
+          {/* A sweep works on a phone now. What made that possible is the hit test:
+              a drag that starts on a bin selects, a drag that starts on open floor
+              moves the map, and two fingers always zoom — so one finger is never
+              ambiguous and no modifier is required. Its own button rather than a
+              third annotate layer: annotating puts words on the floor, this
+              rewrites the barcode payload of every bin in the band. */}
           <button
             type="button"
             onClick={() => {
@@ -666,11 +705,17 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           {/* One entry point for both annotation layers (mig 00097). A third
               header button would imply areas and signs are different errands;
               they are the same errand with different consequences, and the
-              toolbar's Areas | Signs toggle is where that distinction belongs. */}
+              toolbar's Areas | Signs toggle is where that distinction belongs.
+              
+              Still desktop-only, and NOT an oversight left behind by the sweep
+              going mobile. An area is painted ON open floor — that is what an area
+              is — so the hit test that makes one finger unambiguous for a sweep has
+              nothing to test here, and annotate has no honest one-finger form.
+              mapGesture rule 5 is the same statement in code. */}
           <button
             type="button"
             onClick={beginPaint}
-            className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
+            className="hidden rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50 md:inline-flex"
           >
             Annotate
           </button>
@@ -709,7 +754,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           stay live and paintable while the operator works through the steps, which
           is the whole reason for stepping rather than modalling. It also means this
           never trips `npm run check:overlays`. */}
-      <div className={recode.state.active ? 'grid gap-3 lg:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
+      <div className={recode.state.active ? 'grid gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem]' : ''}>
       <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65vh] md:min-h-[420px]">
         <MapStage
           layout={detail.layout}
@@ -720,7 +765,10 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           selectedLocationId={selectedLocationId}
           // While sweeping, the highlight IS the selection — the existing
           // descendants-of-a-selected-zone meaning has no role in that mode.
-          highlightedLocationIds={recode.state.active ? recodeHighlight : highlightedLocationIds}
+          /* `undefined` is a constant, so during a whole sweep this dep never moves
+             and the scene memo survives the stroke. The selection is drawn by
+             MapSelectionLayer instead; see `selectionCells` above. */
+          highlightedLocationIds={recode.state.active ? undefined : highlightedLocationIds}
           // A sweep's band must not double as a bin click, and MapStage's eager
           // capture already routes the click to the container — this is the
           // belt-and-braces half, and it also keeps Bin detail from scrolling
@@ -753,10 +801,16 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
             active: recode.state.active,
             tool: recode.state.tool,
             rect: recode.state.rect,
-            ghosts: recodeGhosts,
+            cells: selectionCells,
+            ghosts: ghostTextById,
+            selectedCount: recode.state.selected.size,
+            // The hit test behind "drag over storage paints, drag over open floor
+            // moves the map". Same selector the brush resolves with, so the two can
+            // never disagree about what counts as storage.
+            hasUnitsAt: (f, x, y) => resolveCell(f, x, y).length > 0,
             onStrokeStart: () => recode.dispatch({ type: 'stroke_start' }),
-            onSelectCell: (f, x, y) =>
-              recode.dispatch({ type: 'select_cell', floor: f, x, y, resolve: resolveCell }),
+            onSelectCell: (f, x, y, erase) =>
+              recode.dispatch({ type: 'select_cell', floor: f, x, y, erase, resolve: resolveCell }),
             onDragStart: (f, x, y, additive) =>
               recode.dispatch({ type: 'drag_start', floor: f, x, y, additive }),
             onDragMove: (x, y) => recode.dispatch({ type: 'drag_move', x, y }),
@@ -764,7 +818,12 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
             // `drag_end`. Passing `resolveRect(recode.state.rect)` here reads a rect
             // that a fast drag has not re-rendered yet, and the band selects
             // nothing. Found in a real browser; no test reproduced it.
-            onDragEnd: () => recode.dispatch({ type: 'drag_end', resolve: resolveRect }),
+            onDragEnd: (erase) => recode.dispatch({ type: 'drag_end', erase, resolve: resolveRect }),
+            // An abandoned band applies nothing. NO_UNITS rather than a new action:
+            // a resolver returning [] leaves no undo frame either, which is exactly
+            // right for a gesture that was interrupted rather than made.
+            onDragCancel: () => recode.dispatch({ type: 'drag_end', resolve: NO_UNITS }),
+            onUndo: () => recode.dispatch({ type: 'undo' }),
           }}
         />
       </div>
@@ -786,6 +845,8 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           levelCodes={recodeLevelCodes}
           preview={recodePreview}
           previewing={previewingRecode}
+          previewError={recodePreviewError}
+          onRetryPreview={() => setRecodePreviewNonce((n) => n + 1)}
           applying={recodeMutation.isPending}
           reverting={revertMutation.isPending}
           applied={recodeApplied}
@@ -924,11 +985,22 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
         />
       )}
 
-      <div className="glass-card rounded-xl p-3">
+      {/* Hidden below `lg` while sweeping, and the reason is structural rather than
+          taste: the panel is `sticky bottom-0` down there, and sticky un-pins the
+          moment its container scrolls past — so anything below the map would carry
+          the operator away from the footer holding Apply. Nothing is lost: mapMode
+          already sets `canSelectBin: false` for the whole sweep, so Bin detail is
+          inert, and the overlay is pinned to `unswept` until the sweep ends. Desktop
+          is untouched. */}
+      <div className={`glass-card rounded-xl p-3 ${recode.state.active ? 'hidden lg:block' : ''}`}>
         <OverlayControls overlay={overlay} onChange={setOverlay} extraEntries={legendExtras} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)]">
+      <div
+        className={`gap-4 lg:grid lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)] ${
+          recode.state.active ? 'hidden lg:grid' : 'grid'
+        }`}
+      >
         <FloatingPanel id="wh-tree" title="Locations" className="max-h-[70vh]">
           <WarehouseTreePanel
             tree={model.tree}

@@ -4,22 +4,32 @@
 // event listeners, and the click-suppression flag a caller needs to stop a pan
 // from also selecting a bin.
 //
-// Gestures (wheel/drag/keyboard) are disabled below the `md` breakpoint so
-// mobile falls back to a static, fitted view with tap-to-select — see
-// `gesturesEnabled`.
+// Gestures used to be disabled below the `md` breakpoint, leaving phones a static
+// fitted view. They are unconditional now: a warehouse operator standing at a rack
+// has a phone, not a laptop, and the code sweep they need is on this map. What
+// replaced the breakpoint is `coarsePointer` — which is about what the INPUT is
+// (cursor affordances, hint wording), never about what the map is allowed to do.
+//
+// Two fingers pinch and pan. That is real multi-touch rather than a wheel event in
+// disguise: `pointersRef` tracks every pointer down on the stage — including ones a
+// paint or brush stroke owns — because otherwise a pinch starting under a live
+// stroke has only one finger to measure. MapStage calls `track` unconditionally in
+// all four pointer handlers for exactly that reason, and a source test pins it.
 
 import { useCallback, useEffect, useRef, useState, type RefObject, type PointerEvent, type KeyboardEvent } from 'react'
 import type { LayoutPlacement, LayoutObject } from '@/types'
 import { BASE_CELL } from '@/components/admin/layout/layoutPalette'
 import {
   type Viewport,
+  applyPinch,
   contentBounds,
   fitToBounds,
   panBy,
   zoomByFactor,
 } from './mapViewport'
 
-const GESTURE_MEDIA_QUERY = '(min-width: 768px)'
+/** Affordances only — never a capability gate. See the header. */
+const COARSE_POINTER_QUERY = '(pointer: coarse)'
 const DRAG_THRESHOLD_PX = 4
 const PAN_STEP_PX = 48
 const WHEEL_ZOOM_FACTOR = 1.1
@@ -35,6 +45,23 @@ interface PanState {
   /** Whether setPointerCapture was actually taken for this pointer session —
    *  only true once the drag threshold is crossed (see onPointerMove). */
   captured: boolean
+}
+
+interface PinchState {
+  a: number
+  b: number
+  /** Captured once at the start, so the gesture is reversible to the exact scale it
+   *  began at rather than accumulating float drift over a hundred frames. */
+  startDist: number
+  startScale: number
+  lastMidX: number
+  lastMidY: number
+}
+
+interface TrackedPointer {
+  x: number
+  y: number
+  type: string
 }
 
 export interface UseMapViewportArgs {
@@ -62,30 +89,48 @@ export interface UseMapViewportResult {
   /** True if the pointer session in progress (or just ended) moved past the
    *  drag threshold — callers use this to suppress a bin click after a pan. */
   didDrag: () => boolean
-  /** False below the `md` breakpoint — mobile gets a static fitted view. */
-  gesturesEnabled: boolean
+  /** True for touch and pen. Decides cursor affordances and hint wording ONLY —
+   *  every gesture is available regardless. */
+  coarsePointer: boolean
+  /**
+   * Record a pointer and return how many are now down.
+   *
+   * MUST be called at the top of all four pointer handlers, unconditionally,
+   * INCLUDING the ones where a paint or brush stroke returns before reaching
+   * `handlers`. A pinch that starts under a live stroke otherwise has only one
+   * finger to measure against. Pinned by __tests__/mapPointerContract.test.ts.
+   */
+  track: (e: PointerEvent<HTMLElement>) => number
+  /** Begin a two-finger gesture, abandoning any pan in flight. */
+  startPinch: (e: PointerEvent<HTMLElement>) => void
 }
 
-function matchesGestureBreakpoint(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return true
-  return window.matchMedia(GESTURE_MEDIA_QUERY).matches
+function matchesCoarsePointer(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+  return window.matchMedia(COARSE_POINTER_QUERY).matches
 }
 
 export function useMapViewport({ placements, objects, floor }: UseMapViewportArgs): UseMapViewportResult {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState<Viewport>({ scale: 1, tx: 0, ty: 0 })
   const [isPanning, setIsPanning] = useState(false)
-  const [gesturesEnabled, setGesturesEnabled] = useState<boolean>(matchesGestureBreakpoint)
+  const [coarsePointer, setCoarsePointer] = useState<boolean>(matchesCoarsePointer)
 
   const panStateRef = useRef<PanState | null>(null)
   const movedRef = useRef(false)
   const hasSizedRef = useRef(false)
+  const pointersRef = useRef(new Map<number, TrackedPointer>())
+  const pinchRef = useRef<PinchState | null>(null)
+  /** The latest viewport, for handlers that must read rather than update it. One
+   *  frame of staleness cannot matter: a pinch begins on a pointer event. */
+  const viewportRef = useRef(viewport)
+  useEffect(() => { viewportRef.current = viewport }, [viewport])
 
-  // ── Media query: disable all gestures below md ──────────────────────────
+  // ── Media query: input affordances, NOT a capability gate ───────────────
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const mq = window.matchMedia(GESTURE_MEDIA_QUERY)
-    const onChange = () => setGesturesEnabled(mq.matches)
+    const mq = window.matchMedia(COARSE_POINTER_QUERY)
+    const onChange = () => setCoarsePointer(mq.matches)
     onChange()
     mq.addEventListener('change', onChange)
     return () => mq.removeEventListener('change', onChange)
@@ -131,7 +176,7 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
   // ── Wheel = zoom (non-passive; React's onWheel can't preventDefault) ────
   useEffect(() => {
     const el = containerRef.current
-    if (!el || !gesturesEnabled) return
+    if (!el) return
     const onWheel = (e: WheelEvent) => {
       // Require Ctrl/⌘ so plain scroll always passes through to the page (the
       // map no longer traps the wheel just because the cursor is over it).
@@ -147,15 +192,55 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [gesturesEnabled])
+  }, [])
 
   // ── Drag to pan (Pointer Events) ─────────────────────────────────────────
   // Capture is taken lazily (see onPointerMove) rather than here: capturing on
   // every pointerdown routes the trailing `click` to the container instead of
   // the element under the cursor (Pointer Events spec), so a bin's onClick
   // never fired. A clean click now never captures at all.
+  /** See the contract on UseMapViewportResult.track. */
+  const track = useCallback((e: PointerEvent<HTMLElement>): number => {
+    const m = pointersRef.current
+    if (e.type === 'pointerdown') {
+      m.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType })
+    } else if (e.type === 'pointermove') {
+      const p = m.get(e.pointerId)
+      if (p) { p.x = e.clientX; p.y = e.clientY }
+    } else {
+      m.delete(e.pointerId)
+    }
+    return m.size
+  }, [])
+
+  const startPinch = useCallback((e: PointerEvent<HTMLElement>) => {
+    const touches = [...pointersRef.current.entries()].filter(([, p]) => p.type !== 'mouse')
+    if (touches.length < 2) return
+    const el = containerRef.current
+    if (!el) return
+    // The two most recent, so a third finger resting on the screen does not
+    // silently anchor the gesture somewhere the operator is not pinching.
+    const [[aId, a], [bId, b]] = touches.slice(-2)
+    const rect = el.getBoundingClientRect()
+    // Two fingers are never a pan, so a one-finger pan in flight loses outright.
+    panStateRef.current = null
+    // And whatever a two-finger gesture does next, it must never end in a bin click.
+    movedRef.current = true
+    e.currentTarget.setPointerCapture(e.pointerId)
+    pinchRef.current = {
+      a: aId,
+      b: bId,
+      // Two fingers at one point would otherwise divide by zero — the same
+      // defensive posture mapViewport takes for zero-area bounds.
+      startDist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+      startScale: viewportRef.current.scale,
+      lastMidX: (a.x + b.x) / 2 - rect.left,
+      lastMidY: (a.y + b.y) / 2 - rect.top,
+    }
+    setIsPanning(true)
+  }, [])
+
   const onPointerDown = useCallback((e: PointerEvent<HTMLElement>) => {
-    if (!gesturesEnabled) return
     if (e.pointerType === 'mouse' && e.button !== 0) return
     panStateRef.current = {
       pointerId: e.pointerId,
@@ -167,9 +252,33 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
     }
     movedRef.current = false
     setIsPanning(true)
-  }, [gesturesEnabled])
+  }, [])
 
   const onPointerMove = useCallback((e: PointerEvent<HTMLElement>) => {
+    const pinch = pinchRef.current
+    if (pinch) {
+      if (e.pointerId !== pinch.a && e.pointerId !== pinch.b) return
+      // Both fingers are read from pointersRef, which `track` has already updated
+      // for this event — that is what the tracking contract buys.
+      const a = pointersRef.current.get(pinch.a)
+      const b = pointersRef.current.get(pinch.b)
+      const el = containerRef.current
+      if (!a || !b || !el) return
+      const rect = el.getBoundingClientRect()
+      const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))
+      const midX = (a.x + b.x) / 2 - rect.left
+      const midY = (a.y + b.y) / 2 - rect.top
+      setViewport((vp) => applyPinch(vp, {
+        targetScale: pinch.startScale * (dist / pinch.startDist),
+        midX,
+        midY,
+        dMidX: midX - pinch.lastMidX,
+        dMidY: midY - pinch.lastMidY,
+      }))
+      pinch.lastMidX = midX
+      pinch.lastMidY = midY
+      return
+    }
     const pan = panStateRef.current
     if (!pan || pan.pointerId !== e.pointerId) return
     const dx = e.clientX - pan.lastX
@@ -188,6 +297,29 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
   }, [])
 
   const endPan = useCallback((e: PointerEvent<HTMLElement>) => {
+    const pinch = pinchRef.current
+    if (pinch && (e.pointerId === pinch.a || e.pointerId === pinch.b)) {
+      pinchRef.current = null
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      }
+      const rest = [...pointersRef.current.entries()]
+        .filter(([id, p]) => id !== e.pointerId && p.type !== 'mouse')
+      if (rest.length === 1) {
+        // Lifting one finger must not freeze the map until the other lifts too. The
+        // survivor always becomes a PAN, never the brush it may have started as:
+        // resuming a stroke from a finger that spent the last second pinching would
+        // paint a line the operator never drew.
+        const [id, p] = rest[0]
+        panStateRef.current = {
+          pointerId: id, lastX: p.x, lastY: p.y, startX: p.x, startY: p.y, captured: false,
+        }
+        movedRef.current = true
+        return
+      }
+      setIsPanning(false)
+      return
+    }
     const pan = panStateRef.current
     if (pan && pan.pointerId === e.pointerId) {
       if (pan.captured && e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -212,7 +344,6 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
   const zoomOut = useCallback(() => zoomAtCenter(1 / BUTTON_ZOOM_FACTOR), [zoomAtCenter])
 
   const onKeyDown = useCallback((e: KeyboardEvent<HTMLElement>) => {
-    if (!gesturesEnabled) return
     switch (e.key) {
       case 'ArrowUp':
         e.preventDefault()
@@ -246,7 +377,7 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
       default:
         break
     }
-  }, [gesturesEnabled, zoomIn, zoomOut, fit])
+  }, [zoomIn, zoomOut, fit])
 
   return {
     viewport,
@@ -263,6 +394,8 @@ export function useMapViewport({ placements, objects, floor }: UseMapViewportArg
     zoomOut,
     isPanning,
     didDrag,
-    gesturesEnabled,
+    coarsePointer,
+    track,
+    startPinch,
   }
 }

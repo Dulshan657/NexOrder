@@ -8,8 +8,14 @@
 //     these bins is one button away instead.
 //  2. THE ORIGIN CORNER WAS THE OTHER ONE. That is only obvious once the codes are
 //     on screen, which is after Apply. Reverting puts every code back.
+//
+// The four actions used to be four identical grey outlines, which buried the one the
+// amber card had just told the operator to press. They are ranked now: Print is
+// primary and lives inside the card that argues for it, Revert is a ghost because it
+// is the rare correction rather than the expected next step.
 
 import { CheckCircle2, Printer, Undo2, Repeat } from 'lucide-react'
+import { Button, Callout } from '@/components/ui'
 
 export interface RecodeSuccessPanelProps {
   recoded: number
@@ -30,59 +36,68 @@ export function RecodeSuccessPanel({
   onPrintLabels, onRevert, onSweepAnother, onDone,
 }: RecodeSuccessPanelProps) {
   return (
-    <div className="flex flex-col gap-3">
-      <p className="flex items-start gap-2 text-sm text-stone-800">
-        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
-        <span>
-          <strong className="font-semibold">{recoded}</strong> bin{recoded === 1 ? '' : 's'} recoded
-          as <span className="font-mono">{block}</span>
-          {levels > 0 && <> · {levels} rack level{levels === 1 ? '' : 's'} followed</>}
+    <div className="flex flex-col gap-4">
+      {/* --po-i staggers this against the two blocks below it, reusing the PO Inbox
+          cascade rather than minting a third entrance keyframe. */}
+      <div
+        className="po-row-in flex flex-col items-center py-2 text-center"
+        style={{ '--po-i': 0 } as any}
+      >
+        <span className="po-pop-in flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 ring-1 ring-emerald-200">
+          <CheckCircle2 className="h-6 w-6 text-emerald-600" strokeWidth={2} aria-hidden="true" />
         </span>
-      </p>
+        <p className="mt-2.5 font-display text-2xl font-semibold leading-none tabular-nums text-stone-900">
+          {recoded}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-stone-500">
+          bin{recoded === 1 ? '' : 's'} recoded as{' '}
+          <span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-stone-700">
+            {block}
+          </span>
+          {levels > 0 && <> · {levels} rack level{levels === 1 ? '' : 's'} followed</>}
+        </p>
+      </div>
 
       {labelPrintedReset > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3">
-          <p className="text-[11px] text-amber-900">
-            <strong className="font-semibold">{labelPrintedReset} label{labelPrintedReset === 1 ? '' : 's'} are now out of date.</strong>{' '}
-            The stickers on those bays name codes that no longer exist.
-          </p>
-          <button
-            type="button"
-            onClick={onPrintLabels}
-            className="mt-2 flex items-center gap-1.5 rounded-lg bg-stone-900 px-2.5 py-1.5 text-[11px] font-medium text-white btn-press"
+        <div className="po-row-in" style={{ '--po-i': 1 } as any}>
+          <Callout
+            tone="warning"
+            title={`${labelPrintedReset} label${labelPrintedReset === 1 ? '' : 's'} are now out of date`}
+            action={
+              <Button size="sm" onClick={onPrintLabels} icon={<Printer className="h-3.5 w-3.5" strokeWidth={2} />}>
+                Print the new labels
+              </Button>
+            }
           >
-            <Printer className="h-3.5 w-3.5" strokeWidth={2} />
-            Print the new labels
-          </button>
+            The stickers on those bays name codes that no longer exist.
+          </Callout>
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1.5">
-        <button
-          type="button"
+      <div className="po-row-in flex flex-wrap items-center gap-2" style={{ '--po-i': 2 } as any}>
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={onSweepAnother}
-          className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
+          icon={<Repeat className="h-3.5 w-3.5" strokeWidth={2} />}
         >
-          <Repeat className="h-3.5 w-3.5" strokeWidth={2} /> Sweep another block
-        </button>
+          Sweep another block
+        </Button>
         {canRevert && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={onRevert}
             disabled={reverting}
-            className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50 disabled:opacity-40"
+            icon={<Undo2 className="h-3.5 w-3.5" strokeWidth={2} />}
+            className="text-stone-500"
           >
-            <Undo2 className="h-3.5 w-3.5" strokeWidth={2} />
             {reverting ? 'Reverting…' : 'Revert this sweep'}
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
-          onClick={onDone}
-          className="ml-auto rounded-lg px-2.5 py-1.5 text-xs font-medium text-stone-500 btn-press hover:text-stone-700"
-        >
+        <Button variant="ghost" size="sm" onClick={onDone} className="ml-auto">
           Done
-        </button>
+        </Button>
       </div>
     </div>
   )

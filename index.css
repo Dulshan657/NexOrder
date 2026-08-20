@@ -370,6 +370,83 @@ body {
   border-radius: 6px;
 }
 
+/* Code sweep: the selection drawn by MapSelectionLayer.
+   Deliberately NOT PLACEMENT_FILL.highlightStroke (#0ea5e9): that outline already
+   means "descendant of what you picked in the tree" everywhere else on this map,
+   and a sweep must not borrow a word that is taken.
+   Translucent on purpose — the operator has to keep seeing which bin is underneath
+   in order to aim the next stroke. The inset hairline is what keeps the ring
+   readable over the `unswept` overlay, which is armed for the whole sweep and lays
+   amber under half these boxes and mint under the rest. No mix-blend-mode: over
+   amber it goes muddy green. */
+.wh-sweep-cell {
+  border: 2px solid var(--color-nexgen-blue);
+  background: rgba(41, 136, 222, .22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .85);
+}
+/* Fires only on cells React has not drawn before — MapSelectionLayer keys each box
+   by locationId, so re-painting a bin you already own animates nothing. That is the
+   accumulate-never-replace contract made visible for 140ms. */
+@keyframes wh-sweep-in {
+  from { opacity: .25; transform: scale(.86); }
+  to   { opacity: 1; transform: none; }
+}
+.wh-sweep-in {
+  animation: wh-sweep-in .14s cubic-bezier(.16,1,.3,1) both;
+}
+
+/* Recode panel motion. Namespaced `.rc-*`, and deliberately restrained: this is an
+   operator tool used one-handed beside a rack, so the only things that move are the
+   panel arriving, the step changing, a progress fill, the signpost changing its
+   mind, and the mobile sheet collapsing. Every rule here is disabled in the
+   prefers-reduced-motion block below.
+
+   None of them needs a neutralizing rule down there — unlike .wh-route-leg and
+   .auth-proof-item, none sets a hidden or offset state OUTSIDE its keyframes, so
+   `animation: none` leaves the element at its natural full-opacity, untransformed
+   state, and `transition: none` just makes the two transitions instant. */
+@keyframes rc-panel-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.rc-panel-in {
+  animation: rc-panel-in .22s cubic-bezier(.16,1,.3,1) both;
+}
+
+/* The step changes. --rc-dir is 1 going forward and -1 going back, set inline by
+   RecodePanel — the same custom-property idiom as --po-i, so ONE keyframe covers
+   both directions instead of two near-identical classes. The body is keyed on the
+   step, so React remounts it and this replays. */
+@keyframes rc-step-in {
+  from { opacity: 0; transform: translateX(calc(var(--rc-dir, 1) * 10px)); }
+  to   { opacity: 1; transform: none; }
+}
+.rc-step-in {
+  animation: rc-step-in .18s cubic-bezier(.16,1,.3,1) both;
+}
+
+/* Progress fills — the step rail's connectors and the site hairline. A width
+   TRANSITION rather than a keyframe, because the target width is data. */
+.rc-rail-fill {
+  transition: width .35s cubic-bezier(.16,1,.3,1);
+}
+
+/* The Apply signpost changing its mind. */
+@keyframes rc-blocked-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+.rc-blocked-in {
+  animation: rc-blocked-in .16s cubic-bezier(.16,1,.3,1) both;
+}
+
+/* The mobile sheet collapsing. grid-template-rows 1fr -> 0fr is the only way to
+   animate to a content-derived height without measuring it in JS; the child needs
+   min-height:0 and overflow:hidden or it refuses to shrink. */
+.rc-sheet-collapsible {
+  transition: grid-template-rows .28s cubic-bezier(.16,1,.3,1);
+}
+
 /* Overlay primitives (components/ui). The backdrop fades in; centered modals reuse
    .po-modal-in; sheets slide up on mobile and in from the right on desktop. */
 @keyframes ui-backdrop-in {
@@ -427,6 +504,12 @@ body {
   .wh-route-leg,
   .wh-pulse,
   .wh-shimmer,
+  .wh-sweep-in,
+  .rc-panel-in,
+  .rc-step-in,
+  .rc-rail-fill,
+  .rc-blocked-in,
+  .rc-sheet-collapsible,
   .ui-backdrop-in,
   .ui-sheet-panel,
   .ui-sheet-panel--full {

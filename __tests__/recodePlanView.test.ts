@@ -11,6 +11,7 @@ import {
   sweepPrefix,
   ghostLabels,
   refusalRemedy,
+  stepSatisfaction,
   visibleControls,
 } from '@/components/inventory/warehouse/recode/recodePlanView'
 import { BUILTIN_PATTERN, WIZARD_DEFAULT_PATTERN, planRecode, type RecodeUnit } from '@/lib/codePattern'
@@ -178,5 +179,54 @@ describe('refusalRemedy', () => {
   it('always produces something to say, even for a bare charset refusal', () => {
     const r = refusalRemedy({ id: 1, from: 'A', to: 'a-b', kind: 'charset', detail: '' })
     expect(r.detail.length).toBeGreaterThan(0)
+  })
+})
+
+// The step rail's ticks.
+//
+// SATISFACTION, NOT VISITEDNESS. Every step here is reachable at any time — the rail
+// is four buttons, not a gate — so "have you been here" says nothing useful: an
+// operator who clicked straight to Review has visited it and answered nothing.
+describe('stepSatisfaction', () => {
+  const args = (over = {}) => ({
+    selectedCount: 3,
+    block: 'BULK',
+    template: '{wh}-{block}-{row}-{col}',
+    hasPreview: true,
+    refusedTotal: 0,
+    willRecode: 3,
+    ...over,
+  })
+
+  it('ticks every step for a sweep that is ready to apply', () => {
+    expect(stepSatisfaction(args())).toEqual({ 1: true, 2: true, 3: true, 4: true })
+  })
+
+  it('leaves Select unticked with nothing painted', () => {
+    expect(stepSatisfaction(args({ selectedCount: 0 }))[1]).toBe(false)
+  })
+
+  it('leaves Block unticked for a blank or unusable name', () => {
+    expect(stepSatisfaction(args({ block: '' }))[2]).toBe(false)
+    expect(stepSatisfaction(args({ block: '   ' }))[2]).toBe(false)
+  })
+
+  it('leaves Numbering unticked for a malformed pattern', () => {
+    expect(stepSatisfaction(args({ template: '{wh}-{nope}' }))[3]).toBe(false)
+  })
+
+  // The one that matters most: 1 to 3 can all be green while the sweep is not
+  // remotely ready, because only the server can answer step 4.
+  it('leaves Review unticked until the server has answered usefully', () => {
+    expect(stepSatisfaction(args({ hasPreview: false }))).toMatchObject({ 1: true, 2: true, 3: true, 4: false })
+    expect(stepSatisfaction(args({ refusedTotal: 2 }))[4]).toBe(false)
+    expect(stepSatisfaction(args({ willRecode: 0 }))[4]).toBe(false)
+  })
+
+  // Steps are independent: an empty selection must not drag the others down, or the
+  // rail would say nothing until everything was done at once.
+  it('scores each step on its own question', () => {
+    expect(stepSatisfaction(args({ selectedCount: 0, hasPreview: false })))
+      .toEqual({ 1: false, 2: true, 3: true, 4: false })
   })
 })
