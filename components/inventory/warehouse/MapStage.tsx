@@ -24,8 +24,7 @@ import { useMapViewport } from './useMapViewport'
 import { BASE_CELL } from '@/components/admin/layout/layoutPalette'
 import { ScaleIndicator } from '@/components/admin/layout/ScaleIndicator'
 import type { ZoneRegion } from './zoneRegions'
-import { MapSelectionLayer } from './MapSelectionLayer'
-import type { GhostLabel } from './recode/recodePlanView'
+import { MapSelectionLayer, type SelectionCell } from './MapSelectionLayer'
 
 const HINT_AUTO_DISMISS_MS = 4000
 
@@ -97,9 +96,13 @@ export interface MapStageProps {
     onDragEnd: () => void
     /** The band being dragged, in grid cells. Null between drags. */
     rect: { floor: number; x0: number; y0: number; x1: number; y1: number } | null
-    /** Proposed code per selected unit, drawn by MapSelectionLayer — a SIBLING of
-     *  the canvas, never a prop of it. See that file for why. */
-    ghosts: readonly GhostLabel[]
+    /** One box per selected unit, drawn by MapSelectionLayer — a SIBLING of the
+     *  canvas, never a prop of it. See that file for why. Derived from the
+     *  selection alone, so it survives a plan that cannot be computed. */
+    cells: readonly SelectionCell[]
+    /** locationId → its proposed code, for the overlay's text. May be empty while
+     *  the boxes above still draw. */
+    ghosts: ReadonlyMap<number, string>
   }
 }
 
@@ -370,7 +373,7 @@ export function MapStage({
       {/* The selection and its proposed codes. Same argument as the band below,
           only stronger: this changes on every painted cell. */}
       {sweeping && select && (
-        <MapSelectionLayer ghosts={select.ghosts} floor={floor} viewport={viewport} />
+        <MapSelectionLayer cells={select.cells} ghosts={select.ghosts} floor={floor} viewport={viewport} />
       )}
       {/* The rubber band. Plain HTML off the viewport transform, the same
           arithmetic BinHoverCard uses — deliberately NOT an SVG element in the

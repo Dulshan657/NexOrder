@@ -15,12 +15,34 @@
 // Consequence worth knowing: this draws ON TOP of the bins, including on top of a
 // rack's level spine. That is deliberate — while a sweep is running, what the bin
 // will be CALLED is the only thing the operator is there to read.
+//
+// ── Geometry is independent of the plan, and that is load-bearing ────────────
+//
+// The boxes used to ride on the ghost labels, which are EMPTY whenever `planRecode`
+// returns null — no block name typed yet, a refusal, anything. So "can you see what
+// you selected" silently depended on "could the codes be computed", and the answer
+// to the first question is never allowed to be no. `cells` now comes straight off the
+// selection; `ghosts` only supplies text for the cells that have any.
 
 import { BASE_CELL } from '@/components/admin/layout/layoutPalette'
-import type { GhostLabel } from './recode/recodePlanView'
+
+/** One selected unit's footprint. A levelled rack is ONE cell here, not one per
+ *  level: a rack is a single unit to a sweep, and lighting up four coincident level
+ *  rects to say so was a workaround for living inside the canvas. */
+export interface SelectionCell {
+  locationId: number
+  floor: number
+  x: number
+  y: number
+  w: number
+  h: number
+}
 
 export interface MapSelectionLayerProps {
-  ghosts: readonly GhostLabel[]
+  cells: readonly SelectionCell[]
+  /** locationId → the ghost code, already trimmed of the run's shared prefix.
+   *  Absent for a cell whose code could not be planned; the box still draws. */
+  ghosts: ReadonlyMap<number, string>
   floor: number
   viewport: { scale: number; tx: number; ty: number }
   /** Ghost text is hidden below this many pixels per cell — an unreadable smear of
@@ -32,6 +54,7 @@ export interface MapSelectionLayerProps {
 const DEFAULT_MIN_TEXT_PX = 26
 
 export function MapSelectionLayer({
+  cells,
   ghosts,
   floor,
   viewport,
@@ -39,26 +62,31 @@ export function MapSelectionLayer({
 }: MapSelectionLayerProps) {
   const px = BASE_CELL * viewport.scale
   const showText = px >= minTextPx
-  const onFloor = ghosts.filter((g) => g.floor === floor)
+  const onFloor = cells.filter((c) => c.floor === floor)
   if (onFloor.length === 0) return null
 
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {onFloor.map((g) => {
-        const w = g.w * px
-        const h = g.h * px
+      {onFloor.map((c) => {
+        const w = c.w * px
+        const h = c.h * px
+        const text = ghosts.get(c.locationId)
         return (
           <div
-            key={g.locationId}
-            className="absolute flex items-center justify-center rounded-[2px] border-2 border-nexgen-blue bg-nexgen-blue/15"
+            // Keyed by locationId so React reuses the node for a cell it has already
+            // drawn. That is what makes `wh-sweep-in` fire ONLY on newly selected
+            // units: paint over bins you already own and nothing moves, paint new
+            // ones and they pop. The union semantics, made visible, for one keyframe.
+            key={c.locationId}
+            className="wh-sweep-cell wh-sweep-in absolute flex items-center justify-center rounded-[2px]"
             style={{
-              left: viewport.tx + g.x * px,
-              top: viewport.ty + g.y * px,
+              left: viewport.tx + c.x * px,
+              top: viewport.ty + c.y * px,
               width: w,
               height: h,
             }}
           >
-            {showText && (
+            {showText && text && (
               <span
                 className="max-w-full truncate px-0.5 font-mono font-semibold leading-none text-nexgen-blue"
                 // Scaled to the cell rather than a fixed class, so the number stays
@@ -66,7 +94,7 @@ export function MapSelectionLayer({
                 // enormous cell does not render a billboard.
                 style={{ fontSize: Math.min(16, Math.max(8, Math.floor(Math.min(w, h) * 0.42))) }}
               >
-                {g.text}
+                {text}
               </span>
             )}
           </div>

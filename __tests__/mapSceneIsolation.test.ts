@@ -45,4 +45,25 @@ describe('RackedWorkspace keeps its scene-memo dependencies stable', () => {
     expect(src).toMatch(/const NOOP = \(\) => \{\}/)
     expect(src).not.toMatch(/onSelectBin=\{[^}]*\(\) => \{\}\}/)
   })
+
+  // The same rule reaching one line further than the assertions above covered.
+  // `routeStops` fell back to an inline `[]`, and it is the FIRST dependency of the
+  // renderMarkers useCallback asserted at the top of this file — so on any site with
+  // no active pick route, which is nearly always, that useCallback was defeated by
+  // its own dep and the scene memo was busted on every painted cell anyway. Both
+  // guards above were passing while the failure they describe was happening.
+  it('uses a module-level empty array for the route stops', () => {
+    expect(src).toMatch(/const EMPTY_STOPS: PickRouteStop\[\] = \[\]/)
+    expect(src).not.toMatch(/route\.stops\s*:\s*\[\]/)
+  })
+
+  // The sweep selection changes on every painted cell BY DEFINITION, so it must
+  // never be a canvas prop. It is drawn by MapSelectionLayer, a sibling. Passing
+  // `undefined` here is what keeps the dep constant for the whole sweep.
+  it('does not feed the sweep selection into the canvas highlight', () => {
+    expect(src).not.toMatch(/recodeHighlight/)
+    expect(src).toMatch(
+      /highlightedLocationIds=\{recode\.state\.active \? undefined : highlightedLocationIds\}/,
+    )
+  })
 })

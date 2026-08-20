@@ -13,7 +13,7 @@
 // context — this component no longer needs one of its own.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { InventoryLocation, LayoutObject, LayoutPlacement } from '@/types'
+import type { InventoryLocation, LayoutObject, LayoutPlacement, PickRouteStop } from '@/types'
 import { useLayoutDetail, useLayouts } from '@/hooks/queries/useLayouts'
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
@@ -23,6 +23,7 @@ import { useWarehouseViewerModel } from './useWarehouseViewerModel'
 import { useWarehouseMapLayers } from './useWarehouseMapLayers'
 import { deriveMapMode, modeGuards } from './mapMode'
 import { MapStage } from './MapStage'
+import type { SelectionCell } from './MapSelectionLayer'
 import { FloatingPanel } from './FloatingPanel'
 import { WarehouseTreePanel } from './WarehouseTreePanel'
 import { BinDetailPanel } from './BinDetailPanel'
@@ -64,6 +65,12 @@ const EMPTY_OBJECTS: LayoutObject[] = []
 const EMPTY_PLACEMENTS: LayoutPlacement[] = []
 const EMPTY_GHOSTS: GhostLabel[] = []
 const EMPTY_STRINGS: string[] = []
+/** EMPTY_STOPS is the same rule reaching one line further than anyone noticed.
+ *  `routeStops` fed `renderMarkers`, whose useCallback comment below calls itself
+ *  LOAD-BEARING — and an inline `: []` fallback defeated it on every site with no
+ *  active pick route, which is every site nearly all of the time. So the scene memo
+ *  was being busted on every painted cell regardless of the guards around it. */
+const EMPTY_STOPS: PickRouteStop[] = []
 
 /** Module-level so its identity is stable. An inline `() => {}` here re-mints on
  *  every render, which busts MapStage's `guardedSelectBin` useCallback and through
@@ -146,6 +153,11 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const recode = useRecodeSelection()
   const [recodePreview, setRecodePreview] = useState<RecodePreview | null>(null)
   const [previewingRecode, setPreviewingRecode] = useState(false)
+  /** Why the dry run failed, kept as STATE rather than only a toast. A toast is gone
+   *  in four seconds and the step it explains is still on screen. */
+  const [recodePreviewError, setRecodePreviewError] = useState<string | null>(null)
+  /** Bumped to re-run the preview effect on the same inputs, for `Try again`. */
+  const [recodePreviewNonce, setRecodePreviewNonce] = useState(0)
   const [ackPrinted, setAckPrinted] = useState(false)
   const [printingRecodedLabels, setPrintingRecodedLabels] = useState(false)
   const [recodedIds, setRecodedIds] = useState<number[]>([])
@@ -184,7 +196,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const [putawayResult, setPutawayResult] = useState<PutawayResponse | null>(null)
   const [routeOrderIds, setRouteOrderIds] = useState<string[]>([])
   const routeQuery = usePickRoute(warehouseId, routeOrderIds)
-  const routeStops = routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : []
+  const routeStops = routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : EMPTY_STOPS
 
   const placements = detail?.placements ?? EMPTY_PLACEMENTS
   const placementByLocation = useMemo(() => {
@@ -282,6 +294,14 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     [recodePlan, recodeUnits, unitPlacements, recodeTemplate, warehouseCode, recode.state.block],
   )
 
+  /** Ghost codes by unit, for the overlay's TEXT only. The boxes come from
+   *  `selectionCells` and must keep drawing when this is empty. */
+  const ghostTextById = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const g of recodeGhosts) m.set(g.locationId, g.text)
+    return m
+  }, [recodeGhosts])
+
   /** The first few codes, as the operator will actually get them. */
   const recodeSamples = useMemo(
     () => (recodePlan?.allCodes ?? []).slice(0, 3),
@@ -335,18 +355,31 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     unitsAtCell(placements, model.locationsById, f, x, y)
   const resolveRect = (r: MarqueeRect) => unitsInRect(placements, model.locationsById, r)
 
-  /** What the canvas lights up: the selected units, plus every level of a levelled
-   *  rack — the rack itself draws nothing, its shelves do. */
-  const recodeHighlight = useMemo(() => {
-    if (!recode.state.active) return undefined
-    const set = new Set<number>()
+  /**
+   * What the SELECTION OVERLAY draws — one box per selected unit, straight off the
+   * selection.
+   *
+   * This used to be a `highlightedLocationIds` Set handed to WarehouseCanvas, which
+   * meant the picture of what you had selected was a scene-memo dependency: 945 bins
+   * re-rendered on every painted cell, the exact failure MapSelectionLayer exists to
+   * prevent, arriving through a door its own header did not name. It was also a
+   * DUPLICATE — the overlay has drawn a filled box per selected unit since it
+   * shipped — so all the canvas copy ever bought was a stroke-colour swap.
+   *
+   * Deriving it here is free of the plan on purpose (see MapSelectionLayer's header)
+   * and needs no rack→levels expansion: a levelled rack draws nothing in the canvas,
+   * which is why the old Set had to fan out to its shelves, but an overlay box is
+   * ours to place and a rack is ONE unit to a sweep.
+   */
+  const selectionCells = useMemo(() => {
+    const out: SelectionCell[] = []
+    if (!recode.state.active) return out
     for (const id of recode.state.selected) {
-      const levels = levelIdsByRack.get(id)
-      if (levels?.length) for (const l of levels) set.add(l)
-      else set.add(id)
+      const p = unitPlacements.get(id)
+      if (p) out.push({ locationId: id, floor: p.floor ?? 0, x: p.x, y: p.y, w: p.w ?? 1, h: p.h ?? 1 })
     }
-    return set
-  }, [recode.state.active, recode.state.selected, levelIdsByRack])
+    return out
+  }, [recode.state.active, recode.state.selected, unitPlacements])
 
 
   /**
@@ -362,6 +395,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     if (recodeUnits.length === 0 || !recode.state.block.trim()) return
     let cancelled = false
     setPreviewingRecode(true)
+    setRecodePreviewError(null)
     previewRecode({
       warehouseId,
       units: recodeUnits.map((u) => ({ locationId: u.id, expectedCode: u.code })),
@@ -380,7 +414,9 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
       .catch((err) => {
         if (cancelled) return
         setRecodePreview(null)
-        addToast(err instanceof Error ? err.message : 'Could not check the new codes', 'error')
+        const message = err instanceof Error ? err.message : 'Could not check the new codes'
+        setRecodePreviewError(message)
+        addToast(message, 'error')
       })
       .finally(() => { if (!cancelled) setPreviewingRecode(false) })
     return () => { cancelled = true }
@@ -390,7 +426,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   }, [
     recode.state.active, recode.state.step, recode.state.selected, recode.state.block,
     recode.state.startAt, recode.state.template, recode.state.order, recode.state.origin,
-    recode.state.renumberBlock, warehouseId,
+    recode.state.renumberBlock, warehouseId, recodePreviewNonce,
   ])
 
   /** A fresh preview must never inherit the previous one's acknowledgement — the
@@ -720,7 +756,10 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           selectedLocationId={selectedLocationId}
           // While sweeping, the highlight IS the selection — the existing
           // descendants-of-a-selected-zone meaning has no role in that mode.
-          highlightedLocationIds={recode.state.active ? recodeHighlight : highlightedLocationIds}
+          /* `undefined` is a constant, so during a whole sweep this dep never moves
+             and the scene memo survives the stroke. The selection is drawn by
+             MapSelectionLayer instead; see `selectionCells` above. */
+          highlightedLocationIds={recode.state.active ? undefined : highlightedLocationIds}
           // A sweep's band must not double as a bin click, and MapStage's eager
           // capture already routes the click to the container — this is the
           // belt-and-braces half, and it also keeps Bin detail from scrolling
@@ -753,7 +792,8 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
             active: recode.state.active,
             tool: recode.state.tool,
             rect: recode.state.rect,
-            ghosts: recodeGhosts,
+            cells: selectionCells,
+            ghosts: ghostTextById,
             onStrokeStart: () => recode.dispatch({ type: 'stroke_start' }),
             onSelectCell: (f, x, y) =>
               recode.dispatch({ type: 'select_cell', floor: f, x, y, resolve: resolveCell }),
@@ -786,6 +826,8 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           levelCodes={recodeLevelCodes}
           preview={recodePreview}
           previewing={previewingRecode}
+          previewError={recodePreviewError}
+          onRetryPreview={() => setRecodePreviewNonce((n) => n + 1)}
           applying={recodeMutation.isPending}
           reverting={revertMutation.isPending}
           applied={recodeApplied}

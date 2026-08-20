@@ -16,7 +16,7 @@
 // and paintable throughout, which is the whole point of stepping rather than
 // modalling. It therefore never trips `npm run check:overlays`.
 
-import { X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Info, Loader2, X } from 'lucide-react'
 import type { RecodePreview } from '@/services/supabase/warehouseLocationService'
 import type { SheetPresetName } from '@/lib/labels/sizing'
 import type { CodeOrder, CodeOrigin } from '@/lib/codePattern'
@@ -60,6 +60,10 @@ export interface RecodePanelProps {
   levelCodes: readonly string[]
   preview: RecodePreview | null
   previewing: boolean
+  /** Why the dry run failed, or null. Distinct from a null `preview`, which also
+   *  covers "the server has not been asked yet". */
+  previewError: string | null
+  onRetryPreview: () => void
   applying: boolean
   reverting: boolean
   applied: RecodeApplied | null
@@ -93,38 +97,73 @@ export interface RecodePanelProps {
   onCancel: () => void
 }
 
-/**
- * Why Apply cannot be pressed — or null when it can.
- *
- * Deliberately ordered by which the operator can act on FIRST. Telling someone with
- * an empty selection to review three refusals would be technically true and useless.
- */
-export function applyBlockedReason(args: {
+export type ApplyBlockTone = 'busy' | 'todo' | 'problem'
+
+export interface ApplyBlock {
+  /** The one-line reason. Identical to what applyBlockedReason returns. */
+  reason: string
+  tone: ApplyBlockTone
+  /** Where the operator can go to fix it, or null when there is nowhere to go.
+   *  Never `'done'` — a finished sweep has no blockers left to answer. */
+  step: 1 | 2 | 3 | 4 | null
+}
+
+export interface ApplyBlockArgs {
   selectedCount: number
   block: string
   preview: RecodePreview | null
   previewing: boolean
   applying: boolean
   ackPrinted: boolean
-}): string | null {
-  if (args.applying) return 'Applying…'
-  if (args.selectedCount === 0) return 'Paint some bins on the map'
-  if (!args.block.trim()) return 'Give the block a name'
-  if (args.previewing) return 'Checking the new codes…'
-  if (!args.preview) return 'Review the sweep first'
-  if (args.preview.refusedTotal > 0) {
-    return `Resolve ${args.preview.refusedTotal} problem${args.preview.refusedTotal === 1 ? '' : 's'}`
+}
+
+/**
+ * Why Apply cannot be pressed — or null when it can.
+ *
+ * Deliberately ordered by which the operator can act on FIRST. Telling someone with
+ * an empty selection to review three refusals would be technically true and useless.
+ *
+ * Each blocker also names the step that ANSWERS it, which is what lets the footer
+ * treat "the problem is elsewhere" as a destination rather than a refusal. Without
+ * that distinction the button below was disabled on every step but 4, so the promise
+ * three comments down — that pressing Apply from step 1 takes you to Review — was
+ * describing a branch that could not fire.
+ */
+export function applyBlock(args: ApplyBlockArgs): ApplyBlock | null {
+  if (args.applying) return { reason: 'Applying…', tone: 'busy', step: null }
+  if (args.selectedCount === 0) {
+    return { reason: 'Paint some bins on the map', tone: 'todo', step: 1 }
   }
-  if (args.preview.labelPrinted > 0 && !args.ackPrinted) return 'Confirm the printed labels'
-  if (args.preview.willRecode === 0) return 'Nothing would change'
+  if (!args.block.trim()) return { reason: 'Give the block a name', tone: 'todo', step: 2 }
+  if (args.previewing) return { reason: 'Checking the new codes…', tone: 'busy', step: null }
+  if (!args.preview) return { reason: 'Review the sweep first', tone: 'todo', step: 4 }
+  if (args.preview.refusedTotal > 0) {
+    return {
+      reason: `Resolve ${args.preview.refusedTotal} problem${args.preview.refusedTotal === 1 ? '' : 's'}`,
+      tone: 'problem',
+      step: 4,
+    }
+  }
+  if (args.preview.labelPrinted > 0 && !args.ackPrinted) {
+    return { reason: 'Confirm the printed labels', tone: 'problem', step: 4 }
+  }
+  if (args.preview.willRecode === 0) {
+    return { reason: 'Nothing would change', tone: 'todo', step: null }
+  }
   return null
+}
+
+/** The narrow view of the above — the reason alone, which is what any non-visual
+ *  caller wants and what __tests__/recodePanelGating.test.ts pins. */
+export function applyBlockedReason(args: ApplyBlockArgs): string | null {
+  return applyBlock(args)?.reason ?? null
 }
 
 export function RecodePanel(props: RecodePanelProps) {
   const { state, preview } = props
   const done = state.step === 'done'
 
-  const blocked = applyBlockedReason({
+  const blocked = applyBlock({
     selectedCount: state.selected.size,
     block: state.block,
     preview,
@@ -132,6 +171,12 @@ export function RecodePanel(props: RecodePanelProps) {
     applying: props.applying,
     ackPrinted: props.ackPrinted,
   })
+
+  /* A blocker on ANOTHER step is a destination, not a refusal: pressing Apply takes
+     you there, which is runRecode's own first branch. Only a blocker you are already
+     standing on — or one with nowhere to go, like "Applying…" — disables the button. */
+  const navigable = !!blocked && blocked.step !== null && blocked.step !== state.step
+  const applyDisabled = !!blocked && !navigable
 
   return (
     <aside
@@ -242,6 +287,9 @@ export function RecodePanel(props: RecodePanelProps) {
             levelCodes={props.levelCodes}
             ackPrinted={props.ackPrinted}
             onAckPrinted={props.onAckPrinted}
+            previewError={props.previewError}
+            onRetryPreview={props.onRetryPreview}
+            selectedCount={state.selected.size}
             onGotoStep={props.onGotoStep}
             onUseSuggestedOrigin={props.onUseSuggestedOrigin}
             onRenumberBlock={props.onRenumberBlock}
@@ -251,43 +299,93 @@ export function RecodePanel(props: RecodePanelProps) {
 
       {!done && (
         <footer className="shrink-0 border-t border-stone-200 px-3 py-2">
+          {blocked && (
+            /* The signpost. Above the buttons and full width rather than an 11px
+               right-aligned afterthought, tinted by what KIND of blocker it is, and
+               pressable when it names somewhere to go. `role=status` so the reason a
+               button went grey is announced, and `aria-describedby` binds the two. */
+            <div id="recode-apply-reason" role="status" aria-live="polite" className="mb-2">
+              {(() => {
+                const tint = blocked.tone === 'problem'
+                  ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-200'
+                  : 'bg-stone-100/80 text-stone-600'
+                const body = (
+                  <>
+                    {blocked.tone === 'busy' ? (
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-stone-400" strokeWidth={2} aria-hidden="true" />
+                    ) : blocked.tone === 'problem' ? (
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" strokeWidth={2} aria-hidden="true" />
+                    ) : (
+                      <Info className="h-3.5 w-3.5 shrink-0 text-stone-400" strokeWidth={2} aria-hidden="true" />
+                    )}
+                    <span className="min-w-0 flex-1">{blocked.reason}</span>
+                    {navigable && (
+                      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-stone-400" strokeWidth={2} aria-hidden="true" />
+                    )}
+                  </>
+                )
+                const shell = `flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[11px] ${tint}`
+                /* A button only when there is somewhere to go — the live region is
+                   the wrapper above, so the control keeps its own button role. */
+                return navigable ? (
+                  <button
+                    type="button"
+                    onClick={() => props.onGotoStep(blocked.step!)}
+                    className={`${shell} btn-press hover:brightness-95`}
+                  >
+                    {body}
+                  </button>
+                ) : (
+                  <p className={shell}>{body}</p>
+                )
+              })()}
+            </div>
+          )}
           <div className="flex items-center gap-2">
-            {state.step !== 4 ? (
+            {/* Back exists on 2 and 3 as well as 4. A flow you can only walk forwards
+                from the footer is not a guided one. */}
+            {state.step !== 1 && (
               <button
                 type="button"
-                onClick={() => props.onGotoStep((state.step as number) + 1 as RecodeStep)}
-                className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
-              >
-                Next
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => props.onGotoStep(3)}
-                className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
+                onClick={() => props.onGotoStep(((state.step as number) - 1) as RecodeStep)}
+                className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-stone-500 btn-press hover:bg-stone-100 hover:text-stone-700"
               >
                 Back
               </button>
             )}
+            {state.step !== 4 && (
+              <button
+                type="button"
+                onClick={() => props.onGotoStep(((state.step as number) + 1) as RecodeStep)}
+                className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
+              >
+                Next
+              </button>
+            )}
             {/* Always rendered, at every step. Pressing it from step 1 takes you to
                 Review, which is where the dry run happens — so the button is never
-                a lie and never a dead end. */}
+                a lie and never a dead end. That only became TRUE when `navigable`
+                stopped disabling it everywhere but step 4. */}
             <button
               type="button"
               onClick={props.onApply}
-              disabled={!!blocked}
-              className="ml-auto rounded-lg bg-stone-900 px-3.5 py-1.5 text-sm font-medium text-white btn-press disabled:opacity-40"
+              disabled={applyDisabled}
+              aria-describedby={blocked ? 'recode-apply-reason' : undefined}
+              aria-busy={props.applying || undefined}
+              className="ml-auto inline-flex items-center gap-2 rounded-lg bg-nexgen-blue px-3.5 py-1.5 text-sm font-semibold text-white btn-press hover:bg-nexgen-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue/40 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500"
             >
+              {props.applying && (
+                <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} aria-hidden="true" />
+              )}
               {props.applying
                 ? 'Applying…'
-                : preview && preview.willRecode > 0
-                  ? `Recode ${preview.willRecode}`
-                  : 'Recode'}
+                : navigable
+                  ? 'Review'
+                  : preview && preview.willRecode > 0
+                    ? `Recode ${preview.willRecode}`
+                    : 'Recode'}
             </button>
           </div>
-          {blocked && (
-            <p className="mt-1 text-right text-[11px] text-stone-500">{blocked}</p>
-          )}
         </footer>
       )}
     </aside>
