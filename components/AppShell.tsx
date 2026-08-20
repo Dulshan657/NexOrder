@@ -80,14 +80,17 @@ import { adminTabFromSearch } from '../lib/adminTabUrl';
 import {
     MODULE_FIELD_OPS,
     MODULE_INVENTORY_DISPATCH,
+    MODULE_INVOICING,
+    MODULE_PO_INBOX,
+    MODULE_PROMOTIONS,
     MODULE_SALES_ORDERS,
+    MODULE_SHOP,
 } from '../lib/modules';
 import StrayScanListener from './StrayScanListener';
 import UserProfile from './UserProfile';
 import MobileCheckoutButton from './MobileCheckoutButton';
 import OrderSummary from './OrderSummary';
 import OrderConfirmation from './OrderConfirmation';
-import ShopView from '../views/ShopView';
 import NotificationCenter from './NotificationCenter';
 import ProfileMenu from './auth/ProfileMenu';
 import { LoadingSkeleton } from './Skeleton';
@@ -100,8 +103,12 @@ import { lazyWithRetry } from '../lib/lazyWithRetry';
 // chunk hashes after a redeploy (see lib/lazyWithRetry.ts).
 const AdminView = lazyWithRetry(() => import('./AdminView'));
 const OrderDetailView = lazyWithRetry(() => import('./OrderDetailView'));
-const OrderVerificationModal = lazyWithRetry(() => import('./OrderVerificationModal'));
-const BundleSelectModal = lazyWithRetry(() => import('./BundleSelectModal'));
+// Both are CART surfaces and belong to `shop`: the verification canvas is
+// shown at placement from the cart (never at delivery — see CLAUDE.md), and a
+// bundle promotion can only be chosen while building one. With no Shop there is
+// no cart to open either from.
+const OrderVerificationModal = MODULE_SHOP ? lazyWithRetry(() => import('./OrderVerificationModal')) : null;
+const BundleSelectModal = MODULE_SHOP ? lazyWithRetry(() => import('./BundleSelectModal')) : null;
 // Module-gated on the DECLARATION, not just where they render: the `import()`
 // runs at module scope, so a JSX gate alone would still emit the chunk and ship
 // it to a tenant without the module. AdminView declares its own copies of these
@@ -111,12 +118,16 @@ const ReceiveStockView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import(
 const ScheduledVisitsView = MODULE_FIELD_OPS ? lazyWithRetry(() => import('./scheduled-visits/ScheduledVisitsView')) : null;
 
 // Each of these renders behind a single `view === ...` branch, so none of them
-// is on the initial paint path for any role. ShopView deliberately stays eager
-// — it is the landing view for both reps and customers.
+// is on the initial paint path for any role.
 const OrdersHistoryView = MODULE_SALES_ORDERS ? lazyWithRetry(() => import('../views/OrdersHistoryView')) : null;
 const RepDashboardView = lazyWithRetry(() => import('../views/RepDashboardView'));
 const HoReCaListView = lazyWithRetry(() => import('./HoReCaListView'));
-const AccountsAgingTable = MODULE_SALES_ORDERS ? lazyWithRetry(() => import('./AccountsAgingTable')) : null;
+const AccountsAgingTable = MODULE_INVOICING ? lazyWithRetry(() => import('./AccountsAgingTable')) : null;
+// Lazy as of 2026-08-20, where it used to be eager. It is still the landing
+// view for reps and customers, so this costs them one chunk fetch behind the
+// existing Suspense skeleton — the price of the whole Shop being absent, not
+// merely unreachable, on a tenant without `shop`.
+const ShopView = MODULE_SHOP ? lazyWithRetry(() => import('../views/ShopView')) : null;
 
 import { inviteUser, updateUserProfile } from '../services/supabase/inviteUserService';
 import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit } from '../lib/adapters';
@@ -153,6 +164,7 @@ import {
     ClipboardList,
     Send,
     FileText,
+    FilePlus,
     LayoutGrid,
 } from 'lucide-react';
 import type { AppNotification } from '../types';
@@ -590,6 +602,14 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
             <ShoppingBag className="w-5 h-5 mr-3" /> Shop
         </button>
     );
+    const adminNewOrderNavButton = (
+        <button
+            onClick={() => { setAdminView('New Order'); setIsSidebarOpen(false); }}
+            className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'New Order' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+        >
+            <FilePlus className="w-5 h-5 mr-3" /> New Order
+        </button>
+    );
     const adminOrderImportNavButton = (
         <button
             onClick={() => { setAdminView('Order Import'); setIsSidebarOpen(false); }}
@@ -664,9 +684,10 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 </button>
                             )}
 
-                            {MODULE_SALES_ORDERS && (
+                            {(MODULE_SHOP || MODULE_SALES_ORDERS || MODULE_INVOICING) && (
                                 <>
                                     <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Orders</p>
+                                    {MODULE_SHOP && (
                                     <button
                                         onClick={() => {
                                             if (view !== 'ordering') { resetOrder(); setView('ordering'); }
@@ -676,18 +697,23 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     >
                                         <ShoppingCart className="w-5 h-5 mr-3" /> Shop
                                     </button>
+                                    )}
+                                    {MODULE_SALES_ORDERS && (
                                     <button
                                         onClick={() => { setView('orders'); setIsSidebarOpen(false); }}
                                         className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'orders' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <History className="w-5 h-5 mr-3" /> Order Import
                                     </button>
+                                    )}
+                                    {MODULE_INVOICING && (
                                     <button
                                         onClick={() => { setView('accounts'); setIsSidebarOpen(false); }}
                                         className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${view === 'accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <Wallet className="w-5 h-5 mr-3" /> Accounts
                                     </button>
+                                    )}
                                 </>
                             )}
 
@@ -734,10 +760,10 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             {/* Demo persona: lead with the PO-Inbox story, then fall through
                                 to the normal admin nav (PO Inbox / Order Import omitted below
                                 to avoid duplicates; Shop hidden too when the persona opts out). */}
-                            {MODULE_SALES_ORDERS && demoPersona?.leadWithPoInbox && (
+                            {MODULE_PO_INBOX && demoPersona?.leadWithPoInbox && (
                                 <>
                                     {adminPoInboxNavButton}
-                                    {adminOrderImportNavButton}
+                                    {MODULE_SALES_ORDERS && adminOrderImportNavButton}
                                 </>
                             )}
                             <button
@@ -747,24 +773,36 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 <LayoutDashboard className="w-5 h-5 mr-3" /> Dashboard
                             </button>
 
-                            {MODULE_SALES_ORDERS && (
+                            {/* One heading, five separately-gated members. "Sales & Orders"
+                                held one module until 2026-08-20; a tenant may now buy the
+                                order object without the Shop, the PO Inbox, Accounts or
+                                Promotions, so the heading survives if ANY member does — the
+                                same shape "Field Ops" and "Inventory & Dispatch" already
+                                have around their core members. Every operand is a folded
+                                constant, so an all-off group is removed whole. */}
+                            {(MODULE_SHOP || MODULE_SALES_ORDERS || MODULE_PO_INBOX || MODULE_INVOICING || MODULE_PROMOTIONS) && (
                                 <>
                                     <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Sales & Orders</p>
-                                    {!demoPersona?.hideShop && adminShopNavButton}
-                                    {!demoPersona?.leadWithPoInbox && adminOrderImportNavButton}
-                                    {!demoPersona?.leadWithPoInbox && adminPoInboxNavButton}
+                                    {MODULE_SHOP && !demoPersona?.hideShop && adminShopNavButton}
+                                    {MODULE_SALES_ORDERS && adminNewOrderNavButton}
+                                    {MODULE_SALES_ORDERS && !demoPersona?.leadWithPoInbox && adminOrderImportNavButton}
+                                    {MODULE_PO_INBOX && !demoPersona?.leadWithPoInbox && adminPoInboxNavButton}
+                                    {MODULE_INVOICING && (
                                     <button
                                         onClick={() => { setAdminView('Accounts'); setIsSidebarOpen(false); }}
                                         className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <Wallet className="w-5 h-5 mr-3" /> Accounts
                                     </button>
+                                    )}
+                                    {MODULE_PROMOTIONS && (
                                     <button
                                         onClick={() => { setAdminView('Promotions'); setIsSidebarOpen(false); }}
                                         className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Promotions' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <Tag className="w-5 h-5 mr-3" /> Promotions
                                     </button>
+                                    )}
                                 </>
                             )}
 
@@ -1019,7 +1057,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                     `useScrollLock` (components/ui) freezes this element when a modal opens. */}
                 <main data-scroll-container className="flex-1 overflow-y-auto">
                     <div>
-                        {isAdminOrManager && adminView === 'Shop' && (
+                        {MODULE_SHOP && isAdminOrManager && adminView === 'Shop' && (
                             <ShopView
                                 products={products}
                                 hoReCas={hoReCas}
@@ -1259,7 +1297,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     </Suspense>
                                     </ErrorBoundary>
                                 )}
-                                {view === 'ordering' && (
+                                {MODULE_SHOP && view === 'ordering' && (
                                     <ShopView
                                         products={products}
                                         hoReCas={hoReCas}
@@ -1362,7 +1400,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         </Suspense>
                                     </ErrorBoundary>
                                 )}
-                                {MODULE_SALES_ORDERS && view === 'accounts' && (
+                                {MODULE_INVOICING && view === 'accounts' && (
                                     <ErrorBoundary label="Accounts aging">
                                         <Suspense fallback={<LoadingSkeleton />}>
                                             <AccountsAgingTable invoices={invoices} hoReCas={hoReCas} currentUser={currentUser} />
@@ -1472,7 +1510,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
             )}
 
             {/* Order Verification Modal */}
-            {showVerificationModal && (
+            {MODULE_SHOP && showVerificationModal && (
                 <ErrorBoundary label="Order verification">
                     <Suspense fallback={<LoadingSkeleton />}>
                         <OrderVerificationModal
@@ -1485,7 +1523,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
             )}
 
             {/* Bundle Promo Selector */}
-            {bundleModalPromo && (
+            {MODULE_SHOP && bundleModalPromo && (
                 <ErrorBoundary label="Bundle selector">
                     <Suspense fallback={<LoadingSkeleton />}>
                         <BundleSelectModal

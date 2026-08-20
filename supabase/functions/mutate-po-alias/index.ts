@@ -169,7 +169,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    requireModule('sales_orders')
+    requireModule('po_inbox')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
     const rl = await checkRateLimit(`mutate-po-alias:${auth.userId}`, {

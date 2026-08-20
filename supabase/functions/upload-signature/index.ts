@@ -105,7 +105,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    requireModule('sales_orders')
+    requireModule('shop')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
     const rl = await checkRateLimit(`upload-signature:${auth.userId}`, { windowMs: 60_000, max: 20 })

@@ -39,20 +39,37 @@
  * health — are not listed because they are not gateable; an ordering system
  * without them is not the product.
  *
- * ── THESE ARE THE THREE THE SIDEBAR ALREADY DRAWS ───────────────────────────
+ * ── THREE HEADINGS, PLUS FOUR CARVED OUT OF "SALES & ORDERS" ────────────────
  *
  * This list held nine finer-grained slugs (warehouse, po_inbox, field_sales,
  * customer_portal, purchasing, invoicing, promotions, analytics, email) from
- * the day the seam was designed until 2026-08-13, while nothing read it. It is
- * now three, and they are deliberately the three group headings in
- * `components/AppShell.tsx` — "Sales & Orders", "Field Ops", "Inventory &
- * Dispatch" — because that is what a customer is actually sold, and a gate the
- * operator cannot point at on screen is a gate nobody can reason about.
+ * the day the seam was designed until 2026-08-13, while nothing read it. It
+ * was then collapsed to the three group headings `components/AppShell.tsx`
+ * draws — "Sales & Orders", "Field Ops", "Inventory & Dispatch" — because that
+ * is what a customer is actually sold, and a gate the operator cannot point at
+ * on screen is a gate nobody can reason about.
  *
- * The nine were also finer than the product: `po_inbox` without `sales_orders`
- * has nowhere to put an approved order, and `analytics` without the surface it
- * reports on shows empty charts. Splitting further is easy later; un-splitting
- * after a tenant has bought one of the nine is not.
+ * Amadiya is the first tenant to want LESS THAN A WHOLE HEADING, and three
+ * could not say it. They key in orders and run a warehouse, but they did not
+ * buy the Shop, the PO Inbox, Promotions or Accounts — and all four sat under
+ * `sales_orders` beside `place-order` and the pick → pack → dispatch ladder
+ * they DO need. So `sales_orders` now means the order OBJECT and its status
+ * ladder, and the four surfaces that merely travelled with it are their own
+ * slugs. The two headings that were already the right size are untouched, and
+ * a sidebar heading stays ONE heading whose members gate separately — exactly
+ * as "Field Ops" and "Inventory & Dispatch" already do around their core
+ * members, HoReCa and Products.
+ *
+ * ── THE SET IS ORDERED BY DEPENDENCE, AND THAT IS CHECKED ───────────────────
+ *
+ * 2026-08-13's note that the nine "were finer than the product" is still true
+ * of the shape, and is why this stops at seven rather than restoring nine:
+ * `po_inbox` without `sales_orders` has nowhere to put an approved order, and
+ * `shop` without it cannot place one. Every carved-out slug REQUIRES
+ * `sales_orders`; none is independently sellable. `MODULE_REQUIRES` states
+ * that and `assertModuleSet()` enforces it at import time, because the failure
+ * mode of getting it wrong is a nav entry whose Edge Function 403s — which
+ * reads as a bug, not as a licensing decision.
  *
  * ONE BOOLEAN PER MODULE, NEVER AN ARRAY, on the consuming side — `arr
  * .includes(x)` is a runtime call that survives tree-shaking and would ship
@@ -62,7 +79,57 @@
  *
  * See MULTI-TENANT-ARCHITECTURE.md §3 for the three layers.
  */
-export const ALL_MODULES = ['sales_orders', 'field_ops', 'inventory_dispatch']
+export const ALL_MODULES = [
+  'sales_orders',
+  'shop',
+  'po_inbox',
+  'promotions',
+  'invoicing',
+  'field_ops',
+  'inventory_dispatch',
+]
+
+/**
+ * What a module cannot stand without.
+ *
+ * Only the four slugs carved out of `sales_orders` have an entry; `field_ops`
+ * and `inventory_dispatch` are genuinely independent and always were. Read by
+ * `assertModuleSet()` and by nothing at runtime — the frontend gets folded
+ * booleans and the Edge Functions get a flat list, so this is a statement
+ * about what may be CONFIGURED, checked once, here.
+ */
+export const MODULE_REQUIRES = {
+  shop: ['sales_orders'],
+  po_inbox: ['sales_orders'],
+  promotions: ['sales_orders'],
+  invoicing: ['sales_orders'],
+}
+
+/**
+ * Throws if a target's module set names something unknown or omits a
+ * dependency. Called for every target at import time, so a bad registry edit
+ * fails the build and every script that loads it, rather than shipping a
+ * surface that renders and then 403s on first use.
+ */
+export function assertModuleSet(targetName, modules) {
+  const unknown = modules.filter((m) => !ALL_MODULES.includes(m))
+  if (unknown.length) {
+    throw new Error(
+      `Target '${targetName}' names unknown module(s): ${unknown.join(', ')}. ` +
+        `Known modules: ${ALL_MODULES.join(', ')}.`,
+    )
+  }
+  for (const m of modules) {
+    for (const dep of MODULE_REQUIRES[m] ?? []) {
+      if (!modules.includes(dep)) {
+        throw new Error(
+          `Target '${targetName}' enables '${m}' without '${dep}', which it requires. ` +
+            `A '${m}' surface with no '${dep}' behind it renders and then 403s.`,
+        )
+      }
+    }
+  }
+}
 
 /**
  * Placeholder ref used by unit tests. Never resolves to a real project — it
@@ -331,16 +398,38 @@ export const TARGETS = {
     authEmailTemplates: true,
 
     /**
-     * Everything on: Amadiya bought all three. The gate ships in the all-on
-     * state ON PURPOSE — it has to be proven inert against a live tenant before
-     * it is ever the thing withholding a surface from one. Removing a slug here
-     * is how a module is turned off, and it takes a rebuild, because the
-     * frontend half is compiled out rather than hidden.
+     * WAREHOUSE MANAGEMENT ONLY, as of 2026-08-20. This is the first time the
+     * module gate has withheld anything from anyone; it shipped all-on until
+     * now precisely so it could be proven inert against a live tenant first.
+     *
+     * Amadiya's office staff key orders in and their floor staff pick, pack and
+     * dispatch them — so the order OBJECT is on. What they did not buy is every
+     * other thing that used to travel with it: no Shop (nobody self-serves), no
+     * PO Inbox (no mailbox is connected), no Promotions (one flat price list),
+     * no Accounts (they invoice elsewhere), no Field Ops (no reps).
+     *
+     * `inventory_dispatch` needs `sales_orders` in practice — a pick is a pick
+     * OF an order — but the dependency is not declared in MODULE_REQUIRES,
+     * because a pure stock-control tenant with no orders at all is a coherent
+     * thing to sell and that would forbid it.
+     *
+     * Adding a module back is a registry edit plus a rebuild plus a redeploy of
+     * the functions, in that order. The frontend half is compiled out rather
+     * than hidden, so nothing here takes effect until the bundle is rebuilt.
      */
-    modules: [...ALL_MODULES],
+    modules: ['sales_orders', 'inventory_dispatch'],
 
     envFile: '.env.amadiya.local',
   },
+}
+
+// Every target's module set is checked the moment this file is imported —
+// which is on every build, every script and every test run. A registry edit
+// that names a slug that does not exist, or enables a surface without the
+// module it sits on, is a build failure here rather than a 403 in front of an
+// operator who was never told the surface was not theirs.
+for (const [name, config] of Object.entries(TARGETS)) {
+  assertModuleSet(name, config.modules)
 }
 
 /**

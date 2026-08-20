@@ -90,7 +90,7 @@ serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    requireModule('sales_orders')
+    requireModule('shop')
     const auth = await requireAuth(req, { allowedRoles: ALLOWED })
 
     // Rate limit per user — pantry edits can be rapid (drag-resort, bulk

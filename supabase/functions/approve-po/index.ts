@@ -138,7 +138,7 @@ serve(async (req: Request) => {
   })
 
   try {
-    requireModule('sales_orders')
+    requireModule('po_inbox')
     let body: ApproveRequest
     try {
       body = await req.json()

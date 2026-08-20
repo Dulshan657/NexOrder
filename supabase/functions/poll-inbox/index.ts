@@ -56,7 +56,7 @@ serve(async (req: Request) => {
   // mailboxes" when there are no mailboxes to poll. It sits AFTER the cron-token
   // gate on purpose: an unauthenticated caller learns nothing about which
   // modules this deployment has.
-  if (!isModuleEnabled('sales_orders')) {
+  if (!isModuleEnabled('po_inbox')) {
     return new Response(JSON.stringify({ ok: true, skipped: 'module_disabled', accounts: [] }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

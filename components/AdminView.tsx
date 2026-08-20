@@ -6,6 +6,9 @@ import { lazyWithRetry } from '../lib/lazyWithRetry';
 import {
     MODULE_FIELD_OPS,
     MODULE_INVENTORY_DISPATCH,
+    MODULE_INVOICING,
+    MODULE_PO_INBOX,
+    MODULE_PROMOTIONS,
     MODULE_SALES_ORDERS,
 } from '../lib/modules';
 import type { AdminTab } from '../lib/adminTabUrl';
@@ -14,8 +17,6 @@ import ProductAdmin from './ProductAdmin';
 import HoReCaListView from './HoReCaListView';
 import UserAdmin from './UserAdmin';
 import SupplierAdmin from './SupplierAdmin';
-import AccountsAgingTable from './AccountsAgingTable';
-import OrderImportPage from './OrderImportPage';
 import WalkInReviewTab from './admin/WalkInReviewTab';
 
 // Heavy admin views — lazy-loaded so rep/customer paths don't pull them in.
@@ -38,8 +39,15 @@ const AuditLogTab = lazyWithRetry(() => import('./admin/AuditLogTab'));
 const SystemHealthTab = lazyWithRetry(() => import('./admin/SystemHealthTab'));
 const SettingsView = lazyWithRetry(() => import('./admin/settings/SettingsView'));
 
-const PromotionAdmin = MODULE_SALES_ORDERS ? lazyWithRetry(() => import('./PromotionAdmin')) : null;
-const POInboxView = MODULE_SALES_ORDERS ? lazyWithRetry(() => import('./admin/POInboxView')) : null;
+// Both of these were plain top-of-file imports until 2026-08-20, which meant
+// their module gate stopped them RENDERING and shipped every byte regardless —
+// the exact failure the comment above warns about, sitting twenty lines below
+// it. They are lazy and gated now.
+const OrderImportPage = MODULE_SALES_ORDERS ? lazyWithRetry(() => import('./OrderImportPage')) : null;
+const AccountsAgingTable = MODULE_INVOICING ? lazyWithRetry(() => import('./AccountsAgingTable')) : null;
+
+const PromotionAdmin = MODULE_PROMOTIONS ? lazyWithRetry(() => import('./PromotionAdmin')) : null;
+const POInboxView = MODULE_PO_INBOX ? lazyWithRetry(() => import('./admin/POInboxView')) : null;
 
 const HoReCaInsightsPanel = MODULE_FIELD_OPS ? lazyWithRetry(() => import('./HoReCaInsightsPanel')) : null;
 const ScheduledVisitsAdmin = MODULE_FIELD_OPS ? lazyWithRetry(() => import('./admin/ScheduledVisitsAdmin')) : null;
@@ -151,10 +159,10 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {props.activeTab === 'HoReCa' && <HoReCaListView hoReCas={props.hoReCas} orders={props.allOrders} invoices={props.invoices} currentUser={props.currentUser} visits={props.visits} onAddHoReCa={props.onAddHoReCa} onUpdateHoReCa={props.onUpdateHoReCa} onDeleteHoReCa={props.onDeleteHoReCa} />}
                 {MODULE_FIELD_OPS && props.activeTab === 'HoReCa Insights' && <HoReCaInsightsPanel allOrders={props.allOrders} hoReCas={props.hoReCas} products={props.products} />}
                 {MODULE_SALES_ORDERS && props.activeTab === 'Order Import' && <OrderImportPage orders={props.allOrders} invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} onReorder={props.onReorder} onViewDetail={props.onViewOrderDetail} onUpdateStatus={props.onUpdateOrderStatus} onBack={() => {}} highlightOrderId={props.highlightOrderId ?? null} onClearHighlightOrderId={props.onClearHighlightOrderId} />}
-                {MODULE_SALES_ORDERS && props.activeTab === 'Promotions' && props.currentUser.role === UserRole.ADMIN && props.promotions && props.onAddPromotion && props.onUpdatePromotion && props.onDeletePromotion && (
+                {MODULE_PROMOTIONS && props.activeTab === 'Promotions' && props.currentUser.role === UserRole.ADMIN && props.promotions && props.onAddPromotion && props.onUpdatePromotion && props.onDeletePromotion && (
                     <PromotionAdmin promotions={props.promotions} products={props.products} hoReCas={props.hoReCas} users={props.users} onAdd={props.onAddPromotion} onUpdate={props.onUpdatePromotion} onDelete={props.onDeletePromotion} />
                 )}
-                {MODULE_SALES_ORDERS && props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
+                {MODULE_INVOICING && props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} addToast={props.addToast} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} onOpenPutaway={openPutaway} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Putaway' && <PutawayQueuePage currentUser={props.currentUser} />}
@@ -179,7 +187,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                         onUpdateHoReCa={props.onUpdateHoReCa}
                     />
                 )}
-                {MODULE_SALES_ORDERS && props.activeTab === 'PO Inbox' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER) && (
+                {MODULE_PO_INBOX && props.activeTab === 'PO Inbox' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER) && (
                     <POInboxView
                         hoReCas={props.hoReCas}
                         products={props.products}

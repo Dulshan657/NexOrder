@@ -103,7 +103,7 @@ serve(async (req: Request) => {
 
   let body: ExtractRequest
   try {
-    requireModule('sales_orders')
+    requireModule('po_inbox')
     body = await req.json()
   } catch {
     return json({ error: { code: 'INVALID_INPUT', message: 'Body must be JSON' } }, 400, corsHeaders)
