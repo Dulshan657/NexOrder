@@ -8,6 +8,7 @@
 import { evaluateRules, type RuleContext } from './rules.ts'
 import { buildCompatibilityIndex, worstCompatibility } from './compat.ts'
 import { capacityUnitLabel, positionsRequired } from './capacity.ts'
+import { planSlotting, type SlottingExclusion } from './slotting.ts'
 import type {
   CandidateBin,
   CandidateBreakdown,
@@ -93,6 +94,20 @@ export function filterCandidates(request: PutawayRequest, options: FilterOptions
     }
   }
 
+  // Slotting (mig 00115) — which blocks this product belongs in, and which
+  // blocks are held empty for somebody else.
+  //
+  // Computed ONCE, ahead of the loop, because it is a set-level decision:
+  // reservation depends on rules that do NOT match this product, and the tier a
+  // bin lands in depends on the winning rule's whole ranked block list. It is
+  // also QUANTITY-INDEPENDENT by design — see slotting.ts, which explains why a
+  // headroom-aware version would silently collapse every reslot plan.
+  const slotPlan = request.slotting
+    ? planSlotting({ ...request.slotting, candidates: request.candidates })
+    : null
+  const slotRefusal = new Map<number, SlottingExclusion>()
+  if (slotPlan) for (const ex of slotPlan.excluded) slotRefusal.set(ex.locationId, ex)
+
   for (const bin of request.candidates) {
     // What this line costs HERE — a whole position in a pallet bay, per-unit
     // slots anywhere else, so it has to be computed inside the loop.
@@ -102,6 +117,18 @@ export function filterCandidates(request: PutawayRequest, options: FilterOptions
     if (bin.distanceFromDockM === null) {
       reject('unreachable', null, 'unreachable', 'No route from a receiving dock', bin,
         'bin has no path to a dock')
+      continue
+    }
+
+    // Slotting, deliberately BEFORE capacity/weight/zone. The loop `continue`s
+    // on the first failure, so its order decides which reason the operator is
+    // shown — and "this is not where that product lives" is true regardless of
+    // how full the bin happens to be. Reporting capacity for a bin the product
+    // may never legally use would send someone to make room in the wrong aisle.
+    const refusal = slotRefusal.get(bin.locationId)
+    if (refusal) {
+      reject(`${refusal.code}:${refusal.ruleId}`, refusal.ruleId, refusal.code,
+        refusal.ruleName, bin, refusal.reason)
       continue
     }
 

@@ -17,15 +17,59 @@
 import { buildExplanation } from './explain.ts'
 import { filterCandidates, scoreCandidates } from './scoring.ts'
 import { isUnitLoad } from './capacity.ts'
+import { planSlotting, tierOf, describeBin } from './slotting.ts'
 import type { CandidateBin, PutawayAllocation, PutawayPlan, PutawayRequest } from './types.ts'
 
 const EPS = 1e-6
 const ALTERNATIVES_SHOWN = 5
 
+/** Slotting provenance for one placed allocation.
+ *
+ *  `offHome` is derived AFTER the fill from the bin actually chosen, never
+ *  predicted before it. That ordering is the whole point: whether stock ends up
+ *  misplaced is a fact about where it landed, and the tier decision upstream is
+ *  deliberately quantity-blind (see slotting.ts) so it cannot know in advance
+ *  which tier will still have room. */
+function slotProvenance(
+  plan: ReturnType<typeof planSlotting> | null,
+  locationId: number,
+): Partial<PutawayAllocation> {
+  if (!plan || !plan.resolution.rule) return {}
+  const verdict = describeBin(plan, locationId)
+  return {
+    offHome: verdict.status === 'off_home',
+    slotting: {
+      ruleId: plan.resolution.rule.id,
+      ruleName: plan.resolution.rule.name,
+      blockName: verdict.blockName,
+      rank: verdict.rank,
+      text: verdict.text,
+    },
+  }
+}
+
 export function planPutaway(request: PutawayRequest): PutawayPlan {
   // 'fill' mode keeps partially-full bins so a line can span several of them.
   const filter = filterCandidates(request, { capacityMode: 'fill' })
-  const ranked = scoreCandidates(request, filter)
+  const scored = scoreCandidates(request, filter)
+
+  // Slotting turns the score ranking into a TIERED ranking: the winning rule's
+  // primary block first, then its overflow blocks in the operator's order, then
+  // everything else.
+  //
+  // Array.prototype.sort is stable in ES2019+, so within a tier the score order
+  // survives byte-for-byte — which is the entire reason "ranked homes, then
+  // anywhere" is three lines here instead of a rewrite of the fill loop below.
+  // And because the fill already spills to the next bin when one is full, the
+  // overflow behaviour needs no branch at all: hand it a tier-ordered list and
+  // it walks off the end of block 1 into block 2 on its own.
+  const slotPlan = request.slotting
+    ? planSlotting({ ...request.slotting, candidates: request.candidates })
+    : null
+  const ranked = slotPlan && !slotPlan.inert
+    ? [...scored].sort((a, b) => tierOf(slotPlan, a.locationId) - tierOf(slotPlan, b.locationId))
+    : scored
+
   const explanation = buildExplanation(request, filter, ranked)
   const alternatives = ranked.slice(1, 1 + ALTERNATIVES_SHOWN)
 
@@ -62,6 +106,7 @@ export function planPutaway(request: PutawayRequest): PutawayPlan {
         alternatives,
         explanation,
         needsManualPlacement: false,
+        ...slotProvenance(slotPlan, bin.locationId),
       })
       bin.usedSlots += 1
       if (weightKg !== null) bin.usedWeightKg += remaining * weightKg
@@ -91,6 +136,7 @@ export function planPutaway(request: PutawayRequest): PutawayPlan {
       alternatives,
       explanation,
       needsManualPlacement: false,
+      ...slotProvenance(slotPlan, bin.locationId),
     })
 
     // Consume this bin's headroom so a later portion (or line, via a caller
