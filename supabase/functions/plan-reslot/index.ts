@@ -27,6 +27,7 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { buildWalkGraph, computeAnchorDistances, snapPlacementToNode } from '../_shared/wie/graph.ts'
 import { buildWalkableCells } from '../_shared/wie/publishReadiness.ts'
 import { planReslot, warehouseStockScope, type ReslotDemand } from '../_shared/wie/reslot.ts'
+import { loadWarehouseSlotting, loadSlottingProduct, contextFor } from '../_shared/slottingLoad.ts'
 import { DEFAULT_WEIGHTS } from '../_shared/wie/types.ts'
 import { positionsUsed, type OccupancyRow } from '../_shared/wie/capacity.ts'
 import type { CandidateBin, CompatibilityRule, RuleDefinition, ScoringWeights, SkuProfile } from '../_shared/wie/types.ts'
@@ -151,6 +152,10 @@ serve(async (req: Request) => {
       for (const z of (zoneRows ?? []) as any[]) zoneById.set(z.id, z)
     }
 
+    // Slotting rules (mig 00115) — loaded once, before the demand pass and
+    // before buildCandidates, both of which read it.
+    const slotting = await loadWarehouseSlotting(admin, warehouseId)
+
     // ── Warehouse stock: descendants of the warehouse, current fill + movable ─
     const { data: whRow } = await admin.from('locations').select('id, materialized_path').eq('id', warehouseId).single()
     const path = (whRow as any)?.materialized_path as string | undefined
@@ -164,7 +169,7 @@ serve(async (req: Request) => {
 
     const { data: balRows } = descIds.length
       ? await admin.from('inventory_balances')
-          .select('product_id, location_id, on_hand, allocated, available, handling_unit_id, products(sku, name, category, size_factor), handling_units(hu_type)')
+          .select('product_id, location_id, on_hand, allocated, available, handling_unit_id, products(sku, name, category, size_factor, brand), handling_units(hu_type)')
           .in('location_id', descIds)
           .gt('on_hand', 0)
       : { data: [] as any[] }
@@ -234,6 +239,7 @@ serve(async (req: Request) => {
         sizeFactor: Number(b.products?.size_factor) || 1, weightKg: weightByProduct.get(b.product_id) ?? null,
         category: b.products?.category ?? null,
         hazardClass: null, tempMin: null, tempMax: null, handlingType: null, stackable: null, velocityClass: null,
+        brand: b.products?.brand ?? null, supplierIds: [],
       }
       if (avail > 0) {
         const d = demandByProduct.get(b.product_id) ?? { sku, sources: [] }
@@ -256,6 +262,19 @@ serve(async (req: Request) => {
       demand.sku.handlingType = attrs?.handling_type ?? null
       demand.sku.stackable = attrs?.stackable ?? null
       demand.sku.velocityClass = (velRow as any)?.velocity_class ?? null
+      // Slotting (mig 00115). plan-reslot persists nothing, so running it
+      // slotting-blind is a wrong PREVIEW rather than wrong data -- but a
+      // preview that disagrees with what putaway will actually do is exactly
+      // how this file's zone-blind bug went unnoticed for months.
+      if (!slotting.empty) {
+        const slotProduct = await loadSlottingProduct(admin, {
+          id: productId,
+          brand: demand.sku.brand ?? null,
+          category: demand.sku.category ?? null,
+        })
+        demand.sku.supplierIds = slotProduct.supplierIds
+        demand.slotting = contextFor(slotting, slotProduct)
+      }
     }
 
     // ── Build CandidateBin[] for the draft (per product for hasSameProduct) ──
@@ -289,6 +308,12 @@ serve(async (req: Request) => {
           zoneMaxUtilizationPct: zone?.max_utilization_pct != null ? Number(zone.max_utilization_pct) : null,
           occupantCategories: [...(occByBin.get(locId) ?? new Set<string>())],
           pickVisits30d: 0, // draft has no graph traffic history
+          // Read from v_slotting_block_bins via slottingLoad -- NEVER re-derive
+          // the rack -> level materialized_path expansion here. That would be a
+          // third copy of the containment rule, which is the precise shape of
+          // this file's zone-blind bug.
+          blockIds: slotting.blockIdsByLocation.get(locId) ?? [],
+          isHold: false, // a draft has no published hold zones to consult
         }
       })
 

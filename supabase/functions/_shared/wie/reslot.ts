@@ -21,6 +21,7 @@
 // (plan-reslot edge fn) loads stock/bins/rules and persists nothing here.
 
 import { filterCandidates, scoreCandidates } from './scoring.ts'
+import { planSlotting, tierOf } from './slotting.ts'
 import type {
   CandidateBin,
   CandidateBreakdown,
@@ -28,6 +29,7 @@ import type {
   RuleDefinition,
   ScoringWeights,
   SkuProfile,
+  SlottingContext,
 } from './types.ts'
 
 /** One SKU's movable stock and where it currently sits (old, non-kept bins). */
@@ -35,6 +37,10 @@ export interface ReslotDemand {
   sku: SkuProfile
   /** Available (unreserved) base units in each source bin. Σ qty = total to place. */
   sources: Array<{ locationId: number; qty: number }>
+  /** Slotting context for THIS product (mig 00115); undefined = not consulted.
+   *  Per-demand rather than per-input because the rules are shared but the
+   *  product side is not. */
+  slotting?: SlottingContext
 }
 
 export interface ReslotMove {
@@ -142,9 +148,28 @@ export function planReslot(input: ReslotPlanInput): ReslotPlan {
     // (the engine's capacity gate would otherwise reject a bin that can hold part
     // of the quantity — we want to split into it). Rank with the real remaining so
     // best-fit / velocity reflect the true load.
-    const base = { layoutId: 0, warehouseId: 0, sku: demand.sku, candidates: live, rules, compatibility, weights }
+    const base = {
+      layoutId: 0, warehouseId: 0, sku: demand.sku, candidates: live,
+      rules, compatibility, weights, slotting: demand.slotting,
+    }
     const filter = filterCandidates({ ...base, quantity: 1 })
-    const ranked = scoreCandidates({ ...base, quantity: remaining }, filter)
+    const scored = scoreCandidates({ ...base, quantity: remaining }, filter)
+
+    // Slotting tiering, exactly as planPutaway applies it: a stable sort, so
+    // within a tier the score order is untouched.
+    //
+    // Note the `quantity: 1` above. That falsified quantity is why slotting.ts
+    // is quantity-INDEPENDENT: a tier decision that asked "does this tier have
+    // room" would read the 1, conclude the primary block fits, and collapse
+    // every plan onto it -- pushing the rest into `overflow`, which carries no
+    // reason field and would reach an operator as "capacity exhausted" with
+    // nothing pointing at slotting. Deciding order only makes that impossible.
+    const slotPlan = demand.slotting
+      ? planSlotting({ ...demand.slotting, candidates: live })
+      : null
+    const ranked = slotPlan && !slotPlan.inert
+      ? [...scored].sort((a, b) => tierOf(slotPlan, a.locationId) - tierOf(slotPlan, b.locationId))
+      : scored
 
     // Destination allocations for this demand, best-first, filling to capacity.
     const allocations: Array<{ bin: CandidateBin; take: number; breakdown: CandidateBreakdown }> = []

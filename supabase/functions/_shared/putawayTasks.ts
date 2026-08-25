@@ -24,6 +24,8 @@ import { isUnitLoad, positionsRequired } from './wie/capacity.ts'
 import { ENGINE_VERSION } from './wie/version.ts'
 import { resolveRolesForPutaway, rolesForHuType } from './wie/levelRoles.ts'
 import { loadLevelRoles } from './levelRoleLookup.ts'
+import { loadWarehouseSlotting, loadSlottingProduct, contextFor, priorityLocationsFor } from './slottingLoad.ts'
+import { resolveSlotting } from './wie/slotting.ts'
 import type { LevelRoleRecord } from './wie/levelRoles.ts'
 import type { CandidateBin, LevelRole, RuleDefinition, ScoringWeights, SkuProfile, SlotKind } from './wie/types.ts'
 
@@ -169,6 +171,13 @@ export async function generatePutawayTasks(
   // and may not perform I/O.
   const levelRoles = await loadLevelRoles(admin)
 
+  // Slotting rules (mig 00115) — which blocks each product belongs in, and
+  // which blocks are held empty for somebody else. A SAFETY gate like the two
+  // above, so it fails CLOSED: a `hard` rule that silently vanished on a
+  // transient read error would send a pallet to the wrong aisle and nobody
+  // would find out until they went looking for it.
+  const slotting = await loadWarehouseSlotting(admin, warehouseId)
+
   // Per-warehouse scoring weights — NOT a safety gate, fail OPEN to defaults.
   const { data: profileRow } = await admin.from('wie_scoring_profiles')
     .select('weights').eq('warehouse_id', warehouseId).maybeSingle()
@@ -191,7 +200,7 @@ export async function generatePutawayTasks(
 
   for (const line of lines) {
     const { data: product, error: pErr } = await admin.from('products')
-      .select('id, sku, name, size_factor, category').eq('id', line.product_id).single()
+      .select('id, sku, name, size_factor, category, brand').eq('id', line.product_id).single()
     if (pErr || !product) throw new Error(`Product ${line.product_id} not found`)
 
     const { data: attrs } = await admin.from('product_wms_attributes')
@@ -208,6 +217,25 @@ export async function generatePutawayTasks(
     const rawRoles = (attrs as any)?.allowed_level_roles
     const allowedLevelRoles: LevelRole[] | null = Array.isArray(rawRoles) && rawRoles.length > 0 ? rawRoles : null
 
+    // Slotting for THIS line, resolved BEFORE the SkuProfile so the profile can
+    // be built complete rather than patched afterwards. Skipped entirely when
+    // the site has no rules, which keeps a site that has never opened the
+    // feature on exactly the code path it ran before mig 00115 -- no extra
+    // query, no context, and `request.slotting` undefined into the engine.
+    const slotProduct = slotting.empty ? null : await loadSlottingProduct(admin, {
+      id: (product as any).id,
+      brand: (product as any).brand ?? null,
+      category: (product as any).category ?? null,
+    })
+    const slotContext = slotProduct ? contextFor(slotting, slotProduct) : undefined
+    // Resolving the winner here is only to name the bins that must survive the
+    // candidate LIMIT. The ladder still has exactly one definition -- this
+    // calls it rather than restating it, and the SQL is told which ids matter
+    // rather than deciding anything.
+    const priorityLocations = slotProduct
+      ? priorityLocationsFor(slotting, resolveSlotting(slotting.rules, slotProduct).homeBlockIds)
+      : null
+
     const sku: SkuProfile = {
       productId: (product as any).id,
       code: (product as any).sku,
@@ -222,6 +250,8 @@ export async function generatePutawayTasks(
       stackable: (attrs as any)?.stackable ?? null,
       velocityClass: (velRow as any)?.velocity_class ?? null,
       allowedLevelRoles,
+      brand: (product as any).brand ?? null,
+      supplierIds: slotProduct?.supplierIds ?? [],
     }
 
     // ── This line rides on a plate an earlier line already placed ───────────
@@ -285,6 +315,9 @@ export async function generatePutawayTasks(
       // A switch, not a filter to relax: a held line may ONLY be offered a hold
       // bin, and an ordinary one may never be (mig 00101).
       p_hold_only: line.quarantine === true,
+      // A priority, not a filter (mig 00116): everything still arrives, but
+      // this product's own home bins can never be the rows the LIMIT cuts off.
+      p_priority_locations: priorityLocations,
     })
     if (cErr) throw new Error(`candidate load failed: ${cErr.message}`)
 
@@ -314,12 +347,24 @@ export async function generatePutawayTasks(
         pickVisits30d: r.pick_visits_30d != null ? Number(r.pick_visits_30d) : 0,
         levelRole: r.level_role ?? null,
         levelIndex: r.level_index != null ? Number(r.level_index) : null,
+        blockIds: Array.isArray(r.block_ids) ? r.block_ids.map(Number) : [],
+        isHold: r.is_hold === true,
       }
     })
+
+    // Held bins come from the candidates themselves rather than a second query:
+    // `p_hold_only` already decided which kind of bin this line may see, and
+    // is_hold (mig 00116) is how that decision reaches the engine at all.
+    const heldLocationIds = new Set(
+      candidates.filter((c) => c.isHold).map((c) => c.locationId),
+    )
 
     const plan = planPutaway({
       layoutId, warehouseId, sku, quantity: line.quantity, huType: line.hu_type,
       candidates, rules, compatibility, weights,
+      slotting: slotContext
+        ? { ...slotContext, heldLocationIds }
+        : undefined,
     })
 
     const binByLocation = new Map(candidates.map((c) => [c.locationId, c]))
@@ -354,6 +399,9 @@ export async function generatePutawayTasks(
           handling_unit_id: line.hu_id ?? null,
           alternatives: alloc.alternatives, explanation: alloc.explanation,
           engine_version: (alloc.explanation as any).engineVersion, actor_id: actorId,
+          // Columns, not JSONB: a badge must not require parsing `explanation`.
+          off_home: alloc.offHome === true,
+          slotting_rule_id: alloc.slotting?.ruleId ?? null,
         } as any).select('id').single()
         if (rErr) throw new Error(`failed to persist recommendation: ${rErr.message}`)
         recommendationId = (recRow as any).id
