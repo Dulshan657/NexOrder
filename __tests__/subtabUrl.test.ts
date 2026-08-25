@@ -79,7 +79,7 @@ describe('settingsSubtabFromSearch', () => {
     expect(settingsSubtabFromSearch('?section=nonsense&subtab=customers')).toBe('customers')
   })
 
-  it('recognises exactly the five warehouse section anchors', () => {
+  it('recognises every warehouse section anchor', () => {
     for (const id of Object.values(SETTINGS_SECTION_IDS)) {
       expect(isKnownSettingsSection(id)).toBe(true)
     }

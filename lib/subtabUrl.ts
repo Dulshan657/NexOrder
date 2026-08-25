@@ -58,6 +58,7 @@ const SECTION_SUBTAB: Readonly<Record<string, SettingsSubTab>> = {
   'settings-wh-zone-profiles': 'warehouse',
   'settings-wh-label-printing': 'warehouse',
   'settings-wh-code-pattern': 'warehouse',
+  'settings-wh-slotting-rules': 'warehouse',
 }
 
 /**

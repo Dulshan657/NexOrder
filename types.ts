@@ -64,6 +64,10 @@ export interface Product {
     description: string;
     price: number;
     category: Category;
+    /** Manufacturer / brand (mig 00114). Optional because a row read before the
+     *  column existed has none, and undefined is the honest value for
+     *  "unbranded" — never '', which a slotting rule condition could match. */
+    brand?: string;
     inventory: number; // on-hand cache (SUM of inventory_balances.on_hand) — physical stock
     available: number; // reservable cache (SUM of inventory_balances.available = on_hand − allocated)
     imageUrl?: string;
