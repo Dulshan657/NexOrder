@@ -33,26 +33,30 @@ function product(overrides: Partial<Product> = {}): Product {
   } as Product
 }
 
-function renderCard(line: Partial<DraftLine> = {}, onUpdate = vi.fn()) {
+function renderCard(
+  line: Partial<DraftLine> = {},
+  onUpdate = vi.fn(),
+  extra: { inGroup?: boolean; onSetPlateType?: (huType: 'pallet' | 'carton') => void } = {},
+) {
   const draft: DraftLine = { ...newDraft(plate.key), productId: 1, ...line }
+  const onSetPlateType = extra.onSetPlateType ?? vi.fn()
   const utils = render(
     <ReceiveLineCard
       line={draft}
       product={product()}
       supplierId={1}
-      referencedPlates={[plate]}
       plates={[plate]}
       plateDestinationLabel={(hu) => (hu === 'pallet' ? 'Pallet — reserve' : 'Carton — pick face')}
       onUpdate={onUpdate}
       onRemove={vi.fn()}
-      onAssignPlate={vi.fn()}
-      onSetPlateType={vi.fn()}
+      onSetPlateType={onSetPlateType}
+      inGroup={extra.inGroup}
     />,
   )
-  return { ...utils, onUpdate, draft }
+  return { ...utils, onUpdate, onSetPlateType, draft }
 }
 
-const toggle = () => screen.getByRole('button', { name: /lot, expiry, barcode, pallet/i })
+const toggle = () => screen.getByRole('button', { name: /lot, expiry, barcode/i })
 
 describe('the always-visible tier', () => {
   it('shows the product, its SKU and the supplier part number', () => {
@@ -114,8 +118,7 @@ describe('the disclosure', () => {
       /Lot code for line/i,
       /Expiry for line/i,
       /Batch barcode for line/i,
-      /Pallet or carton for line/i,
-      /Unit type for line/i,
+      /Arrived on, for line/i,
       /Quarantine line/i,
     ]) {
       expect(screen.getByLabelText(name)).toBeTruthy()
@@ -187,7 +190,7 @@ describe('touch targets', () => {
       screen.getByPlaceholderText('0'),
       screen.getByLabelText(/Lot code for line/i),
       screen.getByLabelText(/Expiry for line/i),
-      screen.getByLabelText(/Pallet or carton for line/i),
+      screen.getByLabelText(/Arrived on, for line/i),
     ]) {
       expect(el.className).toContain('min-h-[44px]')
     }
@@ -211,5 +214,121 @@ describe('editing', () => {
     const { onUpdate } = renderCard()
     fireEvent.click(screen.getByLabelText(/Quarantine line/i))
     expect(onUpdate).toHaveBeenCalledWith({ quarantine: true })
+  })
+})
+
+// ── THE REPORTED BUG ────────────────────────────────────────────────────────
+//
+// This cell used to stack a plate PICKER over a TYPE selector. It read specific
+// → general while the data ran general → specific: the type select's value came
+// off the PLATE, not the line, so on a shared plate changing one line silently
+// retyped every sibling. One select, and a normal line owning its plate
+// one-for-one, is what removes the whole class.
+
+describe('arrived on', () => {
+  it('offers ONE select, not the old picker-over-type pair', () => {
+    renderCard()
+    expect(screen.getAllByLabelText(/Arrived on, for line/i)).toHaveLength(1)
+    // The plate picker and its "+ New unit…" escape hatch are gone: sharing a
+    // plate is what the mixed-pallet card is for.
+    expect(screen.queryByLabelText(/Pallet or carton for line/i)).toBeNull()
+    expect(screen.queryByLabelText(/Unit type for line/i)).toBeNull()
+    expect(screen.queryByText(/New unit/i)).toBeNull()
+  })
+
+  it('reads its value from the line own plate, and offers both types', () => {
+    renderCard()
+    const select = screen.getByLabelText(/Arrived on, for line/i) as HTMLSelectElement
+    expect(select.value).toBe('pallet')
+    expect([...select.options].map((o) => o.value)).toEqual(['pallet', 'carton'])
+  })
+
+  it('shows where each type is USUALLY steered, phrased as a prediction', () => {
+    // The destination is the level-role routing (mig 00081), not a decision the
+    // operator is making here — putaway may place this anywhere.
+    renderCard()
+    const select = screen.getByLabelText(/Arrived on, for line/i)
+    expect(select.textContent).toMatch(/Pallet — reserve/)
+    expect(select.textContent).toMatch(/Carton — pick face/)
+  })
+
+  it('reports a type change for THIS line only', () => {
+    const onSetPlateType = vi.fn()
+    renderCard({}, vi.fn(), { onSetPlateType })
+    fireEvent.change(screen.getByLabelText(/Arrived on, for line/i), {
+      target: { value: 'carton' },
+    })
+    expect(onSetPlateType).toHaveBeenCalledWith('carton')
+    expect(onSetPlateType).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('inside a mixed pallet', () => {
+  // The container owns the type. A member line offering the choice would let one
+  // line claim to have arrived as a carton while sharing a pallet with three
+  // others — the same contradiction the old shared-plate dropdown produced.
+  it('withholds the Arrived on select', () => {
+    renderCard({}, vi.fn(), { inGroup: true })
+    expect(screen.queryByLabelText(/Arrived on, for line/i)).toBeNull()
+  })
+
+  it('keeps every other field, because a SKU on a mixed pallet still has a lot', () => {
+    renderCard({}, vi.fn(), { inGroup: true })
+    for (const name of [
+      /Lot code for line/i,
+      /Expiry for line/i,
+      /Batch barcode for line/i,
+      /Quarantine line/i,
+    ]) {
+      expect(screen.getByLabelText(name)).toBeTruthy()
+    }
+    expect(screen.getByPlaceholderText('0')).toBeTruthy()
+  })
+
+  it('drops the plate from the collapsed summary — the card header names it', () => {
+    renderCard({ lotCode: 'L-9', inGroup: undefined } as Partial<DraftLine>, vi.fn(), {
+      inGroup: true,
+    })
+    const text = toggle().textContent ?? ''
+    expect(text).toMatch(/Lot L-9/)
+    expect(text).not.toMatch(/Pallet 1/)
+  })
+
+  it('still says Hold, which has a consequence for the stock either way', () => {
+    renderCard({ quarantine: true }, vi.fn(), { inGroup: true })
+    expect(toggle().textContent).toMatch(/^Hold/)
+  })
+})
+
+describe('tooltips', () => {
+  // The dock device is a CipherLab RS35, which has no pointer to hover with —
+  // so every hint has to be reachable by press and by keyboard.
+  it('explains Arrived on, Hold, and each of lot / expiry / barcode', () => {
+    renderCard()
+    for (const name of [
+      /What does Arrived on mean/i,
+      /What does Hold do/i,
+      /What is a lot code/i,
+      /What is the expiry for/i,
+      /What is this barcode for/i,
+    ]) {
+      expect(screen.getByRole('button', { name })).toBeTruthy()
+    }
+  })
+
+  it('says arrival is not a storage decision, which is the whole point', () => {
+    renderCard()
+    fireEvent.click(screen.getByRole('button', { name: /What does Arrived on mean/i }))
+    expect(screen.getByRole('tooltip').textContent).toMatch(/not a storage decision/i)
+  })
+
+  it('does not answer to the disclosure selector the mobile suite uses', () => {
+    // `tests/e2e/mobile/receive-stock.spec.ts` finds the line disclosure with
+    // `button[aria-expanded][aria-controls]`. A tooltip is described-by, not a
+    // disclosure, so it must never match — or `.first()` picks a hint instead.
+    const { container } = renderCard()
+    const matches = container.querySelectorAll('button[aria-expanded][aria-controls]')
+    expect(matches).toHaveLength(1)
+    expect(matches[0]).toBe(toggle())
   })
 })

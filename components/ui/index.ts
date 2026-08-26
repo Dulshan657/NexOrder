@@ -22,3 +22,4 @@ export {
 export { Toggle, type ToggleProps } from './Toggle'
 export { ScanField, type ScanFieldProps } from './ScanField'
 export { default as CreatableSelect, type CreatableSelectProps } from './CreatableSelect'
+export { Tooltip, type TooltipProps } from './Tooltip'

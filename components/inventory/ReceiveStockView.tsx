@@ -13,8 +13,10 @@ import { receivableUoms, deriveDefaultUoms, baseUom } from '../../lib/uom';
 import { productsForSupplier, supplierSkuFor, matchesProductQuery } from '../../lib/productSuppliers';
 import { ScanField } from '../ui/ScanField';
 import ReceiveLineCard, { RECEIVE_ROW_COLUMNS } from './receive/ReceiveLineCard';
+import MixedPalletCard from './receive/MixedPalletCard';
 import {
   newDraft,
+  newMixedPlate,
   newPlate,
   plateLabel,
   type DraftLine,
@@ -240,12 +242,17 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   // routing rather than restate it.
   const { data: levelRoles = [] } = useLevelRoles();
 
+  // Phrased as a PREDICTION, not a destination. "Pallet → Reserve" read as a
+  // storage commitment, and it is not one: putaway may place this anywhere, the
+  // SKU's own rule outranks the plate preference, and the operator can break a
+  // pallet down on the floor. What arrives and where it ends up are different
+  // questions, and this control only answers the first.
   const plateDestinationLabel = (huType: 'pallet' | 'carton'): string => {
     const noun = huType === 'pallet' ? 'Pallet' : 'Carton';
     const dest = rolesForHuType(levelRoles, huType).map((k) => roleLabel(levelRoles, k));
     // No role claims this plate type: putaway falls back to the SKU's own rule,
-    // so promising a destination here would be a lie.
-    return dest.length > 0 ? `${noun} → ${dest.join('/')}` : noun;
+    // so naming a destination here would be a lie rather than a guess.
+    return dest.length > 0 ? `${noun} (usually → ${dest.join('/')})` : noun;
   };
 
   // Engine putaway recommendations for the most recent receipt (layout warehouses).
@@ -356,16 +363,53 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   // an operator building a mixed pallet reassigns lines onto a shared plate.
   const [plates, setPlates] = useState<DraftPlate[]>([]);
 
-  const ensurePlate = (): { plate: DraftPlate; next: DraftPlate[] } => {
-    const plate = newPlate();
-    return { plate, next: [...plates, plate] };
-  };
+  // Which mixed pallet is capturing new lines, if any. Null is the ordinary
+  // case: a new line gets a plate of its own, which is what a delivery of
+  // separate units actually looks like.
+  const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
+
+  // ScanField exposes no ref, so reach the input through the wrapper we own.
+  // Only for pointer/keyboard "Add item" — a gun does not need focus at all,
+  // because `useWedgeScanner` captures regardless of where it sits.
+  const searchWrapRef = useRef<HTMLDivElement | null>(null);
+  const focusSearch = () => { searchWrapRef.current?.querySelector('input')?.focus(); };
+
 
   const addProduct = (product: Product) => {
-    const { plate, next } = ensurePlate();
-    setPlates(next);
+    // A mixed pallet is open, so everything added rides on it — including dock
+    // scans, since `handleDockScan` reaches here. That is the whole point of
+    // the card on a gun: walk the pallet, scan, scan, scan, press Done.
+    const openGroup = activeGroupKey != null && plates.some(p => p.key === activeGroupKey);
+    if (openGroup) {
+      setPicked(prev => [...prev, { ...newDraft(activeGroupKey as string, quarantineAll), productId: product.id }]);
+      setSearch('');
+      return;
+    }
+    // Functional update, NOT `setPlates([...plates, plate])`. Two scans landing
+    // in one React batch both read the same `plates` from their own render
+    // closure, so the second drops the first's plate and leaves its line
+    // pointing at a plate_key that is never declared -- which `createPlates`
+    // rejects, failing the WHOLE receipt. A dock gun is exactly how you get two
+    // adds in one batch.
+    const plate = newPlate();
+    setPlates(prev => [...prev, plate]);
     setPicked(prev => [...prev, { ...newDraft(plate.key, quarantineAll), productId: product.id }]);
     setSearch('');
+  };
+
+  /** Start a mixed pallet and point everything that follows at it. */
+  const addMixedPallet = () => {
+    const plate = newMixedPlate();
+    setPlates(prev => [...prev, plate]);
+    setActiveGroupKey(plate.key);
+    focusSearch();
+  };
+
+  /** Remove a mixed pallet and everything on it — the goods left together. */
+  const removePlate = (plateKey: string) => {
+    setPicked(prev => prev.filter(l => l.plateKey !== plateKey));
+    setPlates(prev => prev.filter(p => p.key !== plateKey));
+    setActiveGroupKey(k => (k === plateKey ? null : k));
   };
 
   // ── Scanning at the dock ───────────────────────────────────────────────────
@@ -430,19 +474,12 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
     setPicked(prev => prev.filter(l => l.key !== key));
   };
 
+  // A normal line owns its plate one-for-one, so this can no longer retype a
+  // sibling line's unit the way the old shared-plate dropdown could. The
+  // `!p.mixed` guard is the remaining case: a mixed pallet is a pallet by
+  // definition, and nothing on this screen may argue otherwise.
   const setPlateType = (plateKey: string, huType: 'pallet' | 'carton') => {
-    setPlates(prev => prev.map(p => (p.key === plateKey ? { ...p, huType } : p)));
-  };
-
-  /** Move a line onto a different plate, or onto a brand-new one. */
-  const assignPlate = (lineKey: string, target: string) => {
-    if (target === '__new') {
-      const plate = newPlate();
-      setPlates(prev => [...prev, plate]);
-      updateLine(lineKey, { plateKey: plate.key });
-      return;
-    }
-    updateLine(lineKey, { plateKey: target });
+    setPlates(prev => prev.map(p => (p.key === plateKey && !p.mixed ? { ...p, huType } : p)));
   };
 
   // Plates with nothing on them are dropped before submit: the server rejects
@@ -451,6 +488,13 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   const referencedPlates = useMemo(
     () => plates.filter(p => picked.some(l => l.plateKey === p.key)),
     [plates, picked],
+  );
+
+  // Mixed pallets render as their own cards; everything else is a plain line.
+  const mixedPlates = useMemo(() => plates.filter(p => p.mixed), [plates]);
+  const looseLines = useMemo(
+    () => picked.filter(l => !mixedPlates.some(p => p.key === l.plateKey)),
+    [picked, mixedPlates],
   );
 
   const validLines = useMemo(
@@ -496,6 +540,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       addToast(`Received ${result.lines_received} line${result.lines_received === 1 ? '' : 's'} into stock`, 'success');
       setPicked([]);
       setPlates([]);
+      setActiveGroupKey(null);
       setReference('');
       setQuarantineAll(false);
       setSupplierId(null);
@@ -647,7 +692,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
           Splitting them into two inputs would mean the operator has to decide
           which one to aim at before they know what the label is. */}
       <div className="max-w-xl space-y-1.5">
-        <div className="relative">
+        <div className="relative" ref={searchWrapRef}>
           <ScanField
             ariaLabel="Search products"
             value={search}
@@ -736,7 +781,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       </div>
 
       {/* Staged receipt lines */}
-      {picked.length === 0 ? (
+      {picked.length === 0 && mixedPlates.length === 0 ? (
         <div className="glass-card rounded-xl p-10 text-center">
           <div className="w-12 h-12 rounded-full bg-nexgen-blue/10 flex items-center justify-center mx-auto mb-3">
             <Search className="w-5 h-5 text-nexgen-blue" />
@@ -746,6 +791,18 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
             Pick the supplier above, then search a product to add a line, set the received quantity
             (and an optional lot code &amp; expiry), and receive it into {destName ?? 'the selected warehouse'}.
           </p>
+          {/* The mixed-pallet affordance has to live here as well as in the
+              footer. The footer only exists once something is staged, so
+              without this a receipt could never START with a mixed pallet —
+              which is exactly how a delivery of one arrives. */}
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <button
+              onClick={addMixedPallet}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press"
+            >
+              <Boxes className="w-4 h-4" /> Mixed pallet
+            </button>
+          </div>
         </div>
       ) : (
         <div className="glass-card rounded-xl overflow-hidden">
@@ -758,7 +815,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
           <div
             className={`hidden border-b border-stone-200 px-4 py-3 xl:grid xl:gap-x-4 ${RECEIVE_ROW_COLUMNS}`}
           >
-            {['Product', 'Qty', 'Lot code', 'Expiry', 'Barcode', 'Pallet / carton', 'Hold', ''].map(
+            {['Product', 'Qty', 'Lot code', 'Expiry', 'Barcode', 'Arrived on', 'Hold', ''].map(
               (heading, i) => (
                 <span
                   key={heading || `spacer-${i}`}
@@ -776,7 +833,29 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               inside one `glass-card`, and boxing each of them again would be a
               second surface saying nothing the divider does not. */}
           <div className="divide-y divide-stone-100">
-            {picked.map(line => (
+            {/* Mixed pallets first: they are containers, and a container that
+                sorted itself in among its own contents would read as one more
+                line. `plateLabel` is passed the FULL plate list so the numbering
+                counts mixed pallets among themselves. */}
+            {mixedPlates.map(plate => (
+              <React.Fragment key={plate.key}>
+                <MixedPalletCard
+                  plate={plate}
+                  label={plateLabel(plates, plate.key)}
+                  lines={picked.filter(l => l.plateKey === plate.key)}
+                  productById={productById}
+                  supplierId={supplierId}
+                  plateDestinationLabel={plateDestinationLabel}
+                  active={activeGroupKey === plate.key}
+                  onAddItem={() => { setActiveGroupKey(plate.key); focusSearch(); }}
+                  onDone={() => setActiveGroupKey(null)}
+                  onRemove={() => removePlate(plate.key)}
+                  onUpdateLine={updateLine}
+                  onRemoveLine={removeLine}
+                />
+              </React.Fragment>
+            ))}
+            {looseLines.map(line => (
               // `key` on a typed local component is a type error here: with no
               // @types/react there is no global JSX namespace, so `key` is
               // checked against the component's own props. Fragment carries it
@@ -787,12 +866,10 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                 line={line}
                 product={line.productId != null ? productById.get(line.productId) : undefined}
                 supplierId={supplierId}
-                referencedPlates={referencedPlates}
                 plates={plates}
                 plateDestinationLabel={plateDestinationLabel}
                 onUpdate={patch => updateLine(line.key, patch)}
                 onRemove={() => removeLine(line.key)}
-                onAssignPlate={target => assignPlate(line.key, target)}
                 onSetPlateType={huType => setPlateType(line.plateKey, huType)}
               />
               </React.Fragment>
@@ -810,6 +887,15 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press"
             >
               <Plus className="w-4 h-4" /> Add blank line
+            </button>
+            {/* The container-first path. Declaring the pallet and then listing
+                what is on it is how an operator describes one; the alternative
+                was pointing three separate line dropdowns at the same entry. */}
+            <button
+              onClick={addMixedPallet}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press"
+            >
+              <Boxes className="w-4 h-4" /> Mixed pallet
             </button>
             <div className="ml-auto flex flex-wrap items-center gap-3">
               {!hasSupplier && validLines.length > 0 && (

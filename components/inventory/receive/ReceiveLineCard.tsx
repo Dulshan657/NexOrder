@@ -56,6 +56,7 @@
 import React, { useId, useState } from 'react'
 import { ChevronDown, Trash2 } from 'lucide-react'
 import { ScanField } from '../../ui/ScanField'
+import { Tooltip } from '../../ui/Tooltip'
 import { normalizeScan } from '../../../lib/scan/resolveScan'
 import { receivableUoms, deriveDefaultUoms, baseUom } from '../../../lib/uom'
 import { supplierSkuFor } from '../../../lib/productSuppliers'
@@ -87,28 +88,31 @@ export interface ReceiveLineCardProps {
   line: DraftLine
   product: Product | undefined
   supplierId: number | null
-  /** Plates currently referenced by at least one line, in display order. */
-  referencedPlates: readonly DraftPlate[]
   plates: readonly DraftPlate[]
   /** Where a plate of this type would be routed — reads level roles (mig 00081). */
   plateDestinationLabel: (huType: 'pallet' | 'carton') => string
   onUpdate: (patch: Partial<DraftLine>) => void
   onRemove: () => void
-  onAssignPlate: (target: string) => void
   onSetPlateType: (huType: 'pallet' | 'carton') => void
+  /**
+   * This line sits inside a mixed-pallet card, which owns the container. The
+   * "Arrived on" cell is withheld — a mixed pallet is a pallet, and offering
+   * the choice per line would let one line claim to have arrived as a carton
+   * while sharing a pallet with three others.
+   */
+  inGroup?: boolean
 }
 
 export function ReceiveLineCard({
   line,
   product,
   supplierId,
-  referencedPlates,
   plates,
   plateDestinationLabel,
   onUpdate,
   onRemove,
-  onAssignPlate,
   onSetPlateType,
+  inGroup = false,
 }: ReceiveLineCardProps) {
   // Local, and keyed by the line's own identity through React's `key`. Nothing
   // above needs to know which lines are open, and lifting it would put a piece
@@ -210,7 +214,7 @@ export function ReceiveLineCard({
           className={`h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
           aria-hidden="true"
         />
-        <span className="min-w-0 truncate">{summarise(line, plates, referencedPlates)}</span>
+        <span className="min-w-0 truncate">{summarise(line, plates, inGroup)}</span>
       </button>
 
       {/*
@@ -224,25 +228,37 @@ export function ReceiveLineCard({
       >
         <div>
           <MicroLabel>Lot code</MicroLabel>
-          <input
-            type="text"
-            value={line.lotCode}
-            onChange={(e) => onUpdate({ lotCode: e.target.value })}
-            className={CONTROL}
-            placeholder="optional"
-            aria-label={`Lot code for line ${line.key}`}
-          />
+          <div className="flex items-center gap-1.5">
+            <input
+              type="text"
+              value={line.lotCode}
+              onChange={(e) => onUpdate({ lotCode: e.target.value })}
+              className={`${CONTROL} min-w-0 flex-1`}
+              placeholder="optional"
+              aria-label={`Lot code for line ${line.key}`}
+            />
+            <Tooltip
+              label="What is a lot code?"
+              text="The supplier's batch or lot number. Paired with an expiry date it drives FEFO picking, so the oldest stock leaves first."
+            />
+          </div>
         </div>
 
         <div>
           <MicroLabel>Expiry</MicroLabel>
-          <input
-            type="date"
-            value={line.expiryDate}
-            onChange={(e) => onUpdate({ expiryDate: e.target.value })}
-            className={CONTROL}
-            aria-label={`Expiry for line ${line.key}`}
-          />
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={line.expiryDate}
+              onChange={(e) => onUpdate({ expiryDate: e.target.value })}
+              className={`${CONTROL} min-w-0 flex-1`}
+              aria-label={`Expiry for line ${line.key}`}
+            />
+            <Tooltip
+              label="What is the expiry for?"
+              text="Optional. It sets the FEFO order for picking - the earliest expiry is picked first, ahead of stock received before it."
+            />
+          </div>
         </div>
 
         <div className="col-span-2 xl:col-span-1">
@@ -258,62 +274,90 @@ export function ReceiveLineCard({
             `batchesByBarcode`, so a trailing control character saved now is a
             batch that can never be scanned again.
           */}
-          <ScanField
-            refocusAfterScan={false}
-            ariaLabel={`Batch barcode for line ${line.key}`}
-            value={line.barcode}
-            onChange={(v: string) => onUpdate({ barcode: v })}
-            onScan={(v: string) => onUpdate({ barcode: normalizeScan(v) })}
-            placeholder="optional"
-          />
+          <div className="flex items-center gap-1.5">
+            <div className="min-w-0 flex-1">
+              <ScanField
+                refocusAfterScan={false}
+                ariaLabel={`Batch barcode for line ${line.key}`}
+                value={line.barcode}
+                onChange={(v: string) => onUpdate({ barcode: v })}
+                onScan={(v: string) => onUpdate({ barcode: normalizeScan(v) })}
+                placeholder="optional"
+              />
+            </div>
+            <Tooltip
+              align="right"
+              label="What is this barcode for?"
+              text="The barcode printed on this batch, when it differs from the product's own. Scanning it later resolves to this batch."
+            />
+          </div>
         </div>
 
-        <div className="col-span-2 xl:col-span-1">
-          <MicroLabel>Pallet / carton</MicroLabel>
-          {/* Which physical unit this line sits on. Defaults to a plate of its
-              own; reassign to build a mixed pallet. */}
-          <select
-            aria-label={`Pallet or carton for line ${line.key}`}
-            value={line.plateKey}
-            onChange={(e) => onAssignPlate(e.target.value)}
-            className={CONTROL}
-          >
-            {referencedPlates.map((p) => (
-              <option key={p.key} value={p.key}>
-                {plateLabel(referencedPlates, p.key)}
-              </option>
-            ))}
-            <option value="__new">+ New unit…</option>
-          </select>
-          <select
-            aria-label={`Unit type for line ${line.key}`}
-            value={plates.find((p) => p.key === line.plateKey)?.huType ?? 'pallet'}
-            onChange={(e) => onSetPlateType(e.target.value as 'pallet' | 'carton')}
-            className={`${CONTROL} mt-1.5 text-xs`}
-          >
-            {/* The destination shown here IS the routing: since mig 00081 each
-                level role declares which plate types belong on it, so an
-                operator who moves pallets to a different role sees it change. */}
-            <option value="pallet">{plateDestinationLabel('pallet')}</option>
-            <option value="carton">{plateDestinationLabel('carton')}</option>
-          </select>
-        </div>
+        {/*
+          -- ARRIVED ON ------------------------------------------------------
+          One select, not two. This cell used to stack a plate PICKER ("Pallet
+          1", "Carton 2", "+ New unit...") over a TYPE selector, which read
+          specific -> general while the data ran general -> specific: the type
+          select's value came off the PLATE, so on a shared plate changing one
+          line silently retyped every sibling.
+
+          A normal line now owns its plate one-for-one, so that hazard is gone
+          by construction rather than by guarding. Sharing a plate is what the
+          mixed-pallet card is for, and there the container owns the type.
+        */}
+        {inGroup ? (
+          // Empty rather than absent: the row must keep its eight columns or it
+          // stops lining up under the header at `xl`.
+          <div className="hidden xl:block" />
+        ) : (
+          <div className="col-span-2 xl:col-span-1">
+            <MicroLabel>Arrived on</MicroLabel>
+            <div className="flex items-center gap-1.5">
+              <select
+                aria-label={`Arrived on, for line ${line.key}`}
+                value={plates.find((p) => p.key === line.plateKey)?.huType ?? 'pallet'}
+                onChange={(e) => onSetPlateType(e.target.value as 'pallet' | 'carton')}
+                className={`${CONTROL} min-w-0 flex-1`}
+              >
+                {/* The destination shown here IS the routing: since mig 00081
+                    each level role declares which plate types belong on it, so
+                    an operator who moves pallets to a different role sees it
+                    change. It is phrased as a prediction because that is all it
+                    is -- putaway may place this anywhere. */}
+                <option value="pallet">{plateDestinationLabel('pallet')}</option>
+                <option value="carton">{plateDestinationLabel('carton')}</option>
+              </select>
+              <Tooltip
+                align="right"
+                label="What does Arrived on mean?"
+                text="How the goods physically turned up. It is a hint for putaway, not a storage decision - you can still place them differently on the floor."
+              />
+            </div>
+          </div>
+        )}
 
         {/* The per-line override. Unticking one line of a held delivery releases
             just that line to ordinary stock. A full-height label below `xl`, so
             the checkbox is not a 16px target for a gloved thumb. */}
         <div className="col-span-2 xl:col-span-1 xl:text-center">
           <MicroLabel>Hold</MicroLabel>
-          <label className="flex min-h-[44px] cursor-pointer items-center gap-2 xl:justify-center">
-            <input
-              type="checkbox"
-              aria-label={`Quarantine line ${line.key}`}
-              checked={line.quarantine}
-              onChange={(e) => onUpdate({ quarantine: e.target.checked })}
-              className="h-4 w-4"
+          <div className="flex min-h-[44px] items-center gap-1.5 xl:justify-center">
+            <label className="flex min-h-[44px] flex-1 cursor-pointer items-center gap-2 xl:flex-none">
+              <input
+                type="checkbox"
+                aria-label={`Quarantine line ${line.key}`}
+                checked={line.quarantine}
+                onChange={(e) => onUpdate({ quarantine: e.target.checked })}
+                className="h-4 w-4"
+              />
+              <span className="text-sm text-stone-600 xl:hidden">Hold this line back</span>
+            </label>
+            <Tooltip
+              align="right"
+              label="What does Hold do?"
+              text="Held stock is received into the warehouse but stays unavailable to sell or pick until someone releases it."
             />
-            <span className="text-sm text-stone-600 xl:hidden">Hold this line back</span>
-          </label>
+          </div>
         </div>
       </div>
 
@@ -339,18 +383,17 @@ export function ReceiveLineCard({
  * every time and the operator learns where to look. Hold comes first when it is
  * on: it is the only one of the five with a consequence for the stock.
  */
-function summarise(
-  line: DraftLine,
-  plates: readonly DraftPlate[],
-  referencedPlates: readonly DraftPlate[],
-): string {
+function summarise(line: DraftLine, plates: readonly DraftPlate[], inGroup: boolean): string {
   const parts: string[] = []
   if (line.quarantine) parts.push('Hold')
-  parts.push(plateLabel(referencedPlates.length > 0 ? referencedPlates : plates, line.plateKey))
+  // Inside a mixed pallet the card header already names the unit; repeating it
+  // on every line would be the same two words down the whole card.
+  if (!inGroup) parts.push(plateLabel(plates, line.plateKey))
   if (line.lotCode.trim()) parts.push(`Lot ${line.lotCode.trim()}`)
   if (line.expiryDate) parts.push(`Exp ${line.expiryDate}`)
   if (line.barcode.trim()) parts.push('Barcode set')
-  return `${parts.join(' · ')} — lot, expiry, barcode, pallet`
+  const fields = inGroup ? 'lot, expiry, barcode' : 'lot, expiry, barcode, arrived on'
+  return `${parts.join(' · ')} — ${fields}`
 }
 
 export default ReceiveLineCard
