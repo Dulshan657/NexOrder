@@ -628,6 +628,17 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
         </button>
     );
 
+    // `view === 'orders'` renders a DIFFERENT PAGE per role — `OrdersHistoryView`
+    // dispatches `OrderHistory` for a customer and `OrderImportPage` for a rep,
+    // whose own <h1>s read "Order History" and "Order Import" respectively. The
+    // sidebar had one hard-coded label for both, so a CUSTOMER's own order
+    // history was filed under "Order Import" — the name of an admin tab they
+    // cannot reach, describing an action they never perform.
+    //
+    // Derived once and read by both the sidebar button and the mobile top bar,
+    // so the nav, the bar and the page heading cannot disagree.
+    const ordersViewLabel = isHoReCaUser ? 'Order History' : 'Order Import';
+
     // One definition, mounted twice: in the sidebar header above `md`, and in
     // the mobile top bar below it. Only one is ever visible, and sharing the
     // element is what stops the two copies drifting apart on props.
@@ -660,11 +671,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     // customers run on a different union entirely and need their own map.
     const VIEW_LABELS: Record<typeof view, string> = {
         ordering: 'Shop',
-        // The sidebar button for this view is labelled "Order Import", which is
-        // a different admin tab entirely and is wrong here — the view is
-        // OrdersHistoryView and CLAUDE.md's role table calls it Order History.
-        // Naming it correctly in the bar rather than propagating the mislabel.
-        orders: 'Order History',
+        orders: ordersViewLabel,
         dashboard: 'Dashboard',
         hoReCas: 'HoReCa',
         stock: 'Stock',
@@ -758,7 +765,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         onClick={() => { setView('orders'); setIsSidebarOpen(false); }}
                                         className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'orders' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <History className="w-5 h-5 mr-3" /> Order Import
+                                        <History className="w-5 h-5 mr-3" /> {ordersViewLabel}
                                     </button>
                                     )}
                                     {MODULE_INVOICING && (
