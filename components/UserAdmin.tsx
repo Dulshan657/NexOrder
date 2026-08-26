@@ -54,7 +54,7 @@ const UserAdmin: React.FC<UserAdminProps> = ({ users, onAddUser, onUpdateUser, o
     };
 
     return (
-        <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+        <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
             <div className="flex flex-wrap gap-4 justify-between items-center">
                 <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">Manage Users</h2>
                 <button

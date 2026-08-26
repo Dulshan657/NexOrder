@@ -14,6 +14,7 @@
     "test:integration": "vitest run -c vitest.integration.config.ts",
     "check:csp": "node scripts/check-csp.mjs",
     "check:overlays": "node scripts/check-overlays.mjs",
+    "check:viewport": "node scripts/check-viewport-units.mjs",
     "check:grants:dev": "node scripts/check-grants.mjs --env=dev",
     "check:grants:amadiya": "node scripts/check-grants.mjs --env=amadiya",
     "check:storage:dev": "node scripts/check-storage.mjs --env=dev",

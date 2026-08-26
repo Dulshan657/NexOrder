@@ -565,7 +565,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   };
 
   return (
-    <div className="bg-white min-h-screen p-4 sm:p-6 xl:p-8 space-y-6">
+    <div className="bg-white min-h-svh p-4 sm:p-6 xl:p-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-lg bg-nexgen-blue/10">

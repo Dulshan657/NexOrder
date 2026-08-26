@@ -796,7 +796,7 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
               title="PO email body"
               sandbox=""
               referrerPolicy="no-referrer"
-              className="w-full h-full min-h-[60vh] bg-white"
+              className="w-full h-full min-h-[60svh] bg-white"
             />
           )
         ) : error ? (
@@ -836,7 +836,7 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
             src={url}
             title="PO document"
             referrerPolicy="no-referrer"
-            className="w-full h-full min-h-[60vh] bg-white"
+            className="w-full h-full min-h-[60svh] bg-white"
           />
         ) : format === 'image' ? (
           <img
@@ -850,7 +850,7 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
           // (and a sandboxed iframe blocks the download fallback), so offer
           // an explicit open/download instead of a blank pane. The parsed
           // fields on the right reflect the extracted content.
-          <div className="p-6 flex flex-col items-center justify-center text-center gap-4 min-h-[40vh]">
+          <div className="p-6 flex flex-col items-center justify-center text-center gap-4 min-h-[40svh]">
             <FileText className="w-10 h-10 text-stone-400" />
             <div className="text-sm text-stone-600 max-w-xs">
               {format.toUpperCase()} documents can't be previewed in the browser.

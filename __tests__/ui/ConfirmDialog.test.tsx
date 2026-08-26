@@ -79,4 +79,46 @@ describe('ConfirmDialog', () => {
     )
     expect(screen.getByText('revoke access').tagName).toBe('A')
   })
+
+  // This was the ONE overlay primitive in the app with no height cap and no
+  // internal scroller. `Overlay` is explicitly never a scroll container and the
+  // panel is centred, so a long message grew it past the viewport in both
+  // directions at once and pushed Confirm/Cancel off the bottom with no way to
+  // reach them. Measured in Chrome at 360x664 before the fix: the panel spanned
+  // -57..722 and the Confirm button sat at 661..697, i.e. 3px of it visible.
+  //
+  // jsdom has no layout, so this asserts the SHAPE that makes the geometry come
+  // out right -- the same contract components/ui/chrome.tsx applies to Modal and
+  // Sheet, and the reason those two never had this bug.
+  it('caps its height and scrolls the message, so the buttons stay reachable', () => {
+    render(
+      <ConfirmDialog
+        open
+        title="Cancel this order?"
+        message={'a very long explanation. '.repeat(80)}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+    const panel = screen.getByRole('alertdialog')
+
+    expect(panel.className).toMatch(/max-h-\[90svh\]/)
+    expect(panel.className).toMatch(/flex flex-col/)
+    // `vh` would be the URL-bar-retracted height and is what F36 was about.
+    expect(panel.className).not.toMatch(/max-h-\[\d+vh\]/)
+
+    // Only the message scrolls. `min-h-0` is load-bearing: without it flexbox's
+    // `min-height: auto` refuses to shrink the body, the panel outgrows its cap
+    // and the button row is pushed out again -- which is exactly the Add
+    // Warehouse bug, in a different primitive.
+    const body = panel.querySelector('.overflow-y-auto')
+    expect(body, 'the message must be the scroller').not.toBeNull()
+    expect(body!.className).toMatch(/min-h-0/)
+    expect(body!.className).toMatch(/flex-1/)
+
+    // The buttons must sit OUTSIDE that scroller, and never shrink.
+    const confirm = screen.getByRole('button', { name: 'Confirm' })
+    expect(body!.contains(confirm)).toBe(false)
+    expect(confirm.closest('div')!.className).toMatch(/shrink-0/)
+  })
 })

@@ -372,7 +372,7 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
               ))}
             </datalist>
 
-            <div className="rounded-xl border border-stone-200 overflow-x-auto max-h-[45vh] overflow-y-auto">
+            <div className="rounded-xl border border-stone-200 overflow-x-auto max-h-[45svh] overflow-y-auto">
               <table className="min-w-full text-sm">
                 <thead className="sticky top-0 bg-stone-50 z-10">
                   <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-stone-500">

@@ -49,13 +49,27 @@ export function ConfirmDialog({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="po-modal-in bg-white rounded-xl shadow-elevated border border-stone-200 w-full max-w-sm p-6"
+        // THE ONLY OVERLAY IN THE APP THAT HAD NO HEIGHT CAP AND NO SCROLLER.
+        // `Overlay` is explicitly never a scroll container and this body is
+        // centred, so a long `message` grew the panel past the viewport in both
+        // directions at once and pushed Confirm/Cancel off the bottom with no
+        // way to reach them — on a 664px handheld screen, not a hypothetical
+        // one. Every sibling primitive already had this shape; this one was
+        // missed because a confirm dialog is "obviously" short.
+        //
+        // `svh`, not `vh`: `vh` is the URL-bar-retracted height, which never
+        // happens here. Same reasoning as the shell's `h-svh` (F36).
+        className="po-modal-in bg-white rounded-xl shadow-elevated border border-stone-200 w-full max-w-sm max-h-[90svh] flex flex-col p-6"
       >
-        <h2 id={titleId} className="text-base font-display font-bold text-stone-900">
+        <h2 id={titleId} className="shrink-0 text-base font-display font-bold text-stone-900">
           {title}
         </h2>
-        {message && <div className="mt-2 text-sm text-stone-600 leading-relaxed">{message}</div>}
-        <div className="mt-6 flex justify-end gap-3">
+        {message && (
+          <div className="mt-2 flex-1 min-h-0 overflow-y-auto text-sm text-stone-600 leading-relaxed">
+            {message}
+          </div>
+        )}
+        <div className="mt-6 shrink-0 flex justify-end gap-3">
           <Button variant="secondary" onClick={onCancel} disabled={busy}>
             {cancelLabel}
           </Button>

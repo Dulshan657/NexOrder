@@ -94,8 +94,8 @@ export function DocumentViewerProvider({ children }: { children: React.ReactNode
       {children}
       {state.status !== 'closed' && (
         // The body carries an explicit height rather than relying on `flex-1`.
-        // The old panel was `h-[88vh]` — a DEFINITE height, which is what let
-        // the `h-full` iframe resolve. Modal's panel is `max-h-[90vh]`, which
+        // The old panel was `h-[88vh]` -- a DEFINITE height, which is what let
+        // the `h-full` iframe resolve. Modal's panel is `max-h-[90svh]`, which
         // is not definite, so a percentage-height iframe inside a flex-1 body
         // would collapse to zero and the PDF would render as a blank strip.
         <Modal
@@ -104,7 +104,7 @@ export function DocumentViewerProvider({ children }: { children: React.ReactNode
           size="full"
           icon={<FileText className="w-4 h-4 text-nexgen-blue" />}
           title={state.title}
-          bodyClassName="shrink-0 h-[78vh] bg-stone-100 overflow-hidden"
+          bodyClassName="shrink-0 h-[78svh] bg-stone-100 overflow-hidden"
           footer={state.status === 'ready' ? (
             <>
               <button onClick={download} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press" aria-label="Download">

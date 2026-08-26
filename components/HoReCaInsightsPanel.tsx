@@ -93,7 +93,7 @@ const HoReCaInsightsPanel: React.FC<HoReCaInsightsPanelProps> = ({ allOrders, ho
   };
 
   return (
-    <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
       <div className="flex items-center gap-3">
         <Users className="w-5 h-5 text-stone-700" />
         <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">HoReCa Insights</h2>

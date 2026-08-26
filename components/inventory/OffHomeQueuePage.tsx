@@ -212,7 +212,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
   const listLoading = view === 'todo' ? isLoading : leftLoading
 
   return (
-    <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-5">
+    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900 flex items-center gap-2">
