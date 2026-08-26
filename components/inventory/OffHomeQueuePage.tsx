@@ -226,7 +226,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
         <div className="flex flex-wrap items-center gap-2">
           {activeWarehouses.length > 1 && (
             <select
-              className="text-sm border border-stone-200 rounded-lg px-2 py-1.5 bg-white"
+              className="min-w-0 max-w-full truncate text-sm border border-stone-200 rounded-lg px-2 py-1.5 bg-white"
               value={warehouseId ?? ''}
               onChange={(e) => setScope(Number(e.target.value))}
               aria-label="Warehouse"

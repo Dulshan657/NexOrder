@@ -91,7 +91,7 @@ const ProductSearchDropdown: React.FC<ProductSearchDropdownProps> = ({
       {error && <p className="text-rose-500 text-xs mt-1">{error}</p>}
 
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-40 overflow-hidden min-w-[280px]">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-40 overflow-hidden min-w-0 sm:min-w-[280px]">
           <div className="p-2 border-b border-stone-100">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />

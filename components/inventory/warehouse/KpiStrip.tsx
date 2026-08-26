@@ -19,7 +19,7 @@ export function KpiStrip({ warehouseId }: KpiStripProps) {
     { label: 'Utilization', value: util },
   ]
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       {items.map((i) => (
         <div key={i.label} className="glass-card rounded-lg px-3 py-1.5 text-center">
           <p className="font-mono text-sm font-semibold text-stone-900">{i.value}</p>

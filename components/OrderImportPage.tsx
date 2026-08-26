@@ -1168,53 +1168,55 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                               );
                             })()}
                             <div className="ml-6 mt-2 rounded-lg border border-stone-200 bg-white overflow-hidden">
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="border-b border-stone-100 bg-stone-50">
-                                    <th className="px-3 py-2 text-left font-semibold text-stone-500 uppercase tracking-wide">
-                                      Product
-                                    </th>
-                                    <th className="px-3 py-2 text-right font-semibold text-stone-500 uppercase tracking-wide">
-                                      Qty
-                                    </th>
-                                    <th className="px-3 py-2 text-right font-semibold text-stone-500 uppercase tracking-wide">
-                                      Unit Price
-                                    </th>
-                                    <th className="px-3 py-2 text-right font-semibold text-stone-500 uppercase tracking-wide">
-                                      Subtotal
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-stone-100">
-                                  {order.items.map((item, i) => (
-                                    <tr key={`${item.id}-${i}`} className="hover:bg-stone-50/50">
-                                      <td className="px-3 py-2 text-stone-700">{item.name}</td>
-                                      <td className="px-3 py-2 text-right text-stone-500 tabular-nums">
-                                        {item.quantity}
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="border-b border-stone-100 bg-stone-50">
+                                      <th className="px-3 py-2 text-left font-semibold text-stone-500 uppercase tracking-wide">
+                                        Product
+                                      </th>
+                                      <th className="px-3 py-2 text-right font-semibold text-stone-500 uppercase tracking-wide">
+                                        Qty
+                                      </th>
+                                      <th className="px-3 py-2 text-right font-semibold text-stone-500 uppercase tracking-wide">
+                                        Unit Price
+                                      </th>
+                                      <th className="px-3 py-2 text-right font-semibold text-stone-500 uppercase tracking-wide">
+                                        Subtotal
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-stone-100">
+                                    {order.items.map((item, i) => (
+                                      <tr key={`${item.id}-${i}`} className="hover:bg-stone-50/50">
+                                        <td className="px-3 py-2 text-stone-700">{item.name}</td>
+                                        <td className="px-3 py-2 text-right text-stone-500 tabular-nums">
+                                          {item.quantity}
+                                        </td>
+                                        <td className="px-3 py-2 text-right text-stone-500 tabular-nums">
+                                          ${item.price.toFixed(2)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-medium text-stone-900 tabular-nums">
+                                          ${(item.price * item.quantity).toFixed(2)}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                  <tfoot>
+                                    <tr className="border-t border-stone-200 bg-stone-50">
+                                      <td
+                                        colSpan={3}
+                                        className="px-3 py-2 text-right text-stone-600 font-semibold"
+                                      >
+                                        Order Total
                                       </td>
-                                      <td className="px-3 py-2 text-right text-stone-500 tabular-nums">
-                                        ${item.price.toFixed(2)}
-                                      </td>
-                                      <td className="px-3 py-2 text-right font-medium text-stone-900 tabular-nums">
-                                        ${(item.price * item.quantity).toFixed(2)}
+                                      <td className="px-3 py-2 text-right font-bold text-stone-900 tabular-nums">
+                                        ${order.total.toFixed(2)}
                                       </td>
                                     </tr>
-                                  ))}
-                                </tbody>
-                                <tfoot>
-                                  <tr className="border-t border-stone-200 bg-stone-50">
-                                    <td
-                                      colSpan={3}
-                                      className="px-3 py-2 text-right text-stone-600 font-semibold"
-                                    >
-                                      Order Total
-                                    </td>
-                                    <td className="px-3 py-2 text-right font-bold text-stone-900 tabular-nums">
-                                      ${order.total.toFixed(2)}
-                                    </td>
-                                  </tr>
-                                </tfoot>
-                              </table>
+                                  </tfoot>
+                                </table>
+                              </div>
                             </div>
 
                             {/* Generated documents for this order (pick slip / dispatch advice) */}

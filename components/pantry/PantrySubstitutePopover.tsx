@@ -45,7 +45,7 @@ const PantrySubstitutePopover: React.FC<PantrySubstitutePopoverProps> = ({
             role="dialog"
             aria-modal="false"
             aria-label={`Substitutes for ${target.name}`}
-            className="absolute right-0 top-full mt-2 z-30 w-80 bg-white border border-stone-200 rounded-xl shadow-card-hover overflow-hidden"
+            className="absolute right-0 top-full mt-2 z-30 w-80 max-w-[calc(100vw-2rem)] bg-white border border-stone-200 rounded-xl shadow-card-hover overflow-hidden"
         >
             <header className="px-3 py-2.5 border-b border-stone-100 flex items-start justify-between gap-2">
                 <div>

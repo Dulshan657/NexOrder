@@ -230,37 +230,39 @@ const CustomerAliasTable: React.FC<CustomerAliasTableProps> = ({
     return <EmptyAliases />
   }
   return (
-    <table className="w-full text-sm">
-      <thead className="text-left">
-        <tr className="border-b border-stone-300/70 text-stone-500">
-          <Th>Source</Th>
-          <Th>Customer</Th>
-          <Th>Provenance</Th>
-          <Th className="w-20 text-right">{/* Actions, label hidden */}</Th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-stone-200/70">
-        {filtered.map(row => (
-          <tr key={row.id} className="group hover:bg-stone-50">
-            <Td>
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono text-[11px] uppercase text-stone-500">
-                  {row.source_type.replace('_', ' ')}
-                </span>
-              </div>
-              <div className="truncate max-w-[18rem] text-stone-900">{row.source_value}</div>
-            </Td>
-            <Td>{horecaById.get(row.horeca_id)?.name ?? `#${row.horeca_id}`}</Td>
-            <Td>
-              <ProvenanceCell row={row} onViewSourcePo={onViewSourcePo} />
-            </Td>
-            <Td className="text-right">
-              <RowActions onEdit={() => onEdit(row)} onDelete={() => onDelete(row)} />
-            </Td>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-left">
+          <tr className="border-b border-stone-300/70 text-stone-500">
+            <Th>Source</Th>
+            <Th>Customer</Th>
+            <Th>Provenance</Th>
+            <Th className="w-20 text-right">{/* Actions, label hidden */}</Th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="divide-y divide-stone-200/70">
+          {filtered.map(row => (
+            <tr key={row.id} className="group hover:bg-stone-50">
+              <Td>
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-[11px] uppercase text-stone-500">
+                    {row.source_type.replace('_', ' ')}
+                  </span>
+                </div>
+                <div className="truncate max-w-[18rem] text-stone-900">{row.source_value}</div>
+              </Td>
+              <Td>{horecaById.get(row.horeca_id)?.name ?? `#${row.horeca_id}`}</Td>
+              <Td>
+                <ProvenanceCell row={row} onViewSourcePo={onViewSourcePo} />
+              </Td>
+              <Td className="text-right">
+                <RowActions onEdit={() => onEdit(row)} onDelete={() => onDelete(row)} />
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -301,56 +303,58 @@ const ProductAliasTable: React.FC<ProductAliasTableProps> = ({
     return <EmptyAliases />
   }
   return (
-    <table className="w-full text-sm">
-      <thead className="text-left">
-        <tr className="border-b border-stone-300/70 text-stone-500">
-          <Th>Customer</Th>
-          <Th>Maps from</Th>
-          <Th>Product</Th>
-          <Th>Provenance</Th>
-          <Th className="w-20 text-right">{/* Actions */}</Th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-stone-200/70">
-        {filtered.map(row => {
-          const product = productById.get(row.product_id)
-          return (
-            <tr key={row.id} className="group hover:bg-stone-50">
-              <Td>{horecaById.get(row.horeca_id)?.name ?? `#${row.horeca_id}`}</Td>
-              <Td>
-                {row.source_code && (
-                  <div className="font-mono text-xs text-stone-700">{row.source_code}</div>
-                )}
-                {row.source_description && (
-                  <div className="truncate max-w-[16rem] text-stone-900">
-                    {row.source_description}
-                  </div>
-                )}
-                {!row.source_code && !row.source_description && (
-                  <span className="text-stone-400">—</span>
-                )}
-              </Td>
-              <Td>
-                {product ? (
-                  <>
-                    <div className="font-mono text-xs text-stone-500">{product.sku}</div>
-                    <div className="text-stone-900">{product.name}</div>
-                  </>
-                ) : (
-                  <span className="text-stone-400">#{row.product_id}</span>
-                )}
-              </Td>
-              <Td>
-                <ProvenanceCell row={row} onViewSourcePo={onViewSourcePo} />
-              </Td>
-              <Td className="text-right">
-                <RowActions onEdit={() => onEdit(row)} onDelete={() => onDelete(row)} />
-              </Td>
-            </tr>
-          )
-        })}
-      </tbody>
-    </table>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-left">
+          <tr className="border-b border-stone-300/70 text-stone-500">
+            <Th>Customer</Th>
+            <Th>Maps from</Th>
+            <Th>Product</Th>
+            <Th>Provenance</Th>
+            <Th className="w-20 text-right">{/* Actions */}</Th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-stone-200/70">
+          {filtered.map(row => {
+            const product = productById.get(row.product_id)
+            return (
+              <tr key={row.id} className="group hover:bg-stone-50">
+                <Td>{horecaById.get(row.horeca_id)?.name ?? `#${row.horeca_id}`}</Td>
+                <Td>
+                  {row.source_code && (
+                    <div className="font-mono text-xs text-stone-700">{row.source_code}</div>
+                  )}
+                  {row.source_description && (
+                    <div className="truncate max-w-[16rem] text-stone-900">
+                      {row.source_description}
+                    </div>
+                  )}
+                  {!row.source_code && !row.source_description && (
+                    <span className="text-stone-400">—</span>
+                  )}
+                </Td>
+                <Td>
+                  {product ? (
+                    <>
+                      <div className="font-mono text-xs text-stone-500">{product.sku}</div>
+                      <div className="text-stone-900">{product.name}</div>
+                    </>
+                  ) : (
+                    <span className="text-stone-400">#{row.product_id}</span>
+                  )}
+                </Td>
+                <Td>
+                  <ProvenanceCell row={row} onViewSourcePo={onViewSourcePo} />
+                </Td>
+                <Td className="text-right">
+                  <RowActions onEdit={() => onEdit(row)} onDelete={() => onDelete(row)} />
+                </Td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }
 

@@ -392,37 +392,39 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                             <h3 className="text-sm font-semibold text-stone-700 uppercase tracking-wider">Items</h3>
                         </div>
                         <div className="border border-stone-200 rounded-xl overflow-hidden">
-                            <table className="w-full text-sm">
-                                <thead className="bg-stone-50">
-                                    <tr>
-                                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Product</th>
-                                        {showValue && <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Price</th>}
-                                        <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Qty</th>
-                                        {showValue && <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Subtotal</th>}
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-stone-100">
-                                    {order.items.map((item, i) => (
-                                        <tr key={i}>
-                                            <td className="px-4 py-3">
-                                                <p className="font-medium text-stone-900">{item.name}</p>
-                                                <p className="text-xs text-stone-400">{item.sku} &middot; {item.unit}</p>
-                                            </td>
-                                            {showValue && <td className="px-4 py-3 text-right text-stone-700">${item.price.toFixed(2)}</td>}
-                                            <td className="px-4 py-3 text-right text-stone-700">{item.quantity}</td>
-                                            {showValue && <td className="px-4 py-3 text-right font-medium text-stone-900">${(item.price * item.quantity).toFixed(2)}</td>}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                                {showValue && (
-                                <tfoot className="bg-stone-50">
-                                    <tr>
-                                        <td colSpan={3} className="px-4 py-3 text-right font-semibold text-stone-700">Total</td>
-                                        <td className="px-4 py-3 text-right font-bold text-stone-900">${order.total.toFixed(2)}</td>
-                                    </tr>
-                                </tfoot>
-                                )}
-                            </table>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                  <thead className="bg-stone-50">
+                                      <tr>
+                                          <th className="text-left px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Product</th>
+                                          {showValue && <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Price</th>}
+                                          <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Qty</th>
+                                          {showValue && <th className="text-right px-4 py-2.5 text-xs font-semibold text-stone-500 uppercase">Subtotal</th>}
+                                      </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-stone-100">
+                                      {order.items.map((item, i) => (
+                                          <tr key={i}>
+                                              <td className="px-4 py-3">
+                                                  <p className="font-medium text-stone-900">{item.name}</p>
+                                                  <p className="text-xs text-stone-400">{item.sku} &middot; {item.unit}</p>
+                                              </td>
+                                              {showValue && <td className="px-4 py-3 text-right text-stone-700">${item.price.toFixed(2)}</td>}
+                                              <td className="px-4 py-3 text-right text-stone-700">{item.quantity}</td>
+                                              {showValue && <td className="px-4 py-3 text-right font-medium text-stone-900">${(item.price * item.quantity).toFixed(2)}</td>}
+                                          </tr>
+                                      ))}
+                                  </tbody>
+                                  {showValue && (
+                                  <tfoot className="bg-stone-50">
+                                      <tr>
+                                          <td colSpan={3} className="px-4 py-3 text-right font-semibold text-stone-700">Total</td>
+                                          <td className="px-4 py-3 text-right font-bold text-stone-900">${order.total.toFixed(2)}</td>
+                                      </tr>
+                                  </tfoot>
+                                  )}
+                              </table>
+                            </div>
                         </div>
                     </div>
 

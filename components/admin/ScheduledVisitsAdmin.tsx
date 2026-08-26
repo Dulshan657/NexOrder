@@ -189,91 +189,93 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
 
           {/* ScheduledVisit table */}
           <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-stone-50 border-b border-stone-200">
-                <tr>
-                  <th className="text-left px-4 py-3 font-medium text-stone-600">ScheduledVisit</th>
-                  <th className="text-left px-4 py-3 font-medium text-stone-600">Date</th>
-                  <th className="text-left px-4 py-3 font-medium text-stone-600">Assigned To</th>
-                  <th className="text-left px-4 py-3 font-medium text-stone-600">Status</th>
-                  <th className="text-left px-4 py-3 font-medium text-stone-600">Progress</th>
-                  <th className="text-left px-4 py-3 font-medium text-stone-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRoutes.map(route => {
-                  const badge = STATUS_BADGE[route.status];
-                  const rep = route.assignedTo ? userMap.get(route.assignedTo) : null;
-                  const completed = route.stops.filter(s => s.status !== 'pending').length;
-                  const pct = route.stops.length > 0 ? Math.round((completed / route.stops.length) * 100) : 0;
-
-                  return (
-                    <tr key={route.id} className="border-b border-stone-100 hover:bg-stone-50">
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-stone-800">{route.name}</p>
-                        <p className="text-xs text-stone-400">{route.stops.length} stops</p>
-                      </td>
-                      <td className="px-4 py-3 text-stone-600">
-                        {route.date ? new Date(route.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        {rep ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200">
-                            <UserCheck className="w-3 h-3" />{rep.name}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-stone-400">Self-created</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${badge.color}`}>
-                          {badge.icon}{badge.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
-                          </div>
-                          <span className="text-xs text-stone-500">{pct}%</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {route.status !== 'completed' && (
-                          reassignRouteId === route.id ? (
-                            <div className="flex items-center gap-1">
-                              <select
-                                value={reassignTarget}
-                                onChange={e => setReassignTarget(e.target.value ? Number(e.target.value) : '')}
-                                className="text-xs px-2 py-1 border border-stone-300 rounded"
-                              >
-                                <option value="">Select...</option>
-                                {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                              </select>
-                              <button onClick={() => handleReassign(route.id)} className="text-xs text-emerald-600 font-medium hover:underline">Save</button>
-                              <button onClick={() => setReassignRouteId(null)} className="text-xs text-stone-400 hover:underline">Cancel</button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => { setReassignRouteId(route.id); setReassignTarget(route.assignedTo ?? ''); }}
-                              className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
-                            >
-                              <ArrowRightLeft className="w-3 h-3" />
-                              {isAssignedScheduledVisit(route) ? 'Reassign' : 'Assign'}
-                            </button>
-                          )
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {filteredRoutes.length === 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-stone-50 border-b border-stone-200">
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-stone-400">No routes match your filters.</td>
+                    <th className="text-left px-4 py-3 font-medium text-stone-600">ScheduledVisit</th>
+                    <th className="text-left px-4 py-3 font-medium text-stone-600">Date</th>
+                    <th className="text-left px-4 py-3 font-medium text-stone-600">Assigned To</th>
+                    <th className="text-left px-4 py-3 font-medium text-stone-600">Status</th>
+                    <th className="text-left px-4 py-3 font-medium text-stone-600">Progress</th>
+                    <th className="text-left px-4 py-3 font-medium text-stone-600">Actions</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filteredRoutes.map(route => {
+                    const badge = STATUS_BADGE[route.status];
+                    const rep = route.assignedTo ? userMap.get(route.assignedTo) : null;
+                    const completed = route.stops.filter(s => s.status !== 'pending').length;
+                    const pct = route.stops.length > 0 ? Math.round((completed / route.stops.length) * 100) : 0;
+
+                    return (
+                      <tr key={route.id} className="border-b border-stone-100 hover:bg-stone-50">
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-stone-800">{route.name}</p>
+                          <p className="text-xs text-stone-400">{route.stops.length} stops</p>
+                        </td>
+                        <td className="px-4 py-3 text-stone-600">
+                          {route.date ? new Date(route.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {rep ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200">
+                              <UserCheck className="w-3 h-3" />{rep.name}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-stone-400">Self-created</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${badge.color}`}>
+                            {badge.icon}{badge.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-16 h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-xs text-stone-500">{pct}%</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {route.status !== 'completed' && (
+                            reassignRouteId === route.id ? (
+                              <div className="flex items-center gap-1">
+                                <select
+                                  value={reassignTarget}
+                                  onChange={e => setReassignTarget(e.target.value ? Number(e.target.value) : '')}
+                                  className="text-xs px-2 py-1 border border-stone-300 rounded"
+                                >
+                                  <option value="">Select...</option>
+                                  {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                </select>
+                                <button onClick={() => handleReassign(route.id)} className="text-xs text-emerald-600 font-medium hover:underline">Save</button>
+                                <button onClick={() => setReassignRouteId(null)} className="text-xs text-stone-400 hover:underline">Cancel</button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => { setReassignRouteId(route.id); setReassignTarget(route.assignedTo ?? ''); }}
+                                className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
+                              >
+                                <ArrowRightLeft className="w-3 h-3" />
+                                {isAssignedScheduledVisit(route) ? 'Reassign' : 'Assign'}
+                              </button>
+                            )
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredRoutes.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-stone-400">No routes match your filters.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       ) : subTab === 'approvals' ? (

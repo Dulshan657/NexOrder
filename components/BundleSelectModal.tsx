@@ -68,38 +68,40 @@ const BundleSelectModal: React.FC<BundleSelectModalProps> = ({ promotion, produc
             )}
         >
             <p className="text-sm text-stone-600 mb-3">{promotion.description || 'Select quantities for each bundle product.'}</p>
-            <table className="w-full text-sm">
-                <thead>
-                    <tr className="text-left text-xs text-stone-500 border-b border-stone-200">
-                        <th className="py-2">Product</th>
-                        <th className="py-2">Unit</th>
-                        <th className="py-2 text-right">Qty</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                    {bundleProducts.map(p => (
-                        <tr key={p.id}>
-                            <td className="py-2 text-stone-800">{p.name}</td>
-                            <td className="py-2 text-stone-500 text-xs">
-                                {appliesTo === 'carton' ? `Carton (x${p.cartonSize})` : p.unit}
-                            </td>
-                            <td className="py-2">
-                                {/* Inputs are always w-full, so the width is constrained by the wrapper. */}
-                                <div className="w-20 ml-auto">
-                                    <NumberInput
-                                        dense
-                                        min={0}
-                                        aria-label={`Quantity for ${p.name}`}
-                                        value={quantities[p.id] ?? 0}
-                                        onChange={e => setQuantities(prev => ({ ...prev, [p.id]: Math.max(0, Number(e.target.value) || 0) }))}
-                                        className="text-right"
-                                    />
-                                </div>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                  <thead>
+                      <tr className="text-left text-xs text-stone-500 border-b border-stone-200">
+                          <th className="py-2">Product</th>
+                          <th className="py-2">Unit</th>
+                          <th className="py-2 text-right">Qty</th>
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                      {bundleProducts.map(p => (
+                          <tr key={p.id}>
+                              <td className="py-2 text-stone-800">{p.name}</td>
+                              <td className="py-2 text-stone-500 text-xs">
+                                  {appliesTo === 'carton' ? `Carton (x${p.cartonSize})` : p.unit}
+                              </td>
+                              <td className="py-2">
+                                  {/* Inputs are always w-full, so the width is constrained by the wrapper. */}
+                                  <div className="w-20 ml-auto">
+                                      <NumberInput
+                                          dense
+                                          min={0}
+                                          aria-label={`Quantity for ${p.name}`}
+                                          value={quantities[p.id] ?? 0}
+                                          onChange={e => setQuantities(prev => ({ ...prev, [p.id]: Math.max(0, Number(e.target.value) || 0) }))}
+                                          className="text-right"
+                                      />
+                                  </div>
+                              </td>
+                          </tr>
+                      ))}
+                  </tbody>
+              </table>
+            </div>
         </Modal>
     );
 };

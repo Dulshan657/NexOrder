@@ -136,44 +136,46 @@ export function ReslotPlannerModal({ warehouse, layoutId, publishing, onCancel, 
           {/* Moves table */}
           {moves.length > 0 && (
             <div className="overflow-hidden rounded-lg border border-stone-200">
-              <table className="w-full text-xs">
-                <thead className="bg-stone-50 text-stone-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium">Product</th>
-                    <th className="px-3 py-2 text-right font-medium">Qty</th>
-                    <th className="px-3 py-2 text-left font-medium">From</th>
-                    <th className="px-3 py-2 text-left font-medium">To (override)</th>
-                    <th className="px-3 py-2 text-left font-medium">Why</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  {moves.map((m, i) => (
-                    <tr key={i}>
-                      <td className="px-3 py-2">
-                        <p className="font-medium text-stone-800">{m.productName}</p>
-                        <p className="font-mono text-[10px] text-stone-400">{m.productCode}</p>
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono text-stone-700">{m.qty}</td>
-                      <td className="px-3 py-2 font-mono text-stone-500">{binLabel(m.fromLocationId)}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1">
-                          <ArrowRight className="h-3 w-3 shrink-0 text-stone-400" />
-                          <select
-                            value={overrides[i] ?? m.toLocationId}
-                            onChange={(e) => setOverrides((o) => ({ ...o, [i]: Number(e.target.value) }))}
-                            className="max-w-[120px] rounded border border-stone-200 bg-white px-1.5 py-1 font-mono text-[11px] text-emerald-700"
-                          >
-                            {data.bins.map((b) => (
-                              <option key={b.locationId} value={b.locationId}>{b.code}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-stone-500">{topFactor(m)}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-stone-50 text-stone-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Product</th>
+                      <th className="px-3 py-2 text-right font-medium">Qty</th>
+                      <th className="px-3 py-2 text-left font-medium">From</th>
+                      <th className="px-3 py-2 text-left font-medium">To (override)</th>
+                      <th className="px-3 py-2 text-left font-medium">Why</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {moves.map((m, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-2">
+                          <p className="font-medium text-stone-800">{m.productName}</p>
+                          <p className="font-mono text-[10px] text-stone-400">{m.productCode}</p>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-stone-700">{m.qty}</td>
+                        <td className="px-3 py-2 font-mono text-stone-500">{binLabel(m.fromLocationId)}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-1">
+                            <ArrowRight className="h-3 w-3 shrink-0 text-stone-400" />
+                            <select
+                              value={overrides[i] ?? m.toLocationId}
+                              onChange={(e) => setOverrides((o) => ({ ...o, [i]: Number(e.target.value) }))}
+                              className="max-w-[120px] rounded border border-stone-200 bg-white px-1.5 py-1 font-mono text-[11px] text-emerald-700"
+                            >
+                              {data.bins.map((b) => (
+                                <option key={b.locationId} value={b.locationId}>{b.code}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-stone-500">{topFactor(m)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
