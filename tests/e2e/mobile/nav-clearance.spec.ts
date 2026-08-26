@@ -23,7 +23,7 @@
 //      which is the live guard on ADMIN_TAB_LABELS, whose one non-identity
 //      entry is `'Receiving'` -> "Receive Stock".
 import { expect, test } from '../fixtures/auth'
-import { expectNoHorizontalOverflow, expectTouchTarget, navigateTo, overlaps } from './helpers'
+import { expectNoHorizontalOverflow, expectTouchTarget, navigateTo } from './helpers'
 
 /**
  * Every tab a Warehouse login can reach, by its sidebar label.
@@ -48,8 +48,9 @@ const WAREHOUSE_TABS: ReadonlyArray<string> = [
   'Warehouse',
 ]
 
-/** Where a page's own content starts. The ☰ used to occupy 16→52px. */
-const DEAD_GUTTER_LIMIT_PX = 24
+/** `pl-12` is 48px and `pl-16` is 64px — the two clearances the top bar
+ *  replaced. Nothing legitimate inside `main` pads this far at 360px. */
+const DEAD_GUTTER_LIMIT_PX = 48
 
 test.describe('F8/F40 — the mobile top bar owns the ☰', () => {
   for (const item of WAREHOUSE_TABS) {
@@ -62,32 +63,37 @@ test.describe('F8/F40 — the mobile top bar owns the ☰', () => {
       const menu = page.getByRole('button', { name: 'Open menu' })
       await expectTouchTarget(menu, `${item}: the ☰`)
 
-      // The title is the bar's own text, not a heading — every page still
-      // renders its own <h1>, and a second one would break the heading
-      // selectors these specs use elsewhere.
+      // The title is the bar's own text, not a heading: a second <h1> per page
+      // would capture `getByRole('heading', { name })` in the other specs.
       await expect(bar).toContainText(item)
 
-      const heading = page.getByRole('heading').first()
-      await expect(heading).toBeVisible()
-
-      // (1) IN FLOW. A `position: fixed` bar would paint over the heading; a
-      // flow sibling cannot. This is the assertion that fails if anyone
-      // "simplifies" MobileTopBar back to fixed positioning.
-      expect(
-        await overlaps(bar, heading),
-        `the top bar overlaps the page heading on ${item} — is it position:fixed again?`,
-      ).toBe(false)
-
+      // (1) IN FLOW. A `position: fixed` bar would paint over the page; a flow
+      // sibling cannot. This is the assertion that fails if anyone "simplifies"
+      // MobileTopBar back to fixed positioning.
+      //
+      // Measured against the SCROLL CONTAINER, not against a heading. The first
+      // attempt compared the bar to `getByRole('heading').first()` and was wrong
+      // twice over: Stocktake, Putaway and Replenishment render no h1/h2 inside
+      // `main` at all, and on the pages that do, the heading sits after a 36px
+      // icon tile — so its x is 64 on some pages and 16 on others for reasons
+      // that have nothing to do with clearance.
       const barBox = await bar.boundingBox()
-      const headingBox = await heading.boundingBox()
-      expect(barBox!.y + barBox!.height, `${item}: content must start below the bar`)
-        .toBeLessThanOrEqual(headingBox!.y + 1)
+      const mainBox = await page.locator('main[data-scroll-container]').boundingBox()
+      expect(Math.round(barBox!.y + barBox!.height), `${item}: the scroller must start below the bar`)
+        .toBeLessThanOrEqual(Math.round(mainBox!.y) + 1)
 
-      // (2) NO DEAD GUTTER. This is what catches a `pl-16` being re-added: with
-      // the ☰ gone from the page, 64px of left padding is 18% of a 360px screen
-      // spent on nothing.
-      expect(Math.round(headingBox!.x), `${item}: page content starts too far right — a stale ☰ clearance?`)
-        .toBeLessThan(DEAD_GUTTER_LIMIT_PX)
+      // (2) NO DEAD GUTTER, asserted on computed padding rather than on where
+      // some element happens to land. A stale `pl-16` is 64px and `pl-12` is
+      // 48px; nothing legitimate inside `main` pads that far at 360px. This is
+      // the precise signature of the clearance the top bar replaced.
+      const gutters = await page.evaluate((limit) => {
+        const main = document.querySelector('main[data-scroll-container]')
+        if (!main) return []
+        return [...main.querySelectorAll('*')]
+          .filter((el) => parseFloat(getComputedStyle(el).paddingLeft) >= limit)
+          .map((el) => (el.className || '').toString().slice(0, 80))
+      }, DEAD_GUTTER_LIMIT_PX)
+      expect(gutters, `${item}: a stale ☰ clearance is back`).toEqual([])
 
       await expectNoHorizontalOverflow(page)
     })

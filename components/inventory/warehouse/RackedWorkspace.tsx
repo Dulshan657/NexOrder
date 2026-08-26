@@ -920,7 +920,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           stay live and paintable while the operator works through the steps, which
           is the whole reason for stepping rather than modalling. It also means this
           never trips `npm run check:overlays`. */}
-      <div className={recode.state.active ? 'grid gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem]' : ''}>
+      <div className={recode.state.active ? 'grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem]' : ''}>
       <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65svh] md:min-h-[420px]">
         <MapStage
           layout={detail.layout}
@@ -1221,7 +1221,17 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
       </div>
 
       <div
-        className={`gap-4 lg:grid lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)] ${
+        // `grid-cols-1` is load-bearing below `lg` and is not decoration. This
+        // container is `display: grid` at EVERY width (see the ternary), but
+        // `grid-template-columns` was declared only at `lg` — so on a handheld it
+        // fell back to a single IMPLICIT `auto` track, whose floor is the
+        // min-content width of its items. The Locations panel holds a
+        // `flex-1 truncate` span that cannot shrink on its own, so the track
+        // sized to 532px inside a 328px container and scrolled the whole page
+        // sideways by 188px. Tailwind's numeric `grid-cols-*` expand to
+        // `minmax(0, 1fr)` exactly to stop this; the arbitrary `lg:` value below
+        // already says `minmax(0, ...)` on every track for the same reason.
+        className={`grid-cols-1 gap-4 lg:grid lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)] ${
           recode.state.active ? 'hidden lg:grid' : 'grid'
         }`}
       >
