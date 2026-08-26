@@ -22,14 +22,12 @@
 // the accessibility tree since Chrome 89 / Firefox 84 / Safari 15.4, all well
 // below the Chrome 111 floor `vite.config.ts` now pins.
 //
-// ── WHY `xl`, AND NOT `sm` OR EVEN `lg` ─────────────────────────────────────
+// ── A CONTAINER QUERY, AND WHY IT IS NOT A BREAKPOINT ───────────────────────
 //
 // The three files above swap at `sm` because their columns are few and narrow.
 // This row's fixed columns total 904px before gaps, so `sm` (640px) would trade
-// a horizontal scroll for a broken layout.
-//
-// `lg` (1024px) fails too, and only a browser says so. MEASURED, at these exact
-// widths, with the product column as `minmax(0,1fr)`:
+// a horizontal scroll for a broken layout. The figure that matters is MEASURED,
+// at these exact widths, with the product column as `minmax(0,1fr)`:
 //
 //     1023px  card layout, no overflow
 //     1024px  product column 0px, row overflows by 8px, name fully clipped
@@ -37,14 +35,31 @@
 //     1180px  product column 132px — first width that reads
 //     1280px  product column 232px
 //
-// So the eight columns need ~1180px before the one thing the operator is
-// actually reading stops being starved. `xl` is the nearest breakpoint above
-// that. Between 1024 and 1280 the two-tier card is not a compromise — it is the
-// better of the two layouts, because it shows the product name in full.
+// Those numbers are right, and they are widths of THIS ROW'S CONTAINER: 904px
+// of columns + 112px of gaps + 32px of padding = 1048px is spoken for before
+// the product column gets anything, and 1180 - 1048 = 132 is the row above.
 //
-// Do not lower this without re-measuring. The arithmetic is easy to get wrong
-// in the optimistic direction: 904px of columns "fits" in 1024 right up until
-// you subtract 32px of padding and 112px of gaps.
+// They were then encoded as `@min-[1180px]:`, a VIEWPORT breakpoint, and that is a
+// different quantity. The AppShell sidebar is 208px and the page pads by 32px,
+// so at a 1280px viewport this container is 997px — 51px SHORT of 1048, which
+// means the product column computed to literally 0px and the row overflowed.
+// The one thing the operator is reading was unreadable on an ordinary laptop,
+// while the comment above claimed 232px. Both halves were measured honestly;
+// only the unit was wrong.
+//
+// So the query is on the container, which is what was measured all along. It
+// also stops the sidebar being load-bearing: collapse it, mount this row
+// somewhere narrower, nest it inside a mixed-pallet card — the row responds to
+// the space it actually has.
+//
+// Do not turn this back into a viewport breakpoint, and do not lower 1180
+// without re-measuring. The arithmetic is easy to get wrong in the optimistic
+// direction: 904px of columns "fits" in 1024 right up until you subtract the
+// padding and the gaps.
+//
+// `@container` itself is declared on the staged-lines card in
+// `ReceiveStockView` — one context for the column headings AND the rows, so
+// they cannot disagree about which layout is showing.
 //
 // ── NOTHING HIDES SILENTLY ──────────────────────────────────────────────────
 //
@@ -66,12 +81,12 @@ import type { Product } from '../../../types'
 import { plateLabel, type DraftLine, type DraftPlate } from './receiveDraft'
 
 /**
- * The row's column template at `xl` and above — column-for-column what the
+ * The row's column template once the CONTAINER is wide enough — column-for-column what the
  * table's `w-*` classes were, with the barcode column widened from 10rem to
  * 11rem to seat a full-height ScanField (see the touch-target note below).
  */
 export const RECEIVE_ROW_COLUMNS =
-  'xl:grid-cols-[minmax(0,1fr)_7rem_10rem_10rem_11rem_11rem_5rem_2.5rem]'
+  '@min-[1180px]:grid-cols-[minmax(0,1fr)_7rem_10rem_10rem_11rem_11rem_5rem_2.5rem]'
 
 const CONTROL =
   'w-full min-h-[44px] px-2 py-1.5 text-sm bg-stone-50 border border-stone-200 rounded-md ' +
@@ -80,7 +95,7 @@ const CONTROL =
 /** Column name, repeated per-cell once the header row is hidden below `xl`. */
 function MicroLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-stone-400 xl:hidden">
+    <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-stone-400 @min-[1180px]:hidden">
       {children}
     </span>
   )
@@ -155,7 +170,7 @@ export function ReceiveLineCard({
     <div
       className={
         'grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2.5 px-4 py-3 ' +
-        `xl:gap-x-4 xl:gap-y-0 ${RECEIVE_ROW_COLUMNS} ` +
+        `@min-[1180px]:gap-x-4 @min-[1180px]:gap-y-0 ${RECEIVE_ROW_COLUMNS} ` +
         // The one place a line gets its own surface. A held line has to be
         // recognisable at a glance while collapsed, and while scrolling past.
         (line.quarantine ? 'bg-amber-50/60' : 'hover:bg-stone-50/50')
@@ -164,7 +179,7 @@ export function ReceiveLineCard({
       {/* Product — always visible. Placed explicitly below `xl` so the remove
           control can sit beside it on the first row despite coming last in the
           DOM, which is the order the columns need at `xl`. */}
-      <div className="col-start-1 row-start-1 min-w-0 xl:col-start-auto xl:row-start-auto">
+      <div className="col-start-1 row-start-1 min-w-0 @min-[1180px]:col-start-auto @min-[1180px]:row-start-auto">
         <p className="text-sm font-medium text-stone-900">{product?.name ?? '—'}</p>
         <p className="font-mono text-xs text-stone-400">
           {product?.sku}
@@ -176,7 +191,7 @@ export function ReceiveLineCard({
 
       {/* Quantity — always visible. The one field nobody should ever have to
           open a section to reach. */}
-      <div className="col-span-2 xl:col-span-1">
+      <div className="col-span-2 @min-[1180px]:col-span-1">
         <MicroLabel>Qty</MicroLabel>
         <input
           type="number"
@@ -231,7 +246,7 @@ export function ReceiveLineCard({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={detailsId}
-        className="btn-press col-span-2 -mx-1 flex min-h-[44px] items-center gap-1.5 rounded-lg px-1 text-left text-xs text-stone-500 hover:bg-stone-100 xl:hidden"
+        className="btn-press col-span-2 -mx-1 flex min-h-[44px] items-center gap-1.5 rounded-lg px-1 text-left text-xs text-stone-500 hover:bg-stone-100 @min-[1180px]:hidden"
       >
         <ChevronDown
           className={`h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
@@ -247,7 +262,7 @@ export function ReceiveLineCard({
       */}
       <div
         id={detailsId}
-        className={`${open ? 'grid' : 'hidden'} col-span-2 grid-cols-2 gap-x-3 gap-y-2.5 xl:contents`}
+        className={`${open ? 'grid' : 'hidden'} col-span-2 grid-cols-2 gap-x-3 gap-y-2.5 @min-[1180px]:contents`}
       >
         <div>
           <MicroLabel>Lot code</MicroLabel>
@@ -284,7 +299,7 @@ export function ReceiveLineCard({
           </div>
         </div>
 
-        <div className="col-span-2 xl:col-span-1">
+        <div className="col-span-2 @min-[1180px]:col-span-1">
           <MicroLabel>Barcode</MicroLabel>
           {/*
             Deliberately NOT `compact`. That variant drops the 44px floor to
@@ -331,9 +346,9 @@ export function ReceiveLineCard({
         {inGroup ? (
           // Empty rather than absent: the row must keep its eight columns or it
           // stops lining up under the header at `xl`.
-          <div className="hidden xl:block" />
+          <div className="hidden @min-[1180px]:block" />
         ) : (
-          <div className="col-span-2 xl:col-span-1">
+          <div className="col-span-2 @min-[1180px]:col-span-1">
             <MicroLabel>Arrived on</MicroLabel>
             <div className="flex items-center gap-1.5">
               <select
@@ -362,10 +377,10 @@ export function ReceiveLineCard({
         {/* The per-line override. Unticking one line of a held delivery releases
             just that line to ordinary stock. A full-height label below `xl`, so
             the checkbox is not a 16px target for a gloved thumb. */}
-        <div className="col-span-2 xl:col-span-1 xl:text-center">
+        <div className="col-span-2 @min-[1180px]:col-span-1 @min-[1180px]:text-center">
           <MicroLabel>Hold</MicroLabel>
-          <div className="flex min-h-[44px] items-center gap-1.5 xl:justify-center">
-            <label className="flex min-h-[44px] flex-1 cursor-pointer items-center gap-2 xl:flex-none">
+          <div className="flex min-h-[44px] items-center gap-1.5 @min-[1180px]:justify-center">
+            <label className="flex min-h-[44px] flex-1 cursor-pointer items-center gap-2 @min-[1180px]:flex-none">
               <input
                 type="checkbox"
                 aria-label={`Quarantine line ${line.key}`}
@@ -373,7 +388,7 @@ export function ReceiveLineCard({
                 onChange={(e) => onUpdate({ quarantine: e.target.checked })}
                 className="h-4 w-4"
               />
-              <span className="text-sm text-stone-600 xl:hidden">Hold this line back</span>
+              <span className="text-sm text-stone-600 @min-[1180px]:hidden">Hold this line back</span>
             </label>
             <Tooltip
               align="right"
@@ -385,11 +400,11 @@ export function ReceiveLineCard({
       </div>
 
       {/* Remove — top-right beside the product below `xl`, last column at `xl`. */}
-      <div className="col-start-2 row-start-1 justify-self-end xl:col-start-auto xl:row-start-auto xl:text-right">
+      <div className="col-start-2 row-start-1 justify-self-end @min-[1180px]:col-start-auto @min-[1180px]:row-start-auto @min-[1180px]:text-right">
         <button
           type="button"
           onClick={onRemove}
-          className="btn-press flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-stone-400 hover:bg-red-50 hover:text-red-600 xl:min-h-0 xl:min-w-0 xl:p-1.5"
+          className="btn-press flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-stone-400 hover:bg-red-50 hover:text-red-600 @min-[1180px]:min-h-0 @min-[1180px]:min-w-0 @min-[1180px]:p-1.5"
           aria-label="Remove line"
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" />
