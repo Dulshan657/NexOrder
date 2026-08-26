@@ -120,7 +120,7 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
     };
     
     return (
-        <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+        <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                 <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">Manage Products</h2>
                 <div className="flex flex-wrap items-center gap-2">

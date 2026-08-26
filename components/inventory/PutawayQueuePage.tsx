@@ -117,7 +117,7 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
   };
 
   return (
-    <div className="bg-white min-h-screen">
+    <div className="bg-white min-h-svh">
       <div className="px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8">
         {/* Clamped for the reason spelled out in StocktakePage: a native
             <select> sizes to its widest OPTION, so this ran 53px off a 360px

@@ -40,6 +40,13 @@ jobs:
       - name: Overlay guard (no raw `fixed inset-0` outside components/ui)
         run: node scripts/check-overlays.mjs
 
+      # `vh` is the URL-bar-retracted height, and the shell never scrolls the
+      # body, so on a handheld ~56px of the app sat below the fold with Sign out
+      # in it (F36). Playwright cannot catch this -- its viewport sets the layout
+      # and visual viewport together -- so a source assertion is the only guard.
+      - name: Viewport-unit guard (no `vh` heights; use `svh`/`dvh`)
+        run: node scripts/check-viewport-units.mjs
+
       - name: CSP guard (vercel.ts CSP + image-proxy ordering, per target)
         run: node scripts/check-csp.mjs
 

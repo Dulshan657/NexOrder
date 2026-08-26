@@ -61,7 +61,7 @@ const PickQueueView: React.FC<PickQueueViewProps> = ({ currentUser }) => {
   const filtered = scoped.filter((o) => tab === 'all' || o.status === tab);
 
   return (
-    <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-6">
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-lg bg-nexgen-blue/10">
           <ClipboardCheck className="w-5 h-5 text-nexgen-blue" />

@@ -69,9 +69,16 @@ export function Modal({
   // the parent's handlers here keeps a backdrop click from re-triggering the guard.
   const guarded = !guard.discardOpen
 
+  // `svh`, not `vh`. `vh` is the LARGE viewport -- the height the page would
+  // have with the browser's URL bar retracted -- and on a handheld it never
+  // retracts here, because the shell is `overflow-hidden` and `document.body`
+  // never scrolls. At 90vh on a 360x720 device the panel was 648px inside a
+  // 664px VISIBLE area, i.e. flush to the millimetre, and `sm:p-6` on the
+  // backdrop pushed it over. The footer is `shrink-0` outside the scrolling
+  // body by design, so what overflowed was the row carrying Save. (F36)
   const panelClassName =
     `po-modal-in bg-white rounded-xl shadow-elevated border border-stone-200 ` +
-    `w-full ${SIZE[size]} max-h-[90vh] flex flex-col overflow-hidden`
+    `w-full ${SIZE[size]} max-h-[90svh] flex flex-col overflow-hidden`
 
   const chrome = (
     <DialogChrome

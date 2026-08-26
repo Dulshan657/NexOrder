@@ -108,7 +108,7 @@ const DefaultErrorFallback: React.FC<DefaultErrorFallbackProps> = ({ error, rese
 export const FullPageErrorFallback: ErrorBoundaryProps['fallback'] = ({ error, reset, label }) => (
     <div
         role="alert"
-        className="min-h-screen flex items-center justify-center bg-stone-50 p-6"
+        className="min-h-svh flex items-center justify-center bg-stone-50 p-6"
     >
         <DefaultErrorFallback error={error} reset={reset} label={label} />
     </div>

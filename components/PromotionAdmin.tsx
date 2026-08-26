@@ -110,7 +110,7 @@ const PromotionAdmin: React.FC<PromotionAdminProps> = ({ promotions, products, h
     };
 
     return (
-        <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+        <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">Promotions</h2>

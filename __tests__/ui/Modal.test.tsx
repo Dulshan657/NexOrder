@@ -81,7 +81,13 @@ describe('Modal — structure', () => {
     expect(overlay.className).not.toMatch(/overflow-y-auto/)
     expect(overlay.className).toMatch(/items-center/)
 
-    expect(panel.className).toMatch(/max-h-\[90vh\]/)
+    // `svh`, not `vh` — and the distinction is the whole point, so this asserts
+    // the unit rather than just "is capped". `vh` is the URL-bar-retracted
+    // height, which on a handheld never happens (the shell is `overflow-hidden`
+    // and the body never scrolls), so a 90vh panel was 648px inside a 664px
+    // visible area and its `shrink-0` footer went under the fold. Register F36.
+    expect(panel.className).toMatch(/max-h-\[90svh\]/)
+    expect(panel.className).not.toMatch(/max-h-\[\d+vh\]/)
     expect(panel.className).toMatch(/flex flex-col/)
     expect(panel.className).toMatch(/overflow-hidden/)
 

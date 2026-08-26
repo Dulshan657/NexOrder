@@ -468,7 +468,10 @@ body {
    Tailwind: a `sm:` variant cannot target a plain class, and `sm:rounded-none`
    fighting `sm:rounded-l-2xl` is shorthand-vs-longhand roulette. */
 .ui-sheet-panel {
-  max-height: 92vh;
+  /* `svh` not `vh`: see components/ui/Modal.tsx. A bottom sheet is anchored to
+     the bottom edge, so a cap measured against the URL-bar-retracted height put
+     its footer below the fold on a handheld. */
+  max-height: 92svh;
   border-top-left-radius: 1rem;
   border-top-right-radius: 1rem;
   animation: ui-sheet-in-bottom 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;

@@ -58,7 +58,7 @@ const CartSlidePanel: React.FC<CartSlidePanelProps> = ({
 }) => {
   return (
     <aside
-      className={`hidden lg:flex flex-col fixed top-0 right-0 h-screen w-[420px] bg-white border-l border-stone-200 shadow-elevated z-40 transform transition-transform duration-300 ease-in-out ${
+      className={`hidden lg:flex flex-col fixed top-0 right-0 h-svh w-[420px] bg-white border-l border-stone-200 shadow-elevated z-40 transform transition-transform duration-300 ease-in-out ${
         isOpen ? 'translate-x-0' : 'translate-x-full'
       }`}
     >

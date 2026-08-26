@@ -125,7 +125,7 @@ const AccountsAgingTable: React.FC<AccountsAgingTableProps> = ({ invoices, hoReC
     };
 
     return (
-        <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+        <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
             <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Accounts Receivable</h1>
 
             {/* Summary Cards */}

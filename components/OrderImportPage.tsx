@@ -602,7 +602,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6 font-sans">
+    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6 font-sans">
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">

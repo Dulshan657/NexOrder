@@ -802,7 +802,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     return (
       <div aria-busy="true" className="flex flex-col gap-4">
         <span className="sr-only">Loading warehouse layout…</span>
-        <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65vh] md:min-h-[420px]">
+        <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65svh] md:min-h-[420px]">
           <div className="wh-shimmer h-full w-full rounded-lg" />
         </div>
       </div>
@@ -921,7 +921,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           is the whole reason for stepping rather than modalling. It also means this
           never trips `npm run check:overlays`. */}
       <div className={recode.state.active ? 'grid gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem]' : ''}>
-      <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65vh] md:min-h-[420px]">
+      <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65svh] md:min-h-[420px]">
         <MapStage
           layout={detail.layout}
           placements={detail.placements}
@@ -1225,7 +1225,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           recode.state.active ? 'hidden lg:grid' : 'grid'
         }`}
       >
-        <FloatingPanel id="wh-tree" title="Locations" className="max-h-[70vh]">
+        <FloatingPanel id="wh-tree" title="Locations" className="max-h-[70svh]">
           <WarehouseTreePanel
             tree={model.tree}
             binContents={model.binContents}
@@ -1238,7 +1238,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
         <FloatingPanel
           id="wh-bin-detail"
           title="Bin detail"
-          className="max-h-[70vh]"
+          className="max-h-[70svh]"
           containerRef={binDetailRef}
         >
           <BinDetailPanel
@@ -1276,7 +1276,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
         </FloatingPanel>
 
         <AskEnginePanel
-          className="max-h-[70vh]"
+          className="max-h-[70svh]"
           warehouseId={warehouseId}
           layoutId={layoutId}
           onPutawayResult={setPutawayResult}

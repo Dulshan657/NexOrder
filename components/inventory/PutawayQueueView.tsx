@@ -173,7 +173,7 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
   const allPlaceable = placeableRows(visible);
 
   return (
-    <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-6">
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-lg bg-emerald-50">
           <PackageOpen className="w-5 h-5 text-emerald-600" />
