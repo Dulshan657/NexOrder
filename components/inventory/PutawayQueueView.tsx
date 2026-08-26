@@ -17,6 +17,7 @@ import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { PutawayRow } from './putaway/PutawayRow';
 import { BinPickerSheet } from './putaway/BinPickerSheet';
 import { PutawayScanFinder } from './putaway/PutawayScanFinder';
+import StickyScanBar from './StickyScanBar';
 import { filterQueue, groupByReceipt, placeableRows, type QueueStateFilter } from './putaway/putawayGrouping';
 import { trimNumber } from './putaway/putawayFormat';
 import { buildDisplayLookup, displayFor } from '@/lib/locationLookup';
@@ -187,13 +188,15 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
       {/* Scan what's on the dock and jump to its line, instead of eye-matching a
           product name down a scrollable list with a pallet in your hands. */}
       {rows.length > 0 && (
-        <PutawayScanFinder
-          rows={rows}
-          locations={locationsQuery.data ?? []}
-          binIdOf={(row) => row.recommendedLocationId}
-          onFound={(id) => { setExpanded(id); setSearch(''); }}
-          onFilter={setSearch}
-        />
+        <StickyScanBar>
+          <PutawayScanFinder
+            rows={rows}
+            locations={locationsQuery.data ?? []}
+            binIdOf={(row) => row.recommendedLocationId}
+            onFound={(id) => { setExpanded(id); setSearch(''); }}
+            onFilter={setSearch}
+          />
+        </StickyScanBar>
       )}
 
       {rows.length > 0 && (

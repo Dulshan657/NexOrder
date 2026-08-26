@@ -17,6 +17,7 @@ import { useAssignedPutaways, usePutawayRoute } from '../../hooks/queries/usePut
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
 import { PutawayStopCard } from './putaway/PutawayStopCard';
 import { PutawayScanFinder } from './putaway/PutawayScanFinder';
+import StickyScanBar from './StickyScanBar';
 import { buildDisplayLookup, displayFor, searchTextFor } from '@/lib/locationLookup';
 
 interface PutawayWalkViewProps {
@@ -111,13 +112,15 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
       {/* Scan a plate, SKU or bin and jump straight to its task — the reason a
           walker has a phone in their hand at all. */}
       {tasks.length > 0 && (
-        <PutawayScanFinder
-          rows={tasks}
-          locations={locationsQuery.data ?? []}
-          binIdOf={(row) => row.assignedLocationId}
-          onFound={(id) => { setActiveId(id); setSearch(''); }}
-          onFilter={setSearch}
-        />
+        <StickyScanBar>
+          <PutawayScanFinder
+            rows={tasks}
+            locations={locationsQuery.data ?? []}
+            binIdOf={(row) => row.assignedLocationId}
+            onFound={(id) => { setActiveId(id); setSearch(''); }}
+            onFilter={setSearch}
+          />
+        </StickyScanBar>
       )}
 
       {tasks.length > 0 && (

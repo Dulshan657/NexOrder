@@ -18,6 +18,7 @@ import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations
 import { useWarehouseScope } from '../../context/WarehouseScopeContext'
 import { UserRole, type InventoryLocation, type Product, type User } from '../../types'
 import { CountLocationFinder } from './stocktake/CountLocationFinder'
+import StickyScanBar from './StickyScanBar'
 import { CountSheet } from './stocktake/CountSheet'
 
 interface StocktakePageProps {
@@ -125,7 +126,9 @@ const StocktakePage: React.FC<StocktakePageProps> = ({ currentUser, products }) 
               <p className="mb-4 text-xs text-stone-400">
                 Scan a bin to count it. Bulk and floor-stacked stock is counted on the site root.
               </p>
-              <CountLocationFinder locations={locations} onPick={setSelected} />
+              <StickyScanBar>
+                <CountLocationFinder locations={locations} onPick={setSelected} />
+              </StickyScanBar>
             </>
           )}
         </div>
