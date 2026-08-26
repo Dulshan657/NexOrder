@@ -297,8 +297,16 @@ COMMIT;
 --   SELECT count(*) FROM pg_proc WHERE proname = 'wie_break_down_putaway_tx';
 --
 --   -- b. No plate may hold stock in more than one place. This is the invariant
---   --    the whole migration exists to preserve; expect ZERO rows, before and
---   --    after any break-down.
+--   --    the whole migration exists to preserve -- but it does NOT repair the
+--   --    damage already done, so run this BEFORE and compare, rather than
+--   --    expecting zero. Dev carried three such plates on 2026-08-26
+--   --    (HU-000209 across E2ERACKLVL and two of its levels, HU-000214,
+--   --    HU-000219), all of them partial-putaway artefacts predating this file
+--   --    and all with handling_units.location_id stale as a result. A
+--   --    break-down must add NO new rows to this set; a pre-existing one is the
+--   --    bug being closed, not a regression from it. Repairing them means
+--   --    deciding where each pallet physically is, which is a stocktake, not a
+--   --    migration.
 --   SELECT handling_unit_id, count(DISTINCT location_id) AS places
 --     FROM public.inventory_balances
 --    WHERE handling_unit_id IS NOT NULL AND on_hand > 0
