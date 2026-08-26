@@ -56,7 +56,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({ notif, onMarkRead }
                 <p className={`text-xs ${notif.read ? 'text-stone-400' : 'text-stone-800'}`}>
                     {notif.message}
                 </p>
-                <p className="text-[10px] text-stone-400 mt-0.5">{formatRelativeTime(notif.timestamp)}</p>
+                <p className="text-[11px] text-stone-400 mt-0.5">{formatRelativeTime(notif.timestamp)}</p>
             </div>
             {!notif.read && (
                 <span className="w-2 h-2 rounded-full bg-nexgen-blue flex-shrink-0 mt-1" />

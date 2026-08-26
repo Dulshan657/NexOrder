@@ -915,6 +915,14 @@ export interface Toast {
   message: string;
   type: ToastType;
   action?: ToastAction;
+  /** How long this toast lives, in ms. Set by the provider, read by the
+   *  renderer so the exit animation cannot disagree with the removal timer —
+   *  they were two independent hard-coded numbers and an action toast spent
+   *  3.3s invisible, still occupying layout height, with a dead button. */
+  duration: number;
+  /** How many identical consecutive toasts this one stands for. 1 unless a
+   *  repeat collapsed into it. */
+  count: number;
 }
 
 export interface Supplier {

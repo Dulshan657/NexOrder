@@ -629,8 +629,22 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     );
 
     // ── Render ────────────────────────────────────────────────────────────────
+    //
+    // `h-svh`, NOT `h-screen`. `h-screen` is `100vh`, and `vh` is the LARGE
+    // viewport — the height the page would have if the browser's URL bar were
+    // retracted. On a handheld it never retracts here: this root is
+    // `overflow-hidden` and `document.body` never scrolls, so Chrome has no
+    // root-scroll gesture to retract it with. The shell was therefore ~56px
+    // taller than the screen, permanently, with the overflow hidden and
+    // unreachable — and `<ProfileMenu>` is the last child of the sidebar, after
+    // the scrolling nav, so SIGN OUT was in that band.
+    //
+    // `svh` is the small viewport (URL bar shown), which is this device's only
+    // state. `dvh` would be numerically identical here but recomputes as the
+    // toolbar animates; `svh` is static. `RecodePanel`/`SlottingPanel` already
+    // use `svh` for the same reason.
     return (
-        <div className="flex h-screen bg-white font-sans overflow-hidden">
+        <div className="flex h-svh bg-white font-sans overflow-hidden">
             {/* Sidebar Overlay for Mobile */}
             {isSidebarOpen && (
                 <div
@@ -1066,8 +1080,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                 <ProfileMenu currentUser={currentUser} />
             </aside>
 
-            {/* Main Content Area */}
-            <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
+            {/* Main Content Area.
+                `min-h-0` rather than repeating a viewport height: the parent is
+                already `flex h-svh`, so this column is stretched to it, and
+                `min-h-0` is what actually lets the `overflow-y-auto` child below
+                shrink instead of growing the column past it. */}
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
                 <button
                     onClick={() => setIsSidebarOpen(true)}
                     className="md:hidden fixed top-4 left-4 z-30 p-2 bg-white rounded-lg shadow-md border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-stone-50 transition-colors cursor-pointer"
@@ -1075,9 +1093,10 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                 >
                     <Menu className="w-5 h-5" />
                 </button>
-                {/* The app's real vertical scroller: the shell root and this column are
-                    both `h-screen overflow-hidden`, so `document.body` never scrolls.
-                    `useScrollLock` (components/ui) freezes this element when a modal opens. */}
+                {/* The app's real vertical scroller: the shell root is `h-svh
+                    overflow-hidden` and this column is `min-h-0 overflow-hidden`,
+                    so `document.body` never scrolls. `useScrollLock`
+                    (components/ui) freezes this element when a modal opens. */}
                 <main data-scroll-container className="flex-1 overflow-y-auto">
                     <div>
                         {MODULE_SHOP && isAdminOrManager && adminView === 'Shop' && (

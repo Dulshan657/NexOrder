@@ -10,6 +10,21 @@
 export const BASE_Z = 1000
 export const Z_STEP = 10
 
+/**
+ * App chrome that has to be PORTALLED but is not an overlay.
+ *
+ * The notification panel is the case: it hangs off a bell inside the sidebar,
+ * and the sidebar carries `backdrop-blur-md`, which makes it a containing block
+ * — so a `position: fixed` child positions against the sidebar rather than the
+ * viewport, and the panel cannot be clamped to the screen from inside it. It
+ * therefore portals to document.body like an overlay, but it must NOT outrank
+ * one: a Modal opened over it has to cover it, and it traps no focus and
+ * handles no Escape of its own.
+ *
+ * Hence below BASE_Z, and above AppShell's own z-50 chrome.
+ */
+export const CHROME_Z = BASE_Z - 10
+
 export interface StackEntry {
   id: number
 }
