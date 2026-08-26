@@ -15,7 +15,7 @@
 // records where it actually went.
 
 import React, { useMemo, useState } from 'react'
-import { AlertTriangle, ArrowRight, Check, MapPin, PackageCheck, Undo2, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Check, Layers, MapPin, PackageCheck, Undo2, X } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
 import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkPutawayScan } from '@/supabase/functions/_shared/putawayScanCheck'
@@ -25,6 +25,7 @@ import { CompletePutawayError } from '@/services/supabase/putawayService'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import { locationSubtitle, locationTitle, type DisplayLocation } from '@/lib/locationDisplay'
 import { describeQuantity, trimNumber } from './putawayFormat'
+import { PalletBreakdownSheet } from './PalletBreakdownSheet'
 
 interface PutawayStopCardProps {
   row: PendingPutawayRow
@@ -37,6 +38,9 @@ interface PutawayStopCardProps {
   reachable: boolean
   active: boolean
   disabled: boolean
+  /** Needed by the break-down sheet, which scopes its bin picker and its engine
+   *  suggestions to this site. */
+  warehouseId: number
   onActivate: () => void
   onDone: () => void
 }
@@ -46,7 +50,7 @@ type Step = 'idle' | 'plate' | 'bin' | 'qty'
 // React.FC deliberately: this repo ships no @types/react, so a plainly-typed
 // component's props do not include `key`, and the walk renders these in a list.
 export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
-  row, bin, sequence, legDistanceM, reachable, active, disabled, onActivate, onDone,
+  row, bin, sequence, legDistanceM, reachable, active, disabled, warehouseId, onActivate, onDone,
 }) => {
   // The scan identity. Every scan check, placeholder and refusal message below
   // quotes this rather than the friendly name — the operator is matching a
@@ -64,6 +68,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   const [error, setError] = useState<string | null>(null)
   // Set when the server refuses a level-role mismatch; the operator can force it.
   const [roleGate, setRoleGate] = useState<string | null>(null)
+  const [breakingDown, setBreakingDown] = useState(false)
 
   const name = row.product?.name ?? `Product #${row.productId}`
   const qtyLabel = describeQuantity(row.quantity, row.product)
@@ -400,14 +405,39 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         </div>
       )}
 
-      <button
-        onClick={putBack}
-        disabled={unassign.isPending}
-        className="inline-flex items-center gap-1.5 min-h-[44px] py-2 text-xs text-stone-500 hover:text-stone-800 btn-press disabled:opacity-50"
-      >
-        <Undo2 className="w-3.5 h-3.5" aria-hidden="true" />
-        Can't place this — put it back on the queue
-      </button>
+      <div className="flex items-center gap-4 flex-wrap">
+        <button
+          onClick={putBack}
+          disabled={unassign.isPending}
+          className="inline-flex items-center gap-1.5 min-h-[44px] py-2 text-xs text-stone-500 hover:text-stone-800 btn-press disabled:opacity-50"
+        >
+          <Undo2 className="w-3.5 h-3.5" aria-hidden="true" />
+          Can't place this — put it back on the queue
+        </button>
+
+        {/* Only a pallet has anything to break down, and only a tracked one:
+            a carton is one product in one box, and loose stock is already
+            unattached (complete-putaway's partial quantity covers that). */}
+        {row.huId != null && row.huType === 'pallet' && (
+          <button
+            onClick={() => setBreakingDown(true)}
+            className="inline-flex items-center gap-1.5 min-h-[44px] py-2 text-xs text-nexgen-blue hover:text-nexgen-blue/80 btn-press"
+          >
+            <Layers className="w-3.5 h-3.5" aria-hidden="true" />
+            Break this pallet down
+          </button>
+        )}
+      </div>
+
+      {breakingDown && (
+        <PalletBreakdownSheet
+          open
+          warehouseId={warehouseId}
+          row={row}
+          onClose={() => setBreakingDown(false)}
+          onDone={() => { reset(); onDone() }}
+        />
+      )}
     </div>
   )
 }

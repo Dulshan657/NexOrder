@@ -59,6 +59,20 @@ export interface PutawayLineInput {
    * ONLY be offered a hold bin and an ordinary line can never be offered one.
    */
   quarantine?: boolean
+  /**
+   * Opaque caller tag, copied verbatim onto every result this line produces.
+   *
+   * `recommendations` is a FLAT array and one line can produce several
+   * allocations (multi-bin placement), so without this a caller cannot tell
+   * which of its inputs an entry came from. Matching on product_id does not
+   * work when several lines share a SKU -- which is exactly the shape a pallet
+   * break-down has, every portion being the same product.
+   *
+   * The alternative, one call per line, would lose the greedy `overlay` that
+   * makes later lines see a bin the earlier ones just filled, and two portions
+   * would be offered the same pick bay.
+   */
+  ref?: string
 }
 
 /**
@@ -101,6 +115,8 @@ export interface GeneratePutawayArgs {
 
 export interface PutawayTaskResult {
   recommendationId: number
+  /** The originating line's `ref`, when it carried one. */
+  ref?: string
   productId: number
   quantity: number
   recommendedLocationId: number | null
@@ -295,6 +311,7 @@ export async function generatePutawayTasks(
       }
       recommendations.push({
         recommendationId,
+        ref: line.ref,
         productId: line.product_id,
         quantity: line.quantity,
         recommendedLocationId: placedPlate.locationId,
