@@ -192,6 +192,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
               reachable={stop?.reachable ?? true}
               active={activeId === row.id}
               disabled={!canPlace}
+              warehouseId={warehouseId}
               onActivate={() => setActiveId(row.id)}
               onDone={() => setActiveId(null)}
             />

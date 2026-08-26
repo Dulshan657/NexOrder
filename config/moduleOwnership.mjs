@@ -110,6 +110,7 @@ export const FUNCTION_MODULES = {
   // picking, dispatch, labels, layouts and the WIE.
   'adjust-stock': 'inventory_dispatch',
   'assign-replenishment': 'inventory_dispatch',
+  'break-down-putaway': 'inventory_dispatch',
   'commit-reslot-plan': 'inventory_dispatch',
   'complete-putaway': 'inventory_dispatch',
   'complete-replenishment': 'inventory_dispatch',
