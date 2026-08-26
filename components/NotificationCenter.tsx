@@ -157,7 +157,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                                     // same height while the coarse-pointer floor
                                     // gives a gloved thumb something to hit; the
                                     // control was ~14px tall with a 10px label.
-                                    className="flex items-center gap-1 -my-2 py-2 text-xs text-stone-500 hover:text-stone-700 transition-colors cursor-pointer pointer-coarse:min-h-11"
+                                    className="flex items-center gap-1 -my-2 py-2 text-xs text-stone-500 hover:text-stone-700 transition-colors cursor-pointer touch-target-y"
                                 >
                                     <CheckCheck className="w-3.5 h-3.5" />
                                     Mark all read
@@ -166,7 +166,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                             <button
                                 onClick={() => setOpen(false)}
                                 aria-label="Close notifications"
-                                className="inline-flex items-center justify-center -my-2 rounded-lg text-stone-400 hover:text-stone-700 transition-colors cursor-pointer p-1 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+                                className="inline-flex items-center justify-center -my-2 rounded-lg text-stone-400 hover:text-stone-700 transition-colors cursor-pointer p-1 touch-target"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -181,7 +181,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                                     <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">PO Inbox</span>
                                     <button
                                         onClick={handleOpenPoInbox}
-                                        className="text-xs text-nexgen-blue hover:underline cursor-pointer pointer-coarse:min-h-11"
+                                        className="text-xs text-nexgen-blue hover:underline cursor-pointer touch-target-y"
                                     >
                                         Review all →
                                     </button>
@@ -194,7 +194,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                                 {extraPoCount > 0 && (
                                     <button
                                         onClick={handleOpenPoInbox}
-                                        className="w-full text-left px-4 py-2 text-xs text-stone-500 hover:bg-stone-50 cursor-pointer pointer-coarse:min-h-11"
+                                        className="w-full text-left px-4 py-2 text-xs text-stone-500 hover:bg-stone-50 cursor-pointer touch-target-y"
                                     >
                                         +{extraPoCount} more awaiting review
                                     </button>

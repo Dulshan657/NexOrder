@@ -761,6 +761,33 @@ module is off.
     that places a trigger-anchored panel, clamping **both** axes; anything
     floating off a trigger should use it rather than a `max-w-[calc(100vw-…)]`,
     which caps size and says nothing about where the box starts (register F37).
+    Consumers: `NotificationCenter`, `components/ui/Tooltip.tsx`.
+  - **`components/MobileTopBar.tsx` is a flow-positioned flex sibling of
+    `main[data-scroll-container]`, never `fixed`** (F40). That is what makes
+    `sticky top-0` inside the scroller need no offset, and what makes ☰-over-
+    content structurally impossible rather than individually avoided. Do NOT
+    re-add per-page `pl-16` clearances; `nav-clearance.spec.ts` fails on the
+    dead gutter they leave. Screen names come from `ADMIN_TAB_LABELS`
+    (`lib/adminTabUrl.ts`) — nearly an identity map, except `'Receiving'`
+    renders as **"Receive Stock"**.
+  - **`.touch-target` / `.touch-target-y` (`index.css`) are the 44 px floor**
+    (F43). Three media arms on purpose: `(pointer: coarse)`, `(hover: none)`
+    and `(max-width: 767px)` — a rugged handheld does not always report a
+    coarse pointer, and the mechanism is silently inert if it does not.
+    `any-pointer: coarse` is deliberately excluded: it would catch a Windows
+    touch laptop on a trackpad and inflate every admin table there. When
+    raising a control, **remove** its arbitrary `min-h-[36px]` rather than
+    layering over it — an arbitrary value sorts after a named utility.
+  - **`components/inventory/StickyScanBar.tsx` pins the scan field** on the
+    walk/queue surfaces (F42). Not cosmetic: under the RS35's default
+    `Input Method` mode `useWedgeScanner` catches nothing, so a scan field
+    that has scrolled away means a scan that silently does not happen. Its
+    `bleed` prop must match the host page's padding scale — Receive Stock is
+    `xl:p-8`, the others `lg:p-8`.
+  - **Fonts are self-hosted from `/fonts`** as variable faces (F45). The
+    `@import "tailwindcss"` must stay ABOVE the `@font-face` block: CSS
+    ignores an `@import` that follows any other rule, and the failure is
+    silent — the whole of Tailwind simply does not load.
 - **Supabase client must override `global.fetch`** — without it the client hangs on Windows. See `lib/supabase.ts`.
 - **Sessions persist, and the lock is why.** Persistence *used* to hang `getSession()` on Windows with either localStorage or sessionStorage — but the storage was never the cause. supabase-js defaults to `navigatorLock` (the Web Locks API) whenever `persistSession` is on, and that acquisition never resolved here. `lib/auth/inProcessLock.ts` replaces it with a promise-chain lock that never touches `navigator.locks`, so `persistSession` and `autoRefreshToken` are both **on** as of the warehouse-onboarding branch. What that bought: a refresh or tab discard no longer logs you out, and the JWT no longer dies about an hour in — which is what made phone-based scan picking unusable. What it costs: no cross-**tab** serialisation (two tabs can refresh at once; refresh tokens rotate and the loser retries). **Verify in a real browser after touching any of it** — the original hang never reproduced in tests or Node. Reverting is two booleans.
 - **RLS is enabled** (mig `00008` re-enables; `00009`+ lock down individual table mutations to Edge Functions). Direct INSERT/UPDATE/DELETE from `authenticated` is blocked for the tables in the lockdown table; mutations must go through Edge Functions.

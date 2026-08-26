@@ -135,72 +135,74 @@ const PromotionAdmin: React.FC<PromotionAdminProps> = ({ promotions, products, h
             {/* Table */}
             {filtered.length > 0 ? (
                 <div className="border border-stone-200 rounded-xl overflow-hidden">
-                    <table className="min-w-full divide-y divide-stone-200">
-                        <thead className="bg-stone-50">
-                            <tr>
-                                <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Promotion</th>
-                                <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Type</th>
-                                <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Value</th>
-                                <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Scope</th>
-                                <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Status</th>
-                                <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Dates</th>
-                                <th className="px-5 py-3 text-right text-xs font-medium text-stone-500 uppercase tracking-wider">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stone-100 bg-white">
-                            {filtered.map(promo => {
-                                const status = getPromoStatus(promo);
-                                const typeBadge = TYPE_BADGES[promo.type];
-                                const statusBadge = STATUS_BADGES[status];
-                                return (
-                                    <tr key={promo.id} className="hover:bg-stone-50/50 transition-colors">
-                                        <td className="px-5 py-3.5">
-                                            <p className="text-sm font-medium text-stone-900">{promo.name}</p>
-                                            <p className="text-xs text-stone-500 mt-0.5">{formatTargeting(promo, hoReCas)}</p>
-                                        </td>
-                                        <td className="px-5 py-3.5">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${typeBadge.bg} ${typeBadge.text}`}>
-                                                {TYPE_LABELS[promo.type]}
-                                            </span>
-                                        </td>
-                                        <td className="px-5 py-3.5 text-sm font-medium text-stone-900">{formatValue(promo)}</td>
-                                        <td className="px-5 py-3.5 text-sm text-stone-600 max-w-[160px] truncate">{formatScope(promo, products)}</td>
-                                        <td className="px-5 py-3.5">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${statusBadge.bg} ${statusBadge.text}`}>
-                                                {status}
-                                            </span>
-                                        </td>
-                                        <td className="px-5 py-3.5 text-xs text-stone-500">
-                                            {promo.startDate || promo.endDate ? (
-                                                <div className="flex items-center gap-1">
-                                                    <Calendar className="w-3 h-3" />
-                                                    {promo.startDate && new Date(promo.startDate + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-                                                    {promo.startDate && promo.endDate && ' – '}
-                                                    {promo.endDate && new Date(promo.endDate + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-                                                </div>
-                                            ) : 'Manual'}
-                                        </td>
-                                        <td className="px-5 py-3.5">
-                                            <div className="flex items-center justify-end gap-1">
-                                                <button onClick={() => handleToggle(promo)} title={promo.isActive ? 'Deactivate' : 'Activate'}
-                                                    className={`p-1.5 rounded-lg cursor-pointer transition-colors ${promo.isActive ? 'text-emerald-600 hover:bg-emerald-50' : 'text-stone-400 hover:bg-stone-100'}`}>
-                                                    {promo.isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-                                                </button>
-                                                <button onClick={() => { setEditingPromo(promo); setShowForm(true); }}
-                                                    className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer">
-                                                    <Pencil className="w-4 h-4" />
-                                                </button>
-                                                <button onClick={() => onDelete(promo.id)}
-                                                    className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 cursor-pointer">
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-stone-200">
+                          <thead className="bg-stone-50">
+                              <tr>
+                                  <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Promotion</th>
+                                  <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Type</th>
+                                  <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Value</th>
+                                  <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Scope</th>
+                                  <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Status</th>
+                                  <th className="px-5 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Dates</th>
+                                  <th className="px-5 py-3 text-right text-xs font-medium text-stone-500 uppercase tracking-wider">Actions</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-stone-100 bg-white">
+                              {filtered.map(promo => {
+                                  const status = getPromoStatus(promo);
+                                  const typeBadge = TYPE_BADGES[promo.type];
+                                  const statusBadge = STATUS_BADGES[status];
+                                  return (
+                                      <tr key={promo.id} className="hover:bg-stone-50/50 transition-colors">
+                                          <td className="px-5 py-3.5">
+                                              <p className="text-sm font-medium text-stone-900">{promo.name}</p>
+                                              <p className="text-xs text-stone-500 mt-0.5">{formatTargeting(promo, hoReCas)}</p>
+                                          </td>
+                                          <td className="px-5 py-3.5">
+                                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${typeBadge.bg} ${typeBadge.text}`}>
+                                                  {TYPE_LABELS[promo.type]}
+                                              </span>
+                                          </td>
+                                          <td className="px-5 py-3.5 text-sm font-medium text-stone-900">{formatValue(promo)}</td>
+                                          <td className="px-5 py-3.5 text-sm text-stone-600 max-w-[160px] truncate">{formatScope(promo, products)}</td>
+                                          <td className="px-5 py-3.5">
+                                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${statusBadge.bg} ${statusBadge.text}`}>
+                                                  {status}
+                                              </span>
+                                          </td>
+                                          <td className="px-5 py-3.5 text-xs text-stone-500">
+                                              {promo.startDate || promo.endDate ? (
+                                                  <div className="flex items-center gap-1">
+                                                      <Calendar className="w-3 h-3" />
+                                                      {promo.startDate && new Date(promo.startDate + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                                                      {promo.startDate && promo.endDate && ' – '}
+                                                      {promo.endDate && new Date(promo.endDate + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                                                  </div>
+                                              ) : 'Manual'}
+                                          </td>
+                                          <td className="px-5 py-3.5">
+                                              <div className="flex items-center justify-end gap-1">
+                                                  <button onClick={() => handleToggle(promo)} title={promo.isActive ? 'Deactivate' : 'Activate'}
+                                                      className={`p-1.5 rounded-lg cursor-pointer transition-colors ${promo.isActive ? 'text-emerald-600 hover:bg-emerald-50' : 'text-stone-400 hover:bg-stone-100'}`}>
+                                                      {promo.isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                                                  </button>
+                                                  <button onClick={() => { setEditingPromo(promo); setShowForm(true); }}
+                                                      className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer">
+                                                      <Pencil className="w-4 h-4" />
+                                                  </button>
+                                                  <button onClick={() => onDelete(promo.id)}
+                                                      className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 cursor-pointer">
+                                                      <Trash2 className="w-4 h-4" />
+                                                  </button>
+                                              </div>
+                                          </td>
+                                      </tr>
+                                  );
+                              })}
+                          </tbody>
+                      </table>
+                    </div>
                 </div>
             ) : (
                 <div className="text-center py-12 bg-stone-50 rounded-xl border border-stone-200">

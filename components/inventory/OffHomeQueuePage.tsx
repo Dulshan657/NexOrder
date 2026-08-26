@@ -226,7 +226,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
         <div className="flex flex-wrap items-center gap-2">
           {activeWarehouses.length > 1 && (
             <select
-              className="text-sm border border-stone-200 rounded-lg px-2 py-1.5 bg-white"
+              className="min-w-0 max-w-full truncate text-sm border border-stone-200 rounded-lg px-2 py-1.5 bg-white"
               value={warehouseId ?? ''}
               onChange={(e) => setScope(Number(e.target.value))}
               aria-label="Warehouse"
@@ -261,7 +261,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
               role="tab"
               aria-selected={view === v}
               onClick={() => setView(v)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[40px] rounded-md text-sm btn-press ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-md text-sm btn-press ${
                 view === v ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-500 hover:text-stone-700'
               }`}
             >

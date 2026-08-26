@@ -94,7 +94,7 @@ export function MixedPalletCard({
             <button
               type="button"
               onClick={onDone}
-              className="btn-press inline-flex min-h-[36px] items-center gap-1.5 rounded-lg bg-stone-800 px-3 text-xs font-medium text-white"
+              className="btn-press inline-flex touch-target-y items-center gap-1.5 rounded-lg bg-stone-800 px-3 text-xs font-medium text-white"
             >
               <Check className="h-3.5 w-3.5" aria-hidden="true" /> Done
             </button>
@@ -102,7 +102,7 @@ export function MixedPalletCard({
             <button
               type="button"
               onClick={onAddItem}
-              className="btn-press inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-3 text-xs text-stone-600 hover:bg-stone-100"
+              className="btn-press inline-flex touch-target-y items-center gap-1.5 rounded-lg px-3 text-xs text-stone-600 hover:bg-stone-100"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add item
             </button>
@@ -111,7 +111,7 @@ export function MixedPalletCard({
             type="button"
             onClick={onRemove}
             aria-label={`Remove ${label}`}
-            className="btn-press flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md text-stone-400 hover:bg-red-50 hover:text-red-600"
+            className="btn-press flex touch-target-y min-w-[36px] items-center justify-center rounded-md text-stone-400 hover:bg-red-50 hover:text-red-600"
           >
             <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>

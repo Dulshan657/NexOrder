@@ -115,49 +115,51 @@ export const OpsStockRow: React.FC<OpsStockRowProps> = ({ product, agg, maxQty, 
               <p className="text-xs text-stone-400 px-2 py-1">No batch records for this product.</p>
             ) : (
               <div className="rounded-lg border border-stone-200 bg-white overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-stone-100 bg-stone-50 text-stone-500">
-                      <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Location · Lot</th>
-                      <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Expiry</th>
-                      <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">On hand</th>
-                      <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Allocated</th>
-                      <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Available</th>
-                      {canAdjust && <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">&nbsp;</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {visibleBatches.map((b) => (
-                      <tr key={b.balanceId}>
-                        <td className="px-3 py-2 text-stone-700">
-                          <span className="inline-flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-stone-400" />
-                            {/* Name first (mig 00094); getBalancesByProduct
-                                already selects both, it was just being dropped. */}
-                            {locationTitle({ code: b.locationCode ?? 'MAIN', name: b.locationName })}
-                            {' · '}
-                            {b.lotCode ? `lot ${b.lotCode}` : 'untracked'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-stone-500">{b.expiryDate ?? '—'}</td>
-                        <td className="px-3 py-2 text-right font-mono text-stone-700 tabular-nums">{b.onHand}</td>
-                        <td className="px-3 py-2 text-right font-mono text-stone-500 tabular-nums">{b.allocated}</td>
-                        <td className="px-3 py-2 text-right font-mono font-semibold text-stone-900 tabular-nums">{b.available}</td>
-                        {canAdjust && (
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setAdjustTarget(b); }}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-nexgen-blue hover:bg-nexgen-blue/10 btn-press"
-                            >
-                              <SlidersHorizontal className="w-3 h-3" /> Adjust
-                            </button>
-                          </td>
-                        )}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-stone-100 bg-stone-50 text-stone-500">
+                        <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Location · Lot</th>
+                        <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Expiry</th>
+                        <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">On hand</th>
+                        <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Allocated</th>
+                        <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Available</th>
+                        {canAdjust && <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">&nbsp;</th>}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {visibleBatches.map((b) => (
+                        <tr key={b.balanceId}>
+                          <td className="px-3 py-2 text-stone-700">
+                            <span className="inline-flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-stone-400" />
+                              {/* Name first (mig 00094); getBalancesByProduct
+                                  already selects both, it was just being dropped. */}
+                              {locationTitle({ code: b.locationCode ?? 'MAIN', name: b.locationName })}
+                              {' · '}
+                              {b.lotCode ? `lot ${b.lotCode}` : 'untracked'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-stone-500">{b.expiryDate ?? '—'}</td>
+                          <td className="px-3 py-2 text-right font-mono text-stone-700 tabular-nums">{b.onHand}</td>
+                          <td className="px-3 py-2 text-right font-mono text-stone-500 tabular-nums">{b.allocated}</td>
+                          <td className="px-3 py-2 text-right font-mono font-semibold text-stone-900 tabular-nums">{b.available}</td>
+                          {canAdjust && (
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setAdjustTarget(b); }}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-nexgen-blue hover:bg-nexgen-blue/10 btn-press"
+                              >
+                                <SlidersHorizontal className="w-3 h-3" /> Adjust
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </td>

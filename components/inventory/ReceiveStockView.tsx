@@ -14,6 +14,7 @@ import { useToasts } from '../../hooks/useToasts';
 import { receivableUoms, deriveDefaultUoms, baseUom } from '../../lib/uom';
 import { productsForSupplier, supplierSkuFor, matchesProductQuery } from '../../lib/productSuppliers';
 import { ScanField } from '../ui/ScanField';
+import StickyScanBar from './StickyScanBar';
 import ReceiveLineCard, { RECEIVE_ROW_COLUMNS } from './receive/ReceiveLineCard';
 import MixedPalletCard from './receive/MixedPalletCard';
 import {
@@ -697,94 +698,100 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
           or Enter) goes through `handleDockScan` and adds the line outright.
           Splitting them into two inputs would mean the operator has to decide
           which one to aim at before they know what the label is. */}
-      <div className="max-w-xl space-y-1.5">
-        <div className="relative" ref={searchWrapRef}>
-          <ScanField
-            ariaLabel="Search products"
-            value={search}
-            onChange={(v) => { setSearch(v); if (scanNote) setScanNote(null); }}
-            onScan={handleDockScan}
-            flash={flash}
-            error={scanNote ?? undefined}
-            placeholder={
-              isFiltered
-                ? `Scan a carton, or search ${supplierName}’s products…`
-                : 'Scan a carton, or search by name, SKU or barcode…'
-            }
-            cameraTitle="Scan a carton"
-          />
-          {/* 22px = half of ScanField's 44px input. NOT `top-1/2`: this wrapper
-              also contains the error line, so a percentage drifts downward the
-              moment a refusal message appears. Tied to the input height, so it
-              moves if that does. */}
-          {search && (
-            <button onClick={() => setSearch('')} className="absolute right-3 top-[22px] -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer">
-              <X className="w-4 h-4" />
-            </button>
-          )}
-          {searchResults.length > 0 && (
-            <div className="absolute z-10 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-card overflow-hidden">
-              {searchResults.map(p => {
-                const theirSku = supplierSkuFor(p, supplierId);
-                return (
+      {/* Pinned: at the dock the operator scans carton after carton, and every
+          staged line pushes this box further up. `bleed="xl"` because THIS page
+          pads `p-4 sm:p-6 xl:p-8`, not the `lg:` scale the putaway and stocktake
+          pages use. */}
+      <StickyScanBar bleed="xl">
+        <div className="max-w-xl space-y-1.5">
+          <div className="relative" ref={searchWrapRef}>
+            <ScanField
+              ariaLabel="Search products"
+              value={search}
+              onChange={(v) => { setSearch(v); if (scanNote) setScanNote(null); }}
+              onScan={handleDockScan}
+              flash={flash}
+              error={scanNote ?? undefined}
+              placeholder={
+                isFiltered
+                  ? `Scan a carton, or search ${supplierName}’s products…`
+                  : 'Scan a carton, or search by name, SKU or barcode…'
+              }
+              cameraTitle="Scan a carton"
+            />
+            {/* 22px = half of ScanField's 44px input. NOT `top-1/2`: this wrapper
+                also contains the error line, so a percentage drifts downward the
+                moment a refusal message appears. Tied to the input height, so it
+                moves if that does. */}
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-3 top-[22px] -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            {searchResults.length > 0 && (
+              <div className="absolute z-10 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-card overflow-hidden">
+                {searchResults.map(p => {
+                  const theirSku = supplierSkuFor(p, supplierId);
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => addProduct(p)}
+                      className="flex items-center justify-between gap-3 w-full px-4 py-2.5 text-left hover:bg-stone-50 btn-press"
+                    >
+                      <span className="text-sm text-stone-800 truncate">{p.name}</span>
+                      <span className="text-xs text-stone-400 font-mono shrink-0">
+                        {theirSku ? `${theirSku} · ` : ''}{p.sku}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Scope hint — which catalogue is being searched, and how to widen it. */}
+          {supplierId != null && (
+            <p className="text-xs text-stone-400">
+              {isFiltered ? (
+                <>
+                  Showing {supplierProducts.length} product{supplierProducts.length === 1 ? '' : 's'} from{' '}
+                  <span className="text-stone-500">{supplierName}</span>.{' '}
                   <button
-                    key={p.id}
-                    onClick={() => addProduct(p)}
-                    className="flex items-center justify-between gap-3 w-full px-4 py-2.5 text-left hover:bg-stone-50 btn-press"
+                    type="button"
+                    onClick={() => setShowAllProducts(true)}
+                    className="text-nexgen-blue hover:underline cursor-pointer"
                   >
-                    <span className="text-sm text-stone-800 truncate">{p.name}</span>
-                    <span className="text-xs text-stone-400 font-mono shrink-0">
-                      {theirSku ? `${theirSku} · ` : ''}{p.sku}
-                    </span>
+                    Show all products
                   </button>
-                );
-              })}
-            </div>
+                </>
+              ) : (
+                <>
+                  Showing all products.{' '}
+                  <button
+                    type="button"
+                    onClick={() => setShowAllProducts(false)}
+                    className="text-nexgen-blue hover:underline cursor-pointer"
+                  >
+                    Only {supplierName}’s products
+                  </button>
+                </>
+              )}
+            </p>
+          )}
+          {wouldMatchOutsideSupplier && (
+            <p className="text-xs text-amber-600">
+              No match in {supplierName}’s products.{' '}
+              <button
+                type="button"
+                onClick={() => setShowAllProducts(true)}
+                className="font-medium hover:underline cursor-pointer"
+              >
+                Search all products
+              </button>
+            </p>
           )}
         </div>
-
-        {/* Scope hint — which catalogue is being searched, and how to widen it. */}
-        {supplierId != null && (
-          <p className="text-xs text-stone-400">
-            {isFiltered ? (
-              <>
-                Showing {supplierProducts.length} product{supplierProducts.length === 1 ? '' : 's'} from{' '}
-                <span className="text-stone-500">{supplierName}</span>.{' '}
-                <button
-                  type="button"
-                  onClick={() => setShowAllProducts(true)}
-                  className="text-nexgen-blue hover:underline cursor-pointer"
-                >
-                  Show all products
-                </button>
-              </>
-            ) : (
-              <>
-                Showing all products.{' '}
-                <button
-                  type="button"
-                  onClick={() => setShowAllProducts(false)}
-                  className="text-nexgen-blue hover:underline cursor-pointer"
-                >
-                  Only {supplierName}’s products
-                </button>
-              </>
-            )}
-          </p>
-        )}
-        {wouldMatchOutsideSupplier && (
-          <p className="text-xs text-amber-600">
-            No match in {supplierName}’s products.{' '}
-            <button
-              type="button"
-              onClick={() => setShowAllProducts(true)}
-              className="font-medium hover:underline cursor-pointer"
-            >
-              Search all products
-            </button>
-          </p>
-        )}
-      </div>
+      </StickyScanBar>
 
       {/* Staged receipt lines */}
       {picked.length === 0 && mixedPlates.length === 0 ? (

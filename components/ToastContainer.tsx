@@ -73,7 +73,7 @@ const ToastMessage: React.FC<{ toast: import('../types').Toast; onRemove: (id: n
                             toast.action?.onClick();
                             onRemove(toast.id);
                         }}
-                        className={`mt-1.5 inline-flex items-center text-xs font-semibold underline underline-offset-2 pointer-coarse:min-h-11 ${colors.text} hover:opacity-80`}
+                        className={`mt-1.5 inline-flex items-center text-xs font-semibold underline underline-offset-2 touch-target-y ${colors.text} hover:opacity-80`}
                     >
                         {toast.action.label}
                     </button>
@@ -82,7 +82,7 @@ const ToastMessage: React.FC<{ toast: import('../types').Toast; onRemove: (id: n
             <div className="ml-3 md:ml-4 flex-shrink-0 flex">
                 <button
                     onClick={() => onRemove(toast.id)}
-                    className="inline-flex items-center justify-center rounded-md p-1 pointer-coarse:min-h-11 pointer-coarse:min-w-11 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-500 hover:bg-black/5 transition-colors"
+                    className="inline-flex items-center justify-center rounded-md p-1 touch-target focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-500 hover:bg-black/5 transition-colors"
                 >
                     <span className="sr-only">Close</span>
                     <svg className={`h-5 w-5 ${colors.text}`} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">

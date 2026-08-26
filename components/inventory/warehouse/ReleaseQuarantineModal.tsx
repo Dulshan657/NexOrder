@@ -163,31 +163,33 @@ export function ReleaseQuarantineModal({ open, onClose, from, contents, destinat
         </div>
 
         <div className="rounded-lg border border-stone-200">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-stone-200 text-left text-stone-500">
-                <th scope="col" className="px-2 py-1.5 font-semibold">Product</th>
-                <th scope="col" className="w-28 px-2 py-1.5 text-right font-semibold">Release</th>
-              </tr>
-            </thead>
-            <tbody>
-              {contents.map((c) => (
-                <tr key={c.productId} className="border-b border-stone-100 last:border-0">
-                  <td className="px-2 py-1.5">{c.productName ?? `#${c.productId}`}</td>
-                  <td className="px-2 py-1.5 text-right">
-                    <input
-                      type="number" min={0} max={releasable(c)}
-                      aria-label={`Quantity to release for ${c.productName ?? c.productId}`}
-                      value={qtyByProduct[c.productId] ?? ''}
-                      onChange={(e) => setQtyByProduct((prev) => ({ ...prev, [c.productId]: e.target.value }))}
-                      className="w-24 rounded border border-stone-200 px-2 py-1 text-right"
-                    />
-                    <span className="ml-1 text-stone-400">of {releasable(c)}</span>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-stone-200 text-left text-stone-500">
+                  <th scope="col" className="px-2 py-1.5 font-semibold">Product</th>
+                  <th scope="col" className="w-28 px-2 py-1.5 text-right font-semibold">Release</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {contents.map((c) => (
+                  <tr key={c.productId} className="border-b border-stone-100 last:border-0">
+                    <td className="px-2 py-1.5">{c.productName ?? `#${c.productId}`}</td>
+                    <td className="px-2 py-1.5 text-right">
+                      <input
+                        type="number" min={0} max={releasable(c)}
+                        aria-label={`Quantity to release for ${c.productName ?? c.productId}`}
+                        value={qtyByProduct[c.productId] ?? ''}
+                        onChange={(e) => setQtyByProduct((prev) => ({ ...prev, [c.productId]: e.target.value }))}
+                        className="w-24 rounded border border-stone-200 px-2 py-1 text-right"
+                      />
+                      <span className="ml-1 text-stone-400">of {releasable(c)}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {error && <p className="text-xs text-red-600">{error}</p>}

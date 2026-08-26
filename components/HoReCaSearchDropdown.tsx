@@ -85,7 +85,7 @@ const HoReCaSearchDropdown: React.FC<HoReCaSearchDropdownProps> = ({
       {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-stone-200 rounded-xl shadow-elevated z-50 overflow-hidden">
+        <div className="absolute top-full left-0 mt-1 w-72 max-w-[calc(100vw-2rem)] bg-white border border-stone-200 rounded-xl shadow-elevated z-50 overflow-hidden">
           <div className="p-2 border-b border-stone-100">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />

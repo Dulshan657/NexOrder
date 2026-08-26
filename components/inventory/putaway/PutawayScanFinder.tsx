@@ -135,8 +135,17 @@ export const PutawayScanFinder: React.FC<PutawayScanFinderProps> = ({
   }
 
   // Desktop safety net — see useWedgeScanner. The finder is the right place to
-  // arm it: it is on screen for the whole walk, and its handler already knows
-  // how to deal with a plate, a SKU or a bin.
+  // arm it: its handler already knows how to deal with a plate, a SKU or a bin.
+  //
+  // This used to say the finder "is on screen for the whole walk", and used that
+  // as the justification. It was false at 360x664 — two or three stop cards
+  // pushed it out of view — and it mattered more than it looks, because on the
+  // RS35's `Input Method` mode this net catches NOTHING (an Android IME types
+  // only into the focused editable; register O2). So the handheld depends on the
+  // field itself being reachable, not on this.
+  //
+  // Both call sites now wrap the finder in `StickyScanBar`, which is what makes
+  // the claim true rather than assumed.
   useWedgeScanner({ active: true, onScan: handleScan })
 
   return (

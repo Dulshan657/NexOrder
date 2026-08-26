@@ -203,7 +203,7 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
                       value={chosen}
                       disabled={!canWork}
                       onChange={(e) => setSourceByTask((m) => ({ ...m, [task.id]: Number(e.target.value) }))}
-                      className="mt-1 w-full text-sm rounded-lg border border-stone-200 bg-white px-2 py-1.5 min-h-[40px] disabled:bg-stone-50"
+                      className="mt-1 w-full text-sm rounded-lg border border-stone-200 bg-white px-2 py-1.5 touch-target-y disabled:bg-stone-50"
                     >
                       {task.recommendedFromLocationId != null
                         && !sourceOptions.some((l) => l.id === task.recommendedFromLocationId) && (
@@ -229,14 +229,14 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
                       disabled={!canWork}
                       value={qtyByTask[task.id] ?? ''}
                       onChange={(e) => setQtyByTask((m) => ({ ...m, [task.id]: e.target.value }))}
-                      className="mt-1 w-full text-sm rounded-lg border border-stone-200 px-2 py-1.5 min-h-[40px] disabled:bg-stone-50"
+                      className="mt-1 w-full text-sm rounded-lg border border-stone-200 px-2 py-1.5 touch-target-y disabled:bg-stone-50"
                     />
                   </label>
                   <button
                     type="button"
                     onClick={() => doAssign(task)}
                     disabled={!canWork || assign.isPending}
-                    className="px-3 py-1.5 min-h-[40px] rounded-lg bg-nexgen-blue text-white text-sm font-semibold btn-press disabled:opacity-50"
+                    className="px-3 py-1.5 touch-target-y rounded-lg bg-nexgen-blue text-white text-sm font-semibold btn-press disabled:opacity-50"
                   >
                     Assign
                   </button>
@@ -277,7 +277,7 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
                 onClick={() => unassign.mutateAsync({ taskId: task.id }).catch((e) =>
                   addToast(e instanceof Error ? e.message : 'Could not put it back', 'error'))}
                 disabled={!canWork || unassign.isPending}
-                className="text-xs px-2.5 py-1.5 min-h-[36px] rounded-lg border border-stone-200 text-stone-600 btn-press disabled:opacity-50"
+                className="text-xs px-2.5 py-1.5 touch-target-y rounded-lg border border-stone-200 text-stone-600 btn-press disabled:opacity-50"
               >
                 Put back on the queue
               </button>

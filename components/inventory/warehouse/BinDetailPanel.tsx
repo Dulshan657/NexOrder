@@ -281,7 +281,7 @@ export function BinDetailPanel({
           />
         )}
 
-        <dl className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+        <dl className="@container/bin mb-3 grid grid-cols-1 gap-x-3 gap-y-1.5 text-xs @min-[22rem]/bin:grid-cols-2">
           {isBin && (
             <>
               <dt className="text-stone-400">Capacity</dt>

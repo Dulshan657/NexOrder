@@ -158,7 +158,7 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
             type="button"
             onClick={runScan}
             disabled={detect.isPending}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 min-h-[40px] rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 btn-press disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 touch-target-y rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 btn-press disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${detect.isPending ? 'animate-spin' : ''}`} aria-hidden="true" />
             {detect.isPending ? 'Scanning…' : 'Scan for shortfalls'}
@@ -182,7 +182,7 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
                     role="tab"
                     aria-selected={stage === t}
                     onClick={() => setStage(t)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[40px] rounded-md text-sm btn-press ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-md text-sm btn-press ${
                       stage === t ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-500 hover:text-stone-700'
                     }`}
                   >

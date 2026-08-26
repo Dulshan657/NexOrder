@@ -11,7 +11,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ unreadCount, onClic
     return (
         <button
             onClick={onClick}
-            className="relative inline-flex items-center justify-center p-2 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+            className="relative inline-flex items-center justify-center p-2 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer touch-target"
             aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
         >
             <AnimatedIcon icon={Bell} animation="ring" className="w-5 h-5" />

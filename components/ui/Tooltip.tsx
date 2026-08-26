@@ -44,12 +44,17 @@ import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'reac
 import { createPortal } from 'react-dom'
 import { Info } from 'lucide-react'
 import { BASE_Z, MAX_STACK_DEPTH, Z_STEP } from './overlayStack'
+import { placePopover, type PopoverPlacement } from '@/lib/popoverPosition'
 
 /** Above every modal the stack can allocate, and below the toasts at TOAST_Z. */
 const TOOLTIP_Z = BASE_Z + MAX_STACK_DEPTH * Z_STEP - 1
 
 const PANEL_WIDTH = 224 // 14rem, matching the w-56 the panel is sized at
 const VIEWPORT_MARGIN = 8
+/** Roughly five wrapped lines at this width. Used only to decide whether the
+ *  panel still fits below the trigger; the panel itself is never height-capped,
+ *  because a clipped hint is worse than one that flips. */
+const ESTIMATED_PANEL_HEIGHT = 140
 
 export type TooltipProps = {
   /** The hint itself. One or two sentences — anything longer belongs in a doc. */
@@ -85,19 +90,35 @@ export function Tooltip({ text, label, align = 'left', className = '' }: Tooltip
   const open = pinned || hovered || focused
   const close = () => { setPinned(false); setHovered(false); setFocused(false) }
 
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [pos, setPos] = useState<PopoverPlacement | null>(null)
   const panelId = useId()
   const triggerRef = useRef<HTMLButtonElement | null>(null)
 
   // Measured before paint, so the panel never appears at 0,0 and jump to place.
+  //
+  // This clamped HORIZONTALLY and nothing else, which was half a fix. `top` was
+  // always `r.bottom + 6`, so a hint on a control low on a 664px handheld screen
+  // rendered below the fold — and because the panel is portalled, `fixed`, and
+  // closes on scroll, it could not be scrolled to. It was simply unreachable.
+  //
+  // `placePopover` does both axes and flips above when below cannot hold it. The
+  // estimate for the panel's height is deliberately generous: at 224px wide a
+  // one-or-two-sentence hint wraps to four or five lines on this screen, and
+  // over-estimating only makes the flip decision more eager, while
+  // under-estimating puts it back off the bottom.
   useLayoutEffect(() => {
     if (!open) return
     const el = triggerRef.current
     if (!el) return
-    const r = el.getBoundingClientRect()
-    const preferred = align === 'right' ? r.right - PANEL_WIDTH : r.left
-    const maxLeft = window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN
-    setPos({ top: r.bottom + 6, left: Math.max(VIEWPORT_MARGIN, Math.min(preferred, maxLeft)) })
+    setPos(placePopover({
+      trigger: el.getBoundingClientRect(),
+      preferredWidth: PANEL_WIDTH,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      align,
+      margin: VIEWPORT_MARGIN,
+      preferredMaxHeight: ESTIMATED_PANEL_HEIGHT,
+    }))
   }, [open, align])
 
   useEffect(() => {
@@ -155,7 +176,7 @@ export function Tooltip({ text, label, align = 'left', className = '' }: Tooltip
           <div
             id={panelId}
             role="tooltip"
-            style={{ position: 'fixed', top: pos.top, left: pos.left, width: PANEL_WIDTH, zIndex: TOOLTIP_Z }}
+            style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: TOOLTIP_Z }}
             className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-normal normal-case leading-relaxed tracking-normal text-stone-600 shadow-lg"
           >
             {text}
