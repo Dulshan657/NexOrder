@@ -5,7 +5,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { FileUp, Download, CheckCircle2, AlertTriangle } from 'lucide-react';
 import type { Product, Supplier } from '@/types';
 import { Button, Modal } from '@/components/ui';
-import { categoryOptions } from '@/lib/productTaxonomy';
+import { brandOptions, categoryOptions } from '@/lib/productTaxonomy';
 import { downloadCsv } from '@/lib/csvExport';
 import {
   validateCatalogRow,
@@ -40,6 +40,8 @@ type ValidRowResult = Extract<RowResult, { ok: true }>;
 
 const TEMPLATE_HEADERS = [
   'sku', 'name', 'description', 'price', 'category', 'unit', 'supplier_name',
+  // Optional (mig 00114). Blank = unbranded; slotting rules match on it.
+  'brand',
   // Multi-supplier columns (mig 00070), both ';'-delimited and optional.
   // `supplier_skus` is positional over [supplier_name, ...additional_suppliers].
   'additional_suppliers', 'supplier_skus',
@@ -97,11 +99,34 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
     return [...firstSpelling.values()].sort().join(CATEGORY_KEY_SEPARATOR);
   }, [records, knownCategories]);
 
+  const knownBrands = useMemo(() => brandOptions(catalog), [catalog]);
+
+  // The brands THIS FILE introduces, folded exactly as the categories above
+  // are — and it matters more here, because there is no built-in brand
+  // vocabulary at all, so on a first catalogue load every brand is new. Two
+  // spellings would mean a slotting rule written against one silently missing
+  // the other half of the catalogue.
+  const newBrandKey = useMemo(() => {
+    if (!records) return '';
+    const known = new Set(knownBrands.map((b) => b.toLowerCase()));
+    const firstSpelling = new Map<string, string>();
+    for (const rec of records) {
+      const raw = (rec.brand ?? '').trim();
+      if (!raw || raw.length > MAX_CATEGORY_LENGTH) continue;
+      const folded = raw.toLowerCase();
+      if (known.has(folded) || firstSpelling.has(folded)) continue;
+      firstSpelling.set(folded, raw);
+    }
+    return [...firstSpelling.values()].sort().join(CATEGORY_KEY_SEPARATOR);
+  }, [records, knownBrands]);
+
   const ctx = useMemo<CatalogImportContext>(() => ({
     suppliersByName: new Map(suppliers.map((s) => [s.name.trim().toLowerCase(), s.id])),
     categories: new Set(knownCategories),
     newCategories: new Set(newCategoryKey ? newCategoryKey.split(CATEGORY_KEY_SEPARATOR) : []),
-  }), [suppliers, knownCategories, newCategoryKey]);
+    brands: new Set(knownBrands),
+    newBrands: new Set(newBrandKey ? newBrandKey.split(CATEGORY_KEY_SEPARATOR) : []),
+  }), [suppliers, knownCategories, newCategoryKey, knownBrands, newBrandKey]);
 
   const resetOutcome = () => {
     setServerErrors(null);
@@ -158,6 +183,7 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
     // narrower set than `ctx.newCategories`, which has to span every row so the
     // spellings agree.
     const creatingCategories = new Set<string>();
+    const creatingBrands = new Set<string>();
     for (const rec of records) {
       const result = validateCatalogRow(stripRowId(rec), ctx);
       if (result.ok) {
@@ -165,6 +191,7 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
         // Counts every new supplier on the row, primary or additional.
         for (const name of result.newSupplierNames) creatingSuppliers.add(name);
         if (result.newCategoryName) creatingCategories.add(result.newCategoryName);
+        if (result.newBrandName) creatingBrands.add(result.newBrandName);
       } else {
         invalid++;
       }
@@ -174,6 +201,7 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
       invalid,
       creatingSuppliers: [...creatingSuppliers],
       creatingCategories: [...creatingCategories].sort(),
+      creatingBrands: [...creatingBrands].sort(),
     };
   }, [records, ctx]);
 
@@ -182,6 +210,8 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
     const sampleRow = [
       'AYM-EXAMPLE-001', 'Example Product', 'Optional description', '9.99', 'Other', 'each',
       sampleSupplier,
+      // brand — blank is valid and means unbranded.
+      '',
       // e.g. "Beta Foods;Gamma Trading" with part numbers lined up per supplier.
       '', '',
       '12', '0.0010', '0.0120', '10', '10', '10', '1', '',
@@ -325,6 +355,13 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
               <div className="rounded-lg bg-stone-50 border border-stone-200 px-3 py-2 text-xs text-stone-600">
                 Will create {summary.creatingCategories.length} new categor{summary.creatingCategories.length === 1 ? 'y' : 'ies'}:{' '}
                 {summary.creatingCategories.join(', ')}
+              </div>
+            )}
+
+            {summary.creatingBrands.length > 0 && (
+              <div className="rounded-lg bg-stone-50 border border-stone-200 px-3 py-2 text-xs text-stone-600">
+                Will add {summary.creatingBrands.length} new brand{summary.creatingBrands.length === 1 ? '' : 's'}:{' '}
+                {summary.creatingBrands.join(', ')}
               </div>
             )}
 

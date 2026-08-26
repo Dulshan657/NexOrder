@@ -19,6 +19,11 @@ interface ProductAdminRowProps {
   globalThreshold: number;
   onEdit: (product: Product) => void;
   onDelete: (product: Product) => void;
+  /** Bulk selection (mig 00114's brand assign). `undefined` for callers that
+   *  do not offer selection, which keeps the checkbox column out of their DOM
+   *  entirely rather than rendering a disabled one. */
+  selected?: boolean;
+  onToggleSelected?: (id: number, next: boolean) => void;
 }
 
 /** Extracted from ProductAdmin so the parent file stays under ~400 lines. */
@@ -30,6 +35,8 @@ export const ProductAdminRow: React.FC<ProductAdminRowProps> = ({
   globalThreshold,
   onEdit,
   onDelete,
+  selected,
+  onToggleSelected,
 }) => {
   const notStockedHere = scope !== 'all' && siteOnHand === undefined;
   const qty = scope === 'all' ? product.inventory : (siteOnHand ?? 0);
@@ -51,6 +58,17 @@ export const ProductAdminRow: React.FC<ProductAdminRowProps> = ({
 
   return (
     <tr className={rowClass}>
+      {onToggleSelected && (
+        <td className="pl-6 pr-2 py-4">
+          <input
+            type="checkbox"
+            checked={selected === true}
+            onChange={(e) => onToggleSelected(product.id, e.target.checked)}
+            className="rounded border-stone-300 text-nexgen-blue focus:ring-nexgen-blue/30"
+            aria-label={`Select ${product.name}`}
+          />
+        </td>
+      )}
       <td className="px-6 py-4">
         <div className="w-12 h-12 bg-stone-100 rounded-lg flex items-center justify-center border border-stone-200 overflow-hidden">
           <OptimizedImage
@@ -71,6 +89,9 @@ export const ProductAdminRow: React.FC<ProductAdminRowProps> = ({
       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-stone-900">{product.name}</td>
       <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">{supplierName}</td>
       <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">{product.category}</td>
+      <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">
+        {product.brand || <span className="text-stone-300">—</span>}
+      </td>
       <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">${product.price.toFixed(2)}</td>
       <td className={`px-6 py-4 whitespace-nowrap text-sm ${textClass}`}>
         {notStockedHere ? (

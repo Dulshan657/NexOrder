@@ -371,3 +371,73 @@ describe('validateCatalogRow — multiple suppliers', () => {
     if (result.ok === false) expect(result.error).toMatch(/twice/i)
   })
 })
+
+// ── Brand (mig 00114) ────────────────────────────────────────────────────────
+// The column is optional, but the FOLD is what matters: there is no built-in
+// brand vocabulary, so on a first catalogue load every brand is new and two
+// spellings in one file would split a slotting rule's catalogue in half.
+
+describe('brand', () => {
+  it('is optional — a row with no brand column is still valid', () => {
+    const r = validateCatalogRow(validRec, ctx())
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect('brand' in r.row).toBe(false)
+      expect(r.newBrandName).toBeUndefined()
+    }
+  })
+
+  it('sends a brand the catalog already knows, in the catalog’s spelling', () => {
+    const r = validateCatalogRow(
+      { ...validRec, brand: 'milwaukee' },
+      ctx({ brands: new Set(['Milwaukee']) }),
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.row.brand).toBe('Milwaukee')
+      expect(r.newBrandName).toBeUndefined()
+    }
+  })
+
+  it('CREATES an unknown brand rather than rejecting it', () => {
+    // Bug S6's lesson, and it bites harder here: with no canonical list, a
+    // first catalogue load would otherwise fail on every single row.
+    const r = validateCatalogRow({ ...validRec, brand: 'Ryobi' }, ctx())
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.row.brand).toBe('Ryobi')
+      expect(r.newBrandName).toBe('Ryobi')
+    }
+  })
+
+  it('folds to one spelling across the file via newBrands', () => {
+    const shared = ctx({ newBrands: new Set(['Milwaukee']) })
+    const a = validateCatalogRow({ ...validRec, brand: 'MILWAUKEE' }, shared)
+    const b = validateCatalogRow({ ...validRec, sku: 'X-2', brand: 'milwaukee' }, shared)
+    expect(a.ok && b.ok).toBe(true)
+    if (a.ok && b.ok) {
+      expect(a.row.brand).toBe('Milwaukee')
+      expect(b.row.brand).toBe('Milwaukee')
+    }
+  })
+
+  it('treats a whitespace-only cell as no brand at all', () => {
+    const r = validateCatalogRow({ ...validRec, brand: '   ' }, ctx())
+    expect(r.ok).toBe(true)
+    // Never '' — a stored empty string would be MATCHABLE by a rule whose
+    // brand field was left blank.
+    if (r.ok) expect('brand' in r.row).toBe(false)
+  })
+
+  it('refuses a brand over 60 characters, naming the field', () => {
+    const r = validateCatalogRow({ ...validRec, brand: 'B'.repeat(61) }, ctx())
+    expect(r.ok).toBe(false)
+    // `r.ok === false`, not `!r.ok`: without strictNullChecks TS will not narrow
+    // a discriminated union through a negated boolean-property check. The same
+    // note sits on buildProductPayload's caller in productImportRow.ts.
+    if (r.ok === false) {
+      expect(r.field).toBe('brand')
+      expect(r.error).toContain('60')
+    }
+  })
+})
