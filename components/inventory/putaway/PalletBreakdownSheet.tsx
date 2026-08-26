@@ -62,6 +62,11 @@ interface PortionDraft {
    *  will become — not inherited from the pallet's own recommendation. */
   suggestedLocationId: number | null
   suggestedLocationCode: string | null
+  /** The engine has ANSWERED on this row. Distinct from a non-null
+   *  `suggestedLocationId`, because "no bin" is an answer and the operator has
+   *  to be told it — otherwise pressing Suggest bins visibly does nothing and
+   *  there is no way from inside the UI to find out why. */
+  suggested: boolean
   roleOverride: boolean
 }
 
@@ -74,6 +79,7 @@ const emptyPortion = (unit: CountedUnit): PortionDraft => ({
   locationCode: null,
   suggestedLocationId: null,
   suggestedLocationCode: null,
+  suggested: false,
   roleOverride: false,
 })
 
@@ -226,7 +232,15 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
   }
 
   const patch = (key: number, next: Partial<PortionDraft>) => {
-    setPortions((prev) => prev.map((p) => (p.key === key ? { ...p, ...next } : p)))
+    // Changing the quantity or the unit invalidates the engine's answer for
+    // this row: a "no bin" verdict for 6 cartons says nothing about 2, and a
+    // stale one shown against a number nobody scored is worse than silence.
+    const restated = next.count !== undefined || next.unit !== undefined
+    setPortions((prev) => prev.map((p) => (
+      p.key === key
+        ? { ...p, ...next, ...(restated ? { suggested: false, suggestedLocationId: null, suggestedLocationCode: null } : {}) }
+        : p
+    )))
     setError(null)
   }
 
@@ -252,6 +266,7 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
         const code = locations.find((l) => l.id === suggestion.recommendedLocationId)?.code ?? null
         return {
           ...p,
+          suggested: true,
           suggestedLocationId: suggestion.recommendedLocationId,
           suggestedLocationCode: code,
           // Only fill a destination nobody has chosen yet — never overwrite one
@@ -468,6 +483,11 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
                         {p.suggestedLocationCode && p.suggestedLocationId !== p.locationId && (
                           <span className="block text-[11px] text-stone-400">
                             engine suggested <span className="font-mono">{p.suggestedLocationCode}</span>
+                          </span>
+                        )}
+                        {p.suggested && p.suggestedLocationId == null && (
+                          <span className="block text-[11px] text-amber-700">
+                            No bin the engine will offer for this — pick one yourself.
                           </span>
                         )}
                       </span>

@@ -156,8 +156,17 @@ describe('lib/palletBreakdown entry helpers', () => {
     expect(layerBaseQty(2, null)).toBeNull()
   })
 
-  it('names each unit for the picker', () => {
+  it('pluralises the container words for the picker', () => {
     expect(unitLabel('layer')).toBe('layers')
-    expect(unitLabel('base', 'jar')).toBe('jars')
+    expect(unitLabel('carton')).toBe('cartons')
+    expect(unitLabel('pallet')).toBe('pallets')
+  })
+
+  // Found in a browser, not by a test: the picker read "eachs". A base unit is a
+  // product_uoms code an operator typed, not an English noun.
+  it('echoes the product base unit verbatim, never pluralised', () => {
+    expect(unitLabel('base', 'each')).toBe('each')
+    expect(unitLabel('base', 'can')).toBe('can')
+    expect(unitLabel('base', 'packet')).toBe('packet')
   })
 })

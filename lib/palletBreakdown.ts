@@ -67,9 +67,17 @@ export function layerBaseQty(count: number, basis: LayerBasis | null | undefined
   return count * basis.perLayer * basis.unitsPerCarton
 }
 
-/** Plural name for a unit, for the picker and the running total. `baseLabel` is
- *  the product's own base unit ('each', 'jar', …) from putawayFormat. */
+/**
+ * Name for a unit, for the picker and the running total.
+ *
+ * The three container words are pluralised because a picker reads better that
+ * way ("cartons"). The PRODUCT's own base unit is returned VERBATIM: it is a
+ * `product_uoms.code` typed by an operator, not an English noun, and naive
+ * pluralisation turns 'each' into "eachs". Nothing else in this app pluralises
+ * it either — the walk card and the queue both say "2 each", "36 can",
+ * "1 packet" — so echoing it unchanged is also the consistent choice.
+ */
 export function unitLabel(unit: CountedUnit, baseLabel = 'units'): string {
-  const word = unit === 'pallet' ? 'pallet' : unit === 'layer' ? 'layer' : unit === 'carton' ? 'carton' : baseLabel
-  return word.endsWith('s') ? word : `${word}s`
+  if (unit === 'base') return baseLabel
+  return unit === 'pallet' ? 'pallets' : unit === 'layer' ? 'layers' : 'cartons'
 }

@@ -210,6 +210,42 @@ describe('PalletBreakdownSheet payload', () => {
     expect(screen.getByRole('button', { name: /Print 1 label/i })).toBeTruthy()
   })
 
+  // Found in a browser, not by a test: the engine returned no bin for the SKU,
+  // the sheet said nothing, and pressing Suggest bins looked like a dead button.
+  it('says so when the engine has no bin to offer', async () => {
+    planMock.mockResolvedValue({
+      mode: 'engine', parentRemaining: 408, parentClosed: false,
+      portions: [{
+        index: 0, baseQty: 72, countedUnit: 'carton', huType: 'carton',
+        recommendedLocationId: null, alternatives: [], explanation: {}, locationId: null,
+      }],
+    })
+    renderSheet()
+    scanPlate()
+    setCount(1, '6')
+    fireEvent.click(screen.getByRole('button', { name: /Suggest bins/i }))
+    await waitFor(() => expect(screen.getByText(/No bin the engine will offer/i)).toBeTruthy())
+  })
+
+  it('drops a stale engine verdict when the quantity changes under it', async () => {
+    planMock.mockResolvedValue({
+      mode: 'engine', parentRemaining: 408, parentClosed: false,
+      portions: [{
+        index: 0, baseQty: 72, countedUnit: 'carton', huType: 'carton',
+        recommendedLocationId: null, alternatives: [], explanation: {}, locationId: null,
+      }],
+    })
+    renderSheet()
+    scanPlate()
+    setCount(1, '6')
+    fireEvent.click(screen.getByRole('button', { name: /Suggest bins/i }))
+    await waitFor(() => expect(screen.getByText(/No bin the engine will offer/i)).toBeTruthy())
+
+    // 'no bin for 6 cartons' says nothing about 2, so it must not linger.
+    setCount(1, '2')
+    expect(screen.queryByText(/No bin the engine will offer/i)).toBeNull()
+  })
+
   it('renders the label sheet as a LINK, never a programmatic open', async () => {
     printMock.mockResolvedValue({ signedUrl: 'https://example.test/sheet.pdf', labelCount: 1, storagePath: 'x' })
     renderSheet()
