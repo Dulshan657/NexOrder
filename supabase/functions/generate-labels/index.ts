@@ -155,6 +155,15 @@ interface LabelItem {
   code: string
   /** Secondary line: location name, product name, etc. */
   context: string
+  /**
+   * `locations.id`, for a location run only (mig 00124).
+   *
+   * Recorded alongside the code so `confirm-label-print` can resolve the job by
+   * ROW rather than by string. A code sweep (00107) is a two-phase A->B/B->A
+   * write, so codes can be SWAPPED between rows and a later code match would
+   * confirm the wrong racking.
+   */
+  locationId?: number
 }
 
 // ── Barcode rendering ─────────────────────────────────────────────
@@ -330,7 +339,7 @@ async function loadLayoutItems(
   const warehouseId = ((layout as any).warehouse_id as number | null) ?? null
 
   return {
-    items: (sheet?.items ?? []).map((i) => ({ code: i.code, context: i.context })),
+    items: (sheet?.items ?? []).map((i) => ({ code: i.code, context: i.context, locationId: i.locationId })),
     warehouseId,
     // The stock a group prints on is a property of the SITE and the group,
     // never of the request — a bin sticker rendered at aisle-sign size wastes a
@@ -388,7 +397,7 @@ async function loadItems(
     const rows = (data ?? []) as any[]
 
     return {
-      items: rows.map((r) => ({ code: r.code, context: `${r.kind} · ${r.name ?? ''}`.trim() })),
+      items: rows.map((r) => ({ code: r.code, context: `${r.kind} · ${r.name ?? ''}`.trim(), locationId: r.id })),
       warehouseId: input.warehouseId ?? null,
     }
   }
@@ -809,6 +818,13 @@ serve(async (req: Request) => {
     const { error: logError } = await admin.from('label_print_log').insert({
       label_kind: input.kind,
       codes: items.map((i) => i.code),
+      // Same order as `codes`, and only when EVERY item has an id — a
+      // half-populated array cannot be read index-for-index, and NULL means
+      // "resolve by code", which is what every pre-00124 job does. See the
+      // migration for why a code match alone can confirm the wrong racking.
+      location_ids: items.every((i) => i.locationId != null)
+        ? items.map((i) => i.locationId as number)
+        : null,
       label_count: items.length,
       warehouse_id: warehouseId,
       storage_path: storagePath,

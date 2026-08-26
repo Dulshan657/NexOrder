@@ -24,6 +24,16 @@ export { isUninformativeName }
 export interface DisplayLocation {
   code: string
   name?: string | null
+  /**
+   * `locations.is_active`, when the caller knows it.
+   *
+   * `getWarehouseLocations` deliberately returns retired bins (the designer and
+   * the label screens need them), so a lookup built from it will happily resolve
+   * a bin that publishing has since taken off the layout. Surfaces that send a
+   * person to walk to a bin must be able to tell — see PutawayWalkView. Absent
+   * means "not known", never "retired".
+   */
+  isActive?: boolean
 }
 
 /**

@@ -12,13 +12,23 @@ function row(o: Partial<OccupancyRow> = {}): OccupancyRow {
 }
 
 describe('isUnitLoad', () => {
-  it('is true only for a pallet plate in a pallet-denominated bin', () => {
+  it('is true for ANY plate in a pallet-denominated bin', () => {
+    // 00122: the plate side is presence, not denomination. A carton plate on a
+    // marked slab cell is one physical object in one marked spot.
     expect(isUnitLoad('pallet', 'pallet')).toBe(true)
-    expect(isUnitLoad('pallet', 'carton')).toBe(false)
+    expect(isUnitLoad('pallet', 'carton')).toBe(true)
+  })
+
+  it('stays false for a carton-denominated bin, whatever the plate', () => {
+    // The BIN gate is what leaves MAIN bit-for-bit unchanged.
     expect(isUnitLoad('carton', 'pallet')).toBe(false)
     expect(isUnitLoad('carton', 'carton')).toBe(false)
-    expect(isUnitLoad('pallet', null)).toBe(false)
     expect(isUnitLoad(null, 'pallet')).toBe(false)
+  })
+
+  it('stays false for loose stock, which has no plate to count', () => {
+    expect(isUnitLoad('pallet', null)).toBe(false)
+    expect(isUnitLoad('pallet', undefined)).toBe(false)
   })
 })
 
@@ -56,8 +66,18 @@ describe('positionsUsed', () => {
     expect(positionsUsed('pallet', [row({ huId: null, onHand: 3 }), row({ huId: null, onHand: 4 })])).toBe(7)
   })
 
-  it('counts a carton plate sitting in a pallet bin by its units', () => {
-    expect(positionsUsed('pallet', [row({ huType: 'carton', onHand: 6, sizeFactor: 2 })])).toBe(12)
+  it('counts a carton plate sitting in a pallet bin as ONE position', () => {
+    // 00122, and the whole of the Amadiya bulk-floor bug: charged by units this
+    // was 12 against a ceiling of 1, so one plate was split across 12 bays.
+    expect(positionsUsed('pallet', [row({ huType: 'carton', onHand: 6, sizeFactor: 2 })])).toBe(1)
+  })
+
+  it('counts distinct carton plates in a pallet bin separately', () => {
+    const rows = [
+      row({ huId: 1, huType: 'carton', onHand: 6 }),
+      row({ huId: 2, huType: 'carton', onHand: 6 }),
+    ]
+    expect(positionsUsed('pallet', rows)).toBe(2)
   })
 
   it('mixes unit loads and loose stock in the same bin', () => {

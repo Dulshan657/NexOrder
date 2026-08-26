@@ -154,6 +154,42 @@ describe('planPutaway — unit loads', () => {
     expect(residual(plan)).toMatchObject({ quantity: 200, needsManualPlacement: true })
   })
 
+  it('keeps a CARTON plate whole in a one-position bulk cell', () => {
+    // The Amadiya bulk-floor bug, at the layer that produced it. AMD_BULK is a
+    // marked slab cell: slot_kind 'pallet', capacity_slots 1 (mig 00103). Twelve
+    // packets on ONE carton plate used to be charged 12 against a ceiling of 1,
+    // so the planner fitted a single packet per cell and split that one physical
+    // plate across twelve separate bays (recommendations 417-428 on dev).
+    const bins = [
+      bin({ locationId: 1, slotKind: 'pallet', capacitySlots: 1, distanceFromDockM: 5 }),
+      bin({ locationId: 2, slotKind: 'pallet', capacitySlots: 1, distanceFromDockM: 10 }),
+      bin({ locationId: 3, slotKind: 'pallet', capacitySlots: 1, distanceFromDockM: 15 }),
+    ]
+    const plan = planPutaway({ ...req(bins, sku(), 12), huType: 'carton' })
+    expect(placed(plan)).toHaveLength(1)
+    expect(placed(plan)[0]).toMatchObject({ locationId: 1, quantity: 12 })
+    expect(residual(plan)).toBeUndefined()
+    expect(bins[0].usedSlots).toBe(1)
+    // And it must not have touched the neighbouring bays at all.
+    expect(bins[1].usedSlots).toBe(0)
+    expect(bins[2].usedSlots).toBe(0)
+  })
+
+  it('sends the next plate to the NEXT bay once a one-position cell is spoken for', () => {
+    // usedSlots arrives pre-charged with v_bin_pending_putaway (mig 00123): an
+    // open task already naming bay 1 is what makes bay 1 full to the planner,
+    // even though no stock has physically moved there yet.
+    const plan = planPutaway({
+      ...req([
+        bin({ locationId: 1, slotKind: 'pallet', capacitySlots: 1, usedSlots: 1, distanceFromDockM: 5 }),
+        bin({ locationId: 2, slotKind: 'pallet', capacitySlots: 1, distanceFromDockM: 10 }),
+      ], sku(), 12),
+      huType: 'carton',
+    })
+    expect(placed(plan)).toHaveLength(1)
+    expect(placed(plan)[0]).toMatchObject({ locationId: 2, quantity: 12 })
+  })
+
   it('still honours the bin weight limit', () => {
     const plan = planPutaway(palletReq([
       palletBin({ locationId: 1, weightCapacityKg: 50 }),

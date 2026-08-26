@@ -332,9 +332,21 @@ export async function generatePutawayTasks(
         // What capacity/fill are denominated in (mig 00078) — 'pallet' means a
         // plate consumes one whole position rather than qty × size_factor.
         slotKind: r.slot_kind ?? null,
-        usedSlots: (Number(r.used_slots) || 0) + (pending?.slots ?? 0),
+        // Three things occupy a bay, and all three must be charged or the
+        // planner hands the same space out twice:
+        //   used_slots     stock that is physically in it (v_bin_fill)
+        //   pending_slots  OPEN putaway tasks that already name it (mig 00123) —
+        //                  two-stage putaway moves no stock at assign, so
+        //                  without this a bay promised to three plates still
+        //                  reads empty
+        //   overlay        lines of THIS receipt placed earlier in this loop
+        usedSlots: (Number(r.used_slots) || 0)
+          + (Number(r.pending_slots) || 0)
+          + (pending?.slots ?? 0),
         weightCapacityKg: r.weight_capacity_kg != null ? Number(r.weight_capacity_kg) : null,
-        usedWeightKg: (Number(r.used_weight_kg) || 0) + (pending?.weight ?? 0),
+        usedWeightKg: (Number(r.used_weight_kg) || 0)
+          + (Number(r.pending_weight_kg) || 0)
+          + (pending?.weight ?? 0),
         graphNodeId: r.graph_node_id ?? null,
         accessOffsetM: Number(r.access_offset_m) || 0,
         hasSameProduct: !!r.has_same_product,

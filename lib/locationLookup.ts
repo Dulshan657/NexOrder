@@ -21,6 +21,7 @@ interface LocationLike {
   id: number
   code: string
   name?: string | null
+  isActive?: boolean
 }
 
 /** Both halves of a location's identity, keyed by id. */
@@ -28,7 +29,12 @@ export function buildDisplayLookup(
   locations: readonly LocationLike[] | undefined | null,
 ): Map<number, DisplayLocation> {
   const map = new Map<number, DisplayLocation>()
-  for (const l of locations ?? []) map.set(l.id, { code: l.code, name: l.name ?? null })
+  for (const l of locations ?? []) {
+    // `isActive` is carried through because the source query returns retired
+    // bins too (see the header). A caller that must not send someone walking to
+    // a bin that publishing took off the layout has no other way to know.
+    map.set(l.id, { code: l.code, name: l.name ?? null, isActive: l.isActive })
+  }
   return map
 }
 

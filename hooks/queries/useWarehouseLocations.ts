@@ -23,6 +23,34 @@ export const warehouseLocationKeys = {
   byWarehouse: (id: number) => ['warehouse-locations', id] as const,
 }
 
+/**
+ * Invalidate every cache that holds a location's NAME or CODE.
+ *
+ * `['warehouse-locations', id]` is the one every warehouse screen reads, and it
+ * was the only one these mutations invalidated. Two others carry the same two
+ * strings and were invalidated by nothing at all:
+ *
+ *  - `['location-names']` (hooks/queries/useLocationNames.ts) — the ORDER-scoped
+ *    lookup, because a pick stop carries no warehouseId. 5-minute staleTime plus
+ *    `placeholderData: previous`, and its own header claimed "both rename
+ *    mutations invalidate on success". They did not. That is the Pick workspace,
+ *    where somebody is standing at the rack face reading a sticker.
+ *  - `['locations']` (hooks/queries/useInventoryBalances.ts) — read by the Stock
+ *    page rows.
+ *
+ * Neither self-heals: `lib/queryClient.ts` sets `refetchOnWindowFocus: false`.
+ * Both are prefix keys, so this invalidates every id-set variant of them.
+ */
+function invalidateLocationIdentity(qc: ReturnType<typeof useQueryClient>): void {
+  qc.invalidateQueries({ queryKey: ['location-names'] })
+  qc.invalidateQueries({ queryKey: ['locations'] })
+  // `['pick-tasks', orderId]` carries the live-joined CODE while the name beside
+  // it on the same row comes from `['location-names']`. Refreshing one and not
+  // the other is worse than refreshing neither: it renders a NEW name against an
+  // OLD code, a pair that never existed. Both, or nothing.
+  qc.invalidateQueries({ queryKey: ['pick-tasks'] })
+}
+
 export function useWarehouseLocations(warehouseId: number | null) {
   return useQuery({
     queryKey: warehouseLocationKeys.byWarehouse(warehouseId ?? 0),
@@ -66,6 +94,7 @@ export function useRenameArea(warehouseId: number) {
       qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) })
       qc.invalidateQueries({ queryKey: ['layout-detail'] })
       qc.invalidateQueries({ queryKey: ['layouts', warehouseId] })
+      invalidateLocationIdentity(qc)
     },
   })
 }
@@ -87,6 +116,7 @@ export function usePaintAreas(warehouseId: number) {
       qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) })
       qc.invalidateQueries({ queryKey: ['layout-detail'] })
       qc.invalidateQueries({ queryKey: ['layouts', warehouseId] })
+      invalidateLocationIdentity(qc)
     },
   })
 }
@@ -118,9 +148,10 @@ export function usePaintSigns(warehouseId: number) {
 /**
  * Rewrite the codes of a selected block of bins.
  *
- * FIVE keys, and the last two are the ones easy to miss. The locations key
+ * Many keys, and the last few are the ones easy to miss. The locations key
  * because the codes and paths just changed; the two layout keys because the map
- * labels every bin by its code; and then:
+ * labels every bin by its code; `invalidateLocationIdentity` because the pick
+ * and stock screens hold the same two strings in caches of their own; and then:
  *
  *  - the label keys, because the sweep RESET `label_printed` on every row it
  *    touched. Miss these and the print-backlog badge reads zero outstanding for a
@@ -140,6 +171,12 @@ export function useRecodeLocations(warehouseId: number) {
       qc.invalidateQueries({ queryKey: ['label-print-log'] })
       qc.invalidateQueries({ queryKey: ['warehouse-setup'] })
       qc.invalidateQueries({ queryKey: ['location-code-sweep', warehouseId] })
+      // The backlog SUMMARY, not just its targets: the sweep resets
+      // label_printed on every row it touched, and this 60s-cached key is what
+      // carries `outstanding`. Missing it under-reports the backlog for a minute
+      // — the same failure the targets key is invalidated to prevent.
+      qc.invalidateQueries({ queryKey: ['layout-label-status'] })
+      invalidateLocationIdentity(qc)
     },
   })
 }
@@ -172,6 +209,12 @@ export function useRevertCodeSweep(warehouseId: number) {
       qc.invalidateQueries({ queryKey: ['label-print-log'] })
       qc.invalidateQueries({ queryKey: ['warehouse-setup'] })
       qc.invalidateQueries({ queryKey: ['location-code-sweep', warehouseId] })
+      // The backlog SUMMARY, not just its targets: the sweep resets
+      // label_printed on every row it touched, and this 60s-cached key is what
+      // carries `outstanding`. Missing it under-reports the backlog for a minute
+      // — the same failure the targets key is invalidated to prevent.
+      qc.invalidateQueries({ queryKey: ['layout-label-status'] })
+      invalidateLocationIdentity(qc)
     },
   })
 }
@@ -204,7 +247,10 @@ export function useRenameRack(warehouseId: number) {
   return useMutation({
     mutationFn: ({ id, name, includeLevels }: { id: number; name: string; includeLevels?: boolean }) =>
       renameRack(id, name, includeLevels ?? false),
-    onSuccess: () => qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: warehouseLocationKeys.byWarehouse(warehouseId) })
+      invalidateLocationIdentity(qc)
+    },
   })
 }
 

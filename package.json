@@ -36,6 +36,8 @@
     "crons:amadiya": "node supabase/ops/schedule-crons.mjs --env=amadiya",
     "crons:list:dev": "node supabase/ops/schedule-crons.mjs --env=dev --list",
     "crons:list:amadiya": "node supabase/ops/schedule-crons.mjs --env=amadiya --list",
+    "rescore:putaway:dev": "node supabase/ops/rescore-open-putaway.mjs --env=dev",
+    "rescore:putaway:amadiya": "node supabase/ops/rescore-open-putaway.mjs --env=amadiya",
     "bootstrap:admin:amadiya": "node supabase/ops/bootstrap-admin.mjs --env=amadiya",
     "password:set:amadiya": "node supabase/ops/set-user-password.mjs --env=amadiya",
     "password:list:amadiya": "node supabase/ops/set-user-password.mjs --env=amadiya --list",

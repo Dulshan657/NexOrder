@@ -12,17 +12,33 @@
 // over handling_unit_id.
 //
 //   positions(bin, row) = 1 / (rows sharing this plate)   when bin.slotKind = 'pallet'
-//                                                          AND hu.huType   = 'pallet'
+//                                                          AND the row is ON a plate
 //                       = onHand × sizeFactor              otherwise
 //
-// Gated on BOTH ends, deliberately:
-//   * on the BIN, so a pallet decanted onto a carton shelf is still counted in
-//     cartons — which is what leaves MAIN (entirely carton-denominated, the only
-//     non-demo racked warehouse) bit-for-bit unchanged;
-//   * on the PLATE, so loose/legacy stock (handling_unit_id NULL) and carton
-//     plates degrade to exactly today's arithmetic. Carton plates are explicitly
-//     NOT one-position objects: the 00076 backfill lumped ~46 cartons onto a
-//     single 'carton' plate, so counting them as 1 would read MAIN as 1% full.
+// The BIN gate is the load-bearing one: a pallet decanted onto a carton shelf is
+// still counted in cartons, which is what leaves MAIN (entirely carton-
+// denominated, the only non-demo racked warehouse) bit-for-bit unchanged.
+//
+// ── WHY THE PLATE SIDE STOPPED BEING GATED ON `hu_type = 'pallet'` (00122) ───
+//
+// It used to be, and the reason recorded here was: "carton plates are explicitly
+// NOT one-position objects — the 00076 backfill lumped ~46 cartons onto a single
+// 'carton' plate, so counting them as 1 would read MAIN as 1% full." That is a
+// true statement about a CARTON-denominated bin, and the BIN gate already
+// excludes every one of them. It was never an argument about a pallet bay.
+//
+// What it cost, measured on dev: Amadiya's bulk floor is `AMD_BULK` — one marked
+// slab cell, `slot_kind = 'pallet'`, `capacity_slots = 1` (00103). A receipt of
+// twelve packets on ONE carton plate was charged `12 × size_factor` against a
+// ceiling of 1, so the planner fitted a single packet per cell and split that one
+// plate across twelve separate bulk bays (recommendations 417-428). A plate is a
+// physical object: it is carried to one marked spot, and no operator can put a
+// twelfth of it in each of twelve.
+//
+// So in a plate-denominated bin ANY identified plate is one position. Loose stock
+// (`huId` null) keeps the per-unit arithmetic exactly as before — without an id
+// two rows cannot be proven to be the same physical object, which is the same
+// reason `positionsUsed` has always required one.
 //
 // Pure and IO-free, and it lives in _shared/wie/ so the Vite frontend imports
 // the very module the Edge Functions run — the rule cannot drift between the
@@ -47,9 +63,13 @@ export interface OccupancyRow {
 /**
  * True when this stock is a UNIT LOAD in a bin that counts unit loads — the one
  * case that consumes whole positions rather than per-unit slots.
+ *
+ * `huType` is the PRESENCE of a plate, not its denomination: a carton plate in a
+ * pallet bay is still one physical object standing in one marked spot. Only
+ * loose stock (no plate at all) falls back to per-unit slots. See the header.
  */
 export function isUnitLoad(slotKind: SlotKind, huType: HuType): boolean {
-  return slotKind === 'pallet' && huType === 'pallet'
+  return slotKind === 'pallet' && huType != null
 }
 
 /**

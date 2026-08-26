@@ -15,9 +15,12 @@ function candidate(o: Partial<{
   location_id: number; code: string; capacity_slots: number | null; used_slots: number
   weight_capacity_kg: number | null; used_weight_kg: number; distance_from_dock_m: number | null
   slot_kind: 'pallet' | 'carton' | null
+  pending_slots: number; pending_weight_kg: number
 }> = {}): Record<string, unknown> {
   return {
     location_id: 1, code: 'B1', capacity_slots: 100, used_slots: 0,
+    // mig 00123 — space promised to open tasks, charged alongside used_slots.
+    pending_slots: 0, pending_weight_kg: 0,
     weight_capacity_kg: null, used_weight_kg: 0, graph_node_id: 1, access_offset_m: 0,
     has_same_product: false, distance_from_dock_m: 10, zone_id: null, zone_tag: null,
     zone_type: null, zone_priority_weight: null, zone_allowed_categories: null,
@@ -149,6 +152,25 @@ describe('generatePutawayTasks — cross-line overlay', () => {
     expect(inserted[0]).toMatchObject({ recommended_location_id: 7, quantity: 10 })
     expect(inserted[1]).toMatchObject({ recommended_location_id: null, quantity: 5 })
   })
+
+  // ── Space promised to OTHER receipts (mig 00123) ──────────────────────────
+  // The overlay only spans one call. Across receipts, the bay is held by
+  // v_bin_pending_putaway, which arrives as pending_slots on the candidate row.
+  it('treats a bay promised to an open task as already occupied', async () => {
+    // A one-position bay with an open task already naming it: used_slots is
+    // still 0 because two-stage putaway moves no stock at assign.
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      candidates: [candidate({ location_id: 7, capacity_slots: 1, used_slots: 0, pending_slots: 1 })],
+    })
+    const res = await generatePutawayTasks(admin, {
+      warehouseId: 9, lines: [{ product_id: 1, quantity: 1 }], actorId: 'u1',
+    })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({ recommended_location_id: null, quantity: 1 })
+  })
+
 })
 
 // ── Per-plate capacity + plate coherence (mig 00078) ─────────────────────────
