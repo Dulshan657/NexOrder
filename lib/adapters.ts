@@ -6,6 +6,8 @@
  * components still receive the same typed props they always did.
  */
 
+import { AU_STANDARD_PALLET } from './palletFit'
+
 import type {
   Product, HoReCa, User, Supplier, Order, OrderItem, PurchaseOrder,
   Invoice, Promotion, ScheduledVisit, Visit, SalesTarget, AppSettings,
@@ -157,6 +159,11 @@ export function toProduct(
     lengthCm: row.length_cm != null ? Number(row.length_cm) : undefined,
     widthCm: row.width_cm != null ? Number(row.width_cm) : undefined,
     heightCm: row.height_cm != null ? Number(row.height_cm) : undefined,
+    // mig 00125. Undefined = not measured, which is the signal that makes
+    // the pallet fit estimate the carton from the unit and say so.
+    cartonLengthCm: row.carton_length_cm != null ? Number(row.carton_length_cm) : undefined,
+    cartonWidthCm: row.carton_width_cm != null ? Number(row.carton_width_cm) : undefined,
+    cartonHeightCm: row.carton_height_cm != null ? Number(row.carton_height_cm) : undefined,
     reorderPoint: row.reorder_point ?? undefined,
     safetyStock: row.safety_stock ?? undefined,
     leadTimeDays: row.lead_time_days ?? undefined,
@@ -211,6 +218,9 @@ export function fromProduct(p: Partial<Product>): Record<string, unknown> {
   if (p.lengthCm !== undefined) row.length_cm = p.lengthCm
   if (p.widthCm !== undefined) row.width_cm = p.widthCm
   if (p.heightCm !== undefined) row.height_cm = p.heightCm
+  if (p.cartonLengthCm !== undefined) row.carton_length_cm = p.cartonLengthCm
+  if (p.cartonWidthCm !== undefined) row.carton_width_cm = p.cartonWidthCm
+  if (p.cartonHeightCm !== undefined) row.carton_height_cm = p.cartonHeightCm
   if (p.reorderPoint !== undefined) row.reorder_point = p.reorderPoint
   if (p.safetyStock !== undefined) row.safety_stock = p.safetyStock
   if (p.leadTimeDays !== undefined) row.lead_time_days = p.leadTimeDays
@@ -643,6 +653,21 @@ export function toAppSettings(row: SettingsRow): AppSettings {
     poAutoApproveBlockOnCustomerMismatch:
       (row as { po_auto_approve_block_on_customer_mismatch?: boolean })
         .po_auto_approve_block_on_customer_mismatch ?? true,
+    // Pallet spec (mig 00125). A row read before the columns exist falls
+    // back to the AU standard the migration seeds, so the product form
+    // never computes a fit against an undefined pallet.
+    palletFootprintLengthMm:
+      (row as { pallet_footprint_length_mm?: number }).pallet_footprint_length_mm
+      ?? AU_STANDARD_PALLET.footprintLengthMm,
+    palletFootprintWidthMm:
+      (row as { pallet_footprint_width_mm?: number }).pallet_footprint_width_mm
+      ?? AU_STANDARD_PALLET.footprintWidthMm,
+    palletBaseHeightMm:
+      (row as { pallet_base_height_mm?: number }).pallet_base_height_mm
+      ?? AU_STANDARD_PALLET.baseHeightMm,
+    palletMaxLoadHeightMm:
+      (row as { pallet_max_load_height_mm?: number }).pallet_max_load_height_mm
+      ?? AU_STANDARD_PALLET.maxLoadHeightMm,
   }
 }
 
@@ -667,6 +692,13 @@ export function fromAppSettings(s: Partial<AppSettings>): Record<string, unknown
     row.po_auto_approve_block_on_sender_mismatch = s.poAutoApproveBlockOnSenderMismatch
   if (s.poAutoApproveBlockOnCustomerMismatch !== undefined)
     row.po_auto_approve_block_on_customer_mismatch = s.poAutoApproveBlockOnCustomerMismatch
+  if (s.palletFootprintLengthMm !== undefined)
+    row.pallet_footprint_length_mm = s.palletFootprintLengthMm
+  if (s.palletFootprintWidthMm !== undefined)
+    row.pallet_footprint_width_mm = s.palletFootprintWidthMm
+  if (s.palletBaseHeightMm !== undefined) row.pallet_base_height_mm = s.palletBaseHeightMm
+  if (s.palletMaxLoadHeightMm !== undefined)
+    row.pallet_max_load_height_mm = s.palletMaxLoadHeightMm
   return row
 }
 

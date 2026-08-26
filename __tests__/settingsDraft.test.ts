@@ -20,6 +20,10 @@ const base: AppSettings = {
   poAutoApproveBlockOnShortStock: true,
   poAutoApproveBlockOnSenderMismatch: true,
   poAutoApproveBlockOnCustomerMismatch: true,
+  palletFootprintLengthMm: 1165,
+  palletFootprintWidthMm: 1165,
+  palletBaseHeightMm: 150,
+  palletMaxLoadHeightMm: 1650,
 }
 
 describe('pickSettings', () => {

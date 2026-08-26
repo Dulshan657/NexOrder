@@ -18,6 +18,7 @@ import type { HoReCa, Product } from '../../../types'
 const GeneralTab = lazyWithRetry(() => import('./GeneralTab'))
 const OrdersPricingTab = lazyWithRetry(() => import('./OrdersPricingTab'))
 const InventoryTab = lazyWithRetry(() => import('./InventoryTab'))
+const ProductsTab = lazyWithRetry(() => import('./ProductsTab'))
 const WarehouseTab = lazyWithRetry(() => import('./WarehouseTab'))
 const CustomersTab = lazyWithRetry(() => import('./CustomersTab'))
 // The only sub-tab that belongs to a module. Everything else here — company
@@ -38,6 +39,7 @@ const TABS: ReadonlyArray<{ id: SettingsSubTab; label: string }> = [
   { id: 'general', label: 'General' },
   { id: 'orders', label: 'Orders & Pricing' },
   { id: 'inventory', label: 'Inventory' },
+  { id: 'products', label: 'Products' },
   { id: 'warehouse', label: 'Warehouse' },
   { id: 'customers', label: 'Customers' },
   ...(MODULE_PO_INBOX ? [{ id: 'automation' as SettingsSubTab, label: 'Automation' }] : []),
@@ -130,6 +132,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ hoReCas, products, onUpdate
           {visited.has('inventory') && (
             <div hidden={subtab !== 'inventory'}>
               <InventoryTab />
+            </div>
+          )}
+          {visited.has('products') && (
+            <div hidden={subtab !== 'products'}>
+              <ProductsTab />
             </div>
           )}
           {visited.has('warehouse') && (

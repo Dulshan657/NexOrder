@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { toAppSettings, fromAppSettings } from '../lib/adapters'
 import type { AppSettings } from '../types'
 
-// Full app_settings row (mig 00044 + 00088 columns included).
+// Full app_settings row (mig 00044 + 00088 + 00125 columns included).
 const baseRow = {
   id: 1,
   company_name: 'NexGen',
@@ -22,6 +22,10 @@ const baseRow = {
   po_auto_approve_block_on_short_stock: false,
   po_auto_approve_block_on_sender_mismatch: true,
   po_auto_approve_block_on_customer_mismatch: true,
+  pallet_footprint_length_mm: 1165,
+  pallet_footprint_width_mm: 1165,
+  pallet_base_height_mm: 150,
+  pallet_max_load_height_mm: 1650,
 } as Parameters<typeof toAppSettings>[0]
 
 describe('toAppSettings / fromAppSettings', () => {
@@ -45,7 +49,27 @@ describe('toAppSettings / fromAppSettings', () => {
       po_auto_approve_block_on_short_stock: false,
       po_auto_approve_block_on_sender_mismatch: true,
       po_auto_approve_block_on_customer_mismatch: true,
+      pallet_footprint_length_mm: 1165,
+      pallet_footprint_width_mm: 1165,
+      pallet_base_height_mm: 150,
+      pallet_max_load_height_mm: 1650,
     })
+  })
+
+  it('falls back to the AU standard pallet on a pre-mig-00125 row', () => {
+    // The migration seeds these as NOT NULL defaults, so a row without them is
+    // one read between deploying the frontend and applying the migration. It
+    // must not leave the product form computing against an undefined pallet.
+    const legacy = { ...baseRow } as Record<string, unknown>
+    delete legacy.pallet_footprint_length_mm
+    delete legacy.pallet_footprint_width_mm
+    delete legacy.pallet_base_height_mm
+    delete legacy.pallet_max_load_height_mm
+    const app = toAppSettings(legacy as Parameters<typeof toAppSettings>[0])
+    expect(app.palletFootprintLengthMm).toBe(1165)
+    expect(app.palletFootprintWidthMm).toBe(1165)
+    expect(app.palletBaseHeightMm).toBe(150)
+    expect(app.palletMaxLoadHeightMm).toBe(1650)
   })
 
   it('coerces numeric-string columns to numbers', () => {
