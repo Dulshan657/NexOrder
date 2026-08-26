@@ -263,7 +263,8 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
               check needs to know why this is still here, and "somebody
               dismissed it" is not an answer. */}
           <span className="mt-1 block text-[10px] text-stone-400">
-            Recorded against the task. The check will not raise it again.
+            Recorded against the task. It will not be raised again unless more
+            stock arrives in this bin — a bigger pile is a different problem.
           </span>
         </label>
       </Modal>

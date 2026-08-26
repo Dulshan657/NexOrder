@@ -142,6 +142,32 @@ serve(async (req: Request) => {
         .gt('available', 0)
       if (balErr) throw new EdgeFunctionError('INTERNAL', `balance load failed: ${balErr.message}`)
 
+      // Dismissals, and why they need a quantity rather than just existing.
+      //
+      // 00121's replace deletes only `suggested` rows, so a dismissed one
+      // survives — but the insert then adds a FRESH suggested row for the same
+      // (product, bin), because the partial unique index covers suggested rows
+      // ONLY and the dismissed one is not among them. Dismissal did not stick,
+      // and the queue re-raised work somebody had deliberately left alone.
+      //
+      // Suppressing on the triple forever is the other wrong answer: there is no
+      // un-dismiss, so "double-stacked today" would silence that bin permanently.
+      // The quantity is what makes it a statement about a SITUATION rather than
+      // about a bin — MORE stock arriving is a new situation and re-raises.
+      const { data: dismissedRows } = await admin
+        .from('wie_offhome_tasks')
+        .select('product_id, from_location_id, quantity')
+        .eq('warehouse_id', input.warehouse_id)
+        .eq('status', 'dismissed')
+      const dismissedQty = new Map<string, number>()
+      for (const d of (dismissedRows ?? []) as any[]) {
+        const key = `${d.product_id}:${d.from_location_id}`
+        // Keep the LARGEST dismissed quantity: two dismissals of the same bin
+        // mean the operator has said no twice, and the higher water mark is the
+        // one that has actually been refused.
+        dismissedQty.set(key, Math.max(dismissedQty.get(key) ?? 0, Number(d.quantity)))
+      }
+
       const rows = (balances ?? []) as any[]
       const byProduct = new Map<number, any[]>()
       for (const b of rows) {
@@ -151,12 +177,17 @@ serve(async (req: Request) => {
       }
 
       const found: Array<Record<string, unknown>> = []
+      const examined: number[] = []
       let scanned = 0
       let truncated = false
 
       for (const [productId, group] of byProduct) {
         if (scanned >= MAX_SCANNED_PRODUCTS) { truncated = true; break }
         scanned++
+        // Recorded BEFORE the unruled skip below: a product that used to be
+        // off-home and no longer is must have its stale task retired, and that
+        // only happens if the sweep says it looked at it.
+        examined.push(productId)
 
         const first = group[0]
         const slotProduct = await loadSlottingProduct(admin, {
@@ -178,6 +209,8 @@ serve(async (req: Request) => {
         for (const b of group) {
           const locationId = Number(b.location_id)
           if (homeBins.has(locationId)) continue
+          const dismissed = dismissedQty.get(`${productId}:${locationId}`)
+          if (dismissed !== undefined && Number(b.available) <= dismissed) continue
           found.push({
             warehouse_id: input.warehouse_id,
             layout_id: (wh as any).active_layout_id,
@@ -203,16 +236,21 @@ serve(async (req: Request) => {
         })
       }
 
-      if (found.length > 0) {
-        // The arbiter MUST restate the partial index's predicate — without
-        // `status='suggested'` Postgres cannot match it and errors at runtime.
-        const { error: upErr } = await admin.from('wie_offhome_tasks')
-          .upsert(found as any, {
-            onConflict: 'warehouse_id,product_id,from_location_id',
-            ignoreDuplicates: false,
-          })
-        if (upErr) throw new EdgeFunctionError('INTERNAL', `could not record tasks: ${upErr.message}`)
-      }
+      // Through an RPC, NOT `.upsert({onConflict})`. uq_wie_offhome_open is a
+      // PARTIAL index and supabase-js sends column names only — there is nowhere
+      // to put the `WHERE status = 'suggested'` the arbiter has to restate, and
+      // Postgres answers "no unique or exclusion constraint matching the ON
+      // CONFLICT specification". The same shape as uq_wie_replen_open's
+      // documented trap, met from the client side. It is also two statements,
+      // and two supabase-js statements are not a transaction.
+      const { error: repErr } = await admin.rpc('wie_offhome_replace_tx', {
+        p_warehouse_id: input.warehouse_id,
+        // The products this sweep ACTUALLY examined — a truncated run must not
+        // retire tasks for the ones it never reached.
+        p_product_ids: examined,
+        p_rows: found,
+      })
+      if (repErr) throw new EdgeFunctionError('INTERNAL', `could not record tasks: ${repErr.message}`)
 
       await logAuditEvent(admin, {
         actorId: auth.userId, actorRole: auth.role, action: 'create',
