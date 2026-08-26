@@ -58,6 +58,9 @@ const ReceiveStockView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import(
 const PickQueueView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/PickQueueView')) : null;
 const PutawayQueuePage = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/PutawayQueuePage')) : null;
 const ReplenQueuePage = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/ReplenQueuePage')) : null;
+// The DECLARATION is gated, not just the JSX below: Rollup only folds the chunk
+// away when the dynamic import itself is unreachable.
+const OffHomeQueuePage = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/OffHomeQueuePage')) : null;
 const StocktakePage = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/StocktakePage')) : null;
 const DispatchedOrdersView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/DispatchedOrdersView')) : null;
 const DocumentsView = MODULE_INVENTORY_DISPATCH ? lazyWithRetry(() => import('./inventory/DocumentsView')) : null;
@@ -178,6 +181,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} onOpenPutaway={openPutaway} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Putaway' && <PutawayQueuePage currentUser={props.currentUser} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Replenishment' && <ReplenQueuePage currentUser={props.currentUser} />}
+                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Off-home' && <OffHomeQueuePage currentUser={props.currentUser} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Stocktake' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER || props.currentUser.role === UserRole.WAREHOUSE) && <StocktakePage currentUser={props.currentUser} products={props.products} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Pick Queue' && <PickQueueView currentUser={props.currentUser} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Dispatched' && <DispatchedOrdersView orders={props.allOrders} currentUser={props.currentUser} onViewDetail={props.onViewOrderDetail} />}

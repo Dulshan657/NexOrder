@@ -6,6 +6,8 @@
 // This lets the same code run inside Deno edge functions AND the Vite frontend.
 // The rule is enforced by __tests__/wie/purity.test.ts.
 
+import type { SlottingProduct, SlottingRuleSpec } from './slotting.ts'
+
 import type { HuType, SlotKind } from './capacity.ts'
 
 export type { HuType, SlotKind }
@@ -100,6 +102,22 @@ export interface SkuProfile {
    *  working unchanged. Optional so pre-existing call sites/tests that build
    *  a SkuProfile literal without it keep compiling. */
   allowedLevelRoles?: LevelRole[] | null
+  /** Manufacturer / brand (products.brand, mig 00114); null = unbranded. Read
+   *  ONLY by slotting rules. Optional for the reason above.
+   *
+   *  WARNING, and it has already been designed around rather than discovered:
+   *  making this REQUIRED enforces nothing. All three files that build a
+   *  SkuProfile read their rows through `(p as any)`, so
+   *  `brand: (p as any).brand ?? null` compiles perfectly against a select that
+   *  never asked for the column — `category` is already required here and
+   *  catches exactly that nowhere. The selects in putawayTasks.ts,
+   *  plan-reslot and wie-batch-reoptimize have to be widened by hand. */
+  brand?: string | null
+  /** Every supplier linked to this product (product_suppliers, mig 00070).
+   *  NEVER products.supplier_id, which is the legacy single-supplier column:
+   *  reading one in one engine and the other elsewhere would make putaway,
+   *  reslot and batch-reoptimize disagree about the same slotting rule. */
+  supplierIds?: readonly number[]
 }
 
 /** A candidate storage location (bin), pre-loaded with everything the two-stage
@@ -159,6 +177,17 @@ export interface CandidateBin {
   /** 1-based level number within its rack (mig 00072); null/undefined when
    *  this bin isn't a level. */
   levelIndex?: number | null
+  /** Slotting blocks this bin belongs to (mig 00115), from
+   *  wie_putaway_candidates' `block_ids`, which expands v_slotting_block_bins.
+   *  Empty/undefined = in no block, which is the normal case on a site with no
+   *  slotting rules. */
+  blockIds?: readonly number[]
+  /** This bin sits in a hold/quarantine zone (mig 00101). Slotting has NO
+   *  OPINION on a held bin — see slotting.ts `planSlotting`. Carried here
+   *  because `p_hold_only` is a call argument that never becomes a stored fact,
+   *  so nothing downstream can otherwise tell a quarantine bay from a bin the
+   *  operator simply never assigned. */
+  isHold?: boolean
 }
 
 export type CompatibilityLevel = 'forbidden' | 'restricted' | 'allowed'
@@ -280,6 +309,22 @@ export interface PutawayRequest {
   /** Global category-compatibility matrix (Phase 3); empty ⇒ no gating. */
   compatibility: CompatibilityRule[]
   weights: ScoringWeights
+  /** Slotting rules for this warehouse (mig 00115) — which blocks this product
+   *  belongs in, and which blocks are held empty for somebody else. Undefined ⇒
+   *  slotting is not consulted at all, which is byte-identical to the
+   *  pre-00115 behaviour and is what every caller does on a site with no rules.
+   *  See slotting.ts for why the decision here is quantity-independent. */
+  slotting?: SlottingContext
+}
+
+/** Everything `planSlotting` needs except the candidates, which the request
+ *  already carries. Assembled by _shared/slottingLoad.ts. */
+export interface SlottingContext {
+  product: SlottingProduct
+  rules: readonly SlottingRuleSpec[]
+  blockNames: ReadonlyMap<number, string>
+  blockIdsByLocation: ReadonlyMap<number, readonly number[]>
+  heldLocationIds?: ReadonlySet<number>
 }
 
 // ── Explainability ───────────────────────────────────────────────────────────
@@ -351,6 +396,21 @@ export interface PutawayAllocation {
   explanation: PutawayExplanation
   /** True only for the residual portion no bin had capacity for. */
   needsManualPlacement: boolean
+  /** This allocation landed outside its product's assigned blocks (mig 00115).
+   *  Absent/false for an unruled product, for a held (quarantine) bin, and for
+   *  the manual-placement residual — none of those is "misplaced". */
+  offHome?: boolean
+  /** Why this bin, in the words the operator reads. `text` comes from
+   *  slotting.ts `describeBin`, which is also what the client-side guard and
+   *  the bin-picker badge render — one sentence, three surfaces. */
+  slotting?: {
+    ruleId: number
+    ruleName: string
+    blockName: string | null
+    /** 1-based rank as an operator counts it; null when off-home. */
+    rank: number | null
+    text: string
+  }
 }
 
 /** A multi-bin putaway plan — the quantities in `allocations` sum to the

@@ -160,6 +160,7 @@ import {
     PackagePlus,
     PackageOpen,
     ArrowDownToLine,
+    Boxes,
     ClipboardCheck,
     ClipboardList,
     Send,
@@ -893,6 +894,17 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     </span>
                                 )}
                             </button>
+                            {/* No badge, deliberately: off-home stock is not
+                                work that must be done, and a permanent red
+                                number on a queue nobody is obliged to clear
+                                trains people to ignore badges. */}
+                            <button
+                                onClick={() => { setAdminView('Off-home'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Off-home' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <Boxes className="w-5 h-5 mr-3" />
+                                <span className="flex-1 text-left">Off-home</span>
+                            </button>
                             <button
                                 onClick={() => { setAdminView('Stocktake'); setIsSidebarOpen(false); }}
                                 className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Stocktake' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
@@ -1012,6 +1024,17 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         {replenPendingCount}
                                     </span>
                                 )}
+                            </button>
+                            {/* No badge, deliberately: off-home stock is not
+                                work that must be done, and a permanent red
+                                number on a queue nobody is obliged to clear
+                                trains people to ignore badges. */}
+                            <button
+                                onClick={() => { setAdminView('Off-home'); setIsSidebarOpen(false); }}
+                                className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm btn-press ${adminView === 'Off-home' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                            >
+                                <Boxes className="w-5 h-5 mr-3" />
+                                <span className="flex-1 text-left">Off-home</span>
                             </button>
                             <button
                                 onClick={() => { setAdminView('Stocktake'); setIsSidebarOpen(false); }}

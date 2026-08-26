@@ -125,6 +125,8 @@ export const FUNCTION_MODULES = {
   'generate-pick-slip': 'inventory_dispatch',
   'mutate-layout': 'inventory_dispatch',
   'mutate-level-role': 'inventory_dispatch',
+  'mutate-slotting-rule': 'inventory_dispatch',
+  'mutate-offhome-task': 'inventory_dispatch',
   'mutate-product-home-bin': 'inventory_dispatch',
   'mutate-scoring-profile': 'inventory_dispatch',
   'mutate-storage-type': 'inventory_dispatch',

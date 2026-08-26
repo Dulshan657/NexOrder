@@ -8,7 +8,7 @@ import { compressImage } from '../lib/imageCompression';
 import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/supabase/storageService';
 import { buildProductPayload } from '../lib/productFormPayload';
 import { assembleProductUoms, extraUomsFromProduct } from '../lib/productUomForm';
-import { categoryOptions, uomCodeOptions, withCurrentValue } from '../lib/productTaxonomy';
+import { brandOptions, categoryOptions, uomCodeOptions, withCurrentValue } from '../lib/productTaxonomy';
 import { Button, CreatableSelect, Modal, ScanField } from './ui';
 import OptimizedImage from './OptimizedImage';
 import ProductHomeBinsSection from './admin/ProductHomeBinsSection';
@@ -33,6 +33,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
         description: '',
         price: '',
         category: CATEGORIES[0],
+        brand: '',
         unit: 'each',
         imageUrl: '',
         supplierId: suppliers.length > 0 ? String(suppliers[0].id) : '',
@@ -68,6 +69,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                 description: productToEdit.description,
                 price: String(productToEdit.price),
                 category: productToEdit.category,
+                brand: productToEdit.brand ?? '',
                 unit: productToEdit.unit,
                 imageUrl: productToEdit.imageUrl || '',
                 supplierId: String(productToEdit.supplierId),
@@ -94,6 +96,13 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
     const categoryChoices = useMemo(
         () => withCurrentValue(categoryOptions(catalog), formData.category),
         [catalog, formData.category],
+    );
+    // Brands have NO curated seed list — unlike categories, they are whatever
+    // this tenant happens to sell, so the options are purely what the catalog
+    // already uses plus whatever is being edited right now.
+    const brandChoices = useMemo(
+        () => withCurrentValue(brandOptions(catalog), formData.brand),
+        [catalog, formData.brand],
     );
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -280,6 +289,23 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                         placeholder="Name the new category"
                         className={inputClasses}
                     />
+                </div>
+                <div>
+                    <label htmlFor="brand" className="block text-sm font-medium text-stone-700 mb-1.5">Brand</label>
+                    <CreatableSelect
+                        id="brand"
+                        name="brand"
+                        value={formData.brand}
+                        onChange={brand => setFormData(prev => ({ ...prev, brand }))}
+                        options={brandChoices}
+                        emptyLabel="No brand"
+                        customLabel="New brand…"
+                        placeholder="Name the new brand"
+                        className={inputClasses}
+                    />
+                    <p className="mt-1 text-xs text-stone-400">
+                        Optional. Slotting rules can assign a whole brand to a block of racking.
+                    </p>
                 </div>
                 <ProductSuppliersSection
                     suppliers={suppliers}

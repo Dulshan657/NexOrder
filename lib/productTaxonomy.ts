@@ -49,7 +49,7 @@ export function mergeOptions(
 }
 
 /** Unit-of-measure names to offer: UOM_CODES + every code used in the catalog. */
-export function uomCodeOptions(products: readonly Product[] | undefined): string[] {
+export function uomCodeOptions(products: readonly TaxonomySource[] | undefined): string[] {
     const found: string[] = [];
     for (const p of products ?? []) {
         if (p.unit) found.push(p.unit);
@@ -60,13 +60,42 @@ export function uomCodeOptions(products: readonly Product[] | undefined): string
     return mergeOptions(UOM_CODES, found);
 }
 
+/**
+ * The minimum a taxonomy helper reads. Structural on purpose: `useProducts`
+ * hands back RAW DB rows while most other callers hold adapted `Product`
+ * objects, and both satisfy this without a cast at either call site.
+ */
+export interface TaxonomySource {
+    category?: string | null;
+    brand?: string | null;
+    unit?: string | null;
+    uoms?: ReadonlyArray<{ code?: string | null }> | null;
+}
+
 /** Categories to offer: CATEGORIES + every category used in the catalog. */
-export function categoryOptions(products: readonly Product[] | undefined): string[] {
+export function categoryOptions(products: readonly TaxonomySource[] | undefined): string[] {
     const found: string[] = [];
     for (const p of products ?? []) {
         if (p.category) found.push(p.category);
     }
     return mergeOptions(CATEGORIES, found);
+}
+
+/**
+ * Brands to offer: purely what the catalog already uses.
+ *
+ * NO CURATED LIST, deliberately. Categories ship with CATEGORIES because a food
+ * distributor's are broadly predictable; brands are whatever this tenant sells,
+ * and seeding them would put words in an operator's mouth on an empty catalogue.
+ * Passing an empty curated list means autocomplete-from-existing falls straight
+ * out of `mergeOptions` with no second code path.
+ */
+export function brandOptions(products: readonly TaxonomySource[] | undefined): string[] {
+    const found: string[] = [];
+    for (const p of products ?? []) {
+        if (p.brand) found.push(p.brand);
+    }
+    return mergeOptions([], found);
 }
 
 /**

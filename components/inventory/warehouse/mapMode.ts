@@ -1,6 +1,7 @@
 // What the live map is currently FOR, and what that forbids.
 //
-// The map has grown three jobs — look at it, annotate it, recode it — and until now
+// The map has grown four jobs — look at it, annotate it, recode it, and build a
+// slotting block on it — and until now
 // the exclusion between them was five hand-written conjunctions scattered through
 // RackedWorkspace's JSX (`canRename && !paint.state.active`, `recode.state.active ?
 // NOOP : selectFromMap`, and so on). Every new mode had to remember to appear in all
@@ -17,11 +18,15 @@
 // keeps taking prop bags describing gestures; giving it a mode would make it know
 // what a mode MEANS, which is exactly the knowledge the prop bags keep out of it.
 
-export type MapMode = 'view' | 'annotate' | 'recode'
+export type MapMode = 'view' | 'annotate' | 'recode' | 'slotting'
 
 export interface MapModeInputs {
   paintActive: boolean
   recodeActive: boolean
+  /** Building a slotting block (mig 00115). Required, NOT optional: this record
+   *  is the one place a new mode gets declared, and an optional field would let
+   *  a call site forget it and silently derive `view` during a live selection. */
+  slotActive: boolean
 }
 
 /**
@@ -34,6 +39,10 @@ export interface MapModeInputs {
  */
 export function deriveMapMode(inputs: MapModeInputs): MapMode {
   if (inputs.recodeActive) return 'recode'
+  // Above `annotate` for the same reason recode is: a slotting selection is
+  // built by hand and unsaved, where a paint working set is re-hydrated from the
+  // server on entry. Losing the cheaper one is the better failure.
+  if (inputs.slotActive) return 'slotting'
   if (inputs.paintActive) return 'annotate'
   return 'view'
 }
@@ -63,7 +72,10 @@ export function modeGuards(mode: MapMode, canRename: boolean): ModeGuards {
     canEditSign: canRename && mode === 'view',
     // A sweep's stroke must not double as a bin click, and Bin detail must not
     // scroll itself into view from behind the panel mid-selection.
-    canSelectBin: mode !== 'recode',
+    // A sweep's stroke must not double as a bin click, and Bin detail must not
+    // scroll itself into view from behind the panel mid-selection. Slotting is
+    // the same gesture and gets the same exclusion.
+    canSelectBin: mode !== 'recode' && mode !== 'slotting',
     showModeButtons: canRename && mode === 'view',
   }
 }

@@ -33,6 +33,13 @@ export interface ProductFormData {
    * leaves any existing barcode untouched; present-but-empty clears it.
    */
   barcode?: string
+  /**
+   * Brand (mig 00114). Optional on the TYPE for the same reason `barcode` is:
+   * callers that build a ProductFormData literal without a brand column must
+   * keep compiling. Omitted leaves an existing brand untouched;
+   * present-but-empty clears it.
+   */
+  brand?: string
 }
 
 export type ProductPayload = Record<string, unknown>
@@ -105,6 +112,14 @@ export function buildProductPayload(
   // product cleared to '' would collide with the first.
   if (formData.barcode !== undefined) {
     data.barcode = formData.barcode.trim() || null
+  }
+
+  // null, never '', for a different reason than barcode's: the column's CHECK
+  // refuses a blank-after-trim value, AND a stored '' would be MATCHABLE by a
+  // slotting rule whose brand field was left empty — quietly enrolling the
+  // whole unbranded catalogue in it. "Unbranded" has exactly one spelling.
+  if (formData.brand !== undefined) {
+    data.brand = formData.brand.trim() || null
   }
 
   return { ok: true, data }

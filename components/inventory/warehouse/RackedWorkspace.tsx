@@ -36,6 +36,16 @@ import { AreaPaintSummaryModal } from './AreaPaintSummaryModal'
 import { LayoutLabelJobModal } from '@/components/admin/labels/LayoutLabelJobModal'
 import { RecodePanel } from './recode/RecodePanel'
 import { useRecodeSelection, type MarqueeRect, type RecodeStep } from './recode/useRecodeSelection'
+import { useSlotSelection, type SlotStep } from './slotting/useSlotSelection'
+import { useProducts } from '@/hooks/queries/useProducts'
+import { SlottingPanel, type SlotApplied } from './slotting/SlottingPanel'
+import {
+  useSlottingRows,
+  useSlottingBlockBins,
+  useSaveSlottingBlock,
+  useSaveSlottingRule,
+} from '@/hooks/queries/useSlottingRules'
+import { useOffHomeTasks } from '@/hooks/queries/useOffHome'
 import {
   areasOfSelection, blockCensus, buildLevelIdsByRack, buildUnitPlacements,
   incumbentsOfBlock, takenCodesFromLocations, unitsAtCell, unitsFromSelection,
@@ -82,6 +92,14 @@ const NOOP = () => {}
 /** An abandoned band resolves to nothing. Module-level for the same identity reason
  *  as everything above it. */
 const NO_UNITS = () => []
+/** Slotting draws no ghost text — it renumbers nothing. A module constant, not
+ *  an inline `new Map()`, so the identity is stable across renders and
+ *  MapSelectionLayer is not handed a fresh object per painted cell.
+ *
+ *  NOT `undefined`: MapSelectionLayer does `ghosts.get(...)` inside a map over
+ *  the cells, and with `strict` off `undefined` is assignable to its
+ *  ReadonlyMap prop — so tsc passed and the first paint stroke crashed the tab. */
+const NO_GHOSTS: ReadonlyMap<number, string> = new Map()
 
 export interface RackedWorkspaceProps {
   warehouseId: number
@@ -155,6 +173,9 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   // against an unsaved area working set would be planned from a picture the server
   // has never seen.
   const recode = useRecodeSelection()
+  const slot = useSlotSelection()
+  const [slotError, setSlotError] = useState<string | null>(null)
+  const [slotApplied, setSlotApplied] = useState<SlotApplied | null>(null)
   const [recodePreview, setRecodePreview] = useState<RecodePreview | null>(null)
   const [previewingRecode, setPreviewingRecode] = useState(false)
   /** Why the dry run failed, kept as STATE rather than only a toast. A toast is gone
@@ -209,6 +230,17 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     return map
   }, [placements])
 
+  // Fetched only while the Blocks overlay is on. Every other overlay draws from
+  // data the tab already holds; this one does not, and a map screen is heavy
+  // enough without two more queries nobody asked for.
+  const blocksOverlayOn = overlay === 'slotting_blocks'
+  const overlayBlockBins = useSlottingBlockBins(blocksOverlayOn ? warehouseId : null)
+  const overlayOffHome = useOffHomeTasks(blocksOverlayOn ? warehouseId : null)
+  const offHomeLocationIds = useMemo(
+    () => new Set((overlayOffHome.data ?? []).map((t) => t.fromLocationId)),
+    [overlayOffHome.data],
+  )
+
   // Every colour and label the canvas draws, derived once and memoized for
   // IDENTITY as much as for cost — they are all scene-memo dependencies.
   const {
@@ -223,6 +255,8 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     levelRoles,
     overlay,
     floor,
+    slotBlockIdsByLocation: overlayBlockBins.data,
+    offHomeLocationIds,
   })
 
   // ── Code sweep derivations (migs 00107 / 00108) ───────────────────────────
@@ -353,6 +387,117 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     [spannedAreas],
   )
 
+  // ── Slotting blocks (mig 00115) ────────────────────────────────────────────
+  const slotRows = useSlottingRows(slot.state.active ? warehouseId : null)
+  const saveSlotBlock = useSaveSlottingBlock()
+  const saveSlotRule = useSaveSlottingRule()
+
+  /**
+   * The block's MEMBERS, as the server stores them: one row per selected unit,
+   * `unit_kind` telling it whether to expand.
+   *
+   * A rack parent holds no stock of its own — its SHELF levels do — so sending
+   * the parent as `'rack'` is what makes v_slotting_block_bins expand it to
+   * every level, including levels added to that rack later. Sending the levels
+   * instead would freeze the block at today's rack shape.
+   */
+  const slotMembers = useMemo(
+    () => [...slot.state.selected].map((id) => ({
+      locationId: id,
+      unitKind: (levelIdsByRack.get(id)?.length ? 'rack' : 'bin') as 'rack' | 'bin',
+    })),
+    [slot.state.selected, levelIdsByRack],
+  )
+
+  /** Leaf bins the selection expands to — the number that matters on the floor,
+   *  and not the same as the unit count whenever a rack is involved. */
+  const slotBinCount = useMemo(
+    () => slotMembers.reduce(
+      (n, m) => n + (m.unitKind === 'rack' ? (levelIdsByRack.get(m.locationId)?.length ?? 1) : 1),
+      0,
+    ),
+    [slotMembers, levelIdsByRack],
+  )
+
+  // Fetched only while the panel is open: the brand suggestions are the only
+  // thing on this screen that needs the catalogue, and the map is heavy enough.
+  const slotProducts = useProducts()
+  const slotBrandOptions = useMemo(() => {
+    if (!slot.state.active) return [] as string[]
+    const found = new Set<string>()
+    for (const p of (slotProducts.data ?? []) as any[]) {
+      if (p.brand) found.add(String(p.brand))
+    }
+    return [...found].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  }, [slot.state.active, slotProducts.data])
+
+  const applySlot = async () => {
+    setSlotError(null)
+    try {
+      const blockRes = await saveSlotBlock.mutateAsync({
+        warehouseId,
+        id: slot.state.blockId,
+        name: slot.state.blockName.trim(),
+        sourceKind: 'manual',
+        members: slotMembers,
+      })
+      const blockId = 'id' in blockRes ? blockRes.id : null
+      if (blockId == null) throw new Error('The block was not saved.')
+
+      let ruleName: string | null = null
+      let ruleWasCreated = false
+
+      if (slot.state.attachRuleId) {
+        // Appended as the LAST block, never inserted: rank is the operator's
+        // ordering and a map panel has no business guessing where in it this
+        // belongs. The settings table is where it gets reordered.
+        const existing = (slotRows.data?.rules ?? []).find(
+          (r) => String(r.id) === slot.state.attachRuleId,
+        )
+        if (!existing) throw new Error('That rule no longer exists — reload and try again.')
+        await saveSlotRule.mutateAsync({
+          warehouseId,
+          id: existing.id,
+          name: existing.name,
+          matchProductId: existing.matchProductId,
+          matchBrand: existing.matchBrand,
+          matchCategory: existing.matchCategory,
+          matchSupplierId: existing.matchSupplierId,
+          enforcement: existing.enforcement,
+          reserveEmpty: existing.reserveEmpty,
+          isActive: existing.isActive,
+          blockIds: [...existing.blocks.map((b) => b.id).filter((id) => id !== blockId), blockId],
+        })
+        ruleName = existing.name
+      } else if (slot.state.newRuleName.trim()) {
+        await saveSlotRule.mutateAsync({
+          warehouseId,
+          name: slot.state.newRuleName.trim(),
+          matchBrand: slot.state.newRuleBrand.trim(),
+          // Soft, always, from here. Hard enforcement refuses a scan on the
+          // floor, and that is not a decision to make one step after a paint
+          // stroke — Settings is where it can be read next to everything else.
+          enforcement: 'soft',
+          reserveEmpty: false,
+          isActive: true,
+          blockIds: [blockId],
+        })
+        ruleName = slot.state.newRuleName.trim()
+        ruleWasCreated = true
+      }
+
+      setSlotApplied({
+        blockName: slot.state.blockName.trim(),
+        binCount: slotBinCount,
+        ruleName,
+        ruleWasCreated,
+      })
+      slot.dispatch({ type: 'applied', blockId })
+    } catch (e) {
+      setSlotError(e instanceof Error ? e.message : 'Could not save the block.')
+    }
+  }
+
   /** Units under one painted cell / inside a band. Plain functions, not memos —
    *  they are only ever read at dispatch time, so they feed no memo boundary. */
   const resolveCell = (f: number, x: number, y: number) =>
@@ -377,13 +522,21 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
    */
   const selectionCells = useMemo(() => {
     const out: SelectionCell[] = []
-    if (!recode.state.active) return out
-    for (const id of recode.state.selected) {
+    // Modes are mutually exclusive (deriveMapMode + showModeButtons), so at most
+    // one of these sets is non-empty — but reading the ACTIVE one rather than
+    // unioning them keeps that an assertion instead of an assumption.
+    const selected = recode.state.active
+      ? recode.state.selected
+      : slot.state.active
+        ? slot.state.selected
+        : null
+    if (!selected) return out
+    for (const id of selected) {
       const p = unitPlacements.get(id)
       if (p) out.push({ locationId: id, floor: p.floor ?? 0, x: p.x, y: p.y, w: p.w ?? 1, h: p.h ?? 1 })
     }
     return out
-  }, [recode.state.active, recode.state.selected, unitPlacements])
+  }, [recode.state.active, recode.state.selected, slot.state.active, slot.state.selected, unitPlacements])
 
 
   /**
@@ -590,6 +743,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
   const mode = deriveMapMode({
     paintActive: paint.state.active,
     recodeActive: recode.state.active,
+    slotActive: slot.state.active,
   })
   const guards = modeGuards(mode, canRename)
 
@@ -691,6 +845,18 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
             className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
           >
             Recode bins
+          </button>
+          {/* Assigning stock is its own errand, not a fourth annotate layer: an
+              area puts a NAME on the floor, a block decides where goods go.
+              Deliberately mobile-capable like the sweep and unlike Annotate —
+              the same hit test makes one finger unambiguous, because both drag
+              over RACKING rather than over open floor. */}
+          <button
+            type="button"
+            onClick={() => slot.dispatch({ type: 'begin' })}
+            className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
+          >
+            Assign stock
           </button>
           {/* Painting and saving bind automatically (mig 00096), so this is for a
               site painted before that existed — and it is the only surface that
@@ -797,7 +963,33 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
             onStrokeStart: () => paint.dispatch({ type: 'stroke_start' }),
             onPaintCell: paint.paintCell,
           }}
-          select={{
+          /* MapStage accepts exactly ONE select bag, and that is deliberate on its
+             side — the gesture layer should not know what a mode MEANS. So the
+             arbitration happens here: whichever selection mode is live owns the
+             gesture. They are mutually exclusive by deriveMapMode, and wiring
+             both would silently drop one reducer's strokes — an open panel, a
+             crosshair cursor, and nothing selecting. */
+          select={slot.state.active ? {
+            active: true,
+            tool: slot.state.tool,
+            rect: slot.state.rect,
+            cells: selectionCells,
+            ghosts: NO_GHOSTS,
+            selectedCount: slot.state.selected.size,
+            hasUnitsAt: (f: number, x: number, y: number) => resolveCell(f, x, y).length > 0,
+            onStrokeStart: () => slot.dispatch({ type: 'stroke_start' }),
+            onSelectCell: (f: number, x: number, y: number, erase?: boolean) =>
+              slot.dispatch({ type: 'select_cell', floor: f, x, y, erase, resolve: resolveCell }),
+            onDragStart: (f: number, x: number, y: number, additive: boolean) =>
+              slot.dispatch({ type: 'drag_start', floor: f, x, y, additive }),
+            onDragMove: (x: number, y: number) => slot.dispatch({ type: 'drag_move', x, y }),
+            // Resolved against the reducer's OWN rect — see useSlotSelection's
+            // note on drag_end. Passing a rect read from a render loses a fast
+            // drag entirely.
+            onDragEnd: (erase?: boolean) => slot.dispatch({ type: 'drag_end', erase, resolve: resolveRect }),
+            onDragCancel: () => slot.dispatch({ type: 'drag_end', resolve: NO_UNITS }),
+            onUndo: () => slot.dispatch({ type: 'undo' }),
+          } : {
             active: recode.state.active,
             tool: recode.state.tool,
             rect: recode.state.rect,
@@ -827,6 +1019,38 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           }}
         />
       </div>
+
+      {slot.state.active && (
+        <SlottingPanel
+          state={slot.state}
+          binCount={slotBinCount}
+          areaNames={floorAreaNames}
+          existingNames={(slotRows.data?.blocks ?? []).map((b) => b.name)}
+          rules={slotRows.data?.rules ?? []}
+          brands={slotBrandOptions}
+          saving={saveSlotBlock.isPending || saveSlotRule.isPending}
+          error={slotError}
+          applied={slotApplied}
+          onTool={(tool) => slot.dispatch({ type: 'set_tool', tool })}
+          onMode={(mode) => slot.dispatch({ type: 'set_mode', mode })}
+          onUndo={() => slot.dispatch({ type: 'undo' })}
+          onClear={() => slot.dispatch({ type: 'clear_selection' })}
+          onSelectArea={(name) =>
+            slot.dispatch({
+              type: 'select_ids',
+              ids: unitsInArea(placements, model.locationsById, detail.objects, name),
+            })
+          }
+          onName={(name) => slot.dispatch({ type: 'set_block_name', name })}
+          onAttachRule={(ruleId) => slot.dispatch({ type: 'set_attach_rule', ruleId })}
+          onNewRuleName={(name) => slot.dispatch({ type: 'set_new_rule_name', name })}
+          onNewRuleBrand={(brand) => slot.dispatch({ type: 'set_new_rule_brand', brand })}
+          onGotoStep={(step) => slot.dispatch({ type: 'goto_step', step })}
+          onApply={applySlot}
+          onCancel={() => { setSlotError(null); setSlotApplied(null); slot.dispatch({ type: 'cancel' }) }}
+          onBuildAnother={() => { setSlotError(null); setSlotApplied(null); slot.dispatch({ type: 'begin' }) }}
+        />
+      )}
 
       {recode.state.active && (
         <RecodePanel

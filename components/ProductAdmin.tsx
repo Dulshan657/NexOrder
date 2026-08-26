@@ -1,10 +1,11 @@
 // FIX: Implement the ProductAdmin component.
 import React, { useState, useMemo } from 'react';
-import { FileUp } from 'lucide-react';
+import { FileUp, Tag, X } from 'lucide-react';
 import type { Product, Supplier } from '../types';
 import ProductForm from './ProductForm';
 import ConfirmationDialog from './ConfirmationDialog';
 import ProductImportModal from './admin/ProductImportModal';
+import BulkBrandModal from './admin/BulkBrandModal';
 import ProductAdminRow from './admin/ProductAdminRow';
 import { WarehousePicker } from './inventory/WarehousePicker';
 import { useWarehouseScope } from '../context/WarehouseScopeContext';
@@ -27,6 +28,10 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
     const [productToDelete, setProductToDelete] = useState<Product | null>(null);
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [hideNotStockedHere, setHideNotStockedHere] = useState(false);
+    // Bulk brand assign (mig 00114). Ids, not products: the selection has to
+    // survive a refetch that replaces every Product object.
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [isBrandOpen, setIsBrandOpen] = useState(false);
 
     // ?prodimport=1 — the setup checklist's "catalogue loaded" step.
     useFlagDeepLink('prodimport', () => setIsImportOpen(true));
@@ -43,6 +48,43 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
         if (scope === 'all' || !hideNotStockedHere) return products;
         return products.filter(p => onHandBySite.has(p.id));
     }, [products, scope, hideNotStockedHere, onHandBySite]);
+
+    // Only ever act on what is ON SCREEN. A selection made before the operator
+    // narrowed the list by warehouse must not quietly re-brand rows they can no
+    // longer see, so the effective selection is intersected with what is visible.
+    const selectedProducts = useMemo(
+        () => visibleProducts.filter(p => selectedIds.has(p.id)),
+        [visibleProducts, selectedIds],
+    );
+    const allVisibleSelected = visibleProducts.length > 0
+        && selectedProducts.length === visibleProducts.length;
+
+    const toggleOne = (id: number, next: boolean) => {
+        setSelectedIds(prev => {
+            const copy = new Set(prev);
+            if (next) copy.add(id); else copy.delete(id);
+            return copy;
+        });
+    };
+    const toggleAllVisible = (next: boolean) => {
+        setSelectedIds(next ? new Set(visibleProducts.map(p => p.id)) : new Set());
+    };
+
+    const applyBrand = async (brand: string | null) => {
+        // One update per product through the existing mutation. The server has a
+        // bulk-set-brand action, but this path already carries the optimistic
+        // cache handling and the row count here is a screenful, not a catalogue.
+        for (const p of selectedProducts) {
+            await onUpdateProduct({ ...p, brand: brand ?? undefined });
+        }
+        addToast?.(
+            brand
+                ? `Set ${selectedProducts.length} product(s) to ${brand}`
+                : `Cleared the brand on ${selectedProducts.length} product(s)`,
+            'success',
+        );
+        setSelectedIds(new Set());
+    };
 
     const handleOpenFormForEdit = (product: Product) => {
         setProductToEdit(product);
@@ -108,14 +150,46 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
                     </button>
                 </div>
             </div>
+            {selectedProducts.length > 0 && (
+                <div
+                    role="status"
+                    className="flex flex-wrap items-center gap-3 rounded-lg border border-stone-300 bg-stone-50 px-3 py-2"
+                >
+                    <span className="text-sm text-stone-700">
+                        <span className="font-mono tabular-nums">{selectedProducts.length}</span> selected
+                    </span>
+                    <button
+                        onClick={() => setIsBrandOpen(true)}
+                        className="btn-press inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-stone-800 text-white"
+                    >
+                        <Tag className="w-3.5 h-3.5" /> Set brand
+                    </button>
+                    <button
+                        onClick={() => setSelectedIds(new Set())}
+                        className="btn-press inline-flex items-center gap-1 text-sm text-stone-500 hover:text-stone-800 ml-auto"
+                    >
+                        <X className="w-3.5 h-3.5" /> Clear selection
+                    </button>
+                </div>
+            )}
             <div className="overflow-x-auto border border-stone-200 rounded-xl shadow-sm">
                 <table className="min-w-full divide-y divide-stone-200">
                     <thead className="bg-stone-50">
                         <tr>
+                            <th scope="col" className="pl-6 pr-2 py-3.5 text-left">
+                                <input
+                                    type="checkbox"
+                                    checked={allVisibleSelected}
+                                    onChange={(e) => toggleAllVisible(e.target.checked)}
+                                    className="rounded border-stone-300 text-nexgen-blue focus:ring-nexgen-blue/30"
+                                    aria-label="Select all visible products"
+                                />
+                            </th>
                             <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Image</th>
                             <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Product Name</th>
                             <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Supplier</th>
                             <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Category</th>
+                            <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Brand</th>
                             <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Price</th>
                             <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Inventory</th>
                             <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">m³</th>
@@ -133,11 +207,21 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
                                 globalThreshold={globalThreshold}
                                 onEdit={handleOpenFormForEdit}
                                 onDelete={setProductToDelete}
+                                selected={selectedIds.has(product.id)}
+                                onToggleSelected={toggleOne}
                             />
                         ))}
                     </tbody>
                 </table>
             </div>
+
+            <BulkBrandModal
+                open={isBrandOpen}
+                onClose={() => setIsBrandOpen(false)}
+                products={selectedProducts}
+                catalog={products}
+                onApply={applyBrand}
+            />
 
             {isFormOpen && (
                 <ProductForm

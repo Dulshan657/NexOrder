@@ -27,6 +27,10 @@ export interface CatalogImportContext {
   suppliersByName: Map<string, number>
   /** Canonical category values (e.g. `constants.CATEGORIES`), case-sensitive. */
   categories: Set<string>
+  /** Brands already in the catalog, case-sensitive. Optional: there is no
+   *  built-in brand vocabulary, so an empty/absent set simply means every
+   *  brand in the file is new. */
+  brands?: Set<string>
   /**
    * Canonical spellings for categories THIS FILE introduces, already folded
    * across rows by the caller. Rows validate independently, so without a
@@ -36,6 +40,14 @@ export interface CatalogImportContext {
    * just means a new category keeps whatever spelling its own row used.
    */
   newCategories?: Set<string>
+  /**
+   * Canonical spellings for brands THIS FILE introduces, folded across rows by
+   * the caller — the exact `newCategories` argument, for the exact reason: rows
+   * validate independently, so without a file-wide fold a CSV containing both
+   * "MILWAUKEE" and "Milwaukee" would send two spellings and a slotting rule
+   * written against one would silently miss the other half of the catalogue.
+   */
+  newBrands?: Set<string>
 }
 
 export type RowResult =
@@ -48,6 +60,9 @@ export type RowResult =
       newSupplierNames: string[]
       /** Set when this row's category doesn't exist yet and will be created with it. */
       newCategoryName?: string
+      /** Set when this row's brand isn't in the catalog yet. Reported, never
+       *  rejected — see resolveBrand. */
+      newBrandName?: string
     }
   | { ok: false; error: string; field?: string }
 
@@ -115,6 +130,26 @@ function resolveCategory(
   return { value: pending ?? input, isNew: true }
 }
 
+/**
+ * Resolve a CSV brand to the spelling that should be sent.
+ *
+ * An unrecognised brand is CREATED, not rejected — bug S6's lesson, and more
+ * forcefully here than for categories: `products.brand` has no canonical list
+ * at all (no enum, no seed, no CATEGORIES equivalent), so on a first catalogue
+ * load EVERY brand is unrecognised. Rejecting would fail every row of the
+ * import this column exists to serve.
+ */
+function resolveBrand(
+  input: string,
+  ctx: CatalogImportContext,
+): { value: string; isNew: boolean } {
+  const folded = input.toLowerCase()
+  const known = ctx.brands && [...ctx.brands].find(b => b.toLowerCase() === folded)
+  if (known !== undefined) return { value: known, isNew: false }
+  const pending = ctx.newBrands && [...ctx.newBrands].find(b => b.toLowerCase() === folded)
+  return { value: pending ?? input, isNew: true }
+}
+
 export function validateCatalogRow(rec: Record<string, string>, ctx: CatalogImportContext): RowResult {
   const price = (rec.price ?? '').trim()
   if (!price) return { ok: false, error: 'Price is required.', field: 'price' }
@@ -156,6 +191,19 @@ export function validateCatalogRow(rec: Record<string, string>, ctx: CatalogImpo
     }
   }
   const { value: canonicalCategory, isNew: categoryWillBeCreated } = resolveCategory(categoryInput, ctx)
+
+  // Optional, unlike category: a catalogue with no brands is a normal catalogue.
+  // Bounded by the same 60 chars, because products_brand_length_check (mig
+  // 00114) deliberately mirrors the category constraint.
+  const brandInput = (rec.brand ?? '').trim()
+  if (brandInput.length > MAX_CATEGORY_LENGTH) {
+    return {
+      ok: false,
+      error: `Brand must be ${MAX_CATEGORY_LENGTH} characters or fewer, got ${brandInput.length}.`,
+      field: 'brand',
+    }
+  }
+  const brand = brandInput ? resolveBrand(brandInput, ctx) : null
 
   const unit = (rec.unit ?? '').trim()
   if (!unit) return { ok: false, error: 'Unit is required.', field: 'unit' }
@@ -226,6 +274,10 @@ export function validateCatalogRow(rec: Record<string, string>, ctx: CatalogImpo
     widthCm: rec.width_cm ?? '',
     heightCm: rec.height_cm ?? '',
     sizeFactor: rec.size_factor ?? '',
+    // Only sent when the column carried something. An absent `brand` key leaves
+    // an existing brand untouched, which matters for a re-import that simply
+    // does not carry the column.
+    ...(brandInput ? { brand: brand!.value } : {}),
   }
 
   // Realistic catalogs often omit descriptions; the server treats the field
@@ -256,5 +308,6 @@ export function validateCatalogRow(rec: Record<string, string>, ctx: CatalogImpo
     supplierWillBeCreated,
     newSupplierNames,
     ...(categoryWillBeCreated ? { newCategoryName: canonicalCategory } : {}),
+    ...(brand?.isNew ? { newBrandName: brand.value } : {}),
   }
 }

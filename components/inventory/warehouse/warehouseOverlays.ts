@@ -12,6 +12,10 @@ import type { VelocityClass } from '@/types'
 
 export type OverlayKind =
   | 'none' | 'occupancy' | 'velocity' | 'congestion' | 'slotting' | 'unswept'
+  // NOT 'slotting' — that key is already taken, by the RESLOT ARROW overlay
+  // above, which is a different feature that happens to share the word. Reusing
+  // it would make the two silently fight over one switch.
+  | 'slotting_blocks'
 
 export interface LegendEntry {
   color: string
@@ -142,6 +146,24 @@ export function unsweptFill(codeBlock: string | null | undefined): string {
 }
 
 /** Amber for outstanding, the same reading as the label backlog's. */
+/** Blocks are tinted per BLOCK from a fixed rotation rather than by any
+ *  property of the bin: the question this overlay answers is "which block is
+ *  this", and adjacent blocks needing different colours is the only constraint.
+ *  Stone-adjacent and desaturated so it reads under the existing rack colours
+ *  rather than fighting them. */
+const BLOCK_FILLS = ['#bfdbfe', '#bbf7d0', '#fde68a', '#fbcfe8', '#ddd6fe', '#c7d2fe', '#fed7aa', '#a5f3fc']
+export const OFF_HOME_FILL = '#fecaca'
+
+export function blockFill(blockId: number): string {
+  return BLOCK_FILLS[blockId % BLOCK_FILLS.length]
+}
+
+export const SLOTTING_BLOCKS_LEGEND: LegendEntry[] = [
+  { color: BLOCK_FILLS[0], label: 'In a block' },
+  { color: OFF_HOME_FILL, label: 'Holds off-home stock' },
+  { color: NEUTRAL, label: 'Unassigned' },
+]
+
 const UNSWEPT_FILL = '#fcd34d'
 const SWEPT_FILL = '#d1fae5'
 
@@ -156,6 +178,7 @@ export function legendFor(overlay: OverlayKind): LegendEntry[] {
     case 'velocity': return VELOCITY_LEGEND
     case 'congestion': return CONGESTION_LEGEND
     case 'slotting': return SLOTTING_LEGEND
+    case 'slotting_blocks': return SLOTTING_BLOCKS_LEGEND
     case 'unswept': return UNSWEPT_LEGEND
     default: return []
   }

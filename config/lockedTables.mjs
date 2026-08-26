@@ -96,4 +96,9 @@ export const LOCKED_TABLES = [
   { table: 'warehouse_print_calibration', fn: 'mutate-warehouse set_print_calibration', migration: '00110' },
   { table: 'warehouse_code_patterns', fn: 'mutate-warehouse set_code_pattern', migration: '00107' },
   { table: 'location_code_sweeps', fn: 'mutate-warehouse-location recode_locations', migration: '00108' },
+  { table: 'slotting_blocks', fn: 'mutate-slotting-rule', migration: '00115' },
+  { table: 'slotting_block_members', fn: 'mutate-slotting-rule', migration: '00115' },
+  { table: 'slotting_rules', fn: 'mutate-slotting-rule', migration: '00115' },
+  { table: 'slotting_rule_blocks', fn: 'mutate-slotting-rule', migration: '00115' },
+  { table: 'wie_offhome_tasks', fn: 'mutate-offhome-task', migration: '00119' },
 ]

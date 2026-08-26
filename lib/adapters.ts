@@ -139,6 +139,7 @@ export function toProduct(
     description: row.description ?? '',
     price: Number(row.price),
     category: row.category as Product['category'],
+    brand: (row as { brand?: string | null }).brand ?? undefined,
     inventory: row.inventory,
     // Reservable stock cache (mig 00041). Fall back to on-hand if a row is read
     // before the column exists, so the shop never shows undefined stock.
@@ -191,6 +192,10 @@ export function fromProduct(p: Partial<Product>): Record<string, unknown> {
   if (p.description !== undefined) row.description = p.description
   if (p.price !== undefined) row.price = p.price
   if (p.category !== undefined) row.category = p.category
+  // '' means "unbranded" in a form field, but the column's CHECK refuses a
+  // blank-after-trim value and a stored '' would be MATCHABLE by a slotting
+  // rule condition. Map it to null, the image_url precedent below.
+  if (p.brand !== undefined) row.brand = p.brand === '' ? null : p.brand
   if (p.inventory !== undefined) row.inventory = p.inventory
   // Empty string means "no image" client-side, but the server schema requires
   // image_url to be a valid URL or null (never ''). Map '' -> null so clearing

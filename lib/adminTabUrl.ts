@@ -36,6 +36,7 @@ export type AdminTab =
   | 'Receiving'
   | 'Putaway'
   | 'Replenishment'
+  | 'Off-home'
   | 'Stocktake'
   | 'Pick Queue'
   | 'Dispatched'
@@ -64,6 +65,7 @@ export const ADMIN_TABS: ReadonlyArray<AdminTab> = [
   'Receiving',
   'Putaway',
   'Replenishment',
+  'Off-home',
   'Stocktake',
   'Pick Queue',
   'Dispatched',
@@ -133,6 +135,7 @@ const TAB_MODULES: Partial<Record<AdminTab, ModuleName>> = {
   Receiving: 'inventory_dispatch',
   Putaway: 'inventory_dispatch',
   Replenishment: 'inventory_dispatch',
+  'Off-home': 'inventory_dispatch',
   Stocktake: 'inventory_dispatch',
   'Pick Queue': 'inventory_dispatch',
   Dispatched: 'inventory_dispatch',
@@ -197,6 +200,7 @@ const TABS_BY_ROLE: Record<string, ReadonlyArray<AdminTab>> = {
     'Receiving',
     'Putaway',
     'Replenishment',
+    'Off-home',
     'Stocktake',
     'Pick Queue',
     'Dispatched',
@@ -212,6 +216,7 @@ const TABS_BY_ROLE: Record<string, ReadonlyArray<AdminTab>> = {
     'Receiving',
     'Putaway',
     'Replenishment',
+    'Off-home',
     'Stocktake',
     'Stock',
     'Documents',

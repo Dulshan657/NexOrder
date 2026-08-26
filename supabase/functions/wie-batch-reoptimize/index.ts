@@ -19,6 +19,9 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { filterCandidates } from '../_shared/wie/scoring.ts'
+import { loadWarehouseSlotting, loadSlottingProduct, contextFor } from '../_shared/slottingLoad.ts'
+import { isOffHome, planSlotting } from '../_shared/wie/slotting.ts'
+import type { SlottingContext } from '../_shared/wie/types.ts'
 import type { CandidateBin, CompatibilityRule, LevelRole, RuleDefinition, SkuProfile } from '../_shared/wie/types.ts'
 import { requireModule } from '../_shared/modules.ts'
 
@@ -81,6 +84,8 @@ function toCandidateBin(r: any): CandidateBin {
     zoneMaxUtilizationPct: r.zone_max_utilization_pct != null ? Number(r.zone_max_utilization_pct) : null,
     occupantCategories: Array.isArray(r.bin_categories) ? r.bin_categories.filter((c: unknown): c is string => typeof c === 'string') : [],
     pickVisits30d: r.pick_visits_30d != null ? Number(r.pick_visits_30d) : 0,
+    blockIds: Array.isArray(r.block_ids) ? r.block_ids.map(Number) : [],
+    isHold: r.is_hold === true,
     levelRole: r.level_role ?? null,
     levelIndex: r.level_index != null ? Number(r.level_index) : null,
   }
@@ -138,6 +143,25 @@ serve(async (req: Request) => {
       categoryA: c.category_a, categoryB: c.category_b, level: c.level,
     }))
 
+    // Slotting rules (mig 00115). This function PERSISTS suggestions a human
+    // later commits, so running it slotting-blind is the worst of the three
+    // engines: it would raise no refusal, apply an inert tier order, and -- the
+    // part that actually bites -- never fire the off-home skip below, because
+    // nothing reads as off-home when no rule matched. It would then propose
+    // moving a correctly-homed pallet OUT of its block on travel distance
+    // alone, which is exactly the two-queues-fighting outcome the off-home
+    // queue exists to avoid.
+    const slotting = await loadWarehouseSlotting(admin, warehouse_id)
+    const slotContextCache = new Map<number, SlottingContext | undefined>()
+    const slotContextFor = async (productId: number, p: any): Promise<SlottingContext | undefined> => {
+      if (slotContextCache.has(productId)) return slotContextCache.get(productId)
+      const ctx = slotting.empty ? undefined : contextFor(slotting, await loadSlottingProduct(admin, {
+        id: productId, brand: p?.brand ?? null, category: p?.category ?? null,
+      }))
+      slotContextCache.set(productId, ctx)
+      return ctx
+    }
+
     // Placed bins → available stock sitting in them (only AVAILABLE is movable).
     const { data: placements, error: plErr } = await admin.from('layout_placements')
       .select('location_id').eq('layout_id', layoutId).not('graph_node_id', 'is', null)
@@ -164,7 +188,7 @@ serve(async (req: Request) => {
 
     const loadSku = async (productId: number): Promise<SkuProfile | null> => {
       if (skuCache.has(productId)) return skuCache.get(productId)!
-      const { data: p } = await admin.from('products').select('id, sku, name, size_factor, category').eq('id', productId).single()
+      const { data: p } = await admin.from('products').select('id, sku, name, size_factor, category, brand').eq('id', productId).single()
       if (!p) return null
       const { data: attrs } = await admin.from('product_wms_attributes')
         .select('hazard_class, temp_min, temp_max, handling_type, stackable, weight_kg, allowed_level_roles').eq('product_id', productId).maybeSingle()
@@ -184,6 +208,11 @@ serve(async (req: Request) => {
         stackable: (attrs as any)?.stackable ?? null,
         velocityClass: null, // filtering doesn't use velocity (scoring does)
         allowedLevelRoles,
+        brand: (p as any).brand ?? null,
+        // Resolved BEFORE the profile is built rather than patched in after --
+        // `p` is the only place the brand and category are in scope, and a
+        // profile assembled complete cannot be half-populated by a later branch.
+        supplierIds: (await slotContextFor(productId, p))?.product.supplierIds ?? [],
       }
       skuCache.set(productId, sku)
       return sku
@@ -215,11 +244,28 @@ serve(async (req: Request) => {
       if (!currentRow || currentRow.distance_from_dock_m == null) continue
       const currentDist = Number(currentRow.distance_from_dock_m)
 
+      const slotCtx = slotContextCache.get(row.productId)
+      const candidateBins = candRows.map(toCandidateBin)
+
+      // Stock already sitting OUTSIDE its assigned block belongs to the
+      // off-home queue, which knows where it should go. Two queues proposing
+      // the same pallet -- one on travel distance, one on the operator's own
+      // rule -- is a support ticket, so this one stands down.
+      if (slotCtx) {
+        const plan = planSlotting({
+          ...slotCtx,
+          candidates: candidateBins,
+          blockIdsByLocation: slotting.blockIdsByLocation,
+          heldLocationIds: new Set(candidateBins.filter((c) => c.isHold).map((c) => c.locationId)),
+        })
+        if (isOffHome(plan, row.locationId)) continue
+      }
+
       // Run destinations through the Stage-1 engine filter (rules + compatibility +
       // zone + capacity for THIS quantity). Only survivors are safe to suggest.
       const valid = filterCandidates({
         layoutId, warehouseId: warehouse_id, sku, quantity: row.available,
-        candidates: candRows.map(toCandidateBin), rules, compatibility,
+        candidates: candidateBins, rules, compatibility, slotting: slotCtx,
         weights: { travelDistance: 0, capacityFit: 0, grouping: 0, zonePreference: 0, congestion: 0, velocityMatch: 0 },
       }).valid
 
