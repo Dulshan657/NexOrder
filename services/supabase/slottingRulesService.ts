@@ -58,6 +58,29 @@ export interface SlottingRows {
   rules: SlottingRuleRow[]
 }
 
+/** bin id -> the blocks it belongs to, for the map's Blocks overlay.
+ *
+ *  Through an RPC rather than reading v_slotting_block_bins directly: that view
+ *  is service_role only on purpose (a view bypasses the policies underneath it,
+ *  so granting it to `authenticated` would hand the whole membership map to a
+ *  Customer), and expanding the members client-side would be a second copy of
+ *  the unit -> leaf-bin rule. */
+type BlockBinMapRpc = (
+  fn: 'wie_slotting_block_bin_map',
+  args: { p_warehouse_id: number },
+) => Promise<{ data: Record<string, number[]> | null; error: { message: string } | null }>
+
+export async function getSlottingBlockBins(
+  warehouseId: number,
+): Promise<Map<number, number[]>> {
+  const rpc = supabase.rpc.bind(supabase) as unknown as BlockBinMapRpc
+  const { data, error } = await rpc('wie_slotting_block_bin_map', { p_warehouse_id: warehouseId })
+  if (error) throw new Error(error.message)
+  const out = new Map<number, number[]>()
+  for (const [k, v] of Object.entries(data ?? {})) out.set(Number(k), v)
+  return out
+}
+
 export async function getSlottingRows(warehouseId: number): Promise<SlottingRows> {
   const rpc = supabase.rpc.bind(supabase) as unknown as SlottingRowsRpc
   const { data, error } = await rpc('wie_slotting_rule_rows', { p_warehouse_id: warehouseId })

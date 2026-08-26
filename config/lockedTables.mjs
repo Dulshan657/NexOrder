@@ -100,4 +100,5 @@ export const LOCKED_TABLES = [
   { table: 'slotting_block_members', fn: 'mutate-slotting-rule', migration: '00115' },
   { table: 'slotting_rules', fn: 'mutate-slotting-rule', migration: '00115' },
   { table: 'slotting_rule_blocks', fn: 'mutate-slotting-rule', migration: '00115' },
+  { table: 'wie_offhome_tasks', fn: 'mutate-offhome-task', migration: '00119' },
 ]

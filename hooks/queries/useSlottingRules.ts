@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getSlottingRows,
+  getSlottingBlockBins,
   saveBlock,
   deleteBlock,
   saveRule,
@@ -31,6 +32,19 @@ export function useSlottingRows(warehouseId: number | null | undefined) {
  *  preview would make the panel flicker every keystroke. */
 function invalidateUnlessDryRun(qc: ReturnType<typeof useQueryClient>, warehouseId: number, dryRun?: boolean) {
   if (!dryRun) qc.invalidateQueries({ queryKey: slottingKeys.forWarehouse(warehouseId) })
+}
+
+/** bin -> blocks, for the map's Blocks overlay. Separate from useSlottingRows
+ *  because the overlay needs per-BIN data the settings table never does, and
+ *  loading it there would drag the whole membership map into a screen that only
+ *  shows counts. */
+export function useSlottingBlockBins(warehouseId: number | null | undefined) {
+  return useQuery({
+    queryKey: [...slottingKeys.forWarehouse(warehouseId ?? 0), 'block-bins'] as const,
+    queryFn: () => getSlottingBlockBins(warehouseId as number),
+    enabled: typeof warehouseId === 'number' && warehouseId > 0,
+    staleTime: 5 * 60_000,
+  })
 }
 
 export function useSaveSlottingBlock() {

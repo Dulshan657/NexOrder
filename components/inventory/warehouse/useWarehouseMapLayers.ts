@@ -18,7 +18,7 @@ import type { BinInfo } from './WarehouseCanvas'
 import type { useWarehouseViewerModel } from './useWarehouseViewerModel'
 import { zoneRegions as computeZoneRegions } from './zoneRegions'
 import {
-  occupancyFill, velocityFill, congestionFill, unsweptFill,
+  occupancyFill, velocityFill, congestionFill, unsweptFill, blockFill, OFF_HOME_FILL,
   type OverlayKind, type LegendEntry,
 } from './warehouseOverlays'
 import { zoneTint, zoneTypeLabel } from './zoneTints'
@@ -41,6 +41,12 @@ export interface WarehouseMapLayersArgs {
   levelRoles: ReadonlyArray<{ key: string; colorFill: string }>
   overlay: OverlayKind
   floor: number
+  /** locationId -> the slotting blocks it belongs to (mig 00115), and the bins
+   *  currently holding off-home stock. Both empty unless the `slotting_blocks`
+   *  overlay is on — this is the one overlay whose data is not already loaded
+   *  for the map, so the caller fetches it only when asked. */
+  slotBlockIdsByLocation?: ReadonlyMap<number, readonly number[]>
+  offHomeLocationIds?: ReadonlySet<number>
 }
 
 export interface WarehouseMapLayers {
@@ -57,6 +63,7 @@ export function useWarehouseMapLayers(args: WarehouseMapLayersArgs): WarehouseMa
   const {
     model, placements, placementByLocation, objects,
     storageTypes, zoneProfiles, levelRoles, overlay, floor,
+    slotBlockIdsByLocation, offHomeLocationIds,
   } = args
 
   // Overlay fill per bin. Slotting draws arrows instead of fills.
@@ -71,6 +78,13 @@ export function useWarehouseMapLayers(args: WarehouseMapLayersArgs): WarehouseMa
       } else if (overlay === 'congestion' && p.graphNodeId != null) {
         const c = congestionFill(model.visitsByNode.get(p.graphNodeId) ?? 0, model.maxVisits)
         if (c) map.set(p.locationId, c)
+      } else if (overlay === 'slotting_blocks') {
+        // Off-home wins over the block tint: a bin can be both (it belongs to
+        // one block and holds a product homed in another), and "there is
+        // something here that should not be" is the more urgent of the two.
+        const blocks = slotBlockIdsByLocation?.get(p.locationId)
+        if (offHomeLocationIds?.has(p.locationId)) map.set(p.locationId, OFF_HOME_FILL)
+        else if (blocks && blocks.length > 0) map.set(p.locationId, blockFill(blocks[0]))
       } else if (overlay === 'unswept') {
         // Read off the LOCATION, not the placement: `code_block` is provenance on
         // the row, and a levelled rack's levels each carry null by design (see
@@ -87,6 +101,7 @@ export function useWarehouseMapLayers(args: WarehouseMapLayersArgs): WarehouseMa
   }, [
     overlay, placements, model.binFillPct, model.binVelocityClass,
     model.visitsByNode, model.maxVisits, model.locationsById,
+    slotBlockIdsByLocation, offHomeLocationIds,
   ])
 
   // "×N" badge on multi-product bins while the velocity overlay is active.

@@ -41,9 +41,11 @@ import { useProducts } from '@/hooks/queries/useProducts'
 import { SlottingPanel, type SlotApplied } from './slotting/SlottingPanel'
 import {
   useSlottingRows,
+  useSlottingBlockBins,
   useSaveSlottingBlock,
   useSaveSlottingRule,
 } from '@/hooks/queries/useSlottingRules'
+import { useOffHomeTasks } from '@/hooks/queries/useOffHome'
 import {
   areasOfSelection, blockCensus, buildLevelIdsByRack, buildUnitPlacements,
   incumbentsOfBlock, takenCodesFromLocations, unitsAtCell, unitsFromSelection,
@@ -228,6 +230,17 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     return map
   }, [placements])
 
+  // Fetched only while the Blocks overlay is on. Every other overlay draws from
+  // data the tab already holds; this one does not, and a map screen is heavy
+  // enough without two more queries nobody asked for.
+  const blocksOverlayOn = overlay === 'slotting_blocks'
+  const overlayBlockBins = useSlottingBlockBins(blocksOverlayOn ? warehouseId : null)
+  const overlayOffHome = useOffHomeTasks(blocksOverlayOn ? warehouseId : null)
+  const offHomeLocationIds = useMemo(
+    () => new Set((overlayOffHome.data ?? []).map((t) => t.fromLocationId)),
+    [overlayOffHome.data],
+  )
+
   // Every colour and label the canvas draws, derived once and memoized for
   // IDENTITY as much as for cost — they are all scene-memo dependencies.
   const {
@@ -242,6 +255,8 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     levelRoles,
     overlay,
     floor,
+    slotBlockIdsByLocation: overlayBlockBins.data,
+    offHomeLocationIds,
   })
 
   // ── Code sweep derivations (migs 00107 / 00108) ───────────────────────────
