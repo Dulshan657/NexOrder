@@ -16,9 +16,40 @@
 // for why the reason it does not is no longer the one this comment used to
 // give. (`persistSession` is ON as of the warehouse-onboarding branch; the
 // conclusion is unchanged, the justification is not.)
+import { readFileSync } from 'node:fs'
+
 import { defineConfig, devices } from '@playwright/test'
 
 import { tenantTargets } from './config/environments.mjs'
+
+// E2E_* credentials come from `.env.dev.local`, which is gitignored and already
+// holds this project's dev secrets. The shell still WINS: anything already in
+// `process.env` is left alone, so CI and a one-off `E2E_BASE_URL=... npx
+// playwright test` both behave exactly as before.
+//
+// Only `E2E_*` keys are read. This is not a general dotenv shim -- the app's own
+// vars belong to Vite, which loads the same file by mode, and importing them
+// here would create a second, divergent source of truth for them.
+function loadE2eEnvFile(): void {
+  let raw: string
+  try {
+    raw = readFileSync(new URL('.env.dev.local', import.meta.url), 'utf8')
+  } catch {
+    return // absent is fine: the tenant checkout has no dev credentials
+  }
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq === -1) continue
+    const key = trimmed.slice(0, eq).trim()
+    if (!key.startsWith('E2E_')) continue
+    if (process.env[key]) continue
+    process.env[key] = trimmed.slice(eq + 1).trim()
+  }
+}
+
+loadE2eEnvFile()
 
 const PORT = 3000
 const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`

@@ -89,10 +89,29 @@ site, finds it up, and never boots Vite. It is not hanging; it is checking.
 ### The 360 px project
 
 ```bash
-E2E_BASE_URL=https://nexorder.vercel.app \
-E2E_WAREHOUSE_EMAIL=... E2E_WAREHOUSE_PASSWORD=... \
 npx playwright test --project=mobile
 ```
+
+`playwright.config.ts` reads `E2E_*` keys out of `.env.dev.local` (gitignored,
+and already holding this project's dev secrets), so the vars below need no
+export for an ordinary local run. **The shell still wins** — anything already in
+`process.env` is left alone, so CI and a one-off override behave as before:
+
+```bash
+E2E_BASE_URL=http://localhost:3000 npx playwright test --project=mobile
+```
+
+Only `E2E_*` keys are read. This is deliberately not a general dotenv shim: the
+app's own vars belong to Vite, which loads the same file by mode, and reading
+them here would create a second, divergent source of truth for them.
+
+> **A local run is not automatically the safe default.** `webServer` sets
+> `reuseExistingServer` outside CI, so if anything else is already serving
+> `localhost:3000` Playwright attaches to it and runs the whole suite against
+> the wrong application. That has happened here: every spec failed at the login
+> step against a different app's sign-in form, which reads like a broken fixture
+> rather than a wrong target. Prefer `E2E_BASE_URL` pointed at the demo unless
+> you are deliberately exercising local changes — and check the port first.
 
 `--project=chromium` never runs these (`testIgnore: '**/mobile/**'`) and the
 mobile project never runs anything else. That separation is deliberate: half of
@@ -105,9 +124,9 @@ for the correct behaviour.
 | Var | Required? | Default | Notes |
 |---|---|---|---|
 | `E2E_ADMIN_EMAIL` | **Yes** | — | The Admin demo account. Required rather than defaulted: the old default named an account that exists on exactly one database, and anywhere else the suite logged in as nobody and failed like a UI bug. |
-| `E2E_ADMIN_PASSWORD` | **Yes** | — | Never hardcode this — read it from your password manager and export it in the shell that runs Playwright. |
-| `E2E_WAREHOUSE_EMAIL` | `mobile` only | — | A Warehouse-role account. Read lazily by the `warehousePage` fixture, so the desktop suite runs without it. |
-| `E2E_WAREHOUSE_PASSWORD` | `mobile` only | — | As above. |
+| `E2E_ADMIN_PASSWORD` | **Yes** | — | Never hardcode this in a spec or in tracked source. `.env.dev.local` is gitignored and is where it belongs. |
+| `E2E_WAREHOUSE_EMAIL` | `mobile` only | — | A Warehouse-role account **with `home_warehouse_id` set** — the demo roster's is `warehouse@nexorder.com.au`. Read lazily by the `warehousePage` fixture, so the desktop suite runs without it. |
+| `E2E_WAREHOUSE_PASSWORD` | `mobile` only | — | The demo roster shares one password: `.env.dev.local`'s `SEED_USER_PASSWORD`, which `supabase/ops/mint-demo-users.mjs` mints all eleven logins with. |
 | `E2E_BASE_URL` | No | `http://localhost:3000` | The demo deployment, or a local dev server. A tenant origin is refused outright. |
 | `CI` | No | unset | Set by CI runners; toggles retries, worker count, and JUnit/GitHub reporters. |
 
