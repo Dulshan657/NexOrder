@@ -49,8 +49,11 @@ const supabaseWss = supabaseHost ? ` wss://${supabaseHost}` : ''
 const csp = [
   "default-src 'self'",
   "script-src 'self'",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com",
+  // No Google Fonts origins: the three families are self-hosted from /fonts as
+  // of 2026-08-26, so both entries were dead permissions. `'unsafe-inline'`
+  // stays for the inline <style> blocks in index.html.
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
   `img-src 'self' data: blob:${supabaseHttps} https://*.tile.openstreetmap.org`,
   `connect-src 'self'${supabaseHttps}${supabaseWss}`,
   `frame-src 'self' blob:${supabaseHttps}`,

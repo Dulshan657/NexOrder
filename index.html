@@ -27,6 +27,16 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content"
     />
+    <!-- The two faces every screen needs: DM Sans (body) and Plus Jakarta Sans
+         (display). Preloaded because they are referenced from index.css, which
+         the preload scanner cannot see into -- without these the browser does
+         not learn they exist until the stylesheet has parsed. `crossorigin` is
+         required on a font preload even same-origin, or the request is made
+         twice. The latin-ext and italic faces are deliberately NOT preloaded:
+         `unicode-range` and `font-style` mean they load only if something on
+         the page actually needs them. -->
+    <link rel="preload" href="/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
     <title>Nex Order</title>
     <style>
       /* Custom Scrollbar Styles for a more minimalistic and consistent theme */
