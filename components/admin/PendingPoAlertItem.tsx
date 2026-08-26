@@ -27,7 +27,7 @@ const PendingPoAlertItem: React.FC<PendingPoAlertItemProps> = ({ row, onClick })
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs text-stone-800 truncate">{subject}</p>
-        <p className="text-[10px] text-stone-400 mt-0.5 truncate">
+        <p className="text-[11px] text-stone-400 mt-0.5 truncate">
           {row.from_address || 'unknown sender'} · {formatAge(row.received_at)}
         </p>
       </div>

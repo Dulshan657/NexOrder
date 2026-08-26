@@ -263,6 +263,30 @@ document.getElementById('beep').addEventListener('click', () => {
       ? '  ⚠ TOO OLD — the app needs 111+ for its CSS' : '  ✓')],
     ['CSS viewport', window.innerWidth + ' × ' + window.innerHeight + ' px'],
     ['Device pixel ratio', String(window.devicePixelRatio)],
+    // The number that says whether 'h-screen' is a lie on this device. 'vh' is
+    // the LARGE viewport (URL bar retracted); the app's root is overflow-hidden
+    // and the body never scrolls, so the bar never retracts and 'vh - svh' is
+    // how much of the app sits below the fold, unreachable.
+    ['Viewport units', (function () {
+      var probe = document.createElement('div');
+      probe.style.cssText = 'position:absolute;visibility:hidden;height:100vh';
+      document.body.appendChild(probe);
+      var lvh = probe.offsetHeight;
+      probe.style.height = '100svh'; var svh = probe.offsetHeight;
+      probe.style.height = '100dvh'; var dvh = probe.offsetHeight;
+      probe.remove();
+      return '100vh ' + lvh + ' · 100svh ' + svh + ' · 100dvh ' + dvh +
+        '  →  hidden by the URL bar: ' + (lvh - svh) + ' px';
+    })()],
+    ['Layout vs visual', window.visualViewport
+      ? window.innerHeight + ' layout · ' + Math.round(window.visualViewport.height) +
+        ' visual · gap ' + (window.innerHeight - Math.round(window.visualViewport.height)) + ' px'
+      : window.innerHeight + ' layout · visualViewport unsupported'],
+    // GATES the touch-target work. Every 'pointer-coarse:' rule in the app is
+    // inert if this device reports a fine pointer, and some rugged handhelds do.
+    ['Pointer', window.matchMedia('(pointer: coarse)').matches
+      ? 'coarse ✓ — the 44 px touch rules apply'
+      : 'FINE ⚠ — every pointer-coarse rule is INERT here; use any-pointer instead'],
     ['Vibration', typeof navigator.vibrate === 'function' ? 'supported' : 'NOT supported'],
     ['AudioContext', (window.AudioContext || window.webkitAudioContext) ? 'supported' : 'NOT supported'],
     ['BarcodeDetector', 'BarcodeDetector' in window ? 'supported (camera fallback)' : 'absent — camera falls back to zxing'],

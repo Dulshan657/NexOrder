@@ -727,10 +727,40 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 | Field Sales Rep | Rep Dashboard, Shop, Order History, Routes, Visits |
 | Office Sales Rep | Rep Dashboard, Shop, Order History |
 | Customer | Shop, Order History (scoped to own HoReCa) |
-| Warehouse | Pick Queue, Dispatched, Receive Stock, Putaway, Replenishment, Stocktake, Stock, Documents, Warehouse (site-scoped via `profiles.home_warehouse_id`) |
+| Warehouse | Pick Queue, Dispatched, Receive Stock, Putaway, Replenishment, **Off-home**, Stocktake, Stock, Documents, Warehouse (site-scoped via `profiles.home_warehouse_id`) |
+
+**Ten, not nine — this row omitted `Off-home` until 2026-08-26.** The nav block is
+`AppShell.tsx` under `{isWarehouse && MODULE_INVENTORY_DISPATCH}`, and
+`TABS_BY_ROLE.Warehouse` in `lib/adminTabUrl.ts` is the other half. All ten are
+`inventory_dispatch`, so Amadiya's `['sales_orders','inventory_dispatch']` leaves
+the role complete; `lib/assignableRoles.ts` withholds the role entirely if that
+module is off.
 
 ## Gotchas
 
+- **The handheld is a CipherLab RS35 (RS35WO), Android 10, and it is 360×720 CSS
+  in ordinary Chrome — of which only ~664 px is visible.** Portrait only, gloves
+  sometimes. Chrome's URL bar takes ~56 px and **can never retract here**,
+  because the shell is `overflow-hidden` and `document.body` never scrolls, so
+  there is no root-scroll gesture to retract it with. Three consequences worth
+  knowing before touching layout:
+  - **The shell is `h-svh`, never `h-screen`.** `100vh` is the *large* viewport
+    and was 56 px taller than the screen, hiding `<ProfileMenu>` — i.e. Sign out
+    (register F36). `dvh` is identical here but recomputes; `svh` is static and
+    already used by `RecodePanel`/`SlottingPanel`.
+  - **Playwright cannot see that class of bug.** Its `viewport` sets the layout
+    and visual viewport together, so `100vh` always equals the visible height
+    there. A green mobile suite is not evidence the `vh` problem is fixed —
+    `npm run scan:diagnostics` prints the real `100vh`/`100svh`/`100dvh` and the
+    hidden-pixel count, and that page is the only thing that measures it.
+  - **`pointer-coarse:` is a native Tailwind v4.2 variant** (no `@custom-variant`
+    needed) and is how the 44 px touch floor is applied without changing desktop
+    density. It is **inert if the device reports a fine pointer** — the
+    diagnostics page reports which, and that answer gates the whole approach.
+  - A width cap is not a clamp. `lib/popoverPosition.ts` is the one pure module
+    that places a trigger-anchored panel, clamping **both** axes; anything
+    floating off a trigger should use it rather than a `max-w-[calc(100vw-…)]`,
+    which caps size and says nothing about where the box starts (register F37).
 - **Supabase client must override `global.fetch`** — without it the client hangs on Windows. See `lib/supabase.ts`.
 - **Sessions persist, and the lock is why.** Persistence *used* to hang `getSession()` on Windows with either localStorage or sessionStorage — but the storage was never the cause. supabase-js defaults to `navigatorLock` (the Web Locks API) whenever `persistSession` is on, and that acquisition never resolved here. `lib/auth/inProcessLock.ts` replaces it with a promise-chain lock that never touches `navigator.locks`, so `persistSession` and `autoRefreshToken` are both **on** as of the warehouse-onboarding branch. What that bought: a refresh or tab discard no longer logs you out, and the JWT no longer dies about an hour in — which is what made phone-based scan picking unusable. What it costs: no cross-**tab** serialisation (two tabs can refresh at once; refresh tokens rotate and the loser retries). **Verify in a real browser after touching any of it** — the original hang never reproduced in tests or Node. Reverting is two booleans.
 - **RLS is enabled** (mig `00008` re-enables; `00009`+ lock down individual table mutations to Edge Functions). Direct INSERT/UPDATE/DELETE from `authenticated` is blocked for the tables in the lockdown table; mutations must go through Edge Functions.
