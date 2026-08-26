@@ -811,15 +811,25 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
           </div>
         </div>
       ) : (
-        <div className="glass-card rounded-xl overflow-hidden">
+        /* `@container` is declared HERE, on the one element that wraps both the
+           column headings and every row, so the two can never disagree about
+           which layout is showing. The row needs 1180px of CONTAINER — see the
+           measurement table in `ReceiveLineCard`, and note that a viewport
+           breakpoint got this wrong by the width of the sidebar.
+
+           A plain block comment rather than a JSX one: this sits directly
+           inside a ternary branch, where a JSX expression container is not yet
+           legal. */
+        <div className="@container glass-card rounded-xl overflow-hidden">
           {/*
-            Column headings. Hidden below `xl`, where each control carries its
-            own micro-label instead — see `ReceiveLineCard`. The template is
-            imported rather than restated, so the headings can never drift out
-            of alignment with the cells beneath them.
+            Column headings. Hidden until the container can seat all eight
+            columns, below which each control carries its own micro-label
+            instead — see `ReceiveLineCard`. The template is imported rather
+            than restated, so the headings can never drift out of alignment
+            with the cells beneath them.
           */}
           <div
-            className={`hidden border-b border-stone-200 px-4 py-3 xl:grid xl:gap-x-4 ${RECEIVE_ROW_COLUMNS}`}
+            className={`hidden border-b border-stone-200 px-4 py-3 @min-[1180px]:grid @min-[1180px]:gap-x-4 ${RECEIVE_ROW_COLUMNS}`}
           >
             {['Product', 'Qty', 'Lot code', 'Expiry', 'Barcode', 'Arrived on', 'Hold', ''].map(
               (heading, i) => (

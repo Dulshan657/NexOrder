@@ -15,7 +15,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { ReceiveLineCard } from '@/components/inventory/receive/ReceiveLineCard'
+import { ReceiveLineCard, RECEIVE_ROW_COLUMNS } from '@/components/inventory/receive/ReceiveLineCard'
 import { newDraft, newPlate, type DraftLine, type DraftPlate } from '@/components/inventory/receive/receiveDraft'
 import type { Product } from '@/types'
 
@@ -92,10 +92,15 @@ describe('the disclosure', () => {
     expect(toggle().getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('hides the secondary tier below xl and flattens it into cells at xl', () => {
-    // `hidden` is what collapses it; `xl:contents` is what makes the SAME nodes
-    // become grid cells of the row at desk width, which is the whole reason
-    // there is one render here rather than two.
+  it('hides the secondary tier when narrow and flattens it into cells when wide', () => {
+    // `hidden` is what collapses it; `contents` at the container width is what
+    // makes the SAME nodes become grid cells of the row, which is the whole
+    // reason there is one render here rather than two.
+    //
+    // A CONTAINER query, not a viewport breakpoint: the row's own container is
+    // ~283px narrower than the viewport once the sidebar and page padding are
+    // taken out, and encoding the measured 1180px as `xl:` (1280px viewport)
+    // starved the product column to 0px on an ordinary laptop.
     const { container } = renderCard()
     // getElementById, not querySelector: React's useId emits ids like `:r0:`,
     // which are not valid CSS selectors without escaping.
@@ -103,7 +108,7 @@ describe('the disclosure', () => {
       toggle().getAttribute('aria-controls')!,
     )!
     expect(details.className).toContain('hidden')
-    expect(details.className).toContain('xl:contents')
+    expect(details.className).toContain('@min-[1180px]:contents')
 
     fireEvent.click(toggle())
     expect(details.className).toContain('grid')
@@ -330,5 +335,45 @@ describe('tooltips', () => {
     const matches = container.querySelectorAll('button[aria-expanded][aria-controls]')
     expect(matches).toHaveLength(1)
     expect(matches[0]).toBe(toggle())
+  })
+})
+
+// ── THE COLUMN TEMPLATE IS CONTAINER-SCOPED, NOT VIEWPORT-SCOPED ────────────
+//
+// jsdom applies no Tailwind and computes no layout, so the only thing that can
+// be asserted here is the class string. That is enough, because the bug was in
+// the class string: the row needs 1180px of its OWN CONTAINER, and encoding
+// that as `xl:` (a 1280px VIEWPORT) was wrong by the width of the sidebar --
+// the container is ~283px narrower than the viewport, so at 1280 the product
+// column computed to 0px and the row overflowed.
+//
+// The real behaviour is verified in a browser by forcing the container width
+// and reading `gridTemplateColumns`; this guards the decision from being
+// quietly reverted to a breakpoint that looks equivalent and is not.
+
+describe('the row responds to its container, not the viewport', () => {
+  it('scopes the eight-column template to a container query at the measured width', () => {
+    expect(RECEIVE_ROW_COLUMNS).toContain('@min-[1180px]:grid-cols-')
+    expect(RECEIVE_ROW_COLUMNS).not.toMatch(/(^|\s)(sm|md|lg|xl|2xl):/)
+  })
+
+  it('keeps all eight columns in the template', () => {
+    // Product, Qty, Lot code, Expiry, Barcode, Arrived on, Hold, remove.
+    const inside = RECEIVE_ROW_COLUMNS.slice(
+      RECEIVE_ROW_COLUMNS.indexOf('[', RECEIVE_ROW_COLUMNS.indexOf('grid-cols-')) + 1,
+      RECEIVE_ROW_COLUMNS.lastIndexOf(']'),
+    )
+    expect(inside.split('_')).toHaveLength(8)
+  })
+
+  it('uses no viewport breakpoint anywhere on the row', () => {
+    // Every layout class on this card has to switch on the same signal, or the
+    // header row and the cells beneath it can disagree about which layout is
+    // showing -- which is a misaligned grid, not a graceful degradation.
+    const { container } = renderCard()
+    const classes = [...container.querySelectorAll('*')]
+      .flatMap((el) => (el.getAttribute('class') || '').split(/\s+/))
+      .filter(Boolean)
+    expect(classes.filter((c) => /^(sm|md|lg|xl|2xl):/.test(c))).toEqual([])
   })
 })
