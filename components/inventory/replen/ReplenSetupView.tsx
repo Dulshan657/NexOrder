@@ -360,14 +360,14 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
               visible, drafts, binCodeOf,
               `replenishment-${warehouseName.replace(/\W+/g, '-').toLowerCase()}.csv`,
             )}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 min-h-[40px] rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 btn-press"
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 touch-target-y rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 btn-press"
           >
             <Download className="w-4 h-4" aria-hidden="true" /> Export
           </button>
           <button
             type="button"
             onClick={() => fileInput.current?.click()}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 min-h-[40px] rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 btn-press"
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 touch-target-y rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 btn-press"
           >
             <Upload className="w-4 h-4" aria-hidden="true" /> Import
           </button>
@@ -480,7 +480,7 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
             type="button"
             onClick={() => setConfirmArm(selectedRows.some((r) => r.replenEnabled) ? 'disarm' : 'arm')}
             disabled={save.isPending || selected.size === 0}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 min-h-[40px] rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 btn-press disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 touch-target-y rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 btn-press disabled:opacity-40"
           >
             <Zap className="w-4 h-4" aria-hidden="true" />
             {selectedRows.some((r) => r.replenEnabled) ? 'Turn off' : 'Turn on'} for {selected.size}
@@ -489,7 +489,7 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
             type="button"
             onClick={() => submit(pending, 'leave')}
             disabled={save.isPending || pending.length === 0}
-            className="inline-flex items-center gap-1.5 text-sm px-4 py-1.5 min-h-[40px] rounded-lg bg-nexgen-blue text-white btn-press disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 text-sm px-4 py-1.5 touch-target-y rounded-lg bg-nexgen-blue text-white btn-press disabled:opacity-40"
           >
             <Save className="w-4 h-4" aria-hidden="true" />
             {save.isPending ? 'Saving…' : `Save ${pending.length}`}

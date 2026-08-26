@@ -7,8 +7,15 @@ import { Loader2 } from 'lucide-react'
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 export type ButtonSize = 'sm' | 'md'
 
+// `touch-target-y` lives in BASE rather than in SIZE deliberately: this repo has
+// no tailwind-merge, so a caller's `className` cannot reliably override SIZE and
+// two competing `min-height`s would be settled by generated source order. The
+// named utility sits in `@layer utilities`, after Tailwind's own, so it wins
+// cleanly. Rendered heights before this: md 36px, sm 32px -- every button in the
+// product was under the floor.
 const BASE =
   'inline-flex items-center justify-center gap-2 rounded-lg font-semibold whitespace-nowrap ' +
+  'touch-target-y ' +
   'transition-colors btn-press focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue/40 ' +
   'disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none'
 

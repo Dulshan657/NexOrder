@@ -47,7 +47,7 @@ export function OverlayControls({ overlay, onChange, extraEntries = [] }: Overla
             key={o.kind}
             type="button"
             onClick={() => onChange(o.kind)}
-            className={`min-h-[30px] rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+            className={`touch-target-y rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
               overlay === o.kind ? 'bg-nexgen-blue text-white shadow-sm' : 'text-stone-500 hover:bg-stone-50 hover:text-stone-900'
             }`}
           >

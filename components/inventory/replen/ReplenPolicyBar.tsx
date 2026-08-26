@@ -103,7 +103,7 @@ const ReplenPolicyBar: React.FC<ReplenPolicyBarProps> = ({
       type="button"
       onClick={onFill}
       disabled={disabled || fillableCount === 0}
-      className="ml-auto inline-flex items-center gap-1.5 text-sm px-3 py-1.5 min-h-[40px] rounded-lg bg-nexgen-blue text-white btn-press disabled:opacity-40"
+      className="ml-auto inline-flex items-center gap-1.5 text-sm px-3 py-1.5 touch-target-y rounded-lg bg-nexgen-blue text-white btn-press disabled:opacity-40"
       title="Only fills rows that are still empty — nothing already typed is overwritten."
     >
       <Sparkles className="w-4 h-4" aria-hidden="true" />

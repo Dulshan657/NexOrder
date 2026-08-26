@@ -139,7 +139,7 @@ export default function PrintCalibrationControl({ warehouseId }: PrintCalibratio
             type="button"
             onClick={() => void submit(false)}
             disabled={save.isPending}
-            className="min-h-[38px] rounded-lg bg-nexgen-blue px-3 py-2 text-sm font-medium text-white btn-press disabled:opacity-50"
+            className="touch-target-y rounded-lg bg-nexgen-blue px-3 py-2 text-sm font-medium text-white btn-press disabled:opacity-50"
           >
             {save.isPending ? 'Saving…' : 'Save'}
           </button>
@@ -148,7 +148,7 @@ export default function PrintCalibrationControl({ warehouseId }: PrintCalibratio
               type="button"
               onClick={() => void submit(true)}
               disabled={save.isPending}
-              className="min-h-[38px] rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-600 btn-press disabled:opacity-50"
+              className="touch-target-y rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-600 btn-press disabled:opacity-50"
             >
               Clear
             </button>

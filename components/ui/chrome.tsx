@@ -53,7 +53,9 @@ export function DialogChrome({
             type="button"
             onClick={onRequestClose}
             aria-label="Close"
-            className="p-1 rounded-lg hover:bg-stone-100 btn-press shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue/40"
+            // 16px icon + 2x4px padding = 24px square: the most-used dismiss control
+        // in the app, at 55% of the floor's linear dimension.
+        className="inline-flex items-center justify-center p-1 touch-target rounded-lg hover:bg-stone-100 btn-press shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue/40"
           >
             <X className="w-4 h-4 text-stone-500" />
           </button>

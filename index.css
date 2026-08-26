@@ -30,6 +30,45 @@ body {
 
 /* Custom utility classes */
 @layer utilities {
+  /* ── The 44px touch floor ──────────────────────────────────────────────────
+     A gloved thumb at a rack face, not a mouse. `components/ui/ScanField.tsx`
+     has said so in a comment since the scan work; the figure just never
+     propagated out of that one file, so the shared primitives shipped at 32-38px
+     and the close X on every Modal and Sheet at 24px.
+
+     THREE ARMS, and the redundancy is deliberate. `(pointer: coarse)` is the
+     signal we want, but a rugged handheld does not always report it, and the
+     whole mechanism is silently inert if it does not — the failure mode is "no
+     rule ever applied" with nothing to notice. So:
+
+       (pointer: coarse)   the correct signal, when the device tells the truth
+       (hover: none)       a touch-primary device that misreports its pointer.
+                           A Windows touch laptop driven by a trackpad reports
+                           `hover: hover`, so it is NOT caught here — which is
+                           what keeps `any-pointer: coarse` out of this list,
+                           since that WOULD catch it and inflate every admin
+                           table on those machines.
+       (max-width: 767px)  the backstop. Below `md` the sidebar is already
+                           off-canvas and the layout is the handheld layout, so
+                           there is no desktop density to preserve at that width.
+
+     `npm run scan:diagnostics` reports which arm actually fires on a given
+     device. Desktop at >=768px with a mouse matches none of them and is
+     unchanged, which was the requirement.
+
+     Use `-y` unless the control is a square icon button: `min-width` on a wide,
+     short control (a table row action, an inline text button) does nothing good.
+     ------------------------------------------------------------------------ */
+  @media (pointer: coarse), (hover: none), (max-width: 767px) {
+    .touch-target {
+      min-height: 44px;
+      min-width: 44px;
+    }
+    .touch-target-y {
+      min-height: 44px;
+    }
+  }
+
   .glass-panel {
     @apply bg-white/80 backdrop-blur-md border border-white/20;
     box-shadow: 0 1px 3px rgba(120,113,108,0.06), 0 1px 2px rgba(120,113,108,0.04);

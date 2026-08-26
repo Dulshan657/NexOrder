@@ -149,7 +149,7 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
           onClick={start}
           disabled={disabled || task.remaining <= 0}
           title={disabled ? 'Not your home warehouse' : undefined}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 min-h-[36px] bg-nexgen-blue text-white text-xs font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 touch-target-y bg-nexgen-blue text-white text-xs font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
         >
           <ScanLine className="w-3 h-3" aria-hidden="true" /> Scan to pick {task.remaining}
         </button>
@@ -160,7 +160,7 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
   return (
     <div className="ml-5 my-2 p-3 rounded-lg border border-nexgen-blue/30 bg-nexgen-blue/5 space-y-3">
       {/* Progress: which of the three confirmations are done. */}
-      <div className="flex items-center gap-2 text-[11px]">
+      <div className="flex flex-wrap items-center gap-2 text-[11px]">
         <StepChip label="Bin" done={step !== 'bin'} active={step === 'bin'} value={binCode} />
         <span className="text-stone-300">→</span>
         <StepChip label="Item" done={step === 'qty'} active={step === 'item'} value={itemCode} />
@@ -216,7 +216,7 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
           <label className="block text-xs font-semibold text-stone-600 mb-1.5">
             How many did you pick?
           </label>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <input
               type="number"
               min="0"

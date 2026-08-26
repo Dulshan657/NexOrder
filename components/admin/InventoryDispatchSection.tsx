@@ -97,7 +97,7 @@ function InventoryDispatchSection({
                   key={w}
                   type="button"
                   onClick={() => setWindow(w)}
-                  className={`min-h-[32px] cursor-pointer rounded-md px-2.5 py-1 text-xs font-semibold transition-all duration-150 ${
+                  className={`touch-target-y cursor-pointer rounded-md px-2.5 py-1 text-xs font-semibold transition-all duration-150 ${
                     window === w
                       ? 'bg-nexgen-blue text-white shadow-sm'
                       : 'text-stone-500 hover:bg-stone-50 hover:text-stone-900'

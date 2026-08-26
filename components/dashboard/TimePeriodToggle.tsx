@@ -21,7 +21,7 @@ const TimePeriodToggle: React.FC<TimePeriodToggleProps> = ({ value, onChange }) 
           key={period.value}
           type="button"
           onClick={() => onChange(period.value)}
-          className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-150 cursor-pointer min-h-[36px] ${
+          className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-150 cursor-pointer touch-target-y ${
             value === period.value
               ? 'bg-nexgen-blue text-white shadow-sm'
               : 'text-stone-500 hover:text-stone-900 hover:bg-stone-50'
