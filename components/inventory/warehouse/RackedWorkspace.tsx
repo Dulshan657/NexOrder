@@ -90,6 +90,14 @@ const NOOP = () => {}
 /** An abandoned band resolves to nothing. Module-level for the same identity reason
  *  as everything above it. */
 const NO_UNITS = () => []
+/** Slotting draws no ghost text — it renumbers nothing. A module constant, not
+ *  an inline `new Map()`, so the identity is stable across renders and
+ *  MapSelectionLayer is not handed a fresh object per painted cell.
+ *
+ *  NOT `undefined`: MapSelectionLayer does `ghosts.get(...)` inside a map over
+ *  the cells, and with `strict` off `undefined` is assignable to its
+ *  ReadonlyMap prop — so tsc passed and the first paint stroke crashed the tab. */
+const NO_GHOSTS: ReadonlyMap<number, string> = new Map()
 
 export interface RackedWorkspaceProps {
   warehouseId: number
@@ -951,7 +959,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
             tool: slot.state.tool,
             rect: slot.state.rect,
             cells: selectionCells,
-            ghosts: undefined,
+            ghosts: NO_GHOSTS,
             selectedCount: slot.state.selected.size,
             hasUnitsAt: (f: number, x: number, y: number) => resolveCell(f, x, y).length > 0,
             onStrokeStart: () => slot.dispatch({ type: 'stroke_start' }),
