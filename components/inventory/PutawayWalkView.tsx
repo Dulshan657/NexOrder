@@ -37,18 +37,44 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
 
   const tasks = tasksQuery.data ?? [];
 
-  // Sequence + leg distance per task, when the engine could route them. Tasks
-  // the route doesn't mention (a bin missing from the published layout) still
-  // appear — the pallet exists whether or not the map knows where the bay is.
+  // Sequence, leg distance AND the bin's code per task, when the engine could
+  // route them. Tasks the route doesn't mention (a bin missing from the
+  // published layout) still appear — the pallet exists whether or not the map
+  // knows where the bay is.
+  //
+  // `code` is kept, not dropped, and it is the one that gets rendered. It comes
+  // from `wie_putaway_stops`, which live-joins `locations` on the server; the
+  // client map is built from `getWarehouseLocations`, which is cached for five
+  // minutes, is invalidated by no putaway mutation, and deliberately includes
+  // RETIRED bins. Rendering the map's copy meant the card could name a bin under
+  // a code the server would not accept — and `PutawayStopCard` feeds that same
+  // string into its client-side scan check, so the browser would reject a scan
+  // of the CORRECT current sticker before `complete-putaway` (which reads the
+  // live code) ever saw it.
   const routeById = useMemo(() => {
-    const m = new Map<number, { sequence: number; legDistanceM: number; reachable: boolean }>();
+    const m = new Map<number, { sequence: number; legDistanceM: number; reachable: boolean; code: string }>();
     if (routeQuery.data?.mode === 'engine') {
       for (const s of routeQuery.data.stops) {
-        m.set(s.recId, { sequence: s.sequence, legDistanceM: s.legDistanceM, reachable: s.reachable });
+        m.set(s.recId, { sequence: s.sequence, legDistanceM: s.legDistanceM, reachable: s.reachable, code: s.code });
       }
     }
     return m;
   }, [routeQuery.data]);
+
+  /**
+   * The bin to render for a task: the server's live code, with the cached map
+   * supplying only the friendly NAME (which no RPC returns) and the retired
+   * flag. On a `legacy` site there is no route, so the map is all there is.
+   */
+  const binFor = useMemo(() => (row: { id: number; assignedLocationId: number | null }) => {
+    const cached = displayFor(binById, row.assignedLocationId);
+    const live = routeById.get(row.id)?.code;
+    if (!live) return cached;
+    // A code disagreement means the cached list is stale; the name that came
+    // with it belongs to the old code and must not be shown beside the new one.
+    if (cached && cached.code !== live) return { code: live, name: null, isActive: cached.isActive };
+    return cached ? { ...cached, code: live } : { code: live, name: null };
+  }, [binById, routeById]);
 
   const ordered = useMemo(() => {
     const withRoute = tasks.map((row) => ({ row, stop: routeById.get(row.id) ?? null }));
@@ -68,7 +94,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
     return ordered.filter(({ row }) => {
       // Code AND name: an operator reading "Chiller · Rack 7" off the card
       // will search for that, not for NEXG-B-9-4.
-      const bin = searchTextFor(displayFor(binById, row.assignedLocationId));
+      const bin = searchTextFor(binFor(row));
       return (
         (row.product?.name ?? '').toLowerCase().includes(q) ||
         (row.product?.sku ?? '').toLowerCase().includes(q) ||
@@ -76,7 +102,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
         bin.includes(q)
       );
     });
-  }, [ordered, search, binById]);
+  }, [ordered, search, binFor]);
 
   const totalDistance = routeQuery.data?.mode === 'engine' ? routeQuery.data.totalDistanceM : null;
 
@@ -157,7 +183,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
             <PutawayStopCard
               key={row.id}
               row={row}
-              bin={displayFor(binById, row.assignedLocationId)}
+              bin={binFor(row)}
               sequence={stop?.sequence ?? null}
               legDistanceM={stop?.legDistanceM ?? null}
               reachable={stop?.reachable ?? true}

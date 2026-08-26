@@ -299,7 +299,13 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
                       : 'border-stone-200 text-stone-600 hover:bg-stone-50'
                   }`}
                 >
-                  {a.locationCode}
+                  {/* `locationCode` is a SNAPSHOT, frozen into the
+                      recommendation's `alternatives` JSONB when the engine
+                      scored it (_shared/wie/types.ts CandidateBreakdown), so a
+                      code sweep since then leaves it naming a code no row holds.
+                      Prefer the live row, exactly as PutawayExplanationCard
+                      does; fall back to the snapshot only when the id is gone. */}
+                  {locationsById.get(a.locationId)?.code ?? a.locationCode}
                   <span className="ml-1 text-[10px] text-stone-400 tabular-nums">{a.totalScore.toFixed(2)}</span>
                 </button>
               ))}

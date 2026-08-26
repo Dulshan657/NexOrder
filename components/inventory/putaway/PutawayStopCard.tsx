@@ -269,6 +269,21 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         </div>
       </div>
 
+      {/* A bin that publishing has retired still resolves to a name and a code —
+          `getWarehouseLocations` returns inactive rows on purpose — so without
+          this the card sends someone to a bay that is no longer on the map and
+          says nothing. `complete-putaway` refuses an inactive bin outright, so
+          the walk would otherwise fail only after the walk. */}
+      {bin.isActive === false && (
+        <p className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden="true" />
+          <span>
+            This bin has been retired from the layout. Send the line back to the
+            Assign queue and re-run it so the engine picks a live bay.
+          </span>
+        </p>
+      )}
+
       <div className="flex items-center gap-2 text-[11px]">
         {row.huCode && (
           <>

@@ -13,7 +13,17 @@ import type { DisplayLocation } from '@/lib/locationDisplay'
  * The key is the SORTED id list, so two screens showing the same wave share one
  * cache entry and re-rendering with the ids in a different order does not
  * refetch. Names change only when someone renames a bin, so a 5-minute
- * staleTime is generous; both rename mutations invalidate on success.
+ * staleTime is generous.
+ *
+ * THIS PARAGRAPH USED TO SAY "both rename mutations invalidate on success", and
+ * it was false for as long as it existed: nothing anywhere referenced this key
+ * but this file. With `refetchOnWindowFocus: false` (lib/queryClient.ts) and
+ * `placeholderData: previous` below, a rename or a code sweep left the Pick
+ * workspace showing the old name AND the old code for five minutes — to someone
+ * standing at the rack face reading a sticker. `invalidateLocationIdentity` in
+ * hooks/queries/useWarehouseLocations.ts is what makes the claim true; the
+ * prefix `['location-names']` clears every id-set variant at once. Anything new
+ * that rewrites `locations.name` or `.code` must call it.
  */
 export const locationNameKeys = {
   byIds: (ids: readonly number[]) =>

@@ -74,7 +74,7 @@ serve(async (req: Request) => {
 
     const { data: sheets, error: sheetsError } = await admin
       .from('label_print_log')
-      .select('id, codes, label_kind, layout_id')
+      .select('id, codes, location_ids, label_kind, layout_id')
       .eq('job_id', jobId)
     if (sheetsError) throw new EdgeFunctionError('INTERNAL', sheetsError.message)
     if (!sheets || sheets.length === 0) {
@@ -83,36 +83,62 @@ serve(async (req: Request) => {
 
     // Only location sheets carry a flag to set — a job could in principle mix
     // kinds, and handling units already flipped theirs at generation time.
+    const locationSheets = (sheets as any[]).filter((s) => s.label_kind === 'location')
+
+    // Resolve by ROW where the job recorded ids (mig 00124), by code only for
+    // jobs printed before that column existed.
+    //
+    // The code match was justified as "a location renamed or retired since the
+    // sheet was generated simply matches nothing, which is the correct outcome".
+    // That holds for a rename. It does NOT hold for a code SWEEP:
+    // wie_recode_locations_tx (00107) is a two-phase A→B/B→A write specifically
+    // so codes can be SWAPPED between rows, and after a swap the string still
+    // matches — a different row. Confirming a pre-sweep job then stamped
+    // `label_printed` onto racking nobody had printed a sticker for, while the
+    // rows that WERE printed stayed in the backlog. The sweep resets
+    // `label_printed` on exactly those rows, so this is the moment a wrong
+    // answer costs most.
+    const ids = Array.from(
+      new Set(
+        locationSheets
+          .filter((s) => Array.isArray(s.location_ids) && s.location_ids.length > 0)
+          .flatMap((s) => s.location_ids as number[]),
+      ),
+    )
     const codes = Array.from(
       new Set(
-        (sheets as any[])
-          .filter((s) => s.label_kind === 'location')
+        locationSheets
+          .filter((s) => !Array.isArray(s.location_ids) || s.location_ids.length === 0)
           .flatMap((s) => (s.codes ?? []) as string[]),
       ),
     )
 
+    const stampFields = undo
+      ? { label_printed: false, label_printed_at: null, label_printed_by: null }
+      : {
+          label_printed: true,
+          label_printed_at: new Date().toISOString(),
+          label_printed_by: auth.userId,
+        }
+
     let updated = 0
-    if (codes.length > 0) {
-      // Matching on code, not id: label_print_log stores the codes exactly as
-      // they were printed, and locations.code is globally unique. A location
-      // renamed or retired since the sheet was generated simply matches nothing,
-      // which is the correct outcome — that sticker names something that no
-      // longer exists.
+    if (ids.length > 0) {
       const { data: touched, error: updateError } = await admin
         .from('locations')
-        .update(
-          undo
-            ? { label_printed: false, label_printed_at: null, label_printed_by: null }
-            : {
-                label_printed: true,
-                label_printed_at: new Date().toISOString(),
-                label_printed_by: auth.userId,
-              },
-        )
+        .update(stampFields)
+        .in('id', ids)
+        .select('id')
+      if (updateError) throw new EdgeFunctionError('INTERNAL', updateError.message)
+      updated += (touched ?? []).length
+    }
+    if (codes.length > 0) {
+      const { data: touched, error: updateError } = await admin
+        .from('locations')
+        .update(stampFields)
         .in('code', codes)
         .select('id')
       if (updateError) throw new EdgeFunctionError('INTERNAL', updateError.message)
-      updated = (touched ?? []).length
+      updated += (touched ?? []).length
     }
 
     const { error: stampError } = await admin
