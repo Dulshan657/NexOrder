@@ -116,9 +116,11 @@ const ToastMessage: React.FC<{ toast: import('../types').Toast; onRemove: (id: n
 //    whole 5-8s. `left-2 right-2` is what sizes the box now; `w-full` is gone
 //    below `md` and `left-auto` cancels it above.
 //
-// `top-16` clears the mobile ☰ (`fixed top-4 left-4`, 16→52px) vertically rather
-// than horizontally, which keeps the full 344px of width for the message. It also
-// clears the 52px mobile top bar that replaces that ☰, so this survives untouched.
+// `top-16` (64px) clears the 52px mobile top bar that owns the ☰, with 12px to
+// spare. It was chosen while the ☰ was still a `fixed top-4 left-4` button
+// occupying 16→52px, so that it would clear BOTH and need no revisit when the
+// bar landed — clearing vertically rather than horizontally is also what keeps
+// the full 344px of width for the message.
 //
 // The breakpoint is `md`, not `sm`: the sidebar and the ☰ both switch at `md`
 // (768px), and a toast must stay in the operator's column on a tablet.

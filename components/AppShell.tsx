@@ -72,7 +72,7 @@ import { usePendingReplenCounts } from '../hooks/queries/useReplenishment';
 import { getDemoPersona } from '../lib/demoAccounts';
 
 import { type AdminTab } from './AdminView';
-import { adminTabFromSearch } from '../lib/adminTabUrl';
+import { adminTabFromSearch, ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 // Build-time constants, NOT state. `{MODULE_X && <>…</>}` folds to `{false && …}`
 // for a tenant without the module, and Rollup drops the branch and every lazy
 // import only it reaches. See lib/modules.ts — this is what makes a disabled
@@ -92,6 +92,7 @@ import MobileCheckoutButton from './MobileCheckoutButton';
 import OrderSummary from './OrderSummary';
 import OrderConfirmation from './OrderConfirmation';
 import NotificationCenter from './NotificationCenter';
+import MobileTopBar from './MobileTopBar';
 import ProfileMenu from './auth/ProfileMenu';
 import { LoadingSkeleton } from './Skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -140,7 +141,6 @@ import {
     ShoppingCart,
     ShoppingBag,
     History,
-    Menu,
     X,
     Users as UsersIcon,
     Package,
@@ -628,6 +628,53 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
         </button>
     );
 
+    // One definition, mounted twice: in the sidebar header above `md`, and in
+    // the mobile top bar below it. Only one is ever visible, and sharing the
+    // element is what stops the two copies drifting apart on props.
+    //
+    // Two mounts means two `usePendingPos('needs_review')` calls, but TanStack
+    // Query dedupes on the key — that is one request, not two. Please do not
+    // "optimise" it into a single conditional mount; the conditional would have
+    // to live above the sidebar and the top bar, which have different parents.
+    const notificationCenter = (
+        <NotificationCenter
+            notifications={userNotifications}
+            onMarkRead={handleMarkNotificationRead}
+            onMarkAllRead={handleMarkAllNotificationsRead}
+            isAdminOrManager={isAdminOrManager}
+            onOpenPoInbox={() => {
+                if (typeof window !== 'undefined') {
+                    const params = new URLSearchParams(window.location.search);
+                    params.set('subtab', 'queue');
+                    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+                }
+                setAdminView('PO Inbox');
+                setIsSidebarOpen(false);
+            }}
+        />
+    );
+
+    // What the mobile top bar calls this screen. The admin/warehouse side is
+    // keyed by AdminTab and goes through ADMIN_TAB_LABELS — `'Receiving'` is
+    // displayed as "Receive Stock", so `adminView` cannot be shown raw. Reps and
+    // customers run on a different union entirely and need their own map.
+    const VIEW_LABELS: Record<typeof view, string> = {
+        ordering: 'Shop',
+        // The sidebar button for this view is labelled "Order Import", which is
+        // a different admin tab entirely and is wrong here — the view is
+        // OrdersHistoryView and CLAUDE.md's role table calls it Order History.
+        // Naming it correctly in the bar rather than propagating the mislabel.
+        orders: 'Order History',
+        dashboard: 'Dashboard',
+        hoReCas: 'HoReCa',
+        stock: 'Stock',
+        accounts: 'Accounts',
+        scheduled_visits: 'Scheduled Visits',
+    };
+    const mobileTitle = (isAdminOrManager || isWarehouse)
+        ? ADMIN_TAB_LABELS[adminView]
+        : VIEW_LABELS[view];
+
     // ── Render ────────────────────────────────────────────────────────────────
     //
     // `h-svh`, NOT `h-screen`. `h-screen` is `100vh`, and `vh` is the LARGE
@@ -664,24 +711,17 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                         />
                     </div>
                     <div className="flex items-center gap-2">
-                        <NotificationCenter
-                            notifications={userNotifications}
-                            onMarkRead={handleMarkNotificationRead}
-                            onMarkAllRead={handleMarkAllNotificationsRead}
-                            isAdminOrManager={isAdminOrManager}
-                            onOpenPoInbox={() => {
-                                if (typeof window !== 'undefined') {
-                                    const params = new URLSearchParams(window.location.search);
-                                    params.set('subtab', 'queue');
-                                    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
-                                }
-                                setAdminView('PO Inbox');
-                                setIsSidebarOpen(false);
-                            }}
-                        />
+                        {/* Desktop only — below `md` the bell lives in the mobile
+                            top bar, where it is reachable without first opening
+                            this drawer. Note the wrapper stays visible: the close
+                            X beside it is mobile-ONLY and must survive. */}
+                        <span className="hidden md:block">{notificationCenter}</span>
                         <button
                             onClick={() => setIsSidebarOpen(false)}
-                            className="md:hidden text-stone-400 hover:text-stone-700 cursor-pointer"
+                            aria-label="Close menu"
+                            // Had no padding at all — a bare 20x20px hit area on
+                            // the one control that exists solely for this device.
+                            className="md:hidden inline-flex items-center justify-center rounded-lg p-2 -mr-2 text-stone-400 hover:bg-stone-100 hover:text-stone-700 cursor-pointer pointer-coarse:min-h-11 pointer-coarse:min-w-11"
                         >
                             <X className="w-5 h-5" />
                         </button>
@@ -1086,13 +1126,11 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                 `min-h-0` is what actually lets the `overflow-y-auto` child below
                 shrink instead of growing the column past it. */}
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-                <button
-                    onClick={() => setIsSidebarOpen(true)}
-                    className="md:hidden fixed top-4 left-4 z-30 p-2 bg-white rounded-lg shadow-md border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-stone-50 transition-colors cursor-pointer"
-                    aria-label="Open menu"
-                >
-                    <Menu className="w-5 h-5" />
-                </button>
+                <MobileTopBar
+                    title={mobileTitle}
+                    onOpenMenu={() => setIsSidebarOpen(true)}
+                    notifications={notificationCenter}
+                />
                 {/* The app's real vertical scroller: the shell root is `h-svh
                     overflow-hidden` and this column is `min-h-0 overflow-hidden`,
                     so `document.body` never scrolls. `useScrollLock`

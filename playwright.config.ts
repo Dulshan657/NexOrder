@@ -84,9 +84,23 @@ export default defineConfig({
       // the rest of the descriptor (touch, mobile UA, deviceScaleFactor) is the
       // point — `hasTouch` is what makes the pointer-driven surfaces behave as
       // they do on the handheld.
+      // HEIGHT IS 664, NOT 780 — and not 720 either. The RS35's CSS layout
+      // viewport is 360x720, but Chrome's URL bar takes ~56px of it and cannot
+      // retract here (the shell is `overflow-hidden` and `document.body` never
+      // scrolls, so there is no root-scroll gesture to retract it with). 664 is
+      // what the operator can actually see, which is the number that decides
+      // whether a control is reachable. At 780 nothing vertical was under test
+      // at all.
+      //
+      // Stated limitation, so a green run is not over-read: Playwright's
+      // `viewport` sets the layout AND visual viewport together, so it can never
+      // model "layout viewport taller than the visual one". This makes vertical
+      // CONTENT pressure testable; it cannot catch the `h-screen` vs `h-svh`
+      // defect itself (F36). Only `npm run scan:diagnostics`, read on the
+      // device, measures that.
       name: 'mobile',
       testMatch: '**/mobile/**/*.spec.ts',
-      use: { ...devices['Pixel 5'], viewport: { width: 360, height: 780 } },
+      use: { ...devices['Pixel 5'], viewport: { width: 360, height: 664 } },
     },
     {
       // O6 — the shift-long session soak. NOT a regression test: it runs for
