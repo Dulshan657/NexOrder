@@ -82,6 +82,54 @@ export const ADMIN_TABS: ReadonlyArray<AdminTab> = [
 ]
 
 /**
+ * What each tab is CALLED, as opposed to what it is keyed by.
+ *
+ * Almost an identity map, and that is the trap: `'Receiving'` renders as
+ * **"Receive Stock"** in the sidebar, so anything that shows `adminView`
+ * directly is right 26 times out of 27 and wrong on the one screen a warehouse
+ * operator is on most of the day.
+ *
+ * It lives here, beside the union it covers, because this module is deliberately
+ * `window`-free and node-testable — `__tests__/adminTabUrl.test.ts` asserts the
+ * map is exhaustive over `ADMIN_TABS`, which is what stops a newly added tab
+ * from rendering a blank title in the mobile top bar.
+ *
+ * The sidebar still writes its labels inline in JSX (they carry icons and live
+ * badge counts, so they are not a data structure). These two must agree; the
+ * test pins the map, and `tests/e2e/mobile/top-bar.spec.ts` pins the agreement
+ * by navigating via the sidebar's label and reading the top bar's title.
+ */
+export const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
+  Dashboard: 'Dashboard',
+  Shop: 'Shop',
+  Products: 'Products',
+  HoReCa: 'HoReCa',
+  'HoReCa Insights': 'HoReCa Insights',
+  'Order Import': 'Order Import',
+  Promotions: 'Promotions',
+  Accounts: 'Accounts',
+  'New Order': 'New Order',
+  Stock: 'Stock',
+  Receiving: 'Receive Stock',
+  Putaway: 'Putaway',
+  Replenishment: 'Replenishment',
+  'Off-home': 'Off-home',
+  Stocktake: 'Stocktake',
+  'Pick Queue': 'Pick Queue',
+  Dispatched: 'Dispatched',
+  Documents: 'Documents',
+  Warehouse: 'Warehouse',
+  'Scheduled Visits': 'Scheduled Visits',
+  'Walk-in Review': 'Walk-in Review',
+  Users: 'Users',
+  Suppliers: 'Suppliers',
+  'PO Inbox': 'PO Inbox',
+  Settings: 'Settings',
+  'Audit Log': 'Audit Log',
+  'System Health': 'System Health',
+}
+
+/**
  * Read `?tab=` from a search string, validating against the known set.
  *
  * Tab values contain spaces ('Pick Queue'), so callers must let URLSearchParams

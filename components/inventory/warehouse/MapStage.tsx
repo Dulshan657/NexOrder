@@ -497,9 +497,11 @@ export function MapStage({
           changes on every painted cell and a live region would machine-gun a screen
           reader. The accessible count is the panel's.
           TOP-RIGHT, not top-left: MapControls owns bottom-left and the scale bar
-          bottom-right, but on a phone the AppShell's own menu button floats over the
-          map's top-left corner, which is where this sat until a screenshot showed it
-          half-hidden underneath. */}
+          bottom-right, and this sat top-left until a screenshot showed it half
+          hidden under the AppShell menu button, which used to float over the map's
+          top-left corner. That button now lives in a flow-positioned mobile top bar
+          and overlaps nothing, so the original hazard is gone — but top-right is
+          still the right corner here, for the MapControls reason above. */}
       {sweeping && select && (
         <div className="map-panel-pill pointer-events-none absolute right-3 top-3 z-20 px-3 py-1.5 text-[11px] font-medium" aria-hidden="true">
           <span className="font-semibold tabular-nums text-nexgen-blue">{select.selectedCount}</span>

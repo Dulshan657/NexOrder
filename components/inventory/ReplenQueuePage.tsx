@@ -134,7 +134,7 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
 
   return (
     <div className="bg-white min-h-screen">
-      <div className="pl-16 pr-4 sm:pr-6 md:pl-6 lg:pl-8 lg:pr-8 pt-4 sm:pt-6 lg:pt-8 flex flex-wrap items-center gap-3">
+      <div className="px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8 flex flex-wrap items-center gap-3">
         {/* Clamped for the reason spelled out in StocktakePage: a native
             <select> sizes to its widest OPTION, so this ran 53px off a 360px
             screen and worsened with every site added. `min-w-0` is what lets

@@ -17,9 +17,15 @@ export const MIN_TOUCH_PX = 44
 /**
  * Navigate via the real sidebar, which on this width means opening it first.
  *
- * Deliberately NOT `?tab=`: the deep-link read branch in AppShell sits *after*
- * the Warehouse-role early return, so it does nothing for the role these specs
- * sign in as. Driving the ☰ is also the only thing that proves the ☰ works.
+ * Deliberately NOT `?tab=`, but NOT for the reason this comment used to give.
+ * It claimed the deep-link read branch sits *after* the Warehouse-role early
+ * return and so does nothing for this role. That is false: `adminTabFromSearch`
+ * is the FIRST statement in AppShell's `adminView` initialiser, and
+ * `TABS_BY_ROLE.Warehouse` is populated, so `?tab=Putaway` works fine here.
+ *
+ * The real reason is the one the old comment listed second: driving the ☰ is the
+ * only thing that proves the ☰ — and now the mobile top bar that owns it, and
+ * the drawer it opens — actually works.
  */
 export async function navigateTo(page: Page, item: string): Promise<void> {
   await page.getByRole('button', { name: 'Open menu' }).click()

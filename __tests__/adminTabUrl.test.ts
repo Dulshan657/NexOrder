@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   ADMIN_TABS,
+  ADMIN_TAB_LABELS,
   adminTabFromSearch,
   parseAdminTab,
   roleCanOpenTab,
@@ -81,5 +82,32 @@ describe('adminTabFromSearch', () => {
 
   it('returns null when no tab is requested at all', () => {
     expect(adminTabFromSearch('?wh=3', 'Admin')).toBeNull()
+  })
+})
+
+describe('ADMIN_TAB_LABELS', () => {
+  // The mobile top bar renders this map. A tab added to the union without a
+  // label here would show a blank title on the handheld, and nothing else in
+  // the app would notice — `Record<AdminTab, string>` catches a MISSING key at
+  // compile time, but this repo ships no strict mode and the top bar reads the
+  // map at runtime, so the test is what actually holds.
+  it('covers every tab, with no blanks', () => {
+    for (const tab of ADMIN_TABS) {
+      const label = ADMIN_TAB_LABELS[tab]
+      expect(label, `no label for the '${tab}' tab`).toBeTruthy()
+      expect(label.trim(), `the '${tab}' label is blank`).not.toBe('')
+    }
+  })
+
+  it('has no labels for tabs that do not exist', () => {
+    expect(Object.keys(ADMIN_TAB_LABELS).sort()).toEqual([...ADMIN_TABS].sort())
+  })
+
+  it("keeps the one label that is NOT its tab's own name", () => {
+    // This is the entire reason the map exists. `adminView` is 'Receiving';
+    // every operator knows the screen as "Receive Stock", and the sidebar has
+    // always said so. Showing the raw tab value is right 26 times out of 27 and
+    // wrong on the screen a warehouse operator is on most of the day.
+    expect(ADMIN_TAB_LABELS.Receiving).toBe('Receive Stock')
   })
 })

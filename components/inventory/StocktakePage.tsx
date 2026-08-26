@@ -87,7 +87,7 @@ const StocktakePage: React.FC<StocktakePageProps> = ({ currentUser, products }) 
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="flex flex-wrap items-center gap-3 pl-16 pr-4 pt-4 sm:pr-6 sm:pt-6 md:pl-6 lg:pl-8 lg:pr-8 lg:pt-8">
+      <div className="flex flex-wrap items-center gap-3 px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8">
         {/* A native <select> sizes itself to its WIDEST OPTION, not to its box.
             At 360px that made this 267px starting at x=146 — 53px off the side
             of the screen — and it got worse with every warehouse added, since
