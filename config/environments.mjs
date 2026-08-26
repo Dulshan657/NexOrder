@@ -223,11 +223,20 @@ export const TARGETS = {
     corsOrigins: [
       'https://nexorder.vercel.app',
       'http://localhost:3000',
-      // Vite's fallback port when a second dev server is already on :3000.
-      // Listed so a tab that landed there is not a silent CORS failure — an
-      // origin that works in practice but is missing from this file is what
-      // makes "Failed to send a request to the Edge Function" unreadable.
+      // Vite's fallback ports when something is already on :3000. Listed so a
+      // tab that landed there is not a silent CORS failure — an origin that
+      // works in practice but is missing from this file is what makes "Failed
+      // to send a request to the Edge Function" unreadable.
+      //
+      // The range goes to :3004 because this is not hypothetical: a machine
+      // running another Vite project alongside this one walks the whole way up,
+      // and every port it lands on that is missing here reads as a broken app
+      // rather than a busy port. Dev only — a tenant's list names its own
+      // domain and nothing else.
       'http://localhost:3001',
+      'http://localhost:3002',
+      'http://localhost:3003',
+      'http://localhost:3004',
     ],
 
     /**
