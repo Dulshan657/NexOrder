@@ -206,11 +206,27 @@ serve(async (req: Request) => {
           if (blocks.some((b) => resolution.homeBlockIds.includes(b))) homeBins.add(locationId)
         }
 
+        // AGGREGATE PER BIN BEFORE RAISING ANYTHING. inventory_balances is keyed
+        // (product, location, batch, handling_unit), so ONE product in ONE bin
+        // is routinely several rows — two batches, or loose stock beside a
+        // plate. One task per row would violate uq_wie_offhome_open, which is
+        // keyed (warehouse, product, from_location), and the whole sweep would
+        // fail with a duplicate key. It is also the wrong unit of work: the task
+        // says "move this product out of this bin", and that is one errand
+        // however many lots make it up.
+        const perBin = new Map<number, { qty: number; huIds: Set<number> }>()
         for (const b of group) {
           const locationId = Number(b.location_id)
+          const entry = perBin.get(locationId) ?? { qty: 0, huIds: new Set<number>() }
+          entry.qty += Number(b.available)
+          if (b.handling_unit_id != null) entry.huIds.add(Number(b.handling_unit_id))
+          perBin.set(locationId, entry)
+        }
+
+        for (const [locationId, entry] of perBin) {
           if (homeBins.has(locationId)) continue
           const dismissed = dismissedQty.get(`${productId}:${locationId}`)
-          if (dismissed !== undefined && Number(b.available) <= dismissed) continue
+          if (dismissed !== undefined && entry.qty <= dismissed) continue
           found.push({
             warehouse_id: input.warehouse_id,
             layout_id: (wh as any).active_layout_id,
@@ -219,8 +235,11 @@ serve(async (req: Request) => {
             // AVAILABLE, never on_hand — inv_transfer_stock moves available
             // stock only, so a task sized otherwise is refused at the rack with
             // the pallet already in the operator's hands.
-            quantity: Number(b.available),
-            handling_unit_id: b.handling_unit_id ?? null,
+            quantity: entry.qty,
+            // Only when the bin holds exactly ONE plate. Naming one of two
+            // would tell inv_transfer_stock to move that plate specifically,
+            // which is not what a whole-bin quantity means.
+            handling_unit_id: entry.huIds.size === 1 ? [...entry.huIds][0] : null,
             rule_id: resolution.rule.id,
             explanation: {
               ruleName: resolution.rule.name,
