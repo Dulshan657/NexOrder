@@ -82,6 +82,13 @@ export interface Product {
     lengthCm?: number;          // unit dimensions for auto-calculation
     widthCm?: number;
     heightCm?: number;
+    // Carton OUTER dimensions (mig 00125). Distinct from lengthCm/widthCm/
+    // heightCm above, which are the UNIT. Undefined means not measured, which
+    // is what makes `resolvePalletFit` estimate the box from the unit instead —
+    // and label the resulting figure as estimated wherever it is shown.
+    cartonLengthCm?: number;
+    cartonWidthCm?: number;
+    cartonHeightCm?: number;
     // Inventory & replenishment (mig 00027). `inventory` above is the on-hand
     // cache (= SUM of inventory_balances.on_hand); these drive restock logic.
     reorderPoint?: number;
@@ -960,6 +967,14 @@ export interface AppSettings {
     poAutoApproveBlockOnShortStock: boolean;
     poAutoApproveBlockOnSenderMismatch: boolean;
     poAutoApproveBlockOnCustomerMismatch: boolean;
+    // Global pallet spec (mig 00125), in MILLIMETRES — 1165 is exact in mm
+    // and 116.5 in cm, and the fit is a stack of floor()s. `maxLoadHeight`
+    // is LOAD-only: do not subtract `baseHeight` from it, or the deck is
+    // counted twice and a layer is silently lost.
+    palletFootprintLengthMm: number;
+    palletFootprintWidthMm: number;
+    palletBaseHeightMm: number;
+    palletMaxLoadHeightMm: number;
 }
 
 export interface PantryItem {

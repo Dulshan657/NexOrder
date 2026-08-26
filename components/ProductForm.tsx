@@ -12,6 +12,9 @@ import { brandOptions, categoryOptions, uomCodeOptions, withCurrentValue } from 
 import { Button, CreatableSelect, Modal, ScanField } from './ui';
 import OptimizedImage from './OptimizedImage';
 import ProductHomeBinsSection from './admin/ProductHomeBinsSection';
+import ProductPalletFitSection from './admin/ProductPalletFitSection';
+import { useSettings } from '../hooks/queries/useSettings';
+import { palletSpecFromSettings, withPalletUom } from '../lib/palletUom';
 import ProductWmsAttributesSection from './admin/ProductWmsAttributesSection';
 import ProductUomsSection, { type ExtraUomDraft } from './admin/ProductUomsSection';
 import ProductSuppliersSection, { type SupplierLinkDraft } from './admin/ProductSuppliersSection';
@@ -43,6 +46,9 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
         lengthCm: '',
         widthCm: '',
         heightCm: '',
+        cartonLengthCm: '',
+        cartonWidthCm: '',
+        cartonHeightCm: '',
         sizeFactor: '1',
         barcode: '',
     });
@@ -79,6 +85,9 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                 lengthCm: productToEdit.lengthCm != null ? String(productToEdit.lengthCm) : '',
                 widthCm: productToEdit.widthCm != null ? String(productToEdit.widthCm) : '',
                 heightCm: productToEdit.heightCm != null ? String(productToEdit.heightCm) : '',
+                cartonLengthCm: productToEdit.cartonLengthCm != null ? String(productToEdit.cartonLengthCm) : '',
+                cartonWidthCm: productToEdit.cartonWidthCm != null ? String(productToEdit.cartonWidthCm) : '',
+                cartonHeightCm: productToEdit.cartonHeightCm != null ? String(productToEdit.cartonHeightCm) : '',
                 sizeFactor: productToEdit.sizeFactor != null ? String(productToEdit.sizeFactor) : '1',
                 barcode: productToEdit.barcode ?? '',
             });
@@ -86,6 +95,12 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
             setSupplierLinks(supplierDraftsFromProduct(productToEdit));
         }
     }, [productToEdit]);
+
+    // The global pallet (mig 00125), so the fit panel can work out how many
+    // cartons ride on one. Null until settings load, which the panel reports
+    // as a refusal rather than computing against a pallet nobody chose.
+    const { data: settings } = useSettings();
+    const palletSpec = useMemo(() => palletSpecFromSettings(settings), [settings]);
 
     // Dropdown options: the built-in lists merged with whatever the catalog
     // already uses, plus this product's own value so editing can't re-point it.
@@ -345,6 +360,31 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                             Calculated: {(parseFloat(formData.lengthCm) * parseFloat(formData.widthCm) * parseFloat(formData.heightCm) / 1_000_000).toFixed(6)} m³ per unit
                         </p>
                     )}
+                    {/* Pallet quantity. Sits directly under the UNIT dimensions it may
+                        fall back on, and above the racked-capacity figure, because it
+                        is the same conversation: how big is this thing, really. */}
+                    <ProductPalletFitSection
+                        spec={palletSpec}
+                        unitCm={{ lengthCm: formData.lengthCm, widthCm: formData.widthCm, heightCm: formData.heightCm }}
+                        cartonCm={{ lengthCm: formData.cartonLengthCm, widthCm: formData.cartonWidthCm, heightCm: formData.cartonHeightCm }}
+                        // Mapped key by key, NOT spread. The panel speaks of a box as
+                        // lengthCm/widthCm/heightCm, and those are also the names of the
+                        // UNIT dimensions on this form -- a bare spread would silently
+                        // overwrite them with the carton's.
+                        onCartonChange={(patch) => setFormData(prev => ({
+                            ...prev,
+                            ...(patch.lengthCm !== undefined ? { cartonLengthCm: patch.lengthCm } : {}),
+                            ...(patch.widthCm !== undefined ? { cartonWidthCm: patch.widthCm } : {}),
+                            ...(patch.heightCm !== undefined ? { cartonHeightCm: patch.heightCm } : {}),
+                        }))}
+                        extraUoms={extraUoms}
+                        onApply={(unitsPerPallet) => setExtraUoms(prev => withPalletUom(prev, {
+                            factorToBase: unitsPerPallet,
+                            baseUnitCode: formData.unit,
+                            basePrice: parseFloat(formData.price) || 0,
+                        }))}
+                    />
+
                     <div className="mt-3">
                         <label htmlFor="sizeFactor" className="block text-xs font-medium text-stone-500 mb-1">Slots per unit (racked capacity)</label>
                         <input type="number" name="sizeFactor" id="sizeFactor" value={formData.sizeFactor} onChange={handleChange} step="0.0001" min="0" placeholder="1" className={inputClasses} />

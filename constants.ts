@@ -49,6 +49,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
     poAutoApproveBlockOnShortStock: true,
     poAutoApproveBlockOnSenderMismatch: true,
     poAutoApproveBlockOnCustomerMismatch: true,
+    // AU standard pallet (mig 00125 seeds the same figures). Kept as literals
+    // rather than importing AU_STANDARD_PALLET: this file reaches every
+    // browser, and a default is a value, not a dependency.
+    palletFootprintLengthMm: 1165,
+    palletFootprintWidthMm: 1165,
+    palletBaseHeightMm: 150,
+    palletMaxLoadHeightMm: 1650,
 };
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {

@@ -22,6 +22,7 @@ export type SettingsSubTab =
   | 'general'
   | 'orders'
   | 'inventory'
+  | 'products'
   | 'warehouse'
   | 'customers'
   | 'automation'
@@ -30,6 +31,7 @@ export const SETTINGS_SUBTABS: ReadonlyArray<SettingsSubTab> = [
   'general',
   'orders',
   'inventory',
+  'products',
   'warehouse',
   'customers',
   'automation',
@@ -59,6 +61,7 @@ const SECTION_SUBTAB: Readonly<Record<string, SettingsSubTab>> = {
   'settings-wh-label-printing': 'warehouse',
   'settings-wh-code-pattern': 'warehouse',
   'settings-wh-slotting-rules': 'warehouse',
+  'settings-pallet-spec': 'products',
 }
 
 /**

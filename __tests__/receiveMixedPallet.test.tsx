@@ -38,6 +38,12 @@ vi.mock('@/hooks/queries/useLevelRoles', async () => {
   return { useLevelRoles: () => ({ data: FALLBACK_LEVEL_ROLES }) }
 })
 vi.mock('@/hooks/useToasts', () => ({ useToasts: () => ({ addToast: vi.fn() }) }))
+vi.mock('@/hooks/queries/useSettings', () => ({
+  // ReceiveStockView reads the global pallet (mig 00125) only to say whether a
+  // product's Pallet unit quantity was measured or estimated. Mocked because the
+  // real hook needs a QueryClientProvider these tests deliberately do without.
+  useSettings: () => ({ data: null }),
+}))
 
 import ReceiveStockView from '@/components/inventory/ReceiveStockView'
 import { UserRole, type Product, type User } from '@/types'

@@ -87,6 +87,13 @@ const productBodySchema = z.object({
   length_cm: z.number().min(0).nullable().optional(),
   width_cm: z.number().min(0).nullable().optional(),
   height_cm: z.number().min(0).nullable().optional(),
+  // Carton OUTER dimensions (mig 00125). NULLABLE, not merely optional:
+  // blank means "not measured" and the client sends `null` to clear it.
+  // `.optional()` alone REJECTS null, and with `strict` off nothing here
+  // would say so until an operator hit Save.
+  carton_length_cm: z.number().positive().nullable().optional(),
+  carton_width_cm: z.number().positive().nullable().optional(),
+  carton_height_cm: z.number().positive().nullable().optional(),
   // Racked WMS: capacity slots a single base unit consumes (mig 00039).
   size_factor: z.number().positive().optional(),
   // Supplier EAN/UPC captured by scanning (mig 00074 made it partial-unique).

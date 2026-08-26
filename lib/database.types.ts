@@ -87,6 +87,9 @@ export type Database = {
           length_cm: number | null
           width_cm: number | null
           height_cm: number | null
+          carton_length_cm: number | null
+          carton_width_cm: number | null
+          carton_height_cm: number | null
           reorder_point: number | null
           safety_stock: number | null
           lead_time_days: number | null
@@ -116,6 +119,9 @@ export type Database = {
           length_cm?: number | null
           width_cm?: number | null
           height_cm?: number | null
+          carton_length_cm?: number | null
+          carton_width_cm?: number | null
+          carton_height_cm?: number | null
           reorder_point?: number | null
           safety_stock?: number | null
           lead_time_days?: number | null
@@ -145,6 +151,9 @@ export type Database = {
           length_cm?: number | null
           width_cm?: number | null
           height_cm?: number | null
+          carton_length_cm?: number | null
+          carton_width_cm?: number | null
+          carton_height_cm?: number | null
           reorder_point?: number | null
           safety_stock?: number | null
           lead_time_days?: number | null
@@ -793,6 +802,10 @@ export type Database = {
           show_stock_to_horeca: boolean
           company_logo_url: string | null
           po_auto_approve_enabled: boolean
+          pallet_footprint_length_mm: number
+          pallet_footprint_width_mm: number
+          pallet_base_height_mm: number
+          pallet_max_load_height_mm: number
           po_auto_approve_block_on_short_stock: boolean
           po_auto_approve_block_on_sender_mismatch: boolean
           po_auto_approve_block_on_customer_mismatch: boolean
@@ -812,6 +825,10 @@ export type Database = {
           show_stock_to_horeca: boolean
           company_logo_url: string | null
           po_auto_approve_enabled?: boolean
+          pallet_footprint_length_mm?: number
+          pallet_footprint_width_mm?: number
+          pallet_base_height_mm?: number
+          pallet_max_load_height_mm?: number
           po_auto_approve_block_on_short_stock?: boolean
           po_auto_approve_block_on_sender_mismatch?: boolean
           po_auto_approve_block_on_customer_mismatch?: boolean
@@ -831,6 +848,10 @@ export type Database = {
           show_stock_to_horeca?: boolean
           company_logo_url?: string | null
           po_auto_approve_enabled?: boolean
+          pallet_footprint_length_mm?: number
+          pallet_footprint_width_mm?: number
+          pallet_base_height_mm?: number
+          pallet_max_load_height_mm?: number
           po_auto_approve_block_on_short_stock?: boolean
           po_auto_approve_block_on_sender_mismatch?: boolean
           po_auto_approve_block_on_customer_mismatch?: boolean

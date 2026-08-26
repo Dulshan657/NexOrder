@@ -5,6 +5,8 @@ import { useReceiveStock } from '../../hooks/queries/useReceiveStock';
 import { useRecentReceipts } from '../../hooks/queries/useInventoryBalances';
 import { useSuppliers } from '../../hooks/queries/useSuppliers';
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles';
+import { useSettings } from '../../hooks/queries/useSettings';
+import { palletSpecFromSettings } from '../../lib/palletUom';
 import { roleLabel, rolesForHuType } from '@/lib/levelRoles';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import type { ReceiptHeader, ReceiptLine, ReceiptPlate } from '../../services/supabase/receivingService';
@@ -241,6 +243,10 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   // the receiver where each kind of unit will be steered, so it has to read the
   // routing rather than restate it.
   const { data: levelRoles = [] } = useLevelRoles();
+  // The global pallet (mig 00125) — only so a Pallet unit can say whether its
+  // quantity was measured or estimated, at the moment it becomes real stock.
+  const { data: settingsRow } = useSettings();
+  const palletSpec = useMemo(() => palletSpecFromSettings(settingsRow), [settingsRow]);
 
   // Phrased as a PREDICTION, not a destination. "Pallet → Reserve" read as a
   // storage commitment, and it is not one: putaway may place this anywhere, the
@@ -846,6 +852,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                   productById={productById}
                   supplierId={supplierId}
                   plateDestinationLabel={plateDestinationLabel}
+                  palletSpec={palletSpec}
                   active={activeGroupKey === plate.key}
                   onAddItem={() => { setActiveGroupKey(plate.key); focusSearch(); }}
                   onDone={() => setActiveGroupKey(null)}
@@ -868,6 +875,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                 supplierId={supplierId}
                 plates={plates}
                 plateDestinationLabel={plateDestinationLabel}
+                palletSpec={palletSpec}
                 onUpdate={patch => updateLine(line.key, patch)}
                 onRemove={() => removeLine(line.key)}
                 onSetPlateType={huType => setPlateType(line.plateKey, huType)}

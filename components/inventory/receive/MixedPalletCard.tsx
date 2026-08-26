@@ -27,6 +27,7 @@ import React from 'react'
 import { Boxes, Check, Plus, Trash2 } from 'lucide-react'
 import type { Product } from '../../../types'
 import ReceiveLineCard from './ReceiveLineCard'
+import type { PalletSpec } from '../../../lib/palletFit'
 import type { DraftLine, DraftPlate } from './receiveDraft'
 
 export type MixedPalletCardProps = {
@@ -38,6 +39,8 @@ export type MixedPalletCardProps = {
   productById: ReadonlyMap<number, Product>
   supplierId: number | null
   plateDestinationLabel: (huType: 'pallet' | 'carton') => string
+  /** Threaded through so a member line's Pallet unit can state its basis. */
+  palletSpec?: PalletSpec | null
   /** This card is capturing everything added, including dock scans. */
   active: boolean
   /** Make this card the capture target and put the cursor in the search box. */
@@ -57,6 +60,7 @@ export function MixedPalletCard({
   productById,
   supplierId,
   plateDestinationLabel,
+  palletSpec = null,
   active,
   onAddItem,
   onDone,
@@ -132,6 +136,7 @@ export function MixedPalletCard({
                 supplierId={supplierId}
                 plates={[plate]}
                 plateDestinationLabel={plateDestinationLabel}
+                palletSpec={palletSpec}
                 onUpdate={(patch) => onUpdateLine(line.key, patch)}
                 onRemove={() => onRemoveLine(line.key)}
                 // The container owns the type, so a member line can never set

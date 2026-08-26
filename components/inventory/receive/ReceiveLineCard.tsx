@@ -59,6 +59,8 @@ import { ScanField } from '../../ui/ScanField'
 import { Tooltip } from '../../ui/Tooltip'
 import { normalizeScan } from '../../../lib/scan/resolveScan'
 import { receivableUoms, deriveDefaultUoms, baseUom } from '../../../lib/uom'
+import { provenanceHint, provenanceLabel, uomProvenance } from '../../../lib/palletUom'
+import type { PalletSpec } from '../../../lib/palletFit'
 import { supplierSkuFor } from '../../../lib/productSuppliers'
 import type { Product } from '../../../types'
 import { plateLabel, type DraftLine, type DraftPlate } from './receiveDraft'
@@ -91,6 +93,12 @@ export interface ReceiveLineCardProps {
   plates: readonly DraftPlate[]
   /** Where a plate of this type would be routed — reads level roles (mig 00081). */
   plateDestinationLabel: (huType: 'pallet' | 'carton') => string
+  /**
+   * The global pallet (mig 00125). Only used to say where a product's Pallet
+   * unit quantity came from — an ESTIMATED one is a guess, and the operator
+   * counting a real pallet into stock is the person who most needs to know.
+   */
+  palletSpec?: PalletSpec | null
   onUpdate: (patch: Partial<DraftLine>) => void
   onRemove: () => void
   onSetPlateType: (huType: 'pallet' | 'carton') => void
@@ -109,6 +117,7 @@ export function ReceiveLineCard({
   supplierId,
   plates,
   plateDestinationLabel,
+  palletSpec = null,
   onUpdate,
   onRemove,
   onSetPlateType,
@@ -135,6 +144,12 @@ export function ReceiveLineCard({
   const selectedUom = uoms.find((u) => u.id === line.uomId) ?? uoms.find((u) => u.isBase) ?? uoms[0]
   const baseCode = baseUom(uoms)?.code ?? product?.unit
   const baseQty = (Number(line.quantity) || 0) * (selectedUom?.isBase ? 1 : selectedUom?.factorToBase ?? 1)
+
+  // Where this unit's quantity came from. Returns 'unknown' for anything that
+  // is not a pallet, so an ordinary carton gets no claim attached to it.
+  const provenance = uomProvenance(product, selectedUom, palletSpec)
+  const provLabel = provenanceLabel(provenance)
+  const provHint = provenanceHint(provenance)
 
   return (
     <div
@@ -194,6 +209,14 @@ export function ReceiveLineCard({
             {!selectedUom.isBase && (
               <p className="text-right text-[11px] tabular-nums text-stone-400">
                 = {baseQty} {baseCode}
+              </p>
+            )}
+            {/* An estimated pallet quantity is a guess, and this is where it
+                turns into stock. Said here, not only on the product record. */}
+            {provLabel && provHint && (
+              <p className="flex items-center justify-end gap-1 text-[11px] text-stone-400">
+                <span className={provenance === 'measured' ? '' : 'text-amber-600'}>{provLabel}</span>
+                <Tooltip align="right" label="Where did this pallet quantity come from?" text={provHint} />
               </p>
             )}
           </div>

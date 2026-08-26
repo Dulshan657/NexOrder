@@ -12,6 +12,27 @@ const ORDER_PREFIX_RE = /^[A-Z0-9]{1,6}$/
 export function validateSettings(draft: Partial<AppSettings>): SettingsErrors {
   const errors: SettingsErrors = {}
 
+  // Pallet spec (mig 00125). Bounds mirror the CHECK, so a bad figure is
+  // refused here with a sentence instead of arriving as a 500 from Postgres.
+  // A zero footprint or load height would make `computePalletFit` refuse for
+  // every product at once, which reads as the whole feature being broken.
+  const mm = (
+    key: 'palletFootprintLengthMm' | 'palletFootprintWidthMm'
+      | 'palletBaseHeightMm' | 'palletMaxLoadHeightMm',
+    min: number,
+    max: number,
+  ) => {
+    const v = draft[key]
+    if (v === undefined) return
+    if (!Number.isInteger(v) || v < min || v > max) {
+      errors[key] = `Must be a whole number of millimetres between ${min} and ${max}.`
+    }
+  }
+  mm('palletFootprintLengthMm', 1, 10000)
+  mm('palletFootprintWidthMm', 1, 10000)
+  mm('palletBaseHeightMm', 0, 2000)
+  mm('palletMaxLoadHeightMm', 1, 10000)
+
   // Email is optional; validate format only when a non-empty value is present.
   if (
     draft.companyEmail !== undefined &&

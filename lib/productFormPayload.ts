@@ -25,6 +25,12 @@ export interface ProductFormData {
   lengthCm: string
   widthCm: string
   heightCm: string
+  // Optional on the TYPE, like barcode/brand above: `lib/productImportRow.ts`
+  // builds a ProductFormData literal with no such columns and must keep
+  // compiling. Blank means not measured (mig 00125).
+  cartonLengthCm?: string
+  cartonWidthCm?: string
+  cartonHeightCm?: string
   sizeFactor: string
   /**
    * Supplier EAN/UPC (mig 00074). Optional on the TYPE, not merely on the
@@ -92,6 +98,12 @@ export function buildProductPayload(
     lengthCm: formData.lengthCm ? parseFloat(formData.lengthCm) : undefined,
     widthCm: formData.widthCm ? parseFloat(formData.widthCm) : undefined,
     heightCm: formData.heightCm ? parseFloat(formData.heightCm) : undefined,
+    // `null`, NOT undefined, so CLEARING the box actually clears the column
+    // — undefined is dropped by `fromProduct` and the old figure would
+    // survive, leaving a measured carton nobody can get rid of.
+    cartonLengthCm: formData.cartonLengthCm ? parseFloat(formData.cartonLengthCm) : null,
+    cartonWidthCm: formData.cartonWidthCm ? parseFloat(formData.cartonWidthCm) : null,
+    cartonHeightCm: formData.cartonHeightCm ? parseFloat(formData.cartonHeightCm) : null,
     sizeFactor: formData.sizeFactor ? parseFloat(formData.sizeFactor) : undefined,
   }
 

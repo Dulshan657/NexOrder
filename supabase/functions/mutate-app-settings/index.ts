@@ -38,6 +38,15 @@ const settingsDataSchema = z.object({
   default_credit_limit: z.number().min(0).optional(),
   carton_discount_percent: z.number().min(0).max(50).optional(),
   low_stock_threshold: z.number().min(0).optional(),
+  // Global pallet spec (mig 00125), in whole millimetres. NOT NULL columns
+  // with defaults, and the settings draft only ever emits changed keys with
+  // real values — so `.optional()` is right here and `.nullable()` would be
+  // wrong: it would admit a null the column rejects. The bounds mirror the
+  // CHECK so a refusal reads as a message rather than a 500.
+  pallet_footprint_length_mm: z.number().int().min(1).max(10000).optional(),
+  pallet_footprint_width_mm: z.number().int().min(1).max(10000).optional(),
+  pallet_base_height_mm: z.number().int().min(0).max(2000).optional(),
+  pallet_max_load_height_mm: z.number().int().min(1).max(10000).optional(),
 })
 
 const inputSchema = z.object({
