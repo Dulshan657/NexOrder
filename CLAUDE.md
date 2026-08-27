@@ -621,6 +621,69 @@ the operator state the scheme instead.
 - **Labels needed no server work.** `generate-labels` already takes an explicit `ids` list on the `handling_unit` kind, flips `label_printed` and returns a signed URL. It is rendered as a **link the operator taps** — a programmatic `window.open` after the await is popup-blocked. Between commit and the child stop the plates are labelled in the database and may not be on the floor; the child stop's **plate scan is what closes that window**.
 - Only an **`assigned`** task on a **`pallet`** plate can be broken down. A `suggested` one is refused (the desk queue has no entry point, and an unreachable branch is untested code); loose stock has no plate, and `complete-putaway`'s partial quantity already covers it. Own rate bucket at **10/min/user** — it mints plates and rows, and must not share a budget with the 120/min putaway traffic the same walk generates.
 
+**Identifying the goods at putaway** (**no migration**) — the walk's first step asks
+for whatever actually identifies what is being carried, which is usually the PRODUCT
+barcode and only sometimes the plate.
+
+- **The reported bug: the walk demanded a code printed on nothing.** `receive-stock`'s
+  `createPlates` mints a handling unit for EVERY line — that is what makes "every receipt
+  line is on a plate" true — but it renders no sticker, and until now nothing offered to.
+  So `HU-000509` existed in the database and on no physical object, the stop said
+  *"Scan the plate — expecting HU-000509"*, and the operator holding a carton with
+  `4796009868869` printed on it was told *"That is plate 4796009868869, but this task is
+  for HU-000509"* — which calls a barcode a plate. There was no skip; the only exit was
+  abandoning the stop.
+- **The operating rule is the other way round.** The product barcode identifies the goods.
+  A plate label is needed for a **pallet** (a carton barcode names the SKU and cannot tell
+  two pallets of it apart), for goods carrying **no barcode**, and for a barcode that
+  arrived **damaged**.
+- **`_shared/putawayIdentity.ts` is pure and imported by both runtimes** (re-exported by
+  `lib/putawayIdentity.ts`). Five ordered branches, each pinned by a `reason`:
+  no plate → skip; label printed → plate; unlabelled pallet → plate + offer to print;
+  product has a barcode → product; nothing scannable → skip + offer to print.
+- **What is ASKED FOR and what is ACCEPTED are different, deliberately.** The prompt names
+  one thing (a prompt naming two teaches nobody what to do); the field accepts either code
+  and `classifyPutawayScan` routes it to the right evidence key — plate if it normalises
+  equal to the task's `huCode`, product otherwise. An unrelated string goes to
+  `productCode` **on purpose**, so `checkPutawayScan` answers *"that item is not <SKU>"*
+  rather than calling it a plate.
+- **The server was never the obstacle, and this is worth remembering as a shape.**
+  `checkPutawayScan` has always accepted and validated `productCode`, `complete-putaway`'s
+  zod schema has always taken `scan.productCode`, and `putawayService.ts` has always typed
+  it. The card simply never populated it — so **every product-identified placement was
+  recorded `scan_verified: false`**, understating evidence that had in fact been collected.
+  Before assuming a capability is missing, check whether it is merely unreached.
+- **The identity is captured ONCE, on opening the stop, never derived per render.**
+  `generate-labels` flips `handling_units.label_printed` the instant the PDF renders (right
+  for a plate, wrong for a rack — see `confirm-label-print`'s header), so a live reading
+  would swap the card into "scan the plate" the moment the operator taps Print, while the
+  sticker is still in a printer on the other side of the building.
+- **Two unlabelled plates of one product cannot be told apart by barcode, and the stop says
+  so.** `PutawayWalkView` computes the twins (it holds every stop; the card sees one) and
+  the card warns. They are NOT merged into one stop — that would hide a real container
+  distinction.
+- **Plate labels are now printable at Receive Stock**, which is the only place they are
+  cheap and the reason the backlog exists. `getReceiptPlates()` had been written, exported
+  and **called by nothing**; it is wired up and now carries `label_printed` plus the
+  barcodes of what is on each plate, because the desk's question is not "which plates
+  exist" but "which need a sticker" — `plateNeedsLabel`, the receiving half of the same
+  rule, stated once beside it. Pallets pre-tick; barcoded cartons do not, but stay
+  printable for the damaged-barcode case.
+- **A task can outlive its plate, and used to lie about why.** A count, an adjustment or a
+  transfer at the warehouse ROOT consumes balance rows without naming a plate (`count-bin`
+  passes `p_handling_unit_id => NULL` deliberately); `hu_recompute` marks the plate
+  `'empty'` and **nothing touches `wie_putaway_recommendations`**. The stop stayed on the
+  walk and the placement died inside `inv_transfer_stock` as `INSUFFICIENT_STOCK`, which
+  `complete-putaway` rewrote as *"reserved for an order"* — untrue for this case. The card
+  now warns on `huStatus`, and `complete-putaway` gained the two checks `record-pick` has
+  had all along: `UNKNOWN_PLATE` (resolve the SCANNED code — previously a bogus plate was
+  refused only by string coincidence, and on a plateless task was **silently accepted**)
+  and `PLATE_CONSUMED` (the task's plate still holds this product **at the root**, scoped
+  there because that is the source leg the transaction will use).
+- **No migration:** `label_printed` and `status` are columns on a table the walk already
+  joins. `wie_putaway_stops` is untouched — the walk reads them off the PostgREST queue
+  query, and the route's `huCode` is discarded in `PutawayWalkView` anyway.
+
 **Pallet quantities** (mig `00125`) — what makes a full pallet countable as one line at the dock. `app_settings` gains the global pallet spec (seeded AU standard **1165 × 1165**, 150 mm deck, **1650 mm of load**); `products` gains nullable `carton_{length,width,height}_cm`.
 
 - **`lib/palletFit.ts` is pure and deliberately BROWSER-ONLY, not `_shared/`.** That rule exists where the client previews a decision the server re-makes (`_shared/binCount.ts`, `_shared/wie/replenPolicy.ts`). The server never computes a fit — it stores a factor the admin confirmed, which `validateUoms` already checks — so a `_shared` copy would be imported by nothing on the Deno side. It is dependency-free and takes plain numbers, so it lifts unchanged if that stops being true.
