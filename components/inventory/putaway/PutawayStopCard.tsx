@@ -1,8 +1,17 @@
 // One stop on the putaway walk, confirmed by scanning.
 //
-// Two explicit steps — scan the plate, scan the bin — because they catch two
-// different errors: carrying the wrong pallet, and setting the right one down
-// in the wrong bay. Neither alone is evidence of the other.
+// Two explicit steps — identify what you are carrying, then scan the bin —
+// because they catch two different errors: carrying the wrong thing, and
+// setting the right thing down in the wrong bay. Neither alone is evidence of
+// the other.
+//
+// WHAT the first step asks for is not fixed. It used to be "scan the plate",
+// always, whenever the task named a handling unit — and that was unanswerable
+// for the commonest case on the floor: receive-stock mints a plate for every
+// line, but a sticker only exists if somebody rendered one, so the walk
+// routinely demanded a code printed on nothing. Meanwhile the box in the
+// operator's hands had its own barcode. `putawayIdentity` (pure, shared with
+// the server) decides between them from the facts; see it for the rule.
 //
 // Validation runs through the SAME pure module the Edge Function uses
 // (_shared/putawayScanCheck), so the browser can never accept something the
@@ -15,15 +24,25 @@
 // records where it actually went.
 
 import React, { useMemo, useState } from 'react'
-import { AlertTriangle, ArrowRight, Check, Layers, MapPin, PackageCheck, Undo2, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Check, Layers, MapPin, PackageCheck, Printer, Undo2, X } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
 import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkPutawayScan } from '@/supabase/functions/_shared/putawayScanCheck'
 import { useCompletePutaway, useUnassignPutaway } from '@/hooks/queries/usePutawayWalk'
+import { usePrintPlateLabels } from '@/hooks/queries/usePalletBreakdown'
 import { useToasts } from '@/hooks/useToasts'
 import { CompletePutawayError } from '@/services/supabase/putawayService'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import { locationSubtitle, locationTitle, type DisplayLocation } from '@/lib/locationDisplay'
+import {
+  classifyPutawayScan,
+  identifyChipLabel,
+  identifyHelper,
+  identifyPlaceholder,
+  identifyPrompt,
+  putawayIdentity,
+  type PutawayIdentity,
+} from '@/lib/putawayIdentity'
 import { describeQuantity, trimNumber } from './putawayFormat'
 import { PalletBreakdownSheet } from './PalletBreakdownSheet'
 
@@ -41,16 +60,23 @@ interface PutawayStopCardProps {
   /** Needed by the break-down sheet, which scopes its bin picker and its engine
    *  suggestions to this site. */
   warehouseId: number
+  /** Other queued tasks for this SAME product whose plates are also unlabelled.
+   *  A product barcode identifies the SKU and nothing finer, so when two such
+   *  plates are in the walk at once the evidence genuinely cannot say which one
+   *  is in the operator's hands. The card says so rather than implying a
+   *  certainty it does not have. Computed by the walk, which holds every stop. */
+  unlabelledTwins: ReadonlyArray<{ huCode: string; quantity: number }>
   onActivate: () => void
   onDone: () => void
 }
 
-type Step = 'idle' | 'plate' | 'bin' | 'qty'
+type Step = 'idle' | 'identify' | 'bin' | 'qty'
 
 // React.FC deliberately: this repo ships no @types/react, so a plainly-typed
 // component's props do not include `key`, and the walk renders these in a list.
 export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
-  row, bin, sequence, legDistanceM, reachable, active, disabled, warehouseId, onActivate, onDone,
+  row, bin, sequence, legDistanceM, reachable, active, disabled, warehouseId,
+  unlabelledTwins, onActivate, onDone,
 }) => {
   // The scan identity. Every scan check, placeholder and refusal message below
   // quotes this rather than the friendly name — the operator is matching a
@@ -59,10 +85,23 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   const { addToast } = useToasts()
   const complete = useCompletePutaway()
   const unassign = useUnassignPutaway()
+  const print = usePrintPlateLabels()
 
   const [step, setStep] = useState<Step>('idle')
   const { flash, signal: signalFlash } = useScanFlash()
+  // Captured ONCE, when the stop is opened — deliberately not derived per
+  // render. `generate-labels` flips handling_units.label_printed the instant the
+  // PDF exists (see confirm-label-print's header for why that is right for a
+  // plate and wrong for a rack), so a live reading would swap this card into
+  // "scan the plate" the moment the operator taps Print — while the sticker is
+  // still in a printer on the other side of the building.
+  const [identity, setIdentity] = useState<PutawayIdentity | null>(null)
+  /** What is in the identify field right now. Distinct from the two accepted
+   *  codes below: a refused scan clears the text and leaves the evidence empty. */
+  const [identifyText, setIdentifyText] = useState('')
   const [plateCode, setPlateCode] = useState('')
+  const [productCode, setProductCode] = useState('')
+  const [labelUrl, setLabelUrl] = useState<string | null>(null)
   const [scannedBin, setScannedBin] = useState('')
   const [qty, setQty] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -88,9 +127,24 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     [binCode, row.productId, row.product?.sku, row.product?.barcode, row.huCode, row.quantity, name],
   )
 
+  /** Everything the operator has proved so far, in the shape checkPutawayScan
+   *  and complete-putaway both take. At most one of the two identity codes is
+   *  ever set — they are alternative answers to the same question. */
+  const evidence = useMemo(
+    () => ({
+      handlingUnitCode: plateCode || undefined,
+      productCode: productCode || undefined,
+    }),
+    [plateCode, productCode],
+  )
+
   const reset = () => {
     setStep('idle')
+    setIdentity(null)
+    setIdentifyText('')
     setPlateCode('')
+    setProductCode('')
+    setLabelUrl(null)
     setScannedBin('')
     setQty('')
     setError(null)
@@ -101,32 +155,61 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     setError(null)
     setRoleGate(null)
     setQty(trimNumber(row.quantity))
-    // A line with no plate has nothing to scan at step one — legacy stock and
-    // the CSV opening-stock path. Go straight to the bin rather than showing a
+    const decided = putawayIdentity({
+      huCode: row.huCode,
+      huType: row.huType,
+      huLabelPrinted: row.huLabelPrinted,
+      productBarcode: row.product?.barcode ?? null,
+    })
+    setIdentity(decided)
+    // `none` means there is genuinely nothing to hold up to the gun — a legacy
+    // or CSV opening-stock line with no plate, or an unlabelled plate carrying a
+    // product with no barcode. Go straight to the bin rather than showing a
     // field that can only ever be skipped.
-    setStep(row.huCode ? 'plate' : 'bin')
+    setStep(decided.expect === 'none' ? 'bin' : 'identify')
     onActivate()
   }
 
-  const onPlateScan = (raw: string) => {
-    const verdict = checkPutawayScan(context, { handlingUnitCode: raw }, row.quantity)
+  const onIdentifyScan = (raw: string) => {
+    // The two answers arrive through one field as the same bare string — that is
+    // the whole point of the unprefixed scan payload. The task knows its own
+    // plate code, so telling them apart needs no lookup.
+    const kind = classifyPutawayScan(raw, { huCode: row.huCode })
+    const verdict = checkPutawayScan(
+      context,
+      kind === 'plate' ? { handlingUnitCode: raw } : { productCode: raw },
+      row.quantity,
+    )
     if (verdict.ok === false) {
       setError(verdict.message)
-      setPlateCode('')
+      setIdentifyText('')
       signalFlash('reject')
       return
     }
+    // Record it under the key it actually is, and clear the other: sending both
+    // would claim evidence the operator never produced.
+    setPlateCode(kind === 'plate' ? raw : '')
+    setProductCode(kind === 'plate' ? '' : raw)
     setError(null)
     signalFlash('ok')
     setStep('bin')
   }
 
+  const renderLabel = async () => {
+    if (row.huId == null) return
+    try {
+      const result = await print.mutateAsync([row.huId])
+      // The URL is rendered as a link the operator TAPS. Calling window.open
+      // here — after an await — is popup-blocked, every time.
+      setLabelUrl(result.signedUrl)
+      if (!result.signedUrl) addToast('The sheet rendered but returned no link — try again', 'error')
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Could not render the label', 'error')
+    }
+  }
+
   const onBinScan = (raw: string) => {
-    const verdict = checkPutawayScan(
-      context,
-      { handlingUnitCode: plateCode || undefined, locationCode: raw },
-      row.quantity,
-    )
+    const verdict = checkPutawayScan(context, { ...evidence, locationCode: raw }, row.quantity)
     if (verdict.ok === false) {
       setError(verdict.message)
       setScannedBin('')
@@ -143,21 +226,13 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
 
   const placedElsewhere = useMemo(() => {
     if (!scannedBin) return false
-    const verdict = checkPutawayScan(
-      context,
-      { handlingUnitCode: plateCode || undefined, locationCode: scannedBin },
-      row.quantity,
-    )
+    const verdict = checkPutawayScan(context, { ...evidence, locationCode: scannedBin }, row.quantity)
     return verdict.ok === true && verdict.placedElsewhere
-  }, [context, plateCode, scannedBin, row.quantity])
+  }, [context, evidence, scannedBin, row.quantity])
 
   const confirm = async (roleOverride = false) => {
     const placed = Number(qty)
-    const verdict = checkPutawayScan(
-      context,
-      { handlingUnitCode: plateCode || undefined, locationCode: scannedBin },
-      placed,
-    )
+    const verdict = checkPutawayScan(context, { ...evidence, locationCode: scannedBin }, placed)
     if (verdict.ok === false) {
       setError(verdict.message)
       return
@@ -170,9 +245,14 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         roleOverride: roleOverride || undefined,
         // No actualLocationId: the scanned code is authoritative and the server
         // resolves it, so a stale client-side location list can't misdirect stock.
+        // productCode is carried as well as the plate — the server has always
+        // accepted it and treats either as proof of "the thing" (see
+        // checkPutawayScan's `verified`). Omitting it is what made every
+        // product-identified placement land in the audit trail as
+        // scan_verified: false, understating the evidence actually collected.
         scan: {
           locationCode: scannedBin,
-          handlingUnitCode: plateCode || undefined,
+          ...evidence,
         },
       })
       addToast(
@@ -289,10 +369,50 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         </p>
       )}
 
+      {/* A task can outlive its plate. A count, an adjustment or a transfer at
+          the warehouse ROOT consumes balance rows without naming a plate
+          (count-bin passes p_handling_unit_id => NULL deliberately);
+          hu_recompute then marks the plate 'empty' and nothing touches this
+          task. Without this the walk sends someone to a rack with a code that
+          identifies nothing, and the placement dies inside inv_transfer_stock
+          as INSUFFICIENT_STOCK — which complete-putaway rewrites into "reserved
+          for an order", a sentence that is simply untrue here. */}
+      {(row.huStatus === 'empty' || row.huStatus === 'cancelled') && (
+        <p className="flex items-start gap-1.5 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden="true" />
+          <span>
+            Plate <span className="font-mono">{row.huCode}</span> is recorded as {row.huStatus} — its
+            stock has already been consumed somewhere else, so this placement will be refused. Send
+            the line back to the Assign queue and re-run it.
+          </span>
+        </p>
+      )}
+
+      {/* Product evidence names the SKU and nothing finer. With two unlabelled
+          plates of the same product in the walk at once, it genuinely cannot say
+          which one is being carried — so say that, rather than let a green tick
+          imply a certainty nobody has. */}
+      {step === 'identify' && identity?.expect === 'product' && unlabelledTwins.length > 0 && (
+        <p className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden="true" />
+          <span>
+            {unlabelledTwins.map((t) => `${t.huCode} (${trimNumber(t.quantity)})`).join(', ')}{' '}
+            {unlabelledTwins.length === 1 ? 'is' : 'are'} also queued for this product with no label.
+            The barcode can't prove which one you're carrying — print a plate label if that matters
+            here.
+          </span>
+        </p>
+      )}
+
       <div className="flex items-center gap-2 text-[11px]">
-        {row.huCode && (
+        {identity && identity.expect !== 'none' && (
           <>
-            <StepChip label="Plate" done={step !== 'plate'} active={step === 'plate'} value={plateCode} />
+            <StepChip
+              label={identifyChipLabel(identity)}
+              done={step !== 'identify'}
+              active={step === 'identify'}
+              value={plateCode || productCode}
+            />
             <span className="text-stone-300">→</span>
           </>
         )}
@@ -301,18 +421,67 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         <StepChip label="Count" done={false} active={step === 'qty'} value={step === 'qty' ? qty : ''} />
       </div>
 
-      {step === 'plate' && (
+      {step === 'identify' && identity && (
         <ScanField
-          label={`Scan the plate — expecting ${row.huCode}`}
-          value={plateCode}
-          onChange={setPlateCode}
-          onScan={onPlateScan}
-          flash={step === 'plate' ? flash : null}
-          placeholder={row.huCode ?? ''}
-          cameraTitle="Scan the plate label"
+          label={identifyPrompt(identity, {
+            huCode: row.huCode,
+            productBarcode: row.product?.barcode ?? null,
+            productName: name,
+          })}
+          value={identifyText}
+          onChange={setIdentifyText}
+          onScan={onIdentifyScan}
+          flash={flash}
+          placeholder={identifyPlaceholder(identity, {
+            huCode: row.huCode,
+            productBarcode: row.product?.barcode ?? null,
+          })}
+          cameraTitle={identity.expect === 'product' ? 'Scan the product' : 'Scan the plate label'}
           autoFocus
+          helper={identifyHelper(identity)}
           error={error ?? undefined}
         />
+      )}
+
+      {/* Printing is offered LOUDLY when the plate is one that ought to carry a
+          sticker (a pallet, or goods with nothing else to identify them) and
+          QUIETLY otherwise — a barcode that arrived damaged is a real reason to
+          want a plate label on a carton that ordinarily would not need one.
+          Either way the sheet is a link the operator taps: window.open after an
+          await is popup-blocked, every time. */}
+      {(step === 'identify' || step === 'bin') && identity?.canPrintLabel && (
+        <div
+          className={`rounded-lg border p-3 space-y-2 ${
+            identity.needsLabel ? 'border-amber-200 bg-amber-50' : 'border-stone-200 bg-white'
+          }`}
+        >
+          <p className={`text-xs ${identity.needsLabel ? 'text-amber-800' : 'text-stone-500'}`}>
+            {identity.needsLabel
+              ? `No label has ever been printed for ${row.huCode}.`
+              : 'Barcode damaged or missing?'}
+          </p>
+          {labelUrl ? (
+            <a
+              href={labelUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] bg-nexgen-blue text-white text-sm font-medium rounded-lg btn-press"
+            >
+              <Printer className="w-4 h-4" aria-hidden="true" />
+              Open the label sheet
+            </a>
+          ) : (
+            <button
+              type="button"
+              onClick={renderLabel}
+              disabled={print.isPending}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] border border-stone-300 bg-white text-stone-700 text-sm font-medium rounded-lg btn-press disabled:opacity-50"
+            >
+              <Printer className="w-4 h-4" aria-hidden="true" />
+              {print.isPending ? 'Rendering…' : 'Print a plate label'}
+            </button>
+          )}
+        </div>
       )}
 
       {/* The prompt quotes the CODE, deliberately. generate-labels prints the

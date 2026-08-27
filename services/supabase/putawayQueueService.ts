@@ -32,6 +32,19 @@ export interface PendingPutawayRow {
   huId: number | null
   huType: HuType
   huCode: string | null
+  /** Has a sticker for this plate ever been rendered? `generate-labels` flips it
+   *  the moment the PDF exists (see confirm-label-print's header for why that is
+   *  right for a plate and wrong for a rack).
+   *
+   *  Load-bearing on the walk: a plate with no label is a database claim and
+   *  nothing more, so demanding the operator scan it is demanding the
+   *  impossible. `putawayIdentity` reads this to decide what to ask for. */
+  huLabelPrinted: boolean
+  /** 'open' | 'stored' | 'empty' | 'cancelled' (mig 00075). A task can outlive
+   *  its plate — a count or an adjustment at the warehouse root consumes the
+   *  balance rows with no plate named, `hu_recompute` marks the plate 'empty',
+   *  and nothing touches this task. The stop warns rather than hiding the work. */
+  huStatus: string | null
   /** Where the desk sent it, once assigned (mig 00080). NULL while the line is
    *  still `suggested`. Distinct from `recommendedLocationId` (what the engine
    *  said) — an operator can assign somewhere else entirely. */
@@ -43,7 +56,7 @@ export interface PendingPutawayRow {
 // by Admin/Manager/Warehouse (goods_receipts_select_ops, mig 00037) — exactly
 // the roles that can open the Putaway tab, so this join never trips RLS here.
 const QUEUE_SELECT =
-  '*, products(*, product_uoms(*)), goods_receipts(id, reference, received_date, suppliers(name)), handling_units(id, code, hu_type)'
+  '*, products(*, product_uoms(*)), goods_receipts(id, reference, received_date, suppliers(name)), handling_units(id, code, hu_type, label_printed, status)'
 
 function toReceiptRef(row: any): PutawayReceiptRef | null {
   if (!row) return null
@@ -68,6 +81,8 @@ function toQueueRow(row: any): PendingPutawayRow {
     huId: row.handling_units?.id ?? null,
     huType: row.handling_units?.hu_type ?? null,
     huCode: row.handling_units?.code ?? null,
+    huLabelPrinted: Boolean(row.handling_units?.label_printed),
+    huStatus: row.handling_units?.status ?? null,
     assignedLocationId: row.assigned_location_id ?? null,
     assignedAt: row.assigned_at ?? null,
   }

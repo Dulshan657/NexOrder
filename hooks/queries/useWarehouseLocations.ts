@@ -51,11 +51,29 @@ function invalidateLocationIdentity(qc: ReturnType<typeof useQueryClient>): void
   qc.invalidateQueries({ queryKey: ['pick-tasks'] })
 }
 
+/**
+ * Every location under one warehouse, retired rows included.
+ *
+ * 60s rather than the 5-minute global default, because one of the fields on
+ * these rows is a SAFETY message and not a label: `isActive` is what raises the
+ * "this bin has been retired from the layout" warning on a putaway stop
+ * (PutawayStopCard). Publishing a layout retires bins, and it happens at a desk
+ * while the handheld is out in the aisles — a different session, so none of the
+ * mutation invalidations below can reach it. At five minutes with
+ * refetchOnWindowFocus off (lib/queryClient.ts), a walker could be sent to a bay
+ * that left the map minutes ago and learn about it only when complete-putaway
+ * refuses the placement, having already carried the pallet there.
+ *
+ * Matches the 60s treatment the label-status key gets in this file, and for a
+ * related reason: a cached answer that under-reports is worse than a slightly
+ * chattier query.
+ */
 export function useWarehouseLocations(warehouseId: number | null) {
   return useQuery({
     queryKey: warehouseLocationKeys.byWarehouse(warehouseId ?? 0),
     queryFn: () => getWarehouseLocations(warehouseId as number),
     enabled: warehouseId != null,
+    staleTime: 60_000,
   })
 }
 
