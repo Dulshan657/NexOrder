@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Product, User, PutawayLineRecommendation } from '../../types';
 import { UserRole } from '../../types';
 import { useReceiveStock } from '../../hooks/queries/useReceiveStock';
+import { ReceiptPlateLabels } from './receive/ReceiptPlateLabels';
 import { useRecentReceipts } from '../../hooks/queries/useInventoryBalances';
 import { useSuppliers } from '../../hooks/queries/useSuppliers';
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles';
@@ -264,6 +265,11 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
 
   // Engine putaway recommendations for the most recent receipt (layout warehouses).
   const [putaway, setPutaway] = useState<{ warehouseId: number; recommendations: PutawayLineRecommendation[] } | null>(null);
+  // The receipt just recorded, so its plates can be labelled here — at the dock,
+  // which is the only place a plate label is cheap. Kept separate from `putaway`
+  // because a bulk (unlayouted) warehouse raises no recommendations and still
+  // mints plates that need stickers.
+  const [receiptId, setReceiptId] = useState<number | null>(null);
 
   const suppliers = useMemo<SupplierOption[]>(
     () => (supplierRows ?? []).map((s) => ({ id: s.id, name: s.name })),
@@ -557,6 +563,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       // importer and every other arrival path get them too). Render the panel
       // straight from the receipt's response — no extra round-trip.
       setPutaway(null);
+      setReceiptId(result.receipt_id ?? null);
       if (result.location_id && result.putaway?.mode === 'engine' && result.putaway.recommendations.length > 0) {
         setPutaway({ warehouseId: result.location_id, recommendations: result.putaway.recommendations });
       }
@@ -942,6 +949,12 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       )}
 
       {/* Putaway recommendations — appears after receiving into a layout warehouse */}
+      {/* Mounted only once a receipt exists — like the putaway panel below it.
+          Not merely a tidiness choice: the panel owns a query and a mutation, so
+          rendering it against a null receipt would run both for a page that has
+          nothing to show. */}
+      {receiptId != null && <ReceiptPlateLabels goodsReceiptId={receiptId} />}
+
       {putaway && (
         <div className="space-y-3">
           {onOpenPutaway && (

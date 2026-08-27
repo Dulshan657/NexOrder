@@ -96,12 +96,28 @@ export function checkPutawayScan(
   // line that has none is not evidence of anything, so it is ignored rather
   // than refused — refusing would block every legacy/loose line the moment an
   // operator scanned the pallet label out of habit.
+  //
+  // Worth stating plainly, because it is a silent accept rather than a visible
+  // one: `handling_unit_id` is ON DELETE SET NULL (mig 00078), so a task whose
+  // plate row is gone reaches here with `task.huCode` null and ANY scanned
+  // plate sails through unchecked. The UI skips the step entirely in that case,
+  // so nobody is misled today — but this is the branch to tighten first if
+  // plate evidence is ever made mandatory.
   if (scannedPlate && task.huCode) {
     if (scannedPlate !== normalizeScan(task.huCode)) {
+      // Name what was actually scanned. Calling every non-matching string "a
+      // plate" is how an operator scanning the barcode printed on the carton
+      // was told `That is plate 4796009868869` — a sentence with no true
+      // reading and no next action in it. `classifyPutawayScan` now routes a
+      // barcode to `productCode` instead, so the walk should not reach this
+      // branch at all; every other caller still deserves the truth.
       return {
         ok: false,
         code: 'WRONG_PLATE',
-        message: `That is plate ${scannedPlate}, but this task is for ${task.huCode}.`,
+        message: codeMatchesProduct(scannedPlate, task.product)
+          ? `That is the barcode for ${task.product.name}, not a plate label. ` +
+            `This task is for plate ${task.huCode}.`
+          : `That is plate ${scannedPlate}, but this task is for ${task.huCode}.`,
       }
     }
   }

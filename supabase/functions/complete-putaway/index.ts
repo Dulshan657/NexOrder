@@ -148,7 +148,8 @@ serve(async (req: Request) => {
     const [{ data: productRow }, { data: huRow }, { data: assignedRow }] = await Promise.all([
       admin.from('products').select('id, sku, name, barcode').eq('id', productId).maybeSingle(),
       (rec as any).handling_unit_id
-        ? admin.from('handling_units').select('code').eq('id', (rec as any).handling_unit_id).maybeSingle()
+        ? admin.from('handling_units').select('id, code, status')
+            .eq('id', (rec as any).handling_unit_id).maybeSingle()
         : Promise.resolve({ data: null }),
       admin.from('locations').select('code').eq('id', (rec as any).assigned_location_id).maybeSingle(),
     ])
@@ -180,6 +181,60 @@ serve(async (req: Request) => {
         verdict.code === 'INVALID_QTY' ? 'INVALID_INPUT' : 'CONFLICT',
         verdict.message,
       )
+    }
+
+    // ── Two checks the pure module cannot make ───────────────────────────────
+    // checkPutawayScan compares strings. It cannot know whether a scanned code
+    // names anything at all, and it cannot know whether the plate this task
+    // points at still holds the goods. Both are the same job record-pick already
+    // does (see its UNKNOWN_PLATE / PLATE_MISMATCH block); putaway had neither.
+
+    // 1. A scanned plate that names nothing. Until now this was refused only by
+    //    coincidence — because the string differed from the task's own code —
+    //    and on a task whose plate row is gone (handling_unit_id is ON DELETE
+    //    SET NULL) any invented code was accepted in silence.
+    const scannedPlate = normalizeScan(scan?.handlingUnitCode ?? '')
+    if (scannedPlate) {
+      const { data: scannedHu } = await admin.from('handling_units')
+        .select('id').ilike('code', scannedPlate).maybeSingle()
+      if (!scannedHu) {
+        throw new EdgeFunctionError('CONFLICT', `No pallet or carton with code ${scannedPlate}.`, {
+          reason: 'UNKNOWN_PLATE',
+        })
+      }
+    }
+
+    // 2. A task that has outlived its plate. A count, an adjustment or a
+    //    transfer at the warehouse ROOT consumes balance rows without naming a
+    //    plate — count-bin passes p_handling_unit_id => NULL deliberately, and
+    //    inv_adjust_stock then spreads the shrinkage over whatever plates hold
+    //    the slot. hu_recompute marks the emptied plate 'empty'; nothing tells
+    //    this task. It stayed 'assigned', kept appearing on the walk, and died
+    //    deep inside inv_transfer_stock as INSUFFICIENT_STOCK — which the
+    //    handler below reports as "reserved for an order", a sentence with no
+    //    true reading for this case.
+    //
+    //    Scoped to the warehouse root because that is where un-placed goods sit
+    //    by definition, and it is the source leg the transaction will use. A
+    //    plate holding stock only in some bay cannot satisfy a transfer FROM the
+    //    root, so a location-agnostic check would pass and still fail later.
+    const taskHuId = (huRow as any)?.id ?? null
+    if (taskHuId != null) {
+      const { count: atRoot } = await admin.from('inventory_balances')
+        .select('id', { count: 'exact', head: true })
+        .eq('handling_unit_id', taskHuId)
+        .eq('product_id', productId)
+        .eq('location_id', warehouseId)
+        .gt('on_hand', 0)
+      if (!atRoot) {
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          `${(huRow as any).code} no longer holds any ${(productRow as any).sku} at the dock — ` +
+            `a count, adjustment or transfer has already consumed it. Send this line back to the ` +
+            `Assign queue and re-run it.`,
+          { reason: 'PLATE_CONSUMED' },
+        )
+      }
     }
 
     // ── Rack-level role gate (mig 00072) ─────────────────────────────────────
@@ -228,8 +283,9 @@ serve(async (req: Request) => {
       if (txErr.message.includes('INSUFFICIENT_STOCK:')) {
         throw new EdgeFunctionError(
           'CONFLICT',
-          `Not enough free stock left at the dock for this task — some of it was reserved ` +
-            `for an order after the task was assigned. Re-check the line and place what is there.`,
+          `Not enough free stock left at the dock for this task — some of it has been ` +
+            `reserved for an order or removed since the task was assigned. Re-check the line ` +
+            `and place what is there.`,
         )
       }
       throw rpcError(txErr.message)

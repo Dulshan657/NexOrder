@@ -136,3 +136,59 @@ describe('checkPutawayScan — what counts as verified', () => {
     if (v.ok) expect(v.verified).toBe(true)
   })
 })
+
+describe('checkPutawayScan — naming what was actually scanned', () => {
+  it('says "barcode", not "plate", when the scan is this product BARCODE', () => {
+    // The reported failure, verbatim: an operator scanned the barcode printed
+    // on the carton at a prompt asking for the plate, and was told
+    // `That is plate 4796009868869` — which calls a barcode a plate and leaves
+    // nothing to act on. classifyPutawayScan now routes a barcode to
+    // productCode, so the walk should not reach this branch; every other caller
+    // still deserves the truth.
+    const v = checkPutawayScan(TASK, { handlingUnitCode: '9310072011691' }, 40)
+    expect(v.ok).toBe(false)
+    if (v.ok === false) {
+      expect(v.code).toBe('WRONG_PLATE')
+      expect(v.message).toContain('barcode for Coconut Milk')
+      expect(v.message).toContain('HU-000123')
+      expect(v.message).not.toContain('That is plate')
+    }
+  })
+
+  it('says "barcode" for the SKU too', () => {
+    const v = checkPutawayScan(TASK, { handlingUnitCode: 'AYM-COC-003' }, 40)
+    expect(v.ok).toBe(false)
+    if (v.ok === false) expect(v.message).toContain('not a plate label')
+  })
+
+  it('still names a genuinely wrong PLATE as a plate', () => {
+    const v = checkPutawayScan(TASK, { handlingUnitCode: 'HU-000999' }, 40)
+    expect(v.ok).toBe(false)
+    if (v.ok === false) {
+      expect(v.code).toBe('WRONG_PLATE')
+      expect(v.message).toContain('That is plate HU-000999')
+    }
+  })
+
+  it('counts a product scan as proof of the thing, alongside a bin scan', () => {
+    // This is what makes an identify-by-product placement land in the audit
+    // trail as scan_verified: true. The walk never sent productCode before, so
+    // every such placement understated the evidence actually collected.
+    const v = checkPutawayScan(
+      TASK,
+      { locationCode: 'MAIN-B-4-2-L2', productCode: '9310072011691' },
+      40,
+    )
+    expect(v.ok).toBe(true)
+    if (v.ok) {
+      expect(v.verified).toBe(true)
+      expect(v.placedElsewhere).toBe(false)
+    }
+  })
+
+  it('accepts product evidence on a plated line — a plate scan is not mandatory', () => {
+    const v = checkPutawayScan(TASK, { locationCode: 'MAIN-B-9-9-L1', productCode: 'AYM-COC-003' }, 40)
+    expect(v.ok).toBe(true)
+    if (v.ok) expect(v.placedElsewhere).toBe(true)
+  })
+})

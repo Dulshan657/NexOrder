@@ -81,24 +81,51 @@ export async function receiveStock(
 }
 
 /** Plates created by a receipt, so the operator can print their labels
- *  immediately — an unlabelled plate is just a database claim. */
+ *  immediately — an unlabelled plate is just a database claim.
+ *
+ *  Carries `labelPrinted` and the barcodes of whatever is ON each plate,
+ *  because the desk's question is not "which plates exist" but "which of them
+ *  need a sticker" — and that is `plateNeedsLabel`, the receiving half of the
+ *  rule the putaway walk applies at the rack. A plate's contents ARE its
+ *  balance rows (there is no hu_contents table), so the embed is the join. */
 export interface ReceiptPlateResult {
   id: number
   code: string
   huType: 'pallet' | 'carton'
+  labelPrinted: boolean
+  /** One entry per product on the plate; several only for a mixed pallet. */
+  products: Array<{ id: number; sku: string; name: string; barcode: string | null }>
 }
 
-/** The plates attached to a goods receipt, newest receipt first. */
 export async function getReceiptPlates(goodsReceiptId: number): Promise<ReceiptPlateResult[]> {
   const { data, error } = await supabase
     .from('handling_units')
-    .select('id, code, hu_type')
+    .select('id, code, hu_type, label_printed, inventory_balances(product_id, products(id, sku, name, barcode))')
     .eq('goods_receipt_id', goodsReceiptId)
     .order('id')
   if (error) throw error
-  return (data ?? []).map((r: Record<string, unknown>) => ({
-    id: r.id as number,
-    code: r.code as string,
-    huType: r.hu_type as 'pallet' | 'carton',
-  }))
+  return (data ?? []).map((r: Record<string, unknown>) => {
+    // De-duplicated by product id: one product can hold several balance rows on
+    // one plate (a lot-tracked line splits by batch), and the desk wants the
+    // products, not the slots.
+    const byId = new Map<number, { id: number; sku: string; name: string; barcode: string | null }>()
+    for (const bal of (r.inventory_balances as any[] | null) ?? []) {
+      const prod = bal?.products
+      if (prod?.id != null && !byId.has(prod.id)) {
+        byId.set(prod.id, {
+          id: prod.id,
+          sku: prod.sku ?? '',
+          name: prod.name ?? '',
+          barcode: prod.barcode ?? null,
+        })
+      }
+    }
+    return {
+      id: r.id as number,
+      code: r.code as string,
+      huType: r.hu_type as 'pallet' | 'carton',
+      labelPrinted: Boolean(r.label_printed),
+      products: [...byId.values()],
+    }
+  })
 }

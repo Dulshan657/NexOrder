@@ -20,6 +20,10 @@ import { PutawayScanFinder } from './putaway/PutawayScanFinder';
 import StickyScanBar from './StickyScanBar';
 import { buildDisplayLookup, displayFor, searchTextFor } from '@/lib/locationLookup';
 
+/** Stable identity for "no twins", so a card without any is not handed a fresh
+ *  array on every render of the walk. */
+const EMPTY_TWINS: ReadonlyArray<{ huCode: string; quantity: number }> = [];
+
 interface PutawayWalkViewProps {
   warehouseId: number;
   /** False for a Warehouse-role user looking at someone else's site. */
@@ -104,6 +108,31 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
       );
     });
   }, [ordered, search, binFor]);
+
+  /**
+   * Per task: the OTHER unlabelled plates of the same product that are also in
+   * this walk.
+   *
+   * A product barcode identifies a SKU. When two unlabelled plates of that SKU
+   * are queued at once — which is the ordinary result of two receipts of the
+   * same line — barcode evidence cannot say which of them is in the operator's
+   * hands, and closing one task rather than the other is a coin toss the system
+   * would record as certainty. The stop says so instead.
+   *
+   * Computed here because only the walk holds every stop; the card sees one.
+   * Cheap: the walk is tens of rows, not thousands.
+   */
+  const twinsById = useMemo(() => {
+    const m = new Map<number, Array<{ huCode: string; quantity: number }>>();
+    const unlabelled = tasks.filter((t) => t.huCode && !t.huLabelPrinted);
+    for (const row of unlabelled) {
+      const twins = unlabelled
+        .filter((t) => t.id !== row.id && t.productId === row.productId)
+        .map((t) => ({ huCode: t.huCode as string, quantity: t.quantity }));
+      if (twins.length > 0) m.set(row.id, twins);
+    }
+    return m;
+  }, [tasks]);
 
   const totalDistance = routeQuery.data?.mode === 'engine' ? routeQuery.data.totalDistanceM : null;
 
@@ -193,6 +222,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
               active={activeId === row.id}
               disabled={!canPlace}
               warehouseId={warehouseId}
+              unlabelledTwins={twinsById.get(row.id) ?? EMPTY_TWINS}
               onActivate={() => setActiveId(row.id)}
               onDone={() => setActiveId(null)}
             />
