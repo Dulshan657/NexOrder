@@ -37,6 +37,7 @@ import {
   ExternalLink,
   Truck,
 } from 'lucide-react';
+import { SortableHeader } from './ui/SortableHeader';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -163,25 +164,18 @@ interface SortHeaderProps {
 }
 
 function SortHeader({ column, label, align = 'left', sortColumn, sortDirection, onSort }: SortHeaderProps) {
-  const isActive = sortColumn === column;
+  // Delegates to the shared primitive: a real <button> for the click and focus,
+  // `aria-sort` on the <th> for the state.
   return (
-    <th
-      className={`px-4 py-3 font-semibold text-stone-600 cursor-pointer select-none hover:text-stone-900 transition-colors text-sm ${align === 'right' ? 'text-right' : ''}`}
-      onClick={() => onSort(column)}
-    >
-      <span className={`inline-flex items-center gap-1 ${align === 'right' ? 'justify-end w-full' : ''}`}>
-        {label}
-        {isActive ? (
-          sortDirection === 'asc' ? (
-            <ChevronUp className="w-3.5 h-3.5 flex-shrink-0" />
-          ) : (
-            <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" />
-          )
-        ) : (
-          <ArrowUpDown className="w-3.5 h-3.5 flex-shrink-0 opacity-30" />
-        )}
-      </span>
-    </th>
+    <SortableHeader
+      column={column}
+      label={label}
+      align={align}
+      activeColumn={sortColumn}
+      direction={sortDirection}
+      onSort={(c) => onSort(c as SortColumn)}
+      className={`px-4 py-3 font-semibold text-stone-600 text-sm ${align === 'right' ? 'text-right' : ''}`}
+    />
   );
 }
 

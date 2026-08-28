@@ -9,6 +9,7 @@ import PaymentStatusBadge, {
 } from './PaymentStatusBadge';
 import { RefreshCw, Eye, ChevronUp, ChevronDown, Copy, Check, Download } from 'lucide-react';
 import { ORDER_STATUS_SEQUENCE } from '../constants';
+import { SortableHeader } from './ui/SortableHeader'
 
 type SortColumn = 'date' | 'total' | 'status' | 'horeca' | 'payment';
 type PaymentFilterValue = 'all' | PaymentDisplayState;
@@ -251,20 +252,19 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
 
   const inputClasses = "block w-full rounded-lg border-0 bg-stone-50 py-2.5 px-3 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300";
 
+  // Delegates to the shared primitive, which puts the click on a real <button>
+  // and the sort state in `aria-sort`. Kept as a local wrapper so the call sites
+  // below stay as they were.
   const SortHeader: React.FC<{ column: SortColumn; label: string; align?: 'left' | 'right' }> = ({ column, label, align = 'left' }) => (
-    <th
-      className={`px-4 py-3 font-semibold text-stone-600 cursor-pointer select-none hover:text-stone-900 transition-colors ${align === 'right' ? 'text-right' : ''}`}
-      onClick={() => handleSort(column)}
-    >
-      <span className={`inline-flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
-        {label}
-        {sortColumn === column ? (
-          sortDirection === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
-        ) : (
-          <ChevronDown className="w-3.5 h-3.5 opacity-0" />
-        )}
-      </span>
-    </th>
+    <SortableHeader
+      column={column}
+      label={label}
+      align={align as 'left' | 'right'}
+      activeColumn={sortColumn}
+      direction={sortDirection}
+      onSort={(c) => handleSort(c as SortColumn)}
+      className={`px-4 py-3 font-semibold text-stone-600 ${align === 'right' ? 'text-right' : ''}`}
+    />
   );
 
   return (

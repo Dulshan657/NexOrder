@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Ban, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ChevronDown, ChevronRight, Ban } from 'lucide-react';
 import type { Invoice, HoReCa, User } from '../types';
 import { UserRole } from '../types';
 import { getAllOutstanding, getHoReCaOutstanding } from '../services/accountingService';
 import type { HoReCaOutstanding } from '../services/accountingService';
+import { SortableHeader } from './ui/SortableHeader';
 
 interface AccountsAgingTableProps {
     invoices: Invoice[];
@@ -117,12 +118,6 @@ const AccountsAgingTable: React.FC<AccountsAgingTableProps> = ({ invoices, hoReC
         }
     };
 
-    const SortIcon: React.FC<{ col: SortKey }> = ({ col }) => {
-        if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 opacity-40" />;
-        return sortDir === 'asc'
-            ? <ArrowUp className="w-3 h-3" />
-            : <ArrowDown className="w-3 h-3" />;
-    };
 
     return (
         <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
@@ -150,41 +145,51 @@ const AccountsAgingTable: React.FC<AccountsAgingTableProps> = ({ invoices, hoReC
                     <table className="min-w-full divide-y divide-stone-200">
                         <thead className="bg-stone-50">
                             <tr>
-                                <th
-                                    scope="col"
-                                    className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider cursor-pointer select-none hover:text-stone-700 transition-colors"
-                                    onClick={() => handleSort('customer')}
-                                >
-                                    <div className="flex items-center gap-1.5">HoReCa <SortIcon col="customer" /></div>
-                                </th>
-                                <th
-                                    scope="col"
-                                    className="px-6 py-3.5 text-right text-xs font-medium text-stone-500 uppercase tracking-wider cursor-pointer select-none hover:text-stone-700 transition-colors"
-                                    onClick={() => handleSort('30')}
-                                >
-                                    <div className="flex items-center justify-end gap-1.5">30 Days <SortIcon col="30" /></div>
-                                </th>
-                                <th
-                                    scope="col"
-                                    className="px-6 py-3.5 text-right text-xs font-medium text-stone-500 uppercase tracking-wider cursor-pointer select-none hover:text-stone-700 transition-colors"
-                                    onClick={() => handleSort('60')}
-                                >
-                                    <div className="flex items-center justify-end gap-1.5">60 Days <SortIcon col="60" /></div>
-                                </th>
-                                <th
-                                    scope="col"
-                                    className="px-6 py-3.5 text-right text-xs font-medium text-stone-500 uppercase tracking-wider cursor-pointer select-none hover:text-stone-700 transition-colors"
-                                    onClick={() => handleSort('90plus')}
-                                >
-                                    <div className="flex items-center justify-end gap-1.5">90+ Days <SortIcon col="90plus" /></div>
-                                </th>
-                                <th
-                                    scope="col"
-                                    className="px-6 py-3.5 text-right text-xs font-medium text-stone-500 uppercase tracking-wider cursor-pointer select-none hover:text-stone-700 transition-colors"
-                                    onClick={() => handleSort('total')}
-                                >
-                                    <div className="flex items-center justify-end gap-1.5">Total <SortIcon col="total" /></div>
-                                </th>
+                                <SortableHeader
+                                    column="customer"
+                                    label="HoReCa"
+                                    align="left"
+                                    activeColumn={sortKey}
+                                    direction={sortDir}
+                                    onSort={(c) => handleSort(c as SortKey)}
+                                    className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider"
+                                />
+                                <SortableHeader
+                                    column="30"
+                                    label="30 Days"
+                                    align="right"
+                                    activeColumn={sortKey}
+                                    direction={sortDir}
+                                    onSort={(c) => handleSort(c as SortKey)}
+                                    className="px-6 py-3.5 text-right text-xs font-medium text-stone-500 uppercase tracking-wider"
+                                />
+                                <SortableHeader
+                                    column="60"
+                                    label="60 Days"
+                                    align="right"
+                                    activeColumn={sortKey}
+                                    direction={sortDir}
+                                    onSort={(c) => handleSort(c as SortKey)}
+                                    className="px-6 py-3.5 text-right text-xs font-medium text-stone-500 uppercase tracking-wider"
+                                />
+                                <SortableHeader
+                                    column="90plus"
+                                    label="90+ Days"
+                                    align="right"
+                                    activeColumn={sortKey}
+                                    direction={sortDir}
+                                    onSort={(c) => handleSort(c as SortKey)}
+                                    className="px-6 py-3.5 text-right text-xs font-medium text-stone-500 uppercase tracking-wider"
+                                />
+                                <SortableHeader
+                                    column="total"
+                                    label="Total"
+                                    align="right"
+                                    activeColumn={sortKey}
+                                    direction={sortDir}
+                                    onSort={(c) => handleSort(c as SortKey)}
+                                    className="px-6 py-3.5 text-right text-xs font-medium text-stone-500 uppercase tracking-wider"
+                                />
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-stone-200">
@@ -192,15 +197,22 @@ const AccountsAgingTable: React.FC<AccountsAgingTableProps> = ({ invoices, hoReC
                                 const isExpanded = expandedRows.has(row.hoReCaId);
                                 return (
                                     <React.Fragment key={row.hoReCaId}>
-                                        <tr
-                                            className="hover:bg-stone-50 transition-colors cursor-pointer"
-                                            onClick={() => toggleExpand(row.hoReCaId)}
-                                        >
+                                        <tr className="hover:bg-stone-50 transition-colors">
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-stone-900">
-                                                <div className="flex items-center gap-2">
+                                                {/* The disclosure is a BUTTON, not a click handler on the <tr>.
+                                                    A row is not focusable and has no interactive role, so this
+                                                    was unreachable without a mouse, and the chevron carried the
+                                                    open/closed state to sighted users only. `aria-expanded` is
+                                                    what says it to everyone else. */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleExpand(row.hoReCaId)}
+                                                    aria-expanded={isExpanded}
+                                                    className="flex items-center gap-2 touch-target-y text-left rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue-dark"
+                                                >
                                                     {isExpanded
-                                                        ? <ChevronDown className="w-4 h-4 text-stone-500 flex-shrink-0" />
-                                                        : <ChevronRight className="w-4 h-4 text-stone-500 flex-shrink-0" />
+                                                        ? <ChevronDown className="w-4 h-4 text-stone-500 flex-shrink-0" aria-hidden="true" />
+                                                        : <ChevronRight className="w-4 h-4 text-stone-500 flex-shrink-0" aria-hidden="true" />
                                                     }
                                                     <span>{row.hoReCaName}</span>
                                                     {row.isBlocked && (
@@ -209,7 +221,7 @@ const AccountsAgingTable: React.FC<AccountsAgingTableProps> = ({ invoices, hoReC
                                                             BLOCKED
                                                         </span>
                                                     )}
-                                                </div>
+                                                </button>
                                             </td>
                                             <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${row.thirtyDays > 0 ? 'text-stone-900 font-medium' : 'text-stone-500'}`}>
                                                 {fmt(row.thirtyDays)}

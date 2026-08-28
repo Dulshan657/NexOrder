@@ -155,7 +155,12 @@ const POInboxView: React.FC<POInboxViewProps> = ({
         </nav>
       </header>
 
-      <main className="mt-6">
+      {/* A <section>, not a <main>. AppShell already renders the document's one
+          <main> and this view is inside it -- nesting a second is invalid HTML,
+          and a screen reader listing landmarks then offers two "main" regions
+          with no way to tell which is the real one. The label is what makes it
+          worth being a landmark at all. */}
+      <section aria-label="Purchase order inbox" className="mt-6">
         <Suspense fallback={<LoadingSkeleton />}>
           {subtab === 'queue' && (
             <POInboxTab
@@ -182,7 +187,7 @@ const POInboxView: React.FC<POInboxViewProps> = ({
             />
           )}
         </Suspense>
-      </main>
+      </section>
     </div>
   )
 }

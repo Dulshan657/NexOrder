@@ -8,6 +8,7 @@ import ToastContainer from '../../components/ToastContainer'
 import { ToastProvider, useToasts } from '../../hooks/useToasts'
 import { __resetModalStack } from '../../components/ui/useModalStack'
 import { __resetScrollLock } from '../../components/ui/useScrollLock'
+import { __resetInertBackground } from '../../components/ui/useInertBackground'
 import { Field, Input } from '../../components/ui/Field'
 import { expectNoA11yViolations } from '../support/axe'
 
@@ -19,6 +20,11 @@ import { expectNoA11yViolations } from '../support/axe'
 beforeEach(() => {
   __resetModalStack()
   __resetScrollLock()
+  __resetInertBackground()
+  // Overlay marks #root inert, so the tests need one to mark.
+  const root = document.createElement('div')
+  root.id = 'root'
+  document.body.appendChild(root)
   const main = document.createElement('div')
   main.setAttribute('data-scroll-container', '')
   document.body.appendChild(main)
@@ -120,3 +126,64 @@ describe('ToastContainer', () => {
     await expectNoA11yViolations(overlayRoot())
   })
 })
+
+describe('background inertness', () => {
+  it('marks the app root inert while an overlay is open, and releases it after', () => {
+    const root = () => document.getElementById('root')!
+
+    const view = render(
+      <Modal open onClose={vi.fn()} title="Add Warehouse">
+        <p>body</p>
+      </Modal>,
+    )
+    // The focus trap stops a KEYBOARD leaving; it does nothing about a screen
+    // reader's virtual cursor, which reads the document rather than following
+    // focus. `inert` is what removes the page behind from the a11y tree.
+    expect(root().hasAttribute('inert')).toBe(true)
+
+    view.unmount()
+    expect(root().hasAttribute('inert')).toBe(false)
+  })
+
+  it('does not inert the dialog itself', () => {
+    render(
+      <Modal open onClose={vi.fn()} title="Add Warehouse">
+        <p>body</p>
+      </Modal>,
+    )
+    // Load-bearing structural fact: Overlay portals to document.body, so the
+    // dialog is a SIBLING of #root rather than inside it. If an overlay ever
+    // rendered inline this assertion fails, and it should -- the alternative is
+    // silently disabling the dialog the attribute was meant to protect.
+    const dialog = screen.getByRole('dialog')
+    expect(root_contains(dialog)).toBe(false)
+    expect(dialog.closest('[inert]')).toBeNull()
+  })
+
+  it('stays inert until the LAST overlay closes', () => {
+    const root = () => document.getElementById('root')!
+
+    const outer = render(
+      <Modal open onClose={vi.fn()} title="Outer">
+        <p>outer</p>
+      </Modal>,
+    )
+    const inner = render(
+      <ConfirmDialog open onCancel={vi.fn()} onConfirm={vi.fn()} title="Discard?" message="Sure?" />,
+    )
+    expect(root().hasAttribute('inert')).toBe(true)
+
+    // A nested confirm closing must not un-hide the page behind the modal that
+    // is still open -- which is why this is ref-counted rather than a boolean.
+    inner.unmount()
+    expect(root().hasAttribute('inert')).toBe(true)
+
+    outer.unmount()
+    expect(root().hasAttribute('inert')).toBe(false)
+  })
+})
+
+function root_contains(node: Node): boolean {
+  const root = document.getElementById('root')
+  return Boolean(root && root.contains(node))
+}

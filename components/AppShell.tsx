@@ -97,6 +97,7 @@ import ProfileMenu from './auth/ProfileMenu';
 import { LoadingSkeleton } from './Skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { SkipLink } from './ui/SkipLink'
 
 // Lazy-loaded heavy chunks. The rep + customer hot paths (Shop, OrderHistory)
 // don't render any of these on initial load, so keeping them out of the main
@@ -598,6 +599,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const adminShopNavButton = (
         <button
             onClick={() => { setAdminView('Shop'); setIsSidebarOpen(false); }}
+            aria-current={adminView === 'Shop' ? 'page' : undefined}
             className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Shop' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
         >
             <ShoppingBag className="w-5 h-5 mr-3" /> Shop
@@ -606,6 +608,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const adminNewOrderNavButton = (
         <button
             onClick={() => { setAdminView('New Order'); setIsSidebarOpen(false); }}
+            aria-current={adminView === 'New Order' ? 'page' : undefined}
             className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'New Order' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
         >
             <FilePlus className="w-5 h-5 mr-3" /> New Order
@@ -614,6 +617,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const adminOrderImportNavButton = (
         <button
             onClick={() => { setAdminView('Order Import'); setIsSidebarOpen(false); }}
+            aria-current={adminView === 'Order Import' ? 'page' : undefined}
             className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Order Import' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
         >
             <ShoppingCart className="w-5 h-5 mr-3" /> Order Import
@@ -622,6 +626,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const adminPoInboxNavButton = (
         <button
             onClick={() => { setAdminView('PO Inbox'); setIsSidebarOpen(false); }}
+            aria-current={adminView === 'PO Inbox' ? 'page' : undefined}
             className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'PO Inbox' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
         >
             <Inbox className="w-5 h-5 mr-3" /> PO Inbox
@@ -699,6 +704,12 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     // use `svh` for the same reason.
     return (
         <div className="flex h-svh bg-white font-sans overflow-hidden">
+            {/* FIRST focusable element in the shell, and it has to be first to be
+                worth anything: without it a keyboard user tabs through up to 44
+                sidebar buttons before reaching the screen they came for, on every
+                view change (WCAG 2.2 SC 2.4.1). Visible only while focused. */}
+            <SkipLink targetId="main-content" />
+
             {/* Sidebar Overlay for Mobile */}
             {isSidebarOpen && (
                 <div
@@ -740,6 +751,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             {isRep && (
                                 <button
                                     onClick={() => { setView('dashboard'); setIsSidebarOpen(false); }}
+                                    aria-current={view === 'dashboard' ? 'page' : undefined}
                                     className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'dashboard' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                 >
                                     <LayoutDashboard className="w-5 h-5 mr-3" /> Dashboard
@@ -755,6 +767,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                             if (view !== 'ordering') { resetOrder(); setView('ordering'); }
                                             setIsSidebarOpen(false);
                                         }}
+                                        aria-current={view === 'ordering' ? 'page' : undefined}
                                         className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'ordering' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <ShoppingCart className="w-5 h-5 mr-3" /> Shop
@@ -763,6 +776,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     {MODULE_SALES_ORDERS && (
                                     <button
                                         onClick={() => { setView('orders'); setIsSidebarOpen(false); }}
+                                        aria-current={view === 'orders' ? 'page' : undefined}
                                         className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'orders' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <History className="w-5 h-5 mr-3" /> {ordersViewLabel}
@@ -771,6 +785,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     {MODULE_INVOICING && (
                                     <button
                                         onClick={() => { setView('accounts'); setIsSidebarOpen(false); }}
+                                        aria-current={view === 'accounts' ? 'page' : undefined}
                                         className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <Wallet className="w-5 h-5 mr-3" /> Accounts
@@ -784,6 +799,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Field</p>
                                     <button
                                         onClick={() => { setView('hoReCas'); setIsSidebarOpen(false); }}
+                                        aria-current={view === 'hoReCas' ? 'page' : undefined}
                                         className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'hoReCas' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <UsersIcon className="w-5 h-5 mr-3" /> HoReCa
@@ -791,6 +807,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     {isFieldRep && MODULE_FIELD_OPS && (
                                         <button
                                             onClick={() => { setView('scheduled_visits'); setIsSidebarOpen(false); }}
+                                            aria-current={view === 'scheduled_visits' ? 'page' : undefined}
                                             className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'scheduled_visits' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                         >
                                             <MapPin className="w-5 h-5 mr-3" /> Scheduled Visits
@@ -809,6 +826,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
                                     <button
                                         onClick={() => { setView('stock'); setIsSidebarOpen(false); }}
+                                        aria-current={view === 'stock' ? 'page' : undefined}
                                         className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'stock' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <Package className="w-5 h-5 mr-3" /> Stock
@@ -830,6 +848,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             )}
                             <button
                                 onClick={() => { setAdminView('Dashboard'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Dashboard' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Dashboard' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <LayoutDashboard className="w-5 h-5 mr-3" /> Dashboard
@@ -852,6 +871,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     {MODULE_INVOICING && (
                                     <button
                                         onClick={() => { setAdminView('Accounts'); setIsSidebarOpen(false); }}
+                                        aria-current={adminView === 'Accounts' ? 'page' : undefined}
                                         className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <Wallet className="w-5 h-5 mr-3" /> Accounts
@@ -860,6 +880,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     {MODULE_PROMOTIONS && (
                                     <button
                                         onClick={() => { setAdminView('Promotions'); setIsSidebarOpen(false); }}
+                                        aria-current={adminView === 'Promotions' ? 'page' : undefined}
                                         className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Promotions' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <Tag className="w-5 h-5 mr-3" /> Promotions
@@ -875,6 +896,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Field Ops</p>
                             <button
                                 onClick={() => { setAdminView('HoReCa'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'HoReCa' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'HoReCa' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <UsersIcon className="w-5 h-5 mr-3" /> HoReCa
@@ -883,18 +905,21 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 <>
                                     <button
                                         onClick={() => { setAdminView('HoReCa Insights'); setIsSidebarOpen(false); }}
+                                        aria-current={adminView === 'HoReCa Insights' ? 'page' : undefined}
                                         className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'HoReCa Insights' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <BarChart3 className="w-5 h-5 mr-3" /> HoReCa Insights
                                     </button>
                                     <button
                                         onClick={() => { setAdminView('Scheduled Visits'); setIsSidebarOpen(false); }}
+                                        aria-current={adminView === 'Scheduled Visits' ? 'page' : undefined}
                                         className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Scheduled Visits' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <MapPin className="w-5 h-5 mr-3" /> Scheduled Visits
                                     </button>
                                     <button
                                         onClick={() => { setAdminView('Walk-in Review'); setIsSidebarOpen(false); }}
+                                        aria-current={adminView === 'Walk-in Review' ? 'page' : undefined}
                                         className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Walk-in Review' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <UserPlus className="w-5 h-5 mr-3" />
@@ -914,6 +939,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
                             <button
                                 onClick={() => { setAdminView('Products'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Products' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Products' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <Package className="w-5 h-5 mr-3" /> Products
@@ -921,18 +947,21 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             {MODULE_INVENTORY_DISPATCH && (<>
                             <button
                                 onClick={() => { setAdminView('Stock'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Stock' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Stock' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <Warehouse className="w-5 h-5 mr-3" /> Stock
                             </button>
                             <button
                                 onClick={() => { setAdminView('Receiving'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Receiving' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Receiving' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <PackagePlus className="w-5 h-5 mr-3" /> Receive Stock
                             </button>
                             <button
                                 onClick={() => { setAdminView('Putaway'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Putaway' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Putaway' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <PackageOpen className="w-5 h-5 mr-3" />
@@ -945,6 +974,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             </button>
                             <button
                                 onClick={() => { setAdminView('Replenishment'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Replenishment' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Replenishment' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <ArrowDownToLine className="w-5 h-5 mr-3" />
@@ -961,6 +991,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 trains people to ignore badges. */}
                             <button
                                 onClick={() => { setAdminView('Off-home'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Off-home' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Off-home' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <Boxes className="w-5 h-5 mr-3" />
@@ -968,30 +999,35 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             </button>
                             <button
                                 onClick={() => { setAdminView('Stocktake'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Stocktake' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Stocktake' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <ClipboardList className="w-5 h-5 mr-3" /> Stocktake
                             </button>
                             <button
                                 onClick={() => { setAdminView('Pick Queue'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Pick Queue' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Pick Queue' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <ClipboardCheck className="w-5 h-5 mr-3" /> Pick Queue
                             </button>
                             <button
                                 onClick={() => { setAdminView('Dispatched'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Dispatched' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Dispatched' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <Send className="w-5 h-5 mr-3" /> Dispatched
                             </button>
                             <button
                                 onClick={() => { setAdminView('Documents'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Documents' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Documents' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <FileText className="w-5 h-5 mr-3" /> Documents
                             </button>
                             <button
                                 onClick={() => { setAdminView('Warehouse'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Warehouse' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Warehouse' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <LayoutGrid className="w-5 h-5 mr-3" /> Warehouse
@@ -1001,12 +1037,14 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">System</p>
                             <button
                                 onClick={() => { setAdminView('Users'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Users' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Users' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <UsersIcon className="w-5 h-5 mr-3" /> Users
                             </button>
                             <button
                                 onClick={() => { setAdminView('Suppliers'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Suppliers' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Suppliers' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <Truck className="w-5 h-5 mr-3" /> Suppliers
@@ -1014,6 +1052,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             {isAdmin && (
                                 <button
                                     onClick={() => { setAdminView('Settings'); setIsSidebarOpen(false); }}
+                                    aria-current={adminView === 'Settings' ? 'page' : undefined}
                                     className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Settings' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                 >
                                     <Settings className="w-5 h-5 mr-3" /> Settings
@@ -1022,6 +1061,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             {isAdmin && (
                                 <button
                                     onClick={() => { setAdminView('Audit Log'); setIsSidebarOpen(false); }}
+                                    aria-current={adminView === 'Audit Log' ? 'page' : undefined}
                                     className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Audit Log' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                 >
                                     <ScrollText className="w-5 h-5 mr-3" /> Audit Log
@@ -1030,6 +1070,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             {isAdmin && (
                                 <button
                                     onClick={() => { setAdminView('System Health'); setIsSidebarOpen(false); }}
+                                    aria-current={adminView === 'System Health' ? 'page' : undefined}
                                     className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'System Health' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                 >
                                     <Activity className="w-5 h-5 mr-3" /> System Health
@@ -1046,24 +1087,28 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
                             <button
                                 onClick={() => { setAdminView('Pick Queue'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Pick Queue' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Pick Queue' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <ClipboardCheck className="w-5 h-5 mr-3" /> Pick Queue
                             </button>
                             <button
                                 onClick={() => { setAdminView('Dispatched'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Dispatched' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Dispatched' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <Send className="w-5 h-5 mr-3" /> Dispatched
                             </button>
                             <button
                                 onClick={() => { setAdminView('Receiving'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Receiving' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Receiving' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <PackagePlus className="w-5 h-5 mr-3" /> Receive Stock
                             </button>
                             <button
                                 onClick={() => { setAdminView('Putaway'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Putaway' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Putaway' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <PackageOpen className="w-5 h-5 mr-3" />
@@ -1076,6 +1121,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             </button>
                             <button
                                 onClick={() => { setAdminView('Replenishment'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Replenishment' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Replenishment' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <ArrowDownToLine className="w-5 h-5 mr-3" />
@@ -1092,6 +1138,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 trains people to ignore badges. */}
                             <button
                                 onClick={() => { setAdminView('Off-home'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Off-home' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Off-home' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <Boxes className="w-5 h-5 mr-3" />
@@ -1099,24 +1146,28 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             </button>
                             <button
                                 onClick={() => { setAdminView('Stocktake'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Stocktake' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Stocktake' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <ClipboardList className="w-5 h-5 mr-3" /> Stocktake
                             </button>
                             <button
                                 onClick={() => { setAdminView('Stock'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Stock' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Stock' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <Warehouse className="w-5 h-5 mr-3" /> Stock
                             </button>
                             <button
                                 onClick={() => { setAdminView('Documents'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Documents' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Documents' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <FileText className="w-5 h-5 mr-3" /> Documents
                             </button>
                             <button
                                 onClick={() => { setAdminView('Warehouse'); setIsSidebarOpen(false); }}
+                                aria-current={adminView === 'Warehouse' ? 'page' : undefined}
                                 className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Warehouse' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
                                 <LayoutGrid className="w-5 h-5 mr-3" /> Warehouse
@@ -1142,7 +1193,16 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                     overflow-hidden` and this column is `min-h-0 overflow-hidden`,
                     so `document.body` never scrolls. `useScrollLock`
                     (components/ui) freezes this element when a modal opens. */}
-                <main data-scroll-container className="flex-1 overflow-y-auto">
+                <main
+                    id="main-content"
+                    // -1 so it can RECEIVE focus from the skip link without joining
+                    // the tab order itself. Without it the browser moves the visual
+                    // viewport but leaves focus where it was, so the next Tab goes
+                    // back into the sidebar and the link achieves nothing.
+                    tabIndex={-1}
+                    data-scroll-container
+                    className="flex-1 overflow-y-auto focus:outline-none"
+                >
                     <div>
                         {MODULE_SHOP && isAdminOrManager && adminView === 'Shop' && (
                             <ShopView
