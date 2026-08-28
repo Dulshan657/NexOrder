@@ -16,6 +16,13 @@ import { guardReducer, type GuardState } from './dirtyGuard'
 
 export interface DialogChromeProps {
   titleId: string
+  /**
+   * Id for the description paragraph, so the dialog can `aria-describedby` it.
+   * The description was rendered with no id and referenced by nothing, so a
+   * screen reader announced the dialog's title and then went quiet -- the one
+   * line explaining what the dialog is for was visible and unannounced.
+   */
+  descriptionId?: string
   title?: ReactNode
   icon?: ReactNode
   description?: ReactNode
@@ -28,6 +35,7 @@ export interface DialogChromeProps {
 
 export function DialogChrome({
   titleId,
+  descriptionId,
   title,
   icon,
   description,
@@ -46,7 +54,11 @@ export function DialogChrome({
               <h2 id={titleId} className="text-base font-display font-bold text-stone-900 truncate">
                 {title}
               </h2>
-              {description && <p className="text-xs text-stone-500 truncate">{description}</p>}
+              {description && (
+                <p id={descriptionId} className="text-xs text-stone-500 truncate">
+                  {description}
+                </p>
+              )}
             </div>
           </div>
           <button

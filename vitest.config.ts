@@ -24,6 +24,10 @@ const MODULE_DEFINES = Object.fromEntries(
   ALL_MODULES.map((slug: string) => [`__MODULE_${slug.toUpperCase()}__`, 'true']),
 );
 
+// Paired with the globalThis assignment in the setup file, for the same reason
+// and with the same value. See __tests__/support/moduleGlobals.ts.
+const BUILD_DEFINES = { ...MODULE_DEFINES, __DEMO_HOST__: 'true' };
+
 const MODULE_SETUP = [path.resolve(__dirname, '__tests__/support/moduleGlobals.ts')];
 
 /**
@@ -48,7 +52,7 @@ const OFFLINE_SUPABASE_ENV = {
 
 export default defineConfig({
     resolve: { alias },
-    define: MODULE_DEFINES,
+    define: BUILD_DEFINES,
     test: {
         coverage: {
             provider: 'v8',
@@ -66,7 +70,7 @@ export default defineConfig({
         projects: [
             {
                 resolve: { alias },
-                define: MODULE_DEFINES,
+                define: BUILD_DEFINES,
                 test: {
                     name: 'node',
                     environment: 'node',
@@ -80,7 +84,7 @@ export default defineConfig({
             },
             {
                 resolve: { alias },
-                define: MODULE_DEFINES,
+                define: BUILD_DEFINES,
                 plugins: [react()],
                 test: {
                     name: 'ui',

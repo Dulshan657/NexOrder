@@ -21,3 +21,16 @@ import { ALL_MODULES } from '../../config/environments.mjs'
 for (const slug of ALL_MODULES as string[]) {
   ;(globalThis as Record<string, unknown>)[`__MODULE_${slug.toUpperCase()}__`] = true
 }
+
+// `__DEMO_HOST__` is the same kind of build constant and needs the same shim:
+// vite.config.ts folds it from `kind` in the target registry, and
+// components/auth/LoginPage.tsx reads it at module scope, so anything importing
+// that file dies on "__DEMO_HOST__ is not defined" without this line.
+//
+// TRUE here, and that is a considered choice rather than a convenience. It is
+// the branch with more in it -- the demo roster renders, so the accessibility
+// suites scan the login page in its fullest form, and a labelling defect in the
+// roster cannot hide behind a flag being off. That a tenant build omits the
+// roster entirely is not a unit-testable claim in any case: it is a fold, and
+// only the built artifact can answer it. scripts/check-demo-surface.mjs does.
+;(globalThis as Record<string, unknown>).__DEMO_HOST__ = true

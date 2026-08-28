@@ -56,6 +56,7 @@ export function Sheet({
   children,
 }: SheetProps) {
   const titleId = useId()
+  const descriptionId = useId()
   const guard = useDismissGuard(dirty, onClose)
   const guarded = !guard.discardOpen
 
@@ -70,6 +71,7 @@ export function Sheet({
   const chrome = (
     <DialogChrome
       titleId={titleId}
+      descriptionId={descriptionId}
       title={title}
       icon={icon}
       description={description}
@@ -97,6 +99,7 @@ export function Sheet({
             role="dialog"
             aria-modal="true"
             aria-labelledby={title ? titleId : undefined}
+            aria-describedby={description ? descriptionId : undefined}
             className={panelClassName}
           >
             {chrome}
@@ -106,6 +109,7 @@ export function Sheet({
             role="dialog"
             aria-modal="true"
             aria-labelledby={title ? titleId : undefined}
+            aria-describedby={description ? descriptionId : undefined}
             className={panelClassName}
           >
             {chrome}

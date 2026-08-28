@@ -34,6 +34,7 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const titleId = useId()
+  const messageId = useId()
 
   return (
     <Overlay
@@ -49,6 +50,10 @@ export function ConfirmDialog({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        // An alertdialog announces its description on open. Without this the
+        // user is asked to confirm something they were never told: the message
+        // is on screen, and unannounced.
+        aria-describedby={message ? messageId : undefined}
         // THE ONLY OVERLAY IN THE APP THAT HAD NO HEIGHT CAP AND NO SCROLLER.
         // `Overlay` is explicitly never a scroll container and this body is
         // centred, so a long `message` grew the panel past the viewport in both
@@ -65,7 +70,10 @@ export function ConfirmDialog({
           {title}
         </h2>
         {message && (
-          <div className="mt-2 flex-1 min-h-0 overflow-y-auto text-sm text-stone-600 leading-relaxed">
+          <div
+            id={messageId}
+            className="mt-2 flex-1 min-h-0 overflow-y-auto text-sm text-stone-600 leading-relaxed"
+          >
             {message}
           </div>
         )}

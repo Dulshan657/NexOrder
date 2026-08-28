@@ -296,7 +296,12 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => setForgotOpen(true)}
                     disabled={isSubmitting}
-                    className="text-[11px] font-medium text-nexgen-blue hover:text-nexgen-blue-dark hover:underline disabled:opacity-50 cursor-pointer"
+                    // 11px is small text, so it needs 4.5:1, not the 3:1 that large text and
+                    // non-text get. Brand `nexgen-blue` is 3.70:1 on white and fails
+                    // here -- which is NOT the brand exception recorded in the
+                    // accessibility statement; that one is scoped to large and
+                    // non-text uses. `nexgen-blue-dark` is 4.93:1 and passes.
+                    className="text-[11px] font-medium text-nexgen-blue-dark hover:underline disabled:opacity-50 cursor-pointer"
                   >
                     Forgot your password?
                   </button>
