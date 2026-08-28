@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Check } from 'lucide-react'
+import { ArrowUpRight, Check } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { getBrandByKey } from '@/lib/demoAccounts'
 import { wantsResetRequest } from '@/lib/auth/recoveryLink'
@@ -45,6 +45,11 @@ interface DemoAccount {
 // folding of a ternary is guaranteed. scripts/check-demo-surface.mjs asserts
 // this on the built artifact for every target, in both directions.
 const SHOW_DEMO_LOGINS = __DEMO_HOST__
+
+// The scheduler URL, or null. Folded to a literal by vite.config.ts from the
+// target registry, exactly as __DEMO_HOST__ and the module flags are, so a
+// tenant build drops the call to action entirely rather than hiding it.
+const BOOK_DEMO_URL = __BOOK_DEMO_URL__
 
 const DEMO_PASSWORD = SHOW_DEMO_LOGINS ? 'Password123!' : ''
 
@@ -360,6 +365,33 @@ export default function LoginPage() {
           )}
         </div>
 
+        {/* Book a demo.
+          *
+          * Renders only where `__BOOK_DEMO_URL__` is non-null, which the target
+          * registry sets on the demonstration deployment and never on a client's.
+          * A tenant build folds this whole branch away, so a client's sign-in page
+          * cannot carry a sales call to action, and an unset scheduler ships
+          * nothing rather than a dead link.
+          *
+          * A real <a>, not a <button> calling window.open: this navigates, so it
+          * should be something the browser can middle-click, copy and open in a
+          * background tab. The visually-hidden suffix is what tells a screen-reader
+          * user that it leaves the page, which the icon alone conveys only to
+          * people who can see it. */}
+        {BOOK_DEMO_URL && (
+          <p className="mt-10 auth-in" style={authStagger(6)}>
+            <a
+              href={BOOK_DEMO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-nexgen-blue px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors btn-press touch-target hover:bg-nexgen-blue-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue-dark focus-visible:ring-offset-2"
+            >
+              Book a demo
+              <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
+          </p>
+        )}
         <p className="mt-12 text-xs leading-relaxed text-stone-600">
           Trouble signing in? Contact your administrator if you need access.
         </p>

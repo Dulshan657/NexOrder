@@ -104,6 +104,19 @@ export const config: VercelConfig = {
         { key: 'X-Content-Type-Options', value: 'nosniff' },
         { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
         {
+          // Both the demonstration deployment and every customer deployment are
+          // UNLISTED. This is the half a crawler sees AFTER fetching;
+          // public/robots.txt is the half it sees before, and the two do not
+          // overlap -- a crawler that obeys robots.txt never gets here, and one
+          // arriving from a pasted link never reads robots.txt.
+          //
+          // It does NOT suppress link previews. Unfurlers read og:* and ignore
+          // X-Robots-Tag entirely; the thing that WOULD have suppressed them is
+          // robots.txt, which is why four of them are named there explicitly.
+          key: 'X-Robots-Tag',
+          value: 'noindex, nofollow',
+        },
+        {
           // `camera=(self)`, NOT `camera=()`. An empty allowlist denies the
           // feature to the document's OWN origin, which silently killed the
           // camera scan fallback on every deployed build: `getUserMedia`
@@ -127,6 +140,35 @@ export const config: VercelConfig = {
       // deploy.mjs polls this to confirm the alias serves the deployed sha.
       source: '/version.json',
       headers: [{ key: 'Cache-Control', value: 'no-cache, must-revalidate' }],
+    },
+    {
+      // The public documentation set, served as text the browser RENDERS.
+      //
+      // Vercel infers `text/markdown` for a .md file, and with the
+      // `X-Content-Type-Options: nosniff` above, Chrome and Safari answer that
+      // with a download prompt rather than showing the page. An accessibility
+      // statement is a document a regulator or a customer clicks; handing them a
+      // .md file to save is not serving it. Overriding the Content-Type is the
+      // whole fix.
+      source: '/docs/(.*)',
+      headers: [
+        { key: 'Content-Type', value: 'text/plain; charset=utf-8' },
+        { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
+      ],
+    },
+    {
+      // Same treatment as /version.json, for the same reason: fixed URLs with no
+      // content hash in them, whose whole value is being current after a deploy.
+      source: '/llms.txt',
+      headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }],
+    },
+    {
+      source: '/llms-full.txt',
+      headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }],
+    },
+    {
+      source: '/robots.txt',
+      headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }],
     },
   ],
 }

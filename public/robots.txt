@@ -1,0 +1,81 @@
+# Nex Order is UNLISTED. Both the demonstration deployment and every customer
+# deployment are reached by a link someone was given, never by a search.
+#
+# ORDER AND SPECIFICITY MATTER HERE. A crawler obeys exactly ONE group -- the
+# most specific one matching its token -- so the named groups below are not
+# overridden by the `*` group at the end, and the `*` group does not apply to
+# them. An empty `Disallow:` means "everything is allowed".
+#
+# THE NAMED ALLOWANCES ARE NOT AN OVERSIGHT. Link unfurlers read robots.txt and
+# obey it. Under a blanket `Disallow: /` a link pasted into Slack, an email or a
+# proposal degrades to a bare URL with no title, no description and no image --
+# while Discord and WhatsApp, which ignore robots.txt entirely, would still show
+# a full card. The result would be inconsistent previews, which reads as a bug
+# rather than as a policy. These four fetch the page to build a card; they do not
+# index it.
+#
+# Blocking is also belt-and-braces rather than one mechanism: vercel.ts sends
+# `X-Robots-Tag: noindex, nofollow` on every response. The two catch different
+# actors -- a crawler that obeys this file never fetches the page and so never
+# sees the header, and one that arrives from a pasted link never reads this file.
+
+User-agent: Twitterbot
+Disallow:
+
+User-agent: Slackbot-LinkExpanding
+Disallow:
+
+User-agent: facebookexternalhit
+Disallow:
+
+User-agent: LinkedInBot
+Disallow:
+
+# Named explicitly rather than left to `*`, because the operators of these
+# crawlers document these exact tokens and honouring them is the only signal
+# available. Training on this product's screens is not something to opt into by
+# silence.
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: OAI-SearchBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Claude-Web
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: Amazonbot
+Disallow: /
+
+User-agent: Applebot-Extended
+Disallow: /
+
+User-agent: meta-externalagent
+Disallow: /
+
+User-agent: *
+Disallow: /
+
+# No Sitemap: line. A sitemap invites indexing of pages this file has just
+# refused, and there is nothing here for a search engine to hold.

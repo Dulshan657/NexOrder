@@ -22,3 +22,7 @@ declare const __BUILD_TIME__: string
 // var that shipped working credentials to a tenant by default; see the comment
 // beside `isDemoHost` in vite.config.ts.
 declare const __DEMO_HOST__: boolean
+
+// The scheduler URL for the login page's "Book a demo" link, or null where
+// there is none. Null on every tenant, by registry.
+declare const __BOOK_DEMO_URL__: string | null
