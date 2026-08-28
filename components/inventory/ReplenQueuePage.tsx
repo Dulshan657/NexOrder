@@ -183,7 +183,7 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
                     aria-selected={stage === t}
                     onClick={() => setStage(t)}
                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-md text-sm btn-press ${
-                      stage === t ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-500 hover:text-stone-700'
+                      stage === t ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
                     }`}
                   >
                     {t === 'assign'

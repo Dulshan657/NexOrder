@@ -56,7 +56,7 @@ export function StockTable({
                         {r.velocityClass}
                       </span>
                     ) : (
-                      <span className="text-stone-300">—</span>
+                      <span className="text-stone-500">—</span>
                     )}
                   </td>
                 )}

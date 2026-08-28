@@ -43,7 +43,7 @@ export function MapControls({ scale, onZoomIn, onZoomOut, onFit, floor, floorCou
               type="button"
               onClick={() => onFloorChange(f)}
               className={`min-h-[28px] rounded-md px-2.5 py-1 text-xs font-semibold transition-all btn-press ${
-                floor === f ? 'bg-nexgen-blue text-white shadow-sm' : 'text-stone-500 hover:bg-stone-50 hover:text-stone-900'
+                floor === f ? 'bg-nexgen-blue text-white shadow-sm' : 'text-stone-600 hover:bg-stone-50 hover:text-stone-900'
               }`}
             >
               Floor {f + 1}

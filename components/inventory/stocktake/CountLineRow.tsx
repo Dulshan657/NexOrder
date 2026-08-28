@@ -29,7 +29,7 @@ interface CountLineRowProps {
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  match: 'bg-stone-100 text-stone-500',
+  match: 'bg-stone-100 text-stone-600',
   surplus: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
   shortfall: 'bg-amber-50 text-amber-700 border border-amber-200',
   invalid: 'bg-red-50 text-red-700 border border-red-200',

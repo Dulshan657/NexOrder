@@ -345,7 +345,7 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
               aria-selected={effectiveFilter === key}
               onClick={() => setFilter(key)}
               className={`px-2.5 py-1.5 rounded-md text-xs btn-press ${
-                effectiveFilter === key ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-500 hover:text-stone-700'
+                effectiveFilter === key ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
               }`}
             >
               {label}

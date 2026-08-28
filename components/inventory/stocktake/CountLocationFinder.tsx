@@ -165,7 +165,7 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
                       <span className="block font-mono text-xs text-stone-500">{locationSubtitle(loc)}</span>
                     )}
                   </span>
-                  <span className="shrink-0 rounded bg-stone-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-500">
+                  <span className="shrink-0 rounded bg-stone-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-600">
                     {loc.kind === 'WAREHOUSE'
                       ? 'Site root · bulk'
                       : loc.levelIndex != null ? `Level ${loc.levelIndex}` : loc.kind}

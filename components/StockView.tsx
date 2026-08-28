@@ -188,7 +188,7 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
         {filteredProducts.length} {filteredProducts.length === 1 ? 'product' : 'products'}
         {categoryFilter !== 'All' && ` in ${categoryFilter}`}
         {stockFilter !== 'all' && ` (${stockFilter.replace('_', ' ')})`}
-        {isOps && <span className="text-stone-300"> · click a row for batch detail</span>}
+        {isOps && <span className="text-stone-500"> · click a row for batch detail</span>}
       </p>
 
       {/* Customer — simplified card grid (products cache) */}
