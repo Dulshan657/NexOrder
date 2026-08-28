@@ -33,7 +33,7 @@ export function newExtraUom(): ExtraUomDraft {
     return { code: '', factorToBase: '', price: '', cubicMeters: '', isOrderable: true, isReceivable: true };
 }
 
-const inputClasses = "block w-full rounded-lg border-0 bg-white py-2 px-2.5 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm";
+const inputClasses = "block w-full rounded-lg border-0 bg-white py-2 px-2.5 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm";
 
 const ProductUomsSection: React.FC<ProductUomsSectionProps> = ({
     baseUnitLabel, basePrice, baseVolume, unitOptions, extraUoms, onChange,

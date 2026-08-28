@@ -264,7 +264,7 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
                         rows={3}
                         value={notes}
                         onChange={(e) => onNotesChange(e.target.value)}
-                        className="block w-full rounded-lg border-0 bg-stone-50 py-3 px-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300"
+                        className="block w-full rounded-lg border-0 bg-stone-50 py-3 px-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300"
                         placeholder="Add any special instructions for the warehouse..."
                     ></textarea>
                     <DeliveryScheduler

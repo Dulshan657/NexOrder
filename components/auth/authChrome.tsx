@@ -23,7 +23,7 @@ export const EYEBROW_CLASS = 'font-mono text-[10px] uppercase tracking-[0.18em]'
 
 const INPUT_CLASS =
   'w-full rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 ' +
-  'placeholder-stone-400 ' +
+  'placeholder:text-stone-500 ' +
   'focus:border-nexgen-blue focus:outline-none focus:ring-2 focus:ring-nexgen-blue/25 ' +
   'disabled:bg-stone-100 disabled:text-stone-400 ' +
   'transition-[border-color,box-shadow,background-color] duration-300'

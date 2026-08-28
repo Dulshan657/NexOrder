@@ -85,7 +85,7 @@ const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, use
                 value={name}
                 onChange={e => setName(e.target.value)}
                 placeholder="e.g. Monday CBD ScheduledVisit"
-                className="w-full px-4 py-3 rounded-lg border-0 bg-stone-50 ring-1 ring-inset ring-stone-200 text-stone-900 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400 text-sm"
+                className="w-full px-4 py-3 rounded-lg border-0 bg-stone-50 ring-1 ring-inset ring-stone-200 text-stone-900 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500 text-sm"
                 autoFocus
               />
             </div>
@@ -134,7 +134,7 @@ const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, use
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="Search HoReCa..."
-                  className="w-full pl-9 pr-4 py-2.5 rounded-lg border-0 bg-stone-50 ring-1 ring-inset ring-stone-200 text-stone-900 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400 text-sm"
+                  className="w-full pl-9 pr-4 py-2.5 rounded-lg border-0 bg-stone-50 ring-1 ring-inset ring-stone-200 text-stone-900 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500 text-sm"
                 />
               </div>
               <div className="max-h-60 overflow-y-auto space-y-1 border border-stone-200 rounded-xl p-2">

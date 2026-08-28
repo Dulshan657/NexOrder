@@ -175,7 +175,7 @@ const AddStopModal: React.FC<AddStopModalProps> = ({ route, hoReCas, currentUser
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search by name or address"
-                className="w-full pl-9 pr-4 py-2.5 bg-stone-50 rounded-lg ring-1 ring-inset ring-stone-200 text-sm focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400"
+                className="w-full pl-9 pr-4 py-2.5 bg-stone-50 rounded-lg ring-1 ring-inset ring-stone-200 text-sm focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500"
                 autoFocus
               />
             </div>
@@ -212,7 +212,7 @@ const AddStopModal: React.FC<AddStopModalProps> = ({ route, hoReCas, currentUser
                 value={walkInName}
                 onChange={e => setWalkInName(e.target.value)}
                 placeholder="e.g. Thai Orchid Cafe"
-                className="w-full px-3 py-2.5 bg-stone-50 rounded-lg ring-1 ring-inset ring-stone-200 text-sm focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400"
+                className="w-full px-3 py-2.5 bg-stone-50 rounded-lg ring-1 ring-inset ring-stone-200 text-sm focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500"
                 autoFocus
               />
             </div>
@@ -223,7 +223,7 @@ const AddStopModal: React.FC<AddStopModalProps> = ({ route, hoReCas, currentUser
                 value={walkInAddress}
                 onChange={e => setWalkInAddress(e.target.value)}
                 placeholder="Street, suburb, city"
-                className="w-full px-3 py-2.5 bg-stone-50 rounded-lg ring-1 ring-inset ring-stone-200 text-sm focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400"
+                className="w-full px-3 py-2.5 bg-stone-50 rounded-lg ring-1 ring-inset ring-stone-200 text-sm focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500"
               />
             </div>
             <div>

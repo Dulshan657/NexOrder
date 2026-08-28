@@ -135,7 +135,7 @@ const POAliasesTab: React.FC<POAliasesTabProps> = ({
             placeholder="Filter…"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            className="w-full bg-transparent pl-7 pr-2 py-1 text-sm border-b border-stone-200 focus:outline-none focus:border-stone-500 placeholder:text-stone-400"
+            className="w-full bg-transparent pl-7 pr-2 py-1 text-sm border-b border-stone-200 focus:outline-none focus:border-stone-500 placeholder:text-stone-500"
           />
         </label>
       </div>

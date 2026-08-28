@@ -95,7 +95,7 @@ const HoReCaSearchDropdown: React.FC<HoReCaSearchDropdownProps> = ({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search HoReCa..."
-                className="w-full pl-8 pr-3 py-2 text-sm rounded-lg bg-stone-50 border-0 ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400"
+                className="w-full pl-8 pr-3 py-2 text-sm rounded-lg bg-stone-50 border-0 ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500"
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') { setIsOpen(false); setQuery(''); }
                 }}

@@ -164,7 +164,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
     const totalLabel = mode === 'mutations' ? 'mutation events' : 'client errors';
 
     const inputClass =
-        'w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue';
+        'w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue';
     const selectClass =
         'w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue cursor-pointer';
 
@@ -307,7 +307,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                         value={search}
                         onChange={(e) => { setSearch(e.target.value); setPage(0); }}
                         placeholder={mode === 'mutations' ? 'Search reason or resource ID…' : 'Search message or URL…'}
-                        className="w-full pl-10 pr-10 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+                        className="w-full pl-10 pr-10 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
                     />
                     {search && (
                         <button

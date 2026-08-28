@@ -101,7 +101,7 @@ const ProductSearchDropdown: React.FC<ProductSearchDropdownProps> = ({
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search by SKU or name…"
-                className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md bg-stone-50 border-0 ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400 focus:outline-none"
+                className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md bg-stone-50 border-0 ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500 focus:outline-none"
                 onKeyDown={e => {
                   if (e.key === 'Escape') {
                     setIsOpen(false)

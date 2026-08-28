@@ -75,7 +75,7 @@ const UserAdmin: React.FC<UserAdminProps> = ({ users, onAddUser, onUpdateUser, o
                 <input
                     type="text"
                     id="user-search"
-                    className="block w-full max-w-md rounded-lg border-0 bg-white py-3 pl-11 pr-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300"
+                    className="block w-full max-w-md rounded-lg border-0 bg-white py-3 pl-11 pr-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300"
                     placeholder="Search by Name or Email..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}

@@ -48,7 +48,7 @@ const isOnlySupplier = (product: Product, supplierId: number): boolean => {
     return links.length === 1 && links[0].supplierId === supplierId;
 };
 
-const inputClasses = "block w-full rounded-md border-0 bg-white py-1.5 px-2 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 text-sm";
+const inputClasses = "block w-full rounded-md border-0 bg-white py-1.5 px-2 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-emerald-600 text-sm";
 
 const SupplierProductsSheet: React.FC<SupplierProductsSheetProps> = ({
     open, supplier, products, onClose, onSaveLinks,
@@ -189,7 +189,7 @@ const SupplierProductsSheet: React.FC<SupplierProductsSheetProps> = ({
                         onChange={e => setSearch(e.target.value)}
                         placeholder="Filter by product name or SKU…"
                         aria-label="Filter products"
-                        className="w-full pl-10 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-600"
+                        className="w-full pl-10 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-600"
                     />
                 </div>
 

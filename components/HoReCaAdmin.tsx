@@ -69,7 +69,7 @@ const HoReCaAdmin: React.FC<HoReCaAdminProps> = ({ hoReCas, currentUser, onAddHo
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="Search hoReCas..."
-                            className="w-full sm:w-64 pl-9 pr-8 py-2 border border-stone-300 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:border-transparent transition-colors"
+                            className="w-full sm:w-64 pl-9 pr-8 py-2 border border-stone-300 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:border-transparent transition-colors"
                         />
                         {searchQuery && (
                             <button

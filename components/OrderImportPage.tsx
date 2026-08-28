@@ -115,7 +115,7 @@ const TAB_LABELS: Record<ActiveTab, string> = {
 const ALL_TABS: ActiveTab[] = ['received', 'inProgress', 'completed'];
 
 const INPUT_CLASSES =
-  'block w-full rounded-lg border-0 bg-stone-50 py-2.5 px-3 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm transition-all hover:ring-stone-300';
+  'block w-full rounded-lg border-0 bg-stone-50 py-2.5 px-3 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm transition-all hover:ring-stone-300';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -671,7 +671,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
             <input
               type="text"
               id="orders-search"
-              className="block w-full rounded-lg border-0 bg-stone-50 py-3 pl-11 pr-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm transition-all hover:ring-stone-300"
+              className="block w-full rounded-lg border-0 bg-stone-50 py-3 pl-11 pr-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm transition-all hover:ring-stone-300"
               placeholder={`Search by Order ID or ${customerLabel.toLowerCase()} name...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}

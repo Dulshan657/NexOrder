@@ -163,7 +163,7 @@ const SupplierCombobox: React.FC<SupplierComboboxProps> = ({
           onFocus={() => setOpen(true)}
           placeholder="Search or type a supplier…"
           aria-label="Supplier"
-          className="w-full pl-10 pr-9 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+          className="w-full pl-10 pr-9 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
         />
         {valueId != null ? (
           <Check className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
@@ -616,7 +616,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               value={reference}
               onChange={(e) => setReference(e.target.value)}
               placeholder="Invoice / docket / PO no."
-              className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+              className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
             />
             {/* Quarantine (mig 00101). Bulk control only: it writes the flag onto
                 every line in the grid, so what is ticked below IS what is sent. */}
