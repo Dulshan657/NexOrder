@@ -92,6 +92,19 @@ export default defineConfig({
   },
   projects: [
     {
+      // axe in a real browser. Its testDir sits OUTSIDE the top-level
+      // './tests/e2e' that every other project inherits, so `npm run test:e2e`
+      // does not pick it up and it needs no credentials and no database -- the
+      // two login surfaces are the only screens reachable without one.
+      //
+      // This is the only tier where `color-contrast` runs at all: jsdom has no
+      // layout and no computed colour, so the unit-tier axe suite skips it.
+      name: 'a11y',
+      testDir: './tests/a11y',
+      testMatch: '**/*.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'chromium',
       // The mobile specs are EXCLUDED here, not merely duplicated there. Half
       // of what they assert (a collapsed card tier, a wrapped action bar) is

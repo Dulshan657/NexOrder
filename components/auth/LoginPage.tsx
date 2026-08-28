@@ -349,7 +349,7 @@ export default function LoginPage() {
                       >
                         <span>{primary}</span>
                         {secondary !== undefined && (
-                          <span className="font-normal text-stone-400">{secondary}</span>
+                          <span className="font-normal text-stone-600">{secondary}</span>
                         )}
                       </button>
                     </li>
@@ -360,7 +360,7 @@ export default function LoginPage() {
           )}
         </div>
 
-        <p className="mt-12 text-xs leading-relaxed text-stone-400">
+        <p className="mt-12 text-xs leading-relaxed text-stone-600">
           Trouble signing in? Contact your administrator if you need access.
         </p>
       </main>

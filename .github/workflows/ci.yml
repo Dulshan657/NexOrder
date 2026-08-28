@@ -79,3 +79,49 @@ jobs:
       # learn from it if the ordinary build is already broken.
       - name: Demo-credential surface (per target, on the built artifact)
         run: npm run check:demo
+
+  # A SECOND JOB, not another step in `verify`. It needs a browser download and
+  # a dev server, and neither should sit in the path of a type error.
+  a11y:
+    name: axe · login surfaces
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # The only tier where `color-contrast` runs at all: jsdom has no layout and
+      # no computed colour, so the axe suite inside `npm test` skips that rule
+      # however bad the palette gets.
+      #
+      # NO CREDENTIALS AND NO DATABASE. lib/supabase.ts throws at module scope on
+      # an EMPTY url but never calls out, so a placeholder is enough to boot the
+      # app. Same one vitest.config.ts uses, so the host is greppable and cannot
+      # reach a live project. That is also why this covers login surfaces only --
+      # with no router, they are the only screens reachable without a backend.
+      - name: axe (WCAG 2.2 AA)
+        run: npx playwright test --project=a11y
+        env:
+          VITE_SUPABASE_URL: https://testref.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_offline_ci
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-report
+          path: playwright-report/
+          retention-days: 7
