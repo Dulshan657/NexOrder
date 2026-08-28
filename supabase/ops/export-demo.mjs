@@ -199,6 +199,9 @@ console.log(`[export] ${authUsers.length} auth users (identities only — no pas
 // `"`). So the on-disk path is sanitised for browsability and the TRUE key is
 // recorded in index.json, which is what a restore reads. Never reconstruct a
 // key from a path.
+// The control-character range is the point here: these are bytes a filesystem
+// refuses outright, not text to be matched.
+// eslint-disable-next-line no-control-regex
 const WINDOWS_UNSAFE = /[<>:"|?*\u0000-\u001f]/g
 
 function safeRelPath(bucket, key) {

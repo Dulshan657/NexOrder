@@ -40,6 +40,11 @@ const ROOT = resolve(HERE, '../../..') // NexOrder/
 const CUSTOMER_NAME = 'Young & Jacksons'
 const CUSTOMER_ADDRESS = 'Corner Swanston & Flinders Streets, Melbourne VIC 3000'
 const DEFAULT_SENDER = 'dulshanb@nexgeninnovations.com.au'
+// The header above has documented YJ_SENDER since this script was
+// written, and every use below reads SENDER -- but the line binding the two
+// was never there, so the script died on `ReferenceError: SENDER is not
+// defined` at the first customer insert. Found by the first ESLint run.
+const SENDER = process.env.YJ_SENDER || DEFAULT_SENDER
 
 // V2food SKUs referenced by the demo POs (must already exist via supabase/seed.ts).
 // Each becomes a po_product_aliases.source_code and receives demo stock.
