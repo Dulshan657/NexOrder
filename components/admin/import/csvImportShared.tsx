@@ -86,7 +86,7 @@ export const ImportDropzone: React.FC<ImportDropzoneProps> = ({ onFile, hint, di
         disabled ? 'cursor-not-allowed opacity-50 border-stone-200' : 'cursor-pointer border-stone-200 hover:bg-stone-50'
       } ${dragOver && !disabled ? 'border-emerald-400 bg-emerald-50' : ''}`}
     >
-      <div className="flex flex-col items-center gap-2 text-stone-400">
+      <div className="flex flex-col items-center gap-2 text-stone-500">
         <UploadCloud className="h-8 w-8" />
         <p className="text-xs">{hint}</p>
       </div>
@@ -130,7 +130,7 @@ export const ImportResultStatGrid: React.FC<{ items: StatItem[] }> = ({ items })
     {items.map((item) => (
       <div key={item.label} className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-center">
         <p className={`font-mono text-lg font-semibold ${TONE_CLASS[item.tone ?? 'default']}`}>{item.value}</p>
-        <p className="text-[10px] uppercase tracking-wide text-stone-400">{item.label}</p>
+        <p className="text-[10px] uppercase tracking-wide text-stone-500">{item.label}</p>
       </div>
     ))}
   </div>

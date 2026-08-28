@@ -446,7 +446,7 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
             {previewUrl ? (
               <img src={previewUrl} alt="Floor plan preview" className="mx-auto max-h-56 rounded-lg object-contain" />
             ) : (
-              <div className="flex flex-col items-center gap-2 text-stone-400">
+              <div className="flex flex-col items-center gap-2 text-stone-500">
                 <UploadCloud className="h-8 w-8" />
                 <p className="text-xs">Drop an image here, or click to choose (PNG / JPG / WebP)</p>
               </div>
@@ -481,12 +481,12 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
                   </span>
                   <div className="min-w-0">
                     <p className={`text-xs font-medium ${
-                      state === 'pending' ? 'text-stone-400' : 'text-stone-700'
+                      state === 'pending' ? 'text-stone-500' : 'text-stone-700'
                     }`}>
                       {step.label}
                     </p>
                     {state === 'active' && step.hint && (
-                      <p className="text-[11px] text-stone-400">{step.hint}</p>
+                      <p className="text-[11px] text-stone-500">{step.hint}</p>
                     )}
                   </div>
                 </li>
@@ -516,7 +516,7 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
               ].map((c) => (
                 <div key={c.label} className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-center">
                   <p className="font-mono text-sm font-semibold text-stone-900">{c.value}</p>
-                  <p className="text-[10px] uppercase tracking-wide text-stone-400">{c.label}</p>
+                  <p className="text-[10px] uppercase tracking-wide text-stone-500">{c.label}</p>
                 </div>
               ))}
             </div>
@@ -564,14 +564,14 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
                   value={floorWM}
                   onChange={(e) => setFloorWM(e.target.value)}
                 />
-                <span className="text-stone-400">m ×</span>
+                <span className="text-stone-500">m ×</span>
                 <input
                   type="number" min={1} step={0.1} aria-label="Floor depth in metres"
                   className="w-24 rounded-lg border border-stone-200 bg-white px-2 py-1.5"
                   value={floorHM}
                   onChange={(e) => setFloorHM(e.target.value)}
                 />
-                <span className="text-stone-400">m</span>
+                <span className="text-stone-500">m</span>
               </div>
               <p className="text-[11px] text-stone-500">
                 {importScale.cellSizeM
@@ -614,7 +614,7 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
                     <div key={area.code} className="space-y-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-2">
                       <div className="flex items-center justify-between text-xs">
                         <span className="font-mono font-medium text-stone-700">{area.code}</span>
-                        <span className="text-stone-400">{area.w}×{area.h} · {area.placements.length} cell{area.placements.length === 1 ? '' : 's'}</span>
+                        <span className="text-stone-500">{area.w}×{area.h} · {area.placements.length} cell{area.placements.length === 1 ? '' : 's'}</span>
                       </div>
                       <div className="flex items-center gap-3 text-[11px] text-stone-600">
                         <label className="flex items-center gap-1.5">

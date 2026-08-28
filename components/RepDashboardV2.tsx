@@ -307,7 +307,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
                       <p className="text-sm font-semibold text-stone-900 truncate">{stop.hoReCa?.name ?? 'Unknown'}</p>
                       <p className="text-xs text-stone-500 truncate mt-0.5">{stop.hoReCa?.address ?? ''}</p>
                     </div>
-                    <span className="text-xs font-mono text-stone-400 ml-2">#{idx + 1}</span>
+                    <span className="text-xs font-mono text-stone-500 ml-2">#{idx + 1}</span>
                   </div>
 
                   {stop.insight && (
@@ -352,14 +352,14 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
                   {expandedStop === stop.hoReCaId && stop.insight && (
                     <div className="mt-3 pt-3 border-t border-stone-200 space-y-2">
                       <div className="text-xs text-stone-600">
-                        <span className="text-stone-400">Avg Order:</span> ${stop.insight.avgOrderValue.toFixed(2)}
+                        <span className="text-stone-500">Avg Order:</span> ${stop.insight.avgOrderValue.toFixed(2)}
                       </div>
                       <div className="text-xs text-stone-600">
-                        <span className="text-stone-400">Total Spend:</span> ${stop.insight.totalSpend.toFixed(2)}
+                        <span className="text-stone-500">Total Spend:</span> ${stop.insight.totalSpend.toFixed(2)}
                       </div>
                       {stop.insight.predictedNextOrderDate && (
                         <div className="text-xs text-stone-600">
-                          <span className="text-stone-400">Next Order:</span> {new Date(stop.insight.predictedNextOrderDate).toLocaleDateString()}
+                          <span className="text-stone-500">Next Order:</span> {new Date(stop.insight.predictedNextOrderDate).toLocaleDateString()}
                         </div>
                       )}
                     </div>
@@ -367,7 +367,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
                 </div>
                 <button
                   onClick={() => setExpandedStop(expandedStop === stop.hoReCaId ? null : stop.hoReCaId)}
-                  className="w-full text-xs text-stone-400 hover:text-stone-600 py-2 border-t border-stone-200 cursor-pointer text-center"
+                  className="w-full text-xs text-stone-500 hover:text-stone-600 py-2 border-t border-stone-200 cursor-pointer text-center"
                 >
                   {expandedStop === stop.hoReCaId ? 'Less' : 'More details'}
                 </button>
@@ -379,7 +379,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
         <div className="glass-card rounded-xl p-5 text-center">
           <MapPin className="w-8 h-8 text-stone-300 mx-auto mb-2" />
           <p className="text-sm text-stone-600 mb-3">No scheduled visit planned for today</p>
-          <p className="text-xs text-stone-400">Head to Scheduled Visits to plan your day</p>
+          <p className="text-xs text-stone-500">Head to Scheduled Visits to plan your day</p>
         </div>
       )}
 
@@ -421,7 +421,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
                   </div>
                   <div className="flex justify-between mt-0.5">
                     {dailyNeeded > 0 && (
-                      <span className="text-xs text-stone-400">
+                      <span className="text-xs text-stone-500">
                         Need ${dailyNeeded.toFixed(0)}/day for {daysLeft}d
                       </span>
                     )}

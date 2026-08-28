@@ -126,7 +126,7 @@ const SnoozeButton: React.FC<SnoozeButtonProps> = ({ itemId, onSnooze }) => {
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((prev) => !prev); }}
-        className="text-[10px] text-stone-400 hover:text-amber-500 flex items-center gap-0.5"
+        className="text-[10px] text-stone-500 hover:text-amber-500 flex items-center gap-0.5"
       >
         <Clock className="w-3 h-3" />
         Snooze
@@ -198,7 +198,7 @@ const AssignButton: React.FC<AssignButtonProps> = ({ itemId, users, currentAssig
 
   if (currentAssignee) {
     return (
-      <span className="text-[10px] text-stone-400 flex items-center gap-0.5">
+      <span className="text-[10px] text-stone-500 flex items-center gap-0.5">
         <UserPlus className="w-3 h-3" />
         {currentAssignee.name}
       </span>
@@ -210,7 +210,7 @@ const AssignButton: React.FC<AssignButtonProps> = ({ itemId, users, currentAssig
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((prev) => !prev); }}
-        className="text-[10px] text-stone-400 hover:text-blue-500 flex items-center gap-0.5"
+        className="text-[10px] text-stone-500 hover:text-blue-500 flex items-center gap-0.5"
       >
         <UserPlus className="w-3 h-3" />
         Assign
@@ -309,7 +309,7 @@ const ActionItemRow: React.FC<ActionItemRowProps> = ({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onDismiss(item.id); }}
-          className="text-[10px] text-stone-400 hover:text-red-500 flex items-center gap-0.5"
+          className="text-[10px] text-stone-500 hover:text-red-500 flex items-center gap-0.5"
         >
           <X className="w-3 h-3" />
           Dismiss
@@ -375,7 +375,7 @@ const ColumnPanel: React.FC<ColumnPanelProps> = ({
       {/* Scrollable item list */}
       <div className="max-h-[300px] overflow-y-auto action-items-scroll flex-1">
         {visibleItems.length === 0 ? (
-          <div className="px-4 py-6 text-center text-xs text-stone-400">No items</div>
+          <div className="px-4 py-6 text-center text-xs text-stone-500">No items</div>
         ) : (
           visibleItems.map((item) => (
             <ActionItemRow
@@ -501,9 +501,9 @@ const ActionItemsBoard: React.FC<ActionItemsBoardProps> = ({
 
         {/* Right: collapse toggle */}
         {state.collapsed ? (
-          <ChevronDown className="w-4 h-4 text-stone-400" />
+          <ChevronDown className="w-4 h-4 text-stone-500" />
         ) : (
-          <ChevronUp className="w-4 h-4 text-stone-400" />
+          <ChevronUp className="w-4 h-4 text-stone-500" />
         )}
       </div>
 

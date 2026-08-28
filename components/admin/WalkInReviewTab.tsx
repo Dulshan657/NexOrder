@@ -138,7 +138,7 @@ const WalkInReviewTab: React.FC<WalkInReviewTabProps> = ({ hoReCas, users, curre
                     )}
                   </div>
                   <p className="text-xs text-stone-500 truncate mt-0.5">{h.address || 'No address'}</p>
-                  <div className="flex items-center gap-3 mt-1 text-[11px] text-stone-400">
+                  <div className="flex items-center gap-3 mt-1 text-[11px] text-stone-500">
                     {creator && <span>Added by {creator.name}</span>}
                     {hasCoords && (
                       <a

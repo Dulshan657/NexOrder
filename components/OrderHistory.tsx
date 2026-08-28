@@ -249,7 +249,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
     setFilterPaymentStatus('all');
   };
 
-  const inputClasses = "block w-full rounded-lg border-0 bg-stone-50 py-2.5 px-3 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300";
+  const inputClasses = "block w-full rounded-lg border-0 bg-stone-50 py-2.5 px-3 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300";
 
   const SortHeader: React.FC<{ column: SortColumn; label: string; align?: 'left' | 'right' }> = ({ column, label, align = 'left' }) => (
     <th
@@ -295,14 +295,14 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
         <div className="mb-5 relative">
           <label htmlFor="order-search" className="sr-only">Search by Order ID or HoReCa Name</label>
           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-stone-400" viewBox="0 0 20 20" fill="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-stone-500" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
             </svg>
           </div>
           <input
             type="text"
             id="order-search"
-            className="block w-full rounded-lg border-0 bg-stone-50 py-3 pl-11 pr-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300"
+            className="block w-full rounded-lg border-0 bg-stone-50 py-3 pl-11 pr-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300"
             placeholder="Search by Order ID or HoReCa Name..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -414,7 +414,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
                       <td className="px-4 py-3 align-middle whitespace-nowrap">
                         <span className="inline-flex items-center gap-1.5">
                           <span className="font-medium text-stone-900">{order.id}</span>
-                          <button onClick={() => handleCopyId(order.id)} className="text-stone-400 hover:text-stone-600 transition-colors cursor-pointer" title="Copy Order ID">
+                          <button onClick={() => handleCopyId(order.id)} className="text-stone-500 hover:text-stone-600 transition-colors cursor-pointer" title="Copy Order ID">
                             {copiedId === order.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
                         </span>
@@ -446,7 +446,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
                           <ul className="divide-y divide-stone-100 max-w-2xl">
                             {order.items.map((item, i) => (
                               <li key={`${item.id}-${i}`} className="flex justify-between py-2 text-sm">
-                                <span>{item.name} <span className="text-stone-400 ml-1">x {item.quantity}</span></span>
+                                <span>{item.name} <span className="text-stone-500 ml-1">x {item.quantity}</span></span>
                                 <span className="text-stone-600 tabular-nums">${(item.price * item.quantity).toFixed(2)}</span>
                               </li>
                             ))}

@@ -106,13 +106,13 @@ const POAliasesTab: React.FC<POAliasesTabProps> = ({
         <nav className="flex items-center gap-6 -mb-px" aria-label="Alias kind">
           <ToggleTab active={active === 'customer'} onClick={() => setActive('customer')}>
             Customer
-            <span className="ml-2 font-mono text-stone-400">
+            <span className="ml-2 font-mono text-stone-500">
               {customerQuery.data?.length ?? 0}
             </span>
           </ToggleTab>
           <ToggleTab active={active === 'product'} onClick={() => setActive('product')}>
             Product
-            <span className="ml-2 font-mono text-stone-400">
+            <span className="ml-2 font-mono text-stone-500">
               {productQuery.data?.length ?? 0}
             </span>
           </ToggleTab>
@@ -129,13 +129,13 @@ const POAliasesTab: React.FC<POAliasesTabProps> = ({
 
       <div className="mt-3 flex items-center gap-2">
         <label className="relative w-full max-w-sm">
-          <Search className="absolute left-1 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+          <Search className="absolute left-1 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
           <input
             type="search"
             placeholder="Filter…"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            className="w-full bg-transparent pl-7 pr-2 py-1 text-sm border-b border-stone-200 focus:outline-none focus:border-stone-500 placeholder:text-stone-400"
+            className="w-full bg-transparent pl-7 pr-2 py-1 text-sm border-b border-stone-200 focus:outline-none focus:border-stone-500 placeholder:text-stone-500"
           />
         </label>
       </div>
@@ -330,7 +330,7 @@ const ProductAliasTable: React.FC<ProductAliasTableProps> = ({
                     </div>
                   )}
                   {!row.source_code && !row.source_description && (
-                    <span className="text-stone-400">—</span>
+                    <span className="text-stone-500">—</span>
                   )}
                 </Td>
                 <Td>
@@ -340,7 +340,7 @@ const ProductAliasTable: React.FC<ProductAliasTableProps> = ({
                       <div className="text-stone-900">{product.name}</div>
                     </>
                   ) : (
-                    <span className="text-stone-400">#{row.product_id}</span>
+                    <span className="text-stone-500">#{row.product_id}</span>
                   )}
                 </Td>
                 <Td>

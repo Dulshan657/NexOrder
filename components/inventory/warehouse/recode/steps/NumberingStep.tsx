@@ -221,7 +221,7 @@ export function NumberingStep({
                 onChange={(e: any) => onStart(e.target.value === '' ? null : Number(e.target.value))}
                 className="w-24 font-mono"
               />
-              <span className="text-[11px] text-stone-400">Blank continues the block</span>
+              <span className="text-[11px] text-stone-500">Blank continues the block</span>
             </label>
           )}
         </section>

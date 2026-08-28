@@ -64,9 +64,9 @@ const PantryToolbar = forwardRef<HTMLInputElement, PantryToolbarProps>(({
                 <div>
                     <h2 className="font-display font-semibold text-stone-900 tracking-tight text-lg">
                         {horecaName}
-                        <span className="ml-2 text-stone-400 font-normal text-sm">/ Pantry</span>
+                        <span className="ml-2 text-stone-500 font-normal text-sm">/ Pantry</span>
                     </h2>
-                    <p className="text-[11px] uppercase tracking-[0.14em] text-stone-400 font-medium mt-0.5">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500 font-medium mt-0.5">
                         {itemCount} {itemCount === 1 ? 'item' : 'items'} curated for this venue
                     </p>
                 </div>
@@ -107,7 +107,7 @@ const PantryToolbar = forwardRef<HTMLInputElement, PantryToolbarProps>(({
             {/* Filter + sort row */}
             <div className="px-4 sm:px-5 pb-3 flex flex-wrap gap-2 items-center">
                 <div className="relative flex-1 min-w-[200px]">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" aria-hidden />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" aria-hidden />
                     <input
                         ref={filterRef}
                         type="text"
@@ -119,7 +119,7 @@ const PantryToolbar = forwardRef<HTMLInputElement, PantryToolbarProps>(({
                     />
                 </div>
                 <div className="relative">
-                    <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" aria-hidden />
+                    <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-500" aria-hidden />
                     <select
                         value={sort}
                         onChange={e => onSortChange(e.target.value as PantrySortKey)}

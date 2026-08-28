@@ -155,7 +155,7 @@ const TransferStockModal: React.FC<TransferStockModalProps> = ({ products, onClo
 
         <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
           <LocationPicker label="From" warehouses={activeWarehouses} warehouseId={fromWh} binId={fromBin} onWarehouse={setFromWh} onBin={setFromBin} />
-          <ArrowRight className="w-4 h-4 text-stone-400 mt-7" />
+          <ArrowRight className="w-4 h-4 text-stone-500 mt-7" />
           <LocationPicker label="To" warehouses={activeWarehouses} warehouseId={toWh} binId={toBin} onWarehouse={setToWh} onBin={setToBin} />
         </div>
 

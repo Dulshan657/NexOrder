@@ -166,7 +166,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                             <button
                                 onClick={() => setOpen(false)}
                                 aria-label="Close notifications"
-                                className="inline-flex items-center justify-center -my-2 rounded-lg text-stone-400 hover:text-stone-700 transition-colors cursor-pointer p-1 touch-target"
+                                className="inline-flex items-center justify-center -my-2 rounded-lg text-stone-500 hover:text-stone-700 transition-colors cursor-pointer p-1 touch-target"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -178,7 +178,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                         {showPoSection && (
                             <section>
                                 <div className="flex items-center justify-between px-4 pt-3 pb-1">
-                                    <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">PO Inbox</span>
+                                    <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">PO Inbox</span>
                                     <button
                                         onClick={handleOpenPoInbox}
                                         className="text-xs text-nexgen-blue hover:underline cursor-pointer touch-target-y"
@@ -209,7 +209,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                         <section>
                             {showPoSection && (
                                 <div className="px-4 pt-3 pb-1">
-                                    <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Notifications</span>
+                                    <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">Notifications</span>
                                 </div>
                             )}
                             {notifications.length === 0 ? (

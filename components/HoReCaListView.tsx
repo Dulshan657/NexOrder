@@ -58,7 +58,7 @@ const ActionMenu: React.FC<{
     <div className="relative" ref={ref}>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
-        className="p-1.5 rounded-lg hover:bg-stone-100 transition-colors cursor-pointer text-stone-400 hover:text-stone-600"
+        className="p-1.5 rounded-lg hover:bg-stone-100 transition-colors cursor-pointer text-stone-500 hover:text-stone-600"
       >
         <MoreVertical className="w-4 h-4" />
       </button>
@@ -217,16 +217,16 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
             <input
               type="text"
               placeholder="Search by name or address..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-9 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+              className="w-full pl-10 pr-9 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer">
+              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             )}
@@ -258,7 +258,7 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
       </div>
 
       {/* Results count */}
-      <p className="text-xs text-stone-400">
+      <p className="text-xs text-stone-500">
         {filtered.length} {filtered.length === 1 ? 'customer' : 'customers'}
         {segmentFilter !== 'all' && ` (${segmentFilter.replace('_', ' ')})`}
         {tierFilter !== 'all' && ` - ${tierFilter}`}
@@ -294,7 +294,7 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
                     >
                       <td className="px-5 py-3.5">
                         <p className="text-sm font-medium text-stone-900">{h.name}</p>
-                        <p className="text-xs text-stone-400 mt-0.5 truncate max-w-[250px]">{h.address}</p>
+                        <p className="text-xs text-stone-500 mt-0.5 truncate max-w-[250px]">{h.address}</p>
                       </td>
                       <td className="px-5 py-3.5">
                         {h.tier ? (
@@ -302,11 +302,11 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
                             {h.tier}
                           </span>
                         ) : (
-                          <span className="text-xs text-stone-300">--</span>
+                          <span className="text-xs text-stone-500">--</span>
                         )}
                       </td>
                       <td className="px-5 py-3.5">
-                        {insight ? <SegmentBadge segment={insight.segment} /> : <span className="text-xs text-stone-300">--</span>}
+                        {insight ? <SegmentBadge segment={insight.segment} /> : <span className="text-xs text-stone-500">--</span>}
                       </td>
                       <td className="px-5 py-3.5 text-right text-sm tabular-nums text-stone-700">
                         {h.creditLimit ? `$${h.creditLimit.toLocaleString()}` : '--'}
@@ -318,7 +318,7 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
                         {outstanding ? (
                           <span className="font-semibold text-amber-700">${outstanding.toFixed(2)}</span>
                         ) : (
-                          <span className="text-stone-300">--</span>
+                          <span className="text-stone-500">--</span>
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-right">
@@ -335,7 +335,7 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
         <div className="glass-card rounded-xl p-8 text-center">
           <Building2 className="w-8 h-8 text-stone-300 mx-auto mb-2" />
           <p className="text-sm text-stone-600">No customers match your filters</p>
-          <p className="text-xs text-stone-400 mt-1">Try adjusting your search or filters</p>
+          <p className="text-xs text-stone-500 mt-1">Try adjusting your search or filters</p>
         </div>
       )}
 

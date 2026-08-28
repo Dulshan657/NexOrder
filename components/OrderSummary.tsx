@@ -177,7 +177,7 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                         </svg>
                         <p className="text-stone-500 font-medium">Your order is empty.</p>
-                        <p className="text-sm text-stone-400 mt-1">Add products to get started.</p>
+                        <p className="text-sm text-stone-500 mt-1">Add products to get started.</p>
                       </>
                     )}
                 </div>
@@ -199,7 +199,7 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
                   <div className="flex items-start justify-between">
                     <div className="flex-grow pr-4">
                         <p className="font-medium text-stone-900">{item.name}</p>
-                        <p className="text-xs text-stone-400 mb-0.5">SKU: {item.sku}</p>
+                        <p className="text-xs text-stone-500 mb-0.5">SKU: {item.sku}</p>
                         <p className="text-sm text-stone-500">${item.price.toFixed(2)} / {item.unit}</p>
                     </div>
                     <div className="flex flex-col items-end space-y-2 flex-shrink-0">
@@ -213,7 +213,7 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                                 </button>
                             </div>
-                            <button onClick={() => handleRemoveOrDecrement(item.id, 0, item.packSize)} className="text-stone-400 hover:text-red-600 hover:bg-red-50 p-2.5 -m-1 rounded-full transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-red-500" aria-label={`Remove ${item.name} from order`}>
+                            <button onClick={() => handleRemoveOrDecrement(item.id, 0, item.packSize)} className="text-stone-500 hover:text-red-600 hover:bg-red-50 p-2.5 -m-1 rounded-full transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-red-500" aria-label={`Remove ${item.name} from order`}>
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>
                             </button>
                         </div>
@@ -264,7 +264,7 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
                         rows={3}
                         value={notes}
                         onChange={(e) => onNotesChange(e.target.value)}
-                        className="block w-full rounded-lg border-0 bg-stone-50 py-3 px-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300"
+                        className="block w-full rounded-lg border-0 bg-stone-50 py-3 px-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300"
                         placeholder="Add any special instructions for the warehouse..."
                     ></textarea>
                     <DeliveryScheduler

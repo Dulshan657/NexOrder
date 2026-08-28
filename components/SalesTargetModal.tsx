@@ -151,10 +151,10 @@ const SalesTargetModal: React.FC<SalesTargetModalProps> = ({ isOpen, onClose, ex
                                     onChange={e => updateField(type, 'enabled', e.target.checked)}
                                     className="w-4 h-4 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500"
                                 />
-                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${field.enabled ? 'bg-emerald-100 text-emerald-600' : 'bg-stone-200 text-stone-400'}`}>
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${field.enabled ? 'bg-emerald-100 text-emerald-600' : 'bg-stone-200 text-stone-600'}`}>
                                     {icon}
                                 </div>
-                                <span className={`font-semibold ${field.enabled ? 'text-stone-900' : 'text-stone-400'}`}>{label}</span>
+                                <span className={`font-semibold ${field.enabled ? 'text-stone-900' : 'text-stone-500'}`}>{label}</span>
                             </label>
 
                             {field.enabled && (
@@ -163,7 +163,7 @@ const SalesTargetModal: React.FC<SalesTargetModalProps> = ({ isOpen, onClose, ex
                                         <label className="block text-xs font-medium text-stone-500 mb-1">Target Value</label>
                                         <div className="relative">
                                             {prefix && (
-                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-medium">{prefix}</span>
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 font-medium">{prefix}</span>
                                             )}
                                             <input
                                                 type="number"

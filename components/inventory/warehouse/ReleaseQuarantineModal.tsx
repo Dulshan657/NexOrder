@@ -183,7 +183,7 @@ export function ReleaseQuarantineModal({ open, onClose, from, contents, destinat
                         onChange={(e) => setQtyByProduct((prev) => ({ ...prev, [c.productId]: e.target.value }))}
                         className="w-24 rounded border border-stone-200 px-2 py-1 text-right"
                       />
-                      <span className="ml-1 text-stone-400">of {releasable(c)}</span>
+                      <span className="ml-1 text-stone-500">of {releasable(c)}</span>
                     </td>
                   </tr>
                 ))}

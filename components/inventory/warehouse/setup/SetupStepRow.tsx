@@ -54,7 +54,7 @@ export function SetupStepRow({
       : status === 'current'
         ? 'font-semibold text-stone-900'
         : status === 'blocked'
-          ? 'text-stone-400'
+          ? 'text-stone-500'
           : 'text-stone-600'
 
   return (
@@ -67,10 +67,10 @@ export function SetupStepRow({
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="font-mono text-[10px] text-stone-400">{index}</span>
+          <span className="font-mono text-[10px] text-stone-500">{index}</span>
           <span className={`text-xs ${titleClass}`}>{step.title}</span>
           {evidence && (
-            <span className="font-mono text-[10px] text-stone-400">· {evidence}</span>
+            <span className="font-mono text-[10px] text-stone-500">· {evidence}</span>
           )}
         </div>
 
@@ -79,7 +79,7 @@ export function SetupStepRow({
         )}
 
         {status === 'blocked' && blockedBy.length > 0 && (
-          <p className="mt-1 text-[11px] font-medium text-stone-400">
+          <p className="mt-1 text-[11px] font-medium text-stone-500">
             Waiting on: {blockedBy.join(', ')}
           </p>
         )}
@@ -106,7 +106,7 @@ export function SetupStepRow({
               </button>
             )}
             {blockedReason && (
-              <span className="text-[11px] text-stone-400">{blockedReason}</span>
+              <span className="text-[11px] text-stone-500">{blockedReason}</span>
             )}
           </div>
         )}
@@ -118,7 +118,7 @@ export function SetupStepRow({
             type="button"
             onClick={onRevoke}
             disabled={busy}
-            className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-stone-400 hover:text-stone-600 hover:underline disabled:opacity-50 btn-press"
+            className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 hover:text-stone-600 hover:underline disabled:opacity-50 btn-press"
           >
             <Undo2 className="h-3 w-3" strokeWidth={2.5} /> Undo sign-off
           </button>

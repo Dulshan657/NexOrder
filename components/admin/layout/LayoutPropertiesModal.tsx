@@ -296,7 +296,7 @@ export function LayoutPropertiesModal({
             </span>
           </div>
           {grid ? (
-            <p className="text-xs text-stone-400 mt-1">
+            <p className="text-xs text-stone-500 mt-1">
               1 cell = {num(parsed.cellSizeM)} m. Drawn area {num(grid.gridWidth * parsed.cellSizeM)} ×{' '}
               {num(grid.gridHeight * parsed.cellSizeM)} m — rounded up so the far wall is inside the plan.
             </p>

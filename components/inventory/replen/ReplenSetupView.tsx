@@ -298,7 +298,7 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
       </div>
     );
   }
-  if (isLoading) return <div className="text-sm text-stone-400 p-4">Loading products…</div>;
+  if (isLoading) return <div className="text-sm text-stone-500 p-4">Loading products…</div>;
 
   const armedCount = rows.filter((r) => r.replenEnabled).length;
   const noPickZones = pickZoneBinIds.size === 0;
@@ -345,7 +345,7 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
               aria-selected={effectiveFilter === key}
               onClick={() => setFilter(key)}
               className={`px-2.5 py-1.5 rounded-md text-xs btn-press ${
-                effectiveFilter === key ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-500 hover:text-stone-700'
+                effectiveFilter === key ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
               }`}
             >
               {label}
@@ -407,7 +407,7 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
 
       <div className="glass-card rounded-xl overflow-x-auto">
         <table className="w-full text-left">
-          <thead className="text-[11px] uppercase tracking-wide text-stone-400 border-b border-stone-100">
+          <thead className="text-[11px] uppercase tracking-wide text-stone-500 border-b border-stone-100">
             <tr>
               <th className="px-2 py-2 w-8">
                 <input
@@ -463,7 +463,7 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
           </tbody>
         </table>
         {visible.length === 0 && (
-          <p className="text-sm text-stone-400 p-6 text-center">
+          <p className="text-sm text-stone-500 p-6 text-center">
             No products match this filter.
           </p>
         )}

@@ -216,13 +216,13 @@ const LabelPrintingSection: React.FC = () => {
             <option value="handling_unit">Pallets &amp; cartons (unlabelled)</option>
           </select>
           {mode === 'layout' && (
-            <p className="text-xs text-stone-400 mt-1">
+            <p className="text-xs text-stone-500 mt-1">
               Bins, rack levels, aisle signs and staging for one published layout — tracked, so a
               re-run only covers what has no sticker yet.
             </p>
           )}
           {mode === 'handling_unit' && (
-            <p className="text-xs text-stone-400 mt-1">
+            <p className="text-xs text-stone-500 mt-1">
               Prints every pallet/carton that has no sticker yet, then marks them labelled.
             </p>
           )}
@@ -294,7 +294,7 @@ const LabelPrintingSection: React.FC = () => {
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-stone-400 mt-1">{KIND_GROUPS[groupIndex].helper}</p>
+              <p className="text-xs text-stone-500 mt-1">{KIND_GROUPS[groupIndex].helper}</p>
             </div>
           </>
         )}
@@ -319,7 +319,7 @@ const LabelPrintingSection: React.FC = () => {
               }
               className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-white text-sm tabular-nums"
             />
-            <p className="text-xs text-stone-400 mt-1">
+            <p className="text-xs text-stone-500 mt-1">
               For reusing a part-used sticker sheet — leaves that many cells blank on page 1. This
               stock holds {SHEET_PRESET_INFO[preset].perSheet}, so the most you can skip is{' '}
               {offsetCeiling}.
@@ -415,9 +415,9 @@ const LabelPrintingSection: React.FC = () => {
               <li key={row.id} className="flex items-center gap-3 py-2">
                 <span className="text-xs text-stone-700 flex-1 min-w-0 truncate">
                   {row.labelKind === 'location' ? 'Locations' : row.labelKind === 'product' ? 'Products' : 'Handling units'}
-                  <span className="text-stone-400"> · {row.labelCount} labels</span>
+                  <span className="text-stone-500"> · {row.labelCount} labels</span>
                 </span>
-                <span className="text-[11px] text-stone-400 shrink-0 tabular-nums">
+                <span className="text-[11px] text-stone-500 shrink-0 tabular-nums">
                   {row.createdAt.slice(0, 10)}
                 </span>
                 <button

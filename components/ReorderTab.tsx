@@ -268,12 +268,12 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-start justify-between gap-2">
                                         <div>
-                                            <h4 className={`font-display font-semibold truncate ${item.removed ? 'text-stone-400 line-through' : 'text-stone-900'}`}>
+                                            <h4 className={`font-display font-semibold truncate ${item.removed ? 'text-stone-500 line-through' : 'text-stone-900'}`}>
                                                 {item.name}
                                             </h4>
                                             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                                <span className="text-xs text-stone-400">{item.sku}</span>
-                                                <span className="text-xs text-stone-400">&middot;</span>
+                                                <span className="text-xs text-stone-500">{item.sku}</span>
+                                                <span className="text-xs text-stone-500">&middot;</span>
                                                 <span className="text-xs text-stone-500">{packLabel}</span>
                                                 {item.isLowStock && !item.removed && (
                                                     <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">Low Stock</span>
@@ -291,7 +291,7 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
                                         ) : (
                                             <button
                                                 onClick={() => handleRemoveItem(item.id, item.packSize)}
-                                                className="text-stone-400 hover:text-red-500 transition-colors duration-200 p-2 -mr-1.5 rounded-md flex-shrink-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-red-500"
+                                                className="text-stone-500 hover:text-red-500 transition-colors duration-200 p-2 -mr-1.5 rounded-md flex-shrink-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-red-500"
                                                 aria-label={`Remove ${item.name}`}
                                             >
                                                 <Trash2 className="w-4 h-4" />
@@ -304,7 +304,7 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
                                         <div className="flex items-center justify-between mt-3 gap-2 flex-wrap">
                                             <div className="flex items-baseline gap-1">
                                                 <span className="text-sm font-semibold text-stone-900">${item.currentPrice.toFixed(2)}</span>
-                                                <span className="text-xs text-stone-400">/ {packLabel}</span>
+                                                <span className="text-xs text-stone-500">/ {packLabel}</span>
                                             </div>
 
                                             <div className="flex items-center gap-3">

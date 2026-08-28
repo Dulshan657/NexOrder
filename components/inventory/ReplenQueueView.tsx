@@ -137,7 +137,7 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
         <div className="glass-card rounded-xl p-10 text-center">
           <ArrowDownToLine className="w-9 h-9 text-stone-300 mx-auto mb-3" />
           <p className="text-sm text-stone-600">Every pick zone is above its minimum</p>
-          <p className="text-xs text-stone-400 mt-1">
+          <p className="text-xs text-stone-500 mt-1">
             Replenishments appear here automatically as picks drain a pick zone.
           </p>
         </div>
@@ -192,7 +192,7 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-lg font-display font-bold text-stone-900 tabular-nums">{task.quantity}</p>
-                    <p className="text-[11px] text-stone-400">base units</p>
+                    <p className="text-[11px] text-stone-500">base units</p>
                   </div>
                 </div>
 
@@ -242,7 +242,7 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
                   </button>
                 </div>
                 {!canWork && (
-                  <p className="mt-2 text-[11px] text-stone-400">
+                  <p className="mt-2 text-[11px] text-stone-500">
                     You can only replenish at your own warehouse.
                   </p>
                 )}
@@ -259,11 +259,11 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
           </h4>
           {assigned.map((task) => (
             <div key={task.id} className="rounded-xl border border-stone-200 bg-stone-50 p-3 flex flex-wrap items-center gap-3">
-              <Layers className="w-4 h-4 text-stone-400 shrink-0" aria-hidden="true" />
+              <Layers className="w-4 h-4 text-stone-500 shrink-0" aria-hidden="true" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-stone-800 truncate">
                   {task.productName ?? `Product ${task.productId}`}
-                  <span className="text-stone-400"> · </span>
+                  <span className="text-stone-500"> · </span>
                   <span className="tabular-nums">{task.quantity}</span>
                 </p>
                 <p className="text-xs text-stone-500">
@@ -287,7 +287,7 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
       )}
 
       {suggested.length === 0 && assigned.length > 0 && (
-        <p className="text-xs text-stone-400 flex items-center gap-1.5">
+        <p className="text-xs text-stone-500 flex items-center gap-1.5">
           <PackageOpen className="w-3.5 h-3.5" aria-hidden="true" />
           Everything raised is already assigned — switch to Walk to move it.
         </p>

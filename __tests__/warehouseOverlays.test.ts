@@ -58,7 +58,7 @@ describe('occupancyBucket boundaries', () => {
 describe('occupancyPill', () => {
   it('maps buckets to tailwind classes matching the tree pill', () => {
     expect(occupancyPill(null)).toBe('bg-stone-100 text-stone-500')
-    expect(occupancyPill(0)).toBe('bg-stone-100 text-stone-400')
+    expect(occupancyPill(0)).toBe('bg-stone-100 text-stone-600')
     expect(occupancyPill(0.3)).toBe('bg-emerald-100 text-emerald-700')
     expect(occupancyPill(0.6)).toBe('bg-amber-100 text-amber-700')
     expect(occupancyPill(0.9)).toBe('bg-orange-100 text-orange-700')

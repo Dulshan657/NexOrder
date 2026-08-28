@@ -14,7 +14,7 @@ function DispatchFunnelChart({ data }: DispatchFunnelChartProps) {
 
   if (total === 0) {
     return (
-      <div className="flex h-[240px] items-center justify-center text-sm text-stone-400">
+      <div className="flex h-[240px] items-center justify-center text-sm text-stone-500">
         No orders in this window
       </div>
     );

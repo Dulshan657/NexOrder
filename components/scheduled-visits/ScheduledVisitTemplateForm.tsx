@@ -50,7 +50,7 @@ const ScheduledVisitTemplateForm: React.FC<RouteTemplateFormProps> = ({ hoReCas,
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-display font-bold text-stone-800">New ScheduledVisit Template</h2>
         <button onClick={onCancel} className="p-2 hover:bg-stone-100 rounded-lg transition-colors">
-          <X className="w-5 h-5 text-stone-400" />
+          <X className="w-5 h-5 text-stone-500" />
         </button>
       </div>
 
@@ -68,7 +68,7 @@ const ScheduledVisitTemplateForm: React.FC<RouteTemplateFormProps> = ({ hoReCas,
         <div>
           <label className="block text-sm font-medium text-stone-700 mb-1">Assign To</label>
           <div className="relative">
-            <UserCheck className="absolute left-3 top-2.5 w-4 h-4 text-stone-400" />
+            <UserCheck className="absolute left-3 top-2.5 w-4 h-4 text-stone-500" />
             <select
               value={assignedTo}
               onChange={e => setAssignedTo(e.target.value ? Number(e.target.value) : '')}
@@ -122,13 +122,13 @@ const ScheduledVisitTemplateForm: React.FC<RouteTemplateFormProps> = ({ hoReCas,
                 <Plus className="w-4 h-4 text-blue-500 flex-shrink-0" />
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-stone-800 truncate">{customer.name}</p>
-                  <p className="text-xs text-stone-400 truncate">{customer.address}</p>
+                  <p className="text-xs text-stone-500 truncate">{customer.address}</p>
                 </div>
               </button>
             ))}
           </div>
         ) : (
-          <p className="text-sm text-stone-400 italic">All hoReCas added.</p>
+          <p className="text-sm text-stone-500 italic">All hoReCas added.</p>
         )}
       </div>
 
@@ -159,12 +159,12 @@ const ScheduledVisitTemplateForm: React.FC<RouteTemplateFormProps> = ({ hoReCas,
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-stone-800 truncate">{customer.name}</p>
-                    <p className="text-xs text-stone-400 truncate flex items-center gap-1">
+                    <p className="text-xs text-stone-500 truncate flex items-center gap-1">
                       <MapPin className="w-3 h-3" />{customer.address}
                     </p>
                   </div>
                   <button onClick={() => setSelectedHoReCaIds(prev => prev.filter(id => id !== hoReCaId))} className="p-1 hover:bg-stone-200 rounded transition-colors">
-                    <X className="w-4 h-4 text-stone-400" />
+                    <X className="w-4 h-4 text-stone-500" />
                   </button>
                 </div>
               );

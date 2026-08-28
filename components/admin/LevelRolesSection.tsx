@@ -328,7 +328,7 @@ const LevelRolesSection: React.FC = () => {
                       </span>
                     )}
                     {!r.isActive && (
-                      <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-400">Retired</span>
+                      <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">Retired</span>
                     )}
                   </div>
                   <p className="text-xs text-stone-500 mt-0.5 truncate">
@@ -396,7 +396,7 @@ const LevelRolesSection: React.FC = () => {
                 placeholder="Pick Zone"
                 onChange={(e) => setForm({ ...form, displayName: e.target.value })}
               />
-              <span className="text-[10px] text-stone-400">What operators see, everywhere.</span>
+              <span className="text-[10px] text-stone-500">What operators see, everywhere.</span>
             </label>
             <label className="block text-xs text-stone-500">
               Key
@@ -407,7 +407,7 @@ const LevelRolesSection: React.FC = () => {
                 disabled={!!editing}
                 onChange={(e) => setForm({ ...form, key: e.target.value })}
               />
-              <span className="text-[10px] text-stone-400">
+              <span className="text-[10px] text-stone-500">
                 {editing ? 'Permanent — stored on every level using this role.' : 'Permanent once saved. Lowercase.'}
               </span>
             </label>
@@ -462,7 +462,7 @@ const LevelRolesSection: React.FC = () => {
                 value={form.sortOrder}
                 onChange={(e) => setForm({ ...form, sortOrder: e.target.value })}
               />
-              <span className="text-[10px] text-stone-400">Lowest first. New levels default to the first role.</span>
+              <span className="text-[10px] text-stone-500">Lowest first. New levels default to the first role.</span>
             </label>
           </div>
 
@@ -510,7 +510,7 @@ const LevelRolesSection: React.FC = () => {
                 value={form.replenSourceRank}
                 onChange={(e) => setForm({ ...form, replenSourceRank: e.target.value })}
               />
-              <span className="text-[10px] text-stone-400">
+              <span className="text-[10px] text-stone-500">
                 1 is drawn from first. Reserve is 1 and Bulk is 2, so a pick zone empties reserve before bulk.
               </span>
             </label>

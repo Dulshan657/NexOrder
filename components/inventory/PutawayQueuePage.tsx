@@ -155,7 +155,7 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
                   aria-selected={stage === t}
                   onClick={() => setStage(t)}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-md text-sm btn-press ${
-                    stage === t ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-500 hover:text-stone-700'
+                    stage === t ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
                   }`}
                 >
                   {t === 'assign' ? (
@@ -173,7 +173,7 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
                 </button>
               ))}
             </div>
-            <p className="mt-2 text-xs text-stone-400">
+            <p className="mt-2 text-xs text-stone-500">
               {stage === 'assign'
                 ? 'Decide which bin each line goes to. Nothing moves until someone carries it.'
                 : 'Carry each pallet to its bin and scan to confirm. This is when the stock moves.'}
@@ -193,7 +193,7 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
           <div className="glass-card rounded-xl p-10 text-center">
             <PackageOpen className="w-9 h-9 text-stone-300 mx-auto mb-3" />
             <p className="text-sm text-stone-600">Pick a warehouse to see its putaway queue</p>
-            <p className="text-xs text-stone-400 mt-1">Choose a site from the selector above.</p>
+            <p className="text-xs text-stone-500 mt-1">Choose a site from the selector above.</p>
           </div>
         </div>
       )}

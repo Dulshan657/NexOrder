@@ -85,7 +85,7 @@ const AutoApprovalMenu: React.FC<AutoApprovalMenuProps> = ({ addToast }) => {
       >
         <ShieldCheck className="w-4 h-4 text-stone-500" />
         Auto-approval
-        <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
+        <ChevronDown className="w-3.5 h-3.5 text-stone-500" />
       </button>
 
       {open && (

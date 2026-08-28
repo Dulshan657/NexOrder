@@ -28,7 +28,7 @@ import {
 import { cartonUomOf, palletProvenance, provenanceHint } from '../../lib/palletUom'
 import type { ExtraUomDraft } from './ProductUomsSection'
 
-const CM = 'block w-full rounded-lg border-0 bg-white py-2 px-2.5 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm'
+const CM = 'block w-full rounded-lg border-0 bg-white py-2 px-2.5 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm'
 
 export type ProductPalletFitSectionProps = {
   /** The global pallet, or null when settings have not loaded. */
@@ -99,10 +99,10 @@ export function ProductPalletFitSection({
   return (
     <div className="bg-stone-50 rounded-lg p-4 border border-stone-200 space-y-3">
       <div className="flex items-start gap-2">
-        <Boxes className="w-4 h-4 mt-0.5 shrink-0 text-stone-400" aria-hidden="true" />
+        <Boxes className="w-4 h-4 mt-0.5 shrink-0 text-stone-500" aria-hidden="true" />
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-stone-700">Pallet quantity</h3>
-          <p className="text-[11px] text-stone-400 mt-0.5">
+          <p className="text-[11px] text-stone-500 mt-0.5">
             Worked out from the carton and the standard pallet, so goods-in can count a full
             pallet as one line. Nothing is saved until you add the unit.
           </p>
@@ -233,7 +233,7 @@ export function ProductPalletFitSection({
         </p>
       )}
 
-      <p className="text-[11px] text-stone-400">
+      <p className="text-[11px] text-stone-500">
         The Pallet unit is added for receiving only, never for ordering — a full pallet can be
         counted in at the dock without appearing in the Shop.
       </p>

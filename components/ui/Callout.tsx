@@ -38,7 +38,7 @@ const TONE: Record<CalloutTone, { box: string; title: string; body: string; icon
     box: 'border-stone-200 bg-stone-50/70',
     title: 'text-stone-800',
     body: 'text-stone-600',
-    icon: 'text-stone-400',
+    icon: 'text-stone-500',
   },
   info: {
     box: 'border-nexgen-blue/25 bg-nexgen-blue-light/50',

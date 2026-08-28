@@ -142,7 +142,7 @@ const ChangeRequestModal: React.FC<ChangeRequestModalProps> = ({ route, hoReCas,
                 <div className="w-6 h-6 rounded-full bg-nexgen-blue text-white flex items-center justify-center text-xs font-bold">{index + 1}</div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-stone-800 truncate">{customer.name}</p>
-                  <p className="text-xs text-stone-400 truncate"><MapPin className="w-3 h-3 inline mr-0.5" />{customer.address}</p>
+                  <p className="text-xs text-stone-500 truncate"><MapPin className="w-3 h-3 inline mr-0.5" />{customer.address}</p>
                 </div>
               </div>
             );
@@ -168,13 +168,13 @@ const ChangeRequestModal: React.FC<ChangeRequestModalProps> = ({ route, hoReCas,
                   <Plus className="w-4 h-4 text-blue-500" />
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-stone-800 truncate">{c.name}</p>
-                    <p className="text-xs text-stone-400 truncate">{c.address}</p>
+                    <p className="text-xs text-stone-500 truncate">{c.address}</p>
                   </div>
                 </button>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-stone-400 italic">All HoReCas are already on this route.</p>
+            <p className="text-sm text-stone-500 italic">All HoReCas are already on this route.</p>
           )}
         </div>
       )}

@@ -80,7 +80,7 @@ export function BlockStep({
             {suggestion && clean !== suggestion && (
               <button type="button" onClick={() => onBlock(suggestion)} className={CHIP}>
                 <span className="font-mono">{suggestion}</span>
-                <span className="text-stone-400">from the area</span>
+                <span className="text-stone-500">from the area</span>
               </button>
             )}
             {recent.map((b) => (

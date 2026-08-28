@@ -134,15 +134,15 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
   if (step === 'idle') {
     return (
       <div className="flex items-center gap-3 py-1.5 pl-5">
-        <MapPin className="w-3 h-3 text-stone-400 shrink-0" aria-hidden="true" />
+        <MapPin className="w-3 h-3 text-stone-500 shrink-0" aria-hidden="true" />
         {/* Name first, code beneath — the same order as the walk cards. */}
         <span className="flex-1 min-w-0 truncate">
           <span className="block text-xs text-stone-600 truncate">{locationTitle(bin)}</span>
           {locationSubtitle(bin) && (
-            <span className="block font-mono text-[10px] text-stone-400 truncate">{locationSubtitle(bin)}</span>
+            <span className="block font-mono text-[10px] text-stone-500 truncate">{locationSubtitle(bin)}</span>
           )}
         </span>
-        <span className="font-mono text-xs text-stone-400 shrink-0">
+        <span className="font-mono text-xs text-stone-500 shrink-0">
           {task.pickedQty}/{task.allocatedQty}
         </span>
         <button
@@ -162,13 +162,13 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
       {/* Progress: which of the three confirmations are done. */}
       <div className="flex flex-wrap items-center gap-2 text-[11px]">
         <StepChip label="Bin" done={step !== 'bin'} active={step === 'bin'} value={binCode} />
-        <span className="text-stone-300">→</span>
+        <span className="text-stone-500">→</span>
         <StepChip label="Item" done={step === 'qty'} active={step === 'item'} value={itemCode} />
-        <span className="text-stone-300">→</span>
+        <span className="text-stone-500">→</span>
         <StepChip label="Count" done={false} active={step === 'qty'} value={step === 'qty' ? qty : ''} />
         <button
           onClick={reset}
-          className="ml-auto p-1 text-stone-400 hover:text-stone-700 rounded btn-press"
+          className="ml-auto p-1 text-stone-500 hover:text-stone-700 rounded btn-press"
           aria-label="Cancel this pick"
         >
           <X className="w-3.5 h-3.5" aria-hidden="true" />
@@ -263,7 +263,7 @@ const StepChip: React.FC<{
           ? 'bg-emerald-100 text-emerald-700'
           : active
             ? 'bg-nexgen-blue text-white'
-            : 'bg-stone-100 text-stone-400'
+            : 'bg-stone-100 text-stone-600'
       }`}
     >
       {done && <Check className="w-3 h-3" aria-hidden="true" />}

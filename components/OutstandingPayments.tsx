@@ -39,7 +39,7 @@ const BucketSection: React.FC<{ bucket: AgingBucket; defaultOpen?: boolean }> = 
                         <div key={inv.id} className="flex items-center justify-between px-3 py-2 text-sm">
                             <div>
                                 <span className="font-medium text-stone-700">{inv.id}</span>
-                                <span className="text-stone-400 ml-2 text-xs">Due {new Date(inv.dueDate).toLocaleDateString()}</span>
+                                <span className="text-stone-500 ml-2 text-xs">Due {new Date(inv.dueDate).toLocaleDateString()}</span>
                             </div>
                             <span className="font-semibold text-stone-900">${inv.amount.toFixed(2)}</span>
                         </div>

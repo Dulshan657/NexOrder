@@ -164,7 +164,7 @@ export function Tooltip({ text, label, align = 'left', className = '' }: Tooltip
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className={
-          'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-stone-400 ' +
+          'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-stone-500 ' +
           `hover:text-stone-600 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/40 ${className}`
         }
       >

@@ -108,7 +108,7 @@ export function Field({ label, htmlFor, helper, error, children }: FieldProps) {
             {error}
           </p>
         ) : helper ? (
-          <p id={msgId} className="text-xs text-stone-400 mt-1">
+          <p id={msgId} className="text-xs text-stone-500 mt-1">
             {helper}
           </p>
         ) : null}

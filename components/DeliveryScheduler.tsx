@@ -34,7 +34,7 @@ const DeliveryScheduler: React.FC<DeliverySchedulerProps> = ({
             <div className="flex items-center gap-2 mb-3">
                 <Calendar className="w-4 h-4 text-stone-500" />
                 <h4 className="text-sm font-medium text-stone-700">Delivery Schedule</h4>
-                <span className="text-xs text-stone-400">(optional)</span>
+                <span className="text-xs text-stone-500">(optional)</span>
             </div>
 
             <div className="space-y-3">

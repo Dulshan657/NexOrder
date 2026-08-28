@@ -12,7 +12,7 @@ interface ProductMovementSectionProps {
 const TrendIcon: React.FC<{ trend: string }> = ({ trend }) => {
   if (trend === 'accelerating') return <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />;
   if (trend === 'declining') return <TrendingDown className="w-3.5 h-3.5 text-orange-600" />;
-  return <Minus className="w-3.5 h-3.5 text-stone-400" />;
+  return <Minus className="w-3.5 h-3.5 text-stone-500" />;
 };
 
 const ProductMovementSection: React.FC<ProductMovementSectionProps> = ({ orders, products }) => {
@@ -38,7 +38,7 @@ const ProductMovementSection: React.FC<ProductMovementSectionProps> = ({ orders,
           <Package className="w-5 h-5 text-stone-600" />
           <h3 className="font-semibold text-stone-800">Product Movement</h3>
         </div>
-        {isExpanded ? <ChevronUp className="w-4 h-4 text-stone-400" /> : <ChevronDown className="w-4 h-4 text-stone-400" />}
+        {isExpanded ? <ChevronUp className="w-4 h-4 text-stone-500" /> : <ChevronDown className="w-4 h-4 text-stone-500" />}
       </button>
 
       {isExpanded && (

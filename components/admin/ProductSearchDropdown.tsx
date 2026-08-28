@@ -71,7 +71,7 @@ const ProductSearchDropdown: React.FC<ProductSearchDropdownProps> = ({
         }}
         className={`flex w-full items-center gap-2 rounded border px-2 py-1.5 text-sm transition-colors ${
           disabled
-            ? 'border-stone-200 bg-stone-100 text-stone-400 cursor-not-allowed'
+            ? 'border-stone-200 bg-stone-100 text-stone-600 cursor-not-allowed'
             : error
               ? 'border-rose-400 bg-rose-50 text-rose-700'
               : selected
@@ -79,12 +79,12 @@ const ProductSearchDropdown: React.FC<ProductSearchDropdownProps> = ({
                 : 'border-stone-300 bg-white text-stone-500 hover:border-stone-400'
         }`}
       >
-        <Package className="w-3.5 h-3.5 text-stone-400 flex-shrink-0" />
+        <Package className="w-3.5 h-3.5 text-stone-500 flex-shrink-0" />
         <span className="flex-1 text-left truncate">
           {selected ? `${selected.sku} · ${selected.name}` : placeholder}
         </span>
         <ChevronDown
-          className={`w-3.5 h-3.5 text-stone-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`w-3.5 h-3.5 text-stone-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -94,14 +94,14 @@ const ProductSearchDropdown: React.FC<ProductSearchDropdownProps> = ({
         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-40 overflow-hidden min-w-0 sm:min-w-[280px]">
           <div className="p-2 border-b border-stone-100">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-500" />
               <input
                 ref={inputRef}
                 type="text"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search by SKU or name…"
-                className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md bg-stone-50 border-0 ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400 focus:outline-none"
+                className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md bg-stone-50 border-0 ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500 focus:outline-none"
                 onKeyDown={e => {
                   if (e.key === 'Escape') {
                     setIsOpen(false)
@@ -113,7 +113,7 @@ const ProductSearchDropdown: React.FC<ProductSearchDropdownProps> = ({
           </div>
           <div className="max-h-64 overflow-y-auto py-1">
             {filtered.length === 0 ? (
-              <p className="px-3 py-4 text-sm text-stone-400 text-center">No matches</p>
+              <p className="px-3 py-4 text-sm text-stone-500 text-center">No matches</p>
             ) : (
               filtered.map(p => (
                 <button
@@ -131,7 +131,7 @@ const ProductSearchDropdown: React.FC<ProductSearchDropdownProps> = ({
                   }`}
                 >
                   <span className="block truncate">{p.name}</span>
-                  <span className="block text-xs text-stone-400 truncate mt-0.5">
+                  <span className="block text-xs text-stone-500 truncate mt-0.5">
                     {p.sku} · carton {p.cartonSize}
                     {Number.isFinite(p.price) && p.price > 0 ? ` · $${p.price.toFixed(2)}` : ''}
                   </span>

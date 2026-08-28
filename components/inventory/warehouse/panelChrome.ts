@@ -18,7 +18,7 @@
 
 /** An uppercase section eyebrow. */
 export const SECTION_LABEL =
-  'text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-400'
+  'text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500'
 
 /** A pill: quick-select shortcuts, inline actions inside a card. */
 export const CHIP =

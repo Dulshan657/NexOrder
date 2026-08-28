@@ -97,9 +97,9 @@ export function SlottingSuggestionsView({ warehouse, productNameById }: Slotting
                 </p>
                 <p className="text-[11px] text-stone-500 flex items-center gap-1 mt-0.5">
                   <span className="font-mono">{binCode(s.fromLocationId)}</span>
-                  <ArrowRight className="w-3 h-3 text-stone-400" />
+                  <ArrowRight className="w-3 h-3 text-stone-500" />
                   <span className="font-mono text-emerald-600">{binCode(s.toLocationId)}</span>
-                  <span className="text-stone-400">· saves {s.expectedGainM.toFixed(1)} m</span>
+                  <span className="text-stone-500">· saves {s.expectedGainM.toFixed(1)} m</span>
                 </p>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">

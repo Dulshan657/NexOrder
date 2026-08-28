@@ -92,6 +92,21 @@ export default defineConfig({
   },
   projects: [
     {
+      // Colour contrast on the AUTHENTICATED surfaces, signed in as Warehouse.
+      // An instrument, like `perf` and `soak`, and excluded from the CI a11y job
+      // for the same kind of reason: it needs real credentials.
+      //
+      // It fills the hole between the other two tiers. The jsdom axe suite
+      // reaches authenticated components but has no computed colour, so it
+      // cannot run `color-contrast` at all; the `a11y` project measures colour
+      // properly but can only reach the two signed-out screens. Contrast behind
+      // the login was measured by nothing until this existed.
+      name: 'contrast',
+      testDir: './tests/contrast',
+      testMatch: '**/*.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       // axe in a real browser. Its testDir sits OUTSIDE the top-level
       // './tests/e2e' that every other project inherits, so `npm run test:e2e`
       // does not pick it up and it needs no credentials and no database -- the

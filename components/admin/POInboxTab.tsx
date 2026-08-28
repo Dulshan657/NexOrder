@@ -261,7 +261,7 @@ const EMPTY_COPY: Record<PendingPoStatus, { icon: React.ReactNode; title: string
     tint: 'bg-emerald-50',
   },
   rejected: {
-    icon: <Inbox className="w-6 h-6 text-stone-400" />,
+    icon: <Inbox className="w-6 h-6 text-stone-500" />,
     title: 'No rejected POs',
     body: 'POs you reject (with a recorded reason) are kept here for the audit trail.',
     tint: 'bg-stone-100',
@@ -269,7 +269,7 @@ const EMPTY_COPY: Record<PendingPoStatus, { icon: React.ReactNode; title: string
 }
 
 const ARCHIVE_EMPTY = {
-  icon: <Inbox className="w-6 h-6 text-stone-400" />,
+  icon: <Inbox className="w-6 h-6 text-stone-500" />,
   title: 'Nothing archived yet',
   body: `Resolved POs move here automatically ${ARCHIVE_AFTER_DAYS} days after they're approved, auto-approved, or rejected.`,
   tint: 'bg-stone-100',
@@ -389,7 +389,7 @@ const Row: React.FC<RowProps> = ({ row, hoReCa, index, productById, lowThreshold
             {customerName ? (
               <span className="truncate">{customerName}</span>
             ) : (
-              <span className="italic text-stone-400">unresolved</span>
+              <span className="italic text-stone-500">unresolved</span>
             )}
             <span aria-hidden>·</span>
             <span className="truncate">{row.from_address || 'unknown sender'}</span>

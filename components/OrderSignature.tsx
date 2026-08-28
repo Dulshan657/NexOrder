@@ -53,7 +53,7 @@ const OrderSignature: React.FC<OrderSignatureProps> = ({ orderId, stored }) => {
     }
 
     return (
-        <div className="flex items-center gap-2 text-sm text-stone-400 bg-white border border-stone-200 rounded-lg px-3 py-2 h-20">
+        <div className="flex items-center gap-2 text-sm text-stone-500 bg-white border border-stone-200 rounded-lg px-3 py-2 h-20">
             <Loader2 className="w-4 h-4 animate-spin shrink-0" />
             <span>{isPending ? 'Loading signature…' : 'No signature stored.'}</span>
         </div>

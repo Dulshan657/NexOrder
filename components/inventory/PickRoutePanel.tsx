@@ -68,10 +68,10 @@ export function PickRoutePanel({ warehouseId, orderIds }: PickRoutePanelProps) {
             <span className="font-medium text-stone-700 shrink-0">
               {locationTitle(binNames?.get(stop.locationId) ?? (stop.code ? { code: stop.code } : null))}
             </span>
-            <span className="text-stone-400">·</span>
+            <span className="text-stone-500">·</span>
             <span className="font-mono text-stone-600">{stop.qtyBase} units</span>
-            <span className="text-stone-400">·</span>
-            <span className="font-mono text-stone-400">+{stop.legDistanceM.toFixed(1)} m</span>
+            <span className="text-stone-500">·</span>
+            <span className="font-mono text-stone-500">+{stop.legDistanceM.toFixed(1)} m</span>
           </li>
         ))}
       </ol>

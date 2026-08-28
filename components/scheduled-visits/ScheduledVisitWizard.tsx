@@ -63,7 +63,7 @@ const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, use
                 }`}>
                   {step > s.num ? <Check className="w-4 h-4" /> : s.num}
                 </div>
-                <span className={`text-xs font-medium ${step >= s.num ? 'text-stone-700' : 'text-stone-400'}`}>{s.label}</span>
+                <span className={`text-xs font-medium ${step >= s.num ? 'text-stone-700' : 'text-stone-500'}`}>{s.label}</span>
               </div>
               {i < STEPS.length - 1 && (
                 <div className={`flex-1 h-0.5 mx-2 mb-5 ${step > s.num ? 'bg-emerald-500' : 'bg-stone-200'}`} />
@@ -85,14 +85,14 @@ const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, use
                 value={name}
                 onChange={e => setName(e.target.value)}
                 placeholder="e.g. Monday CBD ScheduledVisit"
-                className="w-full px-4 py-3 rounded-lg border-0 bg-stone-50 ring-1 ring-inset ring-stone-200 text-stone-900 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400 text-sm"
+                className="w-full px-4 py-3 rounded-lg border-0 bg-stone-50 ring-1 ring-inset ring-stone-200 text-stone-900 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500 text-sm"
                 autoFocus
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-stone-700 mb-1.5">Date</label>
               <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500 pointer-events-none" />
                 <input
                   type="date"
                   value={date}
@@ -128,18 +128,18 @@ const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, use
             <div className="space-y-3">
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wider">Search & add stops</p>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500 pointer-events-none" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="Search HoReCa..."
-                  className="w-full pl-9 pr-4 py-2.5 rounded-lg border-0 bg-stone-50 ring-1 ring-inset ring-stone-200 text-stone-900 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400 text-sm"
+                  className="w-full pl-9 pr-4 py-2.5 rounded-lg border-0 bg-stone-50 ring-1 ring-inset ring-stone-200 text-stone-900 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500 text-sm"
                 />
               </div>
               <div className="max-h-60 overflow-y-auto space-y-1 border border-stone-200 rounded-xl p-2">
                 {availableHoReCas.length === 0 ? (
-                  <p className="text-sm text-stone-400 text-center py-4">No matching HoReCa found</p>
+                  <p className="text-sm text-stone-500 text-center py-4">No matching HoReCa found</p>
                 ) : (
                   availableHoReCas.map(c => (
                     <button
@@ -149,7 +149,7 @@ const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, use
                     >
                       <div className="min-w-0">
                         <p className="font-medium truncate">{c.name}</p>
-                        {c.address && <p className="text-xs text-stone-400 truncate">{c.address}</p>}
+                        {c.address && <p className="text-xs text-stone-500 truncate">{c.address}</p>}
                       </div>
                       <span className="text-nexgen-blue text-xs font-medium flex-shrink-0 ml-2">Add</span>
                     </button>

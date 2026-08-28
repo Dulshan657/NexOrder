@@ -141,7 +141,7 @@ const RibbonStat: React.FC<RibbonStatProps> = ({ label, value, tone = 'default',
   <div className={`px-4 py-2 text-right ${emphasise ? 'bg-amber-50' : ''}`}>
     <dt
       className={`text-[10px] uppercase tracking-wide ${
-        emphasise ? 'text-amber-700' : 'text-stone-400'
+        emphasise ? 'text-amber-700' : 'text-stone-500'
       }`}
     >
       {label}
@@ -149,7 +149,7 @@ const RibbonStat: React.FC<RibbonStatProps> = ({ label, value, tone = 'default',
     <dd className={`font-mono text-base leading-tight ${INLINE_VALUE_TONE[tone]} ${emphasise ? 'font-bold' : 'font-semibold'}`}>
       {value}
     </dd>
-    {sub && <div className="text-[10px] font-mono text-stone-400 leading-tight">{sub}</div>}
+    {sub && <div className="text-[10px] font-mono text-stone-500 leading-tight">{sub}</div>}
   </div>
 )
 

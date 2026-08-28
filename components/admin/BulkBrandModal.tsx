@@ -135,7 +135,7 @@ const BulkBrandModal: React.FC<BulkBrandModalProps> = ({
           />
           <span>
             Clear the brand instead
-            <span className="block text-[10px] text-stone-400">
+            <span className="block text-[10px] text-stone-500">
               Sets it to “no brand”, which is not the same as an empty name — a
               slotting rule can never match on it.
             </span>

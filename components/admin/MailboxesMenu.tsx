@@ -45,7 +45,7 @@ const STATUS_DOT: Record<EmailAccountStatus, { label: string; dot: string; text:
   active: { label: 'Active', dot: 'bg-emerald-500', text: 'text-emerald-700' },
   paused: { label: 'Paused', dot: 'bg-stone-400', text: 'text-stone-500' },
   error: { label: 'Needs reconnect', dot: 'bg-amber-500', text: 'text-amber-700' },
-  signed_out: { label: 'Signed out', dot: 'bg-stone-300', text: 'text-stone-400' },
+  signed_out: { label: 'Signed out', dot: 'bg-stone-300', text: 'text-stone-500' },
 }
 
 const HEALTH_DOT: Record<'ok' | 'paused' | 'error', string> = {
@@ -267,7 +267,7 @@ const MailboxesMenu: React.FC<MailboxesMenuProps> = ({ addToast, autoOpenNonce }
                 : 'All mailboxes healthy'
           }
         />
-        <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
+        <ChevronDown className="w-3.5 h-3.5 text-stone-500" />
       </button>
 
       {open && (
@@ -279,7 +279,7 @@ const MailboxesMenu: React.FC<MailboxesMenuProps> = ({ addToast, autoOpenNonce }
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200/70">
             <span className="font-semibold text-sm text-stone-900">Connected mailboxes</span>
-            <span className="font-mono text-[11px] text-stone-400">{health.count}</span>
+            <span className="font-mono text-[11px] text-stone-500">{health.count}</span>
           </div>
 
           {accountsQuery.isLoading ? (
@@ -448,7 +448,7 @@ const AccountRow: React.FC<AccountRowProps> = ({
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             aria-label={`Actions for ${account.email_address}`}
-            className="shrink-0 p-1 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 btn-press"
+            className="shrink-0 p-1 rounded-md text-stone-500 hover:text-stone-700 hover:bg-stone-100 btn-press"
           >
             <MoreHorizontal className="w-4 h-4" />
           </button>

@@ -30,7 +30,7 @@ export function WarehousePicker({ className, showAllOption = true, effectiveId }
     if (isPinned) {
         return (
             <span className={`inline-flex items-center gap-1.5 text-sm text-stone-600 ${className ?? ''}`}>
-                <Lock className="h-3.5 w-3.5 text-stone-400" aria-hidden="true" />
+                <Lock className="h-3.5 w-3.5 text-stone-500" aria-hidden="true" />
                 <span className="font-medium">Warehouse: {scopeLabel}</span>
             </span>
         );

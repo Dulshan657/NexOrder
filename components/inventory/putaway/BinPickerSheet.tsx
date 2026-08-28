@@ -270,7 +270,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
                 ))}
               </select>
             )}
-            <span className="text-xs text-stone-400 tabular-nums">
+            <span className="text-xs text-stone-500 tabular-nums">
               = {trimNumber(baseQty)} {unitLabel}
             </span>
           </div>
@@ -306,7 +306,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
                       Prefer the live row, exactly as PutawayExplanationCard
                       does; fall back to the snapshot only when the id is gone. */}
                   {locationsById.get(a.locationId)?.code ?? a.locationCode}
-                  <span className="ml-1 text-[10px] text-stone-400 tabular-nums">{a.totalScore.toFixed(2)}</span>
+                  <span className="ml-1 text-[10px] text-stone-500 tabular-nums">{a.totalScore.toFixed(2)}</span>
                 </button>
               ))}
             </div>
@@ -339,7 +339,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
         <div>
           <label className="block text-xs font-semibold text-stone-600 mb-1.5">Or browse bins</label>
           <div className="relative">
-            <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -351,9 +351,9 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
 
           <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-stone-100 divide-y divide-stone-100">
             {locationsQuery.isLoading ? (
-              <div className="p-4 text-xs text-stone-400">Loading bins…</div>
+              <div className="p-4 text-xs text-stone-500">Loading bins…</div>
             ) : matches.length === 0 ? (
-              <div className="p-4 text-xs text-stone-400">No bins match that search.</div>
+              <div className="p-4 text-xs text-stone-500">No bins match that search.</div>
             ) : (
               matches.map((b) => {
                 const used = fill.get(b.id) ?? 0
@@ -372,7 +372,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
                         searched by both, so both stay visible. */}
                     <span className="text-xs text-stone-700 truncate flex-1">{locationTitle(b)}</span>
                     {locationSubtitle(b) && (
-                      <span className="font-mono text-[10px] text-stone-400 shrink-0">{locationSubtitle(b)}</span>
+                      <span className="font-mono text-[10px] text-stone-500 shrink-0">{locationSubtitle(b)}</span>
                     )}
                     {mismatched && (
                       <span
@@ -382,7 +382,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
                         <AlertTriangle className="w-3 h-3" aria-hidden="true" /> {roleLabel(levelRoles, b.levelRole)} level
                       </span>
                     )}
-                    <span className="text-[11px] text-stone-400 tabular-nums shrink-0">
+                    <span className="text-[11px] text-stone-500 tabular-nums shrink-0">
                       {cap != null && cap > 0 ? `${Math.round(used)}/${cap}` : `${Math.round(used)}`}
                     </span>
                   </button>
@@ -391,7 +391,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
             )}
           </div>
           {storageBins.length > matches.length && !search.trim() && (
-            <p className="text-[11px] text-stone-400 mt-1.5">
+            <p className="text-[11px] text-stone-500 mt-1.5">
               Showing {matches.length} of {storageBins.length} bins — search to narrow.
             </p>
           )}

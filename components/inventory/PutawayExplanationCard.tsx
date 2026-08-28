@@ -24,7 +24,7 @@ function CandidateFactors({ candidate }: { candidate: CandidateBreakdown }) {
           <div className="flex-1 h-2 bg-stone-100 rounded-full overflow-hidden">
             <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${Math.round(Math.max(0, Math.min(1, f.normalized)) * 100)}%` }} />
           </div>
-          <span className="w-28 text-[10px] text-stone-400 text-right shrink-0">{f.detail}</span>
+          <span className="w-28 text-[10px] text-stone-500 text-right shrink-0">{f.detail}</span>
         </div>
       ))}
       {candidate.ruleTriggers.map((t) => (
@@ -114,14 +114,14 @@ export function PutawayExplanationCard({ explanation, binById }: {
 
       {hardFilters.length > 0 && (
         <details>
-          <summary className="cursor-pointer text-stone-400 hover:text-stone-600">
+          <summary className="cursor-pointer text-stone-500 hover:text-stone-600">
             Why some bins were excluded
           </summary>
           <ul className="mt-1.5 space-y-1">
             {hardFilters.map((h) => (
               <li key={`${h.code}-${h.ruleId ?? 'builtin'}`} className="text-stone-500">
                 <span className="font-medium">{h.label}</span> — {h.rejectedCount} bin{h.rejectedCount === 1 ? '' : 's'}
-                {h.sample.length > 0 && <span className="text-stone-400"> (e.g. {h.sample.map((s) => s.code).join(', ')})</span>}
+                {h.sample.length > 0 && <span className="text-stone-500"> (e.g. {h.sample.map((s) => s.code).join(', ')})</span>}
               </li>
             ))}
           </ul>

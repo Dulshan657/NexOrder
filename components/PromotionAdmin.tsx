@@ -184,15 +184,15 @@ const PromotionAdmin: React.FC<PromotionAdminProps> = ({ promotions, products, h
                                           <td className="px-5 py-3.5">
                                               <div className="flex items-center justify-end gap-1">
                                                   <button onClick={() => handleToggle(promo)} title={promo.isActive ? 'Deactivate' : 'Activate'}
-                                                      className={`p-1.5 rounded-lg cursor-pointer transition-colors ${promo.isActive ? 'text-emerald-600 hover:bg-emerald-50' : 'text-stone-400 hover:bg-stone-100'}`}>
+                                                      className={`p-1.5 rounded-lg cursor-pointer transition-colors ${promo.isActive ? 'text-emerald-600 hover:bg-emerald-50' : 'text-stone-500 hover:bg-stone-100'}`}>
                                                       {promo.isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
                                                   </button>
                                                   <button onClick={() => { setEditingPromo(promo); setShowForm(true); }}
-                                                      className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer">
+                                                      className="p-1.5 rounded-lg text-stone-500 hover:text-stone-700 hover:bg-stone-100 cursor-pointer">
                                                       <Pencil className="w-4 h-4" />
                                                   </button>
                                                   <button onClick={() => onDelete(promo.id)}
-                                                      className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 cursor-pointer">
+                                                      className="p-1.5 rounded-lg text-stone-500 hover:text-red-600 hover:bg-red-50 cursor-pointer">
                                                       <Trash2 className="w-4 h-4" />
                                                   </button>
                                               </div>

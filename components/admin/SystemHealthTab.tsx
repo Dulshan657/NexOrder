@@ -46,7 +46,7 @@ function SessionPanel() {
       <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold text-stone-700">
         <KeyRound className="h-4 w-4" /> This session
       </h3>
-      <p className="mb-3 text-xs text-stone-400">
+      <p className="mb-3 text-xs text-stone-500">
         For the shift-long soak test — leave a handheld logged in for 90 minutes, then
         scan. A refresh count above zero is the thing being checked.
       </p>
@@ -58,7 +58,7 @@ function SessionPanel() {
           { label: 'Token expires', value: session.expiresIn, sub: session.expiresAtLabel },
         ].map((row) => (
           <div key={row.label}>
-            <dt className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">
               {row.label}
             </dt>
             <dd className="mt-1 font-mono text-lg font-bold tabular-nums text-stone-900">
@@ -78,7 +78,7 @@ function LatencySparkline({ points }: { points: ReturnType<typeof latencySeries>
   const pad = 4;
   if (points.length < 2) {
     return (
-      <div style={{ height: `${height}px` }} className="flex items-center justify-center text-xs text-stone-400">
+      <div style={{ height: `${height}px` }} className="flex items-center justify-center text-xs text-stone-500">
         Not enough checks yet for a latency trend.
       </div>
     );
@@ -105,7 +105,7 @@ function LatencySparkline({ points }: { points: ReturnType<typeof latencySeries>
 function StatTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="glass-panel rounded-xl border border-stone-200 p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">{label}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">{label}</p>
       <p className="mt-1 text-2xl font-bold text-stone-900 font-mono">{value}</p>
       {sub && <p className="mt-0.5 text-xs text-stone-500">{sub}</p>}
     </div>
@@ -181,7 +181,7 @@ const SystemHealthTab: React.FC = () => {
           <Rocket className="h-4 w-4" /> Recent deployments
         </h3>
         {deployments.length === 0 ? (
-          <p className="text-sm text-stone-400">No deployments recorded yet — the next `npm run deploy` will appear here.</p>
+          <p className="text-sm text-stone-500">No deployments recorded yet — the next `npm run deploy` will appear here.</p>
         ) : (
           <ul className="divide-y divide-stone-100">
             {deployments.map((d) => (
@@ -193,7 +193,7 @@ const SystemHealthTab: React.FC = () => {
                 )}
                 <span className="font-mono text-stone-900">{formatSha(d.commit_sha)}</span>
                 <span className="text-stone-500 truncate">{d.branch ?? '—'}</span>
-                <span className="ml-auto shrink-0 text-xs text-stone-400">
+                <span className="ml-auto shrink-0 text-xs text-stone-500">
                   {new Date(d.deployed_at).toLocaleString()} · {d.deployer ?? 'unknown'}
                 </span>
               </li>
@@ -202,7 +202,7 @@ const SystemHealthTab: React.FC = () => {
         )}
       </div>
 
-      <p className="text-center text-xs text-stone-400 font-mono">
+      <p className="text-center text-xs text-stone-500 font-mono">
         client build {formatSha(__APP_VERSION__)} · {__BUILD_TIME__}
       </p>
     </div>

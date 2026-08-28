@@ -125,7 +125,7 @@ function levelRow(props: LevelRowProps) {
           <button
             type="button"
             aria-label={`Remove level ${level.levelIndex}`}
-            className="text-stone-400 hover:text-red-600 btn-press"
+            className="text-stone-500 hover:text-red-600 btn-press"
             onClick={(e) => {
               e.stopPropagation()
               onRemove()

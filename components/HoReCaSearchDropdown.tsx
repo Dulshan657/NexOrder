@@ -51,7 +51,7 @@ const HoReCaSearchDropdown: React.FC<HoReCaSearchDropdownProps> = ({
     const name = hoReCas.find(h => h.id === currentUser.hoReCaId)?.name ?? 'Unknown';
     return (
       <div className="flex items-center gap-2 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
-        <Building2 className="w-4 h-4 text-stone-400" />
+        <Building2 className="w-4 h-4 text-stone-500" />
         <span className="text-sm font-medium text-stone-700">{name}</span>
       </div>
     );
@@ -75,11 +75,11 @@ const HoReCaSearchDropdown: React.FC<HoReCaSearchDropdownProps> = ({
               : 'border-stone-300 bg-stone-50 text-stone-500 hover:border-stone-400'
         }`}
       >
-        <Building2 className="w-4 h-4 text-stone-400 flex-shrink-0" />
+        <Building2 className="w-4 h-4 text-stone-500 flex-shrink-0" />
         <span className="flex-1 text-left truncate font-medium">
           {selectedHoReCa?.name ?? 'Select HoReCa'}
         </span>
-        <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 text-stone-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
@@ -88,14 +88,14 @@ const HoReCaSearchDropdown: React.FC<HoReCaSearchDropdownProps> = ({
         <div className="absolute top-full left-0 mt-1 w-72 max-w-[calc(100vw-2rem)] bg-white border border-stone-200 rounded-xl shadow-elevated z-50 overflow-hidden">
           <div className="p-2 border-b border-stone-100">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
               <input
                 ref={inputRef}
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search HoReCa..."
-                className="w-full pl-8 pr-3 py-2 text-sm rounded-lg bg-stone-50 border-0 ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-400"
+                className="w-full pl-8 pr-3 py-2 text-sm rounded-lg bg-stone-50 border-0 ring-1 ring-inset ring-stone-200 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500"
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') { setIsOpen(false); setQuery(''); }
                 }}
@@ -104,7 +104,7 @@ const HoReCaSearchDropdown: React.FC<HoReCaSearchDropdownProps> = ({
           </div>
           <div className="max-h-56 overflow-y-auto py-1">
             {filtered.length === 0 ? (
-              <p className="px-3 py-4 text-sm text-stone-400 text-center">No matches found</p>
+              <p className="px-3 py-4 text-sm text-stone-500 text-center">No matches found</p>
             ) : (
               filtered.map(h => (
                 <button
@@ -122,7 +122,7 @@ const HoReCaSearchDropdown: React.FC<HoReCaSearchDropdownProps> = ({
                 >
                   <span className="block truncate">{h.name}</span>
                   {h.address && (
-                    <span className="block text-xs text-stone-400 truncate mt-0.5">{h.address}</span>
+                    <span className="block text-xs text-stone-500 truncate mt-0.5">{h.address}</span>
                   )}
                 </button>
               ))

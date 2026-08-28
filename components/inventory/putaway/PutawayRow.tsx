@@ -70,18 +70,18 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
             />
           ) : (
             <div className="w-10 h-10 rounded-lg bg-stone-100 flex items-center justify-center shrink-0">
-              <Package className="w-4 h-4 text-stone-400" />
+              <Package className="w-4 h-4 text-stone-500" />
             </div>
           )}
 
           <div className="min-w-0 flex-1">
             <p className="text-sm text-stone-800 truncate">{name}</p>
-            <p className="text-xs text-stone-400 flex flex-wrap items-center gap-x-1.5">
+            <p className="text-xs text-stone-500 flex flex-wrap items-center gap-x-1.5">
               {product?.sku && <span className="font-mono">{product.sku}</span>}
               <span className="text-stone-700 tabular-nums">{qty.primary}</span>
-              {qty.secondary && <span className="text-stone-400">· {qty.secondary}</span>}
+              {qty.secondary && <span className="text-stone-500">· {qty.secondary}</span>}
             </p>
-            <p className="text-[11px] text-stone-400 mt-0.5 truncate">
+            <p className="text-[11px] text-stone-500 mt-0.5 truncate">
               {receiptBits.length > 0 ? receiptBits.join(' · ') : 'Not from a delivery'}
               <span className="text-stone-300"> · waiting {formatRelative(row.createdAt)}</span>
             </p>
@@ -113,7 +113,7 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
               className="p-1.5 rounded-lg hover:bg-stone-100 btn-press"
               aria-label={`Why this bin for ${name}?`}
             >
-              <HelpCircle className="w-4 h-4 text-stone-400" />
+              <HelpCircle className="w-4 h-4 text-stone-500" />
             </button>
             <button
               onClick={onRerun}
@@ -122,7 +122,7 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
               aria-label={`Re-run the recommendation for ${name}`}
               title="Ask the engine again"
             >
-              <RefreshCw className="w-4 h-4 text-stone-400" />
+              <RefreshCw className="w-4 h-4 text-stone-500" />
             </button>
             <button
               onClick={onChooseBin}

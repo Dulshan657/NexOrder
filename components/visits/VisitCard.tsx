@@ -33,12 +33,12 @@ const VisitCard: React.FC<VisitCardProps> = ({ visit, customer, showCustomerName
             <Clock className="w-3 h-3" />
             <span>{new Date(visit.arrivalTime).toLocaleDateString()}</span>
             <span>{new Date(visit.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            {duration !== null && <span className="text-stone-400">({duration} min)</span>}
+            {duration !== null && <span className="text-stone-500">({duration} min)</span>}
           </div>
         </div>
         <div className="flex items-center gap-2">
           {visit.photos.length > 0 && (
-            <span className="text-xs text-stone-400 flex items-center gap-1">
+            <span className="text-xs text-stone-500 flex items-center gap-1">
               <Image className="w-3 h-3" />
               {visit.photos.length}
             </span>

@@ -391,7 +391,7 @@ const PricingSection: React.FC<{
                 <div key={product.id} className="flex items-center gap-3">
                   <div className="flex-grow min-w-0">
                     <p className="text-sm font-medium text-stone-800 truncate">{product.name}</p>
-                    <p className="text-xs text-stone-400">Default: ${product.price.toFixed(2)}</p>
+                    <p className="text-xs text-stone-500">Default: ${product.price.toFixed(2)}</p>
                   </div>
                   <div className="w-28 flex-shrink-0">
                     <NumberInput

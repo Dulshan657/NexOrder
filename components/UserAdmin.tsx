@@ -68,14 +68,14 @@ const UserAdmin: React.FC<UserAdminProps> = ({ users, onAddUser, onUpdateUser, o
             <div className="mb-6 relative">
                 <label htmlFor="user-search" className="sr-only">Search by Name or Email</label>
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-stone-400" viewBox="0 0 20 20" fill="currentColor">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-stone-500" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
                     </svg>
                 </div>
                 <input
                     type="text"
                     id="user-search"
-                    className="block w-full max-w-md rounded-lg border-0 bg-white py-3 pl-11 pr-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300"
+                    className="block w-full max-w-md rounded-lg border-0 bg-white py-3 pl-11 pr-4 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm transition-all hover:ring-stone-300"
                     placeholder="Search by Name or Email..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}

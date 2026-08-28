@@ -121,7 +121,7 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ photos, onPhotosChange, maxPh
 
         {Array.from({ length: uploadingCount }).map((_, i) => (
           <div key={`uploading-${i}`} className="w-20 h-20 rounded-lg border border-stone-200 bg-stone-50 flex items-center justify-center">
-            <Loader2 className="w-5 h-5 text-stone-400 animate-spin" />
+            <Loader2 className="w-5 h-5 text-stone-500 animate-spin" />
           </div>
         ))}
 
@@ -130,8 +130,8 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ photos, onPhotosChange, maxPh
             onClick={() => fileInputRef.current?.click()}
             className="w-20 h-20 rounded-lg border-2 border-dashed border-stone-300 flex flex-col items-center justify-center hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
           >
-            <Camera className="w-5 h-5 text-stone-400" />
-            <span className="text-[10px] text-stone-400 mt-1">Add</span>
+            <Camera className="w-5 h-5 text-stone-500" />
+            <span className="text-[10px] text-stone-500 mt-1">Add</span>
           </button>
         )}
       </div>

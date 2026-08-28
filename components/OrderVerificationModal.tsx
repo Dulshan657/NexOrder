@@ -239,7 +239,7 @@ const OrderVerificationModal: React.FC<OrderVerificationModalProps> = ({ userRol
                             />
                             {!hasSignature && (
                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <p className="text-stone-400 text-sm">Sign here</p>
+                                    <p className="text-stone-500 text-sm">Sign here</p>
                                 </div>
                             )}
                         </div>

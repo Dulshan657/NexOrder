@@ -164,7 +164,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
     const totalLabel = mode === 'mutations' ? 'mutation events' : 'client errors';
 
     const inputClass =
-        'w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue';
+        'w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue';
     const selectClass =
         'w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue cursor-pointer';
 
@@ -301,19 +301,19 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                     )}
                 </div>
                 <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
                     <input
                         type="search"
                         value={search}
                         onChange={(e) => { setSearch(e.target.value); setPage(0); }}
                         placeholder={mode === 'mutations' ? 'Search reason or resource ID…' : 'Search message or URL…'}
-                        className="w-full pl-10 pr-10 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+                        className="w-full pl-10 pr-10 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
                     />
                     {search && (
                         <button
                             type="button"
                             onClick={() => { setSearch(''); setPage(0); }}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 cursor-pointer"
                             aria-label="Clear search"
                         >
                             <X className="w-4 h-4" />
@@ -322,7 +322,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                 </div>
                 {hasFilters && (
                     <div className="flex justify-between items-center">
-                        <p className="text-xs text-stone-400">
+                        <p className="text-xs text-stone-500">
                             {total.toLocaleString()} matching {totalLabel}
                         </p>
                         <button

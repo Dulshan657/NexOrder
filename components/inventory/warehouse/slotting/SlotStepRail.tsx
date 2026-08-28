@@ -51,14 +51,14 @@ export function SlotStepRail({ step, satisfaction, onGotoStep }: SlotStepRailPro
                       ? 'bg-nexgen-blue text-white'
                       : settled
                         ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                        : 'bg-stone-100 text-stone-400 hover:bg-stone-200')
+                        : 'bg-stone-100 text-stone-600 hover:bg-stone-200')
                   }
                 >
                   {settled && !current ? <Check className="h-3 w-3" strokeWidth={2.5} /> : s.n}
                 </button>
                 <span
                   className={
-                    'text-[11px] font-medium ' + (current ? 'text-stone-700' : 'text-stone-400')
+                    'text-[11px] font-medium ' + (current ? 'text-stone-700' : 'text-stone-500')
                   }
                 >
                   {s.label}

@@ -48,7 +48,7 @@ export function PublishChecklist({ readiness, onAutoConnect }: PublishChecklistP
                     ? 'text-stone-600'
                     : c.status === 'fail'
                       ? 'font-medium text-stone-700'
-                      : 'text-stone-400'
+                      : 'text-stone-500'
                 }
               >
                 {c.label}

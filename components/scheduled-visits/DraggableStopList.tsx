@@ -33,7 +33,7 @@ const DraggableStopList: React.FC<DraggableStopListProps> = ({ hoReCaIds, hoReCa
 
   if (hoReCaIds.length === 0) {
     return (
-      <div className="text-center py-8 text-stone-400 text-sm border border-dashed border-stone-200 rounded-xl">
+      <div className="text-center py-8 text-stone-500 text-sm border border-dashed border-stone-200 rounded-xl">
         No stops added yet
       </div>
     );
@@ -57,14 +57,14 @@ const DraggableStopList: React.FC<DraggableStopListProps> = ({ hoReCaIds, hoReCa
               isDragging ? 'border-nexgen-blue bg-nexgen-blue-light' : 'border-stone-200 bg-stone-50 hover:border-stone-300'
             } cursor-grab active:cursor-grabbing`}
           >
-            <GripVertical className="w-4 h-4 text-stone-400 flex-shrink-0" />
+            <GripVertical className="w-4 h-4 text-stone-500 flex-shrink-0" />
             <div className="w-7 h-7 rounded-full bg-nexgen-blue text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
               {index + 1}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-stone-800 truncate">{customer.name}</p>
               {customer.address && (
-                <p className="text-xs text-stone-400 flex items-center gap-1 truncate">
+                <p className="text-xs text-stone-500 flex items-center gap-1 truncate">
                   <MapPin className="w-3 h-3 flex-shrink-0" />
                   {customer.address}
                 </p>
@@ -73,7 +73,7 @@ const DraggableStopList: React.FC<DraggableStopListProps> = ({ hoReCaIds, hoReCa
             {showRemoveButton && onRemove && (
               <button
                 onClick={(e) => { e.stopPropagation(); onRemove(id); }}
-                className="p-1 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors cursor-pointer flex-shrink-0"
+                className="p-1 text-stone-500 hover:text-red-500 hover:bg-red-50 rounded transition-colors cursor-pointer flex-shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>

@@ -416,7 +416,7 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
                 return (
                   <div key={p.key} className="p-3 rounded-lg border border-stone-200 space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] uppercase tracking-wide text-stone-400">
+                      <span className="text-[11px] uppercase tracking-wide text-stone-500">
                         Portion {index + 1}
                       </span>
                       <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500">
@@ -426,7 +426,7 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
                         <button
                           type="button"
                           onClick={() => setPortions((prev) => prev.filter((x) => x.key !== p.key))}
-                          className="ml-auto p-1.5 text-stone-400 hover:text-red-600 rounded btn-press"
+                          className="ml-auto p-1.5 text-stone-500 hover:text-red-600 rounded btn-press"
                           aria-label={`Remove portion ${index + 1}`}
                         >
                           <Trash2 className="w-4 h-4" aria-hidden="true" />
@@ -463,7 +463,7 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
                     </div>
 
                     {p.unit === 'layer' && layerNote && (
-                      <p className={`text-[11px] ${palletBasis?.basis === 'estimated' ? 'text-amber-700' : 'text-stone-400'}`}>
+                      <p className={`text-[11px] ${palletBasis?.basis === 'estimated' ? 'text-amber-700' : 'text-stone-500'}`}>
                         {layerNote}
                       </p>
                     )}
@@ -473,15 +473,15 @@ export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
                       onClick={() => setPickerFor(p.key)}
                       className="flex items-center gap-2 w-full px-3 py-2 min-h-[44px] rounded-lg border border-stone-200 text-left btn-press hover:bg-stone-50"
                     >
-                      <ScanLine className="w-4 h-4 text-stone-400 shrink-0" aria-hidden="true" />
+                      <ScanLine className="w-4 h-4 text-stone-500 shrink-0" aria-hidden="true" />
                       <span className="min-w-0 flex-1">
                         {p.locationCode ? (
                           <span className="block text-sm font-mono text-stone-800 truncate">{p.locationCode}</span>
                         ) : (
-                          <span className="block text-sm text-stone-400">Choose a bin</span>
+                          <span className="block text-sm text-stone-500">Choose a bin</span>
                         )}
                         {p.suggestedLocationCode && p.suggestedLocationId !== p.locationId && (
-                          <span className="block text-[11px] text-stone-400">
+                          <span className="block text-[11px] text-stone-500">
                             engine suggested <span className="font-mono">{p.suggestedLocationCode}</span>
                           </span>
                         )}

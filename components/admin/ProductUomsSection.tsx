@@ -33,7 +33,7 @@ export function newExtraUom(): ExtraUomDraft {
     return { code: '', factorToBase: '', price: '', cubicMeters: '', isOrderable: true, isReceivable: true };
 }
 
-const inputClasses = "block w-full rounded-lg border-0 bg-white py-2 px-2.5 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm";
+const inputClasses = "block w-full rounded-lg border-0 bg-white py-2 px-2.5 text-stone-900 shadow-sm ring-1 ring-inset ring-stone-200 placeholder:text-stone-500 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm";
 
 const ProductUomsSection: React.FC<ProductUomsSectionProps> = ({
     baseUnitLabel, basePrice, baseVolume, unitOptions, extraUoms, onChange,
@@ -48,7 +48,7 @@ const ProductUomsSection: React.FC<ProductUomsSectionProps> = ({
         <div className="bg-stone-50 rounded-lg p-4 border border-stone-200 space-y-3">
             <div>
                 <h3 className="text-sm font-semibold text-stone-700">Units of measure</h3>
-                <p className="text-[11px] text-stone-400 mt-0.5">
+                <p className="text-[11px] text-stone-500 mt-0.5">
                     Base unit <span className="font-medium text-stone-600">{baseUnitLabel || 'each'}</span> @ ${basePrice || '0'} is
                     set above. Add larger packs (carton, pallet…) as whole multiples of the base, each with its own price.
                     Leave a volume blank to inherit {baseVolume ? `${baseVolume} m³` : 'the per-unit m³'} × its base units.
@@ -97,7 +97,7 @@ const ProductUomsSection: React.FC<ProductUomsSectionProps> = ({
                                     aria-label="Receivable" className="h-4 w-4 rounded border-stone-300 text-emerald-600 focus:ring-emerald-600" />
                             </label>
                             <button type="button" onClick={() => remove(i)} aria-label={`Remove ${u.code || 'unit'}`}
-                                className="text-stone-400 hover:text-red-600 transition-colors flex items-center justify-center">
+                                className="text-stone-500 hover:text-red-600 transition-colors flex items-center justify-center">
                                 <Trash2 className="h-4 w-4" />
                             </button>
                         </div>

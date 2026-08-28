@@ -70,10 +70,10 @@ export const OpsStockRow: React.FC<OpsStockRowProps> = ({ product, agg, maxQty, 
       <tr className="border-b border-stone-100 transition-colors hover:bg-stone-50/50 cursor-pointer" onClick={() => setExpanded((v) => !v)}>
         <td className="px-5 py-3.5">
           <div className="flex items-center gap-2">
-            {expanded ? <ChevronDown className="w-4 h-4 text-stone-400" /> : <ChevronRight className="w-4 h-4 text-stone-400" />}
+            {expanded ? <ChevronDown className="w-4 h-4 text-stone-500" /> : <ChevronRight className="w-4 h-4 text-stone-500" />}
             <div>
               <p className="text-sm font-medium text-stone-900">{product.name}</p>
-              <p className="text-xs text-stone-400 font-mono">{product.sku}</p>
+              <p className="text-xs text-stone-500 font-mono">{product.sku}</p>
             </div>
           </div>
         </td>
@@ -88,7 +88,7 @@ export const OpsStockRow: React.FC<OpsStockRowProps> = ({ product, agg, maxQty, 
             if (uoms.length <= 1 || agg.onHand <= 0) return null;
             const breakdown = decomposeToUoms(agg.onHand, uoms);
             if (breakdown.length <= 1) return null;
-            return <p className="text-[11px] font-sans text-stone-400 mt-0.5 normal-nums">{formatBreakdown(breakdown)}</p>;
+            return <p className="text-[11px] font-sans text-stone-500 mt-0.5 normal-nums">{formatBreakdown(breakdown)}</p>;
           })()}
         </td>
         <td className="px-5 py-3.5 text-right font-mono text-sm text-stone-500 tabular-nums">{agg.allocated}</td>
@@ -112,7 +112,7 @@ export const OpsStockRow: React.FC<OpsStockRowProps> = ({ product, agg, maxQty, 
                 {[0, 1].map((i) => <div key={i} className="h-4 rounded bg-stone-100 animate-pulse" />)}
               </div>
             ) : !visibleBatches || visibleBatches.length === 0 ? (
-              <p className="text-xs text-stone-400 px-2 py-1">No batch records for this product.</p>
+              <p className="text-xs text-stone-500 px-2 py-1">No batch records for this product.</p>
             ) : (
               <div className="rounded-lg border border-stone-200 bg-white overflow-hidden">
                 <div className="overflow-x-auto">
@@ -132,7 +132,7 @@ export const OpsStockRow: React.FC<OpsStockRowProps> = ({ product, agg, maxQty, 
                         <tr key={b.balanceId}>
                           <td className="px-3 py-2 text-stone-700">
                             <span className="inline-flex items-center gap-1">
-                              <MapPin className="w-3 h-3 text-stone-400" />
+                              <MapPin className="w-3 h-3 text-stone-500" />
                               {/* Name first (mig 00094); getBalancesByProduct
                                   already selects both, it was just being dropped. */}
                               {locationTitle({ code: b.locationCode ?? 'MAIN', name: b.locationName })}

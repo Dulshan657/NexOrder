@@ -142,7 +142,7 @@ const ScheduledVisitTrackingDetail: React.FC<RouteTrackingDetailProps> = ({ rout
       <div className="flex-1 overflow-y-auto">
         {/* Stop Timeline */}
         <div className="p-3">
-          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-stone-400 mb-3">Stops</h4>
+          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-stone-500 mb-3">Stops</h4>
           <div className="space-y-0">
             {stopsWithContext.map((stop, i) => {
               const isExpanded = expandedStopIdx === i;
@@ -182,7 +182,7 @@ const ScheduledVisitTrackingDetail: React.FC<RouteTrackingDetailProps> = ({ rout
                     )}
 
                     {stop.visit && stop.visit.arrivalTime && (
-                      <p className="text-xs text-stone-400 tabular-nums mt-0.5">
+                      <p className="text-xs text-stone-500 tabular-nums mt-0.5">
                         {new Date(stop.visit.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {stop.visit.departureTime && ` — ${new Date(stop.visit.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
                       </p>
@@ -227,13 +227,13 @@ const ScheduledVisitTrackingDetail: React.FC<RouteTrackingDetailProps> = ({ rout
 
         {/* Activity Feed */}
         <div className="p-3 border-t border-stone-200">
-          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-stone-400 mb-3 flex items-center gap-1.5">
+          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-stone-500 mb-3 flex items-center gap-1.5">
             <Activity className="w-3 h-3" />
             Live Activity
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
           </h4>
           {activityEvents.length === 0 ? (
-            <p className="text-xs text-stone-400 italic">Waiting for activity...</p>
+            <p className="text-xs text-stone-500 italic">Waiting for activity...</p>
           ) : (
             <div className="space-y-2.5">
               {activityEvents.map(event => (
@@ -241,7 +241,7 @@ const ScheduledVisitTrackingDetail: React.FC<RouteTrackingDetailProps> = ({ rout
                   <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${event.dotColor}`} />
                   <div className="min-w-0">
                     <p className="text-xs text-stone-700">{event.message}</p>
-                    <p className="text-[10px] text-stone-400 tabular-nums">{formatRelativeTime(event.minuteMark)}</p>
+                    <p className="text-[10px] text-stone-500 tabular-nums">{formatRelativeTime(event.minuteMark)}</p>
                   </div>
                 </div>
               ))}

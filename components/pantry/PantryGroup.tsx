@@ -37,7 +37,7 @@ const PantryGroup: React.FC<PantryGroupProps> = ({
                 <h3 className="font-display font-semibold text-[11px] uppercase tracking-[0.18em] text-stone-700">
                     {category}
                 </h3>
-                <span className="text-[11px] text-stone-400 font-mono tabular-nums">
+                <span className="text-[11px] text-stone-500 font-mono tabular-nums">
                     {itemCount} {itemCount === 1 ? 'item' : 'items'}
                 </span>
                 <span className="text-stone-300">·</span>

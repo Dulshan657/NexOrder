@@ -207,7 +207,7 @@ export function RackWizard({ dispatch, zoneProfiles, storageTypes, gridWidth, gr
           </select>
         </label>
 
-        <p className="text-xs text-stone-400">
+        <p className="text-xs text-stone-500">
           Creates up to {count} racks{fits ? '' : ' — but the block runs off the grid'}
           {levelTemplate ? ` · ${levelTemplate.length} levels each` : ''}.
         </p>

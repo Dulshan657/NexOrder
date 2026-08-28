@@ -152,13 +152,13 @@ export function ReslotPlannerModal({ warehouse, layoutId, publishing, onCancel, 
                       <tr key={i}>
                         <td className="px-3 py-2">
                           <p className="font-medium text-stone-800">{m.productName}</p>
-                          <p className="font-mono text-[10px] text-stone-400">{m.productCode}</p>
+                          <p className="font-mono text-[10px] text-stone-500">{m.productCode}</p>
                         </td>
                         <td className="px-3 py-2 text-right font-mono text-stone-700">{m.qty}</td>
                         <td className="px-3 py-2 font-mono text-stone-500">{binLabel(m.fromLocationId)}</td>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-1">
-                            <ArrowRight className="h-3 w-3 shrink-0 text-stone-400" />
+                            <ArrowRight className="h-3 w-3 shrink-0 text-stone-500" />
                             <select
                               value={overrides[i] ?? m.toLocationId}
                               onChange={(e) => setOverrides((o) => ({ ...o, [i]: Number(e.target.value) }))}

@@ -52,7 +52,7 @@ const ConfidenceRing: React.FC<ConfidenceRingProps> = ({ value, size = 'sm', cap
   return (
     <div className="shrink-0 flex flex-col items-center gap-0.5">
       {ring}
-      <span className="text-[9px] uppercase tracking-wide text-stone-400 font-medium leading-tight text-center max-w-[3.5rem]">
+      <span className="text-[9px] uppercase tracking-wide text-stone-500 font-medium leading-tight text-center max-w-[3.5rem]">
         {caption}
       </span>
     </div>

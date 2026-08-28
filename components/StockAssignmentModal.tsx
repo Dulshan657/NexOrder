@@ -108,7 +108,7 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({ order, onCo
               <ol className="flex flex-wrap gap-1.5 mb-3">
                 {orderedIds.map((id, i) => (
                   <li key={id} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-stone-100 text-stone-700">
-                    <span className="font-mono text-stone-400">{i + 1}</span> {nameById.get(id) ?? `WH ${id}`}
+                    <span className="font-mono text-stone-500">{i + 1}</span> {nameById.get(id) ?? `WH ${id}`}
                   </li>
                 ))}
               </ol>
@@ -137,7 +137,7 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({ order, onCo
             <div key={`${it.id}-${idx}`} className="flex items-center justify-between px-4 py-2.5">
               <p className="text-sm text-stone-800 truncate">
                 {it.name}
-                {it.packSize ? <span className="text-stone-400 ml-1.5 text-xs">(carton of {it.packSize})</span> : null}
+                {it.packSize ? <span className="text-stone-500 ml-1.5 text-xs">(carton of {it.packSize})</span> : null}
               </p>
               <span className="text-sm font-mono text-stone-900 tabular-nums">×{it.quantity}</span>
             </div>

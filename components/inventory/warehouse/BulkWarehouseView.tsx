@@ -59,7 +59,7 @@ export function BulkWarehouseView({ warehouseId, reason }: BulkWarehouseViewProp
           ))}
         </div>
       ) : locationsWithStock.length === 0 ? (
-        <p className="glass-card rounded-xl p-8 text-center text-xs text-stone-400">No stock recorded at this warehouse.</p>
+        <p className="glass-card rounded-xl p-8 text-center text-xs text-stone-500">No stock recorded at this warehouse.</p>
       ) : (
         <div className="space-y-3">
           {locationsWithStock.map((loc) => (

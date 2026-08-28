@@ -149,7 +149,7 @@ export const FoundItemPicker: React.FC<FoundItemPickerProps> = ({
               >
                 <span className="min-w-0">
                   <span className="block truncate text-sm text-stone-800">{p.name}</span>
-                  <span className="block font-mono text-[11px] text-stone-400">{p.sku}</span>
+                  <span className="block font-mono text-[11px] text-stone-500">{p.sku}</span>
                 </span>
                 <Plus className="h-4 w-4 shrink-0 text-nexgen-blue" aria-hidden="true" />
               </button>

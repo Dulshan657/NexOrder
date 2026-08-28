@@ -28,7 +28,7 @@ const PantryKeyboardHints: React.FC = () => {
             <button
                 type="button"
                 onClick={() => setOpen(o => !o)}
-                className="inline-flex items-center gap-1.5 text-[11px] text-stone-400 hover:text-stone-700 transition-colors"
+                className="inline-flex items-center gap-1.5 text-[11px] text-stone-500 hover:text-stone-700 transition-colors"
                 aria-expanded={open}
             >
                 <Keyboard className="w-3.5 h-3.5" aria-hidden />

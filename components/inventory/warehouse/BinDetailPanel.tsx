@@ -257,14 +257,14 @@ export function BinDetailPanel({
                   onClick={() => setRenaming(true)}
                   aria-label="Rename this location"
                   title="Rename"
-                  className="shrink-0 rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-600 btn-press"
+                  className="shrink-0 rounded p-1 text-stone-500 hover:bg-stone-100 hover:text-stone-600 btn-press"
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
             {locationSubtitle(location) && (
-              <p className="font-mono text-[11px] text-stone-400">{locationSubtitle(location)}</p>
+              <p className="font-mono text-[11px] text-stone-500">{locationSubtitle(location)}</p>
             )}
           </div>
           <span className="shrink-0 rounded bg-stone-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-500">
@@ -284,35 +284,35 @@ export function BinDetailPanel({
         <dl className="@container/bin mb-3 grid grid-cols-1 gap-x-3 gap-y-1.5 text-xs @min-[22rem]/bin:grid-cols-2">
           {isBin && (
             <>
-              <dt className="text-stone-400">Capacity</dt>
+              <dt className="text-stone-500">Capacity</dt>
               <dd className="text-stone-700">
                 {location.capacitySlots != null ? `${location.capacitySlots} ${location.slotKind ?? 'slots'}` : '—'}
               </dd>
-              <dt className="text-stone-400">Fill</dt>
+              <dt className="text-stone-500">Fill</dt>
               <dd className="text-stone-700">{fillPct == null ? '—' : `${Math.round(fillPct * 100)}% (${totalSlots.toFixed(0)} used)`}</dd>
             </>
           )}
           {hasRackLevels && (
             <>
-              <dt className="text-stone-400">Levels</dt>
+              <dt className="text-stone-500">Levels</dt>
               <dd className="text-stone-700">{levels.length} ({totalCapacity(levels)} slots total)</dd>
             </>
           )}
           {zoneName && (
             <>
-              <dt className="text-stone-400">Zone</dt>
+              <dt className="text-stone-500">Zone</dt>
               <dd className="text-stone-700">{zoneName}</dd>
             </>
           )}
           {placement && (
             <>
-              <dt className="text-stone-400">Position</dt>
+              <dt className="text-stone-500">Position</dt>
               <dd className="text-stone-700 font-mono">F{placement.floor + 1} · {placement.x},{placement.y}</dd>
             </>
           )}
           {nodeVisits != null && (
             <>
-              <dt className="text-stone-400">Pick visits (30d)</dt>
+              <dt className="text-stone-500">Pick visits (30d)</dt>
               <dd className="text-stone-700">{nodeVisits}</dd>
             </>
           )}

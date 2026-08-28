@@ -338,7 +338,7 @@ export function ProductImportModal({ suppliers, catalog, onClose, addToast }: Pr
               <p>
                 <span className="text-emerald-600 font-semibold">{summary.valid} valid</span>
                 {' / '}
-                <span className={summary.invalid > 0 ? 'text-red-600 font-semibold' : 'text-stone-400'}>
+                <span className={summary.invalid > 0 ? 'text-red-600 font-semibold' : 'text-stone-500'}>
                   {summary.invalid} error{summary.invalid === 1 ? '' : 's'}
                 </span>
               </p>

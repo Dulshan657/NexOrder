@@ -45,7 +45,7 @@ export function CompatibilityMatrixView() {
     else setCompat.mutate({ a, b, level: next })
   }
 
-  if (isLoading) return <p className="text-xs text-stone-400">Loading matrix…</p>
+  if (isLoading) return <p className="text-xs text-stone-500">Loading matrix…</p>
 
   return (
     <div className="space-y-3">
@@ -59,7 +59,7 @@ export function CompatibilityMatrixView() {
             <tr>
               <th className="p-1 sticky left-0 bg-white" />
               {CATEGORIES.map((c) => (
-                <th key={c} className="p-1 font-medium text-stone-400 whitespace-nowrap" style={{ writingMode: 'vertical-rl' }}>{c}</th>
+                <th key={c} className="p-1 font-medium text-stone-500 whitespace-nowrap" style={{ writingMode: 'vertical-rl' }}>{c}</th>
               ))}
             </tr>
           </thead>

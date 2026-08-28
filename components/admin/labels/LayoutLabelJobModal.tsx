@@ -418,7 +418,7 @@ export function LayoutLabelJobModal({
                 <div key={sheet.group} className="flex items-center gap-3 p-3">
                   <span className="text-sm text-stone-700 flex-1 min-w-0">
                     {GROUP_LABEL[sheet.group]}
-                    <span className="block text-xs text-stone-400">
+                    <span className="block text-xs text-stone-500">
                       {PRESET_LABEL[sheet.preset] ?? sheet.preset}
                       {sheet.overridden
                         ? ' · this run only'
@@ -444,7 +444,7 @@ export function LayoutLabelJobModal({
             </div>
 
             {plannedTotal > 0 && (
-              <p className="text-xs text-stone-400">
+              <p className="text-xs text-stone-500">
                 {(plan.data ?? []).length === 1
                   ? 'One PDF will download.'
                   : `${(plan.data ?? []).length} PDFs — one per sheet size, because they print on different stock. You download each one from the list.`}
@@ -460,7 +460,7 @@ export function LayoutLabelJobModal({
                 <div key={sheet.group} className="flex items-center gap-3 p-3">
                   <span className="text-sm text-stone-700 flex-1 min-w-0">
                     {GROUP_LABEL[sheet.group]}
-                    <span className="block text-xs text-stone-400">
+                    <span className="block text-xs text-stone-500">
                       {sheet.labelCount} label{sheet.labelCount === 1 ? '' : 's'} ·{' '}
                       {PRESET_LABEL[sheet.preset] ?? sheet.preset}
                       {downloaded[sheet.group] === true && ' · downloaded'}
@@ -492,7 +492,7 @@ export function LayoutLabelJobModal({
               ))}
             </div>
 
-            <p className="text-xs text-stone-400">
+            <p className="text-xs text-stone-500">
               {job.sheets.length === 1
                 ? 'Saved to your downloads. Download it again any time — nothing is regenerated, so the codes stay exactly as printed.'
                 : 'Download each sheet above. They do not arrive on their own: browsers drop a burst of downloads, and a sheet that never reached you is worse than one more click. Nothing is regenerated, so the codes stay exactly as printed.'}

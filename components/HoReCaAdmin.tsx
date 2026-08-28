@@ -63,18 +63,18 @@ const HoReCaAdmin: React.FC<HoReCaAdminProps> = ({ hoReCas, currentUser, onAddHo
                 <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">Manage HoReCa</h2>
                 <div className="flex items-center gap-3 w-full sm:w-auto">
                     <div className="relative flex-1 sm:flex-initial">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-500" />
                         <input
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="Search hoReCas..."
-                            className="w-full sm:w-64 pl-9 pr-8 py-2 border border-stone-300 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:border-transparent transition-colors"
+                            className="w-full sm:w-64 pl-9 pr-8 py-2 border border-stone-300 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:border-transparent transition-colors"
                         />
                         {searchQuery && (
                             <button
                                 onClick={() => setSearchQuery('')}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-colors"
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 transition-colors"
                             >
                                 <X className="h-4 w-4" />
                             </button>

@@ -262,7 +262,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
               aria-selected={view === v}
               onClick={() => setView(v)}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-md text-sm btn-press ${
-                view === v ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-500 hover:text-stone-700'
+                view === v ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
               }`}
             >
               {v === 'todo' ? 'To do' : 'Left alone'}
@@ -277,7 +277,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
       </div>
 
       {view === 'left' && (
-        <p className="text-xs text-stone-400 max-w-[68ch]">
+        <p className="text-xs text-stone-500 max-w-[68ch]">
           Tasks somebody decided to leave. They stay quiet while the bin holds
           the same stock or less; more arriving raises them again on its own.
           Restore lifts the decision now and checks the product again.
@@ -306,7 +306,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
         <div className="rounded-xl border border-dashed border-stone-200 px-4 py-12 text-center">
           <PackageSearch className="mx-auto h-6 w-6 text-stone-300" />
           <p className="mt-2 text-sm text-stone-600">Nothing is off-home.</p>
-          <p className="mt-1 text-xs text-stone-400 max-w-[46ch] mx-auto">
+          <p className="mt-1 text-xs text-stone-500 max-w-[46ch] mx-auto">
             Either everything matches its rules, or nothing has been checked yet.
             Press <span className="font-medium text-stone-500">Check now</span> to look.
           </p>
@@ -331,7 +331,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
                     <span>{t.blockNames.length > 0 ? t.blockNames.join(' or ') : 'an assigned block'}</span>
                   </p>
                   {t.ruleName && (
-                    <p className="mt-0.5 text-[11px] text-stone-400">Rule: {t.ruleName}</p>
+                    <p className="mt-0.5 text-[11px] text-stone-500">Rule: {t.ruleName}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -363,7 +363,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
         <div className="rounded-xl border border-dashed border-stone-200 px-4 py-12 text-center">
           <MessageSquareQuote className="mx-auto h-6 w-6 text-stone-300" />
           <p className="mt-2 text-sm text-stone-600">Nothing has been left alone here.</p>
-          <p className="mt-1 text-xs text-stone-400 max-w-[46ch] mx-auto">
+          <p className="mt-1 text-xs text-stone-500 max-w-[46ch] mx-auto">
             Tasks you dismiss from <span className="font-medium text-stone-500">To do</span> land
             here, with the reason, so they can be brought back.
           </p>
@@ -384,7 +384,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
                     <span className="font-mono tabular-nums text-stone-700">{t.quantity}</span>
                     <span>in</span>
                     <span className="font-mono text-stone-700">{t.fromCode}</span>
-                    <span className="text-stone-400">· left {relativeTime(t.decidedAt)}</span>
+                    <span className="text-stone-500">· left {relativeTime(t.decidedAt)}</span>
                   </p>
                   {t.dismissedReason && (
                     <p className="mt-1 text-xs text-stone-600 italic">“{t.dismissedReason}”</p>
@@ -441,7 +441,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
           {/* A required reason, not an optional one: the next person to run the
               check needs to know why this is still here, and "somebody
               dismissed it" is not an answer. */}
-          <span className="mt-1 block text-[10px] text-stone-400">
+          <span className="mt-1 block text-[10px] text-stone-500">
             Recorded against the task. It will not be raised again unless more
             stock arrives in this bin — a bigger pile is a different problem. You
             can bring it back any time from <span className="font-medium text-stone-500">Left alone</span>.

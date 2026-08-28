@@ -88,7 +88,7 @@ const VisitTimeline: React.FC<VisitTimelineProps> = ({ visits, hoReCas, onClickH
                             {customer.name}
                           </span>
                         )}
-                        <span className="text-xs text-stone-400 tabular-nums ml-2">{time}</span>
+                        <span className="text-xs text-stone-500 tabular-nums ml-2">{time}</span>
                         {visit.notes && (
                           <p className="text-sm text-stone-600 line-clamp-2 mt-1">{visit.notes}</p>
                         )}
@@ -99,7 +99,7 @@ const VisitTimeline: React.FC<VisitTimelineProps> = ({ visits, hoReCas, onClickH
                             {outcome.label}
                           </span>
                         )}
-                        {isExpanded ? <ChevronUp className="w-4 h-4 text-stone-400" /> : <ChevronDown className="w-4 h-4 text-stone-400" />}
+                        {isExpanded ? <ChevronUp className="w-4 h-4 text-stone-500" /> : <ChevronDown className="w-4 h-4 text-stone-500" />}
                       </div>
                     </div>
 
@@ -120,7 +120,7 @@ const VisitTimeline: React.FC<VisitTimelineProps> = ({ visits, hoReCas, onClickH
                         )}
                         {visit.nextVisitRecommendation && (
                           <div className="flex items-center gap-1.5 text-stone-600">
-                            <MapPin className="w-3 h-3 text-stone-400 flex-shrink-0" />
+                            <MapPin className="w-3 h-3 text-stone-500 flex-shrink-0" />
                             <span className="text-xs">Next: {visit.nextVisitRecommendation}</span>
                           </div>
                         )}

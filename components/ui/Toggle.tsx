@@ -37,7 +37,7 @@ export function Toggle({ checked, onChange, disabled, label, description }: Togg
       </button>
       <div className="min-w-0">
         <span className="block text-sm font-medium text-stone-700">{label}</span>
-        {description && <span className="block text-xs text-stone-400 leading-snug">{description}</span>}
+        {description && <span className="block text-xs text-stone-500 leading-snug">{description}</span>}
       </div>
     </div>
   )

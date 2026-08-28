@@ -202,7 +202,7 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
       {rows.length > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="relative flex-1 min-w-0">
-            <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -247,18 +247,18 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
       ) : queueQuery.isError ? (
         <div className="glass-card rounded-xl p-8 text-center">
           <p className="text-sm text-red-600">Couldn't load the putaway queue.</p>
-          <p className="text-xs text-stone-400 mt-1">Check your connection and try again.</p>
+          <p className="text-xs text-stone-500 mt-1">Check your connection and try again.</p>
         </div>
       ) : rows.length === 0 ? (
         <div className="glass-card rounded-xl p-10 text-center">
           <PackageOpen className="w-9 h-9 text-stone-300 mx-auto mb-3" />
           <p className="text-sm text-stone-600">Nothing to put away</p>
-          <p className="text-xs text-stone-400 mt-1">Recommendations from received stock will appear here.</p>
+          <p className="text-xs text-stone-500 mt-1">Recommendations from received stock will appear here.</p>
         </div>
       ) : visible.length === 0 ? (
         <div className="glass-card rounded-xl p-10 text-center">
           <p className="text-sm text-stone-600">No lines match those filters</p>
-          <p className="text-xs text-stone-400 mt-1">{rows.length} line{rows.length === 1 ? '' : 's'} are still queued.</p>
+          <p className="text-xs text-stone-500 mt-1">{rows.length} line{rows.length === 1 ? '' : 's'} are still queued.</p>
         </div>
       ) : groups ? (
         <div className="space-y-4">
@@ -271,7 +271,7 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
                     <p className="text-sm text-stone-700 truncate">
                       {g.supplierName ? `${g.supplierName} · ` : ''}{g.label}
                     </p>
-                    <p className="text-[11px] text-stone-400">
+                    <p className="text-[11px] text-stone-500">
                       {g.receivedDate ? `${g.receivedDate} · ` : ''}
                       {g.rows.length} line{g.rows.length === 1 ? '' : 's'}
                     </p>

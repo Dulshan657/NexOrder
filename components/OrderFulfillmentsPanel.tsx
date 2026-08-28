@@ -42,7 +42,7 @@ const OrderFulfillmentsPanel: React.FC<OrderFulfillmentsPanelProps> = ({
           Fulfilment{multi ? ` · ${fulfilments.length} warehouses` : ''}
         </h3>
         {multi && (
-          <span className="text-[11px] text-stone-400">overall: {order.status}</span>
+          <span className="text-[11px] text-stone-500">overall: {order.status}</span>
         )}
       </div>
 

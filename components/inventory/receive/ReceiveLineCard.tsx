@@ -95,7 +95,7 @@ const CONTROL =
 /** Column name, repeated per-cell once the header row is hidden below `xl`. */
 function MicroLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-stone-400 @min-[1180px]:hidden">
+    <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-stone-500 @min-[1180px]:hidden">
       {children}
     </span>
   )
@@ -181,7 +181,7 @@ export function ReceiveLineCard({
           DOM, which is the order the columns need at `xl`. */}
       <div className="col-start-1 row-start-1 min-w-0 @min-[1180px]:col-start-auto @min-[1180px]:row-start-auto">
         <p className="text-sm font-medium text-stone-900">{product?.name ?? '—'}</p>
-        <p className="font-mono text-xs text-stone-400">
+        <p className="font-mono text-xs text-stone-500">
           {product?.sku}
           {/* The supplier's own part number, so the line can be ticked off
               against their docket. */}
@@ -222,14 +222,14 @@ export function ReceiveLineCard({
               ))}
             </select>
             {!selectedUom.isBase && (
-              <p className="text-right text-[11px] tabular-nums text-stone-400">
+              <p className="text-right text-[11px] tabular-nums text-stone-500">
                 = {baseQty} {baseCode}
               </p>
             )}
             {/* An estimated pallet quantity is a guess, and this is where it
                 turns into stock. Said here, not only on the product record. */}
             {provLabel && provHint && (
-              <p className="flex items-center justify-end gap-1 text-[11px] text-stone-400">
+              <p className="flex items-center justify-end gap-1 text-[11px] text-stone-500">
                 <span className={provenance === 'measured' ? '' : 'text-amber-600'}>{provLabel}</span>
                 <Tooltip align="right" label="Where did this pallet quantity come from?" text={provHint} />
               </p>
@@ -404,7 +404,7 @@ export function ReceiveLineCard({
         <button
           type="button"
           onClick={onRemove}
-          className="btn-press flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-stone-400 hover:bg-red-50 hover:text-red-600 @min-[1180px]:min-h-0 @min-[1180px]:min-w-0 @min-[1180px]:p-1.5"
+          className="btn-press flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-stone-500 hover:bg-red-50 hover:text-red-600 @min-[1180px]:min-h-0 @min-[1180px]:min-w-0 @min-[1180px]:p-1.5"
           aria-label="Remove line"
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" />

@@ -140,17 +140,17 @@ export function RuleBuilderView() {
             + New rule
           </button>
         </div>
-        {putawayRules.length === 0 && <p className="text-xs text-stone-400">No rules yet.</p>}
+        {putawayRules.length === 0 && <p className="text-xs text-stone-500">No rules yet.</p>}
         {putawayRules.map((r) => (
           <div key={r.id} className="flex items-center gap-2 p-2 border border-stone-200 rounded-lg bg-white">
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-stone-800 truncate">{r.name}</p>
-              <p className="text-[10px] text-stone-400">
+              <p className="text-[10px] text-stone-500">
                 {r.enforcement} · priority {r.priority} · {r.isActive ? 'active' : 'off'}
               </p>
             </div>
             <button className="text-[11px] text-stone-500 hover:text-stone-800 btn-press" onClick={() => startEdit(r)}>Edit</button>
-            <button className="p-1 text-stone-400 hover:text-red-600 btn-press" onClick={() => del.mutate(r.id)} aria-label="Delete rule">
+            <button className="p-1 text-stone-500 hover:text-red-600 btn-press" onClick={() => del.mutate(r.id)} aria-label="Delete rule">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -181,7 +181,7 @@ export function RuleBuilderView() {
           <div className="space-y-1.5">
             <p className="text-[11px] font-medium text-stone-500">IF</p>
             {draft.conditions.length === 0 && (
-              <p className="text-[11px] text-stone-400 italic">Applies to all products.</p>
+              <p className="text-[11px] text-stone-500 italic">Applies to all products.</p>
             )}
             {draft.conditions.map((c, i) => {
               const attrs = c.subject === 'product' ? PRODUCT_ATTRS : BIN_ATTRS
@@ -203,7 +203,7 @@ export function RuleBuilderView() {
                   {c.op !== 'exists' && (
                     <input className="border border-stone-200 rounded px-1 py-1 w-24" value={String(c.value ?? '')} onChange={(e) => patchCond({ value: e.target.value })} placeholder="value" />
                   )}
-                  <button className="p-1 text-stone-400 hover:text-red-600" onClick={() => setDraft({ ...draft, conditions: draft.conditions.filter((_, ci) => ci !== i) })} aria-label="Remove condition">
+                  <button className="p-1 text-stone-500 hover:text-red-600" onClick={() => setDraft({ ...draft, conditions: draft.conditions.filter((_, ci) => ci !== i) })} aria-label="Remove condition">
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
@@ -250,7 +250,7 @@ export function RuleBuilderView() {
               <label className="flex items-center gap-1 text-stone-500"><input type="checkbox" checked={testHasSame} onChange={(e) => setTestHasSame(e.target.checked)} /> has same product</label>
             </div>
             {testResult && (
-              <p className={`text-[11px] ${testResult.kind === 'veto' ? 'text-red-600' : testResult.kind === 'soft' ? 'text-violet-600' : 'text-stone-400'}`}>
+              <p className={`text-[11px] ${testResult.kind === 'veto' ? 'text-red-600' : testResult.kind === 'soft' ? 'text-violet-600' : 'text-stone-500'}`}>
                 {testResult.kind === 'veto' ? '✕ rejects: ' : testResult.kind === 'soft' ? '▲ adjusts: ' : ''}{testResult.text}
               </p>
             )}

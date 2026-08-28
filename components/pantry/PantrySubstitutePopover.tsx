@@ -57,7 +57,7 @@ const PantrySubstitutePopover: React.FC<PantrySubstitutePopoverProps> = ({
                 <button
                     type="button"
                     onClick={onClose}
-                    className="p-1 -mt-1 -mr-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+                    className="p-1 -mt-1 -mr-1 rounded text-stone-500 hover:text-stone-700 hover:bg-stone-100 transition-colors"
                     aria-label="Close"
                 >
                     <X className="w-3.5 h-3.5" />
