@@ -1,0 +1,535 @@
+{
+  "__tests__/ui/Modal.test.tsx": {
+    "jsx-a11y/click-events-have-key-events": {
+      "count": 1
+    },
+    "jsx-a11y/no-static-element-interactions": {
+      "count": 1
+    }
+  },
+  "components/AccountsAgingTable.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 3
+    }
+  },
+  "components/ActionItemsBoard.tsx": {
+    "jsx-a11y/click-events-have-key-events": {
+      "count": 3
+    },
+    "jsx-a11y/no-static-element-interactions": {
+      "count": 3
+    }
+  },
+  "components/AdminDashboard.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/AppShell.tsx": {
+    "jsx-a11y/click-events-have-key-events": {
+      "count": 1
+    },
+    "jsx-a11y/no-static-element-interactions": {
+      "count": 1
+    }
+  },
+  "components/DeliveryScheduler.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/Header.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/HoReCaAdmin.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/HoReCaForm.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 7
+    }
+  },
+  "components/HoReCaListView.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/HoReCaSearchDropdown.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/InvoiceAdmin.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/OrderDetailView.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/OrderHistory.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 10
+    }
+  },
+  "components/OrderImportPage.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 3
+    }
+  },
+  "components/OrderSummary.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/OrderVerificationModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 5
+    }
+  },
+  "components/ProductAdmin.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/ProductForm.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 13
+    }
+  },
+  "components/PromotionAdmin.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/PromotionForm.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 19
+    }
+  },
+  "components/SalesTargetModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 4
+    }
+  },
+  "components/SearchAutocomplete.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/StockView.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/UserAdmin.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/UserForm.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/admin/AdjustStockModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/admin/AuditLogTab.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 4
+    }
+  },
+  "components/admin/AutoApprovalMenu.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/admin/BulkBrandModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/admin/CodePatternSection.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/admin/InventoryDispatchSection.tsx": {
+    "jsx-a11y/click-events-have-key-events": {
+      "count": 1
+    },
+    "jsx-a11y/no-static-element-interactions": {
+      "count": 1
+    }
+  },
+  "components/admin/LabelPrintingSection.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/admin/LevelRolesSection.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 7
+    }
+  },
+  "components/admin/MailboxesMenu.tsx": {
+    "jsx-a11y/click-events-have-key-events": {
+      "count": 1
+    },
+    "jsx-a11y/no-noninteractive-element-interactions": {
+      "count": 1
+    }
+  },
+  "components/admin/POAliasEditModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 4
+    }
+  },
+  "components/admin/POAliasesTab.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/admin/POInboxDetailModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 11
+    }
+  },
+  "components/admin/ProductHomeBinsSection.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 3
+    }
+  },
+  "components/admin/ProductImportModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/admin/ProductSearchDropdown.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/admin/ProductWmsAttributesSection.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 5
+    }
+  },
+  "components/admin/ScheduledVisitsAdmin.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/admin/SlottingRulesSection.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 5
+    }
+  },
+  "components/admin/StockImportModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/admin/TransferStockModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/admin/WarehouseTreeEditor.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 6
+    }
+  },
+  "components/admin/ZoneProfilesSection.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 5
+    }
+  },
+  "components/admin/import/StockPreviewRow.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/admin/import/csvImportShared.tsx": {
+    "jsx-a11y/click-events-have-key-events": {
+      "count": 1
+    },
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    },
+    "jsx-a11y/no-static-element-interactions": {
+      "count": 1
+    }
+  },
+  "components/admin/labels/LabelSizeWizard.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/admin/labels/PrintCalibrationControl.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/admin/layout/FloorPlanImportModal.tsx": {
+    "jsx-a11y/click-events-have-key-events": {
+      "count": 1
+    },
+    "jsx-a11y/control-has-associated-label": {
+      "count": 4
+    },
+    "jsx-a11y/no-static-element-interactions": {
+      "count": 1
+    }
+  },
+  "components/admin/layout/ObjectInspector.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/admin/layout/PlacementInspector.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 4
+    }
+  },
+  "components/admin/layout/RackWizard.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 3
+    }
+  },
+  "components/admin/newOrder/OrderLinesGrid.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/admin/rules/CompatibilityMatrixView.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/admin/rules/RuleBuilderView.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 8
+    }
+  },
+  "components/admin/settings/GeneralTab.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/admin/settings/StorageFormsView.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 15
+    }
+  },
+  "components/auth/authChrome.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/DocumentsView.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/inventory/OffHomeQueuePage.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/ReceiveStockView.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 3
+    }
+  },
+  "components/inventory/ReplenQueueView.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/ReplenWalkView.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/receive/ReceiptPlateLabels.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/replen/ReplenPolicyBar.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/replen/ReplenSetupView.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/inventory/replen/ReplenStopCard.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/stocktake/CountSheet.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/warehouse/AreaPaintSummaryModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/inventory/warehouse/EditSignModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/warehouse/MapStage.tsx": {
+    "jsx-a11y/no-noninteractive-element-interactions": {
+      "count": 1
+    },
+    "jsx-a11y/no-noninteractive-tabindex": {
+      "count": 1
+    }
+  },
+  "components/inventory/warehouse/RenameAreaModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/inventory/warehouse/RenameLocationModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/inventory/warehouse/WarehouseTestBench.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/warehouse/recode/steps/BlockStep.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/warehouse/recode/steps/NumberingStep.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/warehouse/recode/steps/ReviewStep.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/inventory/warehouse/slotting/SlotSteps.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 4
+    }
+  },
+  "components/pantry/PantryRow.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    },
+    "jsx-a11y/no-noninteractive-tabindex": {
+      "count": 1
+    }
+  },
+  "components/performance/ProductMovementSection.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/scheduled-visits/AddStopModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 3
+    }
+  },
+  "components/scheduled-visits/ChangeRequestModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/scheduled-visits/ScheduledVisitForm.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/scheduled-visits/ScheduledVisitList.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/scheduled-visits/ScheduledVisitTemplateForm.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    }
+  },
+  "components/scheduled-visits/ScheduledVisitWizard.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 3
+    }
+  },
+  "components/stock/OpsStockRow.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 2
+    }
+  },
+  "components/ui/Overlay.tsx": {
+    "jsx-a11y/click-events-have-key-events": {
+      "count": 1
+    },
+    "jsx-a11y/no-static-element-interactions": {
+      "count": 1
+    }
+  },
+  "components/visits/PhotoUpload.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 1
+    },
+    "jsx-a11y/img-redundant-alt": {
+      "count": 1
+    }
+  },
+  "components/visits/VisitModal.tsx": {
+    "jsx-a11y/control-has-associated-label": {
+      "count": 4
+    }
+  },
+  "components/visits/VisitPhotoStrip.tsx": {
+    "jsx-a11y/img-redundant-alt": {
+      "count": 1
+    }
+  },
+  "components/visits/VisitTimeline.tsx": {
+    "jsx-a11y/click-events-have-key-events": {
+      "count": 1
+    },
+    "jsx-a11y/no-static-element-interactions": {
+      "count": 1
+    }
+  },
+  "components/warehouse/levels/RackLevelEditor.tsx": {
+    "jsx-a11y/click-events-have-key-events": {
+      "count": 2
+    },
+    "jsx-a11y/no-noninteractive-element-interactions": {
+      "count": 1
+    },
+    "jsx-a11y/no-static-element-interactions": {
+      "count": 1
+    }
+  }
+}

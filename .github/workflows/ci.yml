@@ -50,6 +50,14 @@ jobs:
       - name: CSP guard (vercel.ts CSP + image-proxy ordering, per target)
         run: node scripts/check-csp.mjs
 
+      # Accessibility only -- jsx-a11y and nothing else. The current 276
+      # findings are frozen in eslint-suppressions.json, so this passes today
+      # and fails the moment a new one appears, including a second violation
+      # in a file that already has some. Sits with the other source assertions
+      # rather than after the compiler: it is a guard, not a build step.
+      - name: Accessibility lint (jsx-a11y)
+        run: npm run lint
+
       - name: Type check
         run: npx tsc --noEmit
 
