@@ -179,8 +179,8 @@ environment", the file is stale, not the database.
   - Server half: `_shared/modules.ts` `requireModule`, **fails OPEN** (unset
     `ENABLED_MODULES` = everything on) because a module gate is a *commercial*
     control and roles/RLS are the security ones. `config/moduleOwnership.mjs`
-    maps 62 functions to modules — 3 `sales_orders`, 3 `shop`, 11 `po_inbox`,
-    1 `promotions`, 1 `invoicing`, 3 `field_ops`, 40 `inventory_dispatch`;
+    maps 65 functions to modules — 3 `sales_orders`, 3 `shop`, 11 `po_inbox`,
+    1 `promotions`, 1 `invoicing`, 3 `field_ops`, 43 `inventory_dispatch`;
     `deploy-functions.mjs` will not deploy a disabled module's functions at all,
     but it never RETIRES one already deployed — Amadiya's 19 now-disabled
     functions must be deleted by hand. `poll-inbox` uses `isModuleEnabled` and
@@ -227,6 +227,8 @@ npx playwright test --project=mobile   # the 360px suite; needs E2E_WAREHOUSE_* 
 npm run check:overlays             # no raw `fixed inset-0` outside components/ui
 npm run check:csp                  # vercel.ts: per-target CSP + /storage rewrite ordering
 npm run check:grants:dev           # no client-role write grant on a locked table (needs creds; not a CI gate)
+npm run check:storage:dev          # bucket public flags + policies vs config/storageBuckets.mjs (needs creds)
+npm run check:viewport             # no `h-screen`/`100vh` where the handheld needs `h-svh`
 
 # Type-check before deploy (no CI block-on-red yet)
 npx tsc --noEmit
@@ -241,7 +243,7 @@ npm run migrate:amadiya                             # apply everything pending
 node supabase/migrate.mjs --env=amadiya --stamp-only
 
 # Edge Functions (never pass --no-verify-jwt; config.toml governs the gate)
-npm run fn:deploy:amadiya          # all 71; append a name for one
+npm run fn:deploy:amadiya          # all 79; append a name for one
 
 # Secrets and crons (supabase/ops/)
 npm run secrets:check:amadiya      # Gate A assertion; exit 1 if incomplete
@@ -398,7 +400,7 @@ The Gmail connect flow (`start-po-oauth` → `_shared/poInbox/oauthUrls.ts` → 
 
 ## Warehouse & inventory (WIE)
 
-The largest subsystem after ordering, and about half the Edge Functions. Migrations `00027`–`00085`, plus `00090`–`00091`.
+The largest subsystem after ordering, and about half the Edge Functions. Migrations `00027`–`00085` and `00090` onward — everything from `00090` to the newest (`00126`) is WIE except `00104`/`00105`/`00111`–`00113`.
 
 **Inventory truth.** `inventory_balances` (product × location × batch **× handling unit**; `on_hand`, `allocated`, `available` generated) is the source of truth; `inventory_movements` is the append-only ledger. `products.inventory` / `products.available` are **caches**, maintained only by `inv_recompute_product_cache()` via `inv_apply_leg()`. All quantities are base units. Every write funnels through `inv_apply_leg` (service_role only): `inv_receive_stock`, `inv_reserve_order`, `inv_pick_order_line`, `inv_transfer_stock`, `inv_adjust_stock`.
 
@@ -521,6 +523,77 @@ The largest subsystem after ordering, and about half the Edge Functions. Migrati
 - Blank ≠ zero on both the grid and the CSV (`min_packs`/`max_packs` are authoritative; the exported `*_base` columns are read-only arithmetic).
 - **Never render a per-row `<select>` of bins.** 158 rows × ~400 locations froze the tab hard enough that Chrome could not be scripted; the grid renders ONE `<datalist>` and every row's bin input points at it.
 - The setup checklist's `replen_min_max` step counts **armed** rows only (`countReplenConfigured`), so saving figures does not tick it — which is the honest test of whether replenishment is on.
+
+**Slotting rules & off-home** (migs `00114`–`00121`) — the operator states where a product
+*belongs*. Until `00115` exactly ONE thing constrained that: `zone_profiles.allowed_categories`,
+an exact-string match on `products.category` applied as hard filter #4 in `scoring.ts`.
+"All the Milwaukee goes in aisle C, and if C is full put it in the mezzanine" could not be
+said at all. A rule ANDs product / brand / category / supplier conditions onto **ranked
+blocks** of bins; precedence is a fixed specificity ladder, not a priority number.
+
+- **`products.brand` (`00114`) is the third classification axis** — a distributor's supplier
+  is not its manufacturer and "Fertiliser" is not "Yara", so neither existing column can
+  stand in. Nullable, **no default and no backfill**: `''` is a value a rule condition can
+  match, so seeding one would silently enrol the whole back catalogue in the first
+  blank-field rule anyone writes. Unbranded has exactly one representation and it is NULL.
+  The index is on the **folded expression** (`lower(btrim(brand))`), because a plain btree
+  cannot serve that predicate and would sit there looking like coverage.
+- **Not `wie_rules`, and it is worth knowing why** — that table's targets are PREDICATES
+  over `resolveAttr`'s closed vocabulary, with one JSONB column and nowhere to hang forty
+  location ids; its `priority` breaks ties where this needs a ladder; rank is per (rule,
+  block); and `mutate-wie-rule` is Admin-only where this is Admin+Manager. `rule_type =
+  'slotting'` has sat unused in `00045`'s CHECK since the beginning — **leave it dead.**
+- **`_shared/wie/slotting.ts` is pure and imported by both runtimes** (`lib/slotting.ts`),
+  loader beside it in `_shared/slottingLoad.ts`. It decides **ORDER, never HEADROOM**, and
+  that is a correctness requirement, not an optimisation: `reslot.ts` deliberately calls
+  `filterCandidates` with a falsified `quantity: 1`. A tier test asking "does this tier have
+  room" would read that 1, collapse every plan into the primary block and spill the rest
+  into `overflow` — which carries **no reason field**, so the operator sees "could not be
+  placed anywhere" with nothing pointing at slotting. Legality and preference order here;
+  which bin actually has room is `putawayPlan.ts`, whose greedy fill already spills.
+- **`wie_putaway_candidates` filters NOTHING new** (`00116`) — it *reports* `block_ids` and
+  `is_hold`. A `WHERE` clause there would delete exactly the non-block bins that overflow
+  depends on, would force the ladder and the reservation union to be restated in SQL beside
+  the TypeScript that already does it, and would be **invisible** where the TS path yields
+  real `rejectedCount`s and samples (see `scoring.ts:178-196`, which had to fabricate them).
+- **Precedence has ONE implementation, `resolveSlotting`.** `wie_slotting_rule_rows` reports
+  a rule's MATCH COUNT and never which rule governs a product — counting is not ranking. The
+  count exists because `match_category` has no FK (free text since `00069`), so renaming a
+  category silently stops a rule matching; a zero beside the rule is the only way anyone
+  finds out.
+- **Both writes are delete-then-insert transactions, and that is forced.**
+  `uq_slotting_rule_rank` is DEFERRABLE (a drag-reorder rewrites every rank at once and a
+  non-deferrable UNIQUE trips 23505 mid-statement) — **and a deferrable constraint cannot be
+  an `ON CONFLICT` arbiter**; Postgres rejects the inference outright.
+- **Off-home** (`00119`) is the other half: a rule written today finds forty pallets already
+  scattered, and the operator needs a list they can walk. **Its own table**, because
+  `uq_wie_slotting_open` is keyed (warehouse, product, from, to) and a travel-saving reslot
+  row for the same pair would collide — the `uq_wie_replen_open` arbiter trap again. **ONE
+  stage, not two**: the stock is already in a bin and the walker is standing at it, so an
+  assign stage would only add a state to abandon. Sized from `available`, never `on_hand`.
+- **`wie_offhome_replace_tx` (`00121`) exists because a partial index's predicate cannot
+  travel over PostgREST** — `.upsert({onConflict})` sends column names only and Postgres
+  answers *"no unique or exclusion constraint matching the ON CONFLICT specification"*. The
+  delete is scoped to the products the sweep **actually examined** (it is capped by
+  `MAX_SCANNED_PRODUCTS`), or a truncated run silently retires tasks for the rest.
+- **A dismissal carries a QUANTITY** (`_shared/wie/offHomeSuppress.ts`, pure): it is a
+  statement about a *situation*, not a bin. "Double-stacked behind the Ryobi pallets" is true
+  of today's pile. Same stock or less stays silent; more stock arriving is a new situation
+  nobody refused. Suppressing on the (warehouse, product, bin) triple would need the operator
+  to *remember* to lift it, and forgetting is silent — `restore` is the act you take when you
+  know, not the maintenance you must not forget.
+- **The Blocks overlay reads `wie_slotting_block_bin_map`** (`00120`), a STABLE SECURITY
+  DEFINER function with the staff check in its body — the `wie_replen_config_rows` pattern.
+  Granting `v_slotting_block_bins` to `authenticated` would hand Customers the whole
+  membership map past `user_is_staff()`; expanding `slotting_block_members` client-side would
+  be a second implementation of unit → leaf-bin expansion. **Staff, not Admin/Manager** — it
+  is looked at while standing in the aisle.
+- Frontend: rules live in **Settings → Warehouse** (`SlottingRulesSection`, beside level
+  roles and label stock); suggestions in `WarehousesSettingsSection` via
+  `SlottingSuggestionsView`; `admin/layout/ReslotPlannerModal.tsx`; the map's block picker is
+  `inventory/warehouse/slotting/*`; the walk is the **Off-home** tab
+  (`components/inventory/OffHomeQueuePage.tsx`, Admin/Manager/Warehouse). Hooks
+  `useSlottingRules`, `useSlottingSuggestions`, `useReslotPlan`, `useOffHome`.
 
 **Location code sweeps** (migs `00107`–`00108`) — the operator paints a block of bins on
 the live map, names it, and every bin in it is recoded. `locations.code` was a grid
@@ -778,6 +851,9 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 | `level_roles` | `mutate-level-role` | Admin | `00081` |
 | `warehouse_setup_acknowledgements` | `mutate-warehouse-setup-ack` | Admin, Manager | `00092` |
 | `wie_replen_tasks` | `detect-`/`assign-`/`complete-`/`unassign-replenishment` | Admin, Manager, Warehouse | `00082` |
+| `slotting_blocks`, `slotting_block_members`, `slotting_rules`, `slotting_rule_blocks` | `mutate-slotting-rule` (`set_rule` / `delete_rule` / `set_block` / `delete_block`) | Admin, Manager | `00115`, `00117` |
+| `wie_slotting_suggestions` | `plan-reslot`, `commit-reslot-plan`, `decide-slotting-suggestion` | Admin, Manager | `00060`, `00117` |
+| `wie_offhome_tasks` | `mutate-offhome-task` (`detect` / `accept` / `dismiss` / `restore`) | Admin, Manager, **Warehouse** | `00119`, `00121` |
 
 - **Audit trail** for every privileged mutation → `audit_events` (mig `00012`). Admin-only SELECT; service_role-only INSERT.
 - **A lockdown is a DROP POLICY *and* a REVOKE, and this table lied about that for a year.** `00009`/`00010` dropped some order policies and revoked nothing, so `authenticated` kept `00001:1084`'s full CRUD grant and three `00001` write policies survived — an Admin could `DELETE` an order over PostgREST and a Manager could rewrite an invoiced line, with no `audit_events` row and no ledger correction. Security-audit finding **DB-1**, closed by `00112`. `00013:15-21` skipped both tables *in writing*, on the stated grounds `00009` had covered them. **Never trust a row of this table; run `npm run check:grants:<target>`,** which asserts it against `information_schema` from `config/lockedTables.mjs`.
@@ -785,7 +861,7 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 - **`cancelled` is TERMINAL and is NOT on the status ladder** (`00111`). `STATUS_ORDER.indexOf('cancelled')` is `-1`, which compares as *before everything*, so the forward-only guard in `update-order-status` would let a cancelled order be advanced to `delivered` — it has an explicit terminal check ahead of the index comparison, and `ORDER_STATUS_SEQUENCE.indexOf` in `OrderDetailView` is guarded the same way (it would otherwise offer "Mark as Processing"). `recomputeOrderStatus` returns early on a cancelled order or the next pick anywhere would roll it back to a fulfilment rollup. **`order_fulfillments.status` deliberately has no `cancelled`** — a site cannot be cancelled independently of its order, and `rollupOrderStatus` has no rung for it. `record-pick` refuses to pick a cancelled order, before the RPC.
 - **Cancelling is one transaction, because `inv_release_reservation` is not idempotent and is not keyed by order.** It nets (ordered − picked) per line and lowers `inventory_balances.allocated`, a counter shared by every open order, so a second call eats somebody else's reservation. `order_cancel_tx` (`00111`) claims the row with a conditional `UPDATE` — that is what serialises two operators pressing Cancel — then releases, then cancels the unpaid invoice. The window is `processing`/`processed` **and zero `pick_progress` rows**: an order's status is the rollup and takes the *lowest* rung, so one at `processed` may already have a site that has picked.
 - **Client error log** → `client_errors` (mig `00014`), written by `log-client-error`. Admin-only SELECT; service_role-only INSERT. `actor_id` nullable so pre-auth crashes are captured.
-- **`verify_jwt = false` functions must gate themselves.** The eight functions listed in `supabase/config.toml` bypass the platform JWT check, so each re-implements auth in-body: cron callers via `isAuthorizedCronCall` (`_shared/cronToken.ts`), server-to-server callers via `isServiceRoleCall`, OAuth callbacks via state consumption. `send-email` had no gate at all until mig-era 2026-07 — it was world-callable and leaked order-ID existence through its `sent` vs `recipient_unresolved` response. Never add a `verify_jwt = false` entry without an in-body gate.
+- **`verify_jwt = false` functions must gate themselves.** The nine functions listed in `supabase/config.toml` bypass the platform JWT check, so each re-implements auth in-body: cron callers via `isAuthorizedCronCall` (`_shared/cronToken.ts`), server-to-server callers via `isServiceRoleCall`, OAuth callbacks via state consumption. `send-email` had no gate at all until mig-era 2026-07 — it was world-callable and leaked order-ID existence through its `sent` vs `recipient_unresolved` response. Never add a `verify_jwt = false` entry without an in-body gate.
 - **Storage buckets: five public, four private, and NO client role holds `FOR ALL` on any of them** (mig `00113`, audit findings STOR-1/STOR-2). This entry said "public read, `authenticated` write" until 2026-08-19, and that sentence was the finding: `auth_write_*` was `FOR ALL TO authenticated` on the bucket name alone, and `FOR ALL` covers SELECT — which on `storage.objects` is **list** — plus UPDATE and DELETE. A **customer** login could enumerate every signature path and delete them, through no Edge Function and so with no audit event. `00081` fixed the identical bug for `anon` and said in writing it was leaving the `authenticated` twin.
   - **`signatures` and `visit-photos` are PRIVATE and carry no client policy at all**, like `floorplan-scans`. Reads are audited signed URLs (`create-signature-url`, `create-visit-photo-urls`); writes are `upload-signature` and `mutate-visit-photo`. Never add a policy back: the direct-upload capability and the list-and-delete hole were the same policy.
   - **`company-assets`, `product-images` and `avatars` stay public by design** — the logo is on every page and every PDF, product images are on the Shop, avatars are in the header. Their writes are per-verb and gated to **the role that owns the column pointing at them**: Admin for `company-assets`/`avatars`, Admin+Manager for `product-images`. The audit's suggested `owner = auth.uid()` for avatars is deliberately NOT used — `storage.objects.owner` is NULL on every object in this project, so it would deny every delete silently, and there is no self-service avatar upload anyway.
@@ -794,7 +870,7 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
   - **A signature is captured in the CART, not at delivery.** `OrderVerificationModal` is shown at order placement and customers skip it entirely. Anything calling it "proof of delivery" — including the audit and the older compliance wording — is wrong about when it happens.
 - **Read policies are closed as of `00105`.** Eight of the nine `USING (true)` SELECT policies now read `staff OR <own scope>`, via `public.user_is_staff()` — the one definition of "internal", covering Admin/Manager/both Reps/Warehouse. `suppliers` and `product_suppliers` (which carries `cost_price`) are staff-only; `horeca_pricing`, `horeca_payment_methods` and `pantry_items` are own-HoReCa; `products`/`product_uoms` hide inactive lines from customers; `promotions` shows customers only live, in-window rows. **Never compare a role to a literal to decide read access — call `user_is_staff()`.** `00104` pins `search_path` on `user_role()`/`user_horeca_id()` first, since everything now rests on them.
 - **`app_settings` is STILL `USING (true)`, deliberately.** It is a singleton, so no row predicate can give a customer the identity and pricing fields the Shop needs while withholding `default_credit_limit` and the `po_auto_approve_*` flags. RLS filters rows; that needs columns. Closing it means splitting the internal thresholds into their own table. Don't "fix" it with a policy that changes nothing.
-- **Rate limiting** (`_shared/rateLimit.ts`): `place-order` 10/min/user, `invite-user` 5/min/admin, `mutate-pantry-item` 60/min/user, `log-client-error` 30/min/IP, `send-email` 20/min/IP, `count-bin` 20/min/user (a whole location per call), `upload-signature` 20/min/user, `create-signature-url` 120/min/user, `mutate-visit-photo` 30/min/user, `create-visit-photo-urls` 120/min/user, `cancel-order` **10/min/user** (rare and destructive; a burst is a mistake or an attack), `mutate-product-home-bin` 30/min/user but **10/min on its own `:bulk` bucket** (up to 200 slots per call), `mutate-warehouse-location` 30/min/user with **four separate 10/min buckets, `:area:`, `:paint:`, `:bind:` and `:sign:`** (the first three can each touch 1100+ rows; keeping them apart is what stops a burst of paints locking the operator out of fixing a spelling — or out of the one action that repairs a site's parentage wholesale. `:sign:` is separate for the inverse reason: signage is the cheap, safe edit made repeatedly while walking the floor, and it must not spend the budget the corrective actions need) → 429 `TOO_MANY_REQUESTS`. Cross-isolate global cap via the `rate_limit_hit()` Postgres RPC + `rate_limit_counters` table (mig `00026`, fixed-window, hourly `pg_cron` cleanup); fails open to a per-isolate in-memory counter if the DB call errors.
+- **Rate limiting** (`_shared/rateLimit.ts`): `place-order` 10/min/user, `invite-user` 5/min/admin, `mutate-pantry-item` 60/min/user, `log-client-error` 30/min/IP, `send-email` 20/min/IP, `count-bin` 20/min/user (a whole location per call), `upload-signature` 20/min/user, `create-signature-url` 120/min/user, `mutate-visit-photo` 30/min/user, `create-visit-photo-urls` 120/min/user, `cancel-order` **10/min/user** (rare and destructive; a burst is a mistake or an attack), `mutate-product-home-bin` 30/min/user but **10/min on its own `:bulk` bucket** (up to 200 slots per call), `mutate-warehouse-location` 30/min/user with **four separate 10/min buckets, `:area:`, `:paint:`, `:bind:` and `:sign:`** (the first three can each touch 1100+ rows; keeping them apart is what stops a burst of paints locking the operator out of fixing a spelling — or out of the one action that repairs a site's parentage wholesale. `:sign:` is separate for the inverse reason: signage is the cheap, safe edit made repeatedly while walking the floor, and it must not spend the budget the corrective actions need), `mutate-slotting-rule` 30/min/user with a **`:block:` 10/min bucket** (a block edit rewrites every member), `plan-reslot` / `commit-reslot-plan` 20/min/user, `decide-slotting-suggestion` 120/min/user, `mutate-offhome-task` 60/min/user with a **`:detect:` 10/min bucket** (a sweep reads every balance in the site) → 429 `TOO_MANY_REQUESTS`. Cross-isolate global cap via the `rate_limit_hit()` Postgres RPC + `rate_limit_counters` table (mig `00026`, fixed-window, hourly `pg_cron` cleanup); fails open to a per-isolate in-memory counter if the DB call errors.
 
 ## Role-Based Views
 
@@ -888,45 +964,22 @@ module is off.
 Ordered by impact; one-line scope each so future agents don't drift.
 
 **High**
-0a. ~~**Ship the warehouse-only rollout to Amadiya.**~~ **DONE 2026-08-20**,
-   tag `rel-2026-08-20` (`e2afb8e`), live on nexorder.com.au. Amadiya runs
-   `['sales_orders', 'inventory_dispatch']`: warehouse management plus orders
-   keyed in by their own office. 57 functions deployed, the **19 belonging to
-   disabled modules deleted** from the project, `po-poll-inbox` unscheduled
-   (6 crons now, not 7). `check:grants` and `check:storage` clean. Two things
-   the release itself taught are folded into the scripts — see "the alias step
-   is not the verdict" below and `schedule-crons.mjs`'s derived job count.
-   **Amadiya is not yet usable**: 0 products, 0 customers, and one Admin login
-   with no Warehouse staff. The converted catalogue in `Amadiya/` still needs
-   importing and staff inviting; that is the next job, not this one.
-0. **Finish the cutover.** ~~create the Amadiya **Vercel project**
-   (`NEXORDER_ENV=amadiya`, Sydney creds, `VITE_SHOW_DEMO_LOGINS=false`), fill
-   `vercel.projectId` in the registry, attach `nexorder.com.au` + `www`,
-   `npm run deploy:amadiya`~~ — **all DONE.** The project exists, both domains
-   are attached and verified, and `rel-2026-08-19` is live on
-   `https://nexorder.com.au` (sha `78a4d2a`), with migrations `00106`–`00113`
-   applied — closing audit findings DB-1, STOR-1 and STOR-2 on production
-   evidence. **The project was created on `dulshan657s-projects` (a personal
-   scope) and TRANSFERRED to the `nexgen14` team on 2026-08-19**; a tenant's
-   hosting belongs on a NexGen-owned scope, as the demo already does on
-   `nexgen13`. The transfer-request API preserved `projectId`, so only
-   `teamSlug`/`orgId` changed in the registry. ~~then remove the `nexorder.vercel.app` alias from
-   the old project and stop its deploys~~ — **done in the cutover**: the old
-   project is retired, its alias removed and its Supabase env vars stripped, so
-   `https://nexorder.vercel.app` currently answers `DEPLOYMENT_NOT_FOUND` and
-   the hostname is **unclaimed**. It is reserved for the rebuilt demo (0b) and
-   a `*.vercel.app` name is globally first-come, so do not leave it long. Then
-   `bootstrap:admin:amadiya` for
-   `info@amadiya.com.au` (deferred until the domain resolves, because the reset
-   link points at it), Amadiya's phone/email/logo into `app_settings`, and
-   Gates C and E (B passed on the 2026-08-19 deploy). Full sequence:
+0. **Make Amadiya usable.** The infrastructure is finished: `rel-2026-08-20`
+   (`e2afb8e`) is live on nexorder.com.au running
+   `['sales_orders', 'inventory_dispatch']` — warehouse management plus orders
+   keyed in by their own office — with 57 functions deployed, the **19 belonging
+   to disabled modules deleted** from the project, `po-poll-inbox` unscheduled
+   (6 crons, not 7), `check:grants` and `check:storage` clean, and the Vercel
+   project moved to the `nexgen14` team. **What is missing is the data**: 0
+   products, 0 customers, and one Admin login with no Warehouse staff. Import
+   the converted catalogue from `Amadiya/`, invite staff, put Amadiya's
+   phone/email/logo into `app_settings`, confirm `bootstrap:admin:amadiya` for
+   `info@amadiya.com.au`, then Gates C and E — full sequence in
    `PRODUCTION-LAUNCH-PLAN.md` Phase 3.
-0b. ~~**Rebuild the demo on its own account.**~~ **DONE 2026-08-13.** Database
-   `uqvekvavkjjurpqtovbq` + site `nexorder-demo` on the `nexgen13` Vercel team,
-   both on NexGen's own accounts, live at https://nexorder.vercel.app. Isolation
-   verified in both directions: each project's Edge Functions return an ACAO
-   header for their own origin and **none** for the other's. Remaining demo work
-   is small and listed under "Recently shipped".
+   The demo half is done and needs nothing: `uqvekvavkjjurpqtovbq` + the
+   `nexgen13` Vercel team, live on nexorder.vercel.app, isolation verified in
+   both directions (each project's Edge Functions return an ACAO header for
+   their own origin and **none** for the other's).
 1. **Branch protection** — CI's `verify` job runs on every PR but `main` doesn't yet *require* it. **Blocked by plan tier (2026-05-21):** GitHub's Free plan disallows branch protection *and* rulesets on **private** repos — both `PUT …/branches/main/protection` and `POST …/rulesets` return `403 "Upgrade to GitHub Pro or make this repository public"`. To unblock, either upgrade to **GitHub Pro** (~$4/mo) or make the repo public, then require the status-check context **`typecheck · test · build`** (= the `verify` job's `name:` in `ci.yml`) via Settings → Branches or the API. Ready-to-run payload + commands saved in `~/.claude/plans/add-branch-protection-generic-zebra.md`.
 2. **Email setup (operator)** — `send-email` is live, gated and rate-limited; it is dormant only because `RESEND_API_KEY` is unset, and setting that one secret is the entire switch (no redeploy). Full procedure, test call, response table and rollback: **`docs/runbooks/enable-email.md`**. The trap worth knowing up front: leaving `EMAIL_FROM` unset falls back to `onboarding@resend.dev`, which Resend delivers *only* to the account owner — so customers get nothing while the response still says `sent: true`.
 
