@@ -128,7 +128,20 @@ const ToastContainer: React.FC = () => {
   const { toasts, removeToast } = useToasts();
 
   return createPortal(
+    // The live region is the CONTAINER, not the toast. Each ToastMessage already
+    // carries role="alert" or role="status", but a role landing on a node that is
+    // itself being inserted is the unreliable half of the pattern -- assistive
+    // tech is only obliged to watch a region it was already observing. This div
+    // is mounted for the life of the app, so there is always something watching
+    // by the time a toast appears.
+    //
+    // `polite`, with the per-toast role="alert" left in place to escalate errors
+    // to assertive. `aria-atomic={false}` so a new toast is announced on its own
+    // rather than re-reading every toast still on screen.
     <div
+      role="status"
+      aria-live="polite"
+      aria-atomic={false}
       className="pointer-events-none fixed top-16 left-2 right-2 flex flex-col gap-2 md:top-4 md:left-auto md:right-4 md:w-full md:max-w-sm md:gap-3"
       style={{ zIndex: TOAST_Z }}
     >

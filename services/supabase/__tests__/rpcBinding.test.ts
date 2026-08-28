@@ -34,7 +34,6 @@ const { calls, state, fakeSupabase } = vi.hoisted(() => {
     rest: { marker: true },
     // Real method (shorthand), NOT an arrow function — must observe `this`.
     rpc(fn: string, args: unknown) {
-      // eslint-disable-next-line @typescript-eslint/no-invalid-this
       if (!this || !(this as { rest?: unknown }).rest) {
         throw new TypeError("Cannot read properties of undefined (reading 'rest')")
       }

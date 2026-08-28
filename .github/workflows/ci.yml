@@ -50,6 +50,14 @@ jobs:
       - name: CSP guard (vercel.ts CSP + image-proxy ordering, per target)
         run: node scripts/check-csp.mjs
 
+      # Accessibility only -- jsx-a11y and nothing else. The current 276
+      # findings are frozen in eslint-suppressions.json, so this passes today
+      # and fails the moment a new one appears, including a second violation
+      # in a file that already has some. Sits with the other source assertions
+      # rather than after the compiler: it is a guard, not a build step.
+      - name: Accessibility lint (jsx-a11y)
+        run: npm run lint
+
       - name: Type check
         run: npx tsc --noEmit
 
@@ -58,3 +66,62 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      # Builds EVERY target and greps the artifact: demo credentials must ship
+      # to the demo host and to no one else. Both directions are asserted.
+      #
+      # This is also the first thing in CI ever to build a tenant target --
+      # `npm run build` above runs with no NEXORDER_ENV, so it has always built
+      # `dev` with every module on. Amadiya's module-folded bundle was, until
+      # now, compiled for the first time by the deploy that shipped it.
+      #
+      # Last, because it is the most expensive step and there is nothing to
+      # learn from it if the ordinary build is already broken.
+      - name: Demo-credential surface (per target, on the built artifact)
+        run: npm run check:demo
+
+  # A SECOND JOB, not another step in `verify`. It needs a browser download and
+  # a dev server, and neither should sit in the path of a type error.
+  a11y:
+    name: axe · login surfaces
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # The only tier where `color-contrast` runs at all: jsdom has no layout and
+      # no computed colour, so the axe suite inside `npm test` skips that rule
+      # however bad the palette gets.
+      #
+      # NO CREDENTIALS AND NO DATABASE. lib/supabase.ts throws at module scope on
+      # an EMPTY url but never calls out, so a placeholder is enough to boot the
+      # app. Same one vitest.config.ts uses, so the host is greppable and cannot
+      # reach a live project. That is also why this covers login surfaces only --
+      # with no router, they are the only screens reachable without a backend.
+      - name: axe (WCAG 2.2 AA)
+        run: npx playwright test --project=a11y
+        env:
+          VITE_SUPABASE_URL: https://testref.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_offline_ci
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-report
+          path: playwright-report/
+          retention-days: 7

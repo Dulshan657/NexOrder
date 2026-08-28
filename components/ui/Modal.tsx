@@ -63,6 +63,7 @@ export function Modal({
   children,
 }: ModalProps) {
   const titleId = useId()
+  const descriptionId = useId()
   const guard = useDismissGuard(dirty, onClose)
 
   // While the discard confirm is up it is topmost, so it owns Escape; suppressing
@@ -83,6 +84,7 @@ export function Modal({
   const chrome = (
     <DialogChrome
       titleId={titleId}
+      descriptionId={descriptionId}
       title={title}
       icon={icon}
       description={description}
@@ -110,6 +112,7 @@ export function Modal({
             role="dialog"
             aria-modal="true"
             aria-labelledby={title ? titleId : undefined}
+            aria-describedby={description ? descriptionId : undefined}
             className={panelClassName}
           >
             {chrome}
@@ -119,6 +122,7 @@ export function Modal({
             role="dialog"
             aria-modal="true"
             aria-labelledby={title ? titleId : undefined}
+            aria-describedby={description ? descriptionId : undefined}
             className={panelClassName}
           >
             {chrome}

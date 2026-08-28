@@ -27,6 +27,20 @@ const DEMO_EMAIL = 'v2food@nexorder.demo'
 const DEMO_NAME = 'v2food Australia'
 const DEMO_ROLE = 'Admin'
 
+// PASSWORD was referenced twice and declared nowhere, so this script threw
+// `ReferenceError: PASSWORD is not defined` before it could create the user.
+// Found by the first ESLint run. It is deliberately an env var with NO
+// default: a literal here would be a demo credential committed to the repo,
+// which is the exact class of thing this branch is removing from the login
+// page. Dev-only fixture, so failing loudly is the correct behaviour.
+const PASSWORD = process.env.DEMO_USER_PASSWORD
+if (!PASSWORD) {
+  throw new Error(
+    'DEMO_USER_PASSWORD is not set. Choose a password for the V2food demo login: ' +
+      'DEMO_USER_PASSWORD="..." node tests/fixtures/po-samples/v2food-demo-seed.mjs',
+  )
+}
+
 const { supa, env: ENV, target: TARGET } = await createDevClient()
 
 async function findAuthUser() {

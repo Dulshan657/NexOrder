@@ -37,6 +37,11 @@ const ROOT = resolve(HERE, '../../..') // NexOrder/
 const CUSTOMER_NAME = 'Sydney Tools Wollongong'
 const CUSTOMER_ADDRESS = '63 Flinders St, Wollongong NSW 2500'
 const DEFAULT_SENDER = 'orders@sydneytools.com.au'
+// The header above has documented SYDNEY_TOOLS_SENDER since this script was
+// written, and every use below reads SENDER -- but the line binding the two
+// was never there, so the script died on `ReferenceError: SENDER is not
+// defined` at the first customer insert. Found by the first ESLint run.
+const SENDER = process.env.SYDNEY_TOOLS_SENDER || DEFAULT_SENDER
 
 // The 10 lines from PO 3380598.PDF. `code` = the printed "Supp Item No"
 // (becomes the po_product_aliases.source_code AND the product sku), `price` =
