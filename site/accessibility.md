@@ -92,7 +92,7 @@ If something in Nex Order is not usable for you, we want to know, and a specific
 report is worth more than a general one — the screen, what you were trying to do,
 and what happened.
 
-Contact: CONTACT_EMAIL_TBD
+Contact: info@nexgeninnovations.com.au
 
 We aim to respond within five working days.
 

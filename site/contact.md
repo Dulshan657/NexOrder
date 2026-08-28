@@ -14,7 +14,7 @@ for you.
 To talk to us about your own operation, [book a demonstration]({{BOOK_DEMO_URL}}).
 <!-- demo:end -->
 
-Email: CONTACT_EMAIL_TBD
+Email: info@nexgeninnovations.com.au
 
 ## If you already use Nex Order
 

@@ -235,11 +235,15 @@ export const TARGETS = {
       ogImage: '/og-image.png',
 
       /**
-       * Where "Book a demo" points. NULL on a tenant, and null here too until
-       * there is a real scheduler to point at -- the button does not render
-       * without it, so an unset value ships nothing rather than a dead link.
+       * Where "Book a demo" points. NULL on a tenant, always.
+       *
+       * A mailto for now rather than a scheduler: it is a real destination that
+       * works today, where a Cal.com link would be a second thing to set up
+       * before the button could exist at all. Swap this for a scheduler URL when
+       * there is one -- LoginPage handles both, and stops calling it a new tab
+       * when the target is a mail client.
        */
-      bookDemoUrl: null,
+      bookDemoUrl: 'mailto:info@nexgeninnovations.com.au?subject=Nex%20Order%20demo',
     },
 
     /**
