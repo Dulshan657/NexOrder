@@ -16,6 +16,7 @@
     "lint:fix": "eslint . --fix",
     "lint:prune": "eslint . --prune-suppressions",
     "check:csp": "node scripts/check-csp.mjs",
+    "check:demo": "node scripts/check-demo-surface.mjs",
     "check:overlays": "node scripts/check-overlays.mjs",
     "check:viewport": "node scripts/check-viewport-units.mjs",
     "check:grants:dev": "node scripts/check-grants.mjs --env=dev",

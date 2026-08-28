@@ -62,6 +62,26 @@ const moduleDefines = Object.fromEntries(
         JSON.stringify(moduleTarget.modules.includes(slug)),
     ]),
 );
+// ONE BOOLEAN, DERIVED, NOT A SECOND SWITCH.
+//
+// `kind` already means exactly this: the registry documents 'demo' as NexGen's
+// own deployment where fixtures are allowed and demo logins are shown, and
+// 'tenant' as a paying client's where none of that is ever true. Reading it
+// here makes "does this build carry demo credentials" a property of the target
+// registry -- reviewable in a diff -- instead of a value typed into a Vercel
+// dashboard that nothing in this repo can see.
+//
+// It replaces VITE_SHOW_DEMO_LOGINS, which was read as `!== 'false'`: an
+// opt-OUT, so a tenant build shipped seven working logins and their shared
+// password unless somebody remembered to type "false" into a web form. Nobody
+// did, and nexorder.com.au served them to a paying client. Inverting it to
+// opt-IN would only have moved the silence: the demo would then lose its roster
+// with no error anywhere, and you would hear about it from a prospect.
+//
+// scripts/check-demo-surface.mjs asserts the fold on the built artifact, in
+// both directions, for every target.
+const isDemoHost = moduleTarget.kind === 'demo';
+
 const storageProxyTarget = isProvisioned(proxyTarget)
     ? proxyTarget.supabaseUrl
     : TARGETS.dev.supabaseUrl;
@@ -198,6 +218,7 @@ export default defineConfig(() => {
       define: {
         __APP_VERSION__: JSON.stringify(sha),
         __BUILD_TIME__: JSON.stringify(builtAt),
+        __DEMO_HOST__: JSON.stringify(isDemoHost),
         ...moduleDefines,
       },
       resolve: {

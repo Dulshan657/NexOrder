@@ -29,17 +29,22 @@ interface DemoAccount {
 // page. That is deliberate while the deployment is a sales-demo surface, and is
 // documented as a launch blocker in PRODUCTION-READINESS-AUDIT.md.
 //
-// SECURITY: before the first paying client, set `VITE_SHOW_DEMO_LOGINS=false`
-// in the Vercel project env AND rotate the seeded account passwords. The flag
-// defaults ON so demo behaviour is unchanged until that call is made.
+// `__DEMO_HOST__` is `true` only where config/environments.mjs says
+// `kind: 'demo'`, folded to a literal by vite.config.ts exactly as the
+// `__MODULE_*__` flags are. A tenant build therefore cannot carry these
+// credentials, and it takes no action by anyone to keep it that way.
 //
-// Vite statically replaces `import.meta.env.VITE_SHOW_DEMO_LOGINS`, so setting
-// it to "false" folds the ternaries below to constants at build time and strips
-// the emails and the password from the bundle. Guarding the *data* rather than
-// only the JSX is deliberate: dropping an unreferenced module-level array
-// relies on tree-shaking, whereas constant folding of a ternary is guaranteed.
-// Verify with `grep -r Password123 dist/` after a build.
-const SHOW_DEMO_LOGINS = import.meta.env.VITE_SHOW_DEMO_LOGINS !== 'false'
+// It replaced VITE_SHOW_DEMO_LOGINS, read here as `!== 'false'` -- an opt-out,
+// so the roster shipped unless someone set an env var in a Vercel dashboard.
+// Nobody did, and a paying client's login page published an Admin account and
+// its password. Rotating those credentials is still a separate, outstanding
+// action: hiding a credential does not invalidate it.
+//
+// Guarding the *data* rather than only the JSX is deliberate: dropping an
+// unreferenced module-level array relies on tree-shaking, whereas constant
+// folding of a ternary is guaranteed. scripts/check-demo-surface.mjs asserts
+// this on the built artifact for every target, in both directions.
+const SHOW_DEMO_LOGINS = __DEMO_HOST__
 
 const DEMO_PASSWORD = SHOW_DEMO_LOGINS ? 'Password123!' : ''
 

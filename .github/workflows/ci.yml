@@ -66,3 +66,16 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      # Builds EVERY target and greps the artifact: demo credentials must ship
+      # to the demo host and to no one else. Both directions are asserted.
+      #
+      # This is also the first thing in CI ever to build a tenant target --
+      # `npm run build` above runs with no NEXORDER_ENV, so it has always built
+      # `dev` with every module on. Amadiya's module-folded bundle was, until
+      # now, compiled for the first time by the deploy that shipped it.
+      #
+      # Last, because it is the most expensive step and there is nothing to
+      # learn from it if the ordinary build is already broken.
+      - name: Demo-credential surface (per target, on the built artifact)
+        run: npm run check:demo
