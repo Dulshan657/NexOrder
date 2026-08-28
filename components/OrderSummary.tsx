@@ -116,8 +116,15 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
       {onClose && (
         <div className="flex items-center justify-between p-5 border-b border-stone-200 bg-white flex-shrink-0">
           <h2 className="text-xl font-display font-bold text-stone-900">Your Order</h2>
-          <button onClick={onClose} className="p-2 text-stone-500 hover:text-stone-900 rounded-full hover:bg-stone-100 transition-colors">
-             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          {/* An icon-only control, so the name has to be supplied: the <svg> is
+              decoration and a screen reader announced this as just "button". */}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close order summary"
+            className="p-2 touch-target text-stone-500 hover:text-stone-900 rounded-full hover:bg-stone-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue-dark"
+          >
+             <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>

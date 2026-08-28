@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useFocusTrap } from './useFocusTrap'
 import { useModalStack } from './useModalStack'
 import { useScrollLock } from './useScrollLock'
+import { useInertBackground } from './useInertBackground'
 
 // Shared base for Modal and Sheet. Owns everything that is easy to get wrong:
 // portalling out of the app tree, z-index, scroll lock, focus trap, Escape, and
@@ -44,7 +45,12 @@ export function Overlay({
   const { z, isTopmost } = useModalStack(open)
 
   useScrollLock(open)
+  // Ordering matters: the trap moves focus INTO the dialog, and `inert` on the
+  // app root is applied by an effect that runs after this line's. Marking the
+  // background inert before focus had left it would blind the element focus is
+  // being taken from mid-flight.
   useFocusTrap(containerRef, open && trapFocus)
+  useInertBackground(open)
 
   // Escape is handled by the topmost overlay only, so a nested confirm closes
   // itself rather than the form that spawned it.

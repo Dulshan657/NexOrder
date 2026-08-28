@@ -117,7 +117,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ hoReCas, products, onUpdate
         </nav>
       </header>
 
-      <main className="mt-6">
+      {/* A <section>, not a <main>. AppShell already renders the document's one
+          <main> and this view is inside it -- nesting a second is invalid HTML,
+          and a screen reader listing landmarks then offers two "main" regions
+          with no way to tell which is the real one. The label is what makes it
+          worth being a landmark at all. */}
+      <section aria-label="Settings" className="mt-6">
         <Suspense fallback={<LoadingSkeleton />}>
           {visited.has('general') && (
             <div hidden={subtab !== 'general'}>
@@ -155,7 +160,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ hoReCas, products, onUpdate
             </div>
           )}
         </Suspense>
-      </main>
+      </section>
     </div>
   )
 }

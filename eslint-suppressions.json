@@ -9,7 +9,7 @@
   },
   "components/AccountsAgingTable.tsx": {
     "jsx-a11y/control-has-associated-label": {
-      "count": 3
+      "count": 2
     }
   },
   "components/ActionItemsBoard.tsx": {
@@ -34,11 +34,6 @@
     }
   },
   "components/DeliveryScheduler.tsx": {
-    "jsx-a11y/control-has-associated-label": {
-      "count": 1
-    }
-  },
-  "components/Header.tsx": {
     "jsx-a11y/control-has-associated-label": {
       "count": 1
     }
@@ -85,7 +80,7 @@
   },
   "components/OrderSummary.tsx": {
     "jsx-a11y/control-has-associated-label": {
-      "count": 2
+      "count": 1
     }
   },
   "components/OrderVerificationModal.tsx": {

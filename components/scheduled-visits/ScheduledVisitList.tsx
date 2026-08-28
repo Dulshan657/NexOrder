@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import type { ScheduledVisit, HoReCa, User } from '../../types';
 import { isAssignedScheduledVisit } from '../../services/scheduledVisitService';
 import { MapPin, Clock, Play, CheckCircle2, UserCheck, AlertCircle, Eye, ChevronUp, ChevronDown } from 'lucide-react';
+import { SortableHeader } from '../ui/SortableHeader'
 
 type SortColumn = 'name' | 'date' | 'status' | 'stops';
 
@@ -61,20 +62,17 @@ const ScheduledVisitList: React.FC<RouteListProps> = ({ routes, hoReCas, users, 
     setCurrentPage(1);
   }, [sortColumn]);
 
+  // Delegates to the shared primitive: a real <button> for the click and focus,
+  // `aria-sort` on the <th> for the state.
   const SortHeader: React.FC<{ column: SortColumn; label: string }> = ({ column, label }) => (
-    <th
-      className="px-4 py-3 font-semibold text-stone-600 cursor-pointer select-none hover:text-stone-900 transition-colors"
-      onClick={() => handleSort(column)}
-    >
-      <span className="inline-flex items-center gap-1">
-        {label}
-        {sortColumn === column ? (
-          sortDirection === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
-        ) : (
-          <ChevronDown className="w-3.5 h-3.5 opacity-0" />
-        )}
-      </span>
-    </th>
+    <SortableHeader
+      column={column}
+      label={label}
+      activeColumn={sortColumn}
+      direction={sortDirection}
+      onSort={(c) => handleSort(c as SortColumn)}
+      className="px-4 py-3 font-semibold text-stone-600"
+    />
   );
 
   if (routes.length === 0) {
