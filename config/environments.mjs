@@ -215,6 +215,38 @@ export const TARGETS = {
     appOrigin: 'https://nexorder.vercel.app',
 
     /**
+     * What the public files say about THIS deployment.
+     *
+     * Consumed by two plugins in vite.config.ts: the head tags injected into
+     * index.html, and the /llms.txt + /docs/*.md set emitted beside the bundle.
+     * Both have to name the host they were built for -- a canonical on one host
+     * pointing at another tells every unfurler the two are the same page, and an
+     * og:image must be absolute or Slack and LinkedIn drop the card. `public/`
+     * is copied byte-for-byte to every target, so it cannot carry either.
+     *
+     * Everything here is PUBLIC by construction: it ships in the built page.
+     */
+    publicSite: {
+      title: 'Nex Order — wholesale operations, end to end',
+      description:
+        'Order management for wholesale distribution: inbound purchase orders read ' +
+        'straight from your inbox, pickers routed bin by bin through the racks, and ' +
+        'tier pricing, stock and invoicing on one ledger.',
+      ogImage: '/og-image.png',
+
+      /**
+       * Where "Book a demo" points. NULL on a tenant, always.
+       *
+       * A mailto for now rather than a scheduler: it is a real destination that
+       * works today, where a Cal.com link would be a second thing to set up
+       * before the button could exist at all. Swap this for a scheduler URL when
+       * there is one -- LoginPage handles both, and stops calling it a new tab
+       * when the target is a mail client.
+       */
+      bookDemoUrl: 'mailto:info@nexgeninnovations.com.au?subject=Nex%20Order%20demo',
+    },
+
+    /**
      * Exact origins the Edge Functions will echo back as
      * Access-Control-Allow-Origin. Consumed as the `ALLOWED_ORIGINS` Edge
      * Function secret (comma-joined). `_shared/cors.ts` fails CLOSED, so an
@@ -355,6 +387,22 @@ export const TARGETS = {
     region: 'ap-southeast-2',
 
     appOrigin: 'https://nexorder.com.au',
+
+    /**
+     * A CLIENT deployment. The description deliberately says nothing about who
+     * operates it: the sign-in page is theirs, the product is ours, and a link
+     * pasted into a chat should not announce which business runs it.
+     *
+     * `bookDemoUrl: null` is what keeps the sales call-to-action off a client's
+     * login page. It is a property of this registry entry, visible in a diff --
+     * not a value someone has to remember not to set in a dashboard.
+     */
+    publicSite: {
+      title: 'Nex Order',
+      description: 'Sign in to Nex Order.',
+      ogImage: '/og-image.png',
+      bookDemoUrl: null,
+    },
 
     corsOrigins: [
       'https://nexorder.com.au',

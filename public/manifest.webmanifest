@@ -1,0 +1,25 @@
+{
+  "name": "Nex Order",
+  "short_name": "Nex Order",
+  "description": "Order management for wholesale distribution, from the inbound purchase order to the loading dock.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafaf9",
+  "theme_color": "#0a2e52",
+  "icons": [
+    {
+      "src": "/assets/Nex-Order-no-bg-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

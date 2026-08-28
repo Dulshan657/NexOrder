@@ -1,11 +1,13 @@
 import path from 'path';
 import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { visualizer } from 'rollup-plugin-visualizer';
 
 import { TARGETS, ALL_MODULES, isProvisioned } from './config/environments.mjs';
+import { SITE_DOCS } from './site/manifest.mjs';
 
 // ── NEXORDER_ENV IS RESOLVED ONCE, AND A WRONG VALUE IS FATAL ───────────────
 //
@@ -82,6 +84,12 @@ const moduleDefines = Object.fromEntries(
 // both directions, for every target.
 const isDemoHost = moduleTarget.kind === 'demo';
 
+// Where "Book a demo" points, or null. NULL on a tenant by registry, and null
+// anywhere no scheduler is configured -- the button does not render without a
+// URL, so an unset value ships nothing rather than a dead link.
+const bookDemoUrl =
+    (moduleTarget as { publicSite?: { bookDemoUrl?: string | null } }).publicSite?.bookDemoUrl ?? null;
+
 const storageProxyTarget = isProvisioned(proxyTarget)
     ? proxyTarget.supabaseUrl
     : TARGETS.dev.supabaseUrl;
@@ -96,6 +104,161 @@ const ANALYZE = process.env.ANALYZE === '1';
 // remotely without .git, so deploy.mjs passes GIT_COMMIT_SHA explicitly;
 // VERCEL_GIT_COMMIT_SHA covers git-integration builds; local dev falls back to
 // `git rev-parse` and finally 'dev'.
+/**
+ * Per-target <head>: title, description, canonical, manifest, icons and the
+ * Open Graph / Twitter card.
+ *
+ * `transformIndexHtml`, not `emitFile`. This is not a new file; it is an edit to
+ * one that Vite's own `vite:build-html` plugin already owns, and reaching into
+ * `bundle['index.html'].source` to string-replace would depend on undocumented
+ * plugin ordering against it.
+ *
+ * The `tags` ARRAY form, never the string form. Returning a string reserialises
+ * <head>, which here holds the inline <style> shipping the scrollbar rules under
+ * `style-src 'unsafe-inline'`, and two font preloads whose `crossorigin` is
+ * load-bearing (without it each font is fetched twice). Appending tags touches
+ * none of it.
+ *
+ * Everything injected is <meta> or <link>, so `script-src 'self'` is unaffected
+ * and the CSP needs no change.
+ */
+function headMetaPlugin(target: (typeof TARGETS)[keyof typeof TARGETS]): Plugin {
+    const site = (target as { publicSite?: Record<string, string | null> }).publicSite;
+    const origin = String((target as { appOrigin?: string }).appOrigin ?? '').replace(/\/$/, '');
+
+    return {
+        name: 'nexorder-head-meta',
+        transformIndexHtml: {
+            // 'pre' so these land ahead of Vite's own script/link injection and
+            // the built <head> stays readable.
+            order: 'pre',
+            handler() {
+                if (!site) return [];
+                const abs = (p: string) => `${origin}${p}`;
+                const meta = (attrs: Record<string, string>) =>
+                    ({ tag: 'meta', attrs, injectTo: 'head' as const });
+
+                return [
+                    { tag: 'title', children: String(site.title), injectTo: 'head' as const },
+                    meta({ name: 'description', content: String(site.description) }),
+                    meta({ name: 'theme-color', content: '#0a2e52' }),
+                    { tag: 'link', attrs: { rel: 'canonical', href: `${origin}/` }, injectTo: 'head' as const },
+                    { tag: 'link', attrs: { rel: 'manifest', href: '/manifest.webmanifest' }, injectTo: 'head' as const },
+                    { tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }, injectTo: 'head' as const },
+                    meta({ property: 'og:type', content: 'website' }),
+                    meta({ property: 'og:site_name', content: 'Nex Order' }),
+                    meta({ property: 'og:url', content: `${origin}/` }),
+                    meta({ property: 'og:title', content: String(site.title) }),
+                    meta({ property: 'og:description', content: String(site.description) }),
+                    meta({ property: 'og:image', content: abs(String(site.ogImage)) }),
+                    meta({ property: 'og:image:width', content: '1200' }),
+                    meta({ property: 'og:image:height', content: '630' }),
+                    meta({ name: 'twitter:card', content: 'summary_large_image' }),
+                    meta({ name: 'twitter:title', content: String(site.title) }),
+                    meta({ name: 'twitter:description', content: String(site.description) }),
+                    meta({ name: 'twitter:image', content: abs(String(site.ogImage)) }),
+                ];
+            },
+        },
+    };
+}
+
+/**
+ * /llms.txt, /llms-full.txt and /docs/*.md, emitted per target.
+ *
+ * They cannot live in `public/`: that directory is copied byte-for-byte to every
+ * deployment, and these must carry absolute URLs naming their own host plus a
+ * demo-only call to action that must never appear on a client's deployment.
+ *
+ * The index is GENERATED from site/manifest.mjs, so a doc cannot ship unlisted
+ * and the index cannot name a page that does not exist.
+ *
+ * Two substitutions keep the sources readable as ordinary Markdown in an editor:
+ * `{{ORIGIN}}` / `{{BOOK_DEMO_URL}}` tokens, and `<!-- demo:start -->` blocks
+ * stripped for a tenant. HTML comments are legal Markdown and render as nothing.
+ */
+function sitePlugin(target: (typeof TARGETS)[keyof typeof TARGETS]): Plugin {
+    const origin = String((target as { appOrigin?: string }).appOrigin ?? '').replace(/\/$/, '');
+    const site = (target as { publicSite?: Record<string, string | null> }).publicSite;
+    const isDemo = (target as { kind?: string }).kind === 'demo';
+    const bookDemoUrl = site?.bookDemoUrl ?? null;
+
+    const render = (raw: string) => {
+        let out = raw;
+        // A tenant gets none of the demo-only prose. Stripped first, so a token
+        // inside a removed block never has to resolve.
+        if (!isDemo) out = out.replace(/<!--\s*demo:start\s*-->[\s\S]*?<!--\s*demo:end\s*-->\s*/g, '');
+        // With no scheduler configured there is no link to offer, so the line
+        // carrying it goes rather than pointing at nothing.
+        if (!bookDemoUrl) out = out.replace(/^.*\{\{BOOK_DEMO_URL\}\}.*\r?\n?/gm, '');
+        return out
+            .replace(/\{\{ORIGIN\}\}/g, origin)
+            .replace(/\{\{BOOK_DEMO_URL\}\}/g, bookDemoUrl ?? '')
+            .replace(/\n{3,}/g, '\n\n');
+    };
+
+    const build = () => {
+        const docs = SITE_DOCS.map((d: { slug: string; title: string; summary: string }) => ({
+            slug: d.slug,
+            title: d.title,
+            summary: d.summary,
+            body: render(readFileSync(path.resolve(__dirname, 'site', `${d.slug}.md`), 'utf8')),
+        }));
+
+        const index =
+            '# Nex Order\n\n' +
+            `> ${site?.description ?? 'Order management for wholesale distribution.'}\n\n` +
+            'Nex Order is order-management software for wholesale distribution, made by\n' +
+            'NexGen Innovations in Sydney. It covers the path from an inbound purchase\n' +
+            'order to the loading dock: order capture, per-customer pricing, warehouse\n' +
+            'receiving, putaway, directed picking, replenishment, stocktake and dispatch.\n\n' +
+            'It is deployed separately for each business that uses it, and is reached by\n' +
+            'invitation rather than by search.\n\n' +
+            '## Docs\n\n' +
+            docs.map((d) => `- [${d.title}](${origin}/docs/${d.slug}.md): ${d.summary}`).join('\n') +
+            '\n';
+
+        const full = index + '\n---\n\n' + docs.map((d) => d.body.trim()).join('\n\n---\n\n') + '\n';
+
+        return { docs, index, full };
+    };
+
+    return {
+        name: 'nexorder-site',
+        generateBundle() {
+            const { docs, index, full } = build();
+            this.emitFile({ type: 'asset', fileName: 'llms.txt', source: index });
+            this.emitFile({ type: 'asset', fileName: 'llms-full.txt', source: full });
+            for (const d of docs) {
+                this.emitFile({ type: 'asset', fileName: `docs/${d.slug}.md`, source: d.body });
+            }
+        },
+        // `generateBundle` runs only on `build`, so without this /llms.txt would
+        // 404 under `npm run dev` and the first time anyone looked at it would be
+        // in production.
+        configureServer(server) {
+            server.middlewares.use((req, res, next) => {
+                const url = (req.url ?? '').split('?')[0];
+                let built;
+                try {
+                    built = build();
+                } catch {
+                    return next();
+                }
+                const send = (body: string) => {
+                    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                    res.end(body);
+                };
+                if (url === '/llms.txt') return send(built.index);
+                if (url === '/llms-full.txt') return send(built.full);
+                const doc = built.docs.find((d) => url === `/docs/${d.slug}.md`);
+                if (doc) return send(doc.body);
+                return next();
+            });
+        },
+    };
+}
+
 function resolveCommitSha(): string {
     // NOTE: Vercel populates system env vars as EMPTY STRINGS on CLI deploys
     // (no git metadata), so empty must be treated as absent — `??` alone would
@@ -155,6 +318,8 @@ export default defineConfig(() => {
         react(),
         tailwindcss(),
         versionJsonPlugin(sha, builtAt),
+        headMetaPlugin(moduleTarget),
+        sitePlugin(moduleTarget),
         ...(ANALYZE
           ? [visualizer({
               filename: 'dist/stats.html',
@@ -219,6 +384,7 @@ export default defineConfig(() => {
         __APP_VERSION__: JSON.stringify(sha),
         __BUILD_TIME__: JSON.stringify(builtAt),
         __DEMO_HOST__: JSON.stringify(isDemoHost),
+        __BOOK_DEMO_URL__: JSON.stringify(bookDemoUrl),
         ...moduleDefines,
       },
       resolve: {
