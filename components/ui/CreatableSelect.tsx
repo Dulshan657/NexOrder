@@ -85,7 +85,7 @@ const CreatableSelect: React.FC<CreatableSelectProps> = ({
                     onClick={() => { setCustom(false); onChange(options[0] ?? ''); }}
                     title="Choose from the list instead"
                     aria-label="Choose from the list instead"
-                    className="shrink-0 text-stone-400 hover:text-stone-700 transition-colors p-1"
+                    className="shrink-0 text-stone-500 hover:text-stone-700 transition-colors p-1"
                 >
                     <List className="h-4 w-4" />
                 </button>

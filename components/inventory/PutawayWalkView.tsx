@@ -157,7 +157,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
           <div className="flex items-center gap-2 text-sm text-stone-600">
             <Footprints className="w-4 h-4 text-nexgen-blue" aria-hidden="true" />
             <span className="tabular-nums font-medium">{tasks.length}</span>
-            <span className="text-stone-400">stop{tasks.length === 1 ? '' : 's'}</span>
+            <span className="text-stone-500">stop{tasks.length === 1 ? '' : 's'}</span>
             {totalDistance != null && totalDistance > 0 && (
               <>
                 <span className="text-stone-300">·</span>
@@ -166,7 +166,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
             )}
           </div>
           <div className="relative flex-1 min-w-0 sm:max-w-xs sm:ml-auto">
-            <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+            <Search className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -194,20 +194,20 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
       ) : tasksQuery.isError ? (
         <div className="glass-card rounded-xl p-8 text-center">
           <p className="text-sm text-red-600">Couldn't load the walk.</p>
-          <p className="text-xs text-stone-400 mt-1">Check your connection and try again.</p>
+          <p className="text-xs text-stone-500 mt-1">Check your connection and try again.</p>
         </div>
       ) : tasks.length === 0 ? (
         <div className="glass-card rounded-xl p-10 text-center">
           <PackageOpen className="w-9 h-9 text-stone-300 mx-auto mb-3" />
           <p className="text-sm text-stone-600">Nothing to carry</p>
-          <p className="text-xs text-stone-400 mt-1">
+          <p className="text-xs text-stone-500 mt-1">
             Assign lines on the Assign tab and they'll show up here as stops.
           </p>
         </div>
       ) : visible.length === 0 ? (
         <div className="glass-card rounded-xl p-10 text-center">
           <p className="text-sm text-stone-600">No stops match that filter</p>
-          <p className="text-xs text-stone-400 mt-1">{tasks.length} still to place.</p>
+          <p className="text-xs text-stone-500 mt-1">{tasks.length} still to place.</p>
         </div>
       ) : (
         <div className="glass-card rounded-xl divide-y divide-stone-100 overflow-hidden">

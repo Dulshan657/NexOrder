@@ -35,11 +35,11 @@ export function LocationLabel({
   layout = 'stacked',
   className = '',
   titleClassName = 'text-sm font-medium text-stone-700',
-  codeClassName = 'font-mono text-[11px] text-stone-400',
+  codeClassName = 'font-mono text-[11px] text-stone-500',
   fallback = '—',
 }: LocationLabelProps) {
   if (!location) {
-    return <span className={`text-sm text-stone-400 ${className}`}>{fallback}</span>
+    return <span className={`text-sm text-stone-500 ${className}`}>{fallback}</span>
   }
 
   const title = locationTitle(location)

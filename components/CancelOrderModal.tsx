@@ -111,7 +111,7 @@ const CancelOrderModal: React.FC<CancelOrderModalProps> = ({
             placeholder="e.g. Customer phoned to cancel — ordered against the wrong site."
             autoFocus
           />
-          <p className="text-xs text-stone-400 text-right mt-1 tabular-nums">
+          <p className="text-xs text-stone-500 text-right mt-1 tabular-nums">
             {trimmed.length}/{CANCEL_REASON_MAX}
           </p>
         </div>

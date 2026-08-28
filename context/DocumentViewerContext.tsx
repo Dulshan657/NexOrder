@@ -117,7 +117,7 @@ export function DocumentViewerProvider({ children }: { children: React.ReactNode
           ) : undefined}
         >
           {state.status === 'loading' && (
-            <div className="h-full flex flex-col items-center justify-center gap-3 text-stone-400">
+            <div className="h-full flex flex-col items-center justify-center gap-3 text-stone-500">
               <div className="w-8 h-8 border-2 border-stone-300 border-t-nexgen-blue rounded-full animate-spin" />
               <p className="text-sm">Loading document…</p>
             </div>
@@ -125,7 +125,7 @@ export function DocumentViewerProvider({ children }: { children: React.ReactNode
           {state.status === 'error' && (
             <div className="h-full flex flex-col items-center justify-center gap-2 text-center px-6">
               <p className="text-sm text-red-600">{state.message}</p>
-              <p className="text-xs text-stone-400">The link may have expired — try again.</p>
+              <p className="text-xs text-stone-500">The link may have expired — try again.</p>
             </div>
           )}
           {state.status === 'ready' && (

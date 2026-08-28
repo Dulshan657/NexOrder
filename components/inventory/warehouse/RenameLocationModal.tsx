@@ -95,7 +95,7 @@ export function RenameLocationModal({
             placeholder="Chiller · Rack 7"
             className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800"
           />
-          <p className="mt-1 text-[11px] text-stone-400">
+          <p className="mt-1 text-[11px] text-stone-500">
             Renaming here makes this a custom name — a later area rename will leave it alone.
           </p>
         </div>
@@ -103,7 +103,7 @@ export function RenameLocationModal({
         <div>
           <p className="mb-1 text-xs font-medium text-stone-500">Code</p>
           <p className="rounded-lg bg-stone-50 px-3 py-2 font-mono text-sm text-stone-600">{location.code}</p>
-          <p className="mt-1 text-[11px] text-stone-400">
+          <p className="mt-1 text-[11px] text-stone-500">
             The code never changes — it is what the barcode label prints and what every scan matches.
           </p>
         </div>
@@ -118,7 +118,7 @@ export function RenameLocationModal({
             />
             <span>
               Rename its {levelCount} level{levelCount === 1 ? '' : 's'} to match
-              <span className="block text-[11px] text-stone-400">
+              <span className="block text-[11px] text-stone-500">
                 Otherwise the rack says one thing and its levels still say another.
               </span>
             </span>

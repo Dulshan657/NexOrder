@@ -147,7 +147,7 @@ const ScheduledVisitDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visi
                 <div key={cr.id} className="flex items-center justify-between text-sm p-2 rounded-lg bg-stone-50">
                   <div>
                     <span className="font-medium text-stone-700 capitalize">{cr.type.replace('_', ' ')}</span>
-                    <span className="text-stone-400 mx-2">·</span>
+                    <span className="text-stone-500 mx-2">·</span>
                     <span className="text-stone-500">{cr.description}</span>
                   </div>
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full border capitalize ${CR_STATUS_COLORS[cr.status]}`}>

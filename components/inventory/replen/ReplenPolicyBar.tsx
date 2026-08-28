@@ -34,7 +34,7 @@ const NumberField: React.FC<{
         }}
         className="w-16 text-sm border border-stone-200 rounded px-2 py-1 text-right tabular-nums"
       />
-      <span className="text-[11px] text-stone-400">{suffix}</span>
+      <span className="text-[11px] text-stone-500">{suffix}</span>
     </span>
   </label>
 );
@@ -53,7 +53,7 @@ const ReplenPolicyBar: React.FC<ReplenPolicyBarProps> = ({
   <div className="glass-card rounded-xl p-3 sm:p-4 flex flex-wrap items-end gap-4">
     <div>
       <p className="text-sm font-medium text-stone-700">Suggest from slot capacity</p>
-      <p className="text-[11px] text-stone-400 max-w-md">
+      <p className="text-[11px] text-stone-500 max-w-md">
         How much fits in the pick slot is the one thing that is true before a site has traded.
         Demand-based cover comes later, once there are real picks to read.
       </p>

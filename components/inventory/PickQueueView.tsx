@@ -30,14 +30,14 @@ const OrderRow: React.FC<{ order: PickQueueOrder; onOpen: () => void }> = ({ ord
         </div>
         <p className="text-xs text-stone-500 mt-0.5 truncate">{order.horecaName}</p>
       </div>
-      <div className="hidden sm:flex items-center gap-1.5 text-xs text-stone-400 shrink-0 w-28">
+      <div className="hidden sm:flex items-center gap-1.5 text-xs text-stone-500 shrink-0 w-28">
         <Clock className="w-3.5 h-3.5" />
         {order.deliveryDate ? order.deliveryDate.slice(0, 10) : 'no date'}
       </div>
       <div className="shrink-0 w-28 text-right">
         <span className="font-mono text-sm text-stone-900">{totalPicked}</span>
-        <span className="font-mono text-sm text-stone-400">/{totalOrdered}</span>
-        <p className="text-[11px] text-stone-400">{order.lines.length} line{order.lines.length === 1 ? '' : 's'} · {pct}%</p>
+        <span className="font-mono text-sm text-stone-500">/{totalOrdered}</span>
+        <p className="text-[11px] text-stone-500">{order.lines.length} line{order.lines.length === 1 ? '' : 's'} · {pct}%</p>
       </div>
       <ChevronRight className="w-4 h-4 text-stone-300 shrink-0" />
     </button>
@@ -95,13 +95,13 @@ const PickQueueView: React.FC<PickQueueViewProps> = ({ currentUser }) => {
       ) : isError ? (
         <div className="glass-card rounded-xl p-8 text-center">
           <p className="text-sm text-red-600">Couldn't load the pick queue.</p>
-          <p className="text-xs text-stone-400 mt-1">Check your connection and try again.</p>
+          <p className="text-xs text-stone-500 mt-1">Check your connection and try again.</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="glass-card rounded-xl p-10 text-center">
           <PackageCheck className="w-9 h-9 text-stone-300 mx-auto mb-3" />
           <p className="text-sm text-stone-600">No orders awaiting picking</p>
-          <p className="text-xs text-stone-400 mt-1">Processed orders will appear here for the warehouse to pick.</p>
+          <p className="text-xs text-stone-500 mt-1">Processed orders will appear here for the warehouse to pick.</p>
         </div>
       ) : (
         <div className="glass-card rounded-xl divide-y divide-stone-100 overflow-hidden">

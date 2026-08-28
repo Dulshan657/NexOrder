@@ -298,7 +298,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm text-stone-800 truncate">{name}</span>
-          <span className="block text-xs text-stone-400">
+          <span className="block text-xs text-stone-500">
             <span className="tabular-nums text-stone-600">{qtyLabel.primary}</span>
             {row.huCode && <span className="font-mono"> · {row.huCode}</span>}
           </span>
@@ -308,7 +308,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           {locationSubtitle(bin) && (
             <span className="block font-mono text-[10px] text-emerald-600/60">{locationSubtitle(bin)}</span>
           )}
-          <span className="block text-[11px] text-stone-400 tabular-nums">
+          <span className="block text-[11px] text-stone-500 tabular-nums">
             {reachable
               ? legDistanceM != null ? `${Math.round(legDistanceM)}m` : ''
               : 'off the map'}
@@ -327,12 +327,12 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           <p className="text-sm font-medium text-stone-900 truncate">{name}</p>
           <p className="text-xs text-stone-500">
             <span className="tabular-nums">{qtyLabel.primary}</span>
-            {qtyLabel.secondary && <span className="text-stone-400"> · {qtyLabel.secondary}</span>}
+            {qtyLabel.secondary && <span className="text-stone-500"> · {qtyLabel.secondary}</span>}
           </p>
         </div>
         <button
           onClick={reset}
-          className="p-1.5 text-stone-400 hover:text-stone-700 rounded btn-press shrink-0"
+          className="p-1.5 text-stone-500 hover:text-stone-700 rounded btn-press shrink-0"
           aria-label="Cancel this stop"
         >
           <X className="w-4 h-4" aria-hidden="true" />
@@ -343,7 +343,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       <div className="flex items-center gap-2 p-3 rounded-lg bg-white border border-stone-200">
         <MapPin className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
         <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wide text-stone-400">Take it to</p>
+          <p className="text-[11px] uppercase tracking-wide text-stone-500">Take it to</p>
           {/* Name big, because this is the instruction someone acts on while
               walking. The code stays underneath: it is what is printed large on
               the sticker they will match against. */}
@@ -616,7 +616,7 @@ const StepChip: React.FC<{ label: string; done: boolean; active: boolean; value:
 }) => (
   <span
     className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${
-      done ? 'bg-emerald-100 text-emerald-700' : active ? 'bg-nexgen-blue text-white' : 'bg-stone-100 text-stone-400'
+      done ? 'bg-emerald-100 text-emerald-700' : active ? 'bg-nexgen-blue text-white' : 'bg-stone-100 text-stone-600'
     }`}
   >
     {done && <Check className="w-3 h-3" aria-hidden="true" />}

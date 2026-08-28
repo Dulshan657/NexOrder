@@ -96,7 +96,7 @@ const PaymentActionModal: React.FC<PaymentActionModalProps> = ({
               placeholder="e.g. Bank confirmation received from HoReCa accounts payable."
               autoFocus
             />
-            <p className="text-xs text-stone-400 text-right mt-1 tabular-nums">
+            <p className="text-xs text-stone-500 text-right mt-1 tabular-nums">
               {trimmed.length}/500
             </p>
           </div>

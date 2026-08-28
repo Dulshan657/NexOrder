@@ -134,7 +134,7 @@ export function BindZonesModal({ warehouseId, onClose }: BindZonesModalProps) {
             )}
 
             {unzoned.length > 0 && (
-              <p className="text-[11px] leading-snug text-stone-400">
+              <p className="text-[11px] leading-snug text-stone-500">
                 {unzoned.map((a) => a.areaName).join(', ')} name{unzoned.length === 1 ? 's' : ''} no zone
                 profile, so {unzoned.length === 1 ? 'its' : 'their'} bins stay at the site root. Tag the
                 area with a zone profile to bind {unzoned.length === 1 ? 'it' : 'them'}.
@@ -160,7 +160,7 @@ export function BindZonesModal({ warehouseId, onClose }: BindZonesModalProps) {
               <ul className="space-y-1 rounded-lg bg-stone-50 p-2 font-mono text-[11px]">
                 {preview.examples.map((ex) => (
                   <li key={ex.code} className="flex flex-wrap items-baseline gap-1.5">
-                    <span className="text-stone-400">{ex.code}</span>
+                    <span className="text-stone-500">{ex.code}</span>
                     <span className="text-stone-300">→</span>
                     <span className="text-stone-600">{ex.to}</span>
                   </li>
@@ -170,7 +170,7 @@ export function BindZonesModal({ warehouseId, onClose }: BindZonesModalProps) {
           </div>
         )}
 
-        <p className="text-[11px] leading-snug text-stone-400">
+        <p className="text-[11px] leading-snug text-stone-500">
           Names, codes and rack numbers are untouched — the labels already on the racking stay
           correct, and no stock moves. Painting or saving areas binds automatically from now on.
         </p>

@@ -63,14 +63,14 @@ export function RecodeStepRail({ step, satisfaction, onGotoStep }: RecodeStepRai
                         ? 'border-nexgen-blue bg-white text-nexgen-blue ring-2 ring-nexgen-blue/20'
                         : settled
                           ? 'border-emerald-400 bg-emerald-400 text-white'
-                          : 'border-stone-200 bg-stone-100 text-stone-400 group-hover:border-stone-300 group-hover:text-stone-500'
+                          : 'border-stone-200 bg-stone-100 text-stone-600 group-hover:border-stone-300 group-hover:text-stone-500'
                     }`}
                   >
                     {settled && !current ? <Check className="h-3 w-3" strokeWidth={3} aria-hidden="true" /> : s.n}
                   </span>
                   <span
                     className={`text-[11px] font-medium leading-none ${
-                      current ? 'text-nexgen-blue' : settled ? 'text-stone-600' : 'text-stone-400'
+                      current ? 'text-nexgen-blue' : settled ? 'text-stone-600' : 'text-stone-500'
                     }`}
                   >
                     {s.label}

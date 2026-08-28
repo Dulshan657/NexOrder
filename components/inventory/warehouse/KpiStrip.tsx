@@ -23,7 +23,7 @@ export function KpiStrip({ warehouseId }: KpiStripProps) {
       {items.map((i) => (
         <div key={i.label} className="glass-card rounded-lg px-3 py-1.5 text-center">
           <p className="font-mono text-sm font-semibold text-stone-900">{i.value}</p>
-          <p className="text-[10px] uppercase tracking-wide text-stone-400">{i.label}</p>
+          <p className="text-[10px] uppercase tracking-wide text-stone-500">{i.label}</p>
         </div>
       ))}
     </div>

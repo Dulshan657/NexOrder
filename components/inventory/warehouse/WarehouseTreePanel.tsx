@@ -102,7 +102,7 @@ export function WarehouseTreePanel({
           style={{ paddingLeft: depth * 14 + 6 }}
         >
           {hasChildren ? (
-            isOpen ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-stone-400" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-stone-400" />
+            isOpen ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-stone-500" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-stone-500" />
           ) : (
             <span className="w-3.5 shrink-0" />
           )}
@@ -110,11 +110,11 @@ export function WarehouseTreePanel({
               surface uses. The code stays because it is the scan identity. */}
           <span className="truncate">{locationTitle(location)}</span>
           {locationSubtitle(location) && (
-            <span className="font-mono text-[11px] shrink-0 text-stone-400">{locationSubtitle(location)}</span>
+            <span className="font-mono text-[11px] shrink-0 text-stone-500">{locationSubtitle(location)}</span>
           )}
           {isBin && (
             <span className="ml-auto flex items-center gap-1 shrink-0">
-              {count ? <span className="text-[10px] text-stone-400">{count} SKU</span> : null}
+              {count ? <span className="text-[10px] text-stone-500">{count} SKU</span> : null}
               <span className={`rounded px-1 py-0.5 text-[10px] font-semibold ${occupancyPill(pct)}`}>
                 {pct == null ? '—' : `${Math.round(pct * 100)}%`}
               </span>
@@ -127,7 +127,7 @@ export function WarehouseTreePanel({
   }
 
   if (tree.length === 0) {
-    return <p className="p-4 text-xs text-stone-400">No storage locations defined for this warehouse.</p>
+    return <p className="p-4 text-xs text-stone-500">No storage locations defined for this warehouse.</p>
   }
 
   return <div className="py-1">{tree.map((n) => renderNode(n, 0))}</div>

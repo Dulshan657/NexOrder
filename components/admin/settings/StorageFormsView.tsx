@@ -460,7 +460,7 @@ const StorageFormsView: React.FC = () => {
                     onChange={(next) => setForm({ ...form, levelTemplate: next })}
                   />
                   {form.levelTemplate.length === 0 && (
-                    <p className="text-xs text-stone-400 pt-2">No levels defined yet. Add at least one.</p>
+                    <p className="text-xs text-stone-500 pt-2">No levels defined yet. Add at least one.</p>
                   )}
                 </div>
               )}

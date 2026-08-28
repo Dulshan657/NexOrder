@@ -94,7 +94,7 @@ const AuditMutationRow: React.FC<AuditMutationRowProps> = memo(function AuditMut
                 <td className="px-6 py-4 text-sm">
                     <div className="flex items-center gap-2">
                         <ChevronRight
-                            className={`w-4 h-4 text-stone-400 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                            className={`w-4 h-4 text-stone-500 transition-transform ${expanded ? 'rotate-90' : ''}`}
                         />
                         <span title={when.absolute} className="font-mono text-xs text-stone-700">
                             {when.relative}
@@ -129,7 +129,7 @@ const AuditMutationRow: React.FC<AuditMutationRowProps> = memo(function AuditMut
                                     Before
                                 </h4>
                                 {row.before_data == null ? (
-                                    <p className="text-xs italic text-stone-400">No prior state (create event).</p>
+                                    <p className="text-xs italic text-stone-500">No prior state (create event).</p>
                                 ) : (
                                     <dl className="space-y-1 font-mono text-xs">
                                         {diff.map(({ key, kind, before }) => (
@@ -137,7 +137,7 @@ const AuditMutationRow: React.FC<AuditMutationRowProps> = memo(function AuditMut
                                                 <dt className={`shrink-0 font-medium ${kind === 'changed' || kind === 'removed' ? 'text-nexgen-blue' : 'text-stone-500'}`}>
                                                     {key}:
                                                 </dt>
-                                                <dd className={`flex-1 break-all whitespace-pre-wrap ${kind === 'removed' ? 'line-through text-stone-400' : 'text-stone-700'}`}>
+                                                <dd className={`flex-1 break-all whitespace-pre-wrap ${kind === 'removed' ? 'line-through text-stone-500' : 'text-stone-700'}`}>
                                                     {formatValue(before)}
                                                 </dd>
                                             </div>
@@ -150,7 +150,7 @@ const AuditMutationRow: React.FC<AuditMutationRowProps> = memo(function AuditMut
                                     After
                                 </h4>
                                 {row.after_data == null ? (
-                                    <p className="text-xs italic text-stone-400">No subsequent state (delete event).</p>
+                                    <p className="text-xs italic text-stone-500">No subsequent state (delete event).</p>
                                 ) : (
                                     <dl className="space-y-1 font-mono text-xs">
                                         {diff.map(({ key, kind, after }) => (

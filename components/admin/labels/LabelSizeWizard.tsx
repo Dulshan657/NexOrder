@@ -315,7 +315,7 @@ export function LabelSizeWizard({
                           <span className="text-sm font-medium text-stone-900">
                             {info.averyLabel}
                           </span>
-                          <span className="text-xs text-stone-400 font-mono">{info.averyCode}</span>
+                          <span className="text-xs text-stone-500 font-mono">{info.averyCode}</span>
                           <span
                             className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium ${style.badge}`}
                           >

@@ -32,7 +32,7 @@ export function PlacementInspector({ placement, dispatch, zoneProfiles, storageT
 
   if (!placement) {
     return (
-      <div className="text-xs text-stone-400 p-3 border border-dashed border-stone-200 rounded-lg">
+      <div className="text-xs text-stone-500 p-3 border border-dashed border-stone-200 rounded-lg">
         Select a rack to edit its code, name and capacity.
       </div>
     )
@@ -210,7 +210,7 @@ export function PlacementInspector({ placement, dispatch, zoneProfiles, storageT
       )}
 
       {isExisting
-        ? <p className="text-[11px] text-stone-400">Existing rack — edit its details in the storage tree.</p>
+        ? <p className="text-[11px] text-stone-500">Existing rack — edit its details in the storage tree.</p>
         : <p className="text-[11px] text-amber-600">New rack — created on save.</p>}
     </div>
   )

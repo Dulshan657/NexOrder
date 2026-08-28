@@ -212,7 +212,7 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
                       <tr key={route.id} className="border-b border-stone-100 hover:bg-stone-50">
                         <td className="px-4 py-3">
                           <p className="font-medium text-stone-800">{route.name}</p>
-                          <p className="text-xs text-stone-400">{route.stops.length} stops</p>
+                          <p className="text-xs text-stone-500">{route.stops.length} stops</p>
                         </td>
                         <td className="px-4 py-3 text-stone-600">
                           {route.date ? new Date(route.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}
@@ -223,7 +223,7 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
                               <UserCheck className="w-3 h-3" />{rep.name}
                             </span>
                           ) : (
-                            <span className="text-xs text-stone-400">Self-created</span>
+                            <span className="text-xs text-stone-500">Self-created</span>
                           )}
                         </td>
                         <td className="px-4 py-3">
@@ -252,7 +252,7 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
                                   {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                 </select>
                                 <button onClick={() => handleReassign(route.id)} className="text-xs text-emerald-600 font-medium hover:underline">Save</button>
-                                <button onClick={() => setReassignRouteId(null)} className="text-xs text-stone-400 hover:underline">Cancel</button>
+                                <button onClick={() => setReassignRouteId(null)} className="text-xs text-stone-500 hover:underline">Cancel</button>
                               </div>
                             ) : (
                               <button
@@ -270,7 +270,7 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
                   })}
                   {filteredRoutes.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-stone-400">No routes match your filters.</td>
+                      <td colSpan={6} className="px-4 py-8 text-center text-stone-500">No routes match your filters.</td>
                     </tr>
                   )}
                 </tbody>
@@ -316,7 +316,7 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
                         )}
                       </div>
                     </div>
-                    <button onClick={() => handleDeleteTemplate(tmpl.id)} className="p-1.5 hover:bg-red-50 rounded-lg transition-colors text-stone-400 hover:text-red-500">
+                    <button onClick={() => handleDeleteTemplate(tmpl.id)} className="p-1.5 hover:bg-red-50 rounded-lg transition-colors text-stone-500 hover:text-red-500">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>

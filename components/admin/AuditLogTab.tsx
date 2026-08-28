@@ -301,7 +301,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                     )}
                 </div>
                 <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
                     <input
                         type="search"
                         value={search}
@@ -313,7 +313,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                         <button
                             type="button"
                             onClick={() => { setSearch(''); setPage(0); }}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 cursor-pointer"
                             aria-label="Clear search"
                         >
                             <X className="w-4 h-4" />
@@ -322,7 +322,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                 </div>
                 {hasFilters && (
                     <div className="flex justify-between items-center">
-                        <p className="text-xs text-stone-400">
+                        <p className="text-xs text-stone-500">
                             {total.toLocaleString()} matching {totalLabel}
                         </p>
                         <button

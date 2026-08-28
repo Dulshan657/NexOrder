@@ -237,7 +237,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
                             <label className={labelClass}>Discount Percentage</label>
                             <div className="relative w-40">
                                 <input type="number" min="1" max="100" value={percentOff} onChange={e => setPercentOff(e.target.value)} className={inputClass} placeholder="e.g. 15" />
-                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400">%</span>
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500">%</span>
                             </div>
                         </div>
                     )}
@@ -246,7 +246,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
                         <div>
                             <label className={labelClass}>Fixed Price</label>
                             <div className="relative w-40">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400">$</span>
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">$</span>
                                 <input type="number" min="0.01" step="0.01" value={fixedPrice} onChange={e => setFixedPrice(e.target.value)} className={`${inputClass} pl-7`} placeholder="e.g. 3.00" />
                             </div>
                         </div>
@@ -257,7 +257,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
                             <label className={labelClass}>Clearance Discount</label>
                             <div className="relative w-40">
                                 <input type="number" min="1" max="90" value={clearancePercent} onChange={e => setClearancePercent(e.target.value)} className={inputClass} placeholder="e.g. 40" />
-                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400">% off</span>
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500">% off</span>
                             </div>
                         </div>
                     )}
@@ -317,7 +317,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
                             <div>
                                 <label className={labelClass}>Bundle Price</label>
                                 <div className="relative w-40">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400">$</span>
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">$</span>
                                     <input type="number" min="0.01" step="0.01" value={bundlePrice} onChange={e => setBundlePrice(e.target.value)} className={`${inputClass} pl-7`} placeholder="e.g. 9.50" />
                                 </div>
                             </div>
@@ -332,7 +332,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
                                                 onChange={() => toggleProductId(p.id, bundleProductIds, setBundleProductIds)}
                                                 className="w-4 h-4 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500" />
                                             <span className="text-sm text-stone-700">{p.name}</span>
-                                            <span className="text-xs text-stone-400 ml-auto">${p.price.toFixed(2)}</span>
+                                            <span className="text-xs text-stone-500 ml-auto">${p.price.toFixed(2)}</span>
                                         </label>
                                     ))}
                                 </div>
@@ -405,7 +405,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
                                         onChange={() => toggleProductId(c.id, targetHoReCaIds, setTargetCustomerIds)}
                                         className="w-4 h-4 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500" />
                                     <span className="text-sm text-stone-700">{c.name}</span>
-                                    {c.tier && <span className="text-xs text-stone-400 ml-auto">{c.tier}</span>}
+                                    {c.tier && <span className="text-xs text-stone-500 ml-auto">{c.tier}</span>}
                                 </label>
                             ))}
                         </div>
@@ -443,7 +443,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
                     <div>
                         <label className={labelClass}>Min Order Value (optional)</label>
                         <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400">$</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">$</span>
                             <input type="number" min="0" step="1" value={minOrderValue} onChange={e => setMinOrderValue(e.target.value)} className={`${inputClass} pl-7`} placeholder="No minimum" />
                         </div>
                     </div>

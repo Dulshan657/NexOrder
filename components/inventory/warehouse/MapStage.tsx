@@ -591,7 +591,7 @@ function BinHoverCard({ hover, info, viewport }: BinHoverCardProps) {
           {info.contentsCount > 1 && ` +${info.contentsCount - 1} more`}
         </p>
       ) : (
-        <p className="text-stone-400">Empty</p>
+        <p className="text-stone-500">Empty</p>
       )}
     </div>
   )

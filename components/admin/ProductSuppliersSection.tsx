@@ -55,7 +55,7 @@ const ProductSuppliersSection: React.FC<ProductSuppliersSectionProps> = ({
         <div className="bg-stone-50 rounded-lg p-4 border border-stone-200 space-y-3">
             <div>
                 <h3 className="text-sm font-semibold text-stone-700">Suppliers</h3>
-                <p className="text-[11px] text-stone-400 mt-0.5">
+                <p className="text-[11px] text-stone-500 mt-0.5">
                     Who this product can be bought from. Add their own part number so goods-in can
                     match it against a delivery docket. The primary supplier is the one shown
                     everywhere a single supplier is expected.
@@ -102,7 +102,7 @@ const ProductSuppliersSection: React.FC<ProductSuppliersSectionProps> = ({
                                 type="button" onClick={() => remove(i)}
                                 aria-label="Remove supplier"
                                 disabled={links.length === 1}
-                                className="text-stone-400 hover:text-red-600 transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-stone-400"
+                                className="text-stone-500 hover:text-red-600 transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-stone-400"
                                 title={links.length === 1 ? 'A product needs at least one supplier' : 'Remove supplier'}
                             >
                                 <Trash2 className="h-4 w-4" />

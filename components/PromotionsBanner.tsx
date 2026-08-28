@@ -61,7 +61,7 @@ const PromotionsBanner: React.FC<PromotionsBannerProps> = ({ promotions, custome
                             <div className="min-w-0">
                                 <p className={`text-sm font-semibold ${config.text} truncate`}>{promo.name}</p>
                                 <p className="text-xs text-stone-500 truncate">{promo.description}{unitNote}</p>
-                                {clickable && <p className="text-[10px] text-stone-400 mt-0.5">Tap to add to order</p>}
+                                {clickable && <p className="text-[10px] text-stone-500 mt-0.5">Tap to add to order</p>}
                             </div>
                         </button>
                     );

@@ -141,7 +141,7 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
                     <div className="flex items-center space-x-4">
                         {isUploading ? (
                             <div className="h-16 w-16 rounded-full bg-stone-100 border border-stone-200 shadow-sm flex items-center justify-center">
-                                <Loader2 className="h-5 w-5 text-stone-400 animate-spin" />
+                                <Loader2 className="h-5 w-5 text-stone-500 animate-spin" />
                             </div>
                         ) : (
                             <OptimizedImage

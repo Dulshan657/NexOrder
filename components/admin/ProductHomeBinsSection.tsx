@@ -101,7 +101,7 @@ const HomeBinRow: React.FC<{ productId: number; warehouse: Warehouse; current?: 
               className="mt-0.5 block w-20 text-sm border border-stone-200 rounded px-2 py-1"
             />
           </label>
-          <span className="text-[11px] text-stone-400 pb-1.5">base units</span>
+          <span className="text-[11px] text-stone-500 pb-1.5">base units</span>
 
           <label
             className="flex items-center gap-1.5 text-xs text-stone-600 pb-1.5 ml-auto"
@@ -118,7 +118,7 @@ const HomeBinRow: React.FC<{ productId: number; warehouse: Warehouse; current?: 
             Auto-replenish
           </label>
           {!binIsPickZone && (
-            <p className="w-full text-[11px] text-stone-400">
+            <p className="w-full text-[11px] text-stone-500">
               This bin is{' '}
               {chosenBin?.levelRole
                 ? `a ${roleLabel(levelRoles, chosenBin.levelRole)} level`
@@ -155,7 +155,7 @@ const ProductHomeBinsSection: React.FC<ProductHomeBinsSectionProps> = ({ product
       <label className="block text-sm font-medium text-stone-700 mb-1">
         Pick slots &amp; replenishment (racked warehouses)
       </label>
-      <p className="text-xs text-stone-400 mb-2">
+      <p className="text-xs text-stone-500 mb-2">
         Where this product is suggested for put-away, and — when the bin is a pick zone — the levels at which
         it is automatically topped up from reserve or bulk.
       </p>

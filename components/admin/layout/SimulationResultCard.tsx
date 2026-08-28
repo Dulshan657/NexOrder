@@ -80,7 +80,7 @@ export function SimulationResultCard({ result, variant = 'card' }: SimulationRes
       </p>
 
       {diff ? <TravelDelta diff={diff} /> : (
-        <p className="text-stone-400 bg-stone-50 border border-stone-100 rounded-lg px-2 py-1.5">
+        <p className="text-stone-500 bg-stone-50 border border-stone-100 rounded-lg px-2 py-1.5">
           This is the active layout (no baseline to compare).
         </p>
       )}
@@ -93,7 +93,7 @@ export function SimulationResultCard({ result, variant = 'card' }: SimulationRes
         <KpiRow label="Unreachable stops" value={`${kpis.unreachableStops}`} amber={kpis.unreachableStops > 0} />
       </div>
 
-      <p className="text-[11px] text-stone-400">
+      <p className="text-[11px] text-stone-500">
         Replays historical picks with today's slotting; travel reflects layout geometry, not re-slotting.
       </p>
 
@@ -103,7 +103,7 @@ export function SimulationResultCard({ result, variant = 'card' }: SimulationRes
           <ul className="space-y-0.5">
             {congested.map((c) => (
               <li key={c.graphNodeId} className="text-stone-500">
-                node #{c.graphNodeId} <span className="text-stone-400">· {c.visits} visits</span>
+                node #{c.graphNodeId} <span className="text-stone-500">· {c.visits} visits</span>
               </li>
             ))}
           </ul>

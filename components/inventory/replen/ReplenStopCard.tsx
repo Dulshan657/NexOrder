@@ -186,11 +186,11 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
           <p className="text-xs text-stone-500 font-mono mt-0.5">{stop.sku}</p>
           <p className="text-sm mt-1.5 flex items-center gap-1.5 flex-wrap">
             <span className="text-stone-700">{locationTitle(from)}</span>
-            <ArrowRight className="w-3.5 h-3.5 text-stone-400" aria-hidden="true" />
+            <ArrowRight className="w-3.5 h-3.5 text-stone-500" aria-hidden="true" />
             <span className="text-emerald-700 font-semibold">{locationTitle(to)}</span>
-            <span className="text-stone-400">·</span>
+            <span className="text-stone-500">·</span>
             <span className="tabular-nums text-stone-700">{stop.qtyBase}</span>
-            {stop.huCode && <span className="text-[11px] font-mono text-stone-400">{stop.huCode}</span>}
+            {stop.huCode && <span className="text-[11px] font-mono text-stone-500">{stop.huCode}</span>}
           </p>
           {!stop.reachable && (
             <p className="text-[11px] text-amber-700 mt-1">
@@ -276,7 +276,7 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
                   className="mt-1 w-full text-sm rounded-lg border border-stone-200 px-3 py-2 min-h-[44px]"
                 />
               </label>
-              <p className="text-[11px] text-stone-400 mt-1">
+              <p className="text-[11px] text-stone-500 mt-1">
                 Leave blank to move all {stop.qtyBase}. Moving less leaves the rest on the queue.
               </p>
               <button
@@ -368,7 +368,7 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
       )}
 
       {step === 'idle' && stop.reachable && (stop.legDistanceM > 0 || stop.placeLegM > 0) && (
-        <p className="mt-2 text-[11px] text-stone-400 flex items-center gap-1">
+        <p className="mt-2 text-[11px] text-stone-500 flex items-center gap-1">
           <MapPin className="w-3 h-3" aria-hidden="true" />
           {Math.round(stop.legDistanceM)} m to the bin
           {stop.placeLegM > 0 && <> · {Math.round(stop.placeLegM)} m to the pick zone</>}

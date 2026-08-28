@@ -192,14 +192,14 @@ export function AreaPaintSummaryModal({
         {previewError && (
           <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{previewError}</p>
         )}
-        {!preview && !previewError && <p className="text-sm text-stone-400">Checking…</p>}
+        {!preview && !previewError && <p className="text-sm text-stone-500">Checking…</p>}
 
         {/* Signs first, matching the save order, and visually separated from the
             areas below because the consequences are not comparable: everything
             in this block is text on a picture. */}
         {editsSigns && signPreview && !signPreview.unchanged && (
           <div className="space-y-1.5 rounded-lg border border-stone-200 bg-white p-2.5 text-sm text-stone-600">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-stone-400">Signs</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-stone-500">Signs</p>
             {signPreview.created.map((name) => (
               <p key={`sc-${name}`}>
                 <span className="font-medium text-stone-800">New sign “{name}”</span>
@@ -218,7 +218,7 @@ export function AreaPaintSummaryModal({
                 <span className="font-medium text-rose-700">“{name}” is removed.</span>
               </p>
             ))}
-            <p className="text-[11px] text-stone-400">
+            <p className="text-[11px] text-stone-500">
               Signs are wayfinding text — no bin is renamed, no zone changes, and the layout does
               not need republishing.
             </p>
@@ -228,7 +228,7 @@ export function AreaPaintSummaryModal({
         {preview && (
           <>
             <div className="space-y-1.5 text-sm text-stone-600">
-              {preview.unchanged && <p className="text-stone-400">Nothing about the areas changed.</p>}
+              {preview.unchanged && <p className="text-stone-500">Nothing about the areas changed.</p>}
               {preview.created.map((name) => (
                 <p key={`c-${name}`}>
                   <span className="font-medium text-stone-800">New area “{name}”</span>
@@ -253,7 +253,7 @@ export function AreaPaintSummaryModal({
                 </p>
               ))}
               {floorCount > 1 && cellsByFloor.size > 0 && (
-                <p className="text-[11px] text-stone-400">
+                <p className="text-[11px] text-stone-500">
                   {[...cellsByFloor.entries()].sort((a, b) => a[0] - b[0])
                     .map(([f, n]) => `Floor ${f + 1}: ${n} cells`).join(' · ')}
                 </p>
@@ -261,7 +261,7 @@ export function AreaPaintSummaryModal({
             </div>
 
             {!willWriteAreas ? (
-              <p className="text-xs text-stone-400">
+              <p className="text-xs text-stone-500">
                 The areas are untouched, so nothing about them will be written — no bin is renamed
                 and no bin changes zone.
               </p>
@@ -286,21 +286,21 @@ export function AreaPaintSummaryModal({
                 </span>
               </label>
             ) : (
-              <p className="text-xs text-stone-400">No bin names need changing.</p>
+              <p className="text-xs text-stone-500">No bin names need changing.</p>
             )}
 
             {cascade && preview.examples.length > 0 && (
               <ul className="space-y-1 rounded-lg bg-stone-50 p-2 text-[11px]">
                 {preview.examples.map((ex) => (
                   <li key={ex.code} className="flex flex-wrap items-baseline gap-1.5">
-                    <span className="font-mono text-stone-400">{ex.code}</span>
+                    <span className="font-mono text-stone-500">{ex.code}</span>
                     <span className="text-stone-500">{ex.from}</span>
                     <span className="text-stone-300">→</span>
                     <span className="font-medium text-stone-700">{ex.to}</span>
                   </li>
                 ))}
                 {preview.willRename > preview.examples.length && (
-                  <li className="text-stone-400">
+                  <li className="text-stone-500">
                     …and {preview.willRename - preview.examples.length} more
                   </li>
                 )}
@@ -328,7 +328,7 @@ export function AreaPaintSummaryModal({
             )}
 
             {willWriteAreas && preview.skippedForeign > 0 && (
-              <p className="text-[11px] leading-snug text-stone-400">
+              <p className="text-[11px] leading-snug text-stone-500">
                 {preview.skippedForeign} location{preview.skippedForeign === 1 ? '' : 's'} already
                 carried a different area&rsquo;s name before this paint, so {preview.skippedForeign === 1 ? 'it is' : 'they are'} left
                 alone. Rename {preview.skippedForeign === 1 ? 'it' : 'them'} from the map if that is wrong.

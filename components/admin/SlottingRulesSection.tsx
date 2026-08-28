@@ -260,7 +260,7 @@ const SlottingRulesSection: React.FC = () => {
           {rules.length === 0 ? (
             <div className="rounded-lg border border-dashed border-stone-200 px-4 py-8 text-center">
               <p className="text-sm text-stone-600">No slotting rules yet.</p>
-              <p className="text-xs text-stone-400 mt-1 max-w-[46ch] mx-auto">
+              <p className="text-xs text-stone-500 mt-1 max-w-[46ch] mx-auto">
                 Until one exists, putaway chooses purely on travel distance and
                 capacity — which is exactly how it behaved before this feature.
               </p>
@@ -289,7 +289,7 @@ const SlottingRulesSection: React.FC = () => {
                       )}
                     </div>
                     <p className="text-xs text-stone-500 mt-0.5">{describeMatch(r)}</p>
-                    <p className="text-xs text-stone-400 mt-0.5">
+                    <p className="text-xs text-stone-500 mt-0.5">
                       {r.blocks.length === 0
                         ? 'No blocks — this rule does nothing yet.'
                         : r.blocks.map((b, i) => `${i + 1}. ${b.name}`).join('  →  ')}
@@ -314,7 +314,7 @@ const SlottingRulesSection: React.FC = () => {
                     </button>
                     <button
                       type="button" onClick={() => removeRule(r)}
-                      className="btn-press p-1.5 rounded hover:bg-red-50 text-stone-400 hover:text-red-600"
+                      className="btn-press p-1.5 rounded hover:bg-red-50 text-stone-500 hover:text-red-600"
                       aria-label={`Remove ${r.name}`}
                     >
                       <Trash2 size={15} />
@@ -331,7 +331,7 @@ const SlottingRulesSection: React.FC = () => {
               Blocks
             </h4>
             {blocks.length === 0 ? (
-              <p className="text-xs text-stone-400">
+              <p className="text-xs text-stone-500">
                 None yet. Draw one on the warehouse map — select the racks, then name them.
               </p>
             ) : (
@@ -341,7 +341,7 @@ const SlottingRulesSection: React.FC = () => {
                     <div className="min-w-0 flex-1">
                       <span className="text-sm text-stone-800">{b.name}</span>
                       {b.sourceKind === 'area' && b.sourceAreaName && (
-                        <span className="ml-2 text-[10px] uppercase tracking-wide text-stone-400">
+                        <span className="ml-2 text-[10px] uppercase tracking-wide text-stone-500">
                           from area {b.sourceAreaName}
                         </span>
                       )}
@@ -349,12 +349,12 @@ const SlottingRulesSection: React.FC = () => {
                     <span className="font-mono text-xs tabular-nums text-stone-500">
                       {b.binCount} bin{b.binCount === 1 ? '' : 's'}
                     </span>
-                    <span className="font-mono text-xs tabular-nums text-stone-400 w-16 text-right">
+                    <span className="font-mono text-xs tabular-nums text-stone-500 w-16 text-right">
                       {b.ruleCount} rule{b.ruleCount === 1 ? '' : 's'}
                     </span>
                     <button
                       type="button" onClick={() => removeBlock(b)}
-                      className="btn-press p-1.5 rounded hover:bg-red-50 text-stone-400 hover:text-red-600"
+                      className="btn-press p-1.5 rounded hover:bg-red-50 text-stone-500 hover:text-red-600"
                       aria-label={`Remove ${b.name}`}
                     >
                       <Trash2 size={15} />
@@ -401,12 +401,12 @@ const SlottingRulesSection: React.FC = () => {
               placeholder="Milwaukee power tools"
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
-            <span className="text-[10px] text-stone-400">Shown on the putaway task, so name it the way you would say it.</span>
+            <span className="text-[10px] text-stone-500">Shown on the putaway task, so name it the way you would say it.</span>
           </label>
 
           <fieldset className="border border-stone-200 rounded-lg p-3">
             <legend className="text-xs text-stone-500 px-1">What it applies to</legend>
-            <p className="text-[10px] text-stone-400 mb-2">
+            <p className="text-[10px] text-stone-500 mb-2">
               Anything you fill in must ALL be true. The most specific rule wins:
               SKU beats brand beats category beats supplier.
             </p>
@@ -468,7 +468,7 @@ const SlottingRulesSection: React.FC = () => {
                     <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>
                   ))}
                 </select>
-                <span className="text-[10px] text-stone-400">Overrides that product&apos;s brand rule.</span>
+                <span className="text-[10px] text-stone-500">Overrides that product&apos;s brand rule.</span>
               </label>
             </div>
           </fieldset>
@@ -476,7 +476,7 @@ const SlottingRulesSection: React.FC = () => {
           <fieldset className="border border-stone-200 rounded-lg p-3">
             <legend className="text-xs text-stone-500 px-1">Where it goes</legend>
             {blocks.length === 0 ? (
-              <p className="text-xs text-stone-400">
+              <p className="text-xs text-stone-500">
                 No blocks exist yet — draw one on the warehouse map first.
               </p>
             ) : (
@@ -485,11 +485,11 @@ const SlottingRulesSection: React.FC = () => {
                   <ol className="space-y-1 mb-2">
                     {form.blockIds.map((id, i) => (
                       <li key={id} className="flex items-center gap-2 text-sm">
-                        <span className="font-mono text-xs tabular-nums text-stone-400 w-5">{i + 1}.</span>
+                        <span className="font-mono text-xs tabular-nums text-stone-500 w-5">{i + 1}.</span>
                         <span className="flex-1 min-w-0 truncate text-stone-800">
                           {blockById.get(id)?.name ?? `Block ${id}`}
                         </span>
-                        <span className="font-mono text-[10px] text-stone-400">
+                        <span className="font-mono text-[10px] text-stone-500">
                           {blockById.get(id)?.binCount ?? 0} bins
                         </span>
                         <button
@@ -509,7 +509,7 @@ const SlottingRulesSection: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => setForm({ ...form, blockIds: form.blockIds.filter((b) => b !== id) })}
-                          className="btn-press p-1 rounded hover:bg-red-50 text-stone-400 hover:text-red-600"
+                          className="btn-press p-1 rounded hover:bg-red-50 text-stone-500 hover:text-red-600"
                           aria-label={`Remove ${blockById.get(id)?.name ?? 'block'} from this rule`}
                         >
                           <X size={14} />
@@ -518,7 +518,7 @@ const SlottingRulesSection: React.FC = () => {
                     ))}
                   </ol>
                 )}
-                <p className="text-[10px] text-stone-400 mb-2">
+                <p className="text-[10px] text-stone-500 mb-2">
                   Filled top to bottom. Below the last one, stock goes anywhere legal and is flagged off-home.
                 </p>
                 <select
@@ -549,7 +549,7 @@ const SlottingRulesSection: React.FC = () => {
                 <option value="soft">Put it elsewhere and flag it (recommended)</option>
                 <option value="hard">Refuse — leave it for manual placement</option>
               </select>
-              <span className="text-[10px] text-stone-400">
+              <span className="text-[10px] text-stone-500">
                 {form.enforcement === 'hard'
                   ? 'A scan into a bin outside these blocks is refused, with a recorded override.'
                   : 'The engine prefers these blocks; nothing is ever refused.'}

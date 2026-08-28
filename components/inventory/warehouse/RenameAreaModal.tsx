@@ -134,7 +134,7 @@ export function RenameAreaModal({ warehouseId, areaName, onClose }: RenameAreaMo
               <ul className="space-y-1 rounded-lg bg-stone-50 p-2 text-[11px]">
                 {preview.examples.map((ex) => (
                   <li key={ex.code} className="flex flex-wrap items-baseline gap-1.5">
-                    <span className="font-mono text-stone-400">{ex.code}</span>
+                    <span className="font-mono text-stone-500">{ex.code}</span>
                     <span className="text-stone-500">{ex.from}</span>
                     <span className="text-stone-300">→</span>
                     {/* The example's `to` came back computed against the OLD name
@@ -146,7 +146,7 @@ export function RenameAreaModal({ warehouseId, areaName, onClose }: RenameAreaMo
                   </li>
                 ))}
                 {total > preview.examples.length && (
-                  <li className="text-stone-400">…and {total - preview.examples.length} more</li>
+                  <li className="text-stone-500">…and {total - preview.examples.length} more</li>
                 )}
               </ul>
             )}
@@ -173,7 +173,7 @@ export function RenameAreaModal({ warehouseId, areaName, onClose }: RenameAreaMo
           </div>
         )}
 
-        <p className="text-[11px] leading-snug text-stone-400">
+        <p className="text-[11px] leading-snug text-stone-500">
           Rack numbers are never changed, and codes are never changed — the labels already on the
           racking stay correct.
         </p>

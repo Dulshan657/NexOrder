@@ -36,7 +36,7 @@ export function LayoutLegend({ forms }: LayoutLegendProps = {}) {
   const items = hasForms ? LEGEND_ITEMS_WITH_STROKE.filter((i) => !i.key.startsWith('rack')) : LEGEND_ITEMS_WITH_STROKE
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Legend</span>
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Legend</span>
       {hasForms &&
         forms!.map((f) => (
           <span key={`form-${f.id}`} className="inline-flex items-center gap-1.5 text-xs text-stone-600">

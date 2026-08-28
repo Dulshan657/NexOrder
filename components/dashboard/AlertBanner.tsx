@@ -63,8 +63,8 @@ const AlertBanner: React.FC<AlertBannerProps> = ({ icon: Icon, label, count, sev
         {subtitle && <span className="text-xs text-stone-500 ml-auto mr-2 hidden sm:inline">{subtitle}</span>}
         {hasContent && (
           expanded
-            ? <ChevronUp className="w-4 h-4 text-stone-400 ml-auto shrink-0" />
-            : <ChevronDown className="w-4 h-4 text-stone-400 ml-auto shrink-0" />
+            ? <ChevronUp className="w-4 h-4 text-stone-500 ml-auto shrink-0" />
+            : <ChevronDown className="w-4 h-4 text-stone-500 ml-auto shrink-0" />
         )}
       </button>
       {expanded && children && (

@@ -98,7 +98,7 @@ export function ReviewStep({
       <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50/60 p-6 text-center">
         <PackageOpen className="mx-auto h-8 w-8 text-stone-300" strokeWidth={1.5} aria-hidden="true" />
         <p className="mt-2 text-sm text-stone-600">Nothing to check yet</p>
-        <p className="mt-1 text-[11px] text-stone-400">
+        <p className="mt-1 text-[11px] text-stone-500">
           {missingSelection ? 'Paint some bins on the map first.' : 'Give the block a name first.'}
         </p>
         <button
@@ -204,7 +204,7 @@ export function ReviewStep({
           <ul className="mt-1.5 divide-y divide-stone-100 overflow-hidden rounded-lg border border-stone-200 bg-white">
             {preview.examples.map((e) => (
               <li key={e.from} className="flex items-center gap-2 px-3 py-1.5 font-mono text-xs">
-                <span className="min-w-0 flex-1 truncate text-stone-400 line-through">{e.from}</span>
+                <span className="min-w-0 flex-1 truncate text-stone-500 line-through">{e.from}</span>
                 <ArrowRight className="h-3 w-3 shrink-0 text-stone-300" strokeWidth={2} aria-hidden="true" />
                 <span className="min-w-0 flex-1 truncate font-semibold text-stone-800">{e.to}</span>
               </li>

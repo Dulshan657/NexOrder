@@ -119,7 +119,7 @@ export function WarehouseSetupPanel({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-stone-900">
             {summary.derivedComplete ? 'Setup complete' : 'Warehouse setup'}
-            <span className="ml-2 font-normal text-stone-400">{warehouseName}</span>
+            <span className="ml-2 font-normal text-stone-500">{warehouseName}</span>
           </p>
           {/* Naming the next action is what lets this collapse without hiding
               the answer. Falls back to the tally only when nothing is left. */}
@@ -136,7 +136,7 @@ export function WarehouseSetupPanel({
           </span>
         )}
 
-        <span className="shrink-0 text-stone-400">
+        <span className="shrink-0 text-stone-500">
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </span>
       </button>
@@ -145,7 +145,7 @@ export function WarehouseSetupPanel({
         <div className="mt-4 space-y-4">
           {grouped.map(({ phase, steps }) => (
             <div key={phase}>
-              <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+              <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
                 {PHASE_LABELS[phase]}
               </p>
               <ul className="space-y-0.5">

@@ -224,7 +224,7 @@ export function LayoutToolbar({
           this bar is the equivalent of picking which storage form to paint. */}
       {canEditAreas && tool === 'area' && (
         <div className="inline-flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-2 py-1.5">
-          <span className="text-[11px] font-medium text-stone-400">Painting area</span>
+          <span className="text-[11px] font-medium text-stone-500">Painting area</span>
           {/* sanitize + maxLength + the inline issue hint below all mirror the
               live map's AreaPaintToolbar, which has had them since 00095. Their
               absence here is why a bad name (a "·", or 200 characters) only
@@ -257,7 +257,7 @@ export function LayoutToolbar({
           </select>
           {areaNames.length > 0 && (
             <>
-              <span className="pl-1 text-[11px] text-stone-400">or extend</span>
+              <span className="pl-1 text-[11px] text-stone-500">or extend</span>
               {areaNames.map((name) => (
                 <button
                   key={name}
@@ -279,7 +279,7 @@ export function LayoutToolbar({
               a draft points at the same `locations` rows as the published layout,
               so a rename here reaches live pick lists before publish — true of
               the storage-form repoint too, but names are what people read. */}
-          <p className="w-full pt-0.5 text-[11px] leading-snug text-stone-400">
+          <p className="w-full pt-0.5 text-[11px] leading-snug text-stone-500">
             {areaIssue
               // Shown while typing, so a rejected name is discovered before the
               // painting rather than after it.
@@ -303,7 +303,7 @@ export function LayoutToolbar({
           has just been told areas rename bins needs to know this one does not. */}
       {canEditAreas && tool === 'label' && (
         <div className="inline-flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-stone-200 bg-stone-50 px-2 py-1.5">
-          <span className="text-[11px] font-medium text-stone-400">Sign text</span>
+          <span className="text-[11px] font-medium text-stone-500">Sign text</span>
           <input
             value={activeSign ?? ''}
             onChange={(e) => onSelectSign(sanitizeSignNameInput(e.target.value))}
@@ -314,7 +314,7 @@ export function LayoutToolbar({
           />
           {signNames.length > 0 && (
             <>
-              <span className="pl-1 text-[11px] text-stone-400">or extend</span>
+              <span className="pl-1 text-[11px] text-stone-500">or extend</span>
               {signNames.map((name) => (
                 <button
                   key={name}
@@ -331,7 +331,7 @@ export function LayoutToolbar({
               ))}
             </>
           )}
-          <p className="w-full pt-0.5 text-[11px] leading-snug text-stone-400">
+          <p className="w-full pt-0.5 text-[11px] leading-snug text-stone-500">
             {signIssue
               ? <span className="font-medium text-amber-600">{signIssue}</span>
               : 'A sign is wayfinding text only — it renames no bins, sets no zone and changes no routing. Drag across cells to size it.'}
@@ -347,7 +347,7 @@ export function LayoutToolbar({
 
       {floorCount > 1 && (
         <div className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white p-0.5">
-          <span className="pl-1.5 text-[11px] font-medium text-stone-400">Floor</span>
+          <span className="pl-1.5 text-[11px] font-medium text-stone-500">Floor</span>
           {Array.from({ length: floorCount }, (_, i) => (
             <button
               key={i}

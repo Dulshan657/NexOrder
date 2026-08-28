@@ -55,7 +55,7 @@ interface OccupancyBucketInfo {
 // they can never drift apart.
 const OCCUPANCY_BUCKETS: Record<OccupancyBucket, OccupancyBucketInfo> = {
   none: { fill: NEUTRAL, pill: 'bg-stone-100 text-stone-500', label: 'No capacity' },
-  empty: { fill: '#ffffff', pill: 'bg-stone-100 text-stone-400', label: 'Empty' },
+  empty: { fill: '#ffffff', pill: 'bg-stone-100 text-stone-600', label: 'Empty' },
   low: { fill: '#6ee7b7', pill: 'bg-emerald-100 text-emerald-700', label: '<50%' }, // emerald-300
   mid: { fill: '#fcd34d', pill: 'bg-amber-100 text-amber-700', label: '50–80%' }, // amber-300
   high: { fill: '#fb923c', pill: 'bg-orange-100 text-orange-700', label: '80–100%' }, // orange-400

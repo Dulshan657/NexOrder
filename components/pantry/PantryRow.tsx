@@ -168,7 +168,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
                     )}
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                    <span className="font-mono text-[10.5px] text-stone-400">{product.sku}</span>
+                    <span className="font-mono text-[10.5px] text-stone-500">{product.sku}</span>
                     {frequency && frequency.count30d > 0 && (
                         <>
                             <span className="text-stone-300">·</span>
@@ -180,7 +180,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
                     {frequency?.lastOrderedDate && (
                         <>
                             <span className="text-stone-300">·</span>
-                            <span className="text-[10.5px] text-stone-400">
+                            <span className="text-[10.5px] text-stone-500">
                                 last {formatRelativeDate(frequency.lastOrderedDate)}
                             </span>
                         </>
@@ -221,7 +221,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
                         className={`px-2 py-1 rounded-md transition-colors ${isCarton ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
                     >
                         <span>Carton</span>
-                        <span className="ml-1 font-mono tabular-nums text-stone-400">×{product.cartonSize}</span>
+                        <span className="ml-1 font-mono tabular-nums text-stone-500">×{product.cartonSize}</span>
                     </button>
                 </div>
                 {isCarton && cartonDiscountPercent > 0 && (
@@ -235,7 +235,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
             <div className="hidden lg:flex items-center justify-end gap-2 relative">
                 <div className="text-right">
                     <div className="text-sm font-mono tabular-nums text-stone-900">${displayPrice.toFixed(2)}</div>
-                    <div className="text-[10px] text-stone-400">/ {isCarton ? 'carton' : product.unit}</div>
+                    <div className="text-[10px] text-stone-500">/ {isCarton ? 'carton' : product.unit}</div>
                 </div>
                 <div className="inline-flex items-center border border-stone-200 rounded-lg overflow-hidden bg-white">
                     <button
@@ -289,7 +289,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
                         <button
                             type="button"
                             onClick={() => setPresetsOpen(o => !o)}
-                            className="p-1 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+                            className="p-1 rounded-md text-stone-500 hover:text-stone-700 hover:bg-stone-100 transition-colors"
                             aria-label="Quantity presets"
                             aria-expanded={presetsOpen}
                         >
@@ -361,7 +361,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
                 <button
                     type="button"
                     onClick={onRemove}
-                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-stone-500 hover:text-red-600 hover:bg-red-50 transition-colors"
                     aria-label={`Remove ${product.name} from pantry`}
                     title="Remove from pantry"
                 >
@@ -400,7 +400,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
                 </div>
                 <div className="flex items-center justify-end gap-2">
                     <span className="text-xs font-mono tabular-nums text-stone-500">
-                        ${displayPrice.toFixed(2)} <span className="text-stone-400">×</span> {pantryItem.defaultQuantity}
+                        ${displayPrice.toFixed(2)} <span className="text-stone-500">×</span> {pantryItem.defaultQuantity}
                     </span>
                     <div className="inline-flex items-center border border-stone-200 rounded-lg overflow-hidden">
                         <button

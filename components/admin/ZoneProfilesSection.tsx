@@ -213,7 +213,7 @@ const ZoneProfilesSection: React.FC = () => {
                 value={form.priorityWeight}
                 onChange={(e) => setForm({ ...form, priorityWeight: Number(e.target.value) })}
               />
-              <span className="text-[10px] text-stone-400">Higher = the optimizer prefers this zone.</span>
+              <span className="text-[10px] text-stone-500">Higher = the optimizer prefers this zone.</span>
             </label>
 
             <label className="block text-xs text-stone-500">

@@ -146,7 +146,7 @@ export function SlottingPanel(props: SlottingPanelProps) {
           type="button"
           onClick={props.onCancel}
           aria-label="Close"
-          className="-mr-1 shrink-0 rounded-lg p-1.5 text-stone-400 btn-press hover:bg-stone-100 hover:text-stone-600"
+          className="-mr-1 shrink-0 rounded-lg p-1.5 text-stone-500 btn-press hover:bg-stone-100 hover:text-stone-600"
         >
           <X className="h-4 w-4" strokeWidth={2} />
         </button>

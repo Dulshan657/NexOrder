@@ -200,7 +200,7 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
                 );
               })}
             </div>
-            <p className="mt-2 text-xs text-stone-400">
+            <p className="mt-2 text-xs text-stone-500">
               {stage === 'assign'
                 ? 'Decide which bin each top-up comes from. Nothing moves until someone carries it.'
                 : stage === 'walk'
@@ -231,7 +231,7 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
           <div className="glass-card rounded-xl p-10 text-center">
             <ArrowDownToLine className="w-9 h-9 text-stone-300 mx-auto mb-3" />
             <p className="text-sm text-stone-600">Pick a warehouse to see its replenishment queue</p>
-            <p className="text-xs text-stone-400 mt-1">Choose a site from the selector above.</p>
+            <p className="text-xs text-stone-500 mt-1">Choose a site from the selector above.</p>
           </div>
         </div>
       )}

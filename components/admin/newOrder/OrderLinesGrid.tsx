@@ -73,7 +73,7 @@ const OrderLinesGrid: React.FC<OrderLinesGridProps> = ({
           <tbody className="divide-y divide-stone-100">
             {lines.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-stone-400">
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-stone-500">
                   No lines yet. Add a product below, or paste a block of them.
                 </td>
               </tr>
@@ -108,7 +108,7 @@ const OrderLinesGrid: React.FC<OrderLinesGridProps> = ({
                     type="button"
                     onClick={() => onRemove(line.productId)}
                     aria-label={`Remove ${line.name}`}
-                    className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 btn-press"
+                    className="p-1.5 rounded-lg text-stone-500 hover:text-red-600 hover:bg-red-50 btn-press"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -133,7 +133,7 @@ const OrderLinesGrid: React.FC<OrderLinesGridProps> = ({
       </div>
 
       <div className="flex items-center gap-2 border-t border-stone-200 bg-white px-4 py-3">
-        <Plus className="w-4 h-4 text-stone-400 shrink-0" />
+        <Plus className="w-4 h-4 text-stone-500 shrink-0" />
         <div className="flex-1 max-w-md">
           <ProductSearchDropdown
             products={selectable}

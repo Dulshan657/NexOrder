@@ -100,7 +100,7 @@ const DocumentsView: React.FC = () => {
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
           <input
             type="text"
             value={search}
@@ -109,7 +109,7 @@ const DocumentsView: React.FC = () => {
             className="w-full pl-10 pr-9 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
           />
           {search && (
-            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"><X className="w-4 h-4" /></button>
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 cursor-pointer"><X className="w-4 h-4" /></button>
           )}
         </div>
         <div className="flex gap-2">
@@ -132,13 +132,13 @@ const DocumentsView: React.FC = () => {
       ) : isError ? (
         <div className="glass-card rounded-xl p-8 text-center">
           <p className="text-sm text-red-600">Couldn't load documents.</p>
-          <p className="text-xs text-stone-400 mt-1">Check your connection and try again.</p>
+          <p className="text-xs text-stone-500 mt-1">Check your connection and try again.</p>
         </div>
       ) : isEmpty ? (
         <div className="glass-card rounded-xl p-10 text-center">
           <FileText className="w-9 h-9 text-stone-300 mx-auto mb-3" />
           <p className="text-sm text-stone-600">No documents yet</p>
-          <p className="text-xs text-stone-400 mt-1">Pick slips and dispatch advices appear here once generated from the Pick Queue.</p>
+          <p className="text-xs text-stone-500 mt-1">Pick slips and dispatch advices appear here once generated from the Pick Queue.</p>
         </div>
       ) : typeFilter === 'all' ? (
         /* Grouped — one row per order, both document types as columns */
@@ -252,7 +252,7 @@ const TypeCell: React.FC<{
           </button>
         )}
       </div>
-      <p className="text-[11px] text-stone-400 pl-1">{formatGenerated(latest.generatedAt)}</p>
+      <p className="text-[11px] text-stone-500 pl-1">{formatGenerated(latest.generatedAt)}</p>
     </div>
   );
 };
@@ -276,7 +276,7 @@ const OrderDocGroupRow: React.FC<{ group: OrderDocGroup; view: DocAction; downlo
       {openHistory && (
         <tr className="bg-stone-50/60">
           <td colSpan={4} className="px-5 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 mb-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 mb-2">
               {typeMeta[openHistory].label} versions
             </p>
             <ul className="space-y-1.5">

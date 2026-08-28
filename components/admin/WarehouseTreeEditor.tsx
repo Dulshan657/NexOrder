@@ -94,14 +94,14 @@ const WarehouseTreeEditor: React.FC<WarehouseTreeEditorProps> = ({ warehouse, on
           className={`flex items-center gap-2 py-2 pr-2 rounded-lg hover:bg-stone-50 ${loc.isActive ? '' : 'opacity-50'}`}
           style={{ paddingLeft: `${depth * 18 + 4}px` }}
         >
-          <button onClick={() => toggle(loc.id)} className="p-0.5 text-stone-400" aria-label="Toggle">
+          <button onClick={() => toggle(loc.id)} className="p-0.5 text-stone-500" aria-label="Toggle">
             {kids.length > 0 ? (isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />) : <span className="w-4 inline-block" />}
           </button>
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-stone-100 text-stone-500">{KIND_LABEL[loc.kind as NodeKind] ?? loc.kind}</span>
           <span className="text-sm text-stone-800 truncate">{loc.name}</span>
-          <span className="text-[11px] font-mono text-stone-400">{loc.code}</span>
+          <span className="text-[11px] font-mono text-stone-500">{loc.code}</span>
           {typeof loc.capacitySlots === 'number' && (
-            <span className="text-[10px] text-stone-400">· cap {loc.capacitySlots}</span>
+            <span className="text-[10px] text-stone-500">· cap {loc.capacitySlots}</span>
           )}
           <div className="ml-auto flex items-center gap-1">
             <button

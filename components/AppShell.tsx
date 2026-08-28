@@ -728,7 +728,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             aria-label="Close menu"
                             // Had no padding at all — a bare 20x20px hit area on
                             // the one control that exists solely for this device.
-                            className="md:hidden inline-flex items-center justify-center rounded-lg p-2 -mr-2 text-stone-400 hover:bg-stone-100 hover:text-stone-700 cursor-pointer touch-target"
+                            className="md:hidden inline-flex items-center justify-center rounded-lg p-2 -mr-2 text-stone-500 hover:bg-stone-100 hover:text-stone-700 cursor-pointer touch-target"
                         >
                             <X className="w-5 h-5" />
                         </button>

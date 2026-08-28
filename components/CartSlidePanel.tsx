@@ -75,7 +75,7 @@ const CartSlidePanel: React.FC<CartSlidePanelProps> = ({
         </div>
         <button
           onClick={onClose}
-          className="p-2 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
+          className="p-2 text-stone-500 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
           aria-label="Close cart"
         >
           <AnimatedIcon icon={X} animation="pop" className="w-5 h-5" />

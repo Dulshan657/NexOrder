@@ -14,7 +14,7 @@ const SEGMENTS: { key: keyof Omit<StockHealth, 'total'>; label: string; color: s
 function StockHealthDonut({ data }: StockHealthDonutProps) {
   if (data.total === 0) {
     return (
-      <div className="flex h-[220px] items-center justify-center text-sm text-stone-400">
+      <div className="flex h-[220px] items-center justify-center text-sm text-stone-500">
         No products to report
       </div>
     );
@@ -52,7 +52,7 @@ function StockHealthDonut({ data }: StockHealthDonutProps) {
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
           <span className="font-mono text-2xl font-bold text-stone-900">{data.total}</span>
-          <span className="text-[10px] uppercase tracking-wider text-stone-400">SKUs</span>
+          <span className="text-[10px] uppercase tracking-wider text-stone-500">SKUs</span>
         </div>
       </div>
 

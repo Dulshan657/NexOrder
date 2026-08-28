@@ -54,7 +54,7 @@ export function PutawayPanel({ warehouseId, recommendations, productNameById }: 
     <div className="glass-card rounded-xl overflow-hidden">
       <div className="px-4 py-3 border-b border-stone-100">
         <h2 className="text-sm font-semibold text-stone-700">Put away — recommended bins</h2>
-        <p className="text-xs text-stone-400 mt-0.5">The engine picked the best bin for each line. Accept, choose another, or skip.</p>
+        <p className="text-xs text-stone-500 mt-0.5">The engine picked the best bin for each line. Accept, choose another, or skip.</p>
       </div>
       <ul className="divide-y divide-stone-100">
         {recommendations.map((rec) => {
@@ -66,7 +66,7 @@ export function PutawayPanel({ warehouseId, recommendations, productNameById }: 
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-stone-800 truncate">{productNameById.get(rec.productId) ?? `Product ${rec.productId}`}</p>
-                  <p className="text-xs text-stone-400">
+                  <p className="text-xs text-stone-500">
                     {rec.quantity} units →{' '}
                     {recCode ? <span className="font-mono text-emerald-600">{recCode}</span> : <span className="text-amber-600">no eligible bin</span>}
                   </p>
@@ -83,7 +83,7 @@ export function PutawayPanel({ warehouseId, recommendations, productNameById }: 
                       onClick={() => setExpanded(expanded === rec.recommendationId ? null : rec.recommendationId)}
                       className="p-1.5 rounded-lg hover:bg-stone-100 btn-press" aria-label="Why this bin?"
                     >
-                      <HelpCircle className="w-4 h-4 text-stone-400" />
+                      <HelpCircle className="w-4 h-4 text-stone-500" />
                     </button>
                     <button
                       onClick={() => accept(rec)}

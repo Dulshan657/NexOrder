@@ -375,7 +375,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg bg-stone-50 border border-stone-200 p-3">
           <div>
             <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
-              <WarehouseIcon className="w-3.5 h-3.5 text-stone-400" /> Destination warehouse <span className="text-red-500">*</span>
+              <WarehouseIcon className="w-3.5 h-3.5 text-stone-500" /> Destination warehouse <span className="text-red-500">*</span>
             </label>
             <SelectInput
               value={warehouseId ?? ''}
@@ -416,7 +416,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
               onChange={(e) => setReceivedDate(e.target.value)}
               className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-nexgen-blue/40 focus:border-nexgen-blue"
             />
-            <p className="text-xs text-stone-400 mt-1">Leave blank to backdate opening balances to today.</p>
+            <p className="text-xs text-stone-500 mt-1">Leave blank to backdate opening balances to today.</p>
           </div>
         </div>
 
@@ -442,7 +442,7 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
               <p>
                 <span className="text-emerald-600 font-semibold">{summary.valid} valid</span>
                 {' / '}
-                <span className={summary.invalid > 0 ? 'text-red-600 font-semibold' : 'text-stone-400'}>
+                <span className={summary.invalid > 0 ? 'text-red-600 font-semibold' : 'text-stone-500'}>
                   {summary.invalid} error{summary.invalid === 1 ? '' : 's'}
                 </span>
               </p>

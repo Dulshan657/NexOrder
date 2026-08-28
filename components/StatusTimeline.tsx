@@ -49,7 +49,7 @@ const StatusTimeline: React.FC<StatusTimelineProps> = ({ statusHistory, currentS
 
                         {/* Content */}
                         <div className={`pb-6 ${isLast ? 'pb-0' : ''}`}>
-                            <p className={`text-sm font-medium ${isReached ? 'text-stone-900' : 'text-stone-400'}`}>
+                            <p className={`text-sm font-medium ${isReached ? 'text-stone-900' : 'text-stone-500'}`}>
                                 {ORDER_STATUS_LABELS[status]}
                                 {isCurrent && <span className="ml-2 text-xs font-normal text-stone-500">(current)</span>}
                             </p>

@@ -53,10 +53,10 @@ const NotificationItem: React.FC<NotificationItemProps> = ({ notif, onMarkRead }
                 <Icon className="w-3.5 h-3.5" />
             </div>
             <div className="flex-1 min-w-0">
-                <p className={`text-xs ${notif.read ? 'text-stone-400' : 'text-stone-800'}`}>
+                <p className={`text-xs ${notif.read ? 'text-stone-500' : 'text-stone-800'}`}>
                     {notif.message}
                 </p>
-                <p className="text-[11px] text-stone-400 mt-0.5">{formatRelativeTime(notif.timestamp)}</p>
+                <p className="text-[11px] text-stone-500 mt-0.5">{formatRelativeTime(notif.timestamp)}</p>
             </div>
             {!notif.read && (
                 <span className="w-2 h-2 rounded-full bg-nexgen-blue flex-shrink-0 mt-1" />

@@ -104,7 +104,7 @@ const ReplenSetupRow: React.FC<ReplenSetupRowProps> = ({
 
       <td className="px-2 py-2 align-top text-right tabular-nums text-xs text-stone-500 whitespace-nowrap">
         <div title="Base units held at this site">{row.onHandHere}</div>
-        <div className="text-[10px] text-stone-400" title="Units picked in 30 days, or ordered in 90 — ranking only">
+        <div className="text-[10px] text-stone-500" title="Units picked in 30 days, or ordered in 90 — ranking only">
           {row.demandQty > 0 ? `${row.demandQty} moved` : '—'}
         </div>
       </td>
@@ -144,7 +144,7 @@ const ReplenSetupRow: React.FC<ReplenSetupRowProps> = ({
           aria-label={`Minimum for ${row.sku}`}
           className="w-20 text-sm border border-stone-200 rounded px-2 py-1 text-right tabular-nums"
         />
-        <div className="text-[10px] text-stone-400 h-4">{describeEntry(figures.minQty, row)}</div>
+        <div className="text-[10px] text-stone-500 h-4">{describeEntry(figures.minQty, row)}</div>
       </td>
 
       <td className="px-2 py-2 align-top">
@@ -156,7 +156,7 @@ const ReplenSetupRow: React.FC<ReplenSetupRowProps> = ({
           aria-label={`Maximum for ${row.sku}`}
           className="w-20 text-sm border border-stone-200 rounded px-2 py-1 text-right tabular-nums"
         />
-        <div className="text-[10px] text-stone-400 h-4">{describeEntry(figures.maxQty, row)}</div>
+        <div className="text-[10px] text-stone-500 h-4">{describeEntry(figures.maxQty, row)}</div>
       </td>
 
       <td className="px-2 py-2 align-top min-w-[180px]">
@@ -171,10 +171,10 @@ const ReplenSetupRow: React.FC<ReplenSetupRowProps> = ({
           </button>
         )}
         {!canFill && suggestionText && (
-          <span className="text-[11px] text-stone-400">{suggestionText}</span>
+          <span className="text-[11px] text-stone-500">{suggestionText}</span>
         )}
         {!suggestionText && suggestion?.reason && (
-          <span className="text-[11px] text-stone-400" title={suggestion.reason}>
+          <span className="text-[11px] text-stone-500" title={suggestion.reason}>
             no capacity figure
           </span>
         )}

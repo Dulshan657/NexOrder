@@ -131,7 +131,7 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
             </label>
           ))}
         </div>
-        <p className="text-[11px] text-stone-400 mt-1.5">
+        <p className="text-[11px] text-stone-500 mt-1.5">
           {allowedLevelRoles.length === 0
             ? 'Nothing checked = any level role is allowed. This is how every product behaves today.'
             : `Restricted to ${allowedLevelRoles.map((r) => roleLabel(levelRoles, r)).join(', ')} levels — putaway will never place this SKU on any other role without an operator override.`}

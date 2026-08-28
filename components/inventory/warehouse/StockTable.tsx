@@ -26,14 +26,14 @@ export function StockTable({
   emptyLabel = 'No stock recorded.',
 }: StockTableProps) {
   if (rows.length === 0) {
-    return <p className="rounded-lg bg-stone-50 py-3 text-center text-xs text-stone-400">{emptyLabel}</p>
+    return <p className="rounded-lg bg-stone-50 py-3 text-center text-xs text-stone-500">{emptyLabel}</p>
   }
 
   return (
     <div className="overflow-hidden rounded-lg border border-stone-100">
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="bg-stone-50 text-[10px] uppercase tracking-wide text-stone-400">
+          <thead className="bg-stone-50 text-[10px] uppercase tracking-wide text-stone-500">
             <tr>
               <th className="px-2 py-1.5 text-left font-semibold">Product</th>
               <th className="px-2 py-1.5 text-right font-semibold">On hand</th>
@@ -47,7 +47,7 @@ export function StockTable({
                 <td className="px-2 py-1.5 text-stone-700">{r.productName ?? `#${r.productId}`}</td>
                 <td className="px-2 py-1.5 text-right font-mono tabular-nums text-stone-700">{r.onHand}</td>
                 {showAllocated && (
-                  <td className="px-2 py-1.5 text-right font-mono tabular-nums text-stone-400">{r.allocated}</td>
+                  <td className="px-2 py-1.5 text-right font-mono tabular-nums text-stone-500">{r.allocated}</td>
                 )}
                 {showAbc && (
                   <td className="px-2 py-1.5 text-center">

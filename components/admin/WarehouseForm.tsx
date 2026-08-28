@@ -153,7 +153,7 @@ const WarehouseForm: React.FC<WarehouseFormProps> = ({ warehouse, onClose }) => 
         </Field>
 
         <Field label="Location">
-          <p className="flex items-center gap-1 text-xs text-stone-400 mb-2">
+          <p className="flex items-center gap-1 text-xs text-stone-500 mb-2">
             <MapPin className="w-3.5 h-3.5" /> Click the map to set coordinates
           </p>
           <WarehouseMapPicker

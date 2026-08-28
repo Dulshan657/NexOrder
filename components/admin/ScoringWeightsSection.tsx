@@ -47,7 +47,7 @@ export function ScoringWeightsSection({ warehouse }: ScoringWeightsSectionProps)
         <Sliders className="w-4 h-4 text-emerald-600" />
         <h4 className="text-sm font-semibold text-stone-700">Scoring weights</h4>
       </div>
-      <p className="text-xs text-stone-400 -mt-2">
+      <p className="text-xs text-stone-500 -mt-2">
         Relative importance of each factor when the engine scores bins. Values are weighed against each
         other — only the ratios matter, not the absolute numbers.
       </p>
@@ -60,7 +60,7 @@ export function ScoringWeightsSection({ warehouse }: ScoringWeightsSectionProps)
             <div key={f.key} className="flex items-center gap-3">
               <div className="w-40 shrink-0">
                 <p className="text-xs font-medium text-stone-700">{f.label}</p>
-                <p className="text-[10px] text-stone-400">{f.hint}</p>
+                <p className="text-[10px] text-stone-500">{f.hint}</p>
               </div>
               <input
                 type="range"

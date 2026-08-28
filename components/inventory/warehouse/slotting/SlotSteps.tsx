@@ -251,7 +251,7 @@ export function SlotRuleStep(p: SlotRuleStepProps) {
       {!attaching && !creating && (
         <div className={CARD}>
           <div className="flex items-start gap-2">
-            <Boxes className="mt-0.5 h-4 w-4 shrink-0 text-stone-400" />
+            <Boxes className="mt-0.5 h-4 w-4 shrink-0 text-stone-500" />
             <p className="text-xs text-stone-600">
               Saving just the block is fine. It will appear in Settings, ready for a
               rule whenever you want one.

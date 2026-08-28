@@ -55,9 +55,9 @@ export function FloatingPanel({
         {icon}
         <span className="flex-1 truncate">{title}</span>
         {open ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-stone-400" />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-stone-500" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-stone-400" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-stone-500" />
         )}
       </button>
       <div

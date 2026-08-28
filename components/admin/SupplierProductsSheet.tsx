@@ -182,7 +182,7 @@ const SupplierProductsSheet: React.FC<SupplierProductsSheetProps> = ({
                 )}
 
                 <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
                     <input
                         type="text"
                         value={search}
@@ -214,7 +214,7 @@ const SupplierProductsSheet: React.FC<SupplierProductsSheetProps> = ({
                                 />
                                 <div className="min-w-0">
                                     <p className="text-sm text-stone-800 truncate">{product.name}</p>
-                                    <p className="text-xs text-stone-400 font-mono">{product.sku}</p>
+                                    <p className="text-xs text-stone-500 font-mono">{product.sku}</p>
                                     {locked && (
                                         <p className="text-[11px] text-amber-600 flex items-center gap-1 mt-0.5">
                                             <AlertTriangle className="w-3 h-3 shrink-0" />

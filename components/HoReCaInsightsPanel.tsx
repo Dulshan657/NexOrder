@@ -228,18 +228,18 @@ const HoReCaInsightsPanel: React.FC<HoReCaInsightsPanelProps> = ({ allOrders, ho
               const barWidth = (pair.coOccurrenceCount / maxCount) * 100;
               return (
                 <div key={i} className="flex items-center gap-3 text-sm">
-                  <div className="w-8 text-right text-stone-400 font-mono">{pair.coOccurrenceCount}x</div>
+                  <div className="w-8 text-right text-stone-500 font-mono">{pair.coOccurrenceCount}x</div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-stone-700 truncate">{pair.productNameA}</span>
-                      <span className="text-stone-400">&</span>
+                      <span className="text-stone-500">&</span>
                       <span className="text-stone-700 truncate">{pair.productNameB}</span>
                     </div>
                     <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
                       <div className="h-full bg-blue-400 rounded-full" style={{ width: `${barWidth}%` }} />
                     </div>
                   </div>
-                  <div className="text-xs text-stone-400 w-12 text-right">{pair.supportPercent}%</div>
+                  <div className="text-xs text-stone-500 w-12 text-right">{pair.supportPercent}%</div>
                 </div>
               );
             })}
@@ -333,7 +333,7 @@ function Section({ title, icon, isExpanded, onToggle, children }: {
           {icon}
           <h3 className="font-semibold text-stone-800 text-sm">{title}</h3>
         </div>
-        {isExpanded ? <ChevronUp className="w-4 h-4 text-stone-400" /> : <ChevronDown className="w-4 h-4 text-stone-400" />}
+        {isExpanded ? <ChevronUp className="w-4 h-4 text-stone-500" /> : <ChevronDown className="w-4 h-4 text-stone-500" />}
       </button>
       {isExpanded && <div className="px-4 pb-4">{children}</div>}
     </div>

@@ -140,7 +140,7 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
       )}
 
       <div>
-        <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-stone-400">
+        <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500">
           <Search className="h-3.5 w-3.5" aria-hidden="true" />
           {code.trim() ? 'Matching places' : 'Or pick a place to count'}
         </p>
@@ -162,7 +162,7 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
                     {/* Name first (mig 00094); this list already searched both. */}
                     <span className="block truncate text-sm text-stone-900">{locationTitle(loc)}</span>
                     {locationSubtitle(loc) && (
-                      <span className="block font-mono text-xs text-stone-400">{locationSubtitle(loc)}</span>
+                      <span className="block font-mono text-xs text-stone-500">{locationSubtitle(loc)}</span>
                     )}
                   </span>
                   <span className="shrink-0 rounded bg-stone-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-500">
@@ -177,7 +177,7 @@ export const CountLocationFinder: React.FC<CountLocationFinderProps> = ({ locati
         )}
 
         {countable.length > filtered.length && (
-          <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-stone-400">
+          <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-stone-500">
             <Package className="h-3 w-3" aria-hidden="true" />
             Showing {filtered.length} of {countable.length} — scan a label or type to narrow.
           </p>

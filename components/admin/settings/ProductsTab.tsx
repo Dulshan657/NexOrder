@@ -120,7 +120,7 @@ const ProductsTab: React.FC = () => {
           <span className="font-medium text-stone-700">{overall} mm</span> overall.
         </p>
 
-        <p className="text-xs text-stone-400">
+        <p className="text-xs text-stone-500">
           Changing this re-works every product’s pallet quantity. Figures already saved onto a
           product’s unit ladder are left alone — they are shown as entered by hand until someone
           confirms the new number.

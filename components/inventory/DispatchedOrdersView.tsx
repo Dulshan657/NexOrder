@@ -31,7 +31,7 @@ const OrderRow: React.FC<{ order: Order; showValue: boolean; onOpen?: () => void
         </div>
         <p className="text-xs text-stone-500 mt-0.5 truncate">{order.hoReCa.name}</p>
       </div>
-      <div className="hidden sm:flex flex-col items-start text-xs text-stone-400 shrink-0 w-32">
+      <div className="hidden sm:flex flex-col items-start text-xs text-stone-500 shrink-0 w-32">
         <span className="inline-flex items-center gap-1.5">
           <Truck className="w-3.5 h-3.5" />
           {dispatchedAt(order).slice(0, 10)}
@@ -43,7 +43,7 @@ const OrderRow: React.FC<{ order: Order; showValue: boolean; onOpen?: () => void
       </div>
       <div className="shrink-0 w-28 text-right">
         {showValue && <span className="font-mono text-sm text-stone-900">${order.total.toFixed(2)}</span>}
-        <p className="text-[11px] text-stone-400">
+        <p className="text-[11px] text-stone-500">
           {itemCount} line{itemCount === 1 ? '' : 's'}
         </p>
       </div>
@@ -74,7 +74,7 @@ const DispatchedOrdersView: React.FC<DispatchedOrdersViewProps> = ({ orders, cur
         <div className="glass-card rounded-xl p-10 text-center">
           <PackageCheck className="w-9 h-9 text-stone-300 mx-auto mb-3" />
           <p className="text-sm text-stone-600">No dispatched orders yet</p>
-          <p className="text-xs text-stone-400 mt-1">Orders appear here once they're dispatched from the Pick Queue.</p>
+          <p className="text-xs text-stone-500 mt-1">Orders appear here once they're dispatched from the Pick Queue.</p>
         </div>
       ) : (
         <div className="glass-card rounded-xl divide-y divide-stone-100 overflow-hidden">

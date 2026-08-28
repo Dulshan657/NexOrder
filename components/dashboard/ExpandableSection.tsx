@@ -27,7 +27,7 @@ const ExpandableSection: React.FC<ExpandableSectionProps> = ({ title, defaultExp
       >
         <h3 className="text-sm font-semibold text-stone-900">{title}</h3>
         <ChevronDown
-          className={`w-4 h-4 text-stone-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 text-stone-500 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
         />
       </button>
       <div

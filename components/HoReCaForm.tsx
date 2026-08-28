@@ -242,7 +242,7 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
                         placeholder="Why are you changing the credit limit / tier / discount? Required for audit trail."
                         className="block w-full rounded-lg border-0 bg-white py-2.5 px-3 text-stone-900 shadow-sm ring-1 ring-inset ring-amber-300 placeholder:text-stone-400 focus:ring-2 focus:ring-inset focus:ring-amber-500 sm:text-sm transition-all resize-none"
                     />
-                    <p className="text-xs text-stone-400 text-right">{reason.length}/500</p>
+                    <p className="text-xs text-stone-500 text-right">{reason.length}/500</p>
                 </div>
             )}
 

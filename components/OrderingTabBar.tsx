@@ -36,7 +36,7 @@ const OrderingTabBar: React.FC<OrderingTabBarProps> = ({ activeTab, onTabChange,
                             isActive
                                 ? 'bg-white text-stone-900 shadow-sm'
                                 : isDisabled
-                                    ? 'text-stone-400 cursor-not-allowed'
+                                    ? 'text-stone-500 cursor-not-allowed'
                                     : 'text-stone-500 hover:text-stone-700 hover:bg-stone-200/50 cursor-pointer'
                         }`}
                         disabled={isDisabled}

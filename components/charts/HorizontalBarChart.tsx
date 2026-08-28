@@ -34,7 +34,7 @@ const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({
 
   if (data.length === 0) {
     return (
-      <div className={`flex items-center justify-center h-48 ${dark ? 'text-stone-400' : 'text-stone-500'}`}>
+      <div className={`flex items-center justify-center h-48 ${dark ? 'text-stone-500' : 'text-stone-500'}`}>
         <p>No data available for &quot;{title}&quot;</p>
       </div>
     );

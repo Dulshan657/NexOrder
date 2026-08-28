@@ -38,7 +38,7 @@ const SalesLineChart: React.FC<SalesLineChartProps> = ({
 
   if (data.length < 2) {
     return (
-      <div style={{ height: `${height}px` }} className={`flex items-center justify-center ${dark ? 'text-stone-400' : 'text-stone-500'}`}>
+      <div style={{ height: `${height}px` }} className={`flex items-center justify-center ${dark ? 'text-stone-500' : 'text-stone-500'}`}>
         Not enough data to display trend.
       </div>
     );

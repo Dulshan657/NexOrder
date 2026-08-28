@@ -141,7 +141,7 @@ export function SelectStep({
           <p className={SECTION_LABEL}>Quick select</p>
           {areaNames.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-stone-400">Areas</span>
+              <span className="text-[11px] text-stone-500">Areas</span>
               {areaNames.map((name) => (
                 <button key={name} type="button" className={CHIP} onClick={() => onSelectArea(name)}>
                   {name}
@@ -151,12 +151,12 @@ export function SelectStep({
           )}
           {blocks.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-stone-400">Done already</span>
+              <span className="text-[11px] text-stone-500">Done already</span>
               {blocks.map((b) => (
                 <button key={b.block} type="button" className={CHIP} onClick={() => onSelectBlock(b.block)}>
                   <Check className="h-3 w-3 text-emerald-500" strokeWidth={3} aria-hidden="true" />
                   <span className="font-mono">{b.block}</span>
-                  <span className="tabular-nums text-stone-400">{b.units}</span>
+                  <span className="tabular-nums text-stone-500">{b.units}</span>
                 </button>
               ))}
             </div>

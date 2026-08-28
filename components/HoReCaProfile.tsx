@@ -136,9 +136,9 @@ const HoReCaProfile: React.FC<HoReCaProfileProps> = ({
                 {hoReCa.paymentMethods.map(pm => (
                   <div key={pm.id} className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
-                      <Phone className="w-3.5 h-3.5 text-stone-400" />
+                      <Phone className="w-3.5 h-3.5 text-stone-500" />
                       <span className="text-stone-700">{pm.type}</span>
-                      <span className="text-stone-400">{pm.details}</span>
+                      <span className="text-stone-500">{pm.details}</span>
                     </div>
                     {pm.isDefault && (
                       <span className="text-xs bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Default</span>
@@ -147,7 +147,7 @@ const HoReCaProfile: React.FC<HoReCaProfileProps> = ({
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-stone-400">No payment methods configured</p>
+              <p className="text-sm text-stone-500">No payment methods configured</p>
             )}
           </div>
         </div>
@@ -159,7 +159,7 @@ const HoReCaProfile: React.FC<HoReCaProfileProps> = ({
             <OutstandingPayments data={outstanding} compact />
           ) : (
             <div className="text-center py-4">
-              <p className="text-sm text-stone-400">No outstanding payments</p>
+              <p className="text-sm text-stone-500">No outstanding payments</p>
             </div>
           )}
         </div>
@@ -211,7 +211,7 @@ const HoReCaProfile: React.FC<HoReCaProfileProps> = ({
           </div>
         ) : (
           <div className="p-6 text-center">
-            <p className="text-sm text-stone-400">No orders yet</p>
+            <p className="text-sm text-stone-500">No orders yet</p>
           </div>
         )}
       </div>

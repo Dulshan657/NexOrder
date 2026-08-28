@@ -79,7 +79,7 @@ const InvoiceAdmin: React.FC<InvoiceAdminProps> = ({ invoices, onUpdateStatus })
             <div className="bg-white rounded-xl border border-stone-200 p-5">
                 <div className="flex flex-wrap gap-4">
                     <div className="flex-1 min-w-[200px] relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
                         <input
                             type="text"
                             value={searchQuery}
@@ -146,7 +146,7 @@ const InvoiceAdmin: React.FC<InvoiceAdminProps> = ({ invoices, onUpdateStatus })
                                                 </button>
                                             )}
                                             {inv.status === 'paid' && inv.paidDate && (
-                                                <span className="text-xs text-stone-400">Paid {new Date(inv.paidDate).toLocaleDateString('en-AU')}</span>
+                                                <span className="text-xs text-stone-500">Paid {new Date(inv.paidDate).toLocaleDateString('en-AU')}</span>
                                             )}
                                         </td>
                                     </tr>

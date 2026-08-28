@@ -52,7 +52,7 @@ const ScheduledVisitStopCard: React.FC<RouteStopCardProps> = ({ stop, customer, 
             {customer.address}
           </p>
           {stop.plannedArrival && stop.status === 'pending' && (
-            <p className="text-xs text-stone-400 mt-1">Planned: {stop.plannedArrival}</p>
+            <p className="text-xs text-stone-500 mt-1">Planned: {stop.plannedArrival}</p>
           )}
 
           {/* Visit summary */}
@@ -65,7 +65,7 @@ const ScheduledVisitStopCard: React.FC<RouteStopCardProps> = ({ stop, customer, 
                   </span>
                 )}
                 {visit.departureTime && (
-                  <span className="text-xs text-stone-400">
+                  <span className="text-xs text-stone-500">
                     {Math.round((new Date(visit.departureTime).getTime() - new Date(visit.arrivalTime).getTime()) / 60000)} min
                   </span>
                 )}

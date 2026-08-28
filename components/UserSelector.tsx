@@ -30,9 +30,9 @@ const UserSelector: React.FC<UserSelectorProps> = ({ users, currentUser, onSelec
           <p className="text-xs text-stone-500 truncate">{currentUser.role}</p>
         </div>
         {isExpanded ? (
-          <ChevronDown className="w-4 h-4 text-stone-400 flex-shrink-0" />
+          <ChevronDown className="w-4 h-4 text-stone-500 flex-shrink-0" />
         ) : (
-          <ChevronUp className="w-4 h-4 text-stone-400 flex-shrink-0" />
+          <ChevronUp className="w-4 h-4 text-stone-500 flex-shrink-0" />
         )}
       </button>
 

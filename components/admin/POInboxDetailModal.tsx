@@ -851,7 +851,7 @@ const DocumentPane: React.FC<DocumentPaneProps> = ({
           // an explicit open/download instead of a blank pane. The parsed
           // fields on the right reflect the extracted content.
           <div className="p-6 flex flex-col items-center justify-center text-center gap-4 min-h-[40svh]">
-            <FileText className="w-10 h-10 text-stone-400" />
+            <FileText className="w-10 h-10 text-stone-500" />
             <div className="text-sm text-stone-600 max-w-xs">
               {format.toUpperCase()} documents can't be previewed in the browser.
               Open the original to read it; the parsed fields on the right
@@ -1012,7 +1012,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
         <fieldset>
           <legend className="text-xs font-medium text-stone-600 mb-2 flex items-center gap-2 w-full">
             <span>Line items</span>
-            <span className="text-stone-400 font-normal font-mono">{props.lines.length}</span>
+            <span className="text-stone-500 font-normal font-mono">{props.lines.length}</span>
             {(() => {
               // Extracted PO total: sum of (unit_price × qty) over lines that
               // carry an extracted unit price. Display-only — the created order
@@ -1042,7 +1042,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
                 <div className="flex items-center justify-between gap-2 text-[11px]">
                   <div className="text-stone-500 truncate min-w-0">
                     {line.po_line_index === null ? (
-                      <span className="text-stone-400 italic">(operator-added line)</span>
+                      <span className="text-stone-500 italic">(operator-added line)</span>
                     ) : (
                       <>
                         <span className="font-mono">{line.rawCode ?? '(no code)'}</span> ·{' '}
@@ -1065,7 +1065,7 @@ const FormPane: React.FC<FormPaneProps> = props => {
                       <button
                         type="button"
                         onClick={() => props.onRemoveLine(idx)}
-                        className="p-1 rounded text-stone-400 hover:text-rose-600 hover:bg-rose-50"
+                        className="p-1 rounded text-stone-500 hover:text-rose-600 hover:bg-rose-50"
                         aria-label="Remove line"
                         title="Remove line"
                       >
@@ -1169,7 +1169,7 @@ const Chip: React.FC<{ label: string; value: string | null; title?: string }> = 
   <div className="flex flex-col min-w-0">
     <span className="text-[10px] uppercase tracking-wide text-stone-500">{label}</span>
     <span className="text-xs font-medium text-stone-900 truncate" title={title}>
-      {value && value.trim().length > 0 ? value : <span className="text-stone-400 italic">—</span>}
+      {value && value.trim().length > 0 ? value : <span className="text-stone-500 italic">—</span>}
     </span>
   </div>
 )
@@ -1240,7 +1240,7 @@ const ConfidenceDot: React.FC<{ value: number | null }> = ({ value }) => {
   // Dot + inline label so the meaning of the % is visible without hovering.
   return (
     <span
-      className="inline-flex items-center gap-1 text-[10px] text-stone-400 font-medium"
+      className="inline-flex items-center gap-1 text-[10px] text-stone-500 font-medium"
       aria-label={`AI confidence ${pct}%`}
     >
       <span className={`inline-block w-2 h-2 rounded-full ${tone}`} />

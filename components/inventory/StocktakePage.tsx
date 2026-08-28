@@ -123,7 +123,7 @@ const StocktakePage: React.FC<StocktakePageProps> = ({ currentUser, products }) 
             />
           ) : (
             <>
-              <p className="mb-4 text-xs text-stone-400">
+              <p className="mb-4 text-xs text-stone-500">
                 Scan a bin to count it. Bulk and floor-stacked stock is counted on the site root.
               </p>
               <StickyScanBar>
@@ -137,7 +137,7 @@ const StocktakePage: React.FC<StocktakePageProps> = ({ currentUser, products }) 
           <div className="glass-card rounded-xl p-10 text-center">
             <ClipboardList className="mx-auto mb-3 h-9 w-9 text-stone-300" />
             <p className="text-sm text-stone-600">Pick a warehouse to start a count</p>
-            <p className="mt-1 text-xs text-stone-400">Choose a site from the selector above.</p>
+            <p className="mt-1 text-xs text-stone-500">Choose a site from the selector above.</p>
           </div>
         </div>
       )}

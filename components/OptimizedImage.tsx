@@ -27,7 +27,7 @@ interface OptimizedImageProps {
 
 function PlaceholderIcon() {
   return (
-    <span className="flex h-full w-full items-center justify-center bg-stone-100 text-stone-400">
+    <span className="flex h-full w-full items-center justify-center bg-stone-100 text-stone-600">
       <svg
         xmlns="http://www.w3.org/2000/svg"
         className="h-1/3 max-h-10 w-1/3 max-w-10 opacity-60"

@@ -96,7 +96,7 @@ export default function PrintCalibrationControl({ warehouseId }: PrintCalibratio
   return (
     <div className="mt-4 rounded-lg border border-stone-200 bg-stone-50/70 p-3">
       <h5 className="flex items-center gap-1.5 text-xs font-semibold text-stone-700">
-        <Ruler className="h-3.5 w-3.5 text-stone-400" aria-hidden="true" />
+        <Ruler className="h-3.5 w-3.5 text-stone-500" aria-hidden="true" />
         Ink-spread compensation
       </h5>
       <p className="mt-1 max-w-prose text-xs text-stone-500">
@@ -171,7 +171,7 @@ export default function PrintCalibrationControl({ warehouseId }: PrintCalibratio
       )}
 
       {!current.isLoading && !stored && !saved && (
-        <p className="mt-2 text-xs text-stone-400">
+        <p className="mt-2 text-xs text-stone-500">
           This printer has never been measured, so labels print at their nominal width — which is
           what every site did before this setting existed, and is the right answer until the ladder
           says otherwise.

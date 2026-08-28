@@ -43,7 +43,7 @@ function VelocityDonut({ velocity }: { velocity: Record<string, number> }) {
 
   if (total === 0) {
     return (
-      <div className="flex h-[140px] items-center justify-center text-xs text-stone-400">
+      <div className="flex h-[140px] items-center justify-center text-xs text-stone-500">
         no pick history yet
       </div>
     )
@@ -77,7 +77,7 @@ function VelocityDonut({ velocity }: { velocity: Record<string, number> }) {
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
           <span className="font-mono text-lg font-bold text-stone-900">{total}</span>
-          <span className="text-[9px] uppercase tracking-wider text-stone-400">SKUs</span>
+          <span className="text-[9px] uppercase tracking-wider text-stone-500">SKUs</span>
         </div>
       </div>
       <ul className="space-y-1.5">
@@ -98,7 +98,7 @@ function VelocityDonut({ velocity }: { velocity: Record<string, number> }) {
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="rounded-lg border border-stone-200 bg-stone-50/60 p-3">
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{title}</p>
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-stone-500">{title}</p>
       {children}
     </div>
   )
@@ -175,7 +175,7 @@ function ReportBody({ report }: { report: WarehouseReport }) {
             )}
           </div>
         ) : (
-          <p className="text-xs text-stone-400">no simulations run</p>
+          <p className="text-xs text-stone-500">no simulations run</p>
         )}
       </Card>
     </div>
@@ -191,7 +191,7 @@ export function WarehouseIntelligenceReport({ warehouseId }: WarehouseIntelligen
   const { data: report, isLoading, isError, error } = useWarehouseReport(warehouseId)
 
   if (isLoading) {
-    return <div className="py-6 text-center text-xs text-stone-400">Loading analytics…</div>
+    return <div className="py-6 text-center text-xs text-stone-500">Loading analytics…</div>
   }
 
   if (isError) {
@@ -203,7 +203,7 @@ export function WarehouseIntelligenceReport({ warehouseId }: WarehouseIntelligen
   }
 
   if (!report) {
-    return <div className="py-6 text-center text-xs text-stone-400">No analytics available yet.</div>
+    return <div className="py-6 text-center text-xs text-stone-500">No analytics available yet.</div>
   }
 
   return <ReportBody report={report} />

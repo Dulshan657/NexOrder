@@ -41,7 +41,7 @@ const AuditErrorRow: React.FC<AuditErrorRowProps> = memo(function AuditErrorRow(
                 <td className="px-6 py-4 text-sm">
                     <div className="flex items-center gap-2">
                         <ChevronRight
-                            className={`w-4 h-4 text-stone-400 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                            className={`w-4 h-4 text-stone-500 transition-transform ${expanded ? 'rotate-90' : ''}`}
                         />
                         <span title={when.absolute} className="font-mono text-xs text-stone-700">
                             {when.relative}

@@ -135,7 +135,7 @@ export const CountSheet: React.FC<CountSheetProps> = ({ location, products, canW
             <p className="text-sm font-semibold text-stone-900">{locationTitle(location)}</p>
             <p className="text-xs text-stone-500">
               {locationSubtitle(location) && (
-                <span className="font-mono text-stone-400">{locationSubtitle(location)} · </span>
+                <span className="font-mono text-stone-500">{locationSubtitle(location)} · </span>
               )}
               {location.kind === 'WAREHOUSE' ? 'bulk / floor stock at the site root' : location.kind}
             </p>
@@ -209,7 +209,7 @@ export const CountSheet: React.FC<CountSheetProps> = ({ location, products, canW
               placeholder="e.g. Quarterly count, aisle 3"
               className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-nexgen-blue focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
             />
-            <p className="mt-1 text-[11px] text-stone-400">
+            <p className="mt-1 text-[11px] text-stone-500">
               Recorded on every movement this count creates, alongside the location and date.
             </p>
           </div>

@@ -12,7 +12,7 @@ interface HoReCaInsightCardProps {
 const TrendIcon: React.FC<{ trend: 'increasing' | 'decreasing' | 'stable' }> = ({ trend }) => {
   if (trend === 'increasing') return <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />;
   if (trend === 'decreasing') return <TrendingDown className="w-3.5 h-3.5 text-orange-600" />;
-  return <Minus className="w-3.5 h-3.5 text-stone-400" />;
+  return <Minus className="w-3.5 h-3.5 text-stone-500" />;
 };
 
 const HoReCaInsightCard: React.FC<HoReCaInsightCardProps> = ({ customer, allOrders }) => {
@@ -25,7 +25,7 @@ const HoReCaInsightCard: React.FC<HoReCaInsightCardProps> = ({ customer, allOrde
     return (
       <div className="bg-stone-50/50 rounded-xl border border-stone-100 p-4">
         <div className="flex items-center gap-2 mb-2">
-          <BarChart3 className="w-4 h-4 text-stone-400" />
+          <BarChart3 className="w-4 h-4 text-stone-500" />
           <h4 className="text-sm font-semibold text-stone-700">Buying Patterns</h4>
         </div>
         <p className="text-sm text-stone-500 italic">No order history yet.</p>
@@ -88,7 +88,7 @@ const HoReCaInsightCard: React.FC<HoReCaInsightCardProps> = ({ customer, allOrde
             {topProducts.map(pf => (
               <div key={pf.productId} className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Package className="w-3.5 h-3.5 text-stone-400 flex-shrink-0" />
+                  <Package className="w-3.5 h-3.5 text-stone-500 flex-shrink-0" />
                   <span className="text-stone-700 truncate">{pf.productName}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0 ml-2">
@@ -101,7 +101,7 @@ const HoReCaInsightCard: React.FC<HoReCaInsightCardProps> = ({ customer, allOrde
                     </span>
                   )}
                   {pf.avgDaysBetweenOrders !== null && (
-                    <span className="text-[10px] text-stone-400">
+                    <span className="text-[10px] text-stone-500">
                       every {pf.avgDaysBetweenOrders}d
                     </span>
                   )}
@@ -127,7 +127,7 @@ const HoReCaInsightCard: React.FC<HoReCaInsightCardProps> = ({ customer, allOrde
                     style={{ height: `${Math.max(height, 4)}%` }}
                     title={`${st.month}: $${st.totalSpend.toFixed(0)}`}
                   />
-                  <span className="text-[8px] text-stone-400 mt-1">{st.month.slice(5)}</span>
+                  <span className="text-[8px] text-stone-500 mt-1">{st.month.slice(5)}</span>
                 </div>
               );
             })}

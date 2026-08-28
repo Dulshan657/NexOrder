@@ -165,7 +165,7 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
           <div className="glass-card rounded-xl p-10 text-center">
             <LayoutGrid className="w-9 h-9 text-stone-300 mx-auto mb-3" />
             <p className="text-sm text-stone-600">Pick a warehouse to view its layout</p>
-            <p className="text-xs text-stone-400 mt-1">Choose a site from the selector above.</p>
+            <p className="text-xs text-stone-500 mt-1">Choose a site from the selector above.</p>
           </div>
         ) : isRacked ? (
           // Keyed wrapper: remount the whole workspace on warehouse/layout change

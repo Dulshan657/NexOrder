@@ -90,7 +90,7 @@ const ReplenWalkView: React.FC<ReplenWalkViewProps> = ({ warehouseId, canWork })
       <div className="glass-card rounded-xl p-10 text-center">
         <Footprints className="w-9 h-9 text-stone-300 mx-auto mb-3" />
         <p className="text-sm text-stone-600">Nothing assigned to walk</p>
-        <p className="text-xs text-stone-400 mt-1">
+        <p className="text-xs text-stone-500 mt-1">
           Assign a replenishment on the Assign tab and it appears here.
         </p>
       </div>
@@ -119,7 +119,7 @@ const ReplenWalkView: React.FC<ReplenWalkViewProps> = ({ warehouseId, canWork })
       </div>
 
       {route?.mode === 'legacy' && (
-        <p className="text-xs text-stone-400">
+        <p className="text-xs text-stone-500">
           This site has no published layout, so the run is listed in the order it was assigned.
         </p>
       )}
@@ -138,7 +138,7 @@ const ReplenWalkView: React.FC<ReplenWalkViewProps> = ({ warehouseId, canWork })
       ))}
 
       {!canWork && (
-        <p className="text-xs text-stone-400">
+        <p className="text-xs text-stone-500">
           You can only replenish at your own warehouse.
         </p>
       )}

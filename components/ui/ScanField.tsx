@@ -296,7 +296,7 @@ export function ScanField({
       <div className="flex items-stretch gap-2">
         <div className="relative flex-1 min-w-0">
           <ScanLine
-            className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+            className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
             aria-hidden="true"
           />
           <input
@@ -368,7 +368,7 @@ export function ScanField({
           {error}
         </p>
       ) : helper ? (
-        <p className="text-xs text-stone-400 mt-1.5">{helper}</p>
+        <p className="text-xs text-stone-500 mt-1.5">{helper}</p>
       ) : null}
 
       <Sheet

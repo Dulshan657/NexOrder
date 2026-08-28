@@ -60,7 +60,7 @@ export function ObjectInspector({ object, dispatch, locationCodeById }: ObjectIn
       <label className="block text-xs text-stone-500">
         Type
         <input
-          className="mt-1 w-full text-xs border border-stone-200 rounded px-2 py-1 bg-stone-50 text-stone-400"
+          className="mt-1 w-full text-xs border border-stone-200 rounded px-2 py-1 bg-stone-50 text-stone-500"
           value={TYPE_LABEL[object.objectType]}
           disabled
         />
@@ -79,14 +79,14 @@ export function ObjectInspector({ object, dispatch, locationCodeById }: ObjectIn
       )}
 
       {object.objectType === 'area' && (
-        <p className="text-[11px] text-stone-400">
+        <p className="text-[11px] text-stone-500">
           Renaming moves every cell of this area. Cells sharing a name draw as one
           region.
         </p>
       )}
 
       {object.objectType === 'staging' && (
-        <p className="text-[11px] text-stone-400">
+        <p className="text-[11px] text-stone-500">
           {object.stagingLocationId
             ? `Linked staging location: ${locationCodeById?.get(object.stagingLocationId) ?? `#${object.stagingLocationId}`}.`
             : 'Staging location created on save.'}

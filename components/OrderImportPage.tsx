@@ -666,7 +666,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
               {`Search by Order ID or ${customerLabel} Name`}
             </label>
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-              <Search className="h-4 w-4 text-stone-400" />
+              <Search className="h-4 w-4 text-stone-500" />
             </div>
             <input
               type="text"
@@ -1002,9 +1002,9 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                           >
                             {order.id}
                             {isExpanded ? (
-                              <ChevronUp className="w-3 h-3 text-stone-400" />
+                              <ChevronUp className="w-3 h-3 text-stone-500" />
                             ) : (
-                              <ChevronDown className="w-3 h-3 text-stone-400" />
+                              <ChevronDown className="w-3 h-3 text-stone-500" />
                             )}
                           </button>
                         </td>
@@ -1048,7 +1048,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                                 aria-label={`Change payment status for order ${order.id}`}
                               >
                                 <PaymentStatusBadge invoice={invoicesByOrderId.get(order.id)} compact />
-                                <MoreVertical className="w-3.5 h-3.5 text-stone-400" />
+                                <MoreVertical className="w-3.5 h-3.5 text-stone-500" />
                               </button>
                               {paymentMenuOrderId === order.id && (
                                 <div
@@ -1163,7 +1163,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                                   <span className="font-semibold">
                                     {approval.auto ? 'Auto-approved (system)' : `Approved by ${approval.name ?? 'Unknown'}`}
                                   </span>
-                                  <span className="text-stone-400">· via PO Inbox</span>
+                                  <span className="text-stone-500">· via PO Inbox</span>
                                 </div>
                               );
                             })()}

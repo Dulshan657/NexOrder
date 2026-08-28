@@ -77,7 +77,7 @@ function InventoryDispatchSection({
               <span className="inline-flex items-center rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-medium text-stone-500">
                 Showing: {scopeLabel}
               </span>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
                 Current
               </span>
             </div>

@@ -70,16 +70,16 @@ export const CountLineRow: React.FC<CountLineRowProps> = ({
         <div className="min-w-0 flex-1">
           <p className="font-mono text-xs font-semibold text-stone-900">{line.sku}</p>
           <p className="truncate text-sm text-stone-700">{line.name}</p>
-          <p className="mt-0.5 text-[11px] text-stone-400">{describeSlots(line.slots)}</p>
+          <p className="mt-0.5 text-[11px] text-stone-500">{describeSlots(line.slots)}</p>
         </div>
 
         <div className="shrink-0 text-right">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">System</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">System</p>
           <p className="font-mono text-lg tabular-nums text-stone-900">{systemQty}</p>
         </div>
 
         <div className="shrink-0">
-          <label className="block text-[10px] font-semibold uppercase tracking-wide text-stone-400" htmlFor={`count-${line.productId}`}>
+          <label className="block text-[10px] font-semibold uppercase tracking-wide text-stone-500" htmlFor={`count-${line.productId}`}>
             Counted
           </label>
           <input

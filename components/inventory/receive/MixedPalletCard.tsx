@@ -77,7 +77,7 @@ export function MixedPalletCard({
       className={`border-l-4 ${active ? 'border-nexgen-blue bg-nexgen-blue/[0.03]' : 'border-stone-200'}`}
     >
       <header className="flex flex-wrap items-center gap-2 px-4 py-2.5">
-        <Boxes className="h-4 w-4 shrink-0 text-stone-400" aria-hidden="true" />
+        <Boxes className="h-4 w-4 shrink-0 text-stone-500" aria-hidden="true" />
         <h3 className="text-sm font-semibold text-stone-700">{label}</h3>
         {active && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-nexgen-blue/10 px-2 py-0.5 text-[11px] font-medium text-nexgen-blue">
@@ -85,7 +85,7 @@ export function MixedPalletCard({
             Scans land here
           </span>
         )}
-        <span className="text-xs text-stone-400">
+        <span className="text-xs text-stone-500">
           {lines.length} item{lines.length === 1 ? '' : 's'}
         </span>
 
@@ -111,7 +111,7 @@ export function MixedPalletCard({
             type="button"
             onClick={onRemove}
             aria-label={`Remove ${label}`}
-            className="btn-press flex touch-target-y min-w-[36px] items-center justify-center rounded-md text-stone-400 hover:bg-red-50 hover:text-red-600"
+            className="btn-press flex touch-target-y min-w-[36px] items-center justify-center rounded-md text-stone-500 hover:bg-red-50 hover:text-red-600"
           >
             <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -119,7 +119,7 @@ export function MixedPalletCard({
       </header>
 
       {lines.length === 0 ? (
-        <p className="px-4 pb-3 text-xs text-stone-400">
+        <p className="px-4 pb-3 text-xs text-stone-500">
           Nothing on this pallet yet — search or scan a product to add the first item.
         </p>
       ) : (

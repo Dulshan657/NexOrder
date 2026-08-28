@@ -698,7 +698,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
                 className="flex items-center gap-2 px-3 py-1.5 text-xs btn-press"
               >
                 <span className="font-medium">{l.name}</span>
-                <span className="text-stone-400">v{l.version}</span>
+                <span className="text-stone-500">v{l.version}</span>
                 <span className={`px-1.5 py-0.5 rounded text-[10px] ${l.status === 'published' ? 'bg-emerald-100 text-emerald-700' : l.status === 'draft' ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-500'}`}>
                   {l.status}
                 </span>
@@ -712,7 +712,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
                   // delete until the save settles rather than trying to
                   // reconcile afterwards.
                   disabled={saveGeometry.isPending}
-                  className="mr-1 rounded-md p-1 text-stone-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-stone-400 btn-press"
+                  className="mr-1 rounded-md p-1 text-stone-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-stone-400 btn-press"
                   aria-label={`Delete ${l.name}`}
                   title={saveGeometry.isPending ? 'Saving — wait before deleting' : 'Delete layout'}
                 >
@@ -732,7 +732,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
                   </button>
                   <button
                     onClick={() => setConfirmDeleteId(null)}
-                    className="rounded-md p-1 text-stone-400 hover:bg-stone-100 btn-press"
+                    className="rounded-md p-1 text-stone-500 hover:bg-stone-100 btn-press"
                     aria-label="Cancel delete"
                     title="Cancel"
                   >
@@ -743,7 +743,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
             </div>
           )
         })}
-        {layouts.length === 0 && <p className="text-xs text-stone-400">No layouts yet — create a draft to begin.</p>}
+        {layouts.length === 0 && <p className="text-xs text-stone-500">No layouts yet — create a draft to begin.</p>}
       </div>
 
       {notice && <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{notice}</div>}

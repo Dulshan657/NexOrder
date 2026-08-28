@@ -157,11 +157,11 @@ const LogoSection: React.FC = () => {
       <div className="flex items-center gap-4">
         <div className="w-40 h-20 bg-white border border-stone-200 rounded-lg flex items-center justify-center p-2 shadow-sm">
           {isUploadingLogo ? (
-            <Loader2 className="w-6 h-6 text-stone-400 animate-spin" />
+            <Loader2 className="w-6 h-6 text-stone-500 animate-spin" />
           ) : logoPreview ? (
             <img src={logoPreview} alt="Logo" className="max-w-full max-h-full object-contain" />
           ) : (
-            <span className="text-stone-400 text-xs">No Logo</span>
+            <span className="text-stone-500 text-xs">No Logo</span>
           )}
         </div>
         <div className="flex flex-col gap-2">

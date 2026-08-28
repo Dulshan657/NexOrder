@@ -63,11 +63,11 @@ const PickLineRow: React.FC<PickLineRowProps> = ({
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
           <p className="text-sm text-stone-800 truncate">{line.productName}</p>
-          <p className="text-xs text-stone-400 font-mono">{line.productSku}</p>
+          <p className="text-xs text-stone-500 font-mono">{line.productSku}</p>
         </div>
         <div className="text-right shrink-0 w-20">
           <span className="font-mono text-sm text-stone-900">{line.picked}</span>
-          <span className="font-mono text-sm text-stone-400">/{line.quantity}</span>
+          <span className="font-mono text-sm text-stone-500">/{line.quantity}</span>
         </div>
         <div className="shrink-0 w-28 text-right">
           {done && (
@@ -79,7 +79,7 @@ const PickLineRow: React.FC<PickLineRowProps> = ({
       </div>
       {!done && (
         tasksLoading ? (
-          <p className="pl-5 pt-1 text-xs text-stone-400">loading pick tasks…</p>
+          <p className="pl-5 pt-1 text-xs text-stone-500">loading pick tasks…</p>
         ) : byWarehouse.length === 0 ? (
           <p className="pl-5 pt-1 text-xs text-amber-600">No allocated bin for this line yet.</p>
         ) : (
@@ -87,7 +87,7 @@ const PickLineRow: React.FC<PickLineRowProps> = ({
             {byWarehouse.map(([warehouseId, group]) => (
               <div key={warehouseId}>
                 {byWarehouse.length > 1 && (
-                  <p className="pl-5 text-[11px] font-medium text-stone-400 uppercase tracking-wide">{group.warehouseCode}</p>
+                  <p className="pl-5 text-[11px] font-medium text-stone-500 uppercase tracking-wide">{group.warehouseCode}</p>
                 )}
                 {group.tasks.map((t) => (
                   <PickTaskRow

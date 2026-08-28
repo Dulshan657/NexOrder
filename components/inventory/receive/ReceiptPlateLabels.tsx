@@ -106,13 +106,13 @@ export const ReceiptPlateLabels: React.FC<ReceiptPlateLabelsProps> = ({ goodsRec
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-mono text-stone-800">{plate.code}</span>
-                  <span className="block text-xs text-stone-400 truncate">
+                  <span className="block text-xs text-stone-500 truncate">
                     {plate.huType === 'pallet' ? 'Pallet' : 'Carton'}
                     {plate.products.length > 0 && ` · ${plate.products.map((p) => p.name).join(', ')}`}
                   </span>
                 </span>
                 {plate.labelPrinted ? (
-                  <span className="shrink-0 text-[11px] text-stone-400">already printed</span>
+                  <span className="shrink-0 text-[11px] text-stone-500">already printed</span>
                 ) : wants ? (
                   <span className="shrink-0 text-[11px] text-amber-700">needs one</span>
                 ) : null}

@@ -57,7 +57,7 @@ const RecentReceiptsPanel: React.FC = () => {
   return (
     <div className="glass-card rounded-xl overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-stone-100">
-        <History className="w-4 h-4 text-stone-400" />
+        <History className="w-4 h-4 text-stone-500" />
         <h2 className="text-sm font-semibold text-stone-700">Recent receipts</h2>
       </div>
       {isLoading ? (
@@ -73,7 +73,7 @@ const RecentReceiptsPanel: React.FC = () => {
         <div className="px-4 py-8 text-center">
           <Boxes className="w-8 h-8 text-stone-200 mx-auto mb-2" />
           <p className="text-sm text-stone-500">No goods received yet</p>
-          <p className="text-xs text-stone-400 mt-1">Receipts you record will show up here.</p>
+          <p className="text-xs text-stone-500 mt-1">Receipts you record will show up here.</p>
         </div>
       ) : (
         <ul className="divide-y divide-stone-100">
@@ -81,19 +81,19 @@ const RecentReceiptsPanel: React.FC = () => {
             <li key={r.id} className="flex items-center gap-3 px-4 py-2.5">
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-stone-800 truncate">{r.productName}</p>
-                <p className="text-xs text-stone-400 font-mono">
+                <p className="text-xs text-stone-500 font-mono">
                   {r.productSku}
                   {r.lotCode ? ` · lot ${r.lotCode}` : ''}
                   {r.expiryDate ? ` · exp ${r.expiryDate}` : ''}
                 </p>
                 {r.supplierName && (
                   <p className="text-xs text-stone-500 flex items-center gap-1 mt-0.5">
-                    <Truck className="w-3 h-3 text-stone-400" /> {r.supplierName}
+                    <Truck className="w-3 h-3 text-stone-500" /> {r.supplierName}
                   </p>
                 )}
               </div>
               <span className="font-mono text-sm text-emerald-600 shrink-0">+{r.qty}</span>
-              <span className="flex items-center gap-1 text-xs text-stone-400 shrink-0 w-20 justify-end">
+              <span className="flex items-center gap-1 text-xs text-stone-500 shrink-0 w-20 justify-end">
                 <Clock className="w-3 h-3" /> {relativeTime(r.createdAt)}
               </span>
             </li>
@@ -155,7 +155,7 @@ const SupplierCombobox: React.FC<SupplierComboboxProps> = ({
   return (
     <div className="relative" ref={boxRef}>
       <div className="relative">
-        <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+        <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
         <input
           type="text"
           value={valueName}
@@ -168,7 +168,7 @@ const SupplierCombobox: React.FC<SupplierComboboxProps> = ({
         {valueId != null ? (
           <Check className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
         ) : (
-          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
         )}
       </div>
       {open && (matches.length > 0 || showCreate) && (
@@ -603,13 +603,13 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               onPickNew={(name) => { setSupplierId(null); setSupplierName(name); }}
             />
             {supplierId == null && supplierName.trim() !== '' && (
-              <p className="text-xs text-stone-400 mt-1">New supplier — will be added to your supplier list.</p>
+              <p className="text-xs text-stone-500 mt-1">New supplier — will be added to your supplier list.</p>
             )}
           </div>
 
           <div>
             <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
-              <FileText className="w-3.5 h-3.5 text-stone-400" /> Reference
+              <FileText className="w-3.5 h-3.5 text-stone-500" /> Reference
             </label>
             <input
               type="text"
@@ -633,7 +633,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               />
               <span>
                 <span className="font-semibold text-stone-700">Quarantine this delivery</span>
-                <span className="block text-stone-400">
+                <span className="block text-stone-500">
                   Goes to a quarantine bay. It cannot be sold until you release it by moving it out.
                 </span>
               </span>
@@ -642,14 +642,14 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
 
           <div>
             <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
-              <Warehouse className="w-3.5 h-3.5 text-stone-400" /> Destination
+              <Warehouse className="w-3.5 h-3.5 text-stone-500" /> Destination
             </label>
             {isLocked ? (
               <>
                 <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700">
                   {homeName ?? 'Your site'}
                 </div>
-                <p className="text-xs text-stone-400 mt-1">You can only receive at your site.</p>
+                <p className="text-xs text-stone-500 mt-1">You can only receive at your site.</p>
               </>
             ) : activeWarehouses.length === 0 ? (
               <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-500">
@@ -676,7 +676,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
           <div className="grid grid-cols-2 gap-3 xl:col-span-1 xl:grid-cols-1 xl:gap-4">
             <div>
               <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
-                <CalendarDays className="w-3.5 h-3.5 text-stone-400" /> Received
+                <CalendarDays className="w-3.5 h-3.5 text-stone-500" /> Received
               </label>
               <input
                 type="date"
@@ -691,7 +691,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
 
         <div className="mt-4 max-w-xs">
           <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
-            <UserRound className="w-3.5 h-3.5 text-stone-400" /> Received by
+            <UserRound className="w-3.5 h-3.5 text-stone-500" /> Received by
           </label>
           <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700">
             {currentUser.name}
@@ -731,7 +731,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                 moment a refusal message appears. Tied to the input height, so it
                 moves if that does. */}
             {search && (
-              <button onClick={() => setSearch('')} className="absolute right-3 top-[22px] -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer">
+              <button onClick={() => setSearch('')} className="absolute right-3 top-[22px] -translate-y-1/2 text-stone-500 hover:text-stone-600 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             )}
@@ -746,7 +746,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                       className="flex items-center justify-between gap-3 w-full px-4 py-2.5 text-left hover:bg-stone-50 btn-press"
                     >
                       <span className="text-sm text-stone-800 truncate">{p.name}</span>
-                      <span className="text-xs text-stone-400 font-mono shrink-0">
+                      <span className="text-xs text-stone-500 font-mono shrink-0">
                         {theirSku ? `${theirSku} · ` : ''}{p.sku}
                       </span>
                     </button>
@@ -758,7 +758,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
 
           {/* Scope hint — which catalogue is being searched, and how to widen it. */}
           {supplierId != null && (
-            <p className="text-xs text-stone-400">
+            <p className="text-xs text-stone-500">
               {isFiltered ? (
                 <>
                   Showing {supplierProducts.length} product{supplierProducts.length === 1 ? '' : 's'} from{' '}
@@ -807,7 +807,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
             <Search className="w-5 h-5 text-nexgen-blue" />
           </div>
           <p className="text-sm font-medium text-stone-700">Start a goods receipt</p>
-          <p className="text-xs text-stone-400 mt-1 max-w-sm mx-auto">
+          <p className="text-xs text-stone-500 mt-1 max-w-sm mx-auto">
             Pick the supplier above, then search a product to add a line, set the received quantity
             (and an optional lot code &amp; expiry), and receive it into {destName ?? 'the selected warehouse'}.
           </p>

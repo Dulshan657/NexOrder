@@ -318,7 +318,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                         placeholder="Name the new brand"
                         className={inputClasses}
                     />
-                    <p className="mt-1 text-xs text-stone-400">
+                    <p className="mt-1 text-xs text-stone-500">
                         Optional. Slotting rules can assign a whole brand to a block of racking.
                     </p>
                 </div>
@@ -340,7 +340,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                             <input type="number" name="cubicMetersCarton" id="cubicMetersCarton" value={formData.cubicMetersCarton} onChange={handleChange} step="0.0001" min="0" placeholder="e.g. 0.0095" className={inputClasses} />
                         </div>
                     </div>
-                    <p className="text-xs text-stone-400">Or calculate from unit dimensions:</p>
+                    <p className="text-xs text-stone-500">Or calculate from unit dimensions:</p>
                     <div className="grid grid-cols-3 gap-3">
                         <div>
                             <label htmlFor="lengthCm" className="block text-xs font-medium text-stone-500 mb-1">Length (cm)</label>
@@ -388,7 +388,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                     <div className="mt-3">
                         <label htmlFor="sizeFactor" className="block text-xs font-medium text-stone-500 mb-1">Slots per unit (racked capacity)</label>
                         <input type="number" name="sizeFactor" id="sizeFactor" value={formData.sizeFactor} onChange={handleChange} step="0.0001" min="0" placeholder="1" className={inputClasses} />
-                        <p className="text-[11px] text-stone-400 mt-1">Pallet/carton slots one base unit consumes — drives bin capacity warnings in racked warehouses.</p>
+                        <p className="text-[11px] text-stone-500 mt-1">Pallet/carton slots one base unit consumes — drives bin capacity warnings in racked warehouses.</p>
                     </div>
                     {productToEdit && <ProductHomeBinsSection productId={productToEdit.id} />}
                     {productToEdit && <ProductWmsAttributesSection productId={productToEdit.id} />}
@@ -399,7 +399,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                     <div className="flex items-center gap-5">
                         <div className="w-24 h-24 bg-stone-50 rounded-lg flex items-center justify-center border border-stone-200 overflow-hidden shadow-sm">
                             {isUploading ? (
-                                <Loader2 className="h-6 w-6 text-stone-400 animate-spin" />
+                                <Loader2 className="h-6 w-6 text-stone-500 animate-spin" />
                             ) : formData.imageUrl ? (
                                 <OptimizedImage src={formData.imageUrl} alt="Product preview" className="w-full h-full" transformWidth={192} />
                             ) : (

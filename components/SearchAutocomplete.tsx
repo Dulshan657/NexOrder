@@ -45,7 +45,7 @@ const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   return (
     <div ref={containerRef} className="relative flex-1">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500 pointer-events-none" />
         <input
           ref={inputRef}
           type="text"
@@ -64,7 +64,7 @@ const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
         {searchQuery && (
           <button
             onClick={() => { onSearchChange(''); inputRef.current?.focus(); }}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -89,7 +89,7 @@ const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                   )}
                   <div className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{p.name}</span>
-                    <span className="block text-xs text-stone-400">{p.category} · ${p.price.toFixed(2)}</span>
+                    <span className="block text-xs text-stone-500">{p.category} · ${p.price.toFixed(2)}</span>
                   </div>
                 </button>
               ))}
@@ -99,7 +99,7 @@ const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           {recentItems.length > 0 && !searchQuery.trim() && (
             <>
               <div className="px-3 py-2 border-t border-stone-100">
-                <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
+                <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">
                   Recently ordered by {hoReCaName}
                 </p>
               </div>
@@ -116,7 +116,7 @@ const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                     <Clock className="w-4 h-4 text-stone-300 flex-shrink-0" />
                     <div className="min-w-0 flex-1">
                       <span className="block truncate">{p.name}</span>
-                      <span className="block text-xs text-stone-400">{p.category}</span>
+                      <span className="block text-xs text-stone-500">{p.category}</span>
                     </div>
                   </button>
                 ))}

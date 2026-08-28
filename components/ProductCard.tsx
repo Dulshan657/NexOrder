@@ -104,7 +104,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddItem, selectedH
           transformWidth={600}
           fallback={
             <div className="w-full h-full flex items-center justify-center">
-                <div className="text-center text-stone-400">
+                <div className="text-center text-stone-500">
                     <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
@@ -126,7 +126,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddItem, selectedH
                 className={`absolute top-3 right-3 p-2.5 rounded-full shadow-sm backdrop-blur-sm transition-all duration-200 z-10 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-emerald-500 ${
                     isPantryItem
                         ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-                        : 'bg-white/90 text-stone-400 hover:text-emerald-500 hover:bg-white'
+                        : 'bg-white/90 text-stone-500 hover:text-emerald-500 hover:bg-white'
                 }`}
                 aria-label={isPantryItem ? `Remove ${product.name} from pantry` : `Add ${product.name} to pantry`}
             >
@@ -172,7 +172,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddItem, selectedH
         )}
         <p className="text-sm text-stone-500 mt-2 flex-grow line-clamp-2">{product.description}</p>
         {product.cubicMetersUnit != null && (
-          <div className="flex items-center gap-1.5 mt-2 text-[11px] text-stone-400">
+          <div className="flex items-center gap-1.5 mt-2 text-[11px] text-stone-500">
             <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
               <path d="M8 15V8M8 8L2 4.5M8 8L14 4.5" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
@@ -192,7 +192,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddItem, selectedH
                  <span className="text-sm text-stone-500">/ {product.unit}</span>
                  {hasCustomPrice && (
                      <>
-                         <span className="text-sm text-stone-400 line-through ml-1">${product.price.toFixed(2)}</span>
+                         <span className="text-sm text-stone-500 line-through ml-1">${product.price.toFixed(2)}</span>
                          <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full ml-1">
                              Save {savingsPercent}%
                          </span>

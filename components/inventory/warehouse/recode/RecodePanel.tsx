@@ -238,7 +238,7 @@ export function RecodePanel(props: RecodePanelProps) {
               <span className="font-medium tabular-nums text-stone-600">{props.swept}</span>
               {' of '}
               <span className="tabular-nums">{props.total}</span> recoded
-              <span className="text-stone-400"> &middot; {props.total - props.swept} to go</span>
+              <span className="text-stone-500"> &middot; {props.total - props.swept} to go</span>
             </p>
           )}
         </div>
@@ -246,7 +246,7 @@ export function RecodePanel(props: RecodePanelProps) {
           type="button"
           onClick={props.onCancel}
           aria-label="Close recode"
-          className="-mr-1 shrink-0 rounded-lg p-1.5 text-stone-400 btn-press hover:bg-stone-100 hover:text-stone-600"
+          className="-mr-1 shrink-0 rounded-lg p-1.5 text-stone-500 btn-press hover:bg-stone-100 hover:text-stone-600"
         >
           <X className="h-4 w-4" strokeWidth={2} />
         </button>
@@ -380,15 +380,15 @@ export function RecodePanel(props: RecodePanelProps) {
                 const body = (
                   <>
                     {blocked.tone === 'busy' ? (
-                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-stone-400" strokeWidth={2} aria-hidden="true" />
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-stone-500" strokeWidth={2} aria-hidden="true" />
                     ) : blocked.tone === 'problem' ? (
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" strokeWidth={2} aria-hidden="true" />
                     ) : (
-                      <Info className="h-3.5 w-3.5 shrink-0 text-stone-400" strokeWidth={2} aria-hidden="true" />
+                      <Info className="h-3.5 w-3.5 shrink-0 text-stone-500" strokeWidth={2} aria-hidden="true" />
                     )}
                     <span className="min-w-0 flex-1">{blocked.reason}</span>
                     {navigable && (
-                      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-stone-400" strokeWidth={2} aria-hidden="true" />
+                      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-stone-500" strokeWidth={2} aria-hidden="true" />
                     )}
                   </>
                 )

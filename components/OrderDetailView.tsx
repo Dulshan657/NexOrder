@@ -407,7 +407,7 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                                           <tr key={i}>
                                               <td className="px-4 py-3">
                                                   <p className="font-medium text-stone-900">{item.name}</p>
-                                                  <p className="text-xs text-stone-400">{item.sku} &middot; {item.unit}</p>
+                                                  <p className="text-xs text-stone-500">{item.sku} &middot; {item.unit}</p>
                                               </td>
                                               {showValue && <td className="px-4 py-3 text-right text-stone-700">${item.price.toFixed(2)}</td>}
                                               <td className="px-4 py-3 text-right text-stone-700">{item.quantity}</td>
@@ -443,7 +443,7 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                                 </p>
                             )}
                             {deliveryAddress.source === 'customer' && (
-                                <p className="text-xs text-stone-400 mt-1">
+                                <p className="text-xs text-stone-500 mt-1">
                                     Customer&rsquo;s account address &mdash; this order carried none of its own.
                                 </p>
                             )}
@@ -475,7 +475,7 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                                     {order.verification.referenceNumber && (
                                         <p className="text-sm text-stone-700"><span className="font-medium">Reference:</span> {order.verification.referenceNumber}</p>
                                     )}
-                                    <p className="text-xs text-stone-400 mt-1">Recorded {new Date(order.verification.timestamp).toLocaleString()}</p>
+                                    <p className="text-xs text-stone-500 mt-1">Recorded {new Date(order.verification.timestamp).toLocaleString()}</p>
                                 </div>
                             )}
                         </div>

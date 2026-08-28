@@ -61,7 +61,7 @@ const TargetProjectionCard: React.FC<TargetProjectionCardProps> = ({ target, ord
             {/* Target line */}
             <line x1={padding} y1={toY(target.targetValue)} x2={chartW - padding} y2={toY(target.targetValue)} stroke="#a8a29e" strokeWidth="0.5" strokeDasharray="2 2" />
           </svg>
-          <div className="flex justify-between text-[9px] text-stone-400 mt-0.5 px-1">
+          <div className="flex justify-between text-[9px] text-stone-500 mt-0.5 px-1">
             <span>Wk 1</span>
             <span className="flex items-center gap-2">
               <span className="inline-block w-3 h-0.5 bg-stone-300" /> Ideal

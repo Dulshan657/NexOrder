@@ -105,7 +105,7 @@ const PantryAddDrawer: React.FC<PantryAddDrawerProps> = ({
             {/* Filters — pinned above the list */}
             <div className="shrink-0 px-5 py-4 border-b border-stone-100">
                 <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" aria-hidden />
+                    <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" aria-hidden />
                     <input
                         ref={inputRef}
                         type="text"
@@ -149,13 +149,13 @@ const PantryAddDrawer: React.FC<PantryAddDrawerProps> = ({
             {/* Results */}
             <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2">
                 {grouped.length === 0 && (
-                    <p className="text-center text-sm text-stone-400 py-12">
+                    <p className="text-center text-sm text-stone-500 py-12">
                         No products match this filter.
                     </p>
                 )}
                 {grouped.map(({ category, items }) => (
                     <section key={category} className="mb-4">
-                        <h3 className="px-3 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-400">
+                        <h3 className="px-3 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">
                             {category}
                         </h3>
                         <ul>
@@ -191,7 +191,7 @@ const PantryAddDrawer: React.FC<PantryAddDrawerProps> = ({
                                                     <span className="text-stone-300">/</span>
                                                     <span>{product.unit}</span>
                                                     <span className="text-stone-300">·</span>
-                                                    <span className="font-mono text-[10px] text-stone-400">{product.sku}</span>
+                                                    <span className="font-mono text-[10px] text-stone-500">{product.sku}</span>
                                                     {oos && (
                                                         <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-red-50 text-red-700">OOS</span>
                                                     )}

@@ -314,7 +314,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="flex items-center gap-2">
               <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
                 className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
-              <span className="text-stone-400 text-xs">to</span>
+              <span className="text-stone-500 text-xs">to</span>
               <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
                 className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
             </div>
@@ -385,7 +385,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </li>
                 ))}
               </ul>
-            ) : <p className="text-sm text-stone-400">No rep data</p>}
+            ) : <p className="text-sm text-stone-500">No rep data</p>}
           </div>
           {repProductivity.length > 0 && (
             <div className="border-t border-stone-200 pt-4">
@@ -423,7 +423,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </li>
               ))}
             </ul>
-          ) : <p className="text-sm text-stone-400">No customer data</p>}
+          ) : <p className="text-sm text-stone-500">No customer data</p>}
 
           <div className="border-t border-stone-200 mt-4 pt-4">
             <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">Customer Segments</h4>
@@ -431,7 +431,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {Object.entries(segmentDistribution).map(([seg, count]) => (
                 <div key={seg} className="flex items-center gap-1.5">
                   <SegmentBadge segment={seg as any} />
-                  <span className="text-xs text-stone-400">{count}</span>
+                  <span className="text-xs text-stone-500">{count}</span>
                 </div>
               ))}
             </div>
@@ -515,7 +515,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className={`h-2 rounded-full ${barColor} transition-all`} style={{ width: `${percent}%` }} />
                     </div>
                     <div className="flex justify-between mt-1">
-                      <span className="text-xs text-stone-400">
+                      <span className="text-xs text-stone-500">
                         {new Date(target.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {new Date(target.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                       </span>
                       <span className={`text-xs font-semibold ${percent >= 60 ? 'text-emerald-600' : percent >= 30 ? 'text-amber-600' : 'text-red-600'}`}>
@@ -527,7 +527,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               })}
             </div>
           ) : (
-            <p className="text-sm text-stone-400">No targets set. Click &quot;Set Targets&quot; to get started.</p>
+            <p className="text-sm text-stone-500">No targets set. Click &quot;Set Targets&quot; to get started.</p>
           )}
         </ExpandableSection>
       )}

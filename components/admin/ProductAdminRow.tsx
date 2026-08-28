@@ -43,7 +43,7 @@ export const ProductAdminRow: React.FC<ProductAdminRowProps> = ({
   const status: StockStatus | null = notStockedHere ? null : classifyStock(qty, lowStockThresholdFor(product, globalThreshold));
 
   const textClass = notStockedHere
-    ? 'text-stone-400'
+    ? 'text-stone-500'
     : status === 'out_of_stock'
       ? 'text-red-600 font-semibold'
       : status === 'low_stock'
@@ -78,7 +78,7 @@ export const ProductAdminRow: React.FC<ProductAdminRowProps> = ({
             transformWidth={96}
             fallback={
               <div className="w-full h-full flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-stone-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-stone-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
@@ -104,13 +104,13 @@ export const ProductAdminRow: React.FC<ProductAdminRowProps> = ({
         {product.cubicMetersUnit != null && (
           <div>
             <span className="font-medium text-stone-700">{product.cubicMetersUnit.toFixed(4)}</span>
-            <span className="text-stone-400"> /unit</span>
+            <span className="text-stone-500"> /unit</span>
           </div>
         )}
         {product.cubicMetersCarton != null && (
           <div>
             <span className="font-medium text-stone-700">{product.cubicMetersCarton.toFixed(4)}</span>
-            <span className="text-stone-400"> /ctn</span>
+            <span className="text-stone-500"> /ctn</span>
           </div>
         )}
         {product.cubicMetersUnit == null && product.cubicMetersCarton == null && '—'}

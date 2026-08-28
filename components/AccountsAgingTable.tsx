@@ -199,8 +199,8 @@ const AccountsAgingTable: React.FC<AccountsAgingTableProps> = ({ invoices, hoReC
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-stone-900">
                                                 <div className="flex items-center gap-2">
                                                     {isExpanded
-                                                        ? <ChevronDown className="w-4 h-4 text-stone-400 flex-shrink-0" />
-                                                        : <ChevronRight className="w-4 h-4 text-stone-400 flex-shrink-0" />
+                                                        ? <ChevronDown className="w-4 h-4 text-stone-500 flex-shrink-0" />
+                                                        : <ChevronRight className="w-4 h-4 text-stone-500 flex-shrink-0" />
                                                     }
                                                     <span>{row.hoReCaName}</span>
                                                     {row.isBlocked && (
@@ -211,13 +211,13 @@ const AccountsAgingTable: React.FC<AccountsAgingTableProps> = ({ invoices, hoReC
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${row.thirtyDays > 0 ? 'text-stone-900 font-medium' : 'text-stone-400'}`}>
+                                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${row.thirtyDays > 0 ? 'text-stone-900 font-medium' : 'text-stone-500'}`}>
                                                 {fmt(row.thirtyDays)}
                                             </td>
-                                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${row.sixtyDays > 0 ? 'text-orange-700 font-medium' : 'text-stone-400'}`}>
+                                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${row.sixtyDays > 0 ? 'text-orange-700 font-medium' : 'text-stone-500'}`}>
                                                 {fmt(row.sixtyDays)}
                                             </td>
-                                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${row.ninetyPlus > 0 ? 'text-red-700 font-semibold' : 'text-stone-400'}`}>
+                                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${row.ninetyPlus > 0 ? 'text-red-700 font-semibold' : 'text-stone-500'}`}>
                                                 {fmt(row.ninetyPlus)}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-stone-900">
@@ -228,7 +228,7 @@ const AccountsAgingTable: React.FC<AccountsAgingTableProps> = ({ invoices, hoReC
                                             <>
                                                 {row.thirtyInvoices.length > 0 && (
                                                     <tr className="bg-stone-50/30">
-                                                        <td colSpan={5} className="pl-12 py-1 text-[10px] font-semibold text-stone-400 uppercase tracking-wider">30 Days</td>
+                                                        <td colSpan={5} className="pl-12 py-1 text-[10px] font-semibold text-stone-500 uppercase tracking-wider">30 Days</td>
                                                     </tr>
                                                 )}
                                                 {row.thirtyInvoices.map(inv => <InvoiceRow key={inv.id} inv={inv} />)}

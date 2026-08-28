@@ -33,7 +33,7 @@ function Section({ title, children, defaultOpen = false }: { title: string; chil
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold text-stone-700 btn-press"
       >
-        {open ? <ChevronDown className="h-3.5 w-3.5 text-stone-400" /> : <ChevronRight className="h-3.5 w-3.5 text-stone-400" />}
+        {open ? <ChevronDown className="h-3.5 w-3.5 text-stone-500" /> : <ChevronRight className="h-3.5 w-3.5 text-stone-500" />}
         {title}
       </button>
       {open && <div className="border-t border-stone-100 p-3">{children}</div>}
@@ -115,10 +115,10 @@ function PickRouteTest({
   return (
     <div className="space-y-2 text-xs">
       {orders.length === 0 ? (
-        <p className="text-stone-400">No pickable orders at this warehouse.</p>
+        <p className="text-stone-500">No pickable orders at this warehouse.</p>
       ) : (
         <>
-          <p className="text-stone-400">Pick up to {MAX_ROUTE_ORDERS} orders to route:</p>
+          <p className="text-stone-500">Pick up to {MAX_ROUTE_ORDERS} orders to route:</p>
           <div className="max-h-32 space-y-1 overflow-auto">
             {orders.map((o) => {
               const on = routeOrderIds.includes(o.orderId)
@@ -131,7 +131,7 @@ function PickRouteTest({
                   }`}
                 >
                   <span className="font-mono">{o.orderId.slice(0, 10)}</span>
-                  <span className="truncate pl-2 text-stone-400">{o.horecaName}</span>
+                  <span className="truncate pl-2 text-stone-500">{o.horecaName}</span>
                 </button>
               )
             })}
@@ -181,7 +181,7 @@ export function WarehouseTestBench({
           read-only · dry-run
         </span>
       </div>
-      <p className="mb-3 text-[11px] text-stone-400">Preview engine decisions on the grid. Nothing is committed — no stock moves.</p>
+      <p className="mb-3 text-[11px] text-stone-500">Preview engine decisions on the grid. Nothing is committed — no stock moves.</p>
       <div className="space-y-2">
         <Section title="Putaway — where would a product go?" defaultOpen>
           <PutawayTest warehouseId={warehouseId} onResult={onPutawayResult} />
