@@ -90,7 +90,7 @@ export const ProductAdminRow: React.FC<ProductAdminRowProps> = ({
       <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">{supplierName}</td>
       <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">{product.category}</td>
       <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">
-        {product.brand || <span className="text-stone-300">—</span>}
+        {product.brand || <span className="text-stone-500">—</span>}
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">${product.price.toFixed(2)}</td>
       <td className={`px-6 py-4 whitespace-nowrap text-sm ${textClass}`}>

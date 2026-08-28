@@ -236,7 +236,7 @@ const TypeCell: React.FC<{
   download: DocAction;
   pending: boolean;
 }> = ({ docs, open, onToggle, view, download, pending }) => {
-  if (docs.length === 0) return <span className="text-sm text-stone-300">—</span>;
+  if (docs.length === 0) return <span className="text-sm text-stone-500">—</span>;
   const latest = docs[0];
   return (
     <div className="space-y-1">

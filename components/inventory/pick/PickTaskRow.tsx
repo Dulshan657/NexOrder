@@ -162,9 +162,9 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
       {/* Progress: which of the three confirmations are done. */}
       <div className="flex flex-wrap items-center gap-2 text-[11px]">
         <StepChip label="Bin" done={step !== 'bin'} active={step === 'bin'} value={binCode} />
-        <span className="text-stone-300">→</span>
+        <span className="text-stone-500">→</span>
         <StepChip label="Item" done={step === 'qty'} active={step === 'item'} value={itemCode} />
-        <span className="text-stone-300">→</span>
+        <span className="text-stone-500">→</span>
         <StepChip label="Count" done={false} active={step === 'qty'} value={step === 'qty' ? qty : ''} />
         <button
           onClick={reset}

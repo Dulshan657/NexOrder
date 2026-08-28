@@ -302,11 +302,11 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
                             {h.tier}
                           </span>
                         ) : (
-                          <span className="text-xs text-stone-300">--</span>
+                          <span className="text-xs text-stone-500">--</span>
                         )}
                       </td>
                       <td className="px-5 py-3.5">
-                        {insight ? <SegmentBadge segment={insight.segment} /> : <span className="text-xs text-stone-300">--</span>}
+                        {insight ? <SegmentBadge segment={insight.segment} /> : <span className="text-xs text-stone-500">--</span>}
                       </td>
                       <td className="px-5 py-3.5 text-right text-sm tabular-nums text-stone-700">
                         {h.creditLimit ? `$${h.creditLimit.toLocaleString()}` : '--'}
@@ -318,7 +318,7 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
                         {outstanding ? (
                           <span className="font-semibold text-amber-700">${outstanding.toFixed(2)}</span>
                         ) : (
-                          <span className="text-stone-300">--</span>
+                          <span className="text-stone-500">--</span>
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-right">
