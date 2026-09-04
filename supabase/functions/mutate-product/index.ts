@@ -77,6 +77,20 @@ const productBodySchema = z.object({
   description: z.string().nullable().optional(),
   price: z.number().min(0).optional(),
   category: categorySchema.optional(),
+  // Manufacturer / brand (mig 00114) — the third classification axis, and the
+  // one Slotting Rules match on ("this brand lives in these racks").
+  //
+  // THIS KEY WAS MISSING UNTIL 2026-09-04 AND ITS ABSENCE WAS SILENT. zod
+  // `z.object()` strips unknown keys, and the handler applies `parsed.data`
+  // directly, so `ProductForm`, `BulkBrandModal` and the CSV importer all sent
+  // a brand that never reached the column. Every brand-matched rule therefore
+  // matched 0 products, with nothing anywhere reporting an error.
+  //
+  // `.nullable()`, not merely `.optional()`: BulkBrandModal's "Clear the brand"
+  // sends an explicit `null`, and `.optional()` REJECTS null. '' is refused by
+  // the column's CHECK and would also be matchable by a rule whose brand field
+  // was left blank — so callers normalise empty to null and so does this.
+  brand: z.string().trim().min(1).max(60).nullable().optional(),
   image_url: z.string().url().nullable().optional(),
   unit: z.string().min(1).optional(),
   carton_size: z.number().int().min(1).optional(),

@@ -239,6 +239,38 @@ describe('mutate-product bulk-create: bulkCreateProducts', () => {
     expect(fake.insertedProducts[0].inventory).toBe(0)
   })
 
+  // mig 00114. `brand` was absent from mutate-product's zod schema until
+  // 2026-09-04, and because `z.object()` STRIPS unknown keys rather than
+  // rejecting them, every create and update dropped it in silence — no error,
+  // no warning, and a UI that reported success. The symptom surfaced two
+  // subsystems away, as a brand-matched slotting rule reporting "0 matches".
+  //
+  // This test pins the row shape reaching the insert. It cannot catch a
+  // regression in the zod schema itself (that file is Deno-only and excluded
+  // from tsc — see this file's header), so the schema carries a comment saying
+  // why the key is there.
+  it('passes brand through to the insert, and null when clearing (mig 00114)', async () => {
+    const fake = new FakeAdmin()
+    const rows = [
+      makeRow({ sku: 'SKU-BRANDED', supplier_id: 1, brand: 'McCURRIE' }),
+      makeRow({ sku: 'SKU-CLEARED', supplier_id: 1, brand: null }),
+      makeRow({ sku: 'SKU-UNBRANDED', supplier_id: 1 }),
+    ]
+
+    const results = await bulkCreateProducts(fake as any, rows as any)
+
+    expect(results.every(r => r.ok)).toBe(true)
+    expect(fake.insertedProducts[0].brand).toBe('McCURRIE')
+    // An explicit null is the one spelling of "unbranded" the column accepts:
+    // its CHECK refuses a blank-after-trim string, and a stored '' would be
+    // MATCHABLE by a rule whose brand field was left empty.
+    expect(fake.insertedProducts[1].brand).toBeNull()
+    // Omitting the key must not write anything — for an update that means
+    // "leave the existing brand alone", which is what the CSV importer relies
+    // on when its brand column is blank.
+    expect(fake.insertedProducts[2].brand).toBeUndefined()
+  })
+
   it('marks a later occurrence of an intra-batch duplicate SKU as failed (S5)', async () => {
     const fake = new FakeAdmin()
     const rows = [

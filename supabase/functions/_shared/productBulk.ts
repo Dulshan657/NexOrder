@@ -76,6 +76,10 @@ export interface BulkProductRow {
   description?: string | null
   price: number
   category: string
+  // mig 00114. Optional because the CSV importer omits the key entirely when the
+  // column is blank (which means "leave it alone"), and nullable because
+  // clearing a brand is an explicit `null`. See mutate-product's schema comment.
+  brand?: string | null
   image_url?: string | null
   unit: string
   carton_size: number
