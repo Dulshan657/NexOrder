@@ -71,11 +71,18 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
     };
 
     const applyBrand = async (brand: string | null) => {
-        // One update per product through the existing mutation. The server has a
-        // bulk-set-brand action, but this path already carries the optimistic
-        // cache handling and the row count here is a screenful, not a catalogue.
+        // One update per product through the existing mutation: it already
+        // carries the optimistic cache handling, and the row count here is a
+        // screenful, not a catalogue. (An earlier version of this comment
+        // claimed the server had a bulk-set-brand action. It does not, and
+        // until 2026-09-04 `mutate-product` dropped `brand` altogether, so
+        // this modal reported success and changed nothing.)
         for (const p of selectedProducts) {
-            await onUpdateProduct({ ...p, brand: brand ?? undefined });
+            // '' NOT undefined for a clear. `Product.brand` is `string | undefined`
+            // and `lib/adapters.ts` skips every undefined key, so `?? undefined`
+            // dropped the clear on the floor and the toast still said it worked.
+            // '' is the spelling the adapter maps to null (its comment says so).
+            await onUpdateProduct({ ...p, brand: brand ?? '' });
         }
         addToast?.(
             brand

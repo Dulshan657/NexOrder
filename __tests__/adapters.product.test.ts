@@ -60,6 +60,27 @@ describe('fromProduct — imageUrl mapping', () => {
   })
 })
 
+describe('fromProduct — brand mapping (mig 00114)', () => {
+  it('maps an empty string brand to null', () => {
+    // '' is how a caller spells "clear it". The column's CHECK refuses a
+    // blank-after-trim value, and a stored '' would be MATCHABLE by a slotting
+    // rule whose brand condition was left empty — quietly enrolling the whole
+    // unbranded catalogue in it. "Unbranded" has exactly one representation.
+    expect(fromProduct({ brand: '' })).toEqual({ brand: null })
+  })
+
+  it('passes a brand through unchanged', () => {
+    expect(fromProduct({ brand: 'McCURRIE' })).toEqual({ brand: 'McCURRIE' })
+  })
+
+  it('omits brand entirely when undefined (partial patch)', () => {
+    // This is why BulkBrandModal's clear could not use `null ?? undefined`:
+    // an undefined key is dropped here, so the clear became a silent no-op
+    // while the toast still reported success. See components/ProductAdmin.tsx.
+    expect(fromProduct({ name: 'Crushed Chilli' })).not.toHaveProperty('brand')
+  })
+})
+
 describe('fromProduct — sku / cartonSize mapping', () => {
   it('maps sku and cartonSize to snake_case columns', () => {
     const row = fromProduct({ sku: 'AYM-COC-003', cartonSize: 12 })
