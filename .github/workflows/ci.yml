@@ -40,6 +40,13 @@ jobs:
       - name: Overlay guard (no raw `fixed inset-0` outside components/ui)
         run: node scripts/check-overlays.mjs
 
+      # CLAUDE.md is loaded into every agent session and the harness refuses it
+      # past 150k chars, at which point none of it is enforcing anything. It hit
+      # 173k on 2026-09-10 and was split into docs/claude/; this stops the split
+      # being undone one useful paragraph at a time.
+      - name: CLAUDE.md size guard (deep detail belongs in docs/claude/)
+        run: node scripts/check-claude-md-size.mjs
+
       # `vh` is the URL-bar-retracted height, and the shell never scrolls the
       # body, so on a handheld ~56px of the app sat below the fold with Sign out
       # in it (F36). Playwright cannot catch this -- its viewport sets the layout
