@@ -8,6 +8,31 @@ Nex Order — B2B order management for food and general distribution. Sales reps
 
 > The app directory was renamed `copy-of-curatif-order-system-v1.3/` → `NexOrder/`. The Vercel **project** still carries the old name — don't "fix" it.
 
+## 🗺️ Where the detail lives
+
+**This file is loaded into every session and Claude Code caps it at 150k chars.** It
+reached 173k on 2026-09-10 and was split. What stays here is the rule that must hold
+*even if nobody opens the doc*; the argued detail behind each rule moved, verbatim, into
+`docs/claude/`. **New deep detail goes there, not here** — then run `npm run check:claude-md`.
+
+| Before you touch… | Read first |
+|---|---|
+| putaway, receiving, stocktake, replenishment min/max, slotting, pallets | [`docs/claude/warehouse-stock-ops.md`](docs/claude/warehouse-stock-ops.md) |
+| the warehouse map — areas, floor signs, zone binding, location names, code sweeps | [`docs/claude/warehouse-map.md`](docs/claude/warehouse-map.md) |
+| the WIE engine, grid scale, layout publish, level roles, setup checklist, `?tab=` deep links | [`docs/claude/warehouse-engine.md`](docs/claude/warehouse-engine.md) |
+| barcodes, scan resolution, handling units, label sheets and calibration | [`docs/claude/warehouse-scanning-labels.md`](docs/claude/warehouse-scanning-labels.md) |
+| inbound-PO email triage, mailbox OAuth | [`docs/claude/po-inbox.md`](docs/claude/po-inbox.md) |
+| module flags, `NEXORDER_ENV`, what a tenant actually ships | [`docs/claude/environments.md`](docs/claude/environments.md) |
+| RLS, storage buckets, `verify_jwt`, cancelling an order | [`docs/claude/server-lockdown.md`](docs/claude/server-lockdown.md) |
+| any modal, sheet or dialog | [`docs/claude/overlays.md`](docs/claude/overlays.md) |
+| password reset, invites, recovery links | [`docs/claude/auth-links.md`](docs/claude/auth-links.md) |
+| a tenant deploy the release gate just refused | [`docs/claude/releasing.md`](docs/claude/releasing.md) |
+| contrast, ARIA, robots / `llms.txt`, the demo roster | [`docs/claude/accessibility.md`](docs/claude/accessibility.md) |
+| what is outstanding and what just shipped | [`docs/claude/roadmap.md`](docs/claude/roadmap.md) |
+
+**A stub below that names a doc is not a summary you may act on alone** — it is only the
+subset that would cause damage if left unread. Open the doc before changing that subsystem.
+
 ## 🔴 TWO workspaces. This one is DEVELOPMENT. Tenant ops happen elsewhere.
 
 **Split 2026-08-13.** Same repository, two checkouts, and which one you are in
@@ -132,85 +157,41 @@ environment", the file is stale, not the database.
   "Inventory & Dispatch"; the other five subdivide the third heading, which is
   a heading and not a module. **`sales_orders` now means the order OBJECT and
   its status ladder only** — place it, advance it, cancel it.
-  - **The gate is no longer inert. Amadiya carries
-    `['sales_orders', 'inventory_dispatch']`** — warehouse management with
-    orders keyed in by their own office. Only `dev` has everything. The split
-    happened because three slugs could not express "orders and a warehouse, but
-    no Shop, no PO Inbox, no Promotions and no Accounts", which is what a
-    tenant actually wanted; `ALL_MODULES` had held nine finer slugs read by
-    nothing until 2026-08-13, and this restores four of them.
-  - **Each carved-out slug REQUIRES `sales_orders`** — an approved PO has
-    nowhere to land without one, and `shop` cannot place an order.
-    `MODULE_REQUIRES` states it and `assertModuleSet()` throws at import time,
-    so a bad registry edit fails the build rather than shipping a nav entry
-    whose Edge Function 403s. `inventory_dispatch` deliberately does NOT
-    declare the dependency: a pure stock-control tenant with no orders is a
-    coherent thing to sell.
-  - **`NEXORDER_ENV` is what decides the module set, and it used to fail
-    silently.** It lives in the Vercel project's build environment, nothing in
-    the repo asserted it, and `vite.config.ts` fell back to `dev` — every
-    module on. Harmless only while every target was all-on. `scripts/deploy.mjs`
-    now passes it as a `--build-env` so `--env=` names the target once, and
-    `vite.config.ts` **throws** on a value naming no target instead of falling
-    back.
-  - **A disabled module is NOT SHIPPED, not hidden.** `vite.config.ts` defines
-    one boolean per module and Rollup folds the branch away, so the chunks never
-    reach the tenant. That only works if the `lazyWithRetry(() => import(...))`
-    **declaration** is gated, not just the JSX — and in **both** `AdminView.tsx`
-    and `AppShell.tsx`, which declare some of the same views. Gating one leaves
-    the chunk alive through the other.
-  - **Verify by building and grepping `dist/`, never by reading.** Amadiya's
-    set builds 82 assets / 3359 kB against dev's 117 / 3754 kB. Tab-name strings
-    like `'Putaway'` legitimately survive — they live in the core `AdminTab`
-    union — so grep for code symbols.
-  - **Three "gates" were never gates, and the pattern is worth recognising.**
-    `AccountsAgingTable` and `OrderImportPage` were plain top-of-file imports
-    in `AdminView.tsx` — twenty lines below the comment warning about exactly
-    that — and `ShopView` was eager *by deliberate choice* as the rep/customer
-    landing view, which shipped the whole catalogue browse to a tenant without
-    `shop`. All three are gated lazies now; ShopView costs those two roles one
-    chunk fetch behind the Suspense skeleton they already had.
-  - **What still leaks, stated rather than claimed clean:** `mutate-pantry-item`,
-    `mutate-promotion` and `mutate-invoice-status` survive as name STRINGS in
-    the main chunk, because `useInvoices`/`usePromotions` read through service
-    modules that also hold the mutation calls; `mutate-visit-photo` survives via
-    `VisitModal`, reached from the core customer list. Strings and one modal,
-    no surfaces.
-  - Server half: `_shared/modules.ts` `requireModule`, **fails OPEN** (unset
-    `ENABLED_MODULES` = everything on) because a module gate is a *commercial*
-    control and roles/RLS are the security ones. `config/moduleOwnership.mjs`
-    maps 65 functions to modules — 3 `sales_orders`, 3 `shop`, 11 `po_inbox`,
-    1 `promotions`, 1 `invoicing`, 3 `field_ops`, 43 `inventory_dispatch`;
-    `deploy-functions.mjs` will not deploy a disabled module's functions at all,
-    but it never RETIRES one already deployed — Amadiya's 19 now-disabled
-    functions must be deleted by hand. `poll-inbox` uses `isModuleEnabled` and
-    no-ops instead of throwing — it is a cron with no try/catch.
-    `_shared/modules.ts` `MODULE_SLUGS` is a hand-kept copy of `ALL_MODULES`
-    (`_shared` cannot import outside `supabase/functions`), policed by
-    `__tests__/moduleOwnership.test.ts`.
-  - **Products and HoReCa are CORE despite where the sidebar files them.**
-    Sales & Orders reads product prices; orders come from the customer list.
-    `HoReCa Insights` *is* Field Ops. See `TAB_MODULES` in `lib/adminTabUrl.ts`.
-  - With `inventory_dispatch` off the **Warehouse role is empty**, and with
-    `shop` off the **Customer role is** (its only two surfaces are the Shop and
-    their own order history), so `lib/assignableRoles.ts` withholds each from
-    the invite form. The Field Sales Rep is *not* withheld by either — they keep
-    Order Import, the customer list and Stock. Only remove a role when the
-    modules take away everything it could do.
-  - **`New Order` (`components/admin/NewOrderView.tsx`) is what a tenant
-    without `shop` uses to create an order.** Customer, lines, delivery date,
-    notes — no cart, promotions, pantry, bundles or UOM picker. Prices are shown
-    and never entered. `lib/newOrder/resolveOrderLines.ts` is pure and parses
-    the paste box (commas or tabs, header row skipped, repeated SKU summed into
-    one line, every refusal naming the row the operator can point at); the
-    preview grid IS what gets submitted. Price the preview with
-    `resolvePromotionPrice`, never `resolveHoReCaPrice` — the latter misses
-    promotions and the preview silently disagreed with the order.
-  - **Money is hidden from the Warehouse role** by `lib/canSeeOrderValue.ts`, a
-    role test and not a module test. It reaches only `OrderDetailView` and
-    `DispatchedOrdersView`: the whole `components/inventory/` tree renders no
-    currency and pick slips carry units only. It is a DISPLAY rule — `orders.total`
-    stays readable by anyone RLS lets see the order.
+
+  The gate mechanics, what still leaks, the server half and the per-role
+  consequences are in [`docs/claude/environments.md`](docs/claude/environments.md).
+  The rules that must hold without opening it:
+  - **The gate is live, not inert. Amadiya carries
+    `['sales_orders', 'inventory_dispatch']`; only `dev` has everything.**
+  - **Every carved-out slug REQUIRES `sales_orders`** — `MODULE_REQUIRES` states it
+    and `assertModuleSet()` throws at import time, so a bad registry edit fails the
+    build. `inventory_dispatch` deliberately does NOT declare the dependency.
+  - **A disabled module is NOT SHIPPED, not hidden.** Gate the
+    `lazyWithRetry(() => import(...))` **declaration**, not just the JSX — and in
+    **both** `AdminView.tsx` and `AppShell.tsx`, which declare some of the same views.
+    Gating one leaves the chunk alive through the other.
+  - **Verify by building and grepping `dist/` for code symbols, never by reading.**
+    Tab-name strings like `'Putaway'` legitimately survive — they live in the core
+    `AdminTab` union.
+  - **`NEXORDER_ENV` decides the set**, lives in the Vercel build environment, and is
+    passed by `scripts/deploy.mjs` as a `--build-env`; `vite.config.ts` **throws** on
+    a value naming no target rather than falling back to `dev`.
+  - Server half: `_shared/modules.ts` `requireModule` **fails OPEN** — a module gate is
+    a *commercial* control and roles/RLS are the security ones.
+    `config/moduleOwnership.mjs` maps 65 functions; `deploy-functions.mjs` will not
+    deploy a disabled module's functions but **never RETIRES** one already deployed.
+  - **Products and HoReCa are CORE** despite where the sidebar files them — see
+    `TAB_MODULES` in `lib/adminTabUrl.ts`.
+  - Without `inventory_dispatch` the **Warehouse role is empty**, and without `shop`
+    the **Customer role is**, so `lib/assignableRoles.ts` withholds each from the
+    invite form. The Field Sales Rep is withheld by neither.
+  - **`New Order` (`components/admin/NewOrderView.tsx`) is how a tenant without `shop`
+    creates an order.** Price its preview with `resolvePromotionPrice`, never
+    `resolveHoReCaPrice` — the latter misses promotions and the preview then silently
+    disagrees with the order.
+  - **Money is hidden from the Warehouse role** by `lib/canSeeOrderValue.ts` — a role
+    test, not a module test, and a DISPLAY rule only: `orders.total` stays readable by
+    anyone RLS lets see the order.
 
 ## Commands
 
@@ -220,6 +201,9 @@ npm run dev                        # Vite on :3000
 npm run build
 npm test                           # vitest run
 npm run test:watch                 # vitest in watch mode
+npx vitest run __tests__/adminTabUrl.test.ts   # one file
+npx vitest run -t "some test name"             # one test by name, across the suite
+npx vitest run --project=ui                    # only the jsdom half (see below)
 npm run test:coverage              # vitest + coverage report
 npm run test:integration           # vitest against live pg — dev only, throws on a prod URL
 npm run test:e2e                   # Playwright (:ui / :headed variants) — dev only
@@ -229,11 +213,15 @@ npm run check:csp                  # vercel.ts: per-target CSP + /storage rewrit
 npm run check:grants:dev           # no client-role write grant on a locked table (needs creds; not a CI gate)
 npm run check:storage:dev          # bucket public flags + policies vs config/storageBuckets.mjs (needs creds)
 npm run check:viewport             # no `h-screen`/`100vh` where the handheld needs `h-svh`
+npm run check:claude-md            # CLAUDE.md under the 150k session limit (warns from 120k)
 npm run lint                       # eslint-plugin-jsx-a11y ONLY; eslint-suppressions.json is a ratchet
+npm run lint:fix                   # the autofixable subset
 npm run lint:prune                 # after fixing findings, shrink the frozen baseline
 npm run check:demo                 # builds EVERY target; demo credentials must ship to the demo host only
 
-# Type-check before deploy (no CI block-on-red yet)
+# Type-check. CI's `verify` job runs this and fails on red, but `main` does not yet
+# REQUIRE the check (branch protection is blocked by plan tier — see Pending Work),
+# so a red job cannot stop a merge. Run it before you deploy.
 npx tsc --noEmit
 
 # Deploy: builds, aliases, verifies /version.json AND /functions/v1/health
@@ -242,6 +230,7 @@ npm run deploy:amadiya             # -> nexorder.com.au, ONLY from a rel-* tag (
 
 # Migrations — ledgered in public.schema_migrations, checksummed, transactional
 node supabase/migrate.mjs --env=amadiya --dry-run   # what would run, in order
+npm run migrate:dev                                 # rehearse on the demo FIRST
 npm run migrate:amadiya                             # apply everything pending
 node supabase/migrate.mjs --env=amadiya --stamp-only
 
@@ -270,7 +259,25 @@ npm run demo:import:check:dev      # preflight + verify, writes nothing
 npm run demo:import:dev            # restore demo-export/ (clears first — idempotent)
 # Seed / fixture scripts work again now that `dev` has a project.
 # Order matters: users BEFORE import, or every uuid reference dangles.
+
+# Tenant user management — tenant workspace only
+npm run bootstrap:admin:amadiya    # first Admin login on a fresh tenant
+npm run password:set:amadiya       # --list to enumerate users first
+
+# Maintenance / one-offs
+npm run embed:products:dev         # refresh product embeddings via the embed-products fn (mig 00089)
+node supabase/ops/rescore-open-putaway.mjs --env=dev --warehouse=2873 --dry-run
+                                   # re-score OPEN putaway tasks against the current engine
+                                   # (needed after 00122/00123 changed what the planner believes
+                                   #  about space). The npm alias omits --warehouse and will fail.
+npm run soak:session:dev           # the O6 JWT soak in 12 min, not 90 — it lowers `jwt_exp`
+                                   # to 5 min, runs the Playwright `soak` project, puts it back
+npm run build:analyze              # rollup-plugin-visualizer treemap
+npm run scan:sheet                 # regenerate scan-gun-test-sheet.html
+npx playwright test --project=perf # projects: chromium, mobile, a11y, contrast, soak, perf
 ```
+
+**The unit suite is two vitest projects, split by file extension** (`vitest.config.ts`): `node` runs `**/*.test.ts` (pure logic, no DOM, faster) and `ui` runs `**/*.test.tsx` under jsdom with the React plugin. A component test named `.test.ts` is silently run without a DOM; name it `.test.tsx`. `*.integration.test.ts` is excluded from both — it runs only via `vitest.integration.config.ts`.
 
 **Never run `vercel deploy --prod` directly** — it won't move the alias, and users will report fixes as "not live". Always use `npm run deploy:<target>` (wraps deploy + alias + verification).
 
@@ -280,8 +287,8 @@ npm run demo:import:dev            # restore demo-export/ (clears first — idem
 
 A tenant deploys from a **release tag**, never from whatever is checked out
 (`requireReleaseTag` in `scripts/deploy.mjs`; the decision is pure and tested in
-`scripts/lib/releaseTag.mjs`). Module flags stop a tenant seeing a surface they
-did not buy; this stops them getting one that is theirs and half-finished.
+`scripts/lib/releaseTag.mjs`). Module flags stop a tenant seeing a surface they did
+not buy; this stops them getting one that is theirs and half-finished.
 
 ```bash
 # 1. merge to main and let dev deploy; verify it on nexorder.vercel.app
@@ -295,14 +302,12 @@ npm run fn:deploy:amadiya
 npm run deploy:amadiya
 ```
 
-Three conditions, each ruling out a different way of shipping something nobody
-looked at: a **clean tree** (an uncommitted edit is in the build and in no tag),
-**HEAD at a `rel-*` tag** (marked deliberately, not merely current), and that tag
-being an **ancestor of main** (a tag on an unmerged branch is a private commit
-with a label on it). A missing `main` **warns** rather than refuses — the tenant
-workspace is a detached worktree and may legitimately have none, and refusing a
-deploy over a missing ref would be the gate failing at its own job. `dev` is
-exempt: deploying whatever is checked out is the point of a demo environment.
+Three conditions, each ruling out a different way of shipping something nobody looked
+at: a **clean tree**, **HEAD at a `rel-*` tag**, and that tag being an **ancestor of
+main**. A missing `main` **warns** rather than refuses (the tenant workspace is a
+detached worktree and may legitimately have none). `dev` is exempt — deploying
+whatever is checked out is the point of a demo environment. Why each condition exists:
+[`docs/claude/releasing.md`](docs/claude/releasing.md).
 
 `supabase/run-migration.mjs` is legacy and cannot reach the DB host from this box. Use `supabase/migrate.mjs`.
 
@@ -330,7 +335,7 @@ React 19 · TypeScript · Tailwind v4 · Vite 6 · Supabase Postgres + Deno Edge
 **Data flow:** Supabase → Edge Functions OR `services/supabase/*.ts` → `hooks/queries/*.ts` (TanStack Query) → `lib/adapters.ts` (snake_case ↔ camelCase) → `App.tsx` → `<AppShell>` → role-gated views via contexts.
 
 **Key files:**
-- `App.tsx` (~170 lines) — data root: auth, queries, adapters, `placeOrderMutation`, mounts `<AppShell>`. No render tree, no UI state.
+- `App.tsx` (~180 lines) — data root: auth, queries, adapters, `placeOrderMutation`, mounts `<AppShell>`. No render tree, no UI state.
 - `components/AppShell.tsx` — the big one; owns UI/nav state; mounts `<OrderProvider>` + `<PantryProvider>`; inner component (`AppShellInner`) consumes contexts and renders the entire UI tree.
 - `context/OrderContext.tsx` — cart state + order handlers (add/apply-promo/bundle/qty/submit/place/reorder/start/reset).
 - `context/PantryContext.tsx` — per-HoReCa pantry state + handlers; mounted inside OrderProvider (it consumes `useOrderContext()`).
@@ -356,17 +361,13 @@ React 19 · TypeScript · Tailwind v4 · Vite 6 · Supabase Postgres + Deno Edge
 
 **Path alias:** `@/*` → project root (in `tsconfig.json` and Vite config).
 
-**Overlays.** Never hand-roll a `fixed inset-0` backdrop — `scripts/check-overlays.mjs` fails CI on one outside `components/ui/` (it runs before `tsc` in the `verify` job). Use `<Modal>` (centered), `<Sheet>` (right slide-in, bottom sheet on mobile), or `<ConfirmDialog>`.
+**Overlays.** Never hand-roll a `fixed inset-0` backdrop — `scripts/check-overlays.mjs` fails CI on one outside `components/ui/` (it runs before `tsc` in the `verify` job). Use `<Modal>` (centered), `<Sheet>` (right slide-in, bottom sheet on mobile), or `<ConfirmDialog>`. The full rules — scroll containment, dirty-guard wiring, the z-index stack and the two TypeScript traps — are in [`docs/claude/overlays.md`](docs/claude/overlays.md).
 
-- The overlay is **never** the scroll container. The panel caps at `max-h-[90vh] flex flex-col`, header/footer are `shrink-0`, and only the body scrolls (`flex-1 min-h-0 overflow-y-auto`). `min-h-0` is load-bearing: without it flexbox's `min-height:auto` refuses to shrink the body, the panel outgrows the viewport, and a centered panel's header lands at a negative offset where it can never be scrolled to. That was the Add Warehouse bug.
-- Pass `dirty` and every dismiss path (Esc, backdrop, X, footer `requestClose`) raises a discard confirm first. Wire footer Cancel to the `({ requestClose })` render-prop, not `onClose`, or it bypasses the guard.
-- Overlays portal to `document.body` and take their z-index from `overlayStack.ts` (`BASE_Z = 1000`). Escape only ever closes the topmost. Don't reach for `z-[60]`.
-- `useScrollLock` locks **`<main data-scroll-container>`**, not `document.body` — the AppShell root is `h-screen overflow-hidden` so the body never scrolls and a body lock is a silent no-op. Ref-counted, so a nested confirm can't unfreeze the page behind its parent.
-- **The migration is finished and the guard is now absolute.** `components/overlay-baseline.json` is `"files": []` — every overlay in `components/`, `views/` and `context/` goes through `components/ui`. Keep the file (its `_comment` documents the ban); **never add an entry to it**. A new `fixed inset-0` fails CI outright, with the single permanent exemption of `components/AppShell.tsx` (mobile sidebar + order summary — app chrome, not dialogs).
-- Two constraints the migration surfaced, both easy to trip over:
-  - **`key` can never be passed to a typed local component.** With no `@types/react` there is no global JSX namespace, so `key` is checked against the component's own props and `<Modal key={x}>` errors. Wrap in `<React.Fragment key={x}>` instead.
-  - **`max-h-[90vh]` is not a *definite* height.** A percentage-height child (`h-full` iframe/canvas) inside the `flex-1` body collapses to 0px. Give the body an explicit height via `bodyClassName` — see `context/DocumentViewerContext.tsx`.
-- `components/admin/settings/primitives.tsx` re-exports `Field`/`Input`/`Select`/`Toggle` from `components/ui` for back-compat. New code should import from `components/ui` directly.
+- The overlay is **never** the scroll container: panel `max-h-[90vh] flex flex-col`, header/footer `shrink-0`, body `flex-1 min-h-0 overflow-y-auto`. **`min-h-0` is load-bearing** — without it a centered panel's header lands at a negative offset it can never be scrolled to.
+- Pass `dirty`, and wire footer Cancel to the `({ requestClose })` render-prop, not `onClose`, or it bypasses the discard guard.
+- **`components/overlay-baseline.json` is `"files": []` and must stay so** — never add an entry. The single permanent exemption is `components/AppShell.tsx`.
+- `useScrollLock` locks **`<main data-scroll-container>`**, not `document.body` (which never scrolls here, so a body lock is a silent no-op).
+- **`key` can never be passed to a typed local component** — with no `@types/react` there is no global JSX namespace, so `<Modal key={x}>` errors. Wrap in `<React.Fragment key={x}>`.
 
 **Types gotcha:** there is no `@types/react` and `strict` is off, so every React type (props, hooks, `React.FC`) resolves to `any`. `interface X extends React.ButtonHTMLAttributes<...>` therefore contributes no members — use a type-alias intersection instead. Embedding Leaflet in an overlay needs a `ResizeObserver` → `map.invalidateSize()` (it measures once at mount, while the panel is still animating).
 
@@ -378,28 +379,15 @@ React 19 · TypeScript · Tailwind v4 · Vite 6 · Supabase Postgres + Deno Edge
 
 ## PO Inbox (inbound-PO email triage)
 
-Admin/manager daily-driver surface (`components/admin/POInbox*.tsx`, nav label **"PO Inbox"**) that triages purchase orders the AI extracts from connected mailboxes. The legacy manual "Purchase Orders" admin view was removed.
+Admin/manager daily-driver surface (`components/admin/POInbox*.tsx`, nav label **"PO Inbox"**) that triages purchase orders the AI extracts from connected mailboxes. **Flow:** connect mailbox via OAuth (Gmail/Outlook) → cron `poll-inbox` → `extract-po` parses each `inbound_messages` row into `pending_pos` → operator reviews the Queue → `approve-po` / `reject-po`. Sender→customer/product mapping lives in `po_customer_aliases` / `po_product_aliases`. Tables: `email_accounts`, `oauth_pending_states`, `inbound_messages`, `pending_pos`, the two alias tables and `po_extraction_audit` (migs `00018`–`00023`). The legacy manual "Purchase Orders" admin view was removed.
 
-**Flow:** connect mailbox via OAuth (Gmail/Outlook) → cron polls inbox (`poll-inbox`) → `extract-po` parses a PO from each `inbound_messages` row into `pending_pos` → operator reviews in the Queue → `approve-po` (creates the real purchase order) / `reject-po`. Sender→customer/product mapping lives in `po_customer_aliases` / `po_product_aliases` (Aliases sub-tab). Sub-tabs: `queue`, `aliases` (mailboxes moved to a header popover; `?subtab=` persists).
+**Every function, the shared per-account poll engine, the layer map and the Gmail / Google Cloud OAuth setup are in [`docs/claude/po-inbox.md`](docs/claude/po-inbox.md).** Design docs: `docs/superpowers/specs/2026-05-20-po-inbox-redesign-design.md`.
 
-- **Layer:** services `poInboxService.ts`, `poInboxStatsService.ts`, `emailAccountsService.ts`, `poAliasMutationService.ts`; hooks `usePendingPos`, `usePoInboxStats`, `useEmailAccounts`, `usePoAliasMutations`.
-- **Edge functions:** `start-po-oauth`, `gmail-oauth-callback`, `outlook-oauth-callback`, `poll-inbox`, `extract-po`, `approve-po`, `reject-po`, `create-po-document-url`, `mutate-po-alias`, `pause-email-account`, `disconnect-email-account`, `retry-email-account`. The per-account poll engine is shared at `_shared/poInbox/pollAccount.ts` (`processAccount`), used by both the cron `poll-inbox` and the on-demand `retry-email-account` ("Retry now" for a transiently-failing mailbox).
-- **`storage_path_prefix` is percent-encoded but the objects are not.** `storagePrefixFor()` encodes the provider message id (Graph ids carry `/` and `=`), and that encoded string is what `inbound_messages.storage_path_prefix` holds — but a Storage key may not contain `%` at all (the API answers 400 `InvalidKey`), so `upload()`, whose path rides in the request URL and is decoded server-side, wrote every object under the **decoded** prefix. Three consequences, each of which failed silently in a different way: `download()` works (it decodes too — which is why `extract-po` was fine); `list()` sends its prefix in the **request body** where it is compared literally, so it matches nothing; and `createSignedUrl()` signs the encoded spelling *successfully* and returns a URL that 400s only when fetched. Resolve the prefix by listing the candidates and using whichever one returns objects — that is the spelling to sign. `_shared/poInbox/archivePaths.ts` holds the helpers (`archivePrefixCandidates`, `isSafeStoredName`, `pickAttachmentName`); `create-po-document-url` does it once for both the envelope and the attachments. This is what made every Outlook-sourced PO's document viewer say "no attachment named …".
-- **`_shared/poInbox/documentNotes.ts` and `deliveryAddress.ts` are imported by both runtimes** — `approve-po` (Deno) and `POInboxDetailModal` (Vite). Dependency-free for that reason; never fork one, or the reviewer reads one thing and the picker is handed another. `composeOrderNotes` folds the printed "Notes" / "Delivery Instructions" / "Job Address" blocks into `orders.notes`: `notes` is the only one printed bare, everything else gets a heading, because a naked street address in a picking note reads as the delivery address and is not one. The document-level `notes` and the per-line `lines[].notes` share a key name and are different fields.
-- **What the PO printed is the fallback for what the operator didn't say.** `approve-po` fills `orders.notes` from `composeOrderNotes`, `delivery_date` from `requested_date`, and `delivery_address` from `ship_to` (`resolveDeliveryAddress`) whenever no override is supplied. That is the ONLY path any of it has onto the order under `mode:'auto'`, where nobody opens the review modal — every order created before the `ship_to` fallback existed has `delivery_address` NULL. The address fallback writes **no** `horeca_addresses` row: an address lifted off a document was chosen by nobody, and auto-approval would otherwise grow the customer's address book on every PO. NULL still means "fall back to `horecas.address`" (mig `00021`); `lib/orderDeliveryAddress.ts` is the single place that applies that fallback for display.
-- **`job_address` is not `ship_to`.** On a builder PO both are printed and they are routinely different — the goods go to the installer's yard while the job is on an estate. Each needs its own prompt bullet; the label-binding rule alone is not enough once two address-shaped blocks sit on one page.
-- **`supabase/functions` is excluded from `npx tsc --noEmit`** (`tsconfig.json`), and nothing imports the Edge Functions, so their call sites are type-checked by **nothing** locally — and `supabase functions deploy` without Docker only uploads, so it will not catch it either. This bites with the shared `_shared/poInbox` helpers: their parameter types are all-optional ("weak"), and TypeScript rejects an argument sharing no property with a weak type (`TS2559`). `approve-po`'s local `PendingPoRow.extracted_po` must declare every field it forwards — `ship_to`, `notes`, `delivery_instructions`, `job_address` — or it breaks at runtime having looked fine everywhere else.
-- **Tables:** `email_accounts`, `oauth_pending_states`, `inbound_messages`, `pending_pos`, `po_customer_aliases`, `po_product_aliases`, `po_extraction_audit` (migrations `00018`–`00023`).
-- **Design docs:** `docs/superpowers/specs/2026-05-20-po-inbox-redesign-design.md` (+ plan alongside).
-
-### Gmail OAuth / Google Cloud setup
-
-The Gmail connect flow (`start-po-oauth` → `_shared/poInbox/oauthUrls.ts` → `gmail-oauth-callback`) uses a Google Cloud OAuth client; client id/secret live in Edge Function secrets `GMAIL_OAUTH_CLIENT_ID` / `GMAIL_OAUTH_CLIENT_SECRET` (Outlook: `OUTLOOK_OAUTH_CLIENT_*`).
-
-- **Registered redirect URI:** `https://lsgkznyiabqitqfpveey.supabase.co/functions/v1/gmail-oauth-callback` (built by `buildCallbackUri()` from `SUPABASE_URL`). Outlook: `…/outlook-oauth-callback`.
-- **Scopes:** `gmail.readonly` (a Google **restricted** scope), `userinfo.email`, `openid`; `access_type=offline`, `prompt=consent`.
-- **OAuth consent screen** (Google Cloud Console → APIs & Services → OAuth consent screen): **App name = `NexOrder`**, publishing status **Testing**. The App name is what shows on the consent dialog ("NexOrder wants access…"); if blank, Google falls back to displaying the redirect host (`…supabase.co`). Manage who can connect via **Test users**. Don't add a logo / Homepage / Privacy / ToS URLs unless intentionally going through brand verification.
-- **Known limitation:** removing the "Google hasn't verified this app" interstitial requires full verification + (for the restricted scope) a CASA assessment, which needs an **Authorized Domain you own and can verify in Search Console**. `supabase.co` / `vercel.app` don't qualify, so verification is blocked until a custom owned domain fronts the callback. Until then, Testing-mode users click through the interstitial.
+- **`storage_path_prefix` is percent-encoded but the objects are not.** `download()` works (it decodes too), `list()` compares its prefix literally and matches nothing, and `createSignedUrl()` signs the encoded spelling *successfully* and returns a URL that 400s only when fetched. Resolve the prefix by listing the candidates and signing whichever spelling returns objects — `_shared/poInbox/archivePaths.ts`.
+- **`_shared/poInbox/documentNotes.ts` and `deliveryAddress.ts` are imported by BOTH runtimes** — `approve-po` (Deno) and `POInboxDetailModal` (Vite). Dependency-free for that reason; never fork one, or the reviewer reads one thing and the picker is handed another.
+- **`job_address` is not `ship_to`.** On a builder PO both are printed and routinely differ — the goods go to the installer's yard while the job is on an estate.
+- **What the PO printed is the fallback for what the operator didn't say**, and under `mode:'auto'` nobody opens the review modal, so `approve-po`'s fallbacks are the ONLY path `notes`, `delivery_date` and `delivery_address` have onto the order. The address fallback deliberately writes no `horeca_addresses` row.
+- **`supabase/functions` is excluded from `npx tsc --noEmit`** and nothing imports the Edge Functions, so their call sites are type-checked by nothing locally. This bites on the shared helpers, whose parameter types are all-optional ("weak"): `approve-po`'s local `PendingPoRow.extracted_po` must declare **every** field it forwards or it breaks at runtime having looked fine everywhere else.
 
 ## Warehouse & inventory (WIE)
 
@@ -409,392 +397,30 @@ The largest subsystem after ordering, and about half the Edge Functions. Migrati
 
 **Locations** are one self-referential tree (`kind` ∈ `WAREHOUSE|ZONE|AISLE|RACK|BAY|SHELF|BIN|STAGING`). There is no separate bins table. `locations.code` is **globally unique**. A warehouse is `location_type` `'bulk'` (stock sits at the root) or `'racked'` (bin-level, WIE-driven). Multi-warehouse since `00036`; `inv_default_location()` = lowest-id active warehouse.
 
-**Warehouse Intelligence Engine** — `supabase/functions/_shared/wie/*.ts` is **pure** (no Deno/IO), so the Vite frontend imports the same modules the server runs.
-- `graph.ts` walk graph + Dijkstra · `publishReadiness.ts` the 4 publish gates · `autoConnect.ts` walkway repair · `scoring.ts` + `putawayPlan.ts` the putaway optimiser · `pickTasks.ts` / `picking.ts` directed picking.
-- Layouts are drafted (`mutate-layout` `save_geometry`), then **published** (`publish-layout` → `wie_publish_layout_tx`), which builds the routing graph and flips the warehouse to `racked`. Only one published layout per warehouse.
-- Putaway: receipt/adjust/transfer → `_shared/putawayTasks.ts` `generatePutawayTasks` → `wie_putaway_recommendations` (advisory) → `decide-putaway` / `complete-putaway` → `inv_transfer_stock(root → bin)`. Stock only reaches a bin through those two functions.
-- **Putaway is two-stage since mig `00080`** — `suggested --assign--> assigned --complete--> accepted|overridden`. Assigning moves **no stock** (`wie_assign_putaway_tx`); the transfer fires only at `complete-putaway` (`wie_complete_putaway_tx`), when the operator scans the bin and the plate on the floor. Un-placed goods therefore read as sitting at the warehouse root, which is where they actually are. `wie_unassign_putaway_tx` returns an abandoned run to `'suggested'`; `wie_putaway_stops` turns assigned rows into routable walk stops (`recommend-putaway-route`). Scanning the *wrong* bin warns but still records.
-- `wie_decide_putaway_tx` (mig `00071`) is deliberately untouched by `00080` and remains the **one-step "place it now"** desk/bulk path (also used by the CSV opening-stock importer). Both transactions claim the row `FOR UPDATE` and optionally **split** it: a partial putaway leaves the ORIGINAL row `'suggested'` holding the remainder and inserts a decided copy as the audit record. Re-scoring a queued line is `recommend-putaway` + `replaces_recommendation_id`, which expires the row it supersedes.
-- Frontend: `components/inventory/PutawayWalkView.tsx` + `inventory/putaway/{PutawayScanFinder,PutawayStopCard}.tsx`, `hooks/queries/usePutawayWalk.ts`, `services/supabase/putawayRouteService.ts`.
-- **The opening-stock CSV takes an optional `bin_code`, which is what makes a counted-by-bin stocktake importable in one pass.** Stock still never reaches a bin through a receipt — `receive-stock`'s `location_id` is the destination *warehouse*, and passing a bin id would also stamp `handling_units.warehouse_id` with it. So `StockImportModal` groups rows **by bin before chunking**, receives each group as its own receipt, and drives every recommendation that receipt returns onto that group's bin via `decidePutaway({decision:'override', roleOverride:true})`. Grouping first is the point: one destination per receipt means no matching of recommendations back to CSV rows. `roleOverride` is deliberate — a count records where stock *physically is*, and refusing pallets on a pick level would not move them, only leave the system wrong. Rows leave the preview grid the moment the **receipt** succeeds, even if placement then fails, because re-importing them would receive the quantities twice; the failure text says so and points at the Putaway queue. A warehouse with no published layout returns `mode: 'legacy'` and no recommendations — the rows are received and reported as unplaced rather than silently dropped.
+**The detail lives in four docs — open the relevant one before changing anything here:**
+[`warehouse-engine.md`](docs/claude/warehouse-engine.md) (the pure engine, grid scale, layout publish, level roles, replenishment, the setup checklist, `?tab=` deep links) ·
+[`warehouse-map.md`](docs/claude/warehouse-map.md) (named areas, floor signs, zone binding, friendly location names, live area painting, location code sweeps) ·
+[`warehouse-stock-ops.md`](docs/claude/warehouse-stock-ops.md) (stocktake by location, replenishment min/max, slotting rules & off-home, receiving, pallet break-down, putaway identity, pallet quantities) ·
+[`warehouse-scanning-labels.md`](docs/claude/warehouse-scanning-labels.md) (scan identity, handling units, Code 128 labels, calibration).
 
-**Grid scale** (mig `00091`) — `warehouse_layouts.cell_size_m` is what makes every reported metre mean anything, and it was 1.0 everywhere until now because nothing ever sent it. The operator states the building's real size and a resolution; **the grid is derived**. `_shared/wie/gridScale.ts` is pure and imported by both runtimes — the designer previews a rescale with the same `planRescale` the server performs.
-- **Exact rational arithmetic, never floats.** `cell_size_m` is `NUMERIC(6,2)`, so the factor between two resolutions is an exact fraction in hundredths (1.0 → 0.75 is 4/3). "Does a 3-cell rack land on whole cells" is therefore an integer test. Anything indivisible, out of bounds, or past the 200-cell cap is **refused with the offenders named** — never rounded, never relocated, because a bin is a real `locations` row that may hold stock.
-- **`update_layout` is the one `mutate-layout` action that does not `requireDraft`.** A mis-measured building is only discovered after go-live and the alternative was redrawing the floor plan. Geometry rows carry no inventory, so moving them on a published layout is safe — but publishing **freezes** `layout_graph_edges.weight_m` / `layout_travel_distances.distance_m` / `layout_placements.access_offset_m`, so the change is inert until republish. `publish-layout` therefore accepts a re-publish (`wie_publish_layout_tx` always handled it; its archive step is scoped `id <> p_layout_id`).
-- `needsRepublish` is **derived** in `lib/adapters.ts` from `updated_at > published_at`, not stored — nothing else can move `updated_at` on a published layout.
-- `wie_update_layout_tx` is deliberately dumb: the maths is not restated in PL/pgSQL, the caller sends computed coordinates and the RPC applies them atomically with a bounds backstop. A half-rescaled layout is a corrupt layout, which is why this can't be a sequence of supabase-js updates.
-- **`ACCESS_OFFSET_STEP_M` (0.5) stays absolute** — vertical reach up a rack level is real metres and has nothing to do with floor scale. `wie-batch-reoptimize`'s gain floor is now `max(1.0 m, cellSizeM)`: at 3 m/cell a bare 1 m threshold admitted a third-of-a-cell move.
-- Floor-plan import is the mirror case: the **grid is fixed** by the extraction, so **cell size** is derived. The model reads printed dimensions/scale bars and *proposes* them (null when the drawing says nothing); the operator confirms before they become the scale.
+**The invariants, each explained in the doc named beside it:**
 
-**Setup checklist** (mig `00092`) — standing a warehouse up is strictly order-dependent (config → publish → label → count → import) and nothing in the UI said so. `WarehouseSetupPanel` renders above the map on the Warehouse tab for Admin/Manager, derives where the site actually is, and deep-links each step.
-- **`lib/warehouseSetup/evaluate.ts` is pure and takes already-fetched data**; `hooks/queries/useWarehouseSetup.ts` does the gathering. Same split as `publishReadiness.ts` vs `PublishChecklist`. Only two queries are new — the acknowledgement rows and a `product_home_bins` head-count; everything else is already cached by the Warehouse tab.
-- **The three config vocabularies ship SEEDED** (`storage_types` 6, `level_roles` 3, `zone_profiles` 8 — and `useLevelRoles` carries `placeholderData`, so it can never return empty). "A row exists" is permanently true and proves nothing, so those steps are **sign-offs**: has anyone checked the defaults against the real racking. Same for the wifi walk and the three go-live exercises, whose rows exist but where a seeded/demo row would false-positive.
-- **`_shared/warehouseSetupSteps.ts` is the one vocabulary, both runtimes.** The edge function validates `step_key` against it; `lib/warehouseSetup/steps.ts` builds titles/prose/nav on top and **throws at module load** if the two disagree on a key or its kind. Acknowledging a *derived* step is refused, not ignored — the panel would keep showing the derived truth while the row claimed otherwise.
-- **No dismissal and no backfill.** All derived steps passing collapses the panel to one line; a dismiss button could hide a genuinely missing step and collapsing cannot. Step keys are STORED — renaming one orphans its sign-offs.
-- Three guardrails warn (never block): stock import into a racked site with unconfirmed bin labels, a layout at ≥90% of `PUTAWAY_CANDIDATE_LIMIT`, and publishing with level roles / zone profiles unchecked. Refusing wouldn't put stickers on racking; it would only stop the work.
-
-**Stocktake by location** (`count-bin`, **no migration**) — one number per SKU per location, posted as `stocktake_variance`. Closes onboarding gap H2: `AdjustStockModal` corrects one (product, location, batch) slot at a time and the opening-stock CSV is *additive*, so a re-count finding LESS than the system believed had nowhere to go. Nav item **Stocktake** (Admin/Manager/Warehouse), `components/inventory/StocktakePage.tsx` + `inventory/stocktake/*`.
-- **`inv_adjust_stock` fans out over PLATES but only within ONE batch** (`COALESCE(batch_id,0) = COALESCE(v_batch_id,0)`, mig `00075` §7). `p_batch_id => NULL` names the **untracked slot**, not "every lot". A one-number-per-SKU count therefore cannot be one RPC call, and that — not the rate limit — is why `count-bin` exists rather than a client loop over `adjust-stock`. It does the **batch** fan-out; the RPC does the **plate** fan-out inside each batch. (The rate limit is the second reason: `adjust-stock` is 30/min/user and a 12-line bin would burn 12.)
-- **`_shared/binCount.ts` is pure and imported by both runtimes**, re-exported by `lib/binCount.ts` — the sheet's live prediction *is* the server's decision, evaluated early, not a second copy of it. Same split as `_shared/wie/levelRoles.ts` ↔ `lib/levelRoles.ts`.
-- **A surplus goes to the only lot present, or to untracked.** One lot holding stock → that lot. Zero or several → `batch NULL`, and the sheet **says so** — stamping one of two lots asserts an expiry nobody stated, while always-untracked would give a single-lot bin a second expiry-less row that FEFO has nothing to order by.
-- **A shortfall deeper than `Σ available` is refused for the WHOLE line and writes nothing**, while every other line still posts. Half-applying leaves the SKU matching neither the count nor the prior belief, and the operator cannot re-count without double-applying. Shortfalls consume FEFO across lots (undated last). The sheet predicts the refusal from `allocated` before anything is sent.
-- **Blank ≠ zero.** A line nobody typed into is untouched; a write-off must be typed as `0`. `parseCountedQty` returns `null` for blank and `undefined` for unusable text — never 0.
-- **Any stock-holding location is countable, including a warehouse ROOT** — that is how a bulk / floor-stacked area is counted at all, and a root has no label to scan, so the picker list is not a convenience. `getWarehouseLocations` matches `LIKE '<wh>/%'` and **excludes the root**, so `StocktakePage` prepends it. ZONE/AISLE/RACK are excluded: a levelled rack's stock is on its SHELF rows.
-- Upward counts route through `generatePutawayTasks` exactly as `adjust-stock` does — it self-skips for a specific bin, so counting a bin raises nothing and counting a racked root raises real tasks. **One** audit event per location (`resource: 'inventory_count'`), not one per line.
-- No line ever throws: an unexpected RPC error is reported as a failed line so the response still says which of the other lines landed.
-
-**Deep linking** — `?tab=` was added with this (`lib/adminTabUrl.ts`, which now **owns the `AdminTab` union**; `AdminView` re-exports it). `AppShell` wraps `setAdminView` once to write it, so no sidebar edits; the read branch is **role-validated**, because `AdminView` renders nothing when a role gate fails and an unchecked `?tab=` is a blank page. **The read branch runs FIRST, before the Warehouse-role and demo-persona early returns** — this entry said "after" until 2026-08-26 and was wrong. `adminTabFromSearch` is the first statement in the `adminView` initialiser, so an explicit `?tab=` beats every landing default, which is the point of a pasted link; `TABS_BY_ROLE.Warehouse` is populated, so `?tab=Putaway` **does** work for the Warehouse role, and a link a role cannot open degrades to that role's default rather than being ignored. This also retires the orphan-param class of bug — `?subtab=`/`?wh=` used to survive a reload with no owning tab.
-- `AdminView.openWith(tab, params)` is the one URL writer (`openDesigner`/`openPutaway` are now wrappers). `hooks/useFlagDeepLink.ts` consumes a one-shot flag and **strips it unconditionally** — a param left behind re-fires on every later visit to that tab, which is the bug `?designer=` had (fixed here: it stripped only on match).
-- **The param namespace is flat and crowded.** `?import=` already means *floor-plan import* globally, so the CSV importers are `?stockimport=` / `?prodimport=`; `?subtab=` is shared between PO Inbox and Settings. `settingsSubtabFromSearch` now carries a param→subtab **table** — a deep link must force the sub-tab that HOSTS its target, or the consuming effect fires while its host is `hidden` and pops a modal over the wrong tab.
-- **`?section=` scrolling is not an anchor.** Native `#hash` is dead here (`document.body` never scrolls; the scroller is `main[data-scroll-container]`). `useSectionDeepLink` polls until the target's `offsetParent` is non-null — `scrollIntoView` in a `display:none` sub-tab is a **silent no-op** — then re-scrolls after the queries swap their skeletons and change the height.
-- `WarehousePage` gained `PutawayQueuePage`'s ref-guarded `?wh=` scope-adoption effect; without it an in-session `?tab=Warehouse&wh=3` silently shows a different site (the scope provider only reads the URL at its own init).
-
-**Named areas** (mig `00090`) — an operator-drawn, tinted, labelled region ("Cold Storage", "Bulk"). A `layout_objects` row of `object_type='area'` whose `meta` is `{ name, zoneProfileId? }`, painted **cell-by-cell like a wall** (the data model stays 1×1, so erase/select keep working per cell).
-- **An area's identity is its NAME, per floor.** `objectRegions.regionGroupKey` subdivides the flood fill by it, which is what lets a 50-cell area merge into one labelled region while a touching "Bulk" stays separate — merging on type alone would fuse them under one of the two names, the same failure that keeps `obstacle` out of `MERGED_OBJECT_TYPES`. Renaming therefore goes through `rename_area` (moves every cell); renaming the one selected cell would split the region.
-- Areas **co-occupy with everything** in `ALLOWED_COOCCUPANTS` (like `label`): an area names the ground the racks stand on, so it must lie over them. It is **inert in `buildWalkableCells`** — neither walkable nor subtracted — so routing and publish readiness are untouched.
-- Both canvases render it identically: wash under the grid, name above the bins, tinted via `zoneTint(zoneProfileId → zone_type)` so an area, its zone and the COLD_ROOM storage form agree on what "cold" looks like. `OBJECT_FILL.area` is only the no-profile fallback.
-- **`meta.zoneProfileId` IS the binding, as of `00096`** — it was inert from `00090` until then, and the entry that used to sit here said so. What has not changed is HOW a bin's zone is read: **materialized-path ancestry to a `kind='ZONE'` location** (`00047`'s header; `wie_putaway_candidates`' LATERAL join). `locations.zone_profile_id` *on a bin* is still read by nothing and is still never stamped — binding moves the bin, it does not label it. See "Zone binding" below.
-- **`meta.name` IS read, as of `00094`** — it is where a bin's friendly name comes from. That is display text, not zone semantics; the note above is unchanged.
-
-**Floor signs** (mig `00097`) — plain wayfinding text on the map ("Inbound Staging"), placeable on a **published** layout. Backed by `object_type='label'`, legal since `00045` but until now authorable only on a draft, because `save_geometry` was its only writer and it `requireDraft`s. MAIN carries five from its seed.
-- **A SIGN IS NOT AN AREA, and every difference follows.** An area is warehouse vocabulary with consequences: it renames the bins standing on it (`00094`) and re-parents them under a ZONE (`00096`). A sign is text. `paint_labels` therefore has **no `cascade_names`, no `include_custom`, and runs no binding pass** — do not add them "for symmetry" with `paint_areas`. The asymmetry is the feature.
-- Safe on a live layout for exactly `00095`'s reason, if anything more strongly: `buildWalkableCells` whitelists `walkway|dock|lift|staging` and subtracts `wall|conveyor`, `publish-layout` reads `object_type` only for `staging_location_id`, and `resolveOverlaps` exempts labels outright. No graph node, no edge weight, no `access_offset_m`. **`warehouse_layouts.updated_at` is NOT bumped** — same rule as areas and `rename_area`.
-- **`_shared/wie/signPaint.ts` is pure and imported by both runtimes** (re-exported by `lib/signPaint.ts`). It **delegates** to `areaPaint.ts` rather than forking it: `areaSpecsFromObjects` / `areaObjectsFromSpecs` / `areaCellsFingerprint` / `diffAreas` now take an `objectType` (defaulted to `'area'`, so every existing call site is unchanged). Forking would duplicate `fnv1a` and the cell comparator, and the fingerprint must agree byte-for-byte across the two runtimes or every save 409s. `planAreaCascade` stays area-only.
-- **Signs get their OWN fingerprint and their own baseline ref.** Sharing the area one would make an area paint 409 a sign save and vice versa — the two pictures move independently and each action checks only its own.
-- **`label` is now in `MERGED_OBJECT_TYPES`, keyed by name** like `area`. It was excluded on the argument that "merging two adjacent labels would swallow both names" — true of a merge on *type*, which is precisely what `regionGroupKey` exists to stop doing. Leaving it out had a cost only visible once signs became paintable: a painted sign is N separate 1×1 objects and both canvases gate name text at ~48px, so it could **never draw its own text at any zoom**. MAIN's seeded signs only showed because the seed wrote them as single `w: 10` rows. `obstacle` stays out (discrete named rooms).
-- Consequently `'label'` is **removed from `NAMED_OBJECT_TYPES`** on both canvases (that pass iterates every object and would stamp the text on every cell), and the text is drawn **once per region, centred on its bounding box, in the top text layer above the bins** — signs co-occupy with everything, so one over a rack row is the normal case and text under the bins would vanish. Centring (vs an area name's top-left anchor) is what keeps the seeded signs looking identical.
-- **The first save on a site rewrites its seeded wide labels as 1×1 rows** (MAIN's five become ~42). Lossless: the fold expands `w`/`h` and merging redraws them in place. `__tests__/signPaint.test.ts` pins the fingerprint across that round trip — without it every sign save on MAIN would 409 forever.
-- Live map: one **Annotate** button (not a third one beside "Paint areas") opening `AreaPaintToolbar` with an **Areas | Signs** toggle. One working set, **one undo stack spanning both layers**, one Save. Clicking a sign's text enters annotate mode on the sign layer and opens `EditSignModal`, which **edits the working set rather than calling the server** — `paint_labels` is a full replace, so a self-saving dialog would be a second implementation of the same write with its own fingerprint to get wrong. Designer: `label` joins `AREA_SCOPE_TOOLS`; Save issues `paint_labels` **then** `paint_areas`, each only if its own fingerprint moved (signs first — they cannot fail on a cascade, so an area failure leaves only the risky half to retry).
-- **The scoped eraser reads `annotationBrush`, not stacking order.** Signs and areas overlap freely and there is no ordering that is right in both directions; the operator already said which layer they are on.
-- **A blank brush is now REFUSED, out loud** (`blockedAt.reason = 'unnamed'`). This was the reported bug: the Area tool armed on click, so painting before typing wrote cells with no `meta.name` — merging into no region, drawing no text, and rejected by the server. For an area the only trace was a `#a8a29e` wash at 12% opacity *under* the grid, invisible on stone. "I painted and nothing showed" was exactly this. The designer's area input also gained the `sanitizeAreaName` / `maxLength` / inline-issue treatment the live map has had since `00095`.
-
-**Zone binding** (mig `00096`) — what finally reads an area's `meta.zoneProfileId`. A bin's zone is not a column: it is derived by prefix-matching `materialized_path` against `kind='ZONE'` rows, and every drawn bin was parented at the warehouse ROOT, so that LATERAL returned NULL for every bin on every site and the whole zone subsystem (`allowed_categories`, `priority_weight`, `max_utilization_pct`, the `zoneTag` rule field) had never once fired. Binding means **re-parenting**: a new `parent_id` AND a new `materialized_path`, plus a rewritten path on every SHELF child.
-- **The rule, for a unit** (a flat bin, or a levelled rack's RACK PARENT): its area's `zoneProfileId` → that profile's ZONE; else the placement's own `zone_profile_id` → that ZONE; else the warehouse root. **The AREA wins over the per-bin dropdown** (`PlacementInspector`/`RackWizard`), which predates areas and is invisible on the map.
-- **Erase, shrink or un-profile is NOT a special case** — it is the third branch, reached by evaluating the same rule again. That is what makes the reverse free, and it is the half most likely to be missing.
-- **One ZONE per (warehouse, profile), never per area.** Two areas tagged Cold share `<WH>-Z4`. A zone's `code` is a `materialized_path` segment, so per-area zones would make renaming an area rewrite the zone's path and every descendant's — a second, harder path rewrite on top of this one. The cost: `zone_tag` (= `lower(zone.name)`) is the PROFILE name, so a `wie_rules` row matching on it matches the profile, not the area.
-- **`_shared/wie/zoneBinding.ts` is pure and imported by both runtimes** (re-exported by `lib/zoneBinding.ts`); I/O beside it in **`_shared/zoneResolve.ts`**, which now owns `resolveZone` — lifted verbatim out of `mutate-layout`, because two find-or-create implementations racing on one (warehouse, profile) pair leave two ZONE rows and a LATERAL that picks the longer path. **Containment is not redefined**: `areaForRect` (the majority-of-cells vote) is imported from `locationNaming.ts`, so naming and binding can never disagree about which area a rack is in.
-- **`parent_id` and `materialized_path` are two independent hand-maintained copies of one edge** and nothing in the database enforces agreement. Every move writes both. A SHELF's path is composed from string parts at creation and never read back from its rack, so **re-parenting a rack silently invalidates every child path unless the children are in the same batch** — verified live: a level left out of the batch keeps its stale path. `planZoneBinding` always emits them, and checks them independently of the unit so a drifted level is repaired even when its rack is settled.
-- `wie_reparent_locations_tx` mirrors `wie_rename_locations_tx` (one statement, count-mismatch → `serialization_failure`, service_role only) but carries **three** scope guards, not one: the row's current path, its NEW path, and its NEW PARENT must all be under the warehouse. The third is not implied by the second — a well-formed path string can point `parent_id` at another site.
-- **Automatic on `paint_areas` and `save_geometry`; `bind_zones` is for the site painted before this existed.** New bins are inserted under the right parent first time (`resolveZone` at creation), so the binding pass only ever touches rows that already existed. Scope is `layout_placements`, so a hand-built `WarehouseTreeEditor` node is never re-parented. `bind_zones` has its own `:bind:` 10/min bucket and a `dry_run` that returns before any write — **the only surface that previews a re-parent**. Re-running it must report zero moves; that idempotence is the proof the rule is total.
-- **`allowed_categories` WARNS, never blocks.** Binding turns a hard allow-list on for the first time, so a bin can become an illegal putaway target while still holding the stock the zone excludes. Refusing would not move the pallets.
-- Emptied ZONE rows are left in place (`zoneRegions` derives a zone's shape from its bins, so an empty one draws nothing). `warehouse_layouts.updated_at` is **not** bumped — parentage contributes no graph node, edge weight or `access_offset_m`. `00096` also adds the first-ever index on `materialized_path` (`text_pattern_ops`, load-bearing: a default btree cannot serve `LIKE 'prefix%'`).
-- **Three places answered "what zone is this bin in" and two were wrong.** `plan-reslot` read `bin.zone_profile_id` (never written on a bin) and sent `zone_type` as `zoneTag`; both fixed to ancestry + `lower(zone.name)`. `putawayGuards.resolveZoneProfileId` walks `parent_id` while SQL walks the path — they agree only because binding keeps both in step; the comment there says so.
-
-**Friendly location names** (mig `00094`) — `L4 · NEXG-B-9-4-L4` is a grid COORDINATE (`${wh}-B-${x}-${y}[-L${n}]`), and a drawn layout has no AISLE or BAY to name either (its tree is Warehouse → [Zone] → Rack → Shelf). So the grouping comes from the painted **named area**, and a rack reads `Chiller · Rack 7`, its levels `Chiller · Rack 7 · L4`.
-- **`locations.name` already existed, NOT NULL, written at draw time — with `Bin 9,4`.** The column was never the problem; the value and the display were. **The code is untouched and must stay so**: barcode payload, `resolveScan` key, `materialized_path` segment, CSV `bin_code`.
-- **`_shared/wie/locationNaming.ts` is pure and imported by both runtimes** (re-exported by `lib/locationNaming.ts`); the I/O sits beside it in `_shared/locationNamingWrite.ts`, because `wie/` is under the purity contract (`__tests__/wie/purity.test.ts`). The designer's preview IS the server's decision. Display helpers: `lib/locationDisplay.ts` + `components/inventory/LocationLabel.tsx`; id→name lookups: `lib/locationLookup.ts` (warehouse-scoped) and `hooks/queries/useLocationNames.ts` (order-scoped pick surfaces only).
-- **A number is assigned once and NEVER reassigned.** Delete rack 3 and the next is 6. A sign already on the racking cannot be un-printed, and re-minting 3 puts two racks under one name. Assignment fires only where `name_seq IS NULL`, which makes the pass monotonic — which is what lets the server recompute the client's answer rather than trust it.
-- **Three columns, not one flag.** `name_is_auto` alone cannot say which pool a number came from: paint "Bulk" over `Chiller · Rack 1..5` and a geometry-derived pool finds Chiller empty, so the next Chiller rack duplicates a live name. **`name_area` is the pool key and is stored, never derived.** `name_seq` likewise cannot be derived from position (renumbers on delete) nor parsed back out of `name` (an area name is free text and may contain ` · Rack `).
-- **The high-water mark comes from the WAREHOUSE, not the layout** (`loadAreaHighWater`, and `seqFloor` client-side). Deleting a rack drops its placement row but not its `locations` row — publishing never retires a bin. A rack drawn and deleted *before any save* leaves no claim, which is correct.
-- **Pools are per area NAME, across floors**, so `rename_area` drops its floor predicate. `00090`'s "identity is its name, per floor" is about region MERGING — a flood fill cannot cross floors. A region is a per-floor blob; an area is every blob sharing a name.
-- **`area_renames` rides on `save_geometry`; it cannot be inferred.** A full replace sends byte-identical geometry for "renamed Chiller" and "erased Chiller, painted Cold Room". Coalesced client-side (A→B→C ⇒ A→C).
-- **The live rename is on `mutate-warehouse-location`, not `mutate-layout`** — see the lockdown table. `mutate-layout` is Admin-only and gates *before* body parse; this one is already Admin+Manager and already writes `layout_placements`. The area↔bin join is purely geometric (`layout_objects` cells ∩ `layout_placements` cells on the same layout); the intersection is done in TS, not SQL, for the same reason `proposeHomeBins` is. `dry_run` on the real action, never a separate preview endpoint. Own 10/min bucket; one audit event; **`warehouse_layouts.updated_at` is deliberately NOT bumped** or `needsRepublish` would demand a routing-graph rebuild for a spelling fix.
-- **Typing a name makes it custom and releases its number** — forced server-side in both `update` and the reducer, since a caller could otherwise leave a typed name marked auto and have the next cascade eat it. A cascade skips custom rows and *reports* how many; "also rename these" is the opt-in.
-- **Scan prompts keep the CODE** ("expecting NEXG-B-9-4-L4"): the sticker prints the code large and the name only as small context, so the prompt must quote what is big on it. Toasts take `locationOneLine` (both). **CSV keeps `bin_code`; there is no `bin_name`** — a non-unique name cannot be an identity contract.
-- On the canvases a bin draws the name's **tail** only (the area is its own wayfinding layer), falling back to the code when it will not fit; `fitName` is head-preserving where `fitCode` keeps the tail, and names are proportional (`SANS_ADVANCE`).
-- **`claimedInTarget` (added `00095`) is what stops a moved BOUNDARY duplicating a name.** `assignAutoNames` keeps a unit's number when it came from either side of a rename, and the high-water fold protects only *fresh* mints — so sweeping `Bulk · Rack 3` into a Chiller that already holds `Chiller · Rack 3` produced two racks under one name. Harmless while an area could only be renamed (a rename moves the whole pool at once, so nothing can collide, and `rename_area` deliberately still passes nothing); reachable on day one of painting. `planAreaCascade` supplies it per group.
-
-**Live area painting** (mig `00095`) — an area's shape, name, tint and existence are editable on a **published** layout, from the live map *and* from the designer opened on it. Everything else about a published layout stays read-only.
-- **Why this is safe, precisely: an `area` is INERT in routing.** `buildWalkableCells` whitelists `walkway|dock|lift|staging` and subtracts `wall|conveyor`; `publish-layout` reads `object_type` only to collect `staging_location_id`. An area contributes no graph node, no edge weight and no `access_offset_m`, so it cannot invalidate anything `wie_publish_layout_tx` froze. **Therefore `warehouse_layouts.updated_at` is NOT bumped** — same rule as `rename_area`.
-- **FULL REPLACE, not a diff, and that is the design.** The server reads the before-picture from the database, so "renamed Chiller to Cold Room" and "erased Chiller, painted Cold Room over the same cells" are *derived* as the same plan rather than told apart — correct, because both mean the same thing. This is exactly the ambiguity `save_geometry` needs `area_renames` for; **`paint_areas` has no such field and must never grow one.**
-- **Storage stays 1×1 rows, enforced by the RPC.** The designer's `paint_cell` removes *the whole object covering a cell*, so a stored multi-cell run would vanish wholesale the first time one cell of it was repainted. Run-length packing is a **wire format only** (a blobby area compresses 10–40×).
-- **`wie_replace_layout_areas_tx` exists because two supabase-js statements are not a transaction.** There is no ordering of a separate DELETE and INSERT that is correct — delete-first leaves a live warehouse with every area gone if the insert fails. Deliberately dumb: bounds backstop, 1×1 and non-blank-name checks, nothing else.
-- **`_shared/wie/areaPaint.ts` is pure and imported by both runtimes** (re-exported by `lib/areaPaint.ts`). Two things depend on it being literally the same code: `areaCellsFingerprint` (a byte of drift and every save 409s on a picture nobody changed) and the summary panel's counts, which ARE the server's `dry_run`. `planAreaCascade` is the only new decision logic — it buckets moved units by `(beforeArea → afterArea)` and feeds each direction through `assignAutoNames` as a rename, so adopt / strip / boundary-move all fall out with no special case. **Groups are threaded, not independent**: separate calls lose the shared high-water mark and the record of which numbers have landed, without which `Bulk · Rack 3` and `Cold · Rack 3` both moving into Chiller would both keep 3.
-- **The cascade is OPT-IN**, previewed by `dry_run` (which returns before any write and before the audit). A unit whose carried pool already disagreed with where it sat is reported as `skippedForeign` and **left alone** — this paint did not make it inconsistent. Own `:paint:` bucket at 10/min, deliberately not shared with `:area:` so a burst of paints cannot lock the operator out of fixing a spelling.
-- **Concurrency is a fingerprint, not a timestamp** — see the `updated_at` rule above: *nothing* moves when areas change. `base_fingerprint` is captured once at paint-mode entry and held in a ref, never recomputed from live query data, or a background refetch would leave the check comparing the server's picture against itself. The designer's stale-draft banner compares fingerprints for the same reason.
-- **`EditorState.editScope`** (`'all' | 'areas'`) is the designer's guard, and it lives in the **reducer**, not the toolbar: a keyboard shortcut, a stale render or a canvas drag must be refused by the same thing that refuses a bad co-occupancy. In `'areas'`, Save routes to `paint_areas` — **never** to `save_geometry`, which is a full replace plus an orphan sweep that hard-deletes `locations` rows. Note the eraser must look for an `area` *specifically* rather than take `objectAt`'s topmost hit: areas co-occupy with everything, so over a wall the topmost object is the wall.
-- On the live map the cell is derived in **`MapStage`**, not the canvas (`WarehouseCanvas`'s scene memo excludes `viewport.tx/ty` so a pan is one `<g transform>` update). Paint mode takes pointer capture **eagerly** — correct there and only there, because the lazy capture in `useMapViewport` exists to preserve a trailing child `click` and paint mode has none; `Alt` falls through to the pan path. The ✎ rename pencil is suppressed while painting: both rewrite the same rows.
-
-**Level roles are operator-managed data** (mig `00081`). A rack level's role lives in `level_roles`; `locations.level_role` FKs it (the CHECK is gone). The **stored key never changes** — `'pick'` is still `'pick'`; its `display_name` is "Pick Zone". `NULL` still means an unconstrained legacy bin, which the FK preserves for free.
-- The row carries what used to be code: `hu_types` (replaced `ROLES_BY_HU_TYPE`), `is_pick_zone` (replenishment destination + `inv_reserve_order` preference), `replen_source_rank` (which roles feed a pick zone, in order).
-- **One definition, both runtimes:** `_shared/wie/levelRoles.ts` (pure — every helper takes the role array as its first arg, no cache, no fetch), re-exported by `lib/levelRoles.ts`. Load it via `useLevelRoles()` client-side or `_shared/levelRoleLookup.ts` server-side. **Never** compare a role to a literal to decide behaviour — read the flags.
-- Admin CRUD: `mutate-level-role` + `components/admin/LevelRolesSection.tsx` (Settings → Warehouse). Deleting needs `wie_level_role_usage` all-zero — it counts the two references no FK can guard, `product_wms_attributes.allowed_level_roles` (array element) and `storage_types.level_template` (JSONB).
-
-**Replenishment** (mig `00082`) — reserve/bulk → pick zone, same two-stage shape as putaway: `suggested --assign--> assigned --complete--> accepted|overridden`, stock moving only at `complete-replenishment`.
-- Config is `product_home_bins.{min_qty,max_qty,replen_enabled}` (base units), guarded by a trigger to pick-zone levels. Its unique key is now `(product_id, warehouse_id, purpose)`.
-- Detector `wie_replen_detect` runs advisorily after **every pick and every putaway**, plus on demand. The putaway hook is not redundant: "short but nothing to pull" is a state entered by a putaway, not a pick.
-- Functions: `detect-`/`assign-`/`complete-`/`unassign-replenishment`, `recommend-replen-route` — all Admin/Manager/**Warehouse** (`transfer-stock` is Admin/Manager only, so it could never serve this).
-- Frontend: `components/inventory/{ReplenQueuePage,ReplenQueueView,ReplenWalkView}.tsx` + `inventory/replen/ReplenStopCard.tsx`, `hooks/queries/useReplenishment.ts`.
-
-**Bulk min/max** (mig `00093`, closes onboarding H3) — `ReplenQueuePage`'s third sub-view, `?subtab=setup`, **Admin/Manager only** (`mutate-product-home-bin`'s roles; Warehouse staff walk the queue, they do not set thresholds). One grid per site: every active product ranked by demand, its home bin, its two figures, CSV export/import.
-- **Read is `wie_replen_config_rows(warehouse)`**, one STABLE `SECURITY DEFINER` RPC granted to `authenticated` — same pattern and calling convention as `wie_warehouse_report` (including `supabase.rpc.bind`). It reports **facts only**: policy maths and free-bin assignment are deliberately not in SQL.
-- **`_shared/wie/replenPolicy.ts` is pure and imported by both runtimes**, re-exported by `lib/replenPolicy.ts` — the grid's suggested figures and inline refusals ARE the server's decision, evaluated early. Same split as `_shared/binCount.ts`.
-- **The suggestion is capacity, never demand.** A site being stood up has no picks, and days-of-cover from three days of history is a fiction. `capacityBaseUnits` inverts `capacity.ts`: a carton bay holds `capacity_slots / size_factor`; a **pallet** bay holds `capacity_slots × units-per-pallet`, which exists nowhere but the product's largest UOM — without one there is **no suggestion**, because an invented figure becomes a real transfer to a real rack.
-- **`proposeHomeBins` is greedy in demand order and cannot double-claim** — that is precisely why it is JS and not a SQL subquery, which would hand one nearest bin to every SKU. Stock-held bin first (a person put it there), else nearest free pick bin. An *untouched* proposal is not a change: counting them made Save offer to commit 118 assignments nobody had looked at.
-- **`bulkSet` takes `replenEnabled` at CALL level, not per row.** It maps onto the two acts (save figures / arm), and PostgREST needs a uniform key set across an upsert batch — omitting it leaves the column untouched on existing rows and `false` on new ones. Every row is validated in JS **before** the single upsert, because the table's CHECKs and its pick-zone trigger abort the whole statement on one bad row. A refused row is reported, never fatal; **one** audit event per batch (`product_home_bins_bulk`). Own rate bucket, 10/min.
-- **A row already armed still has to satisfy the pick-zone rule when merely edited** — `willBeArmed(row, 'leave')` is the row's own `replen_enabled`, not `false`.
-- Blank ≠ zero on both the grid and the CSV (`min_packs`/`max_packs` are authoritative; the exported `*_base` columns are read-only arithmetic).
-- **Never render a per-row `<select>` of bins.** 158 rows × ~400 locations froze the tab hard enough that Chrome could not be scripted; the grid renders ONE `<datalist>` and every row's bin input points at it.
-- The setup checklist's `replen_min_max` step counts **armed** rows only (`countReplenConfigured`), so saving figures does not tick it — which is the honest test of whether replenishment is on.
-
-**Slotting rules & off-home** (migs `00114`–`00121`) — the operator states where a product
-*belongs*. Until `00115` exactly ONE thing constrained that: `zone_profiles.allowed_categories`,
-an exact-string match on `products.category` applied as hard filter #4 in `scoring.ts`.
-"All the Milwaukee goes in aisle C, and if C is full put it in the mezzanine" could not be
-said at all. A rule ANDs product / brand / category / supplier conditions onto **ranked
-blocks** of bins; precedence is a fixed specificity ladder, not a priority number.
-
-- **`products.brand` (`00114`) is the third classification axis** — a distributor's supplier
-  is not its manufacturer and "Fertiliser" is not "Yara", so neither existing column can
-  stand in. Nullable, **no default and no backfill**: `''` is a value a rule condition can
-  match, so seeding one would silently enrol the whole back catalogue in the first
-  blank-field rule anyone writes. Unbranded has exactly one representation and it is NULL.
-  The index is on the **folded expression** (`lower(btrim(brand))`), because a plain btree
-  cannot serve that predicate and would sit there looking like coverage.
-- **Not `wie_rules`, and it is worth knowing why** — that table's targets are PREDICATES
-  over `resolveAttr`'s closed vocabulary, with one JSONB column and nowhere to hang forty
-  location ids; its `priority` breaks ties where this needs a ladder; rank is per (rule,
-  block); and `mutate-wie-rule` is Admin-only where this is Admin+Manager. `rule_type =
-  'slotting'` has sat unused in `00045`'s CHECK since the beginning — **leave it dead.**
-- **`_shared/wie/slotting.ts` is pure and imported by both runtimes** (`lib/slotting.ts`),
-  loader beside it in `_shared/slottingLoad.ts`. It decides **ORDER, never HEADROOM**, and
-  that is a correctness requirement, not an optimisation: `reslot.ts` deliberately calls
-  `filterCandidates` with a falsified `quantity: 1`. A tier test asking "does this tier have
-  room" would read that 1, collapse every plan into the primary block and spill the rest
-  into `overflow` — which carries **no reason field**, so the operator sees "could not be
-  placed anywhere" with nothing pointing at slotting. Legality and preference order here;
-  which bin actually has room is `putawayPlan.ts`, whose greedy fill already spills.
-- **`wie_putaway_candidates` filters NOTHING new** (`00116`) — it *reports* `block_ids` and
-  `is_hold`. A `WHERE` clause there would delete exactly the non-block bins that overflow
-  depends on, would force the ladder and the reservation union to be restated in SQL beside
-  the TypeScript that already does it, and would be **invisible** where the TS path yields
-  real `rejectedCount`s and samples (see `scoring.ts:178-196`, which had to fabricate them).
-- **Precedence has ONE implementation, `resolveSlotting`.** `wie_slotting_rule_rows` reports
-  a rule's MATCH COUNT and never which rule governs a product — counting is not ranking. The
-  count exists because `match_category` has no FK (free text since `00069`), so renaming a
-  category silently stops a rule matching; a zero beside the rule is the only way anyone
-  finds out.
-- **Both writes are delete-then-insert transactions, and that is forced.**
-  `uq_slotting_rule_rank` is DEFERRABLE (a drag-reorder rewrites every rank at once and a
-  non-deferrable UNIQUE trips 23505 mid-statement) — **and a deferrable constraint cannot be
-  an `ON CONFLICT` arbiter**; Postgres rejects the inference outright.
-- **Off-home** (`00119`) is the other half: a rule written today finds forty pallets already
-  scattered, and the operator needs a list they can walk. **Its own table**, because
-  `uq_wie_slotting_open` is keyed (warehouse, product, from, to) and a travel-saving reslot
-  row for the same pair would collide — the `uq_wie_replen_open` arbiter trap again. **ONE
-  stage, not two**: the stock is already in a bin and the walker is standing at it, so an
-  assign stage would only add a state to abandon. Sized from `available`, never `on_hand`.
-- **`wie_offhome_replace_tx` (`00121`) exists because a partial index's predicate cannot
-  travel over PostgREST** — `.upsert({onConflict})` sends column names only and Postgres
-  answers *"no unique or exclusion constraint matching the ON CONFLICT specification"*. The
-  delete is scoped to the products the sweep **actually examined** (it is capped by
-  `MAX_SCANNED_PRODUCTS`), or a truncated run silently retires tasks for the rest.
-- **A dismissal carries a QUANTITY** (`_shared/wie/offHomeSuppress.ts`, pure): it is a
-  statement about a *situation*, not a bin. "Double-stacked behind the Ryobi pallets" is true
-  of today's pile. Same stock or less stays silent; more stock arriving is a new situation
-  nobody refused. Suppressing on the (warehouse, product, bin) triple would need the operator
-  to *remember* to lift it, and forgetting is silent — `restore` is the act you take when you
-  know, not the maintenance you must not forget.
-- **The Blocks overlay reads `wie_slotting_block_bin_map`** (`00120`), a STABLE SECURITY
-  DEFINER function with the staff check in its body — the `wie_replen_config_rows` pattern.
-  Granting `v_slotting_block_bins` to `authenticated` would hand Customers the whole
-  membership map past `user_is_staff()`; expanding `slotting_block_members` client-side would
-  be a second implementation of unit → leaf-bin expansion. **Staff, not Admin/Manager** — it
-  is looked at while standing in the aisle.
-- Frontend: rules live in **Settings → Warehouse** (`SlottingRulesSection`, beside level
-  roles and label stock); suggestions in `WarehousesSettingsSection` via
-  `SlottingSuggestionsView`; `admin/layout/ReslotPlannerModal.tsx`; the map's block picker is
-  `inventory/warehouse/slotting/*`; the walk is the **Off-home** tab
-  (`components/inventory/OffHomeQueuePage.tsx`, Admin/Manager/Warehouse). Hooks
-  `useSlottingRules`, `useSlottingSuggestions`, `useReslotPlan`, `useOffHome`.
-
-**Location code sweeps** (migs `00107`–`00108`) — the operator paints a block of bins on
-the live map, names it, and every bin in it is recoded. `locations.code` was a grid
-coordinate (`AMADIYA-B-3-4`) because that is where the cell happened to sit; this lets
-the operator state the scheme instead.
-
-- **`{row}`/`{col}` are SELECTION-RELATIVE; `{x}`/`{y}` are ABSOLUTE GRID.** That
-  distinction is the whole feature. `{row}`/`{col}` count within the painted block, so
-  the first bin of every block is `1-1` wherever it stands — which is what an operator
-  means. Dense on both axes: a walkway between two rack runs burns no row number and a
-  hole in a run burns no column. **Contiguity is `{n}`'s job; coordinates count things,
-  not cells.**
-- **`BUILTIN_PATTERN` and `WIZARD_DEFAULT_PATTERN` are two different jobs and must not
-  be conflated.** BUILTIN (`{wh}-{block}-{x}-{y}`) keeps DRAW-TIME minting
-  byte-identical to the historical code and must never change. A SWEEP's default is the
-  wizard's (`{wh}-{block}-{row}-{col}`). They drifted apart once — the client planned
-  `-1-1` and the server returned `-3-3`, reproducing the original bug through a second
-  door — because each half was correct in isolation and only the FALLBACK CHAINS
-  disagreed. The client now sends the template it planned with; the server's fallback is
-  a backstop. Caught in a browser, not by tests.
-- **A control may only be rendered when its token is in the template** (`usedTokens`).
-  The original defect was not wrong numbering, it was that `Start at` and `Order` were
-  shown against a pattern with no `{n}`: the operator set them, nothing happened, and
-  there was no way from inside the UI to find out why. `visibleControls` makes that
-  class of bug impossible rather than fixing one instance of it.
-- **Selection is a BRUSH, with the rectangle demoted to a secondary tool that hit-tests
-  by `contain`.** The rectangle tested INTERSECT, and a rack is `w×h` cells, so a band
-  round the bulk block clipped one cell of the neighbouring fast-mover racks and
-  swallowed them — with no shape the operator could draw that avoided it, because real
-  blocks are not rectangles. Bands ACCUMULATE like strokes; one undo frame per stroke.
-- **The origin is operator-chosen (`nw|ne|sw|se`) and decomposes into two INDEPENDENT
-  axis directions**, shared by `buildSelectionFrame` and `orderCells` — so the counter
-  starts at the same bin the coordinates call `1-1`. Two rules would let the walk go one
-  way and the numbers the other with nothing downstream noticing.
-- **Growing a block frames over the UNION and writes only the new units.** Members
-  already in the block are planned but never written, purely to check they still render
-  the code they hold; if a framing would move one that is a **`drift` refusal voiding the
-  batch**, answered by re-framing or by opting into `renumber_block`. The origin that
-  WOULD fit is **solved from the floor** (`solveBlockFraming`), never stored — storing
-  `(row,col)` on `locations` would be a third hand-kept copy of geometry beside
-  `parent_id` and `materialized_path`, and a stored high-water gets growth wrong anyway
-  (a row added north of a north-origin block must become row 1 and push the rest down).
-- **Ghost numbers are planned CLIENT-SIDE** from the same pure module (`plan.proposed`,
-  which carries every unit's code even when the batch is refused — reading them off
-  `writes` made a refused plan show only the offenders' new codes and everything else its
-  OLD one). The `:recode:` bucket is 10/min, so four origin clicks would spend it. The
-  server's `dry_run` fires ONCE on entering Review and is the authority. The client's
-  `takenCodes` is SITE-scoped where the server's is GLOBAL — stated in
-  `recodePlanView.ts` rather than left to be discovered.
-- **`MapSelectionLayer` is a SIBLING of `WarehouseCanvas`, never a prop of it.** The
-  canvas memoizes its whole scene; a value changing per painted cell would rebuild 945
-  bins per cell. `renderMarkers`/`canvasObjects`/`placements` were already unmemoized
-  scene deps busting it on every marquee frame — `__tests__/mapSceneIsolation.test.ts` is
-  a source assertion because the failure mode is a tab that merely gets slow.
-- **A sweep is revertible and the offer survives a reload** (`location_code_sweeps`).
-  Only the newest un-reverted sweep is reachable and the action takes no sweep id —
-  reverting an older one would collide with every newer one. Revert restores
-  `code_block`/`code_seq` as well as the code, or the provenance would still claim the
-  sweep happened and feed the next high-water mark. `recordSweep` is deliberately NOT
-  fatal: the sweep has already committed, so the response carries `canRevert` and the
-  panel withholds the button rather than reporting a successful write as an error.
-- Panel is a **grid sibling of the map, not an overlay** (`components/inventory/warehouse/recode/`),
-  so the map stays paintable and `check:overlays` is untouched. **Apply is visible at
-  every step** with a one-line reason when disabled — the reported complaint was "I only
-  see a Preview button and no button to apply", and the button existed.
-- The `unswept` overlay tints bins whose `code_block IS NULL` — 00107's provenance
-  signal, a fact about the row rather than a guess about the string. Arms on entering
-  the panel, restored on cancel.
-- Settings → Warehouse → **Bin code pattern** writes `warehouse_code_patterns`
-  (`set_code_pattern` on **`mutate-warehouse`**, the sibling of `set_label_prefs` — not
-  on `mutate-warehouse-location`, whose buckets are for actions rewriting hundreds of
-  rows). Clearing DELETES the row: "no row = the built-in default" must have one
-  representation. **Read by the sweep only** — drawing a new bin still mints a grid code.
-
-**Receiving: "Arrived on", and mixed pallets** (**no migration** — the payload already said all of this).
-
-- **The reported bug was an inverted control.** The receipt line's `Pallet / carton` column stacked a plate PICKER ("Pallet 1", "Carton 2", "+ New unit…") over a TYPE selector, reading specific → general while the data ran general → specific: the type select's value came off the **plate**, not the line, so on a shared plate changing one line silently retyped every sibling. The column is now **`Arrived on`** with ONE select, and a normal line owns its plate one-for-one — the hazard is gone by construction, not by a guard.
-- **Arrival is not storage, and the label now says so.** `plateDestinationLabel` reads `rolesForHuType` (mig `00081`) exactly as before but renders `Pallet (usually → Reserve/Bulk)`. Putaway may place it anywhere, the SKU's own rule outranks the plate preference, and a pallet can be broken down on the floor — so a bare arrow read as a commitment it never was.
-- **A mixed pallet is a CONTAINER, not three identical dropdown selections.** `+ Mixed pallet` opens a card (`components/inventory/receive/MixedPalletCard.tsx`); everything added while it is open rides on it, **including dock scans**, because `handleDockScan` funnels through `addProduct`. Walk the pallet, scan, scan, scan, press **Done**. It is **always `hu_type: 'pallet'`** (a carton holds one product, so a mixed carton names nothing) and its member lines withhold their own `Arrived on` (`inGroup`) so none can contradict the container. The button is on the footer **and the empty state** — without the second one a receipt could never *start* with a mixed pallet.
-- **Nothing changed server-side.** `createPlates` already accepted one declared plate carrying several lines; that IS a mixed pallet, and `generatePutawayTasks` already passes `hu_id` so it lands as one physical object. `__tests__/receiveMixedPallet.test.tsx` asserts the **payload** for that reason.
-- **`addProduct` read `plates` from its own render closure.** Two adds in one React batch — which is exactly what a gun does — and the second dropped the first's plate, leaving a line naming a `plate_key` that was never declared. `createPlates` rejects that and fails the WHOLE receipt. Now a functional `setPlates`. Latent before mixed pallets; reachable after.
-- **`components/ui/Tooltip.tsx` portals to `document.body` and positions `fixed` from the trigger's rect.** Not decoration: the staged-lines container is `overflow-hidden` and clipped an inline popover on the right-hand columns, and `ProductForm` sits inside a `<Modal>` at `BASE_Z` it could not climb over. It is **not** an overlay — no backdrop, no focus trap, no scroll lock, not in `overlayStack`. `position: fixed` is not `fixed inset-0`, so `check:overlays` is satisfied on both counts. It uses **`aria-describedby`, never `aria-controls`** — it is a tooltip, not a disclosure, and `aria-controls` would also make it match `tests/e2e/mobile/receive-stock.spec.ts`'s `button[aria-expanded][aria-controls]` line-disclosure selector.
-- **The receipt row switches on a CONTAINER query, not a viewport breakpoint** (`@min-[1180px]:`, with `@container` declared once on the staged-lines card so the headings and the rows cannot disagree). `ReceiveLineCard`'s measurement table was always right and always in CONTAINER widths — 904px of columns + 112px of gaps + 32px of padding = 1048px before the product column gets anything, and its "1180px → 132px" row is exactly `1180 - 1048`. Encoding that as `xl:` made it a VIEWPORT figure, which differs by the 208px sidebar plus page padding: at a 1280px viewport the container is 997px, so **the product column computed to 0px and the row overflowed**. Do not turn it back into a breakpoint; the receipt HEADER card's `xl:` classes are page layout and stay.
-- **Hover, focus and pin are three separate states, not one `open` flag.** A single boolean toggled by click was opened by `mouseenter` and shut again by the click that followed, so the hint never appeared on a mouse. jsdom fires no hover, so only a browser showed it.
-
-**Pallet break-down at putaway** (mig `00126`) — take part of a pallet off it, at the rack, mid-walk. Each portion becomes a **new labelled handling unit** with its own destination and its own walk stop.
-
-- **Partial putaway looked like it already did this and did not.** `p_qty` on `wie_assign_putaway_tx` / `wie_complete_putaway_tx` splits the **task**; it never splits the **plate**. `inv_transfer_stock` copies each balance row's `handling_unit_id` onto both legs (`00080`), so placing part of a plate left ONE `handling_units` row with stock in two locations — `hu_recompute` saw `v_locs > 1`, deliberately declined to pick a winner, and left `location_id` stale, while `v_bin_fill` charged a pallet position in **both** bays. Breaking a pallet down is not a quantity operation; it is a **container** operation.
-  - **It does NOT repair the damage already done.** Dev carried three such plates on 2026-08-26 (`HU-000209` across `E2ERACKLVL` and two of its levels, plus `HU-000214`/`HU-000219`), all partial-putaway artefacts. `00126`'s verify block says to compare before/after, not to expect zero. Repairing one means deciding where the pallet physically is, which is a stocktake.
-- **NOTHING moves to a bay.** The portions are re-plated **where they already are** — at the warehouse root — and become `assigned` tasks; `complete-putaway` still moves each, per plate, with the plate + bin scan that already exists. That keeps `00080`'s promise, and it makes `00123` work for free: `v_bin_pending_putaway` charges one position per **distinct plate** on open tasks, so the destination bays are spoken for the instant the children exist, with no change to that view. **Verified on dev: a 2-portion break-down put `pending_slots = 1` on each of two bays.**
-- **The legs are `transfer_out`/`transfer_in` at the SAME location** with different `handling_unit_id`s (legal since `00075` rebuilt the slot key), `ref_type = 'hu_split'`, `ref_id` = the parent plate. A new `replate` movement type would render blank in every stock-history surface until each learned the word; `ref_type` answers "why" without teaching anyone a new one.
-- **FEFO, and `available` NOT `on_hand`** — same `ORDER BY` as `inv_transfer_stock`, so FEFO means one thing here. Reserved stock cannot change container any more than it can change bin: dev's plate 240 holds 49 with **28 allocated**, and a 30-unit portion is refused `short by 9` rather than quietly moving someone's reservation onto a plate walking to a pick face.
-- **The whole sheet is validated BEFORE any plate is minted.** The transaction would roll an orphan `handling_units` row back anyway, but `handling_unit_code_seq` is a **sequence and sequences do not roll back** — checking first is what keeps a site's plate codes contiguous instead of pocked with gaps from attempts that never happened.
-- **Allocating 100% is allowed**: the parent task closes as `'expired'` (which `00123`'s pending view excludes, so its bay stops being spoken for in the same statement) and `hu_recompute` marks the plate `'empty'` on its own. There is no `'split'` status and none is needed.
-- **`_shared/palletBreakdown.ts` is pure and imported by both runtimes** (re-exported by `lib/palletBreakdown.ts`) — the sheet's running total and inline refusals ARE the server's decision, evaluated early. Same split as `_shared/binCount.ts`. It **must not import `lib/palletFit.ts`**, which is browser-only by deliberate decision: the client converts layers to base units and the wire carries `{ base_qty, counted_unit }`. The unit survives only to derive `hu_type` and for the audit trail; the invariant that protects the ledger is arithmetic on the base quantity, re-checked server-side and again under the row lock.
-- **`hu_type` is DERIVED from the unit counted in** — pallet/layer → `pallet`, carton/base → `carton`. Not cosmetic: it is what `rolesForHuType` (`00081`) reads to route each portion's engine suggestion, and what `v_bin_fill` (`00122`) charges one position for.
-- **`dry_run` scores each portion AS THE CONTAINER IT WILL BECOME**, which is why the suggestion cannot be lifted off the parent's own `alternatives` — those were scored for a pallet. **ONE call for the whole sheet, not one per portion**, so the greedy `overlay` stops two carton portions being offered the same pick bay. That needed an opaque **`ref` on `PutawayLineInput`**: `recommendations` is a FLAT array, one line can produce several allocations, and every portion shares a SKU, so nothing else can map a result back to its input.
-- **Labels needed no server work.** `generate-labels` already takes an explicit `ids` list on the `handling_unit` kind, flips `label_printed` and returns a signed URL. It is rendered as a **link the operator taps** — a programmatic `window.open` after the await is popup-blocked. Between commit and the child stop the plates are labelled in the database and may not be on the floor; the child stop's **plate scan is what closes that window**.
-- Only an **`assigned`** task on a **`pallet`** plate can be broken down. A `suggested` one is refused (the desk queue has no entry point, and an unreachable branch is untested code); loose stock has no plate, and `complete-putaway`'s partial quantity already covers it. Own rate bucket at **10/min/user** — it mints plates and rows, and must not share a budget with the 120/min putaway traffic the same walk generates.
-
-**Identifying the goods at putaway** (**no migration**) — the walk's first step asks
-for whatever actually identifies what is being carried, which is usually the PRODUCT
-barcode and only sometimes the plate.
-
-- **The reported bug: the walk demanded a code printed on nothing.** `receive-stock`'s
-  `createPlates` mints a handling unit for EVERY line — that is what makes "every receipt
-  line is on a plate" true — but it renders no sticker, and until now nothing offered to.
-  So `HU-000509` existed in the database and on no physical object, the stop said
-  *"Scan the plate — expecting HU-000509"*, and the operator holding a carton with
-  `4796009868869` printed on it was told *"That is plate 4796009868869, but this task is
-  for HU-000509"* — which calls a barcode a plate. There was no skip; the only exit was
-  abandoning the stop.
-- **The operating rule is the other way round.** The product barcode identifies the goods.
-  A plate label is needed for a **pallet** (a carton barcode names the SKU and cannot tell
-  two pallets of it apart), for goods carrying **no barcode**, and for a barcode that
-  arrived **damaged**.
-- **`_shared/putawayIdentity.ts` is pure and imported by both runtimes** (re-exported by
-  `lib/putawayIdentity.ts`). Five ordered branches, each pinned by a `reason`:
-  no plate → skip; label printed → plate; unlabelled pallet → plate + offer to print;
-  product has a barcode → product; nothing scannable → skip + offer to print.
-- **What is ASKED FOR and what is ACCEPTED are different, deliberately.** The prompt names
-  one thing (a prompt naming two teaches nobody what to do); the field accepts either code
-  and `classifyPutawayScan` routes it to the right evidence key — plate if it normalises
-  equal to the task's `huCode`, product otherwise. An unrelated string goes to
-  `productCode` **on purpose**, so `checkPutawayScan` answers *"that item is not <SKU>"*
-  rather than calling it a plate.
-- **The server was never the obstacle, and this is worth remembering as a shape.**
-  `checkPutawayScan` has always accepted and validated `productCode`, `complete-putaway`'s
-  zod schema has always taken `scan.productCode`, and `putawayService.ts` has always typed
-  it. The card simply never populated it — so **every product-identified placement was
-  recorded `scan_verified: false`**, understating evidence that had in fact been collected.
-  Before assuming a capability is missing, check whether it is merely unreached.
-- **The identity is captured ONCE, on opening the stop, never derived per render.**
-  `generate-labels` flips `handling_units.label_printed` the instant the PDF renders (right
-  for a plate, wrong for a rack — see `confirm-label-print`'s header), so a live reading
-  would swap the card into "scan the plate" the moment the operator taps Print, while the
-  sticker is still in a printer on the other side of the building.
-- **Two unlabelled plates of one product cannot be told apart by barcode, and the stop says
-  so.** `PutawayWalkView` computes the twins (it holds every stop; the card sees one) and
-  the card warns. They are NOT merged into one stop — that would hide a real container
-  distinction.
-- **Plate labels are now printable at Receive Stock**, which is the only place they are
-  cheap and the reason the backlog exists. `getReceiptPlates()` had been written, exported
-  and **called by nothing**; it is wired up and now carries `label_printed` plus the
-  barcodes of what is on each plate, because the desk's question is not "which plates
-  exist" but "which need a sticker" — `plateNeedsLabel`, the receiving half of the same
-  rule, stated once beside it. Pallets pre-tick; barcoded cartons do not, but stay
-  printable for the damaged-barcode case.
-- **A task can outlive its plate, and used to lie about why.** A count, an adjustment or a
-  transfer at the warehouse ROOT consumes balance rows without naming a plate (`count-bin`
-  passes `p_handling_unit_id => NULL` deliberately); `hu_recompute` marks the plate
-  `'empty'` and **nothing touches `wie_putaway_recommendations`**. The stop stayed on the
-  walk and the placement died inside `inv_transfer_stock` as `INSUFFICIENT_STOCK`, which
-  `complete-putaway` rewrote as *"reserved for an order"* — untrue for this case. The card
-  now warns on `huStatus`, and `complete-putaway` gained the two checks `record-pick` has
-  had all along: `UNKNOWN_PLATE` (resolve the SCANNED code — previously a bogus plate was
-  refused only by string coincidence, and on a plateless task was **silently accepted**)
-  and `PLATE_CONSUMED` (the task's plate still holds this product **at the root**, scoped
-  there because that is the source leg the transaction will use).
-- **No migration:** `label_printed` and `status` are columns on a table the walk already
-  joins. `wie_putaway_stops` is untouched — the walk reads them off the PostgREST queue
-  query, and the route's `huCode` is discarded in `PutawayWalkView` anyway.
-
-**Pallet quantities** (mig `00125`) — what makes a full pallet countable as one line at the dock. `app_settings` gains the global pallet spec (seeded AU standard **1165 × 1165**, 150 mm deck, **1650 mm of load**); `products` gains nullable `carton_{length,width,height}_cm`.
-
-- **`lib/palletFit.ts` is pure and deliberately BROWSER-ONLY, not `_shared/`.** That rule exists where the client previews a decision the server re-makes (`_shared/binCount.ts`, `_shared/wie/replenPolicy.ts`). The server never computes a fit — it stores a factor the admin confirmed, which `validateUoms` already checks — so a `_shared` copy would be imported by nothing on the Deno side. It is dependency-free and takes plain numbers, so it lifts unchanged if that stops being true.
-- **Integer millimetres throughout.** `1165` is exact in mm and 116.5 in cm, and the whole computation is a stack of `floor()`s — a value one part in a million short loses a whole carton off a layer. `cmToMm` rounds at the boundary.
-- **`pallet_max_load_height_mm` is already LOAD-only.** Do not subtract `pallet_base_height_mm` from it "to account for the deck" — that counts it twice and silently loses a layer. The base height is stored for the overall-height readout and a future clear-height check, and is otherwise write-only on purpose.
-- **Two orientations per layer, best wins; no pinwheel, no overhang.** Both fit more and both stop the answer being something an operator can check against the pallet in front of them. A carton that does not fit is **refused by name**, never returned as `unitsPerPallet: 0` — a zero offered as a UOM factor is the worst outcome available here.
-- **An unmeasured carton is ESTIMATED from the unit box** by scoring every `a×b×c = N` arrangement on **minimum surface area**. Volume is identical across candidates (always `N` × the unit), so "most cube-like" reduces to one metric with nothing to weight — and it is what a packaging engineer optimises anyway. Plus a 5% allowance **per edge**, because the fit divides by linear dimensions.
-- **Nothing is written without a press.** `ProductPalletFitSection` computes continuously, shows its working, and only the button touches the ladder — with the number editable first. The row is **receivable and NOT orderable**, which matters twice: selling by the pallet was not asked for, *and* `set_product_uoms` (mig `00067`) recomputes `products.carton_size` from the non-base **orderable** rows, so an orderable pallet row would silently redefine what a carton is for the whole ordering side.
-- **Provenance is RECOMPUTED, not stored, and not "are the carton dims null".** A stored flag goes stale in silence. "Are the dims null" answers the wrong question — whether a *fresh* computation would be an estimate, not where *this* stored number came from — and gets three real cases wrong: a hand-edited suggestion, dims filled in later, dims cleared later. `palletUom.ts` recomputes and compares into `measured | estimated | manual | unknown`. Its stated cost: change the pallet spec and every previously-`measured` row reclassifies to `manual`, which is honest and is the only signal anyone gets that a spec change invalidated a catalogue's figures.
-- **The label is shown where the figure is USED, not only where it is set** — an estimated pallet quantity is a guess, and Receive Stock is where it becomes stock.
-- Receiving needs **no special casing**: a receivable Pallet UOM already flows through `receivableUoms` into the per-line Unit select, and `toBaseLines` in `receive-stock` already converts by `factor_to_base`. A product with no pallet config still allows `Arrived on: Pallet` — there is simply no Pallet unit to count in.
-- The spec lives in **Settings → Products** (a new seventh sub-tab, `?subtab=products`). It is consumed by the PRODUCT form, not a warehouse surface; Warehouse holds level roles and label stock, and Inventory holds the low-stock threshold.
-- **Known gap, unchanged by this:** `wie_replen_config_rows` still infers `palletFactor` as `MAX(factor_to_base)` (mig `00118:405-419`), so a three-tier each/inner/carton ladder with no pallet has its **carton** read as a pallet. A declared Pallet row makes the inference correct for any product an admin configures — dev currently has **no product with more than 2 tiers**, so it bites nothing today. A real fix needs a marker on the row, not more inference.
-
-**Scan tracking & handling units** (migs `00074`–`00078`, `00106`).
-- **Scan identity.** The barcode payload is **bare text** — a `locations.code`, a product SKU, or a handling-unit code — with no URL wrapper and no namespace prefix, so third-party scanner apps read something meaningful. The cost is that one string could name two things: `lib/scan/resolveScan.ts` returns `ambiguous` with every candidate and the UI asks the operator. **It never guesses.** Labels are rendered by `generate-labels` (`_shared/labelSheet.ts`) and logged to `label_print_log`; print UI is `components/admin/LabelPrintingSection.tsx`, input primitive is `components/ui/ScanField.tsx` (+ `lib/scan/useBarcodeScanner.ts`).
-- **Labels are Code 128, not QR, as of 2026-08-14.** Operators scan with a hand-held gun rather than a phone, and a laser reads a linear symbol faster, further and at worse angles than any camera reads a QR. Nothing was stranded — no QR label had reached a floor. `qrcode` was an esm.sh import, so the swap removed nothing from `package.json`. The camera path (`useBarcodeScanner.ts`) still decodes QR; there was no reason to stop.
-  - **The payload did not change**, so `resolveScan`, all three scan validators, `label_print_log` and `confirm-label-print` were untouched. This was a label-*printing* change.
-  - **Three pure modules, all shared with the browser.** `_shared/labels/code128.ts` (encoder — knows only modules), `_shared/labelSheet.ts` (turns a module count into points), `_shared/labels/sizing.ts` (turns points into a judgement, and is **the only file holding a threshold**). `generate-labels` is the one place that knows both modules and points.
-  - **A barcode's readability IS its width, so label size is no longer a constant.** `AMD-B-12-7-L3` gets 0.31 mm bars on the old 63×34 mm sticker and 0.48 mm on 99×38 mm, so the `slots` sheet group moved to `a4-14`. That costs real money — 945 slots is 68 sheets instead of 40.
-  - **The renderer refuses below 0.25 mm** (the ISO floor) and names the offending codes, **before** a PDFDocument exists. A sheet of unscannable stickers is worse than no sheet: it fails on a ladder, after 400 are stuck down. It judges against the floor **only**, never against a scan distance — distance is advice the wizard gives, not a limit, because a refused run on-site is worse than a warned one.
-  - **`SHEET_PRESETS` is ten real Avery A4 die-cuts** with `SHEET_PRESET_INFO` metadata; both UI preset lists read their copy from it. Expanding it caught a live bug: `a4-8` was 0.55 mm out per row against L7165, and with no vertical gutter that **compounds** to 2.2 mm by the bottom row. All presets are now exact and tested against their Avery size.
-  - **`warehouse_label_prefs` (mig `00106`) stores the stock per (warehouse, sheet group)** — three groups, three genuinely different die-cuts. **No row means the built-in default**, so nothing needed backfilling and clearing a preference is a delete. `resolvePreset` in `layoutLabelPlan.ts` is the one definition both runtimes use; the job modal previews with it and `generate-labels` renders with it. A layout run otherwise re-derives its stock, so `presetOverride` is a deliberately separate field for "this run only" — distinct from `preset`, which carries a default and so cannot say whether the caller meant it.
-  - **`LabelSizeWizard`** asks what you're labelling and how far away you scan, then shows bar width for the **worst** code in the run, a verdict, sheet count and a to-scale preview drawn from the real encoder. Its verdicts ARE the server's decision, evaluated early — same split as `_shared/binCount.ts`.
-  - **`kind: 'calibration'`** prints one code at six bar widths (0.25–0.55 mm) so an operator can find where their printer and gun stop agreeing. Deliberately **not** in `label_print_log` — no sticker from it goes on a location. Bar width is the one thing a printer can silently ruin, and every threshold above assumes a printer that holds it.
-  - **Ink-spread compensation is per-site data as of mig `00110`** (`warehouse_print_calibration`, one row per warehouse, **no row = none**), not the `BAR_WIDTH_REDUCTION_PT` constant it used to be. Runbook: `docs/runbooks/calibrate-label-bar-width.md`.
-    - **Its own table, not a column on `warehouse_label_prefs`.** That one is keyed `(warehouse_id, sheet_group)` because three die-cuts sit behind it; ink spread belongs to the **printer**, and a printer is not three things.
-    - **The CHECK bounds what may be typed; the safety property is `effectiveBarWidthReduction` in `_shared/labels/sizing.ts`.** The narrowest bar in a Code 128 symbol is ONE module, so the reduction is capped at a quarter of the module width **at render time** — a bound that depends on the code and the stock, which is exactly why it could never be a constant.
-    - **The verdicts in `fitCode`/`refuseRun` judge NOMINAL widths and must keep doing so.** Compensation exists so the printed bar lands on nominal; judging the compensated figure against the ISO floor counts the allowance twice.
-    - **The calibration ladder is drawn with NO compensation, even on a calibrated site** — printed through the correction it would be measuring the correction.
-  - `deno check` type-checks the Edge Functions; `supabase/functions` is excluded from `tsc` and is otherwise checked by nothing locally. `deno.lock` is gitignored.
-- **GTIN folding is groundwork for Phase 2 (per-pack-size barcodes) and is deliberately half-wired.** `barcodeVariants` treats GTIN-8/12/13/14 as one number because zero-padding preserves the mod-10 check digit — that is arithmetic, not convention. `gtin14Base` recovers the unit EAN-13 from an ITF-14 case code (strip the indicator, drop the check digit, **recompute** it) and is **not** consulted by `codeMatchesProduct`: a case of twelve and a single unit are different things, and folding them together is exactly what destroys the quantity. A test pins that.
-- **Handling units are an inventory dimension, not a sidecar.** There is no `hu_contents` table — `handling_unit_id` is a nullable 4th column on `inventory_balances`, folded into the unique slot index exactly as `batch_id` is: `UNIQUE (product_id, location_id, COALESCE(batch_id,0), COALESCE(handling_unit_id,0))`. A plate's contents **are** its balance rows, so mixed-SKU plates fall out for free and there is no second copy of the quantity to drift. `NULL` = loose/untracked stock and stays valid forever.
-- **Per-plate capacity** (`00078`): a pallet consumes **one position**, not `qty × size_factor`. `v_bin_fill` is the single source of bin fill — don't re-derive it.
-- Picking is scan-enforced: `_shared/pickScanCheck.ts` validates at `record-pick`.
+- **`_shared/wie/*.ts` and its siblings are PURE** (no Deno, no IO), so the Vite frontend imports the very modules the server runs. That is a correctness contract, not a convenience: **the client's preview IS the server's decision, evaluated early**. Never fork one — several (`areaCellsFingerprint`, `normalizeScan`, `binCount`, `replenPolicy`, `palletBreakdown`, `putawayIdentity`) must agree byte-for-byte or a save 409s and a scan the operator was told was valid is rejected server-side. Pinned by `__tests__/wie/purity.test.ts`. → all four
+- **Every inventory write funnels through `inv_apply_leg`** (service_role only): receive / reserve / pick / transfer / adjust. `inventory_balances` is the truth, `inventory_movements` the append-only ledger, and `products.inventory` / `products.available` are **caches** maintained only by `inv_recompute_product_cache()`. All quantities are base units. → engine
+- **A WAREHOUSE id is not a place stock sits.** Once goods are put away a balance row's `location_id` is the BIN's; the root holds only what has not been placed. Anything scoping stock "to a warehouse" must expand through `inv_warehouse_draw_locations` — never rebuild that expansion as a `materialized_path` prefix in TypeScript. → WIE gotchas below
+- **`inv_transfer_stock` moves `available` stock only**, so anything sized from `on_hand` fails at the rack. Replenishment, off-home and pallet break-down are all sized from `available` for that reason. → engine, stock-ops
+- **Layouts are drafted, then PUBLISHED.** Publishing builds the routing graph, flips the warehouse to `racked`, **freezes** edge weights / travel distances / access offsets, and **never retires old bins**. One published layout per warehouse. → engine
+- **Areas, floor signs, renames and zone re-parenting are legal on a PUBLISHED layout and deliberately do NOT bump `warehouse_layouts.updated_at`** — none contributes a graph node, edge weight or access offset. Staleness for those is therefore a **fingerprint**, never a timestamp, and each layer checks only its own. → map
+- **A bin's zone is materialized-path ancestry to a `kind='ZONE'` row.** `locations.zone_profile_id` on a bin is read by nothing and never stamped — binding *moves* the bin, it does not label it. `parent_id` and `materialized_path` are two hand-maintained copies of one edge with nothing in the database enforcing agreement: every move writes both, and a SHELF's path must ride in the same batch as its rack or it is silently orphaned. → map
+- **An auto-assigned location number is assigned once and NEVER reassigned**, and the high-water mark comes from the WAREHOUSE, not the layout. Typing a name makes it custom and releases its number. **The barcode payload, the `resolveScan` key, the path segment and the CSV `bin_code` are all the `code`** — never the friendly name. → map
+- **Putaway is two-stage** — `suggested → assigned → accepted|overridden` — and **assigning moves no stock**; the transfer fires at `complete-putaway`, when the operator scans the bin. Un-placed goods therefore read as sitting at the warehouse root, which is where they are. → stock-ops
+- **Partial putaway splits the TASK, never the PLATE.** Breaking a pallet down is a *container* operation (`break-pallet`, mig `00126`); dev still carries three plates holding stock in two locations from before that existed, and `00126` repairs none of them. → stock-ops
+- **The PRODUCT barcode identifies the goods at putaway.** A plate label is for a pallet, for goods carrying no barcode, and for a damaged one (`_shared/putawayIdentity.ts`). What is *asked for* and what is *accepted* differ deliberately. → stock-ops, scanning
+- **A handling unit is an inventory DIMENSION** — a nullable 4th column folded into the balance slot key, so a plate's contents *are* its balance rows and there is no `hu_contents` table. Stock on a plate consumes **one position**, not `qty × size_factor`; `v_bin_fill` is the single source of bin fill, so don't re-derive it. → scanning
+- **Level roles are operator-managed DATA** (`level_roles`, mig `00081`). Never compare a role to a literal to decide behaviour — read `is_pick_zone` / `hu_types` / `replen_source_rank` off the row. → engine
+- **`planPutaway` is greedy per line in input order**, so callers must sort by velocity or fast movers land behind slow ones. Slotting decides **ORDER, never HEADROOM** — `reslot.ts` deliberately passes a falsified `quantity: 1`, so a tier test asking "is there room" would read that 1 and collapse every plan. → engine, stock-ops
+- **Blank is not zero** on every count and config sheet: `parseCountedQty` returns `null` for blank and `undefined` for unusable text, and a write-off must be typed as `0`. → stock-ops
+- **Warn wherever refusing would not move the pallets** — `allowed_categories` after zone binding, unconfirmed bin labels at import, a wrong SOURCE bin at replenishment. A wrong DESTINATION *is* refused, because placing elsewhere leaves the short slot short while reporting the work done. → stock-ops
 
 **WIE gotchas** (each has cost real debugging time):
 - **`wie_putaway_candidates`' cap is `PUTAWAY_CANDIDATE_LIMIT` = 2000, not 200.** It was 200 until mig `00072` raised it ("MAIN alone is 189 bays x 5 levels = 945 locations"); this entry said 200 until 2026-08-03. The constant lives in `_shared/wie/types.ts` — the *pure* module — because `_shared/putawayTasks.ts`, which passes it, imports supabase-js from a URL and so cannot be imported by the frontend; the layout designer warns from 90%. It is ordered by dock distance with the limit as a **hard cutoff**, so a layout with more addressable locations silently hides its farthest bays from the engine. **Count locations, not placements**: a levelled rack holds no placement row of its own — its SHELF levels do. It also returns **every** active placement regardless of `kind` — anything you place is a putaway target, so staging/returns must be `label` objects, not bins.
@@ -861,19 +487,14 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 - **Audit trail** for every privileged mutation → `audit_events` (mig `00012`). Admin-only SELECT; service_role-only INSERT.
 - **A lockdown is a DROP POLICY *and* a REVOKE, and this table lied about that for a year.** `00009`/`00010` dropped some order policies and revoked nothing, so `authenticated` kept `00001:1084`'s full CRUD grant and three `00001` write policies survived — an Admin could `DELETE` an order over PostgREST and a Manager could rewrite an invoiced line, with no `audit_events` row and no ledger correction. Security-audit finding **DB-1**, closed by `00112`. `00013:15-21` skipped both tables *in writing*, on the stated grounds `00009` had covered them. **Never trust a row of this table; run `npm run check:grants:<target>`,** which asserts it against `information_schema` from `config/lockedTables.mjs`.
   - **`anon` was never revoked from, and TRUNCATE never from anyone.** This project carries `ALTER DEFAULT PRIVILEGES` for anon/authenticated/service_role (`00101`, documented in `00102`), and every REVOKE since `00009` names `authenticated` and the three DML verbs. **RLS cannot constrain TRUNCATE** — there is no row to filter — so every "locked down" claim here is narrower than it sounds. `orders`/`order_items` are fixed; the other ~35 tables are audit finding **DB-3**, recorded in `config/grantBaseline.mjs`, which `check:grants` prints every run and fails on any addition to. Never add an entry to make it pass.
-- **`cancelled` is TERMINAL and is NOT on the status ladder** (`00111`). `STATUS_ORDER.indexOf('cancelled')` is `-1`, which compares as *before everything*, so the forward-only guard in `update-order-status` would let a cancelled order be advanced to `delivered` — it has an explicit terminal check ahead of the index comparison, and `ORDER_STATUS_SEQUENCE.indexOf` in `OrderDetailView` is guarded the same way (it would otherwise offer "Mark as Processing"). `recomputeOrderStatus` returns early on a cancelled order or the next pick anywhere would roll it back to a fulfilment rollup. **`order_fulfillments.status` deliberately has no `cancelled`** — a site cannot be cancelled independently of its order, and `rollupOrderStatus` has no rung for it. `record-pick` refuses to pick a cancelled order, before the RPC.
-- **Cancelling is one transaction, because `inv_release_reservation` is not idempotent and is not keyed by order.** It nets (ordered − picked) per line and lowers `inventory_balances.allocated`, a counter shared by every open order, so a second call eats somebody else's reservation. `order_cancel_tx` (`00111`) claims the row with a conditional `UPDATE` — that is what serialises two operators pressing Cancel — then releases, then cancels the unpaid invoice. The window is `processing`/`processed` **and zero `pick_progress` rows**: an order's status is the rollup and takes the *lowest* rung, so one at `processed` may already have a site that has picked.
+- **`cancelled` is TERMINAL and is NOT on the status ladder** (`00111`). `STATUS_ORDER.indexOf('cancelled')` is `-1`, which compares as *before everything*, so every ladder comparison needs an explicit terminal check ahead of the index test — `update-order-status` and `OrderDetailView` both carry one. Cancelling is **one transaction** (`order_cancel_tx`) because **`inv_release_reservation` is not idempotent and is not keyed by order**: it nets (ordered − picked) per line against a counter shared by every open order, so a second call eats somebody else's reservation.
+- **`verify_jwt = false` functions must gate themselves in-body** — cron callers via `isAuthorizedCronCall`, server-to-server via `isServiceRoleCall`, OAuth callbacks via state consumption. Never add an entry to `supabase/config.toml` without one; `send-email` was world-callable until 2026-07.
+- **`signatures` and `visit-photos` are PRIVATE buckets carrying no client policy at all.** Reads are audited signed URLs, writes are Edge Functions. **Never add a policy back** — the direct-upload capability and the list-and-delete hole were the same policy (`FOR ALL` covers SELECT, which on `storage.objects` is *list*). `company-assets` / `product-images` / `avatars` stay public by design, with per-verb writes gated to the role owning the column that points at them. **A public bucket is served by the CDN with RLS never consulted**, so flipping `buckets.public` alone is not enough. `npm run check:storage:<target>` asserts all of it from `config/storageBuckets.mjs`.
+- **A signature is captured in the CART, not at delivery** — anything calling it "proof of delivery" is wrong about when it happens.
 - **Client error log** → `client_errors` (mig `00014`), written by `log-client-error`. Admin-only SELECT; service_role-only INSERT. `actor_id` nullable so pre-auth crashes are captured.
-- **`verify_jwt = false` functions must gate themselves.** The nine functions listed in `supabase/config.toml` bypass the platform JWT check, so each re-implements auth in-body: cron callers via `isAuthorizedCronCall` (`_shared/cronToken.ts`), server-to-server callers via `isServiceRoleCall`, OAuth callbacks via state consumption. `send-email` had no gate at all until mig-era 2026-07 — it was world-callable and leaked order-ID existence through its `sent` vs `recipient_unresolved` response. Never add a `verify_jwt = false` entry without an in-body gate.
-- **Storage buckets: five public, four private, and NO client role holds `FOR ALL` on any of them** (mig `00113`, audit findings STOR-1/STOR-2). This entry said "public read, `authenticated` write" until 2026-08-19, and that sentence was the finding: `auth_write_*` was `FOR ALL TO authenticated` on the bucket name alone, and `FOR ALL` covers SELECT — which on `storage.objects` is **list** — plus UPDATE and DELETE. A **customer** login could enumerate every signature path and delete them, through no Edge Function and so with no audit event. `00081` fixed the identical bug for `anon` and said in writing it was leaving the `authenticated` twin.
-  - **`signatures` and `visit-photos` are PRIVATE and carry no client policy at all**, like `floorplan-scans`. Reads are audited signed URLs (`create-signature-url`, `create-visit-photo-urls`); writes are `upload-signature` and `mutate-visit-photo`. Never add a policy back: the direct-upload capability and the list-and-delete hole were the same policy.
-  - **`company-assets`, `product-images` and `avatars` stay public by design** — the logo is on every page and every PDF, product images are on the Shop, avatars are in the header. Their writes are per-verb and gated to **the role that owns the column pointing at them**: Admin for `company-assets`/`avatars`, Admin+Manager for `product-images`. The audit's suggested `owner = auth.uid()` for avatars is deliberately NOT used — `storage.objects.owner` is NULL on every object in this project, so it would deny every delete silently, and there is no self-service avatar upload anyway.
-  - **A public bucket is served by the CDN with RLS never consulted**, so `public_read_*` policies were decorative for that path and flipping `buckets.public` alone is not enough — `00113` drops them too.
-  - **`npm run check:storage:<target>` asserts all of it** from `config/storageBuckets.mjs`. Grants are deliberately untouched here (unlike `00112`): `storage` is not a PostgREST-exposed schema and `storage.buckets` has RLS with zero policies, so the policy predicate and the bucket flag are the only reachable levers. Do not reintroduce anonymous writes; `FOR ALL TO anon` includes DELETE.
-  - **A signature is captured in the CART, not at delivery.** `OrderVerificationModal` is shown at order placement and customers skip it entirely. Anything calling it "proof of delivery" — including the audit and the older compliance wording — is wrong about when it happens.
 - **Read policies are closed as of `00105`.** Eight of the nine `USING (true)` SELECT policies now read `staff OR <own scope>`, via `public.user_is_staff()` — the one definition of "internal", covering Admin/Manager/both Reps/Warehouse. `suppliers` and `product_suppliers` (which carries `cost_price`) are staff-only; `horeca_pricing`, `horeca_payment_methods` and `pantry_items` are own-HoReCa; `products`/`product_uoms` hide inactive lines from customers; `promotions` shows customers only live, in-window rows. **Never compare a role to a literal to decide read access — call `user_is_staff()`.** `00104` pins `search_path` on `user_role()`/`user_horeca_id()` first, since everything now rests on them.
 - **`app_settings` is STILL `USING (true)`, deliberately.** It is a singleton, so no row predicate can give a customer the identity and pricing fields the Shop needs while withholding `default_credit_limit` and the `po_auto_approve_*` flags. RLS filters rows; that needs columns. Closing it means splitting the internal thresholds into their own table. Don't "fix" it with a policy that changes nothing.
-- **Rate limiting** (`_shared/rateLimit.ts`): `place-order` 10/min/user, `invite-user` 5/min/admin, `mutate-pantry-item` 60/min/user, `log-client-error` 30/min/IP, `send-email` 20/min/IP, `count-bin` 20/min/user (a whole location per call), `upload-signature` 20/min/user, `create-signature-url` 120/min/user, `mutate-visit-photo` 30/min/user, `create-visit-photo-urls` 120/min/user, `cancel-order` **10/min/user** (rare and destructive; a burst is a mistake or an attack), `mutate-product-home-bin` 30/min/user but **10/min on its own `:bulk` bucket** (up to 200 slots per call), `mutate-warehouse-location` 30/min/user with **four separate 10/min buckets, `:area:`, `:paint:`, `:bind:` and `:sign:`** (the first three can each touch 1100+ rows; keeping them apart is what stops a burst of paints locking the operator out of fixing a spelling — or out of the one action that repairs a site's parentage wholesale. `:sign:` is separate for the inverse reason: signage is the cheap, safe edit made repeatedly while walking the floor, and it must not spend the budget the corrective actions need), `mutate-slotting-rule` 30/min/user with a **`:block:` 10/min bucket** (a block edit rewrites every member), `plan-reslot` / `commit-reslot-plan` 20/min/user, `decide-slotting-suggestion` 120/min/user, `mutate-offhome-task` 60/min/user with a **`:detect:` 10/min bucket** (a sweep reads every balance in the site) → 429 `TOO_MANY_REQUESTS`. Cross-isolate global cap via the `rate_limit_hit()` Postgres RPC + `rate_limit_counters` table (mig `00026`, fixed-window, hourly `pg_cron` cleanup); fails open to a per-isolate in-memory counter if the DB call errors.
+- **Rate limiting** (`_shared/rateLimit.ts`): every mutation function carries a per-user or per-IP budget, and the destructive or fan-out actions get their **own** bucket rather than sharing one — `:bulk:`, `:area:`, `:paint:`, `:bind:`, `:sign:`, `:block:`, `:detect:`, each 10/min, so a burst of cheap edits cannot lock the operator out of the corrective action. Over budget → 429 `TOO_MANY_REQUESTS`. Cross-isolate global cap via the `rate_limit_hit()` Postgres RPC + `rate_limit_counters` (mig `00026`, fixed-window, hourly `pg_cron` cleanup); **fails open** to a per-isolate in-memory counter if the DB call errors. Per-function budgets, plus the cancellation window, the nine self-gating functions and audit findings STOR-1/STOR-2: [`docs/claude/server-lockdown.md`](docs/claude/server-lockdown.md).
 
 ## Role-Based Views
 
@@ -957,224 +578,40 @@ module is off.
 - **Supabase Auth config lives in `supabase/apply-auth-config.mjs`, not `config.toml`.** That toml is per-function `verify_jwt` only and is never pushed. `buildDesired(config)` in the mjs is the source of truth for `site_url` / `uri_allow_list` / `password_min_length` / `disable_signup`, deriving the origins from `config/environments.mjs`; edit it and run `npm run auth:config:<env>` rather than clicking in Studio, or the next person has no way to know what the values should be. **The preview glob belongs to dev only** — in the prod allow-list it would make any preview build a valid password-reset landing page for a client account. The allow-list entries are **globs** — `*` does not cross a `/`, and `ForgotPasswordDialog` sends `${origin}/` with a trailing slash, so every entry needs a `/**` suffix to match. A `redirectTo` that misses the list is silently replaced with `site_url`, which reads as "the reset link sent me to the wrong place".
 - **`mailer_otp_exp` (3600) is no longer duplicated as prose.** `ForgotPasswordDialog`'s "expires in 1 hour" now reads `PASSWORD_SET_WINDOW_LABEL` from `lib/auth/pendingPasswordSet.ts`, which is also what bounds an abandoned reset. `supabase/apply-auth-config.mjs` is still the server-side source of truth — change it and change that constant.
 - **Never `await` a supabase call inside an `onAuthStateChange` callback.** supabase-js dispatches it while holding its internal auth lock and awaits whatever you return; any PostgREST query needs `getSession()`, which waits for that same lock, and the lock deadlocks against itself. `signInWithPassword` doesn't take the lock but `setSession`/`getSession` do — so ordinary login looks fine while the password-recovery screen hangs on "Verifying recovery link…" with no error anywhere. `hooks/useAuth.ts` therefore does sync state updates inline and defers the profile fetch to a `setTimeout(…, 0)`; `__tests__/authProviderNoDeadlock.test.tsx` pins that.
-- **Auth links have four shapes, and `lib/auth/recoveryLink.ts` is the only place that knows them.** `#access_token=…` (default template), `?token_hash=…`, an `error`/`error_code` pair on **either** the hash or the query, and PKCE `?code=` — which is deliberately *not* claimed, because `?code=` is also the PO-Inbox OAuth popup's param and claiming it would hijack a mailbox connection. `isAuthLinkUrl()` returns true for failed links on purpose: that is what routes them to a screen that can explain itself.
-- **`type=invite` is claimed alongside `type=recovery`, and that is the whole staff-onboarding path.** `invite-user` calls `inviteUserByEmail`, which creates the auth row with **no password** — so the emailed link is the only way an invited user can ever sign in. Until it was claimed, the invite landed on a bare login page and the only way to onboard anyone was a direct database write. The parsed link carries `flow`, because `verifyOtp`'s `type` must match the token that was issued (sending `'recovery'` for an invite token is refused server-side) and because "reset your password" is a lie to someone who never had one. `invite-user` passes **no** `redirectTo` on purpose — the link then lands on `site_url`, which needs no allow-list entry.
-- **A recovery session is an ORDINARY session, and the URL is not allowed to be the only record that a password is still owed.** `verifyOtp` returns the real thing, `persistSession: true` writes it to localStorage, and `hooks/useAuth.ts` discards the `onAuthStateChange` event name — so nothing downstream can tell `PASSWORD_RECOVERY` from `SIGNED_IN`. `ResetPasswordView` strips the token from the URL the instant the session exists (right, for credential hygiene), which used to leave *nothing anywhere* saying a reset was in progress: refreshing the set-password screen rendered the whole app for a user who had never chosen a password. Reported on a client's production domain 2026-08-17. **`lib/auth/pendingPasswordSet.ts` is that record** — written *before* `history.replaceState`, and `index.tsx` `Root` decides from the marker as well as the URL. Three consequences worth keeping: localStorage **not** sessionStorage (it must have the same lifetime as the session it guards, and a tab restore is the exact case `persistSession` was turned on for); the marker is bound to `mailer_otp_exp` so an abandoned flow cannot park a privileged session in a browser; and **every exit from that screen must end the session first** — "Back to sign in" calling `onComplete()` on a live recovery session was the same bug through a different door. The marker is only cleared once a `getSession()` confirms the sign-out actually took.
-- `App.tsx` is intentionally thin (~170 lines). Don't add UI logic here — it belongs in `components/AppShell.tsx` or a view file under `views/`.
+- **Auth links have four shapes, and `lib/auth/recoveryLink.ts` is the only place that knows them** — `#access_token=…`, `?token_hash=…`, an `error`/`error_code` pair on **either** hash or query, and PKCE `?code=`, which is deliberately **not** claimed because it is also the PO-Inbox OAuth popup's param. `isAuthLinkUrl()` returns true for failed links on purpose. **`type=invite` is claimed alongside `type=recovery`** and is the whole staff-onboarding path: `inviteUserByEmail` creates the auth row with no password, so the emailed link is the only way an invited user can ever sign in.
+- **A recovery session is an ORDINARY session**, so nothing downstream can tell `PASSWORD_RECOVERY` from `SIGNED_IN`, and `ResetPasswordView` strips the token from the URL the moment the session exists. **`lib/auth/pendingPasswordSet.ts` is therefore the only record that a password is still owed** — localStorage (same lifetime as the session it guards), bound to `mailer_otp_exp`, written *before* `history.replaceState`. **Every exit from that screen must end the session first**, and the marker is cleared only once a `getSession()` confirms the sign-out took. Full detail: [`docs/claude/auth-links.md`](docs/claude/auth-links.md).
+- `App.tsx` is intentionally thin (~180 lines). Don't add UI logic here — it belongs in `components/AppShell.tsx` or a view file under `views/`.
 
 ## Accessibility, and the public surface
 
-Target is **WCAG 2.2 AA, enforced** rather than audited. Added 2026-08-28, when
-this repo had no ESLint of any kind and the Playwright suite had never run in CI.
+Target is **WCAG 2.2 AA, enforced** rather than audited (added 2026-08-28). Three CI tiers plus one local instrument, each blind exactly where the next one sees: `npm run lint` (eslint-plugin-jsx-a11y, static) · `__tests__/a11y/*.test.tsx` (axe in jsdom — **cannot measure colour contrast at all**, it has no layout) · `tests/a11y/*.spec.ts` (axe in Chromium, the only CI tier that measures contrast, but with no router it reaches only the two signed-out screens) · `tests/contrast/` (authenticated crawl of the ten Warehouse surfaces, **never in CI**, needs real credentials — the only thing that can measure colour behind the login, and it found 13 real defects on its first run. Do not delete it to tidy up).
 
-**Three tiers, because each is blind exactly where the next one sees.**
+**The tier table, the full measured contrast figures, the two disclosed exceptions, the `components/ui` primitives, the robots/unfurler rules and the derived demo roster are in [`docs/claude/accessibility.md`](docs/claude/accessibility.md).**
 
-| | what it covers | what it CANNOT | runs |
-|---|---|---|---|
-| `npm run lint` — eslint-plugin-jsx-a11y | names, roles, keyboard reachability, ARIA validity, statically | anything about the rendered result | CI, `verify` job |
-| `__tests__/a11y/*.test.tsx` — axe in jsdom | the same, resolved against a real accessibility tree, on AUTHENTICATED components with no database | **colour contrast** — jsdom has no layout or computed colour, so axe disables that rule outright | CI, inside `npm test` |
-| `tests/a11y/*.spec.ts` — axe in Chromium | contrast, for real | anything behind AuthGate: there is no router, so the two signed-out screens are all it can reach | CI, `a11y` job |
-| `tests/contrast/` — authenticated crawl | contrast on the ten Warehouse surfaces | — | **never in CI**; needs real credentials |
-
-The fourth is an instrument with the standing of `perf` and `soak`, and it is the
-only thing that can measure colour behind the login. It found 13 real defects on
-its first run that no other tier could see. Do not delete it to tidy up.
-
-- **`eslint-suppressions.json` is the ratchet.** 273 findings frozen across 96
-  files; anything new is an **error**, including a second violation added to a
-  file that already has some — the case `check-overlays.mjs`'s baseline cannot
-  express. Shrink it with `npm run lint:prune` after a fixing change. **Never add
-  an entry by hand.** What remains is almost all the form-label long tail: ~242
-  raw `<input>`/`<textarea>` with no programmatic label, across ~80 files.
-- **ESLint is PINNED TO 9.** `eslint-plugin-jsx-a11y@6.10.2` peers `^3 || … || ^9`
-  and ESLint 10 is out, so a plain `npm i -D eslint` resolves to 10 and refuses
-  to install. The plugin is the constraint, not the linter.
-- **`eslint.config.js` has NO `parserOptions.project`, deliberately.** There is no
-  `@types/react` here and `strict` is off, so every React type is `any` and a
-  type-aware rule set would be mostly wrong. jsx-a11y is purely syntactic and
-  needs none of it.
-- **`react-hooks` is registered with every rule OFF**, purely so the tree's 19
-  pre-existing `eslint-disable-next-line react-hooks/exhaustive-deps` comments
-  resolve instead of erroring. Hence `reportUnusedDisableDirectives: 'off'`.
-- **`no-autofocus` is off, and that is a judgement.** All 30 findings are
-  deliberate: ScanField, PickTaskRow, PutawayStopCard, ReplenStopCard and
-  CountLocationFinder are scan surfaces where autofocus is load-bearing (under
-  the RS35's default Input Method mode a scan field that loses focus means a scan
-  that silently does not happen), and the rest are dialogs focusing their first
-  field. Freezing 30 deliberate decisions as debt would make the baseline lie.
-
-**Contrast: measure, do not calculate.** Tailwind v4 ships an **OKLCH** palette,
-so `stone-400` renders `#a6a09b`, not the `#a8a29e` from the v3 hex table — and
-every figure moves the wrong way. The authoritative values are the `--color-*`
-custom properties in the BUILT css.
-
-| on | white | stone-50 | stone-100 | stone-200 |
-|---|---|---|---|---|
-| `stone-400` `#a6a09b` | 2.59 | 2.48 | 2.37 | 2.06 |
-| `stone-500` `#79716b` | 4.81 | 4.61 | **4.41** | **3.83** |
-| `stone-600` `#57534d` | 7.64 | 7.32 | 7.01 | 6.08 |
-| `nexgen-blue` `#2988de` | 3.70 | 3.55 | 3.40 | 2.95 |
-| `nexgen-blue-dark` `#2472c2` | 4.93 | 4.72 | 4.52 | 3.92 |
-
-- **`stone-500` FAILS on a `bg-stone-100`/`200` tint.** That is why the sweep
-  targets stone-600 wherever an element carries a resting tint — and why a
-  same-line rule is not enough: on the warehouse surfaces the tint is usually on
-  a **parent**, which only rendering finds.
-- **`hover:bg-stone-100` is not a resting tint.** Matching it pushed 27 icon
-  buttons to stone-600 for a state they are not in.
-- **`disabled:text-stone-400` (13) stays.** WCAG 1.4.3 exempts inactive
-  components; darkening them erases the disabled affordance for no gain.
-- **Dark surfaces use `stone-300`, never `stone-400`** — see the measured table
-  at `index.css:330`. A blanket `stone-300 → 400` shift would reverse a
-  documented fix on the navy login rail.
-- **Two exceptions are DISCLOSED, not hidden:** brand blue at 3.70:1 (and 3.30:1
-  on its own `/10` tint), and the severity badge palette — white on red-500,
-  amber-500 and blue-500 is 2.13–3.7:1, i.e. all three, not one. Both are in
-  `site/accessibility.md`. **`tests/a11y/exceptions.ts` may only ever contain
-  something that statement also discloses.**
-- **The focus ring is `nexgen-blue-dark`, not `nexgen-blue/40`.** That composites
-  to `#a9cff2` — 1.62:1, against the 3:1 SC 1.4.11 requires. It is a *different*
-  criterion from the brand exception and is not covered by it. New code should
-  use the dark shade for anything needing 4.5:1 rather than adding to the
-  exception list.
-
-**`components/ui/` gained three primitives.** `SortableHeader` (aria-sort on the
-`<th>`, click on a real `<button>`), `SkipLink`, and `useInertBackground`.
-
-- **`useInertBackground` marks `#root` inert, which is a SIBLING of the overlay,
-  not an ancestor** — `Overlay` portals to `document.body`. That structural fact
-  is what makes it safe, and it is asserted in a test: if an overlay ever renders
-  inline the test fails, and it should, because the attribute would then disable
-  the dialog it exists to protect. Ref-counted like `useScrollLock`.
-- **`Field` points INWARD.** The label carries an id and controls inherit
-  `aria-labelledby` / `aria-describedby` / `aria-invalid` from context, rather
-  than the wrapper handing out an id. `Field` takes `children: ReactNode` and
-  cannot know how many controls are inside — WarehouseForm wraps two — so one id
-  would land on both. Callers passing `htmlFor` keep their native association.
-
-### The public surface
-
-Both hosts are **UNLISTED**: `public/robots.txt` denies `*` and fourteen named AI
-crawlers, and `vercel.ts` sends `X-Robots-Tag: noindex, nofollow`. The two are
-not redundant — a crawler obeying robots.txt never fetches and so never sees the
-header; one arriving from a pasted link never reads robots.txt.
-
-- **Four unfurlers are allowed by name** (Twitterbot, Slackbot-LinkExpanding,
-  facebookexternalhit, LinkedInBot) with an empty `Disallow:`. They obey
-  robots.txt, so a blanket deny degrades a shared link to a bare URL while
-  Discord and WhatsApp — which ignore robots.txt — still show a card. Do not
-  "tidy" these away; inconsistent previews read as a bug.
-- **`site/` is public by construction**, which is the point of it being its own
-  top-level directory: `docs/` holds runbooks and an internal spec, so a glob
-  there would eventually publish one. Four docs, and
-  **`site/accessibility.md` is a conformance claim — keep it true.**
-- **`llms.txt` is GENERATED from `site/manifest.mjs`**, so a doc cannot ship
-  unlisted and the index cannot name a page that does not exist.
-- **`headMetaPlugin` uses `transformIndexHtml` with the `tags` ARRAY form**, never
-  the string form, which would reserialise a `<head>` holding the inline
-  `<style>` that ships under `style-src 'unsafe-inline'` and two font preloads
-  whose `crossorigin` stops each font being fetched twice.
-- **`index.html` has NO `<title>`, deliberately.** It is injected per target. Add
-  one back and the document has two; browsers use the first, so the injected one
-  silently loses while the tab still looks right.
-- **`/docs/*.md` is served as `text/plain`.** Vercel infers `text/markdown`, which
-  with the existing `nosniff` makes Chrome and Safari offer a download.
-- **`sitePlugin` also serves these from `configureServer`** — `generateBundle`
-  runs only on `build`, so without it the first look at `/llms.txt` would be in
-  production.
-
-### The demo roster is derived, not configured
-
-**`VITE_SHOW_DEMO_LOGINS` IS GONE.** It was read as `!== 'false'` — an opt-out env
-var in a Vercel dashboard — so a tenant build shipped seven working logins and
-their shared password unless someone remembered to type "false" into a web form.
-Nobody did, and nexorder.com.au served them to a paying client.
-
-`__DEMO_HOST__` is folded from `kind` in the registry, which already documents
-`'demo'` as "fixtures allowed, demo logins shown". Inverting the env var to
-opt-in would only have moved the silence: the demo would lose its roster with no
-error anywhere.
-
-- **`npm run check:demo` asserts it on the BUILT ARTIFACT, for every target, in
-  BOTH directions.** A tenant-only check would pass forever if the roster
-  silently vanished from the demo too.
-- Its expectation comes from a **literal** target list in the script, not from
-  `kind`. The first version used `kind` and failed its own negative test — that
-  field drives the fold as well as the expectation, so flipping a target moved
-  both together and the check approved shipping an Admin password to a client.
-  Same reasoning as fixture guard #3.
-- It is also **the first thing in CI ever to build a tenant target**; `npm run
-  build` runs with no `NEXORDER_ENV` and has always built `dev` with every module
-  on.
-- **Rotating the seven seeded passwords is still outstanding.** Hiding a
-  credential does not invalidate it.
+- **Measure contrast, do not calculate it.** Tailwind v4 ships an **OKLCH** palette, so the v3 hex table is wrong (`stone-400` renders `#a6a09b`, not `#a8a29e`) and every figure moves the wrong way. The authoritative values are the `--color-*` custom properties in the BUILT css.
+- **`stone-500` FAILS on a `bg-stone-100`/`200` tint** (4.41 / 3.83:1). Use `stone-600` wherever an element carries a resting tint — and the tint is usually on a **parent**, which only rendering finds. `hover:bg-stone-100` is not a resting tint. `disabled:text-stone-400` stays (WCAG 1.4.3 exempts inactive components). **Dark surfaces use `stone-300`, never `stone-400`.**
+- **The focus ring is `nexgen-blue-dark`, not `nexgen-blue/40`** — that composites to 1.62:1 against the 3:1 SC 1.4.11 requires, and it is a *different* criterion from the disclosed brand-blue exception.
+- **`eslint-suppressions.json` is a ratchet** — 273 findings frozen across 96 files; anything new is an **error**, including a second violation in a file that already has some. **Never add an entry by hand**; shrink it with `npm run lint:prune`.
+- **ESLint is PINNED TO 9** — `eslint-plugin-jsx-a11y@6.10.2` peers `^9`, so a plain `npm i -D eslint` resolves to 10 and refuses to install. `eslint.config.js` has **no `parserOptions.project`** deliberately, and `no-autofocus` is off because all 30 findings are deliberate scan surfaces or dialogs focusing their first field.
+- **Both hosts are UNLISTED** (`robots.txt` denies `*` plus fourteen named AI crawlers; `vercel.ts` sends `X-Robots-Tag: noindex, nofollow`) — but **four unfurlers are allowed by name**, because a blanket deny degrades every shared link to a bare URL. Do not "tidy" them away.
+- **`site/` is public by construction; `docs/` is not** — that is why `site/` is its own top-level directory, and why `docs/claude/` belongs under `docs/`. `llms.txt` is GENERATED from `site/manifest.mjs`, and `site/accessibility.md` is a conformance claim — keep it true.
+- **`index.html` has NO `<title>`, deliberately** — it is injected per target, and adding one back gives the document two.
+- **`VITE_SHOW_DEMO_LOGINS` is GONE.** `__DEMO_HOST__` is folded from the registry's `kind`, and `npm run check:demo` asserts it on the BUILT artifact, for every target, in **both** directions. **Rotating the seven seeded demo passwords is still outstanding** — hiding a credential does not invalidate it.
 
 ## Pending Work
 
-Ordered by impact; one-line scope each so future agents don't drift.
+Ordered by impact. **Full scope, blockers and the exact unblocking steps for every item — plus the "Recently shipped" notes git history does not carry — are in [`docs/claude/roadmap.md`](docs/claude/roadmap.md).**
 
 **High**
-0. **Make Amadiya usable.** The infrastructure is finished: `rel-2026-08-20`
-   (`e2afb8e`) is live on nexorder.com.au running
-   `['sales_orders', 'inventory_dispatch']` — warehouse management plus orders
-   keyed in by their own office — with 57 functions deployed, the **19 belonging
-   to disabled modules deleted** from the project, `po-poll-inbox` unscheduled
-   (6 crons, not 7), `check:grants` and `check:storage` clean, and the Vercel
-   project moved to the `nexgen14` team. **What is missing is the data**: 0
-   products, 0 customers, and one Admin login with no Warehouse staff. Import
-   the converted catalogue from `Amadiya/`, invite staff, put Amadiya's
-   phone/email/logo into `app_settings`, confirm `bootstrap:admin:amadiya` for
-   `info@amadiya.com.au`, then Gates C and E — full sequence in
-   `PRODUCTION-LAUNCH-PLAN.md` Phase 3.
-   The demo half is done and needs nothing: `uqvekvavkjjurpqtovbq` + the
-   `nexgen13` Vercel team, live on nexorder.vercel.app, isolation verified in
-   both directions (each project's Edge Functions return an ACAO header for
-   their own origin and **none** for the other's).
-1. **Branch protection** — CI's `verify` job runs on every PR but `main` doesn't yet *require* it. **Blocked by plan tier (2026-05-21):** GitHub's Free plan disallows branch protection *and* rulesets on **private** repos — both `PUT …/branches/main/protection` and `POST …/rulesets` return `403 "Upgrade to GitHub Pro or make this repository public"`. To unblock, either upgrade to **GitHub Pro** (~$4/mo) or make the repo public, then require the status-check context **`typecheck · test · build`** (= the `verify` job's `name:` in `ci.yml`) via Settings → Branches or the API. Ready-to-run payload + commands saved in `~/.claude/plans/add-branch-protection-generic-zebra.md`.
-2. **Email setup (operator)** — `send-email` is live, gated and rate-limited; it is dormant only because `RESEND_API_KEY` is unset, and setting that one secret is the entire switch (no redeploy). Full procedure, test call, response table and rollback: **`docs/runbooks/enable-email.md`**. The trap worth knowing up front: leaving `EMAIL_FROM` unset falls back to `onboarding@resend.dev`, which Resend delivers *only* to the account owner — so customers get nothing while the response still says `sent: true`.
 
-**Medium**
-3. **Desktop entry point for a stocktake** — `count-bin` and the Stocktake page ship phone-first (scan a bin, count it). The office-side case — reconciling against a paper count, or correcting one bin noticed while looking at the map — still has only `AdjustStockModal`. Scope it as a "Count this bin" action on `BinDetailPanel` (`components/inventory/warehouse/BinDetailPanel.tsx`) and on the Stock page, opening the same `CountSheet` in a `<Modal>`. No server work: `count-bin` already takes any location.
-4. **Accessibility: finish the form-label tail.** The programme landed 2026-08-28 — see "Accessibility, and the public surface" above for the three enforced tiers, the measured contrast table and the two disclosed exceptions. Everything in the old version of this item is done: the icon-only buttons, the sort headers, the toast live region, the focus rings, the landmarks, the skip link. **What remains is ~242 raw `<input>`/`<textarea>` with no programmatic label across ~80 files**, frozen in `eslint-suppressions.json` at a count that can only fall. Burn it down per-PR: prefer `components/ui/Field`, which now wires `aria-labelledby`/`aria-describedby`/`aria-invalid` for free, then `npm run lint:prune`. The other two open items are the severity badge palette (all three colours fail, so it is a palette decision) and rotating the seven seeded demo passwords.
-5. **Email expansion** — wire `invoice_issued` template on invoice → `issued`; decide whether to use the custom `user_invitation` template vs Supabase's built-in invite email.
-6. **Test coverage expansion** — strong PO-inbox, pricing, scan, auth-link and WIE-engine coverage; PO-inbox matching resolvers use the `__tests__/support/fakeSupabase.ts` harness. Gaps: cart submission flow, pantry add/remove, HoReCa reason-prompt gate, role-based routing.
+0. **Make Amadiya usable.** The infrastructure is finished: `rel-2026-08-20` is live on nexorder.com.au running `['sales_orders', 'inventory_dispatch']`, 57 functions deployed with the 19 disabled-module ones deleted, `check:grants` and `check:storage` clean, project on the `nexgen14` team. **What is missing is the data** — 0 products, 0 customers, one Admin login and no Warehouse staff. Import the converted catalogue from `Amadiya/`, invite staff, fill `app_settings`, then Gates C and E: `PRODUCTION-LAUNCH-PLAN.md` Phase 3. The demo half is done and needs nothing.
+1. **Branch protection** — CI's `verify` job runs on every PR but `main` does not *require* it. **Blocked by plan tier:** GitHub Free disallows branch protection and rulesets on private repos (403). Needs GitHub Pro or a public repo, then require the context **`typecheck · test · build`**.
+2. **Email setup (operator)** — `send-email` is live, gated and rate-limited, and dormant only because `RESEND_API_KEY` is unset; that one secret is the whole switch, no redeploy. `docs/runbooks/enable-email.md`. **Trap:** an unset `EMAIL_FROM` falls back to `onboarding@resend.dev`, which Resend delivers *only* to the account owner — customers get nothing while the response still says `sent: true`.
 
-**Lower**
-7. **Dead code sweep** — the original three-item list was two-thirds wrong; this is what's actually left. `components/SalesDashboard.tsx` and the root `CustomerForm.tsx` stub were deleted 2026-07-31 after a one-off `npx knip` run confirmed both (knip is *not* a dependency — write a throwaway `knip.json` at the repo root, run it, delete it). **`hooks/useLocalStorage.ts` is LIVE — do not delete it.** It is imported by `components/ActionItemsBoard.tsx:4,423`, which is mounted on both `AdminDashboard` and `RepDashboardV2`; the "zero imports" claim predates that board and has already survived one correction attempt (`PRODUCTION-READINESS-AUDIT.md:318`). **`constants.ts` is done** — commit `f631198` moved the demo seed data to `supabase/seedData/`; the file is 85 lines and all 9 exports are live, and "move to `supabase/seed.ts`" would *duplicate*, not move, since `supabase/seed.ts:16` already imports `USERS`/`DEFAULT_SETTINGS` **from** it. ~~The one real residue is bundle hygiene: `USERS` reaches the browser via `App.tsx:8`.~~ **Fixed in the cutover** — `USERS` moved to `supabase/seedData/users.ts` (beside the seed data that needs it; the launch plan suggested `tests/fixtures/`, but `supabase/seedData/orders.ts` consumes it and a `supabase/ → tests/` import is the wrong direction). Verified by building and grepping: `alice@nexorder.com.au`, `Password123!` and the demo customer domains are all absent — **but only with `VITE_SHOW_DEMO_LOGINS=false` as well**, because `LoginPage.tsx` carries its own `DEMO_ACCOUNTS` copy. The move and the flag each remove a different one; neither is sufficient alone. **`components/Header.tsx` is DELETED** (2026-08-28): 45 lines, zero imports repo-wide, and it referenced `i.pravatar.cc`, which is not in the CSP's `img-src`. Note also that the `VITE_SHOW_DEMO_LOGINS=false` caveat above is obsolete — the flag is gone and the roster is derived from the target registry. Still-unswept candidates knip flagged, each needing its own check: `components/{HoReCaAdmin,InvoiceAdmin,RoleSelector,UserSelector}.tsx`, `components/dashboard/AlertBanner.tsx`, `components/performance/{ProductMovementSection,TargetProjectionCard,VelocityBar}.tsx`, `hooks/{usePromotionStatus,useScheduledVisitLifecycle}.ts`, `hooks/queries/usePurchaseOrders.ts`, `services/supabase/purchaseOrderService.ts` (the last two are likely fallout from removing the manual Purchase Orders view).
-8. **Inventory automation** — restock alerts are read-only. Add "generate PO from low-stock alerts", soft stock reservations on order confirmation, expiry/FIFO for perishables.
-9. **Reports export** — add CSV/PDF download on accounts-aging, sales-by-rep, stock-status, promotion-ROI panels (CSV helper exists at `lib/csvExport.ts`).
-10. **i18n** — UI is English-only; currency hardcoded `AUD`. Wire `react-i18next` before strings calcify if non-English markets are in scope.
-11. **PWA** — no manifest/service worker. Low priority for B2B (reps online); install-to-home-screen would help field reps.
+**Medium** — a desktop entry point for a stocktake (`count-bin` already takes any location; no server work) · finish the a11y form-label tail (~242 unlabelled `<input>`/`<textarea>` across ~80 files, frozen in `eslint-suppressions.json`) · wire the `invoice_issued` email template · test-coverage gaps: cart submission, pantry add/remove, the HoReCa reason-prompt gate, role-based routing.
+
+**Lower** — dead-code sweep (**`hooks/useLocalStorage.ts` is LIVE — do not delete it**; `constants.ts` and `components/Header.tsx` are done; the still-unswept candidates are listed in the doc) · inventory automation (PO from low-stock, soft reservations, expiry/FIFO) · CSV/PDF report export · i18n · PWA.
 
 ## Recently shipped
 
-git history is the changelog. Only the items below carry something the sections above don't.
-
-- **The demo rebuild (2026-08-13) left four things worth knowing.** (1) A new
-  Vercel project ships with `ssoProtection: 'all_except_custom_domains'`, so a
-  `*.vercel.app` alias 302s to `vercel.com/sso-api` — `deploy.mjs` then reports
-  `TIMEOUT` on `version.json` while the build is perfectly fine, because the
-  poller is parsing an SSO redirect page as JSON. Clear it via
-  `PATCH /v9/projects/<id> {"ssoProtection":null}`. (2) The Vercel CLI's global
-  login is still Amadiya's account; `deploy:dev` works only because
-  `VERCEL_TOKEN` rides in `.env.dev.local`. Do not run `vercel login` to "fix"
-  anything — it would swap the account under `deploy:amadiya`, which has no
-  token. (3) `npm run auth:config:dev` cannot manage email templates on a free
-  project, and the PATCH is all-or-nothing, so `authEmailTemplates: false` in
-  the registry is what stops four cosmetic keys taking `disable_signup` and
-  `password_min_length` down with them. (4) Demo email works but has **no
-  `EMAIL_FROM`**, so Resend delivers only to the account owner — deliberate on
-  a demo, and a trap to remember before demoing an emailed order confirmation.
-
-- **`00083` (order allocation prefers the pick zone) is APPLIED as of 2026-07-27.** Its gate — one replenishment task driven `suggested → assigned → accepted` with the stock actually moving — was satisfied on WIE-DEMO first; `supabase/exercise-replen-gate.mjs` reproduces it and re-runs idempotently. All four of the header's verify steps were run against prod (one overload; pick zone wins on an expiry tie; **FEFO still beats the preference**; a bulk warehouse's ordering is provably unchanged — 0 of its 7 candidate locations carry a `level_role`, so the new CASE has exactly 1 distinct value). Rollback is `00075`'s body.
-- **`00085` fixes a real bug that gate exercise uncovered.** `wie_convert_rack_to_levels_tx` (mig `00072`) moves a flat bin's stock onto L1 when it is first levelled, but it predates handling units (`00075`) and never passed `p_handling_unit_id`. It therefore read the plate's balance row and wrote the delta to the **loose (`NULL`-HU) slot**, driving it negative until `inventory_balances_alloc_bound` rejected the whole transaction. Since `receive-stock` creates a plate per receipt, that is the normal case — converting essentially any stocked bin failed. The CHECK constraint is what prevented silent duplication; treat it as load-bearing, not decorative.
-- **Replenishment ledger legs name their task as of mig `00109`** (`ref_type = 'replen_task'`, `ref_id` = the completion record's id, on BOTH legs). This entry said they did not until 2026-08-18. Three things worth keeping:
-  - **`inv_transfer_stock` takes `p_ref_type`/`p_ref_id` and their DEFAULTS reproduce the pre-00109 values exactly**, so putaway, reslot and quarantine still write `('transfer', NULL)` with no edit. Pass them when a caller has an identity worth recording; don't otherwise.
-  - **The id stamped is `v_completed`, not `p_task_id`.** They are the same row on a full completion, but a partial leaves the original task holding the remainder and inserts a new row carrying the quantity that moved — and the leg must name the row whose quantity is in the leg.
-  - **Legs written before `00109` still read `('transfer', NULL)`** and nothing backfills them. Any query over history has to tolerate both.
-- **Order statuses are 6, grouped into 3 Order Import tabs** — Received (`processing`/`processed`), In Progress (`picked`/`packed`), Completed (`dispatched`/`delivered`). Mig `00025`.
-- **Image columns store public Storage URLs, never base64.** Uploads compress to WebP via `browser-image-compression` (mig `00024`) — don't reintroduce data URLs.
-- **`warehouse-main/`** — replaces MAIN's placeholder 15-bin layout with the real 189-bay DC and drives `recommend-putaway` → `decide-putaway` to slot every SKU (`warehouse:main:{seed,reset}`). See its README.
-- **`tridon-demo/`** — self-contained real-email hardware demo: one auto-approving PO, one that lands in review (an uncatalogued Milwaukee line). `demo:tridon:{seed,reset,pdfs}`. It **steals** the `dulshanb@…` sender from the V2food demo, so re-run `seed:v2food-demo` afterwards. See its README.
-
-Everything else — the warehouse/WIE programme, scan tracking, two-stage putaway, Pick Zone + replenishment, rack levels, multi-supplier & multi-UOM, PO Inbox, the admin-mutation lockdown, realtime, error boundaries, the audit-log viewer, CI, perf splitting, the pantry redesign, the settings revamp, health monitoring and the password-reset round trip — is described in the sections above.
+git history is the changelog. The entries carrying something the sections above don't — the demo-rebuild traps (new Vercel projects' SSO protection makes a healthy deploy report `TIMEOUT`; the CLI's global login is still Amadiya's, so `deploy:dev` works only via `VERCEL_TOKEN`), migs `00083`/`00085`, the `00109` replenishment ledger refs, and the `warehouse-main/` and `tridon-demo/` fixture packs — are in [`docs/claude/roadmap.md`](docs/claude/roadmap.md).
