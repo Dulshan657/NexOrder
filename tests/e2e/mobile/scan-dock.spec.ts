@@ -21,27 +21,15 @@
 //
 // The Putaway half is DATA-DEPENDENT and skips with a stated reason, in the
 // same spirit as F16/F17 in touch-targets.spec.ts.
-import type { Page } from '@playwright/test'
 import { expect, test } from '../fixtures/auth'
-import { expectNoHorizontalOverflow, expectTouchTarget, navigateTo } from './helpers'
-
-/** Pixel 5, per playwright.config.ts. The dock's bottom edge must land here. */
-const VIEWPORT_H = 664
-
-/** The dock itself, not the field inside it — they differ by the dock's `py-2`,
- *  and 8px of difference is exactly the size of the defect being guarded. */
-function dock(page: Page) {
-  return page.locator('[data-scan-dock="bottom"]')
-}
-
-/** Flush with the foot of the screen, within a px or two of subpixel rounding. */
-async function expectPinnedToFoot(page: Page, label: string): Promise<void> {
-  const box = await dock(page).boundingBox()
-  expect(box, `${label} should be laid out`).not.toBeNull()
-  const foot = Math.round(box!.y + box!.height)
-  expect(foot, `${label} reaches the foot of the screen`).toBeGreaterThanOrEqual(VIEWPORT_H - 2)
-  expect(foot, `${label} is not below the fold`).toBeLessThanOrEqual(VIEWPORT_H + 2)
-}
+import {
+  VIEWPORT_H,
+  expectNoHorizontalOverflow,
+  expectPinnedToFoot,
+  expectTouchTarget,
+  navigateTo,
+  scanDock,
+} from './helpers'
 
 test.describe('the scan dock is pinned to the foot, at both ends of the scroll', () => {
   test('Receive Stock: the dock holds while the page scrolls', async ({ warehousePage: page }) => {
@@ -78,7 +66,7 @@ test.describe('the scan dock is pinned to the foot, at both ends of the scroll',
     // rather than read `isVisible()` straight after navigating — otherwise the
     // skip below fires on every run and the test silently measures nothing,
     // which is the failure mode it is meant to prevent.
-    const hasWork = await dock(page)
+    const hasWork = await scanDock(page)
       .waitFor({ state: 'visible', timeout: 15_000 })
       .then(() => true)
       .catch(() => false)

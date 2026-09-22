@@ -3,6 +3,7 @@ import {
   getInventoryBalances,
   getLocations,
   getBalancesByProduct,
+  findHandlingUnitByCode,
   getBalancesByWarehouse,
   getRecentReceipts,
   getProductStockByWarehouse,
@@ -14,6 +15,7 @@ export const inventoryKeys = {
   locations: ['locations'] as const,
   byProduct: (productId: number) => ['inventory_balances', 'product', productId] as const,
   byWarehouse: (warehouseId: number) => ['inventory_balances', 'warehouse', warehouseId] as const,
+  handlingUnitByCode: (code: string) => ['inventory_balances', 'handling_unit', 'code', code] as const,
   recentReceipts: ['inventory_movements', 'recent_receipts'] as const,
   // Deliberately nested under the `['inventory_balances']` prefix (not a
   // sibling key) so the existing `useAdjustStock` invalidation and the
@@ -70,6 +72,20 @@ export function useBalancesByWarehouse(warehouseId: number | null) {
     queryKey: inventoryKeys.byWarehouse(warehouseId ?? 0),
     queryFn: () => getBalancesByWarehouse(warehouseId as number),
     enabled: warehouseId != null,
+  })
+}
+
+/** A plate and its contents, by the code that was scanned — the Stock lookup's
+ * answer to a handling-unit scan. Disabled until something is actually scanned.
+ *
+ * Keyed by CODE, not id, because a scan is the only way in: the in-memory scan
+ * index cannot carry handling units (see `findHandlingUnitByCode`'s header), so
+ * there is no id to key by until this query has already run. */
+export function useHandlingUnitByCode(code: string | null) {
+  return useQuery({
+    queryKey: inventoryKeys.handlingUnitByCode(code ?? ''),
+    queryFn: () => findHandlingUnitByCode(code as string),
+    enabled: !!code,
   })
 }
 

@@ -20,6 +20,9 @@ import { UserRole, type InventoryLocation, type Product, type User } from '../..
 import { CountLocationFinder } from './stocktake/CountLocationFinder'
 import StickyScanBar from './StickyScanBar'
 import { CountSheet } from './stocktake/CountSheet'
+import { useLocations } from '../../hooks/queries/useInventoryBalances'
+import { useValueDeepLink } from '../../hooks/useValueDeepLink'
+import { subtreeLocationIds } from '../../lib/warehouseSubtree'
 
 interface StocktakePageProps {
   currentUser: User
@@ -71,6 +74,32 @@ const StocktakePage: React.FC<StocktakePageProps> = ({ currentUser, products }) 
       ...rest,
     ]
   }, [activeWarehouses, effectiveWarehouseId, subtree])
+
+  // ── "Count this bin", handed over from the Stock lookup ───────────────────
+  //
+  // `?bin=<locationId>`, resolved against EVERY location rather than the
+  // current site's subtree: the operator may have scanned a bin belonging to
+  // another warehouse, and the useful response is to switch sites and open it,
+  // not to silently ignore the link. Gated on the tree having loaded, because
+  // consuming the param before there is anything to match it against would
+  // strip it and lose the handoff.
+  //
+  // An id that matches nothing falls through to the ordinary finder. A stale
+  // link must not strand somebody on an empty screen.
+  const { data: allLocations } = useLocations()
+  useValueDeepLink(
+    'bin',
+    (raw) => {
+      const id = Number(raw)
+      if (!Number.isFinite(id)) return
+      const target = (allLocations ?? []).find((l) => l.id === id)
+      if (!target) return
+      const home = activeWarehouses.find((w) => subtreeLocationIds(allLocations, w.id)?.has(id))
+      if (home) setScope(home.id)
+      setSelected(target)
+    },
+    (allLocations?.length ?? 0) > 0 && activeWarehouses.length > 0,
+  )
 
   // Warehouse staff may only move stock at their own site — the same rule
   // count-bin enforces server-side, mirrored here so the Post button is
