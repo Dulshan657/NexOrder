@@ -155,8 +155,15 @@ describe('putaway walk — identifying an unlabelled carton', () => {
   it('offers to print a plate label, quietly, in case the barcode is damaged', () => {
     mount()
     open()
-    expect(screen.getByText(/Barcode damaged or missing\?/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: /Print a plate label/i })).toBeTruthy()
+    // One button rather than a bordered panel with a caption above it: the quiet
+    // half of this affordance answers a question that is almost always "no", and
+    // at 360px the panel cost ~90px of the height the card needs for its scan
+    // field and its Confirm. The LOUD half (`needsLabel`) keeps its full
+    // treatment — see the card. What matters here is unchanged: the offer exists,
+    // it names the damaged-barcode case, and it is a real button.
+    expect(
+      screen.getByRole('button', { name: /Barcode damaged\? Print a plate label/i }),
+    ).toBeTruthy()
   })
 
   it('warns that a barcode cannot tell two unlabelled plates of one product apart', () => {

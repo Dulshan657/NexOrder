@@ -88,14 +88,19 @@ import { plateLabel, type DraftLine, type DraftPlate } from './receiveDraft'
 export const RECEIVE_ROW_COLUMNS =
   '@min-[1180px]:grid-cols-[minmax(0,1fr)_7rem_10rem_10rem_11rem_11rem_5rem_2.5rem]'
 
+// `min-h-[44px]` and NOT `touch-target-y`, deliberately. The named utility is
+// gated on `(pointer: coarse), (hover: none), (max-width: 767px)`; this floor is
+// unconditional, and `__tests__/ui/receiveLineCard.test.tsx` pins it as such.
+// Swapping them would quietly drop these four controls to ~34px on any desktop
+// reporting a fine pointer.
 const CONTROL =
-  'w-full min-h-[44px] px-2 py-1.5 text-sm bg-stone-50 border border-stone-200 rounded-md ' +
-  'focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue'
+  'w-full min-h-[44px] px-2 py-1.5 text-sm bg-white border border-stone-300 rounded-md ' +
+  'focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue'
 
 /** Column name, repeated per-cell once the header row is hidden below `xl`. */
 function MicroLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-stone-500 @min-[1180px]:hidden">
+    <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-600 @min-[1180px]:hidden">
       {children}
     </span>
   )
@@ -246,7 +251,7 @@ export function ReceiveLineCard({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={detailsId}
-        className="btn-press col-span-2 -mx-1 flex min-h-[44px] items-center gap-1.5 rounded-lg px-1 text-left text-xs text-stone-500 hover:bg-stone-100 @min-[1180px]:hidden"
+        className="btn-press touch-target-y col-span-2 -mx-1 flex items-center gap-1.5 rounded-lg px-1 text-left text-xs text-stone-600 hover:bg-stone-100 @min-[1180px]:hidden"
       >
         <ChevronDown
           className={`h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}

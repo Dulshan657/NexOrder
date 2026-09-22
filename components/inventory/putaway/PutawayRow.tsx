@@ -76,14 +76,14 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
 
           <div className="min-w-0 flex-1">
             <p className="text-sm text-stone-800 truncate">{name}</p>
-            <p className="text-xs text-stone-500 flex flex-wrap items-center gap-x-1.5">
+            <p className="text-xs text-stone-600 flex flex-wrap items-center gap-x-1.5">
               {product?.sku && <span className="font-mono">{product.sku}</span>}
               <span className="text-stone-700 tabular-nums">{qty.primary}</span>
-              {qty.secondary && <span className="text-stone-500">· {qty.secondary}</span>}
+              {qty.secondary && <span className="text-stone-600">· {qty.secondary}</span>}
             </p>
-            <p className="text-[11px] text-stone-500 mt-0.5 truncate">
+            <p className="text-xs text-stone-600 mt-0.5 truncate">
               {receiptBits.length > 0 ? receiptBits.join(' · ') : 'Not from a delivery'}
-              <span className="text-stone-300"> · waiting {formatRelative(row.createdAt)}</span>
+              <span className="text-stone-500"> · waiting {formatRelative(row.createdAt)}</span>
             </p>
           </div>
         </div>
@@ -92,25 +92,35 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
         <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 sm:shrink-0">
           <p className="text-xs max-w-[16rem] sm:max-w-[20rem]">
             {bin ? (
+              /* The code was set at 10px on a 60%-opacity emerald — which
+                 composites to roughly 1.9:1, making the string an operator
+                 matches against a printed sticker the least readable thing on
+                 the row. Opacity is never the way to make a colour quieter.
+
+                 The EMPHASIS stays on the title rather than moving to the code,
+                 because `LocationLabel` collapses to title-only for a bin with no
+                 useful name — and on this tenant that is most of them. Styling
+                 the code as the hero would leave those rendering their one string
+                 in the quiet style. */
               <LocationLabel
                 location={bin}
-                titleClassName="text-xs font-medium text-emerald-600"
-                codeClassName="font-mono text-[10px] text-emerald-600/60"
+                titleClassName="text-xs font-semibold text-emerald-700"
+                codeClassName="font-mono text-xs text-stone-600"
               />
             ) : mismatch ? (
-              <span className="inline-flex items-start gap-1 text-amber-600">
+              <span className="inline-flex items-start gap-1 text-amber-700">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
                 <span className="truncate">{mismatch.label}</span>
               </span>
             ) : (
-              <span className="text-amber-600">No eligible bin</span>
+              <span className="text-amber-700">No eligible bin</span>
             )}
           </p>
 
           <div className="flex items-center gap-1.5">
             <button
               onClick={onToggleExplanation}
-              className="p-1.5 rounded-lg hover:bg-stone-100 btn-press"
+              className="touch-target p-1.5 rounded-lg hover:bg-stone-100 btn-press inline-flex items-center justify-center"
               aria-label={`Why this bin for ${name}?`}
             >
               <HelpCircle className="w-4 h-4 text-stone-500" />
@@ -118,7 +128,7 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
             <button
               onClick={onRerun}
               disabled={busy}
-              className="p-1.5 rounded-lg hover:bg-stone-100 btn-press disabled:opacity-40"
+              className="touch-target p-1.5 rounded-lg hover:bg-stone-100 btn-press disabled:opacity-40 inline-flex items-center justify-center"
               aria-label={`Re-run the recommendation for ${name}`}
               title="Ask the engine again"
             >
@@ -127,7 +137,7 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
             <button
               onClick={onChooseBin}
               disabled={busy}
-              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg btn-press disabled:opacity-40 ${
+              className={`touch-target-y inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg btn-press disabled:opacity-40 ${
                 mismatch
                   ? 'border border-amber-300 bg-amber-50 text-amber-700'
                   : 'border border-stone-200 text-stone-600'
@@ -143,7 +153,7 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
               onClick={onPlaceNow}
               disabled={!row.recommendedLocationId || busy}
               title="Move the stock straight into the bin, without a walk"
-              className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600 btn-press disabled:opacity-40"
+              className="touch-target-y inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600 btn-press disabled:opacity-40"
             >
               <Check className="w-3.5 h-3.5" /> Place now
             </button>
@@ -151,7 +161,7 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
               onClick={onAssign}
               disabled={!row.recommendedLocationId || busy}
               title="Send it to the walk — the stock stays on the dock until someone carries it"
-              className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-40"
+              className="touch-target-y inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-40"
             >
               <Footprints className="w-3.5 h-3.5" /> Assign
             </button>
