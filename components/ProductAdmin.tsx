@@ -1,12 +1,16 @@
 // FIX: Implement the ProductAdmin component.
 import React, { useState, useMemo } from 'react';
 import { FileUp, Tag, X } from 'lucide-react';
-import type { Product, Supplier } from '../types';
+import type { Category, Product, Supplier } from '../types';
 import ProductForm from './ProductForm';
 import ConfirmationDialog from './ConfirmationDialog';
 import ProductImportModal from './admin/ProductImportModal';
 import BulkBrandModal from './admin/BulkBrandModal';
 import ProductAdminRow from './admin/ProductAdminRow';
+import { ProductAdminFilters } from './admin/ProductAdminFilters';
+import { PRODUCT_ROW_COLUMNS } from './admin/productAdminColumns';
+import { categoryOptions } from '../lib/productTaxonomy';
+import { matchesProductQuery } from '../lib/productSuppliers';
 import { WarehousePicker } from './inventory/WarehousePicker';
 import { useWarehouseScope } from '../context/WarehouseScopeContext';
 import { useProductStockByWarehouse } from '../hooks/queries/useInventoryBalances';
@@ -44,10 +48,38 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
 
     const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.id, s.name] as const)), [suppliers]);
 
-    const visibleProducts = useMemo(() => {
+    // Search and category live HERE, not inside ProductAdminFilters, and that is
+    // load-bearing rather than a preference — `selectedProducts` below
+    // intersects the selection with what is visible, so a filter this component
+    // could not see would let `applyBrand` re-brand rows the operator has
+    // narrowed away. Same reason the warehouse filter lives here.
+    const [searchQuery, setSearchQuery] = useState('');
+    const [categoryFilter, setCategoryFilter] = useState<Category | 'All'>('All');
+
+    // Built-ins first, then any operator-created category — filtered to the ones
+    // actually present so the list doesn't offer empty categories.
+    const activeCategories = useMemo(() => {
+        const present = new Set(products.map(p => p.category));
+        return categoryOptions(products).filter(c => present.has(c));
+    }, [products]);
+
+    const scopedProducts = useMemo(() => {
         if (scope === 'all' || !hideNotStockedHere) return products;
+        // `has`, never `?? 0`: a product with a zero-quantity row IS stocked
+        // here and one with no row at all is not, and the two must not merge.
         return products.filter(p => onHandBySite.has(p.id));
     }, [products, scope, hideNotStockedHere, onHandBySite]);
+
+    const visibleProducts = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        return scopedProducts.filter(p => {
+            if (categoryFilter !== 'All' && p.category !== categoryFilter) return false;
+            // `matchesProductQuery` already covers name / SKU / barcode /
+            // supplier SKU — a strictly better match set than a hand-rolled
+            // name-and-SKU test, and one definition rather than two.
+            return !q || matchesProductQuery(p, q);
+        });
+    }, [scopedProducts, searchQuery, categoryFilter]);
 
     // Only ever act on what is ON SCREEN. A selection made before the operator
     // narrowed the list by warehouse must not quietly re-brand rows they can no
@@ -160,6 +192,10 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
             {selectedProducts.length > 0 && (
                 <div
                     role="status"
+                    // Toasts are `role="status"` too, so the role alone cannot
+                    // name this bar from a test — and a selection that silently
+                    // survives a filter is exactly the bug worth pinning.
+                    data-testid="bulk-selection-bar"
                     className="flex flex-wrap items-center gap-3 rounded-lg border border-stone-300 bg-stone-50 px-3 py-2"
                 >
                     <span className="text-sm text-stone-700">
@@ -179,31 +215,62 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
                     </button>
                 </div>
             )}
-            <div className="overflow-x-auto border border-stone-200 rounded-xl shadow-sm">
-                <table className="min-w-full divide-y divide-stone-200">
-                    <thead className="bg-stone-50">
-                        <tr>
-                            <th scope="col" className="pl-6 pr-2 py-3.5 text-left">
-                                <input
-                                    type="checkbox"
-                                    checked={allVisibleSelected}
-                                    onChange={(e) => toggleAllVisible(e.target.checked)}
-                                    className="rounded border-stone-300 text-nexgen-blue focus:ring-nexgen-blue/30"
-                                    aria-label="Select all visible products"
-                                />
-                            </th>
-                            <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Image</th>
-                            <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Product Name</th>
-                            <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Supplier</th>
-                            <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Category</th>
-                            <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Brand</th>
-                            <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Price</th>
-                            <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Inventory</th>
-                            <th scope="col" className="px-6 py-3.5 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">m³</th>
-                            <th scope="col" className="px-6 py-3.5 text-right text-xs font-medium text-stone-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-stone-200">
+            <ProductAdminFilters
+                query={searchQuery}
+                onQueryChange={setSearchQuery}
+                category={categoryFilter}
+                onCategoryChange={setCategoryFilter}
+                categories={activeCategories}
+                shown={visibleProducts.length}
+                total={scopedProducts.length}
+            />
+
+            {/* Select-all sits ABOVE the list, once, at every width. It used to
+                be the table head's first cell, which at 360px would have meant
+                either hiding it or rendering a second copy — and two controls
+                with one accessible name is the duplicate the single-render rule
+                exists to prevent. */}
+            <label className="touch-target-y inline-flex cursor-pointer select-none items-center gap-2 text-sm text-stone-700">
+                <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={(e) => toggleAllVisible(e.target.checked)}
+                    className="rounded border-stone-300 text-nexgen-blue focus:ring-2 focus:ring-nexgen-blue-dark"
+                    aria-label="Select all visible products"
+                />
+                Select all visible
+            </label>
+
+            {visibleProducts.length === 0 ? (
+                <div className="glass-card rounded-xl p-10 text-center">
+                    <p className="text-sm text-stone-700">No products match those filters</p>
+                    <p className="mt-1 text-xs text-stone-600">
+                        {scopedProducts.length} {scopedProducts.length === 1 ? 'product is' : 'products are'} in the catalogue at this scope.
+                    </p>
+                </div>
+            ) : (
+                /* One `@container` for the heading strip AND the rows, so the two
+                   cannot disagree about which layout is showing. */
+                <div className="@container overflow-hidden rounded-xl border border-stone-200 shadow-sm">
+                    <div
+                        className={
+                            'hidden border-b border-stone-200 bg-stone-50 px-3 py-3 text-xs font-medium uppercase tracking-wider text-stone-600 ' +
+                            `@min-[1000px]:grid @min-[1000px]:gap-x-3 ${PRODUCT_ROW_COLUMNS}`
+                        }
+                        aria-hidden="true"
+                    >
+                        <span />
+                        <span>Image</span>
+                        <span>Product Name</span>
+                        <span>Supplier</span>
+                        <span>Category</span>
+                        <span>Brand</span>
+                        <span>Price</span>
+                        <span>Inventory</span>
+                        <span>m³</span>
+                        <span className="text-right">Actions</span>
+                    </div>
+                    <ul className="divide-y divide-stone-200 bg-white">
                         {visibleProducts.map((product) => (
                             <ProductAdminRow
                                 key={product.id}
@@ -218,9 +285,9 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
                                 onToggleSelected={toggleOne}
                             />
                         ))}
-                    </tbody>
-                </table>
-            </div>
+                    </ul>
+                </div>
+            )}
 
             <BulkBrandModal
                 open={isBrandOpen}
