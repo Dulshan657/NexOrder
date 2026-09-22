@@ -77,7 +77,8 @@
     "test:e2e:perf": "playwright test --project=perf",
     "soak:session:dev": "node scripts/session-soak.mjs --env=dev",
     "embed:products:dev": "node supabase/embed-products.mjs --env=dev",
-    "embed:products:amadiya": "node supabase/embed-products.mjs --env=amadiya"
+    "embed:products:amadiya": "node supabase/embed-products.mjs --env=amadiya",
+    "report:hardware": "tsx scripts/build-hardware-report.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
@@ -99,6 +100,7 @@
     "@tailwindcss/vite": "^4.2.2",
     "@testing-library/react": "^16.3.2",
     "@types/leaflet": "^1.9.21",
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^22.14.0",
     "@typescript-eslint/parser": "^8.68.0",
     "@vercel/config": "^0.5.6",
@@ -111,6 +113,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.11.0",
     "jsdom": "^29.1.1",
+    "markdown-it": "^15.0.2",
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
     "rollup-plugin-visualizer": "^7.0.1",
