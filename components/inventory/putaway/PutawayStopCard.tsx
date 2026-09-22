@@ -23,9 +23,10 @@
 // next one along is the right answer. The card warns, names both bins, and
 // records where it actually went.
 
-import React, { useMemo, useState } from 'react'
-import { AlertTriangle, ArrowRight, Check, Layers, MapPin, PackageCheck, Printer, Undo2, X } from 'lucide-react'
+import React, { useId, useMemo, useState } from 'react'
+import { AlertTriangle, ArrowRight, Check, Layers, PackageCheck, Printer, Undo2, X } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
+import { Callout } from '@/components/ui'
 import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkPutawayScan } from '@/supabase/functions/_shared/putawayScanCheck'
 import { useCompletePutaway, useUnassignPutaway } from '@/hooks/queries/usePutawayWalk'
@@ -33,7 +34,7 @@ import { usePrintPlateLabels } from '@/hooks/queries/usePalletBreakdown'
 import { useToasts } from '@/hooks/useToasts'
 import { CompletePutawayError } from '@/services/supabase/putawayService'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
-import { locationSubtitle, locationTitle, type DisplayLocation } from '@/lib/locationDisplay'
+import { locationTitle, type DisplayLocation } from '@/lib/locationDisplay'
 import {
   classifyPutawayScan,
   identifyChipLabel,
@@ -108,9 +109,20 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   // Set when the server refuses a level-role mismatch; the operator can force it.
   const [roleGate, setRoleGate] = useState<string | null>(null)
   const [breakingDown, setBreakingDown] = useState(false)
+  const qtyFieldId = useId()
 
   const name = row.product?.name ?? `Product #${row.productId}`
   const qtyLabel = describeQuantity(row.quantity, row.product)
+
+  // The code is the hero on this card and the name is the supporting line — the
+  // reverse of how `locationDisplay` orders them, and deliberately so. That module
+  // is written for a bin being READ in a list; this is a bin being MATCHED against
+  // a sticker at arm's length, and the sticker has the code on it in large type.
+  // `locationTitle` falls back to the code when the name says nothing, so guard
+  // against printing the same string twice — that is exactly what
+  // `locationSubtitle` returning '' exists to prevent.
+  const binName = locationTitle(bin)
+  const hasBinName = binName !== binCode
 
   const context = useMemo(
     () => ({
@@ -291,68 +303,131 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       <button
         onClick={start}
         disabled={disabled}
-        className="flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-stone-50/70 btn-press disabled:opacity-50 disabled:cursor-not-allowed"
+        className="touch-target-y flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-stone-50/70 btn-press disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <span className="w-7 h-7 shrink-0 rounded-full bg-stone-100 text-stone-500 text-xs font-mono flex items-center justify-center">
+        <span className="w-8 h-8 shrink-0 rounded-full bg-stone-100 text-stone-600 text-xs font-mono font-semibold flex items-center justify-center tabular-nums">
           {sequence ?? '·'}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm text-stone-800 truncate">{name}</span>
-          <span className="block text-xs text-stone-500">
-            <span className="tabular-nums text-stone-600">{qtyLabel.primary}</span>
-            {row.huCode && <span className="font-mono"> · {row.huCode}</span>}
-          </span>
+          {/* The DESTINATION leads, because the only question a collapsed row has
+              to answer is "where am I taking this". The old row led with the
+              product name and rendered the code at 10px on a 60%-opacity emerald
+              — roughly 1.9:1 — which is the one string on the row that gets
+              matched against a printed sticker. */}
+          <span className="block font-mono text-sm font-semibold text-emerald-700 truncate">{binCode}</span>
+          <span className="block text-xs text-stone-600 truncate">{name}</span>
         </span>
-        <span className="shrink-0 text-right max-w-[45%] sm:max-w-none">
-          <span className="block text-sm font-medium text-emerald-600 truncate">{locationTitle(bin)}</span>
-          {locationSubtitle(bin) && (
-            <span className="block font-mono text-[10px] text-emerald-600/60">{locationSubtitle(bin)}</span>
-          )}
-          <span className="block text-[11px] text-stone-500 tabular-nums">
+        <span className="shrink-0 text-right max-w-[38%] sm:max-w-none">
+          <span className="block text-xs font-medium text-stone-700 tabular-nums">{qtyLabel.primary}</span>
+          {row.huCode && <span className="block font-mono text-xs text-stone-600 truncate">{row.huCode}</span>}
+          <span className="block text-xs text-stone-600 tabular-nums">
             {reachable
               ? legDistanceM != null ? `${Math.round(legDistanceM)}m` : ''
               : 'off the map'}
           </span>
         </span>
-        <ArrowRight className="w-4 h-4 text-stone-300 shrink-0" aria-hidden="true" />
+        <ArrowRight className="w-4 h-4 text-stone-400 shrink-0" aria-hidden="true" />
       </button>
     )
   }
 
   // ── Active ─────────────────────────────────────────────────────────────────
+
+  // The rail below renders whichever steps this task actually has: `identify` is
+  // dropped entirely when there is nothing to hold up to the gun (`expect:'none'`),
+  // which is the same condition `start()` uses to skip straight to the bin.
+  const stages: ReadonlyArray<{ key: Step; label: string; value: string }> = [
+    ...(identity && identity.expect !== 'none'
+      ? [{ key: 'identify' as Step, label: identifyChipLabel(identity), value: plateCode || productCode }]
+      : []),
+    { key: 'bin', label: 'Bin', value: scannedBin },
+    { key: 'qty', label: 'Count', value: step === 'qty' ? qty : '' },
+  ]
+  const STAGE_ORDER: ReadonlyArray<Step> = ['identify', 'bin', 'qty']
+  const currentStage = STAGE_ORDER.indexOf(step)
+
   return (
-    <div className="p-4 bg-nexgen-blue/5 border-y border-nexgen-blue/20 space-y-3">
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-stone-900 truncate">{name}</p>
-          <p className="text-xs text-stone-500">
-            <span className="tabular-nums">{qtyLabel.primary}</span>
-            {qtyLabel.secondary && <span className="text-stone-500"> · {qtyLabel.secondary}</span>}
-          </p>
-        </div>
-        <button
-          onClick={reset}
-          className="p-1.5 text-stone-500 hover:text-stone-700 rounded btn-press shrink-0"
-          aria-label="Cancel this stop"
-        >
-          <X className="w-4 h-4" aria-hidden="true" />
-        </button>
+    <div
+      className={`bg-nexgen-blue/5 border-y border-nexgen-blue/20 ${flash === 'ok' ? 'scan-accept' : ''}`}
+    >
+      {/* Progress rail. Replaces the old inline chip row: at 360px a row of
+          pill-shaped chips wrapped onto two lines as soon as an accepted code was
+          echoed into it, and the echo was the useful part. */}
+      <ol
+        aria-label="Putaway progress"
+        className="flex items-stretch divide-x divide-nexgen-blue/15 border-b border-nexgen-blue/20 bg-white/70"
+      >
+        {stages.map((stage) => {
+          const done = STAGE_ORDER.indexOf(stage.key) < currentStage
+          const isNow = stage.key === step
+          return (
+            <li
+              key={stage.key}
+              aria-current={isNow ? 'step' : undefined}
+              /* `nexgen-blue-dark`, not `nexgen-blue`: white on the brand blue is
+                 3.70:1 and only survives as a DISCLOSED exception, while the dark
+                 shade measures 4.93:1 and simply passes. Same reasoning as the
+                 focus ring. */
+              className={`min-w-0 flex-1 px-2 py-2 text-center ${
+                isNow ? 'bg-nexgen-blue-dark text-white' : done ? 'text-emerald-700' : 'text-stone-600'
+              }`}
+            >
+              <span className="flex items-center justify-center gap-1 text-xs font-semibold">
+                {done && <Check className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}
+                <span className="truncate">{stage.label}</span>
+              </span>
+              {done && stage.value && (
+                <span className="mt-0.5 block truncate font-mono text-xs text-emerald-700">{stage.value}</span>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+
+      {/* The destination, and nothing competing with it. The code is set in mono
+          at the size it is printed on the bin label, because that is the
+          comparison the operator is actually making. `break-all` rather than
+          `truncate`: a code the operator cannot finish reading is worse than a
+          code on two lines. */}
+      <div className="px-4 pt-4 pb-3 text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600">Take it to</p>
+        <p className="mt-1.5 font-mono text-3xl sm:text-4xl font-bold leading-none tracking-tight text-stone-900 break-all">
+          {binCode}
+        </p>
+        {hasBinName && <p className="mt-2 text-base font-semibold text-emerald-700">{binName}</p>}
       </div>
 
-      {/* Destination, stated big — this is the whole point of the card. */}
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-white border border-stone-200">
-        <MapPin className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
-        <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wide text-stone-500">Take it to</p>
-          {/* Name big, because this is the instruction someone acts on while
-              walking. The code stays underneath: it is what is printed large on
-              the sticker they will match against. */}
-          <p className="text-lg font-bold text-stone-900 truncate">{locationTitle(bin)}</p>
-          {locationSubtitle(bin) && (
-            <p className="font-mono text-xs text-stone-500 truncate">{locationSubtitle(bin)}</p>
-          )}
+      {/* Facts, separated by rules rather than boxed into cards — the card is
+          already the box. */}
+      <dl
+        className={`grid ${row.huCode ? 'grid-cols-2' : 'grid-cols-1'} divide-x divide-nexgen-blue/15 border-y border-nexgen-blue/20 bg-white/50 text-center`}
+      >
+        <div className="min-w-0 px-3 py-2.5">
+          <dt className="text-xs text-stone-600">Quantity</dt>
+          <dd className="mt-0.5 font-mono text-xl font-semibold tabular-nums text-stone-900">
+            {qtyLabel.primary}
+          </dd>
+          {qtyLabel.secondary && <dd className="text-xs text-stone-600">{qtyLabel.secondary}</dd>}
         </div>
-      </div>
+        {row.huCode && (
+          <div className="min-w-0 px-3 py-2.5">
+            <dt className="text-xs text-stone-600">Plate</dt>
+            <dd className="mt-0.5 truncate font-mono text-xl font-semibold text-stone-900">{row.huCode}</dd>
+          </div>
+        )}
+      </dl>
+
+      <div className="p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <p className="min-w-0 flex-1 text-sm font-medium text-stone-900">{name}</p>
+          <button
+            onClick={reset}
+            className="touch-target -m-2 flex items-center justify-center rounded-lg p-2 text-stone-600 hover:text-stone-900 hover:bg-white/70 btn-press shrink-0"
+            aria-label="Cancel this stop"
+          >
+            <X className="w-4 h-4" aria-hidden="true" />
+          </button>
+        </div>
 
       {/* A bin that publishing has retired still resolves to a name and a code —
           `getWarehouseLocations` returns inactive rows on purpose — so without
@@ -360,13 +435,10 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           says nothing. `complete-putaway` refuses an inactive bin outright, so
           the walk would otherwise fail only after the walk. */}
       {bin.isActive === false && (
-        <p className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden="true" />
-          <span>
-            This bin has been retired from the layout. Send the line back to the
-            Assign queue and re-run it so the engine picks a live bay.
-          </span>
-        </p>
+        <Callout tone="warning" dense icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}>
+          This bin has been retired from the layout. Send the line back to the
+          Assign queue and re-run it so the engine picks a live bay.
+        </Callout>
       )}
 
       {/* A task can outlive its plate. A count, an adjustment or a transfer at
@@ -378,14 +450,11 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           as INSUFFICIENT_STOCK — which complete-putaway rewrites into "reserved
           for an order", a sentence that is simply untrue here. */}
       {(row.huStatus === 'empty' || row.huStatus === 'cancelled') && (
-        <p className="flex items-start gap-1.5 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden="true" />
-          <span>
-            Plate <span className="font-mono">{row.huCode}</span> is recorded as {row.huStatus} — its
-            stock has already been consumed somewhere else, so this placement will be refused. Send
-            the line back to the Assign queue and re-run it.
-          </span>
-        </p>
+        <Callout tone="danger" dense icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}>
+          Plate <span className="font-mono">{row.huCode}</span> is recorded as {row.huStatus} — its
+          stock has already been consumed somewhere else, so this placement will be refused. Send
+          the line back to the Assign queue and re-run it.
+        </Callout>
       )}
 
       {/* Product evidence names the SKU and nothing finer. With two unlabelled
@@ -393,35 +462,16 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           which one is being carried — so say that, rather than let a green tick
           imply a certainty nobody has. */}
       {step === 'identify' && identity?.expect === 'product' && unlabelledTwins.length > 0 && (
-        <p className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden="true" />
-          <span>
-            {unlabelledTwins.map((t) => `${t.huCode} (${trimNumber(t.quantity)})`).join(', ')}{' '}
-            {unlabelledTwins.length === 1 ? 'is' : 'are'} also queued for this product with no label.
-            The barcode can't prove which one you're carrying — print a plate label if that matters
-            here.
-          </span>
-        </p>
+        <Callout tone="warning" dense icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}>
+          {unlabelledTwins.map((t) => `${t.huCode} (${trimNumber(t.quantity)})`).join(', ')}{' '}
+          {unlabelledTwins.length === 1 ? 'is' : 'are'} also queued for this product with no label.
+          The barcode can't prove which one you're carrying — print a plate label if that matters
+          here.
+        </Callout>
       )}
 
-      <div className="flex items-center gap-2 text-[11px]">
-        {identity && identity.expect !== 'none' && (
-          <>
-            <StepChip
-              label={identifyChipLabel(identity)}
-              done={step !== 'identify'}
-              active={step === 'identify'}
-              value={plateCode || productCode}
-            />
-            <span className="text-stone-300">→</span>
-          </>
-        )}
-        <StepChip label="Bin" done={step === 'qty'} active={step === 'bin'} value={scannedBin} />
-        <span className="text-stone-300">→</span>
-        <StepChip label="Count" done={false} active={step === 'qty'} value={step === 'qty' ? qty : ''} />
-      </div>
-
       {step === 'identify' && identity && (
+        <div className="step-advance">
         <ScanField
           label={identifyPrompt(identity, {
             huCode: row.huCode,
@@ -441,6 +491,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           helper={identifyHelper(identity)}
           error={error ?? undefined}
         />
+        </div>
       )}
 
       {/* Printing is offered LOUDLY when the plate is one that ought to carry a
@@ -449,39 +500,57 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           want a plate label on a carton that ordinarily would not need one.
           Either way the sheet is a link the operator taps: window.open after an
           await is popup-blocked, every time. */}
+      {/* The QUIET half is now one line rather than a bordered panel. At 360px
+          that panel cost ~90px of the ~548px the card has to fit a scan field and
+          a Confirm button into, to say "barcode damaged?" — a question that is
+          almost always no. The LOUD half keeps its full treatment, because when
+          `needsLabel` is true the operator is being told the sticker they are
+          looking for does not exist. */}
       {(step === 'identify' || step === 'bin') && identity?.canPrintLabel && (
-        <div
-          className={`rounded-lg border p-3 space-y-2 ${
-            identity.needsLabel ? 'border-amber-200 bg-amber-50' : 'border-stone-200 bg-white'
-          }`}
-        >
-          <p className={`text-xs ${identity.needsLabel ? 'text-amber-800' : 'text-stone-500'}`}>
+        identity.needsLabel || labelUrl ? (
+          <Callout
+            tone={identity.needsLabel ? 'warning' : 'neutral'}
+            dense
+            icon={<Printer className="w-4 h-4" aria-hidden="true" />}
+            action={
+              labelUrl ? (
+                <a
+                  href={labelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="touch-target-y inline-flex items-center gap-1.5 px-3.5 py-2 bg-nexgen-blue text-white text-sm font-medium rounded-lg btn-press"
+                >
+                  <Printer className="w-4 h-4" aria-hidden="true" />
+                  Open the label sheet
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  onClick={renderLabel}
+                  disabled={print.isPending}
+                  className="touch-target-y inline-flex items-center gap-1.5 px-3.5 py-2 border border-stone-300 bg-white text-stone-700 text-sm font-medium rounded-lg btn-press disabled:opacity-50"
+                >
+                  <Printer className="w-4 h-4" aria-hidden="true" />
+                  {print.isPending ? 'Rendering…' : 'Print a plate label'}
+                </button>
+              )
+            }
+          >
             {identity.needsLabel
               ? `No label has ever been printed for ${row.huCode}.`
-              : 'Barcode damaged or missing?'}
-          </p>
-          {labelUrl ? (
-            <a
-              href={labelUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] bg-nexgen-blue text-white text-sm font-medium rounded-lg btn-press"
-            >
-              <Printer className="w-4 h-4" aria-hidden="true" />
-              Open the label sheet
-            </a>
-          ) : (
-            <button
-              type="button"
-              onClick={renderLabel}
-              disabled={print.isPending}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] border border-stone-300 bg-white text-stone-700 text-sm font-medium rounded-lg btn-press disabled:opacity-50"
-            >
-              <Printer className="w-4 h-4" aria-hidden="true" />
-              {print.isPending ? 'Rendering…' : 'Print a plate label'}
-            </button>
-          )}
-        </div>
+              : 'The label sheet is ready.'}
+          </Callout>
+        ) : (
+          <button
+            type="button"
+            onClick={renderLabel}
+            disabled={print.isPending}
+            className="touch-target-y inline-flex items-center gap-1.5 py-2 text-xs text-nexgen-blue-dark hover:underline btn-press disabled:opacity-50"
+          >
+            <Printer className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            {print.isPending ? 'Rendering…' : 'Barcode damaged? Print a plate label'}
+          </button>
+        )
       )}
 
       {/* The prompt quotes the CODE, deliberately. generate-labels prints the
@@ -490,55 +559,70 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           is big on it. The friendly name is stated above, in the destination
           block, where it belongs. */}
       {step === 'bin' && (
-        <ScanField
-          label={`Scan the bin — expecting ${binCode}`}
-          value={scannedBin}
-          onChange={setScannedBin}
-          onScan={onBinScan}
-          flash={step === 'bin' ? flash : null}
-          placeholder={binCode}
-          cameraTitle="Scan the bin label"
-          autoFocus
-          helper="A different bay is fine — it gets recorded."
-          error={error ?? undefined}
-        />
+        <div className="step-advance">
+          <ScanField
+            label={`Scan the bin — expecting ${binCode}`}
+            value={scannedBin}
+            onChange={setScannedBin}
+            onScan={onBinScan}
+            flash={step === 'bin' ? flash : null}
+            placeholder={binCode}
+            cameraTitle="Scan the bin label"
+            autoFocus
+            helper="A different bay is fine — it gets recorded."
+            error={error ?? undefined}
+          />
+        </div>
       )}
 
       {step === 'qty' && (
-        <div className="space-y-3">
+        <div className="step-advance space-y-3">
           {placedElsewhere && (
-            <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
-              <p className="text-xs">
-                You scanned <span className="font-mono font-medium">{scannedBin}</span>, not{' '}
-                <span className="font-mono font-medium">{binCode}</span>. That's allowed — the stock will be
-                recorded where you actually put it.
-              </p>
-            </div>
+            <Callout tone="warning" dense icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}>
+              You scanned <span className="font-mono font-medium">{scannedBin}</span>, not{' '}
+              <span className="font-mono font-medium">{binCode}</span>. That's allowed — the stock will be
+              recorded where you actually put it.
+            </Callout>
           )}
 
           {roleGate && (
-            <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-900">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
-              <div className="text-xs space-y-2">
-                <p>{roleGate}</p>
+            <Callout
+              tone="warning"
+              dense
+              icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}
+              action={
                 <button
                   onClick={() => confirm(true)}
                   disabled={complete.isPending}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[44px] bg-amber-600 text-white text-sm font-medium rounded-lg btn-press disabled:opacity-50"
+                  className="touch-target-y inline-flex items-center gap-1.5 px-3 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg btn-press disabled:opacity-50"
                 >
                   Place anyway
                 </button>
-              </div>
-            </div>
+              }
+            >
+              {roleGate}
+            </Callout>
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-stone-600 mb-1.5">
+            {/* `aria-labelledby` as well as `htmlFor`, and NOT a duplicate
+                `aria-label`: the visible text is then the accessible name, so the
+                two cannot drift apart. The pair is also what
+                `jsx-a11y/control-has-associated-label` can actually see —
+                `htmlFor`/`id` alone is a runtime association the static rule
+                cannot resolve across siblings, and the suppressions file is a
+                one-way ratchet that must not be fed by hand. */}
+            <label
+              id={`${qtyFieldId}-label`}
+              htmlFor={qtyFieldId}
+              className="block text-xs font-semibold text-stone-600 mb-1.5"
+            >
               How much did you put away?
             </label>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
               <input
+                id={qtyFieldId}
+                aria-labelledby={`${qtyFieldId}-label`}
                 type="number"
                 min="0"
                 step="any"
@@ -546,22 +630,17 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
                 value={qty}
                 onChange={(e) => { setQty(e.target.value); setError(null) }}
                 autoFocus
-                // 44px tall: keyed with a thumb, at a rack face, possibly gloved.
-                className="w-28 px-3 py-2 min-h-[44px] rounded-lg border border-stone-300 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
-                aria-label="Quantity put away"
+                // `touch-target-y` rather than an arbitrary min-h: an arbitrary
+                // value sorts AFTER the named utility, so layering the two would
+                // silently win against the 44px floor.
+                className="touch-target-y w-24 shrink-0 px-3 py-2 rounded-lg border border-stone-300 text-base font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
               />
-              <span className="text-xs text-stone-500">of {trimNumber(row.quantity)} on this task</span>
-              <button
-                onClick={() => confirm(false)}
-                disabled={complete.isPending}
-                className="ml-auto inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] bg-emerald-600 text-white text-sm font-medium rounded-lg btn-press disabled:opacity-50"
-              >
-                <PackageCheck className="w-4 h-4" aria-hidden="true" />
-                {complete.isPending ? 'Recording…' : 'Confirm'}
-              </button>
+              <span className="min-w-0 text-xs text-stone-600">
+                of {trimNumber(row.quantity)} on this task
+              </span>
             </div>
             {Number(qty) > 0 && Number(qty) < row.quantity && (
-              <p className="text-xs text-amber-600 mt-1.5">
+              <p className="text-xs text-amber-700 mt-1.5">
                 {trimNumber(row.quantity - Number(qty))} stays on this task for another trip.
               </p>
             )}
@@ -570,18 +649,31 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
                 {error}
               </p>
             )}
+            {/* Full width, and last. It is the only committing action on the card,
+                and on a 360px screen a button that shares a row with an input is a
+                button somebody misses with a gloved thumb. */}
+            <button
+              onClick={() => confirm(false)}
+              disabled={complete.isPending}
+              className="touch-target-y mt-3 flex w-full items-center justify-center gap-1.5 px-3.5 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg btn-press disabled:opacity-50"
+            >
+              <PackageCheck className="w-4 h-4" aria-hidden="true" />
+              {complete.isPending ? 'Recording…' : 'Confirm'}
+            </button>
           </div>
         </div>
       )}
 
-      <div className="flex items-center gap-4 flex-wrap">
+      {/* Both escape hatches on one line. They are the rarest controls on the
+          card and they were costing two stacked 44px rows of the height budget. */}
+      <div className="flex items-center justify-between gap-3 border-t border-nexgen-blue/15 pt-1">
         <button
           onClick={putBack}
           disabled={unassign.isPending}
-          className="inline-flex items-center gap-1.5 min-h-[44px] py-2 text-xs text-stone-500 hover:text-stone-800 btn-press disabled:opacity-50"
+          className="touch-target-y inline-flex min-w-0 items-center gap-1.5 py-2 text-xs text-stone-600 hover:text-stone-900 btn-press disabled:opacity-50"
         >
-          <Undo2 className="w-3.5 h-3.5" aria-hidden="true" />
-          Can't place this — put it back on the queue
+          <Undo2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate">Put it back on the queue</span>
         </button>
 
         {/* Only a pallet has anything to break down, and only a tracked one:
@@ -590,12 +682,13 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         {row.huId != null && row.huType === 'pallet' && (
           <button
             onClick={() => setBreakingDown(true)}
-            className="inline-flex items-center gap-1.5 min-h-[44px] py-2 text-xs text-nexgen-blue hover:text-nexgen-blue/80 btn-press"
+            className="touch-target-y inline-flex shrink-0 items-center gap-1.5 py-2 text-xs text-nexgen-blue-dark hover:underline btn-press"
           >
-            <Layers className="w-3.5 h-3.5" aria-hidden="true" />
-            Break this pallet down
+            <Layers className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            Break down
           </button>
         )}
+        </div>
       </div>
 
       {breakingDown && (
@@ -610,17 +703,3 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     </div>
   )
 }
-
-const StepChip: React.FC<{ label: string; done: boolean; active: boolean; value: string }> = ({
-  label, done, active, value,
-}) => (
-  <span
-    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${
-      done ? 'bg-emerald-100 text-emerald-700' : active ? 'bg-nexgen-blue text-white' : 'bg-stone-100 text-stone-600'
-    }`}
-  >
-    {done && <Check className="w-3 h-3" aria-hidden="true" />}
-    {label}
-    {done && value && <span className="font-mono opacity-70 max-w-[90px] truncate">{value}</span>}
-  </span>
-)

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Product, User, PutawayLineRecommendation } from '../../types';
 import { UserRole } from '../../types';
 import { useReceiveStock } from '../../hooks/queries/useReceiveStock';
@@ -73,7 +73,7 @@ const RecentReceiptsPanel: React.FC = () => {
         <div className="px-4 py-8 text-center">
           <Boxes className="w-8 h-8 text-stone-200 mx-auto mb-2" />
           <p className="text-sm text-stone-500">No goods received yet</p>
-          <p className="text-xs text-stone-500 mt-1">Receipts you record will show up here.</p>
+          <p className="text-xs text-stone-600 mt-1">Receipts you record will show up here.</p>
         </div>
       ) : (
         <ul className="divide-y divide-stone-100">
@@ -163,7 +163,7 @@ const SupplierCombobox: React.FC<SupplierComboboxProps> = ({
           onFocus={() => setOpen(true)}
           placeholder="Search or type a supplier…"
           aria-label="Supplier"
-          className="w-full pl-10 pr-9 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+          className="w-full pl-10 pr-9 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
         />
         {valueId != null ? (
           <Check className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
@@ -323,6 +323,36 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   const destName = isLocked
     ? homeName
     : activeWarehouses.find((w) => w.id === destinationId)?.name;
+
+  /**
+   * Whether the receipt header is showing its fields, below `xl`.
+   *
+   * Local display state and nothing else — every field below stays mounted
+   * whatever this is, toggled by `hidden`/`grid` classes rather than by a
+   * conditional render. Two reasons, both load-bearing:
+   *   - `SupplierCombobox` owns its own open/query state, and `submit()` reads
+   *     React state rather than the DOM, so unmounting would lose typing for no
+   *     gain in correctness;
+   *   - `receiveStockSupplierFilter.test.tsx` reaches these controls through
+   *     `getByLabelText('Supplier')` in nine of its eleven tests. jsdom loads no
+   *     Tailwind, so a class toggle is invisible to it; a conditional render
+   *     would fail all nine.
+   *
+   * Starts CLOSED only once a supplier is chosen, so the first run of an empty
+   * receipt is exactly as it was and nobody has to discover a disclosure to
+   * begin. At `xl` the five-column grid shows everything anyway and the toggle
+   * is hidden — note that has to be the VIEWPORT breakpoint, because the
+   * `@container` on this page is declared on the staged-lines card, which is
+   * this block's sibling. An `@min-[…]` utility here would match nothing, ever.
+   */
+  const [headerOpen, setHeaderOpen] = useState(false);
+  const headerFieldsId = useId();
+  const headerCollapsed = !headerOpen && supplierName.trim() !== '';
+  const headerSummary = [
+    supplierName.trim() || 'No supplier yet',
+    destName ?? 'Default site',
+    receivedDate,
+  ].join(' · ');
 
   // ── Receipt lines ──────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
@@ -581,7 +611,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
         </div>
         <div>
           <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Receive Stock</h1>
-          <p className="text-xs text-stone-500 mt-0.5">
+          <p className="text-xs text-stone-600 mt-0.5">
             Record goods arriving into {destName ?? 'the selected warehouse'}. Choose the supplier, then add what arrived.
           </p>
         </div>
@@ -589,7 +619,50 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
 
       {/* Receipt header — who supplied this delivery */}
       <div className="glass-card rounded-xl p-4 sm:p-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+        {/* Once the delivery is identified, this whole block is six fields of
+            answered questions sitting between the operator and the scan box —
+            about 400px of it at 360px wide, which is most of a screen. It
+            collapses to the answers. The quarantine flag is in the summary and
+            not only in the fields, because it writes onto EVERY line below: a
+            flag that changes what is received, concealed inside a collapsed
+            section, would be a worse defect than the scrolling this fixes. */}
+        {headerCollapsed && (
+          <button
+            type="button"
+            onClick={() => setHeaderOpen(true)}
+            aria-expanded={false}
+            aria-controls={headerFieldsId}
+            data-testid="receipt-header-toggle"
+            className="touch-target-y flex w-full items-center gap-2 rounded-lg text-left btn-press hover:bg-stone-50 xl:hidden"
+          >
+            <ChevronDown className="w-4 h-4 shrink-0 text-stone-600" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate text-sm text-stone-700">{headerSummary}</span>
+            {quarantineAll && (
+              <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                Quarantine
+              </span>
+            )}
+          </button>
+        )}
+
+        {supplierName.trim() !== '' && !headerCollapsed && (
+          <button
+            type="button"
+            onClick={() => setHeaderOpen(false)}
+            aria-expanded
+            aria-controls={headerFieldsId}
+            data-testid="receipt-header-toggle"
+            className="touch-target-y mb-2 flex w-full items-center gap-2 rounded-lg text-left btn-press hover:bg-stone-50 xl:hidden"
+          >
+            <ChevronDown className="w-4 h-4 shrink-0 rotate-180 text-stone-600" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-stone-700">Delivery details</span>
+          </button>
+        )}
+
+        <div
+          id={headerFieldsId}
+          className={`${headerCollapsed ? 'hidden' : 'grid'} xl:grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4`}
+        >
           <div className="xl:col-span-2">
             <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
               Supplier <span className="text-red-500">*</span>
@@ -603,7 +676,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               onPickNew={(name) => { setSupplierId(null); setSupplierName(name); }}
             />
             {supplierId == null && supplierName.trim() !== '' && (
-              <p className="text-xs text-stone-500 mt-1">New supplier — will be added to your supplier list.</p>
+              <p className="text-xs text-stone-600 mt-1">New supplier — will be added to your supplier list.</p>
             )}
           </div>
 
@@ -616,7 +689,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               value={reference}
               onChange={(e) => setReference(e.target.value)}
               placeholder="Invoice / docket / PO no."
-              className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+              className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
             />
             {/* Quarantine (mig 00101). Bulk control only: it writes the flag onto
                 every line in the grid, so what is ticked below IS what is sent. */}
@@ -633,7 +706,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               />
               <span>
                 <span className="font-semibold text-stone-700">Quarantine this delivery</span>
-                <span className="block text-stone-500">
+                <span className="block text-stone-600">
                   Goes to a quarantine bay. It cannot be sold until you release it by moving it out.
                 </span>
               </span>
@@ -649,7 +722,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                 <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700">
                   {homeName ?? 'Your site'}
                 </div>
-                <p className="text-xs text-stone-500 mt-1">You can only receive at your site.</p>
+                <p className="text-xs text-stone-600 mt-1">You can only receive at your site.</p>
               </>
             ) : activeWarehouses.length === 0 ? (
               <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-500">
@@ -664,7 +737,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                 value={destinationId ?? ''}
                 onChange={(e) => setDestinationId(e.target.value === '' ? null : Number(e.target.value))}
                 aria-label="Destination warehouse"
-                className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+                className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
               >
                 {activeWarehouses.map((w) => (
                   <option key={w.id} value={w.id}>{w.name}</option>
@@ -683,13 +756,13 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                 value={receivedDate}
                 max={todayIso()}
                 onChange={(e) => setReceivedDate(e.target.value)}
-                className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
+                className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
               />
             </div>
           </div>
         </div>
 
-        <div className="mt-4 max-w-xs">
+        <div className={`${headerCollapsed ? 'hidden' : 'block'} xl:block mt-4 max-w-xs`}>
           <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
             <UserRound className="w-3.5 h-3.5 text-stone-500" /> Received by
           </label>
@@ -699,128 +772,30 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
         </div>
       </div>
 
-      {/* Product search / dock scan */}
-      {/* One box for both jobs, deliberately. Typing still drives the substring
-          search and its dropdown exactly as before; a SCAN (camera, wedge gun,
-          or Enter) goes through `handleDockScan` and adds the line outright.
-          Splitting them into two inputs would mean the operator has to decide
-          which one to aim at before they know what the label is. */}
-      {/* Pinned: at the dock the operator scans carton after carton, and every
-          staged line pushes this box further up. `bleed="xl"` because THIS page
-          pads `p-4 sm:p-6 xl:p-8`, not the `lg:` scale the putaway and stocktake
-          pages use. */}
-      <StickyScanBar bleed="xl">
-        <div className="max-w-xl space-y-1.5">
-          <div className="relative" ref={searchWrapRef}>
-            <ScanField
-              ariaLabel="Search products"
-              value={search}
-              onChange={(v) => { setSearch(v); if (scanNote) setScanNote(null); }}
-              onScan={handleDockScan}
-              flash={flash}
-              error={scanNote ?? undefined}
-              placeholder={
-                isFiltered
-                  ? `Scan a carton, or search ${supplierName}’s products…`
-                  : 'Scan a carton, or search by name, SKU or barcode…'
-              }
-              cameraTitle="Scan a carton"
-            />
-            {/* 22px = half of ScanField's 44px input. NOT `top-1/2`: this wrapper
-                also contains the error line, so a percentage drifts downward the
-                moment a refusal message appears. Tied to the input height, so it
-                moves if that does. */}
-            {search && (
-              <button onClick={() => setSearch('')} className="absolute right-3 top-[22px] -translate-y-1/2 text-stone-500 hover:text-stone-600 cursor-pointer">
-                <X className="w-4 h-4" />
-              </button>
-            )}
-            {searchResults.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-card overflow-hidden">
-                {searchResults.map(p => {
-                  const theirSku = supplierSkuFor(p, supplierId);
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => addProduct(p)}
-                      className="flex items-center justify-between gap-3 w-full px-4 py-2.5 text-left hover:bg-stone-50 btn-press"
-                    >
-                      <span className="text-sm text-stone-800 truncate">{p.name}</span>
-                      <span className="text-xs text-stone-500 font-mono shrink-0">
-                        {theirSku ? `${theirSku} · ` : ''}{p.sku}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Scope hint — which catalogue is being searched, and how to widen it. */}
-          {supplierId != null && (
-            <p className="text-xs text-stone-500">
-              {isFiltered ? (
-                <>
-                  Showing {supplierProducts.length} product{supplierProducts.length === 1 ? '' : 's'} from{' '}
-                  <span className="text-stone-500">{supplierName}</span>.{' '}
-                  <button
-                    type="button"
-                    onClick={() => setShowAllProducts(true)}
-                    className="text-nexgen-blue hover:underline cursor-pointer"
-                  >
-                    Show all products
-                  </button>
-                </>
-              ) : (
-                <>
-                  Showing all products.{' '}
-                  <button
-                    type="button"
-                    onClick={() => setShowAllProducts(false)}
-                    className="text-nexgen-blue hover:underline cursor-pointer"
-                  >
-                    Only {supplierName}’s products
-                  </button>
-                </>
-              )}
-            </p>
-          )}
-          {wouldMatchOutsideSupplier && (
-            <p className="text-xs text-amber-600">
-              No match in {supplierName}’s products.{' '}
-              <button
-                type="button"
-                onClick={() => setShowAllProducts(true)}
-                className="font-medium hover:underline cursor-pointer"
-              >
-                Search all products
-              </button>
-            </p>
-          )}
-        </div>
-      </StickyScanBar>
-
       {/* Staged receipt lines */}
       {picked.length === 0 && mixedPlates.length === 0 ? (
-        <div className="glass-card rounded-xl p-10 text-center">
-          <div className="w-12 h-12 rounded-full bg-nexgen-blue/10 flex items-center justify-center mx-auto mb-3">
-            <Search className="w-5 h-5 text-nexgen-blue" />
+        // Built on the shape of `warehouse/WarehouseEmptyState` — the squarer
+        // icon tile, the larger headline, the measured column of body text.
+        <div className="glass-panel shadow-card rounded-2xl p-8 sm:p-10 text-center">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-nexgen-blue/10 text-nexgen-blue">
+            <Search className="h-7 w-7" aria-hidden="true" />
           </div>
-          <p className="text-sm font-medium text-stone-700">Start a goods receipt</p>
-          <p className="text-xs text-stone-500 mt-1 max-w-sm mx-auto">
-            Pick the supplier above, then search a product to add a line, set the received quantity
-            (and an optional lot code &amp; expiry), and receive it into {destName ?? 'the selected warehouse'}.
+          <h2 className="text-lg font-semibold text-stone-900">Start a goods receipt</h2>
+          <p className="mx-auto mt-2 max-w-sm text-sm text-stone-600">
+            Pick the supplier above, then scan or search a product to add a line, set the received
+            quantity (and an optional lot code &amp; expiry), and receive it into{' '}
+            {destName ?? 'the selected warehouse'}.
           </p>
           {/* The mixed-pallet affordance has to live here as well as in the
               footer. The footer only exists once something is staged, so
               without this a receipt could never START with a mixed pallet —
               which is exactly how a delivery of one arrives. */}
-          <div className="mt-4 flex items-center justify-center gap-2">
+          <div className="mt-7 flex items-center justify-center gap-2">
             <button
               onClick={addMixedPallet}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press"
+              className="touch-target-y inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-5 py-2.5 text-sm font-semibold text-stone-700 hover:bg-stone-50 btn-press"
             >
-              <Boxes className="w-4 h-4" /> Mixed pallet
+              <Boxes className="h-4 w-4 text-nexgen-blue" aria-hidden="true" /> Mixed pallet
             </button>
           </div>
         </div>
@@ -849,7 +824,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
               (heading, i) => (
                 <span
                   key={heading || `spacer-${i}`}
-                  className={`text-xs font-semibold uppercase tracking-wider text-stone-500 ${
+                  className={`text-xs font-semibold uppercase tracking-wider text-stone-600 ${
                     heading === 'Qty' ? 'text-right' : heading === 'Hold' ? 'text-center' : 'text-left'
                   }`}
                 >
@@ -977,6 +952,124 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
 
       {/* Recent receipts — gives the screen context and an audit trail */}
       <RecentReceiptsPanel />
+
+      {/* Product search / dock scan */}
+      {/* One box for both jobs, deliberately. Typing still drives the substring
+          search and its dropdown exactly as before; a SCAN (camera, wedge gun,
+          or Enter) goes through `handleDockScan` and adds the line outright.
+          Splitting them into two inputs would mean the operator has to decide
+          which one to aim at before they know what the label is. */}
+      {/* Pinned to the FOOT of the page, and its position in this file is the
+          mechanism rather than a matter of reading order.
+
+          `sticky` is bounded by its containing block, so the bar un-pins the
+          moment that block's bottom scrolls past. Rendered where it used to be —
+          above the staged lines — a bottom-pinned bar would come unstuck as soon
+          as the operator scrolled into the plate labels, the putaway panel or the
+          recent-receipts list. It has to be the LAST child, with nothing below
+          it. (Leaving it first and merely flipping the prop is worse than
+          either: it would still pin to the foot, while reserving its ~60px of
+          flow space as a blank band at the top of the page.)
+
+          Bottom rather than top because this is a 360px handheld held one-handed
+          at a dock; the thumb reaches the bottom of the screen and not the top.
+          The Android keyboard is not a problem here — index.html sets
+          `interactive-widget=resizes-content` precisely so a bottom-anchored bar
+          is pushed up rather than covered.
+
+          `bleed="xl"` because THIS page pads `p-4 sm:p-6 xl:p-8`, not the `lg:`
+          scale the putaway and stocktake pages use. */}
+      <StickyScanBar bleed="xl" position="bottom">
+        <div className="max-w-xl space-y-1.5">
+          <div className="relative" ref={searchWrapRef}>
+            <ScanField
+              ariaLabel="Search products"
+              value={search}
+              onChange={(v) => { setSearch(v); if (scanNote) setScanNote(null); }}
+              onScan={handleDockScan}
+              flash={flash}
+              error={scanNote ?? undefined}
+              placeholder={
+                isFiltered
+                  ? `Scan a carton, or search ${supplierName}’s products…`
+                  : 'Scan a carton, or search by name, SKU or barcode…'
+              }
+              cameraTitle="Scan a carton"
+            />
+            {/* 22px = half of ScanField's 44px input. NOT `top-1/2`: this wrapper
+                also contains the error line, so a percentage drifts downward the
+                moment a refusal message appears. Tied to the input height, so it
+                moves if that does. */}
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-3 top-[22px] -translate-y-1/2 text-stone-500 hover:text-stone-600 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            {searchResults.length > 0 && (
+              <div className="absolute z-10 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-card overflow-hidden">
+                {searchResults.map(p => {
+                  const theirSku = supplierSkuFor(p, supplierId);
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => addProduct(p)}
+                      className="flex items-center justify-between gap-3 w-full px-4 py-2.5 text-left hover:bg-stone-50 btn-press"
+                    >
+                      <span className="text-sm text-stone-800 truncate">{p.name}</span>
+                      <span className="text-xs text-stone-500 font-mono shrink-0">
+                        {theirSku ? `${theirSku} · ` : ''}{p.sku}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Scope hint — which catalogue is being searched, and how to widen it. */}
+          {supplierId != null && (
+            <p className="text-xs text-stone-500">
+              {isFiltered ? (
+                <>
+                  Showing {supplierProducts.length} product{supplierProducts.length === 1 ? '' : 's'} from{' '}
+                  <span className="text-stone-500">{supplierName}</span>.{' '}
+                  <button
+                    type="button"
+                    onClick={() => setShowAllProducts(true)}
+                    className="text-nexgen-blue hover:underline cursor-pointer"
+                  >
+                    Show all products
+                  </button>
+                </>
+              ) : (
+                <>
+                  Showing all products.{' '}
+                  <button
+                    type="button"
+                    onClick={() => setShowAllProducts(false)}
+                    className="text-nexgen-blue hover:underline cursor-pointer"
+                  >
+                    Only {supplierName}’s products
+                  </button>
+                </>
+              )}
+            </p>
+          )}
+          {wouldMatchOutsideSupplier && (
+            <p className="text-xs text-amber-600">
+              No match in {supplierName}’s products.{' '}
+              <button
+                type="button"
+                onClick={() => setShowAllProducts(true)}
+                className="font-medium hover:underline cursor-pointer"
+              >
+                Search all products
+              </button>
+            </p>
+          )}
+        </div>
+      </StickyScanBar>
+
     </div>
   );
 };

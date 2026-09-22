@@ -515,6 +515,61 @@ body {
   animation: wh-sweep-in .14s cubic-bezier(.16,1,.3,1) both;
 }
 
+/* Handheld scan surfaces (Receive Stock, Putaway). Namespaced `.scan-*`/`.queue-*`
+   and deliberately thin: this runs on an RS35 on battery, held one-handed at a rack
+   face, so the only things that move are a scan landing, a step changing, and a list
+   arriving. No perpetual loops — a warehouse screen that never stops moving is a
+   screen the operator stops reading.
+
+   NOTE for whoever adds a fourth: none of these declares a hidden or offset state
+   OUTSIDE its keyframes, which is what lets the reduced-motion block below disable
+   them with `animation: none` alone. `.wh-route-leg` and `.auth-proof-item` down
+   there are the cautionary tales — both needed an extra neutralizing rule because
+   they did. Keep that property and you need only add the selector. */
+
+/* The CARD confirming a scan, not just the input. ScanField already rings its own
+   border (`pulseClass`), but at 360px the operator's eye is on the bin code, not on
+   the field — so the surface holding the code is what has to acknowledge. A
+   pseudo-element wash rather than animating `background-color`: opacity composites,
+   background-color repaints. */
+@keyframes scan-accept {
+  from { opacity: .5; }
+  to   { opacity: 0; }
+}
+.scan-accept { position: relative; }
+.scan-accept::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: var(--color-emerald-500, #00a63e);
+  opacity: 0;
+  animation: scan-accept .22s cubic-bezier(.16,1,.3,1) both;
+}
+
+/* Identify -> Bin -> Count. Keyed on the step so it re-runs per transition; the
+   travel is 6px, just enough to say "this is new content" without the card
+   appearing to jump while someone is aiming a scanner at it. */
+@keyframes step-advance {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.step-advance {
+  animation: step-advance .22s cubic-bezier(.16,1,.3,1) both;
+}
+
+/* Queue reveal. `--q-i` is set inline per row, same contract as `--wh-i` above:
+   22ms a step, so a 20-stop walk is fully in under half a second. */
+@keyframes queue-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+.queue-in {
+  animation: queue-in .26s cubic-bezier(.16,1,.3,1) both;
+  animation-delay: calc(var(--q-i, 0) * 22ms);
+}
+
 /* Recode panel motion. Namespaced `.rc-*`, and deliberately restrained: this is an
    operator tool used one-handed beside a rack, so the only things that move are the
    panel arriving, the step changing, a progress fill, the signpost changing its
@@ -628,6 +683,9 @@ body {
   .wh-pulse,
   .wh-shimmer,
   .wh-sweep-in,
+  .scan-accept::after,
+  .step-advance,
+  .queue-in,
   .rc-panel-in,
   .rc-step-in,
   .rc-rail-fill,

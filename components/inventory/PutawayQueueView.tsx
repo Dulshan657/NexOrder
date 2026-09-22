@@ -181,34 +181,20 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
         </div>
         <div>
           <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Putaway</h1>
-          <p className="text-xs text-stone-500 mt-0.5">Decide where each line goes. Nothing moves until someone carries it.</p>
+          <p className="text-xs text-stone-600 mt-0.5">Decide where each line goes. Nothing moves until someone carries it.</p>
         </div>
       </div>
-
-      {/* Scan what's on the dock and jump to its line, instead of eye-matching a
-          product name down a scrollable list with a pallet in your hands. */}
-      {rows.length > 0 && (
-        <StickyScanBar>
-          <PutawayScanFinder
-            rows={rows}
-            locations={locationsQuery.data ?? []}
-            binIdOf={(row) => row.recommendedLocationId}
-            onFound={(id) => { setExpanded(id); setSearch(''); }}
-            onFilter={setSearch}
-          />
-        </StickyScanBar>
-      )}
 
       {rows.length > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="relative flex-1 min-w-0">
-            <Search className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-stone-600 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search product, SKU, supplier or bin"
               aria-label="Search the putaway queue"
-              className="w-full pl-9 pr-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
             />
           </div>
           <select
@@ -247,18 +233,18 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
       ) : queueQuery.isError ? (
         <div className="glass-card rounded-xl p-8 text-center">
           <p className="text-sm text-red-600">Couldn't load the putaway queue.</p>
-          <p className="text-xs text-stone-500 mt-1">Check your connection and try again.</p>
+          <p className="text-xs text-stone-600 mt-1">Check your connection and try again.</p>
         </div>
       ) : rows.length === 0 ? (
         <div className="glass-card rounded-xl p-10 text-center">
           <PackageOpen className="w-9 h-9 text-stone-300 mx-auto mb-3" />
           <p className="text-sm text-stone-600">Nothing to put away</p>
-          <p className="text-xs text-stone-500 mt-1">Recommendations from received stock will appear here.</p>
+          <p className="text-xs text-stone-600 mt-1">Recommendations from received stock will appear here.</p>
         </div>
       ) : visible.length === 0 ? (
         <div className="glass-card rounded-xl p-10 text-center">
           <p className="text-sm text-stone-600">No lines match those filters</p>
-          <p className="text-xs text-stone-500 mt-1">{rows.length} line{rows.length === 1 ? '' : 's'} are still queued.</p>
+          <p className="text-xs text-stone-600 mt-1">{rows.length} line{rows.length === 1 ? '' : 's'} are still queued.</p>
         </div>
       ) : groups ? (
         <div className="space-y-4">
@@ -271,7 +257,7 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
                     <p className="text-sm text-stone-700 truncate">
                       {g.supplierName ? `${g.supplierName} · ` : ''}{g.label}
                     </p>
-                    <p className="text-[11px] text-stone-500">
+                    <p className="text-xs text-stone-600">
                       {g.receivedDate ? `${g.receivedDate} · ` : ''}
                       {g.rows.length} line{g.rows.length === 1 ? '' : 's'}
                     </p>
@@ -293,6 +279,25 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
         <div className="glass-card rounded-xl divide-y divide-stone-100 overflow-hidden">
           {visible.map(renderRow)}
         </div>
+      )}
+
+      {/* Scan what's on the dock and jump to its line, instead of eye-matching a
+          product name down a scrollable list with a pallet in your hands.
+
+          Last in flow, deliberately: `sticky` is bounded by its containing block,
+          so content rendered after this would carry the dock off screen. The two
+          overlays below portal to the body and contribute no box, so they do not
+          count. */}
+      {rows.length > 0 && (
+        <StickyScanBar position="bottom">
+          <PutawayScanFinder
+            rows={rows}
+            locations={locationsQuery.data ?? []}
+            binIdOf={(row) => row.recommendedLocationId}
+            onFound={(id) => { setExpanded(id); setSearch(''); }}
+            onFilter={setSearch}
+          />
+        </StickyScanBar>
       )}
 
       {picking && (

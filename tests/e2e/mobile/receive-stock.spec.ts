@@ -38,7 +38,17 @@ test.describe('F25 — Receive Stock fits a 360 px screen', () => {
     // card layout F25 introduced, so opening it is part of what this guards.
     // The toggle is `xl:hidden`; at desktop width every field it hides is
     // already a visible column.
-    const disclosure = page.locator('button[aria-expanded][aria-controls]').first()
+    //
+    // The receipt HEADER is now a disclosure too, and it is excluded by name.
+    // It only renders once a supplier is set — which this test never does — so
+    // a bare `.first()` happens to still land here today. That is luck, not a
+    // guarantee: the header toggle sits earlier in the DOM, so the moment any
+    // test picks a supplier first, `.first()` would silently select it, click
+    // it, pass the `aria-expanded` assertion, and then fail further down on a
+    // line disclosure nobody ever opened.
+    const disclosure = page
+      .locator('button[aria-expanded][aria-controls]:not([data-testid="receipt-header-toggle"])')
+      .first()
     await expect(disclosure).toBeVisible()
     await expectTouchTarget(disclosure, 'line disclosure toggle')
     await disclosure.click()

@@ -11,7 +11,7 @@
 // listed oldest-first instead. That is the correct answer for a bulk site, not
 // a degraded one — there are no aisles to optimise a walk through.
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Footprints, MapPin, PackageOpen, Search } from 'lucide-react';
 import { useAssignedPutaways, usePutawayRoute } from '../../hooks/queries/usePutawayWalk';
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
@@ -37,6 +37,29 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
 
   const [activeId, setActiveId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
+
+  /**
+   * Bring the opened stop to the top of the SCREEN, not just to the top of the
+   * list.
+   *
+   * Hoisting it in the array is only half the fix. Tapping stop 18 of 21 means
+   * the operator is scrolled near the foot of the queue; the card then moves to
+   * the top of the list, which is somewhere above the viewport, and they are
+   * left looking at collapsed rows with no indication anything happened. Chrome's
+   * scroll anchoring sometimes covers for this and sometimes does not — which is
+   * worse than either, because it makes the bug intermittent.
+   *
+   * `behavior: 'auto'` deliberately: a smooth scroll here would be motion that
+   * `prefers-reduced-motion` cannot switch off (scrollIntoView does not consult
+   * it), and on a handheld an instant jump is what the operator wants anyway.
+   */
+  const activeCardRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (activeId == null) return;
+    // Optional call: jsdom does not implement scrollIntoView, and a scroll is
+    // the one thing here whose absence costs a unit test nothing.
+    activeCardRef.current?.scrollIntoView?.({ block: 'start', behavior: 'auto' });
+  }, [activeId]);
 
   const binById = useMemo(() => buildDisplayLookup(locationsQuery.data), [locationsQuery.data]);
 
@@ -110,6 +133,40 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
   }, [ordered, search, binFor]);
 
   /**
+   * The stop being worked, hoisted to the top of the list.
+   *
+   * WHY: at 360x664 the expanded card is the whole screen. Rendered in route
+   * order it sits behind however many collapsed rows precede it — four rows is
+   * already ~256px — so its scan field starts below the fold, and on the RS35 a
+   * scan only reaches the FOCUSED editable. The operator scans, nothing happens,
+   * nothing explains why.
+   *
+   * WHY THIS SHAPE, and not a separate "current stop" region above the list:
+   * `PutawayStopCard` keeps the entire wizard in local state (`step`, the
+   * accepted codes, the scanned bin, the count). React reconciles keyed children
+   * WITHIN A PARENT, so a pure reorder moves the DOM node and keeps the instance.
+   * Rendering the active card from a different JSX element — a sibling block, or
+   * a second .map() — puts it in a different child slot, which unmounts it: step
+   * resets to 'idle', the card renders collapsed again, and tapping a stop does
+   * nothing at all. Forever. Reorder the array; never move the element.
+   *
+   * Derived from `visible`, not `ordered`, so the filter keeps behaving exactly
+   * as it did — including the pre-existing case where typing a filter that
+   * excludes the open stop hides it. Fixing that here would be a change of
+   * behaviour wearing a layout change's clothes.
+   *
+   * The route sequence badges are untouched: `sequence` comes from the server
+   * via `routeById`, never from array position. The visible effect is that the
+   * promoted stop's number goes missing from the run below it (1 2 3 4 6 7…),
+   * which reads as "5 is the one I'm holding" rather than as a renumbering.
+   */
+  const walkOrder = useMemo(() => {
+    const i = visible.findIndex(({ row }) => row.id === activeId);
+    if (i <= 0) return visible;
+    return [visible[i], ...visible.slice(0, i), ...visible.slice(i + 1)];
+  }, [visible, activeId]);
+
+  /**
    * Per task: the OTHER unlabelled plates of the same product that are also in
    * this walk.
    *
@@ -138,48 +195,43 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
 
   return (
     <div className="space-y-4">
-      {/* Scan a plate, SKU or bin and jump straight to its task — the reason a
-          walker has a phone in their hand at all. */}
-      {tasks.length > 0 && (
-        <StickyScanBar>
-          <PutawayScanFinder
-            rows={tasks}
-            locations={locationsQuery.data ?? []}
-            binIdOf={(row) => row.assignedLocationId}
-            onFound={(id) => { setActiveId(id); setSearch(''); }}
-            onFilter={setSearch}
-          />
-        </StickyScanBar>
-      )}
-
-      {tasks.length > 0 && (
+      {/* The overview chrome — how many stops, how far, and a filter — stands
+          down while a stop is open, for the same reason the scan dock does.
+          These are affordances for CHOOSING work; once a pallet is in the
+          operator's hands the only question left is which bin, and at 360px this
+          strip plus the routing notice below it were costing ~140px of the
+          ~548px the card has to fit a scan field and a Confirm into. They come
+          straight back when the stop is closed or completed. */}
+      {tasks.length > 0 && activeId == null && (
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="flex items-center gap-2 text-sm text-stone-600">
             <Footprints className="w-4 h-4 text-nexgen-blue" aria-hidden="true" />
             <span className="tabular-nums font-medium">{tasks.length}</span>
-            <span className="text-stone-500">stop{tasks.length === 1 ? '' : 's'}</span>
+            <span className="text-stone-600">stop{tasks.length === 1 ? '' : 's'}</span>
             {totalDistance != null && totalDistance > 0 && (
               <>
-                <span className="text-stone-300">·</span>
+                <span className="text-stone-400" aria-hidden="true">·</span>
                 <span className="tabular-nums">{Math.round(totalDistance)}m</span>
               </>
             )}
           </div>
           <div className="relative flex-1 min-w-0 sm:max-w-xs sm:ml-auto">
-            <Search className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+            <Search className="w-4 h-4 text-stone-600 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter by product, plate or bin"
               aria-label="Filter the walk"
-              className="w-full pl-9 pr-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+              /* `nexgen-blue-dark`, not `nexgen-blue/40`: the translucent ring
+                 composites to 1.62:1 against the 3:1 that SC 1.4.11 requires. */
+              className="touch-target-y w-full pl-9 pr-3 py-2 rounded-lg border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
             />
           </div>
         </div>
       )}
 
-      {routeQuery.data?.mode === 'engine' && routeQuery.data.unreachableCount > 0 && (
-        <p className="text-[11px] text-amber-600 flex items-center gap-1.5">
+      {activeId == null && routeQuery.data?.mode === 'engine' && routeQuery.data.unreachableCount > 0 && (
+        <p className="text-xs text-amber-700 flex items-start gap-1.5">
           <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
           {routeQuery.data.unreachableCount} bin
           {routeQuery.data.unreachableCount === 1 ? ' is' : 's are'} not placed in the current layout, so
@@ -194,40 +246,71 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
       ) : tasksQuery.isError ? (
         <div className="glass-card rounded-xl p-8 text-center">
           <p className="text-sm text-red-600">Couldn't load the walk.</p>
-          <p className="text-xs text-stone-500 mt-1">Check your connection and try again.</p>
+          <p className="text-xs text-stone-600 mt-1">Check your connection and try again.</p>
         </div>
       ) : tasks.length === 0 ? (
         <div className="glass-card rounded-xl p-10 text-center">
           <PackageOpen className="w-9 h-9 text-stone-300 mx-auto mb-3" />
-          <p className="text-sm text-stone-600">Nothing to carry</p>
-          <p className="text-xs text-stone-500 mt-1">
+          <p className="text-sm text-stone-700">Nothing to carry</p>
+          <p className="text-xs text-stone-600 mt-1">
             Assign lines on the Assign tab and they'll show up here as stops.
           </p>
         </div>
       ) : visible.length === 0 ? (
         <div className="glass-card rounded-xl p-10 text-center">
-          <p className="text-sm text-stone-600">No stops match that filter</p>
-          <p className="text-xs text-stone-500 mt-1">{tasks.length} still to place.</p>
+          <p className="text-sm text-stone-700">No stops match that filter</p>
+          <p className="text-xs text-stone-600 mt-1">{tasks.length} still to place.</p>
         </div>
       ) : (
         <div className="glass-card rounded-xl divide-y divide-stone-100 overflow-hidden">
-          {visible.map(({ row, stop }) => (
-            <PutawayStopCard
-              key={row.id}
-              row={row}
-              bin={binFor(row)}
-              sequence={stop?.sequence ?? null}
-              legDistanceM={stop?.legDistanceM ?? null}
-              reachable={stop?.reachable ?? true}
-              active={activeId === row.id}
-              disabled={!canPlace}
-              warehouseId={warehouseId}
-              unlabelledTwins={twinsById.get(row.id) ?? EMPTY_TWINS}
-              onActivate={() => setActiveId(row.id)}
-              onDone={() => setActiveId(null)}
-            />
+          {walkOrder.map(({ row, stop }, i) => (
+            // The key rides on the wrapper, and the wrapper stays in this one
+            // array — that is what makes the reorder above a move rather than a
+            // remount. `queue-in` therefore fires on arrival only; a row React
+            // merely repositions does not replay it.
+            <div key={row.id} ref={row.id === activeId ? activeCardRef : undefined} className="queue-in" style={{ "--q-i": i } as React.CSSProperties}>
+              <PutawayStopCard
+                row={row}
+                bin={binFor(row)}
+                sequence={stop?.sequence ?? null}
+                legDistanceM={stop?.legDistanceM ?? null}
+                reachable={stop?.reachable ?? true}
+                active={activeId === row.id}
+                disabled={!canPlace}
+                warehouseId={warehouseId}
+                unlabelledTwins={twinsById.get(row.id) ?? EMPTY_TWINS}
+                onActivate={() => setActiveId(row.id)}
+                onDone={() => setActiveId(null)}
+              />
+            </div>
           ))}
         </div>
+      )}
+
+      {/* Scan a plate, SKU or bin and jump straight to its task — the reason a
+          walker has a phone in their hand at all.
+
+          LAST CHILD, and that is structural: `sticky` is bounded by its
+          containing block, so anything rendered after this would scroll the dock
+          off the screen the moment it came into view.
+
+          HIDDEN WHILE A STOP IS OPEN, and that is a focus rule, not taste. The
+          open card auto-focuses its own scan field, and under the RS35's IME an
+          Android keyboard types into the focused editable and nowhere else — two
+          live scan inputs on one screen is a coin toss over which one hears the
+          gun. It also keeps the dock from being pushed up over the very field it
+          would be covering, since `interactive-widget=resizes-content` shrinks
+          the layout viewport when the keyboard opens. */}
+      {tasks.length > 0 && activeId == null && (
+        <StickyScanBar position="bottom">
+          <PutawayScanFinder
+            rows={tasks}
+            locations={locationsQuery.data ?? []}
+            binIdOf={(row) => row.assignedLocationId}
+            onFound={(id) => { setActiveId(id); setSearch(''); }}
+            onFilter={setSearch}
+          />
+        </StickyScanBar>
       )}
     </div>
   );
