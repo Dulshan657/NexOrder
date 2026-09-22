@@ -99,9 +99,13 @@ test.describe('Stock lookup on a handheld', () => {
     await page.getByRole('button', { name: /^Browse$/ }).click()
 
     const rows = page.locator('ul > li > button[aria-expanded]')
+
+    // Wait for the list to settle BEFORE deciding there is nothing in it. A
+    // bare `count()` races the query and skips on a slow network rather than on
+    // an empty catalogue — a skip that fires every run measures nothing while
+    // looking like it measured something.
+    await rows.first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {})
     const count = await rows.count()
-    // Data-dependent: a site with no catalogue has no rows to expand. Skipped
-    // with a reason rather than silently measuring nothing.
     test.skip(count === 0, 'no products visible at this warehouse scope')
 
     const first = rows.first()
