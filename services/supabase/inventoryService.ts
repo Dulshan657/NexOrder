@@ -50,6 +50,114 @@ export async function getBalancesByProduct(productId: number): Promise<ProductBa
   }))
 }
 
+/** One line of stock sitting on a plate. */
+export interface HandlingUnitLine {
+  productId: number
+  sku: string
+  name: string
+  batchId: number | null
+  lotCode: string | null
+  expiryDate: string | null
+  locationId: number | null
+  onHand: number
+  allocated: number
+}
+
+/** A plate, where it is, and what is on it.
+ *
+ *  `locationId` is the plate's own `handling_units.location_id`, which
+ *  `hu_recompute()` maintains from the balance rows and nothing sets by hand
+ *  (mig 00075:71-73) — so it cannot disagree with the stock it describes. It is
+ *  NULL for a plate still being built at the dock.
+ *
+ *  Each LINE also carries its own location, and the two can differ. A plate's
+ *  contents are simply its balance rows — mig 00075 folded the handling unit
+ *  into the balance slot key rather than adding an `hu_contents` table — and
+ *  nothing in the schema forces every row on one plate to share a location.
+ *  Partial putaway splits the TASK and never the PLATE, and `dev` still carries
+ *  three plates holding stock in two places from before `break-pallet` existed
+ *  (mig 00126 repairs none of them). A shape with one location would have to
+ *  pick one and silently lie about the rest. */
+export interface HandlingUnitHit {
+  id: number
+  code: string
+  huType: HuType
+  status: 'open' | 'stored' | 'empty' | 'cancelled'
+  warehouseId: number | null
+  locationId: number | null
+  locationCode: string | null
+  locationName: string | null
+  labelPrinted: boolean
+  lines: HandlingUnitLine[]
+}
+
+/**
+ * Resolve a scanned plate code to the plate and its contents.
+ *
+ * ── WHY THIS IS A QUERY AND NOT AN INDEX LOOKUP ────────────────────────────
+ *
+ * `buildScanIndex` matches against rows the caller already holds, and every
+ * other caller has a bounded set to feed it — `PutawayScanFinder` harvests
+ * plate codes off the queue rows it was handed. A stock lookup has no such set:
+ * the operator may scan any plate in the building, and no query in this repo
+ * returns every handling unit. Indexing what happens to be on screen would make
+ * an HU scan resolve sometimes, which is worse than never.
+ *
+ * So the lookup screen runs the in-memory index first and falls back to this
+ * only on a miss. `handling_units.code` is `NOT NULL UNIQUE` (mig 00075:60) and
+ * `HU-` is a reserved namespace that no `locations.code` and no `products.sku`
+ * occupies, so a hit here is unambiguous by construction.
+ *
+ * Returns `null` for no such plate — the caller renders its own "unknown code"
+ * screen and must not treat an absence as an error.
+ */
+export async function findHandlingUnitByCode(code: string): Promise<HandlingUnitHit | null> {
+  const { data, error } = await supabase
+    .from('handling_units')
+    .select(
+      'id, code, hu_type, status, warehouse_id, location_id, label_printed, ' +
+      'locations(code, name), ' +
+      'inventory_balances(product_id, location_id, batch_id, on_hand, allocated, ' +
+      'products(sku, name), batches(lot_code, expiry_date))',
+    )
+    .eq('code', code)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+
+  const r = data as any
+  const lines: HandlingUnitLine[] = ((r.inventory_balances ?? []) as any[])
+    .map((b) => ({
+      productId: Number(b.product_id),
+      sku: b.products?.sku ?? '',
+      name: b.products?.name ?? 'Unknown product',
+      batchId: b.batch_id != null ? Number(b.batch_id) : null,
+      lotCode: b.batches?.lot_code ?? null,
+      expiryDate: b.batches?.expiry_date ?? null,
+      locationId: b.location_id != null ? Number(b.location_id) : null,
+      // NUMERIC columns arrive as strings over the wire.
+      onHand: Number(b.on_hand),
+      allocated: Number(b.allocated),
+    }))
+    // Ordered by SKU so the list reads the same way twice, matching
+    // getLocationCountSheet. An operator checking a plate against a pick list
+    // needs it stable between refetches.
+    .sort((a, b) => a.sku.localeCompare(b.sku))
+
+  return {
+    id: Number(r.id),
+    code: r.code,
+    huType: r.hu_type,
+    status: r.status,
+    warehouseId: r.warehouse_id != null ? Number(r.warehouse_id) : null,
+    locationId: r.location_id != null ? Number(r.location_id) : null,
+    locationCode: r.locations?.code ?? null,
+    locationName: r.locations?.name ?? null,
+    labelPrinted: !!r.label_printed,
+    lines,
+  }
+}
+
 /** One count-sheet line: everything the system believes about one product at one
  *  location, at (batch × plate) grain. */
 export interface CountSheetSlotRow {

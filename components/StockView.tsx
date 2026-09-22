@@ -8,8 +8,15 @@ import { classifyStock, lowStockThresholdFor } from '../lib/stockStatus';
 import { useWarehouseScope } from '../context/WarehouseScopeContext';
 import { WarehousePicker } from './inventory/WarehousePicker';
 import { useScopedStock } from '../hooks/useScopedStock';
-import { OpsStockRow, StatusPill } from './stock/OpsStockRow';
+import { StatusPill } from './stock/OpsStockRow';
+import { OpsStockList } from './stock/OpsStockList';
 import { StockKpiTiles } from './stock/StockKpiTiles';
+import { StockModeTabs, type StockMode } from './stock/StockModeTabs';
+import { StockLookupPanel } from './stock/lookup/StockLookupPanel';
+import { LookupScanField } from './stock/lookup/LookupScanField';
+import { useStockLookup } from './stock/lookup/useStockLookup';
+import StickyScanBar from './inventory/StickyScanBar';
+import { useWarehouses } from '../hooks/queries/useWarehouses';
 import TransferStockModal from './admin/TransferStockModal';
 import StockImportModal from './admin/StockImportModal';
 import { useFlagDeepLink } from '../hooks/useFlagDeepLink';
@@ -18,11 +25,15 @@ interface StockViewProps {
   products: Product[];
   currentUser: User;
   addToast?: (message: string, type: 'success' | 'error' | 'info') => void;
+  /** Hands a location to Stocktake with the count sheet already open. Optional
+   *  so the view still renders wherever it is mounted without a router — the
+   *  "Count this bin" buttons simply do not appear. */
+  onCountBin?: (locationId: number) => void;
 }
 
 type StockFilter = 'all' | 'in_stock' | 'low_stock' | 'out_of_stock';
 
-const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }) => {
+const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast, onCountBin }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<Category | 'All'>('All');
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
@@ -44,6 +55,37 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
   // as they do today.
   const { scope } = useWarehouseScope();
   const effectiveScope = isOps ? scope : 'all';
+
+  // ── Look up vs Browse ─────────────────────────────────────────────────────
+  //
+  // The default is derived from the ROLE, not the viewport. A viewport-derived
+  // default would be invisible to Playwright (it sets layout and visual
+  // viewport together) and unmeasurable in jsdom (no layout engine), so it
+  // could not be pinned by any test we can run — the same reasoning
+  // `scripts/check-viewport-units.mjs` records for `vh`. Warehouse staff are
+  // the ones holding a gun, so they land on the scanner; everyone else lands on
+  // the list they have always landed on. Both are one tap apart either way.
+  const [mode, setMode] = useState<StockMode>(
+    currentUser.role === UserRole.WAREHOUSE ? 'lookup' : 'levels',
+  );
+  const lookupMode = isOps && mode === 'lookup';
+
+  const lookup = useStockLookup(products);
+  const { data: warehouses } = useWarehouses();
+  const scopeId = typeof effectiveScope === 'number' ? effectiveScope : null;
+  const scopeLabel = useMemo(
+    () => (warehouses ?? []).find(w => w.id === scopeId)?.name ?? null,
+    [warehouses, scopeId],
+  );
+
+  // The one place the two modes talk: an unresolved scan can be thrown at the
+  // catalogue search instead of leaving the operator at a dead end.
+  const searchCatalogue = (query: string) => {
+    setSearchQuery(query);
+    setCategoryFilter('All');
+    setStockFilter('all');
+    setMode('levels');
+  };
 
   // Ledger (scoped or global) is the source of truth for staff; customers see
   // the products cache.
@@ -101,7 +143,17 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
   const maxQty = useMemo(() => Math.max(...products.map(p => qtyOf(p)), 1), [products, aggByProduct, isCustomer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+    // In lookup mode the root becomes a flex column so the results region can
+    // absorb the slack and push the dock to the bottom of the page.
+    //
+    // WHY THIS IS NEEDED AND `sticky bottom-0` IS NOT ENOUGH: sticky HOLDS an
+    // element that would otherwise scroll out of view; it does not volunteer to
+    // move one that is already comfortably above the fold. On a short result —
+    // a miss card, an empty bin — the dock's static position sat at 579px of a
+    // 664px screen, measured, and stayed there. Every other scan surface hides
+    // this by always having enough content to fill the page. Pushing the dock
+    // down by layout means sticky is only ever asked to do the thing it does.
+    <div className={`bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6${lookupMode ? ' flex flex-col' : ''}`}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -140,6 +192,27 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
         <StockImportModal products={products} addToast={addToast} onClose={() => setImportOpen(false)} />
       )}
 
+      {isOps && <StockModeTabs mode={mode} onChange={setMode} />}
+
+      {lookupMode ? (
+        // `flex-1` is the slack-absorber described on the root. `min-h-0` keeps
+        // a tall result (a full bin's contents) from refusing to shrink and
+        // pushing the dock off the bottom instead.
+        <div className="min-h-0 flex-1">
+        <StockLookupPanel
+          screen={lookup.screen}
+          products={products}
+          currentUser={currentUser}
+          globalThreshold={globalThreshold}
+          scopeId={scopeId}
+          scopeLabel={scopeLabel}
+          onCountBin={onCountBin}
+          onSearchCatalogue={searchCatalogue}
+          onPick={lookup.pick}
+        />
+        </div>
+      ) : (
+        <>
       {/* KPI Summary — staff only */}
       {!isCustomer && <StockKpiTiles metrics={metrics} />}
 
@@ -229,27 +302,17 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
           <p className="text-xs text-stone-500 mt-1">Try adjusting your search or category filter</p>
         </div>
       ) : isOps ? (
-        /* Ops — ledger table with expandable per-batch detail */
-        <div className="glass-card rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b border-stone-200 text-stone-500">
-                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider">Product</th>
-                  <th scope="col" className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider">On hand</th>
-                  <th scope="col" className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider">Allocated</th>
-                  <th scope="col" className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider min-w-[200px]">Available</th>
-                  <th scope="col" className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProducts.map((product) => (
-                  <OpsStockRow key={product.id} product={product} agg={aggOf(product)} maxQty={maxQty} canAdjust={isAdminManager} globalThreshold={globalThreshold} scope={effectiveScope} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        /* Ops — ledger list with expandable per-batch detail. A container-query
+           grid, not a table: see OpsStockRow's header for why both the outer
+           table and the nested one had to go together. */
+        <OpsStockList
+          products={filteredProducts}
+          aggOf={aggOf}
+          maxQty={maxQty}
+          canAdjust={isAdminManager}
+          globalThreshold={globalThreshold}
+          scope={effectiveScope}
+        />
       ) : (
         /* Reps — aggregate available only (no batch/location detail) */
         <div className="glass-card rounded-xl overflow-hidden">
@@ -292,6 +355,26 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast }
             </table>
           </div>
         </div>
+      )}
+        </>
+      )}
+
+      {/* THE DOCK IS THE LAST CHILD OF THE PAGE ROOT, AND NOTHING MAY FOLLOW IT.
+          `sticky` is bounded by its containing block, so a bar placed earlier
+          still pins to the foot but reserves its ~60px of flow space as a blank
+          white band at the TOP of the page — it looks almost right, which is
+          what makes it the likely way to get this wrong. `bleed="lg"` matches
+          this page's `p-4 sm:p-6 lg:p-8`; a mismatch overhangs 8px a side and
+          puts a horizontal scrollbar on the page between 1024 and 1279px. */}
+      {lookupMode && (
+        <StickyScanBar bleed="lg" position="bottom">
+          <LookupScanField
+            value={lookup.code}
+            onChange={lookup.setCode}
+            onScan={lookup.onScan}
+            flash={lookup.flash}
+          />
+        </StickyScanBar>
       )}
     </div>
   );

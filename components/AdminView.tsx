@@ -144,6 +144,11 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
     // server-resolved destination warehouse via ?wh= (PutawayQueuePage reads
     // this the same way the Warehouse viewer does) before switching tabs.
     const openPutaway = (warehouseId: number) => openWith('Putaway', { wh: String(warehouseId) });
+    // "Count this bin", from the Stock lookup. Only the LOCATION travels —
+    // StocktakePage resolves which site it belongs to itself, because it is the
+    // one holding the location tree. Passing a `wh=` guess from here would be a
+    // second opinion about the same fact.
+    const openStocktakeBin = (locationId: number) => openWith('Stocktake', { bin: String(locationId) });
 
     // Setup-checklist steps. The target says which params it needs; the
     // warehouse id is substituted here because only this level knows it.
@@ -177,7 +182,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                     <PromotionAdmin promotions={props.promotions} products={props.products} hoReCas={props.hoReCas} users={props.users} onAdd={props.onAddPromotion} onUpdate={props.onUpdatePromotion} onDelete={props.onDeletePromotion} />
                 )}
                 {MODULE_INVOICING && props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
-                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} addToast={props.addToast} />}
+                {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} addToast={props.addToast} onCountBin={openStocktakeBin} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Receiving' && <ReceiveStockView products={props.products} currentUser={props.currentUser} onOpenPutaway={openPutaway} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Putaway' && <PutawayQueuePage currentUser={props.currentUser} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Replenishment' && <ReplenQueuePage currentUser={props.currentUser} />}

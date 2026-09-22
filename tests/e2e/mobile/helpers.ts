@@ -90,3 +90,29 @@ export async function overlaps(a: Locator, b: Locator): Promise<boolean> {
 export function warehouseSelect(page: Page): Locator {
   return page.getByLabel('Warehouse').first()
 }
+
+/** Pixel 5, per playwright.config.ts. A dock's bottom edge must land here. */
+export const VIEWPORT_H = 664
+
+/** The scan dock itself, not the field inside it — they differ by the dock's
+ *  `py-2`, and 8px of difference is exactly the size of the defect being
+ *  guarded. */
+export function scanDock(page: Page): Locator {
+  return page.locator('[data-scan-dock="bottom"]')
+}
+
+/**
+ * Flush with the foot of the screen, within a px or two of subpixel rounding.
+ *
+ * Lifted out of `scan-dock.spec.ts` when a third surface (the Stock lookup)
+ * grew a dock: one assertion the docks share cannot disagree with itself, which
+ * two copies eventually would. The spec's own header stays where it is — it
+ * explains the SPEC, not this helper.
+ */
+export async function expectPinnedToFoot(page: Page, label: string): Promise<void> {
+  const box = await scanDock(page).boundingBox()
+  expect(box, `${label} should be laid out`).not.toBeNull()
+  const foot = Math.round(box!.y + box!.height)
+  expect(foot, `${label} reaches the foot of the screen`).toBeGreaterThanOrEqual(VIEWPORT_H - 2)
+  expect(foot, `${label} is not below the fold`).toBeLessThanOrEqual(VIEWPORT_H + 2)
+}

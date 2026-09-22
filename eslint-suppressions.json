@@ -477,11 +477,6 @@
       "count": 3
     }
   },
-  "components/stock/OpsStockRow.tsx": {
-    "jsx-a11y/control-has-associated-label": {
-      "count": 2
-    }
-  },
   "components/ui/Overlay.tsx": {
     "jsx-a11y/click-events-have-key-events": {
       "count": 1
