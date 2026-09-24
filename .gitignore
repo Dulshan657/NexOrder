@@ -49,3 +49,7 @@ supabase/.temp/
 # Written by `deno check` when type-checking Edge Functions locally.
 # Deploys go through the Supabase CLI, which does not read it.
 deno.lock
+
+# scripts/demo-video output — rendered mp4s/scratch frames, and
+# app-identity.mjs's app_settings snapshot. Never commit.
+/demo-video-out/

@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<!--
+  scripts/demo-video/erp-mock.html
+
+  A neutral, generic "ERP / Accounting — Order Import" queue page for the last
+  beat of the demo video ("approved orders are parked for your ERP to pick
+  up"). Deliberately carries no real vendor name or logo — it exists only to
+  look like a DIFFERENT app from NexOrder, receiving a standard export file.
+
+  Pure render of data passed in via `window.__ERP_DATA__` (see record.mjs,
+  which sets it with page.addInitScript before navigating here). No network
+  calls, no build step.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Order Import Queue</title>
+<style>
+  :root {
+    --ink: #1a2233;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --panel: #ffffff;
+    --bg: #f4f6f9;
+    --accent: #3b6fa0;
+    --ok-bg: #eaf6ee;
+    --ok-fg: #1f8a4c;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #4a7fb5, #24466b);
+    flex: none;
+  }
+  .brand h1 {
+    font-size: 17px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .brand .source {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .badge {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    background: #eef1f5;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 12px;
+  }
+  main {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 24px;
+    padding: 28px 32px 40px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .card-head {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .card-head h2 {
+    font-size: 15px;
+    margin: 0;
+    font-weight: 700;
+  }
+  .card-head .count {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 700;
+  }
+  tbody td {
+    padding: 13px 20px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr {
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+  tbody tr:hover, tbody tr.selected {
+    background: #f6f9fc;
+  }
+  .po-number { font-weight: 700; }
+  .customer { color: var(--ink); }
+  .muted { color: var(--muted); }
+  .mono { font-variant-numeric: tabular-nums; font-family: "SFMono-Regular", Consolas, monospace; }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--ok-fg);
+    background: var(--ok-bg);
+    border: 1px solid #c9ead3;
+    border-radius: 999px;
+    padding: 4px 10px;
+  }
+  .status-pill::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ok-fg);
+  }
+  aside .card-head { border-bottom: 1px solid var(--line); }
+  .file-preview {
+    padding: 18px 20px;
+  }
+  .file-preview .file-name {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    font-family: "SFMono-Regular", Consolas, monospace;
+  }
+  pre {
+    margin: 0;
+    background: #0f1622;
+    color: #d7e2ef;
+    border-radius: 10px;
+    padding: 16px;
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-x: auto;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    white-space: pre;
+  }
+  .empty-hint {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <div>
+        <h1>Order Import Queue</h1>
+        <div class="source">Source: NexOrder · PO Inbox</div>
+      </div>
+    </div>
+    <span class="badge" id="order-count-badge">0 orders ready</span>
+  </header>
+
+  <main>
+    <section class="card">
+      <div class="card-head">
+        <h2>Ready to import</h2>
+        <span class="count" id="table-count"></span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>PO number</th>
+            <th>Customer</th>
+            <th>Order date</th>
+            <th>Lines</th>
+            <th>Total ex GST</th>
+            <th>Received</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="order-rows"></tbody>
+      </table>
+    </section>
+
+    <aside class="card">
+      <div class="card-head">
+        <h2>Parked file</h2>
+      </div>
+      <div class="file-preview" id="file-preview">
+        <div class="empty-hint">Select an order to preview its parked file.</div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    // Populated by record.mjs via page.addInitScript before this page loads —
+    // see ERP_MOCK_URL / window.__ERP_DATA__ in record.mjs. Falls back to an
+    // empty list so this file also renders sensibly opened directly.
+    var DATA = (window.__ERP_DATA__ && window.__ERP_DATA__.orders) || []
+
+    function money(n) {
+      return '$' + Number(n || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    }
+
+    function csvFor(order) {
+      var header = 'po_number,customer,order_date,sku,description,qty,unit_price'
+      var lines = (order.lines || []).map(function (l) {
+        return [order.poNumber, order.customer, order.orderDate, l.sku, l.description, l.qty, l.unitPrice].join(',')
+      })
+      return [header].concat(lines).join('\n')
+    }
+
+    function renderRows() {
+      var tbody = document.getElementById('order-rows')
+      tbody.innerHTML = ''
+      document.getElementById('order-count-badge').textContent = DATA.length + ' order' + (DATA.length === 1 ? '' : 's') + ' ready'
+      document.getElementById('table-count').textContent = DATA.length + ' total'
+
+      DATA.forEach(function (order, idx) {
+        var tr = document.createElement('tr')
+        tr.dataset.index = String(idx)
+        tr.innerHTML =
+          '<td class="po-number">' + order.poNumber + '</td>' +
+          '<td class="customer">' + order.customer + '</td>' +
+          '<td class="muted mono">' + order.orderDate + '</td>' +
+          '<td class="mono">' + (order.lines ? order.lines.length : order.lineCount || 0) + '</td>' +
+          '<td class="mono">' + money(order.totalExGst) + '</td>' +
+          '<td class="muted">' + order.receivedAgo + '</td>' +
+          '<td><span class="status-pill">Ready to import</span></td>'
+        tr.addEventListener('click', function () { selectOrder(idx) })
+        tbody.appendChild(tr)
+      })
+    }
+
+    function selectOrder(idx) {
+      Array.prototype.forEach.call(document.querySelectorAll('#order-rows tr'), function (tr) {
+        tr.classList.toggle('selected', Number(tr.dataset.index) === idx)
+      })
+      var order = DATA[idx]
+      var preview = document.getElementById('file-preview')
+      if (!order) {
+        preview.innerHTML = '<div class="empty-hint">Select an order to preview its parked file.</div>'
+        return
+      }
+      var filename = order.poNumber.toLowerCase() + '.csv'
+      preview.innerHTML =
+        '<div class="file-name">' + filename + '</div>' +
+        '<pre></pre>'
+      preview.querySelector('pre').textContent = csvFor(order)
+    }
+
+    renderRows()
+    if (DATA.length > 0) selectOrder(0)
+  </script>
+</body>
+</html>

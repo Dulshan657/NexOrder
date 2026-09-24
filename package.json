@@ -78,7 +78,9 @@
     "soak:session:dev": "node scripts/session-soak.mjs --env=dev",
     "embed:products:dev": "node supabase/embed-products.mjs --env=dev",
     "embed:products:amadiya": "node supabase/embed-products.mjs --env=amadiya",
-    "report:hardware": "tsx scripts/build-hardware-report.ts"
+    "report:hardware": "tsx scripts/build-hardware-report.ts",
+    "demo:video:silent": "node scripts/demo-video/record.mjs",
+    "demo:video:guided": "node scripts/demo-video/record.mjs --annotated"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",

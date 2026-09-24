@@ -247,3 +247,116 @@ export const NEWSLETTER_BODY = [
   'Not a subscriber yet? Forward this to a friend and tell them to sign up.',
   'Unsubscribe any time from the link below.',
 ].join('\n')
+
+// ============================================================================
+// Showcase set (`--showcase` in inject.mjs) — a deterministic 4-message pack
+// for the prospect sales-demo video: A/B/C auto-approve (PDF, email-body,
+// fax-styled scan), D lands in needs_review on one deliberately ambiguous
+// line. See inject.mjs's SHOWCASE_MESSAGES for the envelopes.
+//
+// Customer substitution: the demo database was rebuilt 2026-08-13 (see
+// CLAUDE.md "Demo rebuild 2026-08") and no longer carries The Grand Hotel,
+// Lotus Garden Restaurant or The Spice Room — only Harbour View Café survived
+// from the original edge-case set. The showcase substitutes three of the
+// CURRENT roster's food/hospitality HoReCas instead of inventing new ones:
+//   The Grand Hotel        -> Mountain Retreat Inn  (id 3, "hotel" theme)
+//   The Spice Room          -> Seaside Bistro        (id 2)
+//   Lotus Garden Restaurant -> Young & Jacksons      (id 9, real Melbourne pub)
+//   Harbour View Café       -> Harbour View Café     (id 6, unchanged)
+// PO numbers keep the task brief's numeric suffixes but swap the prefix to
+// match the substituted customer's initials (GH->MR, SR->SB, LG->YJ) so the
+// prefix doesn't read as a copy/paste error on camera.
+// ============================================================================
+
+/** Showcase A — PDF attachment, auto_approved. Mountain Retreat Inn. */
+export const SHOWCASE_MOUNTAIN_RETREAT = {
+  company: 'MOUNTAIN RETREAT INN',
+  tagline: 'Boutique Hotel · Blue Mountains',
+  addressLines: ['789 Pine Trail', 'Blue Mountains NSW 2780', 'orders@mountainretreatinn.com.au'],
+  poNumber: 'MR-2409-117',
+  orderDate: '2026-09-24',
+  requestedDate: '2026-09-27',
+  buyer: 'Sarah Whitmore · Purchasing Manager',
+  shipTo: ['Mountain Retreat Inn', '789 Pine Trail', 'Blue Mountains NSW 2780'],
+  notes: 'Standard weekly order for the lodge kitchen. Deliver to the rear loading dock before 10am.',
+  lines: [
+    { code: 'AYM-COC-003', name: 'Coconut Milk 400ml', qty: 12, uom: 'cans', pack: '1 carton (12)' },
+    { code: 'AYM-SAU-001', name: 'Oyster Sauce 210ml', qty: 12, uom: 'bottles', pack: '2 cartons (6)' },
+    { code: 'AYM-SAU-004', name: 'Fish Sauce 210ml', qty: 12, uom: 'bottles', pack: '2 cartons (6)' },
+    { code: 'AYM-CHL-001', name: 'Sweet Chilli Sauce 435ml', qty: 12, uom: 'bottles', pack: '2 cartons (6)' },
+    { code: 'AYM-CUR-005', name: 'Thai Panang Curry Paste 195g', qty: 6, uom: 'jars', pack: '1 carton (6)' },
+  ],
+}
+
+/** Showcase B — PO written directly in the email body (no attachment),
+ *  auto_approved. Real customer: Harbour View Café. */
+export const SHOWCASE_HARBOUR_VIEW_SUBJECT = 'PO HV-2409-042 — Weekly order, Harbour View Café'
+export const SHOWCASE_HARBOUR_VIEW_BODY = [
+  'Hi team,',
+  '',
+  'Please find our weekly order below.',
+  '',
+  'PO number: HV-2409-042',
+  'Order date: 24 September 2026',
+  'Requested delivery: 27 September 2026',
+  '',
+  '- 12 x Coconut Milk 270ml (2 cartons)',
+  '- 6 x Light Soy Sauce 210ml (1 carton)',
+  '- 6 x Thai Sweet Chilli Sauce 435ml (1 carton)',
+  '- 6 x Satay Sauce 250ml (1 carton)',
+  '',
+  'Please deliver to the usual loading dock at Circular Quay before 9am.',
+  '',
+  'Thanks,',
+  'Tom Reeves',
+  'Café Manager, Harbour View Café',
+  '5 Circular Quay, Sydney NSW 2000',
+  'hello@harbourviewcafe.com.au',
+].join('\n')
+
+/** Showcase C — fax-styled scan attached as a PDF, auto_approved. Seaside Bistro. */
+export const SHOWCASE_SEASIDE_BISTRO_FAX_HEADER =
+  'FAX FROM: +61 7 5533 8842   SEASIDE BISTRO   24/09/2026 07:42   P.001/001'
+export const SHOWCASE_SEASIDE_BISTRO = {
+  company: 'SEASIDE BISTRO',
+  tagline: 'Waterfront Dining · Gold Coast',
+  addressLines: ['456 Ocean View', 'Gold Coast QLD 4217', 'fax@seasidebistro.com.au'],
+  poNumber: 'SB-2409-310',
+  orderDate: '2026-09-24',
+  requestedDate: '2026-09-27',
+  buyer: 'Marco Delgado · Head Chef',
+  shipTo: ['Seaside Bistro', '456 Ocean View', 'Gold Coast QLD 4217'],
+  notes: 'Kitchen door access only between 7am and 11am. Call on arrival.',
+  lines: [
+    { code: 'AYM-SAU-001', name: 'Oyster Sauce 210ml', qty: 6, uom: 'bottles', pack: '1 carton (6)' },
+    { code: 'AYM-CUR-001', name: 'Thai Red Curry Paste 195g', qty: 6, uom: 'jars', pack: '1 carton (6)' },
+    { code: 'AYM-SOY-004', name: 'Dark Soy Sauce 210ml', qty: 6, uom: 'bottles', pack: '1 carton (6)' },
+    { code: 'AYM-NOO-001', name: 'Rice Noodles 200g', qty: 6, uom: 'packets', pack: '1 carton (12)' },
+    { code: 'AYM-CUR-007', name: 'Malaysian Rendang Curry Paste 185g', qty: 6, uom: 'jars', pack: '1 carton (6)' },
+  ],
+}
+
+/** Showcase D — PDF, needs_review. Real customer: Young & Jacksons, sent from
+ *  its existing trusted address (young-jacksons-seed.mjs). Every line resolves
+ *  except the last, which uses the customer's own vague code/description for a
+ *  "big bottle" of chilli sauce — the AYM catalog carries NINE 275/435ml chilli
+ *  sauce variants, so that line is genuinely ambiguous and should not clear the
+ *  product-match confidence gate. That is the ONLY reason this PO needs review:
+ *  the sender is trusted and every other line resolves cleanly. */
+export const SHOWCASE_YOUNG_JACKSONS_REVIEW = {
+  company: 'YOUNG & JACKSONS',
+  tagline: 'Established 1861 · Cnr Swanston & Flinders St, Melbourne',
+  addressLines: ['Corner Swanston & Flinders Streets', 'Melbourne VIC 3000', 'orders@youngandjacksons.com.au'],
+  poNumber: 'YJ-2409-088',
+  orderDate: '2026-09-24',
+  requestedDate: '2026-09-27',
+  buyer: 'Jordan Pike · Bar & Kitchen Manager',
+  shipTo: ['Young & Jacksons', 'Cnr Swanston & Flinders St', 'Melbourne VIC 3000'],
+  notes: 'One line uses our own stock code — flag if you need it clarified.',
+  lines: [
+    { code: 'AYM-SAU-004', name: 'Fish Sauce 210ml', qty: 6, uom: 'bottles', pack: '1 carton (6)' },
+    { code: 'AYM-CUR-004', name: 'Thai Massaman Curry Paste 195g', qty: 6, uom: 'jars', pack: '1 carton (6)' },
+    { code: 'AYM-NOO-003', name: 'Rice Noodle Nests 300g', qty: 6, uom: 'packets', pack: '1 carton (12)' },
+    { code: 'YJ-410', name: 'Chilli sauce - big bottle', qty: 6, uom: 'bottles', pack: '1 carton (6)' },
+  ],
+}
