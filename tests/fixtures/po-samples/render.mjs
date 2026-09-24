@@ -363,6 +363,240 @@ export function renderImagePo(spec) {
 }
 
 // ============================================================================
+// Fax-styled scan (canvas -> grayscale/grain PNG -> single-page PDF or PNG)
+//
+// Real fax-to-email gateways deliver a scanned page as a PDF with no text
+// layer — fax hardware and its email bridges rasterize, they don't emit
+// vector text. drawFaxCanvas() reproduces that look: a grayscale, slightly
+// rotated, grain-speckled page with a thin reversed-colour fax banner across
+// the top, rendered in a monospace face.
+//
+// Two exports, both driven by the same canvas:
+//   renderFax()    — wraps it as a single-page PDF (what a real fax-to-email
+//                     bridge sends, and what the PO Inbox showcase's brief asked
+//                     for).
+//   renderFaxPng() — the raw PNG bytes.
+//
+// PICK renderFaxPng() FOR THE SHOWCASE INJECTOR. Empirically, gpt-4o's PDF
+// ingestion path (extract-po sends PDFs as a `file` content part) reads this
+// page's own text-layer-free, grayscale/grained/rotated page far less
+// reliably than its image vision path (`image_url`) reads the IDENTICAL
+// pixels as a PNG — repeat runs of the PDF path produced confident but
+// completely fabricated line items (verified: the rendered PDF page is
+// perfectly legible to a human/vision model reading it directly; only
+// gpt-4o's PDF-specific ingestion mangled it). Sending the same page as a
+// PNG instead routes it through extract-po's image vision path and resolved
+// every line correctly across repeated runs. inject.mjs's showcase-c message
+// therefore attaches via renderFaxPng(), against the brief's own escape
+// hatch ("If the PDF path can't clear auto_approved reliably, try PNG, and
+// report") — reported in the task write-up. renderFax() (the PDF path) is
+// left in place for anyone who wants to reproduce/investigate the failure,
+// or in case a future OpenAI PDF-ingestion change makes it reliable again.
+// ============================================================================
+
+/**
+ * @param {object} spec PO document spec (see specs.mjs)
+ * @param {string} header Fax banner text, e.g.
+ *   "FAX FROM: +61 7 5533 8842   SEASIDE BISTRO   24/09/2026 07:42   P.001/001"
+ * @returns {import('@napi-rs/canvas').Canvas}
+ */
+function drawFaxCanvas(spec, header) {
+  const W = 900
+  const H = 1273
+  const SCALE = 1.7
+  const canvas = createCanvas(Math.round(W * SCALE), Math.round(H * SCALE))
+  const ctx = canvas.getContext('2d')
+  ctx.scale(SCALE, SCALE)
+  const MONO = 'monospace'
+
+  // Fax paper is slightly off-white, not print-shop white.
+  ctx.fillStyle = '#f4f4f2'
+  ctx.fillRect(0, 0, W, H)
+
+  // Everything below rotates a hair, as if the page fed through the scanner
+  // slightly askew — applied BEFORE the content is drawn, so the grain added
+  // after restore() sits on top of the rotated page like a real scan artefact
+  // rather than looking hand-drawn onto it.
+  ctx.save()
+  ctx.translate(W / 2, H / 2)
+  ctx.rotate((-0.35 * Math.PI) / 180)
+  ctx.translate(-W / 2, -H / 2)
+  ctx.textBaseline = 'top'
+
+  // Fax header strip — reversed (dark bar, light text), the way a fax
+  // machine stamps its banner across the top of every page it sends.
+  ctx.fillStyle = '#1a1a1a'
+  ctx.fillRect(0, 0, W, 34)
+  ctx.fillStyle = '#f4f4f4'
+  ctx.font = `bold 13px ${MONO}`
+  ctx.fillText(header, 14, 11)
+
+  const M = 60
+  let y = 60
+
+  ctx.fillStyle = '#111111'
+  ctx.font = `bold 26px ${MONO}`
+  ctx.fillText(spec.company, M, y)
+  y += 32
+  ctx.fillStyle = '#3a3a3a'
+  ctx.font = `13px ${MONO}`
+  ctx.fillText(spec.tagline, M, y)
+  y += 22
+  ctx.fillStyle = '#2a2a2a'
+  ctx.font = `13px ${MONO}`
+  for (const line of spec.addressLines) {
+    ctx.fillText(line, M, y)
+    y += 18
+  }
+  y += 12
+
+  ctx.strokeStyle = '#444444'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(M, y)
+  ctx.lineTo(W - M, y)
+  ctx.stroke()
+  y += 22
+
+  ctx.fillStyle = '#000000'
+  ctx.font = `bold 20px ${MONO}`
+  ctx.fillText('PURCHASE ORDER', M, y)
+  y += 32
+  ctx.font = `13px ${MONO}`
+  for (const [label, value] of [
+    ['PO Number:', spec.poNumber],
+    ['Order date:', spec.orderDate],
+    ['Requested date:', spec.requestedDate],
+    ['Buyer:', spec.buyer],
+  ]) {
+    ctx.fillStyle = '#444444'
+    ctx.fillText(label, M, y)
+    ctx.fillStyle = '#111111'
+    ctx.fillText(String(value), M + 160, y)
+    y += 20
+  }
+  y += 8
+
+  ctx.fillStyle = '#000000'
+  ctx.font = `bold 13px ${MONO}`
+  ctx.fillText('Ship to:', M, y)
+  y += 18
+  ctx.font = `13px ${MONO}`
+  ctx.fillStyle = '#2a2a2a'
+  for (const line of spec.shipTo) {
+    ctx.fillText(line, M + 12, y)
+    y += 17
+  }
+  y += 14
+
+  const col = { code: M, name: M + 130, qty: M + 470, uom: M + 540, pack: M + 620 }
+  ctx.fillStyle = '#000000'
+  ctx.font = `bold 13px ${MONO}`
+  ctx.fillText('Code', col.code, y)
+  ctx.fillText('Description', col.name, y)
+  ctx.fillText('Qty', col.qty, y)
+  ctx.fillText('UoM', col.uom, y)
+  ctx.fillText('Pack', col.pack, y)
+  y += 20
+  ctx.beginPath()
+  ctx.moveTo(M, y)
+  ctx.lineTo(W - M, y)
+  ctx.stroke()
+  y += 10
+
+  ctx.font = `13px ${MONO}`
+  ctx.fillStyle = '#1a1a1a'
+  for (const line of spec.lines) {
+    ctx.fillText(line.code || '—', col.code, y)
+    ctx.fillText(line.name, col.name, y)
+    ctx.fillText(String(line.qty), col.qty, y)
+    ctx.fillText(line.uom, col.uom, y)
+    ctx.fillText(line.pack, col.pack, y)
+    y += 24
+  }
+  y += 10
+  ctx.beginPath()
+  ctx.moveTo(M, y)
+  ctx.lineTo(W - M, y)
+  ctx.stroke()
+  y += 20
+
+  if (spec.notes) {
+    ctx.fillStyle = '#000000'
+    ctx.font = `bold 13px ${MONO}`
+    ctx.fillText('Notes', M, y)
+    y += 18
+    ctx.fillStyle = '#333333'
+    ctx.font = `12px ${MONO}`
+    const words = spec.notes.split(' ')
+    let lineStr = ''
+    const maxWidth = W - M * 2
+    for (const word of words) {
+      const trial = lineStr ? `${lineStr} ${word}` : word
+      if (ctx.measureText(trial).width > maxWidth) {
+        ctx.fillText(lineStr, M, y)
+        y += 17
+        lineStr = word
+      } else {
+        lineStr = trial
+      }
+    }
+    if (lineStr) ctx.fillText(lineStr, M, y)
+  }
+
+  ctx.restore()
+
+  // Grain: sparse light/dark speckles, applied AFTER the rotation restore so
+  // the noise reads as a scanner/transmission artefact on the finished page
+  // rather than something drawn onto the rotated content. Deliberately light
+  // — dense grain measurably hurt gpt-4o's read of this page (see module
+  // comment above), so this stays a visual hint, not real degradation.
+  addFaxGrain(ctx, W, H)
+
+  return canvas
+}
+
+/** @returns {Uint8Array} the fax page as a PNG — see module comment for why
+ *  the showcase injector uses this rather than {@link renderFax}. */
+export function renderFaxPng(spec, header) {
+  const canvas = drawFaxCanvas(spec, header)
+  return new Uint8Array(canvas.toBuffer('image/png'))
+}
+
+/** @returns {Promise<Uint8Array>} the fax page wrapped as a single-page A4
+ *  PDF — what a real fax-to-email bridge would deliver. See module comment:
+ *  the showcase injector does NOT use this export (gpt-4o's PDF ingestion
+ *  read it unreliably); kept for anyone reproducing that or wanting the
+ *  literal "delivered as PDF" artifact. */
+export function renderFax(spec, header) {
+  const canvas = drawFaxCanvas(spec, header)
+  const pngBuffer = canvas.toBuffer('image/png')
+  return new Promise((resolveDone, rejectDone) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 0 })
+    const chunks = []
+    doc.on('data', c => chunks.push(c))
+    doc.on('end', () => resolveDone(new Uint8Array(Buffer.concat(chunks))))
+    doc.on('error', rejectDone)
+    doc.image(pngBuffer, 0, 0, { width: doc.page.width, height: doc.page.height })
+    doc.end()
+  })
+}
+
+/** Sparse light/dark speckles across the page — a cheap stand-in for
+ *  scanner/fax-transmission grain. Low density/alpha so the underlying text
+ *  stays legible to the model. */
+function addFaxGrain(ctx, w, h) {
+  const dotCount = Math.round(w * h * 0.003)
+  for (let i = 0; i < dotCount; i++) {
+    const x = Math.random() * w
+    const y = Math.random() * h
+    const shade = Math.random() < 0.5 ? '0,0,0' : '255,255,255'
+    ctx.fillStyle = `rgba(${shade},${(Math.random() * 0.08).toFixed(3)})`
+    ctx.fillRect(x, y, 1, 1)
+  }
+}
+
+// ============================================================================
 // Placeholder footer / signature images
 //
 // These never reach the model — selectAttachments() demotes inline/small/gif

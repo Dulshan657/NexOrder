@@ -1,0 +1,33 @@
+Track:          Inspiration
+Artist:         Rafael Krux
+Publisher note: "Positive, uplifting and inspiring track suitable for
+                 commercials and advertising." (site description)
+Source:         FreePD.com — "Upbeat / Positive" category
+                 https://freepd.com/music/Inspiration.mp3
+                 (page: https://freepd.com/upbeat.php)
+Retrieved via:  Internet Archive Wayback Machine snapshot, since freepd.com
+                 itself permanently closed (confirmed via its own "The Music
+                 Has Moved On" closure notice, live as of this download):
+                 http://web.archive.org/web/20200512013452/https://freepd.com/music/Inspiration.mp3
+Licence:        Creative Commons Zero (CC0 1.0) — Public Domain Dedication
+                 https://creativecommons.org/publicdomain/zero/1.0/
+Download date:  2026-09-24
+
+FreePD.com published its entire catalogue under CC0 — "100% Free Music -
+Free for Commercial Use, Free Of Royalties, Free Of Attribution, Creative
+Commons 0" (site tagline, captured verbatim on the same 2020-05-12 Wayback
+snapshot as the track page above). No attribution is required to use this
+track; this file exists as a record of provenance, not a licence condition.
+
+File: track.mp3 (this directory) — 320kbps mp3, 2:18 (138s).
+
+Note on selection: an earlier candidate pulled from a different FreePD
+Wayback snapshot ("Acoustic Shifter") was rejected after its embedded ID3
+tags revealed it originated from the "Give Life Back to Music" netlabel
+(a different, non-CC0 source) rather than being FreePD's own — FreePD
+appears to have curated some catalogue entries from other CC-licensed
+sources under its own CC0 banner, so per-track provenance was checked
+before use rather than trusting the site's blanket claim alone. "Inspiration"
+carries no such cross-reference in its metadata and is directly attributed
+to a named FreePD artist (Rafael Krux, listed on https://freepd.com/artists.php)
+whose track description explicitly targets commercial/advertising use.
