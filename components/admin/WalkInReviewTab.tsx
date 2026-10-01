@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import type { HoReCa, User } from '../../types';
 import { useMarkHoReCaReviewed, useUpdateHoReCa } from '../../hooks/queries/useHoReCas';
-import { numericIdToUuid } from '../../lib/userIdMap';
 import { UserPlus, MapPin, Check, ExternalLink, Loader2, Inbox } from 'lucide-react';
 
 interface WalkInReviewTabProps {
@@ -41,10 +40,7 @@ const WalkInReviewTab: React.FC<WalkInReviewTabProps> = ({ hoReCas, users, curre
   const handleMarkReviewed = async (h: HoReCa) => {
     setBusyId(h.id);
     try {
-      await markReviewedMutation.mutateAsync({
-        id: h.id,
-        reviewerUuid: numericIdToUuid(currentUser.id),
-      });
+      await markReviewedMutation.mutateAsync(h.id);
       addToast?.(`Promoted "${h.name}" to the customer list.`, 'success');
     } catch (err) {
       addToast?.(`Could not mark ${h.name} reviewed.`, 'error');

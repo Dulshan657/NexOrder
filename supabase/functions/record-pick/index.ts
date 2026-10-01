@@ -18,6 +18,7 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { isLocationFullyPicked, recomputeOrderStatus } from '../_shared/fulfillment.ts'
+import { setOrderStatus } from '../_shared/orderStatus.ts'
 import { checkPickScan } from '../_shared/pickScanCheck.ts'
 import { requireModule } from '../_shared/modules.ts'
 
@@ -262,24 +263,23 @@ serve(async (req: Request) => {
               status_history: [...hist, { status: 'picked', timestamp: nowIso, actor: auth.userId, note: 'All lines picked at this warehouse' }],
             })
             .eq('id', (ful as any).id)
+            // A concurrent advance already moved it on; don't overwrite its history.
+            .eq('status', 'processed')
         }
         await recomputeOrderStatus(admin, orderId, auth.userId, nowIso)
       } else if (result.order_fully_picked) {
-        // Legacy order (no fulfilments): advance the order to 'picked'.
-        const { data: order } = await admin
-          .from('orders')
-          .select('status, status_history')
-          .eq('id', orderId)
-          .single()
-        if ((order as any)?.status === 'processed') {
-          const history = Array.isArray((order as any)?.status_history) ? (order as any).status_history : []
-          await admin
-            .from('orders')
-            .update({
-              status: 'picked',
-              status_history: [...history, { status: 'picked', timestamp: nowIso, actor: auth.userId, note: 'All lines picked' }],
-            })
-            .eq('id', orderId)
+        // Legacy order (no fulfilments): advance the order to 'picked', but
+        // only from 'processed' and never once cancelled — checked under the
+        // row lock by order_set_status_tx (mig 00128). The pick itself is
+        // already recorded, so a refusal is logged, not returned as an error.
+        const verdict = await setOrderStatus(admin, {
+          orderId,
+          from: ['processed'],
+          to: 'picked',
+          entry: { status: 'picked', timestamp: nowIso, actor: auth.userId, note: 'All lines picked' },
+        })
+        if (!verdict.ok && verdict.code !== 'CONFLICT') {
+          console.warn(`[record-pick] order ${orderId} not advanced to picked: ${verdict.code}`)
         }
       }
     }

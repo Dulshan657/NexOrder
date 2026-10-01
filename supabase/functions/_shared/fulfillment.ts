@@ -9,6 +9,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { rollupOrderStatus, type FulfillmentStatus } from './orderStatusRollup.ts'
+import { ORDER_STATUS_LADDER, setOrderStatus, statusesUpTo } from './orderStatus.ts'
 
 export const FULFILLMENT_LADDER: FulfillmentStatus[] = [
   'processed',
@@ -153,34 +154,24 @@ export async function recomputeOrderStatus(
 
   const rolled = rollupOrderStatus((fs as any[]).map((f) => f.status as FulfillmentStatus))
 
-  const { data: order } = await admin
-    .from('orders')
-    .select('status, status_history')
-    .eq('id', orderId)
-    .single()
-  if (!order) return null
-
   // A cancelled order is terminal (mig 00111) and must not be rolled back to a
   // fulfilment status. `order_fulfillments.status` has no `cancelled` value on
   // purpose — a site cannot be cancelled independently of the order it serves —
-  // so its rows keep whatever they last held, and without this guard the next
-  // pick or status change anywhere would recompute the order back to `processed`
-  // and quietly un-cancel it. The fulfilments are left as they are: they are the
-  // record of what each warehouse had done when the order was cancelled.
-  if ((order as any).status === 'cancelled') return 'cancelled'
-
-  if ((order as any).status === rolled) return rolled
-
-  const history = Array.isArray((order as any).status_history) ? (order as any).status_history : []
-  await admin
-    .from('orders')
-    .update({
-      status: rolled,
-      status_history: [
-        ...history,
-        { status: rolled, timestamp: stampIso, actor: actorId, note: 'Derived from warehouse fulfilments' },
-      ],
-    })
-    .eq('id', orderId)
-  return rolled
+  // so its rows keep whatever they last held, and without a guard the next
+  // pick or status change anywhere would recompute the order back to
+  // `processed` and quietly un-cancel it. order_set_status_tx (mig 00128) makes
+  // that check under the row lock, so a cancel that commits mid-recompute is
+  // still seen. Unchanged status is a no-op inside it (no history entry).
+  //
+  // Forward-only: the rollup was computed from a fulfilments read taken before
+  // the lock, so when two sites advance at once the slower writer holds a
+  // stale, lower rollup. Refusing a move backwards keeps the later one.
+  const verdict = await setOrderStatus(admin, {
+    orderId,
+    from: statusesUpTo(ORDER_STATUS_LADDER, rolled as (typeof ORDER_STATUS_LADDER)[number]),
+    to: rolled,
+    entry: { status: rolled, timestamp: stampIso, actor: actorId, note: 'Derived from warehouse fulfilments' },
+  })
+  if (verdict.ok === true) return rolled
+  return verdict.code === 'CANCELLED' ? 'cancelled' : null
 }

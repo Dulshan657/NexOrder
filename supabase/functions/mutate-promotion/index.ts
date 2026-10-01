@@ -13,7 +13,7 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { z } from 'https://esm.sh/zod@3.23.8'
 import { requireAuth, type UserRole } from '../_shared/auth.ts'
 import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
@@ -78,7 +78,7 @@ function parseDateOrNull(value: string | null | undefined): Date | null {
 }
 
 async function assertNotUsedInOrders(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient,
   promoId: string,
 ): Promise<void> {
   // applied_promotions stores a JSON array. We check if any element contains
@@ -126,7 +126,7 @@ async function assertNotUsedInOrders(
 }
 
 async function assertCartonProductValid(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient,
   appliesTo: string | undefined,
   type: string | undefined,
   bogoConfig: unknown,

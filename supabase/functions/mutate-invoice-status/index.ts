@@ -11,6 +11,9 @@
 //     auto-create one. Net-30 default due_date until accounting integration
 //     supplies real terms. amount snapshots from orders.total.
 //   - If no invoice exists and target status is 'pending': no-op.
+//   - A cancelled invoice, or a cancelled order, is refused with 409. The
+//     database enforces both too (mig 00127 triggers), along with one
+//     invoice per order, so a concurrent create surfaces as 409, not a dupe.
 //
 // Sensitive-field rule mirrors mutate-horeca: when the caller is a Manager
 // (not Admin), a 5–500 char `reason` is required. Audit-logged either way.
@@ -42,7 +45,7 @@ interface InvoiceRow {
   horeca_name: string
   amount: number
   due_date: string
-  status: 'pending' | 'paid' | 'overdue'
+  status: 'pending' | 'paid' | 'overdue' | 'cancelled'
   paid_date: string | null
   created_date: string
 }
@@ -55,6 +58,22 @@ function addDaysIso(iso: string, days: number): string {
   const d = new Date(iso + 'T00:00:00Z')
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
+}
+
+/**
+ * Postgres errors the invoice writes expect under concurrency: the one-invoice-
+ * per-order UNIQUE (23505) and the 00127 cancellation triggers (23514). Both
+ * mean "the state moved underneath you", which is a 409, not a 500.
+ */
+function conflictFromDbError(err: { code?: string; message?: string } | null): EdgeFunctionError | null {
+  if (!err) return null
+  if (err.code === '23505') {
+    return new EdgeFunctionError('CONFLICT', 'An invoice was just created for this order. Refresh and try again.')
+  }
+  if (err.code === '23514' && /ORDER_CANCELLED|INVOICE_CANCELLED/.test(err.message ?? '')) {
+    return new EdgeFunctionError('CONFLICT', 'This order or its invoice has been cancelled.')
+  }
+  return null
 }
 
 function newInvoiceId(): string {
@@ -121,6 +140,9 @@ serve(async (req: Request) => {
 
     // ---- UPDATE PATH ----
     if (existing) {
+      if (existing.status === 'cancelled') {
+        throw new EdgeFunctionError('CONFLICT', 'This invoice was cancelled with its order and cannot change status.')
+      }
       const updates: Partial<InvoiceRow> = { status }
       if (status === 'paid') {
         updates.paid_date = todayIso()
@@ -132,9 +154,16 @@ serve(async (req: Request) => {
         .from('invoices')
         .update(updates as any)
         .eq('id', existing.id)
+        // Only if nobody changed it since we read it (e.g. order_cancel_tx).
+        .eq('status', existing.status)
         .select()
-        .single()
+        .maybeSingle()
 
+      const updateConflict = conflictFromDbError(updateError)
+      if (updateConflict) throw updateConflict
+      if (!updateError && !updatedRow) {
+        throw new EdgeFunctionError('CONFLICT', 'The invoice changed while you were editing it. Refresh and try again.')
+      }
       if (updateError || !updatedRow) {
         throw new EdgeFunctionError(
           'INTERNAL',
@@ -171,12 +200,15 @@ serve(async (req: Request) => {
     // ---- AUTO-CREATE PATH (paid or overdue) ----
     const { data: orderRow, error: orderError } = await admin
       .from('orders')
-      .select('id, horeca_id, total, horecas(name)')
+      .select('id, horeca_id, total, status, horecas(name)')
       .eq('id', orderId)
       .single()
 
     if (orderError || !orderRow) {
       throw new EdgeFunctionError('NOT_FOUND', `Order ${orderId} not found`)
+    }
+    if ((orderRow as any).status === 'cancelled') {
+      throw new EdgeFunctionError('CONFLICT', 'This order is cancelled and cannot be invoiced.')
     }
 
     const horecaName =
@@ -200,6 +232,8 @@ serve(async (req: Request) => {
       .select()
       .single()
 
+    const insertConflict = conflictFromDbError(insertError)
+    if (insertConflict) throw insertConflict
     if (insertError || !createdRow) {
       throw new EdgeFunctionError(
         'INTERNAL',

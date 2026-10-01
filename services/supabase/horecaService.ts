@@ -60,43 +60,8 @@ export async function deleteHoReCa(id: number, reason?: string): Promise<void> {
   if (error) throw error
 }
 
-export async function markHoReCaReviewed(id: number, reviewerUuid: string) {
-  const { data, error } = await supabase
-    .from('horecas')
-    .update({
-      reviewed_at: new Date().toISOString(),
-      reviewed_by: reviewerUuid,
-      is_temporary: false,
-    })
-    .eq('id', id)
-    .select()
-    .single()
-  if (error) throw error
-  return data
-}
-
-export async function upsertHoReCaPricing(
-  horecaId: number,
-  productId: number,
-  customPrice: number
-) {
-  const { data, error } = await supabase
-    .from('horeca_pricing')
-    .upsert(
-      { horeca_id: horecaId, product_id: productId, custom_price: customPrice },
-      { onConflict: 'horeca_id,product_id' }
-    )
-    .select()
-    .single()
-  if (error) throw error
-  return data
-}
-
-export async function deleteHoReCaPricing(horecaId: number, productId: number) {
-  const { error } = await supabase
-    .from('horeca_pricing')
-    .delete()
-    .eq('horeca_id', horecaId)
-    .eq('product_id', productId)
-  if (error) throw error
+// horecas is write-locked to mutate-horeca (migration 00013), so the review
+// goes through it; the function stamps reviewed_by from the caller's session.
+export async function markHoReCaReviewed(id: number): Promise<HoReCaRow> {
+  return updateHoReCa(id, { reviewed_at: new Date().toISOString(), is_temporary: false })
 }

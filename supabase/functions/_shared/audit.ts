@@ -19,7 +19,7 @@ export interface AuditLogInput {
    * `audit_events.action` carries no CHECK constraint (00012:11 documents the
    * vocabulary in a comment only), so widening this union needed no migration.
    */
-  action: 'create' | 'update' | 'delete' | 'read'
+  action: 'create' | 'update' | 'delete' | 'read' | 'set_default'
   resource: string
   resourceId?: string | null
   before?: unknown | null

@@ -32,6 +32,7 @@ import {
   recomputeOrderStatus,
 } from '../_shared/fulfillment.ts'
 import { requireModule } from '../_shared/modules.ts'
+import { setOrderStatus, statusesUpTo, type SetOrderStatusVerdict } from '../_shared/orderStatus.ts'
 
 type OrderStatus = 'processing' | 'processed' | 'picked' | 'packed' | 'dispatched' | 'delivered'
 
@@ -93,6 +94,16 @@ serve(async (req: Request) => {
     })
   const errorResponse = (code: string, message: string, status = 400): Response =>
     jsonResponse({ error: { code, message } }, status)
+  /** The response for an order_set_status_tx refusal (mig 00128). */
+  const verdictErrorResponse = (verdict: Exclude<SetOrderStatusVerdict, { ok: true }>): Response => {
+    if (verdict.code === 'CANCELLED') {
+      return errorResponse('INVALID_TRANSITION', 'This order was cancelled. A cancelled order cannot be moved to another status.', 422)
+    }
+    if (verdict.code === 'CONFLICT') {
+      return errorResponse('CONFLICT', `The order moved to ${verdict.status} while you were updating it. Refresh and try again.`, 409)
+    }
+    return errorResponse('ORDER_NOT_FOUND', 'Order not found', 404)
+  }
 
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
   if (req.method !== 'POST') return errorResponse('METHOD_NOT_ALLOWED', 'POST only', 405)
@@ -162,7 +173,7 @@ serve(async (req: Request) => {
 
   const { data: order, error: orderError } = await serviceClient
     .from('orders')
-    .select('id, status, status_history, horeca_id')
+    .select('id, status, horeca_id')
     .eq('id', body.orderId)
     .single()
   if (orderError || !order) {
@@ -257,21 +268,31 @@ serve(async (req: Request) => {
       await pruneFulfillments(serviceClient, body.orderId, reservedLocs)
     }
 
-    const history = Array.isArray((order as any).status_history) ? (order as any).status_history : []
-    const { data: updated, error: updErr } = await serviceClient
-      .from('orders')
-      .update({
-        status: 'processed',
-        status_history: [
-          ...history,
-          { status: 'processed', timestamp: nowIso, actor: profile.id, ...(body.note ? { note: body.note } : {}) },
-        ],
+    let verdict: SetOrderStatusVerdict
+    try {
+      verdict = await setOrderStatus(serviceClient, {
+        orderId: body.orderId,
+        from: statusesUpTo(STATUS_ORDER, 'processed'),
+        to: 'processed',
+        entry: { status: 'processed', timestamp: nowIso, actor: profile.id, ...(body.note ? { note: body.note } : {}) },
       })
-      .eq('id', body.orderId)
-      .select()
-      .single()
-    if (updErr) return errorResponse('DB_UPDATE_FAILED', updErr.message, 500)
-    return jsonResponse({ order: updated, fulfilmentLocations: locs })
+    } catch (e) {
+      return errorResponse('DB_UPDATE_FAILED', e instanceof Error ? e.message : String(e), 500)
+    }
+    if (!verdict.ok) {
+      // Cancelled while we re-routed: order_cancel_tx released the old
+      // reservation, so the one inv_reserve_order just made is orphaned stock.
+      if (verdict.code === 'CANCELLED' && Array.isArray(body.locationPref) && body.locationPref.length > 0) {
+        const { error: relErr } = await serviceClient.rpc('inv_release_reservation', {
+          p_order_id: body.orderId,
+          p_location_id: null,
+          p_actor: profile.id,
+        })
+        if (relErr) console.error(`[update-order-status] release after cancel failed for ${body.orderId}: ${relErr.message}`)
+      }
+      return verdictErrorResponse(verdict)
+    }
+    return jsonResponse({ order: verdict.order, fulfilmentLocations: locs })
   }
 
   // ── Mode B: per-warehouse advance (picked/packed/dispatched/delivered) ─────
@@ -300,6 +321,8 @@ serve(async (req: Request) => {
     const curIdx = FULFILLMENT_LADDER.indexOf(ful.status)
     const newIdx = FULFILLMENT_LADDER.indexOf(body.status as any)
     if (newIdx < 0) return errorResponse('INVALID_STATUS', 'Invalid fulfilment status', 422)
+    // body.status narrowed to the fulfilment ladder by the check above.
+    const fulfilmentTarget = FULFILLMENT_LADDER[newIdx]
     if (newIdx < curIdx) {
       return errorResponse('INVALID_TRANSITION', `Cannot move fulfilment from ${ful.status} back to ${body.status}`, 422)
     }
@@ -312,7 +335,7 @@ serve(async (req: Request) => {
     }
 
     const fHistory = Array.isArray(ful.status_history) ? ful.status_history : []
-    const { error: fErr } = await serviceClient
+    const { data: fRows, error: fErr } = await serviceClient
       .from('order_fulfillments')
       .update({
         status: body.status,
@@ -322,12 +345,19 @@ serve(async (req: Request) => {
         ],
       })
       .eq('id', ful.id)
+      // Only if nobody advanced it since we read it — otherwise this write
+      // would replace their history entry with ours.
+      .eq('status', ful.status)
+      .select('id')
     if (fErr) return errorResponse('DB_UPDATE_FAILED', fErr.message, 500)
+    if (!fRows || fRows.length === 0) {
+      return errorResponse('CONFLICT', "This warehouse's fulfilment changed while you were updating it. Refresh and try again.", 409)
+    }
 
     // On dispatch, release any residual reservation this warehouse still holds
     // for the order — a no-op for a correctly-picked fulfilment. The dispatch is
     // already persisted, so a failed release logs rather than failing the request.
-    await releaseResidualOnDispatch(serviceClient, body.orderId, locationId as number, profile.id, body.status)
+    await releaseResidualOnDispatch(serviceClient, body.orderId, locationId as number, profile.id, fulfilmentTarget)
 
     // Recompute the derived order status from all fulfilments.
     await recomputeOrderStatus(serviceClient, body.orderId, profile.id, nowIso)
@@ -385,9 +415,6 @@ serve(async (req: Request) => {
     return errorResponse('INVALID_TRANSITION', `Cannot move order from ${currentOrderStatus} backwards to ${body.status}`, 422)
   }
 
-  const previousHistory = Array.isArray((order as any).status_history)
-    ? ((order as any).status_history as StatusHistoryEntry[])
-    : []
   const newEntry: StatusHistoryEntry = {
     status: body.status,
     timestamp: nowIso,
@@ -395,15 +422,21 @@ serve(async (req: Request) => {
     ...(body.note ? { note: body.note } : {}),
   }
 
-  const { data: updated, error: updateError } = await serviceClient
-    .from('orders')
-    .update({ status: body.status, status_history: [...previousHistory, newEntry] as any })
-    .eq('id', body.orderId)
-    .select()
-    .single()
-  if (updateError) {
-    return errorResponse('DB_UPDATE_FAILED', updateError.message, 500)
+  let legacyVerdict: SetOrderStatusVerdict
+  try {
+    legacyVerdict = await setOrderStatus(serviceClient, {
+      orderId: body.orderId,
+      // Forward-only, re-checked under the row lock: the checks above read a
+      // snapshot that a concurrent writer may already have moved past.
+      from: statusesUpTo(STATUS_ORDER, body.status),
+      to: body.status,
+      entry: newEntry as unknown as Record<string, unknown>,
+    })
+  } catch (e) {
+    return errorResponse('DB_UPDATE_FAILED', e instanceof Error ? e.message : String(e), 500)
   }
+  if (!legacyVerdict.ok) return verdictErrorResponse(legacyVerdict)
+  const updated = legacyVerdict.order
 
   if (body.status === 'dispatched') {
     try {

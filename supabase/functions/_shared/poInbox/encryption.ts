@@ -32,7 +32,9 @@ const AES_KEY_BYTES = 32
 const IV_BYTES = 12
 const ENVELOPE_SEPARATOR = ':'
 
-function base64Decode(b64: string): Uint8Array {
+// Typed over ArrayBuffer (not ArrayBufferLike) because WebCrypto takes a
+// BufferSource, which since TS 5.7 excludes SharedArrayBuffer-backed views.
+function base64Decode(b64: string): Uint8Array<ArrayBuffer> {
   const bin = atob(b64)
   const out = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
@@ -55,7 +57,7 @@ async function importKey(): Promise<CryptoKey> {
     throw new Error(`${ENV_KEY} is not configured`)
   }
 
-  let rawBytes: Uint8Array
+  let rawBytes: Uint8Array<ArrayBuffer>
   try {
     rawBytes = base64Decode(b64)
   } catch {

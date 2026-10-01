@@ -44,7 +44,7 @@ const VisitModal: React.FC<VisitModalProps> = ({ hoReCaId, userId, scheduledVisi
 
   const handleSave = () => {
     const visit: Visit = {
-      id: `VISIT-${Date.now()}`,
+      id: `VISIT-${crypto.randomUUID()}`,
       hoReCaId,
       userId,
       scheduledVisitId,

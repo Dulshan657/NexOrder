@@ -46,7 +46,7 @@ import { useUpdateOrderStatus } from '../hooks/queries/useOrders';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
 import { useMarkNotificationRead, useMarkAllNotificationsRead } from '../hooks/queries/useNotifications';
 import { useUpdateScheduledVisit, useCreateScheduledVisit } from '../hooks/queries/useScheduledVisits';
-import { useCreateVisit } from '../hooks/queries/useVisits';
+import { useCreateVisit, useUpdateVisit } from '../hooks/queries/useVisits';
 import {
     useCreateProduct,
     useUpdateProduct,
@@ -132,7 +132,7 @@ const AccountsAgingTable = MODULE_INVOICING ? lazyWithRetry(() => import('./Acco
 const ShopView = MODULE_SHOP ? lazyWithRetry(() => import('../views/ShopView')) : null;
 
 import { inviteUser, updateUserProfile } from '../services/supabase/inviteUserService';
-import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit } from '../lib/adapters';
+import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit, fromVisit, visitUpdateFields } from '../lib/adapters';
 import { numericIdToUuid } from '../lib/userIdMap';
 import type { SortOption } from './ShopTopBar';
 import type { OrderingTabKey } from './OrderingTabBar';
@@ -322,6 +322,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const updateRouteMutation = useUpdateScheduledVisit();
     const createRouteMutation = useCreateScheduledVisit();
     const createVisitMutation = useCreateVisit();
+    const updateVisitMutation = useUpdateVisit();
 
     const createProductMutation = useCreateProduct();
     const updateProductMutation = useUpdateProduct();
@@ -529,29 +530,29 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     );
 
     // ── setVisits shim ────────────────────────────────────────────────────────
+    // Resolves true once every write has landed (false after toasting a
+    // failure), so a caller that links the visit elsewhere — a route stop —
+    // can wait and never point at a visit that was not saved.
     const setVisits = useCallback(
-        (updater: Visit[] | ((prev: Visit[]) => Visit[])) => {
+        async (updater: Visit[] | ((prev: Visit[]) => Visit[])): Promise<boolean> => {
             const next = typeof updater === 'function' ? updater(visits) : updater;
-            const prevIds = new Set(visits.map(v => v.id));
-            for (const v of next) {
-                if (!prevIds.has(v.id)) {
-                    createVisitMutation.mutate({
-                        horeca_id: v.hoReCaId,
-                        user_id: numericIdToUuid(v.userId),
-                        scheduled_visit_id: v.scheduledVisitId ?? null,
-                        arrival_time: v.arrivalTime,
-                        departure_time: v.departureTime ?? null,
-                        outcome: v.outcome ?? null,
-                        notes: v.notes ?? null,
-                        competitor_notes: v.competitorNotes ?? null,
-                        stock_check_notes: v.stockCheckNotes ?? null,
-                        next_visit_recommendation: v.nextVisitRecommendation ?? null,
-                        photos: v.photos ?? [],
-                    } as any);
-                }
+            const prevById = new Map<string, Visit>(visits.map(v => [v.id, v]));
+            const writes = next.flatMap(v => {
+                const prev = prevById.get(v.id);
+                if (!prev) return [createVisitMutation.mutateAsync(fromVisit(v))];
+                const updates = visitUpdateFields(prev, v);
+                return updates ? [updateVisitMutation.mutateAsync({ id: v.id, updates })] : [];
+            });
+            try {
+                await Promise.all(writes);
+                return true;
+            } catch (err) {
+                console.error('[AppShell] visit save failed', err);
+                addToast('The visit could not be saved. Please try again.', 'error');
+                return false;
             }
         },
-        [visits, createVisitMutation],
+        [visits, createVisitMutation, updateVisitMutation, addToast],
     );
 
     // ── setSalesTargets shim ──────────────────────────────────────────────────

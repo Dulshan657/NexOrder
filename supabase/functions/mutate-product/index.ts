@@ -25,6 +25,7 @@ import {
   remapBulkResults,
   type BulkCreateResult,
   type BulkProductRow,
+  type ProductBulkSupabaseLike,
   type RawBulkRow,
 } from '../_shared/productBulk.ts'
 import { validateUoms, deriveDefaultUomInputs, type UomInput } from '../_shared/uomValidation.ts'
@@ -578,7 +579,10 @@ serve(async (req: Request) => {
       })
 
       const validResults = await bulkCreateProducts(
-        admin,
+        // ProductBulkSupabaseLike is the structural seam productBulk.ts is
+        // tested through; the real client satisfies it at runtime, but its
+        // generics are too deep for the checker to prove that.
+        admin as unknown as ProductBulkSupabaseLike,
         validRows.map(v => v.data),
         await cartonDiscountPercent(admin),
       )

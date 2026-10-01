@@ -722,7 +722,7 @@ export type Database = {
           created_at: string
         }
         Insert: {
-          id?: string
+          id: string
           horeca_id: number
           user_id: string
           scheduled_visit_id?: string | null

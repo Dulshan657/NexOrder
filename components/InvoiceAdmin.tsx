@@ -137,7 +137,7 @@ const InvoiceAdmin: React.FC<InvoiceAdminProps> = ({ invoices, onUpdateStatus })
                                         <td className="px-4 py-3 text-stone-600">{new Date(inv.dueDate).toLocaleDateString('en-AU')}</td>
                                         <td className="px-4 py-3">{statusBadge(inv.status)}</td>
                                         <td className="px-4 py-3 text-right">
-                                            {inv.status !== 'paid' && (
+                                            {(inv.status === 'pending' || inv.status === 'overdue') && (
                                                 <button
                                                     onClick={() => onUpdateStatus(inv.id, 'paid')}
                                                     className="text-xs font-medium text-emerald-600 hover:text-emerald-800 transition-colors cursor-pointer"

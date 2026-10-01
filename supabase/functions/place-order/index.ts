@@ -235,7 +235,8 @@ async function getOutstandingBalance(serviceClient: SupabaseClient, hoReCaId: nu
     .from('invoices')
     .select('amount')
     .eq('horeca_id', hoReCaId)
-    .neq('status', 'paid')
+    // Only money still owed: a cancelled invoice (mig 00111) is not a debt.
+    .in('status', ['pending', 'overdue'])
   if (error) throw error
   return (data ?? []).reduce((sum: number, row: any) => sum + Number(row.amount ?? 0), 0)
 }
@@ -320,7 +321,7 @@ serve(async (req: Request) => {
   }
 
   // Load data via service client (bypasses RLS, all reads needed for pricing)
-  let hoReCa: HoReCa & { credit_limit: number; name: string }
+  let hoReCa: Awaited<ReturnType<typeof loadHoReCa>>
   try {
     hoReCa = await loadHoReCa(serviceClient, body.hoReCaId)
   } catch {

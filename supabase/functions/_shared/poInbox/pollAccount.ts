@@ -13,7 +13,8 @@
 //      c. INSERT inbound_messages (provider_message_id UNIQUE — dedupes)
 //      d. Fire-and-forget extract-po HTTP call
 //   4. Update the watermark + last_sync_at on the account (clears any
-//      transient-failure backoff state)
+//      transient-failure backoff state). The watermark only advances once
+//      every listed message is stored -- see batchPlan.ts
 //   5. Failure handling:
 //      * genuine grant revocation -> status='error', last_error=...; the
 //        admin UI surfaces this and exposes a Reconnect CTA
@@ -25,6 +26,7 @@ import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.
 import { decryptToken, encryptToken } from './encryption.ts'
 import { sanitizeForLog } from './env.ts'
 import { fireAndForget } from './dispatch.ts'
+import { planPollBatch } from './batchPlan.ts'
 import {
   attachmentPath,
   formatLastError,
@@ -49,8 +51,12 @@ import {
 
 const ARCHIVE_BUCKET = 'po-archive'
 // Per-cycle cap so a backlog never causes the function to exceed its
-// wall-clock budget. Unprocessed messages stay queued and pick up next tick.
+// wall-clock budget. When the backlog is larger, the watermark is held so
+// the remainder is re-listed (and picked up) next tick.
 const MAX_MESSAGES_PER_ACCOUNT = 25
+// Graph ids are ~150 chars before URL-encoding; 20 per .in() keeps the
+// request URL comfortably under the gateway limit.
+const STORED_ID_LOOKUP_CHUNK = 20
 const FETCH_TIMEOUT_MS = 15_000
 
 export interface AccountRow {
@@ -134,7 +140,8 @@ async function processGmail(
     account.watermark,
   )
 
-  const toProcess = messages.slice(0, MAX_MESSAGES_PER_ACCOUNT)
+  const storedIds = await fetchStoredMessageIds(serviceClient, account.id, messages)
+  const { toProcess, advanceWatermark } = planPollBatch(messages, storedIds, MAX_MESSAGES_PER_ACCOUNT)
   let stored = 0
   for (const ref of toProcess) {
     const envelope = await getGmailMessage(accessToken, ref.id)
@@ -151,7 +158,11 @@ async function processGmail(
     }
   }
 
-  await markAccountSynced(serviceClient, account.id, nextWatermark)
+  await markAccountSynced(
+    serviceClient,
+    account.id,
+    advanceWatermark ? nextWatermark : account.watermark,
+  )
 
   return {
     accountId: account.id,
@@ -188,20 +199,26 @@ async function processOutlook(
       `Underlying: ${sanitizeForLog(err instanceof Error ? err.message : String(err))}`,
     )
   }
-  await serviceClient
+  const { error: tokenWriteError } = await serviceClient
     .from('email_accounts')
-    .update({
-      oauth_refresh_token_encrypted: newEncryptedRefresh,
-      updated_at: new Date().toISOString(),
-    })
+    .update({ oauth_refresh_token_encrypted: newEncryptedRefresh })
     .eq('id', account.id)
+  if (tokenWriteError) {
+    // The old refresh token is already invalidated by the rotation, so the
+    // next tick will need re-auth. Fail loudly now so last_error says why.
+    throw new Error(
+      `Microsoft token rotation: could not persist new refresh token: ` +
+      sanitizeForLog(tokenWriteError.message),
+    )
+  }
 
   const { messages, nextWatermark, fellBackToList } = await listNewGraphMessages(
     refreshed.accessToken,
     account.watermark,
   )
 
-  const toProcess = messages.slice(0, MAX_MESSAGES_PER_ACCOUNT)
+  const storedIds = await fetchStoredMessageIds(serviceClient, account.id, messages)
+  const { toProcess, advanceWatermark } = planPollBatch(messages, storedIds, MAX_MESSAGES_PER_ACCOUNT)
   let stored = 0
   for (const ref of toProcess) {
     const envelope = await getGraphMessage(refreshed.accessToken, ref.id)
@@ -218,7 +235,11 @@ async function processOutlook(
     }
   }
 
-  await markAccountSynced(serviceClient, account.id, nextWatermark)
+  await markAccountSynced(
+    serviceClient,
+    account.id,
+    advanceWatermark ? nextWatermark : account.watermark,
+  )
 
   return {
     accountId: account.id,
@@ -403,10 +424,36 @@ async function uploadBinary(
   if (error) throw new Error(`storage upload ${path}: ${error.message}`)
 }
 
+/**
+ * Provider message ids from `refs` that already have an inbound_messages row
+ * for this account. Lets a held watermark skip past what was stored last tick.
+ */
+async function fetchStoredMessageIds(
+  serviceClient: SupabaseClient,
+  accountId: string,
+  refs: ReadonlyArray<{ id: string }>,
+): Promise<Set<string>> {
+  const ids = refs.map((r) => r.id)
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += STORED_ID_LOOKUP_CHUNK) {
+    chunks.push(ids.slice(i, i + STORED_ID_LOOKUP_CHUNK))
+  }
+  const results = await Promise.all(chunks.map(async (chunk) => {
+    const { data, error } = await serviceClient
+      .from('inbound_messages')
+      .select('provider_message_id')
+      .eq('email_account_id', accountId)
+      .in('provider_message_id', chunk)
+    if (error) throw new Error(`inbound_messages lookup failed: ${sanitizeForLog(error.message)}`)
+    return (data ?? []).map((row: { provider_message_id: string }) => row.provider_message_id)
+  }))
+  return new Set(results.flat())
+}
+
 async function markAccountSynced(
   serviceClient: SupabaseClient,
   accountId: string,
-  watermark: string,
+  watermark: string | null,
 ): Promise<void> {
   const { error } = await serviceClient
     .from('email_accounts')

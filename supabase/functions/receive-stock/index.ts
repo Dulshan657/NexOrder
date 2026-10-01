@@ -11,7 +11,7 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { z } from 'https://esm.sh/zod@3.23.8'
 import { requireAuth, type UserRole } from '../_shared/auth.ts'
 import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
@@ -94,7 +94,7 @@ type ReceiptPlate = z.infer<typeof receiptPlateSchema>
  * locations.slot_kind, the same rule the 00076 backfill used, so the two agree.
  */
 async function createPlates(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient,
   plates: ReceiptPlate[] | undefined,
   lines: ReceiptLine[],
   locationId: number | null,
@@ -175,7 +175,7 @@ async function createPlates(
 // product. Returns lines with base quantities and uom_id stripped (the RPC has
 // no UOM concept).
 async function toBaseLines(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient,
   lines: ReceiptLine[],
 ): Promise<Array<Omit<ReceiptLine, 'uom_id'>>> {
   const uomIds = [...new Set(lines.map(l => l.uom_id).filter((id): id is number => id != null))]
@@ -209,7 +209,7 @@ async function toBaseLines(
 //                           create a minimal one so it joins the master list.
 // A supplier is required: a receipt must record who supplied the goods.
 async function resolveHeaderSupplier(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient,
   receipt: ReceiptHeader | undefined,
 ): Promise<number> {
   if (receipt?.supplier_id) return receipt.supplier_id

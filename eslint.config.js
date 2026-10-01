@@ -165,4 +165,16 @@ export default [
         },
         rules: { 'no-unused-vars': 'off' },
     },
+    {
+        // The demo-video recorder drives a real page. overlay.js is injected
+        // into it (page.addInitScript) as a classic script, and interact.mjs
+        // runs in Node but passes callbacks to page.evaluate that execute in
+        // the browser, so both legitimately reference window/document.
+        files: ['scripts/demo-video/overlay.js'],
+        languageOptions: { sourceType: 'script', globals: { ...globals.browser } },
+    },
+    {
+        files: ['scripts/demo-video/interact.mjs'],
+        languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    },
 ]

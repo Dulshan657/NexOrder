@@ -37,6 +37,8 @@ type InvoiceRow = Database['public']['Tables']['invoices']['Row']
 type PromotionRow = Database['public']['Tables']['promotions']['Row']
 type RouteRow = Database['public']['Tables']['scheduled_visits']['Row']
 type VisitRow = Database['public']['Tables']['visits']['Row']
+type VisitInsert = Database['public']['Tables']['visits']['Insert']
+type VisitUpdate = Database['public']['Tables']['visits']['Update']
 type SalesTargetRow = Database['public']['Tables']['sales_targets']['Row']
 type SettingsRow = Database['public']['Tables']['app_settings']['Row']
 type NotificationRow = Database['public']['Tables']['notifications']['Row']
@@ -611,6 +613,48 @@ export function toVisit(row: VisitRow): Visit {
     photos: row.photos ?? [],
     createdAt: row.created_at,
   }
+}
+
+/**
+ * Full insert row for a new visit. `visits.id` is TEXT with no database
+ * default, so the client-generated id must be sent or the insert fails.
+ */
+export function fromVisit(v: Visit): VisitInsert {
+  return {
+    id: v.id,
+    horeca_id: v.hoReCaId,
+    user_id: numericIdToUuid(v.userId),
+    scheduled_visit_id: v.scheduledVisitId ?? null,
+    arrival_time: v.arrivalTime,
+    departure_time: v.departureTime ?? null,
+    outcome: v.outcome ?? null,
+    notes: v.notes ?? null,
+    competitor_notes: v.competitorNotes ?? null,
+    stock_check_notes: v.stockCheckNotes ?? null,
+    next_visit_recommendation: v.nextVisitRecommendation ?? null,
+    photos: v.photos ?? [],
+  }
+}
+
+/** Columns a visit edit may change — identity and ownership are never sent. */
+const EDITABLE_VISIT_COLUMNS = [
+  'scheduled_visit_id', 'arrival_time', 'departure_time', 'outcome', 'notes',
+  'competitor_notes', 'stock_check_notes', 'next_visit_recommendation', 'photos',
+] as const
+
+/**
+ * Only the editable columns that differ between two versions of a visit, or
+ * null when nothing changed (so the caller skips the write entirely).
+ */
+export function visitUpdateFields(prev: Visit, next: Visit): VisitUpdate | null {
+  const before = fromVisit(prev)
+  const after = fromVisit(next)
+  const changed = Object.fromEntries(
+    EDITABLE_VISIT_COLUMNS
+      .filter((col) => JSON.stringify(before[col]) !== JSON.stringify(after[col]))
+      .map((col) => [col, after[col]]),
+  ) as VisitUpdate
+  return Object.keys(changed).length > 0 ? changed : null
 }
 
 // ── SalesTarget ───────────────────────────────────────────────────
