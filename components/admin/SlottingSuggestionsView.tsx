@@ -6,7 +6,7 @@ import { useMemo } from 'react'
 import { Sparkles, ArrowRight, Check, X } from 'lucide-react'
 import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
 import { useSlottingSuggestions, useDecideSlotting, useRunReoptimize } from '@/hooks/queries/useSlottingSuggestions'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import type { SlottingSuggestion, Warehouse } from '@/types'
 import { buildDisplayLookup, displayFor } from '@/lib/locationLookup'
 import { locationOneLine } from '@/lib/locationDisplay'
@@ -22,7 +22,7 @@ export function SlottingSuggestionsView({ warehouse, productNameById }: Slotting
   const locationsQuery = useWarehouseLocations(warehouse.id)
   const decide = useDecideSlotting(warehouse.id)
   const reoptimize = useRunReoptimize(warehouse.id)
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   // Name AND code (mig 00094) — select('*') already returns both.
   const binById = useMemo(() => buildDisplayLookup(locationsQuery.data), [locationsQuery.data])

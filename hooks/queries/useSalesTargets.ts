@@ -15,8 +15,9 @@ export const salesTargetKeys = {
   byUser: (userId: string) => ['salesTargets', 'user', userId] as const,
 } as const
 
-export function useSalesTargets(userId?: string | null) {
+export function useSalesTargets(userId?: string | null, { enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled,
     queryKey: userId ? salesTargetKeys.byUser(userId) : salesTargetKeys.all,
     queryFn: () => getSalesTargets(userId ?? undefined),
   })

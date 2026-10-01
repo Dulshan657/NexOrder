@@ -10,7 +10,7 @@ import { locationSubtitle, locationTitle } from '@/lib/locationDisplay'
 import { RenameLocationModal } from './RenameLocationModal'
 import { supabase } from '@/lib/supabase'
 import { extractFunctionErrorMessage } from '@/lib/functionError'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { warehouseLocationKeys } from '@/hooks/queries/useWarehouseLocations'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { defaultRoleKey } from '@/lib/levelRoles'
@@ -129,7 +129,7 @@ export function BinDetailPanel({
 }: BinDetailPanelProps) {
   const [releasing, setReleasing] = useState(false)
   const [renaming, setRenaming] = useState(false)
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const setLevels = useSetRackLevels(warehouseId)
   const convertRack = useConvertRack(warehouseId)
   const storageTypes = useStorageTypes()

@@ -15,11 +15,16 @@
 //
 // Mounted at App.tsx once the user is authenticated. Cleans up on
 // userId/role change or unmount.
+//
+// Every handler goes through ONE shared batcher (lib/invalidationBatcher.ts):
+// events arrive per row, so an unbatched handler refetched the full orders or
+// products list once per line of every order placed by anyone.
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { UserRole } from '@/types'
+import { createInvalidationBatcher } from '@/lib/invalidationBatcher'
 
 interface UseRealtimeSubscriptionsOptions {
   userId: string | null | undefined
@@ -37,25 +42,21 @@ export function useRealtimeSubscriptions(arg: UseRealtimeSubscriptionsOptions | 
   const isInventoryOps =
     role === UserRole.ADMIN || role === UserRole.MANAGER || role === UserRole.WAREHOUSE
 
+  const batcher = useMemo(
+    () => createInvalidationBatcher((queryKey) => { void qc.invalidateQueries({ queryKey }) }),
+    [qc],
+  )
+  useEffect(() => () => batcher.cancel(), [batcher])
+
   useEffect(() => {
     if (!userId) return
 
-    const invalidateOrders = () => {
-      qc.invalidateQueries({ queryKey: ['orders'] })
-      // An order status change (e.g. → processed) can add/remove it from the
-      // warehouse Pick Queue — keep that list in sync across clients too.
-      qc.invalidateQueries({ queryKey: ['pick_queue'] })
-    }
-    const invalidateNotifications = () => {
-      qc.invalidateQueries({ queryKey: ['notifications'] })
-    }
-    const invalidateProducts = () => {
-      qc.invalidateQueries({ queryKey: ['products'] })
-    }
-    const invalidateInvoicesAndOrders = () => {
-      qc.invalidateQueries({ queryKey: ['invoices'] })
-      qc.invalidateQueries({ queryKey: ['orders'] })
-    }
+    // An order status change (e.g. → processed) can add/remove it from the
+    // warehouse Pick Queue — keep that list in sync across clients too.
+    const invalidateOrders = () => batcher.schedule([['orders'], ['pick_queue']])
+    const invalidateNotifications = () => batcher.schedule([['notifications']])
+    const invalidateProducts = () => batcher.schedule([['products']])
+    const invalidateInvoicesAndOrders = () => batcher.schedule([['invoices'], ['orders']])
 
     const channel = supabase
       .channel(`app-realtime-${userId}`)
@@ -89,19 +90,15 @@ export function useRealtimeSubscriptions(arg: UseRealtimeSubscriptionsOptions | 
     return () => {
       void supabase.removeChannel(channel)
     }
-  }, [userId, qc])
+  }, [userId, batcher])
 
   // Separate admin-only channel for PO inbox tables. Reps + Customers
   // never subscribe.
   useEffect(() => {
     if (!userId || !isPoOperator) return
 
-    const invalidatePendingPos = () => {
-      qc.invalidateQueries({ queryKey: ['pending_pos'] })
-    }
-    const invalidateEmailAccounts = () => {
-      qc.invalidateQueries({ queryKey: ['email_accounts'] })
-    }
+    const invalidatePendingPos = () => batcher.schedule([['pending_pos']])
+    const invalidateEmailAccounts = () => batcher.schedule([['email_accounts']])
 
     const channel = supabase
       .channel(`po-inbox-realtime-${userId}`)
@@ -120,7 +117,7 @@ export function useRealtimeSubscriptions(arg: UseRealtimeSubscriptionsOptions | 
     return () => {
       void supabase.removeChannel(channel)
     }
-  }, [userId, isPoOperator, qc])
+  }, [userId, isPoOperator, batcher])
 
   // Inventory & Dispatch channel — balances, pick progress, generated docs.
   // Ops roles only (Admin/Manager/Warehouse); reps/customers never subscribe.
@@ -129,17 +126,11 @@ export function useRealtimeSubscriptions(arg: UseRealtimeSubscriptionsOptions | 
   useEffect(() => {
     if (!userId || !isInventoryOps) return
 
-    const invalidateBalances = () => {
-      qc.invalidateQueries({ queryKey: ['inventory_balances'] })
-      qc.invalidateQueries({ queryKey: ['products'] })
-    }
-    const invalidatePickProgress = () => {
-      qc.invalidateQueries({ queryKey: ['pick_progress'] })
-      qc.invalidateQueries({ queryKey: ['orders'] })
-    }
-    const invalidateOrderDocuments = () => {
-      qc.invalidateQueries({ queryKey: ['order_documents'] })
-    }
+    const invalidateBalances = () => batcher.schedule([['inventory_balances'], ['products']])
+    // pick_progress feeds the pick queue's picked counts; no query is keyed
+    // 'pick_progress'. orders.pickedUnits rides the ['orders'] prefix.
+    const invalidatePickProgress = () => batcher.schedule([['pick_queue'], ['orders']])
+    const invalidateOrderDocuments = () => batcher.schedule([['order_documents']])
 
     const channel = supabase
       .channel(`inventory-realtime-${userId}`)
@@ -163,5 +154,5 @@ export function useRealtimeSubscriptions(arg: UseRealtimeSubscriptionsOptions | 
     return () => {
       void supabase.removeChannel(channel)
     }
-  }, [userId, isInventoryOps, qc])
+  }, [userId, isInventoryOps, batcher])
 }

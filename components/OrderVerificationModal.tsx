@@ -3,7 +3,7 @@ import type { OrderVerification, OrderVerificationMethod } from '../types';
 import { UserRole } from '../types';
 import { PenLine, Phone } from 'lucide-react';
 import { uploadSignature } from '../services/supabase/signatureService';
-import { useToasts } from '../hooks/useToasts';
+import { useToastActions } from '../hooks/useToasts';
 import { Button, Modal } from './ui';
 
 interface OrderVerificationModalProps {
@@ -31,7 +31,7 @@ const OrderVerificationModal: React.FC<OrderVerificationModalProps> = ({ userRol
 
     // Upload state
     const [isUploading, setIsUploading] = useState(false);
-    const { addToast } = useToasts();
+    const { addToast } = useToastActions();
 
     // Call reference state
     const [callerName, setCallerName] = useState('');

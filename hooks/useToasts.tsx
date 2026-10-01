@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useState, useContext, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Toast, ToastAction, ToastType } from '../types';
 
 /** How long a toast lives. Toasts with an action button stay around longer —
@@ -23,13 +23,21 @@ export const TOAST_EXIT_MS = 300;
  */
 export const MAX_TOASTS = 3;
 
-interface ToastContextType {
-  toasts: Toast[];
+interface ToastActions {
   addToast: (message: string, type: ToastType, action?: ToastAction) => void;
   removeToast: (id: number) => void;
 }
 
-const ToastContext = createContext<ToastContextType | undefined>(undefined);
+interface ToastContextType extends ToastActions {
+  toasts: Toast[];
+}
+
+// Two contexts, so that RAISING a toast does not subscribe you to the list.
+// The actions are stable for the provider's lifetime; only the list changes.
+// With one context, every toast shown or dismissed re-rendered App (which
+// raises toasts) and through it the entire tree.
+const ToastActionsContext = createContext<ToastActions | undefined>(undefined);
+const ToastListContext = createContext<Toast[] | undefined>(undefined);
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -104,17 +112,34 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, []);
 
+  const actions = useMemo<ToastActions>(() => ({ addToast, removeToast }), [addToast, removeToast]);
+
   return (
-    <ToastContext.Provider value={{ toasts, addToast, removeToast }}>
-      {children}
-    </ToastContext.Provider>
+    <ToastActionsContext.Provider value={actions}>
+      <ToastListContext.Provider value={toasts}>
+        {children}
+      </ToastListContext.Provider>
+    </ToastActionsContext.Provider>
   );
 };
 
+/** Raise or dismiss toasts WITHOUT re-rendering when the list changes.
+ *  Prefer this anywhere the toast list itself is not rendered. */
+export const useToastActions = (): ToastActions => {
+  const actions = useContext(ToastActionsContext);
+  if (!actions) {
+    throw new Error('useToastActions must be used within a ToastProvider');
+  }
+  return actions;
+};
+
+/** The list plus the actions. Re-renders on every toast change — use it only
+ *  where the list is rendered (ToastContainer). */
 export const useToasts = (): ToastContextType => {
-  const context = useContext(ToastContext);
-  if (!context) {
+  const actions = useContext(ToastActionsContext);
+  const toasts = useContext(ToastListContext);
+  if (!actions || !toasts) {
     throw new Error('useToasts must be used within a ToastProvider');
   }
-  return context;
+  return useMemo(() => ({ toasts, ...actions }), [toasts, actions]);
 };

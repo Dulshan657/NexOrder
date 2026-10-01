@@ -29,7 +29,10 @@ vi.mock('@/hooks/queries/useLevelRoles', async () => {
   const { FALLBACK_LEVEL_ROLES } = await import('@/lib/levelRoles')
   return { useLevelRoles: () => ({ data: FALLBACK_LEVEL_ROLES }) }
 })
-vi.mock('@/hooks/useToasts', () => ({ useToasts: () => ({ addToast: vi.fn() }) }))
+vi.mock('@/hooks/useToasts', () => ({
+  useToasts: () => ({ addToast: vi.fn() }),
+  useToastActions: () => ({ addToast: vi.fn() }),
+}))
 vi.mock('@/hooks/queries/useSettings', () => ({
   // ReceiveStockView reads the global pallet (mig 00125) only to say whether a
   // product's Pallet unit quantity was measured or estimated. Mocked because the

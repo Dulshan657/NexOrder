@@ -16,7 +16,7 @@ import { useReplenTasks, useAssignReplenishment, useUnassignReplenishment, useDe
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
 import { useLevelRoles } from '../../hooks/queries/useLevelRoles';
 import { roleLabel } from '../../lib/levelRoles';
-import { useToasts } from '../../hooks/useToasts';
+import { useToastActions } from '../../hooks/useToasts';
 import type { ReplenSkipReason, ReplenTask } from '../../services/supabase/replenService';
 import { buildDisplayLookup, displayFor } from '@/lib/locationLookup';
 import { locationOneLine, locationTitle, type DisplayLocation } from '@/lib/locationDisplay';
@@ -58,7 +58,7 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
   const assign = useAssignReplenishment();
   const unassign = useUnassignReplenishment();
   const detect = useDetectReplenishment();
-  const { addToast } = useToasts();
+  const { addToast } = useToastActions();
 
   const [sourceByTask, setSourceByTask] = useState<Record<number, number>>({});
   const [qtyByTask, setQtyByTask] = useState<Record<number, string>>({});

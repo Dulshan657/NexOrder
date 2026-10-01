@@ -352,25 +352,67 @@ type DeliveryAddressJson = {
   recipient_name?: string | null
 }
 
+type OrderRowWithEmbeds = OrderRow & {
+  delivery_address?: DeliveryAddressJson | null
+  order_items?: OrderItemRow[] | null
+  pending_pos?: PendingPoEmbed[] | PendingPoEmbed | null
+  order_fulfillments?: (OrderFulfillmentRow & { locations?: { name: string } | null })[] | null
+}
+
+interface OrderLookups {
+  hoReCaById: Map<number, HoReCa>
+  userById: Map<number, User>
+  productById: Map<number, Product>
+}
+
+// First match wins, as the `.find()` calls these replaced did.
+function firstById<T extends { id: number }>(list: T[]): Map<number, T> {
+  const map = new Map<number, T>()
+  for (const item of list) if (!map.has(item.id)) map.set(item.id, item)
+  return map
+}
+
+function buildOrderLookups(hoReCas: HoReCa[], users: User[], products: Product[]): OrderLookups {
+  return {
+    hoReCaById: firstById(hoReCas),
+    userById: firstById(users),
+    productById: firstById(products),
+  }
+}
+
 export function toOrder(
-  row: OrderRow & {
-    delivery_address?: DeliveryAddressJson | null
-    order_items?: OrderItemRow[] | null
-    pending_pos?: PendingPoEmbed[] | PendingPoEmbed | null
-    order_fulfillments?: (OrderFulfillmentRow & { locations?: { name: string } | null })[] | null
-  },
+  row: OrderRowWithEmbeds,
   hoReCas: HoReCa[],
   users: User[],
   products: Product[],
 ): Order {
+  return orderFromRow(row, buildOrderLookups(hoReCas, users, products))
+}
+
+/**
+ * Adapt a whole order list. Builds the id lookups ONCE: per-row `.find()`
+ * scans made rebuilding `allOrders` cost orders x lines x products, and it
+ * reruns whenever orders or the product catalogue refetch.
+ */
+export function toOrders(
+  rows: OrderRowWithEmbeds[],
+  hoReCas: HoReCa[],
+  users: User[],
+  products: Product[],
+): Order[] {
+  const lookups = buildOrderLookups(hoReCas, users, products)
+  return rows.map(row => orderFromRow(row, lookups))
+}
+
+function orderFromRow(row: OrderRowWithEmbeds, { hoReCaById, userById, productById }: OrderLookups): Order {
   const pendingPo = Array.isArray(row.pending_pos) ? row.pending_pos[0] : row.pending_pos
-  const hoReCa = hoReCas.find(h => h.id === row.horeca_id) ?? {
+  const hoReCa = hoReCaById.get(row.horeca_id) ?? {
     id: row.horeca_id,
     name: 'Unknown',
     address: '',
   } as HoReCa
 
-  const submittedBy = users.find(u => u.id === uuidToNumericId(row.submitted_by)) ?? {
+  const submittedBy = userById.get(uuidToNumericId(row.submitted_by)) ?? {
     id: 0,
     name: 'Unknown',
     email: '',
@@ -378,7 +420,7 @@ export function toOrder(
   } as User
 
   const items: OrderItem[] = (Array.isArray(row.order_items) ? row.order_items : []).map(oi => {
-    const product = products.find(p => p.id === oi.product_id)
+    const product = productById.get(oi.product_id)
     return {
       ...(product ?? {
         id: oi.product_id,

@@ -103,8 +103,10 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
     };
 
     const applyBrand = async (brand: string | null) => {
-        // One update per product through the existing mutation: it already
-        // carries the optimistic cache handling, and the row count here is a
+        // One update per product through the existing mutation: it is
+        // optimistic (lib/optimistic.ts), and each update's onMutate cancels
+        // the previous one's settle refetch, so the catalogue is reloaded once
+        // at the end rather than once per product. The row count here is a
         // screenful, not a catalogue. (An earlier version of this comment
         // claimed the server had a bulk-set-brand action. It does not, and
         // until 2026-09-04 `mutate-product` dropped `brand` altogether, so

@@ -17,6 +17,7 @@ import {
   type CompletePutawayResult,
 } from '@/services/supabase/putawayService'
 import { putawayKeys } from './putawayKeys'
+import { inventoryKeys } from './useInventoryBalances'
 
 /** Tasks assigned to a bin but not yet carried there. */
 export function useAssignedPutaways(warehouseId: number | null) {
@@ -47,8 +48,7 @@ export function useCompletePutaway() {
   return useMutation<CompletePutawayResult, Error, CompletePutawayInput>({
     mutationFn: (input) => completePutaway(input),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['inventory-balances'] })
-      qc.invalidateQueries({ queryKey: ['inventoryBalances'] })
+      qc.invalidateQueries({ queryKey: inventoryKeys.balances })
       qc.invalidateQueries({ queryKey: putawayKeys.all })
       qc.invalidateQueries({ queryKey: putawayKeys.counts })
       qc.invalidateQueries({ queryKey: ['putaway-route'] })

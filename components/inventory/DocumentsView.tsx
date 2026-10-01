@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useOrderDocuments, useOrderDocumentUrl } from '../../hooks/queries/useOrderDocuments';
 import type { OrderDocumentView } from '../../services/supabase/orderDocumentService';
-import { useToasts } from '../../hooks/useToasts';
+import { useToastActions } from '../../hooks/useToasts';
 import { useDocumentViewer } from '../../context/DocumentViewerContext';
 import { downloadSignedDoc } from '../../lib/openSignedDoc';
 import type { OrderDocument, OrderDocumentType } from '../../types';
@@ -48,7 +48,7 @@ export function groupByOrder(views: OrderDocumentView[]): OrderDocGroup[] {
 }
 
 const DocumentsView: React.FC = () => {
-  const { addToast } = useToasts();
+  const { addToast } = useToastActions();
   const { previewDocument } = useDocumentViewer();
   const { data: docs, isLoading, isError } = useOrderDocuments();
   const getUrl = useOrderDocumentUrl();

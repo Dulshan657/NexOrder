@@ -6,14 +6,14 @@
 import React from 'react'
 import { ShieldCheck, Loader2 } from 'lucide-react'
 import { useSettings, useUpdateSettings } from '../../../hooks/queries/useSettings'
-import { useToasts } from '../../../hooks/useToasts'
+import { useToastActions } from '../../../hooks/useToasts'
 import { TOGGLES, policyValue, type PolicyToggle } from './autoApprovalPolicy'
 import { SettingsSection, Toggle } from './primitives'
 
 const AutomationTab: React.FC = () => {
   const settingsQuery = useSettings()
   const updateMutation = useUpdateSettings()
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   const settings = settingsQuery.data as Record<string, unknown> | undefined
   const loaded = !!settings

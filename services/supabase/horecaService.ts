@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import type { Database } from '@/lib/database.types'
 
 type HoReCaRow = Database['public']['Tables']['horecas']['Row']
@@ -16,12 +17,16 @@ type HoReCaRowWithJoins = HoReCaRow & {
 }
 
 export async function getHoReCas() {
-  const { data, error } = await supabase
-    .from('horecas')
-    .select('*, horeca_pricing(*), horeca_payment_methods(*)')
-    .order('name')
-  if (error) throw error
-  return (data ?? []) as unknown as HoReCaRowWithJoins[]
+  // Paged past the API row cap (lib/fetchAllRows); `id` makes the order unique.
+  const rows = await fetchAllRows((from, to) =>
+    supabase
+      .from('horecas')
+      .select('*, horeca_pricing(*), horeca_payment_methods(*)')
+      .order('name')
+      .order('id')
+      .range(from, to),
+  )
+  return rows as unknown as HoReCaRowWithJoins[]
 }
 
 export async function getHoReCaById(id: number) {

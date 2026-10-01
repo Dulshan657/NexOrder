@@ -408,7 +408,9 @@ export function OrderProvider({
         [resetOrder],
     );
 
-    const value: OrderContextValue = {
+    // Memoized: AppShell re-renders on every keystroke of its search box,
+    // and a fresh value object re-rendered every consumer with it.
+    const value = useMemo<OrderContextValue>(() => ({
         orderItems,
         selectedHoReCaId,
         selectedHoReCa,
@@ -439,7 +441,14 @@ export function OrderProvider({
         handleReorderItems,
         handleStartOrder,
         resetOrder,
-    };
+    }), [
+        orderItems, selectedHoReCaId, selectedHoReCa, notes, deliveryDate, deliveryTimeSlot,
+        isLoading, errors, confirmation, showVerificationModal, bundleModalPromo, total,
+        setSelectedHoReCaId, setNotes, setDeliveryDate, setDeliveryTimeSlot,
+        setShowVerificationModal, setBundleModalPromo, setConfirmation, setErrors, handleAddItem,
+        handleApplyPromo, handleBundleConfirm, handleUpdateQuantity, handleSubmitOrder, placeOrder,
+        handleReorder, handleReorderItems, handleStartOrder, resetOrder,
+    ]);
 
     return <OrderContext.Provider value={value}>{children}</OrderContext.Provider>;
 }

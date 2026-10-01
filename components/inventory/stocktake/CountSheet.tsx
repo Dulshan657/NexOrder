@@ -23,7 +23,7 @@ import {
 } from '@/lib/binCount'
 import { useCountBin, useLocationCountSheet } from '@/hooks/queries/useCountBin'
 import { extractFunctionErrorMessage } from '@/lib/functionError'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { CountLineRow } from './CountLineRow'
 import { FoundItemPicker } from './FoundItemPicker'
 import { locationOneLine, locationSubtitle, locationTitle } from '@/lib/locationDisplay'
@@ -38,7 +38,7 @@ interface CountSheetProps {
 export const CountSheet: React.FC<CountSheetProps> = ({ location, products, canWork, onDone }) => {
   const { data: systemLines, isLoading, isError, error } = useLocationCountSheet(location.id)
   const post = useCountBin()
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   const [counts, setCounts] = useState<Record<number, string>>({})
   const [found, setFound] = useState<CountSheetLine[]>([])

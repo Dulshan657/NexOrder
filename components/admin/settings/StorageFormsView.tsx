@@ -16,7 +16,7 @@ import {
   useUpdateStorageType,
   useDeactivateStorageType,
 } from '../../../hooks/queries/useStorageTypes'
-import { useToasts } from '../../../hooks/useToasts'
+import { useToastActions } from '../../../hooks/useToasts'
 import { deriveCapacitySlots, capacityModeOf, type CapacityMode } from '../../../lib/storageFormCapacity'
 import { RackLevelEditor } from '../../warehouse/levels/RackLevelEditor'
 import { useLevelRoles } from '../../../hooks/queries/useLevelRoles'
@@ -95,7 +95,7 @@ const StorageFormsView: React.FC = () => {
   const createType = useCreateStorageType()
   const updateType = useUpdateStorageType()
   const deactivateType = useDeactivateStorageType()
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<StorageType | null>(null)

@@ -31,7 +31,7 @@ import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkPutawayScan } from '@/supabase/functions/_shared/putawayScanCheck'
 import { useCompletePutaway, useUnassignPutaway } from '@/hooks/queries/usePutawayWalk'
 import { usePrintPlateLabels } from '@/hooks/queries/usePalletBreakdown'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { CompletePutawayError } from '@/services/supabase/putawayService'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import { locationTitle, type DisplayLocation } from '@/lib/locationDisplay'
@@ -83,7 +83,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   // quotes this rather than the friendly name — the operator is matching a
   // string against the big text on a sticker, and that text is the code.
   const binCode = bin.code
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const complete = useCompletePutaway()
   const unassign = useUnassignPutaway()
   const print = usePrintPlateLabels()

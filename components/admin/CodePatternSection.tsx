@@ -17,7 +17,7 @@ import { useEffect, useState } from 'react'
 import { Hash } from 'lucide-react'
 import { useWarehouses } from '@/hooks/queries/useWarehouses'
 import { useWarehouseCodePattern, useSetWarehouseCodePattern } from '@/hooks/queries/useWarehouses'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import {
   CODE_ORDERS,
   CODE_ORDER_LABELS,
@@ -44,7 +44,7 @@ export function CodePatternSection() {
 
   const stored = useWarehouseCodePattern(effectiveId)
   const save = useSetWarehouseCodePattern(effectiveId)
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   const [template, setTemplate] = useState(WIZARD_DEFAULT_PATTERN.template)
   const [defaultBlock, setDefaultBlock] = useState(WIZARD_DEFAULT_PATTERN.defaultBlock)

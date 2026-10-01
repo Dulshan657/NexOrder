@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
@@ -11,6 +11,13 @@ interface AuthContextType {
   user: User | null
   profile: Profile | null
   isLoading: boolean
+  /**
+   * A session exists but its profile could not be LOADED (network, timeout) —
+   * as opposed to there being no profile row at all. AuthGate shows a retry
+   * for this instead of LoginPage, because the session is still valid.
+   */
+  profileError: boolean
+  retryProfile: () => Promise<void>
   isAdmin: boolean
   isManager: boolean
   isAdminOrManager: boolean
@@ -24,14 +31,30 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-async function fetchProfile(userId: string): Promise<Profile | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single()
-  if (error) return null
-  return data
+/** PostgREST's code for `.single()` matching no rows: the profile does not exist. */
+const NO_ROWS = 'PGRST116'
+
+type ProfileFetch = { ok: true; profile: Profile | null } | { ok: false }
+
+async function fetchProfile(userId: string): Promise<ProfileFetch> {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single()
+    if (!error) return { ok: true, profile: data }
+    if (error.code === NO_ROWS) return { ok: true, profile: null }
+    return { ok: false }
+  } catch {
+    return { ok: false }
+  }
+}
+
+/** Shallow equality over a flat profile row. */
+function sameProfile(a: Profile, b: Profile): boolean {
+  const keys = Object.keys(a) as Array<keyof Profile>
+  return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k])
 }
 
 function deriveRoleBooleans(role: UserRole | undefined) {
@@ -49,10 +72,57 @@ function deriveRoleBooleans(role: UserRole | undefined) {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [profileError, setProfileError] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
+  const aliveRef = useRef(true)
+  // Who the session belongs to RIGHT NOW. A profile load resolving after a
+  // sign-out or account switch is for someone else and must be dropped.
+  const currentUserIdRef = useRef<string | null>(null)
+  const profileRef = useRef<Profile | null>(null)
+  const inFlightRef = useRef<{ userId: string; promise: Promise<void> } | null>(null)
+
+  // Keep the previous object when a refetch returns the same row, so the
+  // hourly TOKEN_REFRESHED does not hand every `profile` consumer (App's
+  // currentUser memo, and through it the whole tree) a new reference.
+  const applyProfile = useCallback((next: Profile | null) => {
+    const prev = profileRef.current
+    const stable = prev && next && sameProfile(prev, next) ? prev : next
+    profileRef.current = stable
+    setProfile(stable)
+  }, [])
+
+  // The profile is the one dependency the whole app is gated on, so a
+  // TRANSIENT failure must never null it: AuthGate would swap the app for
+  // LoginPage with a valid session still in hand, losing cart and pick state.
+  // Concurrent loads for the same user share one request (getSession and
+  // INITIAL_SESSION both ask at startup).
+  const loadProfile = useCallback((userId: string): Promise<void> => {
+    const pending = inFlightRef.current
+    if (pending && pending.userId === userId) return pending.promise
+
+    const promise: Promise<void> = (async () => {
+      const result = await fetchProfile(userId)
+      if (!aliveRef.current || currentUserIdRef.current !== userId) return
+      if (result.ok) {
+        applyProfile(result.profile)
+        setProfileError(false)
+        return
+      }
+      // Keep what we already have for this user. Only a user with no loaded
+      // profile is left without one — and is flagged, not signed out.
+      if (profileRef.current?.id === userId) return
+      applyProfile(null)
+      setProfileError(true)
+    })().finally(() => {
+      if (inFlightRef.current?.promise === promise) inFlightRef.current = null
+    })
+    inFlightRef.current = { userId, promise }
+    return promise
+  }, [applyProfile])
+
   useEffect(() => {
-    let cancelled = false
+    aliveRef.current = true
 
     // Defense-in-depth: any error in getSession or fetchProfile must
     // still flip isLoading to false, otherwise AuthGate's spinner is
@@ -60,17 +130,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ;(async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        if (cancelled) return
+        if (!aliveRef.current) return
         if (session?.user) {
+          currentUserIdRef.current = session.user.id
           setUser(session.user)
-          const profileData = await fetchProfile(session.user.id)
-          if (cancelled) return
-          setProfile(profileData)
+          await loadProfile(session.user.id)
         }
       } catch {
         // Fall through — render LoginPage instead of hanging.
       } finally {
-        if (!cancelled) setIsLoading(false)
+        if (aliveRef.current) setIsLoading(false)
       }
     })()
 
@@ -89,6 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // task that runs after the lock is released.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const sessionUser = session?.user ?? null
+      currentUserIdRef.current = sessionUser?.id ?? null
       setUser(sessionUser)
 
       // Record that a refresh happened, for the shift-long soak test.
@@ -106,49 +176,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       recordAuthEvent(event, session?.expires_at ?? null)
 
       if (sessionUser === null) {
-        setProfile(null)
+        inFlightRef.current = null
+        applyProfile(null)
+        setProfileError(false)
         setIsLoading(false)
         return
       }
 
       setTimeout(() => {
-        void (async () => {
-          try {
-            const profileData = await fetchProfile(sessionUser.id)
-            if (!cancelled) setProfile(profileData)
-          } finally {
-            if (!cancelled) setIsLoading(false)
-          }
-        })()
+        // A sign-out can land between the event and this task.
+        if (currentUserIdRef.current !== sessionUser.id) return
+        void loadProfile(sessionUser.id).finally(() => {
+          if (aliveRef.current) setIsLoading(false)
+        })
       }, 0)
     })
 
     return () => {
-      cancelled = true
+      aliveRef.current = false
       subscription.unsubscribe()
     }
-  }, [])
+  }, [loadProfile, applyProfile])
 
-  const signIn = async (email: string, password: string): Promise<void> => {
+  const userId = user?.id ?? null
+  const retryProfile = useCallback(
+    (): Promise<void> => (userId ? loadProfile(userId) : Promise.resolve()),
+    [userId, loadProfile],
+  )
+
+  const signIn = useCallback(async (email: string, password: string): Promise<void> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
-  }
+  }, [])
 
-  const signOut = async (): Promise<void> => {
+  const signOut = useCallback(async (): Promise<void> => {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
-  }
+  }, [])
 
-  const roleBooleans = deriveRoleBooleans(profile?.role)
-
-  const value: AuthContextType = {
+  const role = profile?.role
+  const value = useMemo<AuthContextType>(() => ({
     user,
     profile,
     isLoading,
-    ...roleBooleans,
+    profileError,
+    retryProfile,
+    ...deriveRoleBooleans(role),
     signIn,
     signOut,
-  }
+  }), [user, profile, isLoading, profileError, retryProfile, role, signIn, signOut])
 
   return React.createElement(AuthContext.Provider, { value }, children)
 }

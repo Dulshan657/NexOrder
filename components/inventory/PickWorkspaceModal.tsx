@@ -7,7 +7,7 @@ import {
   useGenerateDispatchAdvice,
 } from '../../hooks/queries/usePickQueue';
 import { useOrderPickTasks } from '../../hooks/queries/useOrderPickTasks';
-import { useToasts } from '../../hooks/useToasts';
+import { useToastActions } from '../../hooks/useToasts';
 import { useAuth } from '../../hooks/useAuth';
 import { useDocumentViewer } from '../../context/DocumentViewerContext';
 import { PickRoutePanel } from './PickRoutePanel';
@@ -114,7 +114,7 @@ interface PickWorkspaceModalProps {
 }
 
 const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClose }) => {
-  const { addToast } = useToasts();
+  const { addToast } = useToastActions();
   const { profile } = useAuth();
   const homeWarehouseId = profile?.home_warehouse_id ?? null;
   const isWarehouseRole = profile?.role === 'Warehouse';

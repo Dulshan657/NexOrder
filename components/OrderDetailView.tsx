@@ -15,9 +15,9 @@ import { MODULE_SHOP } from '../lib/modules';
 import { getInboundApproval } from '../lib/orderSource';
 import { orderDeliveryAddress } from '../lib/orderDeliveryAddress';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
-import { useCancelOrder, useOrderPickedUnits } from '../hooks/queries/useOrders';
+import { useCancelOrder, useOrderPickedUnits, usePendingOrderStatusIds } from '../hooks/queries/useOrders';
 import { cancelUnavailableReason } from '../lib/orderCancel';
-import { useToasts } from '../hooks/useToasts';
+import { useToastActions } from '../hooks/useToasts';
 import { Modal } from './ui';
 import { Package, Truck, Calendar, FileText, Ban } from 'lucide-react';
 
@@ -36,7 +36,8 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
     const isManager = currentUser.role === UserRole.MANAGER;
 
     const updateInvoiceStatus = useUpdateInvoiceStatus();
-    const { addToast } = useToasts();
+    const { addToast } = useToastActions();
+    const statusPending = usePendingOrderStatusIds().has(order.id);
     const [paymentAction, setPaymentAction] = useState<InvoicePaymentAction | null>(null);
     const [paymentError, setPaymentError] = useState<string | undefined>(undefined);
 
@@ -240,9 +241,11 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                                 </div>
                                 <button
                                     onClick={handleAdvanceStatus}
-                                    className="px-4 py-2 bg-stone-900 text-white text-sm font-medium rounded-lg hover:bg-stone-800 transition-colors cursor-pointer whitespace-nowrap"
+                                    disabled={statusPending}
+                                    aria-busy={statusPending}
+                                    className="px-4 py-2 bg-stone-900 text-white text-sm font-medium rounded-lg hover:bg-stone-800 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-60 disabled:cursor-wait"
                                 >
-                                    Mark as {nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}
+                                    {statusPending ? 'Saving…' : `Mark as ${nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}`}
                                 </button>
                             </div>
                         </div>

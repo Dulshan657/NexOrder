@@ -8,7 +8,7 @@ import type { Database } from '../../../lib/database.types'
 import { uploadToBucket, deleteFromBucketByUrl } from '../../../services/supabase/storageService'
 import { toAppSettings, fromAppSettings } from '../../../lib/adapters'
 import { useSettings, useUpdateSettings } from '../../../hooks/queries/useSettings'
-import { useToasts } from '../../../hooks/useToasts'
+import { useToastActions } from '../../../hooks/useToasts'
 import { useSettingsDraft } from './useSettingsDraft'
 import { SettingsSection, SettingsField, TextInput, SaveBar } from './primitives'
 
@@ -94,7 +94,7 @@ const GeneralTab: React.FC = () => {
 const LogoSection: React.FC = () => {
   const settingsQuery = useSettings()
   const updateMutation = useUpdateSettings()
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   const serverLogo = useMemo<string | null>(() => {
     if (!settingsQuery.data) return null

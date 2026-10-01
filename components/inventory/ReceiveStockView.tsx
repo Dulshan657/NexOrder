@@ -11,7 +11,7 @@ import { palletSpecFromSettings } from '../../lib/palletUom';
 import { roleLabel, rolesForHuType } from '@/lib/levelRoles';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import type { ReceiptHeader, ReceiptLine, ReceiptPlate } from '../../services/supabase/receivingService';
-import { useToasts } from '../../hooks/useToasts';
+import { useToastActions } from '../../hooks/useToasts';
 import { receivableUoms, deriveDefaultUoms, baseUom } from '../../lib/uom';
 import { productsForSupplier, supplierSkuFor, matchesProductQuery } from '../../lib/productSuppliers';
 import { ScanField } from '../ui/ScanField';
@@ -237,7 +237,7 @@ export function resolveReceiveDestination(
 }
 
 const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUser, onOpenPutaway }) => {
-  const { addToast } = useToasts();
+  const { addToast } = useToastActions();
   const receive = useReceiveStock();
   const { data: supplierRows } = useSuppliers();
   const { data: warehouseRows } = useWarehouses();

@@ -12,7 +12,7 @@ import { getPendingPutaways, type PendingPutawayRow } from '../../services/supab
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
 import { useDecidePutaway, useRerunPutaway } from '../../hooks/queries/usePutawayRecommendation';
 import { putawayKeys } from '../../hooks/queries/putawayKeys';
-import { useToasts } from '../../hooks/useToasts';
+import { useToastActions } from '../../hooks/useToasts';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { PutawayRow } from './putaway/PutawayRow';
 import { BinPickerSheet } from './putaway/BinPickerSheet';
@@ -40,7 +40,7 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
   const locationsQuery = useWarehouseLocations(warehouseId);
   const decide = useDecidePutaway();
   const rerun = useRerunPutaway();
-  const { addToast } = useToasts();
+  const { addToast } = useToastActions();
 
   const [expanded, setExpanded] = useState<number | null>(null);
   const [picking, setPicking] = useState<PendingPutawayRow | null>(null);

@@ -24,7 +24,7 @@ import {
 import { getLevelRoleUsage } from '../../services/supabase/levelRoleService'
 import { sortedRoles } from '../../lib/levelRoles'
 import type { LevelRoleRecord } from '../../lib/levelRoles'
-import { useToasts } from '../../hooks/useToasts'
+import { useToastActions } from '../../hooks/useToasts'
 
 /** The handling-unit types the inventory model supports (mig 00075). Rendered as
  *  a matrix across roles rather than a per-role free-text field, so removing
@@ -97,7 +97,7 @@ const LevelRolesSection: React.FC = () => {
   const createRole = useCreateLevelRole()
   const updateRole = useUpdateLevelRole()
   const deleteRole = useDeleteLevelRole()
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<LevelRoleRecord | null>(null)

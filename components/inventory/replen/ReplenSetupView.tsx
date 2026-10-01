@@ -18,7 +18,7 @@ import { useReplenConfig, useBulkSetHomeBins, useReplenDryRun } from '../../../h
 import { useWarehouseLocations } from '../../../hooks/queries/useWarehouseLocations';
 import { useLevelRoles } from '../../../hooks/queries/useLevelRoles';
 import { useLocalStorage } from '../../../hooks/useLocalStorage';
-import { useToasts } from '../../../hooks/useToasts';
+import { useToastActions } from '../../../hooks/useToasts';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import ReplenPolicyBar from './ReplenPolicyBar';
 import ReplenSetupRow, { type BinOption } from './ReplenSetupRow';
@@ -49,7 +49,7 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
   const { data: config, isLoading, error } = useReplenConfig(warehouseId);
   const { data: locations } = useWarehouseLocations(warehouseId);
   const { data: levelRoles = [] } = useLevelRoles();
-  const { addToast } = useToasts();
+  const { addToast } = useToastActions();
   const save = useBulkSetHomeBins();
   const dryRun = useReplenDryRun();
   const fileInput = useRef<HTMLInputElement>(null);

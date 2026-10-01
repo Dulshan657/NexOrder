@@ -1,4 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import { useQuery, useMutation, useMutationState, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import {
   getOrders,
   getOrdersByHoReCa,
@@ -57,9 +58,43 @@ export function usePlaceOrder() {
   })
 }
 
+const orderStatusMutationKey = [...orderKeys.all, 'status'] as const
+
+type StatusVars = { id: string; status: OrderStatus }
+
+/** Put the server-confirmed status on that one order in every cached order
+ *  list, so the row's label and next action change as soon as the server
+ *  agrees instead of after the full, unbounded orders refetch. Non-list
+ *  entries under the prefix (e.g. pickedUnits) are left alone. */
+function patchOrderStatus(qc: QueryClient, id: string, status: OrderStatus) {
+  qc.setQueriesData<unknown>({ queryKey: orderKeys.all }, (data) => {
+    if (!Array.isArray(data)) return data
+    let hit = false
+    const next = data.map((row: { id?: string }) => {
+      if (row?.id !== id) return row
+      hit = true
+      return { ...row, status }
+    })
+    return hit ? next : data
+  })
+}
+
+/** Ids of orders with a status change in flight — for disabling their
+ *  advance buttons, so a slow round-trip does not invite a second click. */
+export function usePendingOrderStatusIds(): Set<string> {
+  const ids = useMutationState({
+    filters: { mutationKey: orderStatusMutationKey, status: 'pending' },
+    select: (m) => (m.state.variables as StatusVars | undefined)?.id,
+  })
+  // A string key keeps the Set's identity stable while the pending ids are.
+  const key = ids.filter((id): id is string => Boolean(id)).sort().join('\n')
+  return useMemo(() => new Set(key ? key.split('\n') : []), [key])
+}
+
 export function useUpdateOrderStatus() {
   const qc = useQueryClient()
   return useMutation({
+    mutationKey: orderStatusMutationKey,
     mutationFn: ({
       id,
       status,
@@ -74,6 +109,9 @@ export function useUpdateOrderStatus() {
       locationPref?: number[]
     }) => updateOrderStatus(id, status, note, { locationId, locationPref }),
     onSuccess: (_data, variables) => {
+      patchOrderStatus(qc, variables.id, variables.status)
+      // Still refetch: a status change can carry server-side effects
+      // (fulfilments, totals) that the patch above does not know about.
       qc.invalidateQueries({ queryKey: orderKeys.all })
       // Processing an order (status → processed) makes it pickable — surface it
       // in the Pick Queue immediately instead of waiting for staleTime.

@@ -41,7 +41,7 @@ import {
   senderMismatch,
 } from '@/services/supabase/poInboxService'
 import type { ApproveDeliveryAddress } from '@/services/supabase/poInboxService'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import ConfidenceRing from './ConfidenceRing'
 import { builderLabel, confidenceReasoning, statusBadge } from './poInboxFormat'
 // Shared with approve-po, which uses the same helpers to fold these blocks into
@@ -131,7 +131,7 @@ const POInboxDetailModal: React.FC<POInboxDetailModalProps> = ({
   const detailQuery = usePendingPoDetail(pendingPoId)
   const approveMutation = useApprovePo()
   const rejectMutation = useRejectPo()
-  const toastsContext = useToasts()
+  const toastsContext = useToastActions()
 
   // Edit form state — initialized from the loaded row.
   const [horecaId, setHorecaId] = useState<number | null>(null)

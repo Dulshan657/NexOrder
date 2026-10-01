@@ -34,7 +34,7 @@ import {
   useDismissOffHome,
   useRestoreOffHome,
 } from '../../hooks/queries/useOffHome'
-import { useToasts } from '../../hooks/useToasts'
+import { useToastActions } from '../../hooks/useToasts'
 import { UserRole, type User } from '../../types'
 import type { OffHomeTask, RestoreResult } from '../../services/supabase/offHomeService'
 import { parseSubtab } from '../../lib/subtabUrl'
@@ -104,7 +104,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
     () => (warehouses ?? []).filter((w) => w.isActive),
     [warehouses],
   )
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   // Shares the app-wide scope, and — like the putaway and replenishment pages —
   // merely opening this tab must not clobber a shared 'all' scope.

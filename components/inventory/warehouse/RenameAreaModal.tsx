@@ -13,7 +13,7 @@
 
 import { useEffect, useState } from 'react'
 import { Modal } from '@/components/ui'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { useRenameArea } from '@/hooks/queries/useWarehouseLocations'
 import { previewAreaRename, type AreaRenamePreview } from '@/services/supabase/warehouseLocationService'
 import { MAX_AREA_NAME, areaNameIssue, sanitizeAreaName } from '@/lib/locationNaming'
@@ -32,7 +32,7 @@ export function RenameAreaModal({ warehouseId, areaName, onClose }: RenameAreaMo
   const [preview, setPreview] = useState<AreaRenamePreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const rename = useRenameArea(warehouseId)
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   // One call per (area, includeCustom) — never per keystroke. `to` is sent only
   // so the examples read correctly; the counts do not depend on it.

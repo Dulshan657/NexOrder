@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { Product, Supplier } from '../types';
 import { CATEGORIES } from '../constants';
-import { useToasts } from '../hooks/useToasts';
+import { useToastActions } from '../hooks/useToasts';
 import { compressImage } from '../lib/imageCompression';
 import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/supabase/storageService';
 import { buildProductPayload } from '../lib/productFormPayload';
@@ -53,7 +53,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
         barcode: '',
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { addToast } = useToasts();
+    const { addToast } = useToastActions();
     const [isUploading, setIsUploading] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
     // Additional units of measure above the base (mig 00067). Base = Unit + Price.

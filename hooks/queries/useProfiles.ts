@@ -5,8 +5,9 @@ export const profileKeys = {
   all: ['profiles'] as const,
 } as const
 
-export function useProfiles() {
+export function useProfiles({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled,
     queryKey: profileKeys.all,
     queryFn: () => listProfiles(),
     staleTime: 10 * 60 * 1000,

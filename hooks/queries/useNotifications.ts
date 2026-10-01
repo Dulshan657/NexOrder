@@ -6,6 +6,7 @@ import {
   markAllAsRead,
 } from '@/services/supabase/notificationService'
 import type { Database } from '@/lib/database.types'
+import { optimisticUpdate, patchRowById } from '@/lib/optimistic'
 
 type NotificationInsert = Database['public']['Tables']['notifications']['Insert']
 
@@ -31,23 +32,29 @@ export function useNotifications(
   })
 }
 
+// Optimistic: the unread badge clears on click instead of after a refetch.
 export function useMarkNotificationRead() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => markAsRead(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: notificationKeys.all })
-    },
+    ...optimisticUpdate<string>(qc, notificationKeys.all, (data, id) => patchRowById(data, id, { read: true })),
   })
+}
+
+/** Only the user's OWN rows: the server's update is `.eq('user_id', userId)`,
+ *  so flipping role-broadcast rows here would flash them read, then unread. */
+function markOwnRowsRead(data: unknown, userId: string): unknown {
+  if (!Array.isArray(data)) return data
+  return data.map((row: { user_id?: string | null; read?: boolean }) =>
+    row?.user_id === userId && !row.read ? { ...row, read: true } : row,
+  )
 }
 
 export function useMarkAllNotificationsRead() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (userId: string) => markAllAsRead(userId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: notificationKeys.all })
-    },
+    ...optimisticUpdate<string>(qc, notificationKeys.all, markOwnRowsRead),
   })
 }
 

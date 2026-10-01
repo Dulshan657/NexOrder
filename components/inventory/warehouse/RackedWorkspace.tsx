@@ -64,7 +64,7 @@ import { AskEnginePanel } from './AskEnginePanel'
 import { slottingArrows, routePath, putawayMarkers } from './warehouseMarkers'
 import type { OverlayKind } from './warehouseOverlays'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { useWarehouseLabelPrefs } from '@/hooks/queries/useLabelJobs'
 import { resolvePreset } from '@/supabase/functions/_shared/labels/layoutLabelPlan'
 
@@ -200,7 +200,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
    *  legitimately resolves to undefined and the wizard's own default takes over. */
   const codePattern = useWarehouseCodePattern(warehouseId)
   const savePattern = useSetWarehouseCodePattern(warehouseId)
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   /** The stock this site prints SLOT labels on (mig 00106). The confirm dialog
    *  judges bar width against it, so a longer pattern's physical cost is visible

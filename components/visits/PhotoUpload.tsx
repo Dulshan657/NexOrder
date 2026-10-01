@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Camera, X, Image, Loader2 } from 'lucide-react';
 import { uploadVisitPhoto, deleteVisitPhoto, visitPhotoMime } from '../../services/supabase/visitPhotoService';
-import { useToasts } from '../../hooks/useToasts';
+import { useToastActions } from '../../hooks/useToasts';
 
 interface PhotoUploadProps {
   /** Storage keys in the private `visit-photos` bucket, as stored on `visits.photos`. */
@@ -32,7 +32,7 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({ photos, onPhotosChange, maxPh
   // re-render must never be what decides whether a URL is still alive.
   const previewsRef = useRef<Record<string, string>>({});
   const [, forcePreviewRender] = useState(0);
-  const { addToast } = useToasts();
+  const { addToast } = useToastActions();
 
   useEffect(() => () => {
     for (const url of Object.values(previewsRef.current) as string[]) URL.revokeObjectURL(url);

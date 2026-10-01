@@ -23,6 +23,8 @@ interface PantryRowProps {
     onRemove: () => void;
     onUpdatePackSize: (packSize: number | undefined) => void;
     onUpdateQuantity: (quantity: number) => void;
+    /** +/- buttons: relative, so quick repeated presses accumulate. */
+    onAdjustQuantity: (delta: number) => void;
     onSuggestSubstitute?: () => void;
     substituteOpen?: boolean;
     substituteSuggestions?: Product[];
@@ -56,6 +58,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
     onRemove,
     onUpdatePackSize,
     onUpdateQuantity,
+    onAdjustQuantity,
     onSuggestSubstitute,
     substituteOpen,
     substituteSuggestions,
@@ -240,7 +243,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
                 <div className="inline-flex items-center border border-stone-200 rounded-lg overflow-hidden bg-white">
                     <button
                         type="button"
-                        onClick={() => onUpdateQuantity(Math.max(1, pantryItem.defaultQuantity - 1))}
+                        onClick={() => onAdjustQuantity(-1)}
                         disabled={pantryItem.defaultQuantity <= 1}
                         className="px-1.5 py-1 text-stone-500 hover:bg-stone-100 hover:text-stone-700 transition-colors disabled:opacity-30"
                         aria-label="Decrease quantity"
@@ -277,7 +280,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
                     )}
                     <button
                         type="button"
-                        onClick={() => onUpdateQuantity(pantryItem.defaultQuantity + 1)}
+                        onClick={() => onAdjustQuantity(1)}
                         className="px-1.5 py-1 text-stone-500 hover:bg-stone-100 hover:text-stone-700 transition-colors"
                         aria-label="Increase quantity"
                     >
@@ -405,7 +408,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
                     <div className="inline-flex items-center border border-stone-200 rounded-lg overflow-hidden">
                         <button
                             type="button"
-                            onClick={() => onUpdateQuantity(Math.max(1, pantryItem.defaultQuantity - 1))}
+                            onClick={() => onAdjustQuantity(-1)}
                             disabled={pantryItem.defaultQuantity <= 1}
                             className="px-1.5 py-1 text-stone-500 disabled:opacity-30"
                             aria-label="Decrease quantity"
@@ -417,7 +420,7 @@ const PantryRow: React.FC<PantryRowProps> = ({
                         </span>
                         <button
                             type="button"
-                            onClick={() => onUpdateQuantity(pantryItem.defaultQuantity + 1)}
+                            onClick={() => onAdjustQuantity(1)}
                             className="px-1.5 py-1 text-stone-500"
                             aria-label="Increase quantity"
                         >

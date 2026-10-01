@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { optimisticUpdate, patchRowById } from '@/lib/optimistic'
 import {
   getPromotions,
   getActivePromotions,
@@ -16,8 +17,9 @@ export const promotionKeys = {
   active: ['promotions', 'active'] as const,
 } as const
 
-export function usePromotions() {
+export function usePromotions({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled,
     queryKey: promotionKeys.all,
     queryFn: getPromotions,
   })
@@ -40,14 +42,16 @@ export function useCreatePromotion() {
   })
 }
 
+// Optimistic, so the on/off toggle flips on click. The server's role gate is
+// the only thing that refuses it, and a refusal rolls the toggle back.
 export function useUpdatePromotion() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: PromotionUpdate }) =>
       updatePromotion(id, updates),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: promotionKeys.all })
-    },
+    ...optimisticUpdate<{ id: string; updates: PromotionUpdate }>(
+      qc, promotionKeys.all, (data, { id, updates }) => patchRowById(data, id, updates),
+    ),
   })
 }
 

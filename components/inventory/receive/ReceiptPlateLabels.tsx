@@ -18,7 +18,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Printer, Tag } from 'lucide-react'
 import { useReceiptPlates } from '@/hooks/queries/useReceiveStock'
 import { usePrintPlateLabels } from '@/hooks/queries/usePalletBreakdown'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { plateNeedsLabel } from '@/lib/putawayIdentity'
 
 interface ReceiptPlateLabelsProps {
@@ -27,7 +27,7 @@ interface ReceiptPlateLabelsProps {
 }
 
 export const ReceiptPlateLabels: React.FC<ReceiptPlateLabelsProps> = ({ goodsReceiptId }) => {
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const platesQuery = useReceiptPlates(goodsReceiptId)
   const print = usePrintPlateLabels()
   const [selected, setSelected] = useState<number[]>([])

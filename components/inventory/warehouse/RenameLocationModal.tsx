@@ -12,7 +12,7 @@
 
 import { useState } from 'react'
 import { Modal } from '@/components/ui'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { useRenameRack } from '@/hooks/queries/useWarehouseLocations'
 import type { InventoryLocation } from '@/types'
 
@@ -31,7 +31,7 @@ export function RenameLocationModal({
   const [name, setName] = useState(location.name ?? '')
   const [includeLevels, setIncludeLevels] = useState(levelCount > 0)
   const rename = useRenameRack(warehouseId)
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   const trimmed = name.trim()
   const dirty = trimmed !== (location.name ?? '').trim()

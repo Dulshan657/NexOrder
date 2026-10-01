@@ -1,4 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { optimisticUpdate, removeRowById } from '@/lib/optimistic'
+import { inventoryKeys } from './useInventoryBalances'
 import {
   getOffHomeTasks,
   detectOffHome,
@@ -53,19 +55,27 @@ export function useAcceptOffHome() {
     onSuccess: (_r, { warehouseId }) => {
       qc.invalidateQueries({ queryKey: offHomeKeys.forWarehouse(warehouseId) })
       // The stock actually moved, so every balance-derived view is now stale.
-      qc.invalidateQueries({ queryKey: ['inventory-balances'] })
+      qc.invalidateQueries({ queryKey: inventoryKeys.balances })
       qc.invalidateQueries({ queryKey: ['products'] })
     },
   })
 }
+
+// Dismiss and restore move no stock, so they are optimistic: the task leaves
+// the list it is in at once, and the settle refetch puts it in the other one.
+// The prefix covers both lists. NOT the balance or product keys the accept
+// path invalidates: neither moves stock, and invalidating a key they cannot
+// have changed only costs the floor a refetch.
+const leaveOffHomeList = <T extends { warehouseId: number; taskId: number }>(qc: QueryClient) =>
+  optimisticUpdate<T>(qc, ({ warehouseId }) => offHomeKeys.forWarehouse(warehouseId),
+    (data, { taskId }) => removeRowById(data, taskId), offHomeKeys.all)
 
 export function useDismissOffHome() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ taskId, reason }: { warehouseId: number; taskId: number; reason: string }) =>
       dismissOffHome(taskId, reason),
-    onSuccess: (_r, { warehouseId }) =>
-      qc.invalidateQueries({ queryKey: offHomeKeys.forWarehouse(warehouseId) }),
+    ...leaveOffHomeList<{ warehouseId: number; taskId: number; reason: string }>(qc),
   })
 }
 
@@ -73,10 +83,6 @@ export function useRestoreOffHome() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ taskId }: { warehouseId: number; taskId: number }) => restoreOffHome(taskId),
-    onSuccess: (_r, { warehouseId }) =>
-      // The prefix, so both lists refresh. NOT the balance or product keys the
-      // accept path invalidates: a restore moves no stock, and invalidating a
-      // key it cannot have changed only costs the floor a refetch.
-      qc.invalidateQueries({ queryKey: offHomeKeys.forWarehouse(warehouseId) }),
+    ...leaveOffHomeList<{ warehouseId: number; taskId: number }>(qc),
   })
 }

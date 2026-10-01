@@ -21,6 +21,7 @@ vi.mock('@/hooks/queries/useWarehouseLocations', () => ({
 }))
 vi.mock('@/hooks/useToasts', () => ({
   useToasts: () => ({ addToast: vi.fn() }),
+  useToastActions: () => ({ addToast: vi.fn() }),
 }))
 
 import { useReceiveStock } from '@/hooks/queries/useReceiveStock'

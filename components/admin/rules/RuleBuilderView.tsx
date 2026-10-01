@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react'
 import { Trash2, Plus } from 'lucide-react'
 import { CATEGORIES } from '@/constants'
 import { useWieRules, useUpsertWieRule, useDeleteWieRule } from '@/hooks/queries/useWieRules'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { evaluateRules, type RuleContext } from '@/supabase/functions/_shared/wie/rules'
 import type { CandidateBin, RuleDefinition, SkuProfile } from '@/supabase/functions/_shared/wie/types'
 import type { WieRule, WieRuleCondition, WieRuleOp } from '@/types'
@@ -81,7 +81,7 @@ export function RuleBuilderView() {
   const { data: rules } = useWieRules()
   const upsert = useUpsertWieRule()
   const del = useDeleteWieRule()
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const [draft, setDraft] = useState<DraftRule | null>(null)
 
   // Live-test inputs.

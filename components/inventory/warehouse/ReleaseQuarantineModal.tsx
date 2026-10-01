@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Modal, Button, ScanField } from '@/components/ui'
 import { normalizeScan } from '@/lib/scan/resolveScan'
 import { useScanFlash } from '@/lib/scan/useScanFlash'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { useReleaseQuarantine } from '@/hooks/queries/useReleaseQuarantine'
 import { locationOneLine } from '@/lib/locationDisplay'
 import type { InventoryLocation } from '@/types'
@@ -31,7 +31,7 @@ interface ReleaseQuarantineModalProps {
 }
 
 export function ReleaseQuarantineModal({ open, onClose, from, contents, destinations }: ReleaseQuarantineModalProps) {
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const release = useReleaseQuarantine()
   const [destinationCode, setDestinationCode] = useState('')
   const { flash, signal: signalFlash } = useScanFlash()

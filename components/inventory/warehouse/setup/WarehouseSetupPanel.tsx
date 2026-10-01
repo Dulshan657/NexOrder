@@ -16,7 +16,7 @@
 import React, { useMemo } from 'react'
 import { ChevronDown, ChevronRight, ClipboardList, CheckCircle2 } from 'lucide-react'
 import { UserRole, type User } from '@/types'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
 import {
   useAcknowledgeSetupStep,
@@ -43,7 +43,7 @@ export function WarehouseSetupPanel({
   currentUser,
   onNavigate,
 }: WarehouseSetupPanelProps) {
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const { summary, isLoading } = useWarehouseSetup(warehouseId)
   const acknowledge = useAcknowledgeSetupStep(warehouseId)
   const revoke = useRevokeSetupStep(warehouseId)

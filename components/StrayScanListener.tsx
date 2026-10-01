@@ -36,7 +36,7 @@ import {
   subscribeWedgeConsumers,
 } from '../lib/scan/wedgeRegistry'
 import { playScanStray } from '../lib/scan/scanFeedback'
-import { useToasts } from '../hooks/useToasts'
+import { useToastActions } from '../hooks/useToasts'
 
 /**
  * Whether a real scanning surface currently holds wedge capture.
@@ -55,7 +55,7 @@ function useHasWedgeConsumer(): boolean {
 
 export function StrayScanListener(): null {
   const claimed = useHasWedgeConsumer()
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   useWedgeScanner({
     // Stand aside entirely whenever a real surface is listening. Receive Stock

@@ -320,16 +320,28 @@ serve(async (req: Request) => {
     return errorResponse('TOO_MANY_REQUESTS', 'Rate limit exceeded — too many orders in a short period', 429)
   }
 
-  // Load data via service client (bypasses RLS, all reads needed for pricing)
-  let hoReCa: Awaited<ReturnType<typeof loadHoReCa>>
-  try {
-    hoReCa = await loadHoReCa(serviceClient, body.hoReCaId)
-  } catch {
+  // Load data via service client (bypasses RLS, all reads needed for pricing).
+  //
+  // These five reads depend on nothing but the request, so they run together:
+  // checkout used to make every one of them a sequential round-trip. Only the
+  // location chain below genuinely waits — it needs the HoReCa's coordinates.
+  // The outstanding balance is read here rather than just before the credit
+  // check; that check was never transactional, so moving the read a few
+  // milliseconds earlier changes nothing it guarantees.
+  const productIds = [...new Set(body.items.map(i => i.productId))]
+  const HORECA_MISSING = Symbol('horeca-missing')
+  const [hoReCaOrMissing, productMap, promotions, settings, outstanding] = await Promise.all([
+    loadHoReCa(serviceClient, body.hoReCaId).catch(() => HORECA_MISSING),
+    loadProducts(serviceClient, productIds),
+    loadActivePromotions(serviceClient),
+    loadAppSettings(serviceClient),
+    getOutstandingBalance(serviceClient, body.hoReCaId),
+  ])
+  if (hoReCaOrMissing === HORECA_MISSING) {
     return errorResponse('HORECA_NOT_FOUND', `HoReCa ${body.hoReCaId} not found`, 404)
   }
+  const hoReCa = hoReCaOrMissing as Awaited<ReturnType<typeof loadHoReCa>>
 
-  const productIds = [...new Set(body.items.map(i => i.productId))]
-  const productMap = await loadProducts(serviceClient, productIds)
   for (const id of productIds) {
     if (!productMap.has(id)) return errorResponse('PRODUCT_NOT_FOUND', `Product ${id} not found`, 404)
   }
@@ -415,10 +427,7 @@ serve(async (req: Request) => {
     }
   }
 
-  // Resolve prices. App settings are needed here (not just below) because the
-  // carton discount feeds into per-line pricing, so load them before the loop.
-  const promotions = await loadActivePromotions(serviceClient)
-  const settings = await loadAppSettings(serviceClient)
+  // Resolve prices. The carton discount (from settings) feeds per-line pricing.
   const cartonDiscountPercent = Number(settings?.carton_discount_percent ?? 5)
   const userContext: UserContext = { id: 0, role: profile.role } // numeric id only used by 'rep' targeting; safe to leave 0 for now
 
@@ -455,8 +464,7 @@ serve(async (req: Request) => {
     return errorResponse('BELOW_MINIMUM', `Order total $${total} is below minimum $${minOrderValue}`, 422)
   }
 
-  // Credit limit
-  const outstanding = await getOutstandingBalance(serviceClient, body.hoReCaId)
+  // Credit limit (`outstanding` was loaded with the other reads above)
   const creditLimit = hoReCa.credit_limit > 0 ? hoReCa.credit_limit : Number(settings?.default_credit_limit ?? 0)
   if (creditLimit > 0 && outstanding + total > creditLimit) {
     return errorResponse('CREDIT_EXCEEDED', `Credit limit $${creditLimit} would be exceeded ($${outstanding} outstanding + $${total} new)`, 422)

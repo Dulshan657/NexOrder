@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from './hooks/useAuth';
-import { useToasts } from './hooks/useToasts';
+import { useToastActions } from './hooks/useToasts';
 import { numericIdForProfile, profileToUser } from './lib/profileToUser';
 import { DEFAULT_SETTINGS } from './constants';
 import AppShell from './components/AppShell';
@@ -27,9 +27,14 @@ import { setUserIdMap } from './lib/userIdMap';
 
 // ── Adapters ──────────────────────────────────────────────────────────────────
 import {
-    toProduct, toHoReCa, toOrder, toInvoice, toSupplier,
+    toProduct, toHoReCa, toOrders, toInvoice, toSupplier,
     toPromotion, toScheduledVisit, toVisit, toSalesTarget, toAppSettings, toNotification,
 } from './lib/adapters';
+import { summariseQueries } from './lib/queryHealth';
+import { appDataNeeds } from './lib/appDataNeeds';
+
+// Shared fallback for lists that have not loaded; see the note in App.
+const EMPTY: never[] = [];
 
 const App: React.FC = () => {
     // ── Auth ──────────────────────────────────────────────────────────────────
@@ -39,7 +44,7 @@ const App: React.FC = () => {
     const currentUser = useMemo(() => profileToUser(auth.profile!), [auth.profile]);
     const currentUserUuid = auth.user?.id ?? '';
     const queryClient = useQueryClient();
-    const { addToast } = useToasts();
+    const { addToast } = useToastActions();
 
     // Subscribe to Supabase postgres_changes so orders / notifications /
     // products stay live without polling. RLS filters per-user automatically.
@@ -61,19 +66,62 @@ const App: React.FC = () => {
     });
 
     // ── Server state — Supabase query hooks ───────────────────────────────────
-    const { data: rawProducts = [] } = useProducts();
-    const horecasQuery = useHoReCas();
-    const { data: rawHoReCas = [] } = horecasQuery;
-    const { data: rawOrders = [] } = useOrders();
-    const { data: rawInvoices = [] } = useInvoices();
-    const { data: rawSuppliers = [] } = useSuppliers();
-    const { data: rawPromotions = [] } = usePromotions();
-    const { data: rawRoutes = [] } = useScheduledVisits();
-    const { data: rawVisits = [] } = useVisits();
-    const { data: rawProfiles = [] } = useProfiles();
-    const { data: rawSalesTargets = [] } = useSalesTargets();
-    const { data: rawSettings } = useSettings();
-    const { data: rawNotifications = [] } = useNotifications(currentUserUuid, currentUser.role);
+    const productsQuery = useProducts();
+    const hoReCasQuery = useHoReCas();
+    const ordersQuery = useOrders();
+    // Only what this role can ever display (lib/appDataNeeds.ts).
+    const needs = useMemo(() => appDataNeeds(currentUser.role), [currentUser.role]);
+    const invoicesQuery = useInvoices({}, { enabled: needs.invoices });
+    const suppliersQuery = useSuppliers({ enabled: needs.suppliers });
+    const promotionsQuery = usePromotions({ enabled: needs.promotions });
+    const routesQuery = useScheduledVisits({}, { enabled: needs.routes });
+    const visitsQuery = useVisits({}, { enabled: needs.visits });
+    const profilesQuery = useProfiles({ enabled: needs.users });
+    const salesTargetsQuery = useSalesTargets(undefined, { enabled: needs.salesTargets });
+    const settingsQuery = useSettings();
+    const notificationsQuery = useNotifications(currentUserUuid, currentUser.role);
+
+    // One shared empty array: a fresh `[]` per render would re-run every
+    // adapter memo below on every render until the data arrives.
+    const rawProducts = productsQuery.data ?? EMPTY;
+    const rawHoReCas = hoReCasQuery.data ?? EMPTY;
+    const rawOrders = ordersQuery.data ?? EMPTY;
+    const rawInvoices = invoicesQuery.data ?? EMPTY;
+    const rawSuppliers = suppliersQuery.data ?? EMPTY;
+    const rawPromotions = promotionsQuery.data ?? EMPTY;
+    const rawRoutes = routesQuery.data ?? EMPTY;
+    const rawVisits = visitsQuery.data ?? EMPTY;
+    // A role that may not list profiles (RLS returns only its own row anyway)
+    // gets the signed-in profile, so order "submitted by" names and the
+    // numeric-id registry below are exactly what the query used to produce.
+    const ownProfileOnly = useMemo(() => (auth.profile ? [auth.profile] : EMPTY), [auth.profile]);
+    const rawProfiles = needs.users ? profilesQuery.data ?? EMPTY : ownProfileOnly;
+    const rawSalesTargets = salesTargetsQuery.data ?? EMPTY;
+    const rawSettings = settingsQuery.data;
+    const rawNotifications = notificationsQuery.data ?? EMPTY;
+
+    // Failed / first-loading lists, so AppShell can say so instead of letting
+    // a failure pass as an empty state. Settings has a default and is omitted.
+    const dataQueries = [
+        { label: 'orders', query: ordersQuery },
+        { label: 'products', query: productsQuery },
+        { label: 'customers', query: hoReCasQuery },
+        { label: 'invoices', query: invoicesQuery },
+        { label: 'suppliers', query: suppliersQuery },
+        { label: 'promotions', query: promotionsQuery },
+        { label: 'routes', query: routesQuery },
+        { label: 'visits', query: visitsQuery },
+        { label: 'users', query: profilesQuery },
+        { label: 'sales targets', query: salesTargetsQuery },
+        { label: 'notifications', query: notificationsQuery },
+    ];
+    const dataStatus = summariseQueries(dataQueries);
+    const dataStatusKey = `${dataStatus.failed.join()}|${dataStatus.loading.join()}`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const stableDataStatus = useMemo(() => dataStatus, [dataStatusKey]);
+    const retryFailedData = () => {
+        for (const { query } of dataQueries) if (query.isError) void query.refetch();
+    };
 
     // Populate the numeric-id → real-profile-UUID registry used by adapters.
     //
@@ -118,31 +166,6 @@ const App: React.FC = () => {
         [rawSettings],
     );
 
-    // TEMP DIAGNOSTIC — REMOVE after the rep "only see 1 horeca" investigation is closed.
-    // Logs unconditionally so we don't need a build-time env flag for the one-shot capture.
-    useEffect(() => {
-        // eslint-disable-next-line no-console
-        console.groupCollapsed('[horeca-debug]');
-        // eslint-disable-next-line no-console
-        console.log('currentUser', { role: currentUser.role, hoReCaId: currentUser.hoReCaId, id: currentUser.id, email: currentUser.email });
-        // eslint-disable-next-line no-console
-        console.log('currentUserUuid', currentUserUuid);
-        // eslint-disable-next-line no-console
-        console.log('useHoReCas state', { status: horecasQuery.status, fetchStatus: horecasQuery.fetchStatus, isError: horecasQuery.isError, errorMessage: horecasQuery.error instanceof Error ? horecasQuery.error.message : null });
-        // eslint-disable-next-line no-console
-        console.log('rawHoReCas', {
-            count: (rawHoReCas as Array<{ id: number; name: string }>).length,
-            names: (rawHoReCas as Array<{ id: number; name: string }>).map(h => h.name),
-            ids: (rawHoReCas as Array<{ id: number; name: string }>).map(h => h.id),
-        });
-        // eslint-disable-next-line no-console
-        console.log('hoReCas (adapted)', { count: hoReCas.length, names: hoReCas.map(h => h.name), ids: hoReCas.map(h => h.id) });
-        // eslint-disable-next-line no-console
-        console.log('mode', import.meta.env.MODE);
-        // eslint-disable-next-line no-console
-        console.groupEnd();
-    }, [currentUser, currentUserUuid, horecasQuery.status, horecasQuery.fetchStatus, horecasQuery.isError, horecasQuery.error, rawHoReCas, hoReCas]);
-
     // Users are derived from real profiles. Empty during the brief boot window
     // before profiles load — it used to fall back to the seeded demo roster,
     // which on a client's deployment named six people who do not work there.
@@ -150,7 +173,7 @@ const App: React.FC = () => {
 
     // Orders embed hoReCa, user, and product objects
     const allOrders = useMemo(
-        () => rawOrders.map(o => toOrder(o, hoReCas, users, products)),
+        () => toOrders(rawOrders, hoReCas, users, products),
         [rawOrders, hoReCas, users, products],
     );
 
@@ -159,6 +182,8 @@ const App: React.FC = () => {
 
     return (
         <AppShell
+            dataStatus={stableDataStatus}
+            onRetryData={retryFailedData}
             currentUser={currentUser}
             currentUserUuid={currentUserUuid}
             products={products}

@@ -24,7 +24,7 @@ import { ScanField } from '@/components/ui/ScanField'
 import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkReplenScan } from '@/supabase/functions/_shared/replenScanCheck'
 import { useCompleteReplenishment, useUnassignReplenishment } from '@/hooks/queries/useReplenishment'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { CompleteReplenError } from '@/services/supabase/replenService'
 import type { ReplenRouteStop } from '@/services/supabase/replenRouteService'
 import { locationTitle, type DisplayLocation } from '@/lib/locationDisplay'
@@ -54,7 +54,7 @@ export const ReplenStopCard: React.FC<ReplenStopCardProps> = ({
   // predating mig 00094) — locationTitle already does exactly that.
   const from = fromLocation ?? { code: stop.code }
   const to = toLocation ?? { code: stop.toCode }
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const complete = useCompleteReplenishment()
   const unassign = useUnassignReplenishment()
 

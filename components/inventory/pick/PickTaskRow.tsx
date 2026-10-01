@@ -17,7 +17,7 @@ import { ScanField } from '@/components/ui/ScanField'
 import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkPickScan } from '@/supabase/functions/_shared/pickScanCheck'
 import { useRecordPick } from '@/hooks/queries/usePickQueue'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import type { PickQueueLine, PickTask } from '@/services/supabase/pickService'
 import { locationOneLine, locationSubtitle, locationTitle } from '@/lib/locationDisplay'
 
@@ -40,7 +40,7 @@ type Step = 'idle' | 'bin' | 'item' | 'qty'
 // codebase uses React.FC. (See the types gotcha in CLAUDE.md.)
 export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, disabled, binName }) => {
   const bin = { code: task.code, name: binName ?? null }
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const recordPick = useRecordPick()
 
   const [step, setStep] = useState<Step>('idle')

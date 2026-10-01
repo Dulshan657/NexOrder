@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import { extractFunctionErrorMessage } from '@/lib/functionError'
 import type { Database } from '@/lib/database.types'
 
@@ -23,14 +24,18 @@ const PRODUCT_SELECT =
   '*, suppliers!products_supplier_id_fkey(name), product_uoms(*), product_suppliers(*, suppliers(name))'
 
 export async function getProducts() {
-  const { data, error } = await supabase
-    .from('products')
-    // products now has two FKs to suppliers (supplier_id + preferred_supplier_id),
-    // so the embed must pin the relationship or PostgREST errors with PGRST201.
-    .select(PRODUCT_SELECT)
-    .order('name')
-  if (error) throw error
-  return (data ?? []) as unknown as ProductRowWithSupplier[]
+  // Paged past the API row cap (lib/fetchAllRows); `id` makes the order unique.
+  const rows = await fetchAllRows((from, to) =>
+    supabase
+      .from('products')
+      // products now has two FKs to suppliers (supplier_id + preferred_supplier_id),
+      // so the embed must pin the relationship or PostgREST errors with PGRST201.
+      .select(PRODUCT_SELECT)
+      .order('name')
+      .order('id')
+      .range(from, to),
+  )
+  return rows as unknown as ProductRowWithSupplier[]
 }
 
 export async function getProductById(id: number) {

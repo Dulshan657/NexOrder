@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getWmsAttributes, saveWmsAttributes, type WmsAttributesInput } from '@/services/supabase/wmsAttributesService'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import type { LevelRole, ProductWmsAttributes, ShelfLifePolicy } from '@/types'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { roleLabel, sortedRoles } from '@/lib/levelRoles'
@@ -24,7 +24,7 @@ type WmsAttributesInputWithLevelRoles = WmsAttributesInput & { allowed_level_rol
 
 export default function ProductWmsAttributesSection({ productId }: ProductWmsAttributesSectionProps) {
   const qc = useQueryClient()
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const { data } = useQuery({ queryKey: ['wms-attributes', productId], queryFn: () => getWmsAttributes(productId) })
   // Operator-managed role vocabulary (mig 00081).
   const { data: levelRoles = [] } = useLevelRoles()

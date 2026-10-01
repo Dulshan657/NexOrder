@@ -20,7 +20,7 @@
 
 import { useEffect, useState } from 'react'
 import { Modal } from '@/components/ui'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { usePaintAreas, usePaintSigns } from '@/hooks/queries/useWarehouseLocations'
 import {
   previewPaintAreas,
@@ -65,7 +65,7 @@ export function AreaPaintSummaryModal({
   const [previewError, setPreviewError] = useState<string | null>(null)
   const paint = usePaintAreas(warehouseId)
   const paintSignsMutation = usePaintSigns(warehouseId)
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const editsSigns = signSpecs !== undefined && signBaseFingerprint !== undefined
 
   /**

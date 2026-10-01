@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { inventoryKeys } from './useInventoryBalances'
 import {
   getSlottingSuggestions,
   decideSlotting,
@@ -25,7 +26,7 @@ export function useDecideSlotting(warehouseId: number) {
       decideSlotting(suggestionId, decision),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: slottingKeys.byWarehouse(warehouseId) })
-      qc.invalidateQueries({ queryKey: ['inventory-balances'] })
+      qc.invalidateQueries({ queryKey: inventoryKeys.balances })
     },
   })
 }

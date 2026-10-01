@@ -25,6 +25,7 @@ import ProductCard from '../components/ProductCard';
 import PantryList from '../components/PantryList';
 import ReorderTab from '../components/ReorderTab';
 import CartSlidePanel from '../components/CartSlidePanel';
+import type { PantryUpdate } from '../lib/pantryCache';
 
 export interface ShopViewProps {
     // App-level data
@@ -90,7 +91,7 @@ export interface ShopViewProps {
     onRemoveFromPantry: (productId: number) => void;
     onUpdatePantryItem: (
         productId: number,
-        updates: Partial<Pick<PantryItem, 'preferredPackSize' | 'defaultQuantity'>>,
+        updates: PantryUpdate,
     ) => void;
 }
 

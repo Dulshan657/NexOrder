@@ -18,8 +18,9 @@ export const routeKeys = {
   detail: (id: string) => ['scheduled_visits', id] as const,
 } as const
 
-export function useScheduledVisits(filters: ScheduledVisitFilters = {}) {
+export function useScheduledVisits(filters: ScheduledVisitFilters = {}, { enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled,
     queryKey: routeKeys.filtered(filters),
     queryFn: () => getScheduledVisits(filters),
   })

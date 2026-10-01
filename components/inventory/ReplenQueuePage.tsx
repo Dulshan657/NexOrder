@@ -16,7 +16,7 @@ import {
   usePendingReplenCounts,
   useDetectReplenishment,
 } from '../../hooks/queries/useReplenishment';
-import { useToasts } from '../../hooks/useToasts';
+import { useToastActions } from '../../hooks/useToasts';
 import { UserRole, type User } from '../../types';
 import ReplenQueueView from './ReplenQueueView';
 import ReplenWalkView from './ReplenWalkView';
@@ -60,7 +60,7 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
 
   const countsEnabled = CAN_VIEW_REPLEN.has(currentUser.role);
   const { data: counts } = usePendingReplenCounts(countsEnabled);
-  const { addToast } = useToasts();
+  const { addToast } = useToastActions();
   const detect = useDetectReplenishment();
 
   // Shares the app-wide warehouse scope. Same rule as the putaway page: merely

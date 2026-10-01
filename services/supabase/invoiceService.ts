@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import type { Database } from '@/lib/database.types'
 
 type InvoiceRow = Database['public']['Tables']['invoices']['Row']
@@ -10,21 +11,24 @@ export interface InvoiceFilters {
 }
 
 export async function getInvoices(filters: InvoiceFilters = {}) {
-  let query = supabase
-    .from('invoices')
-    .select('*')
-    .order('created_date', { ascending: false })
+  const build = () => {
+    let query = supabase
+      .from('invoices')
+      .select('*')
+      .order('created_date', { ascending: false })
+      .order('id')
 
-  if (filters.horecaId !== undefined) {
-    query = query.eq('horeca_id', filters.horecaId)
-  }
-  if (filters.status !== undefined) {
-    query = query.eq('status', filters.status)
-  }
+    if (filters.horecaId !== undefined) {
+      query = query.eq('horeca_id', filters.horecaId)
+    }
+    if (filters.status !== undefined) {
+      query = query.eq('status', filters.status)
+    }
 
-  const { data, error } = await query
-  if (error) throw error
-  return data
+    return query
+  }
+  // Paged past the API row cap (lib/fetchAllRows); `id` makes the order unique.
+  return fetchAllRows((from, to) => build().range(from, to))
 }
 
 export async function getInvoiceByOrderId(orderId: string): Promise<InvoiceRow | null> {

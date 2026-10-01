@@ -293,17 +293,20 @@ export async function getBalancesByWarehouse(warehouseId: number): Promise<Wareh
 
   // The warehouse root itself PLUS every descendant. Bulk warehouses and racked
   // staging keep stock on the root location, so it must be included.
-  const { data: locRows, error: locErr } = await supabase
-    .from('locations')
-    .select('id')
-    .like('materialized_path', `${escapeLike(path)}/%`)
-  if (locErr) throw locErr
-  const locationIds = [warehouseId, ...((locRows ?? []) as { id: number }[]).map((l) => l.id)]
-
-  const { data, error } = await supabase
-    .from('inventory_balances')
-    .select('location_id, product_id, on_hand, allocated, handling_unit_id, products(name, size_factor), handling_units(hu_type)')
-    .in('location_id', locationIds)
+  //
+  // Two queries in parallel, scoped by the joined location's path. This used
+  // to fetch every descendant location id first and send them back as an IN
+  // list: a third round-trip, and a URL that grew with every bin on the site.
+  const columns = 'location_id, product_id, on_hand, allocated, handling_unit_id, products(name, size_factor), handling_units(hu_type)'
+  const [root, descendants] = await Promise.all([
+    supabase.from('inventory_balances').select(columns).eq('location_id', warehouseId),
+    supabase
+      .from('inventory_balances')
+      .select(`${columns}, locations!inner(materialized_path)`)
+      .like('locations.materialized_path', `${escapeLike(path)}/%`),
+  ])
+  const error = root.error ?? descendants.error
+  const data = [...((root.data ?? []) as unknown[]), ...((descendants.data ?? []) as unknown[])]
   if (error) throw error
   return ((data ?? []) as any[]).map((r) => ({
     locationId: Number(r.location_id),

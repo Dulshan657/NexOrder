@@ -18,7 +18,7 @@
 
 import { useEffect, useState } from 'react'
 import { Modal } from '@/components/ui'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import { useBindZones } from '@/hooks/queries/useWarehouseLocations'
 import { previewZoneBinding, type ZoneBindingPreview } from '@/services/supabase/warehouseLocationService'
 
@@ -31,7 +31,7 @@ export function BindZonesModal({ warehouseId, onClose }: BindZonesModalProps) {
   const [preview, setPreview] = useState<ZoneBindingPreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const bind = useBindZones(warehouseId)
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   useEffect(() => {
     let cancelled = false

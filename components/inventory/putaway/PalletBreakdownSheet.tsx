@@ -27,7 +27,7 @@ import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkPutawayScan } from '@/supabase/functions/_shared/putawayScanCheck'
 import { useSettings } from '@/hooks/queries/useSettings'
 import { useWarehouseLocations } from '@/hooks/queries/useWarehouseLocations'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import {
   useBreakDownPallet,
   usePlanBreakdown,
@@ -88,7 +88,7 @@ type Step = 'plate' | 'portions' | 'labels'
 export const PalletBreakdownSheet: React.FC<PalletBreakdownSheetProps> = ({
   open, warehouseId, row, onClose, onDone,
 }) => {
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const { data: settingsRow } = useSettings()
   const { data: locations = [] } = useWarehouseLocations(warehouseId)
   const plan = usePlanBreakdown()

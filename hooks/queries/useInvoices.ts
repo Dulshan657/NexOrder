@@ -13,8 +13,9 @@ export const invoiceKeys = {
   byOrder: (orderId: string) => ['invoices', 'order', orderId] as const,
 } as const
 
-export function useInvoices(filters: InvoiceFilters = {}) {
+export function useInvoices(filters: InvoiceFilters = {}, { enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled,
     queryKey: invoiceKeys.filtered(filters),
     queryFn: () => getInvoices(filters),
   })

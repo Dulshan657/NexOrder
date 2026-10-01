@@ -25,7 +25,10 @@ vi.mock('@/hooks/queries/usePalletBreakdown', () => ({
   useBreakDownPallet: () => ({ mutateAsync: commitMock, isPending: false }),
   usePrintPlateLabels: () => ({ mutateAsync: printMock, isPending: false }),
 }))
-vi.mock('@/hooks/useToasts', () => ({ useToasts: () => ({ addToast: vi.fn() }) }))
+vi.mock('@/hooks/useToasts', () => ({
+  useToasts: () => ({ addToast: vi.fn() }),
+  useToastActions: () => ({ addToast: vi.fn() }),
+}))
 vi.mock('@/hooks/queries/useSettings', () => ({
   // The AU standard pallet is what palletSpecFromSettings falls back to, so a
   // null row still yields a spec — layers are available whenever the carton box

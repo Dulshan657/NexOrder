@@ -15,10 +15,11 @@ import StockAssignmentModal from './StockAssignmentModal';
 import { useUpdateInvoiceStatus } from '../hooks/queries/useInvoices';
 import { useGeneratePickSlip, useGenerateDispatchAdvice } from '../hooks/queries/usePickQueue';
 import { useOrderDocuments, useOrderDocumentUrl } from '../hooks/queries/useOrderDocuments';
+import { usePendingOrderStatusIds } from '../hooks/queries/useOrders';
 import type { OrderDocumentView } from '../services/supabase/orderDocumentService';
 import { useDocumentViewer } from '../context/DocumentViewerContext';
 import type { OrderDocumentType } from '../types';
-import { useToasts } from '../hooks/useToasts';
+import { useToastActions } from '../hooks/useToasts';
 import { ORDER_STATUS_SEQUENCE, ORDER_STATUS_LABELS } from '../constants';
 import { downloadCsv } from '../lib/csvExport';
 import {
@@ -239,7 +240,8 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   const isManager = currentUser.role === UserRole.MANAGER;
 
   const updateInvoiceStatus = useUpdateInvoiceStatus();
-  const { addToast } = useToasts();
+  const { addToast } = useToastActions();
+  const pendingStatusIds = usePendingOrderStatusIds();
   const generatePickSlip = useGeneratePickSlip();
   const generateDispatchAdvice = useGenerateDispatchAdvice();
 
@@ -1120,11 +1122,13 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                               isAdminOrManager && nextStatus && (
                                 <button
                                   onClick={() => handleAdvanceStatus(order)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-stone-300 text-stone-700 bg-white hover:bg-stone-50 hover:border-stone-400 transition-colors cursor-pointer whitespace-nowrap"
+                                  disabled={pendingStatusIds.has(order.id)}
+                                  aria-busy={pendingStatusIds.has(order.id)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-stone-300 text-stone-700 bg-white hover:bg-stone-50 hover:border-stone-400 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-60 disabled:cursor-wait"
                                   title={`Advance to ${ORDER_STATUS_LABELS[nextStatus]}`}
                                   aria-label={`Mark order ${order.id} as ${ORDER_STATUS_LABELS[nextStatus]}`}
                                 >
-                                  {ORDER_STATUS_LABELS[nextStatus]}
+                                  {pendingStatusIds.has(order.id) ? 'Saving…' : ORDER_STATUS_LABELS[nextStatus]}
                                 </button>
                               )
                             )}

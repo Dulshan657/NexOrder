@@ -15,8 +15,9 @@ export const visitKeys = {
   filtered: (filters: VisitFilters) => ['visits', filters] as const,
 } as const
 
-export function useVisits(filters: VisitFilters = {}) {
+export function useVisits(filters: VisitFilters = {}, { enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled,
     queryKey: visitKeys.filtered(filters),
     queryFn: () => getVisits(filters),
   })

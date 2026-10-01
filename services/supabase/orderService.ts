@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import { extractFunctionErrorMessage } from '@/lib/functionError'
 import type { Database } from '@/lib/database.types'
 
@@ -19,24 +20,26 @@ const ORDER_SELECT =
   '*, horecas(name), order_items(*), pending_pos!pending_pos_approved_order_id_fkey(inbound_message_id, status), order_fulfillments(*, locations(name))'
 
 export async function getOrders(filters: OrderFilters = {}) {
-  let query = supabase
-    .from('orders')
-    .select(ORDER_SELECT)
-    .order('order_date', { ascending: false })
+  const build = () => {
+    let query = supabase
+      .from('orders')
+      .select(ORDER_SELECT)
+      .order('order_date', { ascending: false })
+      .order('id')
 
-  if (filters.horecaId !== undefined) {
-    query = query.eq('horeca_id', filters.horecaId)
+    if (filters.horecaId !== undefined) {
+      query = query.eq('horeca_id', filters.horecaId)
+    }
+    if (filters.submittedBy !== undefined) {
+      query = query.eq('submitted_by', filters.submittedBy)
+    }
+    if (filters.status !== undefined) {
+      query = query.eq('status', filters.status)
+    }
+    return query
   }
-  if (filters.submittedBy !== undefined) {
-    query = query.eq('submitted_by', filters.submittedBy)
-  }
-  if (filters.status !== undefined) {
-    query = query.eq('status', filters.status)
-  }
-
-  const { data, error } = await query
-  if (error) throw error
-  return data
+  // Paged past the API row cap (lib/fetchAllRows); `id` makes the order unique.
+  return fetchAllRows((from, to) => build().range(from, to))
 }
 
 export async function getOrderById(id: string) {

@@ -11,6 +11,7 @@ import PantryEmptyState from './PantryEmptyState';
 import PantryAddDrawer from './PantryAddDrawer';
 import PantryKeyboardHints from './PantryKeyboardHints';
 import { ShoppingCart, X as XIcon } from 'lucide-react';
+import type { PantryUpdate } from '../../lib/pantryCache';
 
 export interface PantryListProps {
     pantryItems: PantryItem[];
@@ -25,7 +26,7 @@ export interface PantryListProps {
     onAddAllToOrder: () => void;
     onAddSelectedToOrder: (items: PantryItem[]) => void;
     onRemoveFromPantry: (productId: number) => void;
-    onUpdatePantryItem: (productId: number, updates: Partial<Pick<PantryItem, 'preferredPackSize' | 'defaultQuantity'>>) => void;
+    onUpdatePantryItem: (productId: number, updates: PantryUpdate) => void;
     onAddToPantry: (productId: number) => void;
 }
 
@@ -314,17 +315,15 @@ const PantryList: React.FC<PantryListProps> = ({
         onAddToOrder(pi);
     }, [pantryItemById, productById, onAddToOrder]);
 
+    // Deltas, not absolute values: the context applies them to the latest
+    // cached quantity, so repeated presses accumulate.
     const onIncQty = useCallback((productId: number) => {
-        const pi = pantryItemById.get(productId);
-        if (!pi) return;
-        onUpdatePantryItem(productId, { defaultQuantity: pi.defaultQuantity + 1 });
-    }, [pantryItemById, onUpdatePantryItem]);
+        onUpdatePantryItem(productId, { quantityDelta: 1 });
+    }, [onUpdatePantryItem]);
 
     const onDecQty = useCallback((productId: number) => {
-        const pi = pantryItemById.get(productId);
-        if (!pi) return;
-        onUpdatePantryItem(productId, { defaultQuantity: Math.max(1, pi.defaultQuantity - 1) });
-    }, [pantryItemById, onUpdatePantryItem]);
+        onUpdatePantryItem(productId, { quantityDelta: -1 });
+    }, [onUpdatePantryItem]);
 
     const onTogglePackSize = useCallback((productId: number) => {
         const pi = pantryItemById.get(productId);
@@ -502,6 +501,7 @@ const PantryList: React.FC<PantryListProps> = ({
                                             onRemove={() => onRemoveFromPantry(entry.pantryItem.productId)}
                                             onUpdatePackSize={ps => onUpdatePantryItem(entry.pantryItem.productId, { preferredPackSize: ps })}
                                             onUpdateQuantity={qty => onUpdatePantryItem(entry.pantryItem.productId, { defaultQuantity: qty })}
+                                            onAdjustQuantity={delta => onUpdatePantryItem(entry.pantryItem.productId, { quantityDelta: delta })}
                                             onSuggestSubstitute={() => setSubstituteForId(subOpen ? null : productId)}
                                             substituteOpen={subOpen}
                                             substituteSuggestions={suggestions}

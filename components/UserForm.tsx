@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Loader2, UserCircle } from 'lucide-react';
 import { User, UserRole } from '../types';
-import { useToasts } from '../hooks/useToasts';
+import { useToastActions } from '../hooks/useToasts';
 import { compressImage } from '../lib/imageCompression';
 import { uploadToBucket, deleteFromBucketByUrl, isBucketUrl } from '../services/supabase/storageService';
 import OptimizedImage from './OptimizedImage';
@@ -39,7 +39,7 @@ const UserForm: React.FC<UserFormProps> = ({ userToEdit, onSave, onClose }) => {
     const [homeWarehouseId, setHomeWarehouseId] = useState<number | ''>(initialWarehouseId);
     const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { addToast } = useToasts();
+    const { addToast } = useToastActions();
     const [isUploading, setIsUploading] = useState(false);
     const { data: warehouses } = useWarehouses();
 

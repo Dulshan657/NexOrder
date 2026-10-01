@@ -9,7 +9,7 @@ import { toAppSettings, fromAppSettings } from '../../../lib/adapters'
 import { pickSettings, diffSettings } from '../../../lib/settingsDraft'
 import { validateSettings, type SettingsErrors } from '../../../lib/settingsValidation'
 import { useSettings, useUpdateSettings } from '../../../hooks/queries/useSettings'
-import { useToasts } from '../../../hooks/useToasts'
+import { useToastActions } from '../../../hooks/useToasts'
 
 // The one place the camelCase→snake_case patch is cast to the table Update type
 // (fromAppSettings only emits known app_settings columns).
@@ -39,7 +39,7 @@ export function useSettingsDraft<K extends keyof AppSettings>(
 ): SettingsDraft<K> {
   const settingsQuery = useSettings()
   const updateMutation = useUpdateSettings()
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   // Captured once — tabs pass literal arrays; re-picking on a new identity
   // every render would defeat memoization.

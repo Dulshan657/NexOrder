@@ -35,7 +35,7 @@ import { useWarehouses } from '../../hooks/queries/useWarehouses'
 import { useProducts } from '../../hooks/queries/useProducts'
 import { useSuppliers } from '../../hooks/queries/useSuppliers'
 import { brandOptions, categoryOptions } from '../../lib/productTaxonomy'
-import { useToasts } from '../../hooks/useToasts'
+import { useToastActions } from '../../hooks/useToasts'
 
 interface RuleForm {
   name: string
@@ -88,7 +88,7 @@ function describeMatch(r: SlottingRuleRow): string {
 }
 
 const SlottingRulesSection: React.FC = () => {
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
   const { data: warehouses } = useWarehouses()
   const racked = useMemo(
     () => (warehouses ?? []).filter((w: any) => w.isActive !== false),

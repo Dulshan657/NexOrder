@@ -170,6 +170,8 @@ import {
     LayoutGrid,
 } from 'lucide-react';
 import type { AppNotification } from '../types';
+import DataStatusBanner from './DataStatusBanner';
+import type { DataStatus } from '../lib/queryHealth';
 
 // ── Props for AppShell ────────────────────────────────────────────────────────
 
@@ -191,6 +193,9 @@ export interface AppShellProps {
     addToast: (message: string, type: ToastType) => void;
     placeOrderMutation: ReturnType<typeof usePlaceOrder>;
     queryClient: QueryClient;
+    /** Which app-level lists failed or are still loading (lib/queryHealth). */
+    dataStatus?: DataStatus;
+    onRetryData?: () => void;
 }
 
 // ── AppShellInner — consumes contexts, owns the render tree ──────────────────
@@ -229,6 +234,8 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     // Data
     currentUser,
     currentUserUuid,
+    dataStatus,
+    onRetryData,
     products,
     hoReCas,
     allOrders,
@@ -1204,6 +1211,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                     data-scroll-container
                     className="flex-1 overflow-y-auto focus:outline-none"
                 >
+                    {dataStatus && onRetryData && <DataStatusBanner status={dataStatus} onRetry={onRetryData} />}
                     <div>
                         {MODULE_SHOP && isAdminOrManager && adminView === 'Shop' && (
                             <ShopView

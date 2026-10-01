@@ -160,6 +160,10 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
     };
     return (
         <div>
+            {/* Keyed by tab so a crash in one tab does not keep showing its
+                error after switching to another. A typed local component
+                cannot take `key` itself (no @types/react), hence the Fragment. */}
+            <React.Fragment key={props.activeTab}>
             <ErrorBoundary label={`Admin · ${props.activeTab}`}>
             <Suspense fallback={<LoadingSkeleton />}>
             <div>
@@ -224,6 +228,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
             </div>
             </Suspense>
             </ErrorBoundary>
+            </React.Fragment>
         </div>
     );
 };

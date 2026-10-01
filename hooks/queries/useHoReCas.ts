@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { optimisticUpdate, patchRowById } from '@/lib/optimistic'
 import {
   getHoReCas,
   createHoReCa,
@@ -56,11 +57,16 @@ export function useDeleteHoReCa() {
 
 export function useMarkHoReCaReviewed() {
   const qc = useQueryClient()
+  // Mirrors what markHoReCaReviewed writes, so the review flag clears on click.
+  const optimistic = optimisticUpdate<number>(qc, horecaKeys.all, (data, id) =>
+    patchRowById(data, id, { reviewed_at: new Date().toISOString(), is_temporary: false }),
+  )
   return useMutation({
     mutationFn: (id: number) => markHoReCaReviewed(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: horecaKeys.all })
+    ...optimistic,
+    onError: (err, id, context) => {
+      optimistic.onError(err, id, context)
+      console.error('[horecas] mark reviewed failed', err)
     },
-    onError: (err) => console.error('[horecas] mark reviewed failed', err),
   })
 }

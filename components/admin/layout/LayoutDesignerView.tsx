@@ -27,7 +27,7 @@ import {
 import { useRunSimulation } from '@/hooks/queries/useSimulation'
 import { useWarehouseStockSummary } from '@/hooks/queries/useWarehouseStockSummary'
 import { useCommitReslotPlan } from '@/hooks/queries/useReslotPlan'
-import { useToasts } from '@/hooks/useToasts'
+import { useToastActions } from '@/hooks/useToasts'
 import type { PublishRejection } from '@/services/supabase/layoutService'
 import type { CommitMove } from '@/services/supabase/reslotService'
 import type { LayoutObjectType, LevelRole, SimulationResult, Warehouse } from '@/types'
@@ -87,7 +87,7 @@ export function LayoutDesignerView({ warehouse, autoOpenImport = false }: Layout
   const areaBaseFingerprintRef = useRef<string>('')
   // Floor signs (mig 00097) — their own baseline, see the hydrate effect.
   const signBaseFingerprintRef = useRef<string>('')
-  const { addToast } = useToasts()
+  const { addToast } = useToastActions()
 
   const createLayout = useCreateLayout(warehouse.id)
   const updateLayout = useUpdateLayout(warehouse.id)

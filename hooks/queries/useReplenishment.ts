@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { inventoryKeys } from './useInventoryBalances'
 import {
   getReplenTasks,
   getPendingReplenCounts,
@@ -78,9 +79,9 @@ export function useCompleteReplenishment() {
       qc.invalidateQueries({ queryKey: replenKeys.all })
       // Stock moved between two bins, so anything showing per-bin quantities is
       // now stale: the warehouse map's fill colours, the stock tables, and the
-      // putaway bin picker's capacity badges.
-      qc.invalidateQueries({ queryKey: ['inventory'] })
-      qc.invalidateQueries({ queryKey: ['warehouse'] })
+      // putaway bin picker's capacity badges. All three read keys under the
+      // inventory_balances prefix, so this one prefix covers them.
+      qc.invalidateQueries({ queryKey: inventoryKeys.balances })
     },
   })
 }

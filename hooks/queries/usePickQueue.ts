@@ -35,31 +35,51 @@ interface RecordPickVariables {
   scan?: PickScanEvidence
 }
 
+const recordPickKey = ['pick_queue', 'record'] as const
+
+/** This pick's own task row as it was before the optimistic patch. */
+type PickSnapshot = { task: PickTask | undefined }
+
+const isTask = (t: PickTask, orderItemId: number, locationId: number | undefined) =>
+  t.orderItemId === orderItemId && t.locationId === locationId
+
 export function useRecordPick() {
   const qc = useQueryClient()
-  return useMutation({
+  return useMutation<Awaited<ReturnType<typeof recordPick>>, Error, RecordPickVariables, PickSnapshot>({
+    mutationKey: recordPickKey,
     mutationFn: ({ orderItemId, pickedQty, locationId, scan }: RecordPickVariables) =>
       recordPick(orderItemId, pickedQty, locationId, scan),
+    // OPTIMISTIC on the counts, so the queue and the task's remaining move on
+    // Confirm. The server still re-validates the scan; a refusal rolls back.
+    //
     // Directed picking hits one bin at a time (one task, one Pick button) —
     // a broad invalidation here refetches every row's data and re-renders the
     // whole pick workspace, which drops fast clicks. Patch the two caches that
-    // actually changed instead, and only fall back to a real refetch when the
+    // actually change instead, and only fall back to a real refetch when the
     // pick moved the line or the order across a status boundary.
-    onSuccess: (result, { orderId, orderItemId, pickedQty, locationId }) => {
-      if (locationId != null) {
-        qc.setQueryData<PickTask[]>(pickTaskKeys.forOrder(orderId), (tasks) =>
-          (tasks ?? [])
-            .map((t) =>
-              t.orderItemId === orderItemId && t.locationId === locationId
-                ? { ...t, pickedQty: t.pickedQty + pickedQty, remaining: Math.max(t.remaining - pickedQty, 0) }
-                : t,
-            )
-            .filter((t) => t.remaining > 0),
-        )
+    onMutate: async ({ orderId, orderItemId, pickedQty, locationId }) => {
+      const tasksKey = pickTaskKeys.forOrder(orderId)
+      await Promise.all([
+        qc.cancelQueries({ queryKey: tasksKey }),
+        qc.cancelQueries({ queryKey: pickKeys.queue, exact: true }),
+      ])
+      const snapshot: PickSnapshot = {
+        task: qc.getQueryData<PickTask[]>(tasksKey)?.find((t) => isTask(t, orderItemId, locationId)),
       }
 
+      // The finished task is NOT removed here: the row is still awaiting this
+      // mutation, and unmounting it would swallow a refusal's error message.
+      if (locationId != null) {
+        qc.setQueryData<PickTask[]>(tasksKey, (tasks) =>
+          tasks?.map((t) =>
+            isTask(t, orderItemId, locationId)
+              ? { ...t, pickedQty: t.pickedQty + pickedQty, remaining: Math.max(t.remaining - pickedQty, 0) }
+              : t,
+          ),
+        )
+      }
       qc.setQueryData<PickQueueOrder[]>(pickKeys.queue, (orders) =>
-        (orders ?? []).map((o) =>
+        orders?.map((o) =>
           o.orderId !== orderId
             ? o
             : {
@@ -70,7 +90,39 @@ export function useRecordPick() {
               },
         ),
       )
-
+      return snapshot
+    },
+    // Undo THIS pick only — its own task row and its own count — never a
+    // whole-cache snapshot, which may predate another pick the server has
+    // since recorded. Then refetch, so the server has the last word.
+    onError: (_err, { orderId, orderItemId, pickedQty, locationId }, snapshot) => {
+      const tasksKey = pickTaskKeys.forOrder(orderId)
+      if (snapshot?.task) {
+        qc.setQueryData<PickTask[]>(tasksKey, (tasks) =>
+          tasks?.map((t) => (isTask(t, orderItemId, locationId) ? snapshot.task! : t)),
+        )
+      }
+      qc.setQueryData<PickQueueOrder[]>(pickKeys.queue, (orders) =>
+        orders?.map((o) =>
+          o.orderId !== orderId
+            ? o
+            : {
+                ...o,
+                lines: o.lines.map((l) =>
+                  l.orderItemId === orderItemId ? { ...l, picked: l.picked - pickedQty } : l,
+                ),
+              },
+        ),
+      )
+      qc.invalidateQueries({ queryKey: tasksKey })
+      qc.invalidateQueries({ queryKey: pickKeys.queue, exact: true })
+    },
+    onSuccess: (result, { orderId, orderItemId, locationId }) => {
+      // Only the task this pick finished: another pick's row at 0 is still
+      // awaiting its own answer and must stay mounted to show a refusal.
+      qc.setQueryData<PickTask[]>(pickTaskKeys.forOrder(orderId), (tasks) =>
+        tasks?.filter((t) => !(isTask(t, orderItemId, locationId) && t.remaining <= 0)),
+      )
       if (result.line_fully_picked || result.order_fully_picked) {
         qc.invalidateQueries({ queryKey: pickKeys.queue })
         qc.invalidateQueries({ queryKey: ['orders'] })

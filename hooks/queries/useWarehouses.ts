@@ -57,12 +57,9 @@ export function useTransferStock() {
     mutationFn: (input: TransferStockInput) => transferStock(input),
     onSuccess: () => {
       // Balances + product caches shift on both sides of the move.
-      qc.invalidateQueries({ queryKey: ['inventory'] })
-      // The line above is a latent no-op: TanStack Query matches keys by
-      // element-wise array prefix, and 'inventory' !== 'inventory_balances',
-      // so it has never matched useInventoryBalances/useProductStockByWarehouse.
-      // Without this, transfers only refreshed balances via the realtime
-      // channel. Keep the line above too, in case something else relies on it.
+      // Keys match by element-wise PREFIX: this must be the real
+      // 'inventory_balances' root (a bare ['inventory'] matched nothing).
+      // __tests__/queryKeyInvalidations.test.ts guards that.
       qc.invalidateQueries({ queryKey: inventoryKeys.balances })
       qc.invalidateQueries({ queryKey: ['products'] })
       qc.invalidateQueries({ queryKey: warehouseKeys.all })

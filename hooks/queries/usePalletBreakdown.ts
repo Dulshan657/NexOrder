@@ -19,6 +19,7 @@ import {
 } from '@/services/supabase/palletBreakdownService'
 import { generateLabels, type GenerateLabelsResult } from '@/services/supabase/labelService'
 import { putawayKeys } from './putawayKeys'
+import { inventoryKeys } from './useInventoryBalances'
 
 export interface PlanBreakdownVars {
   recommendationId: number
@@ -45,8 +46,7 @@ export function useBreakDownPallet() {
     mutationFn: ({ recommendationId, portions, roleOverride }) =>
       breakDownPallet({ recommendationId, portions, roleOverride }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['inventory-balances'] })
-      qc.invalidateQueries({ queryKey: ['inventoryBalances'] })
+      qc.invalidateQueries({ queryKey: inventoryKeys.balances })
       qc.invalidateQueries({ queryKey: putawayKeys.all })
       qc.invalidateQueries({ queryKey: putawayKeys.counts })
       qc.invalidateQueries({ queryKey: ['putaway-route'] })

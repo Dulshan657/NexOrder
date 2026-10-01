@@ -31,7 +31,10 @@ vi.mock('@/hooks/queries/usePalletBreakdown', () => ({
   usePlanBreakdown: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useBreakDownPallet: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
-vi.mock('@/hooks/useToasts', () => ({ useToasts: () => ({ addToast: vi.fn() }) }))
+vi.mock('@/hooks/useToasts', () => ({
+  useToasts: () => ({ addToast: vi.fn() }),
+  useToastActions: () => ({ addToast: vi.fn() }),
+}))
 
 import { PutawayStopCard } from '@/components/inventory/putaway/PutawayStopCard'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'

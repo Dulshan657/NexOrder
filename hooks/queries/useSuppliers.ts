@@ -14,8 +14,9 @@ export const supplierKeys = {
   all: ['suppliers'] as const,
 } as const
 
-export function useSuppliers() {
+export function useSuppliers({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled,
     queryKey: supplierKeys.all,
     queryFn: getSuppliers,
   })

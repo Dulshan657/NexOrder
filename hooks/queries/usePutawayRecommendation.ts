@@ -7,6 +7,7 @@ import {
   type DecidePutawayInput,
 } from '@/services/supabase/putawayService'
 import { putawayKeys } from './putawayKeys'
+import { inventoryKeys } from './useInventoryBalances'
 
 /** Request engine putaway recommendations for a set of received lines.
  *  Pass dryRun for a read-only preview that never persists a queue task. */
@@ -23,8 +24,7 @@ export function useDecidePutaway() {
   return useMutation({
     mutationFn: (input: DecidePutawayInput) => decidePutaway(input),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['inventory-balances'] })
-      qc.invalidateQueries({ queryKey: ['inventoryBalances'] })
+      qc.invalidateQueries({ queryKey: inventoryKeys.balances })
       // The decided row leaves 'suggested' — refresh the queue + counts so the
       // accepted/overridden row disappears without a manual refetch. A partial
       // putaway rides the same invalidation: the remainder row comes back with
