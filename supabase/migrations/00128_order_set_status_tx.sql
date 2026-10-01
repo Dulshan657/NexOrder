@@ -64,6 +64,12 @@ BEGIN
             USING ERRCODE = 'invalid_parameter_value';
     END IF;
 
+    -- jsonb || NULL is NULL: a missing entry would wipe the whole history.
+    IF p_entry IS NULL OR jsonb_typeof(p_entry) <> 'object' THEN
+        RAISE EXCEPTION 'order_set_status_tx needs a status_history entry object'
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+
     SELECT status INTO v_status
       FROM public.orders
      WHERE id = p_order_id

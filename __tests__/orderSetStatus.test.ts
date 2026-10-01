@@ -66,7 +66,8 @@ describe('recomputeOrderStatus', () => {
     expect(from).toHaveBeenCalledWith('order_fulfillments')
     expect(rpc).toHaveBeenCalledWith('order_set_status_tx', expect.objectContaining({
       p_order_id: 'ORD-1',
-      p_from: null,
+      // forward-only: a stale rollup must not move the order backwards
+      p_from: ['processing', 'processed', 'picked'],
       p_to: 'picked',
       p_entry: expect.objectContaining({ status: 'picked', actor: 'actor' }),
     }))

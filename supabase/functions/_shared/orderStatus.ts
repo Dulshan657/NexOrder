@@ -37,6 +37,11 @@ export async function setOrderStatus(
   return data as SetOrderStatusVerdict
 }
 
+/** The order lifecycle ladder; 'cancelled' is a terminal side-state, not a rung. */
+export const ORDER_STATUS_LADDER = [
+  'processing', 'processed', 'picked', 'packed', 'dispatched', 'delivered',
+] as const
+
 /** Every rung of `ladder` up to and including `to`: the statuses a
  *  forward-only move to `to` may start from. Empty when `to` is off the ladder. */
 export function statusesUpTo<T>(ladder: readonly T[], to: T): T[] {
