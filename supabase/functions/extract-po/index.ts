@@ -540,7 +540,10 @@ async function loadDocuments(
       // Uint8Array), sidestepping Deno's spotty Node-Buffer polyfill.
       try {
         const bytes = new Uint8Array(await blob.arrayBuffer())
-        const result = await mammoth.extractRawText({ buffer: bytes })
+        // mammoth's typings name a Node Buffer; at runtime a Uint8Array is what
+        // JSZip wants (see above), so only the type is being bridged here.
+        const input = { buffer: bytes } as unknown as Parameters<typeof mammoth.extractRawText>[0]
+        const result = await mammoth.extractRawText(input)
         docxText = result.value
         if (primaryFormat === 'text') {
           primaryFormat = 'docx'

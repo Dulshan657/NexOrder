@@ -321,7 +321,7 @@ serve(async (req: Request) => {
   }
 
   // Load data via service client (bypasses RLS, all reads needed for pricing)
-  let hoReCa: HoReCa & { credit_limit: number; name: string }
+  let hoReCa: Awaited<ReturnType<typeof loadHoReCa>>
   try {
     hoReCa = await loadHoReCa(serviceClient, body.hoReCaId)
   } catch {

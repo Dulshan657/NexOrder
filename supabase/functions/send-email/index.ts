@@ -26,7 +26,7 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { z } from 'https://esm.sh/zod@3.23.8'
 import { errorResponse } from '../_shared/errors.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
@@ -167,7 +167,7 @@ serve(async (req: Request) => {
 // Template rendering
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function renderTemplate(admin: ReturnType<typeof createClient>, input: Input): Promise<RenderedEmail | null> {
+async function renderTemplate(admin: SupabaseClient, input: Input): Promise<RenderedEmail | null> {
   switch (input.template) {
     case 'order_confirmation':
       return renderOrderConfirmation(admin, input.orderId)
