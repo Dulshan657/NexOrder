@@ -179,7 +179,11 @@ serve(async (req: Request) => {
       }
 
       const beforeData = existingRow as Record<string, unknown>
-      const incoming = input.data as Record<string, unknown>
+      // reviewed_by is never taken from the client: whoever sets reviewed_at
+      // is the reviewer, and clearing reviewed_at clears it.
+      const incoming: Record<string, unknown> = 'reviewed_at' in input.data
+        ? { ...input.data, reviewed_by: input.data.reviewed_at ? auth.userId : null }
+        : Object.fromEntries(Object.entries(input.data).filter(([k]) => k !== 'reviewed_by'))
 
       // Sensitive fields check for Managers
       if (auth.role === 'Manager') {

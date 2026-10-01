@@ -2,7 +2,6 @@ import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 
 type InvoiceRow = Database['public']['Tables']['invoices']['Row']
-type InvoiceInsert = Database['public']['Tables']['invoices']['Insert']
 type InvoiceStatus = InvoiceRow['status']
 
 export interface InvoiceFilters {
@@ -34,16 +33,6 @@ export async function getInvoiceByOrderId(orderId: string): Promise<InvoiceRow |
     .select('*')
     .eq('order_id', orderId)
     .maybeSingle()
-  if (error) throw error
-  return data
-}
-
-export async function createInvoice(invoice: InvoiceInsert) {
-  const { data, error } = await supabase
-    .from('invoices')
-    .insert(invoice)
-    .select()
-    .single()
   if (error) throw error
   return data
 }
