@@ -15,7 +15,7 @@ interface RoutesViewProps {
   routes: ScheduledVisit[];
   setRoutes: (routes: ScheduledVisit[]) => void;
   visits: Visit[];
-  setVisits: (visits: Visit[]) => void;
+  setVisits: (visits: Visit[]) => Promise<boolean>;
   orders: Order[];
   users?: User[];
   onStartOrder: (hoReCaId: number) => void;
@@ -57,14 +57,16 @@ const ScheduledVisitsView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, 
     setCheckInStopIndex(stopIndex);
   };
 
-  const handleVisitSave = (visit: Visit) => {
-    setVisits([...visits, visit]);
-    // Link visit to route stop
-    if (selectedRoute && checkInStopIndex !== null) {
-      const updated = arriveAtStop(selectedRoute, checkInStopIndex, visit.id);
-      handleUpdateRoute(updated);
-    }
+  const handleVisitSave = async (visit: Visit) => {
+    const route = selectedRoute;
+    const stopIndex = checkInStopIndex;
     setCheckInStopIndex(null);
+    // Link the stop only once the visit row exists, so a failed insert never
+    // leaves the stop pointing at a visit that was never saved.
+    const saved = await setVisits([...visits, visit]);
+    if (saved && route && stopIndex !== null) {
+      handleUpdateRoute(arriveAtStop(route, stopIndex, visit.id));
+    }
   };
 
   const tabs: Array<{ key: RoutesTab; label: string; icon: React.ReactNode; count: number }> = [
