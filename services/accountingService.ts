@@ -30,8 +30,9 @@ function getDaysPastDue(invoice: Invoice): number {
 }
 
 export function getHoReCaOutstanding(hoReCaId: number, hoReCaName: string, invoices: Invoice[]): HoReCaOutstanding {
+    // Only money still owed: paid is settled and cancelled (mig 00111) is void.
     const unpaidInvoices = invoices.filter(
-        inv => inv.hoReCaId === hoReCaId && inv.status !== 'paid'
+        inv => inv.hoReCaId === hoReCaId && (inv.status === 'pending' || inv.status === 'overdue')
     );
 
     const buckets: AgingBucket[] = BUCKET_DEFS.map(def => ({
