@@ -105,7 +105,7 @@ export function findGrantViolations(rows, tablesPresent) {
  * Findings for protected columns a client role can UPDATE. Never baselined:
  * every one of these is a privilege-escalation path, not inherited debt.
  *
- * @param {readonly { table_name: string, column_name: string, grantee: string, can_update: boolean }[]} rows
+ * @param {readonly { table_name: string, column_name: string, grantee: string, can_update: boolean | string }[]} rows
  * @returns {Finding[]}
  */
 export function findProtectedColumnViolations(rows) {
