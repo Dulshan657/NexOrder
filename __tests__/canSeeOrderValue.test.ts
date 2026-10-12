@@ -15,6 +15,10 @@ describe('canSeeOrderValue', () => {
     }
   })
 
+  it('shows it to QR Staff, as to a Customer: they see what their venue is charged', () => {
+    expect(canSeeOrderValue(UserRole.QR_STAFF)).toBe(true)
+  })
+
   it('defaults to showing when the role is unknown', () => {
     // An unknown role reaching a money column is a bug elsewhere; blanking the
     // figure would hide that bug behind something that looks intentional.

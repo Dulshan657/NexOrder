@@ -1,7 +1,16 @@
 // mutate-pantry-item Edge Function
 //
-// Upsert / delete on `pantry_items`. Customers can mutate only their own
-// HoReCa's pantry; reps, managers, and admins can mutate any HoReCa.
+// Upsert / delete on `pantry_items`. Customers, and the QR Staff logins behind a
+// venue's kitchen QR (mig 00129), can mutate only their own HoReCa's pantry;
+// reps, managers, and admins can mutate any HoReCa.
+//
+// QR Staff is customer-side here, by design: the kitchen manages the pantry list
+// it reorders from. `requireAuth` has already refused a QR Staff login whose 2h
+// unlock lapsed or was revoked (QR_SESSION_EXPIRED) and checked that
+// qr_staff.horeca_id agrees with profiles.horeca_id, so the venue compared below
+// is one the caller is unlocked for. No QR Staff session ever reaches any other
+// role-gated function -- this is the only allow-list besides the qr-* ones that
+// names it.
 //
 // `preferred_pack_size` is either null (single unit) or the matching
 // product.carton_size (carton). Any other value is rejected.
@@ -23,6 +32,7 @@ const ALLOWED: ReadonlyArray<UserRole> = [
   'Field Sales Rep',
   'Office Sales Rep',
   'Restaurant/Hotel Customer',
+  'QR Staff',
 ]
 
 const upsertDataSchema = z.object({
@@ -37,16 +47,31 @@ const deleteDataSchema = z.object({
   product_id: z.number().int().positive(),
 })
 
-const inputSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('upsert'), data: upsertDataSchema }),
-  z.object({ action: z.literal('delete'), data: deleteDataSchema }),
-  // Convenience: support flat shape for delete too — `{ action, horeca_id, product_id }`
-  z.object({
-    action: z.literal('delete'),
-    horeca_id: z.number().int().positive(),
-    product_id: z.number().int().positive(),
-  }),
-])
+// `delete` is accepted in two shapes -- nested `{ action, data: { horeca_id, product_id } }`
+// and the flat convenience `{ action, horeca_id, product_id }` (the one the client
+// sends). A discriminated union may hold each `action` value only ONCE: zod throws
+// "Duplicate discriminator value" while the schema is being built, which crashed
+// this function at boot for every caller. So `delete` is a single member carrying
+// both shapes as optional fields, and the superRefine below requires one of them.
+const inputSchema = z
+  .discriminatedUnion('action', [
+    z.object({ action: z.literal('upsert'), data: upsertDataSchema }),
+    z.object({
+      action: z.literal('delete'),
+      data: deleteDataSchema.optional(),
+      horeca_id: z.number().int().positive().optional(),
+      product_id: z.number().int().positive().optional(),
+    }),
+  ])
+  .superRefine((input, ctx) => {
+    if (input.action !== 'delete' || input.data !== undefined) return
+    if (input.horeca_id === undefined || input.product_id === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'delete needs either data { horeca_id, product_id } or both horeca_id and product_id',
+      })
+    }
+  })
 
 interface PantryItemRow {
   id: number
@@ -111,22 +136,20 @@ serve(async (req: Request) => {
     }
     const input = parsed.data
 
-    // Normalize delete shapes (flat vs. nested data) into a single shape.
-    const horecaId =
-      input.action === 'delete' && !('data' in input)
-        ? input.horeca_id
-        : input.action === 'delete'
-          ? input.data.horeca_id
-          : input.data.horeca_id
-    const productId =
-      input.action === 'delete' && !('data' in input)
-        ? input.product_id
-        : input.action === 'delete'
-          ? input.data.product_id
-          : input.data.product_id
+    // Normalize every shape (upsert data, nested delete, flat delete) into one
+    // target. The superRefine above guarantees a delete carries one of the two.
+    const target =
+      input.action === 'upsert'
+        ? { horecaId: input.data.horeca_id, productId: input.data.product_id }
+        : input.data
+          ? { horecaId: input.data.horeca_id, productId: input.data.product_id }
+          : { horecaId: input.horeca_id as number, productId: input.product_id as number }
+    const { horecaId, productId } = target
 
-    // Customer scope check: customers can only touch their own HoReCa pantry.
-    if (auth.role === 'Restaurant/Hotel Customer') {
+    // Customer-side scope check: a Customer or a QR Staff login can only touch
+    // their own HoReCa pantry. `profile.horeca_id` is the venue (for QR Staff,
+    // `requireAuth` has verified it against qr_staff).
+    if (auth.role === 'Restaurant/Hotel Customer' || auth.role === 'QR Staff') {
       if (auth.profile.horeca_id == null || auth.profile.horeca_id !== horecaId) {
         throw new EdgeFunctionError(
           'FORBIDDEN',

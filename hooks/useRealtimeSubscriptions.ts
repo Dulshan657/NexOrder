@@ -1,6 +1,6 @@
 // Live-update bridge between Supabase postgres_changes and TanStack Query.
 //
-// Two channels:
+// Channels:
 //
 //   1. `app-realtime-{userId}` — tables every authenticated role
 //      legitimately consumes (orders, order_items, notifications,
@@ -12,6 +12,15 @@
 //      defense-in-depth: RLS already gates the row payload, but not
 //      subscribing at all narrows the surface to roles that actually
 //      have a UI consuming these tables.
+//
+//   3. `inventory-realtime-{userId}` — Admin/Manager/Warehouse only (balances,
+//      pick progress, generated documents).
+//
+//   4. `qr-realtime-{userId}` — held QR orders (qr_order_requests, mig 00129).
+//      Only where the `shop` module is on, and for every role except Warehouse,
+//      which has no QR surface and no RLS access to the table. Row delivery is decided by RLS: Admin/Manager, the venue's
+//      assigned reps, the venue itself — and for a QR Staff login only while its
+//      2h unlock is live, since `user_horeca_id()` goes NULL at expiry.
 //
 // Mounted at App.tsx once the user is authenticated. Cleans up on
 // userId/role change or unmount.
@@ -25,6 +34,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { UserRole } from '@/types'
 import { createInvalidationBatcher } from '@/lib/invalidationBatcher'
+import { MODULE_SHOP } from '@/lib/modules'
 
 interface UseRealtimeSubscriptionsOptions {
   userId: string | null | undefined
@@ -41,6 +51,10 @@ export function useRealtimeSubscriptions(arg: UseRealtimeSubscriptionsOptions | 
   const isPoOperator = role === UserRole.ADMIN || role === UserRole.MANAGER
   const isInventoryOps =
     role === UserRole.ADMIN || role === UserRole.MANAGER || role === UserRole.WAREHOUSE
+  // QR reorder rides the `shop` module, so a tenant without it never subscribes
+  // (the constant folds this to `false` and the effect below is dead code there).
+  // Warehouse has neither a QR surface nor RLS access to qr_order_requests.
+  const canSeeQrRequests = MODULE_SHOP && role !== UserRole.WAREHOUSE
 
   const batcher = useMemo(
     () => createInvalidationBatcher((queryKey) => { void qc.invalidateQueries({ queryKey }) }),
@@ -155,4 +169,27 @@ export function useRealtimeSubscriptions(arg: UseRealtimeSubscriptionsOptions | 
       void supabase.removeChannel(channel)
     }
   }, [userId, isInventoryOps, batcher])
+
+  // Held QR orders. A change anywhere (submitted, cancelled, approved, rejected)
+  // moves the approver's queue and the kitchen's pending banner, so it refreshes
+  // the request lists; the order an approval creates arrives via the orders
+  // subscription above, and the requester's bell via notifications.
+  useEffect(() => {
+    if (!userId || !canSeeQrRequests) return
+
+    const invalidateQrRequests = () => batcher.schedule([['qr-order-requests']])
+
+    const channel = supabase
+      .channel(`qr-realtime-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'qr_order_requests' },
+        invalidateQrRequests,
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [userId, canSeeQrRequests, batcher])
 }

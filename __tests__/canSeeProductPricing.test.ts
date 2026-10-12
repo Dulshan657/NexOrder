@@ -16,6 +16,10 @@ describe('canSeeProductPricing', () => {
     }
   })
 
+  it('shows them to QR Staff, as to a Customer: the kitchen shops at the venue prices', () => {
+    expect(canSeeProductPricing(UserRole.QR_STAFF)).toBe(true)
+  })
+
   it('defaults to showing when the role is unknown', () => {
     // A display rule that failed closed would hide data from any role nobody
     // has classified yet, which is a worse default than showing a figure to

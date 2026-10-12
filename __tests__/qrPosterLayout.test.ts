@@ -272,7 +272,7 @@ describe('venue names', () => {
     const l = layoutPoster(input({ venueName: 'Phở \u{1F35C} 餐厅' }), measure)
     const drawn = l.venue.lines.join(' ')
     // eslint-disable-next-line no-control-regex
-    expect(drawn).toMatch(/^[ -~ -ÿ…]*$/)
+    expect(drawn).toMatch(/^[ -~\u00a0-\u00ff\u2026]*$/)
   })
 })
 
@@ -329,8 +329,46 @@ describe('sanitizeForWinAnsi', () => {
     expect(sanitizeForWinAnsi('Nhà hàng Phở')).toBe('Nhà hàng Pho')
   })
 
-  it('replaces what has no base letter, and collapses whitespace and controls', () => {
-    expect(sanitizeForWinAnsi('餐厅')).toBe('??')
+  it('reduces the Latin letters that do not decompose', () => {
+    expect(sanitizeForWinAnsi('Đà Lạt')).toBe('Dà Lat') // à is WinAnsi and stays; ạ reduces to a
+    expect(sanitizeForWinAnsi('Łódź')).toBe('Lódz') // ó stays; ź reduces to z
+    expect(sanitizeForWinAnsi('Ta\u02bca Cafe')).toBe("Ta'a Cafe")
+  })
+
+  it('drops what has no base letter instead of printing "?"', () => {
+    expect(sanitizeForWinAnsi('餐厅')).toBe('')
+    expect(sanitizeForWinAnsi('餐厅 Bar')).toBe('Bar')
+    expect(sanitizeForWinAnsi('Ωmega')).toBe('mega')
+    expect(sanitizeForWinAnsi('Arrow \u2192 Bar')).toBe('Arrow Bar')
+    expect(sanitizeForWinAnsi('Check \u2713 Bar')).toBe('Check Bar')
+  })
+
+  it('never emits a "?" for anything the font cannot draw', () => {
+    const awkward = [
+      'Flag \u{1F1E6}\u{1F1FA} Cafe', // regional indicators
+      'Thumbs \u{1F44D}\u{1F3FD} Up', // skin-tone modifier
+      'Keycap 1\ufe0f\u20e3 Bar', // keycap sequence
+      'England \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}', // tag characters
+      'Man \u{1F468}\u200d\u{1F373} Chef', // ZWJ sequence
+      '\u{1F600}\u{1F601}',
+      'Cyrillic \u041a\u0430\u0444\u0435',
+      'Arabic \u0645\u0637\u0639\u0645',
+    ]
+    for (const s of awkward) expect(sanitizeForWinAnsi(s), s).not.toContain('?')
+  })
+
+  it('keeps a literal question mark the venue typed', () => {
+    expect(sanitizeForWinAnsi('Why Not?')).toBe('Why Not?')
+  })
+
+  it('collapses the spaces left behind and trims the ends', () => {
+    expect(sanitizeForWinAnsi('Flag \u{1F1E6}\u{1F1FA} Cafe')).toBe('Flag Cafe')
+    expect(sanitizeForWinAnsi('\u{1F355} Pizza \u{1F355}')).toBe('Pizza')
+    expect(sanitizeForWinAnsi('A \u2192 \u2192 B')).toBe('A B')
+    expect(sanitizeForWinAnsi('   \u2192   ')).toBe('')
+  })
+
+  it('collapses whitespace and controls', () => {
     expect(sanitizeForWinAnsi('Pho \u{1F35C}')).toBe('Pho')
     expect(sanitizeForWinAnsi('A\u{1F35C}B')).toBe('A B')
     expect(sanitizeForWinAnsi('Caf\u00e9\u200b \ufe0f')).toBe('Caf\u00e9')

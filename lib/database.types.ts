@@ -11,7 +11,7 @@ export type Database = {
           id: string
           name: string
           email: string
-          role: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer' | 'Warehouse'
+          role: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer' | 'Warehouse' | 'QR Staff'
           avatar_url: string | null
           horeca_id: number | null
           created_at: string
@@ -21,7 +21,7 @@ export type Database = {
           id: string
           name: string
           email: string
-          role: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer' | 'Warehouse'
+          role: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer' | 'Warehouse' | 'QR Staff'
           avatar_url?: string | null
           horeca_id?: number | null
           created_at?: string
@@ -31,7 +31,7 @@ export type Database = {
           id?: string
           name?: string
           email?: string
-          role?: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer' | 'Warehouse'
+          role?: 'Admin' | 'Manager' | 'Field Sales Rep' | 'Office Sales Rep' | 'Restaurant/Hotel Customer' | 'Warehouse' | 'QR Staff'
           avatar_url?: string | null
           horeca_id?: number | null
           created_at?: string

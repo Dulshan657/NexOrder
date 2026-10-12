@@ -9,7 +9,9 @@
 //      anything else. A venue called "Café Münchën" is fine; "Nhà hàng Phở 24" or
 //      one emoji would turn "print the poster" into a 500. `sanitizeForWinAnsi`
 //      makes every string drawable first, degrading a character rather than the
-//      whole request.
+//      whole request -- and a character that cannot be drawn is DROPPED, never
+//      printed as "?": a wall poster reading "Fish ?? Chips" looks like a bug, a
+//      poster that quietly omits a flag emoji looks like a poster.
 //
 //   2. FIT. A name that overflows its line is worse than a small name. Text is
 //      wrapped on words, shrunk toward a floor, and only truncated (with an
@@ -55,15 +57,33 @@ function isInvisible(ch: string): boolean {
 const COMBINING_MARKS = /[\u0300-\u036f]/g
 const PICTOGRAPH = /\p{Extended_Pictographic}/u
 
+// Latin letters that do not decompose (NFD leaves them whole), so the
+// "base letter plus mark" route below cannot reach them. Without this "Đà Lạt"
+// would lose its first letter. Kept to the handful that actually turn up in
+// venue names; anything else with no base letter is dropped.
+const LATIN_BASE: Readonly<Record<string, string>> = {
+  'Đ': 'D', 'đ': 'd',
+  'Ł': 'L', 'ł': 'l',
+  'Ħ': 'H', 'ħ': 'h',
+  'Ŧ': 'T', 'ŧ': 't',
+  'ı': 'i',
+  // Modifier-letter apostrophes (Hawaiian okina, Ta'a / Taʼa): same mark, plain glyph.
+  'ʼ': "'", 'ʻ': "'", 'ʹ': "'",
+}
+
 /**
  * Make `input` safe to hand to a standard PDF font.
  *
  * Whitespace runs (including newlines and tabs, which WinAnsi cannot draw) become
- * one space. A character outside WinAnsi is first decomposed -- "a with a macron"
- * becomes "a" plus a combining macron, and the mark is dropped -- and only becomes
- * "?" if no base letter survives (CJK). Emoji and other pictographs are dropped as
- * a word break rather than printed as "?", and control and zero-width characters
- * vanish.
+ * one space. A character outside WinAnsi is first reduced to a base letter --
+ * "a with a macron" decomposes to "a" plus a combining mark that is dropped, and
+ * the few Latin letters that do not decompose (Đ, Ł ...) come from a small table.
+ * If no base letter survives (CJK, an arrow, a check mark, a flag, a keycap) the
+ * character is DROPPED. Emoji and other pictographs are dropped as a word break,
+ * and control and zero-width characters vanish. Nothing is ever replaced with
+ * "?". Doubled and trailing spaces left behind are collapsed, so a name that is
+ * entirely undrawable comes back empty and the caller's fallback ("Your venue")
+ * takes over.
  */
 export function sanitizeForWinAnsi(input: string): string {
   let out = ''
@@ -77,8 +97,8 @@ export function sanitizeForWinAnsi(input: string): string {
       out += ' '
       continue
     }
-    const kept = [...ch.normalize('NFD').replace(COMBINING_MARKS, '')].filter(isWinAnsi).join('')
-    out += kept || '?'
+    const base = LATIN_BASE[ch] ?? ch.normalize('NFD').replace(COMBINING_MARKS, '')
+    out += [...base].filter(isWinAnsi).join('')
   }
   return out.replace(/ {2,}/g, ' ').trim()
 }

@@ -22,6 +22,7 @@ import type {
   WieScoringProfile, WieScoringWeights, SlottingSuggestion,
   WieProductVelocity, WieLocationTraffic, ProductUom, ProductSupplierLink,
   LevelRole, RackLevel, LevelRoleRecord, WarehouseSetupAck,
+  QrStaff, QrOrderRequest, QrOrderRequestItem, QrOrderRequestStatus, OrderDeliveryAddress,
 } from '@/types'
 import { sortUoms } from './uom'
 import type { Database } from './database.types'
@@ -352,10 +353,16 @@ type DeliveryAddressJson = {
   recipient_name?: string | null
 }
 
+// qr_order_requests!qr_order_requests_approved_order_id_fkey(staff_name): a
+// one-to-one reverse embed (the FK column is UNIQUE), so PostgREST returns an
+// object or null; an array is tolerated the way pending_pos is.
+type QrRequestEmbed = { staff_name: string | null }
+
 type OrderRowWithEmbeds = OrderRow & {
   delivery_address?: DeliveryAddressJson | null
   order_items?: OrderItemRow[] | null
   pending_pos?: PendingPoEmbed[] | PendingPoEmbed | null
+  qr_order_requests?: QrRequestEmbed[] | QrRequestEmbed | null
   order_fulfillments?: (OrderFulfillmentRow & { locations?: { name: string } | null })[] | null
 }
 
@@ -406,6 +413,7 @@ export function toOrders(
 
 function orderFromRow(row: OrderRowWithEmbeds, { hoReCaById, userById, productById }: OrderLookups): Order {
   const pendingPo = Array.isArray(row.pending_pos) ? row.pending_pos[0] : row.pending_pos
+  const qrEmbed = Array.isArray(row.qr_order_requests) ? row.qr_order_requests[0] : row.qr_order_requests
   const hoReCa = hoReCaById.get(row.horeca_id) ?? {
     id: row.horeca_id,
     name: 'Unknown',
@@ -475,6 +483,7 @@ function orderFromRow(row: OrderRowWithEmbeds, { hoReCaById, userById, productBy
       : undefined,
     inboundMessageId: pendingPo?.inbound_message_id ?? undefined,
     autoApproved: pendingPo ? pendingPo.status === 'auto_approved' : undefined,
+    qrRequest: qrEmbed ? { staffName: qrEmbed.staff_name ?? '' } : undefined,
     cancelledAt: row.cancelled_at ?? undefined,
     cancelledBy: row.cancelled_by ?? undefined,
     cancelReason: row.cancel_reason ?? undefined,
@@ -1216,5 +1225,121 @@ export function toLayoutObject(row: LayoutObjectRow): LayoutObject {
     h: row.h,
     meta: (row.meta as Record<string, unknown>) ?? {},
     stagingLocationId: row.staging_location_id ?? undefined,
+  }
+}
+
+// ── HoReCa QR reorder (migs 00129/00130) ──────────────────────────
+// These two tables are not in the hand-maintained database.types.ts, so the
+// row shapes are declared here, next to the adapters that read them. The
+// column lists are the EXPLICIT ones qrService selects: qr_staff has a
+// column-level grant (never pin_hmac / auth_user_id), so `select=*` is refused.
+
+/** qr_staff, exactly the granted columns. */
+export interface QrStaffRow {
+  id: string
+  horeca_id: number
+  name: string
+  unlocked_until: string | null
+  last_unlocked_at: string | null
+  created_at: string
+  revoked_at: string | null
+}
+
+/** qr_order_requests, the columns qrService selects (no `verification` / `claimed_at`). */
+export interface QrOrderRequestRow {
+  id: string
+  horeca_id: number
+  requested_by: string | null
+  qr_staff_id: string | null
+  staff_name: string | null
+  status: string
+  items: unknown
+  notes: string | null
+  delivery_date: string | null
+  delivery_time_slot: string | null
+  delivery_address: DeliveryAddressJson | null
+  quoted_total: number | string | null
+  created_at: string
+  decided_at: string | null
+  decided_by: string | null
+  decision_reason: string | null
+  last_error: string | null
+  edited_by_approver: boolean | null
+  approved_order_id: string | null
+}
+
+export function qrStaffFromRow(row: QrStaffRow): QrStaff {
+  return {
+    id: row.id,
+    horecaId: row.horeca_id,
+    name: row.name,
+    unlockedUntil: row.unlocked_until ?? null,
+    lastUnlockedAt: row.last_unlocked_at ?? null,
+    createdAt: row.created_at,
+    revokedAt: row.revoked_at ?? null,
+  }
+}
+
+const QR_STATUSES: ReadonlySet<string> = new Set<QrOrderRequestStatus>([
+  'pending', 'approving', 'approved', 'rejected', 'cancelled',
+])
+
+function qrItemsFromJson(value: unknown): QrOrderRequestItem[] {
+  if (!Array.isArray(value)) return []
+  const out: QrOrderRequestItem[] = []
+  for (const raw of value) {
+    if (raw === null || typeof raw !== 'object') continue
+    const r = raw as Record<string, unknown>
+    if (typeof r.productId !== 'number' || typeof r.quantity !== 'number') continue
+    const item: QrOrderRequestItem = {
+      productId: r.productId,
+      quantity: r.quantity,
+      packSize: typeof r.packSize === 'number' ? r.packSize : null,
+      uomId: typeof r.uomId === 'number' ? r.uomId : null,
+    }
+    if (typeof r.productName === 'string') item.productName = r.productName
+    if (typeof r.productSku === 'string') item.productSku = r.productSku
+    out.push(item)
+  }
+  return out
+}
+
+function qrAddressFromJson(a: DeliveryAddressJson | null | undefined): OrderDeliveryAddress | null {
+  // Same rule as orders: no usable street means "absent", so consumers fall
+  // back to the venue's own address instead of rendering a street-less one.
+  if (!a?.street) return null
+  return {
+    street: a.street,
+    city: a.city ?? null,
+    postcode: a.postcode ?? null,
+    country: a.country ?? null,
+    recipientName: a.recipient_name ?? null,
+  }
+}
+
+export function qrOrderRequestFromRow(row: QrOrderRequestRow): QrOrderRequest {
+  return {
+    id: row.id,
+    horecaId: row.horeca_id,
+    requestedBy: row.requested_by ?? null,
+    qrStaffId: row.qr_staff_id ?? null,
+    staffName: row.staff_name ?? '',
+    // An unrecognised status (a future migration) maps to `cancelled`, the one
+    // inert state: the UI offers nothing to do with it, so it can never be
+    // approved or rejected on a guess.
+    status: (QR_STATUSES.has(row.status) ? row.status : 'cancelled') as QrOrderRequestStatus,
+    items: qrItemsFromJson(row.items),
+    notes: row.notes ?? null,
+    deliveryDate: row.delivery_date ?? null,
+    deliveryTimeSlot: (row.delivery_time_slot as DeliveryTimeSlot | null) ?? null,
+    deliveryAddress: qrAddressFromJson(row.delivery_address),
+    quotedTotal: Number(row.quoted_total ?? 0),
+    createdAt: row.created_at,
+    decidedAt: row.decided_at ?? null,
+    decidedBy: row.decided_by ?? null,
+    decisionReason: row.decision_reason ?? null,
+    lastError: row.last_error ?? null,
+    editedByApprover: row.edited_by_approver === true,
+    approvedOrderId: row.approved_order_id ?? null,
   }
 }

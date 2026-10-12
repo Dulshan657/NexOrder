@@ -6,6 +6,12 @@ export enum UserRole {
     OFFICE_REP = 'Office Sales Rep',
     CUSTOMER = 'Restaurant/Hotel Customer',
     WAREHOUSE = 'Warehouse',
+    // A hidden per-person login behind a venue's kitchen QR (mig 00129). It is
+    // minted and retired by mutate-qr-access, never invited, so it must never be
+    // offered anywhere a role is CHOSEN (lib/assignableRoles.ts) or listed among
+    // the people who work here (UserAdmin). Its session is only live while
+    // qr_staff.unlocked_until is in the future.
+    QR_STAFF = 'QR Staff',
 }
 
 export type OrderVerificationMethod = 'signature' | 'call_reference' | 'choose';
@@ -861,6 +867,73 @@ export interface Order {
     // rollup (least-advanced fulfilment); these expose the per-site detail so the
     // UI can show "WH1 dispatched · WH2 picking". Empty/absent for legacy orders.
     fulfillments?: OrderFulfillment[];
+    // Set when this order was placed by approving a kitchen QR request
+    // (qr_order_requests.approved_order_id, mig 00129). Drives "via QR · <name>".
+    // The embed is subject to qr_order_requests RLS (Admin/Manager, the venue's
+    // assigned reps, the venue itself), so for any other viewer it is simply
+    // absent -- never an error.
+    qrRequest?: { staffName: string } | null;
+}
+
+// ── HoReCa QR reorder (migs 00129/00130) ──────────────────────────────────────
+// Wire contracts: supabase/functions/{qr-unlock,mutate-qr-access,qr-order-request}.
+// Row-to-type adapters: lib/adapters.ts (qrStaffFromRow, qrOrderRequestFromRow).
+
+/** One kitchen staff member behind a venue's QR. Never carries a PIN or its hash. */
+export interface QrStaff {
+    id: string;
+    horecaId: number;
+    name: string;
+    /** ISO timestamp; null or in the past means locked. The database enforces the 2h window. */
+    unlockedUntil: string | null;
+    lastUnlockedAt: string | null;
+    createdAt: string;
+    /** Always null in lists (revoked staff are filtered out); kept so a row can say so. */
+    revokedAt: string | null;
+}
+
+/** Lifecycle of a held QR order. `approving` is a transient claim an approver holds. */
+export type QrOrderRequestStatus = 'pending' | 'approving' | 'approved' | 'rejected' | 'cancelled';
+
+/**
+ * One line of a held order, as qr_order_requests.items stores it: what
+ * place-order takes, plus a display-only name/SKU snapshot taken at submit.
+ * Priced at APPROVAL, never here -- the snapshot is not an input to pricing.
+ */
+export interface QrOrderRequestItem {
+    productId: number;
+    quantity: number;
+    packSize: number | null;
+    uomId: number | null;
+    productName?: string;
+    productSku?: string;
+}
+
+export interface QrOrderRequest {
+    id: string;
+    horecaId: number;
+    /** profiles.id of the hidden QR Staff login; null if that profile was deleted. */
+    requestedBy: string | null;
+    qrStaffId: string | null;
+    /** The staff member's name AT SUBMIT (snapshot, mig 00130). */
+    staffName: string;
+    status: QrOrderRequestStatus;
+    items: QrOrderRequestItem[];
+    notes: string | null;
+    deliveryDate: string | null;
+    deliveryTimeSlot: DeliveryTimeSlot | null;
+    deliveryAddress: OrderDeliveryAddress | null;
+    /** An ESTIMATE shown to the kitchen; the authoritative total is computed on approval. */
+    quotedTotal: number;
+    createdAt: string;
+    decidedAt: string | null;
+    /** profiles.id of whoever approved/rejected (or holds the claim while `approving`). */
+    decidedBy: string | null;
+    decisionReason: string | null;
+    /** Why the last approval attempt failed; the request is back to `pending`. Redacted server-side. */
+    lastError: string | null;
+    editedByApprover: boolean;
+    approvedOrderId: string | null;
 }
 
 // 'cancelled' is set only by cancel-order, never by mutate-invoice-status: an
@@ -885,7 +958,14 @@ export interface Invoice {
     createdDate: string;
 }
 
-export type NotificationType = 'low_stock' | 'order_status' | 'invoice' | 'system' | 'system_alert' | 'route_assigned' | 'route_completed' | 'change_request' | 'change_approved' | 'change_rejected';
+export type NotificationType =
+    | 'low_stock' | 'order_status' | 'invoice' | 'system' | 'system_alert'
+    | 'route_assigned' | 'route_completed' | 'change_request' | 'change_approved' | 'change_rejected'
+    // HoReCa QR reorder (supabase/functions/_shared/qrNotify.ts, qr-order-request, qr-unlock).
+    | 'qr_order_pending'   // a kitchen filed an order awaiting approval -> metadata.requestId
+    | 'qr_order_approved'  // to the requester: their order was placed
+    | 'qr_order_rejected'  // to the requester: declined, metadata.reason says why
+    | 'qr_code_locked';    // a venue's QR locked after 20 wrong PINs -> approvers
 
 export interface AppNotification {
     id: string;
@@ -900,6 +980,16 @@ export interface AppNotification {
         invoiceId?: string;
         scheduledVisitId?: string;
         userId?: number;
+        // qr_* notifications (mig 00129). All optional: only the keys the
+        // sending function wrote are present.
+        requestId?: string;
+        horecaId?: number;
+        horecaName?: string;
+        staffName?: string;
+        itemCount?: number;
+        quotedTotal?: number;
+        reason?: string;
+        edited?: boolean;
     };
 }
 

@@ -68,6 +68,7 @@ type SourceFilterValue = 'all' | OrderSourceKey;
 const SOURCE_FILTER_OPTIONS: ReadonlyArray<{ value: SourceFilterValue; label: string }> = [
   { value: 'all', label: 'All Sources' },
   { value: 'email_inbound', label: 'Email PO' },
+  { value: 'qr_kitchen', label: 'Kitchen QR' },
   { value: 'customer_web', label: 'Customer Web' },
   { value: 'rep_field', label: 'Field Rep' },
   { value: 'rep_office', label: 'Office Rep' },

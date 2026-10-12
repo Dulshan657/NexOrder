@@ -24,6 +24,15 @@ describe('appDataNeeds', () => {
         expect([n.suppliers, n.routes, n.visits, n.users, n.salesTargets].some(Boolean)).toBe(false)
     })
 
+    it('QR Staff loads promotions for shop pricing and nothing else', () => {
+        // Invoices are Customer-only under RLS (kitchen staff do not see them), and
+        // like a Customer a QR Staff login reads only its own profile.
+        const n = appDataNeeds(UserRole.QR_STAFF)
+        expect(n.promotions).toBe(true)
+        expect(n.invoices).toBe(false)
+        expect([n.suppliers, n.routes, n.visits, n.users, n.salesTargets].some(Boolean)).toBe(false)
+    })
+
     it('the warehouse role loads none of the seven', () => {
         expect(Object.values(appDataNeeds(UserRole.WAREHOUSE)).some(Boolean)).toBe(false)
     })

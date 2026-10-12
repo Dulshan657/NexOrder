@@ -8,9 +8,10 @@ export type OrderSourceKey =
   | 'rep_office'
   | 'admin'
   | 'manager'
-  | 'email_inbound';
+  | 'email_inbound'
+  | 'qr_kitchen';
 
-export type OrderSourceTone = 'blue' | 'amber' | 'emerald' | 'stone' | 'violet' | 'sky' | 'teal';
+export type OrderSourceTone = 'blue' | 'amber' | 'emerald' | 'stone' | 'violet' | 'sky' | 'teal' | 'rose';
 
 export interface OrderSource {
   key: OrderSourceKey;
@@ -25,14 +26,34 @@ export interface OrderSource {
  *   1. Email Inbound — the order was created by the approve-po Edge Function
  *      from an automatically-extracted customer PO. Populated on Order when
  *      the data adapter joins `pending_pos.approved_order_id`.
- *   2. Walk-in — the HoReCa was created by a rep on a route (`isTemporary`)
+ *   2. Kitchen QR — the order was placed by approving a QR order request
+ *      (mig 00129). Populated on Order when the adapter joins
+ *      `qr_order_requests.approved_order_id`; the label carries the staff
+ *      member's name AT SUBMIT. The request's RLS is Admin/Manager, the venue's
+ *      assigned reps and the venue itself, so for other viewers the join is
+ *      absent and the order falls through to the role fallback below -- which is
+ *      correct, since they never saw the request either.
+ *   3. Walk-in — the HoReCa was created by a rep on a route (`isTemporary`)
  *      or promoted from a walk-in record (`reviewedAt`), regardless of who
  *      keyed the order in.
- *   3. submittedBy.role fallback for human-placed orders.
+ *   4. submittedBy.role fallback for human-placed orders.
  */
+/**
+ * "via QR · Sam". A name is free text a manager typed; an empty one (the 00130
+ * snapshot column defaults to '') must not render as a dangling "via QR ·".
+ */
+function qrKitchenSource(staffName: string | null | undefined): OrderSource {
+  const name = (staffName ?? '').trim();
+  return { key: 'qr_kitchen', label: name ? `via QR · ${name}` : 'via QR', tone: 'rose' };
+}
+
 export function getOrderSource(order: Order): OrderSource {
   if (order.inboundMessageId) {
     return { key: 'email_inbound', label: 'Email PO', tone: 'teal' };
+  }
+
+  if (order.qrRequest) {
+    return qrKitchenSource(order.qrRequest.staffName);
   }
 
   const horeca = order.hoReCa;
@@ -49,6 +70,11 @@ export function getOrderSource(order: Order): OrderSource {
       return { key: 'rep_field', label: 'Field Rep', tone: 'emerald' };
     case UserRole.OFFICE_REP:
       return { key: 'rep_office', label: 'Office Rep', tone: 'sky' };
+    case UserRole.QR_STAFF:
+      // The qr_order_requests join above is RLS-gated (Admin/Manager, assigned
+      // reps, the venue). A viewer outside that set can still read the
+      // submitter's profile name, so the order is not mislabelled "Customer Web".
+      return qrKitchenSource(order.submittedBy?.name);
     case UserRole.ADMIN:
       return { key: 'admin', label: 'Admin', tone: 'violet' };
     case UserRole.MANAGER:

@@ -185,8 +185,15 @@ describe('roleCanOpenTab respects the module as well as the role', () => {
 })
 
 describe('assignable roles', () => {
-  it('offers every role while every module is on', () => {
-    expect(assignableRoles).toEqual(Object.values(UserRole))
+  it('offers every role while every module is on, except the hidden QR Staff login', () => {
+    expect(assignableRoles).toEqual(Object.values(UserRole).filter((r) => r !== UserRole.QR_STAFF))
+  })
+
+  it('NEVER offers QR Staff, in any build', () => {
+    // It is minted by mutate-qr-access, one per PIN, and refused by invite-user.
+    // Offering it would create a login with no PIN and no unlock row, which
+    // nothing could ever use or retire from the Users list.
+    expect(assignableRoles).not.toContain(UserRole.QR_STAFF)
   })
 
   it('includes Warehouse exactly when Inventory & Dispatch is on', () => {

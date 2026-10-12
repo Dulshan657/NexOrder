@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { User } from '../types';
 import UserForm from './UserForm';
 import ConfirmationDialog from './ConfirmationDialog';
+import { directoryUsers } from '../lib/userDirectory';
 
 interface UserAdminProps {
     users: User[];
@@ -16,16 +17,20 @@ const UserAdmin: React.FC<UserAdminProps> = ({ users, onAddUser, onUpdateUser, o
     const [userToDelete, setUserToDelete] = useState<User | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
+    // The hidden per-person QR Staff logins are minted and retired by
+    // mutate-qr-access (QR & PINs on a HoReCa), never managed here.
+    const people = useMemo(() => directoryUsers(users), [users]);
+
     const filteredUsers = useMemo(() => {
         if (!searchQuery.trim()) {
-            return users;
+            return people;
         }
         const lowercasedQuery = searchQuery.toLowerCase();
-        return users.filter(user =>
+        return people.filter(user =>
             user.name.toLowerCase().includes(lowercasedQuery) ||
             user.email.toLowerCase().includes(lowercasedQuery)
         );
-    }, [users, searchQuery]);
+    }, [people, searchQuery]);
 
     const handleOpenFormForEdit = (user: User) => {
         setUserToEdit(user);

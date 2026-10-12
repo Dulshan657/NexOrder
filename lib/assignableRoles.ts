@@ -29,6 +29,12 @@ import { MODULE_INVENTORY_DISPATCH, MODULE_SHOP } from './modules'
  * with `shop` off a rep keeps Order Import, the customer list and Stock. Only
  * remove a role when the modules take away everything it could do.
  *
+ * QR_STAFF is NEVER offered, in any build. It is not a role an admin chooses:
+ * `mutate-qr-access` mints one hidden login per kitchen staff member (mig 00129)
+ * and `invite-user` refuses the role. Offering it would let an admin create a
+ * login with no PIN and no unlock row, which can never be used and nothing can
+ * retire from the Users list.
+ *
  * This is a build-time constant list, folded like every other module check, so
  * a disabled role's option is not in the shipped markup rather than hidden by
  * CSS. It is a UI affordance and not a security control: the server decides
@@ -37,5 +43,6 @@ import { MODULE_INVENTORY_DISPATCH, MODULE_SHOP } from './modules'
 export const assignableRoles: ReadonlyArray<UserRole> = Object.values(UserRole).filter((role) => {
   if (role === UserRole.WAREHOUSE) return MODULE_INVENTORY_DISPATCH
   if (role === UserRole.CUSTOMER) return MODULE_SHOP
+  if (role === UserRole.QR_STAFF) return false
   return true
 })

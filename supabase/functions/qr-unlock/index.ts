@@ -4,7 +4,7 @@
 // opaque token; this function turns "token + a staff member's PIN" into a real
 // Supabase session for that staff member's hidden login, good for 2 hours.
 //
-//   resolve  { token }       -> { horecaName, logoUrl, companyName, phone }
+//   resolve  { token }       -> { horecaId, horecaName, logoUrl, companyName, phone }
 //   unlock   { token, pin }  -> { tokenHash, expiresAt, staffName, horecaId }
 //
 // `verify_jwt = false` (supabase/config.toml): the caller has no session yet,
@@ -107,6 +107,10 @@ async function handleResolve(
   if (error || !horeca) throw new EdgeFunctionError('QR_UNKNOWN_CODE', 'This QR code is not valid.')
 
   return json(req, {
+    // The id lets the entry screen tell "this venue" from another one when a
+    // session already exists on the phone (lib/qr/qrEntryDecision.ts). It is a
+    // plain row id, and the caller already holds the token that names it.
+    horecaId: venue.horecaId,
     horecaName: (horeca as { name: string }).name,
     logoUrl: company.logoUrl,
     companyName: company.name,
