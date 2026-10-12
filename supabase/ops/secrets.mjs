@@ -81,6 +81,20 @@ const REQUIRED_FROM_FILE = [
   ['OPENAI_API_KEY', 'PO extraction and floor-plan extraction.'],
 ]
 
+/**
+ * Required only where a module is enabled: [name, module, why]. A secret that
+ * backs a surface the tenant did not buy is not "missing" there -- `--check`
+ * exiting 1 on Amadiya for a Shop secret would make Gate A unpassable for a
+ * reason that is not a fault.
+ */
+const REQUIRED_WITH_MODULE = [
+  [
+    'QR_PIN_PEPPER',
+    'shop',
+    'HoReCa QR reorder: keys the stored HMAC of every kitchen PIN. NEVER copy between projects, and rotating it INVALIDATES EVERY PIN.',
+  ],
+]
+
 /** Wanted, but the system runs without them. */
 const OPTIONAL_FROM_FILE = [
   ['RESEND_API_KEY', 'Outbound email. Unset = send-email is dormant.'],
@@ -129,8 +143,15 @@ for (const [name, derive] of Object.entries(DERIVED)) {
   console.log(`  derived   ${name.padEnd(28)} ${want}`)
 }
 
+const moduleSecrets = REQUIRED_WITH_MODULE.filter(([, mod]) => config.modules.includes(mod))
+for (const [name, mod] of REQUIRED_WITH_MODULE) {
+  if (!config.modules.includes(mod)) {
+    console.log(`  n/a       ${name.padEnd(28)} module "${mod}" is not enabled for ${target.name}`)
+  }
+}
+
 console.log()
-for (const [name, why] of REQUIRED_FROM_FILE) {
+for (const [name, why] of [...REQUIRED_FROM_FILE, ...moduleSecrets.map(([n, , w]) => [n, w])]) {
   const have = present.has(name)
   const value = env[name]
   if (have && !overwrite) {

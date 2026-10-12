@@ -11,6 +11,10 @@
 //     a non-empty `reason` field is required in the request. Missing reason →
 //     400 INVALID_INPUT with { missingReason: true, sensitiveFieldsTouched: [...] }
 //   - Delete: blocked if the HoReCa has any non-cancelled orders (409 CONFLICT)
+//   - set_reps: replace the reps ASSIGNED to a HoReCa (`horeca_reps`, mig 00129).
+//     Only an assigned rep approves that venue's QR orders or manages its kitchen
+//     PINs, so this is an access grant -- Admin/Manager only, every id must be a
+//     Field or Office Sales Rep, and it is audited with the before and after set.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -70,7 +74,16 @@ const inputSchema = z.discriminatedUnion('action', [
     id: z.number().int().positive(),
     reason: z.string().optional(),
   }),
+  z.object({
+    action: z.literal('set_reps'),
+    horecaId: z.number().int().positive(),
+    // The COMPLETE set. An empty array unassigns every rep.
+    repIds: z.array(z.string().uuid()).max(50),
+    reason: z.string().optional(),
+  }),
 ])
+
+const REP_ROLES: ReadonlyArray<string> = ['Field Sales Rep', 'Office Sales Rep']
 
 // Determine which sensitive fields have changed between incoming data and the existing row
 function touchedSensitiveFields(
@@ -285,6 +298,94 @@ serve(async (req: Request) => {
 
       return new Response(
         JSON.stringify({ ok: true }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    // ---- SET_REPS ----
+    if (input.action === 'set_reps') {
+      const wanted = [...new Set(input.repIds)]
+
+      const { data: horeca, error: horecaError } = await admin
+        .from('horecas')
+        .select('id')
+        .eq('id', input.horecaId)
+        .maybeSingle()
+      if (horecaError) throw new EdgeFunctionError('INTERNAL', 'Failed to load the HoReCa')
+      if (!horeca) throw new EdgeFunctionError('NOT_FOUND', `HoReCa ${input.horecaId} not found`)
+
+      // Every id must be a rep. Anything else -- a Customer, an Admin, a QR Staff
+      // login, an id that is not a user at all -- is refused outright rather than
+      // silently dropped, so a stale picker cannot half-apply.
+      if (wanted.length > 0) {
+        const { data: profiles, error: profilesError } = await admin
+          .from('profiles')
+          .select('id, role')
+          .in('id', wanted)
+        if (profilesError) throw new EdgeFunctionError('INTERNAL', 'Failed to validate the reps')
+        const roleById = new Map(
+          ((profiles ?? []) as Array<{ id: string; role: string }>).map((p) => [p.id, p.role]),
+        )
+        const invalid = wanted.filter((id) => !REP_ROLES.includes(roleById.get(id) ?? ''))
+        if (invalid.length > 0) {
+          throw new EdgeFunctionError(
+            'INVALID_INPUT',
+            'Only Field Sales Reps and Office Sales Reps can be assigned to a HoReCa',
+            { invalidRepIds: invalid },
+          )
+        }
+      }
+
+      const { data: currentRows, error: currentError } = await admin
+        .from('horeca_reps')
+        .select('rep_id')
+        .eq('horeca_id', input.horecaId)
+      if (currentError) throw new EdgeFunctionError('INTERNAL', 'Failed to load the current reps')
+      const current = ((currentRows ?? []) as Array<{ rep_id: string }>).map((r) => r.rep_id)
+
+      const toAdd = wanted.filter((id) => !current.includes(id))
+      const toRemove = current.filter((id) => !wanted.includes(id))
+
+      // Add before removing: a failure part-way leaves a SUPERSET of the old
+      // set, and the caller sees the error and retries, rather than leaving the
+      // venue with no rep at all.
+      if (toAdd.length > 0) {
+        const { error: addError } = await admin.from('horeca_reps').insert(
+          toAdd.map((repId) => ({
+            horeca_id: input.horecaId,
+            rep_id: repId,
+            created_by: auth.userId,
+          })),
+        )
+        if (addError) throw new EdgeFunctionError('INTERNAL', addError.message)
+      }
+      if (toRemove.length > 0) {
+        const { error: removeError } = await admin
+          .from('horeca_reps')
+          .delete()
+          .eq('horeca_id', input.horecaId)
+          .in('rep_id', toRemove)
+        if (removeError) throw new EdgeFunctionError('INTERNAL', removeError.message)
+      }
+
+      if (toAdd.length > 0 || toRemove.length > 0) {
+        await logAuditEvent(admin, {
+          actorId: auth.userId,
+          actorRole: auth.role,
+          action: 'update',
+          resource: 'horeca_reps',
+          resourceId: String(input.horecaId),
+          before: { repIds: current },
+          after: { repIds: wanted },
+          reason: input.reason ?? null,
+        })
+      }
+
+      return new Response(
+        JSON.stringify({ ok: true, horecaId: input.horecaId, repIds: wanted }),
         {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

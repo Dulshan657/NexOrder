@@ -6,7 +6,6 @@
 // `requireAuth` collapses that into one call and throws structured
 // `EdgeFunctionError`s that the caller can convert to a response envelope.
 
-// deno-lint-ignore-file no-explicit-any
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { EdgeFunctionError } from './errors.ts'
 
@@ -17,6 +16,10 @@ export type UserRole =
   | 'Office Sales Rep'
   | 'Restaurant/Hotel Customer'
   | 'Warehouse'
+  // A hidden login minted per kitchen staff member behind a venue QR (mig 00129).
+  // It is in this union so a function can NAME it in `allowedRoles`; no other
+  // function does, so every existing allow-list refuses it by default.
+  | 'QR Staff'
 
 export interface AuthProfile {
   id: string
@@ -26,11 +29,27 @@ export interface AuthProfile {
   home_warehouse_id: number | null
 }
 
+/**
+ * The live `qr_staff` row behind a QR Staff login. Present on the auth result
+ * only for that role, and only when the unlock is current -- an expired or
+ * revoked one never gets this far, `requireAuth` throws QR_SESSION_EXPIRED.
+ */
+export interface QrStaffInfo {
+  /** qr_staff.id */
+  id: string
+  name: string
+  horecaId: number
+  /** ISO timestamp; always in the future at the moment `requireAuth` returns. */
+  unlockedUntil: string
+}
+
 export interface AuthContext {
   userId: string
   role: UserRole
   profile: AuthProfile
   userClient: SupabaseClient
+  /** Non-null exactly when `role === 'QR Staff'`. */
+  qrStaff: QrStaffInfo | null
 }
 
 export interface RequireAuthOptions {
@@ -49,6 +68,8 @@ export interface RequireAuthOptions {
  * Throws `EdgeFunctionError`:
  *   - `UNAUTHORIZED` (401) — missing/invalid JWT or no auth user.
  *   - `FORBIDDEN`    (403) — profile not found, or role not in `allowedRoles`.
+ *   - `QR_SESSION_EXPIRED` (401) — a QR Staff login with no live unlock (see
+ *     `loadActiveQrStaff`). Only that role pays for the extra query.
  */
 export async function requireAuth(
   req: Request,
@@ -95,10 +116,70 @@ export async function requireAuth(
     )
   }
 
+  const qrStaff = profile.role === 'QR Staff' ? await loadActiveQrStaff(profile) : null
+
   return {
     userId,
     role: profile.role,
     profile,
     userClient,
+    qrStaff,
+  }
+}
+
+/**
+ * A QR Staff login is only as good as its unlock. The JWT lasts an hour and the
+ * refresh token far longer, so "unlocked for 2 hours" is not a token property --
+ * it is `qr_staff.unlocked_until`, and the database enforces it in RLS through
+ * `user_horeca_id()`. This is the same rule for the Edge Function side, where
+ * the service role bypasses RLS and would otherwise never notice.
+ *
+ * The row must be unrevoked, unexpired, and agree with `profiles.horeca_id` --
+ * the same three conditions `user_horeca_id()` insists on, so a request RLS
+ * would call anonymous is never treated as a staff request here.
+ *
+ * It is read with the SERVICE ROLE, not the caller's client: `auth_user_id` is
+ * deliberately not a granted column on `qr_staff`, so a client cannot filter on
+ * it. Every miss -- no row, revoked, lapsed, venue mismatch -- is the same
+ * QR_SESSION_EXPIRED, because to the phone they all mean "show the PIN pad".
+ */
+async function loadActiveQrStaff(profile: AuthProfile): Promise<QrStaffInfo> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!supabaseUrl || !serviceKey) {
+    throw new EdgeFunctionError('INTERNAL', 'Supabase env vars not configured')
+  }
+  const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+
+  const { data, error } = await service
+    .from('qr_staff')
+    .select('id, name, horeca_id, unlocked_until')
+    .eq('auth_user_id', profile.id)
+    .is('revoked_at', null)
+    .maybeSingle()
+
+  if (error) {
+    // Not "expired": a database fault must not read as the user's problem and
+    // bounce a working phone to the PIN pad.
+    throw new EdgeFunctionError('INTERNAL', 'Could not verify the QR session')
+  }
+
+  const row = data as
+    | { id: string; name: string; horeca_id: number; unlocked_until: string | null }
+    | null
+  if (
+    !row ||
+    row.horeca_id !== profile.horeca_id ||
+    !row.unlocked_until ||
+    new Date(row.unlocked_until).getTime() <= Date.now()
+  ) {
+    throw new EdgeFunctionError('QR_SESSION_EXPIRED', 'Your session has ended. Enter your PIN again.')
+  }
+
+  return {
+    id: row.id,
+    name: row.name,
+    horecaId: row.horeca_id,
+    unlockedUntil: row.unlocked_until,
   }
 }
