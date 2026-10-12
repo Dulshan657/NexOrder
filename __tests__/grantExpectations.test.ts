@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import {
   fatalFindings,
   findGrantViolations,
+  findProtectedColumnViolations,
   formatBaselined,
   lockedTableNames,
 } from '../scripts/lib/grantExpectations.mjs';
@@ -66,14 +67,11 @@ describe('findGrantViolations', () => {
     expect(findGrantViolations(rows, ALL_TABLES)).toEqual([]);
   });
 
-  it("honours a table's declared exception without honouring it everywhere", () => {
-    // profiles keeps UPDATE: 00011 revoked only the (role, horeca_id) COLUMNS,
-    // so a user may still edit their own name. That is design, not drift.
-    expect(findGrantViolations([grant('profiles', 'authenticated', 'UPDATE')], ALL_TABLES)).toEqual([]);
-    // ...but the same privilege on a table with no exception is still a finding,
-    // and profiles' other privileges are not covered by its exception either.
-    expect(findGrantViolations([grant('profiles', 'authenticated', 'INSERT')], ALL_TABLES)).toHaveLength(1);
-    expect(findGrantViolations([grant('orders', 'authenticated', 'UPDATE')], ALL_TABLES)).toHaveLength(1);
+  it('treats a table-level UPDATE on profiles as a finding (00131)', () => {
+    // 00011's column-level revoke was a no-op behind this grant; it is what let
+    // any user PATCH their own role to Admin.
+    expect(findGrantViolations([grant('profiles', 'authenticated', 'UPDATE')], ALL_TABLES)).toHaveLength(1);
+    expect(findGrantViolations([grant('profiles', 'anon', 'TRUNCATE')], ALL_TABLES)).toHaveLength(1);
   });
 
   it('reports a locked table that is absent rather than passing it silently', () => {
@@ -173,5 +171,25 @@ describe('TRUNCATE', () => {
     // had ever revoked, from anyone, on any table.
     const findings = findGrantViolations([grant('orders', 'authenticated', 'TRUNCATE')], ALL_TABLES);
     expect(fatalFindings(findings)).toHaveLength(1);
+  });
+});
+
+describe('findProtectedColumnViolations', () => {
+  const col = (column: string, grantee: string, can: boolean | string) => ({
+    table_name: 'profiles', column_name: column, grantee, can_update: can,
+  });
+
+  it('flags a client role that can UPDATE profiles.role, however the privilege arrived', () => {
+    const f = findProtectedColumnViolations([col('role', 'authenticated', true), col('horeca_id', 'anon', 't')]);
+    expect(f.map((x: any) => x.privilege)).toEqual(['UPDATE(horeca_id)', 'UPDATE(role)']);
+    expect(fatalFindings(f)).toHaveLength(2);
+  });
+
+  it('passes when the protected columns are not updatable', () => {
+    expect(findProtectedColumnViolations([col('role', 'authenticated', false), col('horeca_id', 'anon', 'f')])).toEqual([]);
+  });
+
+  it('ignores columns that are not protected', () => {
+    expect(findProtectedColumnViolations([col('name', 'authenticated', true)])).toEqual([]);
   });
 });
