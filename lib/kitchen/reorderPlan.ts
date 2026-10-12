@@ -19,6 +19,8 @@
 //     (`resolvePromotionPrice`), NOT the bare `resolveHoReCaPrice` -- that one
 //     knows nothing about promotions and previews list price on a tenant that
 //     has any (the same mistake NewOrderView's grid had to fix).
+// That per-line price lives in `lib/reorderLinePrice.ts`, shared with the Shop's
+// Reorder tab so the two cannot drift again.
 // The total is an ESTIMATE and is labelled so wherever it is shown: the server
 // reprices at approval/placement and is the authority on carton rounding, BOGO
 // free lines and cart-level discounts.
@@ -32,8 +34,7 @@
 
 import type { HoReCa, Order, OrderItem, Product, Promotion, User } from '@/types'
 import { applyCartPromotions } from '@/services/promotionService'
-import { resolvePromotionPrice, resolveUomLinePrice } from '@/pricing'
-import { deriveDefaultUoms, findUomById, findUomByFactor, orderableUoms } from '@/lib/uom'
+import { priceReorderLine } from '@/lib/reorderLinePrice'
 
 export type ReorderLineStatus = 'ok' | 'low' | 'unavailable'
 
@@ -102,27 +103,11 @@ function excludedLine(source: OrderItem, reason: string): ReorderLine {
 }
 
 function planLine(source: OrderItem, product: Product, input: ReorderPlanInput): ReorderLine {
-  const { hoReCa, promotions, currentUser, cartonDiscountPercent } = input
-  const promos = [...promotions]
-
-  const own = orderableUoms(product.uoms)
-  const uoms = own.length > 0 ? own : orderableUoms(deriveDefaultUoms(product.unit, product.price, product.cartonSize, cartonDiscountPercent))
-  // A line that was a carton must stay a carton. Falling back to the base unit
-  // when its pack no longer exists would read "2 cartons" as "2 units" -- a
-  // quietly different order -- so that line is held back with a reason instead.
-  const wasPacked = (source.packSize ?? 1) > 1
-  const matched = findUomById(uoms, source.uomId) ?? findUomByFactor(uoms, source.packSize)
-  if (!matched && wasPacked) return excludedLine(source, 'Pack size changed')
-  const uom = matched ?? uoms.find((u) => u.isBase) ?? uoms[0]
-
-  const unitPrice = uom
-    ? resolveUomLinePrice(product, uom, hoReCa, currentUser, promos)
-    : resolvePromotionPrice(product, hoReCa, currentUser, promos).finalPrice
-
-  const packSize = uom ? (uom.isBase ? undefined : uom.factorToBase) : source.packSize
-  const unit = uom?.code ?? source.unit
-  // An id of 0 is a synthesised default UOM that was never persisted.
-  const uomId = uom && uom.id > 0 ? uom.id : undefined
+  // The price (and the unit of measure it was found in) is the shared definition
+  // the Shop's Reorder tab uses too -- see lib/reorderLinePrice.ts.
+  const priced = priceReorderLine(source, product, input)
+  if (priced.ok === false) return excludedLine(source, priced.reason)
+  const { unitPrice, packSize, unit, uomId } = priced
 
   const baseUnits = source.quantity * (packSize ?? 1)
   const short = baseUnits > product.available
