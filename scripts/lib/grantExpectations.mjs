@@ -6,7 +6,7 @@
 // which matters because the script itself can only ever run where a Supabase
 // access token exists.
 
-import { CLIENT_ROLES, CLIENT_WRITE_PRIVILEGES, LOCKED_TABLES } from '../../config/lockedTables.mjs'
+import { CLIENT_ROLES, CLIENT_WRITE_PRIVILEGES, LOCKED_TABLES, PROTECTED_COLUMNS } from '../../config/lockedTables.mjs'
 import { GRANT_BASELINE } from '../../config/grantBaseline.mjs'
 
 /**
@@ -99,6 +99,30 @@ export function findGrantViolations(rows, tablesPresent) {
       (a.privilege ?? '').localeCompare(b.privilege ?? ''),
   )
   return findings
+}
+
+/**
+ * Findings for protected columns a client role can UPDATE. Never baselined:
+ * every one of these is a privilege-escalation path, not inherited debt.
+ *
+ * @param {readonly { table_name: string, column_name: string, grantee: string, can_update: boolean | string }[]} rows
+ * @returns {Finding[]}
+ */
+export function findProtectedColumnViolations(rows) {
+  return rows
+    .filter((r) => r.can_update === true || r.can_update === 't')
+    .filter((r) => (PROTECTED_COLUMNS[r.table_name] ?? []).includes(r.column_name))
+    .map((r) => ({
+      kind: 'protected_column',
+      table: r.table_name,
+      grantee: r.grantee,
+      privilege: `UPDATE(${r.column_name})`,
+      message:
+        `${r.grantee} can UPDATE public.${r.table_name}.${r.column_name}. ` +
+        'That column decides who someone is or what they can reach -- see 00131. ' +
+        'A column-level REVOKE does nothing while a table-level grant stands.',
+    }))
+    .sort((a, b) => a.table.localeCompare(b.table) || a.grantee.localeCompare(b.grantee) || a.privilege.localeCompare(b.privilege))
 }
 
 /** The tables this check cares about, for the WHERE clause. */
