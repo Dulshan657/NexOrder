@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
@@ -10,12 +10,23 @@ import ToastContainer from './components/ToastContainer';
 import { DocumentViewerProvider } from './context/DocumentViewerContext';
 import { ErrorBoundary, FullPageErrorFallback } from './components/ErrorBoundary';
 import { installGlobalErrorHandlers } from './lib/errorReporter';
-import { registerChunkErrorReload } from './lib/lazyWithRetry';
+import { lazyWithRetry, registerChunkErrorReload } from './lib/lazyWithRetry';
 import ResetPasswordView from './components/auth/ResetPasswordView';
 import { parseAuthLink } from './lib/auth/recoveryLink';
 import type { AuthScreen } from './lib/auth/pendingPasswordSet';
 import { decideAuthScreen, readPendingPasswordSet } from './lib/auth/pendingPasswordSet';
 import { primeScanAudio } from './lib/scan/scanFeedback';
+// Build-time constant, NOT state: `MODULE_SHOP ? lazyWithRetry(...) : null` folds
+// to `null` for a tenant without the Shop, and Rollup then drops the `import()`
+// and the whole kitchen entry screen with it. Gate the DECLARATION -- a JSX gate
+// alone would still emit the chunk. See lib/modules.ts.
+import { MODULE_SHOP } from './lib/modules';
+import { readQrToken } from './lib/qr/qrLink';
+
+// A venue's printed QR opens `/?qr=<token>`. The screen is lazy: it is only ever
+// needed on that URL, and kitchens on a flaky connection should not pay for it on
+// every normal load.
+const QrEntryScreen = MODULE_SHOP ? lazyWithRetry(() => import('./components/qr/QrEntryScreen')) : null;
 
 // Popup OAuth completion handshake.
 //
@@ -116,6 +127,16 @@ installGlobalErrorHandlers();
 // guarded reload pulls a fresh index.html with the current chunk hashes.
 registerChunkErrorReload();
 
+// Shown while the lazy entry screen's chunk loads. Same ground as AuthGate's
+// splash so the swap to the real screen does not flash.
+function QrEntryFallback() {
+  return (
+    <div className="min-h-[100dvh] flex items-center justify-center bg-stone-50">
+      <p role="status" className="text-sm text-stone-600">Opening your kitchen…</p>
+    </div>
+  );
+}
+
 // Top-level switch: when arriving via a Supabase recovery or invite link,
 // render the dedicated set-password view instead of the normal AuthGate → App
 // tree. This covers FAILED links too (expired, already used) — they carry an
@@ -138,6 +159,14 @@ function Root() {
       parseAuthLink(window.location.hash, window.location.search).kind,
       readPendingPasswordSet(),
     ),
+  );
+
+  // A kitchen QR link. Like the auth-link switch above it is read once per page
+  // load; QrEntryScreen strips `?qr=` from the address bar when it lets the user
+  // in, and `onDone` is what drops this state and falls through to the normal app.
+  // A malformed token reads as no token, so a mangled sticker just opens the app.
+  const [qrToken, setQrToken] = useState<string | null>(() =>
+    MODULE_SHOP ? readQrToken(window.location.search) : null,
   );
 
   // Wake the scan tones on the first real user gesture of the page.
@@ -171,6 +200,18 @@ function Root() {
 
   if (screen === 'set-password') {
     return <ResetPasswordView onComplete={() => setScreen('app')} />;
+  }
+
+  // Before AuthGate on purpose: the person scanning is usually signed out, and
+  // AuthGate would put LoginPage in front of the PIN pad.
+  if (QrEntryScreen && qrToken) {
+    return (
+      <ErrorBoundary label="Kitchen QR">
+        <Suspense fallback={<QrEntryFallback />}>
+          <QrEntryScreen token={qrToken} onDone={() => setQrToken(null)} />
+        </Suspense>
+      </ErrorBoundary>
+    );
   }
 
   return (

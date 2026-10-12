@@ -225,6 +225,24 @@ async function assertPinFree(
   }
 }
 
+// The kitchen phone finds its own unlock row by name (auth_user_id is not
+// client-readable), so two active staff at one venue must never share a name.
+async function assertNameFree(
+  service: SupabaseClient,
+  horecaId: number,
+  name: string,
+  exceptStaffId?: string,
+): Promise<void> {
+  let q = service.from('qr_staff').select('id, name').eq('horeca_id', horecaId).is('revoked_at', null)
+  if (exceptStaffId) q = q.neq('id', exceptStaffId)
+  const { data, error } = await q
+  if (error) throw new EdgeFunctionError('INTERNAL', 'Could not check the name')
+  const wanted = name.trim().toLowerCase()
+  if ((data ?? []).some((r: { name: string }) => r.name.trim().toLowerCase() === wanted)) {
+    throw new EdgeFunctionError('CONFLICT', 'Someone here already has that name. Add a surname or initial.')
+  }
+}
+
 function randomPassword(): string {
   const bytes = new Uint8Array(32)
   crypto.getRandomValues(bytes)
@@ -380,6 +398,7 @@ async function actCreateStaff(
 
   const pinHmac = await hmacPin(pepper, horecaId, input.pin)
   await assertPinFree(ctx.service, horecaId, pinHmac)
+  await assertNameFree(ctx.service, horecaId, input.name)
   await ensureCode(ctx.service, horecaId)
 
   const { data: created, error: createErr } = await ctx.service.auth.admin.createUser({
@@ -456,6 +475,7 @@ async function actCreateStaff(
 async function actRename(ctx: Ctx, input: Extract<Input, { action: 'rename_staff' }>): Promise<Response> {
   const staff = await findStaff(ctx, input.staffId)
   if (staff.revoked_at) throw new EdgeFunctionError('CONFLICT', 'That staff member has been removed')
+  await assertNameFree(ctx.service, staff.horeca_id, input.name, staff.id)
 
   const { error } = await ctx.service.from('qr_staff').update({ name: input.name }).eq('id', staff.id)
   if (error) throw new EdgeFunctionError('INTERNAL', 'Could not rename the staff member')

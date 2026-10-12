@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { Suspense, useState, useMemo, useCallback, useEffect } from 'react';
 import type { Order, HoReCa, User, Invoice } from '../types';
 import { UserRole } from '../types';
 import StatusBadge from './StatusBadge';
@@ -10,6 +10,13 @@ import PaymentStatusBadge, {
 import { RefreshCw, Eye, ChevronUp, ChevronDown, Copy, Check, Download } from 'lucide-react';
 import { ORDER_STATUS_SEQUENCE } from '../constants';
 import { SortableHeader } from './ui/SortableHeader'
+import { ErrorBoundary } from './ErrorBoundary'
+import { lazyWithRetry } from '../lib/lazyWithRetry'
+import { MODULE_SHOP } from '../lib/modules'
+
+// Kitchen QR orders held for approval. Gated at the declaration so a tenant
+// without the shop module ships no chunk for it.
+const PendingQrRequests = MODULE_SHOP ? lazyWithRetry(() => import('./qr/PendingQrRequests')) : null;
 
 type SortColumn = 'date' | 'total' | 'status' | 'horeca' | 'payment';
 type PaymentFilterValue = 'all' | PaymentDisplayState;
@@ -47,6 +54,14 @@ interface OrderHistoryProps {
 const ITEMS_PER_PAGE = 20;
 
 const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, currentUser, onReorder, onBulkReorder, onViewDetail, onBack }) => {
+  // This page serves the venue's Customer login AND its kitchen staff (a hidden
+  // QR Staff login). Kitchen staff do not see invoices (their RLS returns none), so
+  // every payment affordance is withheld from them: an empty invoice list would
+  // otherwise read as "Not invoiced" on every row.
+  const isKitchen = currentUser.role === UserRole.QR_STAFF;
+  const isVenueUser = currentUser.role === UserRole.CUSTOMER || isKitchen;
+  const showPayment = !isKitchen;
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [filterHoReCaId, setFilterHoReCaId] = useState('all');
@@ -198,19 +213,21 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
   }, []);
 
   const generateCsv = useCallback((ordersToExport: Order[]): string => {
-    const headers = ['Order ID', 'HoReCa', 'Date', 'Status', 'Payment', 'Total', 'Items'];
+    const headers = showPayment
+      ? ['Order ID', 'HoReCa', 'Date', 'Status', 'Payment', 'Total', 'Items']
+      : ['Order ID', 'HoReCa', 'Date', 'Status', 'Total', 'Items'];
     const rows = ordersToExport.map(o => [
       o.id,
       o.hoReCa.name,
       new Date(o.orderDate).toLocaleDateString(),
       o.status,
-      getPaymentLabel(invoicesByOrderId.get(o.id), true),
+      ...(showPayment ? [getPaymentLabel(invoicesByOrderId.get(o.id), true)] : []),
       o.total.toFixed(2),
       o.items.map(i => `${i.name} x${i.quantity}`).join('; '),
     ]);
     const escape = (val: string) => `"${val.replace(/"/g, '""')}"`;
     return [headers, ...rows].map(row => row.map(escape).join(',')).join('\n');
-  }, [invoicesByOrderId]);
+  }, [invoicesByOrderId, showPayment]);
 
   const downloadCsv = useCallback((ordersToExport: Order[], filename: string) => {
     const csv = generateCsv(ordersToExport);
@@ -278,6 +295,14 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
         )}
       </div>
 
+      {PendingQrRequests && currentUser.hoReCaId != null && isVenueUser && (
+        <ErrorBoundary label="Orders awaiting approval">
+          <Suspense fallback={null}>
+            <PendingQrRequests horecaId={currentUser.hoReCaId} mode={isKitchen ? 'requester' : 'approver'} />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+
       {displayedHoReCa && displayedHoReCa.creditLimit !== undefined && (
         <div className="bg-white p-5 rounded-xl border border-stone-200/60 shadow-card mb-8 flex justify-between items-center">
           <div>
@@ -308,8 +333,8 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <div className={`grid grid-cols-1 sm:grid-cols-2 ${currentUser.role === UserRole.CUSTOMER ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-5 items-end`}>
-          {currentUser.role !== UserRole.CUSTOMER && (
+        <div className={`grid grid-cols-1 sm:grid-cols-2 ${isKitchen ? 'lg:grid-cols-4' : isVenueUser ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-5 items-end`}>
+          {!isVenueUser && (
             <div>
               <label htmlFor="customer-filter" className="block text-sm font-medium text-stone-700 mb-1.5">Filter by HoReCa</label>
               <select id="customer-filter" value={filterHoReCaId} onChange={e => setFilterHoReCaId(e.target.value)} className={inputClasses}>
@@ -318,19 +343,21 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
               </select>
             </div>
           )}
-          <div>
-            <label htmlFor="payment-filter" className="block text-sm font-medium text-stone-700 mb-1.5">Payment</label>
-            <select
-              id="payment-filter"
-              value={filterPaymentStatus}
-              onChange={e => setFilterPaymentStatus(e.target.value as PaymentFilterValue)}
-              className={inputClasses}
-            >
-              {PAYMENT_FILTER_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
+          {showPayment && (
+            <div>
+              <label htmlFor="payment-filter" className="block text-sm font-medium text-stone-700 mb-1.5">Payment</label>
+              <select
+                id="payment-filter"
+                value={filterPaymentStatus}
+                onChange={e => setFilterPaymentStatus(e.target.value as PaymentFilterValue)}
+                className={inputClasses}
+              >
+                {PAYMENT_FILTER_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label htmlFor="start-date" className="block text-sm font-medium text-stone-700 mb-1.5">Start Date</label>
             <input type="date" id="start-date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className={inputClasses} />
@@ -394,7 +421,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
                   <SortHeader column="horeca" label="HoReCa" />
                   <SortHeader column="date" label="Date" />
                   <SortHeader column="status" label="Status" />
-                  <SortHeader column="payment" label="Payment" />
+                  {showPayment && <SortHeader column="payment" label="Payment" />}
                   <SortHeader column="total" label="Total" align="right" />
                   <th className="px-4 py-3 font-semibold text-stone-600 text-right whitespace-nowrap">Actions</th>
                 </tr>
@@ -422,9 +449,11 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
                       <td className="px-4 py-3 align-middle text-stone-700">{order.hoReCa.name}</td>
                       <td className="px-4 py-3 align-middle text-stone-500 whitespace-nowrap">{new Date(order.orderDate).toLocaleDateString()}</td>
                       <td className="px-4 py-3 align-middle whitespace-nowrap"><StatusBadge status={order.status} /></td>
-                      <td className="px-4 py-3 align-middle whitespace-nowrap">
-                        <PaymentStatusBadge invoice={invoicesByOrderId.get(order.id)} compact />
-                      </td>
+                      {showPayment && (
+                        <td className="px-4 py-3 align-middle whitespace-nowrap">
+                          <PaymentStatusBadge invoice={invoicesByOrderId.get(order.id)} compact />
+                        </td>
+                      )}
                       <td className="px-4 py-3 align-middle text-right font-semibold text-stone-900 tabular-nums whitespace-nowrap">${order.total.toFixed(2)}</td>
                       <td className="px-4 py-3 align-middle text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
@@ -442,7 +471,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
                     </tr>
                     {expandedIds.has(order.id) && (
                       <tr>
-                        <td colSpan={8} className="px-4 py-3 bg-stone-50/50">
+                        <td colSpan={showPayment ? 8 : 7} className="px-4 py-3 bg-stone-50/50">
                           <ul className="divide-y divide-stone-100 max-w-2xl">
                             {order.items.map((item, i) => (
                               <li key={`${item.id}-${i}`} className="flex justify-between py-2 text-sm">

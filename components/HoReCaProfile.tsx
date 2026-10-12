@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { Suspense, useMemo, useState } from 'react';
 import type { HoReCa, Order, Invoice, User, Visit } from '../types';
 import { UserRole } from '../types';
-import { ArrowLeft, MapPin, CreditCard, Percent, ShoppingBag, Pencil, Phone, Building2 } from 'lucide-react';
+import { ArrowLeft, MapPin, CreditCard, Percent, ShoppingBag, Pencil, Phone, Building2, QrCode } from 'lucide-react';
 import SegmentBadge from './SegmentBadge';
 import HoReCaInsightCard from './HoReCaInsightCard';
 import OutstandingPayments from './OutstandingPayments';
@@ -10,6 +10,15 @@ import VisitModal from './visits/VisitModal';
 import HoReCaForm from './HoReCaForm';
 import { getHoReCaOutstanding } from '../services/accountingService';
 import { computeAllHoReCaInsights } from '../services/buyingPatternsService';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { ErrorBoundary } from './ErrorBoundary';
+import { MODULE_SHOP } from '../lib/modules';
+
+// Kitchen QR reorder ships with the shop module. Both pieces are declared HERE, at
+// the one place a profile is rendered, so neither AppShell nor AdminView needs to
+// know about them -- and a tenant without the module ships neither chunk.
+const QrAccessPanel = MODULE_SHOP ? lazyWithRetry(() => import('./qr/QrAccessPanel')) : null;
+const AssignedRepsSummary = MODULE_SHOP ? lazyWithRetry(() => import('./qr/AssignedRepsSummary')) : null;
 
 interface HoReCaProfileProps {
   hoReCa: HoReCa;
@@ -31,9 +40,14 @@ const HoReCaProfile: React.FC<HoReCaProfileProps> = ({
 }) => {
   const [showEditForm, setShowEditForm] = useState(false);
   const [showVisitModal, setShowVisitModal] = useState(false);
+  const [showQrPanel, setShowQrPanel] = useState(false);
 
   const isAdmin = currentUser.role === UserRole.ADMIN;
   const isRep = currentUser.role === UserRole.FIELD_REP || currentUser.role === UserRole.OFFICE_REP;
+  // Who is offered "QR & PINs". The server decides who may USE it: a rep who is not
+  // assigned to this venue gets a plain "ask an admin" message from the panel itself.
+  const canOpenQrPanel =
+    QrAccessPanel !== null && (isAdmin || currentUser.role === UserRole.MANAGER || isRep);
 
   const outstanding = useMemo(
     () => getHoReCaOutstanding(hoReCa.id, hoReCa.name, invoices),
@@ -83,6 +97,12 @@ const HoReCaProfile: React.FC<HoReCaProfileProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {canOpenQrPanel && (
+            <button onClick={() => setShowQrPanel(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-stone-100 text-stone-700 text-sm font-medium hover:bg-stone-200 transition-colors cursor-pointer touch-target-y">
+              <QrCode className="w-3.5 h-3.5" aria-hidden="true" /> QR &amp; PINs
+            </button>
+          )}
           {isAdmin && onUpdateHoReCa && (
             <button onClick={() => setShowEditForm(true)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-stone-100 text-stone-700 text-sm font-medium hover:bg-stone-200 transition-colors cursor-pointer">
@@ -150,6 +170,15 @@ const HoReCaProfile: React.FC<HoReCaProfileProps> = ({
               <p className="text-sm text-stone-500">No payment methods configured</p>
             )}
           </div>
+
+          {/* Assigned reps (who approves this venue's kitchen QR orders) */}
+          {AssignedRepsSummary && (
+            <ErrorBoundary label="Assigned reps">
+              <Suspense fallback={null}>
+                <AssignedRepsSummary horecaId={hoReCa.id} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
         </div>
 
         {/* Right — Outstanding Payments */}
@@ -232,6 +261,15 @@ const HoReCaProfile: React.FC<HoReCaProfileProps> = ({
           onClose={() => setShowEditForm(false)}
           userRole={currentUser.role}
         />
+      )}
+
+      {/* Kitchen QR & PINs. Mounted only while open: opening it is what creates the code. */}
+      {QrAccessPanel && showQrPanel && (
+        <ErrorBoundary label="QR & PINs">
+          <Suspense fallback={null}>
+            <QrAccessPanel horecaId={hoReCa.id} open onClose={() => setShowQrPanel(false)} />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
       {/* Visit Modal (Rep) */}

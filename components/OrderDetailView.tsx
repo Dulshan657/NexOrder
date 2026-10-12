@@ -143,7 +143,8 @@ const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, currentUser, i
                     <div className="flex flex-wrap items-center gap-3">
                         <OrderSourceBadge order={order} />
                         <StatusBadge status={order.status} size="md" />
-                        <PaymentStatusBadge invoice={invoice} />
+                        {/* Kitchen staff are given no invoices, so every order would read "Not invoiced". */}
+                        {currentUser.role !== UserRole.QR_STAFF && <PaymentStatusBadge invoice={invoice} />}
                     </div>
 
                     {/* OrderStream notice */}

@@ -6,6 +6,8 @@ import {
   updateHoReCa,
   deleteHoReCa,
   markHoReCaReviewed,
+  listHorecaReps,
+  setHorecaReps,
 } from '@/services/supabase/horecaService'
 import type { Database } from '@/lib/database.types'
 
@@ -14,12 +16,15 @@ type HoReCaUpdate = Database['public']['Tables']['horecas']['Update']
 
 export const horecaKeys = {
   all: ['horecas'] as const,
+  /** The reps assigned to one venue (profile ids). */
+  reps: (horecaId: number) => ['horeca-reps', horecaId] as const,
 } as const
 
-export function useHoReCas() {
+export function useHoReCas({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: horecaKeys.all,
     queryFn: getHoReCas,
+    enabled,
   })
 }
 
@@ -67,6 +72,27 @@ export function useMarkHoReCaReviewed() {
     onError: (err, id, context) => {
       optimistic.onError(err, id, context)
       console.error('[horecas] mark reviewed failed', err)
+    },
+  })
+}
+
+/** Profile ids of the reps assigned to a venue. Staff only (RLS); pass `enabled: false` to keep it idle. */
+export function useHorecaReps(horecaId: number | null | undefined, { enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery<string[]>({
+    queryKey: horecaKeys.reps(horecaId ?? 0),
+    queryFn: () => listHorecaReps(horecaId as number),
+    enabled: enabled && horecaId != null,
+  })
+}
+
+/** `mutate({ horecaId, repIds, reason? })`: the COMPLETE set; an empty array unassigns everyone. */
+export function useSetHorecaReps() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ horecaId, repIds, reason }: { horecaId: number; repIds: string[]; reason?: string }) =>
+      setHorecaReps(horecaId, repIds, reason),
+    onSuccess: (_stored, { horecaId }) => {
+      qc.invalidateQueries({ queryKey: horecaKeys.reps(horecaId) })
     },
   })
 }

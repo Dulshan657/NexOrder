@@ -30,7 +30,9 @@ const OrdersHistoryView: React.FC<OrdersHistoryViewProps> = ({
     onNavigateToShop,
     onNavigateBack,
 }) => {
-    const isCustomer = currentUser.role === UserRole.CUSTOMER;
+    // A venue's kitchen staff (the hidden QR Staff login) see the same history page as
+    // its Customer login, never the staff Order Import page.
+    const isCustomer = currentUser.role === UserRole.CUSTOMER || currentUser.role === UserRole.QR_STAFF;
 
     const handleBulkReorder = useCallback(
         (selectedOrders: Order[]) => {

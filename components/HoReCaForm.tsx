@@ -1,8 +1,18 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { Suspense, useState, useEffect, useMemo } from 'react';
 import { Building2 } from 'lucide-react';
 import type { HoReCa, HoReCaTier, PaymentMethod } from '../types';
 import { UserRole } from '../types';
 import { Button, Modal } from './ui';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { ErrorBoundary } from './ErrorBoundary';
+import { MODULE_SHOP } from '../lib/modules';
+import type { PendingSave } from '../lib/qr/assignedReps';
+
+// Which reps look after a venue only matters to kitchen QR orders, which ship with
+// the shop module. Gated at the declaration so a tenant without it ships no chunk --
+// and the picker owns the saving too (see PendingSave), so none of the QR code
+// reaches this file's own bundle.
+const AssignedRepsPicker = MODULE_SHOP ? lazyWithRetry(() => import('./qr/AssignedRepsPicker')) : null;
 
 // Defaults used by the Edge Function / DB schema
 const SENSITIVE_DEFAULTS = {
@@ -55,6 +65,14 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
     const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(initialPaymentMethods);
     const [editingMethod, setEditingMethod] = useState<Partial<PaymentMethod> | null>(null);
     const [reason, setReason] = useState('');
+    // The assigned-reps section's unsaved change, or null when it has none. The
+    // section persists it itself (mutate-horeca `set_reps` -- a different table with
+    // a different audit trail from the venue update, hence a separate call); the
+    // form only decides WHEN, and what to do if it fails. An object, not a bare
+    // function, because useState would call a function passed to its setter.
+    const [pendingReps, setPendingReps] = useState<PendingSave | null>(null);
+    const [repsError, setRepsError] = useState<string | null>(null);
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         setFormData(initialFields);
@@ -95,7 +113,7 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
 
     // A half-entered payment method counts as unsaved input too — it lives only in
     // `editingMethod` until "Save Method" folds it into the list.
-    const isDirty = useMemo(
+    const detailsDirty = useMemo(
         () =>
             editingMethod !== null ||
             reason.trim() !== '' ||
@@ -103,6 +121,13 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
             (Object.keys(initialFields) as (keyof FormFields)[]).some((key) => formData[key] !== initialFields[key]),
         [formData, initialFields, paymentMethods, initialPaymentMethods, editingMethod, reason],
     );
+    const isDirty = detailsDirty || pendingReps !== null;
+
+    // Admin and Manager assign reps, and only to a venue that exists to be assigned.
+    const canAssignReps =
+        AssignedRepsPicker !== null &&
+        hoReCaToEdit !== null &&
+        (userRole === UserRole.ADMIN || userRole === UserRole.MANAGER);
 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -143,8 +168,9 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
         setPaymentMethods(prev => prev.filter(m => m.id !== methodId));
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (saving) return;
         if (!formData.name || !formData.address) {
             alert('Please fill all fields.');
             return;
@@ -167,6 +193,28 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
 
         const reasonToSend = showReasonPrompt ? reason.trim() : undefined;
 
+        // Reps first: if it fails the form stays open with the reason, and nothing
+        // else has been saved yet.
+        if (hoReCaToEdit && pendingReps !== null) {
+            setSaving(true);
+            setRepsError(null);
+            try {
+                await pendingReps.save();
+            } catch (err) {
+                setRepsError(err instanceof Error && err.message
+                    ? `Could not update the assigned reps: ${err.message}`
+                    : 'Could not update the assigned reps. Please try again.');
+                setSaving(false);
+                return;
+            }
+            setSaving(false);
+            // Only the reps changed: there is no venue update to send.
+            if (!detailsDirty) {
+                onClose();
+                return;
+            }
+        }
+
         if (hoReCaToEdit) {
             onSave({ ...customerData, id: hoReCaToEdit.id }, reasonToSend);
         } else {
@@ -188,7 +236,7 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
             footer={({ requestClose }) => (
                 <>
                     <Button variant="secondary" onClick={requestClose}>Cancel</Button>
-                    <Button type="submit" disabled={showReasonPrompt && reason.trim().length < 5}>
+                    <Button type="submit" loading={saving} disabled={showReasonPrompt && reason.trim().length < 5}>
                         Save HoReCa
                     </Button>
                 </>
@@ -244,6 +292,22 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
                     />
                     <p className="text-xs text-stone-500 text-right">{reason.length}/500</p>
                 </div>
+            )}
+
+            {/* Assigned reps (kitchen QR approvals) */}
+            {canAssignReps && AssignedRepsPicker && hoReCaToEdit && (
+                <ErrorBoundary label="Assigned reps">
+                    <Suspense fallback={null}>
+                        <AssignedRepsPicker
+                            horecaId={hoReCaToEdit.id}
+                            onPendingSave={setPendingReps}
+                            disabled={saving}
+                        />
+                        {repsError && (
+                            <p role="alert" className="mt-2 text-sm font-medium text-red-700">{repsError}</p>
+                        )}
+                    </Suspense>
+                </ErrorBoundary>
             )}
 
             {/* Payment Methods Section */}
