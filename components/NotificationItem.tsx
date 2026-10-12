@@ -1,6 +1,8 @@
 import React from 'react';
 import type { AppNotification } from '../types';
-import { Package, ShoppingCart, FileText, Info, MapPin, CheckCircle2, GitPullRequest, XCircle } from 'lucide-react';
+import { Package, ShoppingCart, FileText, Info, MapPin, CheckCircle2, GitPullRequest, XCircle, QrCode, Lock } from 'lucide-react';
+import { qrNotificationDetail } from '../lib/qr/notificationText';
+import { MODULE_SHOP } from '../lib/modules';
 
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
     low_stock: Package,
@@ -12,6 +14,10 @@ const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
     change_request: GitPullRequest,
     change_approved: CheckCircle2,
     change_rejected: XCircle,
+    qr_order_pending: QrCode,
+    qr_order_approved: CheckCircle2,
+    qr_order_rejected: XCircle,
+    qr_code_locked: Lock,
 };
 
 const formatRelativeTime = (iso: string): string => {
@@ -28,13 +34,24 @@ const formatRelativeTime = (iso: string): string => {
 interface NotificationItemProps {
     notif: AppNotification;
     onMarkRead: (id: string) => void;
+    /** Runs after a tap, once the notification is marked read. Only passed for a
+     *  notification that has somewhere to go (kitchen QR types today). */
+    onActivate?: (notif: AppNotification) => void;
+    /** What tapping does ("Review order"). Shown under the message when `onActivate` is set. */
+    actionLabel?: string;
 }
 
-const NotificationItem: React.FC<NotificationItemProps> = ({ notif, onMarkRead }) => {
+const NotificationItem: React.FC<NotificationItemProps> = ({ notif, onMarkRead, onActivate, actionLabel }) => {
     const Icon = ICON_MAP[notif.type] || Info;
+    // Kitchen-QR notifications exist only where the shop module ships; gating the call
+    // (not just the display) lets the bundler drop the helper from a tenant without it.
+    const detail = MODULE_SHOP ? qrNotificationDetail(notif) : null;
     return (
         <button
-            onClick={() => !notif.read && onMarkRead(notif.id)}
+            onClick={() => {
+                if (!notif.read) onMarkRead(notif.id);
+                onActivate?.(notif);
+            }}
             className={`w-full text-left px-4 py-3 flex gap-3 transition-colors cursor-pointer ${
                 notif.read ? 'opacity-60' : 'bg-nexgen-blue/5 hover:bg-stone-50'
             }`}
@@ -48,6 +65,10 @@ const NotificationItem: React.FC<NotificationItemProps> = ({ notif, onMarkRead }
                 notif.type === 'change_request' ? 'bg-orange-50 text-orange-600' :
                 notif.type === 'change_approved' ? 'bg-emerald-50 text-emerald-600' :
                 notif.type === 'change_rejected' ? 'bg-red-50 text-red-600' :
+                notif.type === 'qr_order_pending' ? 'bg-amber-50 text-amber-600' :
+                notif.type === 'qr_order_approved' ? 'bg-emerald-50 text-emerald-600' :
+                notif.type === 'qr_order_rejected' ? 'bg-red-50 text-red-600' :
+                notif.type === 'qr_code_locked' ? 'bg-red-50 text-red-600' :
                 'bg-stone-100 text-stone-500'
             }`}>
                 <Icon className="w-3.5 h-3.5" />
@@ -56,6 +77,12 @@ const NotificationItem: React.FC<NotificationItemProps> = ({ notif, onMarkRead }
                 <p className={`text-xs ${notif.read ? 'text-stone-500' : 'text-stone-800'}`}>
                     {notif.message}
                 </p>
+                {detail && (
+                    <p className="text-[11px] text-stone-600 mt-0.5">{detail}</p>
+                )}
+                {onActivate && actionLabel && (
+                    <p className="text-[11px] font-medium text-nexgen-blue-dark mt-0.5">{actionLabel} &rarr;</p>
+                )}
                 <p className="text-[11px] text-stone-500 mt-0.5">{formatRelativeTime(notif.timestamp)}</p>
             </div>
             {!notif.read && (

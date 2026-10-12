@@ -4,59 +4,30 @@
 // quantities; the server resolves prices, applies promotions, checks stock
 // and credit, and writes the order/items/invoice. Direct INSERT on `orders`
 // and `order_items` is denied to all non-service-role connections by RLS.
+//
+// This file is the HTTP shell: CORS, authentication, the role gate, the rate
+// limit, body validation and the module gate. The placement itself — pricing,
+// stock / minimum / credit rules, insert, reservation, invoice, email — is
+// `_shared/placeOrderCore.ts`, which the QR approval flow also runs so a held
+// order is priced and validated by exactly the same rules as a live one.
 
-// deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
-import {
-  applyCartPromotions,
-  resolveLineUnitPrice,
-  resolveUomLineUnitPrice,
-  lineBaseUnits,
-  type Product,
-  type HoReCa,
-  type Promotion,
-  type ResolvedItem,
-  type UserContext,
-} from '../_shared/pricing.ts'
-import { orderedWarehousesFor } from '../_shared/warehouseRouting.ts'
+import { EdgeFunctionError } from '../_shared/errors.ts'
 import { requireModule } from '../_shared/modules.ts'
-
-// A product's UOM rows, trimmed to what pricing needs (mig 00067).
-interface LineUom {
-  id: number
-  factorToBase: number
-  price: number
-  isBase: boolean
-}
-
-type PricedProduct = Product & { name: string; sku: string; uoms: LineUom[] }
-
-interface PlaceOrderItem {
-  productId: number
-  quantity: number
-  packSize?: number | null
-  uomId?: number | null
-}
+import { findInvalidOrderItem, type OrderLineInput } from '../_shared/orderPricing.ts'
+import { placeOrderCore } from '../_shared/placeOrderCore.ts'
 
 interface PlaceOrderRequest {
   hoReCaId: number
-  items: PlaceOrderItem[]
+  items: OrderLineInput[]
   notes?: string | null
   deliveryDate?: string | null
   deliveryTimeSlot?: 'AM' | 'PM' | null
   verification?: Record<string, unknown> | null
   orderIdPrefix?: string
-}
-
-interface PlaceOrderResponse {
-  orderId: string
-  total: number
-  cartDiscount: number
-  appliedPromotionIds: string[]
-  bogoFreeItems: Array<{ productId: number; freeQuantity: number; promoId: string }>
 }
 
 // jsonResponse / errorResponse are defined inside `serve` so they close over
@@ -70,175 +41,6 @@ async function loadProfile(userClient: SupabaseClient, userId: string) {
     .single()
   if (error || !data) throw new Error('Profile not found')
   return data as { id: string; role: string; horeca_id: number | null }
-}
-
-async function loadHoReCa(serviceClient: SupabaseClient, hoReCaId: number): Promise<HoReCa & { credit_limit: number; name: string; lat?: number; lng?: number }> {
-  const { data, error } = await serviceClient
-    .from('horecas')
-    .select('id, name, discount_percent, credit_limit, tier, lat, lng, horeca_pricing(product_id, custom_price)')
-    .eq('id', hoReCaId)
-    .single()
-  if (error || !data) throw new Error('HoReCa not found')
-
-  const row = data as {
-    id: number
-    name: string
-    discount_percent: number | null
-    credit_limit: number | null
-    tier: string | null
-    lat: number | null
-    lng: number | null
-    horeca_pricing: Array<{ product_id: number; custom_price: number }> | null
-  }
-
-  const pricing: Record<number, number> = {}
-  for (const p of row.horeca_pricing ?? []) {
-    pricing[p.product_id] = Number(p.custom_price)
-  }
-
-  return {
-    id: row.id,
-    name: row.name,
-    credit_limit: Number(row.credit_limit ?? 0),
-    discountPercent: row.discount_percent ?? undefined,
-    tier: (row.tier as HoReCa['tier']) ?? null,
-    lat: row.lat != null ? Number(row.lat) : undefined,
-    lng: row.lng != null ? Number(row.lng) : undefined,
-    pricing,
-  }
-}
-
-/**
- * Closest-first warehouse preference for this order's destination. Reads active
- * WAREHOUSE locations and orders them by distance from the HoReCa's coordinates;
- * the inv_reserve_order RPC walks this list, splitting a line across sites.
- */
-async function loadLocationPref(
-  serviceClient: SupabaseClient,
-  coords: { lat: number; lng: number } | null,
-): Promise<number[]> {
-  const { data } = await serviceClient
-    .from('locations')
-    .select('id, lat, lng, is_active, location_type, kind')
-    .eq('kind', 'WAREHOUSE')
-  const warehouses = ((data ?? []) as Array<any>).map((w) => ({
-    id: w.id as number,
-    lat: w.lat != null ? Number(w.lat) : null,
-    lng: w.lng != null ? Number(w.lng) : null,
-    isActive: !!w.is_active,
-    locationType: (w.location_type ?? 'bulk') as 'bulk' | 'racked',
-  }))
-  return orderedWarehousesFor(coords, warehouses)
-}
-
-/**
- * Every location an order may draw from, for the given warehouses.
- *
- * Delegates to `inv_warehouse_draw_locations` per warehouse — one definition,
- * shared with `inv_reserve_order`, rather than a materialized-path prefix
- * rebuilt in TypeScript that would drift the first time the rule changed. The
- * list is one entry per active warehouse, so the fan-out is small and runs
- * concurrently.
- *
- * Returns [] when the preference is empty, which the caller reads as
- * "unscoped" exactly as before.
- */
-async function expandDrawLocations(
-  serviceClient: SupabaseClient,
-  warehouseIds: number[],
-): Promise<number[]> {
-  if (warehouseIds.length === 0) return []
-  const results = await Promise.all(
-    warehouseIds.map((id) =>
-      serviceClient.rpc('inv_warehouse_draw_locations', { p_warehouse_id: id }),
-    ),
-  )
-  const ids = new Set<number>()
-  for (const { data } of results) {
-    for (const row of (data ?? []) as Array<{ location_id: number }>) {
-      ids.add(Number(row.location_id))
-    }
-  }
-  // A warehouse whose expansion came back empty (an RPC error, say) must not
-  // silently narrow the check to nothing — fall back to the warehouse itself,
-  // which is what the old code checked and is never wrong, only incomplete.
-  for (const id of warehouseIds) if (!ids.has(id)) ids.add(id)
-  return [...ids]
-}
-
-async function loadProducts(serviceClient: SupabaseClient, productIds: number[]): Promise<Map<number, PricedProduct>> {
-  const { data, error } = await serviceClient
-    .from('products')
-    .select('id, sku, name, price, category, inventory, carton_size, product_uoms(id, factor_to_base, price, is_base)')
-    .in('id', productIds)
-  if (error) throw error
-
-  const map = new Map<number, PricedProduct>()
-  for (const row of (data ?? []) as Array<any>) {
-    map.set(row.id, {
-      id: row.id,
-      name: row.name,
-      sku: row.sku,
-      price: Number(row.price),
-      category: row.category,
-      inventory: Number(row.inventory),
-      cartonSize: row.carton_size ?? undefined,
-      uoms: ((row.product_uoms ?? []) as Array<any>).map(u => ({
-        id: u.id,
-        factorToBase: Number(u.factor_to_base),
-        price: Number(u.price),
-        isBase: u.is_base,
-      })),
-    })
-  }
-  return map
-}
-
-async function loadActivePromotions(serviceClient: SupabaseClient): Promise<Promotion[]> {
-  const { data, error } = await serviceClient
-    .from('promotions')
-    .select('*')
-    .eq('is_active', true)
-  if (error) throw error
-
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    name: row.name,
-    type: row.type,
-    percentOff: row.percent_off != null ? Number(row.percent_off) : undefined,
-    fixedPrice: row.fixed_price != null ? Number(row.fixed_price) : undefined,
-    bogoConfig: row.bogo_config ?? null,
-    bundleConfig: row.bundle_config ?? null,
-    clearancePercent: row.clearance_percent != null ? Number(row.clearance_percent) : undefined,
-    scope: row.scope,
-    targeting: row.targeting,
-    stackWithHoReCaPricing: !!row.stack_with_horeca_pricing,
-    startDate: row.start_date,
-    endDate: row.end_date,
-    isActive: !!row.is_active,
-    priority: Number(row.priority ?? 10),
-  }))
-}
-
-async function loadAppSettings(serviceClient: SupabaseClient) {
-  const { data } = await serviceClient.from('app_settings').select('*').eq('id', 1).single()
-  return data as {
-    order_id_prefix: string
-    minimum_order_value: number | null
-    default_credit_limit: number | null
-    carton_discount_percent: number | null
-  } | null
-}
-
-async function getOutstandingBalance(serviceClient: SupabaseClient, hoReCaId: number): Promise<number> {
-  const { data, error } = await serviceClient
-    .from('invoices')
-    .select('amount')
-    .eq('horeca_id', hoReCaId)
-    // Only money still owed: a cancelled invoice (mig 00111) is not a debt.
-    .in('status', ['pending', 'overdue'])
-  if (error) throw error
-  return (data ?? []).reduce((sum: number, row: any) => sum + Number(row.amount ?? 0), 0)
 }
 
 serve(async (req: Request) => {
@@ -280,14 +82,8 @@ serve(async (req: Request) => {
   if (typeof body.hoReCaId !== 'number' || !Array.isArray(body.items) || body.items.length === 0) {
     return errorResponse('INVALID_INPUT', 'hoReCaId (number) and items[] (non-empty) required')
   }
-  for (const it of body.items) {
-    if (typeof it.productId !== 'number' || typeof it.quantity !== 'number' || it.quantity <= 0 || !Number.isInteger(it.quantity)) {
-      return errorResponse('INVALID_ITEM', 'Each item needs integer productId and positive integer quantity')
-    }
-    if (it.uomId != null && (!Number.isInteger(it.uomId) || it.uomId <= 0)) {
-      return errorResponse('INVALID_ITEM', 'uomId must be a positive integer when provided')
-    }
-  }
+  const invalidItem = findInvalidOrderItem(body.items)
+  if (invalidItem) return errorResponse('INVALID_ITEM', invalidItem)
 
   const { data: authUser } = await userClient.auth.getUser()
   if (!authUser?.user) return errorResponse('UNAUTHORIZED', 'Invalid session', 401)
@@ -320,276 +116,24 @@ serve(async (req: Request) => {
     return errorResponse('TOO_MANY_REQUESTS', 'Rate limit exceeded — too many orders in a short period', 429)
   }
 
-  // Load data via service client (bypasses RLS, all reads needed for pricing).
-  //
-  // These five reads depend on nothing but the request, so they run together:
-  // checkout used to make every one of them a sequential round-trip. Only the
-  // location chain below genuinely waits — it needs the HoReCa's coordinates.
-  // The outstanding balance is read here rather than just before the credit
-  // check; that check was never transactional, so moving the read a few
-  // milliseconds earlier changes nothing it guarantees.
-  const productIds = [...new Set(body.items.map(i => i.productId))]
-  const HORECA_MISSING = Symbol('horeca-missing')
-  const [hoReCaOrMissing, productMap, promotions, settings, outstanding] = await Promise.all([
-    loadHoReCa(serviceClient, body.hoReCaId).catch(() => HORECA_MISSING),
-    loadProducts(serviceClient, productIds),
-    loadActivePromotions(serviceClient),
-    loadAppSettings(serviceClient),
-    getOutstandingBalance(serviceClient, body.hoReCaId),
-  ])
-  if (hoReCaOrMissing === HORECA_MISSING) {
-    return errorResponse('HORECA_NOT_FOUND', `HoReCa ${body.hoReCaId} not found`, 404)
-  }
-  const hoReCa = hoReCaOrMissing as Awaited<ReturnType<typeof loadHoReCa>>
-
-  for (const id of productIds) {
-    if (!productMap.has(id)) return errorResponse('PRODUCT_NOT_FOUND', `Product ${id} not found`, 404)
-  }
-
-  // Normalize each line's pack factor + UOM from the product's own UOM rows
-  // (mig 00067) BEFORE aggregation/stock-check/pricing, so all three agree and a
-  // client-sent pack_size can't disagree with the authoritative factor. A UOM
-  // resolves to: base → per-unit line (packSize null); non-base → its factor. An
-  // unknown/absent uomId falls back to the legacy client packSize path.
-  const normalizedItems: PlaceOrderItem[] = body.items.map(it => {
-    const product = productMap.get(it.productId)!
-    const uom = it.uomId != null ? product.uoms.find(u => u.id === it.uomId) : undefined
-    const packSize = uom
-      ? (uom.isBase ? null : uom.factorToBase)
-      : (it.packSize ?? null)
-    return { productId: it.productId, quantity: it.quantity, packSize, uomId: uom ? uom.id : null }
-  })
-
-  // Aggregate quantities so duplicates in the cart count toward stock check.
-  // The key includes uomId so two distinct UOMs sharing a factor never merge.
-  const aggregated = new Map<string, PlaceOrderItem>()
-  for (const it of normalizedItems) {
-    const key = `${it.productId}:${it.uomId ?? ''}:${it.packSize ?? ''}`
-    const existing = aggregated.get(key)
-    if (existing) existing.quantity += it.quantity
-    else aggregated.set(key, { ...it })
-  }
-
-  // Stock check. Inventory is in BASE units, but a carton line carries
-  // quantity = number of cartons + packSize = units per carton. Convert to base
-  // units (quantity × packSize) so the check — and the reservation below, which
-  // reuses totalsByProduct — operate in the same unit as stock.
-  const totalsByProduct = new Map<number, number>()
-  for (const it of aggregated.values()) {
-    const baseUnits = lineBaseUnits(it.quantity, it.packSize)
-    totalsByProduct.set(it.productId, (totalsByProduct.get(it.productId) ?? 0) + baseUnits)
-  }
-
-  // Closest-first warehouse preference from the customer's coordinates; the RPC
-  // splits each line across sites nearest-first. Computed here (before the stock
-  // check) because availability must be scoped to the same warehouses the RPC
-  // will draw from. Falls back to the default warehouse when the HoReCa has no
-  // coordinates or only one warehouse exists.
-  const coords =
-    typeof hoReCa.lat === 'number' && typeof hoReCa.lng === 'number'
-      ? { lat: hoReCa.lat, lng: hoReCa.lng }
-      : null
-  const locationPref = await loadLocationPref(serviceClient, coords)
-
-  // Check against AVAILABLE (on_hand − allocated) from inventory_balances, NOT
-  // products.inventory (the on_hand cache). The reservation RPC reserves against
-  // available, so checking on_hand here would let an order pass the pre-check and
-  // then fail reservation with a misleading "Stock changed" race error when the
-  // shortfall was really stock already allocated to other open orders. Scope to
-  // the preferred warehouses so it matches exactly what the RPC will reserve.
-  //
-  // SCOPE TO THE DRAW LOCATIONS, NOT THE WAREHOUSE IDS. `locationPref` holds
-  // WAREHOUSE rows, but stock that has been put away lives on the BIN, and a
-  // bin's `location_id` is its own id — not its warehouse's. Filtering on the
-  // warehouse ids alone therefore counted only what was still sitting at the
-  // warehouse root, and answered "0 available" for a racked site with a full
-  // rack. `inv_warehouse_draw_locations` is the same expansion
-  // `inv_reserve_order` uses (mig 00040: racked ⇒ root + descendants, bulk ⇒
-  // root), and it has to be THAT function rather than a path prefix rebuilt
-  // here, or the check and the reservation can disagree again later.
-  const pids = [...totalsByProduct.keys()]
-  const drawLocations = await expandDrawLocations(serviceClient, locationPref)
-  let balQuery = serviceClient
-    .from('inventory_balances')
-    .select('product_id, available')
-    .in('product_id', pids)
-  if (drawLocations.length > 0) balQuery = balQuery.in('location_id', drawLocations)
-  const { data: balRows } = await balQuery
-  const availByProduct = new Map<number, number>()
-  for (const r of (balRows ?? []) as Array<{ product_id: number; available: number }>) {
-    availByProduct.set(r.product_id, (availByProduct.get(r.product_id) ?? 0) + Number(r.available))
-  }
-  for (const [pid, qty] of totalsByProduct) {
-    const avail = availByProduct.get(pid) ?? 0
-    if (avail < qty) {
-      const product = productMap.get(pid)!
-      return errorResponse('INSUFFICIENT_STOCK', `${avail} of "${product.name}" available, ${qty} requested`, 409)
-    }
-  }
-
-  // Resolve prices. The carton discount (from settings) feeds per-line pricing.
-  const cartonDiscountPercent = Number(settings?.carton_discount_percent ?? 5)
-  const userContext: UserContext = { id: 0, role: profile.role } // numeric id only used by 'rep' targeting; safe to leave 0 for now
-
-  const resolvedItems: ResolvedItem[] = []
-  for (const it of aggregated.values()) {
-    const product = productMap.get(it.productId)!
-    const uom = it.uomId != null ? product.uoms.find(u => u.id === it.uomId) : undefined
-    // Explicit-UOM line → use the UOM's own list price (mig 00067). Base UOM and
-    // legacy packSize-only lines → the existing carton/per-unit math.
-    const { unitPrice, appliedPromotionId } = uom && !uom.isBase
-      ? resolveUomLineUnitPrice(product, hoReCa, userContext, promotions, uom)
-      : resolveLineUnitPrice(product, hoReCa, userContext, promotions, it.packSize ?? null, cartonDiscountPercent)
-    resolvedItems.push({
-      productId: it.productId,
-      quantity: it.quantity,
-      packSize: it.packSize ?? null,
-      uomId: it.uomId ?? null,
-      productName: product.name,
-      productSku: product.sku,
-      unitPrice,
-      appliedPromotionId,
-    })
-  }
-
-  const subtotal = resolvedItems.reduce((s, i) => s + i.unitPrice * i.quantity, 0)
-  const { bogoFreeItems, bundleDiscounts, cartDiscount } = applyCartPromotions(
-    resolvedItems, promotions, hoReCa, userContext, productMap,
-  )
-  const total = Math.round((subtotal - cartDiscount) * 100) / 100
-
-  // Minimum order value
-  const minOrderValue = Number(settings?.minimum_order_value ?? 0)
-  if (minOrderValue > 0 && total < minOrderValue) {
-    return errorResponse('BELOW_MINIMUM', `Order total $${total} is below minimum $${minOrderValue}`, 422)
-  }
-
-  // Credit limit (`outstanding` was loaded with the other reads above)
-  const creditLimit = hoReCa.credit_limit > 0 ? hoReCa.credit_limit : Number(settings?.default_credit_limit ?? 0)
-  if (creditLimit > 0 && outstanding + total > creditLimit) {
-    return errorResponse('CREDIT_EXCEEDED', `Credit limit $${creditLimit} would be exceeded ($${outstanding} outstanding + $${total} new)`, 422)
-  }
-
-  // Insert order, items, invoice
-  const orderIdPrefix = settings?.order_id_prefix ?? 'ORD'
-  const orderId = `${orderIdPrefix}-${Date.now()}`
-  const orderDate = new Date().toISOString()
-
-  const { error: orderError } = await serviceClient
-    .from('orders')
-    .insert({
-      id: orderId,
-      horeca_id: body.hoReCaId,
-      submitted_by: profile.id,
-      total,
-      order_date: orderDate,
-      notes: body.notes ?? null,
-      status: 'processing',
-      status_history: [{ status: 'processing', timestamp: orderDate }] as any,
-      delivery_date: body.deliveryDate ?? null,
-      delivery_time_slot: body.deliveryTimeSlot ?? null,
-      verification: (body.verification ?? null) as any,
-      applied_promotions: bundleDiscounts.length > 0 ? bundleDiscounts as any : null,
-    })
-  if (orderError) {
-    return errorResponse('DB_ORDER_INSERT_FAILED', orderError.message, 500)
-  }
-
-  const itemRows = resolvedItems.map(i => ({
-    order_id: orderId,
-    product_id: i.productId,
-    quantity: i.quantity,
-    pack_size: i.packSize,
-    uom_id: i.uomId ?? null,
-    unit_price: i.unitPrice,
-    product_name: i.productName,
-    product_sku: i.productSku,
-  }))
-  const { error: itemsError } = await serviceClient.from('order_items').insert(itemRows)
-  if (itemsError) {
-    // Best-effort rollback
-    await serviceClient.from('orders').delete().eq('id', orderId)
-    return errorResponse('DB_ITEMS_INSERT_FAILED', itemsError.message, 500)
-  }
-
-  // Reserve stock atomically (after order persisted). The inv_reserve_order RPC
-  // raises `allocated` across FIFO balance rows in one transaction; available
-  // drops but on_hand stays put until the goods are physically picked
-  // (reserve-on-placement model). On any failure we roll back the order/items
-  // so we never leave a phantom order against unreserved stock.
-  const reserveItems = [...totalsByProduct.entries()].map(([productId, quantity]) => ({
-    product_id: productId,
-    quantity,
-  }))
-  // coords + locationPref were computed above (the stock pre-check is scoped to
-  // these same warehouses). The RPC splits each line across sites nearest-first.
-  const { error: reserveError } = await serviceClient.rpc('inv_reserve_order', {
-    p_order_id: orderId,
-    p_items: reserveItems,
-    p_location_pref: locationPref.length > 0 ? locationPref : null,
-    p_actor: profile.id,
-  })
-  if (reserveError) {
-    await serviceClient.from('order_items').delete().eq('order_id', orderId)
-    await serviceClient.from('orders').delete().eq('id', orderId)
-    const insufficient = reserveError.message.includes('INSUFFICIENT_STOCK')
-    return errorResponse(
-      insufficient ? 'INSUFFICIENT_STOCK' : 'STOCK_RACE',
-      insufficient ? 'Stock changed — one or more items are no longer available' : reserveError.message,
-      409,
-    )
-  }
-
-  // Invoice (pending, due in 30d)
-  const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  const invoiceId = `INV-${Date.now()}`
-  const { error: invoiceError } = await serviceClient.from('invoices').insert({
-    id: invoiceId,
-    order_id: orderId,
-    horeca_id: body.hoReCaId,
-    horeca_name: hoReCa.name,
-    amount: total,
-    status: 'pending',
-    due_date: dueDate,
-    created_date: orderDate.split('T')[0],
-  })
-  if (invoiceError) {
-    // Order is already placed; surface invoice failure but don't roll back
-    console.warn('Invoice creation failed, order placed without invoice:', invoiceError.message)
-  }
-
-  // Fire-and-forget order confirmation email. Failure must never roll back
-  // the placed order, so any error is logged and swallowed.
   try {
-    const fnUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/send-email`
-    void fetch(fnUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ template: 'order_confirmation', orderId }),
-    }).catch((err) => console.warn('order_confirmation email dispatch failed:', err))
-  } catch (e) {
-    console.warn('order_confirmation email dispatch threw:', e)
+    const result = await placeOrderCore(serviceClient, {
+      submittedBy: profile.id,
+      actorRole: profile.role,
+      hoReCaId: body.hoReCaId,
+      items: body.items,
+      notes: body.notes,
+      deliveryDate: body.deliveryDate,
+      deliveryTimeSlot: body.deliveryTimeSlot,
+      verification: body.verification,
+    })
+    return jsonResponse(result, 201)
+  } catch (err) {
+    // A broken business rule or a failed write arrives as an EdgeFunctionError
+    // carrying the code and status place-order has always answered with.
+    // Anything else is a failed read the core never handled; it propagates, as
+    // it did before the extraction, to the runtime's own 500.
+    if (err instanceof EdgeFunctionError) return errorResponse(err.code, err.message, err.status)
+    throw err
   }
-
-  const response: PlaceOrderResponse = {
-    orderId,
-    total,
-    cartDiscount,
-    appliedPromotionIds: [
-      ...new Set([
-        ...resolvedItems.map(i => i.appliedPromotionId).filter((x): x is string => !!x),
-        ...bundleDiscounts.map(b => b.promoId),
-        ...bogoFreeItems.map(b => b.promoId),
-      ]),
-    ],
-    bogoFreeItems: bogoFreeItems.map(b => ({
-      productId: b.productId,
-      freeQuantity: b.freeQuantity,
-      promoId: b.promoId,
-    })),
-  }
-  return jsonResponse(response, 201)
 })

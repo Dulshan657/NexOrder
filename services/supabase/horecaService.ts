@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAllRows'
+import { extractFunctionErrorMessage } from '@/lib/functionError'
 import type { Database } from '@/lib/database.types'
 
 type HoReCaRow = Database['public']['Tables']['horecas']['Row']
@@ -69,4 +70,36 @@ export async function deleteHoReCa(id: number, reason?: string): Promise<void> {
 // goes through it; the function stamps reviewed_by from the caller's session.
 export async function markHoReCaReviewed(id: number): Promise<HoReCaRow> {
   return updateHoReCa(id, { reviewed_at: new Date().toISOString(), is_temporary: false })
+}
+
+// ── Assigned reps (mig 00129) ─────────────────────────────────────────────────
+// `horeca_reps` says which Field/Office Sales Reps look after a venue. It decides
+// who may approve that venue's kitchen QR orders and manage its PINs. SELECT is
+// granted to staff only; writes go through mutate-horeca `set_reps` (Admin,
+// Manager), which takes the COMPLETE set -- an empty array unassigns everyone.
+
+/** The profile ids (UUIDs) of the reps assigned to a venue. */
+export async function listHorecaReps(horecaId: number): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('horeca_reps')
+    .select('rep_id')
+    .eq('horeca_id', horecaId)
+  if (error) throw error
+  return ((data ?? []) as unknown as Array<{ rep_id: string }>).map((r) => r.rep_id)
+}
+
+/**
+ * Replace the venue's assigned reps with exactly `repIds`. The server refuses any
+ * id that is not a Field or Office Sales Rep rather than dropping it, so a stale
+ * picker cannot half-apply. Returns the set that is now stored.
+ */
+export async function setHorecaReps(horecaId: number, repIds: string[], reason?: string): Promise<string[]> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true; horecaId: number; repIds: string[] }>(
+    'mutate-horeca',
+    { body: { action: 'set_reps', horecaId, repIds, reason } },
+  )
+  // The generic "non-2xx status code" hides the one thing the person needs ("only
+  // Field and Office Sales Reps can be assigned"); the envelope in the body has it.
+  if (error) throw new Error(await extractFunctionErrorMessage(error, 'Please try again.'))
+  return data?.repIds ?? repIds
 }

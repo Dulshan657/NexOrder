@@ -130,6 +130,38 @@ describe('parseRecoveryLink — everything else', () => {
     })
 })
 
+describe('parseRecoveryLink — the kitchen QR entry URL', () => {
+    // `?qr=<token>` is how a printed venue sticker opens the app (mig 00129). It
+    // must NEVER be mistaken for an auth link: claiming it would drop a cook on
+    // the set-password screen instead of the PIN pad.
+    const TOKEN = 'abcdefghijklmnopqrstuvwxyz012345'
+
+    it('does not claim ?qr=', () => {
+        expect(parseRecoveryLink('', `?qr=${TOKEN}`).kind).toBe('none')
+    })
+
+    it('does not claim ?qr= beside other ordinary params', () => {
+        expect(parseRecoveryLink('', `?tab=Orders&qr=${TOKEN}&wh=2`).kind).toBe('none')
+    })
+
+    it('does not claim it with a hash present', () => {
+        expect(parseRecoveryLink('#cart', `?qr=${TOKEN}`).kind).toBe('none')
+    })
+
+    it('still reads a real auth link when both are present', () => {
+        expect(parseRecoveryLink('', `?qr=${TOKEN}&token_hash=pkce_abc123&type=recovery`)).toEqual({
+            kind: 'token_hash',
+            flow: 'recovery',
+            tokenHash: 'pkce_abc123',
+        })
+    })
+
+    it('does not treat a token that happens to look like a flow as one', () => {
+        expect(parseRecoveryLink('', '?qr=recovery').kind).toBe('none')
+        expect(parseRecoveryLink('', '?qr=type%3Drecovery').kind).toBe('none')
+    })
+})
+
 describe('wantsResetRequest', () => {
     it('matches the marker ResetPasswordView writes', () => {
         expect(wantsResetRequest('?reset=1')).toBe(true)

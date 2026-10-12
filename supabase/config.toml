@@ -31,6 +31,12 @@
 #                           embeddings (mig 00089); accepts the service-role
 #                           bearer OR EMBED_PRODUCTS_CRON_TOKEN, both compared
 #                           in-function. Writes nothing a caller supplies.
+# - qr-unlock             — the public door of the HoReCa QR reorder flow (mig
+#                           00129): the caller is a kitchen phone with no session
+#                           yet. Gated in-function by per-IP rate limits and the
+#                           per-code PIN backoff in qr_verify_pin(); owned by the
+#                           `shop` module, so it is NOT deployed to a tenant
+#                           without Shop (Amadiya keeps nine entries, not ten).
 #
 # All other functions keep the default verify_jwt = true so callers must
 # supply a valid Supabase auth JWT.
@@ -60,4 +66,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.embed-products]
+verify_jwt = false
+
+[functions.qr-unlock]
 verify_jwt = false

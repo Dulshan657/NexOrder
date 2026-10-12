@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { Suspense, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { Order, HoReCa, User, OrderStatus, Invoice, InvoiceStatus } from '../types';
 import { UserRole } from '../types';
 import StatusBadge from './StatusBadge';
@@ -39,6 +39,13 @@ import {
   Truck,
 } from 'lucide-react';
 import { SortableHeader } from './ui/SortableHeader';
+import { ErrorBoundary } from './ErrorBoundary';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { MODULE_SHOP } from '../lib/modules';
+
+// Kitchen QR orders held for approval. Gated at the declaration, so a tenant
+// without the shop module (Amadiya) ships no chunk for it.
+const PendingQrRequests = MODULE_SHOP ? lazyWithRetry(() => import('./qr/PendingQrRequests')) : null;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,6 +75,8 @@ type SourceFilterValue = 'all' | OrderSourceKey;
 const SOURCE_FILTER_OPTIONS: ReadonlyArray<{ value: SourceFilterValue; label: string }> = [
   { value: 'all', label: 'All Sources' },
   { value: 'email_inbound', label: 'Email PO' },
+  // Kitchen QR orders exist only where the shop module ships.
+  ...(MODULE_SHOP ? [{ value: 'qr_kitchen' as const, label: 'Kitchen QR' }] : []),
   { value: 'customer_web', label: 'Customer Web' },
   { value: 'rep_field', label: 'Field Rep' },
   { value: 'rep_office', label: 'Office Rep' },
@@ -614,6 +623,16 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
           </button>
         )}
       </div>
+
+      {/* Kitchen QR orders awaiting approval. Admin/Manager see every venue; a rep sees
+          their assigned venues (RLS narrows the list, not this component). */}
+      {PendingQrRequests && !isCustomer && currentUser.role !== UserRole.WAREHOUSE && (
+        <ErrorBoundary label="Orders awaiting approval">
+          <Suspense fallback={null}>
+            <PendingQrRequests mode="approver" />
+          </Suspense>
+        </ErrorBoundary>
+      )}
 
       {/* Tabs */}
       <div className="border-b border-stone-200">

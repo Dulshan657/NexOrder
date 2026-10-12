@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, CheckCheck } from 'lucide-react';
 import type { AppNotification } from '../types';
@@ -8,6 +8,15 @@ import PendingPoAlertItem from './admin/PendingPoAlertItem';
 import { usePendingPos } from '@/hooks/queries/usePendingPos';
 import { placePopover, type PopoverPlacement } from '@/lib/popoverPosition';
 import { CHROME_Z } from './ui/overlayStack';
+import { ErrorBoundary } from './ErrorBoundary';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
+import { MODULE_SHOP } from '@/lib/modules';
+import { qrActionLabel, qrNotificationAction, type QrNotificationAction } from '@/lib/qr/notificationText';
+
+// Kitchen QR actions open an overlay in place. Both ship with the shop module, so
+// both are gated at the declaration and a tenant without it carries neither chunk.
+const QrRequestReviewModal = MODULE_SHOP ? lazyWithRetry(() => import('./qr/QrRequestReviewModal')) : null;
+const QrAccessPanel = MODULE_SHOP ? lazyWithRetry(() => import('./qr/QrAccessPanel')) : null;
 
 interface NotificationCenterProps {
     notifications: AppNotification[];
@@ -16,6 +25,12 @@ interface NotificationCenterProps {
     isAdminOrManager: boolean;
     /** Routes the admin shell to the PO Inbox queue (sets ?subtab=queue). */
     onOpenPoInbox: () => void;
+    /**
+     * Takes the user to their order history. Optional: without it a
+     * `qr_order_approved` / `qr_order_rejected` notification just marks itself read.
+     * `orderId` is the order the approval placed (null for a rejection).
+     */
+    onOpenOrders?: (orderId: string | null) => void;
 }
 
 const MAX_PO_ROWS = 5;
@@ -40,8 +55,13 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     onMarkAllRead,
     isAdminOrManager,
     onOpenPoInbox,
+    onOpenOrders,
 }) => {
     const [open, setOpen] = useState(false);
+    // Overlays a kitchen-QR notification opens. Held here, not in the dropdown, so
+    // they outlive the panel closing behind them.
+    const [reviewRequestId, setReviewRequestId] = useState<string | null>(null);
+    const [accessHoReCaId, setAccessHoReCaId] = useState<number | null>(null);
     const rootRef = useRef<HTMLDivElement>(null);
     // The panel is portalled to document.body, so it is NOT inside rootRef any
     // more and the outside-click test below has to know about it separately.
@@ -117,6 +137,24 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
     const handleOpenPoInbox = () => {
         onOpenPoInbox();
+        setOpen(false);
+    };
+
+    // Whether a tap on this action can do anything here. A notification whose action
+    // is unavailable (module not shipped, no navigation given) is a plain notification.
+    const canRun = (action: QrNotificationAction | null): action is QrNotificationAction => {
+        if (!action) return false;
+        if (action.kind === 'review') return QrRequestReviewModal !== null;
+        if (action.kind === 'access') return QrAccessPanel !== null;
+        return onOpenOrders !== undefined;
+    };
+
+    const handleActivate = (notif: AppNotification) => {
+        const action = qrNotificationAction(notif);
+        if (!canRun(action)) return;
+        if (action.kind === 'review') setReviewRequestId(action.requestId);
+        else if (action.kind === 'access') setAccessHoReCaId(action.horecaId);
+        else onOpenOrders?.(action.orderId);
         setOpen(false);
     };
 
@@ -218,15 +256,44 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                                 </div>
                             ) : (
                                 <div className="divide-y divide-stone-100">
-                                    {notifications.map(notif => (
-                                        <NotificationItem key={notif.id} notif={notif} onMarkRead={onMarkRead} />
-                                    ))}
+                                    {notifications.map(notif => {
+                                        // Gated on the module itself (not only on the overlays being
+                                        // null) so the helper is dropped from a tenant without it.
+                                        const action = MODULE_SHOP ? qrNotificationAction(notif) : null;
+                                        const runnable = MODULE_SHOP && canRun(action);
+                                        return (
+                                            <NotificationItem
+                                                key={notif.id}
+                                                notif={notif}
+                                                onMarkRead={onMarkRead}
+                                                onActivate={runnable ? handleActivate : undefined}
+                                                actionLabel={runnable ? qrActionLabel(action) : undefined}
+                                            />
+                                        );
+                                    })}
                                 </div>
                             )}
                         </section>
                     </div>
                 </div>,
                 document.body,
+            )}
+
+            {QrRequestReviewModal && reviewRequestId && (
+                <ErrorBoundary label="Order review">
+                    <Suspense fallback={null}>
+                        <Fragment key={reviewRequestId}>
+                            <QrRequestReviewModal requestId={reviewRequestId} onClose={() => setReviewRequestId(null)} />
+                        </Fragment>
+                    </Suspense>
+                </ErrorBoundary>
+            )}
+            {QrAccessPanel && accessHoReCaId !== null && (
+                <ErrorBoundary label="QR & PINs">
+                    <Suspense fallback={null}>
+                        <QrAccessPanel horecaId={accessHoReCaId} open onClose={() => setAccessHoReCaId(null)} />
+                    </Suspense>
+                </ErrorBoundary>
             )}
         </div>
     );

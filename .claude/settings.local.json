@@ -4,11 +4,19 @@
       "Bash(npm run:*)",
       "Bash(npx vite:*)",
       "Bash(ls -la \"C:\\\\Users\\\\dulsh\\\\OneDrive\\\\Documents\\\\Projects\\\\OrderSystem\\\\NexOrder\\\\\" | head -20)",
-      "Bash(xargs ls -la)"
+      "Bash(xargs ls -la)",
+      "PowerShell($p = \"C:\\\\Users\\\\dulsh\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@anthropic-ai\\\\claude-code\"; Get-ChildItem $p -Force | Select-Object Mode,Length,Name; \"--- package version ---\"; \\(Get-Content \"$p\\\\package.json\" -Raw | ConvertFrom-Json\\).version; \"--- node arch ---\"; node -p \"process.arch + ' / ' + process.platform\"; \"--- os arch ---\"; $env:PROCESSOR_ARCHITECTURE; \\(Get-CimInstance Win32_Processor\\).Architecture)",
+      "PowerShell($exe = \"C:\\\\Users\\\\dulsh\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@anthropic-ai\\\\claude-code\\\\bin\\\\claude.exe\"; if \\(Test-Path $exe\\) { Get-Item $exe | Select-Object Length,LastWriteTime,FullName } else { \"MISSING: $exe\" }; \"--- bin dir ---\"; Get-ChildItem \"C:\\\\Users\\\\dulsh\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@anthropic-ai\\\\claude-code\\\\bin\" -Force -ErrorAction SilentlyContinue | Select-Object Length,Name)",
+      "PowerShell($exe = \"C:\\\\Users\\\\dulsh\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@anthropic-ai\\\\claude-code\\\\bin\\\\claude.exe\"; $bytes = [System.IO.File]::ReadAllBytes\\($exe\\); \"First 2 bytes \\(MZ = valid exe\\): \" + [System.Text.Encoding]::ASCII.GetString\\($bytes[0..1]\\); \"--- content as text ---\"; [System.Text.Encoding]::UTF8.GetString\\($bytes\\))",
+      "PowerShell(\"=== npm version / prefix ===\"; npm --version; npm config get prefix; \"=== what 'claude' resolves to on PATH ===\"; Get-Command claude -All -ErrorAction SilentlyContinue | Select-Object CommandType,Name,Source; \"=== other claude installs ===\"; @\\(\"$env:USERPROFILE\\\\.local\\\\bin\\\\claude.exe\",\"$env:LOCALAPPDATA\\\\Programs\\\\claude\\\\claude.exe\",\"$env:USERPROFILE\\\\.claude\\\\local\\\\claude.exe\"\\) | ForEach-Object { if \\(Test-Path $_\\) { Get-Item $_ | Select-Object Length,FullName } else { \"absent: $_\" } })",
+      "PowerShell(\"=== platform-specific optional deps present? ===\"; Get-ChildItem \"C:\\\\Users\\\\dulsh\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@anthropic-ai\" -Force | Select-Object Name; \"=== optionalDependencies declared ===\"; \\(Get-Content \"C:\\\\Users\\\\dulsh\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@anthropic-ai\\\\claude-code\\\\package.json\" -Raw\\); \"=== npm flags that break this ===\"; npm config get ignore-scripts; npm config get omit)",
+      "PowerShell(\"=== free space on C: ===\"; Get-PSDrive C | Select-Object @{n='FreeGB';e={[math]::Round\\($_.Free/1GB,1\\)}},@{n='UsedGB';e={[math]::Round\\($_.Used/1GB,1\\)}}; \"=== leftover staging dir ===\"; $s = \"C:\\\\Users\\\\dulsh\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@anthropic-ai\\\\.claude-code-542H6BAq\"; if \\(Test-Path $s\\) { $m = Get-ChildItem $s -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum; \"files: \" + $m.Count + \"  sizeMB: \" + [math]::Round\\($m.Sum/1MB,1\\); Get-ChildItem $s -Force | Select-Object Length,Name } else { \"absent\" }; \"=== any claude process running \\(would lock files\\)? ===\"; Get-Process claude -ErrorAction SilentlyContinue | Select-Object Id,ProcessName)",
+      "PowerShell($s = \"C:\\\\Users\\\\dulsh\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@anthropic-ai\\\\.claude-code-542H6BAq\"; Get-ChildItem $s -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object { \"{0,12}  {1}\" -f $_.Length, $_.FullName.Replace\\($s,'.'\\) })",
+      "PowerShell($s = \"C:\\\\Users\\\\dulsh\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@anthropic-ai\\\\.claude-code-542H6BAq\\\\node_modules\\\\@anthropic-ai\\\\claude-code-win32-x64\"; \"=== staged package.json ===\"; Get-Content \"$s\\\\package.json\" -Raw; \"=== is it a real PE binary? ===\"; $b = [System.IO.File]::OpenRead\\(\"$s\\\\claude.exe\"\\); $h = New-Object byte[] 2; $null = $b.Read\\($h,0,2\\); $b.Close\\(\\); \"magic: \" + [System.Text.Encoding]::ASCII.GetString\\($h\\); \"=== npm registry latest ===\"; npm view @anthropic-ai/claude-code version)"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "supabase"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }

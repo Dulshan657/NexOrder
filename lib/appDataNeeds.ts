@@ -13,6 +13,10 @@
 //    SlottingRulesSection, which call useSuppliers() themselves.
 //  - users: Customer and Warehouse can read only their own profile under RLS,
 //    so App substitutes the signed-in profile instead of fetching it.
+//  - QR Staff (mig 00129) is a Customer-shaped login for the Shop: it prices
+//    with promotions but is NOT allowed invoices (`invoices_select_customer` is
+//    Customer-only, so fetching them would just return nothing after a round
+//    trip) and, like a Customer, reads only its own profile.
 //
 // products, horecas, orders, settings and notifications are needed by every
 // role and are not listed here.
@@ -33,11 +37,12 @@ export function appDataNeeds(role: UserRole | string | null | undefined): AppDat
   const isAdminOrManager = role === UserRole.ADMIN || role === UserRole.MANAGER
   const isRep = role === UserRole.FIELD_REP || role === UserRole.OFFICE_REP
   const isCustomer = role === UserRole.CUSTOMER
+  const isQrStaff = role === UserRole.QR_STAFF
   const staffOrRep = isAdminOrManager || isRep
   return {
     invoices: staffOrRep || isCustomer,
     suppliers: isAdminOrManager,
-    promotions: staffOrRep || isCustomer,
+    promotions: staffOrRep || isCustomer || isQrStaff,
     routes: staffOrRep,
     visits: staffOrRep,
     users: staffOrRep,

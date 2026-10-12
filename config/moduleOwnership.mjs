@@ -59,6 +59,15 @@ export const FUNCTION_MODULES = {
   'mutate-pantry-item': 'shop',
   'upload-signature': 'shop',
   'create-signature-url': 'shop',
+  // HoReCa location QR reorder (migs 00129/00130, docs/claude/qr-reorder-plan.md):
+  // a printed code per venue, kitchen staff PINs, and orders held for approval.
+  // It is a way of using the Shop without a login, so it ships with the Shop and
+  // a tenant without one (Amadiya) neither deploys these four nor has a
+  // `verify_jwt = false` entry for `qr-unlock`.
+  'qr-unlock': 'shop',
+  'mutate-qr-access': 'shop',
+  'qr-order-request': 'shop',
+  'generate-qr-poster': 'shop',
 
   // ── po_inbox ──────────────────────────────────────────────────────────────
   // Inbound-PO email triage end to end: the mailbox connections, the poll, the

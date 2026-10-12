@@ -14,6 +14,48 @@ interface MaybeHttpError {
   context?: unknown
 }
 
+/** The whole `{ error: { code, message, details } }` envelope of a failed call,
+ *  plus the HTTP status it arrived with. */
+export interface FunctionErrorEnvelope {
+  /** HTTP status of the response. */
+  status: number
+  /** `error.code` (the `ErrorCode` union in `_shared/errors.ts`), or null if the body was not our envelope. */
+  code: string | null
+  /** `error.message`, or null when absent/blank. */
+  message: string | null
+  /** `error.details`, untouched. */
+  details: unknown
+}
+
+/** Read an Edge Function failure in one go: status, `code`, `message` and `details`.
+ *
+ *  For callers that must BRANCH on the code (a locked QR code, a request someone
+ *  else already decided) and also show the message, instead of calling
+ *  `extractFunctionErrorMessage` and `extractFunctionErrorDetails` separately
+ *  and losing the code. Returns null when the failure carried no HTTP response at
+ *  all (offline, aborted, DNS) -- there is nothing structured to read then. A
+ *  response whose body is not our envelope (a gateway page, a relay error) still
+ *  yields its status, with `code`/`message` null.
+ *
+ *  Never throws. Clones the response, so another reader is unaffected. */
+export async function extractFunctionErrorEnvelope(error: unknown): Promise<FunctionErrorEnvelope | null> {
+  const context = (error as MaybeHttpError | null | undefined)?.context
+  if (!(context instanceof Response)) return null
+  let body: { error?: { code?: unknown; message?: unknown; details?: unknown } } | null = null
+  try {
+    body = (await context.clone().json()) as typeof body
+  } catch {
+    // Not JSON, empty, or already consumed: status only.
+  }
+  const e = body?.error
+  return {
+    status: context.status,
+    code: typeof e?.code === 'string' ? e.code : null,
+    message: typeof e?.message === 'string' && e.message.trim().length > 0 ? e.message : null,
+    details: e?.details,
+  }
+}
+
 /** The structured `details` an Edge Function attached to a failure, if any.
  *
  *  Separate from the message on purpose: callers that need to BRANCH on why a

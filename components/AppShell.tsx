@@ -24,6 +24,7 @@ import {
     type HoReCa,
     type Invoice,
     type Order,
+    type OrderItem,
     type OrderStatus,
     type Product,
     type Promotion,
@@ -67,9 +68,12 @@ import {
     useUpdatePromotion,
     useDeletePromotion,
 } from '../hooks/queries/usePromotions';
+import { useQrSessionExpiry } from '../hooks/useQrSessionExpiry';
 import { usePendingPutawayCounts } from '../hooks/queries/usePendingPutawayCounts';
 import { usePendingReplenCounts } from '../hooks/queries/useReplenishment';
 import { getDemoPersona } from '../lib/demoAccounts';
+import { isQrStaffRole, isVenueUser } from '../lib/venueUser';
+import { clearQrEntry, peekQrEntry } from '../lib/qr/qrEntryFlag';
 
 import { type AdminTab } from './AdminView';
 import { adminTabFromSearch, ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
@@ -130,6 +134,11 @@ const AccountsAgingTable = MODULE_INVOICING ? lazyWithRetry(() => import('./Acco
 // existing Suspense skeleton — the price of the whole Shop being absent, not
 // merely unreachable, on a tenant without `shop`.
 const ShopView = MODULE_SHOP ? lazyWithRetry(() => import('../views/ShopView')) : null;
+// Venue logins' landing screen, and the Customer's "Kitchen QR" sheet. Both are
+// Shop surfaces, so both are gated at the DECLARATION. The staff side's QR chunks
+// are declared inside HoReCaProfile and NotificationCenter, gated the same way.
+const KitchenHomeView = MODULE_SHOP ? lazyWithRetry(() => import('../views/KitchenHomeView')) : null;
+const QrAccessPanel = MODULE_SHOP ? lazyWithRetry(() => import('./qr/QrAccessPanel')) : null;
 
 import { inviteUser, updateUserProfile } from '../services/supabase/inviteUserService';
 import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit, fromVisit, visitUpdateFields } from '../lib/adapters';
@@ -168,10 +177,27 @@ import {
     FileText,
     FilePlus,
     LayoutGrid,
+    ChefHat,
+    QrCode,
 } from 'lucide-react';
 import type { AppNotification } from '../types';
 import DataStatusBanner from './DataStatusBanner';
 import type { DataStatus } from '../lib/queryHealth';
+
+// What the kitchen-session hook answers on a build without the Shop (see the call).
+const NO_QR_SESSION = { unlockedUntil: null, endsAt: null } as const;
+
+// Every screen the rep / venue side can be on. 'kitchen' is the landing screen of
+// a venue login (QR Staff always; a Customer who arrived through the venue's QR).
+type AppView =
+    | 'ordering'
+    | 'orders'
+    | 'dashboard'
+    | 'hoReCas'
+    | 'stock'
+    | 'accounts'
+    | 'scheduled_visits'
+    | 'kitchen';
 
 // ── Props for AppShell ────────────────────────────────────────────────────────
 
@@ -202,8 +228,8 @@ export interface AppShellProps {
 
 interface AppShellInnerProps extends AppShellProps {
     // Nav state (owned by AppShell, passed down)
-    view: 'ordering' | 'orders' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits';
-    setView: React.Dispatch<React.SetStateAction<'ordering' | 'orders' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits'>>;
+    view: AppView;
+    setView: React.Dispatch<React.SetStateAction<AppView>>;
     adminView: AdminTab;
     // Narrowed from Dispatch<SetStateAction<AdminTab>>: it now also writes ?tab=,
     // so it takes a tab, not an updater. Nothing ever used the updater form.
@@ -307,6 +333,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
         handleReorderItems,
         handleStartOrder,
         resetOrder,
+        orderItemsNow,
     } = useOrderContext();
 
     // ── Pantry context consumption ────────────────────────────────────────────
@@ -347,10 +374,26 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     // ── Derived booleans ──────────────────────────────────────────────────────
     const isRep = currentUser.role === UserRole.FIELD_REP || currentUser.role === UserRole.OFFICE_REP;
     const isFieldRep = currentUser.role === UserRole.FIELD_REP;
-    const isHoReCaUser = currentUser.role === UserRole.CUSTOMER;
+    // Anyone who belongs to ONE venue: a Customer login or a kitchen QR Staff
+    // login. Scoping only (whose orders, which landing screen); QR Staff cannot
+    // place an order directly -- OrderContext files a held request instead.
+    const isHoReCaUser = isVenueUser(currentUser.role);
+    const isQrStaff = isQrStaffRole(currentUser.role);
+    const isCustomerLogin = currentUser.role === UserRole.CUSTOMER;
     const isAdminOrManager = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
     const isAdmin = currentUser.role === UserRole.ADMIN;
     const isWarehouse = currentUser.role === UserRole.WAREHOUSE;
+    // The kitchen's 2-hour unlock: counts down to it, warns ahead, and sends the
+    // phone back to the PIN pad at the end. Inert for every role but QR Staff.
+    // A build constant picks the branch, so a tenant without the Shop never
+    // bundles the hook (nor the QR service reads behind it).
+    const { endsAt: kitchenEndsAt } = MODULE_SHOP
+        ? useQrSessionExpiry({ currentUser, currentUserUuid, addToast })
+        : NO_QR_SESSION;
+    // Customer's "Kitchen QR" sheet. Mounted on first open and then kept, so the
+    // sheet can animate out instead of vanishing.
+    const [qrPanelMounted, setQrPanelMounted] = useState(false);
+    const [qrPanelOpen, setQrPanelOpen] = useState(false);
     // Nav badge total — RLS only allows Admin/Manager/Warehouse to read the
     // recommendations table the counts come from.
     const { data: putawayCounts } = usePendingPutawayCounts(isAdminOrManager || isWarehouse);
@@ -416,6 +459,8 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
 
     const showStockTab = (() => {
         if (!isHoReCaUser) return true;
+        // Kitchen staff reorder; they do not browse stock levels.
+        if (isQrStaff) return false;
         if (selectedHoReCa?.showStockTab !== undefined) return selectedHoReCa.showStockTab;
         return appSettings.showStockToHoReCa;
     })();
@@ -589,6 +634,30 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
         [handleStartOrder, setView],
     );
 
+    // ── Kitchen screen navigation ─────────────────────────────────────────────
+    // "Edit before ordering" / a recent order's Reorder: the lines go into the cart
+    // (replacing whatever was there), the Shop opens on its Reorder tab and the cart
+    // opens over it -- on a handset that is the "Your Order" sheet with the
+    // quantity steppers and Submit, which is exactly the editor this asks for.
+    const handleEditKitchenItems = useCallback(
+        (items: OrderItem[]) => {
+            handleReorderItems(items, 'replace');
+            setOrderingTab('reorder');
+            setView('ordering');
+            setIsCartOpen(true);
+        },
+        [handleReorderItems, setOrderingTab, setView, setIsCartOpen],
+    );
+
+    const openShopOnTab = useCallback(
+        (tab: OrderingTabKey) => {
+            setOrderingTab(tab);
+            setView('ordering');
+            setIsSidebarOpen(false);
+        },
+        [setOrderingTab, setView, setIsSidebarOpen],
+    );
+
     // ── Early return: order confirmation screen ───────────────────────────────
     if (confirmation) {
         return (
@@ -666,6 +735,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
             onMarkRead={handleMarkNotificationRead}
             onMarkAllRead={handleMarkAllNotificationsRead}
             isAdminOrManager={isAdminOrManager}
+            onOpenOrders={() => setView('orders')}
             onOpenPoInbox={() => {
                 if (typeof window !== 'undefined') {
                     const params = new URLSearchParams(window.location.search);
@@ -690,6 +760,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
         stock: 'Stock',
         accounts: 'Accounts',
         scheduled_visits: 'Scheduled Visits',
+        kitchen: 'Kitchen',
     };
     const mobileTitle = (isAdminOrManager || isWarehouse)
         ? ADMIN_TAB_LABELS[adminView]
@@ -766,6 +837,32 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 </button>
                             )}
 
+                            {/* A venue login's landing screen, and (Customer only) the sheet that
+                                prints and manages the venue's kitchen QR and staff PINs. */}
+                            {MODULE_SHOP && isHoReCaUser && (
+                                <>
+                                    <button
+                                        onClick={() => { setView('kitchen'); setIsSidebarOpen(false); }}
+                                        aria-current={view === 'kitchen' ? 'page' : undefined}
+                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'kitchen' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                    >
+                                        <ChefHat className="w-5 h-5 mr-3" /> Kitchen
+                                    </button>
+                                    {isCustomerLogin && currentUser.hoReCaId != null && (
+                                        <button
+                                            onClick={() => {
+                                                setQrPanelMounted(true);
+                                                setQrPanelOpen(true);
+                                                setIsSidebarOpen(false);
+                                            }}
+                                            className="flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press hover:bg-stone-100 hover:text-stone-900"
+                                        >
+                                            <QrCode className="w-5 h-5 mr-3" /> Kitchen QR
+                                        </button>
+                                    )}
+                                </>
+                            )}
+
                             {(MODULE_SHOP || MODULE_SALES_ORDERS || MODULE_INVOICING) && (
                                 <>
                                     <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Orders</p>
@@ -775,10 +872,23 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                             if (view !== 'ordering') { resetOrder(); setView('ordering'); }
                                             setIsSidebarOpen(false);
                                         }}
-                                        aria-current={view === 'ordering' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'ordering' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                        aria-current={view === 'ordering' && !(isQrStaff && orderingTab === 'pantry') ? 'page' : undefined}
+                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'ordering' && !(isQrStaff && orderingTab === 'pantry') ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
                                         <ShoppingCart className="w-5 h-5 mr-3" /> Shop
+                                    </button>
+                                    )}
+                                    {/* The pantry list is a tab inside the Shop, so this is a
+                                        shortcut to it. Kitchen staff get it as a nav item
+                                        because their phone has no tab bar to find it from;
+                                        a Customer's nav is left as it was. */}
+                                    {MODULE_SHOP && isQrStaff && (
+                                    <button
+                                        onClick={() => openShopOnTab('pantry')}
+                                        aria-current={view === 'ordering' && orderingTab === 'pantry' ? 'page' : undefined}
+                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'ordering' && orderingTab === 'pantry' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                    >
+                                        <ClipboardList className="w-5 h-5 mr-3" /> Pantry
                                     </button>
                                     )}
                                     {MODULE_SALES_ORDERS && (
@@ -790,7 +900,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         <History className="w-5 h-5 mr-3" /> {ordersViewLabel}
                                     </button>
                                     )}
-                                    {MODULE_INVOICING && (
+                                    {MODULE_INVOICING && !isQrStaff && (
                                     <button
                                         onClick={() => { setView('accounts'); setIsSidebarOpen(false); }}
                                         aria-current={view === 'accounts' ? 'page' : undefined}
@@ -1183,7 +1293,10 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                         </>
                     )}
                 </nav>
-                <ProfileMenu currentUser={currentUser} />
+                <ProfileMenu
+                    currentUser={currentUser}
+                    kitchenSession={isQrStaff ? { endsAt: kitchenEndsAt } : undefined}
+                />
             </aside>
 
             {/* Main Content Area.
@@ -1453,6 +1566,28 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     </Suspense>
                                     </ErrorBoundary>
                                 )}
+                                {MODULE_SHOP && view === 'kitchen' && isHoReCaUser && (
+                                    <ErrorBoundary label="Kitchen">
+                                        <Suspense fallback={<LoadingSkeleton />}>
+                                            <KitchenHomeView
+                                                currentUser={currentUser}
+                                                products={products}
+                                                hoReCa={selectedHoReCa}
+                                                orders={ordersForHistory}
+                                                promotions={promotions}
+                                                cartonDiscountPercent={appSettings.cartonDiscountPercent}
+                                                pantryCount={currentPantryItems.length}
+                                                onOrderNow={orderItemsNow}
+                                                onEditItems={handleEditKitchenItems}
+                                                onOpenShop={() => openShopOnTab('catalogue')}
+                                                onOpenPantry={() => openShopOnTab('pantry')}
+                                                onOpenHistory={() => setView('orders')}
+                                                onViewOrder={setSelectedOrderId}
+                                                addToast={addToast}
+                                            />
+                                        </Suspense>
+                                    </ErrorBoundary>
+                                )}
                                 {MODULE_SHOP && view === 'ordering' && (
                                     <ShopView
                                         products={products}
@@ -1665,6 +1800,19 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                 </ErrorBoundary>
             )}
 
+            {/* Kitchen QR & PINs (Customer login). Mounted on first open and kept. */}
+            {MODULE_SHOP && isCustomerLogin && currentUser.hoReCaId != null && qrPanelMounted && (
+                <ErrorBoundary label="Kitchen QR">
+                    <Suspense fallback={null}>
+                        <QrAccessPanel
+                            horecaId={currentUser.hoReCaId}
+                            open={qrPanelOpen}
+                            onClose={() => setQrPanelOpen(false)}
+                        />
+                    </Suspense>
+                </ErrorBoundary>
+            )}
+
             {/* Order Verification Modal */}
             {MODULE_SHOP && showVerificationModal && (
                 <ErrorBoundary label="Order verification">
@@ -1703,9 +1851,21 @@ const AppShell: React.FC<AppShellProps> = props => {
 
     // ── UI / nav state ────────────────────────────────────────────────────────
     // Customers have no dashboard route — land them on Shop. Reps land on Dashboard.
-    const [view, setView] = useState<
-        'ordering' | 'orders' | 'dashboard' | 'hoReCas' | 'stock' | 'accounts' | 'scheduled_visits'
-    >(currentUser.role === UserRole.CUSTOMER ? 'ordering' : 'dashboard');
+    // Kitchen staff always start on the Kitchen screen; a Customer does when this
+    // visit came through the venue's QR (QrEntryScreen leaves the marker). On a
+    // build without the Shop neither exists, and the old defaults apply.
+    const [view, setView] = useState<AppView>(() => {
+        if (MODULE_SHOP && currentUser.role === UserRole.QR_STAFF) return 'kitchen';
+        if (currentUser.role === UserRole.CUSTOMER) {
+            return MODULE_SHOP && peekQrEntry() ? 'kitchen' : 'ordering';
+        }
+        return 'dashboard';
+    });
+    // The marker has done its job. Peeked above (StrictMode runs initialisers
+    // twice, so a read-and-clear there would answer differently the second time).
+    useEffect(() => {
+        if (MODULE_SHOP) clearQrEntry();
+    }, []);
     const [adminView, setAdminViewState] = useState<AdminTab>(() => {
         if (typeof window !== 'undefined') {
             // An explicit ?tab= wins over every landing-view default — it is the
@@ -1766,6 +1926,14 @@ const AppShell: React.FC<AppShellProps> = props => {
         setOrderingTab('catalogue');
     }, []);
 
+    // A kitchen request was filed: back to the Kitchen screen, where it now shows
+    // under "Waiting for approval".
+    const onQrSubmitted = useCallback(() => {
+        setView('kitchen');
+        setIsCartOpen(false);
+        setOrderingTab('catalogue');
+    }, []);
+
     const navState = {
         view, setView,
         adminView, setAdminView,
@@ -1798,6 +1966,7 @@ const AppShell: React.FC<AppShellProps> = props => {
                 addToast={addToast}
                 placeOrderMutation={placeOrderMutation}
                 onResetView={onResetView}
+                onQrSubmitted={onQrSubmitted}
             >
                 <PantryProvider
                     products={products}

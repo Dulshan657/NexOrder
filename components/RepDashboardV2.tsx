@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { Suspense, useState, useMemo } from 'react';
 import type { User, HoReCa, Product, Order, Invoice, SalesTarget, Visit, ScheduledVisit } from '../types';
 import { UserRole } from '../types';
 import { MapPin, Target, ShoppingBag, DollarSign, BarChart3, CheckCircle2, AlertCircle, Clock, Phone, ArrowRight, Package, UserCheck, Play } from 'lucide-react';
@@ -22,6 +22,13 @@ import { computeTargetAchieved, computeTargetProgress } from '../lib/semantic';
 import { useMetric, useMetricContext } from '../hooks/useMetrics';
 import type { CustomerRevenue, DateRevenue, ProductUnits } from '../lib/semantic';
 import { useSettings } from '../hooks/queries/useSettings';
+import { ErrorBoundary } from './ErrorBoundary';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { MODULE_SHOP } from '../lib/modules';
+
+// Kitchen QR orders held for approval. Gated at the declaration, so a tenant
+// without the shop module ships no chunk for it.
+const PendingQrRequests = MODULE_SHOP ? lazyWithRetry(() => import('./qr/PendingQrRequests')) : null;
 
 interface RepDashboardV2Props {
   currentUser: User;
@@ -259,6 +266,16 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
           )}
         </div>
       </div>
+
+      {/* Kitchen QR orders waiting on this rep (RLS limits the list to assigned venues).
+          Renders nothing when there are none. */}
+      {PendingQrRequests && (
+        <ErrorBoundary label="Orders awaiting approval">
+          <Suspense fallback={null}>
+            <PendingQrRequests mode="approver" compact />
+          </Suspense>
+        </ErrorBoundary>
+      )}
 
       {/* B. Today's ScheduledVisit Card (HERO) */}
       {todayRoute ? (

@@ -14,6 +14,7 @@ const TONE_CLASSES: Record<OrderSourceTone, string> = {
   violet: 'bg-violet-50 text-violet-700 border-violet-200',
   sky: 'bg-sky-50 text-sky-700 border-sky-200',
   teal: 'bg-teal-50 text-teal-700 border-teal-200',
+  rose: 'bg-rose-50 text-rose-700 border-rose-200',
 };
 
 const OrderSourceBadge: React.FC<OrderSourceBadgeProps> = ({ order }) => {

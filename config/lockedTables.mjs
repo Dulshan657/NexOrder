@@ -110,4 +110,14 @@ export const LOCKED_TABLES = [
   { table: 'slotting_rules', fn: 'mutate-slotting-rule', migration: '00115' },
   { table: 'slotting_rule_blocks', fn: 'mutate-slotting-rule', migration: '00115' },
   { table: 'wie_offhome_tasks', fn: 'mutate-offhome-task', migration: '00119' },
+  // HoReCa QR reorder (00129). All four are created locked: REVOKE ALL from
+  // anon/authenticated, then only SELECT is given back where listed. This file
+  // models writes only, so the READ boundaries that matter most are NOT checked
+  // here and are asserted by hand in 00129's Verify block: qr_codes has no
+  // client privilege of any kind (its token IS the entry URL), and qr_staff is
+  // column-limited SELECT that excludes pin_hmac and auth_user_id.
+  { table: 'qr_codes', fn: 'mutate-qr-access / qr-unlock (service_role only -- no client privilege at all)', migration: '00129' },
+  { table: 'qr_staff', fn: 'mutate-qr-access / qr-unlock (SELECT is column-limited, never pin_hmac)', migration: '00129' },
+  { table: 'qr_order_requests', fn: 'qr-order-request', migration: '00129' },
+  { table: 'horeca_reps', fn: 'mutate-horeca', migration: '00129' },
 ]

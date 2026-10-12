@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import type { Order, Product, HoReCa, OrderItem } from '../types';
+import type { Order, Product, HoReCa, OrderItem, Promotion, User } from '../types';
 import { RotateCcw, ShoppingCart, Trash2, AlertTriangle, UserRound, Package } from 'lucide-react';
-import { resolveHoReCaPrice } from '../pricing';
+import { priceReorderLine } from '../lib/reorderLinePrice';
 import { classifyStock, lowStockThresholdFor } from '../lib/stockStatus';
 import { useSettings } from '../hooks/queries/useSettings';
 import OptimizedImage from './OptimizedImage';
@@ -11,6 +11,9 @@ interface ReorderTabProps {
     lastOrder: Order | null;
     products: Product[];
     selectedHoReCa: HoReCa | null;
+    /** Live promotions, so a line is priced the way the cart and the server price it. */
+    promotions: Promotion[];
+    currentUser: User | null;
     cartonDiscountPercent: number;
     cartItemCount: number;
     onAddItems: (items: OrderItem[], mode: 'replace' | 'merge') => void;
@@ -20,6 +23,8 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
     lastOrder,
     products,
     selectedHoReCa,
+    promotions,
+    currentUser,
     cartonDiscountPercent,
     cartItemCount,
     onAddItems,
@@ -47,32 +52,37 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
 
     // Resolve items with current product data
     const resolvedItems = useMemo(() => {
+        const pricing = { hoReCa: selectedHoReCa, promotions, currentUser, cartonDiscountPercent };
         return editedItems.map(item => {
             const currentProduct = products.find(p => p.id === item.id);
-            const isAvailable = !!currentProduct && currentProduct.available > 0;
             const isLowStock = !!currentProduct
                 && classifyStock(currentProduct.available, lowStockThresholdFor(currentProduct, globalThreshold)) === 'low_stock';
 
-            // Recalculate price with current pricing
+            // Price with the SAME resolution the cart and the server quote use
+            // (venue price + live promotion, in the line's own unit of measure) --
+            // never the bare resolveHoReCaPrice, which misses promotions and made
+            // "Reorder All" disagree with the cart.
             let currentPrice = item.price;
+            let skipReason: string | null = !currentProduct || currentProduct.available <= 0 ? 'Out of Stock' : null;
             if (currentProduct) {
-                const unitPrice = resolveHoReCaPrice(currentProduct, selectedHoReCa);
-                if (item.packSize === currentProduct.cartonSize) {
-                    currentPrice = (unitPrice * currentProduct.cartonSize) * (1 - cartonDiscountPercent / 100);
+                const priced = priceReorderLine(item, currentProduct, pricing);
+                if (priced.ok === false) {
+                    skipReason = skipReason ?? priced.reason;
                 } else {
-                    currentPrice = unitPrice;
+                    currentPrice = priced.unitPrice;
                 }
             }
 
             return {
                 ...item,
                 currentPrice,
-                isAvailable,
+                isAvailable: skipReason === null,
+                skipReason,
                 isLowStock,
                 currentProduct,
             };
         });
-    }, [editedItems, products, selectedHoReCa, cartonDiscountPercent, globalThreshold]);
+    }, [editedItems, products, selectedHoReCa, promotions, currentUser, cartonDiscountPercent, globalThreshold]);
 
     const activeItems = resolvedItems.filter(i => !i.removed);
     const reorderTotal = activeItems.reduce((sum, item) => sum + item.currentPrice * item.quantity, 0);
@@ -105,7 +115,7 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
     const buildOrderItems = (): OrderItem[] => {
         return activeItems
             .filter(i => i.isAvailable)
-            .map(({ removed, currentPrice, isAvailable, isLowStock, currentProduct, ...item }) => ({
+            .map(({ removed, currentPrice, isAvailable, skipReason, isLowStock, currentProduct, ...item }) => ({
                 ...item,
                 price: currentPrice,
             }));
@@ -129,7 +139,7 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
 
     const handleAddSingleItem = (item: typeof resolvedItems[0]) => {
         if (!item.isAvailable) return;
-        const { removed, currentPrice, isAvailable, isLowStock, currentProduct, ...orderItem } = item;
+        const { removed, currentPrice, isAvailable, skipReason, isLowStock, currentProduct, ...orderItem } = item;
         const builtItem: OrderItem = { ...orderItem, price: currentPrice };
         handleAddToOrder([builtItem]);
     };
@@ -217,7 +227,7 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
                 {unavailableCount > 0 && (
                     <div className="flex items-center gap-2 mt-3 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm">
                         <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                        {unavailableCount} item{unavailableCount !== 1 ? 's are' : ' is'} currently out of stock and will be skipped.
+                        {unavailableCount} item{unavailableCount !== 1 ? 's are' : ' is'} currently unavailable and will be skipped.
                     </div>
                 )}
             </div>
@@ -244,7 +254,7 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
                             {!item.isAvailable && !item.removed && (
                                 <div className="flex items-center gap-2 mb-3 text-xs font-medium text-red-700 bg-red-100 rounded-lg px-3 py-1.5">
                                     <AlertTriangle className="w-3.5 h-3.5" />
-                                    Out of Stock — will be skipped
+                                    {item.skipReason} — will be skipped
                                 </div>
                             )}
 
@@ -267,7 +277,7 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
                                 {/* Info */}
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-start justify-between gap-2">
-                                        <div>
+                                        <div className="min-w-0">
                                             <h4 className={`font-display font-semibold truncate ${item.removed ? 'text-stone-500 line-through' : 'text-stone-900'}`}>
                                                 {item.name}
                                             </h4>
@@ -307,7 +317,10 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
                                                 <span className="text-xs text-stone-500">/ {packLabel}</span>
                                             </div>
 
-                                            <div className="flex items-center gap-3">
+                                            {/* flex-wrap + min-w-0: on a 360px handheld the stepper, the
+                                                line total and Add cannot share the ~222px beside the
+                                                thumbnail, and a non-wrapping group overhung its card. */}
+                                            <div className="flex items-center flex-wrap gap-x-3 gap-y-2 min-w-0">
                                                 {/* Quantity Stepper */}
                                                 <div className="flex items-center border border-stone-200 rounded-lg overflow-hidden">
                                                     <button

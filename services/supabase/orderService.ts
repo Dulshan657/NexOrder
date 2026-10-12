@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAllRows'
 import { extractFunctionErrorMessage } from '@/lib/functionError'
+import { MODULE_SHOP } from '@/lib/modules'
 import type { Database } from '@/lib/database.types'
 
 type OrderRow = Database['public']['Tables']['orders']['Row']
@@ -16,8 +17,27 @@ export interface OrderFilters {
 // can tag PO-Inbox orders and show who approved them. pending_pos has
 // GRANT SELECT to authenticated with Admin/Manager-only RLS, so non-admins get
 // an empty embed (no error) — their orders are never inbound anyway.
-const ORDER_SELECT =
+//
+// qr_order_requests is embedded the same way (one-to-one: approved_order_id is
+// UNIQUE, mig 00129) to tag orders a kitchen placed by QR -- "via QR · <name>".
+// Its RLS is Admin/Manager, the venue's assigned reps and the venue itself; for
+// anyone else the embed is null, never an error. `staff_name` is the snapshot
+// taken at submit (mig 00130), so a later rename does not rewrite history.
+//
+// The QR embed rides the `shop` module: a QR order can only exist where the Shop
+// does, so a tenant without it neither asks for the table nor ships the string,
+// and its order list does not depend on migration 00129 having reached it.
+//
+// Two whole literals rather than one built by concatenation, and the choice is
+// typed as the full one: supabase-js parses the select string at the TYPE level,
+// and a string it cannot see as a literal turns every order query into
+// `GenericStringError[]` (App.tsx stops compiling). The cast only claims an
+// optional embed that the types never modelled anyway (Relationships is empty).
+const ORDER_SELECT_BASE =
   '*, horecas(name), order_items(*), pending_pos!pending_pos_approved_order_id_fkey(inbound_message_id, status), order_fulfillments(*, locations(name))'
+const ORDER_SELECT_WITH_QR =
+  '*, horecas(name), order_items(*), pending_pos!pending_pos_approved_order_id_fkey(inbound_message_id, status), qr_order_requests!qr_order_requests_approved_order_id_fkey(staff_name), order_fulfillments(*, locations(name))'
+const ORDER_SELECT = (MODULE_SHOP ? ORDER_SELECT_WITH_QR : ORDER_SELECT_BASE) as typeof ORDER_SELECT_WITH_QR
 
 export async function getOrders(filters: OrderFilters = {}) {
   const build = () => {

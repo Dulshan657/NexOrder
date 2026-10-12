@@ -110,6 +110,31 @@ describe('config/lockedTables.mjs', () => {
     expect(names).toContain('order_items');
   });
 
+  it('names the four QR reorder tables (00129) and keeps them out of the DB-3 baseline', () => {
+    // Created locked (REVOKE ALL from anon/authenticated), so there is no
+    // inherited debt to record. Baselining one would hide a regression on a
+    // table whose rows include the venue entry token and the PIN hashes.
+    const names = lockedTableNames();
+    for (const table of ['qr_codes', 'qr_staff', 'qr_order_requests', 'horeca_reps']) {
+      expect(names, table).toContain(table);
+      expect(GRANT_BASELINE[table], `${table} must not be baselined`).toBeUndefined();
+    }
+  });
+
+  it('fails any client write grant on a QR table', () => {
+    const rows = [
+      grant('qr_codes', 'authenticated', 'INSERT'),
+      grant('qr_staff', 'anon', 'UPDATE'),
+      grant('qr_order_requests', 'authenticated', 'TRUNCATE'),
+      grant('horeca_reps', 'authenticated', 'DELETE'),
+      // SELECT is how qr_order_requests / horeca_reps / qr_staff (by column)
+      // are meant to be read, and is not modelled by this check.
+      grant('qr_order_requests', 'authenticated', 'SELECT'),
+    ];
+    const findings = findGrantViolations(rows, ALL_TABLES);
+    expect(fatalFindings(findings)).toHaveLength(4);
+  });
+
   it('lists every table once, with a function and a migration', () => {
     const names = lockedTableNames();
     expect(new Set(names).size).toBe(names.length);

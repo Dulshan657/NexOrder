@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
 import { recordAuthEvent } from '@/lib/auth/sessionBreadcrumbs'
+import { MODULE_SHOP } from '@/lib/modules'
+import { qrReturnUrl } from '@/lib/qr/qrReturnUrl'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
 type UserRole = Profile['role']
@@ -210,8 +212,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const signOut = useCallback(async (): Promise<void> => {
+    // A kitchen (QR Staff) login that signs out -- the idle timeout is the usual
+    // way -- lands on the venue's PIN pad, not a login page it has no password
+    // for. A full navigation, not a state change: the phone is shared, and the
+    // next person must not inherit this one's cart or cached lists.
+    const wasKitchen = profileRef.current?.role === 'QR Staff'
     const { error } = await supabase.auth.signOut()
     if (error) throw error
+    if (MODULE_SHOP && wasKitchen && typeof window !== 'undefined') window.location.replace(qrReturnUrl())
   }, [])
 
   const role = profile?.role

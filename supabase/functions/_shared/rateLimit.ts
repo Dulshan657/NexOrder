@@ -117,14 +117,10 @@ function checkInMemory(key: string, config: RateLimitConfig): RateLimitResult {
  * Falls back to "unknown" if no proxy headers are set; in that case
  * every unauthenticated caller shares one bucket, which is the safe
  * default (errs on the side of throttling).
+ *
+ * The extraction itself is `clientIp.ts` (pure, so it is unit-tested): it
+ * prefers `cf-connecting-ip`, then `x-real-ip`, then the RIGHT-most
+ * `x-forwarded-for` entry -- never the left-most, which is whatever the client
+ * chose to send.
  */
-export function clientIp(req: Request): string {
-  const fwd = req.headers.get('x-forwarded-for')
-  if (fwd) {
-    const first = fwd.split(',')[0].trim()
-    if (first) return first
-  }
-  const real = req.headers.get('x-real-ip')
-  if (real) return real
-  return 'unknown'
-}
+export { clientIp } from './clientIp.ts'
