@@ -17,6 +17,18 @@ export type ErrorCode =
   | 'CONFLICT'
   | 'TOO_MANY_REQUESTS'
   | 'INTERNAL'
+  // Order placement (`placeOrderCore.ts`). These are place-order's own wire
+  // codes, which the frontend reads and which predate this union; they live
+  // here so the core can throw an EdgeFunctionError instead of building a
+  // Response, and so every wrapper around it answers identically.
+  | 'HORECA_NOT_FOUND'
+  | 'PRODUCT_NOT_FOUND'
+  | 'INSUFFICIENT_STOCK'
+  | 'STOCK_RACE'
+  | 'BELOW_MINIMUM'
+  | 'CREDIT_EXCEEDED'
+  | 'DB_ORDER_INSERT_FAILED'
+  | 'DB_ITEMS_INSERT_FAILED'
 
 const DEFAULT_STATUS: Record<ErrorCode, number> = {
   UNAUTHORIZED: 401,
@@ -26,6 +38,14 @@ const DEFAULT_STATUS: Record<ErrorCode, number> = {
   CONFLICT: 409,
   TOO_MANY_REQUESTS: 429,
   INTERNAL: 500,
+  HORECA_NOT_FOUND: 404,
+  PRODUCT_NOT_FOUND: 404,
+  INSUFFICIENT_STOCK: 409,
+  STOCK_RACE: 409,
+  BELOW_MINIMUM: 422,
+  CREDIT_EXCEEDED: 422,
+  DB_ORDER_INSERT_FAILED: 500,
+  DB_ITEMS_INSERT_FAILED: 500,
 }
 
 export interface ErrorEnvelope {
