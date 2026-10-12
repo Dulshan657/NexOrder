@@ -29,6 +29,7 @@ reached 173k on 2026-09-10 and was split. What stays here is the rule that must 
 | a tenant deploy the release gate just refused | [`docs/claude/releasing.md`](docs/claude/releasing.md) |
 | contrast, ARIA, robots / `llms.txt`, the demo roster | [`docs/claude/accessibility.md`](docs/claude/accessibility.md) |
 | what is outstanding and what just shipped | [`docs/claude/roadmap.md`](docs/claude/roadmap.md) |
+| the venue QR code, kitchen PINs, the `QR Staff` role, QR order approval | [`docs/claude/qr-reorder-plan.md`](docs/claude/qr-reorder-plan.md) — **the 2-hour limit lives in `user_horeca_id()`, not the JWT**; pending QR orders are `qr_order_requests`, never an `orders.status` |
 
 **A stub below that names a doc is not a summary you may act on alone** — it is only the
 subset that would cause damage if left unread. Open the doc before changing that subsystem.
@@ -483,6 +484,10 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 | `slotting_blocks`, `slotting_block_members`, `slotting_rules`, `slotting_rule_blocks` | `mutate-slotting-rule` (`set_rule` / `delete_rule` / `set_block` / `delete_block`) | Admin, Manager | `00115`, `00117` |
 | `wie_slotting_suggestions` | `plan-reslot`, `commit-reslot-plan`, `decide-slotting-suggestion` | Admin, Manager | `00060`, `00117` |
 | `wie_offhome_tasks` | `mutate-offhome-task` (`detect` / `accept` / `dismiss` / `restore`) | Admin, Manager, **Warehouse** | `00119`, `00121` |
+| `qr_codes`, `qr_staff` | `qr-unlock` (public, self-gated), `mutate-qr-access` | Admin, Manager, assigned reps, venue Customer | `00129`, `00130`, `00132` |
+| `qr_order_requests` | `qr-order-request` | submit/cancel: QR Staff; decide: venue Customer, assigned reps, Admin, Manager | `00129`, `00130`, `00132` |
+| `horeca_reps` | `mutate-horeca` `set_reps` | Admin, Manager | `00129` |
+| `profiles.role` / `.horeca_id` / `.home_warehouse_id` | `invite-user`, `mutate-profile` | service_role only — **00011's column revoke was a no-op until `00131`** | `00011`, **`00131`** |
 
 - **Audit trail** for every privileged mutation → `audit_events` (mig `00012`). Admin-only SELECT; service_role-only INSERT.
 - **A lockdown is a DROP POLICY *and* a REVOKE, and this table lied about that for a year.** `00009`/`00010` dropped some order policies and revoked nothing, so `authenticated` kept `00001:1084`'s full CRUD grant and three `00001` write policies survived — an Admin could `DELETE` an order over PostgREST and a Manager could rewrite an invoiced line, with no `audit_events` row and no ledger correction. Security-audit finding **DB-1**, closed by `00112`. `00013:15-21` skipped both tables *in writing*, on the stated grounds `00009` had covered them. **Never trust a row of this table; run `npm run check:grants:<target>`,** which asserts it against `information_schema` from `config/lockedTables.mjs`.
