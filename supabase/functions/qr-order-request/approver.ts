@@ -6,6 +6,7 @@ import { type AuthContext } from '../_shared/auth.ts'
 import { EdgeFunctionError } from '../_shared/errors.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { placeOrderCore, type PlaceOrderCoreInput, type PlaceOrderResult } from '../_shared/placeOrderCore.ts'
+import { retirePendingNotifications } from '../_shared/qrNotify.ts'
 import { linesDiffer, toOrderLines } from '../_shared/qrRequestItems.ts'
 import { approvalFailureMessage, claimableFilter, storedFailureMessage } from '../_shared/qrRequestTransitions.ts'
 import type { Input } from './schema.ts'
@@ -144,12 +145,18 @@ export async function approve(admin: SupabaseClient, auth: AuthContext, input: E
 
   // ── finish ───────────────────────────────────────────────────────────────
   // The order EXISTS from here. If this write fails and the request stays
-  // `approving`, its claim goes stale in two minutes and a second Approve would
+  // `approving`, its claim goes stale in ten minutes and a second Approve would
   // place the order again -- so retry, and if it still fails tell the approver
   // the order was placed rather than letting them try again.
+  //
+  // The UPDATE matches OUR claim (`claimed_at`), not merely "approving": if the
+  // claim was taken over while this placement ran, the new holder owns the
+  // request, and stamping it `approved` here would link THEIR order's request to
+  // OUR order and hide that two were placed.
   assertEdge('approving', 'approved', 'approver')
   const decidedAt = new Date().toISOString()
   let finalized = false
+  let linked = false
   for (let attempt = 0; attempt < FINALIZE_ATTEMPTS && !finalized; attempt += 1) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, FINALIZE_BACKOFF_MS[attempt - 1]))
     const { data, error } = await admin
@@ -164,15 +171,18 @@ export async function approve(admin: SupabaseClient, auth: AuthContext, input: E
       })
       .eq('id', row.id)
       .eq('status', 'approving')
+      .eq('claimed_at', claim.claimed_at)
       .select('id')
     if (error) {
       console.error(`[qr-order-request] finalize attempt ${attempt + 1} failed for ${row.id}:`, error.message)
       continue
     }
-    if (((data ?? []) as unknown[]).length === 0) {
-      // Nothing was `approving` any more (our claim was taken over). The order is
-      // real and unlinked; say so loudly rather than pretend it did not happen.
-      console.error(`[qr-order-request] ORPHAN ORDER ${placed.orderId}: request ${row.id} was no longer approving`)
+    linked = ((data ?? []) as unknown[]).length > 0
+    if (!linked) {
+      // Nothing of OURS was `approving` any more (our claim was taken over). The
+      // order is real and unlinked; say so loudly rather than pretend it did not
+      // happen.
+      console.error(`[qr-order-request] ORPHAN ORDER ${placed.orderId}: request ${row.id} was no longer approving under our claim`)
     }
     finalized = true
   }
@@ -184,6 +194,10 @@ export async function approve(admin: SupabaseClient, auth: AuthContext, input: E
       { orderId: placed.orderId },
     )
   }
+
+  // Off the bell, whoever's it was on. Only when WE decided it: if the claim was
+  // lost, the request is still in someone else's hands and theirs to retire.
+  if (linked) await retirePendingNotifications(admin, [row.id])
 
   await logAuditEvent(admin, {
     actorId: auth.userId,
@@ -260,12 +274,16 @@ export async function reject(admin: SupabaseClient, auth: AuthContext, input: Ex
     metadata: { horecaId: row.horeca_id, requestedBy: row.requested_by },
   })
 
+  await retirePendingNotifications(admin, [row.id])
+
   const venue = await horecaNameOf(admin, row.horeca_id)
   await notifyRequester(
     admin,
     row,
     'qr_order_rejected',
-    `Your order for ${venue} was not approved: ${input.reason}`,
+    // The reason is NOT in the sentence: it travels in `metadata.reason`, and the
+    // bell prints it on its own "Reason: ..." line. Saying it in both showed it twice.
+    `Your order for ${venue} was not approved`,
     { horecaName: venue, reason: input.reason },
   )
 

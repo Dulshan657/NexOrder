@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const signOutQrLocally = vi.fn()
+const lockQrSelf = vi.fn()
 vi.mock('@/services/supabase/qrService', () => ({
   signOutQrLocally: (...a: unknown[]) => signOutQrLocally(...a),
+  lockQrSelf: (...a: unknown[]) => lockQrSelf(...a),
 }))
 
-const { handleQrSessionEnded, qrReturnUrl, lockKitchen } = await import('@/lib/qr/qrSessionEnd')
+const { handleQrSessionEnded, qrReturnUrl, lockKitchen, SERVER_LOCK_BUDGET_MS } = await import('@/lib/qr/qrSessionEnd')
 const { markQrEntry, peekQrEntry, clearQrEntry, QR_ENTRY_FLAG_KEY } = await import('@/lib/qr/qrEntryFlag')
 const { isQrStaffRole, isVenueUser } = await import('@/lib/venueUser')
 
@@ -14,6 +16,8 @@ const TOKEN = 'A'.repeat(32)
 beforeEach(() => {
   signOutQrLocally.mockReset()
   signOutQrLocally.mockResolvedValue(undefined)
+  lockQrSelf.mockReset()
+  lockQrSelf.mockResolvedValue(undefined)
 })
 
 describe('qrReturnUrl', () => {
@@ -81,10 +85,66 @@ describe('handleQrSessionEnded', () => {
     expect(navigate).toHaveBeenCalledWith('/')
   })
 
-  it('uses signOutQrLocally by default, and Lock is the same action', async () => {
+  it('uses signOutQrLocally and lockQrSelf by default, and Lock is the same action', async () => {
     expect(lockKitchen).toBe(handleQrSessionEnded)
     await handleQrSessionEnded({ navigate: vi.fn(), token: TOKEN })
     expect(signOutQrLocally).toHaveBeenCalledTimes(1)
+    expect(lockQrSelf).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('handleQrSessionEnded -- ending the unlock on the server (lock_self)', () => {
+  it('asks the server to lock BEFORE the local sign-out, while there is still a token to ask with', async () => {
+    const order: string[] = []
+    await handleQrSessionEnded({
+      lockServer: async () => void order.push('lockServer'),
+      signOut: async () => void order.push('signOut'),
+      navigate: () => void order.push('navigate'),
+      token: TOKEN,
+    })
+    expect(order).toEqual(['lockServer', 'signOut', 'navigate'])
+  })
+
+  it.each([
+    ['rejects', () => Promise.reject(new Error('QR_SESSION_EXPIRED'))],
+    ['throws synchronously', () => {
+      throw new Error('boom')
+    }],
+  ])('carries on to sign out and navigate when the server lock %s', async (_label, lockServer) => {
+    const signOut = vi.fn(async () => undefined)
+    const navigate = vi.fn()
+    await expect(
+      handleQrSessionEnded({ lockServer: lockServer as () => Promise<void>, signOut, navigate, token: TOKEN }),
+    ).resolves.toBeUndefined()
+    expect(signOut).toHaveBeenCalledTimes(1)
+    expect(navigate).toHaveBeenCalledWith(`/?qr=${TOKEN}`)
+  })
+
+  it('does not let a slow server hold the screen: it gives up after the budget', async () => {
+    vi.useFakeTimers()
+    try {
+      const signOut = vi.fn(async () => undefined)
+      const navigate = vi.fn()
+      const hung = new Promise<void>(() => undefined) // never settles
+      const done = handleQrSessionEnded({ lockServer: () => hung, signOut, navigate, token: TOKEN })
+
+      await vi.advanceTimersByTimeAsync(SERVER_LOCK_BUDGET_MS - 1)
+      expect(signOut).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(2)
+      await done
+      expect(signOut).toHaveBeenCalledTimes(1)
+      expect(navigate).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('is ONE server lock however many triggers fire together', async () => {
+    const lockServer = vi.fn(async () => undefined)
+    const deps = { lockServer, signOut: async () => undefined, navigate: vi.fn(), token: TOKEN }
+    await Promise.all([handleQrSessionEnded(deps), handleQrSessionEnded(deps)])
+    expect(lockServer).toHaveBeenCalledTimes(1)
   })
 })
 

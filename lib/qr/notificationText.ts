@@ -56,8 +56,13 @@ export function qrActionLabel(action: QrNotificationAction): string {
   }
 }
 
-/** A second line of facts under the server's message, or null when there is nothing to add. */
-export function qrNotificationDetail(n: Pick<AppNotification, 'type' | 'metadata'>): string | null {
+/**
+ * A second line of facts under the server's message, or null when there is nothing
+ * to add. It never repeats the message: a rejection written before the server
+ * stopped putting the reason in its sentence ("... was not approved: Out of
+ * season") would otherwise show "Out of season" twice.
+ */
+export function qrNotificationDetail(n: Pick<AppNotification, 'type' | 'metadata'> & { message?: string }): string | null {
   const m = n.metadata ?? {}
   switch (n.type) {
     case 'qr_order_pending': {
@@ -69,8 +74,11 @@ export function qrNotificationDetail(n: Pick<AppNotification, 'type' | 'metadata
     }
     case 'qr_order_approved':
       return m.edited ? 'Approved with changes' : null
-    case 'qr_order_rejected':
-      return m.reason ? `Reason: ${m.reason}` : null
+    case 'qr_order_rejected': {
+      const reason = typeof m.reason === 'string' ? m.reason.trim() : ''
+      if (!reason) return null
+      return n.message && n.message.toLowerCase().includes(reason.toLowerCase()) ? null : `Reason: ${reason}`
+    }
     default:
       return null
   }

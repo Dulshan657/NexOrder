@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { GENERIC_MESSAGE, NETWORK_MESSAGE, QrApiError, isQrApiError, toQrApiError } from '@/lib/qr/qrApiError'
+import {
+  GENERIC_MESSAGE,
+  NETWORK_MESSAGE,
+  QrApiError,
+  isQrApiError,
+  retryUnlessClientError,
+  toQrApiError,
+} from '@/lib/qr/qrApiError'
 import { extractFunctionErrorEnvelope } from '@/lib/functionError'
 
 // Mirror supabase-js FunctionsHttpError: a generic message plus the raw Response
@@ -205,5 +212,34 @@ describe('QrApiError derived fields', () => {
     const e = new QrApiError({ code: 'NETWORK', message: 'm' })
     expect(e).toBeInstanceOf(Error)
     expect(typeof e.stack).toBe('string')
+  })
+})
+
+describe('retryUnlessClientError', () => {
+  const err = (status: number | null, code = 'X') => new QrApiError({ code, message: 'm', status })
+
+  it.each([400, 401, 403, 404, 409, 422, 429, 499])('never retries a %i', (status) => {
+    expect(retryUnlessClientError(0, err(status))).toBe(false)
+  })
+
+  it.each([500, 502, 503, 504])('retries a %i once', (status) => {
+    expect(retryUnlessClientError(0, err(status))).toBe(true)
+    expect(retryUnlessClientError(1, err(status))).toBe(false)
+  })
+
+  it('retries a call that never got a response (status null) once', () => {
+    expect(retryUnlessClientError(0, err(null, 'NETWORK'))).toBe(true)
+    expect(retryUnlessClientError(1, err(null, 'NETWORK'))).toBe(false)
+  })
+
+  it('keeps the app default (one retry) for an error that is not a QrApiError', () => {
+    expect(retryUnlessClientError(0, new Error('postgrest'))).toBe(true)
+    expect(retryUnlessClientError(1, new Error('postgrest'))).toBe(false)
+    expect(retryUnlessClientError(0, undefined)).toBe(true)
+  })
+
+  it('honours a different retry budget', () => {
+    expect(retryUnlessClientError(2, err(500), 3)).toBe(true)
+    expect(retryUnlessClientError(3, err(500), 3)).toBe(false)
   })
 })

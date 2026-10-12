@@ -102,8 +102,8 @@ describe('isTerminal / isQrRequestStatus', () => {
 })
 
 describe('claim staleness', () => {
-  it('is two minutes', () => {
-    expect(QR_CLAIM_STALE_MS).toBe(120_000)
+  it('is ten minutes', () => {
+    expect(QR_CLAIM_STALE_MS).toBe(600_000)
   })
 
   it('honours a claim up to and including the limit', () => {
@@ -113,7 +113,7 @@ describe('claim staleness', () => {
 
   it('treats a claim older than the limit as abandoned', () => {
     expect(isClaimStale(new Date(NOW - QR_CLAIM_STALE_MS - 1).toISOString(), NOW)).toBe(true)
-    expect(isClaimStale(new Date(NOW - 10 * 60_000).toISOString(), NOW)).toBe(true)
+    expect(isClaimStale(new Date(NOW - 11 * 60_000).toISOString(), NOW)).toBe(true)
   })
 
   it('accepts a Date or a number as well as an ISO string', () => {
@@ -135,14 +135,16 @@ describe('claim staleness', () => {
 
 describe('canClaim', () => {
   const fresh = new Date(NOW - 10_000).toISOString()
-  const old = new Date(NOW - 5 * 60_000).toISOString()
+  const old = new Date(NOW - 15 * 60_000).toISOString()
+  const fiveMinutes = new Date(NOW - 5 * 60_000).toISOString()
 
   it('claims a pending request', () => {
     expect(canClaim('pending', null, NOW)).toBe(true)
   })
 
-  it('does not steal a live claim', () => {
+  it('does not steal a live claim -- not even one five minutes old (it was two minutes before 00132)', () => {
     expect(canClaim('approving', fresh, NOW)).toBe(false)
+    expect(canClaim('approving', fiveMinutes, NOW)).toBe(false)
   })
 
   it('takes over an abandoned claim', () => {
@@ -158,13 +160,13 @@ describe('canClaim', () => {
 
 describe('staleClaimCutoff / claimableFilter', () => {
   it('puts the cutoff exactly QR_CLAIM_STALE_MS in the past, as ISO', () => {
-    expect(staleClaimCutoff(NOW)).toBe('2026-10-12T09:58:00.000Z')
+    expect(staleClaimCutoff(NOW)).toBe('2026-10-12T09:50:00.000Z')
   })
 
   it('builds the PostgREST or-filter for pending OR an abandoned claim', () => {
     expect(claimableFilter(NOW)).toBe(
       'status.eq.pending,' +
-        'and(status.eq.approving,claimed_at.lt.2026-10-12T09:58:00.000Z),' +
+        'and(status.eq.approving,claimed_at.lt.2026-10-12T09:50:00.000Z),' +
         'and(status.eq.approving,claimed_at.is.null)',
     )
   })

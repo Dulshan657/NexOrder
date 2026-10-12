@@ -10,11 +10,13 @@
 //   reset_pin       { staffId, pin }             -> ends that person's unlock
 //   revoke_staff    { staffId }                  -> never a hard delete
 //   unlock_code     { horecaId? }                -> clear a wrong-PIN lock-out
+//   lock_self       {}                           -> a kitchen ends its OWN unlock
 //
 // WHO: Admin, Manager, the reps ASSIGNED to the venue (`horeca_reps`), and the
 // venue's own Customer logins (`canManageHoreca`, `_shared/qrAccess.ts`). A QR
-// Staff login is deliberately not on the list: a kitchen phone must never be
-// able to manage the PINs that let it in. A Customer may omit `horecaId`.
+// Staff login may call `lock_self` and NOTHING else (`qrAccessActionAllowed`): a
+// kitchen phone must never be able to manage the PINs that let it in. A Customer
+// may omit `horecaId`.
 //
 // ── A PIN IS A PERSON'S LOGIN ───────────────────────────────────────────────
 //
@@ -42,17 +44,30 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { requireAppUrl } from '../_shared/appUrl.ts'
-import { canManageHoreca, requireManageHoreca } from '../_shared/qrAccess.ts'
+import {
+  QR_MAX_ACTIVE_STAFF,
+  canManageHoreca,
+  qrAccessActionAllowed,
+  requireManageHoreca,
+} from '../_shared/qrAccess.ts'
+import { retirePendingNotifications } from '../_shared/qrNotify.ts'
 import { describePinProblem, generateQrToken, hmacPin, validatePin } from '../_shared/qrPin.ts'
 import { lockInfo } from '../_shared/qrUnlockPolicy.ts'
 
+// Everyone who may authenticate here at all. Which of them may call WHICH action is
+// `qrAccessActionAllowed`, checked once the body is parsed; the venue-level check
+// (`canManageHoreca`) is per action. QR Staff is on this list for `lock_self` only.
 const ALLOWED: ReadonlyArray<UserRole> = [
   'Admin',
   'Manager',
   'Field Sales Rep',
   'Office Sales Rep',
   'Restaurant/Hotel Customer',
+  'QR Staff',
 ]
+
+/** Why a revoked person's waiting orders were cancelled. Read by approvers in the history. */
+const REVOKED_STAFF_REASON = 'Staff member removed'
 
 // A century. GoTrue has no "ban forever"; this is how Phase A probed it.
 const BAN_FOREVER = '876000h'
@@ -78,6 +93,7 @@ const inputSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('reset_pin'), staffId: staffIdField, pin: pinField }),
   z.object({ action: z.literal('revoke_staff'), staffId: staffIdField }),
   z.object({ action: z.literal('unlock_code'), horecaId: horecaIdField.optional() }),
+  z.object({ action: z.literal('lock_self') }),
 ])
 type Input = z.infer<typeof inputSchema>
 
@@ -243,6 +259,24 @@ async function assertNameFree(
   }
 }
 
+/**
+ * A venue has a bounded number of ACTIVE kitchen staff. Each one is a real auth
+ * user, so an unbounded loop of `create_staff` is an unbounded loop of accounts
+ * (the 10/min PIN bucket slows it, it does not stop it). Revoked staff do not
+ * count; removing someone frees a place.
+ */
+async function assertRoomForStaff(service: SupabaseClient, horecaId: number): Promise<void> {
+  const { count, error } = await service
+    .from('qr_staff')
+    .select('id', { count: 'exact', head: true })
+    .eq('horeca_id', horecaId)
+    .is('revoked_at', null)
+  if (error) throw new EdgeFunctionError('INTERNAL', 'Could not check the staff list')
+  if ((count ?? 0) >= QR_MAX_ACTIVE_STAFF) {
+    throw new EdgeFunctionError('CONFLICT', `This venue already has ${QR_MAX_ACTIVE_STAFF} kitchen staff`)
+  }
+}
+
 function randomPassword(): string {
   const bytes = new Uint8Array(32)
   crypto.getRandomValues(bytes)
@@ -339,17 +373,13 @@ async function actRegenerate(
   await loadVenue(ctx.service, horecaId)
   await ensureCode(ctx.service, horecaId)
 
-  // Unlocks first: that is the part that must hold. Rotating the token after
-  // means a failure in between leaves staff re-entering a PIN, not a dead
-  // sticker with live phones behind it.
-  const { data: cleared, error: clearErr } = await ctx.service
-    .from('qr_staff')
-    .update({ unlocked_until: null })
-    .eq('horeca_id', horecaId)
-    .is('revoked_at', null)
-    .select('auth_user_id')
-  if (clearErr) throw new EdgeFunctionError('INTERNAL', 'Could not end the current unlocks')
-
+  // Rotate the token FIRST. Regenerating is a revocation: the reason anyone does
+  // it is that the old sticker (or a photograph of it) must stop working, and a
+  // failure in the clean-up below must not leave it working. The cost of that
+  // order is a window in which phones are still unlocked under a dead sticker,
+  // which is harmless -- an unlock needs no sticker -- and which the next step
+  // closes. The counters and the failure window go with the old token: a new
+  // code starts with a clean record.
   const token = generateQrToken()
   const { error: rotateErr } = await ctx.service
     .from('qr_codes')
@@ -357,10 +387,27 @@ async function actRegenerate(
       token,
       rotated_at: new Date().toISOString(),
       failed_attempts: 0,
+      failure_window_started_at: null,
       locked_until: null,
     })
     .eq('horeca_id', horecaId)
   if (rotateErr) throw new EdgeFunctionError('INTERNAL', 'Could not replace the QR code')
+
+  // Then end every unlock. If this fails the sticker is already dead; say so,
+  // because a retry rotates again and clears.
+  const { data: cleared, error: clearErr } = await ctx.service
+    .from('qr_staff')
+    .update({ unlocked_until: null })
+    .eq('horeca_id', horecaId)
+    .is('revoked_at', null)
+    .select('auth_user_id')
+  if (clearErr) {
+    console.error('[mutate-qr-access] could not clear unlocks after rotating:', clearErr.message)
+    throw new EdgeFunctionError(
+      'INTERNAL',
+      'The code was replaced, but ending the current unlocks did not finish. Replace it again to retry.',
+    )
+  }
 
   const users = ((cleared ?? []) as Array<{ auth_user_id: string }>).map((r) => r.auth_user_id)
   const results = await Promise.all(users.map((u) => endSessions(ctx.service, u)))
@@ -399,6 +446,7 @@ async function actCreateStaff(
   const pinHmac = await hmacPin(pepper, horecaId, input.pin)
   await assertPinFree(ctx.service, horecaId, pinHmac)
   await assertNameFree(ctx.service, horecaId, input.name)
+  await assertRoomForStaff(ctx.service, horecaId)
   await ensureCode(ctx.service, horecaId)
 
   const { data: created, error: createErr } = await ctx.service.auth.admin.createUser({
@@ -530,6 +578,37 @@ async function actResetPin(ctx: Ctx, input: Extract<Input, { action: 'reset_pin'
   return json(ctx.req, { ok: true, sessionsEnded })
 }
 
+/**
+ * Cancel what a removed person still has waiting, and take it off the approvers'
+ * bell. Those orders were held for a person nobody can ask about any more, and an
+ * approver approving one would place a real order nobody at the venue is expecting.
+ *
+ * Only `pending`: an `approving` request is mid-placement under an approver's
+ * claim and is theirs to finish. Idempotent -- a retried revoke finds nothing
+ * left to cancel. `ok: false` means the clean-up did not complete.
+ */
+async function cancelWaitingRequests(ctx: Ctx, staff: StaffRow): Promise<{ ok: boolean; cancelled: number }> {
+  const { data, error } = await ctx.service
+    .from('qr_order_requests')
+    .update({
+      status: 'cancelled',
+      decided_at: new Date().toISOString(),
+      decided_by: ctx.auth.userId,
+      decision_reason: REVOKED_STAFF_REASON,
+    })
+    .eq('requested_by', staff.auth_user_id)
+    .eq('status', 'pending')
+    .select('id')
+  if (error) {
+    console.error("[mutate-qr-access] could not cancel the removed staff member's requests:", error.message)
+    return { ok: false, cancelled: 0 }
+  }
+  const ids = ((data ?? []) as Array<{ id: string }>).map((r) => r.id)
+  // Never throws; a stale badge is logged there and is not worth failing a revoke.
+  await retirePendingNotifications(ctx.service, ids)
+  return { ok: true, cancelled: ids.length }
+}
+
 async function actRevoke(ctx: Ctx, input: Extract<Input, { action: 'revoke_staff' }>): Promise<Response> {
   const staff = await findStaff(ctx, input.staffId)
 
@@ -553,6 +632,7 @@ async function actRevoke(ctx: Ctx, input: Extract<Input, { action: 'revoke_staff
   })
   if (banErr) console.error('[mutate-qr-access] ban failed:', banErr.message)
   const sessionsEnded = await endSessions(ctx.service, staff.auth_user_id)
+  const requests = await cancelWaitingRequests(ctx, staff)
 
   await audit(ctx, 'update', 'qr_staff', staff.id, {
     horecaId: staff.horeca_id,
@@ -560,6 +640,8 @@ async function actRevoke(ctx: Ctx, input: Extract<Input, { action: 'revoke_staff
     alreadyRevoked: staff.revoked_at !== null,
     banned: !banErr,
     sessionsEnded,
+    requestsCancelled: requests.cancelled,
+    requestsCleanupOk: requests.ok,
   })
 
   if (banErr || !sessionsEnded) {
@@ -568,7 +650,13 @@ async function actRevoke(ctx: Ctx, input: Extract<Input, { action: 'revoke_staff
       'Access was removed, but ending their login did not finish. Remove them again to retry.',
     )
   }
-  return json(ctx.req, { ok: true })
+  if (!requests.ok) {
+    throw new EdgeFunctionError(
+      'INTERNAL',
+      'Access was removed, but cancelling their waiting orders did not finish. Remove them again to retry.',
+    )
+  }
+  return json(ctx.req, { ok: true, requestsCancelled: requests.cancelled })
 }
 
 async function actUnlockCode(
@@ -581,7 +669,8 @@ async function actUnlockCode(
 
   const { error } = await ctx.service
     .from('qr_codes')
-    .update({ failed_attempts: 0, locked_until: null })
+    // The window goes with the count: the next wrong PIN starts a fresh run at 1.
+    .update({ failed_attempts: 0, failure_window_started_at: null, locked_until: null })
     .eq('horeca_id', horecaId)
   if (error) throw new EdgeFunctionError('INTERNAL', 'Could not unlock the code')
 
@@ -589,6 +678,41 @@ async function actUnlockCode(
     horecaId,
     operation: 'unlock_code',
     failedAttemptsCleared: row.failed_attempts,
+  })
+  return json(ctx.req, { ok: true })
+}
+
+/**
+ * A kitchen ends its OWN unlock: the "Lock" button, on a phone about to be passed
+ * to the next cook. The client signs out locally either way; this is what makes
+ * the SERVER stop honouring the session, so a copied refresh token or a phone left
+ * on the bench gets nothing more.
+ *
+ * Unlock first (the control: `user_horeca_id()` and `requireAuth` both read it),
+ * then the sessions (belt and braces). The caller is identified by the verified JWT
+ * alone -- there is no `staffId` to pass, so there is no way to lock somebody else.
+ */
+async function actLockSelf(ctx: Ctx): Promise<Response> {
+  const staff = ctx.auth.qrStaff
+  if (ctx.auth.role !== 'QR Staff' || !staff) {
+    throw new EdgeFunctionError('FORBIDDEN', 'Only a kitchen login can lock itself')
+  }
+
+  const { error } = await ctx.service
+    .from('qr_staff')
+    .update({ unlocked_until: null })
+    .eq('id', staff.id)
+    .eq('auth_user_id', ctx.auth.userId)
+  if (error) {
+    console.error('[mutate-qr-access] lock_self failed:', error.message)
+    throw new EdgeFunctionError('INTERNAL', 'Could not lock the kitchen session')
+  }
+  const sessionsEnded = await endSessions(ctx.service, ctx.auth.userId)
+
+  await audit(ctx, 'update', 'qr_staff', staff.id, {
+    horecaId: staff.horecaId,
+    operation: 'lock_self',
+    sessionsEnded,
   })
   return json(ctx.req, { ok: true })
 }
@@ -616,6 +740,17 @@ serve(async (req: Request) => {
     }
     const input = parsed.data
 
+    // The role gate for THIS action: a kitchen login may only lock itself, and
+    // nobody else may. (The venue-level check is per action, below.)
+    if (!qrAccessActionAllowed(auth.role, input.action)) {
+      throw new EdgeFunctionError(
+        'FORBIDDEN',
+        auth.role === 'QR Staff'
+          ? 'A kitchen login cannot manage access'
+          : 'Only a kitchen login can lock itself',
+      )
+    }
+
     const service = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -638,13 +773,17 @@ serve(async (req: Request) => {
         return await actRevoke(ctx, input)
       case 'unlock_code':
         return await actUnlockCode(ctx, input)
+      case 'lock_self':
+        return await actLockSelf(ctx)
     }
 
     // Unreachable while the schema and this switch agree.
     throw new EdgeFunctionError('INVALID_INPUT', 'Unrecognised action')
   } catch (e) {
     if (isEdgeFunctionError(e)) return e.toResponse(req)
+    // The detail goes to the log; the caller gets the same sentence the other QR
+    // functions give. A raw message is a database or driver string.
     console.error('[mutate-qr-access] unexpected error:', e)
-    return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error', undefined, undefined, req)
+    return errorResponse('INTERNAL', 'Something went wrong. Please try again.', undefined, undefined, req)
   }
 })

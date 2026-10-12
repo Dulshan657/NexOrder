@@ -41,6 +41,9 @@ export const PRICING_ROLE = 'Restaurant/Hotel Customer'
 export const MINUTE = 60_000
 export const HOUR = 3_600_000
 
+/** How many requests one kitchen staff member may have waiting at once. */
+export const MAX_WAITING_PER_STAFF = 3
+
 // ── the request row ─────────────────────────────────────────────────────────
 
 export interface RequestRow {

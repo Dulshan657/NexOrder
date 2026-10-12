@@ -22,7 +22,7 @@ import {
   type QrPosterFormat,
   type QrRegenerateResult,
 } from '@/services/supabase/qrService'
-import type { QrApiError } from '@/lib/qr/qrApiError'
+import { retryUnlessClientError, type QrApiError } from '@/lib/qr/qrApiError'
 import type { QrStaff } from '@/types'
 
 export const qrAccessKeys = {
@@ -54,6 +54,9 @@ export function useQrAccess(
     queryFn: () => getQrAccess(horecaId as number),
     enabled: enabled && horecaId != null,
     staleTime: ACCESS_STALE_MS,
+    // A 403 ("not your venue") or 404 is a verdict, not a blip: retrying it only
+    // keeps the panel on its spinner for the length of the retry.
+    retry: retryUnlessClientError,
   })
 }
 

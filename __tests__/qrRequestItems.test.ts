@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  QR_MAX_DELIVERY_DAYS_AHEAD,
   QR_MAX_LINES,
   QR_MAX_LINE_QUANTITY,
+  deliveryDateProblem,
   findInvalidRequestLines,
+  firstInactiveProduct,
   linesDiffer,
   parseStoredLines,
   toOrderLines,
@@ -152,5 +155,72 @@ describe('withSnapshot', () => {
     const input = [line({ productId: 1 })]
     withSnapshot(input, priced)
     expect(input[0].productName).toBeUndefined()
+  })
+})
+
+describe('deliveryDateProblem', () => {
+  const NOW = new Date('2026-10-12T09:30:00.000Z')
+
+  it('accepts today, tomorrow and the last allowed day', () => {
+    expect(deliveryDateProblem('2026-10-12', NOW)).toBeNull()
+    expect(deliveryDateProblem('2026-10-13', NOW)).toBeNull()
+    expect(deliveryDateProblem('2027-01-10', NOW)).toBeNull() // today + 90 days
+  })
+
+  it('is exactly 90 days, not 89 or 91', () => {
+    expect(QR_MAX_DELIVERY_DAYS_AHEAD).toBe(90)
+    expect(deliveryDateProblem('2027-01-11', NOW)).toMatch(/within the next 90 days/)
+  })
+
+  it('refuses yesterday and anything earlier', () => {
+    expect(deliveryDateProblem('2026-10-11', NOW)).toMatch(/past/)
+    expect(deliveryDateProblem('2020-01-01', NOW)).toMatch(/past/)
+  })
+
+  it('refuses a date years out', () => {
+    expect(deliveryDateProblem('2099-12-31', NOW)).toMatch(/within the next 90 days/)
+  })
+
+  it('treats no date as fine -- it is optional', () => {
+    expect(deliveryDateProblem(null, NOW)).toBeNull()
+    expect(deliveryDateProblem(undefined, NOW)).toBeNull()
+    expect(deliveryDateProblem('', NOW)).toBeNull()
+  })
+
+  it('judges by the UTC calendar date, even a minute before midnight', () => {
+    const lateEvening = new Date('2026-10-12T23:59:59.000Z')
+    expect(deliveryDateProblem('2026-10-12', lateEvening)).toBeNull()
+    expect(deliveryDateProblem('2026-10-11', lateEvening)).toMatch(/past/)
+  })
+})
+
+describe('firstInactiveProduct', () => {
+  const rows = [
+    { id: 1, name: 'Fresh Cream 1L', is_active: true },
+    { id: 2, name: ' Retired Jar ', is_active: false },
+    { id: 3, name: null, is_active: false },
+  ]
+
+  it('finds a retired product among the requested lines, by name', () => {
+    expect(firstInactiveProduct(rows, [line({ productId: 1 }), line({ productId: 2 })])).toEqual({
+      id: 2,
+      name: 'Retired Jar',
+    })
+  })
+
+  it('falls back to the id when the row has no name', () => {
+    expect(firstInactiveProduct(rows, [line({ productId: 3 })])).toEqual({ id: 3, name: 'Product 3' })
+  })
+
+  it('is null when every requested product is active', () => {
+    expect(firstInactiveProduct(rows, [line({ productId: 1 })])).toBeNull()
+  })
+
+  it('ignores a product with no row -- that is PRODUCT_NOT_FOUND from the pricing dry run', () => {
+    expect(firstInactiveProduct(rows, [line({ productId: 999 })])).toBeNull()
+  })
+
+  it('ignores an inactive product that was not asked for', () => {
+    expect(firstInactiveProduct(rows, [line({ productId: 1 })])).toBeNull()
   })
 })

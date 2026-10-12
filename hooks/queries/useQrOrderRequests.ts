@@ -29,7 +29,7 @@ import {
   type QrSubmitInput,
   type QrSubmitResult,
 } from '@/services/supabase/qrService'
-import type { QrApiError } from '@/lib/qr/qrApiError'
+import { retryUnlessClientError, type QrApiError } from '@/lib/qr/qrApiError'
 import type { QrOrderRequest, QrOrderRequestStatus } from '@/types'
 import { orderKeys } from './useOrders'
 import { productKeys } from './useProducts'
@@ -99,6 +99,8 @@ export function useQrRequestPreview(
     staleTime: 0,
     gcTime: 60_000,
     placeholderData: keepPreviousData,
+    // FORBIDDEN / NOT_FOUND ("not your venue", "no such request") will not improve.
+    retry: retryUnlessClientError,
   })
 }
 

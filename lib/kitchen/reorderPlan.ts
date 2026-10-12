@@ -172,23 +172,6 @@ export function buildReorderPlan(input: ReorderPlanInput): ReorderPlan {
   }
 }
 
-/**
- * The venue's orders newest first, split into what the Kitchen screen shows:
- * the one to offer "same again" on (the newest that was not cancelled -- a
- * cancelled order is a poor thing to repeat unprompted) and the last few for the
- * "Recent orders" list (cancelled ones included, so the list matches History).
- */
-export function pickKitchenOrders<T extends Pick<Order, 'orderDate' | 'status' | 'hoReCa'>>(
-  orders: readonly T[],
-  hoReCaId: number | null | undefined,
-  recentCount = 3,
-): { hero: T | null; recent: T[] } {
-  if (hoReCaId == null) return { hero: null, recent: [] }
-  const mine = orders
-    .filter((o) => o.hoReCa.id === hoReCaId)
-    .sort((a, b) => Date.parse(b.orderDate) - Date.parse(a.orderDate))
-  return {
-    hero: mine.find((o) => o.status !== 'cancelled') ?? null,
-    recent: mine.slice(0, recentCount),
-  }
-}
+// Lives in its own file so the core ordering hook (which a tenant without the
+// shop module also ships) can share the pick without pulling in the planner.
+export { pickKitchenOrders } from './pickKitchenOrders'

@@ -187,3 +187,38 @@ New secret `QR_PIN_PEPPER` → add to `secrets:check`. Rotating it invalidates a
   scan URL on phone → PIN → "Order same again" → Customer gets notification → edits + approves
   → order appears "via QR · Sam" with stock reserved; wrong PIN ×5 → backoff; wait/forge expiry
   → bounced to PIN pad; regenerate code → old URL dead.
+
+## Hardening pass (migration `00132`, 2026-10-12)
+
+Review findings fixed after the first build. The rules that now hold:
+
+- **The PIN failure counter is a rolling 24 h window and a correct unlock never touches it.**
+  `qr_codes.failure_window_started_at` marks the first failure of a run; a failure after 24 h
+  starts a new run at 1. Before this, any staff member's success zeroed the counter, so a guesser
+  could interleave guesses with an honest cook's unlocks forever. Only `unlock_code` and
+  `regenerate_code` reset it. Thresholds unchanged (5 -> 1 min, 10 -> 15 min, 15 -> 1 h, 20 -> locked).
+  Approvers get a `qr_code_locked` bell entry at the 5th, 10th and 20th wrong PIN
+  (`metadata.failedAttempts`, `metadata.permanent`); each counted failure is one structured
+  `console.warn` (venue + count, never the PIN).
+- **`clientIp()` is `_shared/clientIp.ts`**: `cf-connecting-ip`, then `x-real-ip`, then the RIGHT-most
+  `x-forwarded-for` entry, capped at 64 chars. The left-most entry is what the client wrote.
+  `qr-unlock` also has a header-independent bucket, `qr-unlock:tok:<16 hex of sha256(token)>`, 20 per
+  10 min, applied once the token names a real venue.
+- **A kitchen phone cannot read `horeca_payment_methods`** (the own-venue arm now requires the
+  Customer role). The other own-venue policies still include QR Staff by design.
+- **`QR_CLAIM_STALE_MS` is 10 minutes** and the approve finalize UPDATE matches `claimed_at`, so a
+  taken-over claim cannot stamp its request with the other approver's order.
+- **`revoke_staff` cancels that person's `pending` requests** (reason "Staff member removed") and
+  retires their bell entries. Every decision (approve, reject, cancel, revoke) marks the request's
+  `qr_order_pending` notifications read (`retirePendingNotifications`).
+- **`mutate-qr-access` `lock_self`** is the only action a QR Staff login may call; it clears the
+  caller's own unlock and deletes its sessions. The Lock button and the session-end handler call it
+  best-effort (2.5 s cap) before the local sign-out. A session that already lapsed is refused by
+  `requireAuth` (QR_SESSION_EXPIRED) and the call is ignored - the database gate had already shut it.
+- **Caps**: 50 active staff per venue; 3 waiting (`pending` + `approving`) requests per staff member.
+  Both are read-then-write, so a burst can overshoot by a request or two; the rate limits bound it.
+- **Submit refuses** an inactive product and a delivery date outside today .. today + 90 (UTC).
+  `placeOrderCore` itself still ignores `is_active`.
+- **`regenerate_code` rotates the token first**, then clears unlocks and sessions.
+- `qr_staff`'s venue arm excludes revoked rows; Admin/Manager/assigned reps and the login's own row still see them.
+

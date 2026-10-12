@@ -8,14 +8,19 @@
 //   unlock   { token, pin }  -> { tokenHash, expiresAt, staffName, horecaId }
 //
 // `verify_jwt = false` (supabase/config.toml): the caller has no session yet,
-// that is the whole point. So this function gates ITSELF, in four layers:
+// that is the whole point. So this function gates ITSELF, in five layers:
 //
 //   1. the module gate (`shop`) -- a commercial control, not a security one;
-//   2. a per-IP rate limit on each action (cross-isolate, Postgres-backed);
-//   3. the per-CODE backoff inside `qr_verify_pin()` (mig 00129): 5 wrong PINs
-//      -> 1 min, 10 -> 15 min, 15 -> 1 h, 20 -> locked until a human resets it.
-//      This one holds against an attacker rotating IPs, which the first cannot;
-//   4. the PIN itself, compared only as HMAC-SHA256(QR_PIN_PEPPER, venue:pin).
+//   2. a per-IP rate limit on each action (cross-isolate, Postgres-backed). The
+//      IP comes from headers (`_shared/clientIp.ts`), so it is only as honest as
+//      the platform proxy that wrote them;
+//   3. a per-TOKEN rate limit on `unlock` (20 per 10 min). No header can move it:
+//      it is keyed on the sticker being guessed at, not on who is guessing;
+//   4. the per-CODE backoff inside `qr_verify_pin()` (mig 00129, 00132): 5 wrong
+//      PINs -> 1 min, 10 -> 15 min, 15 -> 1 h, 20 -> locked until a human resets
+//      it. The count is a rolling 24 h window and a CORRECT unlock does not reset
+//      it, so a guesser cannot hide behind a colleague's honest PIN;
+//   5. the PIN itself, compared only as HMAC-SHA256(QR_PIN_PEPPER, venue:pin).
 //
 // The client turns `tokenHash` into a session with
 // `supabase.auth.verifyOtp({ token_hash, type: 'magiclink' })` -- the same
@@ -35,7 +40,7 @@
 // attacker is anonymous. That means anyone with the sticker can lock a venue
 // out by guessing wrongly 20 times. The cost of the alternative -- a lock that
 // a guesser cannot trigger -- is a lock that does not stop a guesser. The
-// approvers are told the moment it happens, and `mutate-qr-access`
+// approvers are told at the 5th, 10th and 20th wrong PIN, and `mutate-qr-access`
 // `unlock_code` clears it.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -47,8 +52,8 @@ import { checkRateLimit, clientIp } from '../_shared/rateLimit.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { loadCompanyIdentity } from '../_shared/companyIdentity.ts'
-import { hmacPin, isQrToken } from '../_shared/qrPin.ts'
-import { interpretVerifyResult } from '../_shared/qrUnlockPolicy.ts'
+import { hmacPin, isQrToken, tokenFingerprint } from '../_shared/qrPin.ts'
+import { failureAlertMessage, interpretVerifyResult, type FailureAlert } from '../_shared/qrUnlockPolicy.ts'
 import { notifyHorecaApprovers } from '../_shared/qrNotify.ts'
 
 // Per IP. `resolve` runs every time a sticker is scanned, `unlock` only when a
@@ -56,6 +61,12 @@ import { notifyHorecaApprovers } from '../_shared/qrNotify.ts'
 // far below a guessing script. The per-code backoff is the real brake.
 const RESOLVE_LIMIT = { windowMs: 60_000, max: 60 }
 const UNLOCK_LIMIT = { windowMs: 10 * 60_000, max: 30 }
+// Per TOKEN, not per caller: the one budget a spoofed or rotating source address
+// cannot widen. Applied only once the token names a real venue, so the number of
+// keys it can create is bounded by the number of venues, not by an attacker's
+// imagination. Tighter than the IP limit on purpose -- it is shared by everyone
+// standing at that sticker -- but still ~4x what a fumbling kitchen needs.
+const TOKEN_UNLOCK_LIMIT = { windowMs: 10 * 60_000, max: 20 }
 
 const inputSchema = z.discriminatedUnion('action', [
   z.object({
@@ -138,6 +149,17 @@ async function handleUnlock(
   const venue = isQrToken(input.token) ? await findVenueByToken(service, input.token) : null
   if (!venue) throw new EdgeFunctionError('QR_UNKNOWN_CODE', 'This QR code is not valid.')
 
+  const tokenLimit = await checkRateLimit(
+    `qr-unlock:tok:${await tokenFingerprint(input.token)}`,
+    TOKEN_UNLOCK_LIMIT,
+  )
+  if (!tokenLimit.ok) {
+    throw new EdgeFunctionError(
+      'TOO_MANY_REQUESTS',
+      `Too many attempts. Try again in ${Math.max(1, Math.ceil(tokenLimit.resetMs / 1000))}s.`,
+    )
+  }
+
   const pinHmac = await hmacPin(pepper, venue.horecaId, input.pin)
   const { data, error } = await service.rpc('qr_verify_pin', {
     p_token: input.token,
@@ -156,8 +178,17 @@ async function handleUnlock(
   }
 
   if (outcome.kind === 'refused') {
-    if (outcome.permanentLockReached) {
-      await announcePermanentLock(service, venue.horecaId, req)
+    if (outcome.failedAttempts !== null) {
+      // One structured line per counted wrong PIN: the venue and the running
+      // count, never the PIN. This is the server log, not the wire.
+      console.warn('[qr-unlock] wrong PIN', {
+        horecaId: venue.horecaId,
+        failedAttempts: outcome.failedAttempts,
+        ip: clientIp(req),
+      })
+    }
+    if (outcome.alert) {
+      await announceFailures(service, venue.horecaId, outcome.alert, req)
     }
     throw new EdgeFunctionError(outcome.code, outcome.message, outcome.details)
   }
@@ -210,8 +241,11 @@ async function handleUnlock(
 }
 
 /**
- * The 20th wrong PIN locks the code until a human resets it. Tell the people
- * who can do that.
+ * Tell the people who answer for the venue that wrong PINs are being tried: at
+ * the 5th and 10th (the code is briefly locked) and the 20th (locked until a
+ * manager resets it). Reuses the `qr_code_locked` notification, which the bell
+ * already routes to QR & PINs; the count and whether it is permanent ride in
+ * `metadata` for anything that wants to tell the cases apart.
  *
  * There is no audit_events row for this, and that is a limit rather than an
  * oversight: `audit_events.actor_id` is NOT NULL and references auth.users, and
@@ -219,21 +253,27 @@ async function handleUnlock(
  * approver would put a false name in the log. The notification rows are the
  * durable record, and the structured warning below carries the venue.
  */
-async function announcePermanentLock(
+async function announceFailures(
   service: SupabaseClient,
   horecaId: number,
+  alert: FailureAlert,
   req: Request,
 ): Promise<void> {
-  console.warn(`[qr-unlock] venue ${horecaId} QR code locked after repeated wrong PINs`, {
-    ip: clientIp(req),
-  })
+  console.warn(
+    `[qr-unlock] venue ${horecaId} QR code reached ${alert.failedAttempts} wrong PINs` +
+      (alert.permanent ? ' and is locked until reset' : ''),
+    { ip: clientIp(req) },
+  )
   const venue = await service.from('horecas').select('name').eq('id', horecaId).maybeSingle()
   const name = (venue.data as { name?: string } | null)?.name ?? `venue ${horecaId}`
   await notifyHorecaApprovers(service, horecaId, {
     type: 'qr_code_locked',
-    message:
-      `The kitchen QR code for ${name} has been locked after too many incorrect PINs. ` +
-      `Check nobody is guessing, then unlock it from QR & PINs.`,
+    message: failureAlertMessage(alert, name),
+    metadata: {
+      horecaName: name,
+      failedAttempts: alert.failedAttempts,
+      permanent: alert.permanent,
+    },
   })
 }
 

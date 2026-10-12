@@ -21,6 +21,7 @@ import {
   getQrAccess,
   listQrRequests,
   listQrStaff,
+  lockQrSelf,
   previewQrRequest,
   regenerateQrCode,
   rejectQrRequest,
@@ -227,6 +228,26 @@ describe('mutate-qr-access', () => {
     ok({ ok: true })
     await revokeQrStaff('s1')
     expect(lastBody()).toEqual({ action: 'revoke_staff', staffId: 's1' })
+  })
+})
+
+describe('lockQrSelf', () => {
+  it('asks mutate-qr-access to lock the caller -- with no staff id, so it can only ever lock itself', async () => {
+    ok({ ok: true })
+    await expect(lockQrSelf()).resolves.toBeUndefined()
+    expect(lastFn()).toBe('mutate-qr-access')
+    expect(lastBody()).toEqual({ action: 'lock_self' })
+  })
+
+  it('has a short timeout: it is made while leaving and must not hold the screen', async () => {
+    ok({ ok: true })
+    await lockQrSelf()
+    expect(invoke.mock.calls.at(-1)![1].timeout).toBeLessThanOrEqual(5_000)
+  })
+
+  it('throws a QrApiError the caller can ignore when the session already lapsed', async () => {
+    fail(401, 'QR_SESSION_EXPIRED', 'Your session has ended. Enter your PIN again.')
+    await expect(lockQrSelf()).rejects.toMatchObject({ code: 'QR_SESSION_EXPIRED' })
   })
 })
 

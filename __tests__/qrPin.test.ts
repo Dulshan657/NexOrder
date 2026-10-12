@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto'
+import { createHash, createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -8,6 +8,7 @@ import {
   generateQrToken,
   hmacPin,
   isQrToken,
+  tokenFingerprint,
   validatePin,
 } from '@/supabase/functions/_shared/qrPin'
 
@@ -154,6 +155,25 @@ describe('hmacPin', () => {
 
   it('refuses an empty pepper rather than producing a recomputable hash', async () => {
     await expect(hmacPin('', 1, '4826')).rejects.toThrow(/QR_PIN_PEPPER/)
+  })
+})
+
+describe('tokenFingerprint', () => {
+  const token = 'A'.repeat(32)
+
+  it('is the first 16 hex characters of SHA-256(token)', async () => {
+    const expected = createHash('sha256').update(token).digest('hex').slice(0, 16)
+    expect(await tokenFingerprint(token)).toBe(expected)
+    expect(await tokenFingerprint(token)).toMatch(/^[0-9a-f]{16}$/)
+  })
+
+  it('is stable for a token and different between tokens', async () => {
+    expect(await tokenFingerprint(token)).toBe(await tokenFingerprint(token))
+    expect(await tokenFingerprint(token)).not.toBe(await tokenFingerprint('B'.repeat(32)))
+  })
+
+  it('does not contain the token', async () => {
+    expect(await tokenFingerprint('abcdefghijklmnopqrstuvwxyz012345')).not.toContain('abcdef')
   })
 })
 

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  QR_MAX_ACTIVE_STAFF,
   canApproveHoreca,
   canManageHoreca,
+  qrAccessActionAllowed,
   requireManageHoreca,
   type QrAccessCaller,
 } from '@/supabase/functions/_shared/qrAccess'
@@ -122,5 +124,46 @@ describe('requireManageHoreca', () => {
     await expect(
       requireManageHoreca(service, caller('Restaurant/Hotel Customer', 9), 5),
     ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 })
+  })
+})
+
+describe('qrAccessActionAllowed -- mutate-qr-access role gate', () => {
+  const MANAGE_ACTIONS = ['get', 'regenerate_code', 'create_staff', 'rename_staff', 'reset_pin', 'revoke_staff', 'unlock_code']
+  const MANAGERS = ['Admin', 'Manager', 'Field Sales Rep', 'Office Sales Rep', 'Restaurant/Hotel Customer']
+
+  it('lets a kitchen login call lock_self and nothing else', () => {
+    expect(qrAccessActionAllowed('QR Staff', 'lock_self')).toBe(true)
+    for (const action of MANAGE_ACTIONS) {
+      expect(qrAccessActionAllowed('QR Staff', action), action).toBe(false)
+    }
+  })
+
+  it('keeps lock_self for the kitchen alone', () => {
+    for (const role of [...MANAGERS, 'Warehouse']) {
+      expect(qrAccessActionAllowed(role, 'lock_self'), role).toBe(false)
+    }
+  })
+
+  it('lets the managing roles run every management action', () => {
+    for (const role of MANAGERS) {
+      for (const action of MANAGE_ACTIONS) {
+        expect(qrAccessActionAllowed(role, action), `${role} ${action}`).toBe(true)
+      }
+    }
+  })
+
+  it('refuses Warehouse, an unknown role, and an unknown action', () => {
+    for (const action of MANAGE_ACTIONS) {
+      expect(qrAccessActionAllowed('Warehouse', action), action).toBe(false)
+      expect(qrAccessActionAllowed('', action), action).toBe(false)
+      expect(qrAccessActionAllowed('Superuser', action), action).toBe(false)
+    }
+    expect(qrAccessActionAllowed('QR Staff', 'drop_everything')).toBe(false)
+  })
+})
+
+describe('QR_MAX_ACTIVE_STAFF', () => {
+  it('is fifty', () => {
+    expect(QR_MAX_ACTIVE_STAFF).toBe(50)
   })
 })

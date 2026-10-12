@@ -25,6 +25,24 @@ import type { ErrorCode } from './errors.ts'
 /** The failure count at which `qr_verify_pin` locks a code until someone resets it. */
 export const PERMANENT_LOCK_ATTEMPTS = 20
 
+/**
+ * The failure counts (within `qr_verify_pin`'s rolling 24 h window) at which the
+ * venue's approvers are told. 5 and 10 are the first two backoffs, 20 is the
+ * permanent lock; 15 is not announced -- by then they have heard twice.
+ */
+export const PIN_ALERT_ATTEMPTS: readonly number[] = [5, 10, PERMANENT_LOCK_ATTEMPTS]
+
+/**
+ * What the approvers are told about, as structured facts. `failedAttempts` is for
+ * the APPROVERS (and the notification's metadata); it never goes on the wire to
+ * the person holding the sticker.
+ */
+export interface FailureAlert {
+  failedAttempts: number
+  /** This failure locked the code until a manager unlocks it. */
+  permanent: boolean
+}
+
 export interface LockInfo {
   /** ISO timestamp the lock ends, or null (not locked, or permanent). */
   lockedUntil: string | null
@@ -61,8 +79,17 @@ export type UnlockOutcome =
       code: Extract<ErrorCode, 'QR_UNKNOWN_CODE' | 'QR_LOCKED' | 'QR_BAD_PIN'>
       message: string
       details?: Record<string, unknown>
-      /** This attempt was the one that locked the code for good: tell the approvers. */
-      permanentLockReached: boolean
+      /**
+       * This attempt took the venue's failure count to 5, 10 or 20: tell the
+       * approvers. Null for every other refusal. Server-side only.
+       */
+      alert: FailureAlert | null
+      /**
+       * The venue's failure count after this attempt, for the structured server
+       * log. Null unless this refusal COUNTED as a wrong PIN. Server-side only --
+       * `details` is the wire and never carries it.
+       */
+      failedAttempts: number | null
     }
   | { kind: 'malformed' }
 
@@ -102,7 +129,8 @@ export function interpretVerifyResult(raw: unknown): UnlockOutcome {
         kind: 'refused',
         code: 'QR_UNKNOWN_CODE',
         message: 'This QR code is not valid.',
-        permanentLockReached: false,
+        alert: null,
+        failedAttempts: null,
       }
 
     case 'locked': {
@@ -114,7 +142,8 @@ export function interpretVerifyResult(raw: unknown): UnlockOutcome {
           ? 'This code is locked. Ask your manager to unlock it.'
           : 'Too many incorrect PINs. Try again later.',
         details: { lockedUntil: lock.lockedUntil, permanent: lock.permanent },
-        permanentLockReached: false,
+        alert: null,
+        failedAttempts: null,
       }
     }
 
@@ -130,14 +159,36 @@ export function interpretVerifyResult(raw: unknown): UnlockOutcome {
         details: locked
           ? { locked: true, lockedUntil: lock.lockedUntil, permanent: lock.permanent }
           : undefined,
-        // `=== 20`, not `>= 20`: attempts made while locked are refused without
-        // being counted, so the counter reaches 20 exactly once per lock cycle
-        // and the approvers are told once.
-        permanentLockReached: lock.permanent && failed === PERMANENT_LOCK_ATTEMPTS,
+        // Exact match, not `>=`: attempts made while locked are refused without
+        // being counted, so the counter passes each of 5, 10 and 20 exactly once
+        // per window and the approvers are told once each.
+        alert: PIN_ALERT_ATTEMPTS.includes(failed)
+          ? { failedAttempts: failed, permanent: lock.permanent && failed === PERMANENT_LOCK_ATTEMPTS }
+          : null,
+        failedAttempts: failed,
       }
     }
 
     default:
       return { kind: 'malformed' }
   }
+}
+
+/**
+ * The bell notification for a `FailureAlert`. Reuses `qr_code_locked` (the client
+ * already routes it to QR & PINs); the count and whether it is permanent travel in
+ * the notification's metadata as well, for anything that wants to branch on them.
+ */
+export function failureAlertMessage(alert: FailureAlert, venueName: string): string {
+  if (alert.permanent) {
+    return (
+      `The kitchen QR code for ${venueName} has been locked after too many incorrect PINs. ` +
+      `Check nobody is guessing, then unlock it from QR & PINs.`
+    )
+  }
+  return (
+    `${alert.failedAttempts} incorrect PINs have been entered on the kitchen QR code for ${venueName} ` +
+    `in the last 24 hours and it is locked for a short while. If that was not your staff, ` +
+    `regenerate the code from QR & PINs.`
+  )
 }

@@ -24,6 +24,11 @@
 //   anything else         a business rule or a transient failure -> inline, and the
 //                         mutation's invalidation re-runs the preview so the
 //                         reason shows up in the problems list.
+//
+// And a request the caller cannot see at all (a bell entry for another rep's venue,
+// FORBIDDEN, or one that no longer exists, NOT_FOUND) is a verdict, not a fault: it
+// gets a plain sentence and a Close button -- no Approve, no Reject, no Try again,
+// because none of them could ever work.
 
 import { useEffect, useMemo, useState } from 'react'
 import { Ban, Check, Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react'
@@ -258,6 +263,9 @@ export default function QrRequestReviewModal({ requestId, open = true, onClose }
   }, [current])
   const request = current?.request ?? (heldRequest && heldRequest.id === requestId ? heldRequest : null)
   const preview = current?.preview ?? null
+  // The server answered "not yours" / "not there". Retrying cannot change that.
+  const unavailable =
+    !request && !isLoading && isQrApiError(loadError) && (loadError.code === 'FORBIDDEN' || loadError.code === 'NOT_FOUND')
 
   // Reset everything when the modal is pointed at a different request.
   useEffect(() => {
@@ -364,7 +372,7 @@ export default function QrRequestReviewModal({ requestId, open = true, onClose }
 
   // ── footer ────────────────────────────────────────────────────────────────
   const footer = ({ requestClose }: { requestClose: () => void }) => {
-    if (decided) {
+    if (decided || unavailable) {
       return <Button variant="secondary" onClick={requestClose}>Close</Button>
     }
     if (rejecting) {
@@ -424,7 +432,15 @@ export default function QrRequestReviewModal({ requestId, open = true, onClose }
           <p role="status" className="py-8 text-center text-sm text-stone-600">Loading order...</p>
         )}
 
-        {!isLoading && loadError && !request && (
+        {unavailable && (
+          <Callout tone="neutral" title="This order is not available to you">
+            {isQrApiError(loadError) && loadError.code === 'NOT_FOUND'
+              ? 'It no longer exists.'
+              : 'It belongs to a venue you do not answer for.'}
+          </Callout>
+        )}
+
+        {!isLoading && loadError && !request && !unavailable && (
           <Callout
             tone="danger"
             title="Could not load this order"

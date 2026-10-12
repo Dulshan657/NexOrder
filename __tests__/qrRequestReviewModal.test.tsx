@@ -417,3 +417,52 @@ describe('QrRequestReviewModal: edge cases the first review found', () => {
     expect(qty('Fresh Cream 1L').value).toBe('1')
   })
 })
+
+describe('QrRequestReviewModal: a request the caller cannot see', () => {
+  const failWith = (code: string, message: string) =>
+    previewHook.mockImplementation(() => ({
+      data: undefined,
+      error: new QrApiError({ code, message, status: code === 'FORBIDDEN' ? 403 : 404 }),
+      isLoading: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    }))
+
+  it('says so in a plain sentence and offers Close only: no Approve, no Reject, no Try again', () => {
+    failWith('FORBIDDEN', 'You do not answer for this venue')
+    renderModal()
+
+    expect(screen.getByText('This order is not available to you')).toBeTruthy()
+    expect(screen.getByText('It belongs to a venue you do not answer for.')).toBeTruthy()
+    // The server's own wording is not echoed to the screen.
+    expect(screen.queryByText(/You do not answer for this venue/)).toBeNull()
+
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Close' }).length).toBeGreaterThan(0)
+  })
+
+  it('treats a request that no longer exists the same way', () => {
+    failWith('NOT_FOUND', 'No such order request')
+    renderModal()
+
+    expect(screen.getByText('It no longer exists.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull()
+  })
+
+  it('still offers Try again for a failure that might pass (a dropped connection)', () => {
+    previewHook.mockImplementation(() => ({
+      data: undefined,
+      error: new QrApiError({ code: 'NETWORK', message: 'Could not reach the server.', status: null }),
+      isLoading: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    }))
+    renderModal()
+
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
+    expect(screen.queryByText('This order is not available to you')).toBeNull()
+  })
+})

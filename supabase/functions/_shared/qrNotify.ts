@@ -100,3 +100,45 @@ export async function notifyHorecaApprovers(
     return 0
   }
 }
+
+/**
+ * Mark every `qr_order_pending` notification for these requests as read.
+ *
+ * A request leaves the queue three ways -- approved, rejected, cancelled (by the
+ * kitchen, or by revoking the person who sent it) -- and the "waiting for your
+ * approval" bell entry has to leave with it, or every approver keeps an unread
+ * badge for an order that needs nothing from them. Marked READ rather than
+ * deleted: the entry is history, the `read` flag is what the bell already treats
+ * as handled, and a broadcast row (Admin/Manager share one) cannot be
+ * un-addressed per person anyway.
+ *
+ * Matches on `metadata->>requestId`, which `qr-order-request` `submit` writes.
+ * Service role only (an approver may not update someone else's row).
+ *
+ * Never throws -- a stale badge is a smaller harm than failing a decision that
+ * has already been made -- but is logged. Returns how many rows it changed.
+ */
+export async function retirePendingNotifications(
+  service: SupabaseClient,
+  requestIds: ReadonlyArray<string>,
+): Promise<number> {
+  const ids = [...new Set(requestIds.filter((id) => typeof id === 'string' && id !== ''))]
+  if (ids.length === 0) return 0
+  try {
+    const { data, error } = await service
+      .from('notifications')
+      .update({ read: true })
+      .eq('type', 'qr_order_pending')
+      .eq('read', false)
+      .in('metadata->>requestId', ids)
+      .select('id')
+    if (error) {
+      console.warn('[qrNotify] could not retire pending notifications:', error.message)
+      return 0
+    }
+    return (data ?? []).length
+  } catch (e) {
+    console.warn('[qrNotify] retiring pending notifications threw:', e instanceof Error ? e.message : e)
+    return 0
+  }
+}

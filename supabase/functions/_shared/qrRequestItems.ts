@@ -125,3 +125,48 @@ export function withSnapshot(
     return known ? { ...l, productName: known.productName, productSku: known.productSku } : { ...l }
   })
 }
+
+// ── what a kitchen may ask for ──────────────────────────────────────────────
+
+/** A held order may be dated at most this many days past today. */
+export const QR_MAX_DELIVERY_DAYS_AHEAD = 90
+
+const DAY_MS = 86_400_000
+
+/**
+ * Why a requested delivery date is unusable, or null when it is fine (or absent).
+ * The window is today through today + 90 days, by the UTC calendar date: an order
+ * dated yesterday cannot be delivered, and one dated years out is a typo that
+ * would sit in the approvers' queue until somebody noticed. `date` is the
+ * already-validated `YYYY-MM-DD` the schema accepts.
+ */
+export function deliveryDateProblem(date: string | null | undefined, now: Date): string | null {
+  if (date == null || date === '') return null
+  const today = now.toISOString().slice(0, 10)
+  const latest = new Date(now.getTime() + QR_MAX_DELIVERY_DAYS_AHEAD * DAY_MS).toISOString().slice(0, 10)
+  if (date < today) return 'The delivery date cannot be in the past.'
+  if (date > latest) return `Choose a delivery date within the next ${QR_MAX_DELIVERY_DAYS_AHEAD} days.`
+  return null
+}
+
+/**
+ * The first requested product that exists but is switched off, or null.
+ * `rows` are the products as read from the database for the requested ids; an id
+ * with no row is the pricing dry run's `PRODUCT_NOT_FOUND`, not this check's.
+ * `placeOrderCore` does not look at `is_active` (and must not change for this), so
+ * without the check a kitchen could keep ordering something the catalogue has
+ * retired.
+ */
+export function firstInactiveProduct(
+  rows: ReadonlyArray<{ id: number; name?: string | null; is_active: boolean | null }>,
+  lines: ReadonlyArray<Pick<QrRequestLine, 'productId'>>,
+): { id: number; name: string } | null {
+  const byId = new Map(rows.map((r) => [Number(r.id), r]))
+  for (const line of lines) {
+    const row = byId.get(line.productId)
+    if (row && row.is_active === false) {
+      return { id: line.productId, name: row.name?.trim() || `Product ${line.productId}` }
+    }
+  }
+  return null
+}

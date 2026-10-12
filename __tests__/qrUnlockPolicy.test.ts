@@ -3,15 +3,26 @@ import { describe, expect, it } from 'vitest'
 import {
   BAD_PIN_MESSAGE,
   PERMANENT_LOCK_ATTEMPTS,
+  PIN_ALERT_ATTEMPTS,
+  failureAlertMessage,
   interpretVerifyResult,
   lockInfo,
+  type UnlockOutcome,
 } from '@/supabase/functions/_shared/qrUnlockPolicy'
 
 /**
  * `qr_verify_pin()` answers a stranger holding a public sticker. These pin what
  * the wire is allowed to say about it: one fixed wrong-PIN message, no attempt
- * counts, and the approvers told exactly once when a code locks for good.
+ * counts, and the approvers told once each at 5, 10 and 20 wrong PINs.
+ *
+ * (The wire is `code`, `message` and `details`. `alert` and `failedAttempts` are
+ * for the server's own use -- the notification and the log -- and are asserted
+ * to stay off the wire by reading `details` and `message` alone.)
  */
+const wire = (out: UnlockOutcome) => {
+  if (out.kind !== 'refused') throw new Error('expected a refusal')
+  return JSON.stringify({ code: out.code, message: out.message, details: out.details })
+}
 describe('lockInfo', () => {
   it('reads Postgres infinity as a permanent lock', () => {
     expect(lockInfo('infinity')).toEqual({ lockedUntil: null, permanent: true })
@@ -72,7 +83,8 @@ describe('interpretVerifyResult -- refusals', () => {
     expect(interpretVerifyResult({ ok: false, reason: 'unknown_code' })).toMatchObject({
       kind: 'refused',
       code: 'QR_UNKNOWN_CODE',
-      permanentLockReached: false,
+      alert: null,
+      failedAttempts: null,
     })
   })
 
@@ -87,7 +99,8 @@ describe('interpretVerifyResult -- refusals', () => {
       kind: 'refused',
       code: 'QR_LOCKED',
       details: { lockedUntil: '2030-01-01T00:15:00.000Z', permanent: false },
-      permanentLockReached: false,
+      alert: null,
+      failedAttempts: null,
     })
   })
 
@@ -103,7 +116,7 @@ describe('interpretVerifyResult -- refusals', () => {
 
   it('a refusal made WHILE locked never re-announces the lock to approvers', () => {
     const out = interpretVerifyResult({ ok: false, reason: 'locked', locked_until: 'infinity' })
-    expect(out).toMatchObject({ permanentLockReached: false })
+    expect(out).toMatchObject({ alert: null, failedAttempts: null })
   })
 })
 
@@ -128,8 +141,8 @@ describe('interpretVerifyResult -- wrong PIN', () => {
       failed_attempts: 3,
       locked_until: null,
     })
-    expect(out).toMatchObject({ details: undefined })
-    expect(JSON.stringify(out)).not.toMatch(/failed|attempt|3/)
+    expect(out).toMatchObject({ details: undefined, alert: null, failedAttempts: 3 })
+    expect(wire(out)).not.toMatch(/failed|attempt|3/)
   })
 
   it('says only that it is now locked when this attempt locked it', () => {
@@ -143,38 +156,66 @@ describe('interpretVerifyResult -- wrong PIN', () => {
       code: 'QR_BAD_PIN',
       message: BAD_PIN_MESSAGE,
       details: { locked: true, lockedUntil: '2030-01-01T00:01:00.000Z', permanent: false },
-      permanentLockReached: false,
     })
-    expect(JSON.stringify(out)).not.toMatch(/failed_attempts|"5"|:5[,}]/)
+    expect(wire(out)).not.toMatch(/failed|attempt|"5"|:5[,}]/)
+  })
+})
+
+describe('interpretVerifyResult -- who is told, and when', () => {
+  const bad = (failed: number, lockedUntil: string | null) =>
+    interpretVerifyResult({ ok: false, reason: 'bad_pin', failed_attempts: failed, locked_until: lockedUntil })
+
+  it('alerts the approvers at exactly 5, 10 and 20 wrong PINs', () => {
+    expect(PIN_ALERT_ATTEMPTS).toEqual([5, 10, PERMANENT_LOCK_ATTEMPTS])
+    expect(bad(5, '2030-01-01T00:01:00+00:00')).toMatchObject({
+      alert: { failedAttempts: 5, permanent: false },
+    })
+    expect(bad(10, '2030-01-01T00:15:00+00:00')).toMatchObject({
+      alert: { failedAttempts: 10, permanent: false },
+    })
+    expect(bad(PERMANENT_LOCK_ATTEMPTS, 'infinity')).toMatchObject({
+      code: 'QR_BAD_PIN',
+      alert: { failedAttempts: PERMANENT_LOCK_ATTEMPTS, permanent: true },
+    })
   })
 
-  it('flags the permanent lock exactly at the threshold', () => {
-    const out = interpretVerifyResult({
-      ok: false,
-      reason: 'bad_pin',
-      failed_attempts: PERMANENT_LOCK_ATTEMPTS,
-      locked_until: 'infinity',
+  it.each([1, 2, 3, 4, 6, 7, 8, 9, 11, 14, 15, 16, 19, 21, 25])(
+    'says nothing at %i wrong PINs (each level is announced once, not on every attempt)',
+    (n) => {
+      expect(bad(n, n >= 5 ? '2030-01-01T00:01:00+00:00' : null)).toMatchObject({ alert: null })
+    },
+  )
+
+  it('does not call a timed lock permanent just because the count is a threshold', () => {
+    expect(bad(PERMANENT_LOCK_ATTEMPTS, '2030-01-01T01:00:00+00:00')).toMatchObject({
+      alert: { permanent: false },
     })
-    expect(out).toMatchObject({ code: 'QR_BAD_PIN', permanentLockReached: true })
   })
 
-  it('does not flag a permanent lock past the threshold or below it', () => {
-    expect(
-      interpretVerifyResult({
-        ok: false,
-        reason: 'bad_pin',
-        failed_attempts: PERMANENT_LOCK_ATTEMPTS + 1,
-        locked_until: 'infinity',
-      }),
-    ).toMatchObject({ permanentLockReached: false })
-    expect(
-      interpretVerifyResult({
-        ok: false,
-        reason: 'bad_pin',
-        failed_attempts: 15,
-        locked_until: '2030-01-01T01:00:00+00:00',
-      }),
-    ).toMatchObject({ permanentLockReached: false })
+  it('writes the log fields the server needs and keeps them off the wire', () => {
+    const out = bad(10, '2030-01-01T00:15:00+00:00')
+    expect(out).toMatchObject({ kind: 'refused', failedAttempts: 10 })
+    expect(JSON.parse(wire(out)).details).toEqual({
+      locked: true,
+      lockedUntil: '2030-01-01T00:15:00.000Z',
+      permanent: false,
+    })
+  })
+})
+
+describe('failureAlertMessage', () => {
+  it('names the venue and, below the permanent level, how many and what to do', () => {
+    const m = failureAlertMessage({ failedAttempts: 5, permanent: false }, 'Cafe Roma')
+    expect(m).toMatch(/Cafe Roma/)
+    expect(m).toMatch(/5 incorrect PINs/)
+    expect(m).toMatch(/regenerate/i)
+  })
+
+  it('says the code is locked, and how to clear it, at the permanent level', () => {
+    const m = failureAlertMessage({ failedAttempts: 20, permanent: true }, 'Cafe Roma')
+    expect(m).toMatch(/locked/i)
+    expect(m).toMatch(/unlock it/i)
+    expect(m).not.toMatch(/regenerate/i)
   })
 })
 

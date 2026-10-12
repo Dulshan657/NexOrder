@@ -10,6 +10,7 @@ import type {
 } from '../types';
 import { resolveHoReCaPrice, getAllApplicablePromotions } from '../pricing';
 import { getOrderingHints } from '../services/buyingPatternsService';
+import { pickKitchenOrders } from '../lib/kitchen/pickKitchenOrders';
 import type { SortOption } from '../components/ShopTopBar';
 
 export interface OrderingStateInput {
@@ -141,14 +142,15 @@ export function useOrderingState(input: OrderingStateInput): OrderingState {
         return result;
     }, [allOrders, selectedHoReCa, products]);
 
-    const lastOrderForHoReCa = useMemo(() => {
-        const custId = selectedHoReCa?.id ?? null;
-        if (!custId) return null;
-        const hoReCaOrders = allOrders
-            .filter(o => o.hoReCa.id === custId)
-            .sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
-        return hoReCaOrders[0] ?? null;
-    }, [allOrders, selectedHoReCa]);
+    // The order "Reorder" repeats. A cancelled order is a poor thing to offer again
+    // (the kitchen's "Order same again" already skips them), so this uses the very
+    // same pick -- `pickKitchenOrders().hero` -- rather than a second opinion on
+    // what counts as the last order. If the newest order was cancelled, the one
+    // before it is the one offered.
+    const lastOrderForHoReCa = useMemo(
+        () => pickKitchenOrders(allOrders, selectedHoReCa?.id ?? null).hero,
+        [allOrders, selectedHoReCa],
+    );
 
     return {
         filteredProducts,

@@ -168,3 +168,16 @@ export async function hmacPin(pepper: string, horecaId: number, pin: string): Pr
   )
   return toHex(await crypto.subtle.sign('HMAC', key, enc.encode(`${horecaId}:${pin}`)))
 }
+
+/**
+ * A short, stable, non-reversible handle for a venue token: the first 16 hex
+ * characters of SHA-256(token). It keys the per-token rate-limit bucket in
+ * `qr-unlock`, so the bucket is independent of every request header (an
+ * attacker can rotate IPs and spoof `X-Forwarded-For`; they cannot change which
+ * sticker they are guessing against) while the token itself never lands in a
+ * database key or a log line.
+ */
+export async function tokenFingerprint(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))
+  return toHex(digest).slice(0, 16)
+}

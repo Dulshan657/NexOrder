@@ -44,8 +44,15 @@ export type QrRequestStatus = (typeof QR_REQUEST_STATUSES)[number]
 /** Who is acting. QR Staff are always `requester`; everyone who may approve is `approver`. */
 export type QrRequestActor = 'requester' | 'approver'
 
-/** How long an `approving` claim is honoured before another approver may take it over. */
-export const QR_CLAIM_STALE_MS = 120_000
+/**
+ * How long an `approving` claim is honoured before another approver may take it
+ * over. Ten minutes (it was two): a takeover of a claim whose first holder was
+ * merely slow places the order twice, and the finalize UPDATE matches on the
+ * claim's own `claimed_at` so the loser cannot silently overwrite the winner --
+ * but the order the loser placed still exists. A genuinely dead claim costs an
+ * approver a ten minute wait, which is the cheaper mistake.
+ */
+export const QR_CLAIM_STALE_MS = 10 * 60_000
 
 const TRANSITIONS: Readonly<Record<QrRequestStatus, Readonly<Record<QrRequestActor, readonly QrRequestStatus[]>>>> = {
   pending: { requester: ['cancelled'], approver: ['approving', 'rejected'] },

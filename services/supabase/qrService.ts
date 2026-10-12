@@ -52,6 +52,8 @@ const SHORT_TIMEOUT_MS = 20_000
 const DEFAULT_TIMEOUT_MS = 30_000
 const ORDER_TIMEOUT_MS = 60_000
 const POSTER_TIMEOUT_MS = 60_000
+/** A best-effort call made while leaving; it must never hold the screen. */
+const LOCK_TIMEOUT_MS = 4_000
 
 /**
  * Invoke an Edge Function and return its JSON body, or throw a QrApiError.
@@ -146,6 +148,20 @@ export async function signOutQrLocally(): Promise<void> {
   } catch {
     // Nothing useful to do; the next verifyOtp replaces the stored session anyway.
   }
+}
+
+/**
+ * A kitchen login ends its OWN unlock on the server (mutate-qr-access `lock_self`):
+ * the unlock is cleared and every session of this login is deleted. Without it,
+ * "Lock" only forgets the session on THIS phone and the server keeps honouring a
+ * copy of it until the 2 hours are up.
+ *
+ * BEST EFFORT: callers ignore the outcome, and a session that has already lapsed
+ * is refused (QR_SESSION_EXPIRED) -- which is fine, the database has already shut
+ * it. It never signs out locally; `signOutQrLocally` does that.
+ */
+export async function lockQrSelf(): Promise<void> {
+  await call<{ ok: true }>('mutate-qr-access', { action: 'lock_self' }, LOCK_TIMEOUT_MS)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

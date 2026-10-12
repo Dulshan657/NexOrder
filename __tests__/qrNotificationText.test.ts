@@ -62,6 +62,40 @@ describe('qrNotificationDetail', () => {
     expect(qrNotificationDetail({ type: 'qr_order_approved', metadata: { edited: true } })).toBe('Approved with changes')
     expect(qrNotificationDetail({ type: 'qr_order_approved', metadata: { edited: false } })).toBeNull()
   })
+
+  describe('a rejection shows its reason ONCE', () => {
+    const metadata = { reason: 'Out of season' }
+
+    it('adds the reason line when the sentence does not already say it (what the server writes now)', () => {
+      expect(
+        qrNotificationDetail({ type: 'qr_order_rejected', message: 'Your order for Cafe Roma was not approved', metadata }),
+      ).toBe('Reason: Out of season')
+    })
+
+    it('adds nothing when the sentence already ends with the reason (rows written before that change)', () => {
+      expect(
+        qrNotificationDetail({
+          type: 'qr_order_rejected',
+          message: 'Your order for Cafe Roma was not approved: Out of season',
+          metadata,
+        }),
+      ).toBeNull()
+    })
+
+    it('compares case-insensitively and ignores stray whitespace in the reason', () => {
+      expect(
+        qrNotificationDetail({
+          type: 'qr_order_rejected',
+          message: 'Not approved: out of SEASON',
+          metadata: { reason: '  Out of season ' },
+        }),
+      ).toBeNull()
+    })
+
+    it('has no line at all when the reason is blank', () => {
+      expect(qrNotificationDetail({ type: 'qr_order_rejected', message: 'Declined', metadata: { reason: '  ' } })).toBeNull()
+    })
+  })
 })
 
 describe('isQrNotificationType / qrActionLabel', () => {

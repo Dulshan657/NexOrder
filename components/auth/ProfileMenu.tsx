@@ -26,7 +26,6 @@ interface ProfileMenuProps {
 const KitchenProfile: React.FC<{ currentUser: User; session: KitchenSession }> = ({ currentUser, session }) => {
   const [locking, setLocking] = useState(false);
   const ends = formatClockTime(session.endsAt);
-  const summary = ends ? `Kitchen session · ends ${ends}` : 'Kitchen session';
 
   const lock = async () => {
     setLocking(true);
@@ -39,19 +38,19 @@ const KitchenProfile: React.FC<{ currentUser: User; session: KitchenSession }> =
 
   return (
     <div className="border-t border-stone-200">
-      <div
-        className="flex items-center gap-3 px-4 py-3"
-        title={ends ? `Kitchen session · ${currentUser.name} · ends ${ends}` : undefined}
-      >
+      <div className="flex items-center gap-3 px-4 py-3">
         <div
           aria-hidden="true"
           className="w-8 h-8 rounded-xl bg-nexgen-blue-dark flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
         >
           {currentUser.name.charAt(0)}
         </div>
+        {/* Two lines, and neither is cut off: the sidebar is narrow, and a truncated
+            "Ends 14:3…" is worse than a name that wraps. Who it is on top, when it
+            stops below. */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-stone-900 truncate">{currentUser.name}</p>
-          <p className="text-xs text-stone-600 truncate">{summary}</p>
+          <p className="text-sm font-medium text-stone-900 break-words">{`Kitchen session · ${currentUser.name}`}</p>
+          {ends && <p className="text-xs text-stone-600">{`Ends ${ends}`}</p>}
         </div>
       </div>
       <div className="px-3 pb-3">

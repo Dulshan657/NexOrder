@@ -48,6 +48,12 @@ function summary(r: QrOrderRequest): string {
   return `${formatMoney(r.quotedTotal)} est. · ${itemCountLabel(r.items.length)}`
 }
 
+/** A row's two halves: who/when, and how big. Compact shows them as two lines, never one truncated one. */
+interface RowText {
+  head: string
+  summary: string
+}
+
 export default function PendingQrRequests({ horecaId, mode, compact = false }: PendingQrRequestsProps) {
   const { user } = useAuth()
   const { addToast } = useToastActions()
@@ -80,18 +86,22 @@ export default function PendingQrRequests({ horecaId, mode, compact = false }: P
     }
   }
 
-  const rowText = (r: QrOrderRequest): string => {
+  const rowText = (r: QrOrderRequest): RowText => {
     const when = formatWhen(r.createdAt)
     if (mode === 'requester') {
       const mine = myId !== null && r.requestedBy === myId
-      return `Waiting for approval · ${mine ? '' : `${r.staffName || 'Kitchen'} · `}sent ${when} · ${summary(r)}`
+      const who = mine ? '' : `${r.staffName || 'Kitchen'} · `
+      // The banner's own heading already says "Waiting for approval"; repeating it
+      // on a compact row only pushes the amount off the end of a 360px line.
+      return { head: compact ? `${who}sent ${when}` : `Waiting for approval · ${who}sent ${when}`, summary: summary(r) }
     }
-    return `${r.staffName || 'Kitchen staff'} · ${when} · ${summary(r)}`
+    return { head: `${r.staffName || 'Kitchen staff'} · ${when}`, summary: summary(r) }
   }
 
   const rows = visible.map((r) => {
     const mine = myId !== null && r.requestedBy === myId
     const label = mode === 'approver' ? venueName(r.horecaId) : null
+    const text = rowText(r)
     return (
       <li
         key={r.id}
@@ -99,7 +109,16 @@ export default function PendingQrRequests({ horecaId, mode, compact = false }: P
       >
         <div className="min-w-0">
           {label && <p className="truncate text-sm font-semibold text-stone-900">{label}</p>}
-          <p className={`text-stone-700 ${compact ? 'truncate text-xs' : 'text-xs sm:text-sm'}`}>{rowText(r)}</p>
+          {compact ? (
+            // Two lines that WRAP, never one that truncates: the amount is the part
+            // an approver or a cook is looking for, and it sits at the end.
+            <p className="break-words text-xs text-stone-700">
+              <span className="block">{text.head}</span>
+              <span className="block">{text.summary}</span>
+            </p>
+          ) : (
+            <p className="text-xs text-stone-700 sm:text-sm">{`${text.head} · ${text.summary}`}</p>
+          )}
           {mode === 'approver' && r.lastError && !compact && (
             <p className="mt-0.5 text-xs font-medium text-amber-800">Last approval attempt failed: {r.lastError}</p>
           )}

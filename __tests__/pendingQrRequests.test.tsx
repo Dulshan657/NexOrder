@@ -123,6 +123,46 @@ describe('PendingQrRequests', () => {
       expect(screen.getByText(/Ana/)).toBeTruthy()
     })
 
+    describe('compact (the kitchen home banner)', () => {
+      // At 360px the text column is ~225px, so a one-line row loses its tail --
+      // and the tail is the amount.
+      const climb = (from: HTMLElement) => {
+        const chain: HTMLElement[] = []
+        for (let el: HTMLElement | null = from; el && el.tagName !== 'LI'; el = el.parentElement) chain.push(el)
+        return chain
+      }
+
+      it('puts the amount on its own line and never truncates it', () => {
+        pending([req({})])
+        render(<PendingQrRequests mode="requester" horecaId={7} compact />)
+
+        const amount = screen.getByText('$48.20 est. · 3 items')
+        for (const el of climb(amount)) {
+          expect(el.className, el.tagName).not.toMatch(/truncate|whitespace-nowrap|overflow-hidden|text-ellipsis/)
+        }
+        // Who/when is the other line; the heading above already says "Waiting for approval".
+        expect(screen.getByText(/^sent /)).toBeTruthy()
+        expect(screen.getAllByText('Waiting for approval')).toHaveLength(1)
+      })
+
+      it('names a colleague whose request it is', () => {
+        pending([req({ requestedBy: 'staff-ana', staffName: 'Ana' })])
+        render(<PendingQrRequests mode="requester" horecaId={7} compact />)
+
+        expect(screen.getByText(/^Ana · sent /)).toBeTruthy()
+        expect(screen.getByText('$48.20 est. · 3 items')).toBeTruthy()
+      })
+
+      it('does not truncate the amount for an approver either', () => {
+        pending([req({ id: 'a', horecaId: 7, staffName: 'Ana' })])
+        render(<PendingQrRequests mode="approver" compact />)
+
+        for (const el of climb(screen.getByText('$48.20 est. · 3 items'))) {
+          expect(el.className, el.tagName).not.toMatch(/truncate|whitespace-nowrap|overflow-hidden|text-ellipsis/)
+        }
+      })
+    })
+
     it('cancels the request and says so', async () => {
       pending([req({ id: 'mine' })])
       cancelMock.mockResolvedValue(undefined)

@@ -83,3 +83,33 @@ export async function requireManageHoreca(
     throw new EdgeFunctionError('FORBIDDEN', 'You do not have access to this venue')
   }
 }
+
+// ── mutate-qr-access: which role may call which action ──────────────────────
+
+/** The roles that may manage a venue's code and PINs (each still checked per venue). */
+const MANAGE_ACTION_ROLES: ReadonlySet<string> = new Set([
+  'Admin',
+  'Manager',
+  'Field Sales Rep',
+  'Office Sales Rep',
+  'Restaurant/Hotel Customer',
+])
+
+/**
+ * `mutate-qr-access` takes two kinds of caller. A kitchen (QR Staff) login may
+ * call exactly ONE action, `lock_self`, which ends its own unlock; every other
+ * action manages a venue's PINs and is refused to it -- a kitchen phone must
+ * never be able to touch the PINs that let it in. And `lock_self` is the kitchen's
+ * alone: for anyone else it would be a way to end somebody else's session if it
+ * ever grew a target, so it answers FORBIDDEN rather than quietly doing nothing.
+ *
+ * This is the role gate only; which VENUE a manager may act on is
+ * `canManageHoreca`, per action.
+ */
+export function qrAccessActionAllowed(role: string, action: string): boolean {
+  if (action === 'lock_self') return role === 'QR Staff'
+  return MANAGE_ACTION_ROLES.has(role)
+}
+
+/** A venue may have this many active kitchen staff. Stops a runaway or scripted create. */
+export const QR_MAX_ACTIVE_STAFF = 50

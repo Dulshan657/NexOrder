@@ -191,3 +191,21 @@ export async function toQrApiError(error: unknown, fallbackMessage = GENERIC_MES
   }
   return new QrApiError({ code: 'NETWORK', message: NETWORK_MESSAGE, status: null })
 }
+
+/**
+ * A TanStack Query `retry` predicate for QR calls: try again after a failure that
+ * a second attempt could fix (a dropped connection, a 5xx, a timeout), never after
+ * one the server answered deliberately with a 4xx -- FORBIDDEN, NOT_FOUND,
+ * QR_SESSION_EXPIRED, TOO_MANY_REQUESTS. Repeating those cannot change the answer;
+ * it only delays the message the person needs, and for a 429 it spends more of the
+ * very budget that refused them.
+ *
+ * Anything that is not a `QrApiError` (a PostgREST error, say) keeps the app-wide
+ * default of one retry (`lib/queryClient.ts`).
+ */
+export function retryUnlessClientError(failureCount: number, error: unknown, maxRetries = 1): boolean {
+  if (error instanceof QrApiError && error.status !== null && error.status >= 400 && error.status < 500) {
+    return false
+  }
+  return failureCount < maxRetries
+}
