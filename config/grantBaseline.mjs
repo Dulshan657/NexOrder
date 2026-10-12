@@ -66,7 +66,6 @@ export const GRANT_BASELINE = {
   pantry_items: { anon: ['DELETE', 'INSERT', 'TRUNCATE', 'UPDATE'], authenticated: ['TRUNCATE'] },
   product_home_bins: { anon: ['DELETE', 'INSERT', 'TRUNCATE', 'UPDATE'], authenticated: ['DELETE', 'INSERT', 'TRUNCATE', 'UPDATE'] },
   products: { anon: ['DELETE', 'INSERT', 'TRUNCATE', 'UPDATE'], authenticated: ['TRUNCATE'] },
-  profiles: { anon: ['DELETE', 'TRUNCATE', 'UPDATE'], authenticated: ['DELETE', 'TRUNCATE', 'UPDATE'] },
   promotions: { anon: ['DELETE', 'INSERT', 'TRUNCATE', 'UPDATE'], authenticated: ['TRUNCATE'] },
   purchase_order_items: { anon: ['DELETE', 'INSERT', 'TRUNCATE', 'UPDATE'], authenticated: ['TRUNCATE'] },
   purchase_orders: { anon: ['DELETE', 'INSERT', 'TRUNCATE', 'UPDATE'], authenticated: ['TRUNCATE'] },

@@ -30,11 +30,12 @@ import { runSql, SqlError } from './lib/managementApi.mjs'
 import {
   fatalFindings,
   findGrantViolations,
+  findProtectedColumnViolations,
   formatBaselined,
   formatFindings,
   lockedTableNames,
 } from './lib/grantExpectations.mjs'
-import { CLIENT_ROLES } from '../config/lockedTables.mjs'
+import { CLIENT_ROLES, PROTECTED_COLUMNS } from '../config/lockedTables.mjs'
 
 const args = process.argv.slice(2)
 
@@ -65,6 +66,20 @@ SELECT 'table' AS kind,
    AND t.table_name IN (${tableList})
 `
 
+// has_column_privilege, not information_schema: the latter lists column grants
+// only, and misses the column privileges a TABLE-level grant implies (00131).
+const COLUMN_SQL = Object.entries(PROTECTED_COLUMNS)
+  .flatMap(([table, cols]) =>
+    cols.flatMap((col) =>
+      CLIENT_ROLES.map(
+        (role) =>
+          `SELECT '${table}' AS table_name, '${col}' AS column_name, '${role}' AS grantee, ` +
+          `has_column_privilege('${role}', 'public.${table}', '${col}', 'UPDATE') AS can_update`,
+      ),
+    ),
+  )
+  .join('\nUNION ALL\n')
+
 console.error(`[check:grants] target ${target.name} (${target.config.projectRef})`)
 
 let rows
@@ -87,7 +102,18 @@ if (!Array.isArray(rows)) {
 const grants = rows.filter((r) => r.kind === 'grant')
 const tablesPresent = new Set(rows.filter((r) => r.kind === 'table').map((r) => r.table_name))
 
-const findings = findGrantViolations(grants, tablesPresent)
+let columnRows
+try {
+  columnRows = await runSql(target, COLUMN_SQL)
+} catch (e) {
+  if (e instanceof SqlError) {
+    console.error(`[check:grants] ${e.message}`)
+    process.exit(1)
+  }
+  throw e
+}
+
+const findings = [...findGrantViolations(grants, tablesPresent), ...findProtectedColumnViolations(columnRows)]
 const fatal = fatalFindings(findings)
 
 console.log(

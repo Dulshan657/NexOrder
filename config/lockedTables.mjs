@@ -42,6 +42,15 @@ export const CLIENT_WRITE_PRIVILEGES = ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'
 export const CLIENT_ROLES = ['anon', 'authenticated']
 
 /**
+ * Columns no client role may UPDATE, checked with has_column_privilege -- which,
+ * unlike role_table_grants, also sees privileges a TABLE-level grant implies.
+ * That blind spot is how 00011's no-op column revoke survived until 00131.
+ */
+export const PROTECTED_COLUMNS = {
+  profiles: ['id', 'role', 'horeca_id', 'home_warehouse_id', 'created_at'],
+}
+
+/**
  * Locked tables, in the order CLAUDE.md's lockdown table lists them.
  *
  * `except` names a column-level grant that is legitimately still held, for the
@@ -67,13 +76,13 @@ export const LOCKED_TABLES = [
   { table: 'rate_limit_counters', fn: 'rate_limit_hit() RPC', migration: '00026' },
   {
     table: 'profiles',
-    fn: 'invite-user',
-    migration: '00011',
-    // 00011 revoked INSERT outright but only the (role, horeca_id) COLUMNS of
-    // UPDATE: a user may still edit their own name and phone directly. That is
-    // the documented design, not a gap — recorded here so the check does not
-    // report it every run and train people to ignore the output.
-    except: ['UPDATE'],
+    fn: 'invite-user / mutate-profile',
+    // 00011 tried to lock role/horeca_id with a COLUMN-level revoke, which is a
+    // no-op while the table-level grant stands -- any user could make themselves
+    // Admin. 00131 revoked the table grant and re-granted UPDATE on name/email/
+    // avatar_url only. Column grants do not appear in role_table_grants, so no
+    // `except` is needed; PROTECTED_COLUMNS below is what pins the columns.
+    migration: '00131',
   },
   { table: 'inventory_balances', fn: 'receive-stock / adjust-stock / transfer-stock / record-pick / count-bin', migration: '00027' },
   { table: 'inventory_movements', fn: 'the inv_* RPCs (service_role only)', migration: '00027' },
