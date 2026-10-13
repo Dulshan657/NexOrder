@@ -24,7 +24,7 @@ import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { classifyFailure, INITIAL_RUNS } from './lib/flakeVerdict.mjs'
+import { classifyFailure, failingTestsNotOnBase, INITIAL_RUNS } from './lib/flakeVerdict.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const GUARDS = ['lint', 'check:overlays', 'check:viewport', 'check:csp', 'check:claude-md', 'check:demo']
@@ -40,13 +40,17 @@ function die(message) {
 }
 
 // Windows needs a shell for npm/npx (.cmd) and Node deprecates args + shell
-// (DEP0190), so join into one string there. Every argument here is a sha, a
-// flag or a repo-relative path — no spaces, nothing user-supplied unquoted.
+// (DEP0190), so join into one string there — quoting anything not plainly
+// safe, because refs, branch names and test paths reach cmd.exe and a space or
+// `&` would silently change which command ran.
+const SAFE_ARG = /^[\w@%+=:,./\\~-]+$/
+const winQuote = (a) => (SAFE_ARG.test(a) ? a : `"${a.replaceAll('"', '""')}"`)
+
 function sh(argv, { cwd, env, capture = true } = {}) {
   const options = { cwd, env: { ...process.env, ...env }, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }
   if (!capture) options.stdio = 'inherit'
   const r = process.platform === 'win32'
-    ? spawnSync(argv.join(' '), { ...options, shell: true })
+    ? spawnSync(argv.map(winQuote).join(' '), { ...options, shell: true })
     : spawnSync(argv[0], argv.slice(1), options)
   return { ok: r.status === 0, out: `${r.stdout ?? ''}${r.stderr ?? ''}` }
 }
@@ -77,13 +81,23 @@ function assertOutsideCheckout(dir) {
   if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) die(`workdir ${dir} is inside the live checkout — refusing`)
 }
 
+// A gate workdir is force-checked-out and `git clean -x`'d on every run, which
+// would destroy uncommitted work and ignored files (.env.*.local, demo-export/)
+// in anybody's checkout. So the gate only reuses a directory it created itself,
+// proven by MARKER; any other existing directory is refused.
+const MARKER = '.gate-workdir'
+
 function prepareWorktree(dir, sha) {
   assertOutsideCheckout(dir)
+  if (existsSync(dir) && !existsSync(join(dir, MARKER))) {
+    die(`${dir} exists and was not created by the gate (no ${MARKER}) — refusing to reset it`)
+  }
   if (existsSync(join(dir, '.git'))) {
     git(['checkout', '--quiet', '--force', '--detach', sha], dir)
-    git(['clean', '-fdxq', '-e', 'node_modules'], dir)
+    git(['clean', '-fdxq', '-e', 'node_modules', '-e', MARKER], dir)
   } else {
     git(['worktree', 'add', '--quiet', '--detach', dir, sha])
+    writeFileSync(join(dir, MARKER), 'Created by scripts/gate.mjs; reset on every gate run.\n')
   }
   const lockHash = createHash('sha256').update(readFileSync(join(dir, 'package-lock.json'))).digest('hex')
   const stamp = join(dir, 'node_modules', '.gate-lock-hash')
@@ -106,24 +120,43 @@ function runRow(cwd, logs, steps) {
   return { status: results.every((r) => r.ok) ? 'pass' : 'fail', steps: results }
 }
 
-function failingTestFiles(jsonPath, cwd) {
+// file -> full names of its failing tests, from a vitest JSON report.
+function failingTests(jsonPath, cwd) {
   if (!existsSync(jsonPath)) return null
   const report = JSON.parse(readFileSync(jsonPath, 'utf8'))
-  return report.testResults
-    .filter((t) => t.status === 'failed')
-    .map((t) => relative(cwd, t.name).replaceAll('\\', '/'))
+  return new Map(
+    report.testResults
+      .filter((t) => t.status === 'failed')
+      .map((t) => [
+        relative(cwd, t.name).replaceAll('\\', '/'),
+        t.assertionResults.filter((a) => a.status === 'failed').map((a) => a.fullName),
+      ]),
+  )
 }
 
 function rerun(cwd, file, times) {
   return Array.from({ length: times }, () => sh(['npx', 'vitest', 'run', file], { cwd }).ok)
 }
 
-function flakeProtocol(files, tipDir, baseDir, base) {
-  if (files.length === 0) return []
+// One base run that also records WHICH tests failed, so a file red on both
+// sides is excused only when the tip adds no failing test of its own.
+function baseRunWithNames(cwd, file) {
+  const out = join(cwd, '.gate-base-run.json')
+  const ok = sh(['npx', 'vitest', 'run', file, '--reporter=json', `--outputFile.json=${out}`], { cwd }).ok
+  return { ok, failed: failingTests(out, cwd)?.get(file) ?? [] }
+}
+
+function flakeProtocol(failures, tipDir, baseDir, base) {
+  if (failures.size === 0) return []
   prepareWorktree(baseDir, base)
-  return files.map((file) => {
+  return [...failures].map(([file, tipFailed]) => {
     const onBase = existsSync(join(baseDir, file))
-    const record = { tip: rerun(tipDir, file, INITIAL_RUNS), base: onBase ? rerun(baseDir, file, INITIAL_RUNS) : [true] }
+    const first = onBase ? baseRunWithNames(baseDir, file) : { ok: true, failed: [] }
+    const record = {
+      tip: rerun(tipDir, file, INITIAL_RUNS),
+      base: onBase ? [first.ok, ...rerun(baseDir, file, INITIAL_RUNS - 1)] : [true],
+      newFailingTests: failingTestsNotOnBase(tipFailed, first.failed),
+    }
     let verdict = classifyFailure(record)
     if (verdict.moreRuns > 0) {
       record.tip.push(...rerun(tipDir, file, verdict.moreRuns))
@@ -194,11 +227,16 @@ function main() {
   console.log('gate: row 2 — full unit suite')
   const vitestJson = join(logs, 'vitest.json')
   const row2 = runRow(workdir, logs, [['unit', ['npx', 'vitest', 'run', '--reporter=default', '--reporter=json', `--outputFile.json=${vitestJson}`]]])
-  const failing = row2.status === 'fail' ? failingTestFiles(vitestJson, workdir) : []
-  console.log(failing?.length ? `gate: flake protocol on ${failing.length} file(s)` : 'gate: no failing test files')
-  const flakes = flakeProtocol(failing ?? [], workdir, `${workdir}-base`, meta.base)
+  const failing = row2.status === 'fail' ? failingTests(vitestJson, workdir) : new Map()
+  console.log(failing?.size ? `gate: flake protocol on ${failing.size} file(s)` : 'gate: no failing test files')
+  const flakes = flakeProtocol(failing ?? new Map(), workdir, `${workdir}-base`, meta.base)
+  // An unhandled error/rejection fails the run without marking any file failed,
+  // and vitest's JSON has no field for it, so read the console log. While one is
+  // present nothing may be excused as pre-existing: it is unaccounted for.
+  const unhandled = /Unhandled (Error|Rejection)|Errors\s+\d+ errors?/.test(readFileSync(join(logs, 'unit.log'), 'utf8'))
   // The suite failed without naming a file (crash, config error): block outright.
-  if (row2.status === 'fail' && (failing === null || failing.length === 0)) row2.detail = 'suite failed without a per-file result — see .gate-logs/unit.log'
+  if (row2.status === 'fail' && (failing === null || failing.size === 0)) row2.detail = 'suite failed without a per-file result — see .gate-logs/unit.log'
+  else if (row2.status === 'fail' && unhandled) row2.detail = 'unhandled error in the suite, not attributable to a file — see .gate-logs/unit.log'
   else if (row2.status === 'fail' && flakes.every((f) => !f.blocking)) {
     row2.status = 'pass'
     row2.detail = `only pre-existing failures (also red on base): ${flakes.map((f) => f.file).join(', ')}`

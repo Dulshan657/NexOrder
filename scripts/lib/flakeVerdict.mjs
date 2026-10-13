@@ -17,10 +17,23 @@ const allFail = (runs) => runs.every((passed) => !passed)
 const allPass = (runs) => runs.every((passed) => passed)
 
 /**
- * @param {{ tip: boolean[], base: boolean[] }} record  true = that run passed
+ * Tip failures the base does not also have, compared by full test name. A file
+ * that is red on both sides is only `pre-existing` when this is empty: judging
+ * per FILE let a brand-new failure hide inside a file main already had red.
+ * @param {string[]} tipFailed
+ * @param {string[]} baseFailed
+ */
+export function failingTestsNotOnBase(tipFailed, baseFailed) {
+  const onBase = new Set(baseFailed)
+  return tipFailed.filter((name) => !onBase.has(name))
+}
+
+/**
+ * @param {{ tip: boolean[], base: boolean[], newFailingTests?: string[] }} record
+ *   true = that run passed; newFailingTests = failingTestsNotOnBase(...) for the file
  * @returns {{ verdict: 'regression'|'pre-existing'|'flake'|'undecided', blocking: boolean, moreRuns: number }}
  */
-export function classifyFailure({ tip, base }) {
+export function classifyFailure({ tip, base, newFailingTests = [] }) {
   if (tip.length === 0 || base.length === 0) {
     throw new Error('classifyFailure: each side needs at least one run')
   }
@@ -32,7 +45,11 @@ export function classifyFailure({ tip, base }) {
   if (shortfall > 0) return { verdict: 'undecided', blocking: true, moreRuns: shortfall }
 
   if (allFail(tip) && allPass(base)) return { verdict: 'regression', blocking: true, moreRuns: 0 }
-  if (allFail(tip) && allFail(base)) return { verdict: 'pre-existing', blocking: false, moreRuns: 0 }
+  if (allFail(tip) && allFail(base)) {
+    return newFailingTests.length > 0
+      ? { verdict: 'regression', blocking: true, moreRuns: 0 }
+      : { verdict: 'pre-existing', blocking: false, moreRuns: 0 }
+  }
   // Passes alone every time on the tip (failed only inside the full suite —
   // order or isolation dependent), still mixed after MIXED_RUNS, or a steady
   // tip failure over an unsteady base: none is a clean signal either way.

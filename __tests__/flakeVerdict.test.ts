@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyFailure, INITIAL_RUNS, MIXED_RUNS } from '../scripts/lib/flakeVerdict.mjs';
+import { classifyFailure, failingTestsNotOnBase, INITIAL_RUNS, MIXED_RUNS } from '../scripts/lib/flakeVerdict.mjs';
 
 // true = the file passed that run, false = it failed.
 const pass = (n: number) => Array(n).fill(true);
@@ -62,5 +62,28 @@ describe('classifyFailure (gate flake protocol)', () => {
 
   it('refuses to judge with no runs on a side', () => {
     expect(() => classifyFailure({ tip: [], base: pass(3) })).toThrow(/at least one run/);
+  });
+
+  // Found by the gate on its own PR: judging per FILE let a new failing test hide
+  // inside a file main already had red, which is exactly the two weeks main spent
+  // red on paymentStatusBadge. "pre-existing" must mean every failing TEST is.
+  it('a red-on-both file with a test failing only on the tip -> regression, not pre-existing', () => {
+    expect(
+      classifyFailure({ tip: fail(3), base: fail(3), newFailingTests: ['badge > formats a new case'] }),
+    ).toEqual({ verdict: 'regression', blocking: true, moreRuns: 0 });
+  });
+
+  it('a red-on-both file failing the same tests on both sides stays pre-existing', () => {
+    expect(classifyFailure({ tip: fail(3), base: fail(3), newFailingTests: [] }).verdict).toBe('pre-existing');
+  });
+});
+
+describe('failingTestsNotOnBase', () => {
+  it('returns tip failures the base does not share, by full test name', () => {
+    expect(failingTestsNotOnBase(['a > one', 'a > two'], ['a > one'])).toEqual(['a > two']);
+  });
+
+  it('is empty when every tip failure already fails on the base', () => {
+    expect(failingTestsNotOnBase(['a > one'], ['a > one', 'a > three'])).toEqual([]);
   });
 });
