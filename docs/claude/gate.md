@@ -106,10 +106,36 @@ judged per TEST, never per file**: the gate's first review of itself found
 that a file already red on `main` — exactly `paymentStatusBadge` for two
 weeks — would have hidden any new failure added to it. An unhandled error in
 the suite (vitest's JSON has no field for it; the gate reads the log) is never
-excused at all. A file that fails to LOAD (bad import, failing `afterAll`) has
-no failed test under it, so it is named by its file-level message
-(`failedTestNames`) — the gate's second review found that a broken import in an
-already-red file otherwise compared as "nothing new".
+excused at all. A FILE-level failure (bad import, throwing `afterAll`) is
+counted as its own failure, named by vitest's file-level `message` with the
+workdir stripped (`failedTestNames`, `stripRoot`) — **always**, including when
+tests in that file also fail. Two gate reviews found this the hard way: first a
+broken import in an already-red file compared as "nothing new", then a throwing
+`afterAll` added to a file that already had a failing test did too.
+
+### Verdicts and exit codes
+
+| Exit | Verdict | Meaning |
+|---|---|---|
+| 0 | **GO** | full run (all five rows) against the merge-base, nothing failed — the only merge verdict |
+| 1 | **NO-GO** | something failed |
+| 2 | — | could not run (bad argument, git/npm failure) |
+| 3 | **PARTIAL** | what ran passed, but the run was not a full one — never a merge verdict |
+
+`gate-report.json` carries `verdict`, `go` and `exitCode`; `go` is `true` only
+for GO. Two flags make a run PARTIAL by construction:
+
+- `--rows=2,3` runs only those rows — for diagnosis, or a machine short on
+  memory (a full run needs several GB: `check:demo` builds every target).
+- `--base=<ref>` compares against that commit instead of the merge-base with
+  `origin/main`, for a stacked branch or for testing the gate itself. It must
+  be a **strict ancestor** of the ref, or the commit's own failures would read
+  as "already red on the base". Before the gate's third review a passing
+  `--base` run said GO.
+
+Note `main`'s own red can be invisible here: the `paymentStatusBadge` failure
+was en-US-only, so on an en-AU machine `main` passes row 2. An
+environment-only failure is CI's to catch — that is why CI is required too.
 
 ### What the gate does not claim
 

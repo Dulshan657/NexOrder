@@ -28,7 +28,14 @@ import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { classifyFailure, failedTestNames, failingTestsNotOnBase, INITIAL_RUNS } from './lib/flakeVerdict.mjs'
+import {
+  classifyFailure,
+  failedTestNames,
+  failingTestsNotOnBase,
+  gateVerdict,
+  INITIAL_RUNS,
+  stripRoot,
+} from './lib/flakeVerdict.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const GUARDS = ['lint', 'check:overlays', 'check:viewport', 'check:csp', 'check:claude-md', 'check:demo']
@@ -74,7 +81,13 @@ function resolveRef(ref, baseRef) {
   git(['fetch', '--quiet', 'origin'])
   if (baseRef) {
     const sha = git(['rev-parse', '--verify', `${ref}~0`])
-    return { sha, base: git(['rev-parse', '--verify', `${baseRef}~0`]), label: `${ref} (base ${baseRef})` }
+    const base = git(['rev-parse', '--verify', `${baseRef}~0`])
+    // A base that is not behind the commit (itself, a later or a sideways one)
+    // would make the commit's own failures read as "already red on the base".
+    if (base === sha || !sh(['git', 'merge-base', '--is-ancestor', base, sha], { cwd: REPO }).ok) {
+      die(`--base=${baseRef} must be a strict ancestor of ${ref}`)
+    }
+    return { sha, base, label: `${ref} (base ${baseRef})`, overridden: true }
   }
   if (/^\d+$/.test(ref)) {
     const pr = sh(['gh', 'pr', 'view', ref, '--json', 'headRefOid,baseRefName'], { cwd: REPO })
@@ -133,8 +146,6 @@ function runRow(cwd, logs, steps) {
   return { status: results.every((r) => r.ok) ? 'pass' : 'fail', steps: results }
 }
 
-const stripRoot = (text, root) =>
-  text.replaceAll(root.replaceAll('\\', '/'), '<root>').replaceAll(root, '<root>')
 
 // file -> full names of its failing tests, from a vitest JSON report.
 function failingTests(jsonPath, cwd) {
@@ -201,7 +212,7 @@ function report(meta, rows, flakes) {
     '',
     `- **Commit:** \`${meta.sha}\` (exact; detached worktree, nothing overwritten)`,
     `- **Base:** \`${meta.base}\` (${arg('base') ? `--base=${arg('base')}` : 'merge-base with origin/main'})`,
-    `- **Verdict:** ${!meta.go ? '**NO-GO**' : meta.partial ? '**PARTIAL** — rows run passed; not a merge verdict' : '**GO**'}`,
+    `- **Verdict:** **${meta.verdict}**${meta.verdict === 'PARTIAL' ? ' — what ran passed; NOT a merge verdict (needs a full run against the merge-base)' : ''}`,
     '',
     '| # | Row | Result | Detail |',
     '|---|---|---|---|',
@@ -220,6 +231,7 @@ function report(meta, rows, flakes) {
     '- The build is not network-isolated on this machine.',
     '- No remote second-machine run and no resource soak — CI is the second machine.',
     ...(meta.partial ? ['- Only the rows passed in `--rows` ran; the others are claimed for nothing.'] : []),
+    ...(meta.overridden ? ['- The base was chosen with `--base`, so "pre-existing" means "red on that commit", not "red on main".'] : []),
     ...(!meta.partial && rows[4].status === 'skipped' ? ['- Touched browser specs were NOT run (no `--e2e-base-url`).'] : []),
     '- Nothing about the RS35 handheld: emulation cannot reach its IME scan mode.',
   )
@@ -276,7 +288,8 @@ function main() {
     { title: 'Touched browser specs, run whole', ...row5 },
   ]
   meta.partial = want.size < 5
-  meta.go = rows.every((r) => r.status !== 'fail')
+  meta.overridden = Boolean(meta.overridden)
+  Object.assign(meta, gateVerdict({ anyFailed: rows.some((r) => r.status === 'fail'), ...meta }))
 
   const md = report(meta, rows, flakes)
   writeFileSync(join(workdir, 'gate-report.md'), md)
@@ -290,7 +303,7 @@ ${s.tail}
 `)
   }
   console.log(`gate: report at ${join(workdir, 'gate-report.md')}`)
-  process.exit(!meta.go ? 1 : meta.partial ? 3 : 0)
+  process.exit(meta.exitCode)
 }
 
 function unitRow(workdir, logs, meta) {

@@ -25,9 +25,34 @@ const allPass = (runs) => runs.every((passed) => passed)
  */
 export function failedTestNames(result) {
   const names = result.assertionResults.filter((a) => a.status === 'failed').map((a) => a.fullName)
-  if (names.length > 0 || result.status !== 'failed') return names
-  const firstLine = (result.message ?? '').split('\n')[0].trim() || 'no message'
-  return [`[file failed] ${firstLine}`]
+  if (result.status !== 'failed') return names
+  // vitest's `message` is file.result.errors[0] — FILE-level only, never a
+  // per-test failure — so it always counts, alongside any failing tests: a
+  // throwing afterAll leaves every test result intact and lands only here.
+  const firstLine = (result.message ?? '').split('\n')[0].trim()
+  if (firstLine) return [...names, `[file failed] ${firstLine}`]
+  return names.length > 0 ? names : ['[file failed] no message']
+}
+
+/**
+ * Remove a workdir from a message, in both slash forms. A file-level message
+ * carries the absolute path (nexgate vs nexgate-base), so without this the same
+ * failure on both sides compares as different.
+ */
+export function stripRoot(text, root) {
+  return text.replaceAll(root.replaceAll('\\', '/'), '<root>').replaceAll(root, '<root>')
+}
+
+/**
+ * The run's verdict. GO is reserved for a FULL run against the merge-base:
+ * `--rows` skips rows and `--base` chooses what counts as "already red", so a
+ * passing run with either can only be PARTIAL — and `go` is false, so nothing
+ * reading only that field mistakes it for a merge verdict.
+ */
+export function gateVerdict({ anyFailed, partial, overridden }) {
+  if (anyFailed) return { verdict: 'NO-GO', go: false, exitCode: 1 }
+  if (partial || overridden) return { verdict: 'PARTIAL', go: false, exitCode: 3 }
+  return { verdict: 'GO', go: true, exitCode: 0 }
 }
 
 /**

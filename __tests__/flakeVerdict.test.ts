@@ -3,8 +3,10 @@ import {
   classifyFailure,
   failedTestNames,
   failingTestsNotOnBase,
+  gateVerdict,
   INITIAL_RUNS,
   MIXED_RUNS,
+  stripRoot,
 } from '../scripts/lib/flakeVerdict.mjs';
 
 // true = the file passed that run, false = it failed.
@@ -122,9 +124,84 @@ describe('failedTestNames', () => {
     ).toEqual(['[file failed] Failed to load url ./missing']);
   });
 
+  // Found by the gate's third review: the file-level message was only used when
+  // NO test failed, so a throwing afterAll added to a file that already had a
+  // failing test was invisible. vitest's `message` is file.result.errors[0] —
+  // file-level only, never a per-test failure — so it always counts.
+  it('names a file-level failure ALONGSIDE failing tests, not only instead of them', () => {
+    expect(
+      failedTestNames({
+        status: 'failed',
+        message: 'afterAll threw: pool not closed',
+        assertionResults: [{ fullName: 'badge > one', status: 'failed' }],
+      }),
+    ).toEqual(['badge > one', '[file failed] afterAll threw: pool not closed']);
+  });
+
+  it('a throwing afterAll added to an already-red file is a new failure', () => {
+    const tip = failedTestNames({
+      status: 'failed',
+      message: 'afterAll threw: pool not closed',
+      assertionResults: [{ fullName: 'badge > one', status: 'failed' }],
+    });
+    const base = failedTestNames({
+      status: 'failed',
+      message: '',
+      assertionResults: [{ fullName: 'badge > one', status: 'failed' }],
+    });
+    expect(failingTestsNotOnBase(tip, base)).toEqual(['[file failed] afterAll threw: pool not closed']);
+  });
+
   it('a new load failure on the tip is a new failure against a base red for another reason', () => {
     const tip = failedTestNames({ status: 'failed', message: 'Failed to load url ./missing', assertionResults: [] });
     expect(failingTestsNotOnBase(tip, ['badge > one'])).toEqual(['[file failed] Failed to load url ./missing']);
   });
 });
 
+
+describe('stripRoot', () => {
+  it('makes the same load failure in nexgate and nexgate-base compare equal', () => {
+    const tip = stripRoot("Cannot find module './x' imported from C:/w/nexgate/__tests__/p.test.ts", String.raw`C:\w\nexgate`);
+    const base = stripRoot("Cannot find module './x' imported from C:/w/nexgate-base/__tests__/p.test.ts", String.raw`C:\w\nexgate-base`);
+    expect(tip).toBe("Cannot find module './x' imported from <root>/__tests__/p.test.ts");
+    expect(base).toBe(tip);
+  });
+
+  it('strips a backslash-form root too', () => {
+    expect(stripRoot(String.raw`at C:\w\nexgate\a.ts`, String.raw`C:\w\nexgate`)).toBe(String.raw`at <root>\a.ts`);
+  });
+});
+
+// Found by the gate's third review: `--base` produced exit 0 / GO, and a partial
+// run wrote `go: true`. Only a full run against the merge-base can say GO.
+describe('gateVerdict', () => {
+  const full = { partial: false, overridden: false };
+
+  it('GO only when nothing failed, every row ran and the base was not overridden', () => {
+    expect(gateVerdict({ anyFailed: false, ...full })).toEqual({ verdict: 'GO', go: true, exitCode: 0 });
+  });
+
+  it('any failure is NO-GO, whatever else', () => {
+    expect(gateVerdict({ anyFailed: true, partial: true, overridden: true })).toEqual({
+      verdict: 'NO-GO',
+      go: false,
+      exitCode: 1,
+    });
+  });
+
+  it('a --rows run that passed is PARTIAL, never go', () => {
+    expect(gateVerdict({ anyFailed: false, partial: true, overridden: false })).toEqual({
+      verdict: 'PARTIAL',
+      go: false,
+      exitCode: 3,
+    });
+  });
+
+  it('a --base run that passed is PARTIAL, never go', () => {
+    expect(gateVerdict({ anyFailed: false, partial: false, overridden: true })).toEqual({
+      verdict: 'PARTIAL',
+      go: false,
+      exitCode: 3,
+    });
+  });
+});

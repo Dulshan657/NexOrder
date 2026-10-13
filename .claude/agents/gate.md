@@ -25,7 +25,10 @@ both authors passed is exactly the change you are here to break.
    root. It builds a detached worktree at `~/nexgate`, runs the five rows and
    the flake protocol, and writes `gate-report.md` / `gate-report.json` there.
    It takes several minutes; let it finish. Exit 0 = rows GO, 1 = NO-GO,
-   2 = could not run (report that, do not guess).
+   2 = could not run (report that, do not guess), 3 = PARTIAL.
+   For a merge verdict run it with **no** `--rows` and **no** `--base`: either
+   flag makes the run PARTIAL (exit 3, `go: false`), which can never be GO.
+   Use them only to diagnose, and say in your report that you did.
 2. If a browser spec was touched and row 5 says `skipped`, say so plainly — do
    not start a dev server unless the caller asked you to.
 3. Read the diff: `git diff <base>..<sha>` (both are at the top of the report).
