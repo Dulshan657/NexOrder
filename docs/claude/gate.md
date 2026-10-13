@@ -72,9 +72,11 @@ independent review is the gate agent's report, not a GitHub approval.
 
 ## `scripts/gate.mjs`
 
-One exact sha, in a detached worktree at `~/nexgate` — **never** a live
-checkout (it refuses one). Reused between runs; `npm ci` reruns only when
-`package-lock.json` changes.
+One exact sha, in a detached worktree at `~/nexgate`. It force-resets and
+`git clean -x`es that directory every run, so it **only reuses a directory it
+created itself** (marked by `.gate-workdir`) and refuses any other — pointing
+`--workdir` at `nexwt` or the tenant checkout would otherwise wipe uncommitted
+work and `.env.*.local`. `npm ci` reruns only when `package-lock.json` changes.
 
 | Row | Runs |
 |---|---|
@@ -94,11 +96,17 @@ is mixed).
 | Tip alone | Base alone | Verdict |
 |---|---|---|
 | always fails | always passes | **regression** — blocking |
-| always fails | always fails | **pre-existing** — reported, not blamed |
+| always fails | always fails, **same failing tests** | **pre-existing** — reported, not blamed |
+| always fails | always fails, but the tip fails a test the base does not | **regression** — blocking |
 | always passes | — | **flake** (fails only inside the suite) — blocking |
 | mixed after 5, or steady over a flaky base | | **flake** — blocking until ticketed |
 
-A flake blocks. It is a ticket to write, not a pass.
+A flake blocks. It is a ticket to write, not a pass. And **"pre-existing" is
+judged per TEST, never per file**: the gate's first review of itself found
+that a file already red on `main` — exactly `paymentStatusBadge` for two
+weeks — would have hidden any new failure added to it. An unhandled error in
+the suite (vitest's JSON has no field for it; the gate reads the log) is never
+excused at all.
 
 ### What the gate does not claim
 
