@@ -16,7 +16,11 @@
 //
 // Usage:
 //   node scripts/gate.mjs --ref=<sha|branch|pr-number> [--workdir=<dir>] [--e2e-base-url=http://localhost:3000]
-// Exit: 0 = GO, 1 = NO-GO, 2 = could not run.
+//                         [--rows=2,3]   run only these rows (diagnosis, or a box short on memory)
+//                         [--base=<ref>] compare against this instead of the merge-base with
+//                                        origin/main (a stacked branch; testing the gate itself)
+// Exit: 0 = GO, 1 = NO-GO, 2 = could not run, 3 = PARTIAL (--rows; nothing failed,
+// but it is NOT a merge verdict — only a full run can say GO).
 
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -66,8 +70,12 @@ function git(args, cwd = REPO) {
   return r.out.trim()
 }
 
-function resolveRef(ref) {
+function resolveRef(ref, baseRef) {
   git(['fetch', '--quiet', 'origin'])
+  if (baseRef) {
+    const sha = git(['rev-parse', '--verify', `${ref}~0`])
+    return { sha, base: git(['rev-parse', '--verify', `${baseRef}~0`]), label: `${ref} (base ${baseRef})` }
+  }
   if (/^\d+$/.test(ref)) {
     const pr = sh(['gh', 'pr', 'view', ref, '--json', 'headRefOid,baseRefName'], { cwd: REPO })
     if (!pr.ok) die(`cannot read PR #${ref}:\n${pr.out}`)
@@ -183,8 +191,8 @@ function report(meta, rows, flakes) {
     `# Gate report — ${meta.label}`,
     '',
     `- **Commit:** \`${meta.sha}\` (exact; detached worktree, nothing overwritten)`,
-    `- **Base:** \`${meta.base}\` (merge-base with origin/main)`,
-    `- **Verdict:** ${meta.go ? '**GO**' : '**NO-GO**'}`,
+    `- **Base:** \`${meta.base}\` (${arg('base') ? `--base=${arg('base')}` : 'merge-base with origin/main'})`,
+    `- **Verdict:** ${!meta.go ? '**NO-GO**' : meta.partial ? '**PARTIAL** — rows run passed; not a merge verdict' : '**GO**'}`,
     '',
     '| # | Row | Result | Detail |',
     '|---|---|---|---|',
@@ -202,7 +210,8 @@ function report(meta, rows, flakes) {
     '',
     '- The build is not network-isolated on this machine.',
     '- No remote second-machine run and no resource soak — CI is the second machine.',
-    ...(rows[4].status === 'skipped' ? ['- Touched browser specs were NOT run (no `--e2e-base-url`).'] : []),
+    ...(meta.partial ? ['- Only the rows passed in `--rows` ran; the others are claimed for nothing.'] : []),
+    ...(!meta.partial && rows[4].status === 'skipped' ? ['- Touched browser specs were NOT run (no `--e2e-base-url`).'] : []),
     '- Nothing about the RS35 handheld: emulation cannot reach its IME scan mode.',
   )
   return lines.join('\n')
@@ -216,16 +225,66 @@ function main() {
     die('--e2e-base-url must be a localhost URL: a deployed site says nothing about this commit')
   }
 
+  const rowsArg = arg('rows')
+  const want = new Set(rowsArg ? rowsArg.split(',').map(Number) : [1, 2, 3, 4, 5])
+  if ([...want].some((n) => !Number.isInteger(n) || n < 1 || n > 5)) die('--rows takes row numbers 1-5, e.g. --rows=2,3')
+  const notRun = { status: 'skipped', detail: 'not run (--rows)' }
+
   assertOutsideCheckout(workdir)
-  const meta = resolveRef(ref)
+  const meta = resolveRef(ref, arg('base'))
   console.log(`gate: ${meta.label} @ ${meta.sha.slice(0, 10)} (base ${meta.base.slice(0, 10)}) in ${workdir}`)
   prepareWorktree(workdir, meta.sha)
   const logs = join(workdir, '.gate-logs')
   mkdirSync(logs, { recursive: true })
 
-  console.log('gate: row 1 — typecheck + build')
-  const row1 = runRow(workdir, logs, [['tsc', ['npx', 'tsc', '--noEmit']], ['build', ['npm', 'run', 'build']]])
+  let row1 = notRun
+  if (want.has(1)) {
+    console.log('gate: row 1 — typecheck + build')
+    row1 = runRow(workdir, logs, [['tsc', ['npx', 'tsc', '--noEmit']], ['build', ['npm', 'run', 'build']]])
+  }
 
+  const { row: row2, flakes } = want.has(2) ? unitRow(workdir, logs, meta) : { row: notRun, flakes: [] }
+
+  let row3 = notRun
+  if (want.has(3)) {
+    console.log('gate: row 3 — Edge Function types')
+    row3 = runRow(workdir, logs, [['edge-types', ['node', 'scripts/check-edge-types.mjs']]])
+  }
+
+  let row4 = notRun
+  if (want.has(4)) {
+    console.log('gate: row 4 — guards')
+    row4 = runRow(workdir, logs, GUARDS.map((g) => [g, ['npm', 'run', g]]))
+  }
+
+  const row5 = want.has(5) ? browserRow(workdir, logs, meta, e2eBase) : notRun
+
+  const rows = [
+    { title: 'Type-check + release build', ...row1 },
+    { title: 'Full unit suite (+ flake protocol)', ...row2 },
+    { title: 'Edge Function types (deno check)', ...row3 },
+    { title: 'Guards: a11y lint, overlays, viewport, CSP, CLAUDE.md, demo-secret surface', ...row4 },
+    { title: 'Touched browser specs, run whole', ...row5 },
+  ]
+  meta.partial = want.size < 5
+  meta.go = rows.every((r) => r.status !== 'fail')
+
+  const md = report(meta, rows, flakes)
+  writeFileSync(join(workdir, 'gate-report.md'), md)
+  writeFileSync(join(workdir, 'gate-report.json'), JSON.stringify({ ...meta, rows, flakes }, null, 2))
+  console.log(`
+${md}
+`)
+  for (const row of rows) {
+    for (const s of row.steps ?? []) if (!s.ok) console.log(`--- ${s.name} (tail of .gate-logs/${s.name}.log) ---
+${s.tail}
+`)
+  }
+  console.log(`gate: report at ${join(workdir, 'gate-report.md')}`)
+  process.exit(!meta.go ? 1 : meta.partial ? 3 : 0)
+}
+
+function unitRow(workdir, logs, meta) {
   console.log('gate: row 2 — full unit suite')
   const vitestJson = join(logs, 'vitest.json')
   const row2 = runRow(workdir, logs, [['unit', ['npx', 'vitest', 'run', '--reporter=default', '--reporter=json', `--outputFile.json=${vitestJson}`]]])
@@ -243,40 +302,15 @@ function main() {
     row2.status = 'pass'
     row2.detail = `only pre-existing failures (also red on base): ${flakes.map((f) => f.file).join(', ')}`
   }
+  return { row: row2, flakes }
+}
 
-  console.log('gate: row 3 — Edge Function types')
-  const row3 = runRow(workdir, logs, [['edge-types', ['node', 'scripts/check-edge-types.mjs']]])
-
-  console.log('gate: row 4 — guards')
-  const row4 = runRow(workdir, logs, GUARDS.map((g) => [g, ['npm', 'run', g]]))
-
+function browserRow(workdir, logs, meta, e2eBase) {
   const specs = touchedSpecs(meta.sha, meta.base)
-  let row5
-  if (specs.length === 0) row5 = { status: 'n/a', detail: 'no browser spec touched' }
-  else if (!e2eBase) row5 = { status: 'skipped', detail: `touched, not run: ${specs.join(', ')}` }
-  else {
-    console.log(`gate: row 5 — ${specs.length} touched spec(s) against ${e2eBase}`)
-    row5 = runRow(workdir, logs, [['e2e', ['npx', 'playwright', 'test', ...specs], { E2E_BASE_URL: e2eBase }]])
-  }
-
-  const rows = [
-    { title: 'Type-check + release build', ...row1 },
-    { title: 'Full unit suite (+ flake protocol)', ...row2 },
-    { title: 'Edge Function types (deno check)', ...row3 },
-    { title: 'Guards: a11y lint, overlays, viewport, CSP, CLAUDE.md, demo-secret surface', ...row4 },
-    { title: 'Touched browser specs, run whole', ...row5 },
-  ]
-  meta.go = rows.every((r) => r.status !== 'fail')
-
-  const md = report(meta, rows, flakes)
-  writeFileSync(join(workdir, 'gate-report.md'), md)
-  writeFileSync(join(workdir, 'gate-report.json'), JSON.stringify({ ...meta, rows, flakes }, null, 2))
-  console.log(`\n${md}\n`)
-  for (const row of rows) {
-    for (const s of row.steps ?? []) if (!s.ok) console.log(`--- ${s.name} (tail of .gate-logs/${s.name}.log) ---\n${s.tail}\n`)
-  }
-  console.log(`gate: report at ${join(workdir, 'gate-report.md')}`)
-  process.exit(meta.go ? 0 : 1)
+  if (specs.length === 0) return { status: 'n/a', detail: 'no browser spec touched' }
+  if (!e2eBase) return { status: 'skipped', detail: `touched, not run: ${specs.join(', ')}` }
+  console.log(`gate: row 5 — ${specs.length} touched spec(s) against ${e2eBase}`)
+  return runRow(workdir, logs, [['e2e', ['npx', 'playwright', 'test', ...specs], { E2E_BASE_URL: e2eBase }]])
 }
 
 main()
