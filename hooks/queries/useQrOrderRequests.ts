@@ -76,6 +76,20 @@ export function usePendingQrRequests(horecaId?: number, opts: { enabled?: boolea
   return useQrOrderRequests({ horecaId, status: 'pending', ...opts })
 }
 
+/**
+ * Requests that ended without becoming an order -- turned down by an approver
+ * ('rejected') or withdrawn by the staff member ('cancelled') -- newest first.
+ * What the "Not approved" card and Order history are drawn from.
+ *
+ * Not narrowed to "mine" here: RLS lets a venue (including a live QR Staff
+ * session) read all of its own decided requests, and which are the caller's own is a
+ * screen decision (lib/qr/decidedRequests.ts), made the same way the pending
+ * banner's Cancel button is.
+ */
+export function useDecidedQrRequests(horecaId?: number, opts: { enabled?: boolean } = {}) {
+  return useQrOrderRequests({ horecaId, status: ['rejected', 'cancelled'], ...opts })
+}
+
 function itemsKey(items: QrLineInput[] | undefined): string {
   if (!items) return 'as-requested'
   return items.map((i) => `${i.productId}:${i.uomId ?? ''}:${i.packSize ?? ''}:${i.quantity}`).join('|')

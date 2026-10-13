@@ -19,15 +19,21 @@ describe('qrNotificationAction', () => {
     expect(qrNotificationAction({ type: 'qr_order_pending' })).toBeNull()
   })
 
-  it('a decision goes to order history, with the order when there is one', () => {
+  it('an approval goes to order history, with the order when there is one', () => {
     expect(qrNotificationAction({ type: 'qr_order_approved', metadata: { orderId: 'ORD-1' } })).toEqual({
       kind: 'orders',
       orderId: 'ORD-1',
     })
-    expect(qrNotificationAction({ type: 'qr_order_rejected', metadata: { reason: 'x' } })).toEqual({
+    expect(qrNotificationAction({ type: 'qr_order_approved', metadata: {} })).toEqual({
       kind: 'orders',
       orderId: null,
     })
+  })
+
+  it('a rejection opens Order home, where the "Not approved" card says why -- there is no order to open', () => {
+    expect(qrNotificationAction({ type: 'qr_order_rejected', metadata: { reason: 'x' } })).toEqual({ kind: 'kitchen' })
+    // Even a rejection with nothing in its metadata: the card is found by the screen, not by the id.
+    expect(qrNotificationAction({ type: 'qr_order_rejected' })).toEqual({ kind: 'kitchen' })
   })
 
   it('a lock opens QR & PINs for its venue, and needs a real venue id', () => {
@@ -109,6 +115,7 @@ describe('isQrNotificationType / qrActionLabel', () => {
   it('names each action', () => {
     expect(qrActionLabel({ kind: 'review', requestId: 'r' })).toBe('Review order')
     expect(qrActionLabel({ kind: 'orders', orderId: null })).toBe('View order history')
+    expect(qrActionLabel({ kind: 'kitchen' })).toBe('See why')
     expect(qrActionLabel({ kind: 'access', horecaId: 1 })).toBe('Open QR & PINs')
   })
 })

@@ -40,6 +40,18 @@ interface SubmitArgs {
     deliveryTimeSlot: DeliveryTimeSlot | '';
 }
 
+/**
+ * The extras an order carried, for a reorder that must bring them back ("Edit and
+ * resend" on a kitchen order an approver turned down). Every field OVERWRITES the
+ * cart's; an empty string clears it, so an abandoned cart's notes or date can never
+ * ride along on an order they were never written for.
+ */
+export interface ReorderDetails {
+    notes: string;
+    deliveryDate: string;
+    deliveryTimeSlot: DeliveryTimeSlot | '';
+}
+
 export interface OrderContextValue {
     // State
     orderItems: OrderItem[];
@@ -73,7 +85,11 @@ export interface OrderContextValue {
     handleSubmitOrder: () => void;
     placeOrder: (verification?: OrderVerification) => void;
     handleReorder: (order: Order) => void;
-    handleReorderItems: (items: OrderItem[], mode: 'replace' | 'merge') => void;
+    /**
+     * Put these lines in the cart. `details`, when given, also REPLACES the notes and
+     * delivery choices (see ReorderDetails); omitted, they are left exactly as they are.
+     */
+    handleReorderItems: (items: OrderItem[], mode: 'replace' | 'merge', details?: ReorderDetails) => void;
     handleStartOrder: (hoReCaId: number) => void;
     resetOrder: () => void;
 
@@ -527,7 +543,12 @@ export function OrderProvider({
     );
 
     const handleReorderItems = useCallback(
-        (items: OrderItem[], mode: 'replace' | 'merge') => {
+        (items: OrderItem[], mode: 'replace' | 'merge', details?: ReorderDetails) => {
+            if (details) {
+                setNotes(details.notes);
+                setDeliveryDate(details.deliveryDate);
+                setDeliveryTimeSlot(details.deliveryTimeSlot);
+            }
             if (mode === 'replace') {
                 setOrderItems(items);
             } else {

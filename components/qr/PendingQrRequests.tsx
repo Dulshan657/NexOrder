@@ -28,7 +28,7 @@ import { useCancelQrRequest, usePendingQrRequests } from '@/hooks/queries/useQrO
 import { isQrApiError } from '@/services/supabase/qrService'
 import { lazyWithRetry } from '@/lib/lazyWithRetry'
 import { MODULE_SHOP } from '@/lib/modules'
-import { formatMoney, formatWhen, itemCountLabel } from '@/lib/qr/qrFormat'
+import { formatWhen, requestEstimateSummary } from '@/lib/qr/qrFormat'
 import type { QrOrderRequest } from '@/types'
 
 // Gated at the declaration, not the JSX: a disabled module must not ship the chunk.
@@ -42,10 +42,6 @@ export interface PendingQrRequestsProps {
   mode: 'requester' | 'approver'
   /** One-line rows in a single banner, for tight spots (kitchen home, rep dashboard). */
   compact?: boolean
-}
-
-function summary(r: QrOrderRequest): string {
-  return `${formatMoney(r.quotedTotal)} est. · ${itemCountLabel(r.items.length)}`
 }
 
 /** A row's two halves: who/when, and how big. Compact shows them as two lines, never one truncated one. */
@@ -93,9 +89,9 @@ export default function PendingQrRequests({ horecaId, mode, compact = false }: P
       const who = mine ? '' : `${r.staffName || 'Staff'} · `
       // The banner's own heading already says "Waiting for approval"; repeating it
       // on a compact row only pushes the amount off the end of a 360px line.
-      return { head: compact ? `${who}sent ${when}` : `Waiting for approval · ${who}sent ${when}`, summary: summary(r) }
+      return { head: compact ? `${who}sent ${when}` : `Waiting for approval · ${who}sent ${when}`, summary: requestEstimateSummary(r) }
     }
-    return { head: `${r.staffName || 'Staff'} · ${when}`, summary: summary(r) }
+    return { head: `${r.staffName || 'Staff'} · ${when}`, summary: requestEstimateSummary(r) }
   }
 
   const rows = visible.map((r) => {

@@ -4,12 +4,14 @@ import { Button } from '@/components/ui'
 import StatusBadge from '@/components/StatusBadge'
 import PromotionsBanner from '@/components/PromotionsBanner'
 import PendingQrRequests from '@/components/qr/PendingQrRequests'
+import NotApprovedCard from '@/components/qr/NotApprovedCard'
 import KitchenSameAgainModal from '@/components/qr/KitchenSameAgainModal'
 import { buildReorderPlan, pickKitchenOrders, type ReorderPlan } from '@/lib/kitchen/reorderPlan'
 import { formatMoney, itemCountLabel } from '@/lib/qr/qrFormat'
 import { isQrStaffRole } from '@/lib/venueUser'
 import { useShortStockGuard } from '@/hooks/useShortStockGuard'
-import type { SubmitResult } from '@/context/OrderContext'
+import { useResendQrRequest } from '@/hooks/useResendQrRequest'
+import type { ReorderDetails, SubmitResult } from '@/context/OrderContext'
 import type { AppSettings, HoReCa, Order, OrderItem, Product, Promotion, ToastType, User } from '@/types'
 
 // The landing screen of a venue login: what a kitchen needs at 5am with one hand
@@ -17,6 +19,8 @@ import type { AppSettings, HoReCa, Order, OrderItem, Product, Promotion, ToastTy
 // through the venue's QR.
 //
 //   - anything of theirs still waiting for approval, with Cancel on their own;
+//   - anything of theirs an approver turned down, with the reason and "Edit and
+//     resend" (kitchen staff only -- see components/qr/NotApprovedCard.tsx);
 //   - the last order, with "Order same again" (a confirm step, then one tap) and
 //     "Edit before ordering" (loads the cart, opens the Shop);
 //   - the last three orders, each reorderable the same way;
@@ -39,8 +43,11 @@ export interface KitchenHomeViewProps {
   pantryCount: number
   /** `useOrderContext().orderItemsNow`: files a request (QR Staff) or places the order (Customer). */
   onOrderNow: (items: OrderItem[], options?: { notes?: string }) => Promise<SubmitResult>
-  /** Load these lines into the cart and open it in the Shop. */
-  onEditItems: (items: OrderItem[]) => void
+  /**
+   * Load these lines into the cart and open it in the Shop. `details` is passed only by
+   * "Edit and resend", to bring the order's own notes and delivery back with it.
+   */
+  onEditItems: (items: OrderItem[], details?: ReorderDetails) => void
   onOpenShop: () => void
   onOpenPantry: () => void
   onOpenHistory: () => void
@@ -102,6 +109,18 @@ const KitchenHomeView: React.FC<KitchenHomeViewProps> = ({
 
   const heroPlan = useMemo(() => (hero ? planFor(hero) : null), [hero, planFor])
 
+  // "Edit and resend" on an order that was not approved: its lines into the cart,
+  // priced as the Shop prices them today, with a word about any that are gone.
+  const resendRejected = useResendQrRequest({
+    products,
+    hoReCa,
+    promotions,
+    currentUser,
+    cartonDiscountPercent,
+    onEditItems,
+    addToast,
+  })
+
   const openConfirm = () => {
     setError(null)
     setConfirmOpen(true)
@@ -160,6 +179,8 @@ const KitchenHomeView: React.FC<KitchenHomeViewProps> = ({
       </header>
 
       <PendingQrRequests horecaId={hoReCa.id} mode={isQrStaff ? 'requester' : 'approver'} compact />
+
+      {isQrStaff && <NotApprovedCard horecaId={hoReCa.id} onResend={resendRejected} />}
 
       {hero && heroPlan ? (
         <section aria-labelledby="kitchen-last-order" className="rounded-2xl border border-stone-200 bg-white p-4 shadow-card">

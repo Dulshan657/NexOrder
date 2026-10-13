@@ -1,5 +1,5 @@
 import React, { Suspense, useState, useMemo, useCallback, useEffect } from 'react';
-import type { Order, HoReCa, User, Invoice } from '../types';
+import type { Order, HoReCa, User, Invoice, QrOrderRequest } from '../types';
 import { UserRole } from '../types';
 import StatusBadge from './StatusBadge';
 import PaymentStatusBadge, {
@@ -17,6 +17,8 @@ import { MODULE_SHOP } from '../lib/modules'
 // Kitchen QR orders held for approval. Gated at the declaration so a tenant
 // without the shop module ships no chunk for it.
 const PendingQrRequests = MODULE_SHOP ? lazyWithRetry(() => import('./qr/PendingQrRequests')) : null;
+// ...and the ones that ended without becoming an order (not approved / cancelled).
+const DecidedQrRequests = MODULE_SHOP ? lazyWithRetry(() => import('./qr/DecidedQrRequests')) : null;
 
 type SortColumn = 'date' | 'total' | 'status' | 'horeca' | 'payment';
 type PaymentFilterValue = 'all' | PaymentDisplayState;
@@ -49,11 +51,16 @@ interface OrderHistoryProps {
   onBulkReorder?: (orders: Order[]) => void;
   onViewDetail: (orderId: string) => void;
   onBack: () => void;
+  /**
+   * Kitchen staff's "Edit and resend" on an order that was not approved: load its
+   * lines into the cart. Returns whether it did. Without it the button is not shown.
+   */
+  onResendQrRequest?: (request: QrOrderRequest) => boolean;
 }
 
 const ITEMS_PER_PAGE = 20;
 
-const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, currentUser, onReorder, onBulkReorder, onViewDetail, onBack }) => {
+const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, currentUser, onReorder, onBulkReorder, onViewDetail, onBack, onResendQrRequest }) => {
   // This page serves the venue's Customer login AND its kitchen staff (a hidden
   // QR Staff login). Kitchen staff do not see invoices (their RLS returns none), so
   // every payment affordance is withheld from them: an empty invoice list would
@@ -299,6 +306,18 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
         <ErrorBoundary label="Orders awaiting approval">
           <Suspense fallback={null}>
             <PendingQrRequests horecaId={currentUser.hoReCaId} mode={isKitchen ? 'requester' : 'approver'} />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+
+      {DecidedQrRequests && currentUser.hoReCaId != null && isVenueUser && (
+        <ErrorBoundary label="Orders not approved">
+          <Suspense fallback={null}>
+            <DecidedQrRequests
+              horecaId={currentUser.hoReCaId}
+              mode={isKitchen ? 'requester' : 'approver'}
+              onResend={isKitchen ? onResendQrRequest : undefined}
+            />
           </Suspense>
         </ErrorBoundary>
       )}

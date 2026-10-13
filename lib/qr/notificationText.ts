@@ -17,6 +17,8 @@ import { formatMoney, itemCountLabel } from './qrFormat'
 export type QrNotificationAction =
   | { kind: 'review'; requestId: string }
   | { kind: 'orders'; orderId: string | null }
+  /** Order home, where a rejected order's "Not approved" card says why. */
+  | { kind: 'kitchen' }
   | { kind: 'access'; horecaId: number }
 
 export function isQrNotificationType(type: string): boolean {
@@ -35,8 +37,12 @@ export function qrNotificationAction(n: Pick<AppNotification, 'type' | 'metadata
     case 'qr_order_pending':
       return m.requestId ? { kind: 'review', requestId: m.requestId } : null
     case 'qr_order_approved':
-    case 'qr_order_rejected':
       return { kind: 'orders', orderId: m.orderId ?? null }
+    case 'qr_order_rejected':
+      // A rejected request never became an order, so history has nothing under it to
+      // open. Order home does: the Not approved card, with the reason and a resend.
+      // Only the requester is ever sent this type, and the requester is kitchen staff.
+      return { kind: 'kitchen' }
     case 'qr_code_locked':
       return typeof m.horecaId === 'number' ? { kind: 'access', horecaId: m.horecaId } : null
     default:
@@ -51,6 +57,8 @@ export function qrActionLabel(action: QrNotificationAction): string {
       return 'Review order'
     case 'orders':
       return 'View order history'
+    case 'kitchen':
+      return 'See why'
     case 'access':
       return 'Open QR & PINs'
   }

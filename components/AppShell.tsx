@@ -36,7 +36,7 @@ import {
     type Visit,
 } from '../types';
 import type { QueryClient } from '@tanstack/react-query';
-import { OrderProvider } from '../context/OrderContext';
+import { OrderProvider, type ReorderDetails } from '../context/OrderContext';
 import { PantryProvider } from '../context/PantryContext';
 import { WarehouseScopeProvider } from '../context/WarehouseScopeContext';
 import { useOrderContext } from '../context/OrderContext';
@@ -69,6 +69,8 @@ import {
     useDeletePromotion,
 } from '../hooks/queries/usePromotions';
 import { useQrSessionExpiry } from '../hooks/useQrSessionExpiry';
+import { useQrDecisionToasts } from '../hooks/useQrDecisionToasts';
+import { useResendQrRequest } from '../hooks/useResendQrRequest';
 import { usePendingPutawayCounts } from '../hooks/queries/usePendingPutawayCounts';
 import { usePendingReplenCounts } from '../hooks/queries/useReplenishment';
 import { getDemoPersona } from '../lib/demoAccounts';
@@ -421,6 +423,23 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
         [notifications, currentUser.role],
     );
 
+    // Tells a kitchen phone, as it happens, that an approver approved or declined its
+    // order: one toast per NEW decision among the notifications already loaded here,
+    // none for what was there when the app opened. QR Staff only, and a build constant
+    // picks the branch so a tenant without the Shop never bundles the hook. `ready`
+    // holds the baseline until the list has really loaded -- it is the empty default
+    // until then, and every old decision would otherwise look new.
+    const notificationsReady =
+        !dataStatus?.loading.includes('notifications') && !dataStatus?.failed.includes('notifications');
+    if (MODULE_SHOP) {
+        useQrDecisionToasts({
+            enabled: isQrStaff,
+            notifications: userNotifications,
+            ready: notificationsReady,
+            addToast,
+        });
+    }
+
     // ── Derived order/selection state ─────────────────────────────────────────
     const selectedOrder = useMemo(
         () => (selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) ?? null : null),
@@ -640,14 +659,29 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     // opens over it -- on a handset that is the "Your Order" sheet with the
     // quantity steppers and Submit, which is exactly the editor this asks for.
     const handleEditKitchenItems = useCallback(
-        (items: OrderItem[]) => {
-            handleReorderItems(items, 'replace');
+        (items: OrderItem[], details?: ReorderDetails) => {
+            handleReorderItems(items, 'replace', details);
             setOrderingTab('reorder');
             setView('ordering');
             setIsCartOpen(true);
         },
         [handleReorderItems, setOrderingTab, setView, setIsCartOpen],
     );
+
+    // Order history's "Edit and resend" on an order an approver turned down: its lines
+    // into the cart through the same door as "Edit before ordering". Home has its own
+    // copy of this inside KitchenHomeView, which already holds every input.
+    const resendQrRequest = MODULE_SHOP
+        ? useResendQrRequest({
+            products,
+            hoReCa: selectedHoReCa,
+            promotions,
+            currentUser,
+            cartonDiscountPercent: appSettings.cartonDiscountPercent,
+            onEditItems: handleEditKitchenItems,
+            addToast,
+        })
+        : undefined;
 
     const openShopOnTab = useCallback(
         (tab: OrderingTabKey) => {
@@ -736,6 +770,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
             onMarkAllRead={handleMarkAllNotificationsRead}
             isAdminOrManager={isAdminOrManager}
             onOpenOrders={() => setView('orders')}
+            onOpenKitchen={isQrStaff ? () => setView('kitchen') : undefined}
             onOpenPoInbox={() => {
                 if (typeof window !== 'undefined') {
                     const params = new URLSearchParams(window.location.search);
@@ -1660,6 +1695,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                                 onUpdateStatus={handleUpdateOrderStatus}
                                                 onNavigateToShop={() => setView('ordering')}
                                                 onNavigateBack={() => setView(isRep ? 'dashboard' : 'ordering')}
+                                                onResendQrRequest={isQrStaff ? resendQrRequest : undefined}
                                             />
                                         </Suspense>
                                     </ErrorBoundary>

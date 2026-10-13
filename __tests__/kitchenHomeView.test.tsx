@@ -27,6 +27,13 @@ vi.mock('@/components/qr/PendingQrRequests', () => ({
   ),
 }))
 
+// Likewise the "Not approved" card: it reads the network and the sign-in, and is
+// covered by notApprovedCard.test.tsx and kitchenHomeNotApproved.test.tsx. Here only
+// that kitchen staff are given one, for their own venue.
+vi.mock('@/components/qr/NotApprovedCard', () => ({
+  default: (p: { horecaId: number }) => <div data-testid="not-approved" data-horeca={p.horecaId} />,
+}))
+
 const { default: KitchenHomeView } = await import('@/views/KitchenHomeView')
 const { OrderProvider, useOrderContext } = await import('@/context/OrderContext')
 
@@ -89,6 +96,15 @@ describe('KitchenHomeView — the screen', () => {
     render(<KitchenHomeView {...baseProps()} currentUser={customer} />)
     expect(screen.queryByText(/^Hi /)).toBeNull()
     expect(screen.getByTestId('pending').getAttribute('data-mode')).toBe('approver')
+  })
+
+  it('gives kitchen staff the "Not approved" card for their venue, and a Customer none', () => {
+    const { unmount } = render(<KitchenHomeView {...baseProps()} />)
+    expect(screen.getByTestId('not-approved').getAttribute('data-horeca')).toBe('10')
+    unmount()
+
+    render(<KitchenHomeView {...baseProps()} currentUser={customer} />)
+    expect(screen.queryByTestId('not-approved')).toBeNull()
   })
 
   it('shows the last order with its date, size, status and today\'s estimate', () => {

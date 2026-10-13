@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { UserRole, type HoReCa, type Invoice, type Order, type OrderItem, type OrderStatus, type User } from '../types';
+import { UserRole, type HoReCa, type Invoice, type Order, type OrderItem, type OrderStatus, type QrOrderRequest, type User } from '../types';
 import OrderHistory from '../components/OrderHistory';
 import OrderImportPage from '../components/OrderImportPage';
 
@@ -15,6 +15,8 @@ export interface OrdersHistoryViewProps {
     onUpdateStatus?: (orderId: string, newStatus: OrderStatus, note?: string, opts?: { locationId?: number; locationPref?: number[] }) => void;
     onNavigateToShop: () => void;
     onNavigateBack: () => void;
+    /** Kitchen staff's "Edit and resend" on a not-approved order (see OrderHistory). */
+    onResendQrRequest?: (request: QrOrderRequest) => boolean;
 }
 
 const OrdersHistoryView: React.FC<OrdersHistoryViewProps> = ({
@@ -29,6 +31,7 @@ const OrdersHistoryView: React.FC<OrdersHistoryViewProps> = ({
     onUpdateStatus,
     onNavigateToShop,
     onNavigateBack,
+    onResendQrRequest,
 }) => {
     // A venue's kitchen staff (the hidden QR Staff login) see the same history page as
     // its Customer login, never the staff Order Import page.
@@ -65,6 +68,7 @@ const OrdersHistoryView: React.FC<OrdersHistoryViewProps> = ({
                 onBulkReorder={handleBulkReorder}
                 onViewDetail={onSelectOrder}
                 onBack={onNavigateToShop}
+                onResendQrRequest={onResendQrRequest}
             />
         );
     }

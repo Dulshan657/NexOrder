@@ -38,6 +38,34 @@ export function itemCountLabel(n: number): string {
   return `${n} ${n === 1 ? 'item' : 'items'}`
 }
 
+/** The size of a held order's estimate: `$48.20 est. · 3 items`. The one line every QR list shows. */
+export function requestEstimateSummary(r: { quotedTotal: number; items: ReadonlyArray<unknown> }): string {
+  return `${formatMoney(r.quotedTotal)} est. · ${itemCountLabel(r.items.length)}`
+}
+
+/** How many lines are named before the rest fold into "and N more". */
+const SUMMARY_NAMED_LINES = 3
+
+interface SummaryLine {
+  productId: number
+  quantity: number
+  productName?: string
+}
+
+/**
+ * What was in a held order, from the name snapshot taken when it was sent:
+ * `Tomato Paste × 3, Chilli Oil × 1 and 2 more`. A row written before names were
+ * snapshotted falls back to `Product #42`, so a line is never blank.
+ */
+export function requestItemsSummary(items: ReadonlyArray<SummaryLine>): string {
+  const named = items
+    .slice(0, SUMMARY_NAMED_LINES)
+    .map((i) => `${i.productName?.trim() || `Product #${i.productId}`} × ${i.quantity}`)
+    .join(', ')
+  const more = items.length - SUMMARY_NAMED_LINES
+  return more > 0 ? `${named} and ${more} more` : named
+}
+
 /** True when `iso` is a readable time after `now` (an unlock that has not run out yet). */
 export function isFutureTime(iso: string | null | undefined, now: Date = new Date()): boolean {
   const d = toDate(iso)

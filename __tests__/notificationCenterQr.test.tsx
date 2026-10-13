@@ -2,7 +2,8 @@
 //
 //   qr_order_pending    opens the review modal for metadata.requestId
 //   qr_order_approved   goes to order history (when the shell gave the bell a way to)
-//   qr_order_rejected   same, and carries the reason
+//   qr_order_rejected   opens Order home ("See why"), where the Not approved card
+//                       carries the reason; it has no order to open in history
 //   qr_code_locked      opens QR & PINs for metadata.horecaId
 //
 // Every tap also marks the notification read, as for every other type, and a
@@ -59,7 +60,7 @@ const locked = notif({
 
 function renderCenter(
   notifications: AppNotification[],
-  extra: { onOpenOrders?: (orderId: string | null) => void } = {},
+  extra: { onOpenOrders?: (orderId: string | null) => void; onOpenKitchen?: () => void } = {},
 ) {
   const onMarkRead = vi.fn()
   render(
@@ -127,13 +128,27 @@ describe('NotificationCenter: kitchen QR notifications', () => {
     expect(onMarkRead).toHaveBeenCalledWith('n-approved')
   })
 
-  it('takes a rejection to order history too, with no order', () => {
+  it('takes a rejection to Order home, not to history, and marks it read', () => {
     const onOpenOrders = vi.fn()
-    renderCenter([rejected], { onOpenOrders })
+    const onOpenKitchen = vi.fn()
+    const onMarkRead = renderCenter([rejected], { onOpenOrders, onOpenKitchen })
 
     fireEvent.click(screen.getByText('Your order for Cafe Roma was declined'))
 
-    expect(onOpenOrders).toHaveBeenCalledWith(null)
+    expect(onOpenKitchen).toHaveBeenCalledTimes(1)
+    expect(onOpenOrders).not.toHaveBeenCalled()
+    expect(onMarkRead).toHaveBeenCalledWith('n-rejected')
+  })
+
+  it('just marks a rejection read when the shell gave no way to reach Order home', () => {
+    const onOpenOrders = vi.fn()
+    const onMarkRead = renderCenter([rejected], { onOpenOrders })
+
+    expect(screen.queryByText(/See why/)).toBeNull()
+    fireEvent.click(screen.getByText('Your order for Cafe Roma was declined'))
+
+    expect(onMarkRead).toHaveBeenCalledWith('n-rejected')
+    expect(onOpenOrders).not.toHaveBeenCalled()
   })
 
   it('just marks a decision read when the shell gave no way to navigate', () => {
@@ -147,10 +162,12 @@ describe('NotificationCenter: kitchen QR notifications', () => {
   })
 
   it('labels what a tap will do', () => {
-    renderCenter([pending, locked], { onOpenOrders: vi.fn() })
+    renderCenter([pending, locked, approved, rejected], { onOpenOrders: vi.fn(), onOpenKitchen: vi.fn() })
 
     expect(screen.getByText(/Review order/)).toBeTruthy()
     expect(screen.getByText(/Open QR & PINs/)).toBeTruthy()
+    expect(screen.getByText(/View order history/)).toBeTruthy()
+    expect(screen.getByText(/See why/)).toBeTruthy()
   })
 
   it('does nothing extra for a pending notification that lost its request id', () => {

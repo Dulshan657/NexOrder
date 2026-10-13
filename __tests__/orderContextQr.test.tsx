@@ -357,3 +357,80 @@ describe('OrderContext — merging reorder lines', () => {
     expect(before.quantity).toBe(2)
   })
 })
+
+// "Edit and resend" must bring back what the order carried, and must not inherit
+// what an abandoned cart left behind. Plain reorders pass no details and stay as they were.
+describe('OrderContext — reordering with the order\'s own notes and delivery', () => {
+  const stale = (api: Api) =>
+    act(() => {
+      api.setNotes('Stale note from an abandoned cart')
+      api.setDeliveryDate('2026-12-01')
+      api.setDeliveryTimeSlot('Evening (4pm-8pm)')
+    })
+
+  it('replaces the cart AND sets notes, date and slot from the details', () => {
+    const { api } = mount()
+    stale(api())
+
+    act(() =>
+      api().handleReorderItems([mkCartItem(product, 2)], 'replace', {
+        notes: 'Back door please',
+        deliveryDate: '2026-10-14',
+        deliveryTimeSlot: 'Morning (8am-12pm)',
+      }),
+    )
+
+    expect(api().orderItems.map((i) => i.quantity)).toEqual([2])
+    expect(api().notes).toBe('Back door please')
+    expect(api().deliveryDate).toBe('2026-10-14')
+    expect(api().deliveryTimeSlot).toBe('Morning (8am-12pm)')
+  })
+
+  it('clears them to empty when the order had none, rather than keeping the stale ones', () => {
+    const { api } = mount()
+    stale(api())
+
+    act(() =>
+      api().handleReorderItems([mkCartItem(product, 2)], 'replace', {
+        notes: '',
+        deliveryDate: '',
+        deliveryTimeSlot: '',
+      }),
+    )
+
+    expect(api().notes).toBe('')
+    expect(api().deliveryDate).toBe('')
+    expect(api().deliveryTimeSlot).toBe('')
+  })
+
+  it('leaves them exactly as they were when no details are given (every other reorder)', () => {
+    const { api } = mount()
+    stale(api())
+
+    act(() => api().handleReorderItems([mkCartItem(product, 2)], 'replace'))
+
+    expect(api().notes).toBe('Stale note from an abandoned cart')
+    expect(api().deliveryDate).toBe('2026-12-01')
+    expect(api().deliveryTimeSlot).toBe('Evening (4pm-8pm)')
+  })
+
+  it('submits the resent order with its own notes and delivery', async () => {
+    const { api } = mount()
+    stale(api())
+    act(() =>
+      api().handleReorderItems([mkCartItem(product, 2)], 'replace', {
+        notes: 'Back door please',
+        deliveryDate: '2026-10-14',
+        deliveryTimeSlot: 'Morning (8am-12pm)',
+      }),
+    )
+    act(() => api().handleSubmitOrder())
+
+    await waitFor(() => expect(submitQrRequest).toHaveBeenCalledTimes(1))
+    expect(submitQrRequest.mock.calls[0][0]).toMatchObject({
+      notes: 'Back door please',
+      deliveryDate: '2026-10-14',
+      deliveryTimeSlot: 'Morning (8am-12pm)',
+    })
+  })
+})

@@ -31,6 +31,12 @@ interface NotificationCenterProps {
      * `orderId` is the order the approval placed (null for a rejection).
      */
     onOpenOrders?: (orderId: string | null) => void;
+    /**
+     * Takes kitchen staff to Order home, where a rejected order's "Not approved" card
+     * says why. Optional: without it a `qr_order_rejected` notification just marks
+     * itself read. The shell passes it for QR Staff only.
+     */
+    onOpenKitchen?: () => void;
 }
 
 const MAX_PO_ROWS = 5;
@@ -56,6 +62,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     isAdminOrManager,
     onOpenPoInbox,
     onOpenOrders,
+    onOpenKitchen,
 }) => {
     const [open, setOpen] = useState(false);
     // Overlays a kitchen-QR notification opens. Held here, not in the dropdown, so
@@ -146,6 +153,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
         if (!action) return false;
         if (action.kind === 'review') return QrRequestReviewModal !== null;
         if (action.kind === 'access') return QrAccessPanel !== null;
+        if (action.kind === 'kitchen') return onOpenKitchen !== undefined;
         return onOpenOrders !== undefined;
     };
 
@@ -154,6 +162,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
         if (!canRun(action)) return;
         if (action.kind === 'review') setReviewRequestId(action.requestId);
         else if (action.kind === 'access') setAccessHoReCaId(action.horecaId);
+        else if (action.kind === 'kitchen') onOpenKitchen?.();
         else onOpenOrders?.(action.orderId);
         setOpen(false);
     };
