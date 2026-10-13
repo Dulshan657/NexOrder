@@ -25,6 +25,16 @@
 //                         mutation's invalidation re-runs the preview so the
 //                         reason shows up in the problems list.
 //
+// ── SHORT LINES ─────────────────────────────────────────────────────────────
+// The server counts stock in BASE units ("42 of X available, 48 requested") while
+// the stepper counts in the unit the kitchen ordered (4 = 4 cartons of 12), so its
+// sentence reads as a contradiction. For INSUFFICIENT_STOCK the callout and the note
+// under the line are rewritten in the line's own unit (lib/qr/describeShortage.ts),
+// with a one-tap "Set to N" / "Remove line" fix. Approve is untouched by any of this:
+// it stays withheld while the server reports a problem. The shortage is worked out
+// from the PREVIEW's own lines, so it always describes the figures the server sent --
+// and the fix is held while the draft has moved ahead of them.
+//
 // And a request the caller cannot see at all (a bell entry for another rep's venue,
 // FORBIDDEN, or one that no longer exists, NOT_FOUND) is a verdict, not a fault: it
 // gets a plain sentence and a Close button -- no Approve, no Reject, no Try again,
@@ -39,7 +49,15 @@ import {
   useQrRequestPreview,
   useRejectQrRequest,
 } from '@/hooks/queries/useQrOrderRequests'
-import { isQrApiError, type QrOrderPreview, type QrPricedLine } from '@/services/supabase/qrService'
+import { useProducts } from '@/hooks/queries/useProducts'
+import { toProductUom } from '@/lib/adapters'
+import { describeShortage, type ShortageDescription, type ShortageUom } from '@/lib/qr/describeShortage'
+import {
+  isQrApiError,
+  type QrOrderPreview,
+  type QrOrderProblem,
+  type QrPricedLine,
+} from '@/services/supabase/qrService'
 import { formatMoney, formatWhen, itemCountLabel } from '@/lib/qr/qrFormat'
 import {
   QR_MAX_LINE_QUANTITY,
@@ -82,8 +100,10 @@ function QuantityStepper(props: {
   onChange: (next: number) => void
   /** An approval is in flight: the quantities being approved must not move under it. */
   disabled?: boolean
+  /** Lets the modal hand focus to the field after a one-tap fix. */
+  inputId?: string
 }) {
-  const { name, value, onChange, disabled = false } = props
+  const { name, value, onChange, disabled = false, inputId } = props
   const atMin = value <= 1
   const atMax = value >= QR_MAX_LINE_QUANTITY
   const [text, setText] = useState(String(value))
@@ -116,6 +136,7 @@ function QuantityStepper(props: {
         <Minus className="w-4 h-4" aria-hidden="true" />
       </button>
       <input
+        id={inputId}
         type="text"
         inputMode="numeric"
         aria-label={`Quantity of ${name}`}
@@ -138,6 +159,49 @@ function QuantityStepper(props: {
         <Plus className="w-4 h-4" aria-hidden="true" />
       </button>
     </div>
+  )
+}
+
+const FIX_BUTTON_CLASS =
+  'touch-target-y inline-flex shrink-0 items-center justify-center rounded-lg border border-stone-300 bg-white px-3 ' +
+  'text-xs font-semibold text-stone-700 hover:bg-stone-50 btn-press ' +
+  'disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue-dark'
+
+/** The one-tap answer to a shortage: lower the line to what fits, or drop it when nothing does. */
+function ShortageFix(props: {
+  name: string
+  /** > 0: set the line to this. 0: remove it. */
+  maxQty: number
+  disabled: boolean
+  onSetTo: (quantity: number) => void
+  onRemove: () => void
+}) {
+  const { name, maxQty, disabled, onSetTo, onRemove } = props
+  if (maxQty > 0) {
+    return (
+      <button
+        type="button"
+        // The visible words stay inside the name (WCAG 2.5.3); the product is added so a
+        // list of several short lines is not a list of identical buttons.
+        aria-label={`Set to ${maxQty} for ${name}`}
+        disabled={disabled}
+        onClick={() => onSetTo(maxQty)}
+        className={FIX_BUTTON_CLASS}
+      >
+        {`Set to ${maxQty}`}
+      </button>
+    )
+  }
+  return (
+    <button
+      type="button"
+      aria-label={`Remove line for ${name}`}
+      disabled={disabled}
+      onClick={onRemove}
+      className={FIX_BUTTON_CLASS}
+    >
+      Remove line
+    </button>
   )
 }
 
@@ -302,6 +366,42 @@ export default function QrRequestReviewModal({ requestId, open = true, onClose }
   const busy = approve.isPending || reject.isPending
 
   const problems = emptyDraft ? [] : (preview?.problems ?? [])
+
+  // Each product's UOMs, for the name a line is counted in ("boxes"). Absent until the
+  // catalogue has loaded, in which case the line's own pack size still gives the factor.
+  const { data: productRows } = useProducts()
+  const uomsByProduct = useMemo(() => {
+    const out = new Map<number, ShortageUom[]>()
+    for (const row of productRows ?? []) {
+      if (row.product_uoms?.length) out.set(row.id, row.product_uoms.map(toProductUom))
+    }
+    return out
+  }, [productRows])
+
+  // Worked out from the preview's own priced lines, so it always describes the figures
+  // the server sent (the draft may be a keystroke ahead of them).
+  const shortages = useMemo(() => {
+    const out = new Map<number, ShortageDescription>()
+    if (!preview) return out
+    for (const s of preview.stock) {
+      if (!s.short) continue
+      out.set(
+        s.productId,
+        describeShortage({
+          productName: s.productName,
+          available: s.available,
+          requested: s.requested,
+          lines: preview.lines.filter((l) => l.productId === s.productId),
+          uoms: uomsByProduct.get(s.productId),
+        }),
+      )
+    }
+    return out
+  }, [preview, uomsByProduct])
+  const problemText = (p: QrOrderProblem): string =>
+    p.code === 'INSUFFICIENT_STOCK' && p.productId != null
+      ? (shortages.get(p.productId)?.headline ?? p.message)
+      : p.message
   // Approve is offered only on figures that describe what is on screen: the server
   // said the CURRENT draft would place, and no newer preview is still in flight.
   const canApprove = Boolean(preview && preview.ok) && !emptyDraft && settled
@@ -318,6 +418,13 @@ export default function QrRequestReviewModal({ requestId, open = true, onClose }
       return
     }
     setActionError(GENERIC_ERROR)
+  }
+
+  // The "Set to N" button disables itself the moment the draft moves ahead of the preview,
+  // which would drop keyboard focus onto the page. The line's own field takes it instead.
+  const setQuantityTo = (index: number, quantity: number) => {
+    setDraft((d) => withQuantity(d ?? [], index, quantity))
+    setTimeout(() => document.getElementById(`qr-qty-${index}`)?.focus(), 0)
   }
 
   const removeLine = (index: number) => {
@@ -423,7 +530,7 @@ export default function QrRequestReviewModal({ requestId, open = true, onClose }
         title: 'Discard your changes?',
         message: rejecting && !edited
           ? 'The reason you typed will be lost.'
-          : 'Your edits to this order will be lost. The kitchen’s original request stays as it was.',
+          : 'Your edits to this order will be lost. The staff member’s original request stays as it was.',
       }}
       footer={footer}
     >
@@ -484,7 +591,7 @@ export default function QrRequestReviewModal({ requestId, open = true, onClose }
               <Callout tone="danger" title="This order cannot be approved yet">
                 <ul className="list-disc pl-4 space-y-0.5">
                   {problems.map((p, i) => (
-                    <li key={`${p.code}-${p.productId ?? 'order'}-${i}`}>{p.message}</li>
+                    <li key={`${p.code}-${p.productId ?? 'order'}-${i}`}>{problemText(p)}</li>
                   ))}
                 </ul>
                 <p className="mt-1">Lower a quantity or remove the line, or reject the request.</p>
@@ -526,6 +633,9 @@ export default function QrRequestReviewModal({ requestId, open = true, onClose }
                     const sku = skuOf(items, line, priced)
                     const stock = preview?.stock.find((s) => s.productId === line.productId)
                     const gone = problems.some((p) => p.code === 'PRODUCT_NOT_FOUND' && p.productId === line.productId)
+                    const shortage = stock?.short ? shortages.get(line.productId) : undefined
+                    // Two lines of one product: lowering one cannot say what the other should be.
+                    const sole = lines.filter((l) => l.productId === line.productId).length === 1
                     return (
                       <li key={`${lineKey(line)}-${i}`} className="px-3 py-3">
                         <div className="flex items-start justify-between gap-3">
@@ -549,6 +659,7 @@ export default function QrRequestReviewModal({ requestId, open = true, onClose }
                         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                           <QuantityStepper
                             name={name}
+                            inputId={`qr-qty-${i}`}
                             value={line.quantity}
                             disabled={busy}
                             onChange={(n) => setDraft((d) => withQuantity(d ?? [], i, n))}
@@ -558,10 +669,21 @@ export default function QrRequestReviewModal({ requestId, open = true, onClose }
                           </span>
                         </div>
                         {gone && <p className="mt-1 text-xs font-medium text-red-700">No longer available</p>}
-                        {!gone && stock?.short && (
-                          <p className="mt-1 text-xs font-medium text-amber-800">
-                            Short on stock: {stock.available} available, {stock.requested} needed
-                          </p>
+                        {!gone && shortage && (
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <p className="text-xs font-medium text-amber-800">{shortage.lineNote}</p>
+                            {sole && shortage.maxQty !== null && (
+                              <ShortageFix
+                                name={name}
+                                maxQty={shortage.maxQty}
+                                // Held while busy (like the stepper) and until the preview has caught
+                                // up with the draft: its figures describe the lines BEFORE the edit.
+                                disabled={busy || !settled}
+                                onSetTo={(n) => setQuantityTo(i, n)}
+                                onRemove={() => removeLine(i)}
+                              />
+                            )}
+                          </div>
                         )}
                       </li>
                     )
@@ -616,7 +738,7 @@ function decidedTitle(request: QrOrderRequest): string {
     case 'rejected':
       return 'Declined'
     case 'cancelled':
-      return 'Cancelled by the kitchen'
+      return 'Cancelled by staff'
     default:
       return 'Already handled'
   }

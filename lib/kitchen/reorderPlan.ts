@@ -31,12 +31,22 @@
 // physical stock). A line asking for more than is available is KEPT and flagged
 // 'low': the person deciding (an approver, or the server at placement) can see a
 // shortage better than a button that silently trimmed the quantity.
+//
+// A kitchen (QR Staff) must never be shown a stock figure, so a caller can ask
+// for `hideStockCounts` and the 'low' reason then names no number. The test of
+// whether a line is short is the same either way, and the same one the server
+// applies: base units are `lineBaseUnits` (`_shared/pricing.ts`), not a local
+// copy of the multiplication.
 
 import type { HoReCa, Order, OrderItem, Product, Promotion, User } from '@/types'
 import { applyCartPromotions } from '@/services/promotionService'
 import { priceReorderLine } from '@/lib/reorderLinePrice'
+import { lineBaseUnits } from '@/supabase/functions/_shared/pricing'
 
 export type ReorderLineStatus = 'ok' | 'low' | 'unavailable'
+
+/** What a 'low' line says when the reader must not be shown a stock count. */
+export const MAY_BE_SHORT_REASON = 'May be short — your manager will adjust it'
 
 export interface ReorderLine {
   /** Stable React key: product + pack + uom, as the cart dedups on. */
@@ -80,6 +90,11 @@ export interface ReorderPlanInput {
   promotions: readonly Promotion[]
   currentUser: User | null
   cartonDiscountPercent: number
+  /**
+   * Word a shortage without saying how much is in stock (QR Staff). Absent or
+   * false keeps "Only N in stock", which a Customer placing a real order wants.
+   */
+  hideStockCounts?: boolean
 }
 
 const cents = (n: number): number => Math.round(n * 100) / 100
@@ -102,6 +117,10 @@ function excludedLine(source: OrderItem, reason: string): ReorderLine {
   }
 }
 
+function shortReason(product: Product, hideStockCounts: boolean): string {
+  return hideStockCounts ? MAY_BE_SHORT_REASON : `Only ${Math.max(product.available, 0)} in stock`
+}
+
 function planLine(source: OrderItem, product: Product, input: ReorderPlanInput): ReorderLine {
   // The price (and the unit of measure it was found in) is the shared definition
   // the Shop's Reorder tab uses too -- see lib/reorderLinePrice.ts.
@@ -109,7 +128,7 @@ function planLine(source: OrderItem, product: Product, input: ReorderPlanInput):
   if (priced.ok === false) return excludedLine(source, priced.reason)
   const { unitPrice, packSize, unit, uomId } = priced
 
-  const baseUnits = source.quantity * (packSize ?? 1)
+  const baseUnits = lineBaseUnits(source.quantity, packSize)
   const short = baseUnits > product.available
 
   const item: OrderItem = { ...product, quantity: source.quantity, price: unitPrice, packSize, unit, uomId }
@@ -121,7 +140,7 @@ function planLine(source: OrderItem, product: Product, input: ReorderPlanInput):
     unitPrice,
     lineTotal: cents(unitPrice * source.quantity),
     status: short ? 'low' : 'ok',
-    reason: short ? `Only ${Math.max(product.available, 0)} in stock` : undefined,
+    reason: short ? shortReason(product, input.hideStockCounts === true) : undefined,
     item,
   }
 }

@@ -107,7 +107,7 @@ export function conflict(status: string | null, action: QrRequestAction): EdgeFu
 
 export function requireRequester(auth: AuthContext): QrStaffInfo {
   if (auth.role !== 'QR Staff' || !auth.qrStaff) {
-    throw new EdgeFunctionError('FORBIDDEN', 'Only kitchen staff can place and cancel QR orders')
+    throw new EdgeFunctionError('FORBIDDEN', 'Only staff can place and cancel QR orders')
   }
   return auth.qrStaff
 }

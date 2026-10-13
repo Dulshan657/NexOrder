@@ -76,7 +76,7 @@ const SOURCE_FILTER_OPTIONS: ReadonlyArray<{ value: SourceFilterValue; label: st
   { value: 'all', label: 'All Sources' },
   { value: 'email_inbound', label: 'Email PO' },
   // Kitchen QR orders exist only where the shop module ships.
-  ...(MODULE_SHOP ? [{ value: 'qr_kitchen' as const, label: 'Kitchen QR' }] : []),
+  ...(MODULE_SHOP ? [{ value: 'qr_kitchen' as const, label: 'Staff QR' }] : []),
   { value: 'customer_web', label: 'Customer Web' },
   { value: 'rep_field', label: 'Field Rep' },
   { value: 'rep_office', label: 'Office Rep' },

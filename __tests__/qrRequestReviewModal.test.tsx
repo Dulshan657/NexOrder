@@ -7,7 +7,9 @@
 //   - Approve is withheld whenever the server said the order would not place,
 //   - Reject needs a reason of 3+ characters,
 //   - a conflict closes the modal with the server's words rather than leaving a
-//     button that cannot work.
+//     button that cannot work,
+//   - a stock shortage is said in the LINE'S unit (cartons), not the server's base
+//     units, and offers the one-tap fix that fits (lib/qr/describeShortage.ts).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -16,18 +18,23 @@ import { QrApiError } from '@/lib/qr/qrApiError'
 import type { QrLineInput, QrOrderPreview } from '@/services/supabase/qrService'
 import type { QrOrderRequest } from '@/types'
 
-const { previewHook, approveMock, rejectMock, addToast, approveState } = vi.hoisted(() => ({
+const { previewHook, approveMock, rejectMock, addToast, approveState, productsState } = vi.hoisted(() => ({
   previewHook: vi.fn(),
   approveMock: vi.fn(),
   rejectMock: vi.fn(),
   addToast: vi.fn(),
   approveState: { pending: false },
+  // Raw `products` rows, as the catalogue query returns them (only the UOM embed is read).
+  productsState: { rows: [] as unknown[] },
 }))
 
 vi.mock('@/hooks/queries/useQrOrderRequests', () => ({
   useQrRequestPreview: (...args: unknown[]) => previewHook(...args),
   useApproveQrRequest: () => ({ mutateAsync: approveMock, isPending: approveState.pending }),
   useRejectQrRequest: () => ({ mutateAsync: rejectMock, isPending: false }),
+}))
+vi.mock('@/hooks/queries/useProducts', () => ({
+  useProducts: () => ({ data: productsState.rows }),
 }))
 vi.mock('@/hooks/useToasts', () => ({
   useToasts: () => ({ addToast }),
@@ -118,6 +125,7 @@ beforeEach(() => {
   rejectMock.mockReset()
   addToast.mockReset()
   approveState.pending = false
+  productsState.rows = []
 })
 
 afterEach(() => {
@@ -154,9 +162,25 @@ describe('QrRequestReviewModal: reading the request', () => {
     renderModal()
 
     expect(screen.getByText('This order cannot be approved yet')).toBeTruthy()
-    expect(screen.getByText('Only 1 of Butter 500g is available')).toBeTruthy()
-    expect(screen.getByText('Short on stock: 1 available, 3 needed')).toBeTruthy()
+    // The server's base-unit sentence is replaced by one in the line's own unit.
+    expect(screen.getByText('Only 1 unit of Butter 500g in stock. This order asks for 3 units.')).toBeTruthy()
+    expect(screen.queryByText('Only 1 of Butter 500g is available')).toBeNull()
+    expect(screen.getByText('Only 1 unit in stock')).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Approve order' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('leaves the server\'s words alone for every other kind of problem', () => {
+    installPreview({
+      preview: makePreview({
+        ok: false,
+        problems: [{ code: 'BELOW_MINIMUM', message: 'Order total $34.00 is below the $50.00 minimum', total: 34, minimum: 50 }],
+      }),
+    })
+    renderModal()
+
+    expect(screen.getByText('Order total $34.00 is below the $50.00 minimum')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Set to / })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Remove line/ })).toBeNull()
   })
 
   it('shows a decided request read-only, with the reason, and offers no decision', () => {
@@ -415,6 +439,179 @@ describe('QrRequestReviewModal: edge cases the first review found', () => {
     expect(minus.getAttribute('aria-disabled')).toBe('true')
     fireEvent.click(minus)
     expect(qty('Fresh Cream 1L').value).toBe('1')
+  })
+})
+
+describe('QrRequestReviewModal: a short line, said in its own unit', () => {
+  const RICE = 'Rice Noodles 200g'
+  const SERVER_TEXT = '42 of "Rice Noodles 200g" available, 48 requested'
+
+  /** 4 cartons of 12 against 42 units on the shelf: the case that read as a contradiction. */
+  function cartonShortage(over: { uomId?: number | null; available?: number } = {}) {
+    const uomId = over.uomId ?? null
+    const available = over.available ?? 42
+    const cartonRequest: QrOrderRequest = {
+      ...request,
+      items: [{ productId: 3, quantity: 4, packSize: 12, uomId, productName: RICE, productSku: 'RN-200' }],
+    }
+    installPreview({
+      req: cartonRequest,
+      preview: makePreview({
+        ok: false,
+        problems: [{ code: 'INSUFFICIENT_STOCK', message: SERVER_TEXT, productId: 3, requested: 48, available }],
+        lines: [
+          { productId: 3, quantity: 4, packSize: 12, uomId, productName: RICE, productSku: 'RN-200', unitPrice: 30, appliedPromotionId: null, lineTotal: 120, baseUnits: 48 },
+        ],
+        stock: [{ productId: 3, productName: RICE, requested: 48, available, short: true }],
+      }),
+    })
+  }
+
+  it('says 3 cartons, not 42, so the number agrees with the stepper', () => {
+    cartonShortage()
+    renderModal()
+
+    expect(
+      screen.getByText('Only 3 cartons of Rice Noodles 200g in stock (42 units). This order asks for 4 cartons (48 units).'),
+    ).toBeTruthy()
+    expect(screen.getByText('Only 3 cartons in stock (42 units)')).toBeTruthy()
+    expect(screen.queryByText(SERVER_TEXT)).toBeNull()
+    expect(qty(RICE).value).toBe('4')
+    // Still blocked: a clearer sentence does not make the order placeable.
+    expect((screen.getByRole('button', { name: 'Approve order' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('uses the unit of measure\'s own name from the catalogue', () => {
+    productsState.rows = [
+      {
+        id: 3,
+        product_uoms: [
+          { id: 5, product_id: 3, code: 'box', factor_to_base: 12, is_base: false, price: 30, is_orderable: true, is_receivable: true, sort_order: 1, cubic_meters: null },
+        ],
+      },
+    ]
+    cartonShortage({ uomId: 5 })
+    renderModal()
+
+    expect(screen.getByText('Only 3 boxes in stock (42 units)')).toBeTruthy()
+  })
+
+  it('"Set to 3" sets the stepper to what fits and re-prices with it', async () => {
+    cartonShortage()
+    renderModal()
+
+    fireEvent.click(screen.getByRole('button', { name: `Set to 3 for ${RICE}` }))
+
+    expect(qty(RICE).value).toBe('3')
+    await waitFor(() => {
+      expect(lastItemsArg()).toEqual([{ productId: 3, quantity: 3, packSize: 12, uomId: null }])
+    })
+  })
+
+  it('shows the button as "Set to N" and sets a base-unit line to every unit there is', async () => {
+    installPreview({
+      preview: makePreview({
+        ok: false,
+        problems: [{ code: 'INSUFFICIENT_STOCK', message: 'x', productId: 2, requested: 3, available: 1 }],
+        stock: [
+          { productId: 1, productName: 'Fresh Cream 1L', requested: 2, available: 50, short: false },
+          { productId: 2, productName: 'Butter 500g', requested: 3, available: 1, short: true },
+        ],
+      }),
+    })
+    renderModal()
+
+    const fix = screen.getByRole('button', { name: 'Set to 1 for Butter 500g' })
+    expect(fix.textContent).toBe('Set to 1')
+    fireEvent.click(fix)
+
+    expect(qty('Butter 500g').value).toBe('1')
+    await waitFor(() => {
+      expect(lastItemsArg()).toEqual([
+        { productId: 1, quantity: 2, packSize: null, uomId: null },
+        { productId: 2, quantity: 1, packSize: null, uomId: null },
+      ])
+    })
+  })
+
+  it('offers "Remove line" when not even one carton is there, and removing re-prices without it', async () => {
+    cartonShortage({ available: 6 })
+    renderModal()
+
+    expect(
+      screen.getByText('None of Rice Noodles 200g in stock as full cartons (6 units). This order asks for 4 cartons (48 units).'),
+    ).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Set to / })).toBeNull()
+
+    const remove = screen.getByRole('button', { name: `Remove line for ${RICE}` })
+    expect(remove.textContent).toBe('Remove line')
+    fireEvent.click(remove)
+
+    await waitFor(() => expect(lastItemsArg()).toEqual([]))
+    expect(screen.getByText(/Every line has been removed/)).toBeTruthy()
+  })
+
+  it('says a product with nothing on the shelf is out of stock, and offers Remove line', () => {
+    cartonShortage({ available: 0 })
+    renderModal()
+
+    expect(screen.getByText('Rice Noodles 200g is out of stock.')).toBeTruthy()
+    expect(screen.getByText('Out of stock')).toBeTruthy()
+    expect(screen.getByRole('button', { name: `Remove line for ${RICE}` })).toBeTruthy()
+  })
+
+  it('offers no one-tap fix when the product is on lines of different sizes', () => {
+    const split: QrOrderRequest = {
+      ...request,
+      items: [
+        { productId: 3, quantity: 2, packSize: 12, uomId: null, productName: RICE, productSku: 'RN-200' },
+        { productId: 3, quantity: 5, packSize: null, uomId: null, productName: RICE, productSku: 'RN-200' },
+      ],
+    }
+    installPreview({
+      req: split,
+      preview: makePreview({
+        ok: false,
+        problems: [{ code: 'INSUFFICIENT_STOCK', message: 'x', productId: 3, requested: 29, available: 20 }],
+        lines: [
+          { productId: 3, quantity: 2, packSize: 12, uomId: null, productName: RICE, productSku: 'RN-200', unitPrice: 30, appliedPromotionId: null, lineTotal: 60, baseUnits: 24 },
+          { productId: 3, quantity: 5, packSize: null, uomId: null, productName: RICE, productSku: 'RN-200', unitPrice: 3, appliedPromotionId: null, lineTotal: 15, baseUnits: 5 },
+        ],
+        stock: [{ productId: 3, productName: RICE, requested: 29, available: 20, short: true }],
+      }),
+    })
+    renderModal()
+
+    expect(screen.getByText('Only 20 units of Rice Noodles 200g in stock. This order asks for 29 units.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Set to / })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Remove line for / })).toBeNull()
+  })
+
+  it('freezes the fix while an approval is in flight, like the stepper beside it', () => {
+    cartonShortage()
+    approveState.pending = true
+    renderModal()
+
+    expect((screen.getByRole('button', { name: `Set to 3 for ${RICE}` }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('holds the fix while the draft is ahead of the figures, because they are stale', async () => {
+    cartonShortage()
+    renderModal()
+    expect((screen.getByRole('button', { name: `Set to 3 for ${RICE}` }) as HTMLButtonElement).disabled).toBe(false)
+
+    fireEvent.change(qty(RICE), { target: { value: '5' } })
+
+    expect((screen.getByRole('button', { name: `Set to 3 for ${RICE}` }) as HTMLButtonElement).disabled).toBe(true)
+    await waitFor(() => expect(lastItemsArg()?.[0].quantity).toBe(5))
+  })
+
+  it('offers no fix on a decided request', () => {
+    installPreview({ req: { ...request, status: 'approved', approvedOrderId: 'ORD-1' }, preview: null })
+    renderModal()
+
+    expect(screen.queryByRole('button', { name: /^Set to / })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Remove line/ })).toBeNull()
   })
 })
 

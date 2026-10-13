@@ -8,6 +8,7 @@ import KitchenSameAgainModal from '@/components/qr/KitchenSameAgainModal'
 import { buildReorderPlan, pickKitchenOrders, type ReorderPlan } from '@/lib/kitchen/reorderPlan'
 import { formatMoney, itemCountLabel } from '@/lib/qr/qrFormat'
 import { isQrStaffRole } from '@/lib/venueUser'
+import { useShortStockGuard } from '@/hooks/useShortStockGuard'
 import type { SubmitResult } from '@/context/OrderContext'
 import type { AppSettings, HoReCa, Order, OrderItem, Product, Promotion, ToastType, User } from '@/types'
 
@@ -76,6 +77,14 @@ const KitchenHomeView: React.FC<KitchenHomeViewProps> = ({
 
   const { hero, recent } = useMemo(() => pickKitchenOrders(orders, hoReCa?.id), [orders, hoReCa?.id])
 
+  // A kitchen is told, by name, when what it is about to send may be short -- and
+  // can still send it. Off for a Customer, whose order is real and whose server
+  // check is the answer.
+  const { guard: guardShortStock, dialog: shortStockDialog } = useShortStockGuard({
+    enabled: isQrStaff,
+    products,
+  })
+
   const planFor = useCallback(
     (order: Order): ReorderPlan =>
       buildReorderPlan({
@@ -85,8 +94,10 @@ const KitchenHomeView: React.FC<KitchenHomeViewProps> = ({
         promotions,
         currentUser,
         cartonDiscountPercent,
+        // A kitchen never sees how much is in stock; its "low" lines say "may be short".
+        hideStockCounts: isQrStaff,
       }),
-    [products, hoReCa, promotions, currentUser, cartonDiscountPercent],
+    [products, hoReCa, promotions, currentUser, cartonDiscountPercent, isQrStaff],
   )
 
   const heroPlan = useMemo(() => (hero ? planFor(hero) : null), [hero, planFor])
@@ -96,7 +107,7 @@ const KitchenHomeView: React.FC<KitchenHomeViewProps> = ({
     setConfirmOpen(true)
   }
 
-  const confirm = async (notes: string) => {
+  const submit = async (notes: string) => {
     if (!heroPlan || heroPlan.items.length === 0) return
     setBusy(true)
     setError(null)
@@ -107,6 +118,12 @@ const KitchenHomeView: React.FC<KitchenHomeViewProps> = ({
       return
     }
     setConfirmOpen(false)
+  }
+
+  // The confirm step's button: for a kitchen, the short-stock question comes first.
+  const confirm = (notes: string) => {
+    if (!heroPlan || heroPlan.items.length === 0) return
+    guardShortStock(heroPlan.items, () => void submit(notes))
   }
 
   // "Edit": the same lines, in the cart. A line that cannot be ordered today is
@@ -127,7 +144,7 @@ const KitchenHomeView: React.FC<KitchenHomeViewProps> = ({
     return (
       <div className="p-4 sm:p-6 lg:p-8">
         <p role="status" className="text-sm text-stone-600">
-          Loading your kitchen…
+          Loading your order screen…
         </p>
       </div>
     )
@@ -205,7 +222,7 @@ const KitchenHomeView: React.FC<KitchenHomeViewProps> = ({
         </section>
       )}
 
-      <nav aria-label="Kitchen shortcuts" className="grid grid-cols-3 gap-3">
+      <nav aria-label="Order shortcuts" className="grid grid-cols-3 gap-3">
         <button type="button" onClick={onOpenShop} className={SHORTCUT_CLASS}>
           <ShoppingCart className="h-5 w-5 text-nexgen-blue-dark" aria-hidden="true" />
           Shop
@@ -270,10 +287,12 @@ const KitchenHomeView: React.FC<KitchenHomeViewProps> = ({
           heldForApproval={isQrStaff}
           busy={busy}
           error={error}
-          onConfirm={(notes) => void confirm(notes)}
+          onConfirm={confirm}
           onEdit={() => edit(heroPlan)}
         />
       )}
+
+      {shortStockDialog}
     </div>
   )
 }

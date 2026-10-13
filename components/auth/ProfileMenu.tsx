@@ -49,7 +49,7 @@ const KitchenProfile: React.FC<{ currentUser: User; session: KitchenSession }> =
             "Ends 14:3…" is worse than a name that wraps. Who it is on top, when it
             stops below. */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-stone-900 break-words">{`Kitchen session · ${currentUser.name}`}</p>
+          <p className="text-sm font-medium text-stone-900 break-words">{`Staff session · ${currentUser.name}`}</p>
           {ends && <p className="text-xs text-stone-600">{`Ends ${ends}`}</p>}
         </div>
       </div>

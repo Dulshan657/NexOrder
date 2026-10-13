@@ -60,7 +60,7 @@ function AddStaffForm({ horecaId }: { horecaId: number }) {
     setFormError(null)
     try {
       await create.mutateAsync({ name: trimmed, pin })
-      addToast(`${trimmed} can now unlock the kitchen screen`, 'success')
+      addToast(`${trimmed} can now order with the venue QR`, 'success')
       setName('')
       setPin('')
       setPinTouched(false)
@@ -71,10 +71,10 @@ function AddStaffForm({ horecaId }: { horecaId: number }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-3 rounded-lg border border-stone-200 p-3" aria-label="Add kitchen staff">
+    <form onSubmit={onSubmit} className="space-y-3 rounded-lg border border-stone-200 p-3" aria-label="Add staff">
       <h4 className="flex items-center gap-1.5 text-sm font-semibold text-stone-900">
         <UserPlus className="w-4 h-4 text-nexgen-blue" aria-hidden="true" />
-        Add kitchen staff
+        Add staff
       </h4>
       {formError && (
         <p role="alert" className="text-xs font-medium text-red-700">{formError}</p>
@@ -275,10 +275,10 @@ export default function QrStaffList({ horecaId, staff }: QrStaffListProps) {
     <div className="space-y-3">
       {staff.length === 0 ? (
         <p className="rounded-lg border border-dashed border-stone-300 p-3 text-sm text-stone-600">
-          No one can unlock this code yet. Add the people who reorder in the kitchen.
+          No one can unlock this code yet. Add the people who reorder for your team.
         </p>
       ) : (
-        <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200 px-3" aria-label="Kitchen staff">
+        <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200 px-3" aria-label="Staff">
           {staff.map((s) => (
             <Fragment key={s.id}>
               <StaffRow staff={s} horecaId={horecaId} onRemove={setRemoving} />

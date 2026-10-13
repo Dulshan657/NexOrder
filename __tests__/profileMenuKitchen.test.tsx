@@ -22,7 +22,7 @@ afterEach(cleanup)
 describe('ProfileMenu — kitchen session', () => {
   it('shows whose session this is and when it ends, as two separate lines', () => {
     render(<ProfileMenu currentUser={kitchen} kitchenSession={{ endsAt: new Date('2026-10-12T14:32:00') }} />)
-    const who = screen.getByText('Kitchen session · Sam Lee')
+    const who = screen.getByText('Staff session · Sam Lee')
     const ends = screen.getByText(/^Ends \d/)
     expect(who).not.toBe(ends)
     expect(who.parentElement).toBe(ends.parentElement)
@@ -30,14 +30,14 @@ describe('ProfileMenu — kitchen session', () => {
 
   it('never truncates either line -- the end time is the point of the second one', () => {
     render(<ProfileMenu currentUser={kitchen} kitchenSession={{ endsAt: new Date('2026-10-12T14:32:00') }} />)
-    for (const el of [screen.getByText('Kitchen session · Sam Lee'), screen.getByText(/^Ends \d/)]) {
+    for (const el of [screen.getByText('Staff session · Sam Lee'), screen.getByText(/^Ends \d/)]) {
       expect(el.className).not.toMatch(/truncate|overflow-hidden|whitespace-nowrap|text-ellipsis/)
     }
   })
 
   it('says whose session it is before the end time has loaded, with no half-written "Ends"', () => {
     render(<ProfileMenu currentUser={kitchen} kitchenSession={{ endsAt: null }} />)
-    expect(screen.getByText('Kitchen session · Sam Lee')).toBeTruthy()
+    expect(screen.getByText('Staff session · Sam Lee')).toBeTruthy()
     expect(screen.queryByText(/^Ends/)).toBeNull()
   })
 

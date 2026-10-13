@@ -150,7 +150,7 @@ function requirePepper(): string {
   const pepper = Deno.env.get('QR_PIN_PEPPER')
   if (!pepper) {
     console.error('[mutate-qr-access] QR_PIN_PEPPER is not set on this project')
-    throw new EdgeFunctionError('INTERNAL', 'Kitchen PINs are not configured on this project')
+    throw new EdgeFunctionError('INTERNAL', 'Staff PINs are not configured on this project')
   }
   return pepper
 }
@@ -273,7 +273,7 @@ async function assertRoomForStaff(service: SupabaseClient, horecaId: number): Pr
     .is('revoked_at', null)
   if (error) throw new EdgeFunctionError('INTERNAL', 'Could not check the staff list')
   if ((count ?? 0) >= QR_MAX_ACTIVE_STAFF) {
-    throw new EdgeFunctionError('CONFLICT', `This venue already has ${QR_MAX_ACTIVE_STAFF} kitchen staff`)
+    throw new EdgeFunctionError('CONFLICT', `This venue already has ${QR_MAX_ACTIVE_STAFF} staff`)
   }
 }
 
@@ -458,7 +458,7 @@ async function actCreateStaff(
   const authUserId = created?.user?.id
   if (createErr || !authUserId) {
     console.error('[mutate-qr-access] createUser failed:', createErr?.message)
-    throw new EdgeFunctionError('INTERNAL', 'Could not create the kitchen login')
+    throw new EdgeFunctionError('INTERNAL', 'Could not create the staff login')
   }
 
   // From here every failure removes the login again: a QR Staff user with no
@@ -695,7 +695,7 @@ async function actUnlockCode(
 async function actLockSelf(ctx: Ctx): Promise<Response> {
   const staff = ctx.auth.qrStaff
   if (ctx.auth.role !== 'QR Staff' || !staff) {
-    throw new EdgeFunctionError('FORBIDDEN', 'Only a kitchen login can lock itself')
+    throw new EdgeFunctionError('FORBIDDEN', 'Only a staff login can lock itself')
   }
 
   const { error } = await ctx.service
@@ -705,7 +705,7 @@ async function actLockSelf(ctx: Ctx): Promise<Response> {
     .eq('auth_user_id', ctx.auth.userId)
   if (error) {
     console.error('[mutate-qr-access] lock_self failed:', error.message)
-    throw new EdgeFunctionError('INTERNAL', 'Could not lock the kitchen session')
+    throw new EdgeFunctionError('INTERNAL', 'Could not lock the staff session')
   }
   const sessionsEnded = await endSessions(ctx.service, ctx.auth.userId)
 
@@ -746,8 +746,8 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError(
         'FORBIDDEN',
         auth.role === 'QR Staff'
-          ? 'A kitchen login cannot manage access'
-          : 'Only a kitchen login can lock itself',
+          ? 'A staff login cannot manage access'
+          : 'Only a staff login can lock itself',
       )
     }
 

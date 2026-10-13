@@ -132,7 +132,7 @@ registerChunkErrorReload();
 function QrEntryFallback() {
   return (
     <div className="min-h-[100dvh] flex items-center justify-center bg-stone-50">
-      <p role="status" className="text-sm text-stone-600">Opening your kitchen…</p>
+      <p role="status" className="text-sm text-stone-600">Opening your order screen…</p>
     </div>
   );
 }
@@ -206,7 +206,7 @@ function Root() {
   // AuthGate would put LoginPage in front of the PIN pad.
   if (QrEntryScreen && qrToken) {
     return (
-      <ErrorBoundary label="Kitchen QR">
+      <ErrorBoundary label="Staff QR">
         <Suspense fallback={<QrEntryFallback />}>
           <QrEntryScreen token={qrToken} onDone={() => setQrToken(null)} />
         </Suspense>

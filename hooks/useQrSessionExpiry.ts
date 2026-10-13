@@ -94,7 +94,7 @@ export function useQrSessionExpiry({ currentUser, currentUserUuid, addToast }: U
     const warn = () => {
       warnedFor.current = query.data
       const at = formatClockTime(new Date(endMs))
-      addToastRef.current(`Kitchen session ends at ${at}. You will need your PIN again.`, 'info')
+      addToastRef.current(`Staff session ends at ${at}. You will need your PIN again.`, 'info')
     }
 
     const endTimer = setTimeout(() => void handleQrSessionEnded(), Math.min(endMs - now, MAX_TIMER_MS))

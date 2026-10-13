@@ -138,7 +138,7 @@ async function handleUnlock(
   const pepper = Deno.env.get('QR_PIN_PEPPER')
   if (!pepper) {
     console.error('[qr-unlock] QR_PIN_PEPPER is not set on this project')
-    throw new EdgeFunctionError('INTERNAL', 'Kitchen access is not configured.')
+    throw new EdgeFunctionError('INTERNAL', 'Staff access is not configured.')
   }
 
   if (!/^[0-9]{4,6}$/.test(input.pin)) {

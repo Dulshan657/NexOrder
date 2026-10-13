@@ -134,7 +134,7 @@ const AccountsAgingTable = MODULE_INVOICING ? lazyWithRetry(() => import('./Acco
 // existing Suspense skeleton — the price of the whole Shop being absent, not
 // merely unreachable, on a tenant without `shop`.
 const ShopView = MODULE_SHOP ? lazyWithRetry(() => import('../views/ShopView')) : null;
-// Venue logins' landing screen, and the Customer's "Kitchen QR" sheet. Both are
+// Venue logins' landing screen ("Order home"), and the Customer's "Staff QR & PINs" sheet. Both are
 // Shop surfaces, so both are gated at the DECLARATION. The staff side's QR chunks
 // are declared inside HoReCaProfile and NotificationCenter, gated the same way.
 const KitchenHomeView = MODULE_SHOP ? lazyWithRetry(() => import('../views/KitchenHomeView')) : null;
@@ -177,7 +177,7 @@ import {
     FileText,
     FilePlus,
     LayoutGrid,
-    ChefHat,
+    Home,
     QrCode,
 } from 'lucide-react';
 import type { AppNotification } from '../types';
@@ -390,7 +390,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const { endsAt: kitchenEndsAt } = MODULE_SHOP
         ? useQrSessionExpiry({ currentUser, currentUserUuid, addToast })
         : NO_QR_SESSION;
-    // Customer's "Kitchen QR" sheet. Mounted on first open and then kept, so the
+    // Customer's "Staff QR & PINs" sheet. Mounted on first open and then kept, so the
     // sheet can animate out instead of vanishing.
     const [qrPanelMounted, setQrPanelMounted] = useState(false);
     const [qrPanelOpen, setQrPanelOpen] = useState(false);
@@ -760,7 +760,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
         stock: 'Stock',
         accounts: 'Accounts',
         scheduled_visits: 'Scheduled Visits',
-        kitchen: 'Kitchen',
+        kitchen: 'Order home',
     };
     const mobileTitle = (isAdminOrManager || isWarehouse)
         ? ADMIN_TAB_LABELS[adminView]
@@ -837,32 +837,6 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 </button>
                             )}
 
-                            {/* A venue login's landing screen, and (Customer only) the sheet that
-                                prints and manages the venue's kitchen QR and staff PINs. */}
-                            {MODULE_SHOP && isHoReCaUser && (
-                                <>
-                                    <button
-                                        onClick={() => { setView('kitchen'); setIsSidebarOpen(false); }}
-                                        aria-current={view === 'kitchen' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'kitchen' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
-                                    >
-                                        <ChefHat className="w-5 h-5 mr-3" /> Kitchen
-                                    </button>
-                                    {isCustomerLogin && currentUser.hoReCaId != null && (
-                                        <button
-                                            onClick={() => {
-                                                setQrPanelMounted(true);
-                                                setQrPanelOpen(true);
-                                                setIsSidebarOpen(false);
-                                            }}
-                                            className="flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press hover:bg-stone-100 hover:text-stone-900"
-                                        >
-                                            <QrCode className="w-5 h-5 mr-3" /> Kitchen QR
-                                        </button>
-                                    )}
-                                </>
-                            )}
-
                             {(MODULE_SHOP || MODULE_SALES_ORDERS || MODULE_INVOICING) && (
                                 <>
                                     <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Orders</p>
@@ -879,7 +853,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     </button>
                                     )}
                                     {/* The pantry list is a tab inside the Shop, so this is a
-                                        shortcut to it. Kitchen staff get it as a nav item
+                                        shortcut to it. QR Staff logins get it as a nav item
                                         because their phone has no tab bar to find it from;
                                         a Customer's nav is left as it was. */}
                                     {MODULE_SHOP && isQrStaff && (
@@ -949,6 +923,36 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     >
                                         <Package className="w-5 h-5 mr-3" /> Stock
                                     </button>
+                                </>
+                            )}
+
+                            {/* A venue login's landing screen, and (Customer only) the sheet that
+                                prints and manages the venue's staff-ordering QR and PINs. Last in
+                                this nav on purpose: it is the venue's own admin, not a daily
+                                destination, and the venue may be a hotel or motel as readily as a
+                                kitchen. The `'kitchen'` view key is an internal id and stays. */}
+                            {MODULE_SHOP && isHoReCaUser && (
+                                <>
+                                    <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Staff ordering</p>
+                                    <button
+                                        onClick={() => { setView('kitchen'); setIsSidebarOpen(false); }}
+                                        aria-current={view === 'kitchen' ? 'page' : undefined}
+                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'kitchen' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                    >
+                                        <Home className="w-5 h-5 mr-3" /> Order home
+                                    </button>
+                                    {isCustomerLogin && currentUser.hoReCaId != null && (
+                                        <button
+                                            onClick={() => {
+                                                setQrPanelMounted(true);
+                                                setQrPanelOpen(true);
+                                                setIsSidebarOpen(false);
+                                            }}
+                                            className="flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press hover:bg-stone-100 hover:text-stone-900"
+                                        >
+                                            <QrCode className="w-5 h-5 mr-3" /> Staff QR &amp; PINs
+                                        </button>
+                                    )}
                                 </>
                             )}
                         </>
@@ -1567,7 +1571,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     </ErrorBoundary>
                                 )}
                                 {MODULE_SHOP && view === 'kitchen' && isHoReCaUser && (
-                                    <ErrorBoundary label="Kitchen">
+                                    <ErrorBoundary label="Order home">
                                         <Suspense fallback={<LoadingSkeleton />}>
                                             <KitchenHomeView
                                                 currentUser={currentUser}
@@ -1800,9 +1804,9 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                 </ErrorBoundary>
             )}
 
-            {/* Kitchen QR & PINs (Customer login). Mounted on first open and kept. */}
+            {/* Staff QR & PINs (Customer login). Mounted on first open and kept. */}
             {MODULE_SHOP && isCustomerLogin && currentUser.hoReCaId != null && qrPanelMounted && (
-                <ErrorBoundary label="Kitchen QR">
+                <ErrorBoundary label="Staff QR">
                     <Suspense fallback={null}>
                         <QrAccessPanel
                             horecaId={currentUser.hoReCaId}

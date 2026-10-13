@@ -318,7 +318,7 @@ export function OrderProvider({
     const runSubmitForApproval = useCallback(
         (args: SubmitArgs, fromCart: boolean): Promise<SubmitResult> => {
             if (!submitQrMutation) {
-                const error = 'Ordering from the kitchen is not available.';
+                const error = 'Staff ordering is not available.';
                 setErrors({ api: error });
                 return Promise.resolve({ ok: false, error });
             }

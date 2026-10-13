@@ -89,7 +89,7 @@ describe('useQrSessionExpiry', () => {
 
     await advance(1) // T-10 minutes
     expect(addToast).toHaveBeenCalledTimes(1)
-    expect(addToast.mock.calls[0][0]).toMatch(/^Kitchen session ends at /)
+    expect(addToast.mock.calls[0][0]).toMatch(/^Staff session ends at /)
     expect(addToast.mock.calls[0][1]).toBe('info')
     expect(handleQrSessionEnded).not.toHaveBeenCalled()
 

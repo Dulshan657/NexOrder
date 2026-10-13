@@ -6,6 +6,18 @@ import OutstandingPayments from './OutstandingPayments';
 import { getHoReCaOutstanding } from '../services/accountingService';
 import { applyCartPromotions } from '../services/promotionService';
 import { totalLineVolume } from '../lib/uomVolume';
+import { MODULE_SHOP } from '../lib/modules';
+import { isQrStaffRole } from '../lib/venueUser';
+import { useShortStockGuard, type ShortStockGuard } from '../hooks/useShortStockGuard';
+
+// A build without the Shop has no kitchen to warn. `MODULE_SHOP` is a build
+// constant, so the ternary at the call site folds and the guard (with the server
+// arithmetic it imports) is not bundled -- the same shape AppShell uses for
+// `useQrSessionExpiry`.
+const NO_SHORT_STOCK_GUARD: ShortStockGuard = {
+  guard: (_items, proceed) => proceed(),
+  dialog: null,
+};
 
 interface OrderSummaryProps {
   items: OrderItem[];
@@ -63,6 +75,12 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
   hideHoReCaSelector = false,
 }) => {
   const apiError = errors.api;
+
+  // A kitchen (QR Staff) is told, by name, when its order may be short -- and can
+  // still send it. Every other role's Submit goes straight through.
+  const { guard: guardShortStock, dialog: shortStockDialog } = MODULE_SHOP
+    ? useShortStockGuard({ enabled: isQrStaffRole(userRole), products })
+    : NO_SHORT_STOCK_GUARD;
 
   const hoReCaOutstanding = useMemo(() => {
     const customer = hoReCas.find(c => c.id === selectedHoReCaId);
@@ -338,7 +356,7 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
         {apiError && <p className="text-red-500 text-sm mt-4 text-center">{apiError}</p>}
         {isOverLimit && <p className="text-red-500 text-sm mt-2 text-center font-medium">Order exceeds available credit limit.</p>}
         <button
-          onClick={onSubmitOrder}
+          onClick={() => guardShortStock(items, onSubmitOrder)}
           disabled={isLoading || items.length === 0 || isOverLimit || (hoReCaOutstanding?.isBlocked && !isAdminOrManager)}
           className="w-full mt-6 bg-nexgen-blue text-white font-medium py-3.5 rounded-lg hover:bg-nexgen-blue-dark disabled:bg-stone-300 disabled:text-stone-500 disabled:cursor-not-allowed flex items-center justify-center shadow-card btn-press cursor-pointer"
         >
@@ -350,6 +368,7 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
           ) : 'Submit Order'}
         </button>
       </div>
+      {shortStockDialog}
     </div>
   );
 };

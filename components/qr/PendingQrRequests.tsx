@@ -90,12 +90,12 @@ export default function PendingQrRequests({ horecaId, mode, compact = false }: P
     const when = formatWhen(r.createdAt)
     if (mode === 'requester') {
       const mine = myId !== null && r.requestedBy === myId
-      const who = mine ? '' : `${r.staffName || 'Kitchen'} · `
+      const who = mine ? '' : `${r.staffName || 'Staff'} · `
       // The banner's own heading already says "Waiting for approval"; repeating it
       // on a compact row only pushes the amount off the end of a 360px line.
       return { head: compact ? `${who}sent ${when}` : `Waiting for approval · ${who}sent ${when}`, summary: summary(r) }
     }
-    return { head: `${r.staffName || 'Kitchen staff'} · ${when}`, summary: summary(r) }
+    return { head: `${r.staffName || 'Staff'} · ${when}`, summary: summary(r) }
   }
 
   const rows = visible.map((r) => {

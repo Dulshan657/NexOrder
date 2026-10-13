@@ -240,7 +240,7 @@ describe('QrAccessPanel: kitchen staff', () => {
     await waitFor(() => expect(m.create).toHaveBeenCalledWith({ name: 'Joe', pin: '7391' }))
     await waitFor(() => expect(nameField().value).toBe(''))
     expect(pinField().value).toBe('')
-    expect(m.addToast).toHaveBeenCalledWith('Joe can now unlock the kitchen screen', 'success')
+    expect(m.addToast).toHaveBeenCalledWith('Joe can now order with the venue QR', 'success')
   })
 
   it('shows the server\'s refusal of a taken PIN under the PIN field', async () => {
