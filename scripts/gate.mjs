@@ -133,6 +133,9 @@ function runRow(cwd, logs, steps) {
   return { status: results.every((r) => r.ok) ? 'pass' : 'fail', steps: results }
 }
 
+const stripRoot = (text, root) =>
+  text.replaceAll(root.replaceAll('\\', '/'), '<root>').replaceAll(root, '<root>')
+
 // file -> full names of its failing tests, from a vitest JSON report.
 function failingTests(jsonPath, cwd) {
   if (!existsSync(jsonPath)) return null
@@ -140,7 +143,13 @@ function failingTests(jsonPath, cwd) {
   return new Map(
     report.testResults
       .filter((t) => t.status === 'failed')
-      .map((t) => [relative(cwd, t.name).replaceAll('\\', '/'), failedTestNames(t)]),
+      // A file-level message carries the absolute workdir (nexgate vs
+      // nexgate-base), so the same load failure on both sides would otherwise
+      // compare as different: strip it before naming.
+      .map((t) => [
+        relative(cwd, t.name).replaceAll('\\', '/'),
+        failedTestNames({ ...t, message: stripRoot(t.message ?? '', cwd) }),
+      ]),
   )
 }
 
