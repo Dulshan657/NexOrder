@@ -331,10 +331,15 @@ function unitRow(workdir, logs, meta) {
   const report = existsSync(keysPath) ? JSON.parse(readFileSync(keysPath, 'utf8')) : null
   const failing = row2.status === 'fail' ? failingModules(report) : new Map()
   console.log(failing?.size ? `gate: flake protocol on ${failing.size} file(s)` : 'gate: no failing test files')
-  // Known flakes come from the TIP's config/knownFlakes.json — the registry is
-  // part of the change under review, so adding an entry shows in the diff.
+  // Known flakes: an entry counts only if it is in config/knownFlakes.json on
+  // BOTH the tip and the base, so a change cannot list its own failure (it can
+  // add an entry, which takes effect for the NEXT change, after review).
   const knownPath = join(workdir, 'config', 'knownFlakes.json')
-  const known = existsSync(knownPath) ? JSON.parse(readFileSync(knownPath, 'utf8')) : []
+  const baseKnown = sh(['git', 'show', `${meta.base}:config/knownFlakes.json`], { cwd: REPO })
+  const known = {
+    tip: existsSync(knownPath) ? JSON.parse(readFileSync(knownPath, 'utf8')) : [],
+    base: baseKnown.ok ? JSON.parse(baseKnown.out) : [],
+  }
   const touched = git(['diff', '--name-only', `${meta.base}..${meta.sha}`]).split('\n').filter(Boolean)
   const flakes = applyKnownFlakes(flakeProtocol(failing ?? new Map(), workdir, `${workdir}-base`, meta.base), known, touched)
   // An unhandled error/rejection fails the run without belonging to any file.

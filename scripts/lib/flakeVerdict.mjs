@@ -38,24 +38,32 @@ export function gateVerdict({ anyFailed, partial, overridden }) {
 }
 
 /**
- * "Known failures named in advance" (config/knownFlakes.json). A `flake` in a
- * listed file stops blocking — but only a flake (a regression or anything else
- * is never excused by a listing), and only when the change under review does
- * not touch that file: a PR touching a known-flaky test owns it again.
- * @param {{file:string, verdict:string, blocking:boolean}[]} flakes
- * @param {{file:string, reason:string, since:string}[]} known
+ * "Known failures named in advance" (config/knownFlakes.json). A listing
+ * excuses exactly ONE shape: a `flake` whose tip PASSED EVERY RUN ALONE — it
+ * fails only inside the loaded full suite. Everything else still blocks:
+ * - any other verdict (a listing never excuses a regression);
+ * - a `flake` whose tip failed alone even once — `flake` also covers "fails
+ *   every time alone over an unsteady base", which is in effect a regression
+ *   (the gate's eighth review: a PR breaking the source under a listed test
+ *   would otherwise have been excused);
+ * - a file the change touches (a PR editing a known-flaky test owns it again);
+ * - an entry not ALREADY on the base — a PR cannot list its own failure.
+ * @param {{file:string, verdict:string, blocking:boolean, tip:boolean[]}[]} flakes
+ * @param {{ tip: object[], base: object[] }} known  the registry on each side
  * @param {string[]} touchedFiles  files changed between base and tip
  */
 export function applyKnownFlakes(flakes, known, touchedFiles) {
-  for (const k of known) {
-    if (!k.file || !k.reason?.trim() || !k.since) {
+  for (const k of [...known.tip, ...known.base]) {
+    if (!k?.file || !k.reason?.trim() || !k.since) {
       throw new Error(`knownFlakes: every entry needs file, reason and since — got ${JSON.stringify(k)}`)
     }
   }
+  const onBoth = (file) => known.tip.find((k) => k.file === file && known.base.some((b) => b.file === file))
   const touched = new Set(touchedFiles)
   return flakes.map((f) => {
-    const listing = known.find((k) => k.file === f.file)
-    if (f.verdict !== 'flake' || !listing || touched.has(f.file)) return f
+    const listing = onBoth(f.file)
+    const suiteOnly = f.tip.length > 0 && f.tip.every((passed) => passed)
+    if (f.verdict !== 'flake' || !suiteOnly || !listing || touched.has(f.file)) return f
     return { ...f, verdict: 'known-flake', blocking: false, knownReason: listing.reason }
   })
 }

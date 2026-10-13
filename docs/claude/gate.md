@@ -103,15 +103,23 @@ is mixed).
 
 A flake blocks. It is a ticket to write, not a pass — **until it is
 ticketed**: `config/knownFlakes.json` lists known failures named in advance
-(`file`, `reason`, `since`; a missing reason is refused). A listed file's
-`flake` verdict becomes `known-flake` and stops blocking — but **only a flake**
-(a regression is never excused by a listing) and **only when the change does not
-touch that file**: a PR that edits a known-flaky test owns it again. The
-registry is read from the TIP, so adding an entry shows in the diff the gate
-reviews. Delete the entry when the test is fixed. It exists because three jsdom
-tests time out under a loaded full suite on `main` today and pass alone, so
-without it the gate would block every PR on this machine for a reason no PR
-caused. And **"pre-existing" is
+(`file`, `reason`, `since`; a missing reason is refused). A listing excuses
+exactly one shape, turning `flake` into a non-blocking `known-flake`: the test
+**fails inside the loaded full suite and passes EVERY run alone on the tip.**
+Everything else still blocks:
+
+- any verdict other than `flake` — a listing never excuses a regression;
+- a tip that failed alone even once. The gate's eighth review found that
+  `flake` also covers "fails every time alone over an unsteady base", which is
+  in effect a regression: a PR breaking the source under a listed test (never
+  touching the test file) would have been excused;
+- a file the change touches — a PR editing a known-flaky test owns it again;
+- an entry not **already on the base** — a change can add an entry, but it only
+  takes effect for the next change, after review. A PR cannot list itself.
+
+Delete the entry when the test is fixed. It exists because three jsdom tests
+time out under a loaded full suite on `main` today and pass alone, and without
+it the gate would block every PR on this machine for a reason no PR caused. And **"pre-existing" is
 judged per TEST, never per file**: the gate's first review of itself found
 that a file already red on `main` — exactly `paymentStatusBadge` for two
 weeks — would have hidden any new failure added to it. An unhandled error in

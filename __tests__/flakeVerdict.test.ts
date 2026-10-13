@@ -143,10 +143,13 @@ describe('keysOnEveryRun', () => {
 // config/knownFlakes.json stops blocking — but ONLY a flake, and ONLY when this
 // change does not touch that file. A regression is never excused by a listing.
 describe('applyKnownFlakes', () => {
-  const known = [{ file: '__tests__/slow.test.tsx', reason: 'jsdom timeout under load', since: '2026-10-13' }];
-  const flake = { file: '__tests__/slow.test.tsx', verdict: 'flake', blocking: true };
+  const entry = { file: '__tests__/slow.test.tsx', reason: 'jsdom timeout under load', since: '2026-10-13' };
+  const known = { tip: [entry], base: [entry] };
+  // The only shape a listing may excuse: fails inside the loaded suite, passes
+  // EVERY time alone on the tip.
+  const flake = { file: '__tests__/slow.test.tsx', verdict: 'flake', blocking: true, tip: [true, true, true] };
 
-  it('a listed flake in an untouched file becomes known-flake, non-blocking', () => {
+  it('a listed suite-only flake in an untouched file becomes known-flake, non-blocking', () => {
     expect(applyKnownFlakes([flake], known, [])).toEqual([
       { ...flake, verdict: 'known-flake', blocking: false, knownReason: 'jsdom timeout under load' },
     ]);
@@ -157,17 +160,38 @@ describe('applyKnownFlakes', () => {
   });
 
   it('a regression is never excused by a listing', () => {
-    const regression = { file: '__tests__/slow.test.tsx', verdict: 'regression', blocking: true };
+    const regression = { ...flake, verdict: 'regression' };
     expect(applyKnownFlakes([regression], known, [])).toEqual([regression]);
   });
 
   it('an unlisted flake still blocks', () => {
-    const other = { file: '__tests__/other.test.ts', verdict: 'flake', blocking: true };
+    const other = { ...flake, file: '__tests__/other.test.ts' };
     expect(applyKnownFlakes([other], known, [])).toEqual([other]);
   });
 
   it('a listing without a reason is refused', () => {
-    expect(() => applyKnownFlakes([flake], [{ file: flake.file, reason: '', since: '2026-10-13' }], [])).toThrow(/reason/);
+    const bad = { tip: [{ ...entry, reason: '' }], base: [] };
+    expect(() => applyKnownFlakes([flake], bad, [])).toThrow(/reason/);
+  });
+
+  // The gate's eighth review: `flake` also covers "fails EVERY time alone on the
+  // tip over an unsteady base" — in effect a regression. A PR that broke the
+  // source under a listed test (never touching the test file) would have been
+  // excused. A listing excuses only a tip that passed every run alone.
+  it('a tip that fails alone (even once) is never excused by a listing', () => {
+    const steady = { ...flake, tip: [false, false, false, false, false] };
+    expect(applyKnownFlakes([steady], known, [])).toEqual([steady]);
+    const mixed = { ...flake, tip: [true, false, true, true, true] };
+    expect(applyKnownFlakes([mixed], known, [])).toEqual([mixed]);
+  });
+
+  // ...and a PR could add its own entry. Only listings already on the BASE count.
+  it('an entry the change itself adds (tip only) excuses nothing', () => {
+    expect(applyKnownFlakes([flake], { tip: [entry], base: [] }, [])).toEqual([flake]);
+  });
+
+  it('an entry the change removes (base only) excuses nothing', () => {
+    expect(applyKnownFlakes([flake], { tip: [], base: [entry] }, [])).toEqual([flake]);
   });
 });
 
