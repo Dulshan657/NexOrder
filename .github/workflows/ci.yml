@@ -132,3 +132,32 @@ jobs:
           name: a11y-report
           path: playwright-report/
           retention-days: 7
+
+  # The Edge Functions' own compiler. `supabase/functions` is excluded from the
+  # `tsc` step above and nothing on the frontend imports a function, so until
+  # this job the 83 entrypoints were type-checked by nothing at all. A separate
+  # job for the same reason as `a11y`: it downloads every remote import (esm.sh,
+  # jsr, npm:), and a flaky CDN should not sit in the path of a type error.
+  edge:
+    name: edge · deno check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # Pinned to DENO_VERSION in scripts/check-edge-types.mjs, which is what a
+      # developer gets through npx. Bump both together.
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.6
+
+      - name: deno check (every function)
+        run: node scripts/check-edge-types.mjs

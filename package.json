@@ -17,6 +17,7 @@
     "lint:prune": "eslint . --prune-suppressions",
     "check:claude-md": "node scripts/check-claude-md-size.mjs",
     "check:csp": "node scripts/check-csp.mjs",
+    "check:edge-types": "node scripts/check-edge-types.mjs",
     "check:demo": "node scripts/check-demo-surface.mjs",
     "check:overlays": "node scripts/check-overlays.mjs",
     "check:viewport": "node scripts/check-viewport-units.mjs",
