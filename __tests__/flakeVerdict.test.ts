@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  applyKnownFlakes,
   classifyFailure,
   failingTestsNotOnBase,
   gateVerdict,
@@ -135,6 +136,38 @@ describe('keysOnEveryRun', () => {
   it('an intermittent base failure no longer excuses a steady tip failure', () => {
     const base = keysOnEveryRun([['X'], [], ['X']]);
     expect(failingTestsNotOnBase(['X'], base)).toEqual(['X']);
+  });
+});
+
+// "Known failures named in advance": a flake already ticketed in
+// config/knownFlakes.json stops blocking — but ONLY a flake, and ONLY when this
+// change does not touch that file. A regression is never excused by a listing.
+describe('applyKnownFlakes', () => {
+  const known = [{ file: '__tests__/slow.test.tsx', reason: 'jsdom timeout under load', since: '2026-10-13' }];
+  const flake = { file: '__tests__/slow.test.tsx', verdict: 'flake', blocking: true };
+
+  it('a listed flake in an untouched file becomes known-flake, non-blocking', () => {
+    expect(applyKnownFlakes([flake], known, [])).toEqual([
+      { ...flake, verdict: 'known-flake', blocking: false, knownReason: 'jsdom timeout under load' },
+    ]);
+  });
+
+  it('a listed flake in a file this change TOUCHES still blocks', () => {
+    expect(applyKnownFlakes([flake], known, ['__tests__/slow.test.tsx'])).toEqual([flake]);
+  });
+
+  it('a regression is never excused by a listing', () => {
+    const regression = { file: '__tests__/slow.test.tsx', verdict: 'regression', blocking: true };
+    expect(applyKnownFlakes([regression], known, [])).toEqual([regression]);
+  });
+
+  it('an unlisted flake still blocks', () => {
+    const other = { file: '__tests__/other.test.ts', verdict: 'flake', blocking: true };
+    expect(applyKnownFlakes([other], known, [])).toEqual([other]);
+  });
+
+  it('a listing without a reason is refused', () => {
+    expect(() => applyKnownFlakes([flake], [{ file: flake.file, reason: '', since: '2026-10-13' }], [])).toThrow(/reason/);
   });
 });
 

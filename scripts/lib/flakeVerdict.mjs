@@ -38,6 +38,29 @@ export function gateVerdict({ anyFailed, partial, overridden }) {
 }
 
 /**
+ * "Known failures named in advance" (config/knownFlakes.json). A `flake` in a
+ * listed file stops blocking — but only a flake (a regression or anything else
+ * is never excused by a listing), and only when the change under review does
+ * not touch that file: a PR touching a known-flaky test owns it again.
+ * @param {{file:string, verdict:string, blocking:boolean}[]} flakes
+ * @param {{file:string, reason:string, since:string}[]} known
+ * @param {string[]} touchedFiles  files changed between base and tip
+ */
+export function applyKnownFlakes(flakes, known, touchedFiles) {
+  for (const k of known) {
+    if (!k.file || !k.reason?.trim() || !k.since) {
+      throw new Error(`knownFlakes: every entry needs file, reason and since — got ${JSON.stringify(k)}`)
+    }
+  }
+  const touched = new Set(touchedFiles)
+  return flakes.map((f) => {
+    const listing = known.find((k) => k.file === f.file)
+    if (f.verdict !== 'flake' || !listing || touched.has(f.file)) return f
+    return { ...f, verdict: 'known-flake', blocking: false, knownReason: listing.reason }
+  })
+}
+
+/**
  * Failure keys present on EVERY run — a multiset intersection (minimum count).
  * The base side is judged by this, not by one run: a test that only sometimes
  * fails on the base, caught failing once, would otherwise make a tip that

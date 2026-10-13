@@ -23,12 +23,12 @@
 // but it is NOT a merge verdict — only a full run can say GO).
 
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { classifyFailure, failingTestsNotOnBase, gateVerdict, INITIAL_RUNS, keysOnEveryRun } from './lib/flakeVerdict.mjs'
+import { applyKnownFlakes, classifyFailure, failingTestsNotOnBase, gateVerdict, INITIAL_RUNS, keysOnEveryRun } from './lib/flakeVerdict.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const GUARDS = ['lint', 'check:overlays', 'check:viewport', 'check:csp', 'check:claude-md', 'check:demo']
@@ -147,6 +147,9 @@ const REPORTER = join(REPO, 'scripts', 'gate-reporter.mjs')
 // vitest with the gate reporter; returns the run's ok plus what the reporter
 // recorded: { modules: { file: { state, keys } }, unhandled: string[] } or null.
 function vitestWithKeys(cwd, args, out) {
+  // Every base run reuses one path: delete it first, or a run that dies before
+  // the reporter writes would silently inherit the previous run's keys.
+  rmSync(out, { force: true })
   const r = sh(['npx', 'vitest', 'run', ...args, '--reporter=default', `--reporter=${REPORTER}`], {
     cwd,
     env: { GATE_REPORT_OUT: out },
@@ -234,7 +237,7 @@ function report(meta, rows, flakes) {
   if (flakes.length > 0) {
     lines.push('', '## Flake protocol', '', '| File | Tip (alone) | Base (alone) | Verdict |', '|---|---|---|---|')
     for (const f of flakes) {
-      lines.push(`| \`${f.file}\` | ${runsText(f.tip)} | ${f.newFile ? 'new file' : runsText(f.base)} | **${f.verdict}**${f.blocking ? ' (blocking)' : ''} |`)
+      lines.push(`| \`${f.file}\` | ${runsText(f.tip)} | ${f.newFile ? 'new file' : runsText(f.base)} | **${f.verdict}**${f.blocking ? ' (blocking)' : ''}${f.knownReason ? ` — listed in config/knownFlakes.json: ${f.knownReason}` : ''} |`)
     }
   }
   lines.push(
@@ -328,7 +331,12 @@ function unitRow(workdir, logs, meta) {
   const report = existsSync(keysPath) ? JSON.parse(readFileSync(keysPath, 'utf8')) : null
   const failing = row2.status === 'fail' ? failingModules(report) : new Map()
   console.log(failing?.size ? `gate: flake protocol on ${failing.size} file(s)` : 'gate: no failing test files')
-  const flakes = flakeProtocol(failing ?? new Map(), workdir, `${workdir}-base`, meta.base)
+  // Known flakes come from the TIP's config/knownFlakes.json — the registry is
+  // part of the change under review, so adding an entry shows in the diff.
+  const knownPath = join(workdir, 'config', 'knownFlakes.json')
+  const known = existsSync(knownPath) ? JSON.parse(readFileSync(knownPath, 'utf8')) : []
+  const touched = git(['diff', '--name-only', `${meta.base}..${meta.sha}`]).split('\n').filter(Boolean)
+  const flakes = applyKnownFlakes(flakeProtocol(failing ?? new Map(), workdir, `${workdir}-base`, meta.base), known, touched)
   // An unhandled error/rejection fails the run without belonging to any file.
   // The reporter records them; the log regex is a second witness in case the
   // reporter itself never ran. While one is present nothing may be excused.
@@ -340,7 +348,7 @@ function unitRow(workdir, logs, meta) {
   else if (row2.status === 'fail' && unhandled) row2.detail = 'unhandled error in the suite, not attributable to a file — see .gate-logs/unit.log'
   else if (row2.status === 'fail' && flakes.every((f) => !f.blocking)) {
     row2.status = 'pass'
-    row2.detail = `only pre-existing failures (also red on base): ${flakes.map((f) => f.file).join(', ')}`
+    row2.detail = `only excused failures — ${flakes.map((f) => `${f.file} (${f.verdict})`).join(', ')}`
   }
   return { row: row2, flakes }
 }

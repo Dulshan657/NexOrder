@@ -101,7 +101,17 @@ is mixed).
 | always passes | — | **flake** (fails only inside the suite) — blocking |
 | mixed after 5, or steady over a flaky base | | **flake** — blocking until ticketed |
 
-A flake blocks. It is a ticket to write, not a pass. And **"pre-existing" is
+A flake blocks. It is a ticket to write, not a pass — **until it is
+ticketed**: `config/knownFlakes.json` lists known failures named in advance
+(`file`, `reason`, `since`; a missing reason is refused). A listed file's
+`flake` verdict becomes `known-flake` and stops blocking — but **only a flake**
+(a regression is never excused by a listing) and **only when the change does not
+touch that file**: a PR that edits a known-flaky test owns it again. The
+registry is read from the TIP, so adding an entry shows in the diff the gate
+reviews. Delete the entry when the test is fixed. It exists because three jsdom
+tests time out under a loaded full suite on `main` today and pass alone, so
+without it the gate would block every PR on this machine for a reason no PR
+caused. And **"pre-existing" is
 judged per TEST, never per file**: the gate's first review of itself found
 that a file already red on `main` — exactly `paymentStatusBadge` for two
 weeks — would have hidden any new failure added to it. An unhandled error in
