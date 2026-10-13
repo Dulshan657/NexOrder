@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import {
   getPaymentDisplayState,
   getPaymentLabel,
@@ -18,6 +18,24 @@ const baseInvoice = (overrides: Partial<Invoice> = {}): Invoice => ({
 });
 
 describe('PaymentStatusBadge helpers', () => {
+  // CI runs under en-US and a developer box under en-AU, so a date formatted
+  // with the runtime's default locale passed here and failed on the runner
+  // (main was red from 2026-10-01). Force a foreign default so a regression to
+  // `toLocaleDateString(undefined, ...)` fails on every machine, not just CI.
+  const realToLocaleDateString = Date.prototype.toLocaleDateString;
+  beforeAll(() => {
+    vi.spyOn(Date.prototype, 'toLocaleDateString').mockImplementation(function (
+      this: Date,
+      locales?: string | string[],
+      options?: Intl.DateTimeFormatOptions,
+    ) {
+      return realToLocaleDateString.call(this, locales ?? 'en-US', options);
+    });
+  });
+  afterAll(() => {
+    vi.restoreAllMocks();
+  });
+
   describe('getPaymentDisplayState', () => {
     it("returns 'not_invoiced' when no invoice exists", () => {
       expect(getPaymentDisplayState(undefined)).toBe('not_invoiced');
