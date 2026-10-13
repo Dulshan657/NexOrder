@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   classifyFailure,
-  failedTestNames,
   failingTestsNotOnBase,
   gateVerdict,
   INITIAL_RUNS,
@@ -95,69 +94,6 @@ describe('failingTestsNotOnBase', () => {
     expect(failingTestsNotOnBase(['a > one'], ['a > one', 'a > three'])).toEqual([]);
   });
 });
-
-// Found by the gate's second review: a file that fails to LOAD (bad import,
-// failing afterAll) is status "failed" with no failed test under it, so the
-// per-test comparison saw nothing new and excused a broken import inside a
-// file main already had red. The file-level failure must count as a name.
-describe('failedTestNames', () => {
-  it('lists the failing tests of a file', () => {
-    expect(
-      failedTestNames({
-        status: 'failed',
-        message: '',
-        assertionResults: [
-          { fullName: 'badge > one', status: 'failed' },
-          { fullName: 'badge > two', status: 'passed' },
-        ],
-      }),
-    ).toEqual(['badge > one']);
-  });
-
-  it('names a file-level failure by its first message line when no test failed', () => {
-    expect(
-      failedTestNames({
-        status: 'failed',
-        message: 'Failed to load url ./missing\n    at stack',
-        assertionResults: [],
-      }),
-    ).toEqual(['[file failed] Failed to load url ./missing']);
-  });
-
-  // Found by the gate's third review: the file-level message was only used when
-  // NO test failed, so a throwing afterAll added to a file that already had a
-  // failing test was invisible. vitest's `message` is file.result.errors[0] —
-  // file-level only, never a per-test failure — so it always counts.
-  it('names a file-level failure ALONGSIDE failing tests, not only instead of them', () => {
-    expect(
-      failedTestNames({
-        status: 'failed',
-        message: 'afterAll threw: pool not closed',
-        assertionResults: [{ fullName: 'badge > one', status: 'failed' }],
-      }),
-    ).toEqual(['badge > one', '[file failed] afterAll threw: pool not closed']);
-  });
-
-  it('a throwing afterAll added to an already-red file is a new failure', () => {
-    const tip = failedTestNames({
-      status: 'failed',
-      message: 'afterAll threw: pool not closed',
-      assertionResults: [{ fullName: 'badge > one', status: 'failed' }],
-    });
-    const base = failedTestNames({
-      status: 'failed',
-      message: '',
-      assertionResults: [{ fullName: 'badge > one', status: 'failed' }],
-    });
-    expect(failingTestsNotOnBase(tip, base)).toEqual(['[file failed] afterAll threw: pool not closed']);
-  });
-
-  it('a new load failure on the tip is a new failure against a base red for another reason', () => {
-    const tip = failedTestNames({ status: 'failed', message: 'Failed to load url ./missing', assertionResults: [] });
-    expect(failingTestsNotOnBase(tip, ['badge > one'])).toEqual(['[file failed] Failed to load url ./missing']);
-  });
-});
-
 
 describe('stripRoot', () => {
   it('makes the same load failure in nexgate and nexgate-base compare equal', () => {

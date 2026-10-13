@@ -17,24 +17,6 @@ const allFail = (runs) => runs.every((passed) => !passed)
 const allPass = (runs) => runs.every((passed) => passed)
 
 /**
- * The failure "names" of one vitest JSON testResult. A file that fails to LOAD
- * (bad import, failing afterAll) is `failed` with no failed test under it, so
- * it is named by its file-level message instead — otherwise a new load failure
- * inside a file the base already had red would compare as "nothing new".
- * @param {{ status: string, message?: string, assertionResults: { fullName: string, status: string }[] }} result
- */
-export function failedTestNames(result) {
-  const names = result.assertionResults.filter((a) => a.status === 'failed').map((a) => a.fullName)
-  if (result.status !== 'failed') return names
-  // vitest's `message` is file.result.errors[0] — FILE-level only, never a
-  // per-test failure — so it always counts, alongside any failing tests: a
-  // throwing afterAll leaves every test result intact and lands only here.
-  const firstLine = (result.message ?? '').split('\n')[0].trim()
-  if (firstLine) return [...names, `[file failed] ${firstLine}`]
-  return names.length > 0 ? names : ['[file failed] no message']
-}
-
-/**
  * Remove a workdir from a message, in both slash forms. A file-level message
  * carries the absolute path (nexgate vs nexgate-base), so without this the same
  * failure on both sides compares as different.

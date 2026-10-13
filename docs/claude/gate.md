@@ -106,12 +106,21 @@ judged per TEST, never per file**: the gate's first review of itself found
 that a file already red on `main` — exactly `paymentStatusBadge` for two
 weeks — would have hidden any new failure added to it. An unhandled error in
 the suite (vitest's JSON has no field for it; the gate reads the log) is never
-excused at all. A FILE-level failure (bad import, throwing `afterAll`) is
-counted as its own failure, named by vitest's file-level `message` with the
-workdir stripped (`failedTestNames`, `stripRoot`) — **always**, including when
-tests in that file also fail. Two gate reviews found this the hard way: first a
-broken import in an already-red file compared as "nothing new", then a throwing
-`afterAll` added to a file that already had a failing test did too.
+excused at all.
+
+**The gate does not read vitest's JSON reporter — it is lossy.** It exposes
+failing tests and the first module-level error, and nothing a hook throws
+inside a `describe` (that lands on the suite's own result). Three gate reviews
+in a row each found a failure shape it dropped: a broken import in an
+already-red file, a throwing top-level `afterAll`, then a throwing `afterAll`
+inside a `describe` — each compared as "nothing new" and was excused. So row 2
+runs its own reporter, `scripts/gate-reporter.mjs`, which walks the whole task
+tree and records **every** failed module error, suite error and test as a key
+(`scripts/lib/failureKeys.mjs`, workdir stripped), plus the unhandled errors.
+It is loaded by absolute path from the gate's checkout, so it also works on a
+base commit that predates it. If you ever change how failures are compared,
+plant each of those three shapes in an already-red file and gate it with
+`--base` — that is how each hole was found.
 
 ### Verdicts and exit codes
 

@@ -28,14 +28,7 @@ import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  classifyFailure,
-  failedTestNames,
-  failingTestsNotOnBase,
-  gateVerdict,
-  INITIAL_RUNS,
-  stripRoot,
-} from './lib/flakeVerdict.mjs'
+import { classifyFailure, failingTestsNotOnBase, gateVerdict, INITIAL_RUNS } from './lib/flakeVerdict.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const GUARDS = ['lint', 'check:overlays', 'check:viewport', 'check:csp', 'check:claude-md', 'check:demo']
@@ -147,20 +140,28 @@ function runRow(cwd, logs, steps) {
 }
 
 
-// file -> full names of its failing tests, from a vitest JSON report.
-function failingTests(jsonPath, cwd) {
-  if (!existsSync(jsonPath)) return null
-  const report = JSON.parse(readFileSync(jsonPath, 'utf8'))
+// The gate's own reporter, by absolute path from THIS checkout, so it also
+// loads when gating an older commit that predates it.
+const REPORTER = join(REPO, 'scripts', 'gate-reporter.mjs')
+
+// vitest with the gate reporter; returns the run's ok plus what the reporter
+// recorded: { modules: { file: { state, keys } }, unhandled: string[] } or null.
+function vitestWithKeys(cwd, args, out) {
+  const r = sh(['npx', 'vitest', 'run', ...args, '--reporter=default', `--reporter=${REPORTER}`], {
+    cwd,
+    env: { GATE_REPORT_OUT: out },
+  })
+  const report = existsSync(out) ? JSON.parse(readFileSync(out, 'utf8')) : null
+  return { ...r, report }
+}
+
+// file -> its failure keys, for every module that failed in any way.
+function failingModules(report) {
+  if (!report) return null
   return new Map(
-    report.testResults
-      .filter((t) => t.status === 'failed')
-      // A file-level message carries the absolute workdir (nexgate vs
-      // nexgate-base), so the same load failure on both sides would otherwise
-      // compare as different: strip it before naming.
-      .map((t) => [
-        relative(cwd, t.name).replaceAll('\\', '/'),
-        failedTestNames({ ...t, message: stripRoot(t.message ?? '', cwd) }),
-      ]),
+    Object.entries(report.modules)
+      .filter(([, m]) => m.state === 'failed' || m.keys.length > 0)
+      .map(([file, m]) => [file, m.keys]),
   )
 }
 
@@ -168,12 +169,11 @@ function rerun(cwd, file, times) {
   return Array.from({ length: times }, () => sh(['npx', 'vitest', 'run', file], { cwd }).ok)
 }
 
-// One base run that also records WHICH tests failed, so a file red on both
-// sides is excused only when the tip adds no failing test of its own.
+// One base run that also records WHICH failures it has, so a file red on both
+// sides is excused only when the tip adds no failure of its own — at any level.
 function baseRunWithNames(cwd, file) {
-  const out = join(cwd, '.gate-base-run.json')
-  const ok = sh(['npx', 'vitest', 'run', file, '--reporter=json', `--outputFile.json=${out}`], { cwd }).ok
-  return { ok, failed: failingTests(out, cwd)?.get(file) ?? [] }
+  const { ok, report } = vitestWithKeys(cwd, [file], join(cwd, '.gate-base-run.json'))
+  return { ok, failed: report?.modules?.[file]?.keys ?? [] }
 }
 
 function flakeProtocol(failures, tipDir, baseDir, base) {
@@ -308,15 +308,20 @@ ${s.tail}
 
 function unitRow(workdir, logs, meta) {
   console.log('gate: row 2 — full unit suite')
-  const vitestJson = join(logs, 'vitest.json')
-  const row2 = runRow(workdir, logs, [['unit', ['npx', 'vitest', 'run', '--reporter=default', '--reporter=json', `--outputFile.json=${vitestJson}`]]])
-  const failing = row2.status === 'fail' ? failingTests(vitestJson, workdir) : new Map()
+  const keysPath = join(logs, 'failure-keys.json')
+  const row2 = runRow(workdir, logs, [
+    ['unit', ['npx', 'vitest', 'run', '--reporter=default', `--reporter=${REPORTER}`], { GATE_REPORT_OUT: keysPath }],
+  ])
+  const report = existsSync(keysPath) ? JSON.parse(readFileSync(keysPath, 'utf8')) : null
+  const failing = row2.status === 'fail' ? failingModules(report) : new Map()
   console.log(failing?.size ? `gate: flake protocol on ${failing.size} file(s)` : 'gate: no failing test files')
   const flakes = flakeProtocol(failing ?? new Map(), workdir, `${workdir}-base`, meta.base)
-  // An unhandled error/rejection fails the run without marking any file failed,
-  // and vitest's JSON has no field for it, so read the console log. While one is
-  // present nothing may be excused as pre-existing: it is unaccounted for.
-  const unhandled = /Unhandled (Error|Rejection)|Errors\s+\d+ errors?/.test(readFileSync(join(logs, 'unit.log'), 'utf8'))
+  // An unhandled error/rejection fails the run without belonging to any file.
+  // The reporter records them; the log regex is a second witness in case the
+  // reporter itself never ran. While one is present nothing may be excused.
+  const unhandled =
+    (report?.unhandled?.length ?? 0) > 0 ||
+    /Unhandled (Error|Rejection)|Errors\s+\d+ errors?/.test(readFileSync(join(logs, 'unit.log'), 'utf8'))
   // The suite failed without naming a file (crash, config error): block outright.
   if (row2.status === 'fail' && (failing === null || failing.size === 0)) row2.detail = 'suite failed without a per-file result — see .gate-logs/unit.log'
   else if (row2.status === 'fail' && unhandled) row2.detail = 'unhandled error in the suite, not attributable to a file — see .gate-logs/unit.log'
