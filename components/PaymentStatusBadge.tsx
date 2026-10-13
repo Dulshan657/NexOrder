@@ -39,7 +39,7 @@ const SHORT_DATE_FORMAT: Intl.DateTimeFormatOptions = { day: '2-digit', month: '
 function formatShortDate(iso: string): string {
   const d = new Date(iso + (iso.length === 10 ? 'T00:00:00' : ''));
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, SHORT_DATE_FORMAT);
+  return d.toLocaleDateString('en-AU', SHORT_DATE_FORMAT);
 }
 
 function daysBetween(fromIso: string, toIso: string): number {

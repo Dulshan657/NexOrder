@@ -1,0 +1,17 @@
+[
+  {
+    "file": "__tests__/receiveMixedPallet.test.tsx",
+    "reason": "jsdom render times out at 5s in the loaded full suite (file took ~17s); passes 3/3 alone on tip and base. Seen by the gate 2026-10-13. Fix the test's render cost, then delete this entry.",
+    "since": "2026-10-13"
+  },
+  {
+    "file": "__tests__/a11y/qrApproval.test.tsx",
+    "reason": "axe in jsdom times out at 5s in the loaded full suite, then the shared axe singleton cascades 'Axe is already running' into the next tests; passes 3/3 alone on tip and base. Seen by the gate 2026-10-13.",
+    "since": "2026-10-13"
+  },
+  {
+    "file": "__tests__/productImportCategories.test.tsx",
+    "reason": "jsdom timeout in the loaded full suite; passes 3/3 alone on tip and base. Seen by the gate 2026-10-13.",
+    "since": "2026-10-13"
+  }
+]
