@@ -81,10 +81,18 @@ work and `.env.*.local`. `npm ci` reruns only when `package-lock.json` changes.
 | Row | Runs |
 |---|---|
 | 1 | `tsc --noEmit` + `npm run build` |
-| 2 | full unit suite; each failing file → flake protocol |
+| 2 | full unit suite on **3 workers** (`--unit-workers`); each failing file → flake protocol |
 | 3 | `check:edge-types` |
 | 4 | `lint`, `check:overlays`, `check:viewport`, `check:csp`, `check:claude-md`, `check:demo` |
 | 5 | every touched `tests/**/*.spec.ts`, whole — only with `--e2e-base-url=http://localhost:…` |
+
+**Row 2 runs on 3 vitest workers, CI's count** (4 vCPU / 16 GB runner → cpus-1).
+vitest's own default here is cpus-1 = **11 workers on a 7.7 GB machine**, ~0.7 GB
+each; jsdom files then swap and hit the 5 s test timeout. That — not the tests —
+is what blocked four full gate runs of PR #16 with "flakes" that passed 3/3 alone
+on both sides every time. The gate judges the commit at CI's load; it is not a
+stress test of the developer's machine. Load-sensitivity is still real: the
+offending files are ticketed in `config/knownFlakes.json`.
 
 Row 5 refuses a non-localhost URL: `.env.dev.local` pins `E2E_BASE_URL` to the
 deployed demo, and a green run against that says nothing about the commit.

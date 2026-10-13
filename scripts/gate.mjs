@@ -19,8 +19,16 @@
 //                         [--rows=2,3]   run only these rows (diagnosis, or a box short on memory)
 //                         [--base=<ref>] compare against this instead of the merge-base with
 //                                        origin/main (a stacked branch; testing the gate itself)
-// Exit: 0 = GO, 1 = NO-GO, 2 = could not run, 3 = PARTIAL (--rows; nothing failed,
-// but it is NOT a merge verdict — only a full run can say GO).
+//                         [--unit-workers=N] vitest workers for the full suite (default 3)
+// Exit: 0 = GO, 1 = NO-GO, 2 = could not run, 3 = PARTIAL (--rows/--base; nothing
+// failed, but it is NOT a merge verdict — only a full run can say GO).
+//
+// Why the unit suite runs on 3 workers: that is what CI's runner gives it (4 vCPU,
+// 16 GB → vitest's cpus-1). vitest's default here is cpus-1 = 11 workers on a 7.7 GB
+// box, ~0.7 GB each, and the jsdom files then time out at 5 s from swapping — the
+// "flakes" that blocked four gate runs of PR #16 passed 3/3 alone every time. The
+// gate judges the commit at CI's load; it is not a stress test of this machine.
+const DEFAULT_UNIT_WORKERS = 3
 
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -322,11 +330,21 @@ ${s.tail}
   process.exit(meta.exitCode)
 }
 
+function unitWorkers() {
+  const n = Number(arg('unit-workers') ?? DEFAULT_UNIT_WORKERS)
+  if (!Number.isInteger(n) || n < 1) die('--unit-workers takes a positive integer')
+  return n
+}
+
 function unitRow(workdir, logs, meta) {
   console.log('gate: row 2 — full unit suite')
   const keysPath = join(logs, 'failure-keys.json')
   const row2 = runRow(workdir, logs, [
-    ['unit', ['npx', 'vitest', 'run', '--reporter=default', `--reporter=${REPORTER}`], { GATE_REPORT_OUT: keysPath }],
+    [
+      'unit',
+      ['npx', 'vitest', 'run', `--maxWorkers=${unitWorkers()}`, '--reporter=default', `--reporter=${REPORTER}`],
+      { GATE_REPORT_OUT: keysPath },
+    ],
   ])
   const report = existsSync(keysPath) ? JSON.parse(readFileSync(keysPath, 'utf8')) : null
   const failing = row2.status === 'fail' ? failingModules(report) : new Map()
