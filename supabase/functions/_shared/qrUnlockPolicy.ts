@@ -182,12 +182,12 @@ export function interpretVerifyResult(raw: unknown): UnlockOutcome {
 export function failureAlertMessage(alert: FailureAlert, venueName: string): string {
   if (alert.permanent) {
     return (
-      `The kitchen QR code for ${venueName} has been locked after too many incorrect PINs. ` +
+      `The staff QR code for ${venueName} has been locked after too many incorrect PINs. ` +
       `Check nobody is guessing, then unlock it from QR & PINs.`
     )
   }
   return (
-    `${alert.failedAttempts} incorrect PINs have been entered on the kitchen QR code for ${venueName} ` +
+    `${alert.failedAttempts} incorrect PINs have been entered on the staff QR code for ${venueName} ` +
     `in the last 24 hours and it is locked for a short while. If that was not your staff, ` +
     `regenerate the code from QR & PINs.`
   )

@@ -234,10 +234,18 @@ describe('KitchenHomeView — Order same again', () => {
     expect((props.onOrderNow.mock.calls[0][0] as OrderItem[]).map((i) => i.id)).toEqual([1])
   })
 
-  it('warns, but still sends, a line asking for more than is in stock', () => {
-    render(<KitchenHomeView {...baseProps()} products={[{ ...tomato, available: 2 }, chilli]} />)
+  it('flags a line asking for more than is in stock, to a Customer, with the count', () => {
+    render(<KitchenHomeView {...baseProps()} currentUser={customer} products={[{ ...tomato, available: 2 }, chilli]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Order same again' }))
     expect(within(screen.getByRole('dialog')).getByText('Only 2 in stock')).toBeTruthy()
+  })
+
+  it('flags the same line to kitchen staff WITHOUT saying how many are in stock', () => {
+    render(<KitchenHomeView {...baseProps()} products={[{ ...tomato, available: 2 }, chilli]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Order same again' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('May be short — your manager will adjust it')).toBeTruthy()
+    expect(within(dialog).queryByText(/in stock/i)).toBeNull()
   })
 
   it('passes the optional note and closes on success', async () => {
@@ -280,6 +288,107 @@ describe('KitchenHomeView — Order same again', () => {
   })
 })
 
+// A kitchen that is about to send an order that may be short is told so first --
+// by NAME, never by how many are in stock -- and can still send it anyway.
+describe('KitchenHomeView — Order same again, an order that may be short', () => {
+  // Last order is 3 Tomato Paste + 1 Chilli Oil: with 2 Tomato Paste available it is short.
+  const shortProducts = [{ ...tomato, available: 2 }, chilli]
+
+  const openAndSend = (label: string) => {
+    fireEvent.click(screen.getByRole('button', { name: 'Order same again' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: label }))
+  }
+
+  it('asks first, naming the item and holding the submit', () => {
+    const props = baseProps()
+    render(<KitchenHomeView {...props} products={shortProducts} />)
+    openAndSend('Send for approval')
+
+    const warning = screen.getByRole('alertdialog', { name: 'Some items may be short' })
+    expect(within(warning).getByText(/Tomato Paste may be short/)).toBeTruthy()
+    expect(within(warning).queryByText(/Chilli Oil/)).toBeNull()
+    expect(props.onOrderNow).not.toHaveBeenCalled()
+  })
+
+  it('shows no stock figure in the warning', () => {
+    render(<KitchenHomeView {...baseProps()} products={shortProducts} />)
+    openAndSend('Send for approval')
+    const text = screen.getByRole('alertdialog').textContent ?? ''
+    expect(text.split('Tomato Paste').join('')).not.toMatch(/\d/)
+  })
+
+  it('"Send anyway" files the request once, with the note, and closes everything', async () => {
+    const props = baseProps()
+    render(<KitchenHomeView {...props} products={shortProducts} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Order same again' }))
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(/note for your supplier/i), {
+      target: { value: 'back door' },
+    })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send for approval' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Send anyway' }))
+
+    await waitFor(() => expect(props.onOrderNow).toHaveBeenCalledTimes(1))
+    expect((props.onOrderNow.mock.calls[0][0] as OrderItem[]).map((i) => [i.id, i.quantity])).toEqual([
+      [1, 3],
+      [2, 1],
+    ])
+    expect(props.onOrderNow.mock.calls[0][1]).toEqual({ notes: 'back door' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('"Change order" sends nothing and leaves the order open to change', () => {
+    const props = baseProps()
+    render(<KitchenHomeView {...props} products={shortProducts} />)
+    openAndSend('Send for approval')
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Change order' }))
+
+    expect(props.onOrderNow).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    // Still on the same-again step, where "Edit before ordering" is one tap away.
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send for approval' })).toBeTruthy()
+  })
+
+  it('does not ask when everything asked for is in stock', async () => {
+    const props = baseProps()
+    render(<KitchenHomeView {...props} />)
+    openAndSend('Send for approval')
+    await waitFor(() => expect(props.onOrderNow).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('does not ask about a line it is leaving out (nothing is sent for it)', async () => {
+    const props = baseProps()
+    // Chilli Oil has none: it is left out, and Tomato Paste is in stock.
+    render(<KitchenHomeView {...props} products={[tomato, { ...chilli, available: 0 }]} />)
+    openAndSend('Send for approval')
+    await waitFor(() => expect(props.onOrderNow).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('never asks a Customer: their order is real and the server is the check', async () => {
+    const props = baseProps()
+    render(<KitchenHomeView {...props} currentUser={customer} products={shortProducts} />)
+    openAndSend('Place order')
+    await waitFor(() => expect(props.onOrderNow).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('does not ask when the person chooses to edit instead', () => {
+    const props = baseProps()
+    render(<KitchenHomeView {...props} products={shortProducts} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit before ordering' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(props.onEditItems).toHaveBeenCalledTimes(1)
+  })
+
+  it('has no WCAG 2.2 AA violations in the warning', async () => {
+    render(<KitchenHomeView {...baseProps()} products={shortProducts} />)
+    openAndSend('Send for approval')
+    await expectNoA11yViolations(screen.getByRole('alertdialog'))
+  })
+})
+
 // The real thing end to end: the view wired to the real OrderProvider, so what
 // "Order same again" does is decided by the login's role and nothing else.
 describe('KitchenHomeView + OrderProvider — who orders how', () => {
@@ -290,16 +399,16 @@ describe('KitchenHomeView + OrderProvider — who orders how', () => {
     return <KitchenHomeView {...props} onOrderNow={orderItemsNow} />
   }
 
-  function mount(currentUser: typeof kitchen, placeMutate = vi.fn()) {
+  function mount(currentUser: typeof kitchen, placeMutate = vi.fn(), catalogue: Product[] = products) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const onQrSubmitted = vi.fn()
-    const props = { ...baseProps(), currentUser }
+    const props = { ...baseProps(), currentUser, products: catalogue }
     render(
       <QueryClientProvider client={qc}>
         <OrderProvider
           {...({
             currentUser,
-            products,
+            products: catalogue,
             hoReCas: [venue],
             promotions: [],
             invoices: [],
@@ -351,6 +460,44 @@ describe('KitchenHomeView + OrderProvider — who orders how', () => {
       ],
     })
     expect(submitQrRequest).not.toHaveBeenCalled()
+  })
+
+  const shortCatalogue = [{ ...tomato, available: 2 }, chilli]
+
+  it('QR Staff, order may be short: nothing is filed until "Send anyway", then exactly one request', async () => {
+    const { onQrSubmitted, placeMutate } = mount(kitchen, vi.fn(), shortCatalogue)
+    confirm('Send for approval')
+
+    expect(screen.getByRole('alertdialog', { name: 'Some items may be short' })).toBeTruthy()
+    expect(submitQrRequest).not.toHaveBeenCalled()
+
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Send anyway' }))
+    await waitFor(() => expect(submitQrRequest).toHaveBeenCalledTimes(1))
+    expect(submitQrRequest.mock.calls[0][0].items).toEqual([
+      { productId: 1, quantity: 3, packSize: null, uomId: null },
+      { productId: 2, quantity: 1, packSize: null, uomId: null },
+    ])
+    expect(placeMutate).not.toHaveBeenCalled()
+    await waitFor(() => expect(onQrSubmitted).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('QR Staff, order may be short: "Change order" files nothing', () => {
+    mount(kitchen, vi.fn(), shortCatalogue)
+    confirm('Send for approval')
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Change order' }))
+    expect(submitQrRequest).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('Customer, order may be short: places it with no warning (their path is unchanged)', async () => {
+    const placeMutate = vi.fn((_v: unknown, opts: { onSuccess: (r: { orderId: string; total: number }) => void }) =>
+      opts.onSuccess({ orderId: 'ORD-9', total: 22 }),
+    )
+    mount(customer, placeMutate, shortCatalogue)
+    confirm('Place order')
+    await waitFor(() => expect(placeMutate).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 
   it('QR Staff: shows the reason and keeps the dialog when the server refuses', async () => {

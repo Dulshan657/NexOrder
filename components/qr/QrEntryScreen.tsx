@@ -285,7 +285,7 @@ const QrEntryScreen: React.FC<QrEntryScreenProps> = ({ token, onDone }) => {
       </Card>
     )
   } else if (!venue) {
-    body = <Spinner label="Opening your kitchen…" />
+    body = <Spinner label="Opening your order screen…" />
   } else if (profileFailed && phase.kind === 'loading') {
     body = (
       <Card>
@@ -301,7 +301,7 @@ const QrEntryScreen: React.FC<QrEntryScreenProps> = ({ token, onDone }) => {
       </Card>
     )
   } else if (phase.kind === 'loading') {
-    body = <Spinner label="Opening your kitchen…" />
+    body = <Spinner label="Opening your order screen…" />
   } else if (phase.kind === 'entering') {
     body = auth.profileError ? (
       <Card>
@@ -331,7 +331,7 @@ const QrEntryScreen: React.FC<QrEntryScreenProps> = ({ token, onDone }) => {
             {`Continue as ${name}`}
           </button>
           <button type="button" onClick={() => void switchToPin()} className={SECONDARY_BUTTON}>
-            Use kitchen PIN instead
+            Use staff PIN instead
           </button>
         </div>
       </Card>
@@ -363,7 +363,7 @@ const QrEntryScreen: React.FC<QrEntryScreenProps> = ({ token, onDone }) => {
       </main>
       {phase.kind !== 'other_user' && !resolveError?.unknown && (
         <footer className="mt-8 text-center text-sm text-stone-600">
-          Not kitchen staff?{' '}
+          Not venue staff?{' '}
           <a href="/" className={LINK_CLASS}>
             Sign in
           </a>

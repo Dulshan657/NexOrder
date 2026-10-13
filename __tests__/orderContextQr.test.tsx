@@ -140,6 +140,21 @@ describe('OrderContext — QR Staff checkout', () => {
     expect(api().errors.api).toBeUndefined()
   })
 
+  // The soft "may be short" warning is the Submit button's (OrderSummary) and the
+  // Kitchen screen's, not the context's: by the time the context is asked, the
+  // person has already chosen to send. It must file what it is handed and never
+  // quietly trim, hold back or refuse on stock -- that is the approver's call.
+  it('files a short cart as it is: stock is for the approver to judge, not this layer', async () => {
+    const scarce = mkProduct({ id: 1, price: 4, available: 1 })
+    const { api, placeMutate } = mount({ products: [scarce] })
+    act(() => api().handleAddItem(scarce, { price: 4, unit: 'jar' }, 5))
+    act(() => api().handleSubmitOrder())
+
+    await waitFor(() => expect(submitQrRequest).toHaveBeenCalledTimes(1))
+    expect(submitQrRequest.mock.calls[0][0].items).toEqual([{ productId: 1, quantity: 5, packSize: null, uomId: null }])
+    expect(placeMutate).not.toHaveBeenCalled()
+  })
+
   it('refuses an empty cart', () => {
     const { api } = mount()
     act(() => api().handleSubmitOrder())
@@ -221,6 +236,17 @@ describe('OrderContext — orderItemsNow (Order same again)', () => {
     expect(api().orderItems).toHaveLength(1)
     expect(api().orderItems[0].quantity).toBe(5)
     expect(props.onQrSubmitted).toHaveBeenCalledTimes(1)
+  })
+
+  it('files short lines as they are handed in: the Kitchen screen asks before it calls this', async () => {
+    const scarce = mkProduct({ id: 1, price: 4, available: 1 })
+    const { api } = mount({ products: [scarce] })
+    let result: Awaited<ReturnType<Api['orderItemsNow']>> | undefined
+    await act(async () => {
+      result = await api().orderItemsNow([mkCartItem(scarce, 5)])
+    })
+    expect(result).toEqual({ ok: true })
+    expect(submitQrRequest.mock.calls[0][0].items).toEqual([{ productId: 1, quantity: 5, packSize: null, uomId: null }])
   })
 
   it('reports the failure to the caller, who shows it', async () => {

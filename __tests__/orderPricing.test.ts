@@ -430,30 +430,33 @@ describe('collecting every problem at once', () => {
 
 // ── purity ──────────────────────────────────────────────────────────────────
 
-describe('orderPricing.ts stays pure', () => {
-  // It is imported by vitest directly and is meant to be shared by every caller
-  // of the placement core; the reads and writes belong in placeOrderCore.ts.
-  const src = readFileSync(join(__dirname, '..', 'supabase', 'functions', '_shared', 'orderPricing.ts'), 'utf8')
+// orderPricing.ts and the pricing.ts it imports are also bundled into the
+// frontend (lib/qr/mayBeShort.ts, lib/kitchen/reorderPlan.ts), so both must stay
+// free of Deno, URL imports and I/O.
+for (const file of ['orderPricing.ts', 'pricing.ts']) {
+  describe(`${file} stays pure`, () => {
+    const src = readFileSync(join(__dirname, '..', 'supabase', 'functions', '_shared', file), 'utf8')
 
-  it('uses no Deno globals', () => {
-    expect(src).not.toMatch(/\bDeno\./)
-  })
+    it('uses no Deno globals', () => {
+      expect(src).not.toMatch(/\bDeno\./)
+    })
 
-  it('uses no URL or npm imports', () => {
-    expect(src).not.toMatch(/from\s+['"]https?:\/\//)
-    expect(src).not.toMatch(/from\s+['"]npm:/)
-    expect(src).not.toMatch(/from\s+['"]esm\.sh/)
-  })
+    it('uses no URL or npm imports', () => {
+      expect(src).not.toMatch(/from\s+['"]https?:\/\//)
+      expect(src).not.toMatch(/from\s+['"]npm:/)
+      expect(src).not.toMatch(/from\s+['"]esm\.sh/)
+    })
 
-  it('gives every relative import a .ts extension', () => {
-    for (const match of src.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) {
-      expect(match[1]).toMatch(/\.ts$/)
-    }
-  })
+    it('gives every relative import a .ts extension', () => {
+      for (const match of src.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) {
+        expect(match[1]).toMatch(/\.ts$/)
+      }
+    })
 
-  it('does no I/O', () => {
-    expect(src).not.toMatch(/\bfetch\(/)
-    expect(src).not.toMatch(/\.from\(['"]/)
-    expect(src).not.toMatch(/\.rpc\(/)
+    it('does no I/O', () => {
+      expect(src).not.toMatch(/\bfetch\(/)
+      expect(src).not.toMatch(/\.from\(['"]/)
+      expect(src).not.toMatch(/\.rpc\(/)
+    })
   })
-})
+}

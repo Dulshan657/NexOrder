@@ -41,6 +41,8 @@ vi.mock('@/hooks/queries/useQrAccess', () => ({
 vi.mock('@/hooks/queries/useHoReCas', () => ({
   useHoReCas: () => ({ data: [{ id: 7, name: 'Cafe Roma' }] }),
 }))
+// The review modal reads the catalogue only for a unit-of-measure name; none needed here.
+vi.mock('@/hooks/queries/useProducts', () => ({ useProducts: () => ({ data: [] }) }))
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }))
 vi.mock('@/hooks/useToasts', () => ({
   useToasts: () => ({ addToast: vi.fn() }),

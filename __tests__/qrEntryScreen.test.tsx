@@ -106,7 +106,7 @@ describe('QrEntryScreen — the sticker', () => {
     expect(resolveQr).toHaveBeenCalledTimes(2)
   })
 
-  it('always offers the way out for someone who is not kitchen staff', async () => {
+  it('always offers the way out for someone who is not venue staff', async () => {
     mount()
     await screen.findByRole('heading', { name: 'Harbour Bistro' })
     expect((screen.getByRole('link', { name: 'Sign in' }) as HTMLAnchorElement).getAttribute('href')).toBe('/')
@@ -254,7 +254,7 @@ describe('QrEntryScreen — somebody is already signed in', () => {
   it('signs out locally ONLY when they choose the kitchen PIN, then shows the pad', async () => {
     signedInAs('Admin', null, 'Ada')
     mount()
-    fireEvent.click(await screen.findByRole('button', { name: /use kitchen pin instead/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /use staff pin instead/i }))
     expect(await screen.findByRole('group', { name: /keypad/i })).toBeTruthy()
     expect(signOutQrLocally).toHaveBeenCalledTimes(1)
   })
@@ -263,7 +263,7 @@ describe('QrEntryScreen — somebody is already signed in', () => {
     signedInAs('Restaurant/Hotel Customer', 7)
     auth.isLoading = true
     const { onDone, rerender } = mount()
-    await screen.findByText('Opening your kitchen…')
+    await screen.findByText('Opening your order screen…')
     expect(onDone).not.toHaveBeenCalled()
 
     auth.isLoading = false

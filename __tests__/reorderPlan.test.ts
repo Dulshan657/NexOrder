@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReorderPlan, pickKitchenOrders } from '@/lib/kitchen/reorderPlan'
+import { buildReorderPlan, MAY_BE_SHORT_REASON, pickKitchenOrders } from '@/lib/kitchen/reorderPlan'
 import { mkBogoPromo, mkCartItem, mkHoReCa, mkPercentPromo, mkProduct, mkUser } from './fixtures'
 import { UserRole } from '@/types'
 import type { Order, ProductUom } from '@/types'
@@ -103,6 +103,32 @@ describe('buildReorderPlan — what can be ordered today', () => {
     expect(p.included).toHaveLength(1)
     expect(p.included[0].status).toBe('low')
     expect(p.included[0].reason).toBe('Only 3 in stock')
+  })
+
+  it('words the shortage without a number when the reader must not see stock', () => {
+    // A kitchen (QR Staff) has no Stock tab; "Only 3 in stock" would hand them one.
+    const p = plan([mkCartItem(mkProduct({ id: 1 }), 5)], {
+      products: [mkProduct({ id: 1, available: 3 })],
+      hideStockCounts: true,
+    })
+    expect(p.included[0].status).toBe('low')
+    expect(p.included[0].reason).toBe(MAY_BE_SHORT_REASON)
+    expect(p.included[0].reason).not.toMatch(/\d/)
+  })
+
+  it('judges stock the same way whether or not the counts are hidden', () => {
+    const items = [mkCartItem(mkProduct({ id: 1 }), 2, 6)]
+    const products = [mkProduct({ id: 1, available: 10 })]
+    const shown = plan(items, { products })
+    const hidden = plan(items, { products, hideStockCounts: true })
+    expect(hidden.included.map((l) => l.status)).toEqual(shown.included.map((l) => l.status))
+    expect(hidden.included[0].status).toBe('low')
+  })
+
+  it('has no shortage wording for a line that is in stock, hidden or not', () => {
+    const p = plan([mkCartItem(mkProduct({ id: 1 }), 1)], { hideStockCounts: true })
+    expect(p.included[0].status).toBe('ok')
+    expect(p.included[0].reason).toBeUndefined()
   })
 
   it('counts a carton in base units when judging stock', () => {

@@ -65,7 +65,7 @@ export default function AssignedRepsPicker({ horecaId, onPendingSave, disabled =
     <fieldset className="mt-8 border-t border-stone-100 pt-6" disabled={disabled}>
       <legend className="text-lg font-semibold text-stone-800">Assigned reps</legend>
       <p className="mt-1 mb-3 text-sm text-stone-600">
-        Assigned reps can approve this venue&rsquo;s kitchen QR orders and manage its staff PINs. Admins and
+        Assigned reps can approve this venue&rsquo;s staff QR orders and manage its staff PINs. Admins and
         managers always can.
       </p>
 

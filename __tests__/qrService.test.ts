@@ -308,7 +308,7 @@ describe('qr-order-request', () => {
   })
 
   it('an expired unlock is sessionEnded', async () => {
-    fail(401, 'QR_SESSION_EXPIRED', 'Your kitchen session has ended')
+    fail(401, 'QR_SESSION_EXPIRED', 'Your session has ended')
     const err = await submitQrRequest({ items: [{ productId: 3, quantity: 1 }] }).catch((e) => e)
     expect(err.sessionEnded).toBe(true)
   })

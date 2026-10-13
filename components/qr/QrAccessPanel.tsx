@@ -122,7 +122,7 @@ export default function QrAccessPanel({ horecaId, open, onClose }: QrAccessPanel
       >
         <div className="space-y-6">
           <Callout tone="info" title="How it works">
-            Stick the poster up in the kitchen. Staff scan it with their phone, enter their own PIN, and can
+            Stick the poster up where your team orders from. Staff scan it with their phone, enter their own PIN, and can
             reorder for the next 2 hours. Every order they send waits for approval before it is placed.
           </Callout>
 
@@ -210,7 +210,7 @@ export default function QrAccessPanel({ horecaId, open, onClose }: QrAccessPanel
 
               <section aria-labelledby="qr-staff-heading" className="space-y-3">
                 <h3 id="qr-staff-heading" tabIndex={-1} className="text-sm font-semibold text-stone-900 focus:outline-none">
-                  Kitchen staff
+                  Staff
                 </h3>
                 <QrStaffList horecaId={horecaId} staff={state.staff} />
               </section>
