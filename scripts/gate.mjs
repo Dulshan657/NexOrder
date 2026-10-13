@@ -28,7 +28,7 @@ import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { classifyFailure, failingTestsNotOnBase, gateVerdict, INITIAL_RUNS } from './lib/flakeVerdict.mjs'
+import { classifyFailure, failingTestsNotOnBase, gateVerdict, INITIAL_RUNS, keysOnEveryRun } from './lib/flakeVerdict.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const GUARDS = ['lint', 'check:overlays', 'check:viewport', 'check:csp', 'check:claude-md', 'check:demo']
@@ -169,11 +169,17 @@ function rerun(cwd, file, times) {
   return Array.from({ length: times }, () => sh(['npx', 'vitest', 'run', file], { cwd }).ok)
 }
 
-// One base run that also records WHICH failures it has, so a file red on both
-// sides is excused only when the tip adds no failure of its own — at any level.
-function baseRunWithNames(cwd, file) {
-  const { ok, report } = vitestWithKeys(cwd, [file], join(cwd, '.gate-base-run.json'))
-  return { ok, failed: report?.modules?.[file]?.keys ?? [] }
+// Base runs record WHICH failures they have, so a file red on both sides is
+// excused only when the tip adds no failure of its own — at any level. Every
+// base run records keys, and only failures on ALL of them count as "already on
+// the base" (keysOnEveryRun): one lucky failing run of a flaky base test must
+// not excuse a tip that fails it every time. A run whose report is missing
+// contributes no keys, which shrinks the intersection — it fails closed.
+function baseRunsWithKeys(cwd, file, times) {
+  return Array.from({ length: times }, () => {
+    const { ok, report } = vitestWithKeys(cwd, [file], join(cwd, '.gate-base-run.json'))
+    return { ok, keys: report?.modules?.[file]?.keys ?? [] }
+  })
 }
 
 function flakeProtocol(failures, tipDir, baseDir, base) {
@@ -181,16 +187,23 @@ function flakeProtocol(failures, tipDir, baseDir, base) {
   prepareWorktree(baseDir, base)
   return [...failures].map(([file, tipFailed]) => {
     const onBase = existsSync(join(baseDir, file))
-    const first = onBase ? baseRunWithNames(baseDir, file) : { ok: true, failed: [] }
+    const baseRuns = onBase ? baseRunsWithKeys(baseDir, file, INITIAL_RUNS) : []
+    const judge = () => ({
+      newFailingTests: failingTestsNotOnBase(tipFailed, keysOnEveryRun(baseRuns.map((r) => r.keys))),
+    })
     const record = {
       tip: rerun(tipDir, file, INITIAL_RUNS),
-      base: onBase ? [first.ok, ...rerun(baseDir, file, INITIAL_RUNS - 1)] : [true],
-      newFailingTests: failingTestsNotOnBase(tipFailed, first.failed),
+      base: onBase ? baseRuns.map((r) => r.ok) : [true],
+      ...judge(),
     }
     let verdict = classifyFailure(record)
     if (verdict.moreRuns > 0) {
       record.tip.push(...rerun(tipDir, file, verdict.moreRuns))
-      if (onBase) record.base.push(...rerun(baseDir, file, verdict.moreRuns))
+      if (onBase) {
+        baseRuns.push(...baseRunsWithKeys(baseDir, file, verdict.moreRuns))
+        record.base = baseRuns.map((r) => r.ok)
+        Object.assign(record, judge())
+      }
       verdict = classifyFailure(record)
     }
     return { file, newFile: !onBase, ...record, ...verdict }

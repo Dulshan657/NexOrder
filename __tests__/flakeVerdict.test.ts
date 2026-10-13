@@ -3,6 +3,7 @@ import {
   classifyFailure,
   failingTestsNotOnBase,
   gateVerdict,
+  keysOnEveryRun,
   INITIAL_RUNS,
   MIXED_RUNS,
   stripRoot,
@@ -107,6 +108,33 @@ describe('failingTestsNotOnBase', () => {
 
   it('matching counts on both sides is nothing new', () => {
     expect(failingTestsNotOnBase(['D > pre', 'D > pre'], ['D > pre', 'D > pre'])).toEqual([]);
+  });
+});
+
+// The gate's sixth review: base keys came from ONE run, so a test that only
+// SOMETIMES fails on the base, caught failing on that run, made a tip that
+// fails it every time look pre-existing. A failure counts as "already on the
+// base" only if it shows on EVERY base run — a multiset intersection.
+describe('keysOnEveryRun', () => {
+  it('keeps only failures present on every run', () => {
+    expect(keysOnEveryRun([['a', 'x'], ['a'], ['a', 'x']])).toEqual(['a']);
+  });
+
+  it('respects multiplicity: the minimum count across runs', () => {
+    expect(keysOnEveryRun([['a', 'a'], ['a', 'a', 'a'], ['a']])).toEqual(['a']);
+  });
+
+  it('a single run is itself', () => {
+    expect(keysOnEveryRun([['b', 'a', 'a']])).toEqual(['b', 'a', 'a']);
+  });
+
+  it('no runs means nothing is known to be on the base', () => {
+    expect(keysOnEveryRun([])).toEqual([]);
+  });
+
+  it('an intermittent base failure no longer excuses a steady tip failure', () => {
+    const base = keysOnEveryRun([['X'], [], ['X']]);
+    expect(failingTestsNotOnBase(['X'], base)).toEqual(['X']);
   });
 });
 

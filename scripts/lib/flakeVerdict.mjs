@@ -38,6 +38,28 @@ export function gateVerdict({ anyFailed, partial, overridden }) {
 }
 
 /**
+ * Failure keys present on EVERY run — a multiset intersection (minimum count).
+ * The base side is judged by this, not by one run: a test that only sometimes
+ * fails on the base, caught failing once, would otherwise make a tip that
+ * fails it every time look pre-existing.
+ * @param {string[][]} runs
+ */
+export function keysOnEveryRun(runs) {
+  if (runs.length === 0) return []
+  const counts = (keys) => keys.reduce((m, k) => m.set(k, (m.get(k) ?? 0) + 1), new Map())
+  const [first, ...rest] = runs
+  const restCounts = rest.map(counts)
+  const taken = new Map()
+  return first.filter((key) => {
+    const min = Math.min(...restCounts.map((c) => c.get(key) ?? 0))
+    const used = taken.get(key) ?? 0
+    if (used >= min) return false
+    taken.set(key, used + 1)
+    return true
+  })
+}
+
+/**
  * Tip failure keys the base does not also have. A file red on both sides is
  * only `pre-existing` when this is empty: judging per FILE let a brand-new
  * failure hide inside a file main already had red.
