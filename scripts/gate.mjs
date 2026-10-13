@@ -24,7 +24,7 @@ import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { classifyFailure, failingTestsNotOnBase, INITIAL_RUNS } from './lib/flakeVerdict.mjs'
+import { classifyFailure, failedTestNames, failingTestsNotOnBase, INITIAL_RUNS } from './lib/flakeVerdict.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const GUARDS = ['lint', 'check:overlays', 'check:viewport', 'check:csp', 'check:claude-md', 'check:demo']
@@ -43,8 +43,13 @@ function die(message) {
 // (DEP0190), so join into one string there — quoting anything not plainly
 // safe, because refs, branch names and test paths reach cmd.exe and a space or
 // `&` would silently change which command ran.
-const SAFE_ARG = /^[\w@%+=:,./\\~-]+$/
-const winQuote = (a) => (SAFE_ARG.test(a) ? a : `"${a.replaceAll('"', '""')}"`)
+// cmd.exe expands %VAR% even inside double quotes, so no quoting makes a `%`
+// safe: refuse it rather than let a ref be rewritten before git sees it.
+const SAFE_ARG = /^[\w@+=:,./\\~-]+$/
+const winQuote = (a) => {
+  if (a.includes('%')) die(`refusing an argument containing '%' (cmd.exe would expand it): ${a}`)
+  return SAFE_ARG.test(a) ? a : `"${a.replaceAll('"', '""')}"`
+}
 
 function sh(argv, { cwd, env, capture = true } = {}) {
   const options = { cwd, env: { ...process.env, ...env }, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }
@@ -127,10 +132,7 @@ function failingTests(jsonPath, cwd) {
   return new Map(
     report.testResults
       .filter((t) => t.status === 'failed')
-      .map((t) => [
-        relative(cwd, t.name).replaceAll('\\', '/'),
-        t.assertionResults.filter((a) => a.status === 'failed').map((a) => a.fullName),
-      ]),
+      .map((t) => [relative(cwd, t.name).replaceAll('\\', '/'), failedTestNames(t)]),
   )
 }
 

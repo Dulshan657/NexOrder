@@ -17,6 +17,20 @@ const allFail = (runs) => runs.every((passed) => !passed)
 const allPass = (runs) => runs.every((passed) => passed)
 
 /**
+ * The failure "names" of one vitest JSON testResult. A file that fails to LOAD
+ * (bad import, failing afterAll) is `failed` with no failed test under it, so
+ * it is named by its file-level message instead — otherwise a new load failure
+ * inside a file the base already had red would compare as "nothing new".
+ * @param {{ status: string, message?: string, assertionResults: { fullName: string, status: string }[] }} result
+ */
+export function failedTestNames(result) {
+  const names = result.assertionResults.filter((a) => a.status === 'failed').map((a) => a.fullName)
+  if (names.length > 0 || result.status !== 'failed') return names
+  const firstLine = (result.message ?? '').split('\n')[0].trim() || 'no message'
+  return [`[file failed] ${firstLine}`]
+}
+
+/**
  * Tip failures the base does not also have, compared by full test name. A file
  * that is red on both sides is only `pre-existing` when this is empty: judging
  * per FILE let a brand-new failure hide inside a file main already had red.

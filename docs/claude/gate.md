@@ -106,7 +106,10 @@ judged per TEST, never per file**: the gate's first review of itself found
 that a file already red on `main` — exactly `paymentStatusBadge` for two
 weeks — would have hidden any new failure added to it. An unhandled error in
 the suite (vitest's JSON has no field for it; the gate reads the log) is never
-excused at all.
+excused at all. A file that fails to LOAD (bad import, failing `afterAll`) has
+no failed test under it, so it is named by its file-level message
+(`failedTestNames`) — the gate's second review found that a broken import in an
+already-red file otherwise compared as "nothing new".
 
 ### What the gate does not claim
 

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { classifyFailure, failingTestsNotOnBase, INITIAL_RUNS, MIXED_RUNS } from '../scripts/lib/flakeVerdict.mjs';
+import {
+  classifyFailure,
+  failedTestNames,
+  failingTestsNotOnBase,
+  INITIAL_RUNS,
+  MIXED_RUNS,
+} from '../scripts/lib/flakeVerdict.mjs';
 
 // true = the file passed that run, false = it failed.
 const pass = (n: number) => Array(n).fill(true);
@@ -87,3 +93,38 @@ describe('failingTestsNotOnBase', () => {
     expect(failingTestsNotOnBase(['a > one'], ['a > one', 'a > three'])).toEqual([]);
   });
 });
+
+// Found by the gate's second review: a file that fails to LOAD (bad import,
+// failing afterAll) is status "failed" with no failed test under it, so the
+// per-test comparison saw nothing new and excused a broken import inside a
+// file main already had red. The file-level failure must count as a name.
+describe('failedTestNames', () => {
+  it('lists the failing tests of a file', () => {
+    expect(
+      failedTestNames({
+        status: 'failed',
+        message: '',
+        assertionResults: [
+          { fullName: 'badge > one', status: 'failed' },
+          { fullName: 'badge > two', status: 'passed' },
+        ],
+      }),
+    ).toEqual(['badge > one']);
+  });
+
+  it('names a file-level failure by its first message line when no test failed', () => {
+    expect(
+      failedTestNames({
+        status: 'failed',
+        message: 'Failed to load url ./missing\n    at stack',
+        assertionResults: [],
+      }),
+    ).toEqual(['[file failed] Failed to load url ./missing']);
+  });
+
+  it('a new load failure on the tip is a new failure against a base red for another reason', () => {
+    const tip = failedTestNames({ status: 'failed', message: 'Failed to load url ./missing', assertionResults: [] });
+    expect(failingTestsNotOnBase(tip, ['badge > one'])).toEqual(['[file failed] Failed to load url ./missing']);
+  });
+});
+
