@@ -122,6 +122,15 @@ base commit that predates it. If you ever change how failures are compared,
 plant each of those three shapes in an already-red file and gate it with
 `--base` — that is how each hole was found.
 
+Keys are compared as a **multiset** (a fifth review found that, as a set, a new
+failing test sharing its name with an already-red one vanished). Granularity is
+**one key per failed test, suite error or module error**: a test already red on
+the base that gains a *second* reason to fail (a throwing `afterEach` on that
+same test) adds no key. Anything that breaks a test that was passing, or adds a
+suite/module error, does. Verified against real vitest 4.1.4 for `test.fails`,
+timeouts, `expect.soft`, a skipping `beforeAll`, collection failing partway,
+and hooks at module and `describe` level.
+
 ### Verdicts and exit codes
 
 | Exit | Verdict | Meaning |

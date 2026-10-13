@@ -93,6 +93,21 @@ describe('failingTestsNotOnBase', () => {
   it('is empty when every tip failure already fails on the base', () => {
     expect(failingTestsNotOnBase(['a > one'], ['a > one', 'a > three'])).toEqual([]);
   });
+
+  // The gate's fifth review: compared as a SET, a new failing test sharing its
+  // full name with one already red on the base (copy-paste, it.each without a
+  // placeholder) vanished. Keys are a MULTISET — each occurrence counts.
+  it('a duplicate-named new failure is still new', () => {
+    expect(failingTestsNotOnBase(['D > pre', 'D > pre'], ['D > pre'])).toEqual(['D > pre']);
+  });
+
+  it('a second identical suite error is still new', () => {
+    expect(failingTestsNotOnBase(['E [suite] ba', 'E [suite] ba'], ['E [suite] ba'])).toEqual(['E [suite] ba']);
+  });
+
+  it('matching counts on both sides is nothing new', () => {
+    expect(failingTestsNotOnBase(['D > pre', 'D > pre'], ['D > pre', 'D > pre'])).toEqual([]);
+  });
 });
 
 describe('stripRoot', () => {

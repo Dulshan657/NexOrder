@@ -38,15 +38,30 @@ export function gateVerdict({ anyFailed, partial, overridden }) {
 }
 
 /**
- * Tip failures the base does not also have, compared by full test name. A file
- * that is red on both sides is only `pre-existing` when this is empty: judging
- * per FILE let a brand-new failure hide inside a file main already had red.
+ * Tip failure keys the base does not also have. A file red on both sides is
+ * only `pre-existing` when this is empty: judging per FILE let a brand-new
+ * failure hide inside a file main already had red.
+ *
+ * A MULTISET difference, not a set one: a new failing test that shares its full
+ * name with one already red on the base (copy-paste, `it.each` without a
+ * placeholder), or a second identical suite error, is still new.
+ *
+ * Granularity is per KEY — one per failed test, suite error or module error.
+ * A test already red on the base that gains a second, different reason to fail
+ * (a throwing `afterEach` on that same test) adds no key; anything that breaks
+ * a test that was passing, or adds a suite/module error, does.
  * @param {string[]} tipFailed
  * @param {string[]} baseFailed
  */
 export function failingTestsNotOnBase(tipFailed, baseFailed) {
-  const onBase = new Set(baseFailed)
-  return tipFailed.filter((name) => !onBase.has(name))
+  const remaining = new Map()
+  for (const key of baseFailed) remaining.set(key, (remaining.get(key) ?? 0) + 1)
+  return tipFailed.filter((key) => {
+    const left = remaining.get(key) ?? 0
+    if (left === 0) return true
+    remaining.set(key, left - 1)
+    return false
+  })
 }
 
 /**
