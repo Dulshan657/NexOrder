@@ -336,10 +336,8 @@ function main() {
   Object.assign(meta, gateVerdict({ anyFailed: rows.some((r) => r.status === 'fail'), ...meta }))
 
   const briefMd = join(logs, 'brief.md')
-  const md = report(meta, rows, flakes) + (want.has(6) && existsSync(briefMd) ? `
-
-${readFileSync(briefMd, 'utf8')}
-` : '')
+  const briefSection = want.has(6) && existsSync(briefMd) ? `\n\n${readFileSync(briefMd, 'utf8')}\n` : ''
+  const md = report(meta, rows, flakes) + briefSection
   writeFileSync(join(workdir, 'gate-report.md'), md)
   writeFileSync(join(workdir, 'gate-report.json'), JSON.stringify({ ...meta, rows, flakes }, null, 2))
   console.log(`
