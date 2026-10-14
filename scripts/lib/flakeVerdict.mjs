@@ -29,13 +29,17 @@ export function stripRoot(text, root) {
 // the gate judges the commit at that load. See scripts/gate.mjs.
 export const DEFAULT_UNIT_WORKERS = 3
 
+export const GATE_ROWS = [1, 2, 3, 4, 5, 6]
+
 /**
- * A run is a merge verdict only at all five rows AND CI's worker count — a
+ * A run is a merge verdict only at every row AND CI's worker count — a
  * lighter run hides load-sensitivity CI would see, a heavier one invents it.
+ * Row 6 (brief · fail-first) counts like any other: without it nothing says
+ * the change's own test ever needed the change.
  * @param {{ rows: number[], unitWorkers: number }} run
  */
 export function isPartialRun({ rows, unitWorkers }) {
-  return new Set(rows).size < 5 || unitWorkers !== DEFAULT_UNIT_WORKERS
+  return GATE_ROWS.some((r) => !rows.includes(r)) || unitWorkers !== DEFAULT_UNIT_WORKERS
 }
 
 /**

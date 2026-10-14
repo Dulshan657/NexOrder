@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The gate: an independent, exact-commit verdict on a change.
 //
-// Runs the five gate rows against ONE commit in a detached worktree that is
+// Runs the six gate rows against ONE commit in a detached worktree that is
 // never anybody's working checkout, so the result describes that sha and
 // nothing else — not a dirty tree, not a stale node_modules, not "it passed on
 // my machine". It never edits, commits, pushes or deploys. The gate agent
@@ -13,6 +13,9 @@
 //   3  Edge Function types           scripts/check-edge-types.mjs
 //   4  guards                        lint + every source guard + check:demo (secret leak)
 //   5  touched browser specs, whole  only with --e2e-base-url, never the deployed default
+//   6  brief · fail-first            scripts/check-brief.mjs, from THIS checkout: the brief
+//                                    was approved before the code, its tests fail on the
+//                                    base and pass on the tip, no forbidden move, FINAL
 //
 // Usage:
 //   node scripts/gate.mjs --ref=<sha|branch|pr-number> [--workdir=<dir>] [--e2e-base-url=http://localhost:3000]
@@ -41,6 +44,7 @@ import {
   classifyFailure,
   DEFAULT_UNIT_WORKERS,
   failingTestsNotOnBase,
+  GATE_ROWS,
   gateVerdict,
   INITIAL_RUNS,
   isPartialRun,
@@ -282,8 +286,8 @@ function main() {
   }
 
   const rowsArg = arg('rows')
-  const want = new Set(rowsArg ? rowsArg.split(',').map(Number) : [1, 2, 3, 4, 5])
-  if ([...want].some((n) => !Number.isInteger(n) || n < 1 || n > 5)) die('--rows takes row numbers 1-5, e.g. --rows=2,3')
+  const want = new Set(rowsArg ? rowsArg.split(',').map(Number) : GATE_ROWS)
+  if ([...want].some((n) => !GATE_ROWS.includes(n))) die(`--rows takes row numbers ${GATE_ROWS[0]}-${GATE_ROWS.at(-1)}, e.g. --rows=2,3`)
   const notRun = { status: 'skipped', detail: 'not run (--rows)' }
   // Validated BEFORE row 1, not ~2 minutes in when row 2 first needs it.
   const workers = unitWorkers()
@@ -317,6 +321,7 @@ function main() {
   }
 
   const row5 = want.has(5) ? browserRow(workdir, logs, meta, e2eBase) : notRun
+  const row6 = want.has(6) ? briefRow(workdir, logs, meta) : notRun
 
   const rows = [
     { title: 'Type-check + release build', ...row1 },
@@ -324,12 +329,15 @@ function main() {
     { title: 'Edge Function types (deno check)', ...row3 },
     { title: 'Guards: a11y lint, overlays, viewport, CSP, CLAUDE.md, demo-secret surface', ...row4 },
     { title: 'Touched browser specs, run whole', ...row5 },
+    { title: 'Brief · fail-first (approval order, forbidden moves, FINAL)', ...row6 },
   ]
   meta.partial = isPartialRun({ rows: [...want], unitWorkers: workers })
   meta.overridden = Boolean(meta.overridden)
   Object.assign(meta, gateVerdict({ anyFailed: rows.some((r) => r.status === 'fail'), ...meta }))
 
-  const md = report(meta, rows, flakes)
+  const briefMd = join(logs, 'brief.md')
+  const briefSection = want.has(6) && existsSync(briefMd) ? `\n\n${readFileSync(briefMd, 'utf8')}\n` : ''
+  const md = report(meta, rows, flakes) + briefSection
   writeFileSync(join(workdir, 'gate-report.md'), md)
   writeFileSync(join(workdir, 'gate-report.json'), JSON.stringify({ ...meta, rows, flakes }, null, 2))
   console.log(`
@@ -388,6 +396,24 @@ function unitRow(workdir, logs, meta) {
     row2.detail = `only excused failures — ${flakes.map((f) => `${f.file} (${f.verdict})`).join(', ')}`
   }
   return { row: row2, flakes }
+}
+
+// Row 6 runs the checker from the GATE's checkout, like the reporter: a change
+// must not be judged by a checker it edited. It writes its own section, which
+// the report appends (fail-first table, forbidden moves, the author's FINAL
+// "Not claimed").
+function briefRow(workdir, logs, meta) {
+  console.log('gate: row 6 — brief · fail-first')
+  rmSync(join(logs, 'brief.md'), { force: true })
+  const row = runRow(workdir, logs, [[
+    'brief',
+    ['node', join(REPO, 'scripts', 'check-brief.mjs'), `--base=${meta.base}`, `--head=${meta.sha}`, `--repo=${workdir}`, `--md=${join(logs, 'brief.md')}`, `--json=${join(logs, 'brief.json')}`],
+  ]])
+  const result = existsSync(join(logs, 'brief.json')) ? JSON.parse(readFileSync(join(logs, 'brief.json'), 'utf8')) : null
+  row.detail = result
+    ? `${result.verdict} — ${result.failFirst.length} fail-first test(s), ${result.moves.filter((m) => m.blocking).length} blocking move(s), ${result.errors.length} error(s)`
+    : 'check-brief could not run — see .gate-logs/brief.log'
+  return row
 }
 
 function browserRow(workdir, logs, meta, e2eBase) {

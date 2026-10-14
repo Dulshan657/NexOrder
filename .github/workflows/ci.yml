@@ -161,3 +161,50 @@ jobs:
 
       - name: deno check (every function)
         run: node scripts/check-edge-types.mjs
+
+  # Phase B of the gate (docs/claude/briefs.md): the change carries a brief
+  # approved before any code, the brief's own tests FAIL on the base and pass
+  # on the tip, nothing was weakened to get green, and FINAL says what is not
+  # claimed. PRs only — on a push to main there is no base to fail on.
+  #
+  # The checker runs from the BASE branch's copy, not the PR's: a PR must not
+  # be judged by a checker it edited. Only the PR that introduces it (no copy
+  # on the base yet) runs its own, and says so.
+  brief:
+    name: brief · fail-first
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout (PR head, full history)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the brief, fail-first, forbidden moves and FINAL
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: |
+          checker="$GITHUB_WORKSPACE/scripts/check-brief.mjs"
+          if git cat-file -e "$BASE_REF:scripts/check-brief.mjs" 2>/dev/null; then
+            git worktree add --quiet --detach "$RUNNER_TEMP/checker" "$BASE_REF"
+            checker="$RUNNER_TEMP/checker/scripts/check-brief.mjs"
+          else
+            echo "::warning::$BASE_REF has no check-brief.mjs yet — this PR is judged by its own copy"
+          fi
+          node "$checker" --base="$BASE_REF" --repo="$GITHUB_WORKSPACE" --md="$RUNNER_TEMP/brief.md"
+
+      - name: Report
+        if: always()
+        run: test -f "$RUNNER_TEMP/brief.md" && cat "$RUNNER_TEMP/brief.md" >> "$GITHUB_STEP_SUMMARY" || true

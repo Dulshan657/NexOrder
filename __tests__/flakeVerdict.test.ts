@@ -213,8 +213,14 @@ describe('stripRoot', () => {
 // The tenth review: `--unit-workers=1` (lighter than CI) could still say GO. A
 // run is only a merge verdict at all five rows AND CI's worker count.
 describe('isPartialRun', () => {
-  it('all five rows at the default worker count is a full run', () => {
-    expect(isPartialRun({ rows: [1, 2, 3, 4, 5], unitWorkers: DEFAULT_UNIT_WORKERS })).toBe(false);
+  it('all six rows at the default worker count is a full run', () => {
+    expect(isPartialRun({ rows: [1, 2, 3, 4, 5, 6], unitWorkers: DEFAULT_UNIT_WORKERS })).toBe(false);
+  });
+
+  // Phase B added row 6 (brief · fail-first): a run that skips it says nothing
+  // about whether the change's own test ever needed the change.
+  it('five rows is partial now that the gate has six', () => {
+    expect(isPartialRun({ rows: [1, 2, 3, 4, 5], unitWorkers: DEFAULT_UNIT_WORKERS })).toBe(true);
   });
 
   it('fewer rows is partial', () => {
@@ -222,8 +228,8 @@ describe('isPartialRun', () => {
   });
 
   it('any other worker count is partial, lighter or heavier', () => {
-    expect(isPartialRun({ rows: [1, 2, 3, 4, 5], unitWorkers: 1 })).toBe(true);
-    expect(isPartialRun({ rows: [1, 2, 3, 4, 5], unitWorkers: 11 })).toBe(true);
+    expect(isPartialRun({ rows: [1, 2, 3, 4, 5, 6], unitWorkers: 1 })).toBe(true);
+    expect(isPartialRun({ rows: [1, 2, 3, 4, 5, 6], unitWorkers: 11 })).toBe(true);
   });
 
   it('the default is CI\'s count', () => {
