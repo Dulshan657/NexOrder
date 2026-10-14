@@ -51,6 +51,14 @@ describe('findForbiddenMoves', () => {
     }
   });
 
+  it('a skip or timeout quoted in a string is not one', () => {
+    expect(moves(fileDiff('__tests__/a.test.ts', ["+  const fixture = '+it.skip(\"x\")'", "+  const t = 'vi.setConfig({ testTimeout: 30_000 })'"]))).toEqual([]);
+  });
+
+  it('a gate file is reported as edit-gate-scripts, not as a push', () => {
+    expect(moves(fileDiff('scripts/lib/forbiddenMoves.mjs', ['+const P = /git push/']))).toEqual(['edit-gate-scripts']);
+  });
+
   it('flags a raised timeout, not a lowered one', () => {
     expect(moves(fileDiff('__tests__/a.test.tsx', ['-  it("x", run, 5000)', '+  it("x", run, 20000)']))).toEqual(['timeout-raised']);
     expect(moves(fileDiff('__tests__/a.test.tsx', ['+  vi.setConfig({ testTimeout: 30_000 })']))).toEqual(['timeout-raised']);

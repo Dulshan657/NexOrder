@@ -64,12 +64,17 @@ export function parseDiff(diff) {
 
 const count = (lines, re) => lines.filter((l) => re.test(l)).length
 
+// A line with its string contents and trailing comment blanked, so a test
+// that QUOTES a skip or a timeout (this checker's own fixtures) is not one.
+const STRING = /(['"`])(?:\\.|(?!\1).)*\1/g
+const codeOf = (line) => line.replace(STRING, "''").replace(/\/\/.*$/, '')
+
 const num = (text) => Number(text.replaceAll('_', ''))
 
 function timeouts(lines) {
   return lines.flatMap((l) => {
-    const named = [...l.matchAll(TIMEOUT_VALUE)].map((m) => num(m[1]))
-    const trailing = TIMER.test(l) ? null : TRAILING_ARG.exec(l)
+    const named = [...codeOf(l).matchAll(TIMEOUT_VALUE)].map((m) => num(m[1]))
+    const trailing = TIMER.test(l) ? null : TRAILING_ARG.exec(codeOf(l))
     return trailing ? [...named, num(trailing[1])] : named
   })
 }
@@ -116,7 +121,7 @@ function testMoves(f) {
   const moves = []
   const lost = count(f.removed, ASSERTION) - count(f.added, ASSERTION)
   if (lost > 0) moves.push({ move: 'removed-assertion', file: f.path, detail: `${lost} assertion line(s) removed` })
-  const skips = f.added.filter((l) => SKIP.test(l))
+  const skips = f.added.filter((l) => SKIP.test(codeOf(l)))
   if (skips.length > 0) moves.push({ move: 'skip-only', file: f.path, detail: skips[0].trim() })
   return moves
 }
@@ -139,9 +144,12 @@ export function findForbiddenMoves(diff, { before = () => null, after = () => nu
     if (isTest) moves.push(...testMoves(f))
     if (isTest || TEST_CONFIG.test(f.path)) moves.push(...timeoutMoves(f))
     if (TEST_CONFIG.test(f.path)) moves.push({ move: 'edit-test-config', file: f.path, detail: f.status })
-    if (GATE_FILES.some((re) => re.test(f.path))) moves.push({ move: 'edit-gate-scripts', file: f.path, detail: f.status })
+    const isGate = GATE_FILES.some((re) => re.test(f.path))
+    if (isGate) moves.push({ move: 'edit-gate-scripts', file: f.path, detail: f.status })
     moves.push(...baselineMoves(f, before, after))
-    const pushes = SCRIPTISH.test(f.path) ? f.added.filter((l) => PUSH_OR_TENANT.test(l)) : []
+    // The gate's own files are already a move of their own (and this file
+    // has to spell out the very patterns it looks for).
+    const pushes = SCRIPTISH.test(f.path) && !isGate ? f.added.filter((l) => PUSH_OR_TENANT.test(l)) : []
     if (pushes.length > 0) moves.push({ move: 'deploy-or-push', file: f.path, detail: pushes[0].trim() })
   }
   return moves
