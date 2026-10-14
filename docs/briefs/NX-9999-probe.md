@@ -12,3 +12,11 @@
 Prove the required check binds. Close without merging.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | probe | |
+
+### Not claimed
+
+- Everything: this is a probe.

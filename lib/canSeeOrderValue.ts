@@ -22,3 +22,4 @@ import { UserRole } from '../types'
 export function canSeeOrderValue(role: UserRole | string | null | undefined): boolean {
   return role !== UserRole.WAREHOUSE
 }
+// probe
