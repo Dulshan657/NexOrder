@@ -21,9 +21,12 @@ makes the checks *bind*.
 ## The merge routine (every task)
 
 ```bash
+/brief                                    # FIRST: brief approved by the owner, committed alone
+                                          # (docs/claude/briefs.md) — then the work, then FINAL
+npm run check:brief                       # fail-first + forbidden moves + FINAL, locally
 git push -u origin <branch>
 gh pr create --fill                       # base: main
-gh pr checks --watch                      # all three required jobs green
+gh pr checks --watch                      # all four required jobs green
 # gate: from a DIFFERENT session/agent than the author — the `gate` agent
 node scripts/gate.mjs --ref=<pr-number>   # or ask the gate agent to run it
 gh pr comment <pr-number> --body-file ~/nexgate/gate-report.md
@@ -46,9 +49,10 @@ npm run deploy:dev                        # then check /version.json
 | `typecheck · test · build` | audit, guards, a11y lint, `tsc`, unit suite, build, `check:demo` |
 | `axe · login surfaces` | axe in Chromium on the signed-out screens |
 | `edge · deno check` | `scripts/check-edge-types.mjs` — every function entrypoint |
+| `brief · fail-first` | `scripts/check-brief.mjs`, **the base branch's copy** — see [`briefs.md`](briefs.md) |
 
 Renaming a job renames its context and silently un-requires it. Change the
-protection payload in the same PR.
+ruleset (below) in the same PR.
 
 ### Applying / re-applying protection
 
@@ -83,7 +87,8 @@ gh api -X POST repos/Dulshan657/NexOrder/rulesets --input - <<'EOF'
         "required_status_checks": [
           { "context": "typecheck · test · build" },
           { "context": "axe · login surfaces" },
-          { "context": "edge · deno check" } ] } }
+          { "context": "edge · deno check" },
+          { "context": "brief · fail-first" } ] } }
   ]
 }
 EOF
@@ -108,6 +113,7 @@ work and `.env.*.local`. `npm ci` reruns only when `package-lock.json` changes.
 | 3 | `check:edge-types` |
 | 4 | `lint`, `check:overlays`, `check:viewport`, `check:csp`, `check:claude-md`, `check:demo` |
 | 5 | every touched `tests/**/*.spec.ts`, whole — only with `--e2e-base-url=http://localhost:…` |
+| 6 | `check-brief.mjs` **from the gate's checkout**: brief approved first, fail-first on the base, forbidden moves, FINAL ([`briefs.md`](briefs.md)) |
 
 **Row 2 runs on 3 vitest workers, CI's count** (4 vCPU / 16 GB runner → cpus-1).
 vitest's own default here is cpus-1 = **11 workers on a 7.7 GB machine**, ~0.7 GB
@@ -184,7 +190,7 @@ and hooks at module and `describe` level.
 
 | Exit | Verdict | Meaning |
 |---|---|---|
-| 0 | **GO** | full run (all five rows) against the merge-base, nothing failed — the only merge verdict |
+| 0 | **GO** | full run (all six rows) against the merge-base, nothing failed — the only merge verdict |
 | 1 | **NO-GO** | something failed |
 | 2 | — | could not run (bad argument, git/npm failure) |
 | 3 | **PARTIAL** | what ran passed, but the run was not a full one — never a merge verdict |

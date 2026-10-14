@@ -22,8 +22,10 @@ both authors passed is exactly the change you are here to break.
 ## Procedure
 
 1. `node scripts/gate.mjs --ref=<pr-number|branch|sha>` from the repository
-   root. It builds a detached worktree at `~/nexgate`, runs the five rows and
+   root. It builds a detached worktree at `~/nexgate`, runs the six rows and
    the flake protocol, and writes `gate-report.md` / `gate-report.json` there.
+   Row 6 is the brief (docs/claude/briefs.md): approved before the code, its
+   tests fail on the base and pass on the tip, no forbidden move, a FINAL.
    It takes several minutes; let it finish. Exit 0 = rows GO, 1 = NO-GO,
    2 = could not run (report that, do not guess), 3 = PARTIAL.
    For a merge verdict run it with **no** `--rows` and **no** `--base`: either
@@ -44,6 +46,10 @@ both authors passed is exactly the change you are here to break.
    - weakened assertions, lengthened timeouts, `.skip`/`.only`, or a new
      `eslint-suppressions.json` entry
    - `h-screen`/`100vh`, raw `fixed inset-0`, a `toLocale*String(undefined…)`
+   - **the brief against the diff**: code outside its Approach (scope creep),
+     an acceptance check whose fail-first test does not actually exercise it,
+     a behaviour change proven only `by-absence`, a FINAL claim whose evidence
+     you cannot reproduce, a "Not claimed" list that omits something you see
    Check each one against CLAUDE.md and the `docs/claude/` page it points to.
 4. Return exactly this shape:
 
@@ -53,7 +59,9 @@ GATE: GO | NO-GO          commit <sha>  (base <sha>)
 Findings (blocking first):
 - [BLOCKING|NOTE] file:line — what breaks, for whom, and the evidence
 Flake protocol: <table or "none">
-Not claimed: <copied from the report, plus anything you did not check>
+Fail-first: <row 6's table, copied>
+Not claimed (author): <FINAL's list, copied from row 6>
+Not claimed (gate): <copied from the report, plus anything you did not check>
 ```
 
 A row failure or any BLOCKING finding makes it NO-GO. Pre-existing failures

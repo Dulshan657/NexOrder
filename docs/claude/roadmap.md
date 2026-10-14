@@ -46,6 +46,13 @@ Ordered by impact; one-line scope each so future agents don't drift.
 
 git history is the changelog. Only the items below carry something the sections above don't.
 
+- **Factory phase B (2026-10-14, NX-0001): every PR carries a brief, and its
+  own tests must fail on the base.** `docs/claude/briefs.md`. CI's
+  `brief · fail-first` runs the *base branch's* checker, so a PR cannot weaken
+  the check it is judged by. The base run reuses the tip's `node_modules`
+  through a link, so a dependency bump's fail-first is judged with the new
+  dependencies. The report says so; nothing stops it.
+
 - **The demo rebuild (2026-08-13) left four things worth knowing.** (1) A new
   Vercel project ships with `ssoProtection: 'all_except_custom_domains'`, so a
   `*.vercel.app` alias 302s to `vercel.com/sso-api` — `deploy.mjs` then reports

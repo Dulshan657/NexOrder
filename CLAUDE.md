@@ -28,6 +28,7 @@ reached 173k on 2026-09-10 and was split. What stays here is the rule that must 
 | password reset, invites, recovery links | [`docs/claude/auth-links.md`](docs/claude/auth-links.md) |
 | a tenant deploy the release gate just refused | [`docs/claude/releasing.md`](docs/claude/releasing.md) |
 | merging anything to `main` — PR flow, required checks, `scripts/gate.mjs`, the flake protocol | [`docs/claude/gate.md`](docs/claude/gate.md) — **direct pushes to `main` are rejected, admins included** |
+| starting ANY task that will become a PR — the brief, fail-first, FINAL | [`docs/claude/briefs.md`](docs/claude/briefs.md) — **`/brief` first: committed alone, before code; its tests must fail on the base** |
 | contrast, ARIA, robots / `llms.txt`, the demo roster | [`docs/claude/accessibility.md`](docs/claude/accessibility.md) |
 | what is outstanding and what just shipped | [`docs/claude/roadmap.md`](docs/claude/roadmap.md) |
 | the venue QR code, kitchen PINs, the `QR Staff` role, QR order approval | [`docs/claude/qr-reorder-plan.md`](docs/claude/qr-reorder-plan.md) — **the 2-hour limit lives in `user_horeca_id()`, not the JWT**; pending QR orders are `qr_order_requests`, never an `orders.status` |
@@ -227,7 +228,9 @@ npx tsc --noEmit
 npm run check:edge-types           # deno check on every Edge Function (outside tsc)
 
 # Merge = PR, never a direct push (docs/claude/gate.md)
-node scripts/gate.mjs --ref=<pr#>  # exact-commit gate in ~/nexgate: 5 rows + flake protocol
+/brief                             # FIRST, every task: brief approved + committed alone (docs/claude/briefs.md)
+npm run check:brief                # fail-first on the base, forbidden moves, FINAL — CI requires it
+node scripts/gate.mjs --ref=<pr#>  # exact-commit gate in ~/nexgate: 6 rows + flake protocol
 
 # Deploy: builds, aliases, verifies /version.json AND /functions/v1/health
 npm run deploy:dev                 # -> nexorder.vercel.app, from whatever is checked out
@@ -614,7 +617,7 @@ Ordered by impact. **Full scope, blockers and the exact unblocking steps for eve
 **High**
 
 0. **Make Amadiya usable.** The infrastructure is finished: `rel-2026-08-20` is live on nexorder.com.au running `['sales_orders', 'inventory_dispatch']`, 57 functions deployed with the 19 disabled-module ones deleted, `check:grants` and `check:storage` clean, project on the `nexgen14` team. **What is missing is the data** — 0 products, 0 customers, one Admin login and no Warehouse staff. Import the converted catalogue from `Amadiya/`, invite staff, fill `app_settings`, then Gates C and E: `PRODUCTION-LAUNCH-PLAN.md` Phase 3. The demo half is done and needs nothing.
-1. **The factory, phases B–E** — phase A (the gate binds) shipped 2026-10-13, see [`docs/claude/gate.md`](docs/claude/gate.md). Next: B, a per-task brief + fail-first + FINAL evidence package; C, authenticated browser journeys with per-step screenshots; D, timed soak + automatic frontend rollback + expand/contract migrations; E, parallel sessions only once A–C hold, with a backend per worktree.
+1. **The factory, phases C–E** — phase A (the gate binds) shipped 2026-10-13, see [`docs/claude/gate.md`](docs/claude/gate.md); phase B (brief + fail-first + FINAL, required in CI) 2026-10-14, see [`docs/claude/briefs.md`](docs/claude/briefs.md). Next: C, authenticated browser journeys with per-step screenshots; D, timed soak + automatic frontend rollback + expand/contract migrations; E, parallel sessions only once A–C hold, with a backend per worktree.
 2. **Email setup (operator)** — `send-email` is live, gated and rate-limited, and dormant only because `RESEND_API_KEY` is unset; that one secret is the whole switch, no redeploy. `docs/runbooks/enable-email.md`. **Trap:** an unset `EMAIL_FROM` falls back to `onboarding@resend.dev`, which Resend delivers *only* to the account owner — customers get nothing while the response still says `sent: true`.
 
 **Medium** — a desktop entry point for a stocktake (`count-bin` already takes any location; no server work) · finish the a11y form-label tail (~242 unlabelled `<input>`/`<textarea>` across ~80 files, frozen in `eslint-suppressions.json`) · wire the `invoice_issued` email template · **ERP/accounting export of approved orders** (does not exist; the demo video's "Order Import Queue" is a recording-only mock) · test-coverage gaps: cart submission, pantry add/remove, the HoReCa reason-prompt gate, role-based routing.
