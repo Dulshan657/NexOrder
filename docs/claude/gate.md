@@ -52,19 +52,42 @@ protection payload in the same PR.
 
 ### Applying / re-applying protection
 
+`main` is protected by a **repository ruleset** (id `24973486`, "main: PR +
+required checks (gate phase A)"), not classic branch protection: this repo
+answers the classic `PUT …/branches/main/protection` with **404 "Branch
+protection has been disabled on this repository"**. No bypass actors — admins
+included. Proven 2026-10-13: a direct push was `push declined due to repository
+rule violations`, and a red PR (#17) was BLOCKED for `gh pr merge` and
+`gh pr merge --admin` alike.
+
 ```bash
-gh api -X PUT repos/Dulshan657/NexOrder/branches/main/protection --input - <<'EOF'
+gh api repos/Dulshan657/NexOrder/rules/branches/main        # what applies now
+gh api repos/Dulshan657/NexOrder/rulesets/24973486          # the ruleset itself
+# re-create from scratch (delete the old one first, or PUT …/rulesets/<id> to edit):
+gh api -X POST repos/Dulshan657/NexOrder/rulesets --input - <<'EOF'
 {
-  "required_status_checks": { "strict": true, "contexts": [
-    "typecheck · test · build", "axe · login surfaces", "edge · deno check" ] },
-  "enforce_admins": true,
-  "required_pull_request_reviews": { "required_approving_review_count": 0 },
-  "restrictions": null,
-  "allow_force_pushes": false,
-  "allow_deletions": false
+  "name": "main: PR + required checks (gate phase A)",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "pull_request", "parameters": {
+        "required_approving_review_count": 0, "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false, "require_last_push_approval": false,
+        "required_review_thread_resolution": false } },
+    { "type": "required_status_checks", "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          { "context": "typecheck · test · build" },
+          { "context": "axe · login surfaces" },
+          { "context": "edge · deno check" } ] } }
+  ]
 }
 EOF
-gh api -X PATCH repos/Dulshan657/NexOrder -f delete_branch_on_merge=true
+gh api -X PATCH repos/Dulshan657/NexOrder -F delete_branch_on_merge=true
 ```
 
 Zero approvals because a solo developer cannot approve their own PR; the
@@ -171,6 +194,9 @@ for GO. Two flags make a run PARTIAL by construction:
 
 - `--rows=2,3` runs only those rows — for diagnosis, or a machine short on
   memory (a full run needs several GB: `check:demo` builds every target).
+- `--unit-workers=N` runs the unit suite on N workers instead of CI's 3. Any
+  value other than 3 is PARTIAL (lighter hides load-sensitivity CI would see,
+  heavier invents it), is recorded in the report, and is validated before row 1.
 - `--base=<ref>` compares against that commit instead of the merge-base with
   `origin/main`, for a stacked branch or for testing the gate itself. It must
   be a **strict ancestor** of the ref, or the commit's own failures would read

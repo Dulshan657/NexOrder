@@ -19,7 +19,8 @@
 //                         [--rows=2,3]   run only these rows (diagnosis, or a box short on memory)
 //                         [--base=<ref>] compare against this instead of the merge-base with
 //                                        origin/main (a stacked branch; testing the gate itself)
-//                         [--unit-workers=N] vitest workers for the full suite (default 3)
+//                         [--unit-workers=N] vitest workers for the full suite (default 3;
+//                                        any other value makes the run PARTIAL)
 // Exit: 0 = GO, 1 = NO-GO, 2 = could not run, 3 = PARTIAL (--rows/--base; nothing
 // failed, but it is NOT a merge verdict — only a full run can say GO).
 //
@@ -28,7 +29,6 @@
 // box, ~0.7 GB each, and the jsdom files then time out at 5 s from swapping — the
 // "flakes" that blocked four gate runs of PR #16 passed 3/3 alone every time. The
 // gate judges the commit at CI's load; it is not a stress test of this machine.
-const DEFAULT_UNIT_WORKERS = 3
 
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -36,7 +36,16 @@ import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { applyKnownFlakes, classifyFailure, failingTestsNotOnBase, gateVerdict, INITIAL_RUNS, keysOnEveryRun } from './lib/flakeVerdict.mjs'
+import {
+  applyKnownFlakes,
+  classifyFailure,
+  DEFAULT_UNIT_WORKERS,
+  failingTestsNotOnBase,
+  gateVerdict,
+  INITIAL_RUNS,
+  isPartialRun,
+  keysOnEveryRun,
+} from './lib/flakeVerdict.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const GUARDS = ['lint', 'check:overlays', 'check:viewport', 'check:csp', 'check:claude-md', 'check:demo']
@@ -236,6 +245,7 @@ function report(meta, rows, flakes) {
     '',
     `- **Commit:** \`${meta.sha}\` (exact; detached worktree, nothing overwritten)`,
     `- **Base:** \`${meta.base}\` (${arg('base') ? `--base=${arg('base')}` : 'merge-base with origin/main'})`,
+    `- **Unit workers:** ${meta.unitWorkers}${meta.unitWorkers === DEFAULT_UNIT_WORKERS ? " (CI's count)" : ` — NOT CI's ${DEFAULT_UNIT_WORKERS}, so not a merge verdict`}`,
     `- **Verdict:** **${meta.verdict}**${meta.verdict === 'PARTIAL' ? ' — what ran passed; NOT a merge verdict (needs a full run against the merge-base)' : ''}`,
     '',
     '| # | Row | Result | Detail |',
@@ -254,7 +264,8 @@ function report(meta, rows, flakes) {
     '',
     '- The build is not network-isolated on this machine.',
     '- No remote second-machine run and no resource soak — CI is the second machine.',
-    ...(meta.partial ? ['- Only the rows passed in `--rows` ran; the others are claimed for nothing.'] : []),
+    ...(rows.some((r) => r.detail === 'not run (--rows)') ? ['- Only the rows passed in `--rows` ran; the others are claimed for nothing.'] : []),
+    ...(meta.unitWorkers !== DEFAULT_UNIT_WORKERS ? [`- The unit suite ran on ${meta.unitWorkers} workers, not CI's ${DEFAULT_UNIT_WORKERS}: its load says nothing about CI's.`] : []),
     ...(meta.overridden ? ['- The base was chosen with `--base`, so "pre-existing" means "red on that commit", not "red on main".'] : []),
     ...(!meta.partial && rows[4].status === 'skipped' ? ['- Touched browser specs were NOT run (no `--e2e-base-url`).'] : []),
     '- Nothing about the RS35 handheld: emulation cannot reach its IME scan mode.',
@@ -274,9 +285,12 @@ function main() {
   const want = new Set(rowsArg ? rowsArg.split(',').map(Number) : [1, 2, 3, 4, 5])
   if ([...want].some((n) => !Number.isInteger(n) || n < 1 || n > 5)) die('--rows takes row numbers 1-5, e.g. --rows=2,3')
   const notRun = { status: 'skipped', detail: 'not run (--rows)' }
+  // Validated BEFORE row 1, not ~2 minutes in when row 2 first needs it.
+  const workers = unitWorkers()
 
   assertOutsideCheckout(workdir)
   const meta = resolveRef(ref, arg('base'))
+  meta.unitWorkers = workers
   console.log(`gate: ${meta.label} @ ${meta.sha.slice(0, 10)} (base ${meta.base.slice(0, 10)}) in ${workdir}`)
   prepareWorktree(workdir, meta.sha)
   const logs = join(workdir, '.gate-logs')
@@ -311,7 +325,7 @@ function main() {
     { title: 'Guards: a11y lint, overlays, viewport, CSP, CLAUDE.md, demo-secret surface', ...row4 },
     { title: 'Touched browser specs, run whole', ...row5 },
   ]
-  meta.partial = want.size < 5
+  meta.partial = isPartialRun({ rows: [...want], unitWorkers: workers })
   meta.overridden = Boolean(meta.overridden)
   Object.assign(meta, gateVerdict({ anyFailed: rows.some((r) => r.status === 'fail'), ...meta }))
 
@@ -342,7 +356,7 @@ function unitRow(workdir, logs, meta) {
   const row2 = runRow(workdir, logs, [
     [
       'unit',
-      ['npx', 'vitest', 'run', `--maxWorkers=${unitWorkers()}`, '--reporter=default', `--reporter=${REPORTER}`],
+      ['npx', 'vitest', 'run', `--maxWorkers=${meta.unitWorkers}`, '--reporter=default', `--reporter=${REPORTER}`],
       { GATE_REPORT_OUT: keysPath },
     ],
   ])

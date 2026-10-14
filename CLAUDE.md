@@ -221,8 +221,8 @@ npm run lint:fix                   # the autofixable subset
 npm run lint:prune                 # after fixing findings, shrink the frozen baseline
 npm run check:demo                 # builds EVERY target; demo credentials must ship to the demo host only
 
-# Type-check. `main` REQUIRES CI's three jobs as of 2026-10-13 (branch protection,
-# admins included), so a red job blocks the merge — but run it before you push.
+# Type-check. `main` REQUIRES CI's three jobs as of 2026-10-13 (a repository RULESET —
+# classic branch protection is disabled on this repo — admins included), so a red job blocks the merge — but run it before you push.
 npx tsc --noEmit
 npm run check:edge-types           # deno check on every Edge Function (outside tsc)
 

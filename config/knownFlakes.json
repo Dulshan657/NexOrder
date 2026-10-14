@@ -13,5 +13,10 @@
     "file": "__tests__/productImportCategories.test.tsx",
     "reason": "jsdom timeout in the loaded full suite; passes 3/3 alone on tip and base. Seen by the gate 2026-10-13.",
     "since": "2026-10-13"
+  },
+  {
+    "file": "__tests__/hoReCaFormReps.test.tsx",
+    "reason": "jsdom timeout in the loaded full suite (seen at 11 workers by the gate's ninth review); passes 3/3 alone on tip and base.",
+    "since": "2026-10-13"
   }
 ]
