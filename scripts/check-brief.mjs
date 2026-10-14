@@ -47,8 +47,8 @@ function die(message) {
   process.exit(2)
 }
 
-// Same quoting rules as scripts/gate.mjs: Windows needs a shell for npx, and
-// cmd.exe expands %VAR% even inside quotes.
+// Same quoting rules as scripts/gate.mjs for what does reach cmd.exe: it
+// expands %VAR% even inside quotes.
 const SAFE_ARG = /^[\w@+=:,./\\~^-]+$/
 const winQuote = (a) => {
   if (a.includes('%')) die(`refusing an argument containing '%': ${a}`)
@@ -57,7 +57,9 @@ const winQuote = (a) => {
 
 function sh(argv, { cwd, env } = {}) {
   const options = { cwd, env: { ...process.env, ...env }, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }
-  const r = process.platform === 'win32'
+  // Only npm/npx are .cmd shims needing a shell; git gets argv untouched
+  // (its --format=%H would otherwise meet cmd.exe's %-expansion).
+  const r = process.platform === 'win32' && /^np[mx]$/.test(argv[0])
     ? spawnSync(argv.map(winQuote).join(' '), { ...options, shell: true })
     : spawnSync(argv[0], argv.slice(1), options)
   return { ok: r.status === 0, out: r.stdout ?? '', err: r.stderr ?? '' }
