@@ -16,6 +16,7 @@
     "lint:fix": "eslint . --fix",
     "lint:prune": "eslint . --prune-suppressions",
     "check:claude-md": "node scripts/check-claude-md-size.mjs",
+    "check:brief": "node scripts/check-brief.mjs",
     "check:csp": "node scripts/check-csp.mjs",
     "check:edge-types": "node scripts/check-edge-types.mjs",
     "check:demo": "node scripts/check-demo-surface.mjs",

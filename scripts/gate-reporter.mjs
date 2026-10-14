@@ -1,4 +1,4 @@
-// vitest reporter used only by scripts/gate.mjs.
+// vitest reporter used by scripts/gate.mjs and scripts/check-brief.mjs.
 //
 // Writes, to $GATE_REPORT_OUT, every failure of every module as comparable keys
 // (scripts/lib/failureKeys.mjs) plus the run's unhandled errors — the two
@@ -20,7 +20,10 @@ export default class GateReporter {
     const root = process.cwd()
     const modules = {}
     for (const m of testModules) {
-      modules[relative(root, m.moduleId).replaceAll('\\', '/')] = { state: m.state(), keys: failureKeys(m, root) }
+      // `passed` lets scripts/check-brief.mjs tell "this test passed" from
+      // "this test never ran" — fail-first needs both.
+      const passed = [...m.children.allTests('passed')].map((t) => t.fullName)
+      modules[relative(root, m.moduleId).replaceAll('\\', '/')] = { state: m.state(), keys: failureKeys(m, root), passed }
     }
     const unhandled = unhandledErrors.map((e) => stripRoot(String(e?.message ?? e).split('\n')[0], root))
     writeFileSync(out, JSON.stringify({ modules, unhandled }, null, 2))
