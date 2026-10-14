@@ -25,6 +25,19 @@ export function stripRoot(text, root) {
   return text.replaceAll(root.replaceAll('\\', '/'), '<root>').replaceAll(root, '<root>')
 }
 
+// CI's runner (public repo: 4 vCPU / 16 GB) gives vitest cpus-1 = 3 workers;
+// the gate judges the commit at that load. See scripts/gate.mjs.
+export const DEFAULT_UNIT_WORKERS = 3
+
+/**
+ * A run is a merge verdict only at all five rows AND CI's worker count — a
+ * lighter run hides load-sensitivity CI would see, a heavier one invents it.
+ * @param {{ rows: number[], unitWorkers: number }} run
+ */
+export function isPartialRun({ rows, unitWorkers }) {
+  return new Set(rows).size < 5 || unitWorkers !== DEFAULT_UNIT_WORKERS
+}
+
 /**
  * The run's verdict. GO is reserved for a FULL run against the merge-base:
  * `--rows` skips rows and `--base` chooses what counts as "already red", so a

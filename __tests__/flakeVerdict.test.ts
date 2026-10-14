@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   applyKnownFlakes,
   classifyFailure,
+  DEFAULT_UNIT_WORKERS,
+  isPartialRun,
   failingTestsNotOnBase,
   gateVerdict,
   keysOnEveryRun,
@@ -205,6 +207,27 @@ describe('stripRoot', () => {
 
   it('strips a backslash-form root too', () => {
     expect(stripRoot(String.raw`at C:\w\nexgate\a.ts`, String.raw`C:\w\nexgate`)).toBe(String.raw`at <root>\a.ts`);
+  });
+});
+
+// The tenth review: `--unit-workers=1` (lighter than CI) could still say GO. A
+// run is only a merge verdict at all five rows AND CI's worker count.
+describe('isPartialRun', () => {
+  it('all five rows at the default worker count is a full run', () => {
+    expect(isPartialRun({ rows: [1, 2, 3, 4, 5], unitWorkers: DEFAULT_UNIT_WORKERS })).toBe(false);
+  });
+
+  it('fewer rows is partial', () => {
+    expect(isPartialRun({ rows: [2], unitWorkers: DEFAULT_UNIT_WORKERS })).toBe(true);
+  });
+
+  it('any other worker count is partial, lighter or heavier', () => {
+    expect(isPartialRun({ rows: [1, 2, 3, 4, 5], unitWorkers: 1 })).toBe(true);
+    expect(isPartialRun({ rows: [1, 2, 3, 4, 5], unitWorkers: 11 })).toBe(true);
+  });
+
+  it('the default is CI\'s count', () => {
+    expect(DEFAULT_UNIT_WORKERS).toBe(3);
   });
 });
 
