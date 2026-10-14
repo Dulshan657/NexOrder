@@ -50,3 +50,23 @@ and that the FINAL section says what is not claimed.
 API contracts for two-session features, model-tier routing, the idle check (phase E).
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `parseBrief > refuses an unknown key` fails on base (by absence), passes on tip; 13 more `parseBrief`/`briefBody` cases in `__tests__/brief.test.ts` | |
+| A2 | claimed | `checkFinal > refuses a FINAL missing an acceptance id`; scratch scenario (d) on real commits → `FINAL does not account for A2`, exit 1 | |
+| A3 | claimed | `findForbiddenMoves > flags a removed assertion in a test file` + 12 move cases; scratch scenario (b) → `removed-assertion`, exit 1 | |
+| A4 | claimed | `applyAllowances > an allowance added after the code excuses nothing`; scratch scenario (c) → "allowance added after approval — excuses nothing", exit 1; (h) brief after code → blocks | |
+| A5 | claimed | `judgeFailFirst > a test that also passes on the base is not-fail-first`; scratch scenario (a) on a real existing test → `not-fail-first` (base passed, tip passed), exit 1 | |
+| A6 | claimed | `touchesCode > a docs-only diff touches no code`; scratch (e) docs-only → PASS, (f) code with `failFirst: []` → blocks | |
+| A7 | claimed | `isPartialRun > five rows is partial now that the gate has six` — fails on the base **by assertion**, passes on tip | gate row 6 itself is proven by the full gate run on this PR |
+| A8 | not-claimed | | Needs this PR merged first: the ruleset edit and the blocked probe PR are reported in the PR thread after merge |
+| A9 | not-claimed | | Post-merge: `deploy:dev` and `/version.json` reported in the PR thread |
+
+### Not claimed
+
+- Six of the seven fail-first tests are **proven by absence** (the modules are new); only A7's fails by assertion.
+- The CI job's base run links the tip's `node_modules` on Linux; it is exercised for the first time by this PR's own CI run, not locally.
+- This PR is judged by its OWN `check-brief.mjs` in CI (main has none yet); every later PR is judged by main's copy.
+- Revision detection (`checkRevisions`) is covered only by scratch scenario (i), not by a unit test — it is git plumbing.
+- Nothing here checks that a brief's acceptance checks match the code's intent; that is the gate agent's read of the diff.
