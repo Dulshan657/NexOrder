@@ -65,3 +65,32 @@ export function remainingSeconds(rows: readonly LedgerRow[], now: Date): number 
 export function maxSecondsForNewSession(rows: readonly LedgerRow[], now: Date): number {
   return Math.min(SESSION_CAP_SECONDS, remainingSeconds(rows, now))
 }
+
+/** A ledger row with its id, as the start path re-reads it after inserting. */
+export interface IdentifiedLedgerRow extends LedgerRow {
+  id: string
+}
+
+function sortsBefore(a: IdentifiedLedgerRow, b: IdentifiedLedgerRow): boolean {
+  const aMs = parseTime(a.startedAt, 'startedAt')
+  const bMs = parseTime(b.startedAt, 'startedAt')
+  return aMs < bMs || (aMs === bMs && a.id < b.id)
+}
+
+/**
+ * The rows that sort strictly before `mine`: an earlier startedAt, or the same
+ * startedAt and a smaller id. Never `mine` itself.
+ *
+ * This is what makes concurrent starts serialise without a lock. Each start
+ * inserts its open row, re-reads the ledger and charges itself only for the
+ * rows before it. Of any two rows exactly one sorts first, so the earlier start
+ * never sees the later one and the later one sees the earlier one (open, so at
+ * the full SESSION_CAP_SECONDS). A burst can therefore no longer overshoot the
+ * daily allowance by granting every caller the same remaining seconds.
+ */
+export function rowsBefore(
+  rows: readonly IdentifiedLedgerRow[],
+  mine: IdentifiedLedgerRow,
+): IdentifiedLedgerRow[] {
+  return rows.filter((row) => row.id !== mine.id && sortsBefore(row, mine))
+}

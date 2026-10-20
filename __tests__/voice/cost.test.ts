@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  MAX_REPORTED_TOKENS,
   REALTIME_PRICING,
   computeRealtimeCostUsd,
 } from '../../supabase/functions/_shared/voice/cost'
@@ -156,5 +157,25 @@ describe('computeRealtimeCostUsd', () => {
     const before = JSON.stringify(u)
     computeRealtimeCostUsd(u)
     expect(JSON.stringify(u)).toBe(before)
+  })
+})
+
+describe('MAX_REPORTED_TOKENS', () => {
+  it('fits the integer token columns', () => {
+    expect(MAX_REPORTED_TOKENS).toBeGreaterThan(0)
+    expect(MAX_REPORTED_TOKENS).toBeLessThanOrEqual(2 ** 31 - 1)
+  })
+
+  it('keeps the largest reportable cost inside numeric(10,6)', () => {
+    const max = usage({
+      inputTokens: MAX_REPORTED_TOKENS,
+      outputTokens: MAX_REPORTED_TOKENS,
+      inputAudioTokens: MAX_REPORTED_TOKENS,
+      inputTextTokens: MAX_REPORTED_TOKENS,
+      cachedInputTokens: MAX_REPORTED_TOKENS,
+      outputAudioTokens: MAX_REPORTED_TOKENS,
+      outputTextTokens: MAX_REPORTED_TOKENS,
+    })
+    expect(computeRealtimeCostUsd(max)).toBeLessThan(10_000)
   })
 })

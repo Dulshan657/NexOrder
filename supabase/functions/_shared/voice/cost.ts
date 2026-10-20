@@ -91,3 +91,12 @@ export function computeRealtimeCostUsd(
   const total = inputCostPer1M(usage, pricing) + outputCostPer1M(usage, pricing)
   return roundUsd(total / TOKENS_PER_PRICE_UNIT)
 }
+
+/**
+ * The most tokens the voice-session Edge Function accepts for any one usage
+ * field. Comfortably above a 15-minute session, below the integer token columns'
+ * 2^31 - 1, and small enough that the largest reportable cost still fits
+ * voice_sessions.cost_usd numeric(10,6). Without a bound an absurd report made
+ * the closing UPDATE fail, leaving the session open and charged at the cap.
+ */
+export const MAX_REPORTED_TOKENS = 10_000_000

@@ -15,6 +15,21 @@
 //   (truncated) and never forwarded.
 // end: idempotent. Closes the caller's own row on the SERVER clock (a client
 //   cannot shorten its own session), stores the reported usage and its cost.
+//   cost_usd is INFORMATIONAL: it is computed from token counts the client
+//   reports, so it is only as honest as the client. The budget never reads it;
+//   it uses started_at / ended_at, both written by this function's clock.
+//
+// Concurrent starts. The first budget check, the insert and the mint are
+// separate statements with no lock, so N simultaneous starts would all see the
+// same ledger. After inserting, start therefore re-reads the ledger and charges
+// itself only for the rows that sort strictly BEFORE its own (earlier
+// started_at, tie-break by id: budget.ts rowsBefore), open rows at the full
+// 900 s cap. Of two racing starts exactly one sees the other, so the later one
+// is refused (its row deleted) rather than both being granted. The residual
+// bound is the burst limit: at most START_BURST_PER_HOUR (10) starts an hour,
+// and that limit degrades to per-isolate counting if the rate_limit_hit() DB
+// call fails (_shared/rateLimit.ts fails open), so in that degraded state a
+// burst spread over isolates is bounded only by the ledger re-check above.
 //
 // The daily window is a ledger rather than a rate_limit_counters bucket
 // because that table's cleanup cron deletes rows after an hour.
@@ -42,10 +57,12 @@ import {
   START_BURST_PER_HOUR,
   maxSecondsForNewSession,
   remainingSeconds,
+  rowsBefore,
   secondsUsedToday,
+  type IdentifiedLedgerRow,
   type LedgerRow,
 } from '../_shared/voice/budget.ts'
-import { computeRealtimeCostUsd } from '../_shared/voice/cost.ts'
+import { MAX_REPORTED_TOKENS, computeRealtimeCostUsd } from '../_shared/voice/cost.ts'
 
 // Literal on purpose: __tests__/voice/voiceSessionContract.test.ts reads it with
 // the TypeScript parser and asserts it equals VOICE_ROLES in toolSchemas.ts.
@@ -64,13 +81,13 @@ const APP_TIME_ZONE = 'Australia/Sydney'
 type Cors = Record<string, string>
 
 const usageSchema = z.object({
-  inputTokens: z.number().int().min(0),
-  outputTokens: z.number().int().min(0),
-  inputAudioTokens: z.number().int().min(0),
-  inputTextTokens: z.number().int().min(0),
-  cachedInputTokens: z.number().int().min(0),
-  outputAudioTokens: z.number().int().min(0),
-  outputTextTokens: z.number().int().min(0),
+  inputTokens: z.number().int().min(0).max(MAX_REPORTED_TOKENS),
+  outputTokens: z.number().int().min(0).max(MAX_REPORTED_TOKENS),
+  inputAudioTokens: z.number().int().min(0).max(MAX_REPORTED_TOKENS),
+  inputTextTokens: z.number().int().min(0).max(MAX_REPORTED_TOKENS),
+  cachedInputTokens: z.number().int().min(0).max(MAX_REPORTED_TOKENS),
+  outputAudioTokens: z.number().int().min(0).max(MAX_REPORTED_TOKENS),
+  outputTextTokens: z.number().int().min(0).max(MAX_REPORTED_TOKENS),
 })
 
 const inputSchema = z.discriminatedUnion('action', [
@@ -93,6 +110,7 @@ const mintResponseSchema = z.object({
 type MintedSecret = z.infer<typeof mintResponseSchema>
 
 interface LedgerDbRow {
+  id: string
   started_at: string
   ended_at: string | null
 }
@@ -121,17 +139,17 @@ async function enforceRateLimit(key: string, windowMs: number, max: number, what
 }
 
 /** The caller's sessions started in the last 24 hours, inclusive (as budget.ts counts). */
-async function loadLedger(service: SupabaseClient, userId: string, now: Date): Promise<LedgerRow[]> {
+async function loadLedger(service: SupabaseClient, userId: string, now: Date): Promise<IdentifiedLedgerRow[]> {
   const { data, error } = await service
     .from('voice_sessions')
-    .select('started_at, ended_at')
+    .select('id, started_at, ended_at')
     .eq('user_id', userId)
     .gte('started_at', new Date(now.getTime() - DAY_MS).toISOString())
   if (error) {
     console.error('[voice-session] ledger read failed', error.message)
     throw new EdgeFunctionError('INTERNAL', 'Could not read the voice usage ledger')
   }
-  return ((data ?? []) as LedgerDbRow[]).map((r) => ({ startedAt: r.started_at, endedAt: r.ended_at }))
+  return ((data ?? []) as LedgerDbRow[]).map((r) => ({ id: r.id, startedAt: r.started_at, endedAt: r.ended_at }))
 }
 
 /** Seconds left today, or a DAILY_BUDGET refusal naming when the oldest session ages out. */
@@ -177,8 +195,8 @@ async function buildMintRequest(auth: AuthContext, now: Date): Promise<ClientSec
 }
 
 /** POST to OpenAI. Returns null on any failure, having logged it server-side only. */
-async function mintClientSecret(apiKey: string, auth: AuthContext, now: Date): Promise<MintedSecret | null> {
-  const { body, headersExtra } = await buildMintRequest(auth, now)
+async function mintClientSecret(apiKey: string, request: ClientSecretRequest): Promise<MintedSecret | null> {
+  const { body, headersExtra } = request
   try {
     const res = await fetch(CLIENT_SECRETS_URL, {
       method: 'POST',
@@ -226,18 +244,53 @@ async function deleteOpenRow(service: SupabaseClient, sessionId: string): Promis
   }
 }
 
+interface VerifiedBudget {
+  /** The caller's rows that sort before the new one: what it is charged for. */
+  before: LedgerRow[]
+  now: Date
+}
+
+/**
+ * Re-read the ledger with the new row in it and charge the new session only for
+ * the rows sorting before it (budget.ts rowsBefore). Deletes the row and throws
+ * the DAILY_BUDGET refusal if a concurrent start already took the allowance.
+ */
+async function verifyBudgetAfterInsert(
+  service: SupabaseClient, auth: AuthContext, sessionId: string,
+): Promise<VerifiedBudget> {
+  const now = new Date()
+  const rows = await loadLedger(service, auth.userId, now)
+  const mine = rows.find((r) => r.id === sessionId)
+  if (!mine) {
+    console.error('[voice-session] inserted session row not found on re-read', sessionId)
+    await deleteOpenRow(service, sessionId)
+    throw new EdgeFunctionError('INTERNAL', 'Could not open a voice session')
+  }
+  const before = rowsBefore(rows, mine)
+  try {
+    assertBudgetLeft(before, now)
+  } catch (e) {
+    await deleteOpenRow(service, sessionId)
+    throw e
+  }
+  return { before, now }
+}
+
 async function handleStart(auth: AuthContext, service: SupabaseClient, cors: Cors): Promise<Response> {
   await enforceRateLimit(
     `voice-session:start:${auth.userId}`, HOUR_MS, START_BURST_PER_HOUR, 'Too many sessions started',
   )
-  const now = new Date()
-  const rows = await loadLedger(service, auth.userId, now)
-  const remaining = assertBudgetLeft(rows, now)
+  const firstCheckAt = new Date()
+  assertBudgetLeft(await loadLedger(service, auth.userId, firstCheckAt), firstCheckAt)
   const apiKey = Deno.env.get('OPENAI_API_KEY')
   if (!apiKey) throw new EdgeFunctionError('INTERNAL', 'OPENAI_API_KEY is not configured')
 
+  // Built BEFORE the row exists, so a throw here cannot leave an open row behind.
+  const request = await buildMintRequest(auth, firstCheckAt)
   const sessionId = await openLedgerRow(service, auth)
-  const minted = await mintClientSecret(apiKey, auth, now)
+  const { before, now } = await verifyBudgetAfterInsert(service, auth, sessionId)
+  const remaining = remainingSeconds(before, now)
+  const minted = await mintClientSecret(apiKey, request)
   if (!minted) {
     await deleteOpenRow(service, sessionId)
     throw new EdgeFunctionError('INTERNAL', 'Voice service unavailable')
@@ -258,8 +311,8 @@ async function handleStart(auth: AuthContext, service: SupabaseClient, cors: Cor
     expiresAt: minted.expires_at,
     model: REALTIME_MODEL,
     voice: REALTIME_VOICE,
-    maxSeconds: maxSecondsForNewSession(rows, now),
-    budget: { usedSeconds: secondsUsedToday(rows, now), dailySeconds: DAILY_SECONDS },
+    maxSeconds: maxSecondsForNewSession(before, now),
+    budget: { usedSeconds: secondsUsedToday(before, now), dailySeconds: DAILY_SECONDS },
   })
 }
 
@@ -280,7 +333,12 @@ async function loadOwnSession(service: SupabaseClient, auth: AuthContext, sessio
 
 /** Close the row if still open. False when a concurrent `end` closed it first. */
 async function closeSession(
-  service: SupabaseClient, sessionId: string, input: EndInput, endedAt: Date, costUsd: number | null,
+  service: SupabaseClient,
+  userId: string,
+  sessionId: string,
+  input: EndInput,
+  endedAt: Date,
+  costUsd: number | null,
 ): Promise<boolean> {
   const { data, error } = await service
     .from('voice_sessions')
@@ -293,6 +351,7 @@ async function closeSession(
       cost_usd: costUsd,
     })
     .eq('id', sessionId)
+    .eq('user_id', userId)
     .is('ended_at', null)
     .select('id')
   if (error) {
@@ -309,7 +368,7 @@ async function handleEnd(auth: AuthContext, service: SupabaseClient, input: EndI
 
   const endedAt = new Date() // the server clock, never the client's
   const costUsd = input.usage ? computeRealtimeCostUsd(input.usage) : null
-  const closed = await closeSession(service, session.id, input, endedAt, costUsd)
+  const closed = await closeSession(service, auth.userId, session.id, input, endedAt, costUsd)
   if (!closed) return json(cors, { ok: true, alreadyEnded: true })
 
   const durationSec = Math.max(0, Math.ceil((endedAt.getTime() - Date.parse(session.started_at)) / 1000))

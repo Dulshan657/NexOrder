@@ -6,9 +6,10 @@ import {
   START_BURST_PER_HOUR,
   maxSecondsForNewSession,
   remainingSeconds,
+  rowsBefore,
   secondsUsedToday,
 } from '../../supabase/functions/_shared/voice/budget'
-import type { LedgerRow } from '../../supabase/functions/_shared/voice/budget'
+import type { IdentifiedLedgerRow, LedgerRow } from '../../supabase/functions/_shared/voice/budget'
 
 const NOW = new Date('2026-10-20T10:00:00.000Z')
 const HOUR = 3_600_000
@@ -165,5 +166,77 @@ describe('maxSecondsForNewSession', () => {
   it('shrinks while an earlier session is still open', () => {
     const rows = [open(30_000), closed(HOUR, 400)]
     expect(maxSecondsForNewSession(rows, NOW)).toBe(DAILY_SECONDS - SESSION_CAP_SECONDS - 400)
+  })
+})
+
+// Concurrent starts: each start inserts its open row, re-reads the ledger and
+// counts only the rows that sort strictly before its own (earlier startedAt,
+// tie-break by id), so of two simultaneous starts exactly one sees the other.
+describe('rowsBefore', () => {
+  const ID_A = '11111111-1111-4111-8111-111111111111'
+  const ID_B = '22222222-2222-4222-8222-222222222222'
+
+  function row(id: string, startedAgoMs: number, endedAfterSeconds: number | null = null): IdentifiedLedgerRow {
+    const start = NOW.getTime() - startedAgoMs
+    return {
+      id,
+      startedAt: new Date(start).toISOString(),
+      endedAt: endedAfterSeconds === null ? null : new Date(start + endedAfterSeconds * 1000).toISOString(),
+    }
+  }
+
+  it('orders two rows with the same startedAt by id', () => {
+    const a = row(ID_A, 1000)
+    const b = row(ID_B, 1000)
+    expect(rowsBefore([a, b], b).map((r) => r.id)).toEqual([ID_A])
+    expect(rowsBefore([a, b], a)).toEqual([])
+  })
+
+  it('lets a later row see an earlier open row at the full session cap', () => {
+    const earlier = row(ID_B, 2000)
+    const later = row(ID_A, 1000)
+    const before = rowsBefore([earlier, later], later)
+    expect(before.map((r) => r.id)).toEqual([ID_B])
+    expect(secondsUsedToday(before, NOW)).toBe(SESSION_CAP_SECONDS)
+  })
+
+  it('does not let the earlier row see the later one', () => {
+    const earlier = row(ID_B, 2000)
+    const later = row(ID_A, 1000)
+    expect(rowsBefore([earlier, later], earlier)).toEqual([])
+    expect(remainingSeconds(rowsBefore([earlier, later], earlier), NOW)).toBe(DAILY_SECONDS)
+  })
+
+  it('never counts the row itself', () => {
+    const mine = row(ID_A, 1000)
+    expect(rowsBefore([mine], mine)).toEqual([])
+  })
+
+  it('still grants a legitimately low allowance when nothing sorts before the row', () => {
+    // 1740 s used by closed sessions earlier today leaves exactly 60 s.
+    const used1 = row(ID_B, 5 * HOUR, 900)
+    const used2 = row('33333333-3333-4333-8333-333333333333', 4 * HOUR, 840)
+    const mine = row(ID_A, 1000)
+    const remaining = remainingSeconds(rowsBefore([used1, used2, mine], mine), NOW)
+    expect(remaining).toBe(MIN_START_SECONDS)
+    expect(remaining >= MIN_START_SECONDS).toBe(true)
+  })
+
+  it('refuses the second of two concurrent starts that would overshoot', () => {
+    // 900 s used earlier; two simultaneous starts each see 900 s left alone,
+    // but the later one also sees the earlier open row at the cap: 0 left.
+    const used = row('33333333-3333-4333-8333-333333333333', 5 * HOUR, 900)
+    const first = row(ID_A, 1000)
+    const second = row(ID_B, 1000)
+    const all = [used, first, second]
+    expect(remainingSeconds(rowsBefore(all, first), NOW)).toBe(900)
+    expect(remainingSeconds(rowsBefore(all, second), NOW)).toBe(0)
+  })
+
+  it('does not change the rows it is given', () => {
+    const rows = [row(ID_B, 1000), row(ID_A, 2000)]
+    const before = JSON.stringify(rows)
+    rowsBefore(rows, rows[0])
+    expect(JSON.stringify(rows)).toBe(before)
   })
 })

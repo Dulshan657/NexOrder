@@ -106,3 +106,57 @@ describe('voice-session contract', () => {
     }
   })
 })
+
+function functionBody(sf: ts.SourceFile, name: string): ts.FunctionDeclaration {
+  const fn = collect(sf, ts.isFunctionDeclaration).find((f) => f.name?.text === name)
+  if (!fn) throw new Error(`function ${name} not found in voice-session/index.ts`)
+  return fn
+}
+
+/** Source offsets of every call to `callee` inside `node`, in order. */
+function callOffsets(node: ts.Node, callee: string): number[] {
+  return collect(node, ts.isCallExpression)
+    .filter((c) => ts.isIdentifier(c.expression) && c.expression.text === callee)
+    .map((c) => c.getStart())
+}
+
+describe('voice-session hardening', () => {
+  it('builds the mint request before opening the ledger row', () => {
+    const start = functionBody(source(), 'handleStart')
+    const build = callOffsets(start, 'buildMintRequest')
+    const open = callOffsets(start, 'openLedgerRow')
+    expect(build).toHaveLength(1)
+    expect(open).toHaveLength(1)
+    expect(build[0]).toBeLessThan(open[0])
+  })
+
+  it('re-checks the budget after inserting and before minting', () => {
+    const start = functionBody(source(), 'handleStart')
+    const [open] = callOffsets(start, 'openLedgerRow')
+    const [verify] = callOffsets(start, 'verifyBudgetAfterInsert')
+    const [mint] = callOffsets(start, 'mintClientSecret')
+    expect(open).toBeLessThan(verify)
+    expect(verify).toBeLessThan(mint)
+    expect(callOffsets(functionBody(source(), 'verifyBudgetAfterInsert'), 'rowsBefore')).toHaveLength(1)
+  })
+
+  it('bounds every reported usage field', () => {
+    const sf = source()
+    const decl = collect(sf, ts.isVariableDeclaration).find(
+      (d) => ts.isIdentifier(d.name) && d.name.text === 'usageSchema',
+    )
+    const call = decl?.initializer
+    expect(call && ts.isCallExpression(call)).toBe(true)
+    const shape = (call as ts.CallExpression).arguments[0]
+    expect(shape && ts.isObjectLiteralExpression(shape)).toBe(true)
+    const props = (shape as ts.ObjectLiteralExpression).properties.filter(ts.isPropertyAssignment)
+    expect(props).toHaveLength(7)
+    for (const p of props) expect(p.initializer.getText()).toContain('.max(MAX_REPORTED_TOKENS)')
+  })
+
+  it('closes a session only for the caller', () => {
+    const text = functionBody(source(), 'closeSession').getText()
+    expect(text).toContain(".eq('user_id', userId)")
+    expect(text).toContain(".is('ended_at', null)")
+  })
+})
