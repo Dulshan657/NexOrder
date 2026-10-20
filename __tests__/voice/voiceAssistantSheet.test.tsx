@@ -131,6 +131,23 @@ describe('VoiceAssistantSheet', () => {
     expect(status().getAttribute('aria-live')).toBe('polite')
   })
 
+  it('says Ready, not Listening, in a text-only session (there is no mic)', () => {
+    renderSheet(fakeSession({ textOnly: true, phase: 'live', live: 'listening' }))
+    expect(status().textContent).toContain('Ready')
+    expect(status().textContent).not.toContain('Listening')
+    // Neutral, not the emerald "hearing you" dot, and not pulsing.
+    expect(status().querySelector('.bg-emerald-500')).toBeNull()
+    expect(status().querySelector('.animate-ping')).toBeNull()
+  })
+
+  it('still says Thinking and Speaking in a text-only session', () => {
+    renderSheet(fakeSession({ textOnly: true, phase: 'live', live: 'thinking' }))
+    expect(status().textContent).toContain('Thinking')
+    cleanup()
+    renderSheet(fakeSession({ textOnly: true, phase: 'live', live: 'speaking' }))
+    expect(status().textContent).toContain('Speaking')
+  })
+
   it('shows the elapsed time as m:ss and the minutes used today', () => {
     renderSheet(fakeSession({ elapsedSec: 65, budget: { usedSeconds: 120, dailySeconds: 1800 } }))
     expect(screen.getByText('1:05')).toBeTruthy()
@@ -154,6 +171,13 @@ describe('VoiceAssistantSheet', () => {
     fireEvent.keyDown(box, { key: 'Enter' })
     expect(sendText).toHaveBeenCalledWith('Who should I visit today?')
     expect(box.value).toBe('')
+  })
+
+  it('uses the shared input, whose focus ring passes contrast', () => {
+    renderSheet(fakeSession())
+    const box = screen.getByRole('textbox', { name: 'Type a message' })
+    expect(box.className).not.toContain('ring-nexgen-blue/40')
+    expect(box.className).toContain('ring-nexgen-blue-dark')
   })
 
   it('sends typed text with the Send button', () => {
@@ -191,6 +215,19 @@ describe('VoiceAssistantSheet', () => {
     // The pill names the error rather than a phase.
     expect(status().textContent).not.toContain('Listening')
     expect((status().textContent ?? '').trim().length).toBeGreaterThan(0)
+  })
+
+  it.each(KINDS)('announces a %s error as an alert', (kind) => {
+    const error = voiceError(kind)
+    renderSheet(fakeSession({ phase: 'error', error }))
+    expect(screen.getByRole('alert').textContent).toContain(error.message)
+  })
+
+  it('tells a rep the module is off in plain words', () => {
+    const error = voiceError('module-off')
+    expect(error.message).toBe('The assistant is not enabled for your company.')
+    renderSheet(fakeSession({ phase: 'error', error }))
+    expect(screen.getByText('The assistant is not enabled for your company.')).toBeTruthy()
   })
 
   it('gives every error kind its own title', () => {
@@ -260,6 +297,8 @@ describe('VoiceAssistantSheet', () => {
     const audio = document.querySelector('audio')
     expect(audio).not.toBeNull()
     expect(session.audioRef.current).toBe(audio)
+    expect(audio!.hidden).toBe(true)
+    expect(audio!.hasAttribute('controls')).toBe(false)
     expect(audio!.autoplay).toBe(true)
     expect(audio!.hasAttribute('playsinline')).toBe(true)
   })

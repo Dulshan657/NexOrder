@@ -51,16 +51,19 @@ function ErrorCallout({ session, error }: { session: VoiceSessionApi; error: Voi
       </>
     ) : undefined
 
+  // role="alert": the instruction ("Allow the mic for this site...") is the thing
+  // a screen-reader user most needs to hear, and it arrives without a focus move.
   return (
-    <Callout
-      tone="danger"
-      className="shrink-0"
-      icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}
-      title={ERROR_TITLES[error.kind]}
-      action={actions}
-    >
-      {error.message}
-    </Callout>
+    <div role="alert" className="shrink-0">
+      <Callout
+        tone="danger"
+        icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}
+        title={ERROR_TITLES[error.kind]}
+        action={actions}
+      >
+        {error.message}
+      </Callout>
+    </div>
   )
 }
 
@@ -71,7 +74,7 @@ export function VoiceAssistantSheet({ open, session, onClose }: VoiceAssistantSh
     onClose()
   }, [end, onClose])
 
-  const status = voiceStatus(session.phase, session.live, session.error)
+  const status = voiceStatus(session.phase, session.live, session.error, session.textOnly)
 
   return (
     <Sheet
@@ -91,7 +94,7 @@ export function VoiceAssistantSheet({ open, session, onClose }: VoiceAssistantSh
       {/* The model's voice arrives as a WebRTC track and plays here. Its captions
           are the transcript above (role="log"); a <track> cannot caption a live stream. */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio ref={session.audioRef} autoPlay playsInline aria-label="Nex Assistant voice" className="hidden" />
+      <audio ref={session.audioRef} autoPlay playsInline hidden aria-label="Nex Assistant voice" />
     </Sheet>
   )
 }

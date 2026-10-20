@@ -51,8 +51,11 @@ const PHASE_STATUS: Readonly<Record<Exclude<VoicePhase, 'live' | 'error'>, Voice
   ended: { label: 'Ended', tone: 'stone', pulse: false },
 }
 
-export function voiceStatus(phase: VoicePhase, live: LiveState, error: VoiceError | null): VoiceStatus {
-  if (phase === 'live') return LIVE_STATUS[live]
+/** A text-only session has no mic, so it is never "Listening": it is waiting for typing. */
+const READY_STATUS: VoiceStatus = { label: 'Ready', tone: 'stone', pulse: false }
+
+export function voiceStatus(phase: VoicePhase, live: LiveState, error: VoiceError | null, textOnly = false): VoiceStatus {
+  if (phase === 'live') return textOnly && live === 'listening' ? READY_STATUS : LIVE_STATUS[live]
   if (phase === 'error') return { label: error ? ERROR_TITLES[error.kind] : 'Something went wrong', tone: 'rose', pulse: false }
   return PHASE_STATUS[phase]
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Mic, MicOff, RotateCcw, Send } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Field'
 import type { VoiceSessionApi } from '@/hooks/useVoiceSession'
 import { isActivePhase } from './voiceStatus'
 
@@ -11,10 +12,9 @@ export interface VoiceSheetFooterProps {
   session: VoiceSessionApi
 }
 
-const INPUT_CLASS =
-  'flex-1 min-w-0 touch-target-y rounded-lg border border-stone-300 bg-white px-3 text-sm text-stone-900 ' +
-  'placeholder:text-stone-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-nexgen-blue/40 ' +
-  'disabled:bg-stone-50 disabled:text-stone-400'
+// The shared input (components/ui/Field): its solid nexgen-blue-dark focus ring
+// passes SC 1.4.11, which a hand-rolled `ring-nexgen-blue/40` (1.62:1) does not.
+const INPUT_LAYOUT = 'flex-1 min-w-0 text-stone-900 placeholder:text-stone-500 disabled:bg-stone-50 disabled:text-stone-400'
 
 function TypedInput({ session }: VoiceSheetFooterProps) {
   const [text, setText] = useState('')
@@ -29,7 +29,7 @@ function TypedInput({ session }: VoiceSheetFooterProps) {
 
   return (
     <div className="flex items-center gap-2">
-      <input
+      <Input
         type="text"
         aria-label="Type a message"
         placeholder={live ? 'Type a question' : 'Available once connected'}
@@ -41,7 +41,7 @@ function TypedInput({ session }: VoiceSheetFooterProps) {
           event.preventDefault()
           submit()
         }}
-        className={INPUT_CLASS}
+        className={INPUT_LAYOUT}
       />
       <Button variant="secondary" icon={<Send className="w-4 h-4" aria-hidden="true" />} disabled={!live || text.trim().length === 0} onClick={submit}>
         Send

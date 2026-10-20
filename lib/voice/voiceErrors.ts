@@ -34,7 +34,7 @@ const DEFAULT_MESSAGES: Readonly<Record<VoiceErrorKind, string>> = {
   offline: 'You are offline. Reconnect and try again.',
   'rate-limited': 'Too many assistant sessions were started. Try again shortly.',
   budget: "You've used today's assistant time.",
-  'module-off': 'The assistant is not enabled for this deployment.',
+  'module-off': 'The assistant is not enabled for your company.',
   forbidden: 'The assistant is not available for your role.',
   upstream: 'The assistant is unavailable right now. Try again shortly.',
   'connect-failed': 'Could not connect to the assistant. Check your connection and try again.',

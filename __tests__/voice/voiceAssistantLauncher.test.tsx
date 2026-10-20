@@ -25,7 +25,7 @@ import type { VoiceSessionApi } from '@/hooks/useVoiceSession'
 import type { VoiceToolContext } from '@/lib/voice/context'
 import { CAP_WARNING } from '@/lib/voice/voiceSession'
 import { UserRole } from '@/types'
-import type { AppSettings } from '@/types'
+import type { AppSettings, Order } from '@/types'
 import { __resetModalStack } from '@/components/ui/useModalStack'
 import { __resetScrollLock } from '@/components/ui/useScrollLock'
 import { mkHoReCa, mkProduct, mkUser } from '../fixtures'
@@ -107,15 +107,34 @@ describe('VoiceAssistantLauncher', () => {
   })
 
   it('starts the session synchronously in the tap that opens the sheet', () => {
-    const session = fakeSession()
-    useVoiceSession.mockReturnValue(session)
+    // fireEvent runs inside act(), which flushes effects before returning, so
+    // "start was called by the time click() returned" would also pass if start()
+    // moved into a useEffect([open]). What only the handler can see is the DOM
+    // BEFORE the sheet renders: setOpen(true) is batched until the handler
+    // returns. So record, at call time, whether the dialog already exists.
+    const seen: Array<HTMLElement | null> = []
+    const start = vi.fn(async () => {
+      seen.push(screen.queryByRole('dialog'))
+    })
+    useVoiceSession.mockReturnValue(fakeSession({ start }))
     renderLauncher()
     fireEvent.click(button()!)
-    // fireEvent dispatches synchronously, so start() has been called before any
-    // microtask: still inside the gesture.
-    expect(session.start).toHaveBeenCalledTimes(1)
-    expect(session.start).toHaveBeenCalledWith()
+    expect(start).toHaveBeenCalledTimes(1)
+    expect(start).toHaveBeenCalledWith()
+    expect(seen).toEqual([null])
     expect(screen.getByRole('dialog', { name: 'Nex Assistant' })).toBeTruthy()
+  })
+
+  it('returns focus to the mic button when the sheet closes', () => {
+    useVoiceSession.mockReturnValue(fakeSession({ phase: 'live' }))
+    renderLauncher()
+    const mic = button()!
+    mic.focus()
+    fireEvent.click(mic)
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(document.activeElement).toBe(button())
+    expect(document.activeElement).not.toBe(document.body)
   })
 
   it('hides the launcher button while the sheet is open, and brings it back on close', () => {
@@ -162,6 +181,32 @@ describe('VoiceAssistantLauncher', () => {
     // The stable parts are the same objects call to call: only `now` is new.
     expect(second.user).toBe(first.user)
     expect(second.modules).toBe(first.modules)
+  })
+
+  it('runs a tool call made after a re-render against the new data', () => {
+    useVoiceSession.mockReturnValue(fakeSession())
+    runVoiceTool.mockReturnValue({ ok: true, basis: 'b', asOf: 'x', data: {} })
+    const view = renderLauncher()
+    // The session keeps whatever runTool it was LAST handed; a stale closure
+    // would answer from the orders of the first render.
+    const firstRunTool = lastOptions().runTool
+    const newer = [{ id: 'o-2' }] as unknown as Order[]
+    view.rerender(
+      <VoiceAssistantLauncher
+        currentUser={USER}
+        currentUserUuid={UUID}
+        allOrders={newer}
+        products={PRODUCTS}
+        hoReCas={HORECAS}
+        salesTargets={[]}
+        visits={[]}
+        routes={[]}
+        appSettings={SETTINGS}
+      />,
+    )
+    lastOptions().runTool('get_sales_summary', {})
+    expect((runVoiceTool.mock.calls[0][2] as VoiceToolContext).orders).toBe(newer)
+    expect(lastOptions().runTool).not.toBe(firstRunTool)
   })
 
   it('reports a tool that crashed', () => {

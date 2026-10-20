@@ -1,11 +1,11 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVoiceSession } from '@/hooks/useVoiceSession'
 import { useToastActions } from '@/hooks/useToasts'
 import { reportError } from '@/lib/errorReporter'
 import { runVoiceTool } from '@/lib/voice/runVoiceTool'
 import type { VoiceToolContext, VoiceToolResult } from '@/lib/voice/runVoiceTool'
 import type { AppSettings, HoReCa, Order, Product, SalesTarget, ScheduledVisit, User, Visit } from '@/types'
-import { VoiceAssistantButton } from './VoiceAssistantButton'
+import { VOICE_BUTTON_ID, VoiceAssistantButton } from './VoiceAssistantButton'
 import { VoiceAssistantSheet } from './VoiceAssistantSheet'
 import { enabledModules } from './enabledModules'
 
@@ -54,6 +54,20 @@ function reportToolError(toolName: string, error: unknown): void {
   })
 }
 
+/**
+ * The trigger is unmounted while the sheet is open, so the focus trap's own
+ * restore lands on <body>. On the open -> closed transition, send focus back to
+ * the (re-mounted) mic button. This runs after the overlay's cleanups in the same
+ * commit, i.e. after the background is no longer inert.
+ */
+function useReturnFocus(open: boolean): void {
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (wasOpen.current && !open) document.getElementById(VOICE_BUTTON_ID)?.focus()
+    wasOpen.current = open
+  }, [open])
+}
+
 export default function VoiceAssistantLauncher(props: VoiceAssistantLauncherProps) {
   const { addToast } = useToastActions()
   const [open, setOpen] = useState(false)
@@ -74,6 +88,7 @@ export default function VoiceAssistantLauncher(props: VoiceAssistantLauncherProp
     })
   }
   const handleClose = useCallback(() => setOpen(false), [])
+  useReturnFocus(open)
 
   return (
     <>
