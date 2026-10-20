@@ -1,6 +1,6 @@
 // Module flags, frontend. Layer A of MULTI-TENANT-ARCHITECTURE.md §3.
 //
-// A module is a whole surface a tenant may not have bought. Two of the seven
+// A module is a whole surface a tenant may not have bought. Two of the eight
 // here are the sidebar group headings "Field Ops" and "Inventory & Dispatch",
 // because a gate the operator cannot point at on screen is a gate nobody can
 // reason about. The other five subdivide the third heading, "Sales & Orders",
@@ -10,7 +10,9 @@
 // keys in orders and runs a warehouse and bought none of the other four.
 //
 // Each of those four REQUIRES `sales_orders`; `config/environments.mjs`
-// `assertModuleSet()` refuses a registry that says otherwise.
+// `assertModuleSet()` refuses a registry that says otherwise. The eighth,
+// `voice_assistant` (Nex Assistant), is not a heading at all and requires
+// `sales_orders` the same way.
 //
 // ── THESE ARE CONSTANTS, NOT STATE. THAT IS THE ENTIRE POINT ────────────────
 //
@@ -43,6 +45,7 @@ declare const __MODULE_PROMOTIONS__: boolean
 declare const __MODULE_INVOICING__: boolean
 declare const __MODULE_FIELD_OPS__: boolean
 declare const __MODULE_INVENTORY_DISPATCH__: boolean
+declare const __MODULE_VOICE_ASSISTANT__: boolean
 
 /**
  * The order object and its status ladder: New Order, Order Import, and the
@@ -71,6 +74,9 @@ export const MODULE_FIELD_OPS: boolean = __MODULE_FIELD_OPS__
 
 /** Stock, Receiving, Putaway, Replenishment, Stocktake, Picking, Dispatch, Warehouse. */
 export const MODULE_INVENTORY_DISPATCH: boolean = __MODULE_INVENTORY_DISPATCH__
+
+/** Nex Assistant: the in-app voice assistant (mic button, session mint, read-only tools). Requires sales_orders. */
+export const MODULE_VOICE_ASSISTANT: boolean = __MODULE_VOICE_ASSISTANT__
 
 /**
  * CORE surfaces are not listed and are not gateable: Dashboard, Products,

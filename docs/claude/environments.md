@@ -4,21 +4,26 @@
 > Code's 150k-char session limit. The load-bearing summary stays in `CLAUDE.md`;
 > this is the full detail behind it. **Edit here, not there.**
 
-- **Module flags are BUILT, and there are SEVEN as of 2026-08-20:**
+- **Module flags are BUILT, and there are EIGHT as of 2026-10-20:**
   `sales_orders`, `shop`, `po_inbox`, `promotions`, `invoicing`, `field_ops`,
-  `inventory_dispatch`. Two are the sidebar group headings "Field Ops" and
-  "Inventory & Dispatch"; the other five subdivide the third heading, which is
-  a heading and not a module. **`sales_orders` now means the order OBJECT and
-  its status ladder only** — place it, advance it, cancel it.
-  - **The gate is no longer inert. Amadiya carries
-    `['sales_orders', 'inventory_dispatch']`** — warehouse management with
-    orders keyed in by their own office. Only `dev` has everything. The split
+  `inventory_dispatch`, `voice_assistant`. Two are the sidebar group headings
+  "Field Ops" and "Inventory & Dispatch"; five subdivide the third heading,
+  which is a heading and not a module; `voice_assistant` is neither (it has no
+  nav entry — its surface is the mic button). **`sales_orders` now means the
+  order OBJECT and its status ladder only** — place it, advance it, cancel it.
+  - **The gate is no longer inert. Amadiya's registry entry is
+    `['sales_orders', 'inventory_dispatch', 'voice_assistant']`** — warehouse
+    management with orders keyed in by their own office, plus Nex Assistant.
+    The live release (`rel-2026-08-20`) ships only the first two: a registry
+    edit takes effect on a tenant when the owner cuts the next `rel-*` tag and
+    redeploys. Only `dev` has everything. The split
     happened because three slugs could not express "orders and a warehouse, but
     no Shop, no PO Inbox, no Promotions and no Accounts", which is what a
     tenant actually wanted; `ALL_MODULES` had held nine finer slugs read by
     nothing until 2026-08-13, and this restores four of them.
-  - **Each carved-out slug REQUIRES `sales_orders`** — an approved PO has
-    nowhere to land without one, and `shop` cannot place an order.
+  - **Each carved-out slug, and `voice_assistant`, REQUIRES `sales_orders`** —
+    an approved PO has nowhere to land without one, `shop` cannot place an
+    order, and the assistant's tools read orders, customers and sales figures.
     `MODULE_REQUIRES` states it and `assertModuleSet()` throws at import time,
     so a bad registry edit fails the build rather than shipping a nav entry
     whose Edge Function 403s. `inventory_dispatch` deliberately does NOT
@@ -57,8 +62,9 @@
   - Server half: `_shared/modules.ts` `requireModule`, **fails OPEN** (unset
     `ENABLED_MODULES` = everything on) because a module gate is a *commercial*
     control and roles/RLS are the security ones. `config/moduleOwnership.mjs`
-    maps 65 functions to modules — 3 `sales_orders`, 3 `shop`, 11 `po_inbox`,
-    1 `promotions`, 1 `invoicing`, 3 `field_ops`, 43 `inventory_dispatch`;
+    maps 70 functions to modules — 3 `sales_orders`, 7 `shop`, 11 `po_inbox`,
+    1 `promotions`, 1 `invoicing`, 3 `field_ops`, 43 `inventory_dispatch`,
+    1 `voice_assistant` (`voice-session`);
     `deploy-functions.mjs` will not deploy a disabled module's functions at all,
     but it never RETIRES one already deployed — Amadiya's 19 now-disabled
     functions must be deleted by hand. `poll-inbox` uses `isModuleEnabled` and
@@ -66,6 +72,22 @@
     `_shared/modules.ts` `MODULE_SLUGS` is a hand-kept copy of `ALL_MODULES`
     (`_shared` cannot import outside `supabase/functions`), policed by
     `__tests__/moduleOwnership.test.ts`.
+  - **`voice_assistant` decides two response headers per target, not just a
+    bundle.** `vercel.ts` derives both from `target.modules` and
+    `scripts/check-csp.mjs` asserts each in BOTH directions for every
+    provisioned target (`npm run check:csp`):
+    - `Permissions-Policy` carries `microphone=(self)` where the module is on and
+      `microphone=()` where it is off — the same reason `camera` is `(self)`. An
+      empty allowlist denies the feature to the document's OWN origin, so
+      `getUserMedia({ audio: true })` rejects with `NotAllowedError` and the
+      browser prompt never appears. A tenant without the module keeps the
+      microphone fully denied because nothing in its bundle asks for it.
+    - `connect-src` carries `https://api.openai.com` where the module is on and
+      nothing where it is off. The browser connects to the OpenAI realtime API
+      directly, using the session the `voice-session` Edge Function mints.
+    - Both headers are rendered from the registry at build time, so a target
+      gains or loses them on its next BUILD (a `rel-*` tag for a tenant), never
+      from a toggle. The CSP itself is still Report-Only.
   - **Products and HoReCa are CORE despite where the sidebar files them.**
     Sales & Orders reads product prices; orders come from the customer list.
     `HoReCa Insights` *is* Field Ops. See `TAB_MODULES` in `lib/adminTabUrl.ts`.

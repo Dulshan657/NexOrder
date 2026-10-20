@@ -160,6 +160,12 @@ export const FUNCTION_MODULES = {
   'unassign-replenishment': 'inventory_dispatch',
   'wie-batch-reoptimize': 'inventory_dispatch',
   'wie-simulate': 'inventory_dispatch',
+
+  // ── voice_assistant ───────────────────────────────────────────────────────
+  // Nex Assistant, the in-app voice assistant. `voice-session` mints the
+  // short-lived realtime session the browser connects with. Requires
+  // `sales_orders`, so a tenant with this on always has orders to talk about.
+  'voice-session': 'voice_assistant',
 }
 
 /**
