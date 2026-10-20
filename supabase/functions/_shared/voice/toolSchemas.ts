@@ -9,6 +9,11 @@
 // this list, and the browser refuses anything outside it. Never compare a role
 // to a literal anywhere else to decide what the assistant may call.
 
+// The role lists live in roles.ts (import-free) so the browser's launcher gate
+// can read them without pulling every tool definition into the entry chunk.
+import { REP_ROLES, VOICE_ROLES } from './roles.ts'
+export { REP_ROLES, VOICE_ROLES }
+
 export const VOICE_TOOL_NAMES = [
   'get_sales_summary',
   'get_target_progress',
@@ -31,16 +36,6 @@ export interface VoiceToolSchema {
   parameters: Record<string, unknown>
 }
 
-/** The four roles the assistant is offered to. Anyone else gets no tools. */
-export const VOICE_ROLES: readonly string[] = [
-  'Admin',
-  'Manager',
-  'Field Sales Rep',
-  'Office Sales Rep',
-]
-
-/** The two sales-rep roles: own-figures scope, no reorder recommendations. */
-export const REP_ROLES: readonly string[] = ['Field Sales Rep', 'Office Sales Rep']
 const WAREHOUSE_TOOLS: readonly VoiceToolName[] = [
   'get_stock_status',
   'get_reorder_recommendations',
