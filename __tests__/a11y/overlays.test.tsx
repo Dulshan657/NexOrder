@@ -10,6 +10,9 @@ import { __resetModalStack } from '../../components/ui/useModalStack'
 import { __resetScrollLock } from '../../components/ui/useScrollLock'
 import { __resetInertBackground } from '../../components/ui/useInertBackground'
 import { Field, Input } from '../../components/ui/Field'
+import { VoiceAssistantSheet } from '../../components/voice/VoiceAssistantSheet'
+import { voiceError } from '../../lib/voice/voiceErrors'
+import type { VoiceSessionApi } from '../../hooks/useVoiceSession'
 import { expectNoA11yViolations } from '../support/axe'
 
 // Overlays and the toast region. The overlay layer was already strong -- focus
@@ -93,6 +96,40 @@ describe('ConfirmDialog', () => {
     const describedBy = dialog.getAttribute('aria-describedby')
     expect(describedBy).toBeTruthy()
     expect(document.getElementById(describedBy!)?.textContent).toBe('Your edits will be lost.')
+    await expectNoA11yViolations(overlayRoot())
+  })
+})
+
+// Nex Assistant's sheet: the one feature overlay listed here, because it is a
+// live region (status pill + role="log" transcript) inside a dialog, with a
+// toggle button and an error callout, which is more ARIA than any primitive.
+describe('VoiceAssistantSheet', () => {
+  const session = (overrides: Partial<VoiceSessionApi> = {}): VoiceSessionApi => ({
+    phase: 'live',
+    live: 'listening',
+    muted: false,
+    textOnly: false,
+    transcript: [{ id: 'u1', role: 'user', text: 'How are my sales?', final: true }],
+    error: null,
+    budget: { usedSeconds: 60, dailySeconds: 1800 },
+    maxSeconds: 900,
+    elapsedSec: 5,
+    start: vi.fn(async () => {}),
+    end: vi.fn(async () => {}),
+    toggleMute: vi.fn(),
+    sendText: vi.fn(),
+    audioRef: { current: null },
+    ...overrides,
+  })
+
+  it('is a labelled dialog with no axe violations while live', async () => {
+    render(<VoiceAssistantSheet open session={session()} onClose={vi.fn()} />)
+    expect(screen.getByRole('dialog', { name: 'Nex Assistant' })).toBeTruthy()
+    await expectNoA11yViolations(overlayRoot())
+  })
+
+  it('has no axe violations while showing an error', async () => {
+    render(<VoiceAssistantSheet open session={session({ phase: 'error', error: voiceError('mic-denied') })} onClose={vi.fn()} />)
     await expectNoA11yViolations(overlayRoot())
   })
 })

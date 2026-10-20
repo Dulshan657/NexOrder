@@ -91,7 +91,9 @@ import {
     MODULE_PROMOTIONS,
     MODULE_SALES_ORDERS,
     MODULE_SHOP,
+    MODULE_VOICE_ASSISTANT,
 } from '../lib/modules';
+import { canUseVoiceAssistant } from '../lib/voice/canUseVoiceAssistant';
 import StrayScanListener from './StrayScanListener';
 import UserProfile from './UserProfile';
 import MobileCheckoutButton from './MobileCheckoutButton';
@@ -141,6 +143,9 @@ const ShopView = MODULE_SHOP ? lazyWithRetry(() => import('../views/ShopView')) 
 // are declared inside HoReCaProfile and NotificationCenter, gated the same way.
 const KitchenHomeView = MODULE_SHOP ? lazyWithRetry(() => import('../views/KitchenHomeView')) : null;
 const QrAccessPanel = MODULE_SHOP ? lazyWithRetry(() => import('./qr/QrAccessPanel')) : null;
+// Nex Assistant (the floating mic and its sheet). Gated at the DECLARATION like
+// the rest, so a tenant without `voice_assistant` ships none of it.
+const VoiceAssistantLauncher = MODULE_VOICE_ASSISTANT ? lazyWithRetry(() => import('./voice/VoiceAssistantLauncher')) : null;
 
 import { inviteUser, updateUserProfile } from '../services/supabase/inviteUserService';
 import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit, fromVisit, visitUpdateFields } from '../lib/adapters';
@@ -1761,6 +1766,25 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                         )}
                     </div>
                 </main>
+                {/* Gated here only: AdminView.tsx does not declare this view, so one gate covers the chunk. */}
+                {/* The boundary renders nothing on failure: a broken assistant chunk loses the mic button, never the shell. */}
+                {MODULE_VOICE_ASSISTANT && VoiceAssistantLauncher && canUseVoiceAssistant(currentUser.role) && (
+                    <ErrorBoundary label="Nex Assistant" fallback={() => null}>
+                        <Suspense fallback={null}>
+                            <VoiceAssistantLauncher
+                                currentUser={currentUser}
+                                currentUserUuid={currentUserUuid}
+                                allOrders={allOrders}
+                                products={products}
+                                hoReCas={hoReCas}
+                                salesTargets={salesTargets}
+                                visits={visits}
+                                routes={routes}
+                                appSettings={appSettings}
+                            />
+                        </Suspense>
+                    </ErrorBoundary>
+                )}
             </div>
 
             {/* User Profile Modal */}
