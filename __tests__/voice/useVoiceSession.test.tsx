@@ -622,4 +622,22 @@ describe('useVoiceSession', () => {
     expect(JSON.stringify(reportError.mock.calls)).not.toContain('ek_abc')
     expect(r.result.current.phase).toBe('live')
   })
+
+  it('reports two different drops as two different errors, so the reporter keeps both', async () => {
+    const r = renderSession()
+    await startLive(r)
+    r.client().send.mockReturnValue(false)
+    r.client().emit({
+      type: 'response.done',
+      response: { output: [{ type: 'function_call', call_id: 'call_9', name: 'get_sales_summary', arguments: '{}' }] },
+    })
+    expect(reportError).toHaveBeenCalledTimes(2)
+    const reports = reportError.mock.calls.map((call) => call[0] as { message: string; stack?: string; componentStack?: string })
+    // lib/errorReporter drops a repeat of the same message + stack within 60 s,
+    // so the event name must be in the MESSAGE, not only in the metadata.
+    const signatures = reports.map((p) => p.message + '::' + (p.stack ?? '') + '::' + (p.componentStack ?? ''))
+    expect(new Set(signatures).size).toBe(2)
+    expect(reports[0].message).toContain('function_call_output')
+    expect(reports[1].message).toContain('response.create')
+  })
 })

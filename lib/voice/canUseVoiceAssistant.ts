@@ -7,9 +7,9 @@
 // in the entry chunk), so it must never reach toolSchemas.ts and its ten
 // module-level tool definitions, which would then ship with the module off.
 //
-// This is only
-// whether to SHOW the launcher; which tools a role may call is decided by
-// toolsForRole (see runVoiceTool), and the server refuses anyone else regardless.
+// This decides only whether to SHOW the launcher. Which tools a role may call is
+// decided by toolsForRole (see runVoiceTool), and the server refuses anyone else
+// regardless.
 //
 // Mirrors lib/canSeeOrderValue.ts: a role test, not a module test. Whether the
 // tenant has the voice_assistant module is the folded constant

@@ -4,7 +4,8 @@
 // test that fixes the date. This reads the source and refuses the escape hatches.
 //
 // It lists its files by name rather than scanning the directory: realtimeClient.ts
-// and the hooks that follow in lib/voice legitimately use fetch and timers.
+// and voiceSession.ts are impure by design (fetch, timers, the DOM, the error
+// reporter) and must not be added here.
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -14,7 +15,8 @@ const ROOT = join(__dirname, '..', '..', 'lib', 'voice')
 
 const TOP_LEVEL = [
   'canUseVoiceAssistant.ts', 'context.ts', 'findCustomer.ts', 'period.ts', 'realtimeEvents.ts',
-  'resultBudget.ts', 'runVoiceTool.ts', 'toolArgs.ts', 'transcript.ts',
+  'realtimeUsage.ts', 'resultBudget.ts', 'runVoiceTool.ts', 'toolArgs.ts', 'transcript.ts',
+  'voiceErrors.ts',
 ]
 
 const PURE_FILES = [

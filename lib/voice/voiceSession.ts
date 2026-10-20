@@ -289,16 +289,24 @@ function answerCalls(h: Handles, output: readonly ResponseOutputItem[]): void {
     h.answered = new Set([...h.answered, item.call_id])
     const result = runToolSafely(h, item.name, item.arguments)
     const outputEvent = functionOutputItem(item.call_id, JSON.stringify(result))
-    sendOrReport(h, outputEvent, { event: 'function_call_output', callId: item.call_id, tool: item.name })
+    sendOrReport(h, outputEvent, 'function_call_output', { callId: item.call_id, tool: item.name })
     answered += 1
   }
-  if (answered > 0) sendOrReport(h, responseCreate(), { event: 'response.create' })
+  if (answered > 0) sendOrReport(h, responseCreate(), 'response.create')
 }
 
-/** Send, and report (never silently drop) an event the data channel would not take. */
-function sendOrReport(h: Handles, event: ClientEvent, context: Record<string, unknown>): void {
+/**
+ * Send, and report (never silently drop) an event the data channel would not take.
+ * The event name is in the MESSAGE: lib/errorReporter drops a repeat of the same
+ * message and stack for 60 s, and a dropped function_call_output and a dropped
+ * response.create are two different failures that must both be seen.
+ */
+function sendOrReport(h: Handles, event: ClientEvent, name: string, context: Record<string, unknown> = {}): void {
   if (h.client?.send(event)) return
-  reportError({ message: 'Nex Assistant: data channel not open; event dropped', metadata: { ...context, hasClient: h.client !== null } })
+  reportError({
+    message: `Nex Assistant: data channel not open; ${name} dropped`,
+    metadata: { ...context, event: name, hasClient: h.client !== null },
+  })
 }
 
 /** Add a response's usage once, however many times its response.done arrives. */
