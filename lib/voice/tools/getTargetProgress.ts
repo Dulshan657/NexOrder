@@ -2,9 +2,8 @@
 // the pace will get there.
 //
 // A target belongs to a rep by the NUMERIC `userId` on the row, compared with
-// `ctx.user.numericId`. Never the uuid. (See the note in the task report: the
-// adapter that builds SalesTarget currently yields 0 for that field, so in the
-// running app these comparisons find nothing until the adapter is fixed.)
+// `ctx.user.numericId`. Never the uuid. lib/adapters.ts toSalesTarget produces that
+// field as numericIdForProfile(user_id), the same hash currentUser.id comes from.
 
 import { computeTargetProgress } from '@/lib/semantic'
 import { computeTargetProjection } from '@/services/targetProjectionService'
