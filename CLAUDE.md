@@ -477,6 +477,7 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 | `horeca_addresses` | `mutate-horeca-address` | Admin, Manager | `00018` |
 | PO Inbox tables (see above) | PO Inbox functions (see above) | Admin, Manager | `00018`–`00023` |
 | `rate_limit_counters` | `rate_limit_hit()` RPC (service_role-only) | service_role only | `00026` |
+| `voice_sessions` | `voice-session` (`start` / `end`) | service_role only (the function allows Admin, Manager, Field Sales Rep, Office Sales Rep) | `00133` |
 | `inventory_balances`, `inventory_movements` | `receive-stock`, `adjust-stock`, `transfer-stock`, `record-pick`, `decide-putaway`, `complete-putaway`, `count-bin` | Admin, Manager, Warehouse | `00027`, `00032`, `00080` (`count-bin` needs no migration) |
 | `handling_units`, `label_print_log` | `generate-labels`, `receive-stock`, `complete-putaway` | Admin, Manager, Warehouse | `00074`, `00075` |
 | `warehouse_label_prefs` | `mutate-warehouse` `set_label_prefs` | Admin, Manager | `00106` |

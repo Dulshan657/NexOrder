@@ -46,6 +46,8 @@ Ordered by impact; one-line scope each so future agents don't drift.
 
 git history is the changelog. Only the items below carry something the sections above don't.
 
+- **Nex Assistant v1 (2026-10-20, NX-0003) is BUILT, on branch `feat/NX-0003-voice-assistant`, and NOT merged.** It is deployed to dev (migration `00133`, the `voice-session` function, the web app) and released to no tenant: the owner merges when they declare v1, and a tenant gets it only on a `rel-*` tag cut from the tenant workspace. Architecture, ledger, tools and caveats: [`voice-assistant.md`](voice-assistant.md). **Nobody has yet held a spoken conversation on a real device** (brief A14); that walk is the owner's, on desktop Chrome, Android Chrome and iPhone Safari. **v2 ideas:** a Warehouse role without money (tools that never touch prices); persisted transcripts; Sinhala and Tamil; swapping the voice for a hosted one; a Playwright typed-fallback journey (a fake `RTCPeerConnection` plus a mocked `voice-session`); keepalive-token hardening for page close (the end request awaits `getSession()` first, so a closing page can leave the row charged at the cap); and a failure message when the connection dies before the session is live (today it ends as "Session ended").
+
 - **Factory phase B (2026-10-14, NX-0001): every PR carries a brief, and its
   own tests must fail on the base.** `docs/claude/briefs.md`. CI's
   `brief · fail-first` runs the *base branch's* checker, so a PR cannot weaken
