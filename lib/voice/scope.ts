@@ -60,6 +60,9 @@ export function allowedCustomerIds(ctx: VoiceToolContext): ReadonlySet<number> |
  * could also have found by name, so an id lifted from elsewhere opens nothing.
  */
 export function findVisibleCustomer(ctx: VoiceToolContext, id: number): HoReCa | undefined {
+  // `undefined` here also means a rep with no orders yet, who is unrestricted. That
+  // only lets them confirm a customer exists in ctx.hoReCas, which is data they were
+  // already sent; every figure about it is still filtered to their own orders.
   const allowed = allowedCustomerIds(ctx)
   if (allowed && !allowed.has(id)) return undefined
   return ctx.hoReCas.find((customer) => customer.id === id)

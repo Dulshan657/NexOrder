@@ -5,12 +5,20 @@ import { VOICE_TOOL_NAMES, toolsForRole } from '../../supabase/functions/_shared
 import type { VoiceToolName } from '../../supabase/functions/_shared/voice/toolSchemas'
 import { runVoiceTool } from '../../lib/voice/runVoiceTool'
 import type { VoiceToolResult } from '../../lib/voice/runVoiceTool'
+import { getReorderRecommendations } from '../../lib/voice/tools/getReorderRecommendations'
 import { MAX_RESULT_CHARS } from '../../lib/voice/resultBudget'
 import {
   ALL_MODULES, C1, C2, C3, DAY_MS, MANAGER, MINIMAL_ARGS, NOW, OFFICE_REP, REP_A, REP_B,
   buildBulkWorld, buildOrders, ctxFor, deepFreeze,
 } from './voiceFixtures'
 import { mkHoReCa, mkUser } from '../fixtures'
+
+// A spy that still runs the real implementation: the other tests in this file call
+// the tool for real, and the refusal test needs to see whether it was reached.
+vi.mock('../../lib/voice/tools/getReorderRecommendations', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/voice/tools/getReorderRecommendations')>()
+  return { ...actual, getReorderRecommendations: vi.fn(actual.getReorderRecommendations) }
+})
 
 const NOT_AVAILABLE = { ok: false, error: 'Not available for your role' }
 const AMADIYA = ['sales_orders', 'inventory_dispatch', 'voice_assistant']
@@ -82,6 +90,8 @@ describe('runVoiceTool', () => {
   })
 
   it('refuses a tool the role may not use', () => {
+    const reorder = vi.mocked(getReorderRecommendations)
+    reorder.mockClear()
     const rep = ctxFor(REP_A)
     expect(run('get_reorder_recommendations', {}, rep)).toEqual(NOT_AVAILABLE)
 
@@ -90,8 +100,12 @@ describe('runVoiceTool', () => {
     expect(run('get_reorder_recommendations', { lead_time_days: 'soon' }, rep)).toEqual(NOT_AVAILABLE)
     expect(run('get_reorder_recommendations', 42, rep)).toEqual(NOT_AVAILABLE)
 
-    // The same call is fine for a manager.
+    // Refusing is not enough: the tool behind the refusal must never have run.
+    expect(reorder).not.toHaveBeenCalled()
+
+    // The same call is fine for a manager, and that one does reach the tool.
     expect(run('get_reorder_recommendations', {}, ctxFor(MANAGER)).ok).toBe(true)
+    expect(reorder).toHaveBeenCalledTimes(1)
   })
 })
 

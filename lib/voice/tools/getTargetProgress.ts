@@ -43,7 +43,9 @@ function describeTarget(target: SalesTarget, ctx: VoiceToolContext): TargetRow {
     type: target.type,
     target: Math.round(target.targetValue),
     achieved: Math.round(progress.achieved),
-    percent: Math.round(progress.percent),
+    // Not progress.percent: that is capped at 100 for a progress bar, and a rep at
+    // 140% of target should hear 140, beside a projection that is not capped either.
+    percent: target.targetValue > 0 ? Math.round((progress.achieved / target.targetValue) * 100) : 0,
     projectedFinal: Math.round(pace.projectedFinal),
     projectedPercent: pace.projectedPercent,
     status: pace.status,

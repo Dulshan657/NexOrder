@@ -165,6 +165,23 @@ describe('get_target_progress', () => {
     expect(targets[0]).toMatchObject({ type: 'orders', target: 5, achieved: 2, percent: 40, projectedPercent: 63, status: 'behind' })
   })
 
+  it('reports progress past 100 percent as it is, not capped like a progress bar', () => {
+    // One October order of 35 x $4 = $140 against a $100 target.
+    const orders = deepFreeze([order('X1', REP_A, C1, 5, [[P1, 35]])])
+    const salesTargets = deepFreeze([{ ...buildTargets()[0], targetValue: 100 }])
+    const result = run('get_target_progress', {}, ctxFor(REP_A, { orders, salesTargets }))
+    const [row] = dataOf<{ targets: Target[] }>(result).targets
+    expect(row).toMatchObject({ target: 100, achieved: 140, percent: 140 })
+  })
+
+  it('reports 0 percent, never NaN or Infinity, for a target of zero', () => {
+    const salesTargets = deepFreeze([{ ...buildTargets()[0], targetValue: 0 }])
+    const result = run('get_target_progress', {}, ctxFor(REP_A, { salesTargets }))
+    const [row] = dataOf<{ targets: Target[] }>(result).targets
+    expect(row).toMatchObject({ target: 0, achieved: 88, percent: 0, projectedPercent: 0 })
+    expect(JSON.stringify(result)).not.toMatch(/NaN|Infinity|null/)
+  })
+
   it('matches targets on the numeric id, never the uuid', () => {
     const trap = buildTargets().map((t) => ({ ...t, userId: t.userId === REP_A.id ? (ctxFor(REP_A).user.uuid as unknown as number) : t.userId }))
     const ctx = ctxFor(REP_A, { salesTargets: deepFreeze(trap) })
