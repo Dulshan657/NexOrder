@@ -39,7 +39,8 @@ export const VOICE_ROLES: readonly string[] = [
   'Office Sales Rep',
 ]
 
-const REP_ROLES: readonly string[] = ['Field Sales Rep', 'Office Sales Rep']
+/** The two sales-rep roles: own-figures scope, no reorder recommendations. */
+export const REP_ROLES: readonly string[] = ['Field Sales Rep', 'Office Sales Rep']
 const WAREHOUSE_TOOLS: readonly VoiceToolName[] = [
   'get_stock_status',
   'get_reorder_recommendations',

@@ -2,7 +2,8 @@
 //
 // PURE: shared by the voice-session Edge Function (which stores the cost when a
 // session ends) and anything that shows it. Prices are USD per 1M tokens as of
-// REALTIME_PRICING.asOf. They live here, not in a remote lookup, so a cost
+// REALTIME_PRICING.asOf, from https://developers.openai.com/api/docs/pricing
+// (gpt-realtime-2.1, checked 2026-10-20). They live here, not in a remote lookup, so a cost
 // written to the ledger today never changes retroactively; when OpenAI changes
 // prices, edit them AND bump `asOf`.
 //
@@ -20,15 +21,14 @@ export interface RealtimePricing {
 }
 
 export const REALTIME_PRICING: RealtimePricing = Object.freeze({
+  // Source: https://developers.openai.com/api/docs/pricing (gpt-realtime-2.1).
+  // Cached input is $0.40 for both text and audio, so one cached rate serves both.
   audioInPer1M: 32,
   cachedInPer1M: 0.4,
   audioOutPer1M: 64,
-  // Upper bound; text prices unverified. Only the audio prices are confirmed for
-  // gpt-realtime-2.1, so text is billed at the audio rates rather than guessed
-  // lower: the budget may overstate a session's cost but never understate it.
-  textInPer1M: 32,
-  textOutPer1M: 64,
-  asOf: '2026-10',
+  textInPer1M: 4,
+  textOutPer1M: 24,
+  asOf: '2026-10-20',
 })
 
 export interface RealtimeUsage {

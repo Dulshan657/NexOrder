@@ -8,6 +8,8 @@
 // The whole prompt stays under MAX_INSTRUCTION_CHARS: it is paid for on every
 // turn, and a long prompt also makes the model chattier.
 
+import { REP_ROLES } from './toolSchemas.ts'
+
 export interface InstructionsInput {
   role: string
   name: string
@@ -23,7 +25,6 @@ const MAX_NAME_CHARS = 80
 const MAX_ROLE_CHARS = 40
 const MAX_DATE_CHARS = 32
 
-const REP_ROLES: readonly string[] = ['Field Sales Rep', 'Office Sales Rep']
 const COMPANY_ROLES: readonly string[] = ['Admin', 'Manager']
 
 /**
