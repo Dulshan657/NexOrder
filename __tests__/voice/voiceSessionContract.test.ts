@@ -160,3 +160,61 @@ describe('voice-session hardening', () => {
     expect(text).toContain(".is('ended_at', null)")
   })
 })
+
+/** The `try` in handleStart that guards everything after this request's own insert. */
+function startGuard(): { start: ts.FunctionDeclaration; guard: ts.TryStatement | undefined } {
+  const start = functionBody(source(), 'handleStart')
+  const guard = collect(start, ts.isTryStatement).find(
+    (t) => callOffsets(t.tryBlock, 'verifyBudgetAfterInsert').length > 0,
+  )
+  return { start, guard }
+}
+
+describe('voice-session open-row cleanup', () => {
+  it('covers the budget re-read, the mint and the audit write with one catch', () => {
+    const { start, guard } = startGuard()
+    expect(guard).toBeDefined()
+    const block = (guard as ts.TryStatement).tryBlock
+    const [open] = callOffsets(start, 'openLedgerRow')
+    // The insert itself is outside the guard (a failed insert leaves no row to delete)...
+    expect(callOffsets(block, 'openLedgerRow')).toHaveLength(0)
+    expect(block.getStart()).toBeGreaterThan(open)
+    // ...and everything that can throw after it is inside.
+    for (const callee of ['verifyBudgetAfterInsert', 'mintClientSecret', 'logAuditEvent']) {
+      expect(callOffsets(block, callee), callee).toHaveLength(1)
+    }
+    expect((guard as ts.TryStatement).finallyBlock).toBeUndefined()
+  })
+
+  it('deletes this request own row, then rethrows the original error', () => {
+    const { guard } = startGuard()
+    const clause = guard?.catchClause
+    expect(clause).toBeDefined()
+    const variable = clause?.variableDeclaration?.name.getText()
+    expect(variable).toBeTruthy()
+    const body = (clause as ts.CatchClause).block
+    const deletes = collect(body, ts.isCallExpression).filter(
+      (c) => ts.isIdentifier(c.expression) && c.expression.text === 'deleteOpenRow',
+    )
+    expect(deletes).toHaveLength(1)
+    expect(deletes[0].arguments.map((a) => a.getText())).toEqual(['service', 'sessionId'])
+    expect(ts.isAwaitExpression(deletes[0].parent)).toBe(true)
+    const throws = collect(body, ts.isThrowStatement)
+    expect(throws).toHaveLength(1)
+    expect(throws[0].expression.getText()).toBe(variable)
+    expect(deletes[0].getStart()).toBeLessThan(throws[0].getStart())
+  })
+
+  it('deletes by id only, and a failed delete cannot mask the original error', () => {
+    const text = functionBody(source(), 'deleteOpenRow')
+    expect(text.getText()).toContain(".eq('id', sessionId)")
+    expect(text.getText()).not.toContain('user_id')
+    // A cleanup that throws would replace the error being rethrown.
+    expect(collect(text, ts.isTryStatement).filter((t) => t.catchClause)).toHaveLength(1)
+  })
+
+  it('has no second delete of its own row inside the re-read', () => {
+    const verify = functionBody(source(), 'verifyBudgetAfterInsert')
+    expect(callOffsets(verify, 'deleteOpenRow')).toHaveLength(0)
+  })
+})

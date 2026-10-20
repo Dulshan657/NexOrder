@@ -17,19 +17,27 @@
 //   cannot shorten its own session), stores the reported usage and its cost.
 //   cost_usd is INFORMATIONAL: it is computed from token counts the client
 //   reports, so it is only as honest as the client. The budget never reads it;
-//   it uses started_at / ended_at, both written by this function's clock.
+//   it reads started_at and ended_at. ended_at is written by this function's
+//   clock; started_at is the database default now(), the transaction start.
 //
 // Concurrent starts. The first budget check, the insert and the mint are
 // separate statements with no lock, so N simultaneous starts would all see the
 // same ledger. After inserting, start therefore re-reads the ledger and charges
 // itself only for the rows that sort strictly BEFORE its own (earlier
 // started_at, tie-break by id: budget.ts rowsBefore), open rows at the full
-// 900 s cap. Of two racing starts exactly one sees the other, so the later one
-// is refused (its row deleted) rather than both being granted. The residual
-// bound is the burst limit: at most START_BURST_PER_HOUR (10) starts an hour,
-// and that limit degrades to per-isolate counting if the rate_limit_hit() DB
-// call fails (_shared/rateLimit.ts fails open), so in that degraded state a
-// burst spread over isolates is bounded only by the ledger re-check above.
+// 900 s cap. That narrows the race; it does not close it. A row becomes
+// visible to other transactions at COMMIT, while started_at is the time the
+// inserting transaction STARTED, so the later-sorting start sees the earlier
+// one only if the earlier insert has committed before the later re-read runs.
+// If both re-read before either has committed, neither sees the other and both
+// are granted. The window is narrow (one insert round trip) and the total stays
+// bounded by the burst limit: at most START_BURST_PER_HOUR (10) starts an hour,
+// which degrades to per-isolate counting if the rate_limit_hit() DB call fails
+// (_shared/rateLimit.ts fails open).
+//
+// An open row is charged at the full cap for up to 24 h, so no request may
+// leave its own row open on a path that did not return a key: handleStart
+// deletes it (by id) on ANY throw between the insert and the successful return.
 //
 // The daily window is a ledger rather than a rate_limit_counters bucket
 // because that table's cleanup cron deletes rows after an hour.
@@ -237,10 +245,22 @@ async function openLedgerRow(service: SupabaseClient, auth: AuthContext): Promis
   return sessionId
 }
 
+/**
+ * Delete this request's own, never-handed-out row by its id. Logs and returns on
+ * failure: it runs inside a catch, and a cleanup that threw would replace the
+ * error that is about to be rethrown.
+ */
 async function deleteOpenRow(service: SupabaseClient, sessionId: string): Promise<void> {
-  const { error } = await service.from('voice_sessions').delete().eq('id', sessionId)
-  if (error) {
-    console.error('[voice-session] could not delete the unminted session row', sessionId, error.message)
+  try {
+    const { error } = await service.from('voice_sessions').delete().eq('id', sessionId)
+    if (error) {
+      console.error('[voice-session] could not delete the unminted session row', sessionId, error.message)
+    }
+  } catch (e) {
+    console.error(
+      '[voice-session] could not delete the unminted session row', sessionId,
+      e instanceof Error ? e.message : String(e),
+    )
   }
 }
 
@@ -252,8 +272,10 @@ interface VerifiedBudget {
 
 /**
  * Re-read the ledger with the new row in it and charge the new session only for
- * the rows sorting before it (budget.ts rowsBefore). Deletes the row and throws
- * the DAILY_BUDGET refusal if a concurrent start already took the allowance.
+ * the rows sorting before it (budget.ts rowsBefore). Throws the DAILY_BUDGET
+ * refusal if a concurrent start already took the allowance. It deletes nothing:
+ * handleStart removes the row for this and for every other throw (the read can
+ * also fail with INTERNAL, or with a RangeError on an unreadable timestamp).
  */
 async function verifyBudgetAfterInsert(
   service: SupabaseClient, auth: AuthContext, sessionId: string,
@@ -263,16 +285,10 @@ async function verifyBudgetAfterInsert(
   const mine = rows.find((r) => r.id === sessionId)
   if (!mine) {
     console.error('[voice-session] inserted session row not found on re-read', sessionId)
-    await deleteOpenRow(service, sessionId)
     throw new EdgeFunctionError('INTERNAL', 'Could not open a voice session')
   }
   const before = rowsBefore(rows, mine)
-  try {
-    assertBudgetLeft(before, now)
-  } catch (e) {
-    await deleteOpenRow(service, sessionId)
-    throw e
-  }
+  assertBudgetLeft(before, now)
   return { before, now }
 }
 
@@ -288,32 +304,37 @@ async function handleStart(auth: AuthContext, service: SupabaseClient, cors: Cor
   // Built BEFORE the row exists, so a throw here cannot leave an open row behind.
   const request = await buildMintRequest(auth, firstCheckAt)
   const sessionId = await openLedgerRow(service, auth)
-  const { before, now } = await verifyBudgetAfterInsert(service, auth, sessionId)
-  const remaining = remainingSeconds(before, now)
-  const minted = await mintClientSecret(apiKey, request)
-  if (!minted) {
-    await deleteOpenRow(service, sessionId)
-    throw new EdgeFunctionError('INTERNAL', 'Voice service unavailable')
-  }
+  try {
+    const { before, now } = await verifyBudgetAfterInsert(service, auth, sessionId)
+    const minted = await mintClientSecret(apiKey, request)
+    if (!minted) throw new EdgeFunctionError('INTERNAL', 'Voice service unavailable')
 
-  await logAuditEvent(service, {
-    actorId: auth.userId,
-    actorRole: auth.role,
-    action: 'create',
-    resource: 'voice_session',
-    resourceId: sessionId,
-    metadata: { model: REALTIME_MODEL, voice: REALTIME_VOICE, remainingSeconds: remaining },
-  })
-  return json(cors, {
-    ok: true,
-    sessionId,
-    clientSecret: minted.value,
-    expiresAt: minted.expires_at,
-    model: REALTIME_MODEL,
-    voice: REALTIME_VOICE,
-    maxSeconds: maxSecondsForNewSession(before, now),
-    budget: { usedSeconds: secondsUsedToday(before, now), dailySeconds: DAILY_SECONDS },
-  })
+    await logAuditEvent(service, {
+      actorId: auth.userId,
+      actorRole: auth.role,
+      action: 'create',
+      resource: 'voice_session',
+      resourceId: sessionId,
+      metadata: { model: REALTIME_MODEL, voice: REALTIME_VOICE, remainingSeconds: remainingSeconds(before, now) },
+    })
+    return json(cors, {
+      ok: true,
+      sessionId,
+      clientSecret: minted.value,
+      expiresAt: minted.expires_at,
+      model: REALTIME_MODEL,
+      voice: REALTIME_VOICE,
+      maxSeconds: maxSecondsForNewSession(before, now),
+      budget: { usedSeconds: secondsUsedToday(before, now), dailySeconds: DAILY_SECONDS },
+    })
+  } catch (e) {
+    // From the insert to the return this request's own row is open, and an open
+    // row is charged at the full cap for up to 24 h. Whatever threw (the budget
+    // refusal, a failed re-read, an unreadable timestamp, a failed mint) removes
+    // that one row, by id, and the original error goes on.
+    await deleteOpenRow(service, sessionId)
+    throw e
+  }
 }
 
 async function loadOwnSession(service: SupabaseClient, auth: AuthContext, sessionId: string): Promise<SessionRow> {
