@@ -6,6 +6,10 @@
 //   send:    one client event as JSON on the data channel
 //   close:   channel, peer and mic tracks, once
 //
+// The far side going away is reported ONCE through onClose, whichever arrives
+// first: the data channel closing, or the peer connection reaching 'failed' (ICE
+// failing on a network that blocks UDP leaves the channel neither open nor closed).
+//
 // The model's voice arrives as a media track and is played on the <audio> element
 // the UI owns. Events arrive on the data channel and are parsed with
 // parseServerEvent; ones the app does not use are dropped here.
@@ -82,6 +86,7 @@ export class RealtimeClient implements RealtimeClientLike {
   private dc: RTCDataChannel | null = null
   private mic: MediaStream | null = null
   private closed = false
+  private closeReported = false
 
   constructor(deps: RealtimeClientDeps = {}) {
     this.createPeerConnection = deps.createPeerConnection ?? (() => new RTCPeerConnection())
@@ -93,7 +98,11 @@ export class RealtimeClient implements RealtimeClientLike {
     this.pc = pc
     this.mic = options.micStream
     this.closed = false
+    this.closeReported = false
     pc.ontrack = (event: RTCTrackEvent) => playRemote(options.audioEl, event.streams)
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed') this.reportClosed(options)
+    }
     this.attachAudio(pc, options.micStream)
     this.dc = this.openChannel(pc, options)
     try {
@@ -134,10 +143,15 @@ export class RealtimeClient implements RealtimeClientLike {
       const event = parseServerEvent(message.data)
       if (event) options.onEvent(event)
     }
-    dc.onclose = () => {
-      if (!this.closed) options.onClose()
-    }
+    dc.onclose = () => this.reportClosed(options)
     return dc
+  }
+
+  /** Tell the caller the connection died, once, and never after close(). */
+  private reportClosed(options: RealtimeConnectOptions): void {
+    if (this.closed || this.closeReported) return
+    this.closeReported = true
+    options.onClose()
   }
 
   private async exchangeSdp(pc: RTCPeerConnection, clientSecret: string): Promise<void> {

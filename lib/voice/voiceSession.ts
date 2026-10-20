@@ -30,7 +30,7 @@ import { reportError } from '@/lib/errorReporter'
 import { RealtimeClient, RealtimeConnectError } from './realtimeClient'
 import type { RealtimeClientLike } from './realtimeClient'
 import { functionOutputItem, responseCreate, userTextItem } from './realtimeEvents'
-import type { ResponseOutputItem, ServerEvent } from './realtimeEvents'
+import type { ClientEvent, ResponseOutputItem, ResponseUsage, ServerEvent } from './realtimeEvents'
 import { INITIAL_TRANSCRIPT, reduceTranscript } from './transcript'
 import type { TranscriptEntry, TranscriptState } from './transcript'
 import { ZERO_USAGE, addUsage } from './realtimeUsage'
@@ -66,6 +66,8 @@ const WARN_BEFORE_CAP_MS = 60_000
 const SILENCE_MS = 120_000
 const HIDDEN_MS = 60_000
 const TICK_MS = 1_000
+/** How long a connected peer may take to deliver session.created before the start fails. */
+const CONNECT_TIMEOUT_MS = 20_000
 const BAD_ARGUMENTS: VoiceToolResult = { ok: false, error: 'Bad arguments' }
 const TOOL_FAILED: VoiceToolResult = { ok: false, error: 'That lookup failed' }
 const MIC_CONSTRAINTS = { audio: { echoCancellation: true, noiseSuppression: true } }
@@ -99,10 +101,11 @@ interface Timers {
   readonly warn: Timer | null
   readonly silence: Timer | null
   readonly hidden: Timer | null
+  readonly connect: Timer | null
   readonly ticker: ReturnType<typeof setInterval> | null
 }
 
-const NO_TIMERS: Timers = Object.freeze({ cap: null, warn: null, silence: null, hidden: null, ticker: null })
+const NO_TIMERS: Timers = Object.freeze({ cap: null, warn: null, silence: null, hidden: null, connect: null, ticker: null })
 
 export interface Handles {
   /** Bumped by every start and every end/fail; an async step from an older attempt bails out. */
@@ -118,6 +121,8 @@ export interface Handles {
   maxSeconds: number | null
   usage: RealtimeUsage
   answered: ReadonlySet<string>
+  /** response.id of every response whose usage is already counted. */
+  countedResponses: ReadonlySet<string>
   timers: Timers
   startedAt: number
   textSeq: number
@@ -145,8 +150,8 @@ const isStale = (h: Handles, attempt: number): boolean => !h.active || h.attempt
 // ── Teardown ──────────────────────────────────────────────────────────────────
 
 function clearTimers(h: Handles): void {
-  const { cap, warn, silence, hidden, ticker } = h.timers
-  for (const timer of [cap, warn, silence, hidden]) if (timer !== null) clearTimeout(timer)
+  const { cap, warn, silence, hidden, connect, ticker } = h.timers
+  for (const timer of [cap, warn, silence, hidden, connect]) if (timer !== null) clearTimeout(timer)
   if (ticker !== null) clearInterval(ticker)
   h.timers = NO_TIMERS
 }
@@ -244,6 +249,7 @@ function addPageListeners(h: Handles): void {
 function goLive(h: Handles): void {
   if (h.live) return
   h.live = true
+  setTimer(h, 'connect', null, () => undefined)
   h.startedAt = Date.now()
   patchView(h, { phase: 'live', elapsedSec: 0 })
   startLiveTimers(h)
@@ -282,10 +288,26 @@ function answerCalls(h: Handles, output: readonly ResponseOutputItem[]): void {
     if (item.type !== 'function_call' || !item.call_id || !item.name || h.answered.has(item.call_id)) continue
     h.answered = new Set([...h.answered, item.call_id])
     const result = runToolSafely(h, item.name, item.arguments)
-    h.client?.send(functionOutputItem(item.call_id, JSON.stringify(result)))
+    const outputEvent = functionOutputItem(item.call_id, JSON.stringify(result))
+    sendOrReport(h, outputEvent, { event: 'function_call_output', callId: item.call_id, tool: item.name })
     answered += 1
   }
-  if (answered > 0) h.client?.send(responseCreate())
+  if (answered > 0) sendOrReport(h, responseCreate(), { event: 'response.create' })
+}
+
+/** Send, and report (never silently drop) an event the data channel would not take. */
+function sendOrReport(h: Handles, event: ClientEvent, context: Record<string, unknown>): void {
+  if (h.client?.send(event)) return
+  reportError({ message: 'Nex Assistant: data channel not open; event dropped', metadata: { ...context, hasClient: h.client !== null } })
+}
+
+/** Add a response's usage once, however many times its response.done arrives. */
+function countUsage(h: Handles, response: { id?: string; usage?: ResponseUsage }): void {
+  if (response.id !== undefined) {
+    if (h.countedResponses.has(response.id)) return
+    h.countedResponses = new Set([...h.countedResponses, response.id])
+  }
+  h.usage = addUsage(h.usage, response.usage)
 }
 
 function handleEvent(h: Handles, attempt: number, event: ServerEvent): void {
@@ -301,7 +323,7 @@ function handleEvent(h: Handles, attempt: number, event: ServerEvent): void {
       return
     case 'response.done':
       resetSilence(h)
-      h.usage = addUsage(h.usage, event.response.usage)
+      countUsage(h, event.response)
       answerCalls(h, event.response.output)
       return
     case 'error':
@@ -362,6 +384,9 @@ async function mintAndConnect(h: Handles, attempt: number, retried: boolean): Pr
   patchView(h, { phase: 'connecting', budget: session.budget, maxSeconds: session.maxSeconds })
   try {
     await connectClient(h, attempt, session)
+    if (!isStale(h, attempt) && !h.live) {
+      setTimer(h, 'connect', CONNECT_TIMEOUT_MS, () => fail(h, voiceError('connect-failed')))
+    }
   } catch (error) {
     if (isStale(h, attempt)) return
     const kind = error instanceof RealtimeConnectError ? error.kind : 'connect-failed'
@@ -381,6 +406,7 @@ function resetForStart(h: Handles, textOnly: boolean): number {
   h.muted = false
   h.usage = ZERO_USAGE
   h.answered = new Set()
+  h.countedResponses = new Set()
   h.sessionId = null
   h.maxSeconds = null
   h.textSeq = 0
@@ -442,6 +468,7 @@ export function createHandles(options: UseVoiceSessionOptions, setView: Handles[
     maxSeconds: null,
     usage: ZERO_USAGE,
     answered: new Set(),
+    countedResponses: new Set(),
     timers: NO_TIMERS,
     startedAt: 0,
     textSeq: 0,

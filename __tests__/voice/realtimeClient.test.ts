@@ -18,6 +18,8 @@ class FakeChannel {
 
 class FakePeer {
   ontrack: ((e: { streams: unknown[] }) => void) | null = null
+  onconnectionstatechange: (() => void) | null = null
+  connectionState = 'new'
   channel = new FakeChannel()
   addTrack = vi.fn()
   addTransceiver = vi.fn()
@@ -166,5 +168,30 @@ describe('RealtimeClient', () => {
     const { track, stream } = micStream()
     await expect(client.connect({ clientSecret: 'ek', micStream: stream, audioEl: null, onEvent, onClose })).rejects.toThrow()
     expect(track.stop).not.toHaveBeenCalled()
+  })
+
+  it('a peer connection that fails ends the session through onClose, once', async () => {
+    const { peer, client, onEvent, onClose } = setup()
+    await client.connect({ clientSecret: 'ek', micStream: null, audioEl: null, onEvent, onClose })
+    peer.connectionState = 'disconnected'
+    peer.onconnectionstatechange?.()
+    expect(onClose).not.toHaveBeenCalled()
+
+    peer.connectionState = 'failed'
+    expect(peer.onconnectionstatechange).toBeTypeOf('function')
+    peer.onconnectionstatechange?.()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    peer.onconnectionstatechange?.()
+    peer.channel.onclose?.()
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('a peer failure after close() is not reported', async () => {
+    const { peer, client, onEvent, onClose } = setup()
+    await client.connect({ clientSecret: 'ek', micStream: null, audioEl: null, onEvent, onClose })
+    client.close()
+    peer.connectionState = 'failed'
+    peer.onconnectionstatechange?.()
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

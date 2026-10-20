@@ -498,4 +498,128 @@ describe('useVoiceSession', () => {
     expect(reportError).toHaveBeenCalledTimes(1)
     expect(JSON.stringify(reportError.mock.calls)).not.toContain('ek_abc')
   })
+
+  it('fails as connect-failed when session.created does not arrive within 20 s', async () => {
+    const r = renderSession()
+    await start(r)
+    expect(r.result.current.phase).toBe('connecting')
+    act(() => vi.advanceTimersByTime(19_999))
+    expect(r.result.current.phase).toBe('connecting')
+    act(() => vi.advanceTimersByTime(1))
+
+    expect(r.result.current.phase).toBe('error')
+    expect(r.result.current.error?.kind).toBe('connect-failed')
+    expect(mic.track.stop).toHaveBeenCalled()
+    expect(r.client().close).toHaveBeenCalledTimes(1)
+    expect(endVoiceSession).toHaveBeenCalledTimes(1)
+    expect(endVoiceSession.mock.calls[0][0]).toMatchObject({ sessionId: SESSION_ID, reason: 'error' })
+  })
+
+  it('session.created before 20 s clears the connect timeout', async () => {
+    const r = renderSession()
+    await start(r)
+    act(() => vi.advanceTimersByTime(10_000))
+    r.client().emit({ type: 'session.created', session: { id: 'sess_1' } })
+    act(() => vi.advanceTimersByTime(15_000))
+    expect(r.result.current.phase).toBe('live')
+    expect(r.result.current.error).toBeNull()
+    expect(endVoiceSession).not.toHaveBeenCalled()
+  })
+
+  it('a dead connection reported twice (peer failed, then channel closed) ends the session once', async () => {
+    const r = renderSession()
+    await startLive(r)
+    act(() => {
+      r.client().opts!.onClose()
+      r.client().opts!.onClose()
+    })
+    expect(r.result.current.phase).toBe('ended')
+    expect(endVoiceSession).toHaveBeenCalledTimes(1)
+    expect(endVoiceSession.mock.calls[0][0]).toMatchObject({ reason: 'channel' })
+  })
+
+  it('counts the usage of a response delivered twice once', async () => {
+    const r = renderSession()
+    await startLive(r)
+    const done = { type: 'response.done', response: { id: 'resp_1', output: [], usage: { input_tokens: 10, output_tokens: 4 } } }
+    r.client().emit(done)
+    r.client().emit(done)
+    r.client().emit({ type: 'response.done', response: { output: [], usage: { input_tokens: 1, output_tokens: 1 } } })
+    await act(async () => {
+      await r.result.current.end()
+    })
+    expect(endVoiceSession.mock.calls[0][0]).toMatchObject({ usage: expect.objectContaining({ inputTokens: 11, outputTokens: 5 }) })
+  })
+
+  function deferredMint() {
+    let resolve: (value: ReturnType<typeof minted>) => void = () => undefined
+    startVoiceSession.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    return (value: ReturnType<typeof minted>) => resolve(value)
+  }
+
+  it('end() while the key is being minted closes the late session with reason user and never connects', async () => {
+    const resolveMint = deferredMint()
+    const r = renderSession()
+    let starting: Promise<void> = Promise.resolve()
+    await act(async () => {
+      starting = r.result.current.start()
+      await Promise.resolve()
+    })
+    expect(r.result.current.phase).toBe('minting')
+    await act(async () => {
+      await r.result.current.end()
+    })
+    expect(mic.track.stop).toHaveBeenCalled()
+    await act(async () => {
+      resolveMint(minted({ sessionId: 'bbbbbbbb-0000-4000-8000-000000000009' }))
+      await starting
+    })
+    expect(r.clients).toHaveLength(0)
+    expect(r.result.current.phase).toBe('ended')
+    expect(endVoiceSession).toHaveBeenCalledTimes(1)
+    expect(endVoiceSession.mock.calls[0]).toEqual([
+      expect.objectContaining({ sessionId: 'bbbbbbbb-0000-4000-8000-000000000009', reason: 'user' }),
+      { keepalive: false },
+    ])
+  })
+
+  it('unmount while the key is being minted closes the late session with reason unmount', async () => {
+    const resolveMint = deferredMint()
+    const r = renderSession()
+    let starting: Promise<void> = Promise.resolve()
+    await act(async () => {
+      starting = r.result.current.start()
+      await Promise.resolve()
+    })
+    r.unmount()
+    expect(mic.track.stop).toHaveBeenCalled()
+    await act(async () => {
+      resolveMint(minted({ sessionId: 'bbbbbbbb-0000-4000-8000-00000000000a' }))
+      await starting
+    })
+    expect(r.clients).toHaveLength(0)
+    expect(endVoiceSession).toHaveBeenCalledTimes(1)
+    expect(endVoiceSession.mock.calls[0]).toEqual([
+      expect.objectContaining({ sessionId: 'bbbbbbbb-0000-4000-8000-00000000000a', reason: 'unmount' }),
+      { keepalive: true },
+    ])
+  })
+
+  it('reports a tool answer the closed channel could not take', async () => {
+    const r = renderSession()
+    await startLive(r)
+    r.client().send.mockReturnValue(false)
+    r.client().emit({
+      type: 'response.done',
+      response: { output: [{ type: 'function_call', call_id: 'call_9', name: 'get_sales_summary', arguments: '{}' }] },
+    })
+    expect(reportError).toHaveBeenCalledTimes(2)
+    const metadata = reportError.mock.calls.map((call) => (call[0] as { metadata: Record<string, unknown> }).metadata)
+    expect(metadata).toEqual([
+      expect.objectContaining({ event: 'function_call_output', callId: 'call_9' }),
+      expect.objectContaining({ event: 'response.create' }),
+    ])
+    expect(JSON.stringify(reportError.mock.calls)).not.toContain('ek_abc')
+    expect(r.result.current.phase).toBe('live')
+  })
 })
