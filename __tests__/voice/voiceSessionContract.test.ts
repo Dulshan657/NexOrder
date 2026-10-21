@@ -203,6 +203,10 @@ describe('voice-session open-row cleanup', () => {
     expect(throws).toHaveLength(1)
     expect(throws[0].expression.getText()).toBe(variable)
     expect(deletes[0].getStart()).toBeLessThan(throws[0].getStart())
+    // And that catch is the ONLY place handleStart deletes a row: no other path
+    // (a success, an early refusal) may remove the row it has just returned.
+    const { start } = startGuard()
+    expect(callOffsets(start, 'deleteOpenRow')).toHaveLength(1)
   })
 
   it('deletes by id only, and a failed delete cannot mask the original error', () => {
@@ -211,10 +215,20 @@ describe('voice-session open-row cleanup', () => {
     expect(text.getText()).not.toContain('user_id')
     // A cleanup that throws would replace the error being rethrown.
     expect(collect(text, ts.isTryStatement).filter((t) => t.catchClause)).toHaveLength(1)
+    // ...and nothing in it throws, inside the catch or outside the try.
+    expect(collect(text, ts.isThrowStatement)).toHaveLength(0)
   })
 
   it('has no second delete of its own row inside the re-read', () => {
     const verify = functionBody(source(), 'verifyBudgetAfterInsert')
     expect(callOffsets(verify, 'deleteOpenRow')).toHaveLength(0)
+  })
+})
+
+describe('voice-session refusal copy', () => {
+  it('words a rate-limit wait through describeRetryAfter, never as raw seconds', () => {
+    const limiter = functionBody(source(), 'enforceRateLimit')
+    expect(callOffsets(limiter, 'describeRetryAfter')).toHaveLength(1)
+    expect(limiter.getText()).not.toMatch(/\}s`/)
   })
 })

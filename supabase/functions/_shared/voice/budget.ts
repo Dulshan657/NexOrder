@@ -81,12 +81,15 @@ function sortsBefore(a: IdentifiedLedgerRow, b: IdentifiedLedgerRow): boolean {
  * The rows that sort strictly before `mine`: an earlier startedAt, or the same
  * startedAt and a smaller id. Never `mine` itself.
  *
- * This is what makes concurrent starts serialise without a lock. Each start
- * inserts its open row, re-reads the ledger and charges itself only for the
- * rows before it. Of any two rows exactly one sorts first, so the earlier start
- * never sees the later one and the later one sees the earlier one (open, so at
- * the full SESSION_CAP_SECONDS). A burst can therefore no longer overshoot the
- * daily allowance by granting every caller the same remaining seconds.
+ * This NARROWS the race between concurrent starts; it does not close it (see
+ * the header of voice-session/index.ts). Each start inserts its open row,
+ * re-reads the ledger and charges itself only for the rows before it. Of any two
+ * rows exactly one sorts first, so the earlier start is never charged for the
+ * later one. The later start is charged for the earlier one (open, so at the full
+ * SESSION_CAP_SECONDS) only if the earlier insert has COMMITTED before the later
+ * re-read runs; if both re-read first, neither sees the other and both are
+ * granted. The residual window is narrow (one insert round trip), and the total
+ * is bounded by the start burst limit (START_BURST_PER_HOUR).
  */
 export function rowsBefore(
   rows: readonly IdentifiedLedgerRow[],

@@ -171,7 +171,10 @@ describe('maxSecondsForNewSession', () => {
 
 // Concurrent starts: each start inserts its open row, re-reads the ledger and
 // counts only the rows that sort strictly before its own (earlier startedAt,
-// tie-break by id), so of two simultaneous starts exactly one sees the other.
+// tie-break by id). The earlier start is never charged for the later one; the
+// later is charged for the earlier only if that insert COMMITTED before its
+// re-read (voice-session/index.ts header). These tests pin the ordering rule,
+// not the race: the residual window is narrow and bounded by the burst limit.
 describe('rowsBefore', () => {
   const ID_A = '11111111-1111-4111-8111-111111111111'
   const ID_B = '22222222-2222-4222-8222-222222222222'
@@ -228,7 +231,8 @@ describe('rowsBefore', () => {
 
   it('refuses the second of two concurrent starts that would overshoot', () => {
     // 900 s used earlier; two simultaneous starts each see 900 s left alone,
-    // but the later one also sees the earlier open row at the cap: 0 left.
+    // but once the earlier row has committed and is in the later one's re-read,
+    // the later one is charged for it at the cap: 0 left.
     const used = row('33333333-3333-4333-8333-333333333333', 5 * HOUR, 900)
     const first = row(ID_A, ONE_SECOND_MS)
     const second = row(ID_B, ONE_SECOND_MS)

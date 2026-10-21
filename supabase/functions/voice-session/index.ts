@@ -74,6 +74,7 @@ import { MAX_REPORTED_TOKENS, computeRealtimeCostUsd } from '../_shared/voice/co
 // "Today" in the prompt is the operator's calendar day, not UTC's, and the same
 // zone lib/voice/period.ts resolves "this month" in.
 import { APP_TIME_ZONE } from '../_shared/voice/timeZone.ts'
+import { describeRetryAfter } from '../_shared/voice/retryAfter.ts'
 
 // Literal on purpose: __tests__/voice/voiceSessionContract.test.ts reads it with
 // the TypeScript parser and asserts it equals VOICE_ROLES in toolSchemas.ts.
@@ -142,7 +143,7 @@ async function enforceRateLimit(key: string, windowMs: number, max: number, what
   if (!rl.ok) {
     throw new EdgeFunctionError(
       'TOO_MANY_REQUESTS',
-      `${what}; try again in ${Math.ceil(rl.resetMs / 1000)}s`,
+      `${what}; try again in ${describeRetryAfter(rl.resetMs)}`,
     )
   }
 }
