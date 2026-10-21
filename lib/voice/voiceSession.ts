@@ -25,6 +25,14 @@
 // (hooks/useVoiceSession.ts) keeps in a single ref; what renders is ONE immutable
 // `ViewState`, replaced through `setView`. The client secret is passed to
 // connect() and not kept.
+//
+// The user's ACCESS TOKEN is kept (Handles.accessToken), read when a start begins
+// and refreshed every five minutes and at the cap warning while live, so a
+// page-close end can post with keepalive in the same tick as pagehide instead of
+// awaiting getSession() on a page that may be gone first (an end that never
+// arrives leaves the row open, charged at the full cap for 24 h). It is never
+// read on unload, never logged and never put in an error report; it is dropped
+// when the session ends.
 
 import { reportError } from '@/lib/errorReporter'
 import { RealtimeClient, RealtimeConnectError } from './realtimeClient'
@@ -37,7 +45,8 @@ import { ZERO_USAGE, addUsage } from './realtimeUsage'
 import { micError, startError, voiceError } from './voiceErrors'
 import type { VoiceError } from './voiceErrors'
 import type { VoiceToolResult } from './context'
-import { endVoiceSession, startVoiceSession } from '@/services/supabase/voiceSessionService'
+import { endVoiceSession, readAccessToken, startVoiceSession } from '@/services/supabase/voiceSessionService'
+import type { EndVoiceSessionOptions } from '@/services/supabase/voiceSessionService'
 import type { StartVoiceSession, VoiceEndReason } from '@/services/supabase/voiceSessionService'
 import type { RealtimeUsage } from '@/supabase/functions/_shared/voice/cost'
 
@@ -66,6 +75,8 @@ const WARN_BEFORE_CAP_MS = 60_000
 const SILENCE_MS = 120_000
 const HIDDEN_MS = 60_000
 const TICK_MS = 1_000
+/** How often a live session re-reads the access token it keeps for a page-close end. */
+const TOKEN_REFRESH_MS = 5 * 60_000
 /** How long a connected peer may take to deliver session.created before the start fails. */
 const CONNECT_TIMEOUT_MS = 20_000
 const BAD_ARGUMENTS: VoiceToolResult = { ok: false, error: 'Bad arguments' }
@@ -103,9 +114,12 @@ interface Timers {
   readonly hidden: Timer | null
   readonly connect: Timer | null
   readonly ticker: ReturnType<typeof setInterval> | null
+  readonly tokenRefresh: ReturnType<typeof setInterval> | null
 }
 
-const NO_TIMERS: Timers = Object.freeze({ cap: null, warn: null, silence: null, hidden: null, connect: null, ticker: null })
+const NO_TIMERS: Timers = Object.freeze({
+  cap: null, warn: null, silence: null, hidden: null, connect: null, ticker: null, tokenRefresh: null,
+})
 
 export interface Handles {
   /** Bumped by every start and every end/fail; an async step from an older attempt bails out. */
@@ -118,6 +132,8 @@ export interface Handles {
   client: RealtimeClientLike | null
   mic: MediaStream | null
   sessionId: string | null
+  /** The user's access token for a same-tick page-close end. Never logged. */
+  accessToken: string | null
   maxSeconds: number | null
   usage: RealtimeUsage
   answered: ReadonlySet<string>
@@ -150,9 +166,9 @@ const isStale = (h: Handles, attempt: number): boolean => !h.active || h.attempt
 // ── Teardown ──────────────────────────────────────────────────────────────────
 
 function clearTimers(h: Handles): void {
-  const { cap, warn, silence, hidden, connect, ticker } = h.timers
+  const { cap, warn, silence, hidden, connect, ticker, tokenRefresh } = h.timers
   for (const timer of [cap, warn, silence, hidden, connect]) if (timer !== null) clearTimeout(timer)
-  if (ticker !== null) clearInterval(ticker)
+  for (const interval of [ticker, tokenRefresh]) if (interval !== null) clearInterval(interval)
   h.timers = NO_TIMERS
 }
 
@@ -166,9 +182,17 @@ function releaseMedia(h: Handles): void {
 }
 
 /** Tell the server the session is over. Fire-and-forget; a failure is reported, not shown. */
-function closeOnServer(sessionId: string | null, usage: RealtimeUsage, reason: VoiceEndReason, keepalive: boolean): void {
+function closeOnServer(
+  sessionId: string | null,
+  usage: RealtimeUsage,
+  reason: VoiceEndReason,
+  keepalive: boolean,
+  accessToken: string | null = null,
+): void {
   if (sessionId === null) return
-  endVoiceSession({ sessionId, usage, reason }, { keepalive }).catch((error: unknown) => {
+  // The token rides only on a keepalive end, the one that cannot wait for it.
+  const options: EndVoiceSessionOptions = keepalive && accessToken ? { keepalive, accessToken } : { keepalive }
+  endVoiceSession({ sessionId, usage, reason }, options).catch((error: unknown) => {
     reportError({
       message: 'Nex Assistant: ending the voice session failed',
       stack: error instanceof Error ? error.stack : undefined,
@@ -184,8 +208,9 @@ function shutDown(h: Handles, reason: VoiceEndReason): void {
   h.attempt += 1
   clearTimers(h)
   releaseMedia(h)
-  closeOnServer(h.sessionId, h.usage, reason, reason === 'hidden' || reason === 'unmount')
+  closeOnServer(h.sessionId, h.usage, reason, reason === 'hidden' || reason === 'unmount', h.accessToken)
   h.sessionId = null
+  h.accessToken = null
 }
 
 export function endSession(h: Handles, reason: VoiceEndReason): void {
@@ -209,6 +234,13 @@ function setTimer(h: Handles, key: keyof Omit<Timers, 'ticker'>, ms: number | nu
   h.timers = { ...h.timers, [key]: ms === null ? null : setTimeout(run, ms) }
 }
 
+/** Re-read the access token in the background; keep the last one if none comes back. */
+function refreshToken(h: Handles, attempt: number): void {
+  void readAccessToken().then((token) => {
+    if (token !== null && !isStale(h, attempt)) h.accessToken = token
+  })
+}
+
 function resetSilence(h: Handles): void {
   if (h.live) setTimer(h, 'silence', SILENCE_MS, () => endSession(h, 'silence'))
 }
@@ -222,8 +254,16 @@ function startLiveTimers(h: Handles): void {
   const capMs = (h.maxSeconds ?? 0) * 1000
   // The cap is scheduled before the silence watchdog, so at a tie it wins.
   setTimer(h, 'cap', capMs, () => endSession(h, 'cap'))
-  setTimer(h, 'warn', Math.max(0, capMs - WARN_BEFORE_CAP_MS), () => h.options.onWarning?.(CAP_WARNING))
-  h.timers = { ...h.timers, ticker: setInterval(() => tick(h), TICK_MS) }
+  const attempt = h.attempt
+  setTimer(h, 'warn', Math.max(0, capMs - WARN_BEFORE_CAP_MS), () => {
+    refreshToken(h, attempt)
+    h.options.onWarning?.(CAP_WARNING)
+  })
+  h.timers = {
+    ...h.timers,
+    ticker: setInterval(() => tick(h), TICK_MS),
+    tokenRefresh: setInterval(() => refreshToken(h, attempt), TOKEN_REFRESH_MS),
+  }
   resetSilence(h)
 }
 
@@ -376,6 +416,8 @@ async function connectClient(h: Handles, attempt: number, session: StartVoiceSes
 
 async function mintAndConnect(h: Handles, attempt: number, retried: boolean): Promise<void> {
   patchView(h, { phase: 'minting' })
+  // Cached for a page-close end; read alongside the mint, never on unload.
+  refreshToken(h, attempt)
   let session: StartVoiceSession
   try {
     session = await startVoiceSession()
@@ -416,6 +458,7 @@ function resetForStart(h: Handles, textOnly: boolean): number {
   h.answered = new Set()
   h.countedResponses = new Set()
   h.sessionId = null
+  h.accessToken = null
   h.maxSeconds = null
   h.textSeq = 0
   updateView(h, () => ({ ...INITIAL_VIEW, textOnly, phase: textOnly ? 'minting' : 'requesting-mic' }))
@@ -473,6 +516,7 @@ export function createHandles(options: UseVoiceSessionOptions, setView: Handles[
     client: null,
     mic: null,
     sessionId: null,
+    accessToken: null,
     maxSeconds: null,
     usage: ZERO_USAGE,
     answered: new Set(),

@@ -12,7 +12,13 @@
 //
 // `keepalive` is for ending a session while the page goes away (tab hidden,
 // unmount, pagehide): `functions.invoke` cannot set `keepalive`, so that path
-// posts with fetch directly, with the signed-in user's access token.
+// posts with fetch directly, with the signed-in user's access token. On pagehide
+// the page may be gone before any promise settles, so the caller passes the token
+// it cached while the session was live (readAccessToken) and the POST is issued
+// before this module's first await. With no cached token it falls back to reading
+// the session first, which may not finish on a closing page.
+//
+// The access token, like the client secret, is never logged or put in an error.
 //
 // The client secret is returned to the caller and nowhere else: never logged,
 // never stored.
@@ -60,6 +66,11 @@ export interface EndVoiceSessionInput {
 export interface EndVoiceSessionOptions {
   /** Post with `fetch(..., { keepalive: true })` so the request outlives the page. */
   keepalive?: boolean
+  /**
+   * With keepalive: the signed-in user's access token, cached earlier, so the POST
+   * leaves in the same tick with no await before it. Omit to read the session first.
+   */
+  accessToken?: string
 }
 
 export interface VoiceSessionErrorInit {
@@ -123,14 +134,26 @@ function endBody(input: EndVoiceSessionInput): Record<string, unknown> {
   }
 }
 
-async function endWithKeepalive(body: Record<string, unknown>): Promise<void> {
-  const { data, error } = await supabase.auth.getSession()
-  const accessToken = data?.session?.access_token
-  if (error || !accessToken) {
-    throw new VoiceSessionError('Not signed in', { status: null, code: 'UNAUTHORIZED' })
+/**
+ * The signed-in user's access token, or null when there is none or it cannot be
+ * read. Never throws: a caller caching it for a later page-close end treats null
+ * as 'not cached', and that end then takes the awaited path, which reports its
+ * own failure.
+ */
+export async function readAccessToken(): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.auth.getSession()
+    if (error) return null
+    return data?.session?.access_token ?? null
+  } catch {
+    return null
   }
+}
+
+/** Issue the keepalive POST now, synchronously. */
+function postKeepalive(body: Record<string, unknown>, accessToken: string): Promise<Response> {
   const baseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim()
-  const res = await fetch(`${baseUrl}/functions/v1/${FUNCTION_NAME}`, {
+  return fetch(`${baseUrl}/functions/v1/${FUNCTION_NAME}`, {
     method: 'POST',
     keepalive: true,
     headers: {
@@ -140,13 +163,25 @@ async function endWithKeepalive(body: Record<string, unknown>): Promise<void> {
     },
     body: JSON.stringify(body),
   })
+}
+
+async function postWithFreshToken(body: Record<string, unknown>): Promise<Response> {
+  const accessToken = await readAccessToken()
+  if (!accessToken) throw new VoiceSessionError('Not signed in', { status: null, code: 'UNAUTHORIZED' })
+  return postKeepalive(body, accessToken)
+}
+
+async function endWithKeepalive(body: Record<string, unknown>, cachedToken: string | undefined): Promise<void> {
+  // With a cached token the fetch is issued before the first await below.
+  const sending = cachedToken ? postKeepalive(body, cachedToken) : postWithFreshToken(body)
+  const res = await sending
   if (!res.ok) throw await toVoiceSessionError({ context: res }, END_FAILED)
 }
 
 /** Close a session. Idempotent on the server. Throws VoiceSessionError. */
 export async function endVoiceSession(input: EndVoiceSessionInput, options: EndVoiceSessionOptions = {}): Promise<void> {
   const body = endBody(input)
-  if (options.keepalive) return endWithKeepalive(body)
+  if (options.keepalive) return endWithKeepalive(body, options.accessToken)
   const { error } = await supabase.functions.invoke<unknown>(FUNCTION_NAME, { body })
   if (error) throw await toVoiceSessionError(error, END_FAILED)
 }

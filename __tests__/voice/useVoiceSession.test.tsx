@@ -5,9 +5,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, renderHook } from '@testing-library/react'
 
-const { startVoiceSession, endVoiceSession, reportError } = vi.hoisted(() => ({
+const { startVoiceSession, endVoiceSession, readAccessToken, reportError } = vi.hoisted(() => ({
   startVoiceSession: vi.fn(),
   endVoiceSession: vi.fn(),
+  // No cached token here, so every end below takes the awaited path it always
+  // took; the cached-token path is __tests__/voice/useVoiceSessionKeepalive.test.tsx.
+  readAccessToken: vi.fn(),
   reportError: vi.fn(),
 }))
 vi.mock('@/lib/errorReporter', () => ({ reportError, installGlobalErrorHandlers: vi.fn() }))
@@ -15,6 +18,7 @@ vi.mock('@/services/supabase/voiceSessionService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/supabase/voiceSessionService')>()),
   startVoiceSession,
   endVoiceSession,
+  readAccessToken,
 }))
 
 import { useVoiceSession } from '@/hooks/useVoiceSession'
@@ -115,6 +119,8 @@ beforeEach(() => {
   reportError.mockReset()
   startVoiceSession.mockResolvedValue(minted())
   endVoiceSession.mockResolvedValue(undefined)
+  readAccessToken.mockReset()
+  readAccessToken.mockResolvedValue(null)
   mic = fakeMic()
   getUserMedia = stubGetUserMedia(async () => mic.stream)
   visibility = 'visible'

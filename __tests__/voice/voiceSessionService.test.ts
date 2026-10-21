@@ -8,7 +8,7 @@ vi.mock('@/lib/supabase', () => ({
   supabase: { functions: { invoke }, auth: { getSession } },
 }))
 
-import { VoiceSessionError, endVoiceSession, startVoiceSession } from '@/services/supabase/voiceSessionService'
+import { VoiceSessionError, endVoiceSession, readAccessToken, startVoiceSession } from '@/services/supabase/voiceSessionService'
 
 function httpError(status: number, body: unknown): Error {
   const err = new Error('Edge Function returned a non-2xx status code')
@@ -133,5 +133,44 @@ describe('endVoiceSession', () => {
     getSession.mockResolvedValue({ data: { session: { access_token: 'jwt-123' } }, error: null })
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })))
     await expect(endVoiceSession({ sessionId: STARTED.sessionId }, { keepalive: true })).rejects.toMatchObject({ status: 500 })
+  })
+
+  it('with keepalive and a cached token, posts in the same tick without reading the session', async () => {
+    const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const ending = endVoiceSession({ sessionId: STARTED.sessionId, reason: 'hidden' }, { keepalive: true, accessToken: 'cached-jwt' })
+    // Nothing awaited yet: the request must already be on its way.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(getSession).not.toHaveBeenCalled()
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(init.keepalive).toBe(true)
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer cached-jwt')
+    await ending
+  })
+
+  it('a cached token is ignored without keepalive: the ordinary end goes through functions.invoke', async () => {
+    invoke.mockResolvedValue({ data: { ok: true }, error: null })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await endVoiceSession({ sessionId: STARTED.sessionId }, { keepalive: false, accessToken: 'cached-jwt' })
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('readAccessToken', () => {
+  it('returns the signed-in user access token', async () => {
+    getSession.mockResolvedValue({ data: { session: { access_token: 'jwt-123' } }, error: null })
+    await expect(readAccessToken()).resolves.toBe('jwt-123')
+  })
+
+  it('returns null when nobody is signed in, when the read errors, and when it throws', async () => {
+    getSession.mockResolvedValueOnce({ data: { session: null }, error: null })
+    await expect(readAccessToken()).resolves.toBeNull()
+    getSession.mockResolvedValueOnce({ data: { session: null }, error: new Error('lock') })
+    await expect(readAccessToken()).resolves.toBeNull()
+    getSession.mockRejectedValueOnce(new Error('storage'))
+    await expect(readAccessToken()).resolves.toBeNull()
   })
 })
