@@ -10,6 +10,7 @@ import { evaluateMetric } from '@/lib/semantic'
 import type { CustomerRevenue, MetricContext, OrderFilter, ProductUnits, StatusCount } from '@/lib/semantic'
 import type { VoiceToolContext } from '../context'
 import { toMetricContext } from '../context'
+import { toBaseUnitOrders } from '../baseUnits'
 import { formatRange, resolvePeriod } from '../period'
 import type { DateWindow } from '../period'
 import { isRep } from '../scope'
@@ -53,7 +54,10 @@ export function getSalesSummary(args: ToolArgs<'get_sales_summary'>, ctx: VoiceT
   const current = revenueAndCount(mctx, filter)
   const orderStatus = evaluateMetric<StatusCount[]>('sales.ordersByStatus', mctx, filter)
   const topCustomers = evaluateMetric<CustomerRevenue[]>('sales.revenueByCustomer', mctx, filter)
-  const topProducts = evaluateMetric<ProductUnits[]>('sales.unitsByProduct', mctx, filter)
+  // Units in BASE units: sales.unitsByProduct sums quantity as entered, so a carton
+  // line would count cartons. Revenue above stays on the original orders.
+  const unitsCtx: MetricContext = { ...mctx, orders: toBaseUnitOrders(mctx.orders) }
+  const topProducts = evaluateMetric<ProductUnits[]>('sales.unitsByProduct', unitsCtx, filter)
 
   const data = {
     revenue: dollars(current.revenue),

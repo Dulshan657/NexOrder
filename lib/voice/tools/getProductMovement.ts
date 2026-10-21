@@ -35,6 +35,6 @@ export function getProductMovement(args: ToolArgs<'get_product_movement'>, ctx: 
 
   const basis =
     `${MEANING[args.kind]}; ${ordersScope(ctx)} from the last ${MOVEMENT_WINDOW_DAYS} days to ${dayOf(ctx.now.toISOString())}, ` +
-    'cancelled excluded; stock is what is on hand'
+    'cancelled excluded; units are base units (a carton counts as the units in it); stock is what is on hand'
   return ok(basis, { kind: args.kind, total: ranked.length, products: ranked.slice(0, args.limit).map(movementRow) })
 }

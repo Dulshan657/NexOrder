@@ -2,6 +2,7 @@
 
 import { computeHoReCaInsights } from '@/services/buyingPatternsService'
 import type { VoiceToolContext } from '../context'
+import { toBaseUnitOrders } from '../baseUnits'
 import { findVisibleCustomer, isRep, liveOrders } from '../scope'
 import type { ToolArgs } from '../toolArgs'
 import { dayOf, daysSince, dollars, fail, ok } from './common'
@@ -14,7 +15,9 @@ export function getCustomerInsights(args: ToolArgs<'get_customer_insights'>, ctx
   const customer = findVisibleCustomer(ctx, args.horeca_id)
   if (!customer) return fail('Unknown customer')
 
-  const insights = computeHoReCaInsights(liveOrders(ctx), customer.id, customer.name, ctx.now)
+  // Base units, so avgQuantityPerOrder counts cans, not cartons. Spend reads order
+  // totals, which the conversion leaves alone.
+  const insights = computeHoReCaInsights(toBaseUnitOrders(liveOrders(ctx)), customer.id, customer.name, ctx.now)
 
   const data = {
     horecaId: customer.id,
@@ -45,5 +48,5 @@ export function getCustomerInsights(args: ToolArgs<'get_customer_insights'>, ctx
   }
 
   const whose = isRep(ctx) ? `the orders you placed for ${customer.name}` : `all of ${customer.name}'s orders`
-  return ok(`${whose}, cancelled excluded, as of ${dayOf(ctx.now.toISOString())}`, data)
+  return ok(`${whose}, cancelled excluded, quantities in base units, as of ${dayOf(ctx.now.toISOString())}`, data)
 }

@@ -52,6 +52,6 @@ export function getReorderRecommendations(
 
   const basis =
     `sales over the last ${MOVEMENT_WINDOW_DAYS} days to ${dayOf(ctx.now.toISOString())} from non-cancelled orders, active products, ` +
-    `on-hand stock; suggested quantity covers the ${lead}-day lead time plus ${COVER_AFTER_LEAD_DAYS} days of selling`
+    `on-hand stock; every quantity is in base units (a carton counts as the units in it); suggested quantity covers the ${lead}-day lead time plus ${COVER_AFTER_LEAD_DAYS} days of selling`
   return ok(basis, { leadTimeDays: lead, total: picks.length, products: picks.slice(0, args.limit) })
 }

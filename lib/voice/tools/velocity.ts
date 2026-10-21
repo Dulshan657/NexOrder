@@ -14,9 +14,16 @@
 // that test fails.
 //
 // Callers pass the orders and products they want counted (non-cancelled, active).
+//
+// UNITS. velocities() restates every line in BASE units first (../baseUnits.ts):
+// the service sums quantity as entered, so a carton line would count cartons,
+// and every caller here compares the rate with base-unit stock (days remaining,
+// suggested reorder quantity, dead stock). The service itself is left alone
+// because other screens read it.
 
 import { computeSalesVelocity } from '@/services/productMovementService'
 import type { Order, Product, ProductVelocity } from '@/types'
+import { toBaseUnitOrders } from '../baseUnits'
 import { DAY_MS } from './common'
 
 export const MOVEMENT_WINDOW_DAYS = 90
@@ -24,9 +31,9 @@ export const DEAD_STOCK_DAYS = 30
 
 const byName = (a: ProductVelocity, b: ProductVelocity): number => a.productName.localeCompare(b.productName)
 
-/** Weekly velocity per product over the last 90 days, as of `now`. */
+/** Weekly velocity per product in BASE units over the last 90 days, as of `now`. */
 export function velocities(orders: readonly Order[], products: readonly Product[], now: Date): ProductVelocity[] {
-  return computeSalesVelocity(orders, products, MOVEMENT_WINDOW_DAYS, now)
+  return computeSalesVelocity(toBaseUnitOrders(orders), products, MOVEMENT_WINDOW_DAYS, now)
 }
 
 /** Selling products, fastest first. */
