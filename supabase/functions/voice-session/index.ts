@@ -71,6 +71,9 @@ import {
   type LedgerRow,
 } from '../_shared/voice/budget.ts'
 import { MAX_REPORTED_TOKENS, computeRealtimeCostUsd } from '../_shared/voice/cost.ts'
+// "Today" in the prompt is the operator's calendar day, not UTC's, and the same
+// zone lib/voice/period.ts resolves "this month" in.
+import { APP_TIME_ZONE } from '../_shared/voice/timeZone.ts'
 
 // Literal on purpose: __tests__/voice/voiceSessionContract.test.ts reads it with
 // the TypeScript parser and asserts it equals VOICE_ROLES in toolSchemas.ts.
@@ -83,8 +86,6 @@ const HOUR_MS = 3_600_000
 const MINUTE_MS = 60_000
 const END_PER_MINUTE = 30
 const LOGGED_ERROR_CHARS = 300
-/** "Today" in the prompt is the operator's calendar day, not UTC's. */
-const APP_TIME_ZONE = 'Australia/Sydney'
 
 type Cors = Record<string, string>
 
