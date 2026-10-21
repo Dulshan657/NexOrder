@@ -145,6 +145,30 @@ a role outside the four gets `[]`.
 Ids: `Order.submittedBy.id`, `Visit.userId` and `SalesTarget.userId` are NUMERIC hashes of the
 profile uuid (`numericIdForProfile`). Never compare them with `currentUserUuid`.
 
+**Spoken periods are Sydney calendar days** (fix wave after the final review). `today`,
+`this_week` (Monday to today), `this_month`, `last_month`, `last_30_days` and custom
+`YYYY-MM-DD` dates resolve in `APP_TIME_ZONE` = `Australia/Sydney`
+(`supabase/functions/_shared/voice/timeZone.ts`, pure, read by both runtimes), the same zone
+`voice-session` uses to tell the model today's date. They were UTC days until then, so at
+09:00 on 1 November in Sydney the model believed it was November while `this_month` was all
+of October. `lib/voice/period.ts` turns a window into two exact instants (local midnight of
+the first day, the last millisecond of the last day), finding the offset at that midnight
+through `Intl` rather than assuming one: the first Sunday of October is 23 hours and the first
+Sunday of April 25. `previous` is the same number of local days immediately before. Target
+windows (`get_target_progress`) are stored date ranges and still go through
+`lib/semantic` `dayRange`, which is UTC; the zone is fixed for every tenant (per-tenant is v2).
+
+**Every spoken quantity is in BASE units.** `OrderItem.quantity` is in the line's unit of
+measure (cartons on a carton line) and `packSize` is that unit's factor to base units
+(undefined for a single unit; the server's `lineBaseUnits` is `quantity x COALESCE(pack_size, 1)`).
+`lib/semantic` `sales.unitsByProduct`, `computeSalesVelocity` and `buyingPatternsService` sum the
+quantity as entered, which other screens rely on, so the voice tools restate their input with
+`lib/voice/baseUnits.ts` `toBaseUnitOrders` (quantity times the factor, line price divided by
+it, so the line value is unchanged) before any quantity: top-product units, velocity (and so
+movement, days remaining and the reorder quantity, which compare against base-unit stock), a
+customer's usual quantities and the suggested order, which names each product's `unit`
+(`units` when the product has none). Revenue reads the original orders.
+
 **The sales-target adapter fix.** `toSalesTarget` used to do `Number(row.user_id) || 0`, but
 `sales_targets.user_id` is a uuid, so every target had `userId` 0 and `get_target_progress`
 returned nothing for a rep. It now uses `numericIdForProfile` (`__tests__/salesTargetAdapter.test.ts`).
@@ -203,8 +227,19 @@ changes retroactively. When prices change, edit them AND bump `asOf`.
 | Audio | $32 | $0.40 | $64 |
 
 Tokens the audio/text breakdown does not explain are billed at the audio rate, so the estimate
-errs high. Rough scale (a third-party estimate): about $0.02 a minute listening and $0.08 a
-minute speaking.
+errs high.
+
+**Rough scale, derived from the table above (an estimate, not a measurement).** Assume about
+600 audio input tokens per minute the model hears and about 1,200 audio output tokens per
+minute it speaks, the figures in Layer3's write-up
+(https://www.layer3labs.io/guides/openai-realtime-api-pricing, a third-party estimate):
+
+- listening: 600 x $32 / 1,000,000 = $0.0192, about **$0.02 a minute**;
+- speaking: 1,200 x $64 / 1,000,000 = $0.0768, about **$0.08 a minute**.
+
+It leaves out the conversation context re-sent as (mostly cached) input on every turn, which
+grows through a session, text tokens, and transcription, which is billed separately. Treat it
+as an order of magnitude; `cost_usd` on each row is the per-session figure.
 
 ## OpenAI key
 
@@ -213,7 +248,37 @@ minute speaking.
 `semantic_vad` is rejected at mint, consult the client-secret reference, adjust
 `_shared/voice/sessionRequest.ts` and note it here. The per-user safety identifier is sent as
 the `OpenAI-Safety-Identifier` header; whether OpenAI honours that header is unconfirmed (an
-unknown header is ignored). Set a monthly spend limit on the OpenAI project: it is the backstop.
+unknown header is ignored). A monthly spend limit on the OpenAI project is the real hard
+backstop, and both it and the Realtime scope are release gates: see below.
+
+## Release gates (before ANY tenant release that carries this module)
+
+Owner steps, run from **the tenant workspace** on a `rel-*` tag as the release runbook says
+([`releasing.md`](releasing.md), the `voice_assistant` section). Nothing here is run from this
+checkout.
+
+1. **The OpenAI project that owns the tenant's `OPENAI_API_KEY` has Realtime access
+   (`model.request` scope) and a MONTHLY SPEND LIMIT set.** Why the limit is not optional: the
+   daily ledger and the 15-minute cap bind only a COOPERATIVE client. The server cannot end an
+   OpenAI call. A modified client can call `end` early (closing the row, so the ledger counts
+   a short session) and keep its WebRTC call alive up to OpenAI's own session limit, and repeat
+   that up to the burst limit of 10 starts an hour. The OpenAI spend limit is the only control
+   that holds against that.
+2. **The order of operations**, each by its npm script name for the tenant target:
+   1. `secrets` (the registry-derived `ENABLED_MODULES` gains `voice_assistant`; derived
+      secrets are re-applied on every run);
+   2. `migrate` (applies `00133_voice_sessions.sql`);
+   3. `fn:deploy` for `voice-session` (warm isolates read `ENABLED_MODULES` once, so the
+      redeploy is what makes the new value live; until then the function answers 403);
+   4. `deploy` (the frontend). Function before frontend, always.
+3. **The Realtime scope check is manual.** `secrets:check` can only see that `OPENAI_API_KEY`
+   is set; nothing in it can tell whether the key's project may call Realtime or has a spend
+   limit. Check both in the OpenAI dashboard and record that you did.
+
+**v2 hardening (NOT implemented):** have the client report the OpenAI call id from the SDP
+answer's `Location` header to `voice-session`, and let `end`, or a cron, hang up any call that
+outlives its cap with `POST /v1/realtime/calls/{id}/hangup`. That would make the cap a server
+control; until then it is the spend limit above.
 
 ## Known and accepted caveats
 
@@ -224,8 +289,14 @@ unknown header is ignored). Set a monthly spend limit on the OpenAI project: it 
 - **A connection that dies before `session.created`** ends as `ended` ("Session ended") with no
   failure message: a data channel close calls `endSession('channel')`. The 20 s connect timeout
   only covers a connection that stays silent.
-- **A page close ends the row with a keepalive request** that first awaits `getSession()`; if
-  the page is gone before that resolves the row stays open and costs the full cap.
+- **A page close ends the row with a keepalive request issued in the same tick** as
+  `pagehide`/`beforeunload`/unmount, with the access token the session cached at start and
+  refreshed every five minutes and at the cap warning (`Handles.accessToken`, never logged).
+  Only with no cached token does it await `getSession()` first, and then a closing page can
+  still leave the row open at the full cap.
+- **The server cannot hang up an OpenAI call**, so the caps bind a cooperative client only;
+  the OpenAI spend limit is the backstop (release gates above; the hang-up is v2).
+- **The spoken-period zone is Australia/Sydney for every tenant.** A per-tenant setting is v2.
 - `cost_usd` is client-reported and informational; transcription is not in it.
 
 ## Operating it (dev)
