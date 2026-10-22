@@ -19,7 +19,12 @@
     { "id": "A11", "check": "In a real browser the orb visibly follows a conversation (ripples with the mic, orbits while thinking, swells with the model's voice) and the model's audio is not doubled.", "manual": "npm run dev in Chrome, desktop and 360x720, one spoken conversation" },
     { "id": "A12", "check": "Merged and deployed to dev; /version.json shows the merge sha.", "manual": "deploy:dev verification" },
     { "id": "A13", "check": "The assistant is called Nex everywhere a user meets it: the sheet is titled 'Nex', the launcher is labelled 'Talk to Nex', and screen readers hear 'Nex:' before each of her transcript lines." },
-    { "id": "A14", "check": "The model is told it is Nex, with a PERSONALITY section that makes her friendly, approachable and helpful, while the brevity and never-invent-a-number rules still hold and the prompt stays under MAX_INSTRUCTION_CHARS." }
+    { "id": "A14", "check": "The model is told it is Nex, with a PERSONALITY section that makes her friendly, approachable and helpful, while the brevity and never-invent-a-number rules still hold and the prompt stays under MAX_INSTRUCTION_CHARS." },
+    { "id": "A15", "check": "The session transcribes the rep with gpt-4o-transcribe in English, with a Nex Order vocabulary prompt and far-field noise reduction on the input." },
+    { "id": "A16", "check": "Nex is told to fetch only what was asked, to say she did not catch it and ask again when unclear, and to decline off-topic requests (such as the weather) kindly while offering what she can help with." },
+    { "id": "A17", "check": "When get_sales_summary finds no orders in the period it reports latestOrderDate, the date of the most recent in-scope non-cancelled order before the period ended, or null when there is none." },
+    { "id": "A18", "check": "A user transcript line with letters but no Latin ones (a transcription hallucination in another script) is shown as \"(Didn't catch that)\"." },
+    { "id": "A19", "check": "On the demo, 'what is the weather' gets a kind decline and redirect, a mumble gets a request to repeat, and the transcript stays English.", "manual": "owner re-test on nexorder.vercel.app after fn:deploy:dev voice-session and deploy:dev" }
   ],
   "failFirst": [
     { "file": "__tests__/voice/orbState.test.ts", "test": "orbVisual > maps every session state to its orb", "proves": ["A1"] },
@@ -34,7 +39,11 @@
     { "file": "__tests__/voice/audioLevel.test.ts", "test": "createLevelMeter > never connects to the destination and disconnects on close", "proves": ["A9"] },
     { "file": "__tests__/voice/voiceAssistantSheet.test.tsx", "test": "VoiceAssistantSheet > calls the assistant Nex in the title and the transcript", "proves": ["A13"] },
     { "file": "__tests__/voice/voiceAssistantLauncher.test.tsx", "test": "VoiceAssistantLauncher > invites the rep to talk to Nex by name", "proves": ["A13"] },
-    { "file": "__tests__/voice/instructions.test.ts", "test": "buildInstructions > introduces itself as Nex with a friendly, approachable, helpful personality", "proves": ["A14"] }
+    { "file": "__tests__/voice/instructions.test.ts", "test": "buildInstructions > introduces itself as Nex with a friendly, approachable, helpful personality", "proves": ["A14"] },
+    { "file": "__tests__/voice/sessionRequest.test.ts", "test": "buildClientSecretRequest > transcribes English with gpt-4o-transcribe, a vocabulary prompt and far-field noise reduction", "proves": ["A15"] },
+    { "file": "__tests__/voice/instructions.test.ts", "test": "buildInstructions > tells Nex to ask again when unclear, decline off-topic kindly, and never fetch what was not asked", "proves": ["A16"] },
+    { "file": "__tests__/voice/voiceTools.test.ts", "test": "get_sales_summary > reports the latest order date when the period is empty", "proves": ["A17"] },
+    { "file": "__tests__/voice/transcript.test.ts", "test": "reduceTranscript > shows a non-Latin transcript as Didn't catch that", "proves": ["A18"] }
   ],
   "allow": []
 }
@@ -50,6 +59,10 @@ thinking" and "it's answering" are obvious at a glance.
 
 Revised 2026-10-22 at the owner's request: the assistant is named **Nex** and is
 given a friendly, approachable, helpful personality (A13, A14).
+
+Revised again 2026-10-22 after the owner's demo test: asked "what's the weather?",
+the transcript read "Восстановлено." and Nex volunteered a sales summary nobody asked
+for (A15-A19).
 
 ## Approach
 
