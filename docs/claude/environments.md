@@ -12,11 +12,11 @@
   nav entry — its surface is the mic button). **`sales_orders` now means the
   order OBJECT and its status ladder only** — place it, advance it, cancel it.
   - **The gate is no longer inert. Amadiya's registry entry is
-    `['sales_orders', 'inventory_dispatch', 'voice_assistant']`** — warehouse
-    management with orders keyed in by their own office, plus Nex Assistant.
-    The live release (`rel-2026-08-20`) ships only the first two: a registry
-    edit takes effect on a tenant when the owner cuts the next `rel-*` tag and
-    redeploys. Only `dev` has everything. The split
+    `['sales_orders', 'inventory_dispatch']`** — warehouse management with
+    orders keyed in by their own office. `voice_assistant` is deliberately
+    absent: the owner's call on 2026-10-22 is that Amadiya gets no new features
+    yet. A registry edit takes effect on a tenant when the owner cuts the next
+    `rel-*` tag and redeploys. Only `dev` has everything. The split
     happened because three slugs could not express "orders and a warehouse, but
     no Shop, no PO Inbox, no Promotions and no Accounts", which is what a
     tenant actually wanted; `ALL_MODULES` had held nine finer slugs read by
