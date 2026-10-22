@@ -488,11 +488,11 @@ export const TARGETS = {
      * the functions, in that order. The frontend half is compiled out rather
      * than hidden, so nothing here takes effect until the bundle is rebuilt.
      *
-     * `voice_assistant` (2026-10-20) is listed here ahead of the tenant release
-     * that ships it. Like every registry edit it takes effect only on the next
-     * `rel-*` tag the owner cuts, so listing it costs nothing until then.
+     * `voice_assistant` (2026-10-20) is deliberately NOT listed: the owner's
+     * call on 2026-10-22 was that Amadiya gets no new features yet. Adding it
+     * later is this one edit plus the release steps above.
      */
-    modules: ['sales_orders', 'inventory_dispatch', 'voice_assistant'],
+    modules: ['sales_orders', 'inventory_dispatch'],
 
     envFile: '.env.amadiya.local',
   },

@@ -14,8 +14,9 @@ describe('voice_assistant module', () => {
     expect(() => assertModuleSet('t', ['voice_assistant'])).toThrow()
   })
 
-  it('is enabled for dev and amadiya', () => {
+  it('is enabled for dev but not yet for amadiya', () => {
     expect(TARGETS.dev.modules).toContain('voice_assistant')
-    expect(TARGETS.amadiya.modules).toContain('voice_assistant')
+    // The owner, 2026-10-22: Amadiya gets no new features yet.
+    expect(TARGETS.amadiya.modules).not.toContain('voice_assistant')
   })
 })
