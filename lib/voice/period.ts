@@ -98,6 +98,11 @@ function endOfLocalDay(day: Date): Date {
   return new Date(startOfLocalDay(addDays(day, 1)).getTime() - 1)
 }
 
+/** The app-zone calendar date of an instant, as YYYY-MM-DD (a late-evening UTC order is the next day in Sydney). */
+export function localYmd(instant: Date): string {
+  return localDayOf(instant).toISOString().slice(0, 10)
+}
+
 /** A real calendar date as UTC midnight (a civil date), or null. "2026-02-30" is not one. */
 export function parseYmd(value: string): Date | null {
   const match = YMD.exec(value)

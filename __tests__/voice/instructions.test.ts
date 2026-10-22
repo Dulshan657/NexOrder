@@ -64,6 +64,18 @@ describe('buildInstructions', () => {
     for (const role of ROLES) expect(build({ role, modules: EVERY_MODULE }).length).toBeLessThan(MAX_INSTRUCTION_CHARS)
   })
 
+  it('tells Nex to ask again when unclear, decline off-topic kindly, and never fetch what was not asked', () => {
+    // From a demo test: asked about the weather, misheard, she volunteered a sales summary.
+    const text = flat(build())
+    expect(text).toContain('Only call a tool for what the user actually asked for.')
+    expect(text).toContain('Never volunteer a summary nobody asked for.')
+    expect(text).toContain('If you did not clearly hear or understand, say "Sorry, I didn' + "'" + 't catch that')
+    expect(text).toContain('weather')
+    expect(text).toContain("I can't check the weather, but I can help with your orders, customers or stock.")
+    expect(text).toContain('latestOrderDate')
+    for (const role of ROLES) expect(build({ role, modules: EVERY_MODULE }).length).toBeLessThan(MAX_INSTRUCTION_CHARS)
+  })
+
   it('states the currency and language', () => {
     expect(flat(build())).toContain('Amounts are Australian dollars. Speak English.')
   })

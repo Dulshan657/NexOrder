@@ -239,6 +239,17 @@ describe('reduceTranscript', () => {
     })
   })
 
+  it("shows a non-Latin transcript as Didn't catch that", () => {
+    // A demo test: "what's the weather?" came back from the transcriber as Russian.
+    const misheard = feed(INITIAL_TRANSCRIPT, speechStarted('item_u1'), userAudioItem('item_u1'), transcribed('item_u1', 'Восстановлено.'))
+    expect(misheard.entries[0]).toMatchObject({ role: 'user', text: "(Didn't catch that)", final: true })
+
+    const english = feed(INITIAL_TRANSCRIPT, speechStarted('item_u2'), userAudioItem('item_u2'), transcribed('item_u2', 'Sales for Café Olé?'))
+    expect(english.entries[0].text).toBe('Sales for Café Olé?')
+    const digits = feed(INITIAL_TRANSCRIPT, speechStarted('item_u3'), userAudioItem('item_u3'), transcribed('item_u3', '42'))
+    expect(digits.entries[0].text).toBe('42')
+  })
+
   it('has an initial state with nothing in it', () => {
     expect(INITIAL_TRANSCRIPT).toMatchObject({ entries: [], calls: [], live: 'listening' })
   })

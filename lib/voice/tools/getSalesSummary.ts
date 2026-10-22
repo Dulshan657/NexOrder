@@ -6,12 +6,12 @@
 // A rep's scope is applied as an OrderFilter on `repId`; there is deliberately no
 // argument that could change it.
 
-import { evaluateMetric } from '@/lib/semantic'
+import { evaluateMetric, filterOrders } from '@/lib/semantic'
 import type { CustomerRevenue, MetricContext, OrderFilter, ProductUnits, StatusCount } from '@/lib/semantic'
 import type { VoiceToolContext } from '../context'
 import { toMetricContext } from '../context'
 import { toBaseUnitOrders } from '../baseUnits'
-import { formatRange, resolvePeriod } from '../period'
+import { formatRange, localYmd, resolvePeriod } from '../period'
 import type { DateWindow } from '../period'
 import { isRep } from '../scope'
 import type { ToolArgs } from '../toolArgs'
@@ -42,6 +42,21 @@ function previousPeriod(mctx: MetricContext, scope: OrderFilter, span: DateWindo
   }
 }
 
+/**
+ * The app-zone date of the most recent order in scope placed before the period
+ * ended, or null. Asked only when the period is empty, so "nothing today" can
+ * come with "the last orders came in on 12 October" rather than a bare zero.
+ * Cancelled orders are left out by filterOrders' default, as in every metric.
+ */
+function latestOrderDate(orders: VoiceToolContext['orders'], scope: OrderFilter, before: Date): string | null {
+  let latest = Number.NEGATIVE_INFINITY
+  for (const order of filterOrders(orders, { ...scope, to: before })) {
+    const at = new Date(order.orderDate).getTime()
+    if (at > latest) latest = at
+  }
+  return Number.isFinite(latest) ? localYmd(new Date(latest)) : null
+}
+
 export function getSalesSummary(args: ToolArgs<'get_sales_summary'>, ctx: VoiceToolContext): ToolOutcome {
   const customer = args.horeca_id === undefined ? undefined : ctx.hoReCas.find((c) => c.id === args.horeca_id)
   if (args.horeca_id !== undefined && !customer) return fail('Unknown customer')
@@ -68,6 +83,7 @@ export function getSalesSummary(args: ToolArgs<'get_sales_summary'>, ctx: VoiceT
     topCustomers: topCustomers.slice(0, TOP_N).map((c) => ({ horecaId: c.horecaId, name: c.name, revenue: dollars(c.revenue) })),
     topProducts: topProducts.slice(0, TOP_N).map((p) => ({ name: p.name, units: p.units })),
     ...(args.compare_previous ? { previous: previousPeriod(mctx, scope, period.previous, current) } : {}),
+    ...(current.orderCount === 0 ? { latestOrderDate: latestOrderDate(ctx.orders, scope, period.to) } : {}),
   }
 
   const forCustomer = customer ? `, for ${customer.name}` : ''

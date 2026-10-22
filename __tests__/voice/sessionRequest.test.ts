@@ -3,6 +3,7 @@ import {
   REALTIME_MODEL,
   REALTIME_TRANSCRIPTION_MODEL,
   REALTIME_VOICE,
+  TRANSCRIPTION_PROMPT,
   buildClientSecretRequest,
 } from '../../supabase/functions/_shared/voice/sessionRequest'
 import { VOICE_TOOLS } from '../../supabase/functions/_shared/voice/toolSchemas'
@@ -45,7 +46,7 @@ describe('realtime constants', () => {
   it('pins the model, voice and transcription model', () => {
     expect(REALTIME_MODEL).toBe('gpt-realtime-2.1')
     expect(REALTIME_VOICE).toBe('marin')
-    expect(REALTIME_TRANSCRIPTION_MODEL).toBe('gpt-4o-mini-transcribe')
+    expect(REALTIME_TRANSCRIPTION_MODEL).toBe('gpt-4o-transcribe')
   })
 })
 
@@ -68,7 +69,8 @@ describe('buildClientSecretRequest', () => {
         tool_choice: 'auto',
         audio: {
           input: {
-            transcription: { model: 'gpt-4o-mini-transcribe', language: 'en' },
+            transcription: { model: 'gpt-4o-transcribe', language: 'en', prompt: TRANSCRIPTION_PROMPT },
+            noise_reduction: { type: 'far_field' },
             turn_detection: {
               type: 'semantic_vad',
               eagerness: 'auto',
@@ -95,7 +97,22 @@ describe('buildClientSecretRequest', () => {
     expect(body.session.audio.input.transcription).toEqual({
       model: REALTIME_TRANSCRIPTION_MODEL,
       language: 'en',
+      prompt: TRANSCRIPTION_PROMPT,
     })
+  })
+
+  it('transcribes English with gpt-4o-transcribe, a vocabulary prompt and far-field noise reduction', () => {
+    // The mini model turned "what's the weather?" into "Восстановлено." on a demo test.
+    const body = mint().body as MintBody
+    const input = body.session.audio.input as unknown as {
+      transcription: { model: string; language: string; prompt: string }
+      noise_reduction: { type: string }
+    }
+    expect(input.transcription.model).toBe('gpt-4o-transcribe')
+    expect(input.transcription.language).toBe('en')
+    expect(input.transcription.prompt).toContain('Nex Order')
+    expect(input.transcription.prompt).toContain('HoReCa')
+    expect(input.noise_reduction).toEqual({ type: 'far_field' })
   })
 
   it('uses semantic VAD that answers on its own and can be interrupted', () => {

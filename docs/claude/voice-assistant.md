@@ -12,7 +12,8 @@ hears the answer. **Advisory and read-only**: it cannot place, change or cancel 
 the system prompt makes it say so and name the screen that can. Every tool result carries a
 `basis` string and the prompt tells the model to state it, so each answer says what it rests on.
 
-- English only. Voice `marin`, model `gpt-realtime-2.1`, transcription `gpt-4o-mini-transcribe`.
+- English only. Voice `marin`, model `gpt-realtime-2.1`, transcription `gpt-4o-transcribe`
+  (with a vocabulary `prompt` and `far_field` noise reduction; see "Nex" below).
 - Four roles: Admin, Manager, Field Sales Rep, Office Sales Rep (`VOICE_ROLES`). Warehouse,
   Customer and QR Staff are out of v1 (the money-hiding rule makes Warehouse a v2 item).
 - Live transcript of both sides, Mute, End, and a typed box on the same session and tools. If the
@@ -337,6 +338,24 @@ The colour is `voiceStatus`'s tone, so the orb and the status pill cannot disagr
   attached to a media element, which it is.
 - Muted reads as 0 (the disabled track carries silence); text-only has no mic meter.
 - Reduced motion gets one still frame per state; a hidden tab stops the loop.
+
+**Two listeners, and why the transcript can disagree with the answer.** The realtime model
+hears the rep's audio itself; the transcript the rep reads comes from a separate side model.
+On a demo test (2026-10-22), "what's the weather?" came back from `gpt-4o-mini-transcribe`
+as "Восстановлено." despite `language: 'en'`, and Nex, hearing the same poor audio,
+volunteered a sales summary. The fix is in three layers:
+- **Hearing** (`sessionRequest.ts`): `gpt-4o-transcribe` (about 2x the transcription cost,
+  still a fraction of a cent a minute), a vocabulary `prompt` (`TRANSCRIPTION_PROMPT`) and
+  `noise_reduction: far_field`. `near_field` is for headsets; the sheet is used on laptops
+  and phones held at arm's length.
+- **Behaviour** (`PERSONALITY`): fetch only what was asked; on unclear input say "Sorry, I
+  didn't catch that" and nothing else; decline off-topic requests kindly and redirect.
+- **Display** (`transcript.ts` `looksMisheard`): a user line with letters but no Latin ones
+  shows as "(Didn't catch that)" rather than the hallucinated script.
+
+`get_sales_summary` returns `latestOrderDate` when its period is empty, so "nothing today"
+comes with the last day that had orders. The demo data is an August snapshot, so "today" is
+always empty there.
 
 ## Operating it (dev)
 

@@ -77,6 +77,20 @@ describe('get_sales_summary', () => {
     expect(summary({ period: 'custom', from: '2026-08-22', to: '2026-08-31' }).newCustomers).toBe(3)
   })
 
+  it('reports the latest order date when the period is empty', () => {
+    // Nothing today (O13, a day ago, is cancelled). The latest live order is O8,
+    // 8 days before NOW = 12 Oct in Sydney; Alice's own is O7, 12 days = 8 Oct;
+    // The Grove's is O12, 14 days = 6 Oct.
+    const latest = (args: Record<string, unknown>, ctx?: VoiceToolContext) =>
+      (summary(args, ctx) as Sales & { latestOrderDate?: string | null }).latestOrderDate
+    expect(latest({ period: 'today' })).toBe('2026-10-12')
+    expect(latest({ period: 'today' }, ctxFor(REP_A))).toBe('2026-10-08')
+    expect(latest({ period: 'today', horeca_id: C3.id })).toBe('2026-10-06')
+    // Not reported when the period has orders, and null when nothing came before it.
+    expect(latest({ period: 'last_30_days' })).toBeUndefined()
+    expect(latest({ period: 'custom', from: '2026-01-01', to: '2026-01-31' })).toBeNull()
+  })
+
   it('lists orders by status without the empty stages', () => {
     const data = summary({ period: 'last_30_days' })
     expect(data.ordersByStatus).toEqual([

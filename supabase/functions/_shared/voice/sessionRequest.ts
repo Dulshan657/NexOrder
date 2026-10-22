@@ -12,7 +12,17 @@ import type { VoiceToolSchema } from './toolSchemas.ts'
 
 export const REALTIME_MODEL = 'gpt-realtime-2.1'
 export const REALTIME_VOICE = 'marin'
-export const REALTIME_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe'
+// The transcript the rep reads comes from this side model, not from the realtime
+// model (which hears the audio itself). gpt-4o-mini-transcribe turned "what's the
+// weather?" into "Восстановлено." on a demo test, despite language 'en'; the full
+// model, a vocabulary prompt and noise reduction are the fix (about 2x the
+// transcription cost, still a fraction of a cent a minute).
+export const REALTIME_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe'
+/** Words the transcriber should expect: the app's own vocabulary, in Australian English. */
+export const TRANSCRIPTION_PROMPT =
+  'A sales rep or manager talking to Nex in the Nex Order app, in Australian English: orders, customers, HoReCa, invoices, stock, reorder, targets, visits, follow-ups, cartons.'
+/** Laptop and phone-at-arm's-length mics, which is how the sheet is used; near_field is for headsets. */
+const NOISE_REDUCTION = 'far_field'
 
 const CLIENT_SECRET_TTL_SECONDS = 120
 const MAX_OUTPUT_TOKENS = 800
@@ -61,7 +71,8 @@ export function buildClientSecretRequest(input: ClientSecretRequestInput): Clien
         tool_choice: 'auto',
         audio: {
           input: {
-            transcription: { model: REALTIME_TRANSCRIPTION_MODEL, language: 'en' },
+            transcription: { model: REALTIME_TRANSCRIPTION_MODEL, language: 'en', prompt: TRANSCRIPTION_PROMPT },
+            noise_reduction: { type: NOISE_REDUCTION },
             turn_detection: {
               type: 'semantic_vad',
               eagerness: 'auto',
