@@ -6,7 +6,7 @@
   "base": "b356a7dab4cff9308e0937fdaaaf87d75b689cf7",
   "approved": "2026-10-20 owner (implementation plan approved in session 25f092a2; this brief restates its scope and adds none)",
   "acceptance": [
-    { "id": "A1", "check": "voice_assistant is a registered module that requires sales_orders and is enabled for dev and amadiya." },
+    { "id": "A1", "check": "voice_assistant is a registered module that requires sales_orders and is enabled for dev only: Amadiya gets no new features yet." },
     { "id": "A2", "check": "The voice-session Edge Function allows exactly Admin, Manager, Field Sales Rep and Office Sales Rep, gates on the voice_assistant module, and never returns the system instructions to the client." },
     { "id": "A3", "check": "A sales rep is never offered the warehouse reorder tool, and no stock tool is offered when inventory_dispatch is off." },
     { "id": "A4", "check": "The system prompt tells the model it cannot place or change anything and must state what each answer is based on." },
@@ -23,7 +23,7 @@
   ],
   "failFirst": [
     { "file": "__tests__/voice/moduleFlag.test.ts", "test": "voice_assistant module > is registered and requires sales_orders", "proves": ["A1"] },
-    { "file": "__tests__/voice/moduleFlag.test.ts", "test": "voice_assistant module > is enabled for dev and amadiya", "proves": ["A1"] },
+    { "file": "__tests__/voice/moduleFlag.test.ts", "test": "voice_assistant module > is enabled for dev but not yet for amadiya", "proves": ["A1"] },
     { "file": "__tests__/voice/voiceSessionContract.test.ts", "test": "voice-session contract > allows exactly the four sales roles", "proves": ["A2"] },
     { "file": "__tests__/voice/voiceSessionContract.test.ts", "test": "voice-session contract > never puts the instructions in a response", "proves": ["A2"] },
     { "file": "__tests__/voice/toolSchemas.test.ts", "test": "toolsForRole > withholds reorder recommendations from reps", "proves": ["A3"] },
@@ -53,7 +53,9 @@ Full plan: the session plan approved by the owner (OpenAI Realtime over WebRTC f
 browser; an Edge Function mints a short-lived key; tools run in the browser over the
 data the user's own session already loaded, so RLS is the permission model).
 
-- New module `voice_assistant` (requires `sales_orders`), enabled for dev and amadiya.
+- New module `voice_assistant` (requires `sales_orders`), enabled for dev only.
+  Revised 2026-10-22 at the owner's request: Amadiya gets no new features yet, so
+  its registry entry stays `['sales_orders', 'inventory_dispatch']`.
 - Pure shared contracts in `supabase/functions/_shared/voice/` (tool schemas, system
   prompt, session request, budget, cost), imported by Deno and Vite alike.
 - Migration `00133_voice_sessions.sql`: service-role-only ledger for the daily budget and cost.
