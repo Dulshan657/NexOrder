@@ -35,6 +35,8 @@
 // when the session ends.
 
 import { reportError } from '@/lib/errorReporter'
+import { createLevelMeter } from './audioLevel'
+import type { LevelMeter } from './audioLevel'
 import { RealtimeClient, RealtimeConnectError } from './realtimeClient'
 import type { RealtimeClientLike } from './realtimeClient'
 import { functionOutputItem, responseCreate, userTextItem } from './realtimeEvents'
@@ -131,6 +133,8 @@ export interface Handles {
   muted: boolean
   client: RealtimeClientLike | null
   mic: MediaStream | null
+  /** Loudness taps for the orb, made on first read and closed with the media. */
+  meters: { mic: LevelMeter | null; remote: LevelMeter | null }
   sessionId: string | null
   /** The user's access token for a same-tick page-close end. Never logged. */
   accessToken: string | null
@@ -172,7 +176,14 @@ function clearTimers(h: Handles): void {
   h.timers = NO_TIMERS
 }
 
+function closeMeters(h: Handles): void {
+  h.meters.mic?.close()
+  h.meters.remote?.close()
+  h.meters = { mic: null, remote: null }
+}
+
 function releaseMedia(h: Handles): void {
+  closeMeters(h)
   h.removeListeners?.()
   h.removeListeners = null
   h.client?.close()
@@ -506,6 +517,27 @@ export function toggleMute(h: Handles): void {
   patchView(h, { muted: h.muted })
 }
 
+export type LevelSource = 'mic' | 'remote'
+
+/**
+ * How loud the rep's mic or the model's voice is right now, 0..1, for the orb.
+ * Read from an animation frame, not React state. A meter is made on first read
+ * for whichever stream is current and remade if the stream changes; anything
+ * missing (no session, text-only, no Web Audio) reads as 0. Muted reads 0 too,
+ * because the disabled track carries silence.
+ */
+export function readLevel(h: Handles, source: LevelSource): number {
+  if (!h.live) return 0
+  const stream = source === 'mic' ? h.mic : (h.client?.remoteStream ?? null)
+  if (!stream) return 0
+  const current = h.meters[source]
+  if (current?.stream === stream) return current.read()
+  current?.close()
+  const meter = createLevelMeter(stream)
+  h.meters = { ...h.meters, [source]: meter }
+  return meter?.read() ?? 0
+}
+
 export function createHandles(options: UseVoiceSessionOptions, setView: Handles['setView'], audioRef: Handles['audioRef']): Handles {
   return {
     attempt: 0,
@@ -515,6 +547,7 @@ export function createHandles(options: UseVoiceSessionOptions, setView: Handles[
     muted: false,
     client: null,
     mic: null,
+    meters: { mic: null, remote: null },
     sessionId: null,
     accessToken: null,
     maxSeconds: null,

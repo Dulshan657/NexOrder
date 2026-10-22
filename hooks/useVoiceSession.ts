@@ -12,15 +12,16 @@ import {
   INITIAL_VIEW,
   createHandles,
   endSession,
+  readLevel,
   sendText,
   startSession,
   toggleMute,
 } from '@/lib/voice/voiceSession'
-import type { Handles, StartVoiceOptions, UseVoiceSessionOptions, ViewState, VoiceBudget, VoicePhase } from '@/lib/voice/voiceSession'
+import type { Handles, LevelSource, StartVoiceOptions, UseVoiceSessionOptions, ViewState, VoiceBudget, VoicePhase } from '@/lib/voice/voiceSession'
 
 export type { VoiceError, VoiceErrorKind } from '@/lib/voice/voiceErrors'
 export type { VoiceEndReason } from '@/services/supabase/voiceSessionService'
-export type { StartVoiceOptions, UseVoiceSessionOptions, VoiceBudget, VoicePhase } from '@/lib/voice/voiceSession'
+export type { LevelSource, StartVoiceOptions, UseVoiceSessionOptions, VoiceBudget, VoicePhase } from '@/lib/voice/voiceSession'
 export { CAP_WARNING } from '@/lib/voice/voiceSession'
 
 export interface VoiceSessionApi {
@@ -38,6 +39,8 @@ export interface VoiceSessionApi {
   end(reason?: VoiceEndReason): Promise<void>
   toggleMute(): void
   sendText(text: string): void
+  /** Loudness 0..1 of the rep's mic or the model's voice, for the orb. Call per frame, not per render. */
+  getLevel(source: LevelSource): number
   /** Attach to an <audio autoPlay playsInline> element; the model's voice plays there. */
   audioRef: { current: HTMLAudioElement | null }
 }
@@ -65,6 +68,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceSessionAp
   const end = useCallback(async (reason: VoiceEndReason = 'user') => endSession(h, reason), [h])
   const mute = useCallback(() => toggleMute(h), [h])
   const send = useCallback((text: string) => sendText(h, text), [h])
+  const getLevel = useCallback((source: LevelSource) => readLevel(h, source), [h])
 
   return {
     phase: view.phase,
@@ -80,6 +84,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceSessionAp
     end,
     toggleMute: mute,
     sendText: send,
+    getLevel,
     audioRef,
   }
 }

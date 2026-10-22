@@ -45,12 +45,12 @@ export function TranscriptList({ entries }: TranscriptListProps) {
     >
       {count === 0 ? (
         <p className="m-auto max-w-[16rem] text-center text-sm text-stone-600">
-          Ask about your sales, targets, customers or stock.
+          Hi, I&apos;m Nex. Ask me about your sales, targets, customers or stock.
         </p>
       ) : (
         entries.map((entry) => (
           <p key={entry.id} className={`${BUBBLE_BASE} ${BUBBLE_ROLE[entry.role]}`}>
-            <span className="sr-only">{entry.role === 'user' ? 'You: ' : 'Nex Assistant: '}</span>
+            <span className="sr-only">{entry.role === 'user' ? 'You: ' : 'Nex: '}</span>
             <span className={entry.final ? undefined : 'italic text-stone-600'}>{entry.text || '…'}</span>
           </p>
         ))

@@ -61,6 +61,8 @@ export interface RealtimeConnectOptions {
 
 /** What the session hook needs from a client; the hook's tests inject a fake. */
 export interface RealtimeClientLike {
+  /** The model's voice once it arrives (ontrack), for the orb's level meter. Null before and after. */
+  readonly remoteStream?: MediaStream | null
   connect(options: RealtimeConnectOptions): Promise<void>
   send(event: ClientEvent): boolean
   setMuted(muted: boolean): void
@@ -85,6 +87,7 @@ export class RealtimeClient implements RealtimeClientLike {
   private pc: RTCPeerConnection | null = null
   private dc: RTCDataChannel | null = null
   private mic: MediaStream | null = null
+  private remote: MediaStream | null = null
   private closed = false
   private closeReported = false
 
@@ -93,13 +96,20 @@ export class RealtimeClient implements RealtimeClientLike {
     this.fetchImpl = deps.fetchImpl ?? ((input, init) => fetch(input, init))
   }
 
+  get remoteStream(): MediaStream | null {
+    return this.remote
+  }
+
   async connect(options: RealtimeConnectOptions): Promise<void> {
     const pc = this.createPeerConnection()
     this.pc = pc
     this.mic = options.micStream
     this.closed = false
     this.closeReported = false
-    pc.ontrack = (event: RTCTrackEvent) => playRemote(options.audioEl, event.streams)
+    pc.ontrack = (event: RTCTrackEvent) => {
+      this.remote = event.streams[0] ?? null
+      playRemote(options.audioEl, event.streams)
+    }
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'failed') this.reportClosed(options)
     }
@@ -176,6 +186,7 @@ export class RealtimeClient implements RealtimeClientLike {
     if (stopMic) for (const track of this.mic?.getTracks() ?? []) track.stop()
     this.dc = null
     this.pc = null
+    this.remote = null
     if (stopMic) this.mic = null
   }
 }

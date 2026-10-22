@@ -88,6 +88,17 @@ describe('RealtimeClient', () => {
     await Promise.resolve()
   })
 
+  it('keeps the remote stream it receives for metering', async () => {
+    const { peer, client, onEvent, onClose } = setup()
+    await client.connect({ clientSecret: 'ek_test', micStream: null, audioEl: null, onEvent, onClose })
+    expect(client.remoteStream).toBeNull()
+    const remote = { id: 'remote' }
+    peer.ontrack?.({ streams: [remote] })
+    expect(client.remoteStream).toBe(remote)
+    client.close()
+    expect(client.remoteStream).toBeNull()
+  })
+
   it('parses data-channel messages and drops ones it does not use', async () => {
     const { peer, client, onEvent, onClose } = setup()
     await client.connect({ clientSecret: 'ek_test', micStream: null, audioEl: null, onEvent, onClose })

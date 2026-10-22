@@ -299,6 +299,45 @@ control; until then it is the spend limit above.
 - **The spoken-period zone is Australia/Sydney for every tenant.** A per-tenant setting is v2.
 - `cost_usd` is client-reported and informational; transcription is not in it.
 
+## Nex: the name, the personality and the orb (NX-0004)
+
+Users meet the assistant as **Nex** ("Talk to Nex", the sheet titled "Nex", "Nex:" before
+her lines for screen readers). Internal names keep "Nex Assistant" and the module slug
+stays `voice_assistant`; renaming those would be churn. Her personality lives in the
+`PERSONALITY` section of `_shared/voice/instructions.ts`: friendly, approachable and
+helpful. It is the **last** section on purpose, so it colours the answers without
+outranking the rules above it (brief answers, call a tool before any number). The voice
+is `marin`. A prompt change reaches users only after `fn:deploy:<env> voice-session`.
+
+The orb is `components/voice/NexOrb.tsx`, painted from the pure engine of
+[`thinking-orbs`](https://github.com/Jakubantalik/thinking-orbs) (MIT, pinned exactly at
+`0.3.2`, `thinking-orbs/engine` only; it ships in the launcher's lazy chunk and nowhere
+else). `components/voice/orbState.ts` maps the session to a look:
+
+| Session | Orb | Driven by |
+|---|---|---|
+| requesting-mic / minting / connecting | `connecting` | — |
+| live listening | `listening` | the rep's mic |
+| live thinking | `working` | — |
+| live speaking | `composing` | Nex's voice |
+| idle / ending / ended / text-only Ready | `breathing` | — |
+| error | `breathing`, frozen | — |
+
+The colour is `voiceStatus`'s tone, so the orb and the status pill cannot disagree.
+
+- **Only the hero orb animates during a chat.** The header and launcher orbs are still
+  icons that play a ~0.9 s burst when tapped (the header's also plays once as the sheet
+  opens). The launcher never has a session to show: closing the sheet ends it.
+- **Loudness is read per animation frame, never through React state** (`getLevel` →
+  `readLevel` in `voiceSession.ts` → `lib/voice/audioLevel.ts`), so 60 fps does not
+  re-render the sheet.
+- **The analyser is never connected to the AudioContext's `destination`.** Nex's voice
+  already plays through the sheet's `<audio>` element; wiring the analyser onward would
+  play it twice. Chrome feeds a remote WebRTC stream into Web Audio only while it is also
+  attached to a media element, which it is.
+- Muted reads as 0 (the disabled track carries silence); text-only has no mic meter.
+- Reduced motion gets one still frame per state; a hidden tab stops the loop.
+
 ## Operating it (dev)
 
 ```bash

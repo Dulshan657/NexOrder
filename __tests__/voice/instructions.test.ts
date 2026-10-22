@@ -47,7 +47,21 @@ describe('buildInstructions', () => {
     const text = flat(build())
     expect(text).toContain('You are talking to Priya Raman, whose role is Field Sales Rep.')
     expect(text).toContain('Today is 2026-10-20.')
-    expect(text).toContain('You are Nex Assistant')
+    expect(text).toContain('You are Nex,')
+  })
+
+  it('introduces itself as Nex with a friendly, approachable, helpful personality', () => {
+    const raw = build()
+    const text = flat(raw)
+    expect(text).toContain('You are Nex,')
+    expect(text).not.toContain('Nex Assistant')
+    const personality = raw.slice(raw.indexOf('PERSONALITY'))
+    expect(raw.indexOf('PERSONALITY')).toBeGreaterThan(raw.indexOf('HOW TO SPEAK'))
+    for (const trait of ['friendly', 'approachable', 'helpful']) expect(personality.toLowerCase()).toContain(trait)
+    // Personality never outranks the rules: still brief, still no invented numbers.
+    expect(text).toContain('one to three short sentences')
+    expect(text).toContain('Never invent a number.')
+    for (const role of ROLES) expect(build({ role, modules: EVERY_MODULE }).length).toBeLessThan(MAX_INSTRUCTION_CHARS)
   })
 
   it('states the currency and language', () => {
@@ -69,7 +83,7 @@ describe('buildInstructions', () => {
 
   it('includes the five fixed sections in order', () => {
     const text = build()
-    const order = ['HOW TO SPEAK', 'WHAT YOU CANNOT DO', 'CUSTOMERS', 'ROLE RULES', 'STYLE'].map((h) =>
+    const order = ['HOW TO SPEAK', 'WHAT YOU CANNOT DO', 'CUSTOMERS', 'ROLE RULES', 'PERSONALITY'].map((h) =>
       text.indexOf(h),
     )
     expect(order.every((i) => i >= 0)).toBe(true)
@@ -113,7 +127,7 @@ describe('buildInstructions', () => {
   it('omits the role rules heading when no role rule applies', () => {
     const text = build({ role: 'Warehouse', modules: AMADIYA })
     expect(text).not.toContain('ROLE RULES')
-    expect(text).toContain('STYLE')
+    expect(text).toContain('PERSONALITY')
   })
 
   it('stays under 4,000 characters for every role and module set', () => {

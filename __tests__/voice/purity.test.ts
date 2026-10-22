@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest'
 const ROOT = join(__dirname, '..', '..', 'lib', 'voice')
 
 const TOP_LEVEL = [
-  'baseUnits.ts', 'canUseVoiceAssistant.ts', 'context.ts', 'findCustomer.ts', 'period.ts', 'realtimeEvents.ts',
+  'baseUnits.ts', 'canUseVoiceAssistant.ts', 'context.ts', 'findCustomer.ts', 'levelSmoothing.ts', 'period.ts', 'realtimeEvents.ts',
   'realtimeUsage.ts', 'resultBudget.ts', 'runVoiceTool.ts', 'toolArgs.ts', 'transcript.ts',
   'voiceErrors.ts',
 ]
