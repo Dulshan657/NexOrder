@@ -101,3 +101,37 @@ or `main` once NX-0003 has merged with a merge commit (a squash would orphan `ba
   the launcher never has a live state to show).
 
 ## FINAL
+
+Branch `feat/NX-0004-voice-orb`, stacked on `feat/NX-0003-voice-assistant` and merged with it (merge commit, so `base` stays an ancestor) after NX-0003's 2026-10-22 revision took `voice_assistant` off Amadiya. `npm run check:brief -- --base=feat/NX-0003-voice-assistant` is the judge of the fail-first column; its table is in the PR body. All 17 named tests fail on the base and pass on the tip: 11 by assertion, 6 by absence (the new pure modules and `NexOrb` did not exist).
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `orbVisual > maps every session state to its orb` (`__tests__/voice/orbState.test.ts`), proven-by-absence | |
+| A2 | claimed | `orbVisual > agrees with the status pill's tone for every input`, proven-by-absence | Exhaustive over phase x live x textOnly x error |
+| A3 | claimed | `smoothLevel > rises fast, falls slowly, clamps to 0..1 and settles to 0 on silence` (`levelSmoothing.test.ts`), proven-by-absence | `levelSmoothing.ts` is in the voice purity list |
+| A4 | claimed | `VoiceAssistantSheet > shows an aria-hidden hero orb that follows the live state`, proven by assertion | |
+| A5 | claimed | `VoiceAssistantSheet > keeps the header orb static while the hero orb animates` and `VoiceAssistantLauncher > shows a static orb instead of the mic icon, keeping its label`, both proven by assertion | The label the test keeps is "Talk to Nex" since A13; the A5 wording predates the rename |
+| A6 | claimed | `NexOrb > a burst plays when triggered and stops after its duration`, proven-by-absence | |
+| A7 | claimed | `NexOrb > paints one static frame and requests no animation frame under reduced motion`, proven-by-absence | |
+| A8 | claimed | `RealtimeClient > keeps the remote stream it receives for metering`, proven by assertion | |
+| A9 | claimed | `createLevelMeter > never connects to the destination and disconnects on close` (`audioLevel.test.ts`), proven-by-absence | |
+| A10 | claimed | At the merged tip, `NEXORDER_ENV=dev vite build`: the engine symbol `scanMul` appears only in `assets/VoiceAssistantLauncher-*.js`. `NEXORDER_ENV=amadiya vite build` (voice off since NX-0003's revision): no file contains it and no voice chunk is emitted | |
+| A11 | claimed | The owner's walk on https://nexorder.vercel.app, 2026-10-22: the orb followed the conversation, and the owner asked for smoother motion, which `orbMotion.ts` delivered | Desktop only, as far as reported; the 360 px RS35 was not walked |
+| A12 | not-claimed | | The branch is deployed to dev (`deploy:dev` verified the served sha and health 200 at `b96fa8a`), but not merged; the merge waits on NX-0003 and the gate |
+| A13 | claimed | `VoiceAssistantSheet > calls the assistant Nex in the title and the transcript` and `VoiceAssistantLauncher > invites the rep to talk to Nex by name`, both proven by assertion | Internal names (`voice_assistant`, error reports saying "Nex Assistant") are unchanged on purpose |
+| A14 | claimed | `buildInstructions > introduces itself as Nex with a friendly, approachable, helpful personality`, proven by assertion | Under 4,000 characters for every role and module set (same file) |
+| A15 | claimed | `buildClientSecretRequest > transcribes English with gpt-4o-transcribe, a vocabulary prompt and far-field noise reduction`, proven by assertion | A live mint against OpenAI `/v1/realtime/client_secrets` with these settings returned 200 and echoed them. `far_field` rather than the plan's `near_field`, which is meant for headsets |
+| A16 | claimed | `buildInstructions > tells Nex to ask again when unclear, decline off-topic kindly, and never fetch what was not asked`, proven by assertion | |
+| A17 | claimed | `get_sales_summary > reports the latest order date when the period is empty` (`voiceTools.test.ts`), proven by assertion | Present only when `orderCount` is 0; app-zone date |
+| A18 | claimed | `reduceTranscript > shows a non-Latin transcript as Didn't catch that`, proven by assertion | Accented Latin and digit-only lines pass through |
+| A19 | claimed | The owner re-tested on the demo after `fn:deploy:dev voice-session` and `deploy:dev` (2026-10-22): "works now" | |
+
+Gates at the merged tip: `npx tsc --noEmit`, `npm run lint`, `check:edge-types` (84 functions), `check:overlays`, `check:csp` and `check:claude-md` exit 0. Full `npx vitest run`: 5,968 of 5,973 pass. The 5 failures (`qrPinPad`, `receiveMixedPallet`, `shortStockConfirm`, `ui/Modal`, `voiceAssistantSheet` error titles) are jsdom timeouts that move between runs, and all 134 tests in those files pass when run alone.
+
+### Not claimed
+
+- The merge to main and the dev deploy of the merge sha (A12). This PR targets the NX-0003 branch and lands after it.
+- The orb on the 360 px RS35 and on iPhone Safari; only desktop was walked.
+- Why the owner's first demo session ended at 0:27. It was not the 120 s silence timer, and it has not recurred.
+- Any change for Amadiya. The orb ships with the voice module, which Amadiya does not have.
+- The brief's "Out of scope" line excluding server and tool changes is superseded by the A15–A17 revision (session config, prompt and `get_sales_summary`); budget and CSP are untouched.
