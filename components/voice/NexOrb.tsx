@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { MODE_FRAMES, resolvePreset } from 'thinking-orbs/engine'
 import type { OrbFrame, OrbSize } from 'thinking-orbs/engine'
 import type { LevelSource } from '@/lib/voice/voiceSession'
+import { MAX_STEP_SEC, approach, burstVelocity, easeInOut, stateTempo } from './orbMotion'
 import type { OrbVisual } from './orbState'
 import type { StatusTone } from './voiceStatus'
 
@@ -14,18 +15,27 @@ import type { StatusTone } from './voiceStatus'
 //   animate="burst" - the launcher and header icons. A still frame that plays for
 //                     BURST_MS each time playToken changes (or once on mount).
 //
+// FLUID BY CONSTRUCTION (orbMotion.ts): nothing the orb shows is set, it is eased
+// toward. Speed, size and loudness approach their targets by elapsed time; the
+// animation's clock is never reset, so stopping holds the frame it reached rather
+// than snapping back; a burst rises from rest and settles to rest; and a state
+// change cross-fades on an eased curve at an evened-out tempo.
+//
 // Decorative: aria-hidden, because the status pill's role="status" already says
 // what is happening. Reduced motion gets one still frame; a hidden tab stops the
 // loop. Depth is carried by dot alpha, as the library carries it by ink weight.
 
 export const BURST_MS = 900
-const FADE_MS = 250
+const FADE_MS = 450
 const MAX_DPR = 2
 /** The engine's time at which every mode shows a representative still frame. */
 const STILL_T = 0.6
 /** At full loudness the orb is this much bigger, and turns this much faster. */
-const LEVEL_SCALE = 0.12
-const LEVEL_SPEED = 1.5
+const LEVEL_SCALE = 0.08
+const LEVEL_SPEED = 0.5
+/** Seconds to close ~63% of the gap: the orb's size, and its speed. */
+const LEVEL_TAU = 0.12
+const SPEED_TAU = 0.4
 /** Up to this CSS size the 20 px preset (fewer, larger dots) reads better than the 64. */
 const SMALL_PRESET_MAX = 40
 
@@ -68,6 +78,13 @@ export interface NexOrbProps {
 interface Look {
   readonly state: OrbVisual['state']
   readonly tone: StatusTone
+}
+
+/** What carries over when the drawing loop restarts, so a restart never jumps. */
+interface Motion {
+  phase: number
+  velocity: number
+  level: number
 }
 
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
@@ -127,13 +144,17 @@ interface Painter {
 
 function createPainter(ctx: CanvasRenderingContext2D, size: number, dpr: number, ink: string | undefined): Painter {
   const preset: OrbSize = size <= SMALL_PRESET_MAX ? 20 : 64
+  // A bigger orb covers more pixels per turn; slow it so it reads as calm, not busy.
+  const sizeTempo = Math.min(1, Math.sqrt(preset / size))
   let shown: Look | null = null
   let previous: Look | null = null
   let changedAt = 0
 
   const drawLook = (look: Look, phase: number, level: number, alpha: number) => {
+    if (alpha <= 0) return
     const { mode, speed, opts } = resolvePreset(look.state, preset)
-    const frame = MODE_FRAMES[mode](preset, phase * speed, opts)
+    const t = phase * speed * stateTempo(speed) * sizeTempo
+    const frame = MODE_FRAMES[mode](preset, t, opts)
     const scale = (size / preset) * (1 + LEVEL_SCALE * level)
     const offset = size / 2 - (preset / 2) * scale
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offset, dpr * offset)
@@ -150,7 +171,7 @@ function createPainter(ctx: CanvasRenderingContext2D, size: number, dpr: number,
         shown = look
         changedAt = now ?? 0
       }
-      const fade = previous && now !== undefined ? clamp01((now - changedAt) / FADE_MS) : 1
+      const fade = previous && now !== undefined ? easeInOut((now - changedAt) / FADE_MS) : 1
       ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.clearRect(0, 0, size * dpr, size * dpr)
       if (previous && fade < 1) drawLook(previous, phase, level, 1 - fade)
@@ -203,6 +224,8 @@ export function NexOrb({ visual, size, animate, getLevel, playToken, playOnMount
   useEffect(() => {
     latest.current = { visual, getLevel }
   })
+  // Survives loop restarts: a stop holds the frame reached, a start eases up from rest.
+  const motion = useRef<Motion>({ phase: STILL_T, velocity: 0, level: 0 })
 
   const stillKey = playing ? '' : `${visual.state}:${visual.tone}`
   useEffect(() => {
@@ -211,17 +234,26 @@ export function NexOrb({ visual, size, animate, getLevel, playToken, playOnMount
     if (!surface) return
     const painter = createPainter(surface.ctx, size, surface.dpr, ink)
     const look = (v: OrbVisual): Look => ({ state: v.state, tone: v.tone })
+    const m = motion.current
     // Paint now, so the orb is never blank while waiting for the first frame.
-    painter.draw(look(latest.current.visual), STILL_T, 0)
-    if (!playing) return
-    let phase = STILL_T
+    painter.draw(look(latest.current.visual), m.phase, m.level)
+    if (!playing) {
+      m.velocity = 0
+      return
+    }
+    const burstStart = performance.now()
     return runLoop((now, dtSec) => {
       const { visual: v, getLevel: read } = latest.current
-      const level = v.audio && read ? clamp01(read(v.audio)) : 0
-      phase += dtSec * (1 + LEVEL_SPEED * level)
-      painter.draw(look(v), phase, level, now)
+      const heard = v.audio && read ? clamp01(read(v.audio)) : 0
+      m.level = approach(m.level, heard, dtSec, LEVEL_TAU)
+      m.velocity =
+        animate === 'burst'
+          ? burstVelocity((now - burstStart) / BURST_MS)
+          : approach(m.velocity, 1 + LEVEL_SPEED * m.level, dtSec, SPEED_TAU)
+      m.phase += Math.min(dtSec, MAX_STEP_SEC) * m.velocity
+      painter.draw(look(v), m.phase, m.level, now)
     })
-  }, [size, ink, playing, stillKey])
+  }, [size, ink, playing, stillKey, animate])
 
   return (
     <span
