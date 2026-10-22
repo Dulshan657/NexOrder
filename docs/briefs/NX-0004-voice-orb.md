@@ -1,4 +1,4 @@
-# NX-0004 — Nex Assistant orb: a visible, audio-reactive "someone"
+# NX-0004 — Nex: an orb, a name and a personality for the voice assistant
 
 ```json brief
 {
@@ -17,7 +17,9 @@
     { "id": "A9", "check": "The level meter never connects its analyser to the AudioContext destination (no doubled playback), and close() disconnects its source." },
     { "id": "A10", "check": "thinking-orbs ships only in the voice chunk: a build with voice_assistant off contains none of its code.", "manual": "npm run build for dev and for a voice-off target, then grep dist/ for an engine symbol" },
     { "id": "A11", "check": "In a real browser the orb visibly follows a conversation (ripples with the mic, orbits while thinking, swells with the model's voice) and the model's audio is not doubled.", "manual": "npm run dev in Chrome, desktop and 360x720, one spoken conversation" },
-    { "id": "A12", "check": "Merged and deployed to dev; /version.json shows the merge sha.", "manual": "deploy:dev verification" }
+    { "id": "A12", "check": "Merged and deployed to dev; /version.json shows the merge sha.", "manual": "deploy:dev verification" },
+    { "id": "A13", "check": "The assistant is called Nex everywhere a user meets it: the sheet is titled 'Nex', the launcher is labelled 'Talk to Nex', and screen readers hear 'Nex:' before each of her transcript lines." },
+    { "id": "A14", "check": "The model is told it is Nex, with a PERSONALITY section that makes her friendly, approachable and helpful, while the brevity and never-invent-a-number rules still hold and the prompt stays under MAX_INSTRUCTION_CHARS." }
   ],
   "failFirst": [
     { "file": "__tests__/voice/orbState.test.ts", "test": "orbVisual > maps every session state to its orb", "proves": ["A1"] },
@@ -29,7 +31,10 @@
     { "file": "__tests__/voice/nexOrb.test.tsx", "test": "NexOrb > a burst plays when triggered and stops after its duration", "proves": ["A6"] },
     { "file": "__tests__/voice/nexOrb.test.tsx", "test": "NexOrb > paints one static frame and requests no animation frame under reduced motion", "proves": ["A7"] },
     { "file": "__tests__/voice/realtimeClient.test.ts", "test": "RealtimeClient > keeps the remote stream it receives for metering", "proves": ["A8"] },
-    { "file": "__tests__/voice/audioLevel.test.ts", "test": "createLevelMeter > never connects to the destination and disconnects on close", "proves": ["A9"] }
+    { "file": "__tests__/voice/audioLevel.test.ts", "test": "createLevelMeter > never connects to the destination and disconnects on close", "proves": ["A9"] },
+    { "file": "__tests__/voice/voiceAssistantSheet.test.tsx", "test": "VoiceAssistantSheet > calls the assistant Nex in the title and the transcript", "proves": ["A13"] },
+    { "file": "__tests__/voice/voiceAssistantLauncher.test.tsx", "test": "VoiceAssistantLauncher > invites the rep to talk to Nex by name", "proves": ["A13"] },
+    { "file": "__tests__/voice/instructions.test.ts", "test": "buildInstructions > introduces itself as Nex with a friendly, approachable, helpful personality", "proves": ["A14"] }
   ],
   "allow": []
 }
@@ -42,6 +47,9 @@ and a word. Give the assistant a visible presence: a dotted 3D orb (the engine o
 `thinking-orbs`, MIT, plain 2D canvas) whose animation follows the session state and,
 while live, the real loudness of whoever is talking — so "it heard me", "it's
 thinking" and "it's answering" are obvious at a glance.
+
+Revised 2026-10-22 at the owner's request: the assistant is named **Nex** and is
+given a friendly, approachable, helpful personality (A13, A14).
 
 ## Approach
 
@@ -60,6 +68,12 @@ thinking" and "it's answering" are obvious at a glance.
 - Placements: hero orb in `VoiceAssistantSheet` above the pill (smaller below `sm` for
   the 664 px RS35); burst orbs replace the `Mic` icon in the sheet header and in
   `VoiceAssistantButton` (play on click only).
+- Name: user-facing strings only ("Nex" title, "Talk to Nex", "Nex:" in the transcript).
+  The module slug `voice_assistant`, component names and error-report messages keep
+  "Nex Assistant" — they are internal and renaming them is churn.
+- Personality: `_shared/voice/instructions.ts` opens "You are Nex, …" and STYLE becomes a
+  PERSONALITY section (friendly, approachable, helpful; brief still wins). The voice stays
+  `marin`. Takes effect on the next `voice-session` function deploy.
 - Docs: an "Orb" section in `docs/claude/voice-assistant.md`.
 
 Stacked on `feat/NX-0003-voice-assistant` (base above). Its PR targets that branch,
