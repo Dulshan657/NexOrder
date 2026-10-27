@@ -89,6 +89,8 @@ follow in one or two taps. Interview with the owner, 2026-10-27.
 
 Also: an independent code review found two HIGH defects (an incomplete required line was silently dropped and wiped on Receive; the strip collapsed on the first keystroke). Both were fixed with regression tests, along with scans during save, reveal-behind-dock and hover hijacking Enter. Full suite 5212/5212, `tsc`, `check:edge-types` (83 clean), `lint` (baseline pruned by 5), `check:overlays`, `check:viewport`, and `build` all pass.
 
+Owner feedback on dev, fixed in `f225491`: (1) the supplier list was painted under the scan bar and the lines. The card's backdrop-blur is a stacking context, so the card is now lifted while the list is open. (2) "Add a line by hand" gave a line with no way to choose its product; it now carries a product search. Regression tests: `Receive Stock flow > lifts the delivery details above the scan bar only while the supplier list is open` and `Receive Stock flow > lets a line added by hand be given its product`. Confirmed in a browser with `elementFromPoint`: every supplier row is top-most over the scan bar, and the hand-line options are top-most over Recent receipts. The combined voice + NX-0005 build was deployed to dev as `125e993` for owner review (not a merge sha).
+
 ### Not claimed
 
 - No live receipt was submitted on dev, to keep the demo's stock and putaway queue clean. Auto-rendering labels and the success card are proven only against mocks.
@@ -97,4 +99,5 @@ Also: an independent code review found two HIGH defects (an incomplete required 
 - Required lot/expiry is not enforced server-side. A direct call to `receive-stock` (or the CSV import) can still omit them.
 - A repeat scan counts onto the newest loose line even if that line already has a lot or expiry typed. A second batch of a flagged product needs New pallet or a line by hand.
 - Auto-render marks plates `label_printed` even if the sheet is never opened (accepted in the brief).
+- The hand-line product search's autofocus was not observed in the automated browser (the window was not focused); it is set, but not verified.
 
