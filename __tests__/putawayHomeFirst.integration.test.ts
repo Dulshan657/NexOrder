@@ -103,9 +103,14 @@ async function row(client: pg.Client, id: number): Promise<Record<string, unknow
   return r.rows[0]
 }
 
-const maybe = hasDbCreds() ? describe : describe.skip
+// No credential-less fallback: this file runs only under
+// vitest.integration.config.ts, whose setup loads dev credentials, so missing
+// credentials are a broken run and should fail loudly rather than pass empty.
+describe('NX-0006 putaway, home first (live RPCs, rollback-isolated)', () => {
+  it('has database credentials', () => {
+    expect(hasDbCreds()).toBe(true)
+  })
 
-maybe('NX-0006 putaway, home first (live RPCs, rollback-isolated)', () => {
   it('completes a suggested task with no assign step and moves the stock', async () => {
     await withRollbackTx(async (client) => {
       const s = await seed(client)
