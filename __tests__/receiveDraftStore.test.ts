@@ -61,7 +61,7 @@ describe('receive draft store', () => {
     expect(loaded?.savedAt).toBe(NOW)
   })
 
-  it('keeps one user’s draft away from another', () => {
+  it("keeps one user's draft away from another", () => {
     // A handheld at a dock is shared between shifts.
     saveReceiveDraft(7, snapshot(), storage, NOW)
     expect(loadReceiveDraft(8, storage, NOW)).toBeNull()
