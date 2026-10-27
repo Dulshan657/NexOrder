@@ -20,7 +20,8 @@
     { "id": "A12", "check": "decide-putaway 'redirect' (Admin/Manager) changes the bin of a 'suggested' task; 'resolve_short' found reopens it, write_off adjusts stock with a mandatory reason." },
     { "id": "A13", "check": "Migration 00135 applied on dev; A7, A9, A10 and A12 verified against live pg.", "manual": "npm run migrate:dev + npm run test:integration (putawayHomeFirst.integration.test.ts)" },
     { "id": "A14", "check": "Existing Assign/Walk screen still works end to end on dev after the function deploy.", "manual": "browser walk on nexorder.vercel.app" },
-    { "id": "A15", "check": "Merged and deployed to dev (functions then frontend); /version.json shows the merge sha.", "manual": "deploy:dev verification" }
+    { "id": "A15", "check": "Merged and deployed to dev (functions then frontend); /version.json shows the merge sha.", "manual": "deploy:dev verification" },
+    { "id": "A16", "check": "A putaway (complete or Place now) that would leave stock on its plate takes its units OFF the plate, landing loose; the move that empties a plate carries it. No plate ever holds stock in two places. (Revision after the gate's NO-GO on e423710: A5 split mixed pallets without this.)", "manual": "npm run test:integration (putawayHomeFirst: mixed pallet, split plate, Place now)" }
   ],
   "failFirst": [
     { "file": "__tests__/wie/homeFirst.test.ts", "test": "planHomeFirst > puts the whole line in the home bin when it has room", "proves": ["A1"] },
