@@ -72,6 +72,9 @@ beforeEach(() => {
   // give each one its own second.
   clock = 0
   vi.spyOn(performance, 'now').mockImplementation(() => (clock += 1000))
+  // The screen saves an unfinished receipt to browser storage (A13); start
+  // every test from a clean slate so one test's draft cannot leak into the next.
+  window.localStorage.clear()
 })
 afterEach(() => {
   cleanup()
@@ -193,6 +196,50 @@ describe('Receive Stock flow', () => {
 
     expect(screen.getByLabelText('Quantity for Noodles')).toBeTruthy()
     expect(screen.queryByLabelText('Product for new line')).toBeNull()
+  })
+
+  it('keeps the staged receipt when the screen is left and reopened', () => {
+    // Owner report: an accidental click on another sidebar tab unmounted the
+    // screen and threw the whole receipt away.
+    const first = renderView()
+    pickAcme()
+    scanCode('AYM-COC-001')
+    scanCode('AYM-COC-001')
+    first.unmount()
+
+    renderView()
+    expect((screen.getByLabelText('Supplier') as HTMLInputElement).value).toBe('Acme Foods')
+    expect(quantityBoxes()[0].value).toBe('2')
+    expect(screen.getByText(/Restored your unfinished receipt/i)).toBeTruthy()
+  })
+
+  it('discards a restored receipt on request', () => {
+    const first = renderView()
+    pickAcme()
+    scanCode('AYM-COC-001')
+    first.unmount()
+
+    const second = renderView()
+    fireEvent.click(screen.getByRole('button', { name: /Discard/ }))
+    expect(screen.queryAllByLabelText(/^Quantity for /)).toHaveLength(0)
+    second.unmount()
+
+    // …and it stays discarded.
+    renderView()
+    expect(screen.queryAllByLabelText(/^Quantity for /)).toHaveLength(0)
+  })
+
+  it('forgets the draft once the receipt is recorded', async () => {
+    receiveMock.mockResolvedValue({ lines_received: 1, location_id: 1, putaway: null })
+    const first = renderView()
+    pickAcme()
+    scanCode('AYM-COC-001')
+    await act(async () => { fireEvent.click(receiveButton()) })
+    first.unmount()
+
+    renderView()
+    expect(screen.queryAllByLabelText(/^Quantity for /)).toHaveLength(0)
+    expect(screen.queryByText(/Restored your unfinished receipt/i)).toBeNull()
   })
 
   it('ArrowDown then Enter adds the highlighted search result', () => {

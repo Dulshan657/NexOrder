@@ -30,11 +30,12 @@ import {
   type LineRequirement,
 } from './receive/receiveDraft'
 import { emptyStaging, scanUomFor, stageProduct, type StagingState } from './receive/stageProduct'
+import { clearReceiveDraft, loadReceiveDraft, saveReceiveDraft } from './receive/receiveDraftStore'
 import { buildScanIndex, normalizeScan } from '../../lib/scan/resolveScan'
 import { describeReceiveRefusal, resolveReceiveScan } from '../../lib/scan/receiveScan'
 import { useScanFlash } from '../../lib/scan/useScanFlash'
 import { useWedgeScanner } from '../../lib/scan/useWedgeScanner'
-import { PackagePlus, ScanLine } from 'lucide-react'
+import { History, PackagePlus, ScanLine } from 'lucide-react'
 
 interface ReceiveStockViewProps {
   products: Product[]
@@ -159,15 +160,22 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   // way to choose a destination at all.
   const isLocked = currentUser.role === UserRole.WAREHOUSE && currentUser.homeWarehouseId != null
 
+  // ── A receipt left unfinished (A13) ────────────────────────────────────────
+  // Read ONCE, at mount: this screen unmounts whenever another sidebar tab is
+  // opened, and a stray click used to throw the whole receipt away.
+  const [restored] = useState(() => loadReceiveDraft(currentUser.id))
+  const draft = restored?.draft
+  const [restoredAt, setRestoredAt] = useState<number | null>(restored?.savedAt ?? null)
+
   // ── Delivery ───────────────────────────────────────────────────────────────
-  const [supplierId, setSupplierId] = useState<number | null>(null)
-  const [supplierName, setSupplierName] = useState('')
-  const [reference, setReference] = useState('')
+  const [supplierId, setSupplierId] = useState<number | null>(draft?.supplierId ?? null)
+  const [supplierName, setSupplierName] = useState(draft?.supplierName ?? '')
+  const [reference, setReference] = useState(draft?.reference ?? '')
   // Not submitted directly: ticking it writes `quarantine` onto every line, so
   // what is ticked in the lines IS what is sent.
-  const [quarantineAll, setQuarantineAll] = useState(false)
-  const [receivedDate, setReceivedDate] = useState(todayIso())
-  const [destinationId, setDestinationId] = useState<number | null>(null)
+  const [quarantineAll, setQuarantineAll] = useState(draft?.quarantineAll ?? false)
+  const [receivedDate, setReceivedDate] = useState(draft?.receivedDate || todayIso())
+  const [destinationId, setDestinationId] = useState<number | null>(draft?.destinationId ?? null)
 
   // Seed the destination once the warehouse list arrives, and re-resolve if the
   // chosen site later drops out of the active list. Locked users don't pick.
@@ -198,7 +206,19 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   // `touchSeq` changes on EVERY stage, so a second scan of the same line
   // re-arms the flash and the reveal; keyed on the line alone it would not.
   const [staging, setStaging] = useState<StagingState & { touchedKey: string | null; touchSeq: number }>(
-    () => ({ ...emptyStaging(), touchedKey: null, touchSeq: 0 }),
+    () => ({
+      ...emptyStaging(),
+      ...(draft
+        ? {
+            lines: draft.lines,
+            plates: draft.plates,
+            activeGroupKey: draft.activeGroupKey,
+            forceNewPallet: draft.forceNewPallet,
+          }
+        : {}),
+      touchedKey: null,
+      touchSeq: 0,
+    }),
   )
   const { lines: picked, plates, activeGroupKey, forceNewPallet, touchedKey, touchSeq } = staging
   const [received, setReceived] = useState<ReceivedSummary | null>(null)
@@ -215,6 +235,18 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [touchSeq])
+
+  // Save on every change. An empty draft removes itself, so a recorded or
+  // discarded receipt leaves nothing behind.
+  useEffect(() => {
+    saveReceiveDraft(currentUser.id, {
+      supplierId, supplierName, reference, receivedDate, quarantineAll, destinationId,
+      lines: picked, plates, activeGroupKey, forceNewPallet,
+    })
+  }, [
+    currentUser.id, supplierId, supplierName, reference, receivedDate, quarantineAll,
+    destinationId, picked, plates, activeGroupKey, forceNewPallet,
+  ])
 
   const productById = useMemo(() => {
     const m = new Map<number, Product>()
@@ -479,6 +511,12 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
     setQuarantineAll(false)
     setSupplierId(null)
     setSupplierName('')
+    setReceivedDate(todayIso())
+    setRestoredAt(null)
+    // Explicit, not left to the save effect: the effect would also clear it,
+    // but only after a render, and a tab switch in that gap would bring the
+    // just-recorded receipt back.
+    clearReceiveDraft(currentUser.id)
   }
 
   const submit = async () => {
@@ -603,7 +641,35 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
         />
       ) : (
         <>
+          {restoredAt != null && (picked.length > 0 || supplierName.trim() !== '') && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-2 rounded-xl border border-nexgen-blue/30 bg-nexgen-blue/5 px-3 py-2 text-sm text-stone-700"
+            >
+              <History className="h-4 w-4 shrink-0 text-nexgen-blue-dark" aria-hidden="true" />
+              <span className="min-w-0 flex-1">
+                Restored your unfinished receipt from{' '}
+                {new Date(restoredAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}.
+              </span>
+              <button
+                type="button"
+                onClick={resetReceipt}
+                className="btn-press touch-target-y rounded-lg px-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                onClick={() => setRestoredAt(null)}
+                className="btn-press touch-target-y rounded-lg px-2 text-sm font-semibold text-nexgen-blue-dark hover:bg-nexgen-blue/10"
+              >
+                Keep going
+              </button>
+            </div>
+          )}
+
           <DeliveryStrip
+            initiallyCommitted={!!draft && draft.supplierName.trim() !== ''}
             suppliers={suppliers}
             supplierId={supplierId}
             supplierName={supplierName}

@@ -108,6 +108,9 @@ beforeEach(() => {
   receiveMock.mockReset()
   receiveMock.mockResolvedValue({ lines_received: 2, location_id: 1 })
 })
+// The screen saves an unfinished receipt to browser storage (NX-0005 A13);
+// without this, one test's staged lines would reappear in the next.
+beforeEach(() => window.localStorage.clear())
 afterEach(cleanup)
 
 describe('a normal line owns its own plate', () => {

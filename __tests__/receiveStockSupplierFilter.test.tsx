@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 // Receive Stock narrows its product picker to the delivering supplier (mig
@@ -89,6 +89,9 @@ function searchFor(text: string) {
   fireEvent.change(input, { target: { value: text } })
 }
 
+// The screen saves an unfinished receipt to browser storage (NX-0005 A13);
+// without this, one test's staged lines would reappear in the next.
+beforeEach(() => window.localStorage.clear())
 afterEach(cleanup)
 
 describe('ReceiveStockView — supplier-scoped product picker', () => {

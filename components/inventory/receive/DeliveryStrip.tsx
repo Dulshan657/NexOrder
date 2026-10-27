@@ -130,6 +130,8 @@ function SupplierCombobox({
 }
 
 export interface DeliveryStripProps {
+  /** A restored draft (A13) already has its supplier chosen — start collapsed. */
+  initiallyCommitted?: boolean
   suppliers: SupplierOption[]
   supplierId: number | null
   supplierName: string
@@ -160,7 +162,7 @@ const LABEL = 'block text-xs font-semibold text-stone-600 mb-1.5'
 
 export function DeliveryStrip(props: DeliveryStripProps) {
   const {
-    suppliers, supplierId, supplierName, onSupplierText, onSupplierPicked,
+    initiallyCommitted = false, suppliers, supplierId, supplierName, onSupplierText, onSupplierPicked,
     reference, onReference, receivedDate, maxDate, onReceivedDate,
     quarantineAll, onQuarantineAll, isLocked, warehouses, destinationId,
     onDestination, destName, userName,
@@ -170,7 +172,7 @@ export function DeliveryStrip(props: DeliveryStripProps) {
   // Collapse only on a COMMITTED pick (an existing supplier, or "Create …").
   // Keyed on the text alone it collapsed on the first keystroke and hid the
   // very input being typed into.
-  const [committed, setCommitted] = useState(false)
+  const [committed, setCommitted] = useState(initiallyCommitted)
   // `.glass-card` carries backdrop-blur, which makes this card a stacking
   // context: the supplier list's own z-index counts only INSIDE it, so the
   // sticky scan bar (z-10) and the lines below painted over the list. The card

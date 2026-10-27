@@ -44,23 +44,28 @@ export interface DraftPlate {
 
 let draftSeq = 0
 let plateSeq = 0
+// Unique per page load. A draft restored from storage (receiveDraftStore)
+// carries keys minted by an EARLIER load, whose counters restarted at 0 — so
+// bare `p0`/`d0` here would collide with a restored plate, and a line would
+// silently land on the wrong one.
+const LOAD = Math.random().toString(36).slice(2, 8)
 
 // Carton by default since NX-0005: a dock scan counts cartons, so an unqualified
 // unit is one. A single-SKU pallet is declared with "New pallet" instead.
 export const newPlate = (huType: 'pallet' | 'carton' = 'carton'): DraftPlate => ({
-  key: `p${plateSeq++}`,
+  key: `p${LOAD}-${plateSeq++}`,
   huType,
 })
 
 /** A mixed pallet. Type is fixed — see `DraftPlate.mixed`. */
 export const newMixedPlate = (): DraftPlate => ({
-  key: `p${plateSeq++}`,
+  key: `p${LOAD}-${plateSeq++}`,
   huType: 'pallet',
   mixed: true,
 })
 
 export const newDraft = (plateKey: string, quarantine = false): DraftLine => ({
-  key: `d${draftSeq++}`,
+  key: `d${LOAD}-${draftSeq++}`,
   productId: null,
   quantity: '',
   uomId: null,
