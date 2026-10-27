@@ -91,7 +91,7 @@ screen keeps working unchanged.
 | A2 | claimed | `planHomeFirst > sends the remainder to overflow, same rack first then nearest`; `generatePutawayTasks — home bin > spills what the home bin cannot take to the bin nearest it` | Distance falls back to grid distance: `layout_travel_distances` holds distances from docks only (1 source node on layout 6, 12 on layout 25) |
 | A3 | claimed | `planHomeFirst > never puts a unit load in the home bin`, `generatePutawayTasks — home bin > sends a unit load to the reserve bin closest to home` | A unit load = a `pallet` plate; a `carton` plate may go home |
 | A4 | claimed | `planHomeFirst > suggests making a home when the product has none`, `decidePutawayCompletion > make_home only when the product has no home`; integration `pools tasks oldest first and sets a home only when there is none` | |
-| A5 | claimed | `generatePutawayTasks — unit loads > plans each product of a MIXED pallet on its own, keeping the plate` (fails on base by assertion) | Replaces the old one-bin-per-mixed-pallet test, as the brief states |
+| A5 | claimed | `generatePutawayTasks — unit loads > plans each product of a MIXED pallet on its own, keeping the plate` (fails on base by assertion) | Replaces the old one-bin-per-mixed-pallet test, as the brief states. Each product's units come OFF the plate as they land (A16) |
 | A6 | claimed | `generatePutawayTasks — persistence > sets ref on a non-mixed allocation` (fails on base by assertion) | |
 | A7 | claimed | `decidePutawayCompletion > completes a suggested task without assign`; integration `completes a suggested task with no assign step and moves the stock`; dev: direct complete → `accepted at MAIN-F01-R09` | |
 | A8 | claimed | `decidePutawayCompletion > requires a reason for a different bin`; integration `refuses a different bin without a reason, and records one when given`; dev: wrong bin without reason refused | Applies to SUGGESTED tasks only; an ASSIGNED task keeps the old no-reason walk |
@@ -99,17 +99,23 @@ screen keeps working unchanged.
 | A10 | claimed | `decidePutawayCompletion > make_home only when the product has no home` | Warehouse gets FORBIDDEN, Admin/Manager INVALID_INPUT pointing at the home-bin editor |
 | A11 | claimed | `allocateAcrossTasks > fills oldest first and refuses mixed products or plates`; integration pooled test | Revised (59be04a): by product, not batch |
 | A12 | claimed | `decideDeskAction > redirect and resolve_short are Admin/Manager only; write_off needs a reason`; integration `redirect changes a suggested bin…`, `found puts a shortage back…`, write-off test | |
-| A13 | claimed | `npm run migrate:dev` applied 00135 and 00136; `npm run test:integration -- putawayHomeFirst` 8/8 on dev; one overload per function verified in `pg_proc` | Rehearsed under BEGIN…ROLLBACK first, on a racked and a flat layout |
+| A13 | claimed | `npm run migrate:dev` applied 00135, 00136 and 00137; `npm run test:integration -- putawayHomeFirst` 11/11 on dev; one overload per function verified in `pg_proc` | Each migration rehearsed under BEGIN…ROLLBACK first |
 | A14 | claimed | All functions deployed to dev; as the Warehouse test user, receive → decide-putaway `assign_only` → complete-putaway with bin + product scans → `accepted at MAIN-F01-R09` | Driven through the deployed functions by script, the same calls the screen makes — not clicked through in a browser |
 | A15 | not-claimed | | Needs the merge; deploy:dev and /version.json after it |
+| A16 | claimed | Integration `a mixed pallet split across homes comes off its plate; the last product carries it`, `one plate split between home and overflow never sits in two places`, `Place now on a mixed pallet line takes it off the plate too`: all three failed on dev before 00137, pass after | Rule in one place, `inv_putaway_move` (00137); `v_bin_pending_putaway` agrees |
 
 ### Not claimed
 
 - No click-through of the current Assign/Walk screen in a browser: signing in on the hosted dev site was not done from this session. A14 rests on the identical API calls.
-- Two migrations, not one: 00136 fixes 00135's `ON CONFLICT`, which named a key `product_home_bins` lost in 00082 (homes are keyed by `purpose`). Found by the integration test before any client called it. The home putaway fills is the `primary` slot.
+- Three migrations, not one. 00137 is the A16 fix the gate asked for. 00136 fixes 00135's `ON CONFLICT`, which named a key `product_home_bins` lost in 00082 (homes are keyed by `purpose`). Found by the integration test before any client called it. The home putaway fills is the `primary` slot.
 - No `short_qty` column (named in Approach): a shortage is its own row, status `short`, carrying the missing quantity; `written_off` is its closing status.
 - Short dock stock is still `available` at the warehouse root until resolved, so an order reservation can draw on it, exactly as an open remainder already could.
 - Home-bin reads fail OPEN (no home known → plain engine suggestion), and a failed on-hand read can overfill past `max_qty` (never past capacity).
 - `stockAdjust.integration.test.ts > rejects a blank reason…` fails against dev's live `inv_adjust_stock`; unrelated to this branch (no change to that function), not fixed here.
 - Two small receipts (2 × 5 Coconut Milk 400ml) were put away into MAIN-F01-R09 on the dev demo for the A14 check.
+- Dev already held 5 plates with stock in two places before this branch (HU-000209/214/219/517/520, last moved 2026-07-24 to 2026-09-04); 00137 prevents new ones and repairs none, as 00126 also says.
+- A partial count of a whole pallet now lands its units loose and leaves the rest on the plate at the dock (coherent ledger); a true re-plate is still break-pallet (00126).
+- The desk redirect refuses a level-role mismatch outright; it has no "Place anyway" (the floor still has it at completion).
+- `make_home` and the home lookup consider only the `primary` slot; a product homed only in another purpose (e.g. chilled) counts as having no home.
+- `_shared/putawayCompletion.ts` is pure but outside `wie/`, so `__tests__/wie/purity.test.ts` (directory-based) does not check it, like the other top-level pure modules.
 - Nothing on the RS35, and no screen changes: the new screen is NX-0007.
