@@ -98,7 +98,7 @@ screen keeps working unchanged.
 | A10 | claimed | `decidePutawayCompletion > make_home only when the product has no home` | Warehouse gets FORBIDDEN, Admin/Manager INVALID_INPUT pointing at the home-bin editor |
 | A11 | claimed | `allocateAcrossTasks > fills oldest first and refuses mixed products or plates`; integration pooled test | Revised (59be04a): by product, not batch |
 | A12 | claimed | `decideDeskAction > redirect and resolve_short are Admin/Manager only; write_off needs a reason`; integration `redirect changes a suggested bin…`, `found puts a shortage back…`, write-off test | |
-| A13 | claimed | `npm run migrate:dev` applied 00135 and 00136; `npm run test:integration -- putawayHomeFirst` 7/7 on dev; one overload per function verified in `pg_proc` | Rehearsed under BEGIN…ROLLBACK first, on a racked and a flat layout |
+| A13 | claimed | `npm run migrate:dev` applied 00135 and 00136; `npm run test:integration -- putawayHomeFirst` 8/8 on dev; one overload per function verified in `pg_proc` | Rehearsed under BEGIN…ROLLBACK first, on a racked and a flat layout |
 | A14 | claimed | All functions deployed to dev; as the Warehouse test user, receive → decide-putaway `assign_only` → complete-putaway with bin + product scans → `accepted at MAIN-F01-R09` | Driven through the deployed functions by script, the same calls the screen makes — not clicked through in a browser |
 | A15 | not-claimed | | Needs the merge; deploy:dev and /version.json after it |
 
