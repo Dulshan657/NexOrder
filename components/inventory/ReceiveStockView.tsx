@@ -29,7 +29,7 @@ import {
   type DraftLine,
   type LineRequirement,
 } from './receive/receiveDraft'
-import { emptyStaging, stageProduct, type StagingState } from './receive/stageProduct'
+import { emptyStaging, scanUomFor, stageProduct, type StagingState } from './receive/stageProduct'
 import { buildScanIndex, normalizeScan } from '../../lib/scan/resolveScan'
 import { describeReceiveRefusal, resolveReceiveScan } from '../../lib/scan/receiveScan'
 import { useScanFlash } from '../../lib/scan/useScanFlash'
@@ -682,7 +682,12 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                about which layout is showing. The row needs 1180px of CONTAINER
                — see the measurement table in `ReceiveLineCard`. A plain block
                comment: this sits directly inside a ternary branch. */
-            <div className="@container glass-card rounded-xl overflow-hidden">
+            // No `overflow-hidden`: a hand-added line opens a product list that
+            // must be able to leave the card. `relative z-[1]` because the
+            // card's backdrop-blur is a stacking context — without the lift the
+            // Recent receipts card below paints over that list. Still under the
+            // sticky scan bar's z-10.
+            <div className="@container glass-card rounded-xl relative z-[1]">
               <div
                 className={`hidden border-b border-stone-200 px-4 py-3 @min-[1180px]:grid @min-[1180px]:gap-x-4 ${RECEIVE_ROW_COLUMNS}`}
               >
@@ -743,6 +748,12 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
                       onSetPlateType={(huType) => setPlateType(line.plateKey, huType)}
                       requirement={requirementFor(line.productId)}
                       highlighted={touchedKey === line.key}
+                      productPool={searchPool}
+                      onChooseProduct={(p) => updateLine(line.key, {
+                        productId: p.id,
+                        uomId: scanUomFor(p)?.id ?? null,
+                        quantity: line.quantity || '1',
+                      })}
                     />
                   </React.Fragment>
                 ))}

@@ -41,6 +41,8 @@ interface SupplierComboboxProps {
   /** User committed a name not in the list (create-on-the-fly). */
   onPickNew: (name: string) => void
   onChangeText: (name: string) => void
+  /** The list opened or closed — the host lifts its stacking for it. */
+  onOpenChange?: (open: boolean) => void
 }
 
 /**
@@ -49,10 +51,12 @@ interface SupplierComboboxProps {
  * so this is the required header field for a goods receipt.
  */
 function SupplierCombobox({
-  inputId, suppliers, valueId, valueName, onPickExisting, onPickNew, onChangeText,
+  inputId, suppliers, valueId, valueName, onPickExisting, onPickNew, onChangeText, onOpenChange,
 }: SupplierComboboxProps) {
   const [open, setOpen] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { onOpenChange?.(open) }, [open])
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -167,6 +171,12 @@ export function DeliveryStrip(props: DeliveryStripProps) {
   // Keyed on the text alone it collapsed on the first keystroke and hid the
   // very input being typed into.
   const [committed, setCommitted] = useState(false)
+  // `.glass-card` carries backdrop-blur, which makes this card a stacking
+  // context: the supplier list's own z-index counts only INSIDE it, so the
+  // sticky scan bar (z-10) and the lines below painted over the list. The card
+  // is lifted while the list is open, and only then — lifted permanently it
+  // would cover the pinned bar whenever it scrolls up underneath it.
+  const [listOpen, setListOpen] = useState(false)
   const fieldsId = useId()
   const supplierInputId = useId()
   const referenceId = useId()
@@ -194,7 +204,10 @@ export function DeliveryStrip(props: DeliveryStripProps) {
   }
 
   return (
-    <section aria-label="Delivery details" className="glass-card rounded-xl p-3 sm:p-4">
+    <section
+      aria-label="Delivery details"
+      className={`glass-card rounded-xl p-3 sm:p-4 ${listOpen ? 'relative z-30' : ''}`}
+    >
       {isCommitted && (
         <button
           type="button"
@@ -239,6 +252,7 @@ export function DeliveryStrip(props: DeliveryStripProps) {
             valueId={supplierId}
             valueName={supplierName}
             onChangeText={(name) => { setCommitted(false); onSupplierText(name) }}
+            onOpenChange={setListOpen}
             onPickExisting={(s) => pick({ id: s.id, name: s.name })}
             onPickNew={(name) => pick({ id: null, name })}
           />

@@ -164,6 +164,37 @@ describe('Receive Stock flow', () => {
     await act(async () => { resolveReceive({ lines_received: 1, location_id: 1, putaway: null }) })
   })
 
+  it('lifts the delivery details above the scan bar only while the supplier list is open', () => {
+    // `.glass-card` carries backdrop-blur, which makes the card a stacking
+    // context — so the list's own z-index counts only INSIDE it, and the sticky
+    // scan bar and the lines painted over it. jsdom has no stacking, so the
+    // class is what can be pinned here.
+    renderView()
+    const strip = screen.getByRole('region', { name: 'Delivery details' })
+    expect(strip.className).not.toMatch(/\bz-30\b/)
+
+    fireEvent.focus(screen.getByLabelText('Supplier'))
+    expect(strip.className).toMatch(/\bz-30\b/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Acme Foods' }))
+    expect(strip.className).not.toMatch(/\bz-30\b/)
+  })
+
+  it('lets a line added by hand be given its product', () => {
+    // A hand-added line used to arrive with no product and nothing on the row
+    // to choose one with — a dead line that could only be deleted.
+    renderView()
+    pickAcme()
+    fireEvent.click(screen.getByRole('button', { name: /Add a line by hand/ }))
+
+    const picker = screen.getByLabelText('Product for new line')
+    fireEvent.change(picker, { target: { value: 'nood' } })
+    fireEvent.click(screen.getByRole('option', { name: /Noodles/ }))
+
+    expect(screen.getByLabelText('Quantity for Noodles')).toBeTruthy()
+    expect(screen.queryByLabelText('Product for new line')).toBeNull()
+  })
+
   it('ArrowDown then Enter adds the highlighted search result', () => {
     renderView()
     pickAcme()

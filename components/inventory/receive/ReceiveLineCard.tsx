@@ -78,6 +78,7 @@ import { provenanceHint, provenanceLabel, uomProvenance } from '../../../lib/pal
 import type { PalletSpec } from '../../../lib/palletFit'
 import { supplierSkuFor } from '../../../lib/productSuppliers'
 import type { Product } from '../../../types'
+import LineProductPicker from './LineProductPicker'
 import { missingRequired, plateLabel, type DraftLine, type DraftPlate, type LineRequirement } from './receiveDraft'
 
 /**
@@ -138,6 +139,12 @@ export interface ReceiveLineCardProps {
   requirement?: LineRequirement
   /** The line a scan just created or counted on — briefly tinted. */
   highlighted?: boolean
+  /**
+   * For a line with no product yet (added by hand): the products it may be,
+   * and what to do when one is chosen. Without these the cell reads "—".
+   */
+  productPool?: readonly Product[]
+  onChooseProduct?: (product: Product) => void
 }
 
 export function ReceiveLineCard({
@@ -153,6 +160,8 @@ export function ReceiveLineCard({
   inGroup = false,
   requirement,
   highlighted = false,
+  productPool,
+  onChooseProduct,
 }: ReceiveLineCardProps) {
   // Local, and keyed by the line's own identity through React's `key`. Nothing
   // above needs to know which lines are open, and lifting it would put a piece
@@ -252,7 +261,11 @@ export function ReceiveLineCard({
           control can sit beside it on the first row despite coming last in the
           DOM, which is the order the columns need at `xl`. */}
       <div className="col-start-1 row-start-1 min-w-0 @min-[1180px]:col-start-auto @min-[1180px]:row-start-auto">
-        <p className="text-sm font-medium text-stone-900">{product?.name ?? '—'}</p>
+        {!product && productPool && onChooseProduct ? (
+          <LineProductPicker pool={productPool} supplierId={supplierId} onChoose={onChooseProduct} />
+        ) : (
+          <p className="text-sm font-medium text-stone-900">{product?.name ?? '—'}</p>
+        )}
         <p className="font-mono text-xs text-stone-500">
           {product?.sku}
           {/* The supplier's own part number, so the line can be ticked off
