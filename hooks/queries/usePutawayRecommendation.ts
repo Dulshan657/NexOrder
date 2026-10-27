@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   recommendPutaway,
   decidePutaway,
+  redirectPutaway,
+  resolveShortPutaway,
   type PutawayLineInput,
   type PutawayResponse,
   type DecidePutawayInput,
@@ -59,6 +61,38 @@ export function useRerunPutaway() {
         recommendationId,
       ),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: putawayKeys.all })
+      qc.invalidateQueries({ queryKey: putawayKeys.counts })
+    },
+  })
+}
+
+/** Desk (Admin/Manager): send a suggested line to another bin before anyone
+ *  walks it (NX-0006 redirect). Moves nothing. */
+export function useRedirectPutaway() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ recommendationId, chosenLocationId }: { recommendationId: number; chosenLocationId: number }) =>
+      redirectPutaway(recommendationId, chosenLocationId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: putawayKeys.all })
+      qc.invalidateQueries({ queryKey: ['putaway-route'] })
+    },
+  })
+}
+
+/** Desk (Admin/Manager): close a shortage flagged on the floor. A write-off
+ *  adjusts stock, so balances are refreshed too. */
+export function useResolveShortPutaway() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ recommendationId, resolution, reason }: {
+      recommendationId: number
+      resolution: 'found' | 'write_off'
+      reason?: string
+    }) => resolveShortPutaway(recommendationId, resolution, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: inventoryKeys.balances })
       qc.invalidateQueries({ queryKey: putawayKeys.all })
       qc.invalidateQueries({ queryKey: putawayKeys.counts })
     },

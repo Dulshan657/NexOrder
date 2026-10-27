@@ -1,32 +1,38 @@
-// Standing queue of pending putaway recommendations for a warehouse (rows the
-// engine produced at receipt time but nobody has actioned yet).
+// The putaway DESK (NX-0007), for Admin/Manager: the suggested lines nobody has
+// carried yet. There is no Assign step any more (the home bin is the plan, and
+// the floor completes a suggestion directly), so the desk does three things:
+//   * Change bin  - redirect a suggestion before anyone walks it (NX-0006);
+//   * Place now   - Admin only: decide and move in one step, no walk (CSV
+//                   opening stock, desk corrections);
+//   * Shortages   - resolve what the floor flagged short (PutawayShortList).
 //
 // This file stays an orchestrator: row rendering lives in putaway/PutawayRow,
 // bin selection in putaway/BinPickerSheet, and the list logic (search, filter,
 // receipt grouping) in the pure putaway/putawayGrouping module.
 
 import React, { useMemo, useState } from 'react';
-import { PackageOpen, Search, Layers, CheckCheck } from 'lucide-react';
+import { PackageOpen, Search, Layers } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { getPendingPutaways, type PendingPutawayRow } from '../../services/supabase/putawayQueueService';
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
-import { useDecidePutaway, useRerunPutaway } from '../../hooks/queries/usePutawayRecommendation';
+import { useDecidePutaway, useRedirectPutaway, useRerunPutaway } from '../../hooks/queries/usePutawayRecommendation';
 import { putawayKeys } from '../../hooks/queries/putawayKeys';
 import { useToastActions } from '../../hooks/useToasts';
-import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { PutawayRow } from './putaway/PutawayRow';
 import { BinPickerSheet } from './putaway/BinPickerSheet';
 import { PutawayScanFinder } from './putaway/PutawayScanFinder';
+import { PutawayShortList } from './putaway/PutawayShortList';
 import StickyScanBar from './StickyScanBar';
-import { filterQueue, groupByReceipt, placeableRows, type QueueStateFilter } from './putaway/putawayGrouping';
-import { trimNumber } from './putaway/putawayFormat';
+import { filterQueue, groupByReceipt, type QueueStateFilter } from './putaway/putawayGrouping';
 import { buildDisplayLookup, displayFor } from '@/lib/locationLookup';
 
 interface PutawayQueueViewProps {
   warehouseId: number;
+  /** Place now is Admin only (NX-0007). */
+  isAdmin?: boolean;
 }
 
-const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
+const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId, isAdmin = false }) => {
   const queueQuery = useQuery({
     queryKey: putawayKeys.byWarehouse(warehouseId),
     queryFn: () => getPendingPutaways(warehouseId),
@@ -39,6 +45,7 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
   });
   const locationsQuery = useWarehouseLocations(warehouseId);
   const decide = useDecidePutaway();
+  const redirect = useRedirectPutaway();
   const rerun = useRerunPutaway();
   const { addToast } = useToastActions();
 
@@ -47,8 +54,6 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState<QueueStateFilter>('all');
   const [grouped, setGrouped] = useState(false);
-  const [confirmAll, setConfirmAll] = useState<PendingPutawayRow[] | null>(null);
-  const [bulkBusy, setBulkBusy] = useState(false);
 
   // Both halves of a location's identity (mig 00094). `select('*')` already
   // brings the name back, so carrying it costs nothing.
@@ -61,54 +66,32 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
   );
   const groups = useMemo(() => (grouped ? groupByReceipt(visible) : null), [grouped, visible]);
 
-  const busy = decide.isPending || rerun.isPending || bulkBusy;
+  const busy = decide.isPending || redirect.isPending || rerun.isPending;
 
   const binFor = (r: PendingPutawayRow) =>
     r.recommendedLocationId ? displayFor(binById, r.recommendedLocationId) : null;
 
-  // Assign = decide the bin, move nothing; the line becomes a stop on the Walk
-  // run and the stock stays on the dock until someone carries it (mig 00080).
-  // Place now = the pre-00080 one-step path, still right for desk/bulk work.
-  const decideRow = async (r: PendingPutawayRow, assignOnly: boolean) => {
+  // Place now: the one-step path (decide AND move), Admin only.
+  const placeNow = async (r: PendingPutawayRow) => {
     try {
-      // useDecidePutaway's onSuccess invalidates putawayKeys.all, which
-      // refetches this (active) query automatically — no manual refetch needed.
-      await decide.mutateAsync({ recommendationId: r.id, decision: 'accept', assignOnly });
-      if (assignOnly) addToast('Assigned — it\'s on the walk now', 'success');
+      await decide.mutateAsync({ recommendationId: r.id, decision: 'accept' });
+      addToast('Placed', 'success');
     } catch (e) {
       addToast(e instanceof Error ? e.message : 'Failed to put away', 'error');
     }
   };
 
-  const commitOverride = async (chosenLocationId: number, baseQty: number, roleOverride = false) => {
+  // Change bin: the suggestion now points at the desk's bin. Nothing moves; the
+  // floor scans it to the new bin like any other suggestion.
+  const commitRedirect = async (chosenLocationId: number) => {
     const target = picking;
     if (!target) return;
     try {
-      const { remainderQty } = await decide.mutateAsync({
-        recommendationId: target.id,
-        decision: 'override',
-        chosenLocationId,
-        // Only send a quantity for a genuine partial, so a full putaway keeps
-        // taking the server's "whole remaining quantity" path.
-        quantity: baseQty < target.quantity ? baseQty : undefined,
-        // Operator chose a level whose role this SKU isn't allowed on (mig
-        // 00072). Only sent when true, so a normal putaway is unchanged and the
-        // server keeps enforcing the hard never-mix rule by default.
-        roleOverride: roleOverride || undefined,
-        // Picking a bin by hand is still a DESK decision — someone chose where
-        // it should go, not where it now is. It joins the walk like any other
-        // assignment rather than teleporting the pallet.
-        assignOnly: true,
-      });
+      await redirect.mutateAsync({ recommendationId: target.id, chosenLocationId });
       setPicking(null);
-      addToast(
-        remainderQty > 0
-          ? `Assigned — ${trimNumber(remainderQty)} still queued`
-          : 'Assigned — it\'s on the walk now',
-        'success',
-      );
+      addToast('Bin changed - the floor will be sent there', 'success');
     } catch (e) {
-      addToast(e instanceof Error ? e.message : 'Failed to put away', 'error');
+      addToast(e instanceof Error ? e.message : 'Could not change the bin', 'error');
     }
   };
 
@@ -127,34 +110,6 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
     }
   };
 
-  // Sequential on purpose: decide-putaway is rate-limited to 120/min/user, and
-  // a batch that keeps going past a failure is more useful than one that stops
-  // — the operator gets a count and the failures stay in the queue.
-  const assignAll = async (batch: PendingPutawayRow[]) => {
-    setConfirmAll(null);
-    setBulkBusy(true);
-    let ok = 0;
-    const failures: string[] = [];
-    for (const r of batch) {
-      try {
-        await decide.mutateAsync({ recommendationId: r.id, decision: 'accept', assignOnly: true });
-        ok += 1;
-      } catch (e) {
-        failures.push(r.product?.name ?? `Product #${r.productId}`);
-      }
-    }
-    setBulkBusy(false);
-    if (failures.length === 0) {
-      addToast(`Assigned ${ok} line${ok === 1 ? '' : 's'} to the walk`, 'success');
-    } else {
-      addToast(
-        `Assigned ${ok} of ${batch.length} — ${failures.slice(0, 3).join(', ')}` +
-          `${failures.length > 3 ? ` and ${failures.length - 3} more` : ''} failed`,
-        'error',
-      );
-    }
-  };
-
   const renderRow = (r: PendingPutawayRow) => (
     <PutawayRow
       key={r.id}
@@ -164,14 +119,11 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
       expanded={expanded === r.id}
       busy={busy}
       onToggleExplanation={() => setExpanded(expanded === r.id ? null : r.id)}
-      onAssign={() => decideRow(r, true)}
-      onPlaceNow={() => decideRow(r, false)}
+      onPlaceNow={isAdmin ? () => placeNow(r) : undefined}
       onChooseBin={() => setPicking(r)}
       onRerun={() => rerunRow(r)}
     />
   );
-
-  const allPlaceable = placeableRows(visible);
 
   return (
     <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-6">
@@ -180,10 +132,12 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
           <PackageOpen className="w-5 h-5 text-emerald-600" />
         </div>
         <div>
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Putaway</h1>
-          <p className="text-xs text-stone-600 mt-0.5">Decide where each line goes. Nothing moves until someone carries it.</p>
+          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Putaway desk</h1>
+          <p className="text-xs text-stone-600 mt-0.5">Change where a line goes before anyone carries it, and resolve shortages.</p>
         </div>
       </div>
+
+      <PutawayShortList warehouseId={warehouseId} />
 
       {rows.length > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
@@ -216,13 +170,6 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
           >
             <Layers className="w-4 h-4" /> By receipt
           </button>
-          <button
-            onClick={() => setConfirmAll(allPlaceable)}
-            disabled={allPlaceable.length === 0 || busy}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-2 bg-emerald-600 text-white rounded-lg btn-press disabled:opacity-40"
-          >
-            <CheckCheck className="w-4 h-4" /> Assign all ({allPlaceable.length})
-          </button>
         </div>
       )}
 
@@ -249,7 +196,6 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
       ) : groups ? (
         <div className="space-y-4">
           {groups.map((g) => {
-            const groupPlaceable = placeableRows(g.rows);
             return (
               <div key={g.receiptId ?? 'unlinked'} className="glass-card rounded-xl overflow-hidden">
                 <div className="px-4 py-2.5 bg-stone-50/70 border-b border-stone-100 flex items-center justify-between gap-3">
@@ -262,13 +208,6 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
                       {g.rows.length} line{g.rows.length === 1 ? '' : 's'}
                     </p>
                   </div>
-                  <button
-                    onClick={() => setConfirmAll(groupPlaceable)}
-                    disabled={groupPlaceable.length === 0 || busy}
-                    className="text-xs px-2.5 py-1 border border-stone-200 text-stone-600 rounded-lg btn-press disabled:opacity-40 shrink-0"
-                  >
-                    Assign {groupPlaceable.length}
-                  </button>
                 </div>
                 <div className="divide-y divide-stone-100">{g.rows.map(renderRow)}</div>
               </div>
@@ -305,25 +244,12 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
           open
           warehouseId={warehouseId}
           row={picking}
-          busy={decide.isPending}
+          busy={redirect.isPending}
           onClose={() => setPicking(null)}
-          onConfirm={commitOverride}
+          onConfirm={(chosenLocationId: number) => commitRedirect(chosenLocationId)}
         />
       )}
 
-      <ConfirmDialog
-        open={confirmAll != null}
-        title="Assign every recommended bin?"
-        message={
-          confirmAll
-            ? `${confirmAll.length} line${confirmAll.length === 1 ? '' : 's'} go onto the walk, bound for the bins the engine picked. No stock moves until someone carries it. Lines with no eligible bin are left alone.`
-            : undefined
-        }
-        confirmLabel="Assign them"
-        busy={bulkBusy}
-        onConfirm={() => confirmAll && assignAll(confirmAll)}
-        onCancel={() => setConfirmAll(null)}
-      />
     </div>
   );
 };

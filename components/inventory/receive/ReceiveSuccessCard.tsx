@@ -26,7 +26,9 @@ export interface ReceivedSummary {
 interface ReceiveSuccessCardProps {
   summary: ReceivedSummary
   productNameById: ReadonlyMap<number, string>
-  onOpenPutaway?: (warehouseId: number) => void
+  /** "Put away now": Putaway at this warehouse, filtered to this receipt
+   *  when it has one (NX-0007). */
+  onOpenPutaway?: (warehouseId: number, receiptId?: number | null) => void
   onStartNext: () => void
 }
 
@@ -61,10 +63,10 @@ export function ReceiveSuccessCard({
           {onOpenPutaway && warehouseId != null && (
             <button
               type="button"
-              onClick={() => onOpenPutaway(warehouseId)}
+              onClick={() => onOpenPutaway(warehouseId, summary.receiptId)}
               className="btn-press inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-nexgen-blue px-4 text-sm font-semibold text-white"
             >
-              Go to putaway <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              Put away now <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </button>
           )}
           <button

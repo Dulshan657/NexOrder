@@ -8,7 +8,7 @@
 // moment stock actually moves.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getAssignedPutaways, type PendingPutawayRow } from '@/services/supabase/putawayQueueService'
+import { getAssignedPutaways, getOpenPutaways, type PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import { getPutawayRoute, type PutawayRouteResult } from '@/services/supabase/putawayRouteService'
 import {
   completePutaway,
@@ -27,6 +27,18 @@ export function useAssignedPutaways(warehouseId: number | null) {
     queryFn: () => getAssignedPutaways(warehouseId as number),
     // Same reasoning as the Assign queue: a walker returning to this tab must
     // never be shown a task someone else already placed.
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+}
+
+/** Every task still to carry: suggested (no assign needed since NX-0006) and
+ *  assigned. What the NX-0007 putaway screen lists. */
+export function useOpenPutaways(warehouseId: number | null) {
+  return useQuery<PendingPutawayRow[]>({
+    queryKey: [...putawayKeys.all, 'open', warehouseId],
+    enabled: warehouseId != null,
+    queryFn: () => getOpenPutaways(warehouseId as number),
     staleTime: 0,
     refetchOnMount: 'always',
   })

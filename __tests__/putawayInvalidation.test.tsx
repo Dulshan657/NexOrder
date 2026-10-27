@@ -27,12 +27,15 @@ vi.mock('@/hooks/useToasts', () => ({
 import { useReceiveStock } from '@/hooks/queries/useReceiveStock'
 import PutawayQueueView from '@/components/inventory/PutawayQueueView'
 
-function queueResponse(rows: unknown[]) {
+/** `rowsFor(status)` is asked lazily, so the desk's Short list (NX-0007), which
+ *  reads the same table with status 'short', neither consumes nor shifts the
+ *  queue's own fetches. */
+function queueResponse(rowsFor: (status: unknown) => unknown[]) {
   return {
     select: (_cols: string) => ({
       eq: (_c1: string, _v1: unknown) => ({
-        eq: (_c2: string, _v2: unknown) => ({
-          order: (_c3: string, _opts?: unknown) => Promise.resolve({ data: rows, error: null }),
+        eq: (_c2: string, v2: unknown) => ({
+          order: (_c3: string, _opts?: unknown) => Promise.resolve({ data: rowsFor(v2), error: null }),
         }),
       }),
     }),
@@ -66,9 +69,12 @@ describe('putaway-queue cache invalidation (regression)', () => {
     let fetchCount = 0
     from.mockImplementation((table: string) => {
       expect(table).toBe('wie_putaway_recommendations')
-      const rows = fetchCount === 0 ? [] : populatedRow
-      fetchCount += 1
-      return queueResponse(rows)
+      return queueResponse((status) => {
+        if (status === 'short') return []
+        const rows = fetchCount === 0 ? [] : populatedRow
+        fetchCount += 1
+        return rows
+      })
     })
     invoke.mockResolvedValue({
       data: { ok: true, result: { lines_received: 1, location_id: 705 }, putaway: null },

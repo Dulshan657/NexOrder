@@ -22,9 +22,19 @@
 // error. The walker can see that the assigned bay is full or blocked, and the
 // next one along is the right answer. The card warns, names both bins, and
 // records where it actually went.
+//
+// NX-0007 — the owner's flow: scan the item, scan the bin, Enter.
+//   * A scan in the walk's scan bar opens the card ALREADY past "identify"
+//     (`openRequest` carries that scan as the evidence).
+//   * Enter in the count confirms. The count is prefilled.
+//   * A question only when one is forced: a different bin on a SUGGESTED task
+//     needs a one-tap reason; a short count asks whether to flag it; a product
+//     with no home offers to make this bin its home.
+//   * Back on every step until Confirm. Nothing is sent before Confirm, and
+//     there is no undo after it (the owner's call: fix with a transfer).
 
-import React, { useId, useMemo, useState } from 'react'
-import { AlertTriangle, ArrowRight, Check, Layers, PackageCheck, Printer, Undo2, X } from 'lucide-react'
+import React, { useEffect, useId, useMemo, useState } from 'react'
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, Home, Layers, PackageCheck, Printer, Undo2, X } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
 import { Callout } from '@/components/ui'
 import { useScanFlash } from '@/lib/scan/useScanFlash'
@@ -32,7 +42,8 @@ import { checkPutawayScan } from '@/supabase/functions/_shared/putawayScanCheck'
 import { useCompletePutaway, useUnassignPutaway } from '@/hooks/queries/usePutawayWalk'
 import { usePrintPlateLabels } from '@/hooks/queries/usePalletBreakdown'
 import { useToastActions } from '@/hooks/useToasts'
-import { CompletePutawayError } from '@/services/supabase/putawayService'
+import { CompletePutawayError, type PutawayOverrideReason } from '@/services/supabase/putawayService'
+import { OVERRIDE_REASONS } from '@/supabase/functions/_shared/putawayCompletion'
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import { locationTitle, type DisplayLocation } from '@/lib/locationDisplay'
 import {
@@ -67,8 +78,27 @@ interface PutawayStopCardProps {
    *  is in the operator's hands. The card says so rather than implying a
    *  certainty it does not have. Computed by the walk, which holds every stop. */
   unlabelledTwins: ReadonlyArray<{ huCode: string; quantity: number }>
+  /** NX-0007: open this card now, with this scan as the proof of the item --
+   *  the walk's scan bar already identified it, so the card starts at the bin.
+   *  An empty object opens at the normal first step (Guide mode). */
+  openRequest?: { plateCode?: string; productCode?: string } | null
+  /** NX-0007: every task this stop covers, when several loose tasks of one
+   *  product are worked as one (row.quantity is then their total). */
+  taskIds?: number[]
   onActivate: () => void
   onDone: () => void
+}
+
+const REASON_LABEL: Record<PutawayOverrideReason, string> = {
+  blocked: 'Blocked', damaged: 'Damaged', full: 'Full', closer: 'Closer', other: 'Other',
+}
+
+/** Why this bin, in the words the operator reads (NX-0006 suggestion_source). */
+const SOURCE_LABEL: Record<string, string> = {
+  home: 'Home bin',
+  overflow: 'Overflow — home is full',
+  engine: 'No home yet',
+  desk: 'Changed at the desk',
 }
 
 type Step = 'idle' | 'identify' | 'bin' | 'qty'
@@ -77,7 +107,7 @@ type Step = 'idle' | 'identify' | 'bin' | 'qty'
 // component's props do not include `key`, and the walk renders these in a list.
 export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   row, bin, sequence, legDistanceM, reachable, active, disabled, warehouseId,
-  unlabelledTwins, onActivate, onDone,
+  unlabelledTwins, openRequest = null, taskIds, onActivate, onDone,
 }) => {
   // The scan identity. Every scan check, placeholder and refusal message below
   // quotes this rather than the friendly name — the operator is matching a
@@ -109,7 +139,17 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   // Set when the server refuses a level-role mismatch; the operator can force it.
   const [roleGate, setRoleGate] = useState<string | null>(null)
   const [breakingDown, setBreakingDown] = useState(false)
+  const [makeHome, setMakeHome] = useState(false)
+  const [reason, setReason] = useState<PutawayOverrideReason | null>(null)
+  const [askShort, setAskShort] = useState(false)
   const qtyFieldId = useId()
+
+  // An ASSIGNED task is the pre-NX-0006 two-stage flow: it aims at the desk's
+  // bin, needs no reason to go elsewhere, and can be put back on the queue.
+  // `status` is absent only on rows built before NX-0007 read it.
+  const isAssigned = row.status === 'assigned' || (row.status == null && row.assignedLocationId != null)
+  const sourceLabel = row.suggestionSource ? SOURCE_LABEL[row.suggestionSource] : null
+  const offerMakeHome = row.suggestionSource === 'engine'
 
   const name = row.product?.name ?? `Product #${row.productId}`
   const qtyLabel = describeQuantity(row.quantity, row.product)
@@ -161,9 +201,12 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     setQty('')
     setError(null)
     setRoleGate(null)
+    setMakeHome(false)
+    setReason(null)
+    setAskShort(false)
   }
 
-  const start = () => {
+  const start = (evidenceFromScan?: { plateCode?: string; productCode?: string }) => {
     setError(null)
     setRoleGate(null)
     setQty(trimNumber(row.quantity))
@@ -174,12 +217,47 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       productBarcode: row.product?.barcode ?? null,
     })
     setIdentity(decided)
+    // The walk's scan bar already proved the item (NX-0007): keep that scan as
+    // the evidence and go straight to the bin.
+    const proved = evidenceFromScan?.plateCode || evidenceFromScan?.productCode
+    if (proved) {
+      setPlateCode(evidenceFromScan?.plateCode ?? '')
+      setProductCode(evidenceFromScan?.plateCode ? '' : evidenceFromScan?.productCode ?? '')
+    }
     // `none` means there is genuinely nothing to hold up to the gun — a legacy
     // or CSV opening-stock line with no plate, or an unlabelled plate carrying a
     // product with no barcode. Go straight to the bin rather than showing a
     // field that can only ever be skipped.
-    setStep(decided.expect === 'none' ? 'bin' : 'identify')
+    setStep(proved || decided.expect === 'none' ? 'bin' : 'identify')
     onActivate()
+  }
+
+  // Opened from outside (a scan-bar hit, or Guide mode handing over the next
+  // task): start once, the moment the card is the active one.
+  useEffect(() => {
+    if (active && step === 'idle' && openRequest) start(openRequest)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, openRequest])
+
+  /** Back one step. Nothing has been sent, so this only forgets the last scan. */
+  const back = () => {
+    setError(null)
+    if (step === 'qty') {
+      setStep('bin')
+      setScannedBin('')
+      setReason(null)
+      setAskShort(false)
+      return
+    }
+    if (step === 'bin' && identity && identity.expect !== 'none') {
+      setStep('identify')
+      setIdentifyText('')
+      setPlateCode('')
+      setProductCode('')
+      return
+    }
+    reset()
+    onDone()
   }
 
   const onIdentifyScan = (raw: string) => {
@@ -242,18 +320,35 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     return verdict.ok === true && verdict.placedElsewhere
   }, [context, evidence, scannedBin, row.quantity])
 
-  const confirm = async (roleOverride = false) => {
+  const needsReason = placedElsewhere && !isAssigned
+  const shortBy = Number(qty) > 0 && Number(qty) < row.quantity ? row.quantity - Number(qty) : 0
+
+  /** `short` is undefined until the operator has answered "flag it?". */
+  const confirm = async (roleOverride = false, short?: boolean) => {
     const placed = Number(qty)
     const verdict = checkPutawayScan(context, { ...evidence, locationCode: scannedBin }, placed)
     if (verdict.ok === false) {
       setError(verdict.message)
       return
     }
+    if (needsReason && !reason) {
+      setError('Pick why it went to a different bin.')
+      return
+    }
+    // A short count is a question, never a silent partial.
+    if (placed < row.quantity && short === undefined) {
+      setAskShort(true)
+      return
+    }
     if (complete.isPending) return
+    const pooled = taskIds && taskIds.length > 1 ? taskIds : undefined
     try {
       const result = await complete.mutateAsync({
-        recommendationId: row.id,
+        ...(pooled ? { taskIds: pooled } : { recommendationId: row.id }),
         quantity: placed < row.quantity ? placed : undefined,
+        overrideReason: needsReason && reason ? reason : undefined,
+        short: short ? true : undefined,
+        makeHome: offerMakeHome && makeHome ? true : undefined,
         roleOverride: roleOverride || undefined,
         // No actualLocationId: the scanned code is authoritative and the server
         // resolves it, so a stale client-side location list can't misdirect stock.
@@ -268,7 +363,9 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         },
       })
       addToast(
-        result.remainderQty > 0
+        result.remainderStatus === 'short'
+          ? `Placed in ${result.actualLocationCode} — ${trimNumber(result.remainderQty)} flagged short for a manager`
+          : result.remainderQty > 0
           ? `Placed in ${result.actualLocationCode} — ${trimNumber(result.remainderQty)} still to carry`
           : result.placedElsewhere
             ? `Placed in ${result.actualLocationCode} instead of ${binCode} — recorded`
@@ -301,7 +398,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   if (!active || step === 'idle') {
     return (
       <button
-        onClick={start}
+        onClick={() => start()}
         disabled={disabled}
         className="touch-target-y flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-stone-50/70 btn-press disabled:opacity-50 disabled:cursor-not-allowed"
       >
@@ -395,6 +492,24 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           {binCode}
         </p>
         {hasBinName && <p className="mt-2 text-base font-semibold text-emerald-700">{binName}</p>}
+        {sourceLabel && (
+          <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
+            {row.suggestionSource === 'home' && <Home className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+            <span>{sourceLabel}</span>
+          </p>
+        )}
+        {offerMakeHome && (
+          <label className="touch-target-y mt-2 flex items-center justify-center gap-2 text-sm text-stone-700">
+            <input
+              type="checkbox"
+              checked={makeHome}
+              onChange={(e) => setMakeHome(e.target.checked)}
+              aria-label="Make this the home bin"
+              className="h-4 w-4 rounded border-stone-300"
+            />
+            Make this the home bin
+          </label>
+        )}
       </div>
 
       {/* Facts, separated by rules rather than boxed into cards — the card is
@@ -436,8 +551,8 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           the walk would otherwise fail only after the walk. */}
       {bin.isActive === false && (
         <Callout tone="warning" dense icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}>
-          This bin has been retired from the layout. Send the line back to the
-          Assign queue and re-run it so the engine picks a live bay.
+          This bin has been retired from the layout. Scan the bay you actually
+          use, or ask the desk to re-run the line so the engine picks a live bay.
         </Callout>
       )}
 
@@ -452,8 +567,8 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       {(row.huStatus === 'empty' || row.huStatus === 'cancelled') && (
         <Callout tone="danger" dense icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}>
           Plate <span className="font-mono">{row.huCode}</span> is recorded as {row.huStatus} — its
-          stock has already been consumed somewhere else, so this placement will be refused. Send
-          the line back to the Assign queue and re-run it.
+          stock has already been consumed somewhere else, so this placement will be refused. Ask the
+          desk to re-run the line.
         </Callout>
       )}
 
@@ -569,7 +684,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
             placeholder={binCode}
             cameraTitle="Scan the bin label"
             autoFocus
-            helper="A different bay is fine — it gets recorded."
+            helper={isAssigned ? 'A different bay is fine — it gets recorded.' : "A different bay is fine — you'll be asked why."}
             error={error ?? undefined}
           />
         </div>
@@ -583,6 +698,31 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
               <span className="font-mono font-medium">{binCode}</span>. That's allowed — the stock will be
               recorded where you actually put it.
             </Callout>
+          )}
+
+          {/* One tap, from a fixed list: the reason is a fact for the report,
+              not an essay. Required for a suggested task (NX-0006 A8). */}
+          {needsReason && (
+            <fieldset>
+              <legend className="mb-1.5 text-xs font-semibold text-stone-600">Why a different bin?</legend>
+              <div className="flex flex-wrap gap-2">
+                {OVERRIDE_REASONS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    aria-pressed={reason === r}
+                    onClick={() => { setReason(r); setError(null) }}
+                    className={`touch-target-y rounded-lg border px-3 py-1.5 text-sm font-medium btn-press ${
+                      reason === r
+                        ? 'border-nexgen-blue-dark bg-nexgen-blue-dark text-white'
+                        : 'border-stone-300 bg-white text-stone-700'
+                    }`}
+                  >
+                    {REASON_LABEL[r]}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
           )}
 
           {roleGate && (
@@ -628,7 +768,15 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
                 step="any"
                 inputMode="decimal"
                 value={qty}
-                onChange={(e) => { setQty(e.target.value); setError(null) }}
+                onChange={(e) => { setQty(e.target.value); setError(null); setAskShort(false) }}
+                // Enter confirms: the scanner's last Enter was the bin, so this
+                // is the operator's one keypress on the happy path.
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  e.preventDefault()
+                  if (askShort) return
+                  void confirm(false)
+                }}
                 autoFocus
                 // `touch-target-y` rather than an arbitrary min-h: an arbitrary
                 // value sorts AFTER the named utility, so layering the two would
@@ -639,10 +787,33 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
                 of {trimNumber(row.quantity)} on this task
               </span>
             </div>
-            {Number(qty) > 0 && Number(qty) < row.quantity && (
-              <p className="text-xs text-amber-700 mt-1.5">
-                {trimNumber(row.quantity - Number(qty))} stays on this task for another trip.
-              </p>
+            {askShort && shortBy > 0 && (
+              <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3" role="group" aria-label="Short count">
+                <p className="text-sm font-semibold text-amber-900">
+                  Short by {trimNumber(shortBy)} — flag it?
+                </p>
+                <p className="mt-0.5 text-xs text-amber-900">
+                  Flagged, the missing {trimNumber(shortBy)} go to a manager to find or write off.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => confirm(false, true)}
+                    disabled={complete.isPending}
+                    className="touch-target-y rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white btn-press disabled:opacity-50"
+                  >
+                    Flag {trimNumber(shortBy)} short
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => confirm(false, false)}
+                    disabled={complete.isPending}
+                    className="touch-target-y rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 btn-press disabled:opacity-50"
+                  >
+                    No, {trimNumber(shortBy)} still to carry
+                  </button>
+                </div>
+              </div>
             )}
             {error && (
               <p className="text-xs text-red-600 mt-1.5" role="alert">
@@ -654,7 +825,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
                 button somebody misses with a gloved thumb. */}
             <button
               onClick={() => confirm(false)}
-              disabled={complete.isPending}
+              disabled={complete.isPending || (needsReason && !reason) || askShort}
               className="touch-target-y mt-3 flex w-full items-center justify-center gap-1.5 px-3.5 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg btn-press disabled:opacity-50"
             >
               <PackageCheck className="w-4 h-4" aria-hidden="true" />
@@ -667,14 +838,25 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       {/* Both escape hatches on one line. They are the rarest controls on the
           card and they were costing two stacked 44px rows of the height budget. */}
       <div className="flex items-center justify-between gap-3 border-t border-nexgen-blue/15 pt-1">
+        {/* Back, on every step before Confirm. Nothing has been sent yet. */}
         <button
-          onClick={putBack}
-          disabled={unassign.isPending}
-          className="touch-target-y inline-flex min-w-0 items-center gap-1.5 py-2 text-xs text-stone-600 hover:text-stone-900 btn-press disabled:opacity-50"
+          type="button"
+          onClick={back}
+          className="touch-target-y inline-flex shrink-0 items-center gap-1.5 py-2 text-sm font-medium text-stone-700 hover:text-stone-900 btn-press"
         >
-          <Undo2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-          <span className="truncate">Put it back on the queue</span>
+          <ArrowLeft className="w-4 h-4 shrink-0" aria-hidden="true" />
+          Back
         </button>
+        {isAssigned && (
+          <button
+            onClick={putBack}
+            disabled={unassign.isPending}
+            className="touch-target-y inline-flex min-w-0 items-center gap-1.5 py-2 text-xs text-stone-600 hover:text-stone-900 btn-press disabled:opacity-50"
+          >
+            <Undo2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate">Put it back on the queue</span>
+          </button>
+        )}
 
         {/* Only a pallet has anything to break down, and only a tracked one:
             a carton is one product in one box, and loose stock is already

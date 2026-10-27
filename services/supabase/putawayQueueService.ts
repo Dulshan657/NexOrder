@@ -53,6 +53,10 @@ export interface PendingPutawayRow {
   /** Why this bin (NX-0006, mig 00135): the product's home, near its home, the
    *  plain engine (no home yet), or a desk redirect. NULL before 00135. */
   suggestionSource?: PutawaySuggestionSource | null
+  /** 'suggested' | 'assigned' | 'short' … (NX-0007 needs it: a SUGGESTED task
+   *  aims at its recommendation and needs a reason to go elsewhere; an ASSIGNED
+   *  one aims at the desk's bin and can be put back on the queue). */
+  status?: string
 }
 
 export type PutawaySuggestionSource = 'home' | 'overflow' | 'engine' | 'desk'
@@ -91,6 +95,7 @@ function toQueueRow(row: any): PendingPutawayRow {
     assignedLocationId: row.assigned_location_id ?? null,
     assignedAt: row.assigned_at ?? null,
     suggestionSource: row.suggestion_source ?? null,
+    status: row.status,
   }
 }
 
@@ -118,6 +123,20 @@ export async function getAssignedPutaways(warehouseId: number): Promise<PendingP
     .select(QUEUE_SELECT)
     .eq('warehouse_id', warehouseId)
     .eq('status', 'assigned')
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []).map(toQueueRow)
+}
+
+/** Everything still waiting to be carried (NX-0007): suggested tasks, which
+ *  complete directly since NX-0006, and assigned ones still in flight from the
+ *  two-stage flow. Oldest first — a work list. */
+export async function getOpenPutaways(warehouseId: number): Promise<PendingPutawayRow[]> {
+  const { data, error } = await supabase
+    .from('wie_putaway_recommendations')
+    .select(QUEUE_SELECT)
+    .eq('warehouse_id', warehouseId)
+    .in('status', ['suggested', 'assigned'])
     .order('created_at', { ascending: true })
   if (error) throw error
   return (data ?? []).map(toQueueRow)

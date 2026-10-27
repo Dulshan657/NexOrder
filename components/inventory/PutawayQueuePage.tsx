@@ -1,27 +1,49 @@
-// Wrapper around <PutawayQueueView> that owns the warehouse picker: which site
-// opens by default (resolvePutawayWarehouse — deep link, then home warehouse,
-// then whichever site actually has pending work, then the first active site)
-// and the ?wh= deep link so a post-receipt "Go to putaway" CTA (ReceiveStockView
-// -> AdminView -> here) and a page refresh both land on the right warehouse.
+// The Putaway screen. Owns the warehouse picker: which site opens by default
+// (resolvePutawayWarehouse — deep link, then home warehouse, then whichever site
+// actually has pending work, then the first active site) and the ?wh= deep link
+// so "Put away now" after a receipt (ReceiveStockView -> AdminView -> here) and
+// a page refresh both land on the right warehouse.
+//
+// NX-0007: there is no Assign step any more. One scan-first screen for everyone
+// (PutawayWalkView), a Scan / Guide toggle remembered per device, a ?receipt=
+// filter for "Put away now", and, for Admin/Manager, a Desk view to change a
+// suggested bin, Place now, and resolve shortages (PutawayQueueView).
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardList, Footprints, PackageOpen } from 'lucide-react';
+import { ClipboardList, Compass, PackageOpen, ScanLine, X } from 'lucide-react';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import { usePendingPutawayCounts } from '../../hooks/queries/usePendingPutawayCounts';
-import { useAssignedPutaways } from '../../hooks/queries/usePutawayWalk';
 import { useWarehouseScope } from '../../context/WarehouseScopeContext';
 import { resolvePutawayWarehouse } from './putawayWarehouse';
 import { UserRole, type User } from '../../types';
 import PutawayQueueView from './PutawayQueueView';
-import PutawayWalkView from './PutawayWalkView';
+import PutawayWalkView, { type PutawayMode } from './PutawayWalkView';
 
-type Stage = 'assign' | 'walk';
+type View = 'floor' | 'desk';
 
-/** A phone in an aisle is a walker; a wide screen is someone at a desk. Just a
- *  starting tab — either user can switch, and the choice sticks for the session. */
-function defaultStage(): Stage {
-  if (typeof window === 'undefined') return 'assign';
-  return window.matchMedia('(max-width: 767px)').matches ? 'walk' : 'assign';
+/** Per device, not per user: Guide suits a handheld in an aisle, Scan a desk
+ *  with a USB gun. A convenience only, so storage that throws (private mode,
+ *  blocked site data) silently falls back to Scan. */
+const MODE_KEY = 'nexorder.putaway.mode';
+function readMode(): PutawayMode {
+  try {
+    return window.localStorage.getItem(MODE_KEY) === 'guide' ? 'guide' : 'scan';
+  } catch {
+    return 'scan';
+  }
+}
+function writeMode(mode: PutawayMode): void {
+  try {
+    window.localStorage.setItem(MODE_KEY, mode);
+  } catch {
+    /* a convenience, not state: nothing to do */
+  }
+}
+
+function readReceiptParam(): number | null {
+  if (typeof window === 'undefined') return null;
+  const raw = new URLSearchParams(window.location.search).get('receipt');
+  return raw && /^\d+$/.test(raw) ? Number(raw) : null;
 }
 
 interface PutawayQueuePageProps {
@@ -69,11 +91,20 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
 
   const effectiveWarehouseId = scope !== 'all' ? scope : localFallback;
 
-  const [stage, setStage] = useState<Stage>(defaultStage);
-  // Drives the Walk tab's badge. Cheap: the walk view reads the same query key,
-  // so opening the tab costs no second round trip.
-  const { data: assignedTasks } = useAssignedPutaways(effectiveWarehouseId);
-  const assignedCount = assignedTasks?.length ?? 0;
+  const isDesk = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
+  const [view, setView] = useState<View>('floor');
+  const [mode, setModeState] = useState<PutawayMode>(readMode);
+  const setMode = (next: PutawayMode) => {
+    setModeState(next);
+    writeMode(next);
+  };
+  const [receiptId, setReceiptId] = useState<number | null>(readReceiptParam);
+  const clearReceipt = () => {
+    setReceiptId(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('receipt');
+    window.history.replaceState({}, '', url.toString());
+  };
   // Warehouse staff can only place stock at their own site (the same rule
   // complete-putaway enforces server-side, mirrored here so the buttons are
   // disabled rather than failing on tap).
@@ -142,49 +173,77 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
 
       {effectiveWarehouseId != null ? (
         <>
-          <div className="px-4 sm:px-6 lg:px-8 pt-4">
-            <div
-              role="tablist"
-              aria-label="Putaway stage"
-              className="inline-flex p-0.5 rounded-lg bg-stone-100 border border-stone-200"
-            >
-              {(['assign', 'walk'] as const).map((t) => (
+          <div className="px-4 sm:px-6 lg:px-8 pt-4 flex flex-wrap items-center gap-2">
+            {isDesk && (
+              <div role="tablist" aria-label="Putaway view" className="inline-flex p-0.5 rounded-lg bg-stone-100 border border-stone-200">
+                {(['floor', 'desk'] as const).map((v) => (
+                  <button
+                    key={v}
+                    role="tab"
+                    aria-selected={view === v}
+                    onClick={() => setView(v)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-md text-sm btn-press ${
+                      view === v ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    {v === 'floor'
+                      ? <><ScanLine className="w-4 h-4" aria-hidden="true" /> Put away</>
+                      : <><ClipboardList className="w-4 h-4" aria-hidden="true" /> Desk</>}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {view === 'floor' && (
+              <div role="radiogroup" aria-label="How to work the list" className="inline-flex p-0.5 rounded-lg bg-stone-100 border border-stone-200">
+                {(['scan', 'guide'] as const).map((m) => (
+                  <label
+                    key={m}
+                    className={`inline-flex cursor-pointer items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-md text-sm ${
+                      mode === m ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="putaway-mode"
+                      value={m}
+                      checked={mode === m}
+                      onChange={() => setMode(m)}
+                      aria-label={m === 'scan' ? 'Scan' : 'Guide'}
+                      className="sr-only"
+                    />
+                    {m === 'scan'
+                      ? <><ScanLine className="w-4 h-4" aria-hidden="true" /> Scan</>
+                      : <><Compass className="w-4 h-4" aria-hidden="true" /> Guide</>}
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {view === 'floor' && receiptId != null && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-nexgen-blue/10 pl-3 pr-1 py-0.5 text-sm text-nexgen-blue-dark">
+                This delivery only
                 <button
-                  key={t}
-                  role="tab"
-                  aria-selected={stage === t}
-                  onClick={() => setStage(t)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-md text-sm btn-press ${
-                    stage === t ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
-                  }`}
+                  type="button"
+                  onClick={clearReceipt}
+                  className="touch-target inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium hover:bg-white/70"
                 >
-                  {t === 'assign' ? (
-                    <><ClipboardList className="w-4 h-4" aria-hidden="true" /> Assign</>
-                  ) : (
-                    <>
-                      <Footprints className="w-4 h-4" aria-hidden="true" /> Walk
-                      {assignedCount > 0 && (
-                        <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-nexgen-blue text-white text-[10px] tabular-nums">
-                          {assignedCount}
-                        </span>
-                      )}
-                    </>
-                  )}
+                  <X className="h-3.5 w-3.5" aria-hidden="true" /> Show all
                 </button>
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-stone-500">
-              {stage === 'assign'
-                ? 'Decide which bin each line goes to. Nothing moves until someone carries it.'
-                : 'Carry each pallet to its bin and scan to confirm. This is when the stock moves.'}
-            </p>
+              </span>
+            )}
           </div>
 
-          {stage === 'assign' ? (
-            <PutawayQueueView warehouseId={effectiveWarehouseId} />
+          {view === 'desk' && isDesk ? (
+            <PutawayQueueView warehouseId={effectiveWarehouseId} isAdmin={currentUser.role === UserRole.ADMIN} />
           ) : (
             <div className="p-4 sm:p-6 lg:p-8">
-              <PutawayWalkView warehouseId={effectiveWarehouseId} canPlace={canPlaceHere} />
+              <PutawayWalkView
+                warehouseId={effectiveWarehouseId}
+                canPlace={canPlaceHere}
+                mode={mode}
+                receiptId={receiptId}
+              />
             </div>
           )}
         </>

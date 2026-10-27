@@ -143,7 +143,10 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
     // Post-receipt "Go to putaway" deep-link: pre-select the receipt's
     // server-resolved destination warehouse via ?wh= (PutawayQueuePage reads
     // this the same way the Warehouse viewer does) before switching tabs.
-    const openPutaway = (warehouseId: number) => openWith('Putaway', { wh: String(warehouseId) });
+    // NX-0007: "Put away now" narrows the list to the receipt just recorded;
+    // `null` clears a stale ?receipt= left by an earlier one.
+    const openPutaway = (warehouseId: number, receiptId?: number | null) =>
+        openWith('Putaway', { wh: String(warehouseId), receipt: receiptId != null ? String(receiptId) : null });
     // "Count this bin", from the Stock lookup. Only the LOCATION travels —
     // StocktakePage resolves which site it belongs to itself, because it is the
     // one holding the location tree. Passing a `wh=` guess from here would be a

@@ -83,7 +83,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const renderView = (onOpenPutaway?: (id: number) => void) =>
+const renderView = (onOpenPutaway?: (id: number, receiptId?: number | null) => void) =>
   render(<ReceiveStockView products={products} currentUser={currentUser} onOpenPutaway={onOpenPutaway} />)
 
 function pickAcme() {
@@ -299,7 +299,10 @@ describe('Receive Stock flow', () => {
     const link = await screen.findByRole('link', { name: /Print 1 label/ })
     expect(link.getAttribute('href')).toBe('https://example.test/sheet.pdf')
 
-    fireEvent.click(screen.getByRole('button', { name: /Go to putaway/ }))
-    expect(onOpenPutaway).toHaveBeenCalledWith(1)
+    // NX-0007 renamed the button "Put away now" and passes the receipt so
+    // Putaway opens on just this delivery. (The title above is kept: the
+    // NX-0005 brief names this test.)
+    fireEvent.click(screen.getByRole('button', { name: /Put away now/ }))
+    expect(onOpenPutaway).toHaveBeenCalledWith(1, expect.anything())
   })
 })

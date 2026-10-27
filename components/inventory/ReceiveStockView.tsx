@@ -43,7 +43,7 @@ interface ReceiveStockViewProps {
   /** Navigate to the Putaway tab pre-selected to a warehouse — wired to the
    *  post-receipt "Go to putaway" CTA. Undefined when the host doesn't support
    *  cross-tab navigation (keeps this view mountable standalone/in tests). */
-  onOpenPutaway?: (warehouseId: number) => void
+  onOpenPutaway?: (warehouseId: number, receiptId?: number | null) => void
 }
 
 // `DraftLine`, `DraftPlate`, `newDraft`, `newPlate` and `plateLabel` live in

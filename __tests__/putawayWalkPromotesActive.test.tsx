@@ -35,6 +35,8 @@ const { tasksMock, routeMock, locationsMock } = vi.hoisted(() => ({
 
 vi.mock('@/hooks/queries/usePutawayWalk', () => ({
   useAssignedPutaways: () => tasksMock(),
+  // NX-0007: the walk lists every open task (suggested + assigned).
+  useOpenPutaways: () => tasksMock(),
   usePutawayRoute: () => routeMock(),
   useCompletePutaway: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUnassignPutaway: () => ({ mutateAsync: vi.fn(), isPending: false }),

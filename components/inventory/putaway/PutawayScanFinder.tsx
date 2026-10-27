@@ -23,21 +23,32 @@ import { buildScanIndex, resolveScan, type ScanMatch } from '@/lib/scan/resolveS
 import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import type { InventoryLocation } from '@/types'
 
+/** What a scan proved about the goods in the operator's hands. */
+export interface ScanEvidence {
+  plateCode?: string
+  productCode?: string
+}
+
 interface PutawayScanFinderProps {
   rows: PendingPutawayRow[]
   locations: InventoryLocation[]
   /** Which bin a row is destined for — the assigned bin on the walk, the
    *  engine's recommendation on the assign queue. */
   binIdOf: (row: PendingPutawayRow) => number | null
-  /** Exactly one line matched: open it. */
-  onFound: (recommendationId: number) => void
+  /** Exactly one line matched: open it. `evidence` is the scan itself when it
+   *  identified the goods (a plate or a product barcode), so the stop can skip
+   *  asking for it again (NX-0007). A bin scan carries none. */
+  onFound: (recommendationId: number, evidence?: ScanEvidence) => void
+  /** Several lines matched one scan (a mixed plate, or a product queued twice).
+   *  When given, the caller offers the choice; otherwise the list is filtered. */
+  onMany?: (recommendationIds: number[], evidence: ScanEvidence) => void
   /** Several lines matched (or none): narrow the list instead. */
   onFilter: (text: string) => void
   label?: string
 }
 
 export const PutawayScanFinder: React.FC<PutawayScanFinderProps> = ({
-  rows, locations, binIdOf, onFound, onFilter, label = 'Scan a plate, carton or bin',
+  rows, locations, binIdOf, onFound, onMany, onFilter, label = 'Scan a plate, carton or bin',
 }) => {
   const [code, setCode] = useState('')
   const [note, setNote] = useState<string | null>(null)
@@ -111,11 +122,26 @@ export const PutawayScanFinder: React.FC<PutawayScanFinderProps> = ({
       return
     }
 
+    const evidence: ScanEvidence =
+      hit.c.kind === 'handlingUnit'
+        ? { plateCode: hit.c.handlingUnit.code }
+        : hit.c.kind === 'product'
+          ? { productCode: raw.trim() }
+          : {}
+
     if (hit.matched.length === 1) {
       setNote(null)
       setCode('')
       signalFlash('ok')
-      onFound(hit.matched[0].id)
+      onFound(hit.matched[0].id, evidence)
+      return
+    }
+
+    if (onMany) {
+      setNote(null)
+      setCode('')
+      signalFlash('ok')
+      onMany(hit.matched.map((r) => r.id), evidence)
       return
     }
 
