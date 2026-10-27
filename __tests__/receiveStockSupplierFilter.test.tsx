@@ -10,6 +10,11 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 vi.mock('@/hooks/queries/useReceiveStock', () => ({
   useReceiveStock: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
+// Required lot/expiry per product (mig 00134). None here: these tests are
+// about the supplier picker and plates, not about what a product requires.
+vi.mock('@/hooks/queries/useReceivingRequirements', () => ({
+  useReceivingRequirements: () => ({ data: new Map() }),
+}))
 vi.mock('@/hooks/queries/useInventoryBalances', () => ({
   useRecentReceipts: () => ({ data: [], isLoading: false }),
 }))

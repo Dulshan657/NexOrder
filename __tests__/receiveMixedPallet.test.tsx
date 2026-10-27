@@ -24,6 +24,11 @@ const { receiveMock } = vi.hoisted(() => ({ receiveMock: vi.fn() }))
 vi.mock('@/hooks/queries/useReceiveStock', () => ({
   useReceiveStock: () => ({ mutateAsync: receiveMock, isPending: false }),
 }))
+// Required lot/expiry per product (mig 00134). None here: these tests are
+// about the supplier picker and plates, not about what a product requires.
+vi.mock('@/hooks/queries/useReceivingRequirements', () => ({
+  useReceivingRequirements: () => ({ data: new Map() }),
+}))
 vi.mock('@/hooks/queries/useInventoryBalances', () => ({
   useRecentReceipts: () => ({ data: [], isLoading: false }),
 }))
@@ -116,11 +121,12 @@ describe('a normal line owns its own plate', () => {
 
     const selects = arrivedOnSelects()
     expect(selects).toHaveLength(2)
-    expect(selects.map((s) => s.value)).toEqual(['pallet', 'pallet'])
+    // NX-0005: a scanned unit is a carton until said otherwise.
+    expect(selects.map((s) => s.value)).toEqual(['carton', 'carton'])
 
-    fireEvent.change(selects[0], { target: { value: 'carton' } })
+    fireEvent.change(selects[0], { target: { value: 'pallet' } })
 
-    expect(arrivedOnSelects().map((s) => s.value)).toEqual(['carton', 'pallet'])
+    expect(arrivedOnSelects().map((s) => s.value)).toEqual(['pallet', 'carton'])
   })
 
   it('sends one plate per line, carrying the type each line was set to', () => {
@@ -128,7 +134,7 @@ describe('a normal line owns its own plate', () => {
     pickAcme()
     addProduct('Coconut Milk')
     addProduct('Noodles')
-    fireEvent.change(arrivedOnSelects()[0], { target: { value: 'carton' } })
+    fireEvent.change(arrivedOnSelects()[0], { target: { value: 'pallet' } })
     fillQuantities('10', '20')
     submit()
 
@@ -137,8 +143,8 @@ describe('a normal line owns its own plate', () => {
     expect(new Set(lines.map((l) => l.plate_key)).size).toBe(2)
     const typeOf = (productId: number) =>
       plates.find((p) => p.key === lines.find((l) => l.product_id === productId)!.plate_key)!.hu_type
-    expect(typeOf(1)).toBe('carton')
-    expect(typeOf(2)).toBe('pallet')
+    expect(typeOf(1)).toBe('pallet')
+    expect(typeOf(2)).toBe('carton')
   })
 })
 
@@ -248,7 +254,9 @@ describe('the payload contract', () => {
     pickAcme()
     addProduct('Coconut Milk')
     addProduct('Noodles')
-    fillQuantities('10') // Noodles left blank — not a valid line.
+    // A pick stages a quantity of 1 since NX-0005, so blanking Noodles is now
+    // an explicit act — and still leaves it not a valid line.
+    fillQuantities('10', '')
     submit()
 
     const { lines, plates } = payload()

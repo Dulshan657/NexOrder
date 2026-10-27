@@ -45,7 +45,9 @@ export interface DraftPlate {
 let draftSeq = 0
 let plateSeq = 0
 
-export const newPlate = (huType: 'pallet' | 'carton' = 'pallet'): DraftPlate => ({
+// Carton by default since NX-0005: a dock scan counts cartons, so an unqualified
+// unit is one. A single-SKU pallet is declared with "New pallet" instead.
+export const newPlate = (huType: 'pallet' | 'carton' = 'carton'): DraftPlate => ({
   key: `p${plateSeq++}`,
   huType,
 })
@@ -90,4 +92,25 @@ export function plateLabel(plates: readonly DraftPlate[], key: string): string {
     return `Mixed pallet ${nth}`
   }
   return `${plate.huType === 'carton' ? 'Carton' : 'Pallet'} ${index + 1}`
+}
+
+/** What Receive Stock must capture for a product (mig 00134). Absent = nothing. */
+export interface LineRequirement {
+  lot: boolean
+  expiry: boolean
+}
+
+/**
+ * Which REQUIRED fields this line still lacks. A line missing either cannot be
+ * received — the button counts only complete lines, and the scan bar names
+ * what is outstanding so the operator is never left guessing why.
+ */
+export function missingRequired(
+  line: DraftLine,
+  requirement: LineRequirement | undefined,
+): { lot: boolean; expiry: boolean } {
+  return {
+    lot: !!requirement?.lot && line.lotCode.trim() === '',
+    expiry: !!requirement?.expiry && line.expiryDate === '',
+  }
 }

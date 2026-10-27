@@ -1612,6 +1612,8 @@ export type Database = {
           volume_l: number | null
           dims: Json | null
           custom: Json
+          requires_lot: boolean
+          requires_expiry: boolean
           updated_at: string
         }
         Insert: {
@@ -1626,6 +1628,8 @@ export type Database = {
           volume_l?: number | null
           dims?: Json | null
           custom?: Json
+          requires_lot?: boolean
+          requires_expiry?: boolean
           updated_at?: string
         }
         Update: {
@@ -1639,6 +1643,8 @@ export type Database = {
           volume_l?: number | null
           dims?: Json | null
           custom?: Json
+          requires_lot?: boolean
+          requires_expiry?: boolean
           updated_at?: string
         }
         Relationships: []
