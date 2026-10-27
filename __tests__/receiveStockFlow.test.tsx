@@ -5,10 +5,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 // required lot/expiry, totals in the scan bar, and labels rendering by
 // themselves once the receipt is recorded.
 
-const { receiveMock, printMock, requirementsRef, platesRef } = vi.hoisted(() => ({
+const { receiveMock, printMock, requirementsRef, requirementsLoadingRef, platesRef } = vi.hoisted(() => ({
   receiveMock: vi.fn(),
   printMock: vi.fn(),
-  requirementsRef: { current: new Map<number, { lot: boolean; expiry: boolean }>() },
+  requirementsRef: { current: new Map<number, { lot: boolean; expiry: boolean }>() as Map<number, { lot: boolean; expiry: boolean }> | undefined },
+  requirementsLoadingRef: { current: false },
   platesRef: { current: [] as unknown[] },
 }))
 
@@ -20,7 +21,7 @@ vi.mock('@/hooks/queries/usePalletBreakdown', () => ({
   usePrintPlateLabels: () => ({ mutateAsync: printMock, isPending: false }),
 }))
 vi.mock('@/hooks/queries/useReceivingRequirements', () => ({
-  useReceivingRequirements: () => ({ data: requirementsRef.current }),
+  useReceivingRequirements: () => ({ data: requirementsRef.current, isLoading: requirementsLoadingRef.current }),
 }))
 vi.mock('@/hooks/queries/useInventoryBalances', () => ({
   useRecentReceipts: () => ({ data: [], isLoading: false }),
@@ -66,6 +67,7 @@ beforeEach(() => {
   receiveMock.mockReset()
   printMock.mockReset()
   requirementsRef.current = new Map()
+  requirementsLoadingRef.current = false
   platesRef.current = []
   // ScanField drops an identical code committed within 250ms (a doubled
   // terminator). Two deliberate scans in a test happen in the same tick, so
@@ -181,6 +183,19 @@ describe('Receive Stock flow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Acme Foods' }))
     expect(strip.className).not.toMatch(/\bz-30\b/)
+  })
+
+  it('holds Receive until it is known which products need a lot or expiry', () => {
+    // Gate finding: while the requirements were still loading every product
+    // read as requiring nothing, so a fast scan-and-receive skipped them.
+    requirementsRef.current = undefined
+    requirementsLoadingRef.current = true
+    renderView()
+    pickAcme()
+    scanCode('AYM-COC-001')
+
+    expect(receiveButton().disabled).toBe(true)
+    expect(screen.getByText(/Checking which products need a lot or expiry/i)).toBeTruthy()
   })
 
   it('lets a line added by hand be given its product', () => {

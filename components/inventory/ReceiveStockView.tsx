@@ -129,7 +129,9 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   const { data: settingsRow } = useSettings()
   const palletSpec = useMemo(() => palletSpecFromSettings(settingsRow), [settingsRow])
   // Which products must arrive with a lot code / expiry (mig 00134).
-  const { data: requirements, isError: requirementsFailed } = useReceivingRequirements()
+  const {
+    data: requirements, isError: requirementsFailed, isLoading: requirementsLoading,
+  } = useReceivingRequirements()
   const requirementFor = (productId: number | null): LineRequirement | undefined =>
     productId == null ? undefined : requirements?.get(productId)
 
@@ -494,15 +496,22 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
   // receipt. Sending only the complete lines would let the reset that follows
   // wipe the incomplete ones — goods on the dock that never reach stock.
   const anyMissingRequired = totals.missingLot + totals.missingExpiry > 0
+  // Held while the requirements are still LOADING: until then every product
+  // reads as requiring nothing, and a quick scan-and-receive would skip a
+  // required expiry. A FAILED load does not hold the dock — it is warned
+  // about below instead, so a network blip cannot stop receiving outright.
   const canSubmit =
     hasSupplier && hasDestination && validLines.length > 0 && !anyMissingRequired && !saving
+    && !requirementsLoading
   const blockedReason = !hasSupplier && picked.length > 0
     ? 'Choose a supplier to receive'
     : anyMissingRequired
       ? 'Fill the required lot / expiry to receive'
-      : requirementsFailed
-        ? 'Could not load which products need a lot or expiry — check those by hand'
-        : null
+      : requirementsLoading && picked.length > 0
+        ? 'Checking which products need a lot or expiry…'
+        : requirementsFailed
+          ? 'Could not load which products need a lot or expiry — check those by hand'
+          : null
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   const resetReceipt = () => {
