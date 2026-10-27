@@ -71,3 +71,30 @@ follow in one or two taps. Interview with the owner, 2026-10-27.
   sheet is never opened, which is what clicking Print already does today.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `stageProduct > a repeat scan of the same product adds one to its line`; `Receive Stock flow > scanning the same barcode twice leaves one line at quantity 2`. Browser (dev, Warehouse demo user): 3 scans of AYM-NOO-001 → one line, qty 3 | |
+| A2 | claimed | `stageProduct > a first scan stages one carton on a carton plate`; `plate identity > defaults an ordinary plate to a carton, and honours an explicit pallet`. Browser: line in `carton (×12)`, Arrived on = Carton | Only real `product_uoms` rows count as a carton; a product with none counts its base unit |
+| A3 | claimed | `stageProduct > after New pallet the next scan starts its own pallet and repeats count on it`. Browser: New pallet + 2 scans → second line, Pallet plate, qty 2; first line untouched at 3 | The new pallet line still counts in cartons (+1 per scan in the line's unit) |
+| A4 | claimed | `stageProduct > an open mixed pallet captures scans and counts repeats` | |
+| A5 | claimed | `Receive Stock flow > a product that requires an expiry blocks Receive until one is entered`; review regression `…keeps Receive disabled while ANY line lacks a required field…`. Browser: AYM-NOO-002 flagged on dev → "1 missing expiry", Receive disabled until a date was entered (flag reverted afterwards) | Client-side only, by design |
+| A6 | claimed | `Receive Stock flow > ArrowDown then Enter adds the highlighted search result`. Browser: "rice flake", ArrowDown highlighted the row, Enter added it | |
+| A7 | claimed | `Receive Stock flow > the scan bar shows the staged totals beside Receive`. Browser: "2 lines · 5 carton · 2 plates" beside "Receive 2 lines" in the bar | |
+| A8 | claimed | Browser: at 1920px the dock computes `position: sticky; top: 0`, directly under the delivery strip. In a 356×660 same-origin frame it computes `bottom: 0`, and its bottom equals the scrollport's bottom (660) at both ends of a 2010px scroll; no horizontal overflow | Measured by script, not Playwright — see Not claimed |
+| A9 | claimed | Browser (1920px): picking a supplier collapsed the strip to "AYAM Australia Distribution · Main Warehouse · 2026-10-27 · by Wendy Okafor" and focused the scan field; `Receive Stock flow > does not collapse the delivery details while a supplier name is still being typed` | Collapse at 360px follows the same code path; not separately walked |
+| A10 | claimed | `Receive Stock flow > a recorded receipt renders its labels without a click and offers Go to putaway` | Unit test with mocked receive/print; no live receipt was submitted (see Not claimed) |
+| A11 | claimed | `ProductWmsAttributesSection > saves the receiving requirement flags`; `migrate:dev` applied 00134 (both columns `boolean NOT NULL DEFAULT false`, read back from information_schema) | |
+| A12 | not-claimed | 00134 applied on dev; `mutate-wms-attributes` deployed to dev (uqvekvavkjjurpqtovbq) before any frontend | Not merged and not deployed to dev yet, so no merge sha on /version.json |
+
+Also: an independent code review found two HIGH defects (an incomplete required line was silently dropped and wiped on Receive; the strip collapsed on the first keystroke). Both were fixed with regression tests, along with scans during save, reveal-behind-dock and hover hijacking Enter. Full suite 5212/5212, `tsc`, `check:edge-types` (83 clean), `lint` (baseline pruned by 5), `check:overlays`, `check:viewport`, and `build` all pass.
+
+### Not claimed
+
+- No live receipt was submitted on dev, to keep the demo's stock and putaway queue clean. Auto-rendering labels and the success card are proven only against mocks.
+- No Playwright run. `scan-dock.spec.ts` / `receive-stock.spec.ts` (mobile) were not executed, and the planned desktop "dock at top" Playwright assertion was not added. A8 rests on a scripted measurement in a real browser.
+- Not tried on the RS35 itself: the IME scan path, gloves, and whether a three-row bottom dock (about 137px of 664) is comfortable.
+- Required lot/expiry is not enforced server-side. A direct call to `receive-stock` (or the CSV import) can still omit them.
+- A repeat scan counts onto the newest loose line even if that line already has a lot or expiry typed. A second batch of a flagged product needs New pallet or a line by hand.
+- Auto-render marks plates `label_printed` even if the sheet is never opened (accepted in the brief).
+
