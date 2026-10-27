@@ -87,6 +87,9 @@ interface PutawayStopCardProps {
   taskIds?: number[]
   onActivate: () => void
   onDone: () => void
+  /** Called instead of `onDone` after a successful placement, when given:
+   *  the walk may open the next share of the same product (NX-0007). */
+  onPlaced?: () => void
 }
 
 const REASON_LABEL: Record<PutawayOverrideReason, string> = {
@@ -107,7 +110,7 @@ type Step = 'idle' | 'identify' | 'bin' | 'qty'
 // component's props do not include `key`, and the walk renders these in a list.
 export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   row, bin, sequence, legDistanceM, reachable, active, disabled, warehouseId,
-  unlabelledTwins, openRequest = null, taskIds, onActivate, onDone,
+  unlabelledTwins, openRequest = null, taskIds, onActivate, onDone, onPlaced,
 }) => {
   // The scan identity. Every scan check, placeholder and refusal message below
   // quotes this rather than the friendly name — the operator is matching a
@@ -373,7 +376,9 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         result.placedElsewhere ? 'info' : 'success',
       )
       reset()
-      onDone()
+      // A partial placement leaves this task open, so the run waits for it.
+      if (onPlaced && !(result.remainderQty > 0 && result.remainderStatus !== 'short')) onPlaced()
+      else onDone()
     } catch (e) {
       if (e instanceof CompletePutawayError && e.reason === 'level_role_mismatch') {
         setRoleGate(e.message)

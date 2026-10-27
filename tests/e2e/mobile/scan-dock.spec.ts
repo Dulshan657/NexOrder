@@ -118,7 +118,9 @@ test.describe('an open putaway stop fits the screen it is worked on', () => {
     // The card's own scan field — the thing an operator aims a gun at. On the
     // RS35 a scan reaches only the FOCUSED editable, so a field below the fold
     // is a field nobody focuses and a scan that silently does nothing.
-    const scan = page.getByLabel(/^Scan/).first()
+    // A TEXT field: since NX-0007 the Scan / Guide mode switch is a radio
+    // labelled "Scan", which a bare label match picks first (1 px, sr-only).
+    const scan = page.getByRole('textbox', { name: /^Scan/ }).first()
     await expect(scan).toBeVisible()
 
     const box = await scan.boundingBox()

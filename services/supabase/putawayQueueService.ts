@@ -57,6 +57,11 @@ export interface PendingPutawayRow {
    *  aims at its recommendation and needs a reason to go elsewhere; an ASSIGNED
    *  one aims at the desk's bin and can be put back on the queue). */
   status?: string
+  /** The two bins' codes, joined with the row (NX-0007). The screen must be
+   *  able to name the bin without the warehouse's location list, which may
+   *  still be loading when the first scan arrives. */
+  recommendedLocationCode?: string | null
+  assignedLocationCode?: string | null
 }
 
 export type PutawaySuggestionSource = 'home' | 'overflow' | 'engine' | 'desk'
@@ -65,7 +70,8 @@ export type PutawaySuggestionSource = 'home' | 'overflow' | 'engine' | 'desk'
 // by Admin/Manager/Warehouse (goods_receipts_select_ops, mig 00037) — exactly
 // the roles that can open the Putaway tab, so this join never trips RLS here.
 const QUEUE_SELECT =
-  '*, products(*, product_uoms(*)), goods_receipts(id, reference, received_date, suppliers(name)), handling_units(id, code, hu_type, label_printed, status)'
+  '*, products(*, product_uoms(*)), goods_receipts(id, reference, received_date, suppliers(name)), handling_units(id, code, hu_type, label_printed, status), ' +
+  'recommended_location:recommended_location_id(code), assigned_location:assigned_location_id(code)'
 
 function toReceiptRef(row: any): PutawayReceiptRef | null {
   if (!row) return null
@@ -96,6 +102,8 @@ function toQueueRow(row: any): PendingPutawayRow {
     assignedAt: row.assigned_at ?? null,
     suggestionSource: row.suggestion_source ?? null,
     status: row.status,
+    recommendedLocationCode: row.recommended_location?.code ?? null,
+    assignedLocationCode: row.assigned_location?.code ?? null,
   }
 }
 

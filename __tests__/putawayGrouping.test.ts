@@ -69,6 +69,16 @@ describe('filterQueue', () => {
     expect(filterQueue(rows, { query: 'rack 4', binById }).map((r) => r.id)).toEqual([3])
   })
 
+  // The desk has one box (NX-0007): a scanner typing into it must still find the line.
+  it('matches on product barcode and plate code', () => {
+    const scanned = [
+      row({ id: 5, product: { id: 5, name: 'Coconut Milk', sku: 'CM-5', barcode: '9312000000036' } as Product }),
+      row({ id: 6, huCode: 'HU-000777' }),
+    ]
+    expect(filterQueue(scanned, { query: '9312000000036' }).map((r) => r.id)).toEqual([5])
+    expect(filterQueue(scanned, { query: 'hu-000777' }).map((r) => r.id)).toEqual([6])
+  })
+
   it('falls back to the #id for a row with no product join', () => {
     const orphan = [row({ id: 7, productId: 42, product: null, receipt: null })]
     expect(filterQueue(orphan, { query: '#42' }).map((r) => r.id)).toEqual([7])

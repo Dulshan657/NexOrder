@@ -69,4 +69,21 @@ describe('putaway scan bar', () => {
     expect(screen.getByLabelText(/Scan the bin/)).toBeTruthy()
     expect(screen.getByText('Product 2')).toBeTruthy()
   })
+
+  // Found end to end on dev: scanning before the warehouse's location list had
+  // loaded showed "expecting #538", and the real bin then read as a wrong bin.
+  // The task carries its own bin code, so the card never depends on that list.
+  it('names the bin by the code the task carries while locations are not loaded', () => {
+    const row = { ...task(4), recommendedLocationCode: 'MAIN-F01-R10' }
+    tasksMock.mockReturnValue({ data: [row], isLoading: false, isError: false })
+    routeMock.mockReturnValue({ data: { mode: 'legacy' }, isLoading: false, isError: false })
+    render(<PutawayWalkView warehouseId={1} />)
+
+    const bar = screen.getByLabelText(/Scan a plate, carton or bin/i) as HTMLInputElement
+    fireEvent.change(bar, { target: { value: '931200000004' } })
+    fireEvent.keyDown(bar, { key: 'Enter' })
+
+    expect(screen.getByLabelText(/Scan the bin — expecting MAIN-F01-R10/)).toBeTruthy()
+    expect(screen.queryByText('#504')).toBeNull()
+  })
 })

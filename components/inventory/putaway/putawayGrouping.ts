@@ -33,6 +33,8 @@ export function filterQueue(
     const haystack = [
       row.product?.name,
       row.product?.sku,
+      row.product?.barcode,
+      row.huCode,
       row.receipt?.supplierName,
       row.receipt?.reference,
       bin?.code,

@@ -21,6 +21,15 @@ export function targetBinId(row: PendingPutawayRow): number | null {
   return row.recommendedLocationId ?? row.assignedLocationId ?? null
 }
 
+/** The code of `targetBinId`, as joined with the row, when it was. */
+export function targetBinCode(row: PendingPutawayRow): string | null {
+  const id = targetBinId(row)
+  if (id == null) return null
+  if (id === row.assignedLocationId && row.status === 'assigned') return row.assignedLocationCode ?? null
+  if (id === row.recommendedLocationId) return row.recommendedLocationCode ?? null
+  return row.assignedLocationCode ?? null
+}
+
 /**
  * Loose tasks of one product going to the same bin become one stop with the
  * summed quantity, completed together (complete-putaway `task_ids`).
@@ -48,6 +57,21 @@ export function combinePutawayStops(rows: readonly PendingPutawayRow[]): Putaway
     if (poolable) looseByKey.set(key, stop)
   }
   return stops
+}
+
+/**
+ * One scan matched several stops of the SAME product: a home fill and its
+ * overflow, or a product queued twice. There is nothing to choose, so the
+ * operator is sent to them in turn, the home bin first (its share is the one
+ * replenishment would otherwise have to fetch), then in walk order. Several
+ * products (a mixed plate) still return null: that is a real choice.
+ */
+export function sameProductRun(stops: readonly PutawayStop[]): PutawayStop[] | null {
+  if (stops.length < 2) return null
+  const productId = stops[0].lead.productId
+  if (stops.some((s) => s.lead.productId !== productId)) return null
+  const isHome = (s: PutawayStop) => s.lead.suggestionSource === 'home'
+  return [...stops.filter(isHome), ...stops.filter((s) => !isHome(s))]
 }
 
 export interface StopOrdering {

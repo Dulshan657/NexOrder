@@ -19,7 +19,7 @@ import { useOpenPutaways, usePutawayRoute } from '../../hooks/queries/usePutaway
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations'
 import { PutawayStopCard } from './putaway/PutawayStopCard'
 import { PutawayScanFinder, type ScanEvidence } from './putaway/PutawayScanFinder'
-import { combinePutawayStops, orderPutawayStops, targetBinId, type PutawayStop } from './putaway/putawayStops'
+import { combinePutawayStops, orderPutawayStops, sameProductRun, targetBinCode, targetBinId, type PutawayStop } from './putaway/putawayStops'
 import { describeQuantity } from './putaway/putawayFormat'
 import StickyScanBar from './StickyScanBar'
 import { buildDisplayLookup, displayFor, searchTextFor } from '@/lib/locationLookup'
@@ -58,6 +58,9 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({
   const [activeKey, setActiveKey] = useState<number | null>(null)
   const [opening, setOpening] = useState<{ key: number; evidence: ScanEvidence } | null>(null)
   const [choice, setChoice] = useState<Choice | null>(null)
+  // The rest of a same-product run (home, then overflow): opened one after
+  // another as each is placed, on the evidence of the one scan.
+  const [followUp, setFollowUp] = useState<{ keys: number[]; evidence: ScanEvidence } | null>(null)
   const [skipped, setSkipped] = useState<number[]>([])
   const [search, setSearch] = useState('')
 
@@ -95,13 +98,20 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({
    *  rendering nothing: the goods exist whether or not the cached map does. */
   const binFor = useMemo(() => (row: PendingPutawayRow): DisplayLocation => {
     const target = targetBinId(row)
-    const cached = displayFor(binById, target)
+    // Only a REAL entry: displayFor invents "#id" for a miss, which is exactly
+    // the placeholder the row's own code should beat.
+    const cached = target != null ? binById.get(target) ?? null : null
     const live = routeById.get(row.id)?.code
     if (live) {
       if (cached && cached.code !== live) return { code: live, name: null, isActive: cached.isActive }
       return cached ? { ...cached, code: live } : { code: live, name: null }
     }
-    return cached ?? { code: target != null ? `#${target}` : 'No bin yet', name: null }
+    if (cached) return cached
+    // The row's own joined code before the bare id: the location list may not
+    // have loaded yet, and a card naming "#538" judges the real scan wrong.
+    const own = targetBinCode(row)
+    if (own) return { code: own, name: null }
+    return { code: target != null ? `#${target}` : 'No bin yet', name: null }
   }, [binById, routeById])
 
   const ordered = useMemo(
@@ -167,6 +177,11 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({
   const onMany = (taskIds: number[], evidence: ScanEvidence) => {
     const stops = ordered.filter((s) => s.taskIds.some((id) => taskIds.includes(id)))
     if (stops.length === 1) return open(stops[0], evidence)
+    const run = sameProductRun(stops)
+    if (run) {
+      setFollowUp({ keys: run.slice(1).map((s) => s.key), evidence })
+      return open(run[0], evidence)
+    }
     setActiveKey(null)
     setChoice({ evidence, stops })
   }
@@ -174,6 +189,20 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({
   const closeStop = () => {
     setActiveKey(null)
     setOpening(null)
+    setFollowUp(null)
+  }
+
+  /** Placed (not cancelled): carry on to the next share of the run, if any. */
+  const afterPlaced = (placedKey: number) => {
+    const next = followUp?.keys
+      .filter((k) => k !== placedKey)
+      .map((k) => ordered.find((s) => s.key === k))
+      .find((s): s is PutawayStop => s != null)
+    if (!next || !followUp) return closeStop()
+    const evidence = followUp.evidence
+    setFollowUp({ keys: followUp.keys.filter((k) => k !== placedKey && k !== next.key), evidence })
+    setActiveKey(next.key)
+    setOpening({ key: next.key, evidence })
   }
 
   // ── Guide: one task at a time ─────────────────────────────────────────────
@@ -197,6 +226,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({
         taskIds={stop.taskIds}
         onActivate={() => setActiveKey(stop.key)}
         onDone={closeStop}
+        onPlaced={() => afterPlaced(stop.key)}
       />
     )
   }

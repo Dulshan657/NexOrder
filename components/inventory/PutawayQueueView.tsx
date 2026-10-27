@@ -9,6 +9,9 @@
 // This file stays an orchestrator: row rendering lives in putaway/PutawayRow,
 // bin selection in putaway/BinPickerSheet, and the list logic (search, filter,
 // receipt grouping) in the pure putaway/putawayGrouping module.
+//
+// One search box, no scan dock: the floor scans on the Put away tab. The box
+// matches barcodes and plate codes too, so a scan typed into it still lands.
 
 import React, { useMemo, useState } from 'react';
 import { PackageOpen, Search, Layers } from 'lucide-react';
@@ -20,9 +23,7 @@ import { putawayKeys } from '../../hooks/queries/putawayKeys';
 import { useToastActions } from '../../hooks/useToasts';
 import { PutawayRow } from './putaway/PutawayRow';
 import { BinPickerSheet } from './putaway/BinPickerSheet';
-import { PutawayScanFinder } from './putaway/PutawayScanFinder';
 import { PutawayShortList } from './putaway/PutawayShortList';
-import StickyScanBar from './StickyScanBar';
 import { filterQueue, groupByReceipt, type QueueStateFilter } from './putaway/putawayGrouping';
 import { buildDisplayLookup, displayFor } from '@/lib/locationLookup';
 
@@ -146,7 +147,7 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId, isAdmi
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search product, SKU, supplier or bin"
+              placeholder="Search or scan: product, barcode, plate, supplier or bin"
               aria-label="Search the putaway queue"
               className="w-full pl-9 pr-3 py-2 rounded-lg border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
             />
@@ -218,25 +219,6 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId, isAdmi
         <div className="glass-card rounded-xl divide-y divide-stone-100 overflow-hidden">
           {visible.map(renderRow)}
         </div>
-      )}
-
-      {/* Scan what's on the dock and jump to its line, instead of eye-matching a
-          product name down a scrollable list with a pallet in your hands.
-
-          Last in flow, deliberately: `sticky` is bounded by its containing block,
-          so content rendered after this would carry the dock off screen. The two
-          overlays below portal to the body and contribute no box, so they do not
-          count. */}
-      {rows.length > 0 && (
-        <StickyScanBar position="bottom">
-          <PutawayScanFinder
-            rows={rows}
-            locations={locationsQuery.data ?? []}
-            binIdOf={(row) => row.recommendedLocationId}
-            onFound={(id) => { setExpanded(id); setSearch(''); }}
-            onFilter={setSearch}
-          />
-        </StickyScanBar>
       )}
 
       {picking && (
