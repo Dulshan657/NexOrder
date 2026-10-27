@@ -17,6 +17,7 @@
     { "id": "A9", "check": "Once a supplier is chosen, the delivery details collapse to a one-line summary at every width (quarantine badge still visible); the separate 'Received by' field is gone.", "manual": "browser walk at 1280px and 360px" },
     { "id": "A10", "check": "After a receipt is recorded, the label sheet for the plates that need a label is rendered with no extra click, and the success card offers Print labels and Go to putaway." },
     { "id": "A11", "check": "Product WMS attributes can set 'Lot code required at receiving' and 'Expiry required at receiving'; migration 00134 adds both as NOT NULL DEFAULT false and mutate-wms-attributes saves them." },
+    { "id": "A13", "check": "An unfinished receipt (delivery details, lines, plates) survives leaving Receive Stock and coming back — and a page reload — for the same user; it is cleared once recorded, expires after 24h, and is never shown to a different user." },
     { "id": "A12", "check": "Migration 00134 applied on dev and mutate-wms-attributes deployed to dev before the frontend; merged and deployed to dev; /version.json shows the merge sha.", "manual": "migrate:dev, fn deploy, deploy:dev verification" }
   ],
   "failFirst": [
@@ -30,7 +31,10 @@
     { "file": "__tests__/receiveStockFlow.test.tsx", "test": "Receive Stock flow > ArrowDown then Enter adds the highlighted search result", "proves": ["A6"] },
     { "file": "__tests__/receiveStockFlow.test.tsx", "test": "Receive Stock flow > the scan bar shows the staged totals beside Receive", "proves": ["A7"] },
     { "file": "__tests__/receiveStockFlow.test.tsx", "test": "Receive Stock flow > a recorded receipt renders its labels without a click and offers Go to putaway", "proves": ["A10"] },
-    { "file": "__tests__/productWmsReceivingFlags.test.tsx", "test": "ProductWmsAttributesSection > saves the receiving requirement flags", "proves": ["A11"] }
+    { "file": "__tests__/productWmsReceivingFlags.test.tsx", "test": "ProductWmsAttributesSection > saves the receiving requirement flags", "proves": ["A11"] },
+    { "file": "__tests__/receiveStockFlow.test.tsx", "test": "Receive Stock flow > keeps the staged receipt when the screen is left and reopened", "proves": ["A13"] },
+    { "file": "__tests__/receiveDraftStore.test.ts", "test": "receive draft store > keeps one user's draft away from another", "proves": ["A13"] },
+    { "file": "__tests__/receiveDraftStore.test.ts", "test": "receive draft store > drops a draft older than a day", "proves": ["A13"] }
   ],
   "allow": []
 }
@@ -59,6 +63,12 @@ follow in one or two taps. Interview with the owner, 2026-10-27.
   `useReceivingRequirements` read.
 - `ReceiptPlateLabels` auto-render mode with a tap-to-print link; keyboard listbox
   for search results.
+
+**Revision 2026-10-27 (owner, after trying it on dev):** an accidental click on another
+sidebar tab threw the staged receipt away. A13 adds draft persistence in the browser's
+own storage, keyed by user. That is a per-viewer convenience, so browser storage is the
+right home; nothing here is shared or sent anywhere. Plate and line keys also become
+unique per page load, so a restored draft can't collide with keys minted after a reload.
 
 ## Out of scope
 
