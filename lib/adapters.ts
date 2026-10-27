@@ -1045,6 +1045,8 @@ export function toProductWmsAttributes(row: ProductWmsAttributesRow): ProductWms
     volumeL: row.volume_l != null ? Number(row.volume_l) : undefined,
     dims: (row.dims as Record<string, unknown>) ?? undefined,
     custom: (row.custom as Record<string, unknown>) ?? {},
+    requiresLot: row.requires_lot ?? false,
+    requiresExpiry: row.requires_expiry ?? false,
     // mig 00072; column absent from database.types.ts until the migration is
     // applied and types regenerated — same inline-intersection cast used above.
     allowedLevelRoles:

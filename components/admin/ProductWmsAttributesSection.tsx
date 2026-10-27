@@ -10,6 +10,7 @@ import { useToastActions } from '@/hooks/useToasts'
 import type { LevelRole, ProductWmsAttributes, ShelfLifePolicy } from '@/types'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { roleLabel, sortedRoles } from '@/lib/levelRoles'
+import { receivingRequirementKeys } from '@/hooks/queries/useReceivingRequirements'
 
 interface ProductWmsAttributesSectionProps {
   productId: number
@@ -32,6 +33,8 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
     mutationFn: saveWmsAttributes,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['wms-attributes', productId] })
+      // Receive Stock reads the flags from one catalogue-wide map.
+      qc.invalidateQueries({ queryKey: receivingRequirementKeys.all })
       addToast('Warehouse attributes saved', 'success')
     },
     onError: (e) => addToast(e instanceof Error ? e.message : 'Failed to save attributes', 'error'),
@@ -44,6 +47,8 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
   const [handling, setHandling] = useState('')
   const [stackable, setStackable] = useState<boolean | null>(null)
   const [allowedLevelRoles, setAllowedLevelRoles] = useState<LevelRole[]>([])
+  const [requiresLot, setRequiresLot] = useState(false)
+  const [requiresExpiry, setRequiresExpiry] = useState(false)
 
   useEffect(() => {
     if (data) {
@@ -54,6 +59,8 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
       setHandling(data.handlingType ?? '')
       setStackable(data.stackable ?? null)
       setAllowedLevelRoles((data as WmsAttributesWithLevelRoles).allowedLevelRoles ?? [])
+      setRequiresLot(data.requiresLot)
+      setRequiresExpiry(data.requiresExpiry)
     }
   }, [data])
 
@@ -73,6 +80,8 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
       handling_type: handling.trim() || null,
       stackable,
       allowed_level_roles: allowedLevelRoles.length > 0 ? allowedLevelRoles : null,
+      requires_lot: requiresLot,
+      requires_expiry: requiresExpiry,
     }
     save.mutate(payload)
   }
@@ -136,6 +145,22 @@ export default function ProductWmsAttributesSection({ productId }: ProductWmsAtt
             ? 'Nothing checked = any level role is allowed. This is how every product behaves today.'
             : `Restricted to ${allowedLevelRoles.map((r) => roleLabel(levelRoles, r)).join(', ')} levels — putaway will never place this SKU on any other role without an operator override.`}
         </p>
+      </fieldset>
+
+      {/* Receiving requirements (mig 00134). Receive Stock shows a required
+          field inline for these and keeps lot/expiry optional everywhere else. */}
+      <fieldset className="mt-3 border border-stone-200 rounded-lg p-2.5">
+        <legend className="text-xs font-medium text-stone-600 px-1">At receiving</legend>
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-1.5 text-xs text-stone-600">
+            <input type="checkbox" aria-label="Lot code required at receiving" checked={requiresLot} onChange={(e) => setRequiresLot(e.target.checked)} />
+            Lot code required at receiving
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-stone-600">
+            <input type="checkbox" aria-label="Expiry required at receiving" checked={requiresExpiry} onChange={(e) => setRequiresExpiry(e.target.checked)} />
+            Expiry required at receiving
+          </label>
+        </div>
       </fieldset>
 
       <button className="mt-2 text-xs px-3 py-1.5 border border-stone-200 rounded-lg btn-press disabled:opacity-40" onClick={onSave} disabled={save.isPending}>

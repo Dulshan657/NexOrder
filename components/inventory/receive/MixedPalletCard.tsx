@@ -28,7 +28,7 @@ import { Boxes, Check, Plus, Trash2 } from 'lucide-react'
 import type { Product } from '../../../types'
 import ReceiveLineCard from './ReceiveLineCard'
 import type { PalletSpec } from '../../../lib/palletFit'
-import type { DraftLine, DraftPlate } from './receiveDraft'
+import type { DraftLine, DraftPlate, LineRequirement } from './receiveDraft'
 
 export type MixedPalletCardProps = {
   plate: DraftPlate
@@ -51,6 +51,10 @@ export type MixedPalletCardProps = {
   onRemove: () => void
   onUpdateLine: (lineKey: string, patch: Partial<DraftLine>) => void
   onRemoveLine: (lineKey: string) => void
+  /** Required lot/expiry per product (mig 00134). */
+  requirementFor?: (productId: number | null) => LineRequirement | undefined
+  /** The line a scan just touched, so it can flash. */
+  highlightedKey?: string | null
 }
 
 export function MixedPalletCard({
@@ -67,6 +71,8 @@ export function MixedPalletCard({
   onRemove,
   onUpdateLine,
   onRemoveLine,
+  requirementFor,
+  highlightedKey = null,
 }: MixedPalletCardProps) {
   return (
     <section
@@ -143,6 +149,8 @@ export function MixedPalletCard({
                 // it. Passing a no-op keeps the prop contract honest rather
                 // than making it optional and letting a real caller forget it.
                 onSetPlateType={() => {}}
+                requirement={requirementFor?.(line.productId)}
+                highlighted={highlightedKey === line.key}
               />
             </React.Fragment>
           ))}

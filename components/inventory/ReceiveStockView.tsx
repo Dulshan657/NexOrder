@@ -1,223 +1,61 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { Product, User, PutawayLineRecommendation } from '../../types';
-import { UserRole } from '../../types';
-import { useReceiveStock } from '../../hooks/queries/useReceiveStock';
-import { ReceiptPlateLabels } from './receive/ReceiptPlateLabels';
-import { useRecentReceipts } from '../../hooks/queries/useInventoryBalances';
-import { useSuppliers } from '../../hooks/queries/useSuppliers';
-import { useLevelRoles } from '@/hooks/queries/useLevelRoles';
-import { useSettings } from '../../hooks/queries/useSettings';
-import { palletSpecFromSettings } from '../../lib/palletUom';
-import { roleLabel, rolesForHuType } from '@/lib/levelRoles';
-import { useWarehouses } from '../../hooks/queries/useWarehouses';
-import type { ReceiptHeader, ReceiptLine, ReceiptPlate } from '../../services/supabase/receivingService';
-import { useToastActions } from '../../hooks/useToasts';
-import { receivableUoms, deriveDefaultUoms, baseUom } from '../../lib/uom';
-import { productsForSupplier, supplierSkuFor, matchesProductQuery } from '../../lib/productSuppliers';
-import { ScanField } from '../ui/ScanField';
-import StickyScanBar from './StickyScanBar';
-import ReceiveLineCard, { RECEIVE_ROW_COLUMNS } from './receive/ReceiveLineCard';
-import MixedPalletCard from './receive/MixedPalletCard';
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import type { Product, User, PutawayLineRecommendation } from '../../types'
+import { UserRole } from '../../types'
+import { useReceiveStock } from '../../hooks/queries/useReceiveStock'
+import { useSuppliers } from '../../hooks/queries/useSuppliers'
+import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
+import { useSettings } from '../../hooks/queries/useSettings'
+import { useReceivingRequirements } from '@/hooks/queries/useReceivingRequirements'
+import { palletSpecFromSettings } from '../../lib/palletUom'
+import { roleLabel, rolesForHuType } from '@/lib/levelRoles'
+import { useWarehouses } from '../../hooks/queries/useWarehouses'
+import type { ReceiptHeader, ReceiptLine, ReceiptPlate } from '../../services/supabase/receivingService'
+import { useToastActions } from '../../hooks/useToasts'
+import { baseUom } from '../../lib/uom'
+import { productsForSupplier, matchesProductQuery } from '../../lib/productSuppliers'
+import StickyScanBar from './StickyScanBar'
+import ReceiveLineCard, { RECEIVE_ROW_COLUMNS } from './receive/ReceiveLineCard'
+import MixedPalletCard from './receive/MixedPalletCard'
+import DeliveryStrip, { type SupplierOption } from './receive/DeliveryStrip'
+import ReceiveWorkBar, { type ReceiveTotals } from './receive/ReceiveWorkBar'
+import ReceiveSuccessCard, { type ReceivedSummary } from './receive/ReceiveSuccessCard'
+import RecentReceiptsPanel from './receive/RecentReceiptsPanel'
 import {
+  missingRequired,
   newDraft,
   newMixedPlate,
   newPlate,
   plateLabel,
   type DraftLine,
-  type DraftPlate,
-} from './receive/receiveDraft';
-import { buildScanIndex, normalizeScan } from '../../lib/scan/resolveScan';
-import { describeReceiveRefusal, resolveReceiveScan } from '../../lib/scan/receiveScan';
-import { useScanFlash } from '../../lib/scan/useScanFlash';
-import { useWedgeScanner } from '../../lib/scan/useWedgeScanner';
-import { PutawayPanel } from './PutawayPanel';
-import {
-  PackagePlus, Plus, Trash2, Search, X, Boxes, History, Clock,
-  Truck, FileText, CalendarDays, UserRound, Check, ChevronDown, Warehouse, ArrowRight,
-} from 'lucide-react';
-
-/** Compact relative-time label ("just now", "3h ago", "2d ago"). */
-const relativeTime = (iso: string): string => {
-  const then = new Date(iso).getTime();
-  const diffMs = Date.now() - then;
-  if (Number.isNaN(diffMs)) return '';
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
-};
-
-const RecentReceiptsPanel: React.FC = () => {
-  const { data: receipts, isLoading } = useRecentReceipts(8);
-
-  return (
-    <div className="glass-card rounded-xl overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-stone-100">
-        <History className="w-4 h-4 text-stone-500" />
-        <h2 className="text-sm font-semibold text-stone-700">Recent receipts</h2>
-      </div>
-      {isLoading ? (
-        <div className="divide-y divide-stone-100">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="flex items-center gap-3 px-4 py-3">
-              <div className="flex-1 h-3.5 rounded bg-stone-100 animate-pulse" />
-              <div className="w-12 h-3.5 rounded bg-stone-100 animate-pulse" />
-            </div>
-          ))}
-        </div>
-      ) : !receipts || receipts.length === 0 ? (
-        <div className="px-4 py-8 text-center">
-          <Boxes className="w-8 h-8 text-stone-200 mx-auto mb-2" />
-          <p className="text-sm text-stone-500">No goods received yet</p>
-          <p className="text-xs text-stone-600 mt-1">Receipts you record will show up here.</p>
-        </div>
-      ) : (
-        <ul className="divide-y divide-stone-100">
-          {receipts.map((r) => (
-            <li key={r.id} className="flex items-center gap-3 px-4 py-2.5">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-stone-800 truncate">{r.productName}</p>
-                <p className="text-xs text-stone-500 font-mono">
-                  {r.productSku}
-                  {r.lotCode ? ` · lot ${r.lotCode}` : ''}
-                  {r.expiryDate ? ` · exp ${r.expiryDate}` : ''}
-                </p>
-                {r.supplierName && (
-                  <p className="text-xs text-stone-500 flex items-center gap-1 mt-0.5">
-                    <Truck className="w-3 h-3 text-stone-500" /> {r.supplierName}
-                  </p>
-                )}
-              </div>
-              <span className="font-mono text-sm text-emerald-600 shrink-0">+{r.qty}</span>
-              <span className="flex items-center gap-1 text-xs text-stone-500 shrink-0 w-20 justify-end">
-                <Clock className="w-3 h-3" /> {relativeTime(r.createdAt)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-};
-
-interface SupplierOption {
-  id: number;
-  name: string;
-}
-
-interface SupplierComboboxProps {
-  suppliers: SupplierOption[];
-  /** Currently selected supplier id (existing pick), or null for free-text/none. */
-  valueId: number | null;
-  /** Text shown in the field — an existing name or a free-text name. */
-  valueName: string;
-  onPickExisting: (supplier: SupplierOption) => void;
-  /** User committed a name not in the list (create-on-the-fly). */
-  onPickNew: (name: string) => void;
-  onChangeText: (name: string) => void;
-}
-
-/**
- * Searchable supplier picker that also lets the operator type a supplier that
- * isn't in the list yet ("Create …"). A delivery always comes from one supplier,
- * so this is the required header field for a goods receipt.
- */
-const SupplierCombobox: React.FC<SupplierComboboxProps> = ({
-  suppliers, valueId, valueName, onPickExisting, onPickNew, onChangeText,
-}) => {
-  const [open, setOpen] = useState(false);
-  const boxRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onDocClick = (e: MouseEvent) => {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
-  }, []);
-
-  const query = valueName.trim().toLowerCase();
-  const matches = useMemo(() => {
-    if (!query) return suppliers.slice(0, 8);
-    return suppliers.filter((s) => s.name.toLowerCase().includes(query)).slice(0, 8);
-  }, [suppliers, query]);
-
-  const exactExists = useMemo(
-    () => suppliers.some((s) => s.name.trim().toLowerCase() === query),
-    [suppliers, query],
-  );
-  const showCreate = query.length > 0 && !exactExists;
-
-  return (
-    <div className="relative" ref={boxRef}>
-      <div className="relative">
-        <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-        <input
-          type="text"
-          value={valueName}
-          onChange={(e) => { onChangeText(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
-          placeholder="Search or type a supplier…"
-          aria-label="Supplier"
-          className="w-full pl-10 pr-9 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
-        />
-        {valueId != null ? (
-          <Check className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
-        ) : (
-          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-        )}
-      </div>
-      {open && (matches.length > 0 || showCreate) && (
-        <div className="absolute z-20 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-card overflow-hidden">
-          {matches.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => { onPickExisting(s); setOpen(false); }}
-              className="flex items-center justify-between w-full px-4 py-2.5 text-left hover:bg-stone-50 btn-press"
-            >
-              <span className="text-sm text-stone-800">{s.name}</span>
-              {valueId === s.id && <Check className="w-4 h-4 text-emerald-500" />}
-            </button>
-          ))}
-          {showCreate && (
-            <button
-              type="button"
-              onClick={() => { onPickNew(valueName.trim()); setOpen(false); }}
-              className="flex items-center gap-2 w-full px-4 py-2.5 text-left border-t border-stone-100 hover:bg-stone-50 btn-press"
-            >
-              <Plus className="w-4 h-4 text-nexgen-blue" />
-              <span className="text-sm text-stone-700">
-                Create “<span className="font-medium">{valueName.trim()}</span>”
-              </span>
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
+  type LineRequirement,
+} from './receive/receiveDraft'
+import { emptyStaging, scanUomFor, stageProduct, type StagingState } from './receive/stageProduct'
+import { clearReceiveDraft, loadReceiveDraft, saveReceiveDraft } from './receive/receiveDraftStore'
+import { buildScanIndex, normalizeScan } from '../../lib/scan/resolveScan'
+import { describeReceiveRefusal, resolveReceiveScan } from '../../lib/scan/receiveScan'
+import { useScanFlash } from '../../lib/scan/useScanFlash'
+import { useWedgeScanner } from '../../lib/scan/useWedgeScanner'
+import { History, PackagePlus, ScanLine } from 'lucide-react'
 
 interface ReceiveStockViewProps {
-  products: Product[];
-  currentUser: User;
+  products: Product[]
+  currentUser: User
   /** Navigate to the Putaway tab pre-selected to a warehouse — wired to the
    *  post-receipt "Go to putaway" CTA. Undefined when the host doesn't support
    *  cross-tab navigation (keeps this view mountable standalone/in tests). */
-  onOpenPutaway?: (warehouseId: number) => void;
+  onOpenPutaway?: (warehouseId: number) => void
 }
 
-// `DraftLine`, `DraftPlate`, `newDraft`, `newPlate` and `plateLabel` moved to
-// ./receive/receiveDraft.ts when the line row was extracted — both files need
-// them, and importing them back from here would have made the cycle.
-// Re-exported because `plateLabel` was part of this module's public surface.
-export { plateLabel };
+// `DraftLine`, `DraftPlate`, `newDraft`, `newPlate` and `plateLabel` live in
+// ./receive/receiveDraft.ts — the line row needs them too, and importing them
+// back from here would make a cycle. Re-exported because `plateLabel` was part
+// of this module's public surface.
+export { plateLabel }
 
-const todayIso = (): string => new Date().toISOString().slice(0, 10);
+const todayIso = (): string => new Date().toISOString().slice(0, 10)
+
+/** How long a scanned line stays tinted, so the operator sees which one moved. */
+const TOUCH_FLASH_MS = 900
 
 /**
  * Default destination warehouse for a goods receipt: the user's home site when
@@ -229,341 +67,477 @@ export function resolveReceiveDestination(
   activeWarehouses: readonly { id: number }[],
   homeWarehouseId: number | undefined,
 ): number | null {
-  if (activeWarehouses.length === 0) return null;
+  if (activeWarehouses.length === 0) return null
   if (homeWarehouseId != null && activeWarehouses.some((w) => w.id === homeWarehouseId)) {
-    return homeWarehouseId;
+    return homeWarehouseId
   }
-  return activeWarehouses[0].id;
+  return activeWarehouses[0].id
+}
+
+/**
+ * Scroll a just-counted line into the part of the scroller the pinned scan bar
+ * does NOT cover. `scrollIntoView({ block: 'nearest' })` ignores sticky
+ * overlays, so below `lg` it parked the line's bottom edge exactly under the
+ * bottom dock, and at `lg` under the top bar. Every call is optional: jsdom
+ * implements no layout and no scrolling.
+ */
+function revealBesideDock(el: HTMLElement): void {
+  const main = el.closest('[data-scroll-container]') as HTMLElement | null
+  const dock = document.querySelector('[data-scan-dock]') as HTMLElement | null
+  if (!main || !dock || typeof main.scrollBy !== 'function') return
+  const r = el.getBoundingClientRect()
+  const d = dock.getBoundingClientRect()
+  const m = main.getBoundingClientRect()
+  const dockAtBottom = d.bottom >= m.bottom - 1
+  const visibleTop = dockAtBottom ? m.top : d.bottom
+  const visibleBottom = dockAtBottom ? d.top : m.bottom
+  const GAP = 8
+  if (r.bottom > visibleBottom) main.scrollBy({ top: r.bottom - visibleBottom + GAP, behavior: 'smooth' })
+  else if (r.top < visibleTop) main.scrollBy({ top: r.top - visibleTop - GAP, behavior: 'smooth' })
+}
+
+/** The unit a line is counted in, by code, for the totals ("148 carton"). */
+function lineUnitCode(line: DraftLine, product: Product | undefined): string {
+  const own = product?.uoms?.find((u) => u.id === line.uomId)
+  if (own) return own.code
+  return baseUom(product?.uoms)?.code ?? product?.unit ?? 'each'
+}
+
+/** "148 carton · 3 each" — staged quantity grouped by the unit it is counted in. */
+function unitsSummary(lines: readonly DraftLine[], productById: ReadonlyMap<number, Product>): string {
+  const byUnit = new Map<string, number>()
+  for (const l of lines) {
+    const qty = Number(l.quantity) || 0
+    if (qty <= 0 || l.productId == null) continue
+    const code = lineUnitCode(l, productById.get(l.productId))
+    byUnit.set(code, (byUnit.get(code) ?? 0) + qty)
+  }
+  return [...byUnit].map(([code, qty]) => `${qty} ${code}`).join(' · ')
 }
 
 const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUser, onOpenPutaway }) => {
-  const { addToast } = useToastActions();
-  const receive = useReceiveStock();
-  const { data: supplierRows } = useSuppliers();
-  const { data: warehouseRows } = useWarehouses();
+  const { addToast } = useToastActions()
+  const receive = useReceiveStock()
+  const { data: supplierRows } = useSuppliers()
+  const { data: warehouseRows } = useWarehouses()
   // Operator-managed role vocabulary (mig 00081). The plate-type dropdown tells
   // the receiver where each kind of unit will be steered, so it has to read the
   // routing rather than restate it.
-  const { data: levelRoles = [] } = useLevelRoles();
+  const { data: levelRoles = [] } = useLevelRoles()
   // The global pallet (mig 00125) — only so a Pallet unit can say whether its
   // quantity was measured or estimated, at the moment it becomes real stock.
-  const { data: settingsRow } = useSettings();
-  const palletSpec = useMemo(() => palletSpecFromSettings(settingsRow), [settingsRow]);
+  const { data: settingsRow } = useSettings()
+  const palletSpec = useMemo(() => palletSpecFromSettings(settingsRow), [settingsRow])
+  // Which products must arrive with a lot code / expiry (mig 00134).
+  const {
+    data: requirements, isError: requirementsFailed, isLoading: requirementsLoading,
+  } = useReceivingRequirements()
+  const requirementFor = (productId: number | null): LineRequirement | undefined =>
+    productId == null ? undefined : requirements?.get(productId)
 
-  // Phrased as a PREDICTION, not a destination. "Pallet → Reserve" read as a
-  // storage commitment, and it is not one: putaway may place this anywhere, the
-  // SKU's own rule outranks the plate preference, and the operator can break a
-  // pallet down on the floor. What arrives and where it ends up are different
-  // questions, and this control only answers the first.
+  // Phrased as a PREDICTION, not a destination: putaway may place this
+  // anywhere, the SKU's own rule outranks the plate preference, and the
+  // operator can break a pallet down on the floor.
   const plateDestinationLabel = (huType: 'pallet' | 'carton'): string => {
-    const noun = huType === 'pallet' ? 'Pallet' : 'Carton';
-    const dest = rolesForHuType(levelRoles, huType).map((k) => roleLabel(levelRoles, k));
+    const noun = huType === 'pallet' ? 'Pallet' : 'Carton'
+    const dest = rolesForHuType(levelRoles, huType).map((k) => roleLabel(levelRoles, k))
     // No role claims this plate type: putaway falls back to the SKU's own rule,
     // so naming a destination here would be a lie rather than a guess.
-    return dest.length > 0 ? `${noun} (usually → ${dest.join('/')})` : noun;
-  };
-
-  // Engine putaway recommendations for the most recent receipt (layout warehouses).
-  const [putaway, setPutaway] = useState<{ warehouseId: number; recommendations: PutawayLineRecommendation[] } | null>(null);
-  // The receipt just recorded, so its plates can be labelled here — at the dock,
-  // which is the only place a plate label is cheap. Kept separate from `putaway`
-  // because a bulk (unlayouted) warehouse raises no recommendations and still
-  // mints plates that need stickers.
-  const [receiptId, setReceiptId] = useState<number | null>(null);
+    return dest.length > 0 ? `${noun} (usually → ${dest.join('/')})` : noun
+  }
 
   const suppliers = useMemo<SupplierOption[]>(
     () => (supplierRows ?? []).map((s) => ({ id: s.id, name: s.name })),
     [supplierRows],
-  );
+  )
 
   // Destination warehouses — only active sites can receive stock.
   const activeWarehouses = useMemo(
     () => (warehouseRows ?? []).filter((w) => w.isActive),
     [warehouseRows],
-  );
-  // Warehouse-role staff with an assigned home site are pinned to it server-side.
-  // We never send a location_id for them — the server defaults to their
-  // home_warehouse_id — and show a read-only label instead of a picker (any other
-  // destination is rejected). Warehouse staff with NO home site assigned
-  // (home_warehouse_id NULL — true for every profile until one is set in Users
-  // admin) get the same editable picker as an Admin, and location_id IS sent,
-  // otherwise they would have no way to choose a destination at all.
-  const isLocked = currentUser.role === UserRole.WAREHOUSE && currentUser.homeWarehouseId != null;
+  )
+  // Warehouse-role staff with an assigned home site are pinned to it
+  // server-side: no location_id is sent and no picker is shown. Warehouse staff
+  // with NO home site get the same picker as an Admin, or they would have no
+  // way to choose a destination at all.
+  const isLocked = currentUser.role === UserRole.WAREHOUSE && currentUser.homeWarehouseId != null
 
-  // ── Receipt header ─────────────────────────────────────────────────────────
-  const [supplierId, setSupplierId] = useState<number | null>(null);
-  const [supplierName, setSupplierName] = useState('');
-  const [reference, setReference] = useState('');
-  // Not submitted directly: ticking it writes `quarantine` onto every line
-  // (see DraftLine.quarantine). Purely a bulk control over the grid below.
-  const [quarantineAll, setQuarantineAll] = useState(false);
-  const [receivedDate, setReceivedDate] = useState(todayIso());
-  // Destination warehouse the goods land in. Defaults to the user's home site
-  // (server applies the same fallback when omitted); null until warehouses load.
-  const [destinationId, setDestinationId] = useState<number | null>(null);
-  // "Received by" is always the signed-in user — the server stamps received_by
-  // with the actor when the client omits it.
+  // ── A receipt left unfinished (A13) ────────────────────────────────────────
+  // Read ONCE, at mount: this screen unmounts whenever another sidebar tab is
+  // opened, and a stray click used to throw the whole receipt away.
+  const [restored] = useState(() => loadReceiveDraft(currentUser.id))
+  const draft = restored?.draft
+  const [restoredAt, setRestoredAt] = useState<number | null>(restored?.savedAt ?? null)
 
-  // Seed the destination once the warehouse list arrives (prefer the home site,
-  // else the first active site) and re-resolve if the chosen site later drops out
-  // of the active list (e.g. deactivated in another tab). Locked users don't pick.
+  // ── Delivery ───────────────────────────────────────────────────────────────
+  const [supplierId, setSupplierId] = useState<number | null>(draft?.supplierId ?? null)
+  const [supplierName, setSupplierName] = useState(draft?.supplierName ?? '')
+  const [reference, setReference] = useState(draft?.reference ?? '')
+  // Not submitted directly: ticking it writes `quarantine` onto every line, so
+  // what is ticked in the lines IS what is sent.
+  const [quarantineAll, setQuarantineAll] = useState(draft?.quarantineAll ?? false)
+  const [receivedDate, setReceivedDate] = useState(draft?.receivedDate || todayIso())
+  const [destinationId, setDestinationId] = useState<number | null>(draft?.destinationId ?? null)
+
+  // Seed the destination once the warehouse list arrives, and re-resolve if the
+  // chosen site later drops out of the active list. Locked users don't pick.
   useEffect(() => {
-    if (isLocked || activeWarehouses.length === 0) return;
-    const stillValid = destinationId != null && activeWarehouses.some((w) => w.id === destinationId);
-    if (stillValid) return;
-    setDestinationId(resolveReceiveDestination(activeWarehouses, currentUser.homeWarehouseId));
-  }, [activeWarehouses, currentUser.homeWarehouseId, destinationId, isLocked]);
+    if (isLocked || activeWarehouses.length === 0) return
+    const stillValid = destinationId != null && activeWarehouses.some((w) => w.id === destinationId)
+    if (stillValid) return
+    setDestinationId(resolveReceiveDestination(activeWarehouses, currentUser.homeWarehouseId))
+  }, [activeWarehouses, currentUser.homeWarehouseId, destinationId, isLocked])
 
   const homeName = useMemo(
     () => activeWarehouses.find((w) => w.id === currentUser.homeWarehouseId)?.name,
     [activeWarehouses, currentUser.homeWarehouseId],
-  );
-  // Where the stock will actually land: the home site for locked users (server
-  // routes there), otherwise the operator's selection.
+  )
   const destName = isLocked
     ? homeName
-    : activeWarehouses.find((w) => w.id === destinationId)?.name;
+    : activeWarehouses.find((w) => w.id === destinationId)?.name
 
-  /**
-   * Whether the receipt header is showing its fields, below `xl`.
-   *
-   * Local display state and nothing else — every field below stays mounted
-   * whatever this is, toggled by `hidden`/`grid` classes rather than by a
-   * conditional render. Two reasons, both load-bearing:
-   *   - `SupplierCombobox` owns its own open/query state, and `submit()` reads
-   *     React state rather than the DOM, so unmounting would lose typing for no
-   *     gain in correctness;
-   *   - `receiveStockSupplierFilter.test.tsx` reaches these controls through
-   *     `getByLabelText('Supplier')` in nine of its eleven tests. jsdom loads no
-   *     Tailwind, so a class toggle is invisible to it; a conditional render
-   *     would fail all nine.
-   *
-   * Starts CLOSED only once a supplier is chosen, so the first run of an empty
-   * receipt is exactly as it was and nobody has to discover a disclosure to
-   * begin. At `xl` the five-column grid shows everything anyway and the toggle
-   * is hidden — note that has to be the VIEWPORT breakpoint, because the
-   * `@container` on this page is declared on the staged-lines card, which is
-   * this block's sibling. An `@min-[…]` utility here would match nothing, ever.
-   */
-  const [headerOpen, setHeaderOpen] = useState(false);
-  const headerFieldsId = useId();
-  const headerCollapsed = !headerOpen && supplierName.trim() !== '';
-  const headerSummary = [
-    supplierName.trim() || 'No supplier yet',
-    destName ?? 'Default site',
-    receivedDate,
-  ].join(' · ');
+  // ── Staged lines and plates ────────────────────────────────────────────────
+  // One state object, updated only through functional updates: lines name their
+  // plate by key, and `receive-stock` rejects the WHOLE receipt on a plate_key
+  // it was not given. Two scans landing in one React batch must each see the
+  // other's plate, which two separate useStates updated side by side did not
+  // guarantee.
+  // `touchedKey` rides in the same object, so the line a scan counted on is
+  // named by the very update that counted it — not by a second setState fired
+  // from inside an updater, which React may run twice.
+  // `touchSeq` changes on EVERY stage, so a second scan of the same line
+  // re-arms the flash and the reveal; keyed on the line alone it would not.
+  const [staging, setStaging] = useState<StagingState & { touchedKey: string | null; touchSeq: number }>(
+    () => ({
+      ...emptyStaging(),
+      ...(draft
+        ? {
+            lines: draft.lines,
+            plates: draft.plates,
+            activeGroupKey: draft.activeGroupKey,
+            forceNewPallet: draft.forceNewPallet,
+          }
+        : {}),
+      touchedKey: null,
+      touchSeq: 0,
+    }),
+  )
+  const { lines: picked, plates, activeGroupKey, forceNewPallet, touchedKey, touchSeq } = staging
+  const [received, setReceived] = useState<ReceivedSummary | null>(null)
+  // Our own flag, set BEFORE the await: the mutation's `isPending` only flips
+  // on the next render, which leaves a window for a double press or a scan.
+  const [submitting, setSubmitting] = useState(false)
+  const saving = submitting || receive.isPending
 
-  // ── Receipt lines ──────────────────────────────────────────────────────────
-  const [search, setSearch] = useState('');
-  const [picked, setPicked] = useState<DraftLine[]>([]);
-  const [scanNote, setScanNote] = useState<string | null>(null);
-  const { flash, signal: signalFlash } = useScanFlash();
+  useEffect(() => {
+    if (!touchedKey) return
+    const el = document.querySelector(`[data-line-key="${touchedKey}"]`) as HTMLElement | null
+    if (el) revealBesideDock(el)
+    const timer = setTimeout(() => setStaging((prev) => ({ ...prev, touchedKey: null })), TOUCH_FLASH_MS)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [touchSeq])
+
+  // Save on every change. An empty draft removes itself, so a recorded or
+  // discarded receipt leaves nothing behind.
+  useEffect(() => {
+    saveReceiveDraft(currentUser.id, {
+      supplierId, supplierName, reference, receivedDate, quarantineAll, destinationId,
+      lines: picked, plates, activeGroupKey, forceNewPallet,
+    })
+  }, [
+    currentUser.id, supplierId, supplierName, reference, receivedDate, quarantineAll,
+    destinationId, picked, plates, activeGroupKey, forceNewPallet,
+  ])
 
   const productById = useMemo(() => {
-    const m = new Map<number, Product>();
-    for (const p of products) m.set(p.id, p);
-    return m;
-  }, [products]);
+    const m = new Map<number, Product>()
+    for (const p of products) m.set(p.id, p)
+    return m
+  }, [products])
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+  const [search, setSearch] = useState('')
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const [scanNote, setScanNote] = useState<string | null>(null)
+  const { flash, signal: signalFlash } = useScanFlash()
 
   // A delivery only ever contains the delivering supplier's items, so once an
   // EXISTING supplier is picked the picker narrows to their catalogue (mig
-  // 00070). The narrowing is soft: `showAllProducts` widens it back, because a
-  // product whose supplier link hasn't been set up yet must never block a
-  // receipt. supplierId is null both before a pick and for a typed-but-not-yet-
-  // created supplier — exactly the cases that should still show everything.
-  const [showAllProducts, setShowAllProducts] = useState(false);
-  const isFiltered = supplierId != null && !showAllProducts;
-
-  // Reset the widening whenever the supplier changes — "show all" is a
-  // per-delivery escape hatch, not a sticky preference.
-  useEffect(() => { setShowAllProducts(false); }, [supplierId]);
+  // 00070). Soft: `showAllProducts` widens it back, because a product whose
+  // supplier link hasn't been set up must never block a receipt.
+  const [showAllProducts, setShowAllProducts] = useState(false)
+  const isFiltered = supplierId != null && !showAllProducts
+  // "Show all" is a per-delivery escape hatch, not a sticky preference.
+  useEffect(() => { setShowAllProducts(false) }, [supplierId])
 
   const supplierProducts = useMemo(
     () => (supplierId != null ? productsForSupplier(products, supplierId) : products),
     [products, supplierId],
-  );
-
-  const searchPool = isFiltered ? supplierProducts : products;
+  )
+  const searchPool = isFiltered ? supplierProducts : products
 
   const searchResults = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return [];
-    return searchPool.filter(p => matchesProductQuery(p, q, supplierId)).slice(0, 8);
-  }, [searchPool, search, supplierId]);
+    const q = search.trim().toLowerCase()
+    if (!q) return []
+    return searchPool.filter((p) => matchesProductQuery(p, q, supplierId)).slice(0, 8)
+  }, [searchPool, search, supplierId])
+
+  // A new result list resets the highlight; a stale index would point Enter at
+  // whatever happens to sit in that slot now.
+  useEffect(() => { setActiveIndex(-1) }, [searchResults])
 
   // Only computed when the filtered search came up empty, to offer a one-click
   // widen instead of a dead end.
   const wouldMatchOutsideSupplier = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q || !isFiltered || searchResults.length > 0) return false;
-    return products.some(p => matchesProductQuery(p, q, supplierId));
-  }, [products, search, isFiltered, searchResults.length, supplierId]);
-
-  // ── Plates (mig 00075) ─────────────────────────────────────────────────────
-  // Every receipt line lands on a pallet or carton. The default is ONE PLATE
-  // PER LINE, which is what a delivery of loose cartons actually looks like;
-  // an operator building a mixed pallet reassigns lines onto a shared plate.
-  const [plates, setPlates] = useState<DraftPlate[]>([]);
-
-  // Which mixed pallet is capturing new lines, if any. Null is the ordinary
-  // case: a new line gets a plate of its own, which is what a delivery of
-  // separate units actually looks like.
-  const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
+    const q = search.trim().toLowerCase()
+    if (!q || !isFiltered || searchResults.length > 0) return false
+    return products.some((p) => matchesProductQuery(p, q, supplierId))
+  }, [products, search, isFiltered, searchResults.length, supplierId])
 
   // ScanField exposes no ref, so reach the input through the wrapper we own.
-  // Only for pointer/keyboard "Add item" — a gun does not need focus at all,
+  // For pointer/keyboard flows only — a gun does not need focus on a desk,
   // because `useWedgeScanner` captures regardless of where it sits.
-  const searchWrapRef = useRef<HTMLDivElement | null>(null);
-  const focusSearch = () => { searchWrapRef.current?.querySelector('input')?.focus(); };
+  const searchWrapRef = useRef<HTMLDivElement | null>(null)
+  const focusSearch = () => { searchWrapRef.current?.querySelector('input')?.focus() }
 
-
+  // ── Adding ─────────────────────────────────────────────────────────────────
   const addProduct = (product: Product) => {
-    // A mixed pallet is open, so everything added rides on it — including dock
-    // scans, since `handleDockScan` reaches here. That is the whole point of
-    // the card on a gun: walk the pallet, scan, scan, scan, press Done.
-    const openGroup = activeGroupKey != null && plates.some(p => p.key === activeGroupKey);
-    if (openGroup) {
-      setPicked(prev => [...prev, { ...newDraft(activeGroupKey as string, quarantineAll), productId: product.id }]);
-      setSearch('');
-      return;
+    // A scan during the save would count onto a line the server has already
+    // been sent, and the reset that follows would then discard it.
+    if (saving) {
+      setScanNote('Saving the receipt — scan that again in a moment.')
+      signalFlash('reject')
+      return
     }
-    // Functional update, NOT `setPlates([...plates, plate])`. Two scans landing
-    // in one React batch both read the same `plates` from their own render
-    // closure, so the second drops the first's plate and leaves its line
-    // pointing at a plate_key that is never declared -- which `createPlates`
-    // rejects, failing the WHOLE receipt. A dock gun is exactly how you get two
-    // adds in one batch.
-    const plate = newPlate();
-    setPlates(prev => [...prev, plate]);
-    setPicked(prev => [...prev, { ...newDraft(plate.key, quarantineAll), productId: product.id }]);
-    setSearch('');
-  };
+    setStaging((prev) => {
+      const result = stageProduct(prev, product, { quarantine: quarantineAll })
+      return { ...result.state, touchedKey: result.touchedLineKey, touchSeq: prev.touchSeq + 1 }
+    })
+    setSearch('')
+    setScanNote(null)
+  }
+
+  const pickFromSearch = (product: Product) => {
+    addProduct(product)
+    focusSearch()
+  }
 
   /** Start a mixed pallet and point everything that follows at it. */
   const addMixedPallet = () => {
-    const plate = newMixedPlate();
-    setPlates(prev => [...prev, plate]);
-    setActiveGroupKey(plate.key);
-    focusSearch();
-  };
+    const plate = newMixedPlate()
+    setStaging((prev) => ({
+      ...prev,
+      plates: [...prev.plates, plate],
+      activeGroupKey: plate.key,
+      forceNewPallet: false,
+    }))
+    focusSearch()
+  }
+
+  const toggleNewPallet = () => {
+    setStaging((prev) => ({ ...prev, forceNewPallet: !prev.forceNewPallet, activeGroupKey: null }))
+    focusSearch()
+  }
+
+  const addBlankLine = () => {
+    const plate = newPlate()
+    setStaging((prev) => ({
+      ...prev,
+      plates: [...prev.plates, plate],
+      lines: [...prev.lines, newDraft(plate.key, quarantineAll)],
+    }))
+  }
 
   /** Remove a mixed pallet and everything on it — the goods left together. */
   const removePlate = (plateKey: string) => {
-    setPicked(prev => prev.filter(l => l.plateKey !== plateKey));
-    setPlates(prev => prev.filter(p => p.key !== plateKey));
-    setActiveGroupKey(k => (k === plateKey ? null : k));
-  };
+    setStaging((prev) => ({
+      ...prev,
+      lines: prev.lines.filter((l) => l.plateKey !== plateKey),
+      plates: prev.plates.filter((p) => p.key !== plateKey),
+      activeGroupKey: prev.activeGroupKey === plateKey ? null : prev.activeGroupKey,
+    }))
+  }
 
-  // ── Scanning at the dock ───────────────────────────────────────────────────
-  //
-  // This screen had no scan affordance at all, which is odd for the one place
-  // in the building where someone is definitely holding a barcode. Three things
-  // are scannable and they resolve through one pure module, `receiveScan.ts`.
-  //
-  // The index is built over the FULL catalogue, never `searchPool`. The
-  // supplier narrowing is a soft convenience (see showAllProducts above), and
-  // refusing a scanned carton because a supplier link has not been configured
-  // would block a real delivery for a data-entry reason.
+  const updateLine = (key: string, patch: Partial<DraftLine>) => {
+    setStaging((prev) => ({
+      ...prev,
+      lines: prev.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)),
+    }))
+  }
+
+  const removeLine = (key: string) => {
+    setStaging((prev) => ({ ...prev, lines: prev.lines.filter((l) => l.key !== key) }))
+  }
+
+  // A normal line owns its plate one-for-one. A mixed pallet is a pallet by
+  // definition, and nothing on this screen may argue otherwise.
+  const setPlateType = (plateKey: string, huType: 'pallet' | 'carton') => {
+    setStaging((prev) => ({
+      ...prev,
+      plates: prev.plates.map((p) => (p.key === plateKey && !p.mixed ? { ...p, huType } : p)),
+    }))
+  }
+
+  const setQuarantine = (next: boolean) => {
+    setQuarantineAll(next)
+    setStaging((prev) => ({ ...prev, lines: prev.lines.map((l) => ({ ...l, quarantine: next })) }))
+  }
+
+  // ── Scanning ───────────────────────────────────────────────────────────────
+  // The index is built over the FULL catalogue, never `searchPool`: refusing a
+  // scanned carton because a supplier link has not been configured would block
+  // a real delivery for a data-entry reason.
   const scanIndex = useMemo(
     () => buildScanIndex({
-      products: products.map(p => ({ id: p.id, sku: p.sku, name: p.name, barcode: p.barcode ?? null })),
+      products: products.map((p) => ({ id: p.id, sku: p.sku, name: p.name, barcode: p.barcode ?? null })),
     }),
     [products],
-  );
+  )
 
   // Site roots only — this is what lets a warehouse be told from a bin without
   // a second query, since both are `locations` rows.
   const warehouseIdByCode = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const w of activeWarehouses) m.set(normalizeScan(w.code), w.id);
-    return m;
-  }, [activeWarehouses]);
+    const m = new Map<string, number>()
+    for (const w of activeWarehouses) m.set(normalizeScan(w.code), w.id)
+    return m
+  }, [activeWarehouses])
 
-  const handleDockScan = (raw: string) => {
-    const target = resolveReceiveScan(raw, scanIndex, warehouseIdByCode);
+  /** True when the code was taken; false when it was refused (note set). */
+  const handleDockScan = (raw: string): boolean => {
+    const target = resolveReceiveScan(raw, scanIndex, warehouseIdByCode)
 
     if (target.kind === 'product') {
-      const product = productById.get(target.product.id);
+      const product = productById.get(target.product.id)
       if (product) {
-        addProduct(product);
-        setScanNote(null);
-        signalFlash('ok');
-        return;
+        if (saving) {
+          addProduct(product) // refuses and says why
+          return false
+        }
+        addProduct(product)
+        signalFlash('ok')
+        return true
       }
     }
 
     if (target.kind === 'warehouse' && !isLocked) {
-      setDestinationId(target.warehouseId);
-      setScanNote(null);
-      signalFlash('ok');
-      return;
+      setDestinationId(target.warehouseId)
+      setScanNote(null)
+      signalFlash('ok')
+      return true
     }
 
-    setScanNote(describeReceiveRefusal(target));
-    signalFlash('reject');
-  };
+    setScanNote(describeReceiveRefusal(target))
+    signalFlash('reject')
+    return false
+  }
 
-  // The desktop safety net. Receiving is a long form full of quantity and date
-  // boxes, so focus is rarely where the next scan needs it — this is the screen
-  // the global capture was really written for.
-  useWedgeScanner({ active: true, onScan: handleDockScan });
+  // Enter in the search box. An exact code wins; failing that, a search that
+  // narrowed to ONE product means that product — typing "nood" + Enter should
+  // not be refused as an unknown barcode when the screen shows one match.
+  const handleFieldScan = (raw: string) => {
+    const target = resolveReceiveScan(raw, scanIndex, warehouseIdByCode)
+    if (target.kind !== 'product' && target.kind !== 'warehouse' && searchResults.length === 1) {
+      pickFromSearch(searchResults[0])
+      if (!saving) signalFlash('ok')
+      return
+    }
+    handleDockScan(raw)
+  }
 
-  const updateLine = (key: string, patch: Partial<DraftLine>) => {
-    setPicked(prev => prev.map(l => (l.key === key ? { ...l, ...patch } : l)));
-  };
+  // The desktop safety net: focus is often in a quantity or date box when the
+  // next carton is scanned, and this catches it anyway.
+  useWedgeScanner({ active: received == null && !saving, onScan: handleDockScan })
 
-  const removeLine = (key: string) => {
-    setPicked(prev => prev.filter(l => l.key !== key));
-  };
-
-  // A normal line owns its plate one-for-one, so this can no longer retype a
-  // sibling line's unit the way the old shared-plate dropdown could. The
-  // `!p.mixed` guard is the remaining case: a mixed pallet is a pallet by
-  // definition, and nothing on this screen may argue otherwise.
-  const setPlateType = (plateKey: string, huType: 'pallet' | 'carton') => {
-    setPlates(prev => prev.map(p => (p.key === plateKey && !p.mixed ? { ...p, huType } : p)));
-  };
-
-  // Plates with nothing on them are dropped before submit: the server rejects
-  // an empty plate (it would be an orphan holding no stock), and a line can be
-  // removed after its plate was created.
-  const referencedPlates = useMemo(
-    () => plates.filter(p => picked.some(l => l.plateKey === p.key)),
-    [plates, picked],
-  );
-
-  // Mixed pallets render as their own cards; everything else is a plain line.
-  const mixedPlates = useMemo(() => plates.filter(p => p.mixed), [plates]);
+  // ── Derived ────────────────────────────────────────────────────────────────
+  const mixedPlates = useMemo(() => plates.filter((p) => p.mixed), [plates])
   const looseLines = useMemo(
-    () => picked.filter(l => !mixedPlates.some(p => p.key === l.plateKey)),
+    () => picked.filter((l) => !mixedPlates.some((p) => p.key === l.plateKey)),
     [picked, mixedPlates],
-  );
+  )
+
+  const missingByLine = useMemo(
+    () => new Map(picked.map((l) => [l.key, missingRequired(l, requirementFor(l.productId))])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [picked, requirements],
+  )
 
   const validLines = useMemo(
-    () => picked.filter(l => l.productId != null && Number(l.quantity) > 0),
-    [picked],
-  );
+    () => picked.filter((l) => {
+      const missing = missingByLine.get(l.key)
+      return l.productId != null && Number(l.quantity) > 0 && !missing?.lot && !missing?.expiry
+    }),
+    [picked, missingByLine],
+  )
 
-  const hasSupplier = supplierId != null || supplierName.trim() !== '';
-  // Locked users always have a server-derived destination (their home site); for
-  // everyone else a destination must be resolved unless no site is active (then
-  // the server routes to the default site).
-  const hasDestination = isLocked || destinationId != null || activeWarehouses.length === 0;
-  const canSubmit = hasSupplier && hasDestination && validLines.length > 0 && !receive.isPending;
+  const totals = useMemo<ReceiveTotals>(() => {
+    const staged = picked.filter((l) => l.productId != null)
+    let missingLot = 0
+    let missingExpiry = 0
+    for (const l of staged) {
+      const m = missingByLine.get(l.key)
+      if (m?.lot) missingLot += 1
+      if (m?.expiry) missingExpiry += 1
+    }
+    return {
+      lines: staged.length,
+      units: unitsSummary(staged, productById),
+      plates: new Set(staged.map((l) => l.plateKey)).size,
+      missingLot,
+      missingExpiry,
+    }
+  }, [picked, productById, missingByLine])
+
+  const hasSupplier = supplierId != null || supplierName.trim() !== ''
+  // Locked users always have a server-derived destination; otherwise one must be
+  // resolved unless no site is active (then the server routes to the default).
+  const hasDestination = isLocked || destinationId != null || activeWarehouses.length === 0
+  // Any staged line still missing a required lot/expiry blocks the WHOLE
+  // receipt. Sending only the complete lines would let the reset that follows
+  // wipe the incomplete ones — goods on the dock that never reach stock.
+  const anyMissingRequired = totals.missingLot + totals.missingExpiry > 0
+  // Held while the requirements are still LOADING: until then every product
+  // reads as requiring nothing, and a quick scan-and-receive would skip a
+  // required expiry. A FAILED load does not hold the dock — it is warned
+  // about below instead, so a network blip cannot stop receiving outright.
+  const canSubmit =
+    hasSupplier && hasDestination && validLines.length > 0 && !anyMissingRequired && !saving
+    && !requirementsLoading
+  const blockedReason = !hasSupplier && picked.length > 0
+    ? 'Choose a supplier to receive'
+    : anyMissingRequired
+      ? 'Fill the required lot / expiry to receive'
+      : requirementsLoading && picked.length > 0
+        ? 'Checking which products need a lot or expiry…'
+        : requirementsFailed
+          ? 'Could not load which products need a lot or expiry — check those by hand'
+          : null
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
+  const resetReceipt = () => {
+    setStaging((prev) => ({ ...emptyStaging(), touchedKey: null, touchSeq: prev.touchSeq }))
+    setReference('')
+    setQuarantineAll(false)
+    setSupplierId(null)
+    setSupplierName('')
+    setReceivedDate(todayIso())
+    setRestoredAt(null)
+    // Explicit, not left to the save effect: the effect would also clear it,
+    // but only after a render, and a tab switch in that gap would bring the
+    // just-recorded receipt back.
+    clearReceiveDraft(currentUser.id)
+  }
 
   const submit = async () => {
-    if (!hasSupplier || !hasDestination || validLines.length === 0) return;
+    if (!canSubmit) return
     const header: ReceiptHeader = {
-      ...(supplierId != null
-        ? { supplier_id: supplierId }
-        : { supplier_name: supplierName.trim() }),
+      ...(supplierId != null ? { supplier_id: supplierId } : { supplier_name: supplierName.trim() }),
       ...(reference.trim() ? { reference: reference.trim() } : {}),
       ...(receivedDate ? { received_date: receivedDate } : {}),
       // Locked users omit location_id so the server routes to their home site.
       ...(!isLocked && destinationId != null ? { location_id: destinationId } : {}),
-    };
-    const lines: ReceiptLine[] = validLines.map(l => ({
+    }
+    const lines: ReceiptLine[] = validLines.map((l) => ({
       product_id: l.productId as number,
       quantity: Number(l.quantity),
       ...(l.uomId != null ? { uom_id: l.uomId } : {}),
@@ -572,506 +546,301 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       ...(l.barcode.trim() ? { barcode: l.barcode.trim() } : {}),
       plate_key: l.plateKey,
       ...(l.quarantine ? { quarantine: true } : {}),
-    }));
-    // Only plates carrying a VALID line: a plate whose only line was left
-    // incomplete would arrive empty and be rejected server-side.
-    const platePayload: ReceiptPlate[] = referencedPlates
-      .filter(p => validLines.some(l => l.plateKey === p.key))
-      .map(p => ({ key: p.key, hu_type: p.huType }));
+    }))
+    // Only plates carrying a VALID line: an empty plate is rejected server-side.
+    const platePayload: ReceiptPlate[] = plates
+      .filter((p) => validLines.some((l) => l.plateKey === p.key))
+      .map((p) => ({ key: p.key, hu_type: p.huType }))
+    setSubmitting(true)
     try {
-      const result = await receive.mutateAsync({ header, lines, plates: platePayload });
-      addToast(`Received ${result.lines_received} line${result.lines_received === 1 ? '' : 's'} into stock`, 'success');
-      setPicked([]);
-      setPlates([]);
-      setActiveGroupKey(null);
-      setReference('');
-      setQuarantineAll(false);
-      setSupplierId(null);
-      setSupplierName('');
-
-      // Putaway tasks are generated server-side by receive-stock (so the CSV
-      // importer and every other arrival path get them too). Render the panel
-      // straight from the receipt's response — no extra round-trip.
-      setPutaway(null);
-      setReceiptId(result.receipt_id ?? null);
-      if (result.location_id && result.putaway?.mode === 'engine' && result.putaway.recommendations.length > 0) {
-        setPutaway({ warehouseId: result.location_id, recommendations: result.putaway.recommendations });
-      }
+      const result = await receive.mutateAsync({ header, lines, plates: platePayload })
+      addToast(`Received ${result.lines_received} line${result.lines_received === 1 ? '' : 's'} into stock`, 'success')
+      const recommendations: PutawayLineRecommendation[] =
+        result.putaway?.mode === 'engine' ? result.putaway.recommendations : []
+      setReceived({
+        receiptId: result.receipt_id ?? null,
+        linesReceived: result.lines_received,
+        units: unitsSummary(validLines, productById),
+        destName,
+        warehouseId: result.location_id ?? null,
+        recommendations,
+      })
+      resetReceipt()
     } catch (err) {
-      addToast(err instanceof Error ? err.message : 'Failed to receive stock', 'error');
+      addToast(err instanceof Error ? err.message : 'Failed to receive stock', 'error')
+    } finally {
+      setSubmitting(false)
     }
-  };
+  }
+
+  const startNextDelivery = () => {
+    setReceived(null)
+    // The strip is open again with an empty supplier; put the cursor there.
+    requestAnimationFrame(() => {
+      ;(document.querySelector('input[aria-label="Supplier"]') as HTMLInputElement | null)?.focus()
+    })
+  }
+
+  const productNameById = useMemo(() => new Map(products.map((p) => [p.id, p.name])), [products])
+
+  const scope = (
+    <>
+      {supplierId != null && (
+        <p className="text-xs text-stone-600">
+          {isFiltered ? (
+            <>
+              Showing {supplierProducts.length} product{supplierProducts.length === 1 ? '' : 's'} from{' '}
+              <span className="text-stone-700">{supplierName}</span>.{' '}
+              <button
+                type="button"
+                onClick={() => setShowAllProducts(true)}
+                className="text-nexgen-blue-dark hover:underline"
+              >
+                Show all products
+              </button>
+            </>
+          ) : (
+            <>
+              Showing all products.{' '}
+              <button
+                type="button"
+                onClick={() => setShowAllProducts(false)}
+                className="text-nexgen-blue-dark hover:underline"
+              >
+                Only {supplierName}’s products
+              </button>
+            </>
+          )}
+        </p>
+      )}
+      {wouldMatchOutsideSupplier && (
+        <p className="text-xs text-amber-700">
+          No match in {supplierName}’s products.{' '}
+          <button type="button" onClick={() => setShowAllProducts(true)} className="font-medium hover:underline">
+            Search all products
+          </button>
+        </p>
+      )}
+    </>
+  )
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 xl:p-8 space-y-6">
-      {/* Header */}
+    // A flex column so the scan bar can be the LAST item below `lg` (a bottom
+    // dock must be — see StickyScanBar) while sitting right under the delivery
+    // strip in the DOM, which is where it belongs on a desk and in focus order.
+    <div className="bg-white min-h-svh p-4 sm:p-6 xl:p-8 flex flex-col gap-4 sm:gap-5">
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-lg bg-nexgen-blue/10">
-          <PackagePlus className="w-5 h-5 text-nexgen-blue" />
+          <PackagePlus className="w-5 h-5 text-nexgen-blue" aria-hidden="true" />
         </div>
         <div>
           <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Receive Stock</h1>
           <p className="text-xs text-stone-600 mt-0.5">
-            Record goods arriving into {destName ?? 'the selected warehouse'}. Choose the supplier, then add what arrived.
+            Pick the supplier, then scan each carton. Scanning the same product again counts it.
           </p>
         </div>
       </div>
 
-      {/* Receipt header — who supplied this delivery */}
-      <div className="glass-card rounded-xl p-4 sm:p-5">
-        {/* Once the delivery is identified, this whole block is six fields of
-            answered questions sitting between the operator and the scan box —
-            about 400px of it at 360px wide, which is most of a screen. It
-            collapses to the answers. The quarantine flag is in the summary and
-            not only in the fields, because it writes onto EVERY line below: a
-            flag that changes what is received, concealed inside a collapsed
-            section, would be a worse defect than the scrolling this fixes. */}
-        {headerCollapsed && (
-          <button
-            type="button"
-            onClick={() => setHeaderOpen(true)}
-            aria-expanded={false}
-            aria-controls={headerFieldsId}
-            data-testid="receipt-header-toggle"
-            className="touch-target-y flex w-full items-center gap-2 rounded-lg text-left btn-press hover:bg-stone-50 xl:hidden"
-          >
-            <ChevronDown className="w-4 h-4 shrink-0 text-stone-600" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate text-sm text-stone-700">{headerSummary}</span>
-            {quarantineAll && (
-              <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                Quarantine
-              </span>
-            )}
-          </button>
-        )}
-
-        {supplierName.trim() !== '' && !headerCollapsed && (
-          <button
-            type="button"
-            onClick={() => setHeaderOpen(false)}
-            aria-expanded
-            aria-controls={headerFieldsId}
-            data-testid="receipt-header-toggle"
-            className="touch-target-y mb-2 flex w-full items-center gap-2 rounded-lg text-left btn-press hover:bg-stone-50 xl:hidden"
-          >
-            <ChevronDown className="w-4 h-4 shrink-0 rotate-180 text-stone-600" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-stone-700">Delivery details</span>
-          </button>
-        )}
-
-        <div
-          id={headerFieldsId}
-          className={`${headerCollapsed ? 'hidden' : 'grid'} xl:grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4`}
-        >
-          <div className="xl:col-span-2">
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
-              Supplier <span className="text-red-500">*</span>
-            </label>
-            <SupplierCombobox
-              suppliers={suppliers}
-              valueId={supplierId}
-              valueName={supplierName}
-              onChangeText={(name) => { setSupplierName(name); setSupplierId(null); }}
-              onPickExisting={(s) => { setSupplierId(s.id); setSupplierName(s.name); }}
-              onPickNew={(name) => { setSupplierId(null); setSupplierName(name); }}
-            />
-            {supplierId == null && supplierName.trim() !== '' && (
-              <p className="text-xs text-stone-600 mt-1">New supplier — will be added to your supplier list.</p>
-            )}
-          </div>
-
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
-              <FileText className="w-3.5 h-3.5 text-stone-500" /> Reference
-            </label>
-            <input
-              type="text"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              placeholder="Invoice / docket / PO no."
-              className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
-            />
-            {/* Quarantine (mig 00101). Bulk control only: it writes the flag onto
-                every line in the grid, so what is ticked below IS what is sent. */}
-            <label className="mt-2 flex items-start gap-2 text-xs text-stone-600 cursor-pointer">
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={quarantineAll}
-                onChange={(e) => {
-                  const next = e.target.checked;
-                  setQuarantineAll(next);
-                  setPicked(prev => prev.map(l => ({ ...l, quarantine: next })));
-                }}
-              />
-              <span>
-                <span className="font-semibold text-stone-700">Quarantine this delivery</span>
-                <span className="block text-stone-600">
-                  Goes to a quarantine bay. It cannot be sold until you release it by moving it out.
-                </span>
-              </span>
-            </label>
-          </div>
-
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
-              <Warehouse className="w-3.5 h-3.5 text-stone-500" /> Destination
-            </label>
-            {isLocked ? (
-              <>
-                <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700">
-                  {homeName ?? 'Your site'}
-                </div>
-                <p className="text-xs text-stone-600 mt-1">You can only receive at your site.</p>
-              </>
-            ) : activeWarehouses.length === 0 ? (
-              <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-500">
-                No active warehouse — stock lands at the default site.
-              </div>
-            ) : activeWarehouses.length === 1 ? (
-              <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700">
-                {activeWarehouses[0].name}
-              </div>
-            ) : (
-              <select
-                value={destinationId ?? ''}
-                onChange={(e) => setDestinationId(e.target.value === '' ? null : Number(e.target.value))}
-                aria-label="Destination warehouse"
-                className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
-              >
-                {activeWarehouses.map((w) => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 xl:col-span-1 xl:grid-cols-1 xl:gap-4">
-            <div>
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
-                <CalendarDays className="w-3.5 h-3.5 text-stone-500" /> Received
-              </label>
-              <input
-                type="date"
-                value={receivedDate}
-                max={todayIso()}
-                onChange={(e) => setReceivedDate(e.target.value)}
-                className="w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark focus:border-nexgen-blue"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className={`${headerCollapsed ? 'hidden' : 'block'} xl:block mt-4 max-w-xs`}>
-          <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 mb-1.5">
-            <UserRound className="w-3.5 h-3.5 text-stone-500" /> Received by
-          </label>
-          <div className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700">
-            {currentUser.name}
-          </div>
-        </div>
-      </div>
-
-      {/* Staged receipt lines */}
-      {picked.length === 0 && mixedPlates.length === 0 ? (
-        // Built on the shape of `warehouse/WarehouseEmptyState` — the squarer
-        // icon tile, the larger headline, the measured column of body text.
-        <div className="glass-panel shadow-card rounded-2xl p-8 sm:p-10 text-center">
-          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-nexgen-blue/10 text-nexgen-blue">
-            <Search className="h-7 w-7" aria-hidden="true" />
-          </div>
-          <h2 className="text-lg font-semibold text-stone-900">Start a goods receipt</h2>
-          <p className="mx-auto mt-2 max-w-sm text-sm text-stone-600">
-            Pick the supplier above, then scan or search a product to add a line, set the received
-            quantity (and an optional lot code &amp; expiry), and receive it into{' '}
-            {destName ?? 'the selected warehouse'}.
-          </p>
-          {/* The mixed-pallet affordance has to live here as well as in the
-              footer. The footer only exists once something is staged, so
-              without this a receipt could never START with a mixed pallet —
-              which is exactly how a delivery of one arrives. */}
-          <div className="mt-7 flex items-center justify-center gap-2">
-            <button
-              onClick={addMixedPallet}
-              className="touch-target-y inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-5 py-2.5 text-sm font-semibold text-stone-700 hover:bg-stone-50 btn-press"
-            >
-              <Boxes className="h-4 w-4 text-nexgen-blue" aria-hidden="true" /> Mixed pallet
-            </button>
-          </div>
-        </div>
+      {received ? (
+        <ReceiveSuccessCard
+          summary={received}
+          productNameById={productNameById}
+          onOpenPutaway={onOpenPutaway}
+          onStartNext={startNextDelivery}
+        />
       ) : (
-        /* `@container` is declared HERE, on the one element that wraps both the
-           column headings and every row, so the two can never disagree about
-           which layout is showing. The row needs 1180px of CONTAINER — see the
-           measurement table in `ReceiveLineCard`, and note that a viewport
-           breakpoint got this wrong by the width of the sidebar.
-
-           A plain block comment rather than a JSX one: this sits directly
-           inside a ternary branch, where a JSX expression container is not yet
-           legal. */
-        <div className="@container glass-card rounded-xl overflow-hidden">
-          {/*
-            Column headings. Hidden until the container can seat all eight
-            columns, below which each control carries its own micro-label
-            instead — see `ReceiveLineCard`. The template is imported rather
-            than restated, so the headings can never drift out of alignment
-            with the cells beneath them.
-          */}
-          <div
-            className={`hidden border-b border-stone-200 px-4 py-3 @min-[1180px]:grid @min-[1180px]:gap-x-4 ${RECEIVE_ROW_COLUMNS}`}
-          >
-            {['Product', 'Qty', 'Lot code', 'Expiry', 'Barcode', 'Arrived on', 'Hold', ''].map(
-              (heading, i) => (
-                <span
-                  key={heading || `spacer-${i}`}
-                  className={`text-xs font-semibold uppercase tracking-wider text-stone-600 ${
-                    heading === 'Qty' ? 'text-right' : heading === 'Hold' ? 'text-center' : 'text-left'
-                  }`}
-                >
-                  {heading}
-                </span>
-              ),
-            )}
-          </div>
-
-          {/* `divide-y` rather than a card per line: the lines already sit
-              inside one `glass-card`, and boxing each of them again would be a
-              second surface saying nothing the divider does not. */}
-          <div className="divide-y divide-stone-100">
-            {/* Mixed pallets first: they are containers, and a container that
-                sorted itself in among its own contents would read as one more
-                line. `plateLabel` is passed the FULL plate list so the numbering
-                counts mixed pallets among themselves. */}
-            {mixedPlates.map(plate => (
-              <React.Fragment key={plate.key}>
-                <MixedPalletCard
-                  plate={plate}
-                  label={plateLabel(plates, plate.key)}
-                  lines={picked.filter(l => l.plateKey === plate.key)}
-                  productById={productById}
-                  supplierId={supplierId}
-                  plateDestinationLabel={plateDestinationLabel}
-                  palletSpec={palletSpec}
-                  active={activeGroupKey === plate.key}
-                  onAddItem={() => { setActiveGroupKey(plate.key); focusSearch(); }}
-                  onDone={() => setActiveGroupKey(null)}
-                  onRemove={() => removePlate(plate.key)}
-                  onUpdateLine={updateLine}
-                  onRemoveLine={removeLine}
-                />
-              </React.Fragment>
-            ))}
-            {looseLines.map(line => (
-              // `key` on a typed local component is a type error here: with no
-              // @types/react there is no global JSX namespace, so `key` is
-              // checked against the component's own props. Fragment carries it
-              // instead, and renders no DOM node — so the card's root stays a
-              // direct child of `divide-y`. See CLAUDE.md, "Types gotcha".
-              <React.Fragment key={line.key}>
-              <ReceiveLineCard
-                line={line}
-                product={line.productId != null ? productById.get(line.productId) : undefined}
-                supplierId={supplierId}
-                plates={plates}
-                plateDestinationLabel={plateDestinationLabel}
-                palletSpec={palletSpec}
-                onUpdate={patch => updateLine(line.key, patch)}
-                onRemove={() => removeLine(line.key)}
-                onSetPlateType={huType => setPlateType(line.plateKey, huType)}
-              />
-              </React.Fragment>
-            ))}
-          </div>
-
-          {/* Footer actions */}
-          <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-t border-stone-200 bg-stone-50/50">
-            <button
-              onClick={() => {
-                const plate = newPlate();
-                setPlates(prev => [...prev, plate]);
-                setPicked(prev => [...prev, newDraft(plate.key, quarantineAll)]);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press"
+        <>
+          {restoredAt != null && (picked.length > 0 || supplierName.trim() !== '') && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-2 rounded-xl border border-nexgen-blue/30 bg-nexgen-blue/5 px-3 py-2 text-sm text-stone-700"
             >
-              <Plus className="w-4 h-4" /> Add blank line
-            </button>
-            {/* The container-first path. Declaring the pallet and then listing
-                what is on it is how an operator describes one; the alternative
-                was pointing three separate line dropdowns at the same entry. */}
-            <button
-              onClick={addMixedPallet}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg btn-press"
-            >
-              <Boxes className="w-4 h-4" /> Mixed pallet
-            </button>
-            <div className="ml-auto flex flex-wrap items-center gap-3">
-              {!hasSupplier && validLines.length > 0 && (
-                <span className="text-xs text-amber-600">Choose a supplier to receive</span>
-              )}
-              <button
-                onClick={submit}
-                disabled={!canSubmit}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-nexgen-blue text-white text-sm font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <PackagePlus className="w-4 h-4" />
-                {receive.isPending
-                  ? 'Receiving…'
-                  : `Receive ${validLines.length} line${validLines.length === 1 ? '' : 's'}`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Putaway recommendations — appears after receiving into a layout warehouse */}
-      {/* Mounted only once a receipt exists — like the putaway panel below it.
-          Not merely a tidiness choice: the panel owns a query and a mutation, so
-          rendering it against a null receipt would run both for a page that has
-          nothing to show. */}
-      {receiptId != null && <ReceiptPlateLabels goodsReceiptId={receiptId} />}
-
-      {putaway && (
-        <div className="space-y-3">
-          {onOpenPutaway && (
-            <div className="flex justify-end">
-              <button
-                onClick={() => onOpenPutaway(putaway.warehouseId)}
-                className="inline-flex items-center gap-1.5 text-sm px-3 py-2 bg-nexgen-blue text-white font-medium rounded-lg btn-press"
-              >
-                Go to putaway <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-          <PutawayPanel
-            warehouseId={putaway.warehouseId}
-            recommendations={putaway.recommendations}
-            productNameById={new Map(products.map((p) => [p.id, p.name]))}
-          />
-        </div>
-      )}
-
-      {/* Recent receipts — gives the screen context and an audit trail */}
-      <RecentReceiptsPanel />
-
-      {/* Product search / dock scan */}
-      {/* One box for both jobs, deliberately. Typing still drives the substring
-          search and its dropdown exactly as before; a SCAN (camera, wedge gun,
-          or Enter) goes through `handleDockScan` and adds the line outright.
-          Splitting them into two inputs would mean the operator has to decide
-          which one to aim at before they know what the label is. */}
-      {/* Pinned to the FOOT of the page, and its position in this file is the
-          mechanism rather than a matter of reading order.
-
-          `sticky` is bounded by its containing block, so the bar un-pins the
-          moment that block's bottom scrolls past. Rendered where it used to be —
-          above the staged lines — a bottom-pinned bar would come unstuck as soon
-          as the operator scrolled into the plate labels, the putaway panel or the
-          recent-receipts list. It has to be the LAST child, with nothing below
-          it. (Leaving it first and merely flipping the prop is worse than
-          either: it would still pin to the foot, while reserving its ~60px of
-          flow space as a blank band at the top of the page.)
-
-          Bottom rather than top because this is a 360px handheld held one-handed
-          at a dock; the thumb reaches the bottom of the screen and not the top.
-          The Android keyboard is not a problem here — index.html sets
-          `interactive-widget=resizes-content` precisely so a bottom-anchored bar
-          is pushed up rather than covered.
-
-          `bleed="xl"` because THIS page pads `p-4 sm:p-6 xl:p-8`, not the `lg:`
-          scale the putaway and stocktake pages use. */}
-      <StickyScanBar bleed="xl" position="bottom">
-        <div className="max-w-xl space-y-1.5">
-          <div className="relative" ref={searchWrapRef}>
-            <ScanField
-              ariaLabel="Search products"
-              value={search}
-              onChange={(v) => { setSearch(v); if (scanNote) setScanNote(null); }}
-              onScan={handleDockScan}
-              flash={flash}
-              error={scanNote ?? undefined}
-              placeholder={
-                isFiltered
-                  ? `Scan a carton, or search ${supplierName}’s products…`
-                  : 'Scan a carton, or search by name, SKU or barcode…'
-              }
-              cameraTitle="Scan a carton"
-            />
-            {/* 22px = half of ScanField's 44px input. NOT `top-1/2`: this wrapper
-                also contains the error line, so a percentage drifts downward the
-                moment a refusal message appears. Tied to the input height, so it
-                moves if that does. */}
-            {search && (
-              <button onClick={() => setSearch('')} className="absolute right-3 top-[22px] -translate-y-1/2 text-stone-500 hover:text-stone-600 cursor-pointer">
-                <X className="w-4 h-4" />
-              </button>
-            )}
-            {searchResults.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-card overflow-hidden">
-                {searchResults.map(p => {
-                  const theirSku = supplierSkuFor(p, supplierId);
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => addProduct(p)}
-                      className="flex items-center justify-between gap-3 w-full px-4 py-2.5 text-left hover:bg-stone-50 btn-press"
-                    >
-                      <span className="text-sm text-stone-800 truncate">{p.name}</span>
-                      <span className="text-xs text-stone-500 font-mono shrink-0">
-                        {theirSku ? `${theirSku} · ` : ''}{p.sku}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Scope hint — which catalogue is being searched, and how to widen it. */}
-          {supplierId != null && (
-            <p className="text-xs text-stone-500">
-              {isFiltered ? (
-                <>
-                  Showing {supplierProducts.length} product{supplierProducts.length === 1 ? '' : 's'} from{' '}
-                  <span className="text-stone-500">{supplierName}</span>.{' '}
-                  <button
-                    type="button"
-                    onClick={() => setShowAllProducts(true)}
-                    className="text-nexgen-blue hover:underline cursor-pointer"
-                  >
-                    Show all products
-                  </button>
-                </>
-              ) : (
-                <>
-                  Showing all products.{' '}
-                  <button
-                    type="button"
-                    onClick={() => setShowAllProducts(false)}
-                    className="text-nexgen-blue hover:underline cursor-pointer"
-                  >
-                    Only {supplierName}’s products
-                  </button>
-                </>
-              )}
-            </p>
-          )}
-          {wouldMatchOutsideSupplier && (
-            <p className="text-xs text-amber-600">
-              No match in {supplierName}’s products.{' '}
+              <History className="h-4 w-4 shrink-0 text-nexgen-blue-dark" aria-hidden="true" />
+              <span className="min-w-0 flex-1">
+                Restored your unfinished receipt from{' '}
+                {new Date(restoredAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}.
+              </span>
               <button
                 type="button"
-                onClick={() => setShowAllProducts(true)}
-                className="font-medium hover:underline cursor-pointer"
+                onClick={resetReceipt}
+                className="btn-press touch-target-y rounded-lg px-2 text-sm font-medium text-stone-700 hover:bg-stone-100"
               >
-                Search all products
+                Discard
               </button>
-            </p>
+              <button
+                type="button"
+                onClick={() => setRestoredAt(null)}
+                className="btn-press touch-target-y rounded-lg px-2 text-sm font-semibold text-nexgen-blue-dark hover:bg-nexgen-blue/10"
+              >
+                Keep going
+              </button>
+            </div>
           )}
-        </div>
-      </StickyScanBar>
 
+          <DeliveryStrip
+            initiallyCommitted={!!draft && draft.supplierName.trim() !== ''}
+            suppliers={suppliers}
+            supplierId={supplierId}
+            supplierName={supplierName}
+            onSupplierText={(name) => { setSupplierName(name); setSupplierId(null) }}
+            onSupplierPicked={({ id, name }) => {
+              setSupplierId(id)
+              setSupplierName(name)
+              // Straight to the scan field: the next thing anyone does is scan.
+              requestAnimationFrame(focusSearch)
+            }}
+            reference={reference}
+            onReference={setReference}
+            receivedDate={receivedDate}
+            maxDate={todayIso()}
+            onReceivedDate={setReceivedDate}
+            quarantineAll={quarantineAll}
+            onQuarantineAll={setQuarantine}
+            isLocked={isLocked}
+            warehouses={activeWarehouses}
+            destinationId={destinationId}
+            onDestination={setDestinationId}
+            destName={destName}
+            userName={currentUser.name}
+          />
+
+          {/* `bleed="xl"` because THIS page pads `p-4 sm:p-6 xl:p-8`. The order
+              classes go on the bar ITSELF: a wrapper would become sticky's
+              containing block, exactly the bar's height, and it would never pin. */}
+          <StickyScanBar bleed="xl" position="adaptive" className="order-last mt-auto lg:order-none lg:mt-0">
+              <ReceiveWorkBar
+                searchWrapRef={searchWrapRef}
+                search={search}
+                onSearch={(v) => { setSearch(v); if (scanNote) setScanNote(null) }}
+                onFieldScan={handleFieldScan}
+                flash={flash}
+                scanNote={scanNote}
+                placeholder={
+                  isFiltered
+                    ? `Scan a carton, or search ${supplierName}’s products…`
+                    : 'Scan a carton, or search by name, SKU or barcode…'
+                }
+                results={searchResults}
+                supplierId={supplierId}
+                activeIndex={activeIndex}
+                onActiveIndex={setActiveIndex}
+                onPick={pickFromSearch}
+                scope={scope}
+                forceNewPallet={forceNewPallet}
+                onToggleNewPallet={toggleNewPallet}
+                onMixedPallet={addMixedPallet}
+                onAddBlankLine={addBlankLine}
+                totals={totals}
+                canSubmit={canSubmit}
+                isPending={saving}
+                validCount={validLines.length}
+                blockedReason={blockedReason}
+                onSubmit={submit}
+              />
+          </StickyScanBar>
+
+          {picked.length === 0 && mixedPlates.length === 0 ? (
+            <div className="glass-panel shadow-card rounded-2xl p-8 sm:p-10 text-center">
+              <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-nexgen-blue/10 text-nexgen-blue">
+                <ScanLine className="h-7 w-7" aria-hidden="true" />
+              </div>
+              <h2 className="text-lg font-semibold text-stone-900">Scan the first carton</h2>
+              <p className="mx-auto mt-2 max-w-sm text-sm text-stone-600">
+                Each scan adds one carton; scan it again to count it up. Use{' '}
+                <span className="font-semibold">New pallet</span> to start a separate pallet of the same product,
+                or <span className="font-semibold">Mixed pallet</span> for a pallet with several products.
+              </p>
+            </div>
+          ) : (
+            /* `@container` is declared HERE, on the one element that wraps both
+               the column headings and every row, so the two can never disagree
+               about which layout is showing. The row needs 1180px of CONTAINER
+               — see the measurement table in `ReceiveLineCard`. A plain block
+               comment: this sits directly inside a ternary branch. */
+            // No `overflow-hidden`: a hand-added line opens a product list that
+            // must be able to leave the card. `relative z-[1]` because the
+            // card's backdrop-blur is a stacking context — without the lift the
+            // Recent receipts card below paints over that list. Still under the
+            // sticky scan bar's z-10.
+            <div className="@container glass-card rounded-xl relative z-[1]">
+              <div
+                className={`hidden border-b border-stone-200 px-4 py-3 @min-[1180px]:grid @min-[1180px]:gap-x-4 ${RECEIVE_ROW_COLUMNS}`}
+              >
+                {['Product', 'Qty', 'Lot code', 'Expiry', 'Barcode', 'Arrived on', 'Hold', ''].map(
+                  (heading, i) => (
+                    <span
+                      key={heading || `spacer-${i}`}
+                      className={`text-xs font-semibold uppercase tracking-wider text-stone-600 ${
+                        heading === 'Qty' ? 'text-right' : heading === 'Hold' ? 'text-center' : 'text-left'
+                      }`}
+                    >
+                      {heading}
+                    </span>
+                  ),
+                )}
+              </div>
+
+              <div className="divide-y divide-stone-100">
+                {/* Mixed pallets first: they are containers, and one sorted in
+                    among its own contents would read as one more line. */}
+                {mixedPlates.map((plate) => (
+                  <React.Fragment key={plate.key}>
+                    <MixedPalletCard
+                      plate={plate}
+                      label={plateLabel(plates, plate.key)}
+                      lines={picked.filter((l) => l.plateKey === plate.key)}
+                      productById={productById}
+                      supplierId={supplierId}
+                      plateDestinationLabel={plateDestinationLabel}
+                      palletSpec={palletSpec}
+                      active={activeGroupKey === plate.key}
+                      onAddItem={() => {
+                        setStaging((prev) => ({ ...prev, activeGroupKey: plate.key, forceNewPallet: false }))
+                        focusSearch()
+                      }}
+                      onDone={() => setStaging((prev) => ({ ...prev, activeGroupKey: null }))}
+                      onRemove={() => removePlate(plate.key)}
+                      onUpdateLine={updateLine}
+                      onRemoveLine={removeLine}
+                      requirementFor={requirementFor}
+                      highlightedKey={touchedKey}
+                    />
+                  </React.Fragment>
+                ))}
+                {looseLines.map((line) => (
+                  // `key` on a typed local component is a type error here (no
+                  // @types/react); Fragment carries it — CLAUDE.md, "Types gotcha".
+                  <React.Fragment key={line.key}>
+                    <ReceiveLineCard
+                      line={line}
+                      product={line.productId != null ? productById.get(line.productId) : undefined}
+                      supplierId={supplierId}
+                      plates={plates}
+                      plateDestinationLabel={plateDestinationLabel}
+                      palletSpec={palletSpec}
+                      onUpdate={(patch) => updateLine(line.key, patch)}
+                      onRemove={() => removeLine(line.key)}
+                      onSetPlateType={(huType) => setPlateType(line.plateKey, huType)}
+                      requirement={requirementFor(line.productId)}
+                      highlighted={touchedKey === line.key}
+                      productPool={searchPool}
+                      onChooseProduct={(p) => updateLine(line.key, {
+                        productId: p.id,
+                        uomId: scanUomFor(p)?.id ?? null,
+                        quantity: line.quantity || '1',
+                      })}
+                    />
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      <RecentReceiptsPanel />
     </div>
-  );
-};
+  )
+}
 
-export default ReceiveStockView;
+export default ReceiveStockView

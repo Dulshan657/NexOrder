@@ -36,8 +36,19 @@ interface StickyScanBarProps {
      * default) precisely so a bottom-anchored bar is pushed up by the keyboard
      * instead of hidden behind it. That meta tag exists for the stocktake Post
      * bar (register F14); this is the same case.
+     *
+     * `'adaptive'` is bottom below `lg` and top from `lg` (NX-0005): the same
+     * dock worker uses the RS35 and a desk with a USB gun, and on a desk the
+     * eye is at the top of the page, not under a thumb. The host renders the
+     * bar where it belongs at `lg` (high in the DOM, so focus order is right)
+     * and gives it `order-last lg:order-none` inside a flex column, so the two
+     * rules above still hold below `lg`.
      */
-    position?: 'top' | 'bottom';
+    position?: 'top' | 'bottom' | 'adaptive';
+    /** Extra classes for the bar itself — e.g. `order-*` inside a flex host.
+     *  Never wrap the bar to add them: the wrapper would become sticky's
+     *  containing block and the bar would stop pinning. */
+    className?: string;
 }
 
 /** The two padding scales in use across the inventory pages, and nothing else.
@@ -66,11 +77,16 @@ const BLEED_BOTTOM: Record<'lg' | 'xl', string> = {
     xl: '-mb-4 sm:-mb-6 xl:-mb-8',
 };
 
+/** An adaptive bar is only a bottom dock below `lg`, so it bleeds downwards only
+ *  there. Both padding scales agree below `lg`, hence one string. */
+const BLEED_BOTTOM_ADAPTIVE = '-mb-4 sm:-mb-6 lg:mb-0';
+
 /** The border faces the content the bar overlaps, so it reads as an edge rather
  *  than a stray hairline: a top bar is underlined, a bottom bar is overlined. */
-const EDGE: Record<'top' | 'bottom', string> = {
+const EDGE: Record<'top' | 'bottom' | 'adaptive', string> = {
     top: 'top-0 border-b',
     bottom: 'bottom-0 border-t',
+    adaptive: 'bottom-0 border-t lg:top-0 lg:bottom-auto lg:border-t-0 lg:border-b',
 };
 
 /**
@@ -122,7 +138,7 @@ const EDGE: Record<'top' | 'bottom', string> = {
  * collide anyway, since this pins to the scrollport's top edge, which already
  * starts below the bar.
  */
-const StickyScanBar: React.FC<StickyScanBarProps> = ({ children, bleed = 'lg', position = 'top' }) => {
+const StickyScanBar: React.FC<StickyScanBarProps> = ({ children, bleed = 'lg', position = 'top', className = '' }) => {
     return (
         <div
             /* A test hook, and it earns its keep: "pinned" is a property of this
@@ -133,15 +149,15 @@ const StickyScanBar: React.FC<StickyScanBarProps> = ({ children, bleed = 'lg', p
                list is the thing under test. */
             data-scan-dock={position}
             className={`sticky z-10 ${EDGE[position]} border-stone-200 bg-white py-2 ${BLEED[bleed]} ${
-                position === 'bottom' ? BLEED_BOTTOM[bleed] : ''
-            }`}
+                position === 'bottom' ? BLEED_BOTTOM[bleed] : position === 'adaptive' ? BLEED_BOTTOM_ADAPTIVE : ''
+            } ${className}`}
             /* Matches the one existing precedent in this codebase (`PantryList`):
                an inline `max()` rather than an arbitrary Tailwind value, so it
                degrades to the `py-2` this would otherwise be. Inert today — no
                `viewport-fit=cover` in index.html, so the inset resolves to 0 —
                and deliberately so: adding that meta changes the layout viewport
                for every screen in the app. This is forward-insurance only. */
-            style={position === 'bottom' ? { paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' } : undefined}
+            style={position !== 'top' ? { paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' } : undefined}
         >
             {children}
         </div>

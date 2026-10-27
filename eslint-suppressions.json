@@ -341,11 +341,6 @@
       "count": 1
     }
   },
-  "components/inventory/ReceiveStockView.tsx": {
-    "jsx-a11y/control-has-associated-label": {
-      "count": 3
-    }
-  },
   "components/inventory/ReplenQueueView.tsx": {
     "jsx-a11y/control-has-associated-label": {
       "count": 1

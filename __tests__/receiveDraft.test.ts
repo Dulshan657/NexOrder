@@ -20,9 +20,11 @@ describe('plate identity', () => {
     expect(new Set(keys).size).toBe(4)
   })
 
-  it('defaults an ordinary plate to a pallet, and honours an explicit carton', () => {
-    expect(newPlate().huType).toBe('pallet')
-    expect(newPlate('carton').huType).toBe('carton')
+  it('defaults an ordinary plate to a carton, and honours an explicit pallet', () => {
+    // NX-0005: a dock scan counts cartons, so an unqualified unit is a carton.
+    // A single-SKU pallet is declared with "New pallet" instead.
+    expect(newPlate().huType).toBe('carton')
+    expect(newPlate('pallet').huType).toBe('pallet')
   })
 
   it('makes a mixed plate a pallet, and marks it as mixed', () => {
@@ -52,7 +54,7 @@ describe('plateLabel', () => {
     const a = newPlate()
     const b = newPlate()
     const first = newMixedPlate()
-    const c = newPlate()
+    const c = newPlate('pallet')
     const second = newMixedPlate()
     const plates = [a, b, first, c, second]
 
