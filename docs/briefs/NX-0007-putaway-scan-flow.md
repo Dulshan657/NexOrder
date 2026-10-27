@@ -6,7 +6,7 @@
   "base": "ec37f286151d9a71061d14da98fa2ebb1f10692c",
   "approved": "2026-10-27 owner",
   "acceptance": [
-    { "id": "A1", "check": "The Putaway screen has no Assign tab and no Assign/Assign all buttons; one screen with the scan bar on top (desktop and handheld) and the open tasks below in walk order." },
+    { "id": "A1", "check": "The Putaway screen has no Assign tab and no Assign/Assign all buttons; one screen with the scan bar on top on desktop and at the bottom on the handheld (the adaptive dock Receive Stock uses), and the open tasks below in walk order. (Revision: walk order is the engine route for tasks it covers and bin code otherwise, because wie_putaway_stops routes ASSIGNED tasks only and this brief makes no server change.)" },
     { "id": "A2", "check": "A scan in the scan bar of a product barcode or plate code opens its task straight at the bin step — no tap." },
     { "id": "A3", "check": "Happy path: scan item, scan the suggested bin, Enter confirms the prefilled quantity — the task completes with zero clicks, sending the suggested task id (no assign call)." },
     { "id": "A4", "check": "The bin step shows why: 'Home', 'Overflow — home is full', or 'No home yet' with a 'Make this the home bin' checkbox that sends make_home." },
@@ -15,7 +15,7 @@
     { "id": "A7", "check": "Typing fewer than expected asks 'Short by N — flag it?'; yes sends short:true, no keeps the remainder on the list." },
     { "id": "A8", "check": "Scanning a mixed plate lists its products; scanning one of them (or tapping it) continues that product's task." },
     { "id": "A9", "check": "Open loose tasks of the same product show as one stop with the summed quantity and complete with task_ids." },
-    { "id": "A10", "check": "Scan / Guide toggle: Guide shows one task at a time in walk order with Skip; the choice is remembered per device and the screen works when storage throws." },
+    { "id": "A10", "check": "Scan / Guide toggle: Guide shows one task at a time in walk order (as A1) with Skip; the choice is remembered per device and the screen works when storage throws." },
     { "id": "A11", "check": "Admin/Manager see a desk view: change a suggested bin (redirect), Place now (Admin only), and a 'Short at putaway' list with Found it / Write off (reason required)." },
     { "id": "A12", "check": "The receipt success card has 'Put away now', opening Putaway filtered to that receipt (?receipt=); the existing Accept panel stays." },
     { "id": "A13", "check": "On dev at 360x720 and on desktop: receive a homed product, Put away now, 2 scans + Enter completes it; wrong bin, short count, mixed plate and Guide each behave as above.", "manual": "branch deployed to dev (deploy:dev) before the PR; the owner tests on nexorder.vercel.app" },
