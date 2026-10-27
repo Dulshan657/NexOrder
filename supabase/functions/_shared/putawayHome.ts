@@ -30,6 +30,10 @@ export async function loadHomeBins(
   const { data, error } = await admin.from('product_home_bins')
     .select('product_id, bin_id, max_qty')
     .eq('warehouse_id', warehouseId)
+    // One SKU may have several slots (mig 00082: primary, chilled, each-pick…);
+    // the home putaway fills is the PRIMARY one, the same row replenishment
+    // tops up (00093 / 00118).
+    .eq('purpose', 'primary')
   if (error) return homes
   for (const r of (data ?? []) as any[]) {
     homes.set(Number(r.product_id), {

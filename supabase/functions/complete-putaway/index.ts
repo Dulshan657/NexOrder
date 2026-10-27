@@ -214,7 +214,8 @@ serve(async (req: Request) => {
     let existingHomeLocationId: number | null = null
     if (make_home) {
       const { data: homeRow } = await admin.from('product_home_bins')
-        .select('bin_id').eq('product_id', productId).eq('warehouse_id', warehouseId).maybeSingle()
+        .select('bin_id').eq('product_id', productId).eq('warehouse_id', warehouseId)
+        .eq('purpose', 'primary').maybeSingle()
       existingHomeLocationId = (homeRow as any)?.bin_id ?? null
     }
 
