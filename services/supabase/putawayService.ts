@@ -45,8 +45,12 @@ export async function recommendPutaway(
 
 export interface DecidePutawayInput {
   recommendationId: number
-  decision: 'accept' | 'override' | 'unassign'
+  decision: 'accept' | 'override' | 'unassign' | 'redirect' | 'resolve_short'
   chosenLocationId?: number
+  /** resolve_short only (NX-0006). */
+  resolution?: 'found' | 'write_off'
+  /** resolve_short: required for a write-off. */
+  reason?: string
   /** Base units to put away. Omitted = the whole remaining quantity; anything
    *  less leaves the remainder queued (mig 00071). */
   quantity?: number
@@ -78,10 +82,28 @@ export async function decidePutaway(input: DecidePutawayInput): Promise<DecidePu
       quantity: input.quantity,
       role_override: input.roleOverride,
       assign_only: input.assignOnly,
+      resolution: input.resolution,
+      reason: input.reason,
     },
   })
   if (error) throw error
   return { remainderQty: Number(data?.remainder_qty ?? 0) }
+}
+
+/** Desk (Admin/Manager): send a suggested line to another bin before anyone
+ *  walks it (NX-0006). Moves nothing. */
+export function redirectPutaway(recommendationId: number, chosenLocationId: number): Promise<DecidePutawayResult> {
+  return decidePutaway({ recommendationId, decision: 'redirect', chosenLocationId })
+}
+
+/** Desk (Admin/Manager): close a shortage. `found` puts it back on the floor's
+ *  list; `write_off` adjusts the missing units off at the dock (reason required). */
+export function resolveShortPutaway(
+  recommendationId: number,
+  resolution: 'found' | 'write_off',
+  reason?: string,
+): Promise<DecidePutawayResult> {
+  return decidePutaway({ recommendationId, decision: 'resolve_short', resolution, reason })
 }
 
 /** Send a queued line to the Walk run without moving any stock. */
@@ -103,8 +125,19 @@ export interface PutawayScanEvidence {
   handlingUnitCode?: string
 }
 
+export type PutawayOverrideReason = 'blocked' | 'damaged' | 'full' | 'closer' | 'other'
+
 export interface CompletePutawayInput {
-  recommendationId: number
+  /** One task. Give this or `taskIds`. */
+  recommendationId?: number
+  /** Several loose tasks of one product, put away as one count (NX-0006). */
+  taskIds?: number[]
+  /** Required when a SUGGESTED task goes to a different bin (NX-0006). */
+  overrideReason?: PutawayOverrideReason
+  /** The count came up short: the remainder becomes a shortage for a manager. */
+  short?: boolean
+  /** Make this bin the product's home — only when it has none. */
+  makeHome?: boolean
   /** Where it was actually put. Optional when `scan.locationCode` names it —
    *  the server resolves the scanned code and treats it as authoritative. */
   actualLocationId?: number
@@ -120,6 +153,10 @@ export interface CompletePutawayResult {
   scanVerified: boolean
   actualLocationCode: string | null
   remainderQty: number
+  /** What the remainder became: still a task, or a shortage (NX-0006). */
+  remainderStatus: 'suggested' | 'assigned' | 'short' | null
+  /** The bin was made the product's home. */
+  homeSet: boolean
 }
 
 /** A refusal from complete-putaway, carrying the server's own words plus the
@@ -144,9 +181,15 @@ export async function completePutaway(input: CompletePutawayInput): Promise<Comp
     scanVerified: boolean
     actualLocationCode: string | null
     remainder_qty?: number
+    remainder_status?: 'suggested' | 'assigned' | 'short' | null
+    homeSet?: boolean
   }>('complete-putaway', {
     body: {
-      recommendation_id: input.recommendationId,
+      recommendation_id: input.taskIds ? undefined : input.recommendationId,
+      task_ids: input.taskIds,
+      override_reason: input.overrideReason,
+      short: input.short,
+      make_home: input.makeHome,
       actual_location_id: input.actualLocationId,
       quantity: input.quantity,
       role_override: input.roleOverride,
@@ -169,5 +212,7 @@ export async function completePutaway(input: CompletePutawayInput): Promise<Comp
     scanVerified: Boolean(data?.scanVerified),
     actualLocationCode: data?.actualLocationCode ?? null,
     remainderQty: Number(data?.remainder_qty ?? 0),
+    remainderStatus: data?.remainder_status ?? null,
+    homeSet: Boolean(data?.homeSet),
   }
 }

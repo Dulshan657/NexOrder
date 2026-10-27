@@ -776,6 +776,10 @@ export interface PutawayLineRecommendation {
     recommendedLocationId: number | null;
     alternatives: CandidateBreakdown[];
     explanation: PutawayExplanation;
+    /** NX-0006: the product's home bin, near its home, or the plain engine. */
+    suggestionSource?: 'home' | 'overflow' | 'engine';
+    /** NX-0006: no home bin yet — the operator may make the chosen bin its home. */
+    suggestMakeHome?: boolean;
 }
 
 export interface HoReCa {

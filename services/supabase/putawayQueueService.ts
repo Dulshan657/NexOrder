@@ -50,7 +50,12 @@ export interface PendingPutawayRow {
    *  said) — an operator can assign somewhere else entirely. */
   assignedLocationId: number | null
   assignedAt: string | null
+  /** Why this bin (NX-0006, mig 00135): the product's home, near its home, the
+   *  plain engine (no home yet), or a desk redirect. NULL before 00135. */
+  suggestionSource?: PutawaySuggestionSource | null
 }
+
+export type PutawaySuggestionSource = 'home' | 'overflow' | 'engine' | 'desk'
 
 // products is readable by every authenticated user; goods_receipts is readable
 // by Admin/Manager/Warehouse (goods_receipts_select_ops, mig 00037) — exactly
@@ -85,6 +90,7 @@ function toQueueRow(row: any): PendingPutawayRow {
     huStatus: row.handling_units?.status ?? null,
     assignedLocationId: row.assigned_location_id ?? null,
     assignedAt: row.assigned_at ?? null,
+    suggestionSource: row.suggestion_source ?? null,
   }
 }
 
@@ -112,6 +118,20 @@ export async function getAssignedPutaways(warehouseId: number): Promise<PendingP
     .select(QUEUE_SELECT)
     .eq('warehouse_id', warehouseId)
     .eq('status', 'assigned')
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []).map(toQueueRow)
+}
+
+/** Shortages (NX-0006): a count came up short and the operator flagged it.
+ *  The missing units are still on record at the warehouse root until an
+ *  Admin/Manager marks them found or writes them off. Oldest first. */
+export async function getShortPutaways(warehouseId: number): Promise<PendingPutawayRow[]> {
+  const { data, error } = await supabase
+    .from('wie_putaway_recommendations')
+    .select(QUEUE_SELECT)
+    .eq('warehouse_id', warehouseId)
+    .eq('status', 'short')
     .order('created_at', { ascending: true })
   if (error) throw error
   return (data ?? []).map(toQueueRow)

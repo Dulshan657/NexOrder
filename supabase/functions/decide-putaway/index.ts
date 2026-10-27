@@ -28,6 +28,16 @@
 //   'unassign'        → wie_unassign_putaway_tx. Walk an assigned task back to
 //                       the queue when a run is abandoned. No stock has moved,
 //                       so it is a pure state reversal.
+//
+// NX-0006 (mig 00135) adds two more, Admin/Manager only
+// (_shared/putawayCompletion.ts decideDeskAction):
+//
+//   'redirect'        → wie_redirect_putaway_tx. Change the bin of a SUGGESTED
+//                       task before anyone walks it. Moves nothing.
+//   'resolve_short'   → wie_resolve_short_putaway_tx. A count came up short:
+//                       `found` puts the task back on the floor's list,
+//                       `write_off` adjusts the missing units off at the dock
+//                       (reason required).
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -39,12 +49,16 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { requireModule } from '../_shared/modules.ts'
+import { decideDeskAction } from '../_shared/putawayCompletion.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
 const inputSchema = z.object({
   recommendation_id: z.number().int().positive(),
-  decision: z.enum(['accept', 'override', 'unassign']),
+  decision: z.enum(['accept', 'override', 'unassign', 'redirect', 'resolve_short']),
+  // resolve_short only.
+  resolution: z.enum(['found', 'write_off']).optional(),
+  reason: z.string().max(500).nullish(),
   chosen_location_id: z.number().int().positive().optional(),
   // Partial putaway. Omitted = the whole remaining quantity.
   quantity: z.number().positive().optional(),
@@ -63,8 +77,10 @@ const inputSchema = z.object({
   // cross it anyway (e.g. no compliant level had room). The crossing is
   // recorded in audit_events, never silently allowed.
   role_override: z.boolean().optional(),
-}).refine((d) => d.decision !== 'override' || d.chosen_location_id !== undefined, {
-  message: 'override requires chosen_location_id',
+}).refine((d) => (d.decision !== 'override' && d.decision !== 'redirect') || d.chosen_location_id !== undefined, {
+  message: 'override and redirect require chosen_location_id',
+}).refine((d) => d.decision !== 'resolve_short' || d.resolution !== undefined, {
+  message: 'resolve_short requires resolution',
 })
 
 // wie_decide_putaway_tx raises P0001 with a `CODE: message` prefix. Map the ones
@@ -87,6 +103,77 @@ function rpcError(message: string): EdgeFunctionError {
   return new EdgeFunctionError('INTERNAL', `putaway failed: ${message}`)
 }
 
+interface DeskActionArgs {
+  decision: 'redirect' | 'resolve_short'
+  chosenLocationId: number | null
+  resolution: 'found' | 'write_off' | null
+  reason: string | null
+}
+
+/** NX-0006 desk actions: change a suggested bin, or resolve a shortage. */
+async function handleDeskAction(
+  admin: any,
+  req: Request,
+  auth: Awaited<ReturnType<typeof requireAuth>>,
+  rec: any,
+  args: DeskActionArgs,
+): Promise<Response> {
+  const corsHeaders = corsHeadersFor(req)
+  const verdict = args.decision === 'redirect'
+    ? decideDeskAction({ action: 'redirect', role: auth.role, taskStatus: rec.status })
+    : decideDeskAction({
+      action: 'resolve_short', role: auth.role, taskStatus: rec.status,
+      resolution: args.resolution!, reason: args.reason,
+    })
+  if (verdict.ok === false) throw new EdgeFunctionError(verdict.code, verdict.message)
+
+  // Its own budget: a write-off adjusts stock, and a burst of redirects must
+  // not lock a manager out of the corrective action (see rateLimit.ts notes).
+  const rl = await checkRateLimit(`decide-putaway:desk:${auth.userId}`, { windowMs: 60_000, max: 30 })
+  if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')
+
+  let rpcResult: unknown
+  if (args.decision === 'redirect') {
+    const to = args.chosenLocationId!
+    const { data: bin } = await admin.from('locations').select('id, is_active, code').eq('id', to).maybeSingle()
+    if (!bin) throw new EdgeFunctionError('NOT_FOUND', `Bin ${to} not found`)
+    if (!bin.is_active) throw new EdgeFunctionError('CONFLICT', 'That bin is no longer active — choose another')
+    const { data: root, error: rootErr } = await admin.rpc('inv_root_warehouse', { p_location_id: to })
+    if (rootErr) throw new EdgeFunctionError('INTERNAL', `warehouse resolution failed: ${rootErr.message}`)
+    if (root !== rec.warehouse_id) throw new EdgeFunctionError('INVALID_INPUT', 'That bin is not inside this warehouse')
+
+    const { data, error } = await admin.rpc('wie_redirect_putaway_tx', {
+      p_rec_id: rec.id, p_location: to, p_actor: auth.userId,
+    })
+    if (error) throw rpcError(error.message)
+    rpcResult = data
+  } else {
+    const { data, error } = await admin.rpc('wie_resolve_short_putaway_tx', {
+      p_rec_id: rec.id, p_resolution: args.resolution, p_reason: args.reason, p_actor: auth.userId,
+    })
+    if (error) throw rpcError(error.message)
+    rpcResult = data
+  }
+
+  const { data: after } = await admin.from('wie_putaway_recommendations').select('*').eq('id', rec.id).single()
+  await logAuditEvent(admin, {
+    actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'wie_putaway_recommendations',
+    resourceId: String(rec.id), before: rec as Record<string, unknown>, after: (after ?? {}) as Record<string, unknown>,
+    metadata: {
+      stage: args.decision,
+      resolution: args.resolution,
+      reason: args.reason,
+      previous_location_id: rec.recommended_location_id,
+      chosen_location_id: args.chosenLocationId,
+      result: rpcResult,
+    },
+  })
+
+  return new Response(JSON.stringify({ ok: true, decision: args.decision, recommendation: after, result: rpcResult }), {
+    status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
 serve(async (req: Request) => {
   const corsHeaders = corsHeadersFor(req)
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -102,7 +189,10 @@ serve(async (req: Request) => {
     })
     const parsed = inputSchema.safeParse(body)
     if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
-    const { recommendation_id, decision, chosen_location_id, quantity, role_override, assign_only } = parsed.data
+    const {
+      recommendation_id, decision, chosen_location_id, quantity, role_override, assign_only,
+      resolution, reason,
+    } = parsed.data
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
       auth: { persistSession: false },
@@ -111,6 +201,13 @@ serve(async (req: Request) => {
     const { data: rec, error: rErr } = await admin.from('wie_putaway_recommendations')
       .select('*').eq('id', recommendation_id).single()
     if (rErr || !rec) throw new EdgeFunctionError('NOT_FOUND', `Recommendation ${recommendation_id} not found`)
+
+    if (decision === 'redirect' || decision === 'resolve_short') {
+      return await handleDeskAction(admin, req, auth, rec, {
+        decision, chosenLocationId: chosen_location_id ?? null,
+        resolution: resolution ?? null, reason: reason ?? null,
+      })
+    }
 
     // Unassign is the only decision that acts on an ALREADY-assigned task —
     // it walks the state back for a run someone started and abandoned. No stock

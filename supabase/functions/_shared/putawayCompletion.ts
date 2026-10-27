@@ -22,7 +22,9 @@
 // Pure: no Deno, no IO. Imported by complete-putaway and decide-putaway, and
 // by the browser to explain a refusal before it is sent.
 
-import type { UserRole } from './auth.ts'
+// A plain string, not auth.ts's UserRole: this module is imported by the
+// browser, and auth.ts reads Deno.env, which the frontend type-check cannot see.
+export type UserRole = string
 
 export const OVERRIDE_REASONS = ['blocked', 'damaged', 'full', 'closer', 'other'] as const
 export type OverrideReason = typeof OVERRIDE_REASONS[number]
