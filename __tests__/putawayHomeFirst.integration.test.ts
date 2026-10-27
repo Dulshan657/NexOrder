@@ -79,15 +79,62 @@ async function seed(client: pg.Client): Promise<Scenario> {
   return { warehouseId, layoutId, homeBin, otherBin, farBin, productId: product.rows[0].id }
 }
 
-async function task(client: pg.Client, s: Scenario, qty: number, binId: number): Promise<number> {
+async function task(
+  client: pg.Client, s: Scenario, qty: number, binId: number,
+  o: { productId?: number; huId?: number } = {},
+): Promise<number> {
   const r = await client.query<{ id: number }>(
     `INSERT INTO public.wie_putaway_recommendations
        (warehouse_id, layout_id, product_id, quantity, recommended_location_id,
-        explanation, engine_version, status, suggestion_source)
-     VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, 'test', 'suggested', 'home') RETURNING id`,
-    [s.warehouseId, s.layoutId, s.productId, qty, binId],
+        explanation, engine_version, status, suggestion_source, handling_unit_id)
+     VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, 'test', 'suggested', 'home', $6) RETURNING id`,
+    [s.warehouseId, s.layoutId, o.productId ?? s.productId, qty, binId, o.huId ?? null],
   )
   return r.rows[0].id
+}
+
+/** A second product, and a plate at the root carrying the given lines. */
+async function secondProduct(client: pg.Client, s: Scenario): Promise<number> {
+  const r = await client.query<{ id: number }>(
+    `INSERT INTO public.products (id, sku, name, price, category, unit, carton_size, supplier_id, inventory, size_factor)
+     SELECT (SELECT COALESCE(MAX(id),0)+1 FROM public.products), sku || '-B', name || ' B', 5, 'Other', 'EA', 12,
+            supplier_id, 0, 1 FROM public.products WHERE id = $1 RETURNING id`,
+    [s.productId],
+  )
+  return r.rows[0].id
+}
+
+async function plate(client: pg.Client, s: Scenario, lines: Array<[number, number]>): Promise<number> {
+  const h = await client.query<{ id: number }>(
+    `INSERT INTO public.handling_units (hu_type, warehouse_id, location_id) VALUES ('pallet', $1, $1) RETURNING id`,
+    [s.warehouseId],
+  )
+  for (const [productId, qty] of lines) {
+    await client.query(
+      `SELECT public.inv_apply_leg($1, $2, NULL, $3, 0, 'receipt', NULL, 'test', NULL, NULL, NULL, $4)`,
+      [productId, s.warehouseId, qty, h.rows[0].id],
+    )
+  }
+  return h.rows[0].id
+}
+
+/** Locations holding stock on this plate — a plate is only ever in one place. */
+async function plateLocations(client: pg.Client, huId: number): Promise<number[]> {
+  const r = await client.query<{ location_id: number }>(
+    `SELECT DISTINCT location_id FROM public.inventory_balances
+      WHERE handling_unit_id = $1 AND on_hand > 0 ORDER BY 1`,
+    [huId],
+  )
+  return r.rows.map((x) => x.location_id)
+}
+
+async function looseAt(client: pg.Client, productId: number, locationId: number): Promise<number> {
+  const r = await client.query<{ q: string }>(
+    `SELECT COALESCE(SUM(on_hand),0) AS q FROM public.inventory_balances
+      WHERE product_id=$1 AND location_id=$2 AND handling_unit_id IS NULL`,
+    [productId, locationId],
+  )
+  return Number(r.rows[0].q)
 }
 
 async function onHand(client: pg.Client, productId: number, locationId: number): Promise<number> {
@@ -228,6 +275,55 @@ describe('NX-0006 putaway, home first (live RPCs, rollback-isolated)', () => {
       expect(dist.get(s.homeBin)).toBe(0)
       expect(dist.get(s.otherBin)).toBe(2)
       expect(dist.get(s.farBin)).toBe(18)
+    })
+  })
+
+  it('a mixed pallet split across homes comes off its plate; the last product carries it', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      const b = await secondProduct(client, s)
+      const hu = await plate(client, s, [[s.productId, 6], [b, 4]])
+      const ta = await task(client, s, 6, s.homeBin, { huId: hu })
+      const tb = await task(client, s, 4, s.farBin, { productId: b, huId: hu })
+
+      await client.query('SELECT public.wie_complete_putaway_tx($1, $2)', [ta, s.homeBin])
+      // A's cartons left the pallet; the pallet (with B) is still at the dock.
+      expect(await looseAt(client, s.productId, s.homeBin)).toBe(6)
+      expect(await plateLocations(client, hu)).toEqual([s.warehouseId])
+
+      await client.query('SELECT public.wie_complete_putaway_tx($1, $2)', [tb, s.farBin])
+      // B emptied the plate, so the plate went with it — one place only.
+      expect(await plateLocations(client, hu)).toEqual([s.farBin])
+    })
+  })
+
+  it('one plate split between home and overflow never sits in two places', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      const hu = await plate(client, s, [[s.productId, 10]])
+      const home = await task(client, s, 6, s.homeBin, { huId: hu })
+      const over = await task(client, s, 4, s.otherBin, { huId: hu })
+
+      await client.query('SELECT public.wie_complete_putaway_tx($1, $2)', [home, s.homeBin])
+      expect(await looseAt(client, s.productId, s.homeBin)).toBe(6)
+      expect(await plateLocations(client, hu)).toEqual([s.warehouseId])
+
+      await client.query('SELECT public.wie_complete_putaway_tx($1, $2)', [over, s.otherBin])
+      expect(await plateLocations(client, hu)).toEqual([s.otherBin])
+    })
+  })
+
+  it('Place now on a mixed pallet line takes it off the plate too', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      // B exists ONLY on the plate (seed() also leaves loose A at the dock,
+      // which Place now's any-plate draw would take first and prove nothing).
+      const b = await secondProduct(client, s)
+      const hu = await plate(client, s, [[b, 6], [s.productId, 4]])
+      const tb = await task(client, s, 6, s.homeBin, { productId: b, huId: hu })
+      await client.query("SELECT public.wie_decide_putaway_tx($1, 'accept', $2)", [tb, s.homeBin])
+      expect(await looseAt(client, b, s.homeBin)).toBe(6)
+      expect(await plateLocations(client, hu)).toEqual([s.warehouseId])
     })
   })
 })

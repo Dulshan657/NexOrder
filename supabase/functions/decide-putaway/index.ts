@@ -110,6 +110,21 @@ interface DeskActionArgs {
   reason: string | null
 }
 
+/** Is this location in a HOLD zone (mig 00101)? Nearest ZONE ancestor by
+ *  materialized path — the rule wie_putaway_candidates uses — read from the
+ *  path's own prefixes, so no reversed LIKE is needed over PostgREST. */
+async function binIsHold(admin: any, locationId: number): Promise<boolean> {
+  const { data: loc } = await admin.from('locations').select('materialized_path').eq('id', locationId).maybeSingle()
+  const segments = String(loc?.materialized_path ?? '').split('/').filter(Boolean)
+  const prefixes = segments.slice(0, -1).map((_, i) => segments.slice(0, i + 1).join('/'))
+  if (prefixes.length === 0) return false
+  const { data: zones } = await admin.from('locations')
+    .select('materialized_path, zone_profiles(is_hold)').eq('kind', 'ZONE').in('materialized_path', prefixes)
+  const nearest = ((zones ?? []) as any[])
+    .sort((a, b) => String(b.materialized_path).length - String(a.materialized_path).length)[0]
+  return nearest?.zone_profiles?.is_hold === true
+}
+
 /** NX-0006 desk actions: change a suggested bin, or resolve a shortage. */
 async function handleDeskAction(
   admin: any,
@@ -141,6 +156,37 @@ async function handleDeskAction(
     const { data: root, error: rootErr } = await admin.rpc('inv_root_warehouse', { p_location_id: to })
     if (rootErr) throw new EdgeFunctionError('INTERNAL', `warehouse resolution failed: ${rootErr.message}`)
     if (root !== rec.warehouse_id) throw new EdgeFunctionError('INVALID_INPUT', 'That bin is not inside this warehouse')
+
+    // The same guards the floor would meet, checked before anyone walks there.
+    // A held (quarantined) line may only go to a hold bin, and an ordinary line
+    // never to one — the switch receive-stock set via p_hold_only (mig 00101).
+    if (rec.recommended_location_id != null) {
+      const [fromHold, toHold] = await Promise.all([
+        binIsHold(admin, rec.recommended_location_id), binIsHold(admin, to),
+      ])
+      if (fromHold !== toHold) {
+        throw new EdgeFunctionError('CONFLICT', fromHold
+          ? 'This line is on hold; it can only go to another hold bin'
+          : `${bin.code} is a hold bin; only quarantined stock goes there`)
+      }
+    }
+    const { data: binRole } = await admin.from('locations').select('level_role').eq('id', to).maybeSingle()
+    const chosenLevelRole = binRole?.level_role as string | null
+    if (chosenLevelRole) {
+      const { data: attrs } = await admin.from('product_wms_attributes')
+        .select('allowed_level_roles').eq('product_id', rec.product_id).maybeSingle()
+      const allowed = Array.isArray(attrs?.allowed_level_roles) && attrs.allowed_level_roles.length > 0
+        ? attrs.allowed_level_roles as string[]
+        : null
+      if (allowed && !allowed.includes(chosenLevelRole)) {
+        throw new EdgeFunctionError('CONFLICT',
+          `${bin.code} is a ${chosenLevelRole} level; this product is only allowed on ${allowed.join('/')} levels`)
+      }
+    }
+    const { data: whRow } = await admin.from('locations').select('active_layout_id').eq('id', rec.warehouse_id).single()
+    if (whRow?.active_layout_id !== rec.layout_id) {
+      throw new EdgeFunctionError('CONFLICT', 'The layout changed since this suggestion — re-run it')
+    }
 
     const { data, error } = await admin.rpc('wie_redirect_putaway_tx', {
       p_rec_id: rec.id, p_location: to, p_actor: auth.userId,

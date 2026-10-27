@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { extractFunctionErrorDetails, extractFunctionErrorMessage } from '@/lib/functionError'
 import type { PutawayLineRecommendation } from '@/types'
+import type { OverrideReason } from '@/supabase/functions/_shared/putawayCompletion'
 
 export interface PutawayLineInput {
   product_id: number
@@ -125,7 +126,8 @@ export interface PutawayScanEvidence {
   handlingUnitCode?: string
 }
 
-export type PutawayOverrideReason = 'blocked' | 'damaged' | 'full' | 'closer' | 'other'
+/** One list, owned by the server rules (_shared/putawayCompletion.ts). */
+export type PutawayOverrideReason = OverrideReason
 
 export interface CompletePutawayInput {
   /** One task. Give this or `taskIds`. */
