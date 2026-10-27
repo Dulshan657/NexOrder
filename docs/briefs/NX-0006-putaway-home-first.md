@@ -16,7 +16,7 @@
     { "id": "A8", "check": "Completing at a bin other than the suggested one is refused without an override_reason from Blocked, Damaged, Full, Closer, Other." },
     { "id": "A9", "check": "Completing fewer than the task quantity with short = true leaves the remainder as a 'short' task at the warehouse root; without short it stays open as today." },
     { "id": "A10", "check": "make_home sets the product's home bin only when it has none in that warehouse; for the Warehouse role an existing home is refused, Admin/Manager are told to use the home-bin editor." },
-    { "id": "A11", "check": "Several task ids of the same product, batch and no plate complete in one call, quantity allocated oldest task first; mixed products or batches are refused." },
+    { "id": "A11", "check": "Several task ids of the same product with no plate complete in one call, quantity allocated oldest task first; mixed products or plated tasks are refused. (Revision: putaway rows carry no batch and the transfer draws loose dock stock earliest-expiry first, so a batch choice cannot be offered or needed.)" },
     { "id": "A12", "check": "decide-putaway 'redirect' (Admin/Manager) changes the bin of a 'suggested' task; 'resolve_short' found reopens it, write_off adjusts stock with a mandatory reason." },
     { "id": "A13", "check": "Migration 00135 applied on dev; A7, A9, A10 and A12 verified against live pg.", "manual": "npm run migrate:dev + npm run test:integration (putawayHomeFirst.integration.test.ts)" },
     { "id": "A14", "check": "Existing Assign/Walk screen still works end to end on dev after the function deploy.", "manual": "browser walk on nexorder.vercel.app" },
@@ -36,7 +36,7 @@
     { "file": "__tests__/putawayCompletion.test.ts", "test": "decidePutawayCompletion > requires a reason for a different bin", "proves": ["A8"] },
     { "file": "__tests__/putawayCompletion.test.ts", "test": "decidePutawayCompletion > marks the remainder short when flagged", "proves": ["A9"] },
     { "file": "__tests__/putawayCompletion.test.ts", "test": "decidePutawayCompletion > make_home only when the product has no home", "proves": ["A10"] },
-    { "file": "__tests__/putawayCompletion.test.ts", "test": "allocateAcrossTasks > fills oldest first and refuses mixed batches", "proves": ["A11"] },
+    { "file": "__tests__/putawayCompletion.test.ts", "test": "allocateAcrossTasks > fills oldest first and refuses mixed products or plates", "proves": ["A11"] },
     { "file": "__tests__/putawayCompletion.test.ts", "test": "decideDeskAction > redirect and resolve_short are Admin/Manager only; write_off needs a reason", "proves": ["A12"] }
   ],
   "allow": []
