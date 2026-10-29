@@ -14,8 +14,12 @@ draft layouts).
 
 ## Three projects that are instruments, not regression tests
 
-All three are excluded from `npm run test:e2e` and from CI. None guards
-anything on its own; each exists to produce a reading nothing else can.
+None of the three runs in CI, and none guards anything on its own; each exists
+to produce a reading nothing else can. Note that `npm run test:e2e` is a bare
+`playwright test`, which runs every project the config defines: `soak` and
+`perf` are collected by it too (they fail fast without their setup). `voice`
+is the exception, because a run costs money: it is only defined when
+`E2E_VOICE=1` is set.
 
 ### `soak` — does a session survive a shift? (`tests/soak/`)
 
@@ -58,7 +62,7 @@ Full procedure, the pre-registered decision rule and the 2026-08-19 results:
 ### `voice` — does Nex say the right number? (`tests/voice-e2e/`)
 
 ```bash
-E2E_BASE_URL=https://nexorder.vercel.app E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... npx playwright test --project=voice
+E2E_VOICE=1 E2E_BASE_URL=https://nexorder.vercel.app E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... npx playwright test --project=voice
 ```
 
 Asks Nex two recorded questions ("How many orders did we process this month?"

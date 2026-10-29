@@ -19,18 +19,32 @@ interface ProjectLike {
 
 describe('voice e2e harness', () => {
   it('registers a voice project outside tests/e2e', async () => {
-    const config = (await import('../playwright.config')).default as { testDir?: string; projects?: ProjectLike[] }
-    const projects = config.projects ?? []
-    const voice = projects.find((p) => p.name === 'voice')
-    expect(voice, 'a project named voice').toBeDefined()
-    expect(resolve(ROOT, voice?.testDir ?? '')).toBe(VOICE_DIR)
+    // A bare `playwright test` (`npm run test:e2e`) runs EVERY project in the
+    // config, so the only way to keep the voice instrument out of it is for the
+    // project not to exist unless asked for. The gate caught the first version,
+    // which only checked where the folder sat.
+    const load = async (flag: string | undefined) => {
+      const before = process.env.E2E_VOICE
+      if (flag === undefined) delete process.env.E2E_VOICE
+      else process.env.E2E_VOICE = flag
+      try {
+        const url = `../playwright.config.ts?voice=${flag ?? 'off'}`
+        return ((await import(/* @vite-ignore */ url)).default as { testDir?: string; projects?: ProjectLike[] })
+      } finally {
+        if (before === undefined) delete process.env.E2E_VOICE
+        else process.env.E2E_VOICE = before
+      }
+    }
 
-    // The default suite (`npm run test:e2e`, the chromium project) inherits the
-    // top-level testDir, and CI runs only the a11y project: neither reaches it.
-    const defaultDir = resolve(ROOT, config.testDir ?? '')
+    const bare = await load(undefined)
+    expect((bare.projects ?? []).map((p) => p.name), 'a bare run collects no voice project').not.toContain('voice')
+
+    const optedIn = await load('1')
+    const voice = (optedIn.projects ?? []).find((p) => p.name === 'voice')
+    expect(voice, 'E2E_VOICE=1 registers the voice project').toBeDefined()
+    expect(resolve(ROOT, voice?.testDir ?? '')).toBe(VOICE_DIR)
+    const defaultDir = resolve(ROOT, optedIn.testDir ?? '')
     expect(VOICE_DIR.startsWith(defaultDir + '\\') || VOICE_DIR.startsWith(defaultDir + '/')).toBe(false)
-    const a11y = projects.find((p) => p.name === 'a11y')
-    expect(resolve(ROOT, a11y?.testDir ?? '')).not.toBe(VOICE_DIR)
   })
 
   it('matches a count said as digits or words, and no other count', async () => {

@@ -68,6 +68,27 @@ for (const tenant of tenantTargets()) {
   }
 }
 
+// NX-0009 — Nex by voice, end to end: a recorded question through a fake
+// microphone, the real OpenAI Realtime session, the answer checked against SQL.
+// An INSTRUMENT like `soak`, but costlier: every run spends OpenAI minutes and
+// the signed-in account's Nex budget. A bare `playwright test` (which is what
+// `npm run test:e2e` is) runs EVERY project, so this one exists only when asked
+// for: `E2E_VOICE=1 npx playwright test --project=voice`. The spec launches its
+// own browser, because the fake-microphone file is a per-launch flag.
+const VOICE_PROJECTS = process.env.E2E_VOICE === '1'
+  ? [
+      {
+        name: 'voice',
+        testDir: './tests/voice-e2e',
+        testMatch: '**/*.spec.ts',
+        retries: 0,
+        workers: 1,
+        fullyParallel: false,
+        use: { ...devices['Desktop Chrome'] },
+      },
+    ]
+  : []
+
 export default defineConfig({
   testDir: './tests/e2e',
   testMatch: '**/*.spec.ts',
@@ -179,21 +200,7 @@ export default defineConfig({
       retries: 0,
       use: { ...devices['Desktop Chrome'] },
     },
-    {
-      // NX-0008 — Nex by voice, end to end: a recorded question through a fake
-      // microphone, the real OpenAI Realtime session, the answer checked against
-      // SQL. An INSTRUMENT like `soak`: it spends OpenAI minutes and depends on a
-      // language model, so its testDir sits outside './tests/e2e' and neither
-      // `npm run test:e2e` nor CI runs it. The spec launches its own browser,
-      // because the fake-microphone file is a per-launch flag.
-      name: 'voice',
-      testDir: './tests/voice-e2e',
-      testMatch: '**/*.spec.ts',
-      retries: 0,
-      workers: 1,
-      fullyParallel: false,
-      use: { ...devices['Desktop Chrome'] },
-    },
+    ...VOICE_PROJECTS,
     {
       // O14 — the backdrop-blur measurement harness. HEADED, deliberately.
       // The previous attempt ran in a browser-automation tab that is always

@@ -9,7 +9,8 @@
 //
 // An INSTRUMENT, not a regression test: it costs OpenAI minutes and depends on a
 // language model, so it is excluded from `npm run test:e2e` and CI, like `soak`.
-//   E2E_BASE_URL=https://nexorder.vercel.app npx playwright test --project=voice
+//   E2E_VOICE=1 E2E_BASE_URL=https://nexorder.vercel.app npx playwright test --project=voice
+// (the project exists only with E2E_VOICE=1, so a bare `npm run test:e2e` never runs it)
 //
 // "Processed this month" must be answered with SHIPPED (by ship date), "came in"
 // with PLACED (by order date): the two words the owner and Nex once disagreed on.
@@ -115,8 +116,14 @@ async function ask(question: string): Promise<Line[]> {
   }
 }
 
+/**
+ * Nex's ANSWER: the last final line it spoke. Earlier lines are fillers ("let me
+ * check"); matching across all of them would let the right number appear
+ * anywhere and still pass.
+ */
 function nexSaid(lines: Line[]): string {
-  return lines.filter((l) => l.who === 'Nex' && l.final).map((l) => l.text).join(' ')
+  const finals = lines.filter((l) => l.who === 'Nex' && l.final)
+  return finals[finals.length - 1]?.text ?? ''
 }
 
 test.describe('Nex answers order questions with the same numbers as the database', () => {
