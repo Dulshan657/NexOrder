@@ -317,6 +317,7 @@ body {
 .nex-mark-stroke { stroke-dasharray: 1 2; }
 .nex-mark-head { transform-box: fill-box; transform-origin: 50% 50%; }
 .nex-mark-band { transform: translateX(-300px); }
+.nex-mark-glow { opacity: 0; }
 
 @media (prefers-reduced-motion: no-preference) {
   .nex-mark--draw .nex-mark-stroke { animation: nex-mark-draw 0.7s cubic-bezier(0.65, 0, 0.25, 1) backwards; }
@@ -330,7 +331,7 @@ body {
   .nex-mark--shimmer .nex-mark-head { animation: nex-mark-nudge 0.9s cubic-bezier(0.3, 1.5, 0.5, 1) 0.4s; }
   /* The join fills belong to neither the shaft nor the head, so they step aside while the head lifts. */
   .nex-mark--shimmer .nex-mark-join { animation: nex-mark-join-hide 0.9s linear 0.4s; }
-  .nex-mark--disc.nex-mark--shimmer { animation: nex-mark-glow 1.5s ease-in-out; }
+  .nex-mark--shimmer .nex-mark-glow { animation: nex-mark-glow 1.5s ease-in-out; }
 }
 
 @keyframes nex-mark-draw { from { stroke-dashoffset: 1.1; } to { stroke-dashoffset: 0; } }
@@ -343,10 +344,7 @@ body {
 @keyframes nex-mark-sweep { from { transform: translateX(-300px); } to { transform: translateX(650px); } }
 @keyframes nex-mark-nudge { 0%, 100% { transform: none; } 40% { transform: translate(9px, -15.5px); } }
 @keyframes nex-mark-join-hide { 0%, 100% { opacity: 1; } 12%, 80% { opacity: 0; } }
-@keyframes nex-mark-glow {
-  0%, 100% { filter: drop-shadow(0 0 0 rgba(56, 189, 248, 0)); }
-  45%      { filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.55)); }
-}
+@keyframes nex-mark-glow { 0%, 100% { opacity: 0; } 45% { opacity: 1; } }
 
 /* Pre-auth surfaces (login / forgot / reset) — one orchestrated page-load entrance.
    --auth-i is set inline per element by `authStagger()` in components/auth/authChrome.tsx,

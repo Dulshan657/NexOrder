@@ -12,6 +12,11 @@ describe('markCadence', () => {
     for (const t of at) expect(t).toBeLessThan(IDLE_WINDOW_MS)
   })
 
+  it('counts from the page first showing a mark, so a remount plays only what is left', () => {
+    expect(shimmerSchedule(false, 10000)).toEqual([5000, 12000, 19000])
+    expect(shimmerSchedule(false, 31000)).toEqual([])
+  })
+
   it('schedules nothing under reduced motion', () => {
     expect(shimmerSchedule(true)).toEqual([])
   })

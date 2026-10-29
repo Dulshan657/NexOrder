@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
-import { DRAW_ON_MS, NexMark, SHIMMER_MS } from '@/components/voice/NexMark'
+import { DRAW_ON_MS, NexMark, SHIMMER_MS, __resetNexMarkClock } from '@/components/voice/NexMark'
 
 function setReducedMotion(reduced: boolean) {
   window.matchMedia = vi.fn((query: string) => ({
@@ -28,6 +28,7 @@ const advance = (ms: number) =>
 
 beforeEach(() => {
   vi.useFakeTimers()
+  __resetNexMarkClock()
   setReducedMotion(false)
   setHidden(false)
 })
@@ -74,6 +75,30 @@ describe('NexMark', () => {
     expect(mark(container).getAttribute('data-nex-mark-shimmers')).toBe('6')
     advance(SHIMMER_MS)
     expect(phase(container)).toBe('rest')
+  })
+
+  it('ignores a hover or tap while it is still drawing on', () => {
+    const { container, rerender } = render(<NexMark variant="disc" size={56} playToken={0} />)
+    advance(500)
+    rerender(<NexMark variant="disc" size={56} playToken={1} />)
+    expect(phase(container)).toBe('draw')
+    expect(mark(container).getAttribute('data-nex-mark-shimmers')).toBe('0')
+    advance(DRAW_ON_MS - 500)
+    expect(phase(container)).toBe('rest')
+  })
+
+  it('plays only what is left of the idle schedule when remounted', () => {
+    const first = render(<NexMark variant="disc" size={56} />)
+    advance(20000)
+    expect(mark(first.container).getAttribute('data-nex-mark-shimmers')).toBe('3')
+    first.unmount()
+
+    // The launcher comes back when the sheet closes: it draws on again, then plays
+    // only the shimmers still due (22 s and 29 s), not all five.
+    const second = render(<NexMark variant="disc" size={56} />)
+    expect(phase(second.container)).toBe('draw')
+    advance(60000)
+    expect(mark(second.container).getAttribute('data-nex-mark-shimmers')).toBe('2')
   })
 
   it('skips a shimmer while the tab is hidden', () => {

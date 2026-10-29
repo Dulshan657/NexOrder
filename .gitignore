@@ -56,4 +56,3 @@ deno.lock
 
 # Rendered campaign assets (npm run brand:nex-mark); the SVG masters are committed
 brand/nex-mark/dist/
-.harness/

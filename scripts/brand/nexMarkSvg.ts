@@ -19,6 +19,10 @@ const DISC_SCALE = (100 * discFill) / MARK_WIDTH
 const DISC_TRANSFORM = `translate(${50 - centre[0] * DISC_SCALE} ${50 - centre[1] * DISC_SCALE}) scale(${DISC_SCALE})`
 const BARE_SIDE = Math.max(MARK_WIDTH, bounds.maxY - bounds.minY) + W / 2
 const BARE_VIEWBOX = `${centre[0] - BARE_SIDE / 2} ${centre[1] - BARE_SIDE / 2} ${BARE_SIDE} ${BARE_SIDE}`
+/** The animated bare mark also needs room for the arrow's nudge (9, -15.5) past its tip. */
+const NUDGE_ROOM = 24
+const BARE_ANIMATED_SIDE = BARE_SIDE + 2 * NUDGE_ROOM
+const BARE_ANIMATED_VIEWBOX = `${centre[0] - BARE_ANIMATED_SIDE / 2} ${centre[1] - BARE_ANIMATED_SIDE / 2} ${BARE_ANIMATED_SIDE} ${BARE_ANIMATED_SIDE}`
 
 /** Seconds in the loop -> keyframe percentage. */
 const at = (s: number): string => `${((s / LOOP_S) * 100).toFixed(2)}%`
@@ -124,5 +128,5 @@ export function discSvg(animated: boolean): string {
 /** The bare variant: the mark alone in the brand blues (the sheet header). */
 export function bareSvg(animated: boolean, stops: readonly string[] = NEX_MARK_COLOURS.bareLight): string {
   const body = `<defs>${inkGradient('ink', stops)}</defs><g${animated ? ' class="mk"' : ''}>${strokes('url(#ink)', animated)}</g>`
-  return svg(BARE_VIEWBOX, body, animated)
+  return svg(animated ? BARE_ANIMATED_VIEWBOX : BARE_VIEWBOX, body, animated)
 }

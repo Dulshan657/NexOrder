@@ -64,41 +64,66 @@ async function renderPngs(page: Page): Promise<void> {
   }
 }
 
-/** Render one loop at `fps` into a fresh directory; returns it. */
+/** Render one loop at `fps` into a fresh directory; removed again if rendering fails. */
 async function renderFrames(page: Page, px: number, fps: number): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'nex-mark-'))
-  await load(page, discSvg(true), px, BACKGROUND)
-  const frames = Math.round(LOOP_S * fps)
-  for (let i = 0; i < frames; i += 1) {
-    const ms = (i * 1000) / fps
-    await page.evaluate((t: number) => {
-      for (const a of document.getAnimations()) {
-        a.pause()
-        a.currentTime = t
-      }
-    }, ms)
-    await page.locator('#m').screenshot({ path: join(dir, `f${String(i).padStart(4, '0')}.png`) })
+  try {
+    await load(page, discSvg(true), px, BACKGROUND)
+    const frames = Math.round(LOOP_S * fps)
+    for (let i = 0; i < frames; i += 1) {
+      const ms = (i * 1000) / fps
+      await page.evaluate((t: number) => {
+        for (const a of document.getAnimations()) {
+          a.pause()
+          a.currentTime = t
+        }
+      }, ms)
+      await page.locator('#m').screenshot({ path: join(dir, `f${String(i).padStart(4, '0')}.png`) })
+    }
+    return dir
+  } catch (error: unknown) {
+    rmSync(dir, { recursive: true, force: true })
+    throw error
   }
-  return dir
+}
+
+/** Render a loop, hand its frames to `encode`, and always remove them after. */
+async function withFrames(page: Page, px: number, fps: number, encode: (dir: string) => void): Promise<void> {
+  const dir = await renderFrames(page, px, fps)
+  try {
+    encode(dir)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+/** Run ffmpeg quietly, but surface its own error text when it fails. */
+function ffmpeg(args: string[]): void {
+  try {
+    execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], { stdio: ['ignore', 'ignore', 'pipe'] })
+  } catch (error: unknown) {
+    const stderr = (error as { stderr?: Buffer }).stderr?.toString().trim()
+    throw new Error(`ffmpeg ${args.join(' ')}: ${stderr || String(error)}`)
+  }
 }
 
 function encodeGif(frames: string, fps: number, out: string): void {
   const input = ['-y', '-framerate', String(fps), '-i', join(frames, 'f%04d.png')]
   const palette = join(frames, 'palette.png')
-  execFileSync('ffmpeg', [...input, '-vf', 'palettegen=stats_mode=diff', palette], { stdio: 'ignore' })
-  execFileSync(
-    'ffmpeg',
-    [...input, '-i', palette, '-lavfi', 'paletteuse=dither=sierra2_4a', '-loop', '0', out],
-    { stdio: 'ignore' },
-  )
+  ffmpeg([...input, '-vf', 'palettegen=stats_mode=diff', palette])
+  ffmpeg([...input, '-i', palette, '-lavfi', 'paletteuse=dither=sierra2_4a', '-loop', '0', out])
 }
 
+/** Tagged BT.709 end to end, so players do not shift the navy and the cyan. */
 function encodeMp4(frames: string, fps: number, out: string): void {
-  execFileSync(
-    'ffmpeg',
-    ['-y', '-framerate', String(fps), '-i', join(frames, 'f%04d.png'), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '16', '-movflags', '+faststart', out],
-    { stdio: 'ignore' },
-  )
+  ffmpeg([
+    '-y', '-framerate', String(fps), '-i', join(frames, 'f%04d.png'),
+    '-vf', 'scale=out_color_matrix=bt709:out_range=tv',
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '16',
+    '-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709',
+    '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
+    '-movflags', '+faststart', out,
+  ])
 }
 
 async function main(): Promise<void> {
@@ -109,13 +134,9 @@ async function main(): Promise<void> {
   try {
     await renderPngs(page)
     for (const px of [512, 1080]) {
-      const gifFrames = await renderFrames(page, px, 30)
-      encodeGif(gifFrames, 30, join(DIST, `nex-mark-${px}.gif`))
-      rmSync(gifFrames, { recursive: true, force: true })
+      await withFrames(page, px, 30, (dir) => encodeGif(dir, 30, join(DIST, `nex-mark-${px}.gif`)))
     }
-    const mp4Frames = await renderFrames(page, 1080, 60)
-    encodeMp4(mp4Frames, 60, join(DIST, 'nex-mark-1080.mp4'))
-    rmSync(mp4Frames, { recursive: true, force: true })
+    await withFrames(page, 1080, 60, (dir) => encodeMp4(dir, 60, join(DIST, 'nex-mark-1080.mp4')))
   } finally {
     await browser.close()
   }
