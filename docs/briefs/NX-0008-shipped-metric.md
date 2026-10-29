@@ -112,3 +112,29 @@ it drew cancelled orders as the last pipeline stage. Decided with the owner on
   next release tag.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `sales.shippedCount > counts an order shipped in the window even when it was placed before it`, `> counts each order once, by the first time it reached dispatched or delivered` fail on base, pass on tip (check:brief) | |
+| A2 | claimed | `sales.shippedCount > never counts a cancelled order and honours the rep scope` | |
+| A3 | claimed | `get_sales_summary > reports orders shipped in the period by ship date, with the dispatched and delivered split`, `> says in the basis that placed and shipped orders are counted by different dates` | |
+| A4 | claimed | `buildInstructions > tells Nex that processed means shipped and to say what it counted`; `stays under 4,000 characters for every role and module set` still passes | Revised after the live run: counts are exact, basis said plainly |
+| A5 | claimed | `ORDER_STATUS_LABELS > shows the processed status as Confirmed`; e2e `order-numbers.spec.ts` reads "Confirmed:" off the live chart | Also PickQueueView's empty text and StockAssignmentModal's history note |
+| A6 | claimed | `computeDispatchFunnel > counts orders placed since the start of the Sydney calendar month for 'month'` | |
+| A7 | claimed | `computeDispatchFunnel > keeps cancelled orders out of the stages and counts them separately` | |
+| A8 | claimed | `InventoryDispatchSection > opens on This month and shows cancelled orders as a line under the chart`; e2e on nexorder.vercel.app | |
+| A9 | claimed | `npx playwright test --project=voice` against nexorder.vercel.app, 2 passed: "22 orders shipped. That's 5 dispatched and 17 delivered, with 39 still in the warehouse" / "19 orders placed this month" (SQL: shipped 22 = 5 + 17, placed 19, open 39) | Run as bob@ and tridon@, not Alice: Alice's day was spent by the first, session-leaking runs (see Not claimed) |
+| A10 | not-claimed | Branch deployed to dev at 6306667 (/version.json verified, health 200); voice-session deployed to dev at 18a4f00's instructions | Not merged yet; re-verify /version.json after the merge deploy |
+| A11 | claimed | `sales.revenueByDate > groups an early-morning Sydney order on its Sydney date`, `dashboardRange > starts This Week on Monday at Sydney midnight, like Nex` | UTC-pinned assertions in semantic.filter / semantic.equivalence updated to Sydney, as the Approach states |
+| A12 | claimed | `order numbers parity > Nex, the Orders KPI and the pipeline agree for This month` | |
+| A13 | claimed | `npx vitest run -c vitest.integration.config.ts numbersParity` on dev, 1 passed: placed 19 (packed 1, dispatched 5, delivered 13), cancelled 19, shipped 22 (5/17), open 39, all equal to SQL | |
+| A14 | claimed | `E2E_BASE_URL=https://nexorder.vercel.app npx playwright test tests/e2e/order-numbers.spec.ts`, 1 passed | Also passed on a local server from this branch |
+| A15 | claimed | `npx playwright test --project=voice` on nexorder.vercel.app, 2 passed, both sessions ended in the ledger (0 open) | |
+
+### Not claimed
+
+- No run on the RS35 or at phone width; the pipeline card's four buttons were not checked at 360 px.
+- Other dashboards (SalesDashboard, RepDashboardV2) were not audited for their own period logic; only the Admin Dashboard's toggle moved to lib/period. dayRange moving to Sydney days changes their custom ranges and sales-target windows too, unverified by eye.
+- The first live voice runs left four sessions open (two each for alice@ and bob@), which the ledger bills at 900 s each; those two demo accounts have no Nex time until the rows age out (rolling 24 h). Not repaired here.
+- `stillInWarehouse` counts every open order whatever its age (39 on dev, some from March); whether stale open orders should be closed is a data question, not this change.
+- Nex's wording is a language model's: the voice e2e pins the numbers and the "about" rule, not phrasing ("using the 'went out' rule" still appeared once).
