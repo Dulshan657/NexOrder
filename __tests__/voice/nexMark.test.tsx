@@ -77,6 +77,16 @@ describe('NexMark', () => {
     expect(phase(container)).toBe('rest')
   })
 
+  it('never takes the pointer, so a shimmer cannot swallow the click that started it', () => {
+    // A press starts a shimmer, which remounts the shapes inside. Were one of them
+    // the press's target, it would leave the DOM before the release and the browser
+    // would drop the click (found on dev: the launcher stopped opening the sheet).
+    const { container } = render(<NexMark variant="disc" size={56} />)
+    const svg = mark(container)
+    expect(svg.style.pointerEvents).toBe('none')
+    expect(getComputedStyle(svg).pointerEvents).toBe('none')
+  })
+
   it('ignores a hover or tap while it is still drawing on', () => {
     const { container, rerender } = render(<NexMark variant="disc" size={56} playToken={0} />)
     advance(500)

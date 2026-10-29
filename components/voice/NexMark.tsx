@@ -17,7 +17,11 @@ import { useReducedMotion } from './useReducedMotion'
 // the page showed, so a remount only plays what is left of it. Reduced motion
 // gets the finished mark and no timers at all.
 //
-// Decorative: aria-hidden, because the button it sits in carries the label.
+// Decorative: aria-hidden, because the button it sits in carries the label. And
+// INERT TO THE POINTER: a shimmer remounts the shapes inside (that is how its CSS
+// animation restarts), so a press that landed on one of them would see its target
+// leave the DOM before the release, and Chrome then drops the click. With
+// pointer-events off, the press lands on the button, which is never replaced.
 
 export const DRAW_ON_MS = 1500
 export const SHIMMER_MS = 1500
@@ -205,6 +209,7 @@ export function NexMark({ variant, size, playToken, className }: NexMarkProps) {
       viewBox={variant === 'disc' ? '0 0 100 100' : BARE_VIEWBOX}
       width={size}
       height={size}
+      style={{ pointerEvents: 'none' }}
       className={`nex-mark nex-mark--${variant} nex-mark--${phase} shrink-0 overflow-visible ${className ?? ''}`}
     >
       {variant === 'disc' ? (
