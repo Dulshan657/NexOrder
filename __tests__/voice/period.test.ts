@@ -252,6 +252,8 @@ describe('resolvePeriod', () => {
       expect(whole.to.getTime() + 1 - whole.from.getTime()).toBe(25 * HOUR_MS)
       const day = resolvePeriod('today', now)
       expect(day.from.toISOString()).toBe('2026-04-04T13:00:00.000Z')
+      expect(day.to.toISOString()).toBe('2026-04-05T13:59:59.999Z')
+      expect(day.to.getTime() + 1 - day.from.getTime()).toBe(25 * HOUR_MS)
       expect(day.label).toBe('today (5 Apr 2026)')
       // 21 h since midnight, laid onto Saturday: 21:00 AEDT, an hour off the wall
       // clock (20:00 AEST today), the documented daylight-saving-day caveat.
