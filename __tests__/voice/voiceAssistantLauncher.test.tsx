@@ -52,6 +52,7 @@ function fakeSession(overrides: Partial<VoiceSessionApi> = {}): VoiceSessionApi 
     toggleMute: vi.fn(),
     sendText: vi.fn(),
     audioRef: { current: null },
+    getLevel: vi.fn(() => 0),
     ...overrides,
   }
 }
@@ -72,10 +73,18 @@ function renderLauncher() {
   )
 }
 
-const button = () => screen.queryByRole('button', { name: 'Talk to Nex Assistant' })
+const button = () => screen.queryByRole('button', { name: 'Talk to Nex' })
 const lastOptions = () => useVoiceSession.mock.calls[useVoiceSession.mock.calls.length - 1][0]
 
+// jsdom has no canvas; the orbs draw into a context that records nothing.
+function stubCanvas() {
+  const noop = () => undefined
+  const ctx = new Proxy({}, { get: (_t, key) => (key === 'canvas' ? null : noop), set: () => true })
+  HTMLCanvasElement.prototype.getContext = (() => ctx) as unknown as typeof HTMLCanvasElement.prototype.getContext
+}
+
 beforeEach(() => {
+  stubCanvas()
   __resetModalStack()
   __resetScrollLock()
   useVoiceSession.mockReset()
@@ -106,6 +115,25 @@ describe('VoiceAssistantLauncher', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('shows a static orb instead of the mic icon, keeping its label', () => {
+    useVoiceSession.mockReturnValue(fakeSession())
+    renderLauncher()
+    const b = button()!
+    expect(b.querySelector('.lucide-mic')).toBeNull()
+    const orb = b.querySelector('[data-orb-animate]')
+    expect(orb).toBeTruthy()
+    expect(orb!.getAttribute('data-orb-animate')).toBe('burst')
+    expect(orb!.getAttribute('data-orb-playing')).toBe('false')
+    expect(orb!.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('invites the rep to talk to Nex by name', () => {
+    useVoiceSession.mockReturnValue(fakeSession())
+    renderLauncher()
+    expect(screen.getByRole('button', { name: 'Talk to Nex' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Talk to Nex Assistant' })).toBeNull()
+  })
+
   it('starts the session synchronously in the tap that opens the sheet', () => {
     // fireEvent runs inside act(), which flushes effects before returning, so
     // "start was called by the time click() returned" would also pass if start()
@@ -122,7 +150,7 @@ describe('VoiceAssistantLauncher', () => {
     expect(start).toHaveBeenCalledTimes(1)
     expect(start).toHaveBeenCalledWith()
     expect(seen).toEqual([null])
-    expect(screen.getByRole('dialog', { name: 'Nex Assistant' })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: 'Nex' })).toBeTruthy()
   })
 
   it('returns focus to the mic button when the sheet closes', () => {

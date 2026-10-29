@@ -118,13 +118,14 @@ describe('VoiceAssistantSheet', () => {
     end: vi.fn(async () => {}),
     toggleMute: vi.fn(),
     sendText: vi.fn(),
+    getLevel: vi.fn(() => 0),
     audioRef: { current: null },
     ...overrides,
   })
 
   it('is a labelled dialog with no axe violations while live', async () => {
     render(<VoiceAssistantSheet open session={session()} onClose={vi.fn()} />)
-    expect(screen.getByRole('dialog', { name: 'Nex Assistant' })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: 'Nex' })).toBeTruthy()
     await expectNoA11yViolations(overlayRoot())
   })
 

@@ -35,6 +35,7 @@ function fakeSession(overrides: Partial<VoiceSessionApi> = {}): VoiceSessionApi 
     toggleMute: vi.fn(),
     sendText: vi.fn(),
     audioRef: { current: null },
+    getLevel: vi.fn(() => 0),
     ...overrides,
   }
 }
@@ -58,7 +59,17 @@ const KINDS: readonly VoiceErrorKind[] = [
   'expired',
 ]
 
+// jsdom has no canvas; the orbs draw into a context that records nothing.
+function stubCanvas() {
+  const noop = () => undefined
+  const ctx = new Proxy({}, { get: (_t, key) => (key === 'canvas' ? null : noop), set: () => true })
+  HTMLCanvasElement.prototype.getContext = (() => ctx) as unknown as typeof HTMLCanvasElement.prototype.getContext
+}
+
+const orbs = (animate: string) => Array.from(document.querySelectorAll(`[data-orb-animate="${animate}"]`))
+
 beforeEach(() => {
+  stubCanvas()
   __resetModalStack()
   __resetScrollLock()
   const main = document.createElement('div')
@@ -110,9 +121,44 @@ describe('VoiceAssistantSheet', () => {
     expect(end).toHaveBeenCalledWith('user')
   })
 
-  it('is a full-height dialog titled Nex Assistant', () => {
+  it('shows an aria-hidden hero orb that follows the live state', () => {
+    const { rerender } = renderSheet(fakeSession({ phase: 'live', live: 'listening' }))
+    const [hero] = orbs('live')
+    expect(hero).toBeTruthy()
+    expect(hero.getAttribute('aria-hidden')).toBe('true')
+    expect(hero.getAttribute('data-orb-state')).toBe('listening')
+    // Above the status pill: the orb is what the eye lands on, the word explains it.
+    expect(hero.compareDocumentPosition(status()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    rerender(<VoiceAssistantSheet open session={fakeSession({ phase: 'live', live: 'thinking' })} onClose={vi.fn()} />)
+    expect(orbs('live')[0].getAttribute('data-orb-state')).toBe('working')
+
+    rerender(<VoiceAssistantSheet open session={fakeSession({ phase: 'live', live: 'speaking' })} onClose={vi.fn()} />)
+    expect(orbs('live')[0].getAttribute('data-orb-state')).toBe('composing')
+  })
+
+  it('keeps the header orb static while the hero orb animates', () => {
+    renderSheet(fakeSession({ phase: 'live', live: 'speaking' }))
+    const dialog = screen.getByRole('dialog', { name: 'Nex' })
+    expect(orbs('live')).toHaveLength(1)
+    const header = orbs('burst')
+    expect(header).toHaveLength(1)
+    expect(dialog.contains(header[0])).toBe(true)
+    expect(header[0].getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('calls the assistant Nex in the title and the transcript', () => {
     renderSheet(fakeSession())
-    const dialog = screen.getByRole('dialog', { name: 'Nex Assistant' })
+    expect(screen.getByRole('dialog', { name: 'Nex' })).toBeTruthy()
+    expect(screen.queryByText('Nex Assistant')).toBeNull()
+    const log = screen.getByRole('log')
+    expect(log.textContent).toContain('Nex: You have sold 4,200 dollars this week')
+    expect(log.textContent).not.toContain('Nex Assistant')
+  })
+
+  it('is a full-height dialog titled Nex', () => {
+    renderSheet(fakeSession())
+    const dialog = screen.getByRole('dialog', { name: 'Nex' })
     expect(dialog.className).toContain('ui-sheet-panel--full')
   })
 

@@ -12,7 +12,8 @@ hears the answer. **Advisory and read-only**: it cannot place, change or cancel 
 the system prompt makes it say so and name the screen that can. Every tool result carries a
 `basis` string and the prompt tells the model to state it, so each answer says what it rests on.
 
-- English only. Voice `marin`, model `gpt-realtime-2.1`, transcription `gpt-4o-mini-transcribe`.
+- English only. Voice `marin`, model `gpt-realtime-2.1`, transcription `gpt-4o-transcribe`
+  (with a vocabulary `prompt` and `far_field` noise reduction; see "Nex" below).
 - Four roles: Admin, Manager, Field Sales Rep, Office Sales Rep (`VOICE_ROLES`). Warehouse,
   Customer and QR Staff are out of v1 (the money-hiding rule makes Warehouse a v2 item).
 - Live transcript of both sides, Mute, End, and a typed box on the same session and tools. If the
@@ -298,6 +299,63 @@ control; until then it is the spend limit above.
   the OpenAI spend limit is the backstop (release gates above; the hang-up is v2).
 - **The spoken-period zone is Australia/Sydney for every tenant.** A per-tenant setting is v2.
 - `cost_usd` is client-reported and informational; transcription is not in it.
+
+## Nex: the name, the personality and the orb (NX-0004)
+
+Users meet the assistant as **Nex** ("Talk to Nex", the sheet titled "Nex", "Nex:" before
+her lines for screen readers). Internal names keep "Nex Assistant" and the module slug
+stays `voice_assistant`; renaming those would be churn. Her personality lives in the
+`PERSONALITY` section of `_shared/voice/instructions.ts`: friendly, approachable and
+helpful. It is the **last** section on purpose, so it colours the answers without
+outranking the rules above it (brief answers, call a tool before any number). The voice
+is `marin`. A prompt change reaches users only after `fn:deploy:<env> voice-session`.
+
+The orb is `components/voice/NexOrb.tsx`, painted from the pure engine of
+[`thinking-orbs`](https://github.com/Jakubantalik/thinking-orbs) (MIT, pinned exactly at
+`0.3.2`, `thinking-orbs/engine` only; it ships in the launcher's lazy chunk and nowhere
+else). `components/voice/orbState.ts` maps the session to a look:
+
+| Session | Orb | Driven by |
+|---|---|---|
+| requesting-mic / minting / connecting | `connecting` | — |
+| live listening | `listening` | the rep's mic |
+| live thinking | `working` | — |
+| live speaking | `composing` | Nex's voice |
+| idle / ending / ended / text-only Ready | `breathing` | — |
+| error | `breathing`, frozen | — |
+
+The colour is `voiceStatus`'s tone, so the orb and the status pill cannot disagree.
+
+- **Only the hero orb animates during a chat.** The header and launcher orbs are still
+  icons that play a ~0.9 s burst when tapped (the header's also plays once as the sheet
+  opens). The launcher never has a session to show: closing the sheet ends it.
+- **Loudness is read per animation frame, never through React state** (`getLevel` →
+  `readLevel` in `voiceSession.ts` → `lib/voice/audioLevel.ts`), so 60 fps does not
+  re-render the sheet.
+- **The analyser is never connected to the AudioContext's `destination`.** Nex's voice
+  already plays through the sheet's `<audio>` element; wiring the analyser onward would
+  play it twice. Chrome feeds a remote WebRTC stream into Web Audio only while it is also
+  attached to a media element, which it is.
+- Muted reads as 0 (the disabled track carries silence); text-only has no mic meter.
+- Reduced motion gets one still frame per state; a hidden tab stops the loop.
+
+**Two listeners, and why the transcript can disagree with the answer.** The realtime model
+hears the rep's audio itself; the transcript the rep reads comes from a separate side model.
+On a demo test (2026-10-22), "what's the weather?" came back from `gpt-4o-mini-transcribe`
+as "Восстановлено." despite `language: 'en'`, and Nex, hearing the same poor audio,
+volunteered a sales summary. The fix is in three layers:
+- **Hearing** (`sessionRequest.ts`): `gpt-4o-transcribe` (about 2x the transcription cost,
+  still a fraction of a cent a minute), a vocabulary `prompt` (`TRANSCRIPTION_PROMPT`) and
+  `noise_reduction: far_field`. `near_field` is for headsets; the sheet is used on laptops
+  and phones held at arm's length.
+- **Behaviour** (`PERSONALITY`): fetch only what was asked; on unclear input say "Sorry, I
+  didn't catch that" and nothing else; decline off-topic requests kindly and redirect.
+- **Display** (`transcript.ts` `looksMisheard`): a user line with letters but no Latin ones
+  shows as "(Didn't catch that)" rather than the hallucinated script.
+
+`get_sales_summary` returns `latestOrderDate` when its period is empty, so "nothing today"
+comes with the last day that had orders. The demo data is an August snapshot, so "today" is
+always empty there.
 
 ## Operating it (dev)
 

@@ -99,10 +99,24 @@ function onItemAdded(state: TranscriptState, item: ConversationItem): Transcript
   return upsert(state, item.id, 'user', (entry) => (typed === undefined ? entry : { ...entry, text: typed, final: true }))
 }
 
+/** Shown for a line the transcriber could not have heard right. */
+export const MISHEARD_TEXT = "(Didn't catch that)"
+
+/**
+ * Letters, but not one of them Latin: the session transcribes English, so this is
+ * the transcriber hallucinating in another script on short or noisy audio (a demo
+ * test turned "what's the weather?" into "Восстановлено."). Accented Latin ("Café
+ * Olé") and digit-only lines pass.
+ */
+export function looksMisheard(text: string): boolean {
+  return /\p{L}/u.test(text) && !/\p{Script=Latin}/u.test(text)
+}
+
 function onUserTranscript(state: TranscriptState, itemId: string, transcript: string): TranscriptState {
-  const text = transcript.trim()
+  const heard = transcript.trim()
   // The model heard something it could not make out: nothing worth a bubble.
-  if (text.length === 0) return without(state, itemId)
+  if (heard.length === 0) return without(state, itemId)
+  const text = looksMisheard(heard) ? MISHEARD_TEXT : heard
   return upsert(state, itemId, 'user', (entry) => ({ ...entry, text, final: true }))
 }
 
