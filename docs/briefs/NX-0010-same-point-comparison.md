@@ -63,3 +63,20 @@ rule". That line goes, and it is told never to call its basis a rule.
 - Amadiya.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `dashboardRange > compares today so far with yesterday up to the same time` fails on base, passes on tip (check:brief) | |
+| A2 | claimed | `dashboardRange > compares this week so far with last week up to the same weekday and time` | |
+| A3 | claimed | `dashboardRange > compares this month so far with last month up to the same day and time`, `> ends the comparison at the end of a shorter previous month` | |
+| A4 | claimed | __tests__/voice/period.test.ts: the last_month, last_30_days and custom cases pass with their assertions untouched (the diff edits only today / this_week / this_month cases and the DST-day test's today half) | |
+| A5 | claimed | `order numbers parity > Nex and the dashboard arrows compare with the same previous window` | |
+| A6 | claimed | `buildInstructions > never asks Nex to name a rule` | |
+| A7 | claimed | Branch deployed to dev (50f1521, /version.json verified) with voice-session; `E2E_VOICE=1 npx playwright test --project=voice` as bob@, 2 passed; neither answer contains "rule": "22 orders went out: 5 dispatched and 17 delivered, and 39 are still in the warehouse" / "You had 19 orders placed this month" | One run; a language model may still say it |
+| A8 | not-claimed | Branch is on dev, not yet merged | Re-deploy main after merge and check /version.json |
+
+### Not claimed
+
+- On the two daylight-saving change days, "the same time of day" is the time elapsed since midnight, an hour off the wall clock (pinned in period.test.ts).
+- The other dashboards' comparisons (SalesDashboard, RepDashboardV2) are unchanged and were not looked at.
+- The dashboard's arrows were checked by tests only, not by eye on the live page.
