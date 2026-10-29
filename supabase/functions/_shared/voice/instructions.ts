@@ -82,6 +82,8 @@ const ORDER_WORDS = [
   '- "Placed", "came in" or "received" means placed: give orderCount.',
   '- If the words could mean either, give both and name each.',
   '- The status stored as processed is called "confirmed"; never say "processed" for it.',
+  '- Counts are exact: never say "about" for one. Say the basis plainly ("went out this',
+  '  month"); never quote these rules.',
 ].join('\n')
 
 // Who Nex is. Last, so it colours the answers without outranking the rules above:

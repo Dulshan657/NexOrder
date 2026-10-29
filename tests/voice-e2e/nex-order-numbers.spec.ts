@@ -71,6 +71,23 @@ async function transcript(page: Page): Promise<Line[]> {
   ) as Promise<Line[]>
 }
 
+/**
+ * Press End and wait for voice-session to record it. A session the browser just
+ * abandons stays open in the ledger and is billed at the full 15-minute cap
+ * (docs/claude/voice-assistant.md), so two careless runs spend the account's
+ * whole 30-minute day. The first live runs of this spec did exactly that.
+ */
+async function endSession(page: Page | undefined): Promise<void> {
+  if (!page) return
+  const end = page.getByRole('button', { name: 'End', exact: true })
+  if (!(await end.isVisible().catch(() => false))) return
+  const recorded = page.waitForResponse((r) => r.url().includes('/functions/v1/voice-session') && r.request().method() === 'POST', {
+    timeout: 15_000,
+  })
+  await end.click()
+  await recorded.catch(() => console.info('[nex] End was pressed but voice-session did not answer in 15 s'))
+}
+
 /** Ask Nex one recorded question in a fresh browser and return the conversation once Nex has answered with a number. */
 async function ask(question: string): Promise<Line[]> {
   const browser = await chromium.launch({
@@ -110,6 +127,7 @@ async function ask(question: string): Promise<Line[]> {
     console.info(`[nex:${question}]`, JSON.stringify(lines))
     return lines
   } finally {
+    await endSession(browser.contexts()[0]?.pages()[0])
     await browser.close()
   }
 }
@@ -129,6 +147,8 @@ test.describe('Nex answers order questions with the same numbers as the database
     const said = nexSaid(lines)
     expect(said).toMatch(spokenForms(truth.shipped))
     expect(said).toMatch(/ship|went out|sent|out the door|dispatch|deliver/i)
+    // A count is exact; "about 22" (seen on the first live run) undersells it.
+    expect(said).not.toMatch(/\babout \d/i)
     // It must not answer the placed count AS the processed count.
     if (truth.placed !== truth.shipped) expect(said).not.toMatch(new RegExp(`processed ${truth.placed}\\b`, 'i'))
   })
