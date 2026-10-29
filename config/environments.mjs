@@ -60,10 +60,20 @@
  * as "Field Ops" and "Inventory & Dispatch" already do around their core
  * members, HoReCa and Products.
  *
+ * ── `voice_assistant` IS NOT A SIDEBAR HEADING ──────────────────────────────
+ *
+ * Added 2026-10-20 as the eighth slug. Nex Assistant is the in-app voice
+ * assistant: a mic button, a session-mint Edge Function and read-only tools
+ * over orders, customers and sales figures. It has no nav entry of its own, so
+ * it is the one slug the operator cannot point at in the sidebar; the mic
+ * button is the thing to point at. It REQUIRES `sales_orders`, and it is also
+ * what decides whether the document may use the microphone and reach
+ * api.openai.com (`vercel.ts`: `Permissions-Policy` and `connect-src`).
+ *
  * ── THE SET IS ORDERED BY DEPENDENCE, AND THAT IS CHECKED ───────────────────
  *
  * 2026-08-13's note that the nine "were finer than the product" is still true
- * of the shape, and is why this stops at seven rather than restoring nine:
+ * of the shape, and is why this stopped at seven rather than restoring nine:
  * `po_inbox` without `sales_orders` has nowhere to put an approved order, and
  * `shop` without it cannot place one. Every carved-out slug REQUIRES
  * `sales_orders`; none is independently sellable. `MODULE_REQUIRES` states
@@ -87,13 +97,16 @@ export const ALL_MODULES = [
   'invoicing',
   'field_ops',
   'inventory_dispatch',
+  'voice_assistant',
 ]
 
 /**
  * What a module cannot stand without.
  *
- * Only the four slugs carved out of `sales_orders` have an entry; `field_ops`
- * and `inventory_dispatch` are genuinely independent and always were. Read by
+ * Only the four slugs carved out of `sales_orders` have an entry, plus
+ * `voice_assistant` (its tools read orders, customers and sales figures);
+ * `field_ops` and `inventory_dispatch` are genuinely independent and always
+ * were. Read by
  * `assertModuleSet()` and by nothing at runtime — the frontend gets folded
  * booleans and the Edge Functions get a flat list, so this is a statement
  * about what may be CONFIGURED, checked once, here.
@@ -103,6 +116,7 @@ export const MODULE_REQUIRES = {
   po_inbox: ['sales_orders'],
   promotions: ['sales_orders'],
   invoicing: ['sales_orders'],
+  voice_assistant: ['sales_orders'],
 }
 
 /**
@@ -473,6 +487,10 @@ export const TARGETS = {
      * Adding a module back is a registry edit plus a rebuild plus a redeploy of
      * the functions, in that order. The frontend half is compiled out rather
      * than hidden, so nothing here takes effect until the bundle is rebuilt.
+     *
+     * `voice_assistant` (2026-10-20) is deliberately NOT listed: the owner's
+     * call on 2026-10-22 was that Amadiya gets no new features yet. Adding it
+     * later is this one edit plus the release steps above.
      */
     modules: ['sales_orders', 'inventory_dispatch'],
 

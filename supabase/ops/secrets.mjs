@@ -78,7 +78,7 @@ const REQUIRED_FROM_FILE = [
   ['PO_ENCRYPTION_KEY', 'PO-inbox mailbox token encryption. NEVER copy between projects.'],
   ['POLL_INBOX_CRON_TOKEN', 'Bearer for the po-poll-inbox cron. Unset = the cron is refused.'],
   ['HEALTH_CRON_TOKEN', 'Bearer for the health-check cron. Unset = the cron is refused.'],
-  ['OPENAI_API_KEY', 'PO extraction and floor-plan extraction.'],
+  ['OPENAI_API_KEY', "PO extraction, floor-plan extraction and the voice assistant's Realtime session (needs Realtime access)"],
 ]
 
 /**

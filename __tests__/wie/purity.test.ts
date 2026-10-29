@@ -10,7 +10,7 @@ import { join } from 'node:path'
 // the moment an impurity sneaks in.
 
 const SHARED_DIR = join(__dirname, '..', '..', 'supabase', 'functions', '_shared')
-const PURE_DIRS = ['wie', 'floorplan']
+const PURE_DIRS = ['wie', 'floorplan', 'voice']
 
 function pureFiles(): Array<{ dir: string; file: string }> {
   return PURE_DIRS.flatMap((dir) =>

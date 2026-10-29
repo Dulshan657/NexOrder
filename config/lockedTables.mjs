@@ -120,4 +120,7 @@ export const LOCKED_TABLES = [
   { table: 'qr_staff', fn: 'mutate-qr-access / qr-unlock (SELECT is column-limited, never pin_hmac)', migration: '00129' },
   { table: 'qr_order_requests', fn: 'qr-order-request', migration: '00129' },
   { table: 'horeca_reps', fn: 'mutate-horeca', migration: '00129' },
+  // Nex Assistant session ledger (00133). Service role only: created with
+  // REVOKE ALL from anon/authenticated and no policies; no client reads it.
+  { table: 'voice_sessions', fn: 'voice-session Edge Function', migration: '00133' },
 ]

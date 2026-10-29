@@ -23,6 +23,7 @@ reached 173k on 2026-09-10 and was split. What stays here is the rule that must 
 | barcodes, scan resolution, handling units, label sheets and calibration | [`docs/claude/warehouse-scanning-labels.md`](docs/claude/warehouse-scanning-labels.md) |
 | inbound-PO email triage, mailbox OAuth | [`docs/claude/po-inbox.md`](docs/claude/po-inbox.md) |
 | module flags, `NEXORDER_ENV`, what a tenant actually ships | [`docs/claude/environments.md`](docs/claude/environments.md) |
+| Nex Assistant, the in-app voice assistant — `voice_assistant` module, mic permission, CSP, session mint, tools, budget | [`docs/claude/voice-assistant.md`](docs/claude/voice-assistant.md) |
 | RLS, storage buckets, `verify_jwt`, cancelling an order | [`docs/claude/server-lockdown.md`](docs/claude/server-lockdown.md) |
 | any modal, sheet or dialog | [`docs/claude/overlays.md`](docs/claude/overlays.md) |
 | password reset, invites, recovery links | [`docs/claude/auth-links.md`](docs/claude/auth-links.md) |
@@ -154,19 +155,26 @@ environment", the file is stale, not the database.
 - **Tenancy is decided: project-per-tenant, one `main`, module flags.** See
   `MULTI-TENANT-ARCHITECTURE.md` before adding a client or a per-client feature.
   There is never a per-tenant branch.
-- **Module flags are BUILT, and there are SEVEN as of 2026-08-20:**
+- **Module flags are BUILT, and there are EIGHT as of 2026-10-20:**
   `sales_orders`, `shop`, `po_inbox`, `promotions`, `invoicing`, `field_ops`,
-  `inventory_dispatch`. Two are the sidebar group headings "Field Ops" and
-  "Inventory & Dispatch"; the other five subdivide the third heading, which is
-  a heading and not a module. **`sales_orders` now means the order OBJECT and
-  its status ladder only** — place it, advance it, cancel it.
+  `inventory_dispatch`, `voice_assistant`. Two are the sidebar group headings
+  "Field Ops" and "Inventory & Dispatch"; five subdivide the third heading,
+  which is a heading and not a module; `voice_assistant` is neither. **`sales_orders`
+  now means the order OBJECT and its status ladder only** — place it, advance it,
+  cancel it.
+
+  `voice_assistant` — Nex Assistant, the in-app voice assistant; requires `sales_orders`;
+  allows the microphone in `Permissions-Policy` (and `api.openai.com` in `connect-src`)
+  only where on; see `docs/claude/voice-assistant.md`
 
   The gate mechanics, what still leaks, the server half and the per-role
   consequences are in [`docs/claude/environments.md`](docs/claude/environments.md).
   The rules that must hold without opening it:
-  - **The gate is live, not inert. Amadiya carries
-    `['sales_orders', 'inventory_dispatch']`; only `dev` has everything.**
-  - **Every carved-out slug REQUIRES `sales_orders`** — `MODULE_REQUIRES` states it
+  - **The gate is live, not inert. Amadiya's registry entry is
+    `['sales_orders', 'inventory_dispatch']`, and it gets no new features yet
+    (owner, 2026-10-22) — `voice_assistant` is `dev`-only; only `dev` has
+    everything.**
+  - **Every carved-out slug, and `voice_assistant`, REQUIRES `sales_orders`** — `MODULE_REQUIRES` states it
     and `assertModuleSet()` throws at import time, so a bad registry edit fails the
     build. `inventory_dispatch` deliberately does NOT declare the dependency.
   - **A disabled module is NOT SHIPPED, not hidden.** Gate the
@@ -181,7 +189,7 @@ environment", the file is stale, not the database.
     a value naming no target rather than falling back to `dev`.
   - Server half: `_shared/modules.ts` `requireModule` **fails OPEN** — a module gate is
     a *commercial* control and roles/RLS are the security ones.
-    `config/moduleOwnership.mjs` maps 65 functions; `deploy-functions.mjs` will not
+    `config/moduleOwnership.mjs` maps 70 functions; `deploy-functions.mjs` will not
     deploy a disabled module's functions but **never RETIRES** one already deployed.
   - **Products and HoReCa are CORE** despite where the sidebar files them — see
     `TAB_MODULES` in `lib/adminTabUrl.ts`.
@@ -469,6 +477,7 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 | `horeca_addresses` | `mutate-horeca-address` | Admin, Manager | `00018` |
 | PO Inbox tables (see above) | PO Inbox functions (see above) | Admin, Manager | `00018`–`00023` |
 | `rate_limit_counters` | `rate_limit_hit()` RPC (service_role-only) | service_role only | `00026` |
+| `voice_sessions` | `voice-session` (`start` / `end`) | service_role only (the function allows Admin, Manager, Field Sales Rep, Office Sales Rep) | `00133` |
 | `inventory_balances`, `inventory_movements` | `receive-stock`, `adjust-stock`, `transfer-stock`, `record-pick`, `decide-putaway`, `complete-putaway`, `count-bin` | Admin, Manager, Warehouse | `00027`, `00032`, `00080` (`count-bin` needs no migration) |
 | `handling_units`, `label_print_log` | `generate-labels`, `receive-stock`, `complete-putaway` | Admin, Manager, Warehouse | `00074`, `00075` |
 | `warehouse_label_prefs` | `mutate-warehouse` `set_label_prefs` | Admin, Manager | `00106` |

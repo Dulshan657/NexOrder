@@ -94,6 +94,36 @@ for (const [name, target] of Object.entries(TARGETS)) {
     problems.push(`${name}: connect-src does not allow wss://${host} — Realtime will be blocked.`)
   }
 
+  // Nex Assistant: the browser talks to OpenAI directly, and the document may
+  // use the microphone, exactly where the target carries `voice_assistant`.
+  // Asserted in BOTH directions -- a target without the module must not be left
+  // with a standing OpenAI source or an open microphone for code it never ships.
+  const voiceOn = target.modules.includes('voice_assistant')
+  const openaiAllowed = (directives['connect-src'] ?? '').includes('https://api.openai.com')
+  if (openaiAllowed !== voiceOn) {
+    problems.push(
+      voiceOn
+        ? `${name}: connect-src does not allow https://api.openai.com — the voice assistant cannot connect.`
+        : `${name}: connect-src allows https://api.openai.com but the target has no voice_assistant module.`,
+    )
+  }
+
+  const permissionsPolicy = config.headers
+    ?.flatMap((entry) => entry.headers ?? [])
+    ?.find((h) => /^permissions-policy$/i.test(h.key))
+  if (!permissionsPolicy) {
+    problems.push(`${name}: no Permissions-Policy header in vercel.ts.`)
+  } else {
+    const micAllowed = permissionsPolicy.value.includes('microphone=(self)')
+    if (micAllowed !== voiceOn) {
+      problems.push(
+        voiceOn
+          ? `${name}: Permissions-Policy lacks microphone=(self) — getUserMedia would be denied to the voice assistant.`
+          : `${name}: Permissions-Policy allows the microphone but the target has no voice_assistant module.`,
+      )
+    }
+  }
+
   // The /storage image proxy must be matched before the SPA catch-all.
   const sources = (config.rewrites ?? []).map((r) => r.source)
   const storageAt = sources.findIndex((s) => s.startsWith('/storage'))

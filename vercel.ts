@@ -42,6 +42,15 @@ const supabaseHttps = supabaseHost ? ` https://${supabaseHost}` : ''
 const supabaseWss = supabaseHost ? ` wss://${supabaseHost}` : ''
 
 /**
+ * Nex Assistant connects the browser straight to OpenAI's realtime API, so the
+ * origin is allowed in `connect-src` exactly where the `voice_assistant` module
+ * is on. A target without it gets no OpenAI source at all: the surface is not
+ * shipped there, and a CSP that still permitted the origin would be a standing
+ * exemption for code that does not exist.
+ */
+const openaiHttps = target.modules.includes('voice_assistant') ? ' https://api.openai.com' : ''
+
+/**
  * Report-Only until Phase B. `frame-src` is listed explicitly because without
  * it CSP falls back to default-src ('self'), which would break the PO Inbox
  * document preview and the document viewer the moment the policy is enforced.
@@ -55,7 +64,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self'",
   `img-src 'self' data: blob:${supabaseHttps} https://*.tile.openstreetmap.org`,
-  `connect-src 'self'${supabaseHttps}${supabaseWss}`,
+  `connect-src 'self'${supabaseHttps}${supabaseWss}${openaiHttps}`,
   `frame-src 'self' blob:${supabaseHttps}`,
   "worker-src 'self' blob:",
   "object-src 'none'",
@@ -129,10 +138,17 @@ export const config: VercelConfig = {
           //
           // The hand-held imager is the primary reader (see CLAUDE.md — Code 128
           // over QR precisely because a laser beats a camera), so this is the
-          // fallback for a torn or unreachable label. `microphone`, `payment`
-          // and `usb` stay fully denied; nothing in the app asks for them.
+          // fallback for a torn or unreachable label. `payment` and `usb` stay
+          // fully denied; nothing in the app asks for them.
+          //
+          // `microphone` follows the same rule as `camera`: `(self)` wherever
+          // the `voice_assistant` module is on, because Nex Assistant calls
+          // `getUserMedia({ audio: true })` and an empty allowlist would deny
+          // that to the document's own origin with the same unactionable
+          // NotAllowedError. Where the module is off nothing in the bundle
+          // asks for the microphone, so it stays `()`.
           key: 'Permissions-Policy',
-          value: 'geolocation=(self), camera=(self), microphone=(), payment=(), usb=()',
+          value: `geolocation=(self), camera=(self), microphone=${target.modules.includes('voice_assistant') ? '(self)' : '()'}, payment=(), usb=()`,
         },
       ],
     },

@@ -27,6 +27,7 @@ import type {
 import { sortUoms } from './uom'
 import type { Database } from './database.types'
 import { numericIdToUuid, uuidToNumericId } from './userIdMap'
+import { numericIdForProfile } from './profileToUser'
 
 // ── DB Row types ──────────────────────────────────────────────────
 type ProductRow = Database['public']['Tables']['products']['Row']
@@ -713,7 +714,9 @@ export function visitUpdateFields(prev: Visit, next: Visit): VisitUpdate | null 
 export function toSalesTarget(row: SalesTargetRow): SalesTarget {
   return {
     id: row.id,
-    userId: Number(row.user_id) || 0,
+    // user_id is a profile uuid; Number() of one is NaN, which made every target's
+    // owner 0. The id the rest of the app compares against is this same hash.
+    userId: row.user_id ? numericIdForProfile(row.user_id) : 0,
     type: row.type as SalesTarget['type'],
     targetValue: Number(row.target_value),
     startDate: row.start_date,

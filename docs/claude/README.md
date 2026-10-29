@@ -19,6 +19,7 @@ the doc before changing that subsystem.**
 | [`warehouse-scanning-labels.md`](warehouse-scanning-labels.md) | Scan identity, handling units, Code 128 label rendering, sizing and printer calibration |
 | [`po-inbox.md`](po-inbox.md) | Inbound-PO email triage end to end, plus the Gmail / Google Cloud OAuth setup |
 | [`environments.md`](environments.md) | Module flags, `NEXORDER_ENV`, what a tenant ships and what still leaks |
+| [`voice-assistant.md`](voice-assistant.md) | Nex Assistant, the in-app voice assistant: architecture, the `voice-session` actions, the `voice_sessions` ledger and budget rules, the tool list and how to add one, mic permission and CSP, iOS autoplay, pricing, accepted caveats |
 | [`server-lockdown.md`](server-lockdown.md) | Order cancellation, self-gating `verify_jwt = false` functions, storage buckets, per-function rate limits |
 | [`overlays.md`](overlays.md) | `components/ui` modals and sheets, scroll containment, the z-index stack |
 | [`auth-links.md`](auth-links.md) | The four auth-link shapes, invites, and the recovery-session marker |
