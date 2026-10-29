@@ -144,9 +144,47 @@ describe('get_sales_summary', () => {
 
   it('states the period, whose orders and the cancelled rule in the basis', () => {
     expect(basisOf(run('get_sales_summary', { period: 'last_30_days' })))
-      .toBe('orders placed the last 30 days (21 Sep to 20 Oct 2026), all orders, cancelled excluded')
+      .toBe('the last 30 days (21 Sep to 20 Oct 2026): placed orders by order date, shipped orders by the date they first went out, all orders, cancelled excluded')
     expect(basisOf(run('get_sales_summary', { period: 'today' }, ctxFor(REP_A))))
-      .toBe('orders placed today (20 Oct 2026), your own orders, cancelled excluded')
+      .toBe('today (20 Oct 2026): placed orders by order date, shipped orders by the date they first went out, your own orders, cancelled excluded')
+  })
+
+  describe('shipped orders', () => {
+    interface Shipped {
+      orderCount: number
+      shippedCount: number
+      shippedByStatus: { dispatched: number; delivered: number }
+      stillInWarehouse: number
+    }
+
+    // This month is 1 to 20 Oct (Sydney). Placed this month: O7 (8 Oct), O8 (12 Oct),
+    // O12 (6 Oct) and PACKED below (17 Oct) = 4; O13 is cancelled.
+    // Shipped this month: O7 (9 Oct, now delivered), O8 (13 Oct, still dispatched),
+    // O12 (7 Oct, delivered) and LATE (placed 25 Sep, dispatched 2 Oct, delivered) = 4.
+    const late = deepFreeze<Order>({
+      ...order('LATE', REP_B, C3, 25, [[P1, 1]]),
+      statusHistory: [
+        { status: 'processing', timestamp: iso(25) },
+        { status: 'dispatched', timestamp: '2026-10-02T01:00:00.000Z' },
+        { status: 'delivered', timestamp: '2026-10-03T01:00:00.000Z' },
+      ],
+    })
+    const packed = order('PACKED', REP_A, C1, 3, [[P1, 1]], 'packed')
+    const world = () => ctxFor(MANAGER, { orders: [...buildOrders(), late, packed] })
+
+    it('reports orders shipped in the period by ship date, with the dispatched and delivered split', () => {
+      const data = dataOf<Shipped>(run('get_sales_summary', { period: 'this_month' }, world()))
+      expect(data.orderCount).toBe(4)
+      expect(data.shippedCount).toBe(4)
+      expect(data.shippedByStatus).toEqual({ dispatched: 1, delivered: 3 })
+      expect(data.stillInWarehouse).toBe(1)
+    })
+
+    it('says in the basis that placed and shipped orders are counted by different dates', () => {
+      const basis = basisOf(run('get_sales_summary', { period: 'this_month' }, world()))
+      expect(basis).toContain('placed orders by order date')
+      expect(basis).toContain('shipped orders by the date they first went out')
+    })
   })
 })
 

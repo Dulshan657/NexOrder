@@ -80,7 +80,7 @@ const horecaIdProperty = {
 
 const SALES_SUMMARY = defineTool(
   'get_sales_summary',
-  'Revenue, order count, average order value, new customers, orders by status, top 5 customers and top 5 products for a period, with the previous period for comparison. For sales reps the scope is always their own orders. Set horeca_id to scope to one customer (resolve it with find_customer first).',
+  'Revenue, orders placed (orderCount, by order date), orders shipped (shippedCount: first dispatched or delivered in the period, by ship date, split into shippedByStatus), orders still in the warehouse now (stillInWarehouse), average order value, new customers, orders by status, top 5 customers and top 5 products for a period, with the previous period for comparison. For sales reps the scope is always their own orders. Set horeca_id to scope to one customer (resolve it with find_customer first).',
   {
     period: {
       type: 'string',

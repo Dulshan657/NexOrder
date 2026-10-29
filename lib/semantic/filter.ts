@@ -18,37 +18,22 @@
 
 import type { Order } from '../../types'
 import type { OrderFilter } from './types'
-
-const MS_PER_DAY = 86_400_000
-
-/**
- * UTC rather than local time throughout. The `<input type="date">` values the
- * dashboards feed in are `YYYY-MM-DD` strings, which `new Date(...)` parses as
- * UTC midnight, and `sales.revenueByDate` groups on `orderDate.split('T')[0]`,
- * which is also UTC. Building day boundaries in local time — as
- * `endDate + 'T23:59:59'` did — makes the range edge depend on the viewer's
- * timezone while the day labels beside it do not.
- */
-function startOfUtcDay(value: Date | string): Date {
-  const d = typeof value === 'string' ? new Date(value) : value
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
-}
-
-/** Last representable instant of the UTC day containing `value`. */
-function endOfUtcDay(value: Date | string): Date {
-  return new Date(startOfUtcDay(value).getTime() + MS_PER_DAY - 1)
-}
+import { appDayRange } from '../period'
 
 /**
  * The single definition of "these two calendar dates, inclusive".
  *
  * Accepts what the UI actually holds: `YYYY-MM-DD` strings from a date input, or
  * Dates. Returns instants suitable for an `OrderFilter`, covering the whole of
- * both end days — so an order placed at 23:59:59.9 on the final day counts,
- * which is precisely what the old `T23:59:59` spelling got wrong.
+ * both end days, so an order placed at 23:59:59.9 on the final day counts.
+ *
+ * The days are SYDNEY days (lib/period.ts, the app calendar Nex and the
+ * dashboards share). They were UTC days until NX-0008, which put an order placed
+ * before 10 or 11 am in Sydney on the previous day here while Nex counted it on
+ * the right one.
  */
 export function dayRange(from: Date | string, to: Date | string): { from: Date; to: Date } {
-  return { from: startOfUtcDay(from), to: endOfUtcDay(to) }
+  return appDayRange(from, to)
 }
 
 export interface RangeBounds {

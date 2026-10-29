@@ -135,7 +135,7 @@ describe('computeDispatchFunnel', () => {
   const now = new Date('2026-06-09T12:00:00.000Z');
 
   it('returns all six stages in pipeline order, zero-filled on empty input', () => {
-    const result = computeDispatchFunnel([], 30, now);
+    const result = computeDispatchFunnel([], 30, now).stages;
     expect(result.map((s) => s.status)).toEqual<OrderStatus[]>([
       'processing',
       'processed',
@@ -153,7 +153,7 @@ describe('computeDispatchFunnel', () => {
       makeOrder({ id: 'b', status: 'processing', orderDate: '2026-06-07T00:00:00.000Z' }),
       makeOrder({ id: 'c', status: 'dispatched', orderDate: '2026-06-05T00:00:00.000Z' }),
     ];
-    const result = computeDispatchFunnel(orders, 30, now);
+    const result = computeDispatchFunnel(orders, 30, now).stages;
     const byStatus = Object.fromEntries(result.map((s) => [s.status, s.count]));
     expect(byStatus.processing).toBe(2);
     expect(byStatus.dispatched).toBe(1);
@@ -165,8 +165,8 @@ describe('computeDispatchFunnel', () => {
       makeOrder({ id: 'recent', status: 'picked', orderDate: '2026-06-08T00:00:00.000Z' }),
       makeOrder({ id: 'old', status: 'picked', orderDate: '2026-05-01T00:00:00.000Z' }), // ~39d ago
     ];
-    const within7 = computeDispatchFunnel(orders, 7, now);
-    const within90 = computeDispatchFunnel(orders, 90, now);
+    const within7 = computeDispatchFunnel(orders, 7, now).stages;
+    const within90 = computeDispatchFunnel(orders, 90, now).stages;
     expect(within7.find((s) => s.status === 'picked')?.count).toBe(1);
     expect(within90.find((s) => s.status === 'picked')?.count).toBe(2);
   });
@@ -175,14 +175,40 @@ describe('computeDispatchFunnel', () => {
     const orders: Order[] = [makeOrder({ status: 'packed', orderDate: '2026-05-20T00:00:00.000Z' })]; // ~20d ago
     const windows: DispatchWindow[] = [7, 30, 90];
     const counts = windows.map(
-      (w) => computeDispatchFunnel(orders, w, now).find((s) => s.status === 'packed')?.count ?? 0,
+      (w) => computeDispatchFunnel(orders, w, now).stages.find((s) => s.status === 'packed')?.count ?? 0,
     );
     expect(counts).toEqual([0, 1, 1]);
   });
 
   it('ignores orders with unparseable dates', () => {
     const orders: Order[] = [makeOrder({ status: 'processed', orderDate: 'not-a-date' })];
-    const result = computeDispatchFunnel(orders, 30, now);
+    const result = computeDispatchFunnel(orders, 30, now).stages;
     expect(result.find((s) => s.status === 'processed')?.count).toBe(0);
+  });
+
+  it("counts orders placed since the start of the Sydney calendar month for 'month'", () => {
+    // now is 9 Jun 22:00 in Sydney (AEST, UTC+10); June began at 31 May 14:00 UTC.
+    const orders: Order[] = [
+      makeOrder({ id: 'first-minute', status: 'picked', orderDate: '2026-05-31T14:00:00.000Z' }),
+      makeOrder({ id: 'may-in-sydney', status: 'picked', orderDate: '2026-05-31T13:59:59.000Z' }),
+      makeOrder({ id: 'mid-june', status: 'delivered', orderDate: '2026-06-05T03:00:00.000Z' }),
+    ];
+    const result = computeDispatchFunnel(orders, 'month', now).stages;
+    const byStatus = Object.fromEntries(result.map((s) => [s.status, s.count]));
+    expect(byStatus.picked).toBe(1);
+    expect(byStatus.delivered).toBe(1);
+  });
+
+  it('keeps cancelled orders out of the stages and counts them separately', () => {
+    const orders: Order[] = [
+      makeOrder({ id: 'live', status: 'packed', orderDate: '2026-06-08T00:00:00.000Z' }),
+      makeOrder({ id: 'void-1', status: 'cancelled', orderDate: '2026-06-08T00:00:00.000Z' }),
+      makeOrder({ id: 'void-2', status: 'cancelled', orderDate: '2026-06-07T00:00:00.000Z' }),
+      makeOrder({ id: 'void-old', status: 'cancelled', orderDate: '2026-01-07T00:00:00.000Z' }),
+    ];
+    const result = computeDispatchFunnel(orders, 30, now);
+    expect(result.stages.map((s) => s.status)).not.toContain('cancelled');
+    expect(result.stages.reduce((sum, s) => sum + s.count, 0)).toBe(1);
+    expect(result.cancelled).toBe(2);
   });
 });

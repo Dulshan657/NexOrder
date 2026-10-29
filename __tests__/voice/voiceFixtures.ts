@@ -60,11 +60,25 @@ export const P6 = mkProduct({ id: 6, sku: 'OLD', name: 'Retired Sauce', price: 8
 
 export type Line = readonly [Product, number]
 
+/**
+ * The history an order at `status` would carry: dispatched the day after it was
+ * placed, delivered the day after that. A cancelled or still-open order never
+ * shipped, so it has no shipping step.
+ */
+function historyFor(daysAgo: number, status: OrderStatus): Order['statusHistory'] {
+  const placed = [{ status: 'processing' as OrderStatus, timestamp: iso(daysAgo) }]
+  if (status === 'dispatched') return [...placed, { status: 'dispatched', timestamp: iso(daysAgo - 1) }]
+  if (status === 'delivered') {
+    return [...placed, { status: 'dispatched', timestamp: iso(daysAgo - 1) }, { status: 'delivered', timestamp: iso(daysAgo - 2) }]
+  }
+  return placed
+}
+
 /** One order placed `daysAgo` days before NOW; the total is the sum of its lines. */
 export function order(id: string, by: User, at: HoReCa, daysAgo: number, lines: Line[], status: OrderStatus = 'delivered'): Order {
   const items = lines.map(([product, qty]) => mkCartItem(product, qty))
   const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  return { id, hoReCa: at, items, total, orderDate: iso(daysAgo), submittedBy: by, status, statusHistory: [] }
+  return { id, hoReCa: at, items, total, orderDate: iso(daysAgo), submittedBy: by, status, statusHistory: historyFor(daysAgo, status) }
 }
 
 export function buildOrders(): Order[] {

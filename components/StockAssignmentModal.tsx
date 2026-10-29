@@ -53,11 +53,11 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({ order, onCo
   const handleConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     if (primaryId === 'auto') {
-      onConfirm({ note: 'Processed — auto-allocated closest-first' });
+      onConfirm({ note: 'Confirmed — auto-allocated closest-first' });
     } else {
       // Move the chosen warehouse to the front of the closest-first list.
       const pref = [primaryId, ...orderedIds.filter((id) => id !== primaryId)];
-      onConfirm({ note: `Processed — re-routed to ${nameById.get(primaryId) ?? `WH ${primaryId}`} first`, locationPref: pref });
+      onConfirm({ note: `Confirmed — re-routed to ${nameById.get(primaryId) ?? `WH ${primaryId}`} first`, locationPref: pref });
     }
   };
 

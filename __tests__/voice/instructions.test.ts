@@ -93,6 +93,15 @@ describe('buildInstructions', () => {
     expect(text).toContain('Only discuss Nex Order business data.')
   })
 
+  it('tells Nex that processed means shipped and to say what it counted', () => {
+    const text = flat(build())
+    expect(text).toContain('ORDER WORDS')
+    expect(text).toContain('"Processed", "shipped", "sent" or "went out" means shipped: give shippedCount')
+    expect(text).toContain('"Placed", "came in" or "received" means placed: give orderCount.')
+    expect(text).toContain('If the words could mean either, give both and name each.')
+    expect(text).toContain('The status stored as processed is called "confirmed"')
+  })
+
   it('includes the five fixed sections in order', () => {
     const text = build()
     const order = ['HOW TO SPEAK', 'WHAT YOU CANNOT DO', 'CUSTOMERS', 'ROLE RULES', 'PERSONALITY'].map((h) =>

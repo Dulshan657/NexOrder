@@ -62,7 +62,7 @@ export interface OrderFilter {
    *
    * For a range picked as two calendar dates, build these with `dayRange()`
    * rather than by hand — that is the one place that knows an inclusive whole-day
-   * range ends at 23:59:59.999 UTC.
+   * range ends at 23:59:59.999 in Sydney (lib/period.ts).
    */
   to?: Date
   horecaId?: number

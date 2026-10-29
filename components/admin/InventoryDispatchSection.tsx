@@ -18,7 +18,13 @@ interface InventoryDispatchSectionProps {
   onNavigateTab?: (tab: string) => void;
 }
 
-const WINDOWS: DispatchWindow[] = [7, 30, 90];
+// 'month' first and by default: it is the calendar month Nex means by "this month".
+const WINDOWS: ReadonlyArray<{ value: DispatchWindow; label: string }> = [
+  { value: 'month', label: 'This month' },
+  { value: 7, label: '7d' },
+  { value: 30, label: '30d' },
+  { value: 90, label: '90d' },
+];
 
 function InventoryDispatchSection({
   allOrders,
@@ -26,7 +32,7 @@ function InventoryDispatchSection({
   lowStockThreshold = 10,
   onNavigateTab,
 }: InventoryDispatchSectionProps) {
-  const [window, setWindow] = useState<DispatchWindow>(30);
+  const [window, setWindow] = useState<DispatchWindow>('month');
 
   // The donut follows the shared warehouse scope (set from Stock/Products/
   // Warehouse) so it always reflects the site the user is currently focused
@@ -54,7 +60,7 @@ function InventoryDispatchSection({
     [products, lowStockThreshold, onHandOf],
   );
 
-  const dispatchFunnel = useMemo(
+  const pipeline = useMemo(
     () => computeDispatchFunnel(allOrders, window, new Date()),
     [allOrders, window],
   );
@@ -85,30 +91,34 @@ function InventoryDispatchSection({
           <StockHealthDonut data={stockHealth} />
         </div>
 
-        {/* Dispatch funnel — windowed */}
+        {/* Order pipeline: where orders placed in the window are now */}
         <div className="glass-card rounded-xl p-5">
-          <div className="mb-4 flex items-center justify-between gap-2">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-900">
-              <Truck className="h-4 w-4 text-nexgen-blue" /> Dispatch Funnel
-            </h3>
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-900">
+                <Truck className="h-4 w-4 text-nexgen-blue" /> Order pipeline
+              </h3>
+              <p className="mt-0.5 text-xs text-stone-600">Where orders placed in this period are now</p>
+            </div>
             <div className="inline-flex rounded-lg border border-stone-200 bg-stone-100 p-0.5">
-              {WINDOWS.map((w) => (
+              {WINDOWS.map(({ value, label }) => (
                 <button
-                  key={w}
+                  key={value}
                   type="button"
-                  onClick={() => setWindow(w)}
+                  aria-pressed={window === value}
+                  onClick={() => setWindow(value)}
                   className={`touch-target-y cursor-pointer rounded-md px-2.5 py-1 text-xs font-semibold transition-all duration-150 ${
-                    window === w
+                    window === value
                       ? 'bg-nexgen-blue text-white shadow-sm'
-                      : 'text-stone-500 hover:bg-stone-50 hover:text-stone-900'
+                      : 'text-stone-600 hover:bg-stone-50 hover:text-stone-900'
                   }`}
                 >
-                  {w}d
+                  {label}
                 </button>
               ))}
             </div>
           </div>
-          <DispatchFunnelChart data={dispatchFunnel} />
+          <DispatchFunnelChart data={pipeline.stages} cancelled={pipeline.cancelled} />
         </div>
       </div>
     </div>

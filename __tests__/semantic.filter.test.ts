@@ -50,13 +50,15 @@ describe('filterOrders — date range is instant-based', () => {
 })
 
 describe('dayRange — the one definition of an inclusive calendar range', () => {
-  const lastInstant = makeOrder({ id: 'C', orderDate: '2026-07-31T23:59:59.999Z' })
-  const nextDay = makeOrder({ id: 'D', orderDate: '2026-08-01T00:00:00.000Z' })
+  // Sydney days (NX-0008): July in Sydney (AEST, UTC+10) runs from 30 Jun 14:00 UTC
+  // to 31 Jul 13:59:59.999 UTC.
+  const lastInstant = makeOrder({ id: 'C', orderDate: '2026-07-31T13:59:59.999Z' })
+  const nextDay = makeOrder({ id: 'D', orderDate: '2026-07-31T14:00:00.000Z' })
 
   it('covers the whole of both end days', () => {
     const range = dayRange('2026-07-01', '2026-07-31')
-    expect(range.from.toISOString()).toBe('2026-07-01T00:00:00.000Z')
-    expect(range.to.toISOString()).toBe('2026-07-31T23:59:59.999Z')
+    expect(range.from.toISOString()).toBe('2026-06-30T14:00:00.000Z')
+    expect(range.to.toISOString()).toBe('2026-07-31T13:59:59.999Z')
   })
 
   it('keeps an order placed in the final second of the last day', () => {

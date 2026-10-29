@@ -4,6 +4,7 @@
 
 import type { ToolOutcome } from '../context'
 import { isRep } from '../scope'
+import { appDateKey } from '../period'
 import type { VoiceToolContext } from '../context'
 
 export type { ToolOutcome }
@@ -34,9 +35,13 @@ export function percentChange(current: number, previous: number): number | null 
   return clean(Math.round(((current - previous) / previous) * 1000) / 10)
 }
 
-/** The calendar day of an ISO timestamp, `YYYY-MM-DD`, or null when there is none. */
+/**
+ * The Sydney calendar day of an ISO timestamp, `YYYY-MM-DD`, or null when there is
+ * none. Sydney, not UTC: an order placed at 8 am on the 12th is "the 12th" to
+ * everyone in the business, and to the dashboards (lib/period).
+ */
 export function dayOf(timestamp: string | null | undefined): string | null {
-  return timestamp ? timestamp.slice(0, 10) : null
+  return timestamp ? appDateKey(timestamp) : null
 }
 
 /** Whole days from an ISO timestamp to `now` (negative if it is in the future). */
