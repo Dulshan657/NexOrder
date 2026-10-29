@@ -32,7 +32,8 @@ import { computeAllHoReCaInsights } from '../services/buyingPatternsService';
 import { getPromotionROI } from '../services/promotionROIService';
 import { computeRepProductivity } from '../services/repProductivityService';
 import { computeTargetProgress, filterOrders } from '../lib/semantic';
-import { appDateKey, appDateKeysBetween, dashboardRange } from '../lib/period';
+import { appDateKey, appDateKeysBetween } from '../lib/period';
+import { useDashboardRange } from '../hooks/useDashboardRange';
 import { useMetric, useMetricContext } from '../hooks/useMetrics';
 import type { CustomerRevenue, DateRevenue, ProductUnits, RepRevenue } from '../lib/semantic';
 
@@ -65,10 +66,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // dashboardRange, the same Sydney calendar Nex resolves "this week" and "this
   // month" in (lib/period), so the KPIs and Nex count the same orders. This was
   // the browser's own zone with a Sunday week start until NX-0008.
-  const dateRange = useMemo(
-    () => dashboardRange(period, new Date(), customStart, customEnd),
-    [period, customStart, customEnd],
-  );
+  // Re-resolved every minute while the page is open: the comparison stops at
+  // the same time of day (NX-0010), so a range fixed at opening would drift.
+  const dateRange = useDashboardRange(period, customStart, customEnd);
   const periodFilter = useMemo(
     () => ({ from: dateRange.from, to: dateRange.to }),
     [dateRange],

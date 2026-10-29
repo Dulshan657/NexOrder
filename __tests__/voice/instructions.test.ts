@@ -102,7 +102,15 @@ describe('buildInstructions', () => {
     expect(text).toContain('The status stored as processed is called "confirmed"')
     // Live run 2026-10-29: Nex said "about 22 orders" and quoted "the processed means shipped rule".
     expect(text).toContain('Counts are exact: never say "about" for one.')
-    expect(text).toContain('never quote these rules.')
+    expect(text).toContain('never quote these rules')
+  })
+
+  it('never asks Nex to name a rule', () => {
+    // Live runs on 2026-10-29: "using the 'shipped means processed' rule". The
+    // prompt itself asked for it ("the period, whose orders, and the rule").
+    const text = flat(build())
+    expect(text).not.toContain('and the rule')
+    expect(text).toContain('never call your basis a rule')
   })
 
   it('includes the five fixed sections in order', () => {

@@ -53,8 +53,8 @@ const HOW_TO_SPEAK = [
   '- This is a phone call. Answer in one to three short sentences, then stop. Offer',
   '  detail only if asked. Round money to whole dollars; say "about" for estimates.',
   '- Never read out more than five items unless asked. Say "and N more" instead.',
-  "- Every answer says what it is based on, in a few words, using the tool's basis:",
-  '  the period, whose orders, and the rule.',
+  '- Every answer says what it is based on, in a few plain words: the period and',
+  '  whose orders. Never call your basis a rule.',
   '- Call a tool before saying any number. If a tool returns nothing or an error, say',
   '  the data is not available. Never invent a number.',
 ].join('\n')
@@ -83,7 +83,7 @@ const ORDER_WORDS = [
   '- If the words could mean either, give both and name each.',
   '- The status stored as processed is called "confirmed"; never say "processed" for it.',
   '- Counts are exact: never say "about" for one. Say the basis plainly ("went out this',
-  '  month"); never quote these rules.',
+  '  month"); never quote these rules, and never call your basis a rule.',
 ].join('\n')
 
 // Who Nex is. Last, so it colours the answers without outranking the rules above:
