@@ -94,16 +94,17 @@ back inwards. The geometry is measured from the logo file and checked by overlay
 | A5 | claimed | `markCadence > shimmers five times in the first 30 seconds, then rests`, `> schedules nothing under reduced motion` | Also `> counts from the page first showing a mark…`, added after review |
 | A6 | claimed | `NexMark > draws on when mounted and shimmers on schedule`, `> replays the shimmer when playToken changes`, `> skips a shimmer while the tab is hidden` | Also `> ignores a hover or tap while it is still drawing on` and `> plays only what is left of the idle schedule when remounted`, added after review |
 | A7 | claimed | `NexMark > renders still and schedules nothing under reduced motion` (no timers at all: `vi.getTimerCount() === 0`) | |
-| A8 | not-claimed | The component was rendered with the app's real CSS in Chrome (Vite harness, not committed): draw-on mid-frame and the first shimmer with glint and glow, at 240/96/56/32 px disc, 120/20 px bare, and as launcher + header | Not seen signed in on nexorder.vercel.app: the only login in `.env.dev.local` is Warehouse, which has no assistant. Owner to check on dev |
+| A8 | claimed | On nexorder.vercel.app at cc69fa0, signed in as the demo Admin in Chrome: a real click on the launcher opens the sheet (pointerdown, pointerup and click all reach `#nex-assistant-launcher`), the header shows the bare mark, the hero orb listens, Escape closes it and focus returns to the launcher. Also rendered with the app's CSS at every size, mid draw-on and mid shimmer | Desktop only (1600x731); not seen at 360x720 or in dark mode on dev |
 | A9 | claimed | `npm run brand:nex-mark` wrote 5 SVG masters, `nex-mark-512.gif` (1.4 MB), `nex-mark-1080.gif` (4.6 MB), `nex-mark-1080.mp4` (365 KB, ffprobe: bt709/bt709/bt709) and 10 PNGs; frames inspected as a contact sheet | |
-| A10 | not-claimed | The branch (fece8d8) is deployed to dev: /version.json = fece8d8dab1d0ae4152f1214eef890ad623c1aed, health 200, live CSS carries every `nex-mark-*` rule | Not merged yet; the merge sha deploy follows the PR |
+| A10 | not-claimed | The branch (cc69fa0) is deployed to dev: /version.json = cc69fa0, health 200, live CSS carries every `nex-mark-*` rule | Not merged yet; the merge sha deploy follows the PR |
 | A11 | claimed | `nexMarkGeometry > curls the front N's foot inwards, clear of both legs` | |
 | A12 | claimed | `nexMarkGeometry > rounds the inside of the front peak and the valley` | |
 | A13 | claimed | `nexMarkGeometry > has no sharp corner anywhere` | Every corner was also checked by eye at 900 px |
 
 ### Not claimed
 
-- No signed-in look at the launcher on nexorder.vercel.app (A8); the motion was checked only in the harness and the export renders.
+- The first deploy (fece8d8) shipped a launcher that did not open: a press started a shimmer that remounted the shape under the pointer, and Chrome dropped the click. Unit tests could not see it (fireEvent.click always dispatches); fixed in cc69fa0 and pinned by `NexMark > never takes the pointer, so a shimmer cannot swallow the click that started it`, but no test reproduces the browser's dropped click itself.
+- A8 was checked on desktop only, not at 360x720 on dev.
 - The hero orb's live behaviour was not re-tested in a conversation; its code is unchanged apart from `useReducedMotion` moving to its own file.
 - NexOrb's `burst` mode now has no caller and stays, with its tests, for a follow-up brief.
 - Not checked on the RS35 handheld; `voice_assistant` is off on Amadiya, and the Warehouse role has no assistant anyway.
