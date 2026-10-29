@@ -19,8 +19,8 @@
 // two days are 23 and 25 hours long. No Sydney transition happens at midnight,
 // so local midnight always exists and is unique.
 //
-// A period still in progress (today, this week, this month) runs up to NOW and
-// is compared with the SAME POINT of the period before (NX-0010, owner's call):
+// A period still in progress (today, this week, this month) is compared with
+// the SAME POINT of the period before (NX-0010, owner's call):
 // today until 3 pm against yesterday until 3 pm; Monday to Wednesday 3 pm
 // against last Monday to last Wednesday 3 pm; 1 to 29 October against 1 to 29
 // September, ending at the end of a shorter previous month. Comparing "so far"
@@ -193,7 +193,12 @@ export function resolvePeriod(period: PeriodName, now: Date, custom?: CustomRang
   const label = `${days.label} (${formatCivilRange(days.from, days.to)})`
   const sameSpanBefore = inProgressPrevious(period, days.from, now)
   if (sameSpanBefore) {
-    return { from: startOfLocalDay(days.from), to: now, previous: sameSpanBefore, label }
+    // The current window still ends at the END OF TODAY, not at `now`: a caller
+    // that resolves once (the dashboard) would otherwise stop counting orders
+    // that arrive after it did, and a date-only value dated today (a route,
+    // read as UTC midnight = 10 or 11 am here) would sit outside "today" all
+    // morning. Nothing is placed in the future, so the counts are the same.
+    return { ...localWindow(days.from, days.to), previous: sameSpanBefore, label }
   }
   const length = Math.round((days.to.getTime() - days.from.getTime()) / DAY_MS) + 1
   const current = localWindow(days.from, days.to)
@@ -238,9 +243,13 @@ function inProgressPrevious(period: PeriodName, first: Date, now: Date): DateWin
     default:
       return null
   }
+  // Capped at the end of the matching day: on the 25-hour day daylight time
+  // ends, the hours since midnight can outrun a 24-hour day and the window
+  // would overlap the current one.
+  const sameTime = startOfLocalDay(matchingDay).getTime() + sinceMidnight
   return {
     from: startOfLocalDay(previousFirst),
-    to: new Date(startOfLocalDay(matchingDay).getTime() + sinceMidnight),
+    to: new Date(Math.min(sameTime, endOfLocalDay(matchingDay).getTime())),
   }
 }
 

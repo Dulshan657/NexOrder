@@ -46,7 +46,7 @@ function expectWindow(
 
 /**
  * A period still in progress (NX-0010): it runs from local midnight of `from` to
- * NOW, and is compared with `prevFrom`'s midnight to the same time of day on
+ * the end of `today`, and is compared with `prevFrom`'s midnight to the same time of day on
  * `prevMatch` (the time elapsed since local midnight on `today`).
  */
 function expectInProgress(
@@ -59,14 +59,14 @@ function expectInProgress(
 ): void {
   const sinceMidnight = now.getTime() - Date.parse(startOf(today))
   expect(got.from.toISOString()).toBe(startOf(from))
-  expect(got.to.toISOString()).toBe(now.toISOString())
+  expect(got.to.toISOString()).toBe(endOf(today))
   expect(got.previous.from.toISOString()).toBe(startOf(prevFrom))
   expect(got.previous.to.toISOString()).toBe(new Date(Date.parse(startOf(prevMatch)) + sinceMidnight).toISOString())
 }
 
 describe('resolvePeriod', () => {
   describe('today', () => {
-    it('runs from local midnight to now, previous is yesterday up to the same time', () => {
+    it('runs to the end of today, previous is yesterday up to the same time', () => {
       // 20:30 on Wed 21 Oct in Sydney.
       const now = at('2026-10-21T09:30:00.000Z')
       const got = resolvePeriod('today', now)
@@ -84,7 +84,7 @@ describe('resolvePeriod', () => {
   })
 
   describe('this_week', () => {
-    it('runs Monday to now, previous is last Monday to the same weekday and time', () => {
+    it('runs Monday to the end of today, previous is last Monday to the same weekday and time', () => {
       // 20:30 on Wednesday: compared with Mon 12 Oct to Wed 14 Oct, 20:30.
       const now = at('2026-10-21T09:30:00.000Z')
       const got = resolvePeriod('this_week', now)
@@ -113,7 +113,7 @@ describe('resolvePeriod', () => {
   })
 
   describe('this_month', () => {
-    it('runs the 1st to now, previous is last month to the same day and time', () => {
+    it('runs the 1st to the end of today, previous is last month to the same day and time', () => {
       const now = at('2026-10-20T04:00:00.000Z')
       const got = resolvePeriod('this_month', now)
       expectInProgress(got, now, '2026-10-20', '2026-10-01', '2026-09-01', '2026-09-20')
@@ -205,11 +205,11 @@ describe('resolvePeriod', () => {
       const now = at('2026-10-31T21:00:00.000Z')
       const month = resolvePeriod('this_month', now)
       expect(month.from.toISOString()).toBe('2026-10-31T13:00:00.000Z')
-      expect(month.to.toISOString()).toBe(now.toISOString())
+      expect(month.to.toISOString()).toBe('2026-11-01T12:59:59.999Z')
       expect(month.label).toBe('this month (1 Nov 2026)')
       const today = resolvePeriod('today', now)
       expect(today.from.toISOString()).toBe('2026-10-31T13:00:00.000Z')
-      expect(today.to.toISOString()).toBe(now.toISOString())
+      expect(today.to.toISOString()).toBe('2026-11-01T12:59:59.999Z')
       expect(today.label).toBe('today (1 Nov 2026)')
       expect(resolvePeriod('last_month', now).label).toBe('last month (1 Oct to 31 Oct 2026)')
     })
@@ -219,7 +219,7 @@ describe('resolvePeriod', () => {
       const now = at('2026-10-31T12:59:59.999Z')
       const month = resolvePeriod('this_month', now)
       expect(month.from.toISOString()).toBe(startOf('2026-10-01'))
-      expect(month.to.toISOString()).toBe(now.toISOString())
+      expect(month.to.toISOString()).toBe(endOf('2026-10-31'))
       // September has no 31st: the comparison is the whole of September.
       expect(month.previous.from.toISOString()).toBe(startOf('2026-09-01'))
       expect(month.previous.to.toISOString()).toBe(endOf('2026-09-30'))
@@ -273,6 +273,17 @@ describe('resolvePeriod', () => {
       expect(got.from.toISOString()).toBe('2026-10-04T13:00:00.000Z')
       expect(got.to.toISOString()).toBe('2026-10-09T12:59:59.999Z')
     })
+  })
+
+  it('counts a date-only value dated today for the whole of today', () => {
+    // Route dates are DATE columns, read as UTC midnight: 11:00 in Sydney. At
+    // 08:00 a window ending "now" left today's route outside today (gate NO-GO).
+    const eightAm = at('2026-10-19T21:00:00.000Z') // 08:00 Tue 20 Oct in Sydney
+    const route = new Date('2026-10-20').getTime()
+    for (const period of ['today', 'this_week', 'this_month'] as const) {
+      const got = resolvePeriod(period, eightAm)
+      expect(route >= got.from.getTime() && route <= got.to.getTime(), period).toBe(true)
+    }
   })
 
   it('refuses a clock that is not a real instant', () => {

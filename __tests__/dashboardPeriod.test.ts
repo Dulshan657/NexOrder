@@ -44,24 +44,46 @@ describe('dashboardRange', () => {
   it('compares today so far with yesterday up to the same time', () => {
     const range = dashboardRange('today', NOW)
     expect(range.from.toISOString()).toBe('2026-10-19T13:00:00.000Z') // Tue 00:00
-    expect(range.to.toISOString()).toBe(NOW.toISOString())
+    expect(range.to.toISOString()).toBe('2026-10-20T12:59:59.999Z') // end of Tue: later orders still count
     expect(range.previous.from.toISOString()).toBe('2026-10-18T13:00:00.000Z') // Mon 00:00
     expect(range.previous.to.toISOString()).toBe('2026-10-19T04:00:00.000Z') // Mon 15:00
   })
 
   it('compares this week so far with last week up to the same weekday and time', () => {
     const range = dashboardRange('this_week', NOW)
-    expect(range.to.toISOString()).toBe(NOW.toISOString())
+    expect(range.to.toISOString()).toBe('2026-10-20T12:59:59.999Z')
     expect(range.previous.from.toISOString()).toBe('2026-10-11T13:00:00.000Z') // Mon 12 Oct 00:00
     expect(range.previous.to.toISOString()).toBe('2026-10-13T04:00:00.000Z') // Tue 13 Oct 15:00
   })
 
   it('compares this month so far with last month up to the same day and time', () => {
     const range = dashboardRange('this_month', NOW)
-    expect(range.to.toISOString()).toBe(NOW.toISOString())
+    expect(range.to.toISOString()).toBe('2026-10-20T12:59:59.999Z')
     // 1 Sep 00:00 and 20 Sep 15:00 in Sydney, both standard time (UTC+10).
     expect(range.previous.from.toISOString()).toBe('2026-08-31T14:00:00.000Z')
     expect(range.previous.to.toISOString()).toBe('2026-09-20T05:00:00.000Z')
+  })
+
+  it('keeps counting orders placed after the dashboard was opened', () => {
+    // The dashboard resolves its range once, when it opens. Ending the current
+    // period at that instant froze it: an order arriving a minute later fell
+    // outside Today until a reload (gate NO-GO on e54549c).
+    const openedAt = NOW
+    const later = new Date(NOW.getTime() + 60_000).getTime()
+    for (const period of ['today', 'this_week', 'this_month'] as const) {
+      const range = dashboardRange(period, openedAt)
+      expect(later <= range.to.getTime(), period).toBe(true)
+    }
+  })
+
+  it('never lets the comparison overlap the current period', () => {
+    // 23:30 on Sun 5 Apr 2026, the 25-hour day daylight time ends: 23.5 h
+    // since midnight, laid onto a 24-hour Saturday, would run past its end.
+    const lateOnLongDay = new Date('2026-04-05T13:30:00.000Z')
+    for (const period of ['today', 'this_week'] as const) {
+      const range = dashboardRange(period, lateOnLongDay)
+      expect(range.previous.to.getTime() < range.from.getTime(), period).toBe(true)
+    }
   })
 
   it('ends the comparison at the end of a shorter previous month', () => {
