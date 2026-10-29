@@ -44,38 +44,58 @@ function expectWindow(
   expect(got.previous.to.toISOString()).toBe(endOf(prevTo))
 }
 
+/**
+ * A period still in progress (NX-0010): it runs from local midnight of `from` to
+ * NOW, and is compared with `prevFrom`'s midnight to the same time of day on
+ * `prevMatch` (the time elapsed since local midnight on `today`).
+ */
+function expectInProgress(
+  got: { from: Date; to: Date; previous: { from: Date; to: Date } },
+  now: Date,
+  today: string,
+  from: string,
+  prevFrom: string,
+  prevMatch: string,
+): void {
+  const sinceMidnight = now.getTime() - Date.parse(startOf(today))
+  expect(got.from.toISOString()).toBe(startOf(from))
+  expect(got.to.toISOString()).toBe(now.toISOString())
+  expect(got.previous.from.toISOString()).toBe(startOf(prevFrom))
+  expect(got.previous.to.toISOString()).toBe(new Date(Date.parse(startOf(prevMatch)) + sinceMidnight).toISOString())
+}
+
 describe('resolvePeriod', () => {
   describe('today', () => {
-    it('is the whole local day, previous is yesterday', () => {
-      const got = resolvePeriod('today', at('2026-10-21T09:30:00.000Z'))
-      expectWindow(got, '2026-10-21', '2026-10-21', '2026-10-20', '2026-10-20')
+    it('runs from local midnight to now, previous is yesterday up to the same time', () => {
+      // 20:30 on Wed 21 Oct in Sydney.
+      const now = at('2026-10-21T09:30:00.000Z')
+      const got = resolvePeriod('today', now)
+      expectInProgress(got, now, '2026-10-21', '2026-10-21', '2026-10-20', '2026-10-20')
       expect(got.label).toBe('today (21 Oct 2026)')
     })
 
     it('judges the day in the app time zone at the very edges of it', () => {
       // 12:59:59.999 UTC is 23:59:59.999 in Sydney (daylight time, UTC+11).
-      expectWindow(
-        resolvePeriod('today', at('2026-10-20T12:59:59.999Z')),
-        '2026-10-20', '2026-10-20', '2026-10-19', '2026-10-19',
-      )
-      expectWindow(
-        resolvePeriod('today', at('2026-10-20T13:00:00.000Z')),
-        '2026-10-21', '2026-10-21', '2026-10-20', '2026-10-20',
-      )
+      const lastMs = at('2026-10-20T12:59:59.999Z')
+      expectInProgress(resolvePeriod('today', lastMs), lastMs, '2026-10-20', '2026-10-20', '2026-10-19', '2026-10-19')
+      const midnight = at('2026-10-20T13:00:00.000Z')
+      expectInProgress(resolvePeriod('today', midnight), midnight, '2026-10-21', '2026-10-21', '2026-10-20', '2026-10-20')
     })
   })
 
   describe('this_week', () => {
-    it('runs Monday to today, previous is the same number of days before Monday', () => {
-      // Wednesday: three days so far, so the previous window is Fri to Sun.
-      const got = resolvePeriod('this_week', at('2026-10-21T09:30:00.000Z'))
-      expectWindow(got, '2026-10-19', '2026-10-21', '2026-10-16', '2026-10-18')
+    it('runs Monday to now, previous is last Monday to the same weekday and time', () => {
+      // 20:30 on Wednesday: compared with Mon 12 Oct to Wed 14 Oct, 20:30.
+      const now = at('2026-10-21T09:30:00.000Z')
+      const got = resolvePeriod('this_week', now)
+      expectInProgress(got, now, '2026-10-21', '2026-10-19', '2026-10-12', '2026-10-14')
       expect(got.label).toBe('this week (19 Oct to 21 Oct 2026)')
     })
 
     it('is a single day on a Monday', () => {
-      const got = resolvePeriod('this_week', at('2026-10-19T00:00:00.000Z'))
-      expectWindow(got, '2026-10-19', '2026-10-19', '2026-10-18', '2026-10-18')
+      const now = at('2026-10-19T00:00:00.000Z')
+      const got = resolvePeriod('this_week', now)
+      expectInProgress(got, now, '2026-10-19', '2026-10-19', '2026-10-12', '2026-10-12')
     })
 
     it('is seven days on a Sunday', () => {
@@ -93,17 +113,16 @@ describe('resolvePeriod', () => {
   })
 
   describe('this_month', () => {
-    it('runs the 1st to today, previous is the same number of days before the 1st', () => {
-      const got = resolvePeriod('this_month', at('2026-10-20T04:00:00.000Z'))
-      expectWindow(got, '2026-10-01', '2026-10-20', '2026-09-11', '2026-09-30')
+    it('runs the 1st to now, previous is last month to the same day and time', () => {
+      const now = at('2026-10-20T04:00:00.000Z')
+      const got = resolvePeriod('this_month', now)
+      expectInProgress(got, now, '2026-10-20', '2026-10-01', '2026-09-01', '2026-09-20')
       expect(got.label).toBe('this month (1 Oct to 20 Oct 2026)')
     })
 
     it('is a single day on the 1st', () => {
-      expectWindow(
-        resolvePeriod('this_month', at('2026-10-01T12:00:00.000Z')),
-        '2026-10-01', '2026-10-01', '2026-09-30', '2026-09-30',
-      )
+      const now = at('2026-10-01T12:00:00.000Z')
+      expectInProgress(resolvePeriod('this_month', now), now, '2026-10-01', '2026-10-01', '2026-09-01', '2026-09-01')
     })
   })
 
@@ -186,19 +205,24 @@ describe('resolvePeriod', () => {
       const now = at('2026-10-31T21:00:00.000Z')
       const month = resolvePeriod('this_month', now)
       expect(month.from.toISOString()).toBe('2026-10-31T13:00:00.000Z')
-      expect(month.to.toISOString()).toBe('2026-11-01T12:59:59.999Z')
+      expect(month.to.toISOString()).toBe(now.toISOString())
       expect(month.label).toBe('this month (1 Nov 2026)')
       const today = resolvePeriod('today', now)
       expect(today.from.toISOString()).toBe('2026-10-31T13:00:00.000Z')
-      expect(today.to.toISOString()).toBe('2026-11-01T12:59:59.999Z')
+      expect(today.to.toISOString()).toBe(now.toISOString())
       expect(today.label).toBe('today (1 Nov 2026)')
       expect(resolvePeriod('last_month', now).label).toBe('last month (1 Oct to 31 Oct 2026)')
     })
 
     it('is still October one millisecond before Sydney midnight', () => {
       // Sydney midnight on 1 Nov 2026 is 13:00 UTC on 31 Oct (UTC+11).
-      const month = resolvePeriod('this_month', at('2026-10-31T12:59:59.999Z'))
-      expectWindow(month, '2026-10-01', '2026-10-31', '2026-08-31', '2026-09-30')
+      const now = at('2026-10-31T12:59:59.999Z')
+      const month = resolvePeriod('this_month', now)
+      expect(month.from.toISOString()).toBe(startOf('2026-10-01'))
+      expect(month.to.toISOString()).toBe(now.toISOString())
+      // September has no 31st: the comparison is the whole of September.
+      expect(month.previous.from.toISOString()).toBe(startOf('2026-09-01'))
+      expect(month.previous.to.toISOString()).toBe(endOf('2026-09-30'))
       expect(month.label).toBe('this month (1 Oct to 31 Oct 2026)')
       expect(resolvePeriod('this_month', at('2026-10-31T13:00:00.000Z')).label).toBe('this month (1 Nov 2026)')
     })
@@ -222,20 +246,25 @@ describe('resolvePeriod', () => {
     it('gives the first Sunday of April 25 hours', () => {
       // Daylight time ends at 03:00 on Sunday 5 Apr 2026: that midnight is UTC+11, the next is UTC+10.
       const now = at('2026-04-05T10:00:00.000Z')
+      const whole = resolvePeriod('custom', now, { from: '2026-04-05', to: '2026-04-05' })
+      expect(whole.from.toISOString()).toBe('2026-04-04T13:00:00.000Z')
+      expect(whole.to.toISOString()).toBe('2026-04-05T13:59:59.999Z')
+      expect(whole.to.getTime() + 1 - whole.from.getTime()).toBe(25 * HOUR_MS)
       const day = resolvePeriod('today', now)
       expect(day.from.toISOString()).toBe('2026-04-04T13:00:00.000Z')
-      expect(day.to.toISOString()).toBe('2026-04-05T13:59:59.999Z')
-      expect(day.to.getTime() + 1 - day.from.getTime()).toBe(25 * HOUR_MS)
       expect(day.label).toBe('today (5 Apr 2026)')
+      // 21 h since midnight, laid onto Saturday: 21:00 AEDT, an hour off the wall
+      // clock (20:00 AEST today), the documented daylight-saving-day caveat.
       expect(day.previous.from.toISOString()).toBe('2026-04-03T13:00:00.000Z')
-      expect(day.previous.to.toISOString()).toBe('2026-04-04T12:59:59.999Z')
+      expect(day.previous.to.toISOString()).toBe('2026-04-04T10:00:00.000Z')
       expectWindow(resolvePeriod('last_30_days', now), '2026-03-07', '2026-04-05', '2026-02-05', '2026-03-06')
     })
 
     it('starts the week on the local Monday when UTC is still Sunday', () => {
       // 01:00 on Monday 26 Oct in Sydney; 14:00 on Sunday 25 Oct in UTC.
-      const got = resolvePeriod('this_week', at('2026-10-25T14:00:00.000Z'))
-      expectWindow(got, '2026-10-26', '2026-10-26', '2026-10-25', '2026-10-25')
+      const now = at('2026-10-25T14:00:00.000Z')
+      const got = resolvePeriod('this_week', now)
+      expectInProgress(got, now, '2026-10-26', '2026-10-26', '2026-10-19', '2026-10-19')
       expect(got.label).toBe('this week (26 Oct 2026)')
     })
 

@@ -38,4 +38,36 @@ describe('dashboardRange', () => {
     expect(dashboardRange('custom', NOW, '', '2026-10-07')).toMatchObject({ from: fallback.from, to: fallback.to })
     expect(dashboardRange('custom', NOW, '2026-10-09', '2026-10-01')).toMatchObject({ from: fallback.from, to: fallback.to })
   })
+
+  // NX-0010: compare with the SAME POINT last period. NOW is Tue 20 Oct, 15:00
+  // in Sydney (AEDT, UTC+11); daylight time began on Sun 4 Oct.
+  it('compares today so far with yesterday up to the same time', () => {
+    const range = dashboardRange('today', NOW)
+    expect(range.from.toISOString()).toBe('2026-10-19T13:00:00.000Z') // Tue 00:00
+    expect(range.to.toISOString()).toBe(NOW.toISOString())
+    expect(range.previous.from.toISOString()).toBe('2026-10-18T13:00:00.000Z') // Mon 00:00
+    expect(range.previous.to.toISOString()).toBe('2026-10-19T04:00:00.000Z') // Mon 15:00
+  })
+
+  it('compares this week so far with last week up to the same weekday and time', () => {
+    const range = dashboardRange('this_week', NOW)
+    expect(range.to.toISOString()).toBe(NOW.toISOString())
+    expect(range.previous.from.toISOString()).toBe('2026-10-11T13:00:00.000Z') // Mon 12 Oct 00:00
+    expect(range.previous.to.toISOString()).toBe('2026-10-13T04:00:00.000Z') // Tue 13 Oct 15:00
+  })
+
+  it('compares this month so far with last month up to the same day and time', () => {
+    const range = dashboardRange('this_month', NOW)
+    expect(range.to.toISOString()).toBe(NOW.toISOString())
+    // 1 Sep 00:00 and 20 Sep 15:00 in Sydney, both standard time (UTC+10).
+    expect(range.previous.from.toISOString()).toBe('2026-08-31T14:00:00.000Z')
+    expect(range.previous.to.toISOString()).toBe('2026-09-20T05:00:00.000Z')
+  })
+
+  it('ends the comparison at the end of a shorter previous month', () => {
+    // Sat 31 Oct, 14:00 in Sydney: September has no 31st.
+    const range = dashboardRange('this_month', new Date('2026-10-31T03:00:00.000Z'))
+    expect(range.previous.from.toISOString()).toBe('2026-08-31T14:00:00.000Z')
+    expect(range.previous.to.toISOString()).toBe('2026-09-30T13:59:59.999Z') // end of 30 Sep
+  })
 })
