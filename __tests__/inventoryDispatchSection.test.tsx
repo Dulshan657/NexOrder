@@ -52,6 +52,9 @@ describe('InventoryDispatchSection', () => {
       expect(screen.getByRole('button', { name: label }).getAttribute('aria-pressed')).toBe('false')
     }
     expect(screen.getByText('2 cancelled in this period')).toBeTruthy()
+    const counts = screen.getByRole('list', { name: 'Order pipeline counts' })
+    expect(counts.textContent).toContain('Delivered: 1')
+    expect(counts.textContent).not.toContain('Cancelled')
   })
 
   it('hides the cancelled line when nothing was cancelled', () => {

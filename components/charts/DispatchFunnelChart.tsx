@@ -11,6 +11,23 @@ interface DispatchFunnelChartProps {
 // dispatch/delivery. Indexes line up with the FUNNEL_STAGES order from the service.
 const STAGE_COLORS = ['#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8'];
 
+/**
+ * The chart's numbers as text. An SVG bar chart says nothing to a screen reader
+ * (WCAG 1.1.1), and the end-to-end spec reads the same list to check each stage
+ * against the database (tests/e2e/order-numbers.spec.ts).
+ */
+function StageList({ data }: { data: DispatchFunnelStage[] }) {
+  return (
+    <ul className="sr-only" aria-label="Order pipeline counts">
+      {data.map((stage) => (
+        <li key={stage.status} data-status={stage.status}>
+          {stage.label}: {stage.count}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function CancelledLine({ count }: { count: number }) {
   if (count <= 0) return null;
   return <p className="mt-2 text-xs text-stone-600">{count} cancelled in this period</p>;
@@ -25,6 +42,7 @@ function DispatchFunnelChart({ data, cancelled = 0 }: DispatchFunnelChartProps) 
         <div className="flex h-[240px] items-center justify-center text-sm text-stone-600">
           No orders in this period
         </div>
+        <StageList data={data} />
         <CancelledLine count={cancelled} />
       </div>
     );
@@ -67,6 +85,7 @@ function DispatchFunnelChart({ data, cancelled = 0 }: DispatchFunnelChartProps) 
           </BarChart>
         </ResponsiveContainer>
       </div>
+      <StageList data={data} />
       <CancelledLine count={cancelled} />
     </div>
   );
