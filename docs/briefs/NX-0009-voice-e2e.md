@@ -59,10 +59,10 @@ model's wording is not a regression test. It pins the numbers, not the phrasing.
 
 | Acceptance | Status | Evidence | Note |
 |---|---|---|---|
-| A1 | claimed | `voice e2e harness > registers a voice project outside tests/e2e` fails on base, passes on tip (check:brief) | |
+| A1 | claimed | `voice e2e harness > registers a voice project outside tests/e2e` (now: a bare config load has no voice project; E2E_VOICE=1 adds it at tests/voice-e2e). `npx playwright test --list` collects 0 voice tests; `E2E_VOICE=1 npx playwright test --list --project=voice` collects 2 | First version proved the wrong property; the gate caught it (NO-GO on 5ffbd75) |
 | A2 | claimed | `voice e2e harness > matches a count said as digits or words, and no other count` | 0 to 99 in words; larger counts as digits only |
 | A3 | claimed | `voice e2e harness > ships recordings as PCM16 mono 24 kHz with silence either side` | |
-| A4 | claimed | `E2E_BASE_URL=https://nexorder.vercel.app npx playwright test --project=voice` as alice@, 2 passed: "22 orders went out: 5 dispatched and 17 delivered. There are 39 orders still in the warehouse" / "19 orders placed this month" (SQL: shipped 22 = 5 + 17, placed 19) | |
+| A4 | claimed | `E2E_VOICE=1 E2E_BASE_URL=https://nexorder.vercel.app npx playwright test --project=voice`, 2 passed as alice@ and again as bob@ after the fix, judging only Nex's final answer line: "you shipped 22 in total: 5 dispatched and 17 delivered. There are 39 orders still in the warehouse" / "19 orders placed this month" (SQL: 22 = 5 + 17, placed 19) | |
 | A5 | claimed | After that run, alice@ has 0 open sessions; the run's two sessions came to about 68 s of her day | |
 | A6 | claimed | tests/e2e/README.md, "Three projects that are instruments" | |
 
@@ -70,4 +70,6 @@ model's wording is not a regression test. It pins the numbers, not the phrasing.
 
 - Nex still sometimes quotes its own rule ("using the 'shipped means processed' rule") although the instructions say not to; the spec pins numbers and "about", not phrasing.
 - Speech recognition is OpenAI's: one run heard "Orders did we process this month." for the first words. The answer was still right, but a mis-heard question would fail the run without the app being at fault.
+- The timeout raise is larger than the allowance's "15 to 40 s" suggests: the test allows 180 s and waits up to 90 s for an answer, for a slow Realtime connect; the move detector reported only the 15 s wait.
+- Nothing ties the app under test (E2E_BASE_URL) to the database the SQL reads (.env.dev.local); run it against the dev site only.
 - Not run in CI by design, and so not run on every change: it is only as current as the last time someone ran it.
