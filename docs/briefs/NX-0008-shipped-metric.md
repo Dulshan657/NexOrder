@@ -20,7 +20,7 @@
     { "id": "A12", "check": "Parity on one data set: for This month, Nex's orderCount equals the dashboard's Orders KPI equals the sum of the pipeline stages; Nex's ordersByStatus equals the pipeline stage by stage; and every source excludes cancelled from its counts the same way." },
     { "id": "A13", "check": "Parity on dev's real data: the three sources in A12 and Nex's shippedCount agree with counts computed independently in SQL (Sydney month, status_history) on the dev database.", "manual": "npm run test:integration -- numbersParity" },
     { "id": "A14", "check": "End to end, dashboard: signed in as Admin on nexorder.vercel.app, the This month Orders KPI, each pipeline bar and the cancelled line equal the SQL counts from A13.", "manual": "E2E_BASE_URL=https://nexorder.vercel.app npx playwright test tests/e2e/order-numbers.spec.ts" },
-    { "id": "A15", "check": "End to end, Nex: Chromium with a fake microphone plays a recorded 'how many orders did we process this month'; Nex's transcript states the shipped count equal to SQL, and a second recording 'how many orders came in this month' gets the placed count. Run on dev only, never in CI (it costs OpenAI minutes).", "manual": "npx playwright test --project=voice tests/voice-e2e/nex-order-numbers.spec.ts" }
+    { "id": "A15", "check": "End to end, Nex: Chromium with a fake microphone plays a recorded 'how many orders did we process this month'; Nex's transcript states the shipped count equal to SQL, and 'how many orders came in this month' gets the placed count. (Revision: the harness needs a new Playwright project and a raised timeout, which this brief does not allow, so it ships as its own brief, NX-0009; here it is a recorded run only.)", "manual": "recorded run on nexorder.vercel.app, harness in NX-0009" }
   ],
   "failFirst": [
     { "file": "__tests__/semantic.sales.test.ts", "test": "sales.shippedCount > counts an order shipped in the window even when it was placed before it", "proves": ["A1"] },
@@ -95,10 +95,12 @@ it drew cancelled orders as the last pipeline stage. Decided with the owner on
     compares all of them with SQL written independently.
   - `tests/e2e/order-numbers.spec.ts` (Playwright, Admin) reads the dashboard and
     compares it with the same SQL.
-  - A new `voice` Playwright project, excluded from `npm run test:e2e` like `soak`/`perf`,
-    runs Chromium with `--use-fake-device-for-media-stream` and a WAV of the question,
-    generated once with OpenAI TTS and committed as a fixture. It reads Nex's
-    transcript.
+  - Nex by voice (A15) needs a new `voice` Playwright project and a raised test timeout:
+    `edit-test-config` and `timeout-raised`, neither allowed here. (Revision, 2026-10-29,
+    after check:brief flagged them.) It ships as its own brief, NX-0009, on its own
+    branch. This one keeps only the run's recorded result.
+  - The live and dashboard specs carry no conditional skip: without dev credentials they
+    fail loudly rather than pass silently. CI runs neither.
   - All of it runs against dev only (the config already refuses a tenant origin).
 
 ## Out of scope
