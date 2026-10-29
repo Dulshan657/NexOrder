@@ -137,14 +137,15 @@ describe('VoiceAssistantSheet', () => {
     expect(orbs('live')[0].getAttribute('data-orb-state')).toBe('composing')
   })
 
-  it('keeps the header orb static while the hero orb animates', () => {
+  it('shows the Nex mark in the header and keeps the live hero orb', () => {
     renderSheet(fakeSession({ phase: 'live', live: 'speaking' }))
     const dialog = screen.getByRole('dialog', { name: 'Nex' })
     expect(orbs('live')).toHaveLength(1)
-    const header = orbs('burst')
-    expect(header).toHaveLength(1)
-    expect(dialog.contains(header[0])).toBe(true)
-    expect(header[0].getAttribute('aria-hidden')).toBe('true')
+    expect(orbs('burst')).toHaveLength(0)
+    const marks = Array.from(dialog.querySelectorAll('[data-nex-mark]'))
+    expect(marks).toHaveLength(1)
+    expect(marks[0].getAttribute('data-nex-mark')).toBe('bare')
+    expect(marks[0].getAttribute('aria-hidden')).toBe('true')
   })
 
   it('calls the assistant Nex in the title and the transcript', () => {

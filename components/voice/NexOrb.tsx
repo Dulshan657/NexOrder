@@ -5,6 +5,7 @@ import type { LevelSource } from '@/lib/voice/voiceSession'
 import { MAX_STEP_SEC, approach, burstVelocity, easeInOut, stateTempo } from './orbMotion'
 import type { OrbVisual } from './orbState'
 import type { StatusTone } from './voiceStatus'
+import { useReducedMotion } from './useReducedMotion'
 
 // Nex's orb: the dotted 3D sphere from thinking-orbs' pure engine, painted here so
 // it can be any size, take the status pill's colour and follow real loudness.
@@ -90,20 +91,6 @@ interface Motion {
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
 /** Near dots (low `white`) opaque, far ones faint. */
 const depthAlpha = (white: number): number => 0.25 + 0.75 * (1 - clamp01(white))
-
-function useReducedMotion(): boolean {
-  const query = '(prefers-reduced-motion: reduce)'
-  const supported = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-  const [reduced, setReduced] = useState(() => supported && window.matchMedia(query).matches)
-  useEffect(() => {
-    if (!supported) return
-    const mq = window.matchMedia(query)
-    const onChange = (event: MediaQueryListEvent) => setReduced(event.matches)
-    mq.addEventListener?.('change', onChange)
-    return () => mq.removeEventListener?.('change', onChange)
-  }, [supported])
-  return reduced
-}
 
 /** True for BURST_MS after each new token (and after mount when asked). */
 function useBurst(enabled: boolean, token: number | undefined, onMount: boolean): boolean {
