@@ -6,9 +6,9 @@
   "base": "b35adadb0f82c15aa94796ae43714b2df336e46a",
   "approved": "2026-10-29 owner",
   "acceptance": [
-    { "id": "A1", "check": "Today runs from Sydney midnight to now and is compared with yesterday from midnight to the same clock time." },
-    { "id": "A2", "check": "This week runs from Monday 00:00 (Sydney) to now and is compared with last week from Monday 00:00 to the same weekday and clock time." },
-    { "id": "A3", "check": "This month runs from the 1st to now and is compared with last month from the 1st to the same day of the month and clock time; when last month is shorter (31 Oct against September) the comparison ends at the end of last month." },
+    { "id": "A1", "check": "Today (Sydney midnight to the end of today) is compared with yesterday from midnight to the same time of day. (Revision after the gate's NO-GO: the current period still ends at the end of today, not at now, so orders arriving while the dashboard is open keep counting and a date-only route dated today counts all day; only the comparison stops at the same point.)" },
+    { "id": "A2", "check": "This week (Monday 00:00 Sydney to the end of today) is compared with last week from Monday 00:00 to the same weekday and time of day." },
+    { "id": "A3", "check": "This month (the 1st to the end of today) is compared with last month from the 1st to the same day of the month and time of day; when last month is shorter (31 Oct against September) the comparison ends at the end of last month." },
     { "id": "A4", "check": "Last month, the last 30 days and a custom range keep comparing whole days with the same number of whole days just before.", "manual": "the existing last_month / last_30_days / custom cases in __tests__/voice/period.test.ts stay green with their assertions untouched" },
     { "id": "A5", "check": "The Admin Dashboard's arrows and Nex's 'compared with the previous period' use the same windows: on one data set, Nex's previous order count equals the dashboard's previous Orders count for Today, This Week and This Month." },
     { "id": "A6", "check": "Nex's instructions never ask it to name a rule: it states the period and whose orders in plain words, and is told not to call its basis a rule." },
@@ -44,9 +44,11 @@ rule". That line goes, and it is told never to call its basis a rule.
 ## Approach
 
 - `lib/period.ts` `resolvePeriod`: for `today`, `this_week` and `this_month`,
-  `to` becomes `now`, and `previous` becomes the same span one day, week or
-  calendar month earlier, ending at the same clock time (clamped to the end of
-  a shorter previous month). `last_month`, `last_30_days` and `custom` keep
+  `previous` becomes the same span one day, week or calendar month earlier,
+  ending at the same time of day (clamped to the end of a shorter previous
+  month, and never past the end of its own day). The current window keeps
+  ending at the end of today (revision: ending it at `now` froze an open
+  dashboard and pushed date-only route dates out of "today" until 10 am). `last_month`, `last_30_days` and `custom` keep
   whole days. `dashboardRange` keeps delegating, so the dashboard and Nex
   cannot drift apart.
 - `__tests__/voice/period.test.ts`: its assertions for those three periods
