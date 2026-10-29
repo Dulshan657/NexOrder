@@ -84,3 +84,27 @@ back inwards. The geometry is measured from the logo file and checked by overlay
 - Amadiya: `voice_assistant` is on dev only.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `VoiceAssistantLauncher > shows the Nex mark instead of an orb, keeping its label` fails on base, passes on tip (check:brief) | |
+| A2 | claimed | `VoiceAssistantSheet > shows the Nex mark in the header and keeps the live hero orb` fails on base, passes on tip | |
+| A3 | claimed | `nexMarkGeometry > runs every diagonal at 60 degrees`, `> keeps the gap between the two Ns equal on both sides`, `> centres the arrowhead on the shaft axis` | Geometry measured from the logo and overlaid on it during design (preview artifact, round 6) |
+| A4 | claimed | `nexMarkGeometry > keeps the ink at 3:1 or better against the disc` | Computed from the hex values with the WCAG formula, not measured in the built CSS |
+| A5 | claimed | `markCadence > shimmers five times in the first 30 seconds, then rests`, `> schedules nothing under reduced motion` | Also `> counts from the page first showing a mark…`, added after review |
+| A6 | claimed | `NexMark > draws on when mounted and shimmers on schedule`, `> replays the shimmer when playToken changes`, `> skips a shimmer while the tab is hidden` | Also `> ignores a hover or tap while it is still drawing on` and `> plays only what is left of the idle schedule when remounted`, added after review |
+| A7 | claimed | `NexMark > renders still and schedules nothing under reduced motion` (no timers at all: `vi.getTimerCount() === 0`) | |
+| A8 | not-claimed | The component was rendered with the app's real CSS in Chrome (Vite harness, not committed): draw-on mid-frame and the first shimmer with glint and glow, at 240/96/56/32 px disc, 120/20 px bare, and as launcher + header | Not seen signed in on nexorder.vercel.app: the only login in `.env.dev.local` is Warehouse, which has no assistant. Owner to check on dev |
+| A9 | claimed | `npm run brand:nex-mark` wrote 5 SVG masters, `nex-mark-512.gif` (1.4 MB), `nex-mark-1080.gif` (4.6 MB), `nex-mark-1080.mp4` (365 KB, ffprobe: bt709/bt709/bt709) and 10 PNGs; frames inspected as a contact sheet | |
+| A10 | not-claimed | The branch (fece8d8) is deployed to dev: /version.json = fece8d8dab1d0ae4152f1214eef890ad623c1aed, health 200, live CSS carries every `nex-mark-*` rule | Not merged yet; the merge sha deploy follows the PR |
+| A11 | claimed | `nexMarkGeometry > curls the front N's foot inwards, clear of both legs` | |
+| A12 | claimed | `nexMarkGeometry > rounds the inside of the front peak and the valley` | |
+| A13 | claimed | `nexMarkGeometry > has no sharp corner anywhere` | Every corner was also checked by eye at 900 px |
+
+### Not claimed
+
+- No signed-in look at the launcher on nexorder.vercel.app (A8); the motion was checked only in the harness and the export renders.
+- The hero orb's live behaviour was not re-tested in a conversation; its code is unchanged apart from `useReducedMotion` moving to its own file.
+- NexOrb's `burst` mode now has no caller and stays, with its tests, for a follow-up brief.
+- Not checked on the RS35 handheld; `voice_assistant` is off on Amadiya, and the Warehouse role has no assistant anyway.
+- The GIFs are on a white background; a dark-background cut was not rendered.
