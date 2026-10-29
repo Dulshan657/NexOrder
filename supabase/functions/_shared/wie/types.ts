@@ -315,6 +315,14 @@ export interface PutawayRequest {
    *  pre-00115 behaviour and is what every caller does on a site with no rules.
    *  See slotting.ts for why the decision here is quantity-independent. */
   slotting?: SlottingContext
+  /** Closest-to-home bin order from homeFirst.ts (NX-0006). Within each
+   *  slotting tier, bins are ranked by this order instead of by score; bins
+   *  not in it follow, in score order. Undefined ⇒ score order, byte-identical
+   *  to the pre-NX-0006 behaviour. */
+  anchorOrder?: number[]
+  /** Bins this plan may not use at all — the home bin when planning the
+   *  overflow, so a max_qty cap is not refilled through the back door. */
+  excludeLocationIds?: number[]
 }
 
 /** Everything `planSlotting` needs except the candidates, which the request

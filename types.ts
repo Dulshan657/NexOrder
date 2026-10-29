@@ -544,6 +544,9 @@ export interface ProductWmsAttributes {
     volumeL?: number;
     dims?: Record<string, unknown>;
     custom: Record<string, unknown>;
+    /** Receive Stock must capture a lot code / an expiry (mig 00134, NX-0005). */
+    requiresLot: boolean;
+    requiresExpiry: boolean;
     /** Level roles this SKU may be put away into (mig 00072). undefined = ANY
      *  role. An empty array is never persisted — see mutate-wms-attributes. */
     allowedLevelRoles?: LevelRole[];
@@ -773,6 +776,10 @@ export interface PutawayLineRecommendation {
     recommendedLocationId: number | null;
     alternatives: CandidateBreakdown[];
     explanation: PutawayExplanation;
+    /** NX-0006: the product's home bin, near its home, or the plain engine. */
+    suggestionSource?: 'home' | 'overflow' | 'engine';
+    /** NX-0006: no home bin yet — the operator may make the chosen bin its home. */
+    suggestMakeHome?: boolean;
 }
 
 export interface HoReCa {

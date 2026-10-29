@@ -122,6 +122,10 @@ Each fix was written test-first and seen failing for the right reason before the
 
 Gates at the fix-wave tip: `npx vitest run __tests__/voice` all pass; full `npm test` passes once the jsdom-timeout files are re-run alone; `npx tsc --noEmit`, `npm run lint`, `check:csp`, `check:overlays`, `check:viewport`, `check:claude-md` and `deno check` of every function exit 0; `npm run build` exits 0; `voice-session` redeployed to dev and smoke-tested as in A2.
 
+### Bringing the branch up to date with main (2026-10-29)
+
+The owner asked for the merge to main. `origin/main` (NX-0005, NX-0006, migrations `00134`–`00137`) was merged in with no conflicts; dev's ledger already carried `00133`–`00137`, so no migration runs. CI then failed `npm audit --omit=dev --audit-level=high` on GHSA-mrhx-c7xc-m3w5 (zod < 4.6.6): this branch made `zod` a production dependency at `^3.25.76`, and no 3.x release is fixed. The client moved to `zod@^4.6.7`; the Edge Functions keep `esm.sh/zod@3.23.8`, which this audit does not see. The only source changes are `z.AnyZodObject` → `z.ZodObject` and `z.ZodIssueCode.custom` → `'custom'` in `lib/voice/toolArgs.ts`. `__tests__/voice/toolArgs.test.ts` reads zod's internals, so it moved to the v4 spellings (`.strict()` is now a `ZodNever` catchall, and `defaultValue` is a value rather than a function). No assertion was removed or loosened. At this tip: `npx tsc --noEmit` exits 0, the full unit suite on 3 workers passes (355 files, 5999 tests), `npm run build` exits 0, `check:csp` OK, and the prod audit finds 0 vulnerabilities.
+
 ### A14: the owner's walk
 
 Use the dev demo logins: bob (Manager), charlie (Field Sales Rep), warehouse. Do it on desktop Chrome, Android Chrome, and iPhone Safari (in the browser and added to the home screen).

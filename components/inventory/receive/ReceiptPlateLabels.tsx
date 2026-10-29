@@ -14,8 +14,8 @@
 // carton that ordinarily would not need it — they are just not ticked, because
 // pre-ticking the whole receipt is how a print run becomes a thing people skip.
 
-import React, { useEffect, useMemo, useState } from 'react'
-import { Printer, Tag } from 'lucide-react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, Printer, Tag } from 'lucide-react'
 import { useReceiptPlates } from '@/hooks/queries/useReceiveStock'
 import { usePrintPlateLabels } from '@/hooks/queries/usePalletBreakdown'
 import { useToastActions } from '@/hooks/useToasts'
@@ -24,14 +24,33 @@ import { plateNeedsLabel } from '@/lib/putawayIdentity'
 interface ReceiptPlateLabelsProps {
   /** The receipt just recorded. Null before one exists. */
   goodsReceiptId: number | null
+  /**
+   * Render the sheet for the plates that need a label as soon as they are
+   * known, with no click (NX-0005). The operator's one action is then the tap
+   * that opens it — which has to stay a tap: opening it programmatically after
+   * the await is popup-blocked. The tick-list moves behind "Choose labels".
+   *
+   * Rendering is what flips `label_printed`, exactly as the Print button
+   * always has; a sheet nobody opens is therefore recorded as printed. Accepted
+   * in the NX-0005 brief.
+   */
+  autoRender?: boolean
 }
 
-export const ReceiptPlateLabels: React.FC<ReceiptPlateLabelsProps> = ({ goodsReceiptId }) => {
+export const ReceiptPlateLabels: React.FC<ReceiptPlateLabelsProps> = ({ goodsReceiptId, autoRender = false }) => {
   const { addToast } = useToastActions()
   const platesQuery = useReceiptPlates(goodsReceiptId)
   const print = usePrintPlateLabels()
   const [selected, setSelected] = useState<number[]>([])
   const [labelUrl, setLabelUrl] = useState<string | null>(null)
+  const [renderedCount, setRenderedCount] = useState(0)
+  const [chooserOpen, setChooserOpen] = useState(false)
+  // Per receipt, not per `needing`: rendering flips `label_printed`, so the
+  // very next refetch (window focus, coming back from the PDF tab) shrinks
+  // `needing`. Re-seeding on that would untick everything and drop the link
+  // the operator was about to tap.
+  const seededFor = useRef<number | null>(null)
+  const autoRanFor = useRef<number | null>(null)
 
   const plates = platesQuery.data ?? []
 
@@ -53,9 +72,40 @@ export const ReceiptPlateLabels: React.FC<ReceiptPlateLabelsProps> = ({ goodsRec
   // receipt replaces it. Not a render-time derivation: the operator must be able
   // to untick a suggestion, and a derived value would fight them.
   useEffect(() => {
-    setSelected(needing)
     setLabelUrl(null)
-  }, [goodsReceiptId, needing.join(',')])
+    setRenderedCount(0)
+    setChooserOpen(false)
+  }, [goodsReceiptId])
+
+  useEffect(() => {
+    if (goodsReceiptId == null || platesQuery.data == null) return
+    if (seededFor.current === goodsReceiptId) return
+    seededFor.current = goodsReceiptId
+    setSelected(needing)
+  }, [goodsReceiptId, platesQuery.data, needing])
+
+  const renderIds = async (ids: number[]) => {
+    try {
+      const result = await print.mutateAsync(ids)
+      // Rendered as a link the operator TAPS: window.open after an await is
+      // popup-blocked, every time.
+      setLabelUrl(result.signedUrl)
+      setRenderedCount(ids.length)
+      if (!result.signedUrl) addToast('The sheet rendered but returned no link — try again', 'error')
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Could not render the labels', 'error')
+    }
+  }
+
+  useEffect(() => {
+    if (!autoRender || goodsReceiptId == null || platesQuery.data == null) return
+    if (autoRanFor.current === goodsReceiptId || needing.length === 0) return
+    autoRanFor.current = goodsReceiptId
+    void renderIds(needing)
+    // `renderIds` is recreated every render and reads nothing stale that
+    // matters; the ref above is what makes this fire once per receipt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRender, goodsReceiptId, platesQuery.data, needing])
 
   if (goodsReceiptId == null || plates.length === 0) return null
 
@@ -64,17 +114,7 @@ export const ReceiptPlateLabels: React.FC<ReceiptPlateLabelsProps> = ({ goodsRec
     setLabelUrl(null)
   }
 
-  const renderLabels = async () => {
-    try {
-      const result = await print.mutateAsync(selected)
-      // Rendered as a link the operator TAPS: window.open after an await is
-      // popup-blocked, every time.
-      setLabelUrl(result.signedUrl)
-      if (!result.signedUrl) addToast('The sheet rendered but returned no link — try again', 'error')
-    } catch (e) {
-      addToast(e instanceof Error ? e.message : 'Could not render the labels', 'error')
-    }
-  }
+  const renderLabels = () => renderIds(selected)
 
   return (
     <div className="glass-card rounded-xl p-4 sm:p-5 space-y-3">
@@ -92,7 +132,19 @@ export const ReceiptPlateLabels: React.FC<ReceiptPlateLabelsProps> = ({ goodsRec
         </div>
       </div>
 
-      <ul className="space-y-1">
+      {autoRender && (
+        <button
+          type="button"
+          onClick={() => setChooserOpen((v) => !v)}
+          aria-expanded={chooserOpen}
+          className="btn-press touch-target-y inline-flex items-center gap-1.5 rounded-lg px-1 text-xs text-stone-600 hover:bg-stone-100"
+        >
+          <ChevronDown className={`h-4 w-4 transition-transform ${chooserOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+          Choose labels
+        </button>
+      )}
+
+      <ul className={`space-y-1 ${autoRender && !chooserOpen ? 'hidden' : ''}`}>
         {plates.map((plate) => {
           const wants = needing.includes(plate.id)
           return (
@@ -128,10 +180,14 @@ export const ReceiptPlateLabels: React.FC<ReceiptPlateLabelsProps> = ({ goodsRec
             href={labelUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] bg-nexgen-blue text-white text-sm font-medium rounded-lg btn-press"
+            className={`inline-flex items-center gap-1.5 bg-nexgen-blue text-white font-medium rounded-lg btn-press min-h-[44px] ${
+              autoRender ? 'px-5 py-2.5 text-base' : 'px-3.5 py-2 text-sm'
+            }`}
           >
             <Printer className="w-4 h-4" aria-hidden="true" />
-            Open the label sheet
+            {autoRender
+              ? `Print ${renderedCount} label${renderedCount === 1 ? '' : 's'}`
+              : 'Open the label sheet'}
           </a>
         ) : (
           <button

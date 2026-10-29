@@ -66,9 +66,25 @@ export function planPutaway(request: PutawayRequest): PutawayPlan {
   const slotPlan = request.slotting
     ? planSlotting({ ...request.slotting, candidates: request.candidates })
     : null
-  const ranked = slotPlan && !slotPlan.inert
-    ? [...scored].sort((a, b) => tierOf(slotPlan, a.locationId) - tierOf(slotPlan, b.locationId))
-    : scored
+  //
+  // Home first (NX-0006): within a tier, closeness to the product's home bin
+  // replaces the score as the order. The tier still wins — a slotting rule is
+  // the operator's statement of where the product belongs, and the home bin is
+  // normally inside it anyway.
+  const tierFor = (id: number): number =>
+    slotPlan && !slotPlan.inert ? tierOf(slotPlan, id) : 0
+  const anchorIndex = request.anchorOrder
+    ? new Map(request.anchorOrder.map((id, i) => [id, i]))
+    : null
+  // Not Infinity: Infinity - Infinity is NaN, which corrupts a sort comparator.
+  const anchorFor = (id: number): number => anchorIndex?.get(id) ?? Number.MAX_SAFE_INTEGER
+  const excluded = new Set(request.excludeLocationIds ?? [])
+  const eligible = excluded.size > 0 ? scored.filter((c) => !excluded.has(c.locationId)) : scored
+  const ranked = (slotPlan && !slotPlan.inert) || anchorIndex
+    ? [...eligible].sort((a, b) =>
+      tierFor(a.locationId) - tierFor(b.locationId)
+        || (anchorIndex ? anchorFor(a.locationId) - anchorFor(b.locationId) : 0))
+    : eligible
 
   const explanation = buildExplanation(request, filter, ranked)
   const alternatives = ranked.slice(1, 1 + ALTERNATIVES_SHOWN)

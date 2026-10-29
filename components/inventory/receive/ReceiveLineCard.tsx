@@ -69,7 +69,7 @@
 // worse defect than the one this file fixes.
 
 import React, { useId, useState } from 'react'
-import { ChevronDown, Trash2 } from 'lucide-react'
+import { ChevronDown, Minus, Plus, Trash2 } from 'lucide-react'
 import { ScanField } from '../../ui/ScanField'
 import { Tooltip } from '../../ui/Tooltip'
 import { normalizeScan } from '../../../lib/scan/resolveScan'
@@ -78,7 +78,8 @@ import { provenanceHint, provenanceLabel, uomProvenance } from '../../../lib/pal
 import type { PalletSpec } from '../../../lib/palletFit'
 import { supplierSkuFor } from '../../../lib/productSuppliers'
 import type { Product } from '../../../types'
-import { plateLabel, type DraftLine, type DraftPlate } from './receiveDraft'
+import LineProductPicker from './LineProductPicker'
+import { missingRequired, plateLabel, type DraftLine, type DraftPlate, type LineRequirement } from './receiveDraft'
 
 /**
  * The row's column template once the CONTAINER is wide enough — column-for-column what the
@@ -129,6 +130,21 @@ export interface ReceiveLineCardProps {
    * while sharing a pallet with three others.
    */
   inGroup?: boolean
+  /**
+   * What this product must arrive with (mig 00134, NX-0005). When either field
+   * is required, lot AND expiry leave the disclosure and sit inline, so the one
+   * that is required is never hidden and the column order at desk width stays
+   * lot-then-expiry whichever of the two it is.
+   */
+  requirement?: LineRequirement
+  /** The line a scan just created or counted on — briefly tinted. */
+  highlighted?: boolean
+  /**
+   * For a line with no product yet (added by hand): the products it may be,
+   * and what to do when one is chosen. Without these the cell reads "—".
+   */
+  productPool?: readonly Product[]
+  onChooseProduct?: (product: Product) => void
 }
 
 export function ReceiveLineCard({
@@ -142,6 +158,10 @@ export function ReceiveLineCard({
   onRemove,
   onSetPlateType,
   inGroup = false,
+  requirement,
+  highlighted = false,
+  productPool,
+  onChooseProduct,
 }: ReceiveLineCardProps) {
   // Local, and keyed by the line's own identity through React's `key`. Nothing
   // above needs to know which lines are open, and lifting it would put a piece
@@ -171,21 +191,81 @@ export function ReceiveLineCard({
   const provLabel = provenanceLabel(provenance)
   const provHint = provenanceHint(provenance)
 
+  const missing = missingRequired(line, requirement)
+  const inlineDates = !!requirement && (requirement.lot || requirement.expiry)
+  const productName = product?.name ?? `line ${line.key}`
+  const stepQty = (delta: number) =>
+    onUpdate({ quantity: String(Math.max(0, (Number(line.quantity) || 0) + delta)) })
+
+  const requiredRing = 'border-red-400 bg-red-50/40'
+
+  const lotCell = (
+    <div>
+      <MicroLabel>{requirement?.lot ? 'Lot code (required)' : 'Lot code'}</MicroLabel>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          value={line.lotCode}
+          onChange={(e) => onUpdate({ lotCode: e.target.value })}
+          className={`${CONTROL} min-w-0 flex-1 ${missing.lot ? requiredRing : ''}`}
+          placeholder={requirement?.lot ? 'required' : 'optional'}
+          aria-required={requirement?.lot ? true : undefined}
+          aria-invalid={missing.lot ? true : undefined}
+          aria-label={requirement?.lot ? `Lot code for ${productName} (required)` : `Lot code for line ${line.key}`}
+        />
+        <Tooltip
+          label="What is a lot code?"
+          text="The supplier's batch or lot number. Paired with an expiry date it drives FEFO picking, so the oldest stock leaves first."
+        />
+      </div>
+    </div>
+  )
+
+  const expiryCell = (
+    <div>
+      <MicroLabel>{requirement?.expiry ? 'Expiry (required)' : 'Expiry'}</MicroLabel>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="date"
+          value={line.expiryDate}
+          onChange={(e) => onUpdate({ expiryDate: e.target.value })}
+          className={`${CONTROL} min-w-0 flex-1 ${missing.expiry ? requiredRing : ''}`}
+          aria-required={requirement?.expiry ? true : undefined}
+          aria-invalid={missing.expiry ? true : undefined}
+          aria-label={requirement?.expiry ? `Expiry for ${productName} (required)` : `Expiry for line ${line.key}`}
+        />
+        <Tooltip
+          label="What is the expiry for?"
+          text="It sets the FEFO order for picking - the earliest expiry is picked first, ahead of stock received before it."
+        />
+      </div>
+    </div>
+  )
+
   return (
     <div
+      data-line-key={line.key}
       className={
         'grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2.5 px-4 py-3 ' +
         `@min-[1180px]:gap-x-4 @min-[1180px]:gap-y-0 ${RECEIVE_ROW_COLUMNS} ` +
         // The one place a line gets its own surface. A held line has to be
         // recognisable at a glance while collapsed, and while scrolling past.
-        (line.quarantine ? 'bg-amber-50/60' : 'hover:bg-stone-50/50')
+        (line.quarantine
+          ? 'bg-amber-50/60'
+          : highlighted
+            ? 'bg-emerald-50 transition-colors'
+            : 'hover:bg-stone-50/50 transition-colors')
       }
     >
       {/* Product — always visible. Placed explicitly below `xl` so the remove
           control can sit beside it on the first row despite coming last in the
           DOM, which is the order the columns need at `xl`. */}
       <div className="col-start-1 row-start-1 min-w-0 @min-[1180px]:col-start-auto @min-[1180px]:row-start-auto">
-        <p className="text-sm font-medium text-stone-900">{product?.name ?? '—'}</p>
+        {!product && productPool && onChooseProduct ? (
+          <LineProductPicker pool={productPool} supplierId={supplierId} onChoose={onChooseProduct} />
+        ) : (
+          <p className="text-sm font-medium text-stone-900">{product?.name ?? '—'}</p>
+        )}
         <p className="font-mono text-xs text-stone-500">
           {product?.sku}
           {/* The supplier's own part number, so the line can be ticked off
@@ -198,16 +278,36 @@ export function ReceiveLineCard({
           open a section to reach. */}
       <div className="col-span-2 @min-[1180px]:col-span-1">
         <MicroLabel>Qty</MicroLabel>
-        <input
-          type="number"
-          min={1}
-          inputMode="numeric"
-          value={line.quantity}
-          onChange={(e) => onUpdate({ quantity: e.target.value })}
-          className={`${CONTROL} text-right font-mono tabular-nums`}
-          placeholder="0"
-          aria-label={product ? `Quantity for ${product.name}` : 'Quantity'}
-        />
+        <div className="flex items-stretch gap-1.5">
+          {/* Gloved correction without the soft keyboard. Hidden at desk width,
+              where the column is 7rem and there is a real keyboard. */}
+          <button
+            type="button"
+            onClick={() => stepQty(-1)}
+            aria-label={`One less ${productName}`}
+            className="btn-press flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md border border-stone-300 text-stone-600 hover:bg-stone-100 @min-[1180px]:hidden"
+          >
+            <Minus className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <input
+            type="number"
+            min={1}
+            inputMode="numeric"
+            value={line.quantity}
+            onChange={(e) => onUpdate({ quantity: e.target.value })}
+            className={`${CONTROL} min-w-0 flex-1 text-right font-mono tabular-nums`}
+            placeholder="0"
+            aria-label={product ? `Quantity for ${product.name}` : 'Quantity'}
+          />
+          <button
+            type="button"
+            onClick={() => stepQty(1)}
+            aria-label={`One more ${productName}`}
+            className="btn-press flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md border border-stone-300 text-stone-600 hover:bg-stone-100 @min-[1180px]:hidden"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
         {product && uoms.length > 1 && selectedUom && (
           <div className="mt-1.5 space-y-0.5">
             <select
@@ -257,8 +357,19 @@ export function ReceiveLineCard({
           className={`h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
           aria-hidden="true"
         />
-        <span className="min-w-0 truncate">{summarise(line, plates, inGroup)}</span>
+        <span className="min-w-0 truncate">{summarise(line, plates, inGroup, inlineDates)}</span>
       </button>
+
+      {/* Required lot/expiry: out of the disclosure, always on screen. At desk
+          width this wrapper is `contents`, so the two cells take their usual
+          columns. Ahead of the details in the DOM is fine — the toggle between
+          them is `display: none` there and so is no grid item. */}
+      {inlineDates && (
+        <div className="col-span-2 grid grid-cols-2 gap-x-3 @min-[1180px]:contents">
+          {lotCell}
+          {expiryCell}
+        </div>
+      )}
 
       {/*
         Below `xl`: a collapsible two-column block.
@@ -269,40 +380,8 @@ export function ReceiveLineCard({
         id={detailsId}
         className={`${open ? 'grid' : 'hidden'} col-span-2 grid-cols-2 gap-x-3 gap-y-2.5 @min-[1180px]:contents`}
       >
-        <div>
-          <MicroLabel>Lot code</MicroLabel>
-          <div className="flex items-center gap-1.5">
-            <input
-              type="text"
-              value={line.lotCode}
-              onChange={(e) => onUpdate({ lotCode: e.target.value })}
-              className={`${CONTROL} min-w-0 flex-1`}
-              placeholder="optional"
-              aria-label={`Lot code for line ${line.key}`}
-            />
-            <Tooltip
-              label="What is a lot code?"
-              text="The supplier's batch or lot number. Paired with an expiry date it drives FEFO picking, so the oldest stock leaves first."
-            />
-          </div>
-        </div>
-
-        <div>
-          <MicroLabel>Expiry</MicroLabel>
-          <div className="flex items-center gap-1.5">
-            <input
-              type="date"
-              value={line.expiryDate}
-              onChange={(e) => onUpdate({ expiryDate: e.target.value })}
-              className={`${CONTROL} min-w-0 flex-1`}
-              aria-label={`Expiry for line ${line.key}`}
-            />
-            <Tooltip
-              label="What is the expiry for?"
-              text="Optional. It sets the FEFO order for picking - the earliest expiry is picked first, ahead of stock received before it."
-            />
-          </div>
-        </div>
+        {!inlineDates && lotCell}
+        {!inlineDates && expiryCell}
 
         <div className="col-span-2 @min-[1180px]:col-span-1">
           <MicroLabel>Barcode</MicroLabel>
@@ -426,17 +505,26 @@ export function ReceiveLineCard({
  * every time and the operator learns where to look. Hold comes first when it is
  * on: it is the only one of the five with a consequence for the stock.
  */
-function summarise(line: DraftLine, plates: readonly DraftPlate[], inGroup: boolean): string {
+function summarise(
+  line: DraftLine,
+  plates: readonly DraftPlate[],
+  inGroup: boolean,
+  datesInline = false,
+): string {
   const parts: string[] = []
   if (line.quarantine) parts.push('Hold')
   // Inside a mixed pallet the card header already names the unit; repeating it
   // on every line would be the same two words down the whole card.
   if (!inGroup) parts.push(plateLabel(plates, line.plateKey))
-  if (line.lotCode.trim()) parts.push(`Lot ${line.lotCode.trim()}`)
-  if (line.expiryDate) parts.push(`Exp ${line.expiryDate}`)
+  if (!datesInline && line.lotCode.trim()) parts.push(`Lot ${line.lotCode.trim()}`)
+  if (!datesInline && line.expiryDate) parts.push(`Exp ${line.expiryDate}`)
   if (line.barcode.trim()) parts.push('Barcode set')
-  const fields = inGroup ? 'lot, expiry, barcode' : 'lot, expiry, barcode, arrived on'
-  return `${parts.join(' · ')} — ${fields}`
+  // Phrased as an offer: on most lines nothing in here is needed, and a list
+  // of field names read as a list of chores.
+  const offer = datesInline
+    ? (inGroup ? 'Barcode, hold' : 'Barcode, arrived on, hold')
+    : line.lotCode.trim() || line.expiryDate ? 'Edit lot / expiry' : 'Add lot / expiry'
+  return parts.length > 0 ? `${parts.join(' · ')} · ${offer}` : offer
 }
 
 export default ReceiveLineCard

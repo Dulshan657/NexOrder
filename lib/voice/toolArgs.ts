@@ -71,12 +71,12 @@ export const TOOL_ARG_OBJECTS = {
   get_reorder_recommendations: reorderRecommendations,
   get_product_movement: productMovement,
   get_visit_stats: visitStats,
-} as const satisfies Record<VoiceToolName, z.AnyZodObject>
+} as const satisfies Record<VoiceToolName, z.ZodObject>
 
 /** A custom period needs two real dates in order; any other period must not carry dates. */
 function checkDates(value: z.infer<typeof salesSummary>, ctx: z.RefinementCtx): void {
   const issue = (path: 'from' | 'to', message: string): void =>
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message })
+    ctx.addIssue({ code: 'custom', path: [path], message })
 
   if (value.period !== 'custom') {
     if (value.from !== undefined) issue('from', 'only allowed with period custom')

@@ -15,13 +15,14 @@ const paramsOf = (name: VoiceToolName): JsonParams =>
 function inner(field: z.ZodTypeAny): z.ZodTypeAny {
   let current = field
   while (current instanceof z.ZodOptional || current instanceof z.ZodDefault || current instanceof z.ZodNullable) {
-    current = current._def.innerType
+    current = current._def.innerType as z.ZodTypeAny
   }
   return current
 }
 
+/** zod 4 stores the default as a value, not a thunk. */
 function defaultOf(field: z.ZodTypeAny): unknown {
-  return field instanceof z.ZodDefault ? field._def.defaultValue() : undefined
+  return field instanceof z.ZodDefault ? field._def.defaultValue : undefined
 }
 
 const salesMinimal = MINIMAL_ARGS.get_sales_summary
@@ -48,7 +49,8 @@ describe('toolArgs agrees with toolSchemas', () => {
 
       it('is strict, as the JSON schema says additionalProperties false', () => {
         expect(json.additionalProperties).toBe(false)
-        expect(TOOL_ARG_OBJECTS[name]._def.unknownKeys).toBe('strict')
+        // zod 4 records .strict() as a never catchall
+        expect(TOOL_ARG_OBJECTS[name]._def.catchall).toBeInstanceOf(z.ZodNever)
       })
 
       it('agrees on type, enum values, bounds and defaults of each property', () => {
@@ -62,7 +64,7 @@ describe('toolArgs agrees with toolSchemas', () => {
           }
           if (prop.enum) {
             expect(field).toBeInstanceOf(z.ZodEnum)
-            expect([...(field as z.ZodEnum<[string, ...string[]]>).options].sort()).toEqual([...prop.enum].sort())
+            expect([...(field as z.ZodEnum).options].sort()).toEqual([...prop.enum].sort())
           }
           if (prop.minimum !== undefined) expect((field as z.ZodNumber).minValue).toBe(prop.minimum)
           if (prop.maximum !== undefined) expect((field as z.ZodNumber).maxValue).toBe(prop.maximum)
@@ -143,7 +145,7 @@ describe('argument rules', () => {
   describe('get_reorder_recommendations', () => {
     it('defaults the lead time to 14 days and bounds it to 1 to 60', () => {
       const result = parse('get_reorder_recommendations', {})
-      expect(result.success && (result.data as { lead_time_days: number }).lead_time_days).toBe(14)
+      expect(result.success && (result.data as unknown as { lead_time_days: number }).lead_time_days).toBe(14)
       expect(parse('get_reorder_recommendations', { lead_time_days: 60 }).success).toBe(true)
       expect(parse('get_reorder_recommendations', { lead_time_days: 61 }).success).toBe(false)
       expect(parse('get_reorder_recommendations', { lead_time_days: 0 }).success).toBe(false)

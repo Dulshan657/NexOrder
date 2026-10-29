@@ -98,7 +98,11 @@ export const VIEWPORT_H = 664
  *  `py-2`, and 8px of difference is exactly the size of the defect being
  *  guarded. */
 export function scanDock(page: Page): Locator {
-  return page.locator('[data-scan-dock="bottom"]')
+  // `adaptive` (NX-0005, Receive Stock) is a bottom dock below `lg` and a top
+  // bar from `lg`. This project runs at 360px, so it must be found here — and
+  // `expectPinnedToFoot` then MEASURES that it sits at the foot, so accepting
+  // it cannot pass a bar that is really at the top.
+  return page.locator('[data-scan-dock="bottom"], [data-scan-dock="adaptive"]')
 }
 
 /**
