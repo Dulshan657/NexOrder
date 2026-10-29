@@ -68,7 +68,7 @@ rule". That line goes, and it is told never to call its basis a rule.
 
 | Acceptance | Status | Evidence | Note |
 |---|---|---|---|
-| A1 | claimed | `dashboardRange > compares today so far with yesterday up to the same time` (fail-first); after the gate's NO-GO also `dashboardRange > keeps counting orders placed after the dashboard was opened` and `resolvePeriod > counts a date-only value dated today for the whole of today` | Current period ends at the end of today (brief revision); only the comparison stops at the same point |
+| A1 | claimed | `dashboardRange > compares today so far with yesterday up to the same time` (fail-first); after the gate's NO-GOs also `dashboardRange > keeps counting orders placed after the dashboard was opened`, `resolvePeriod > counts a date-only value dated today for the whole of today` and `useDashboardRange > moves the comparison along while the dashboard stays open` | Current period ends at the end of today (brief revision); the dashboard re-resolves its range every minute |
 | A2 | claimed | `dashboardRange > compares this week so far with last week up to the same weekday and time`; `dashboardRange > never lets the comparison overlap the current period` | |
 | A3 | claimed | `dashboardRange > compares this month so far with last month up to the same day and time`, `> ends the comparison at the end of a shorter previous month` | |
 | A4 | claimed | __tests__/voice/period.test.ts: the last_month, last_30_days and custom cases pass with their assertions untouched (the diff edits only today / this_week / this_month cases and the DST-day test's today half) | |
@@ -80,6 +80,7 @@ rule". That line goes, and it is told never to call its basis a rule.
 ### Not claimed
 
 - The first version ended the current period at `now`; the gate found it froze an open dashboard and hid today's route from Nex until 10 am (NO-GO on e54549c). Fixed and tested at period level; Nex's visit stats were not run by voice.
+- The dashboard ticks once a minute, so its comparison can lag the clock by up to a minute.
 - On the two daylight-saving change days, "the same time of day" is the time elapsed since midnight, an hour off the wall clock (pinned in period.test.ts).
 - The other dashboards' comparisons (SalesDashboard, RepDashboardV2) are unchanged and were not looked at.
 - The dashboard's arrows were checked by tests only, not by eye on the live page.
