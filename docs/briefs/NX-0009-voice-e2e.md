@@ -6,7 +6,7 @@
   "base": "49dcab410816c02f6d092b25ebec518c55d71385",
   "approved": "2026-10-29 owner",
   "acceptance": [
-    { "id": "A1", "check": "playwright.config.ts registers a 'voice' project whose testDir is tests/voice-e2e, outside tests/e2e, so neither `npm run test:e2e` (the chromium project) nor CI (the a11y project) runs it." },
+    { "id": "A1", "check": "playwright.config.ts registers a 'voice' project whose testDir is tests/voice-e2e, outside tests/e2e, and neither a bare `npm run test:e2e` nor CI (the a11y project) runs it. (Revision after the gate's NO-GO: a bare `playwright test` runs every defined project, so the voice project is defined only when E2E_VOICE=1.)" },
     { "id": "A2", "check": "The spec accepts a number however Nex says it (\"22\", \"twenty-two\", \"twenty two\") and does not accept a different number." },
     { "id": "A3", "check": "The committed question recordings are PCM16 mono 24 kHz WAVs with at least 2 s of silence before and after the speech, so the session is listening when it starts and the speech detector hears the turn end." },
     { "id": "A4", "check": "'How many orders did we process this month?' spoken through a fake microphone is answered with the shipped count, equal to SQL, with no 'about' before it; 'How many orders came in this month?' with the placed count, equal to SQL.", "manual": "E2E_BASE_URL=https://nexorder.vercel.app npx playwright test --project=voice" },
