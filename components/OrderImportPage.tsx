@@ -1124,18 +1124,18 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
                               <Eye className="w-4 h-4" />
                             </button>
 
-                            {/* Process (Receiving tab, processing-status orders) replaces the
+                            {/* Confirm (Receiving tab, processing-status orders) replaces the
                                 generic Advance button so staff confirm warehouse stock before
                                 the order moves on. v1 assumes a single warehouse. */}
                             {isAdminOrManager && activeTab === 'received' && order.status === 'processing' ? (
                               <button
                                 onClick={() => setProcessingOrder(order)}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-800 text-white hover:bg-blue-900 transition-colors cursor-pointer whitespace-nowrap"
-                                title="Confirm stock and process"
-                                aria-label={`Process order ${order.id}`}
+                                title="Check stock and confirm"
+                                aria-label={`Confirm order ${order.id}`}
                               >
                                 <Sparkles className="w-3.5 h-3.5" />
-                                Process
+                                Confirm
                               </button>
                             ) : (
                               isAdminOrManager && nextStatus && (
@@ -1378,13 +1378,13 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
           const processedId = processingOrder.id;
           onUpdateStatus(processedId, 'processed', note, locationPref ? { locationPref } : undefined);
           setProcessingOrder(null);
-          addToast('Order processed', 'success');
+          addToast('Order confirmed', 'success');
           // Auto-generate the pick slip so the warehouse can start picking
           // immediately. Fire-and-forget — failure is non-fatal (it can be
           // regenerated from the Pick Queue).
           generatePickSlip.mutate(processedId, {
             onSuccess: () => addToast('Pick slip generated', 'success'),
-            onError: () => addToast('Order processed, but pick slip generation failed — retry from the Pick Queue', 'error'),
+            onError: () => addToast('Order confirmed, but pick slip generation failed — retry from the Pick Queue', 'error'),
           });
         }}
       />

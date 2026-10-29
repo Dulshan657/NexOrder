@@ -41,7 +41,10 @@ export function percentChange(current: number, previous: number): number | null 
  * everyone in the business, and to the dashboards (lib/period).
  */
 export function dayOf(timestamp: string | null | undefined): string | null {
-  return timestamp ? appDateKey(timestamp) : null
+  if (!timestamp) return null
+  // appDateKey goes through Intl, which throws on an invalid date; a bad value is "no date".
+  if (Number.isNaN(new Date(timestamp).getTime())) return null
+  return appDateKey(timestamp)
 }
 
 /** Whole days from an ISO timestamp to `now` (negative if it is in the future). */

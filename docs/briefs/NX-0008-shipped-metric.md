@@ -121,7 +121,7 @@ it drew cancelled orders as the last pipeline stage. Decided with the owner on
 | A2 | claimed | `sales.shippedCount > never counts a cancelled order and honours the rep scope` | |
 | A3 | claimed | `get_sales_summary > reports orders shipped in the period by ship date, with the dispatched and delivered split`, `> says in the basis that placed and shipped orders are counted by different dates` | |
 | A4 | claimed | `buildInstructions > tells Nex that processed means shipped and to say what it counted`; `stays under 4,000 characters for every role and module set` still passes | Revised after the live run: counts are exact, basis said plainly |
-| A5 | claimed | `ORDER_STATUS_LABELS > shows the processed status as Confirmed`; e2e `order-numbers.spec.ts` reads "Confirmed:" off the live chart | Also PickQueueView's empty text and StockAssignmentModal's history note |
+| A5 | claimed | `ORDER_STATUS_LABELS > shows the processed status as Confirmed`; e2e `order-numbers.spec.ts` reads "Confirmed:" off the live chart | Also PickQueueView's empty text, and (after the gate's note) the whole confirm flow: the Receiving tab's Confirm button, the Confirm Order dialog and its toasts (`StockAssignmentModal wording > says confirm, never process, and writes a Confirmed note`) |
 | A6 | claimed | `computeDispatchFunnel > counts orders placed since the start of the Sydney calendar month for 'month'` | |
 | A7 | claimed | `computeDispatchFunnel > keeps cancelled orders out of the stages and counts them separately` | |
 | A8 | claimed | `InventoryDispatchSection > opens on This month and shows cancelled orders as a line under the chart`; e2e on nexorder.vercel.app | |
@@ -139,4 +139,6 @@ it drew cancelled orders as the last pipeline stage. Decided with the owner on
 - Other dashboards (SalesDashboard, RepDashboardV2) were not audited for their own period logic; only the Admin Dashboard's toggle moved to lib/period. dayRange moving to Sydney days changes their custom ranges and sales-target windows too, unverified by eye.
 - The first live voice runs left four sessions open (two each for alice@ and bob@), which the ledger bills at 900 s each; those two demo accounts have no Nex time until the rows age out (rolling 24 h). Not repaired here.
 - `stillInWarehouse` counts every open order whatever its age (39 on dev, some from March); whether stale open orders should be closed is a data question, not this change.
+- `dayOf` (Nex's date fields) moved from UTC to Sydney days with the rest; after the gate's note it answers null for a malformed timestamp instead of throwing (`dayOf > answers null, never throws, for a missing or malformed timestamp`). Other Nex tools' date fields (customer insights, follow-ups, product movement, reorder) now read in Sydney days, unverified by voice.
+- The Admin Dashboard's deltas now compare whole days to whole days, as Nex does: "today" so far against all of yesterday, so they lean negative early in the day. Left as is pending the owner's call.
 - Nex's wording is a language model's: the voice e2e pins the numbers and the "about" rule, not phrasing ("using the 'went out' rule" still appeared once).

@@ -13,7 +13,7 @@ export interface StockAssignmentModalProps {
 }
 
 /**
- * Process-order modal. Stock auto-allocates closest-first across the warehouses
+ * Confirm-order modal (the status stored as 'processed' is shown as Confirmed). Stock auto-allocates closest-first across the warehouses
  * (computed from the customer's coordinates) and splits when the nearest is
  * short. The operator may override the primary warehouse; otherwise the order
  * keeps the allocation made at placement.
@@ -69,17 +69,17 @@ const StockAssignmentModal: React.FC<StockAssignmentModalProps> = ({ order, onCo
       dirty={isDirty}
       onSubmit={handleConfirm}
       icon={<MapPin className="w-4 h-4 text-nexgen-blue" />}
-      title={`Process Order ${order.id}`}
+      title={`Confirm Order ${order.id}`}
       description={order.hoReCa.name}
       footer={({ requestClose }) => (
         <>
           <p className="mr-auto text-xs text-stone-500">
             {primaryId === 'auto'
-              ? 'Confirm to process and create per-warehouse fulfilments.'
+              ? 'Confirming creates the per-warehouse fulfilments.'
               : 'Stock will be re-reserved with your chosen warehouse first.'}
           </p>
           <Button variant="ghost" size="sm" onClick={requestClose}>Cancel</Button>
-          <Button type="submit" size="sm">Confirm &amp; Process</Button>
+          <Button type="submit" size="sm">Confirm order</Button>
         </>
       )}
     >
