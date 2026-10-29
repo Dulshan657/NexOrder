@@ -180,6 +180,21 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      // NX-0008 — Nex by voice, end to end: a recorded question through a fake
+      // microphone, the real OpenAI Realtime session, the answer checked against
+      // SQL. An INSTRUMENT like `soak`: it spends OpenAI minutes and depends on a
+      // language model, so its testDir sits outside './tests/e2e' and neither
+      // `npm run test:e2e` nor CI runs it. The spec launches its own browser,
+      // because the fake-microphone file is a per-launch flag.
+      name: 'voice',
+      testDir: './tests/voice-e2e',
+      testMatch: '**/*.spec.ts',
+      retries: 0,
+      workers: 1,
+      fullyParallel: false,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       // O14 — the backdrop-blur measurement harness. HEADED, deliberately.
       // The previous attempt ran in a browser-automation tab that is always
       // `document.hidden`, where requestAnimationFrame is throttled to about

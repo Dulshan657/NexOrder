@@ -12,10 +12,10 @@ clearly named, idempotent, and clean up after itself (see
 warehouse; `finally` blocks that restore edited product attributes / delete
 draft layouts).
 
-## Two projects that are instruments, not regression tests
+## Three projects that are instruments, not regression tests
 
-Both are excluded from `npm run test:e2e`. Neither guards anything; each
-exists to produce a reading that a register row was missing.
+All three are excluded from `npm run test:e2e` and from CI. None guards
+anything on its own; each exists to produce a reading nothing else can.
 
 ### `soak` — does a session survive a shift? (`tests/soak/`)
 
@@ -54,6 +54,30 @@ question unanswered for months.
 
 Full procedure, the pre-registered decision rule and the 2026-08-19 results:
 `docs/runbooks/measure-backdrop-blur.md`.
+
+### `voice` — does Nex say the right number? (`tests/voice-e2e/`)
+
+```bash
+E2E_BASE_URL=https://nexorder.vercel.app E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... npx playwright test --project=voice
+```
+
+Asks Nex two recorded questions ("How many orders did we process this month?"
+and "...came in this month?") through Chromium's fake microphone, over the real
+OpenAI Realtime session, and checks the numbers Nex says against SQL on the
+same database (`__tests__/support/orderNumbersSql.ts`). "Processed" must come
+back as orders **shipped**, "came in" as orders **placed**, and a count never
+as "about N". It pins numbers, not phrasing: the wording is a language model's.
+
+What it costs: two short conversations, about a minute of the signed-in
+account's 30-minute daily Nex budget, plus OpenAI minutes. It presses **End**
+before closing the browser, because an abandoned session is billed at the
+15-minute cap; the first runs did not, and spent two demo accounts' whole day.
+So **use an account with Nex time left** (any demo Admin or Manager). It also
+needs `.env.dev.local` for the SQL side.
+
+The questions are committed WAVs; regenerate them with
+`node tests/voice-e2e/make-fixtures.mjs` (OpenAI TTS, `OPENAI_API_KEY` from
+`.env.dev.local`) only if the wording should change.
 
 ## Setup
 
