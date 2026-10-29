@@ -4,16 +4,16 @@
 // actually renders (the Orders KPI, each order-pipeline stage and the cancelled
 // line) and checks every figure against SQL run on the same database
 // (__tests__/support/orderNumbersSql.ts, written independently of the app).
-// __tests__/numbersParity.integration.test.ts checks Nex against the same SQL,
-// so a pass of both means the screen and Nex say the same thing.
+// __tests__/numbersParity.integration.test.ts checks Nex's tool against the same
+// SQL, so a pass of both means the screen and Nex say the same thing.
 //
-// Read-only. Needs E2E_ADMIN_* AND dev database credentials (.env.dev.local),
-// so it skips where the database is out of reach. Point E2E_BASE_URL at the dev
+// Read-only. Needs E2E_ADMIN_* AND dev database credentials (.env.dev.local);
+// without them it fails loudly rather than skipping. Point E2E_BASE_URL at the dev
 // deployment or a local `npm run dev`; the config refuses a tenant origin.
 
 import type pg from 'pg'
 import { expect, test } from './fixtures/auth'
-import { hasDbCreds, withRollbackTx } from '../../__tests__/support/pgTestClient'
+import { withRollbackTx } from '../../__tests__/support/pgTestClient'
 import { sqlTruth, type SqlTruth } from '../../__tests__/support/orderNumbersSql'
 
 async function readTruth(): Promise<SqlTruth> {
@@ -26,8 +26,6 @@ async function readTruth(): Promise<SqlTruth> {
 }
 
 test.describe('order numbers on the Admin Dashboard', () => {
-  test.skip(!hasDbCreds(), 'needs dev database credentials in .env.dev.local')
-
   test('This month: Orders KPI, pipeline stages and cancelled line match SQL', async ({ adminPage: page }) => {
     const truth = await readTruth()
 

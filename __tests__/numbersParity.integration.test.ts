@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type pg from 'pg'
-import { hasDbCreds, withRollbackTx } from './support/pgTestClient'
+import { withRollbackTx } from './support/pgTestClient'
 import { sqlTruth } from './support/orderNumbersSql'
 import { toOrders } from '../lib/adapters'
 import { runVoiceTool } from '../lib/voice/runVoiceTool'
@@ -35,7 +35,8 @@ async function appOrders(client: pg.Client): Promise<Order[]> {
   return toOrders(rows.rows as never[], [], [], [])
 }
 
-describe.skipIf(!hasDbCreds())('order numbers parity on dev (live)', () => {
+// No skip: without dev credentials this fails loudly rather than passing silently.
+describe('order numbers parity on dev (live)', () => {
   it('Nex, the Orders KPI and the pipeline all match SQL for this month', async () => {
     await withRollbackTx(async (client) => {
       const truth = await sqlTruth(client)
