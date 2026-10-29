@@ -60,7 +60,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
     processing: 'Processing',
-    processed: 'Processed',
+    // Shown as Confirmed (NX-0008): "processed" read as "done". The stored value is unchanged.
+    processed: 'Confirmed',
     picked: 'Picked',
     packed: 'Packed',
     dispatched: 'Dispatched',

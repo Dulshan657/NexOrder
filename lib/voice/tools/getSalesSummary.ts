@@ -1,5 +1,8 @@
 // get_sales_summary: revenue, orders, average order, new customers, the status
 // mix, the top five customers and products, and the previous period beside it.
+// Also what SHIPPED in the period (by the date it went out, not the date it was
+// placed), split into dispatched and delivered, and how many orders are still in
+// the warehouse: people asking how many orders were "processed" mean shipped.
 //
 // Every figure comes from a registry metric (lib/semantic), so the assistant
 // cannot disagree with a dashboard about what "revenue" or a "new customer" is.
@@ -7,7 +10,7 @@
 // argument that could change it.
 
 import { evaluateMetric, filterOrders } from '@/lib/semantic'
-import type { CustomerRevenue, MetricContext, OrderFilter, ProductUnits, StatusCount } from '@/lib/semantic'
+import type { CustomerRevenue, MetricContext, OrderFilter, ProductUnits, ShippedSplit, StatusCount } from '@/lib/semantic'
 import type { VoiceToolContext } from '../context'
 import { toMetricContext } from '../context'
 import { toBaseUnitOrders } from '../baseUnits'
@@ -19,6 +22,9 @@ import { dollars, fail, ok, ordersScope, percentChange } from './common'
 import type { ToolOutcome } from './common'
 
 const TOP_N = 5
+
+/** Confirmed but not yet out of the door: every stage before dispatched. */
+const IN_WAREHOUSE: OrderFilter['statuses'] = ['processing', 'processed', 'picked', 'packed']
 
 function window(scope: OrderFilter, span: DateWindow): OrderFilter {
   return { ...scope, from: span.from, to: span.to }
@@ -79,6 +85,10 @@ export function getSalesSummary(args: ToolArgs<'get_sales_summary'>, ctx: VoiceT
     orderCount: current.orderCount,
     averageOrderValue: dollars(evaluateMetric<number>('sales.averageOrderValue', mctx, filter)),
     newCustomers: evaluateMetric<number>('sales.newCustomerCount', mctx, filter),
+    shippedCount: evaluateMetric<number>('sales.shippedCount', mctx, filter),
+    shippedByStatus: evaluateMetric<ShippedSplit>('sales.shippedByStatus', mctx, filter),
+    // Right now, whenever placed: "still in the warehouse" is a state, not a period.
+    stillInWarehouse: evaluateMetric<number>('sales.orderCount', mctx, { ...scope, statuses: IN_WAREHOUSE }),
     ordersByStatus: orderStatus.filter((s) => s.count > 0).map((s) => ({ status: s.status, count: s.count })),
     topCustomers: topCustomers.slice(0, TOP_N).map((c) => ({ horecaId: c.horecaId, name: c.name, revenue: dollars(c.revenue) })),
     topProducts: topProducts.slice(0, TOP_N).map((p) => ({ name: p.name, units: p.units })),
@@ -87,5 +97,6 @@ export function getSalesSummary(args: ToolArgs<'get_sales_summary'>, ctx: VoiceT
   }
 
   const forCustomer = customer ? `, for ${customer.name}` : ''
-  return ok(`orders placed ${period.label}, ${ordersScope(ctx)}, cancelled excluded${forCustomer}`, data)
+  const basis = `${period.label}: placed orders by order date, shipped orders by the date they first went out, ${ordersScope(ctx)}, cancelled excluded${forCustomer}`
+  return ok(basis, data)
 }

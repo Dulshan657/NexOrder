@@ -31,7 +31,8 @@ import { getRestockAlerts, getDaysToStockout } from '../services/productMovement
 import { computeAllHoReCaInsights } from '../services/buyingPatternsService';
 import { getPromotionROI } from '../services/promotionROIService';
 import { computeRepProductivity } from '../services/repProductivityService';
-import { computeTargetProgress, dayRange, filterOrders } from '../lib/semantic';
+import { computeTargetProgress, filterOrders } from '../lib/semantic';
+import { appDateKey, appDateKeysBetween, dashboardRange } from '../lib/period';
 import { useMetric, useMetricContext } from '../hooks/useMetrics';
 import type { CustomerRevenue, DateRevenue, ProductUnits, RepRevenue } from '../lib/semantic';
 
@@ -51,72 +52,31 @@ interface AdminDashboardProps {
   onNavigateTab?: (tab: string) => void;
 }
 
-const formatDateForInput = (date: Date) => {
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-function getDateRange(period: DashboardTimePeriod, customStart?: string, customEnd?: string): { start: Date; end: Date } {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  switch (period) {
-    case 'today':
-      return { start: today, end: now };
-    case 'this_week': {
-      const dayOfWeek = today.getDay();
-      const weekStart = new Date(today);
-      weekStart.setDate(today.getDate() - dayOfWeek);
-      return { start: weekStart, end: now };
-    }
-    case 'this_month':
-      return { start: new Date(today.getFullYear(), today.getMonth(), 1), end: now };
-    case 'custom':
-      // Both bounds come from date inputs, so this is a calendar range and
-      // dayRange owns it. The old `customEnd + 'T23:59:59'` built the boundary in
-      // local time and dropped the final second of the day.
-      if (customStart && customEnd) {
-        const range = dayRange(customStart, customEnd);
-        return { start: range.from, end: range.to };
-      }
-      return {
-        start: customStart ? new Date(customStart) : new Date(today.getTime() - 30 * 86400000),
-        end: customEnd ? new Date(customEnd + 'T23:59:59') : now,
-      };
-    default:
-      return { start: new Date(today.getTime() - 30 * 86400000), end: now };
-  }
-}
-
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
   allOrders, products, hoReCas, users, invoices, salesTargets = [], onUpdateSalesTargets,
   currentUser, lowStockThreshold = 10, promotions = [], visits = [], routes = [], onNavigateTab,
 }) => {
   const [period, setPeriod] = useState<DashboardTimePeriod>('this_month');
-  const [customStart, setCustomStart] = useState(formatDateForInput(new Date(Date.now() - 30 * 86400000)));
-  const [customEnd, setCustomEnd] = useState(formatDateForInput(new Date()));
+  const [customStart, setCustomStart] = useState(() => appDateKey(new Date(Date.now() - 30 * 86400000)));
+  const [customEnd, setCustomEnd] = useState(() => appDateKey(new Date()));
   const [showTargetModal, setShowTargetModal] = useState(false);
 
-  const dateRange = useMemo(() => getDateRange(period, customStart, customEnd), [period, customStart, customEnd]);
-
-  // This window and the one before it, for the deltas. Both are INSTANT ranges:
-  // getDateRange returns local midnight .. now, not two calendar dates, so they
-  // are passed through as instants rather than via dayRange.
+  // This window and the one before it, for the deltas. Both come from
+  // dashboardRange, the same Sydney calendar Nex resolves "this week" and "this
+  // month" in (lib/period), so the KPIs and Nex count the same orders. This was
+  // the browser's own zone with a Sunday week start until NX-0008.
+  const dateRange = useMemo(
+    () => dashboardRange(period, new Date(), customStart, customEnd),
+    [period, customStart, customEnd],
+  );
   const periodFilter = useMemo(
-    () => ({ from: dateRange.start, to: dateRange.end }),
+    () => ({ from: dateRange.from, to: dateRange.to }),
     [dateRange],
   );
-  const previousFilter = useMemo(() => {
-    const periodMs = dateRange.end.getTime() - dateRange.start.getTime();
-    return {
-      from: new Date(dateRange.start.getTime() - periodMs),
-      // The old predicate was `< prevEnd`; one millisecond short of the current
-      // window's start is the same set of orders, expressed inclusively.
-      to: new Date(dateRange.start.getTime() - 1),
-    };
-  }, [dateRange]);
+  const previousFilter = useMemo(
+    () => ({ from: dateRange.previous.from, to: dateRange.previous.to }),
+    [dateRange],
+  );
 
   const metricCtx = useMetricContext({ orders: allOrders, products, lowStockThreshold });
 
@@ -234,14 +194,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const salesOverTimeData = useMemo(() => {
     const salesByDate = new Map(revenueByDate.map(row => [row.date, row.revenue]));
 
-    const data: { date: string; revenue: number }[] = [];
-    const d = new Date(dateRange.start);
-    while (d <= dateRange.end) {
-      const dateString = formatDateForInput(d);
-      data.push({ date: dateString, revenue: salesByDate.get(dateString) || 0 });
-      d.setDate(d.getDate() + 1);
-    }
-    return data;
+    // Same Sydney date keys sales.revenueByDate groups on, so no day is lost to a zone mismatch.
+    return appDateKeysBetween(dateRange.from, dateRange.to).map(date => ({
+      date,
+      revenue: salesByDate.get(date) || 0,
+    }));
   }, [revenueByDate, dateRange]);
 
   // Top data. The ranking and the rep-roles-only rule live in the registry; only

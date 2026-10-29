@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { evaluateMetric } from '../lib/semantic/evaluate'
 import { computeTargetAchieved } from '../lib/semantic/targets'
 import type { MetricContext } from '../lib/semantic/types'
+import type { Order } from '../types'
 import { UserRole } from '../types'
 import { makeHoReCa, makeItem, makeOrder, makeTarget, makeUser } from './support/metricFixtures'
 
@@ -158,15 +159,98 @@ describe('sales.ordersByStatus', () => {
 })
 
 describe('sales.revenueByDate', () => {
-  it('groups stored totals by calendar day, ascending', () => {
+  it('groups stored totals by Sydney calendar day, ascending', () => {
+    // ORD-2 is 15:00 UTC on 10 Jul, which is 01:00 on 11 Jul in Sydney (AEST).
     const out = evaluateMetric('sales.revenueByDate', ctx, {}) as ReadonlyArray<{
       date: string
       revenue: number
     }>
     expect(out).toEqual([
-      { date: '2026-07-10', revenue: 150 },
+      { date: '2026-07-10', revenue: 100 },
+      { date: '2026-07-11', revenue: 50 },
       { date: '2026-07-12', revenue: 90 },
     ])
+  })
+
+  it('groups an early-morning Sydney order on its Sydney date', () => {
+    // 22:30 UTC on 9 Jul is 08:30 on 10 Jul in Sydney: the day the customer ordered.
+    const early = makeOrder({ id: 'EARLY', orderDate: '2026-07-09T22:30:00.000Z', status: 'delivered', total: 7 })
+    const out = evaluateMetric('sales.revenueByDate', { ...ctx, orders: [early] }, {}) as ReadonlyArray<{
+      date: string
+      revenue: number
+    }>
+    expect(out).toEqual([{ date: '2026-07-10', revenue: 7 }])
+  })
+})
+
+describe('sales.shippedCount', () => {
+  // "Shipped" is when an order FIRST reached dispatched or delivered, read from its
+  // status history, whatever date it was placed. July is the window throughout.
+  const july = { from: new Date('2026-07-01T00:00:00.000Z'), to: new Date('2026-07-31T23:59:59.999Z') }
+  const june = { from: new Date('2026-06-01T00:00:00.000Z'), to: new Date('2026-06-30T23:59:59.999Z') }
+  const august = { from: new Date('2026-08-01T00:00:00.000Z'), to: new Date('2026-08-31T23:59:59.999Z') }
+  const step = (status: string, timestamp: string) => ({ status, timestamp }) as Order['statusHistory'][number]
+
+  const placedJuneShippedJuly = makeOrder({
+    id: 'S-1',
+    orderDate: '2026-06-28T02:00:00.000Z',
+    submittedBy: repA,
+    status: 'delivered',
+    statusHistory: [
+      step('processing', '2026-06-28T02:00:00.000Z'),
+      step('dispatched', '2026-07-02T01:00:00.000Z'),
+      step('delivered', '2026-07-03T01:00:00.000Z'),
+    ],
+  })
+  const placedJulyNotShipped = makeOrder({
+    id: 'S-2',
+    orderDate: '2026-07-05T02:00:00.000Z',
+    submittedBy: repA,
+    status: 'packed',
+    statusHistory: [step('processing', '2026-07-05T02:00:00.000Z'), step('packed', '2026-07-06T02:00:00.000Z')],
+  })
+  const dispatchedJulyDeliveredAugust = makeOrder({
+    id: 'S-3',
+    orderDate: '2026-07-08T02:00:00.000Z',
+    submittedBy: repB,
+    status: 'delivered',
+    statusHistory: [step('dispatched', '2026-07-10T01:00:00.000Z'), step('delivered', '2026-08-02T01:00:00.000Z')],
+  })
+  const deliveredWithoutDispatchStep = makeOrder({
+    id: 'S-4',
+    orderDate: '2026-07-14T02:00:00.000Z',
+    submittedBy: repA,
+    status: 'delivered',
+    statusHistory: [step('delivered', '2026-07-15T01:00:00.000Z')],
+  })
+  const cancelledAfterDispatch = makeOrder({
+    id: 'S-5',
+    orderDate: '2026-07-01T02:00:00.000Z',
+    submittedBy: repA,
+    status: 'cancelled',
+    statusHistory: [step('dispatched', '2026-07-02T01:00:00.000Z'), step('cancelled', '2026-07-02T05:00:00.000Z')],
+  })
+  const shippingCtx: MetricContext = {
+    ...ctx,
+    orders: [placedJuneShippedJuly, placedJulyNotShipped, dispatchedJulyDeliveredAugust, deliveredWithoutDispatchStep, cancelledAfterDispatch],
+  }
+  const shipped = (filter: object) => evaluateMetric('sales.shippedCount', shippingCtx, filter)
+
+  it('counts an order shipped in the window even when it was placed before it', () => {
+    expect(shipped({ ...july, horecaId: undefined })).toBe(3)
+    // S-1 was placed in June but did not ship until July.
+    expect(shipped(june)).toBe(0)
+  })
+
+  it('counts each order once, by the first time it reached dispatched or delivered', () => {
+    // S-3 shipped in July; being delivered in August does not ship it again.
+    expect(shipped(august)).toBe(0)
+    expect(shipped({})).toBe(3)
+  })
+
+  it('never counts a cancelled order and honours the rep scope', () => {
+    expect(shipped({ ...july, repId: repA.id })).toBe(2)
+    expect(shipped({ ...july, repId: repB.id })).toBe(1)
   })
 })
 

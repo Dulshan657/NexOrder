@@ -1,6 +1,7 @@
 import type { Order, Product } from '@/types';
 import { classifyStock, lowStockThresholdFor } from '@/lib/stockStatus';
 import { groupOrdersByStatus, type StatusCount } from '@/lib/semantic/metrics/sales';
+import { resolvePeriod } from '@/lib/period';
 
 // Pure derivations for the Admin Dashboard "Inventory & Dispatch" section.
 // No DB calls — these operate on data already cached in the dashboard (products,
@@ -56,33 +57,58 @@ export function computeStockHealth(
   return { inStock, lowStock, outOfStock, total: inStock + lowStock + outOfStock };
 }
 
-export type DispatchWindow = 7 | 30 | 90;
+/**
+ * 'month' is the Sydney calendar month to date, the same window Nex means by
+ * "this month" (lib/period). The numbers are rolling day counts ending now.
+ */
+export type DispatchWindow = 'month' | 7 | 30 | 90;
 
 /** Kept as an alias so existing importers are unaffected by the move. */
 export type DispatchFunnelStage = StatusCount;
 
+export interface OrderPipeline {
+  /** The six fulfilment stages, in order, zero-filled. Never contains 'cancelled'. */
+  stages: DispatchFunnelStage[];
+  /** Orders placed in the same window and since cancelled. Shown beside the chart, not as a stage. */
+  cancelled: number;
+}
+
+function windowBounds(window: DispatchWindow, now: Date): { from: number; to: number } {
+  if (window === 'month') {
+    const month = resolvePeriod('this_month', now);
+    return { from: month.from.getTime(), to: month.to.getTime() };
+  }
+  return { from: now.getTime() - window * 86_400_000, to: now.getTime() };
+}
+
 /**
- * Count orders placed within the last `windowDays` (relative to the injected
- * `now`) grouped by their current fulfilment status, returned in pipeline order.
- * `now` is a parameter so the function is deterministic and testable.
+ * Where the orders placed in the window sit now: one count per fulfilment stage,
+ * plus the cancelled ones counted apart. `now` is a parameter so the function is
+ * deterministic and testable.
  *
- * The rolling window is this function's own concern — a "last 30 days" window is
- * a different question from the calendar range `sales.ordersByStatus` answers, so
- * it stays here. The grouping and the stage labels are NOT its own concern, and
- * are delegated to `groupOrdersByStatus` in the semantic layer; this file used to
- * carry a second copy of the pipeline order and every label.
+ * Cancelled is split out because it is not a stage. It used to be drawn as the
+ * last bar of the funnel, which read as "the step after delivered". With it gone,
+ * the stages sum to sales.orderCount for the same window, which is what Nex says
+ * when asked how many orders came in (__tests__/numbersParity.test.ts).
+ *
+ * The grouping and the stage labels are delegated to `groupOrdersByStatus` in the
+ * semantic layer; this file used to carry a second copy of both.
  */
 export function computeDispatchFunnel(
   orders: readonly Order[],
-  windowDays: DispatchWindow,
+  window: DispatchWindow,
   now: Date,
-): DispatchFunnelStage[] {
-  const cutoff = now.getTime() - windowDays * 86_400_000;
+): OrderPipeline {
+  const { from, to } = windowBounds(window, now);
 
   const withinWindow = orders.filter((order) => {
     const placed = new Date(order.orderDate).getTime();
-    return !Number.isNaN(placed) && placed >= cutoff && placed <= now.getTime();
+    return !Number.isNaN(placed) && placed >= from && placed <= to;
   });
 
-  return groupOrdersByStatus(withinWindow);
+  const live = withinWindow.filter((order) => order.status !== 'cancelled');
+  return {
+    stages: groupOrdersByStatus(live),
+    cancelled: withinWindow.length - live.length,
+  };
 }

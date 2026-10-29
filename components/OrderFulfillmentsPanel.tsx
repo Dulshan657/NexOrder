@@ -5,7 +5,7 @@ import type { Order, OrderStatus, FulfillmentStatus } from '../types';
 const LADDER: FulfillmentStatus[] = ['processed', 'picked', 'packed', 'dispatched', 'delivered'];
 
 const STATUS_META: Record<FulfillmentStatus, { label: string; cls: string }> = {
-  processed: { label: 'Processed', cls: 'bg-stone-100 text-stone-600' },
+  processed: { label: 'Confirmed', cls: 'bg-stone-100 text-stone-600' },
   picked: { label: 'Picked', cls: 'bg-emerald-50 text-emerald-700' },
   packed: { label: 'Packed', cls: 'bg-amber-50 text-amber-700' },
   dispatched: { label: 'Dispatched', cls: 'bg-nexgen-blue/10 text-nexgen-blue' },

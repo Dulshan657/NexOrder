@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 
 import { evaluateMetric } from '../lib/semantic/evaluate'
 import { dayRange, filterOrders } from '../lib/semantic/filter'
+import { appDateKey } from '../lib/period'
 import { computeTargetAchieved } from '../lib/semantic/targets'
 import type { MetricContext } from '../lib/semantic/types'
 import { UserRole } from '../types'
@@ -111,9 +112,12 @@ describe('SalesDashboard.tsx:209-223 — the line-sum override', () => {
 })
 
 describe('SalesDashboard.tsx:226-230 — sales by date', () => {
+  // The old copy keyed on the UTC date (`orderDate.split('T')[0]`). NX-0008 moved
+  // the metric to the SYDNEY date, the calendar Nex and the dashboards share, so
+  // the reference here keys on the Sydney date too; the grouping is unchanged.
   const salesByDate = new Map<string, number>()
   for (const o of orders) {
-    const date = o.orderDate.split('T')[0]
+    const date = appDateKey(o.orderDate)
     salesByDate.set(date, (salesByDate.get(date) || 0) + o.total)
   }
 
@@ -229,8 +233,9 @@ describe('target attainment — four old copies collapse to one', () => {
   it('and fixes the case where the two old copies disagreed', () => {
     // An order late on the final day: the service copy used `<= new Date(endDate)`,
     // i.e. midnight, and dropped it. The dashboards' 'T23:59:59' kept it.
+    // 08:00 UTC is 18:00 on 31 Jul in Sydney, still the target's last day.
     const lateOrder = makeOrder({
-      id: 'LATE', orderDate: '2026-07-31T18:00:00.000Z', hoReCa: cafe,
+      id: 'LATE', orderDate: '2026-07-31T08:00:00.000Z', hoReCa: cafe,
       submittedBy: repA, total: 500,
     })
     const lateCtx: MetricContext = { ...ctx, orders: [lateOrder] }
@@ -267,7 +272,8 @@ describe('filterOrders reproduces each old range spelling', () => {
   })
 
   it('and the two spellings only ever differed inside the final day', () => {
-    const lateOnFinalDay = makeOrder({ id: 'LATE', orderDate: '2026-07-31T20:00:00.000Z' })
+    // 10:00 UTC is 20:00 on 31 Jul in Sydney.
+    const lateOnFinalDay = makeOrder({ id: 'LATE', orderDate: '2026-07-31T10:00:00.000Z' })
     // The AdminDashboard instant window ended at 00:00 of the 31st, so it missed
     // an order placed that evening; the calendar window keeps it.
     expect(filterOrders([lateOnFinalDay], range)).toHaveLength(0)

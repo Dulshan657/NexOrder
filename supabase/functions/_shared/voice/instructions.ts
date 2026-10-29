@@ -72,6 +72,20 @@ const CUSTOMERS = [
   '  id from this conversation. If ambiguous is true, ask which one before continuing.',
 ].join('\n')
 
+// "Processed" meant three things: the owner meant shipped, Nex counted placed,
+// and the app has a status stored as processed that the screens call Confirmed.
+// get_sales_summary returns both counts; this says which word asks for which.
+const ORDER_WORDS = [
+  'ORDER WORDS',
+  '- "Processed", "shipped", "sent" or "went out" means shipped: give shippedCount',
+  '  with its dispatched/delivered split, then stillInWarehouse.',
+  '- "Placed", "came in" or "received" means placed: give orderCount.',
+  '- If the words could mean either, give both and name each.',
+  '- The status stored as processed is called "confirmed"; never say "processed" for it.',
+  '- Counts are exact: never say "about" for one. Say the basis plainly ("went out this',
+  '  month"); never quote these rules.',
+].join('\n')
+
 // Who Nex is. Last, so it colours the answers without outranking the rules above:
 // a friendly assistant that rambles or guesses a number is not a helpful one.
 const PERSONALITY = [
@@ -133,6 +147,7 @@ export function buildInstructions(input: InstructionsInput): string {
     HOW_TO_SPEAK,
     CANNOT_DO,
     CUSTOMERS,
+    ORDER_WORDS,
     ...(rules.length > 0 ? [['ROLE RULES', ...rules].join('\n')] : []),
     PERSONALITY,
   ]

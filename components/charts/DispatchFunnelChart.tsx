@@ -3,58 +3,90 @@ import type { DispatchFunnelStage } from '@/services/inventoryDashboardService';
 
 interface DispatchFunnelChartProps {
   data: DispatchFunnelStage[];
+  /** Orders placed in the window and since cancelled: a line under the chart, never a stage. */
+  cancelled?: number;
 }
 
 // Pipeline shading: cool blue early-stage → deeper blue as orders progress toward
 // dispatch/delivery. Indexes line up with the FUNNEL_STAGES order from the service.
 const STAGE_COLORS = ['#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8'];
 
-function DispatchFunnelChart({ data }: DispatchFunnelChartProps) {
+/**
+ * The chart's numbers as text. An SVG bar chart says nothing to a screen reader
+ * (WCAG 1.1.1), and the end-to-end spec reads the same list to check each stage
+ * against the database (tests/e2e/order-numbers.spec.ts).
+ */
+function StageList({ data }: { data: DispatchFunnelStage[] }) {
+  return (
+    <ul className="sr-only" aria-label="Order pipeline counts">
+      {data.map((stage) => (
+        <li key={stage.status} data-status={stage.status}>
+          {stage.label}: {stage.count}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function CancelledLine({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return <p className="mt-2 text-xs text-stone-600">{count} cancelled in this period</p>;
+}
+
+function DispatchFunnelChart({ data, cancelled = 0 }: DispatchFunnelChartProps) {
   const total = data.reduce((sum, s) => sum + s.count, 0);
 
   if (total === 0) {
     return (
-      <div className="flex h-[240px] items-center justify-center text-sm text-stone-500">
-        No orders in this window
+      <div>
+        <div className="flex h-[240px] items-center justify-center text-sm text-stone-600">
+          No orders in this period
+        </div>
+        <StageList data={data} />
+        <CancelledLine count={cancelled} />
       </div>
     );
   }
 
   return (
-    <div className="h-[240px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={data}
-          layout="vertical"
-          margin={{ top: 4, right: 32, bottom: 4, left: 8 }}
-          barCategoryGap="22%"
-        >
-          <XAxis type="number" hide />
-          <YAxis
-            type="category"
-            dataKey="label"
-            width={84}
-            axisLine={false}
-            tickLine={false}
-            tick={{ fontSize: 12, fill: '#57534e' }}
-          />
-          <Tooltip
-            cursor={{ fill: 'rgba(0,0,0,0.04)' }}
-            formatter={(value: number) => [`${value} orders`, 'Orders']}
-            contentStyle={{ borderRadius: 8, border: '1px solid #e7e5e4', fontSize: 12 }}
-          />
-          <Bar dataKey="count" radius={[0, 4, 4, 0]} isAnimationActive={false}>
-            {data.map((stage, i) => (
-              <Cell key={stage.status} fill={STAGE_COLORS[i] ?? '#3b82f6'} />
-            ))}
-            <LabelList
-              dataKey="count"
-              position="right"
-              style={{ fontSize: 12, fontWeight: 600, fill: '#44403c' }}
+    <div>
+      <div className="h-[240px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data}
+            layout="vertical"
+            margin={{ top: 4, right: 32, bottom: 4, left: 8 }}
+            barCategoryGap="22%"
+          >
+            <XAxis type="number" hide />
+            <YAxis
+              type="category"
+              dataKey="label"
+              width={84}
+              axisLine={false}
+              tickLine={false}
+              tick={{ fontSize: 12, fill: '#57534e' }}
             />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+            <Tooltip
+              cursor={{ fill: 'rgba(0,0,0,0.04)' }}
+              formatter={(value: number) => [`${value} orders`, 'Orders']}
+              contentStyle={{ borderRadius: 8, border: '1px solid #e7e5e4', fontSize: 12 }}
+            />
+            <Bar dataKey="count" radius={[0, 4, 4, 0]} isAnimationActive={false}>
+              {data.map((stage, i) => (
+                <Cell key={stage.status} fill={STAGE_COLORS[i] ?? '#3b82f6'} />
+              ))}
+              <LabelList
+                dataKey="count"
+                position="right"
+                style={{ fontSize: 12, fontWeight: 600, fill: '#44403c' }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <StageList data={data} />
+      <CancelledLine count={cancelled} />
     </div>
   );
 }

@@ -5,6 +5,7 @@ export { METRICS, getMetric, listMetrics } from './registry'
 export { evaluateMetric, evaluateMetrics } from './evaluate'
 export { dayRange, filterOrders, rangeBounds, withinRange } from './filter'
 export { computeTargetAchieved, computeTargetProgress, targetFilter } from './targets'
+export { filterShippedOrders, firstShippedAt, groupOrdersByStatus } from './metrics/sales'
 export type { RangeBounds } from './filter'
 export type { TargetProgress } from './targets'
 export type {
@@ -22,5 +23,6 @@ export type {
   DateRevenue,
   ProductUnits,
   RepRevenue,
+  ShippedSplit,
   StatusCount,
 } from './metrics/sales'

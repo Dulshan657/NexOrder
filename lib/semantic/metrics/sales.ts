@@ -14,6 +14,7 @@ import { ORDER_STATUS_LABELS, ORDER_STATUS_SEQUENCE } from '../../../constants'
 import { UserRole } from '../../../types'
 import type { Order, OrderStatus } from '../../../types'
 import { filterOrders, rangeBounds, withinRange } from '../filter'
+import { appDateKey } from '../../period'
 import type { MetricDef, OrderFilter } from '../types'
 
 export interface StatusCount {
@@ -48,6 +49,48 @@ export interface ProductUnits {
 export interface CategoryRevenue {
   category: string
   revenue: number
+}
+
+/** Shipped orders by where they are now: still on the truck, or delivered. */
+export interface ShippedSplit {
+  dispatched: number
+  delivered: number
+}
+
+const SHIPPED_STATUSES: readonly OrderStatus[] = ['dispatched', 'delivered']
+
+/**
+ * When an order first went out: the earliest status-history entry at dispatched
+ * or delivered (an order can be marked delivered without a dispatched step), or
+ * null if it never shipped. Being delivered later does not ship it again, so an
+ * order is counted once, in the period it left.
+ */
+export function firstShippedAt(order: Order): number | null {
+  let first: number | null = null
+  for (const entry of order.statusHistory ?? []) {
+    if (!SHIPPED_STATUSES.includes(entry.status)) continue
+    const at = new Date(entry.timestamp).getTime()
+    if (Number.isNaN(at)) continue
+    if (first === null || at < first) first = at
+  }
+  return first
+}
+
+/**
+ * Orders that SHIPPED in the filter's window, whenever they were placed.
+ *
+ * Every other sales metric windows on the placement date. This one applies the
+ * scope (customer, rep, role, status, category; cancelled excluded by default)
+ * through filterOrders with the dates removed, then windows on firstShippedAt.
+ * "How many did we process / ship this month" is this, not sales.orderCount.
+ */
+export function filterShippedOrders(orders: readonly Order[], filter: OrderFilter): readonly Order[] {
+  const bounds = rangeBounds(filter)
+  const scoped = filterOrders(orders, { ...filter, from: undefined, to: undefined })
+  return scoped.filter(order => {
+    const shippedAt = firstShippedAt(order)
+    return shippedAt !== null && withinRange(shippedAt, bounds)
+  })
 }
 
 /** Σ price × quantity over an order's lines. */
@@ -160,6 +203,35 @@ export const SALES_METRICS: readonly MetricDef[] = [
     compute: (ctx, filter) => filterOrders(ctx.orders, filter).length,
   },
   {
+    id: 'sales.shippedCount',
+    label: 'Orders shipped',
+    description:
+      'Number of orders that first reached dispatched or delivered inside the window, read from their status history, whenever they were placed. What people mean by orders "processed" or "shipped" in a period. Cancelled orders never count.',
+    unit: 'count',
+    shape: 'scalar',
+    requires: ['orders'],
+    supportsLineScope: true,
+    compute: (ctx, filter) => filterShippedOrders(ctx.orders, filter).length,
+  },
+  {
+    id: 'sales.shippedByStatus',
+    label: 'Orders shipped, by where they are now',
+    description:
+      'The orders counted by sales.shippedCount, split by their current status: still dispatched (on the way) or delivered. The two always sum to sales.shippedCount.',
+    unit: 'count',
+    shape: 'breakdown',
+    requires: ['orders'],
+    supportsLineScope: true,
+    compute: (ctx, filter): ShippedSplit => {
+      const split: ShippedSplit = { dispatched: 0, delivered: 0 }
+      for (const order of filterShippedOrders(ctx.orders, filter)) {
+        if (order.status === 'delivered') split.delivered += 1
+        else split.dispatched += 1
+      }
+      return split
+    },
+  },
+  {
     id: 'sales.averageOrderValue',
     label: 'Avg. order value',
     description:
@@ -190,7 +262,7 @@ export const SALES_METRICS: readonly MetricDef[] = [
     id: 'sales.revenueByDate',
     label: 'Revenue by date',
     description:
-      'Revenue grouped by the UTC calendar day of the placement date, ascending, on the scope-appropriate basis (line revenue under a category scope). Days with no orders are absent; a caller wanting a gap-free axis fills the range itself, because only the caller knows which range it is drawing.',
+      'Revenue grouped by the Sydney calendar day of the placement date (lib/period, the calendar Nex uses), ascending, on the scope-appropriate basis (line revenue under a category scope). Days with no orders are absent; a caller wanting a gap-free axis fills the range itself, because only the caller knows which range it is drawing.',
     unit: 'currency',
     shape: 'series',
     requires: ['orders'],
@@ -198,7 +270,7 @@ export const SALES_METRICS: readonly MetricDef[] = [
     compute: (ctx, filter): DateRevenue[] => {
       const byDate = new Map<string, number>()
       for (const order of filterOrders(ctx.orders, filter)) {
-        const date = order.orderDate.split('T')[0]
+        const date = appDateKey(order.orderDate)
         byDate.set(date, (byDate.get(date) ?? 0) + effectiveRevenue(order, filter))
       }
       return [...byDate.entries()]

@@ -101,7 +101,7 @@ const PickQueueView: React.FC<PickQueueViewProps> = ({ currentUser }) => {
         <div className="glass-card rounded-xl p-10 text-center">
           <PackageCheck className="w-9 h-9 text-stone-300 mx-auto mb-3" />
           <p className="text-sm text-stone-600">No orders awaiting picking</p>
-          <p className="text-xs text-stone-500 mt-1">Processed orders will appear here for the warehouse to pick.</p>
+          <p className="text-xs text-stone-500 mt-1">Confirmed orders will appear here for the warehouse to pick.</p>
         </div>
       ) : (
         <div className="glass-card rounded-xl divide-y divide-stone-100 overflow-hidden">
