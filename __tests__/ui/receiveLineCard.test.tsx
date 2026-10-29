@@ -56,7 +56,8 @@ function renderCard(
   return { ...utils, onUpdate, onSetPlateType, draft }
 }
 
-const toggle = () => screen.getByRole('button', { name: /lot, expiry, barcode/i })
+// NX-0005: the summary is an offer ("Add lot / expiry"), not a list of fields.
+const toggle = () => screen.getByRole('button', { name: /(Add|Edit) lot \/ expiry/i })
 
 describe('the always-visible tier', () => {
   it('shows the product, its SKU and the supplier part number', () => {

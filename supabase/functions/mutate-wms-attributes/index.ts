@@ -31,6 +31,10 @@ const inputSchema = z.object({
   volume_l: z.number().nonnegative().nullable().optional(),
   dims: z.record(z.unknown()).nullable().optional(),
   custom: z.record(z.unknown()).optional(),
+  // Receiving requirements (mig 00134, NX-0005). NOT NULL columns, so a
+  // boolean or absent, never null.
+  requires_lot: z.boolean().optional(),
+  requires_expiry: z.boolean().optional(),
   // Level roles this SKU may be put away into (mig 00072). NULL = ANY role,
   // which is every existing product's behaviour — so an EMPTY array is
   // normalised to null below rather than being stored as "no role allowed",
@@ -71,8 +75,8 @@ serve(async (req: Request) => {
     // Only write columns the caller actually sent, so a partial save doesn't null
     // out fields it never touched (e.g. weight/volume set elsewhere).
     const row: Record<string, unknown> = { product_id: input.product_id, updated_at: new Date().toISOString() }
-    for (const k of ['hazard_class', 'temp_min', 'temp_max', 'shelf_life_policy', 'stackable', 'handling_type', 'weight_kg', 'volume_l', 'dims', 'custom'] as const) {
-      if (k in input) row[k] = (input as any)[k] ?? null
+    for (const k of ['hazard_class', 'temp_min', 'temp_max', 'shelf_life_policy', 'stackable', 'handling_type', 'weight_kg', 'volume_l', 'dims', 'custom', 'requires_lot', 'requires_expiry'] as const) {
+      if (k in input) row[k] = (input as any)[k] ?? (k === 'requires_lot' || k === 'requires_expiry' ? false : null)
     }
     // An empty selection means "any level role", NOT "no role allowed" — storing
     // [] would hard-filter this SKU out of every candidate level and strand it

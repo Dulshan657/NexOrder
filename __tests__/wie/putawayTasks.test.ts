@@ -9,6 +9,8 @@ interface StubOpts {
   warehouse: Record<string, unknown>
   candidates: Array<Record<string, unknown>>
   product?: Record<string, unknown>
+  /** product_home_bins rows for the warehouse (NX-0006). */
+  homeBins?: Array<Record<string, unknown>>
 }
 
 function candidate(o: Partial<{
@@ -16,6 +18,7 @@ function candidate(o: Partial<{
   weight_capacity_kg: number | null; used_weight_kg: number; distance_from_dock_m: number | null
   slot_kind: 'pallet' | 'carton' | null
   pending_slots: number; pending_weight_kg: number
+  same_rack: boolean; anchor_distance_m: number | null
 }> = {}): Record<string, unknown> {
   return {
     location_id: 1, code: 'B1', capacity_slots: 100, used_slots: 0,
@@ -36,6 +39,7 @@ function makeAdmin(opts: StubOpts) {
     switch (table) {
       case 'locations': return [opts.warehouse]
       case 'products': return [product]
+      case 'product_home_bins': return opts.homeBins ?? []
       case 'wie_rules':
       case 'category_compatibility':
       case 'wie_scoring_profiles':
@@ -48,6 +52,7 @@ function makeAdmin(opts: StubOpts) {
   const builder = (rows: Array<Record<string, unknown>>) => {
     const b = {
       eq: () => b,
+      in: () => b,
       or: () => b,
       order: () => b,
       maybeSingle: async () => ({ data: rows[0] ?? null, error: null }),
@@ -126,6 +131,17 @@ describe('generatePutawayTasks — persistence', () => {
     expect(inserted).toHaveLength(0)
   })
 
+  it('sets ref on a non-mixed allocation', async () => {
+    // break-down-putaway's dry run matches its portions back by ref; without it
+    // every suggestion it asked for came back unmatched.
+    const { admin } = makeAdmin({ warehouse: racked, candidates: [candidate({ location_id: 7 })] })
+    const res = await generatePutawayTasks(admin, {
+      warehouseId: 9, lines: [{ product_id: 1, quantity: 5, ref: 'portion-1' }], actorId: 'u1', dryRun: true,
+    })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(res.recommendations[0].ref).toBe('portion-1')
+  })
+
   it('splits an oversized line into placed + null-bin residual rows', async () => {
     const { admin, inserted } = makeAdmin({ warehouse: racked, candidates: [candidate({ location_id: 7, capacity_slots: 10 })] })
     const res = await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 25 }], actorId: 'u1' })
@@ -197,31 +213,35 @@ describe('generatePutawayTasks — unit loads', () => {
     expect(inserted[1]).toMatchObject({ recommended_location_id: 7, quantity: 90 })
   })
 
-  it('sends every line of a MIXED pallet to one bin, for one position total', async () => {
-    // Two bins. Without plate coherence the second line would score bin 8 (or
-    // claim a second position in bin 7); the pallet is one object, so it can't.
+  it('plans each product of a MIXED pallet on its own, keeping the plate', async () => {
+    // NX-0006 reverses the old rule that every line followed the first one to a
+    // single bin: on the floor the plate is broken down at putaway, each product
+    // to its own home. The plate id rides on every task so the plate drains.
     const { admin, inserted } = makeAdmin({
       warehouse: racked,
+      homeBins: [
+        { product_id: 1, bin_id: 20, max_qty: null },
+        { product_id: 2, bin_id: 30, max_qty: null },
+      ],
       candidates: [
-        candidate({ location_id: 7, capacity_slots: 1, slot_kind: 'pallet', distance_from_dock_m: 5 }),
-        candidate({ location_id: 8, capacity_slots: 1, slot_kind: 'pallet', distance_from_dock_m: 50 }),
+        candidate({ location_id: 7, capacity_slots: 1, slot_kind: 'pallet', distance_from_dock_m: 1 }),
+        candidate({ location_id: 20, code: 'H20', capacity_slots: 100, distance_from_dock_m: 40 }),
+        candidate({ location_id: 30, code: 'H30', capacity_slots: 100, distance_from_dock_m: 60 }),
       ],
     })
     const res = await generatePutawayTasks(admin, {
       warehouseId: 9,
       lines: [
         { product_id: 1, quantity: 40, hu_type: 'pallet', hu_id: 500 },
-        { product_id: 1, quantity: 25, hu_type: 'pallet', hu_id: 500 },
-        { product_id: 1, quantity: 5, hu_type: 'pallet', hu_id: 500 },
+        { product_id: 2, quantity: 25, hu_type: 'pallet', hu_id: 500 },
       ],
       actorId: 'u1',
     })
     if (res.mode !== 'engine') throw new Error('expected engine')
-    expect(inserted).toHaveLength(3)
-    expect(inserted.map((r) => r.recommended_location_id)).toEqual([7, 7, 7])
-    expect(inserted.map((r) => r.quantity)).toEqual([40, 25, 5])
-    // The following lines say WHY they weren't scored.
-    expect((inserted[1].explanation as any).note).toContain('Follows its pallet')
+    expect(inserted.map((r) => r.recommended_location_id)).toEqual([20, 30])
+    expect(inserted.map((r) => r.quantity)).toEqual([40, 25])
+    expect(inserted.map((r) => r.handling_unit_id)).toEqual([500, 500])
+    expect(inserted.map((r) => r.suggestion_source)).toEqual(['home', 'home'])
   })
 
   it('still charges per-unit for a carton-denominated bin', async () => {
@@ -237,5 +257,69 @@ describe('generatePutawayTasks — unit loads', () => {
     if (res.mode !== 'engine') throw new Error('expected engine')
     expect(inserted[0]).toMatchObject({ recommended_location_id: 7, quantity: 10 })
     expect(inserted[1]).toMatchObject({ recommended_location_id: null, quantity: 15 })
+  })
+})
+
+// ── Home bin first (NX-0006) ─────────────────────────────────────────────────
+
+describe('generatePutawayTasks — home bin', () => {
+  it("suggests the home bin before the engine's pick", async () => {
+    // Bin 7 is next to the dock and is what the score alone would choose.
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      homeBins: [{ product_id: 1, bin_id: 20, max_qty: null }],
+      candidates: [
+        candidate({ location_id: 7, distance_from_dock_m: 1 }),
+        candidate({ location_id: 20, code: 'H20', distance_from_dock_m: 80 }),
+      ],
+    })
+    const res = await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 30 }], actorId: 'u1' })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({ recommended_location_id: 20, quantity: 30, suggestion_source: 'home' })
+  })
+
+  it('spills what the home bin cannot take to the bin nearest it', async () => {
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      homeBins: [{ product_id: 1, bin_id: 20, max_qty: null }],
+      candidates: [
+        candidate({ location_id: 7, distance_from_dock_m: 1, same_rack: false, anchor_distance_m: 60 }),
+        candidate({ location_id: 20, code: 'H20', capacity_slots: 10, distance_from_dock_m: 80, same_rack: true, anchor_distance_m: 0 }),
+        candidate({ location_id: 21, code: 'H21', distance_from_dock_m: 82, same_rack: true, anchor_distance_m: 2 }),
+      ],
+    })
+    const res = await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 25 }], actorId: 'u1' })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted.map((r) => [r.recommended_location_id, r.quantity, r.suggestion_source])).toEqual([
+      [20, 10, 'home'],
+      [21, 15, 'overflow'],
+    ])
+  })
+
+  it('sends a unit load to the reserve bin closest to home', async () => {
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      homeBins: [{ product_id: 1, bin_id: 20, max_qty: null }],
+      candidates: [
+        candidate({ location_id: 7, capacity_slots: 1, slot_kind: 'pallet', distance_from_dock_m: 1, same_rack: false, anchor_distance_m: 60 }),
+        candidate({ location_id: 20, code: 'H20', capacity_slots: 100, distance_from_dock_m: 80, same_rack: true, anchor_distance_m: 0 }),
+        candidate({ location_id: 22, capacity_slots: 1, slot_kind: 'pallet', distance_from_dock_m: 84, same_rack: true, anchor_distance_m: 3 }),
+      ],
+    })
+    const res = await generatePutawayTasks(admin, {
+      warehouseId: 9, lines: [{ product_id: 1, quantity: 48, hu_type: 'pallet', hu_id: 900 }], actorId: 'u1',
+    })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({ recommended_location_id: 22, quantity: 48, suggestion_source: 'overflow' })
+  })
+
+  it('marks an unhomed product engine-picked and offers to make the bin home', async () => {
+    const { admin, inserted } = makeAdmin({ warehouse: racked, candidates: [candidate({ location_id: 7 })] })
+    const res = await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 5 }], actorId: 'u1' })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted[0]).toMatchObject({ recommended_location_id: 7, suggestion_source: 'engine' })
+    expect(res.recommendations[0].suggestMakeHome).toBe(true)
   })
 })

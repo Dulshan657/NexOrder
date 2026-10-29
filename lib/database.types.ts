@@ -1612,6 +1612,8 @@ export type Database = {
           volume_l: number | null
           dims: Json | null
           custom: Json
+          requires_lot: boolean
+          requires_expiry: boolean
           updated_at: string
         }
         Insert: {
@@ -1626,6 +1628,8 @@ export type Database = {
           volume_l?: number | null
           dims?: Json | null
           custom?: Json
+          requires_lot?: boolean
+          requires_expiry?: boolean
           updated_at?: string
         }
         Update: {
@@ -1639,6 +1643,8 @@ export type Database = {
           volume_l?: number | null
           dims?: Json | null
           custom?: Json
+          requires_lot?: boolean
+          requires_expiry?: boolean
           updated_at?: string
         }
         Relationships: []
@@ -1677,11 +1683,16 @@ export type Database = {
           alternatives: Json
           explanation: Json
           engine_version: string
-          status: 'suggested' | 'assigned' | 'accepted' | 'overridden' | 'expired'
+          status: 'suggested' | 'assigned' | 'accepted' | 'overridden' | 'expired' | 'short' | 'written_off'
           chosen_location_id: number | null
           actor_id: string | null
           created_at: string
           decided_at: string | null
+          /** mig 00135 (NX-0006). */
+          suggestion_source: 'home' | 'overflow' | 'engine' | 'desk' | null
+          override_reason: 'blocked' | 'damaged' | 'full' | 'closer' | 'other' | null
+          redirected_from_location_id: number | null
+          resolution_reason: string | null
         }
         Insert: {
           id?: number
@@ -1694,14 +1705,14 @@ export type Database = {
           alternatives?: Json
           explanation: Json
           engine_version: string
-          status?: 'suggested' | 'assigned' | 'accepted' | 'overridden' | 'expired'
+          status?: 'suggested' | 'assigned' | 'accepted' | 'overridden' | 'expired' | 'short' | 'written_off'
           chosen_location_id?: number | null
           actor_id?: string | null
           created_at?: string
           decided_at?: string | null
         }
         Update: {
-          status?: 'suggested' | 'assigned' | 'accepted' | 'overridden' | 'expired'
+          status?: 'suggested' | 'assigned' | 'accepted' | 'overridden' | 'expired' | 'short' | 'written_off'
           chosen_location_id?: number | null
           actor_id?: string | null
           decided_at?: string | null

@@ -26,6 +26,31 @@ export interface WmsAttributesInput {
    *  role — which is what every existing product has, so an empty selection
    *  must never be sent as an empty array. */
   allowed_level_roles?: LevelRole[] | null
+  /** Receiving requirements (mig 00134). Never null — the columns are NOT NULL. */
+  requires_lot?: boolean
+  requires_expiry?: boolean
+}
+
+/** What Receive Stock must capture for one product (NX-0005). */
+export interface ReceivingRequirement {
+  lot: boolean
+  expiry: boolean
+}
+
+/**
+ * Every product that must arrive with a lot code or an expiry, keyed by id.
+ * Only the flagged rows are fetched: the map is sparse, and a product absent
+ * from it requires nothing.
+ */
+export async function listReceivingRequirements(): Promise<Map<number, ReceivingRequirement>> {
+  const { data, error } = await supabase
+    .from('product_wms_attributes')
+    .select('product_id, requires_lot, requires_expiry')
+    .or('requires_lot.eq.true,requires_expiry.eq.true')
+  if (error) throw error
+  return new Map(
+    (data ?? []).map((r) => [r.product_id, { lot: !!r.requires_lot, expiry: !!r.requires_expiry }]),
+  )
 }
 
 export async function saveWmsAttributes(input: WmsAttributesInput): Promise<ProductWmsAttributes> {

@@ -18,6 +18,15 @@
 // the stock went, whatever the client believed — so the code is resolved here
 // and the client's actual_location_id is only cross-checked, never trusted over
 // the scan.
+//
+// Since NX-0006 (mig 00135) a SUGGESTED task completes directly — the home bin
+// is the plan, so nobody has to assign it first — and the request may also:
+//   * name several loose tasks of one product (`task_ids`), pooled oldest first;
+//   * give an `override_reason`, REQUIRED when a suggested task goes elsewhere;
+//   * flag a short count (`short`), leaving the remainder for a manager;
+//   * ask to make the bin the product's home (`make_home`), only if it has none.
+// The rules live in _shared/putawayCompletion.ts; ASSIGNED tasks behave exactly
+// as before, so the pre-NX-0006 Walk view keeps working.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -31,11 +40,23 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { checkPutawayScan } from '../_shared/putawayScanCheck.ts'
 import { normalizeScan } from '../_shared/scanNormalize.ts'
 import { requireModule } from '../_shared/modules.ts'
+import {
+  OVERRIDE_REASONS,
+  allocateAcrossTasks,
+  decidePutawayCompletion,
+} from '../_shared/putawayCompletion.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
+const MAX_POOLED_TASKS = 50
 
 const inputSchema = z.object({
-  recommendation_id: z.number().int().positive(),
+  /** One task. Either this or task_ids. */
+  recommendation_id: z.number().int().positive().optional(),
+  /** Several loose tasks of ONE product, completed together (NX-0006). */
+  task_ids: z.array(z.number().int().positive()).min(1).max(MAX_POOLED_TASKS).optional(),
+  override_reason: z.enum(OVERRIDE_REASONS).nullish(),
+  short: z.boolean().optional(),
+  make_home: z.boolean().optional(),
   /** Where it was actually put. Optional when a bin scan names it. */
   actual_location_id: z.number().int().positive().optional(),
   /** Partial placement. Omitted = the whole assigned quantity. */
@@ -51,6 +72,8 @@ const inputSchema = z.object({
     .optional(),
 }).refine((d) => d.actual_location_id !== undefined || Boolean(d.scan?.locationCode), {
   message: 'either actual_location_id or a scanned bin code is required',
+}).refine((d) => (d.recommendation_id !== undefined) !== (d.task_ids !== undefined), {
+  message: 'give either recommendation_id or task_ids',
 })
 
 const PG_ERROR_CODES: ReadonlyArray<['NOT_FOUND' | 'CONFLICT' | 'INVALID_INPUT', string]> = [
@@ -86,22 +109,35 @@ serve(async (req: Request) => {
     })
     const parsed = inputSchema.safeParse(body)
     if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
-    const { recommendation_id, actual_location_id, quantity, role_override, scan } = parsed.data
+    const {
+      recommendation_id, task_ids, actual_location_id, quantity, role_override, scan,
+      override_reason, short, make_home,
+    } = parsed.data
+    const ids = task_ids ?? [recommendation_id!]
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
       auth: { persistSession: false },
     })
 
-    const { data: rec, error: rErr } = await admin.from('wie_putaway_recommendations')
-      .select('*').eq('id', recommendation_id).single()
-    if (rErr || !rec) throw new EdgeFunctionError('NOT_FOUND', `Putaway task ${recommendation_id} not found`)
-    if ((rec as any).status !== 'assigned') {
-      throw new EdgeFunctionError(
-        'CONFLICT',
-        (rec as any).status === 'suggested'
-          ? 'That line has not been assigned to a bin yet'
-          : `This task was already ${(rec as any).status} — someone else may have placed it`,
-      )
+    const { data: recRows, error: rErr } = await admin.from('wie_putaway_recommendations')
+      .select('*').in('id', ids)
+    const recs = (recRows ?? []) as any[]
+    if (rErr || recs.length !== new Set(ids).size) {
+      throw new EdgeFunctionError('NOT_FOUND', `Putaway task ${ids.join(', ')} not found`)
+    }
+    // The oldest task leads: its bin, plate and product are what the scan is
+    // checked against. Pooling refuses mixed products and plates below.
+    const ordered = [...recs].sort((a, b) =>
+      String(a.created_at).localeCompare(String(b.created_at)) || a.id - b.id)
+    const rec = ordered[0]
+    for (const r of ordered) {
+      if (r.status !== 'suggested' && r.status !== 'assigned') {
+        throw new EdgeFunctionError(
+          'CONFLICT', `This task was already ${r.status} — someone else may have placed it`)
+      }
+      if (r.warehouse_id !== rec.warehouse_id) {
+        throw new EdgeFunctionError('INVALID_INPUT', 'These tasks are in different warehouses')
+      }
     }
 
     const warehouseId = (rec as any).warehouse_id as number
@@ -151,12 +187,66 @@ serve(async (req: Request) => {
         ? admin.from('handling_units').select('id, code, status')
             .eq('id', (rec as any).handling_unit_id).maybeSingle()
         : Promise.resolve({ data: null }),
-      admin.from('locations').select('code').eq('id', (rec as any).assigned_location_id).maybeSingle(),
+      // Where the operator was sent: the desk's bin on the two-stage path,
+      // otherwise the suggestion itself (NX-0006).
+      admin.from('locations').select('code').eq(
+        'id',
+        (rec as any).status === 'assigned'
+          ? (rec as any).assigned_location_id
+          : (rec as any).recommended_location_id,
+      ).maybeSingle(),
     ])
     if (!productRow) throw new EdgeFunctionError('NOT_FOUND', `Product ${productId} not found`)
 
-    const remaining = Number((rec as any).quantity)
+    const remaining = ordered.reduce((sum, r) => sum + Number(r.quantity), 0)
     const placedQty = quantity ?? remaining
+
+    // ── Pool and decide (NX-0006) ────────────────────────────────────────────
+    const pooled = allocateAcrossTasks(
+      ordered.map((r) => ({
+        id: r.id, productId: r.product_id, huId: r.handling_unit_id ?? null,
+        quantity: Number(r.quantity), createdAt: String(r.created_at),
+      })),
+      placedQty,
+    )
+    if (pooled.ok === false) throw new EdgeFunctionError(pooled.code, pooled.message)
+
+    let existingHomeLocationId: number | null = null
+    if (make_home) {
+      const { data: homeRow } = await admin.from('product_home_bins')
+        .select('bin_id').eq('product_id', productId).eq('warehouse_id', warehouseId)
+        .eq('purpose', 'primary').maybeSingle()
+      existingHomeLocationId = (homeRow as any)?.bin_id ?? null
+    }
+
+    const placedById = new Map(pooled.allocations.map((a) => [a.id, a.quantity]))
+    let homeDecisionMade = false
+    let setHome = false
+    let anyElsewhere = false
+    for (const r of ordered) {
+      const qty = placedById.get(r.id) ?? 0
+      if (qty <= 0) continue
+      const decision = decidePutawayCompletion({
+        task: {
+          status: r.status,
+          quantity: Number(r.quantity),
+          suggestedLocationId: r.recommended_location_id ?? null,
+          assignedLocationId: r.assigned_location_id ?? null,
+        },
+        actualLocationId: actualId,
+        quantity: qty,
+        short,
+        overrideReason: override_reason ?? null,
+        // Asked once, for the product, not once per pooled task.
+        makeHome: make_home && !homeDecisionMade,
+        existingHomeLocationId,
+        role: auth.role,
+      })
+      if (decision.ok === false) throw new EdgeFunctionError(decision.code, decision.message)
+      homeDecisionMade = true
+      setHome = setHome || decision.setHome
+      anyElsewhere = anyElsewhere || decision.status === 'overridden'
+    }
 
     const verdict = checkPutawayScan(
       {
@@ -230,8 +320,8 @@ serve(async (req: Request) => {
         throw new EdgeFunctionError(
           'CONFLICT',
           `${(huRow as any).code} no longer holds any ${(productRow as any).sku} at the dock — ` +
-            `a count, adjustment or transfer has already consumed it. Send this line back to the ` +
-            `Assign queue and re-run it.`,
+            `a count, adjustment or transfer has already consumed it. Re-run this line from the ` +
+            `putaway queue.`,
           { reason: 'PLATE_CONSUMED' },
         )
       }
@@ -269,11 +359,15 @@ serve(async (req: Request) => {
     }
 
     // ── Move it ──────────────────────────────────────────────────────────────
-    const { data: result, error: txErr } = await admin.rpc('wie_complete_putaway_tx', {
-      p_rec_id: recommendation_id,
+    // One transaction for every pooled task and the home bin (mig 00135). A task
+    // the count did not reach is sent with qty 0: left alone, or marked short.
+    const { data: manyResult, error: txErr } = await admin.rpc('wie_complete_putaway_many_tx', {
+      p_allocations: ordered.map((r) => ({ id: r.id, qty: placedById.get(r.id) ?? 0 })),
       p_actual: actualId,
-      p_qty: quantity ?? null,
       p_actor: auth.userId,
+      p_override_reason: anyElsewhere ? (override_reason ?? null) : null,
+      p_short: short === true,
+      p_make_home: setHome,
     })
     if (txErr) {
       // The assign→place gap is now minutes or hours rather than milliseconds,
@@ -291,12 +385,27 @@ serve(async (req: Request) => {
       throw rpcError(txErr.message)
     }
 
-    const placed = result as {
-      placed_id: number
-      status: string
+    interface TxResult {
+      placed_id: number | null
+      status: string | null
       remainder_id: number | null
       remainder_qty: number
+      remainder_status: string | null
       moved: unknown
+    }
+    const many = manyResult as { results: TxResult[]; home_set: boolean }
+    const placedRows = many.results.filter((r) => r.placed_id !== null)
+    // The lead result keeps the single-task response shape the Walk view reads.
+    const lead = placedRows[0] ?? many.results[0]
+    const remainderRows = many.results.filter((r) => r.remainder_id !== null && Number(r.remainder_qty) > 0)
+    const placed = {
+      placed_id: lead.placed_id ?? rec.id,
+      status: lead.status ?? 'short',
+      remainder_id: remainderRows[0]?.remainder_id ?? null,
+      remainder_qty: remainderRows.reduce((sum, r) => sum + Number(r.remainder_qty), 0),
+      remainder_status: remainderRows[0]?.remainder_status ?? null,
+      // A single object for one task, as before; a list only when pooled.
+      moved: placedRows.length === 1 ? placedRows[0].moved : placedRows.map((r) => r.moved),
     }
 
     const { data: updated } = await admin.from('wie_putaway_recommendations')
@@ -313,7 +422,15 @@ serve(async (req: Request) => {
         placed_elsewhere: verdict.placedElsewhere,
         quantity: placedQty,
         remainder_qty: placed.remainder_qty,
-        source_recommendation_id: recommendation_id,
+        remainder_status: placed.remainder_status,
+        source_recommendation_id: rec.id,
+        task_ids: ordered.map((r) => r.id),
+        task_status_before: rec.status,
+        suggested_location_id: rec.recommended_location_id,
+        override_reason: anyElsewhere ? (override_reason ?? null) : null,
+        short: short === true,
+        make_home_requested: make_home === true,
+        home_set: many.home_set,
         moved: placed.moved,
         // Recorded on the audit event rather than the task row, for the same
         // reason record-pick does it: it avoids widening a signature every time
@@ -358,6 +475,8 @@ serve(async (req: Request) => {
       moved: placed.moved,
       remainder_id: placed.remainder_id,
       remainder_qty: placed.remainder_qty,
+      remainder_status: placed.remainder_status,
+      homeSet: many.home_set,
       recommendation: updated,
     }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
