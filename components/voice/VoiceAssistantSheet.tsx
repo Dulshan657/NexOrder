@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Callout } from '@/components/ui/Callout'
 import type { VoiceSessionApi } from '@/hooks/useVoiceSession'
 import type { VoiceError } from '@/lib/voice/voiceErrors'
+import { NexMark } from './NexMark'
 import { NexOrb } from './NexOrb'
 import { orbVisual } from './orbState'
 import { TranscriptList } from './TranscriptList'
@@ -18,13 +19,13 @@ import { ERROR_TITLES, canTypeInstead, formatElapsed, isRetryable, minutesToday,
 // close it (a stray tap must not end a conversation); the X and Escape end the
 // session and close.
 //
-// Nex's orb sits above the status pill and is the only orb that animates during a
-// chat; the one in the header is an icon that plays a short burst when the sheet
-// opens or it is tapped.
+// Nex's orb sits above the status pill and is the only orb in the sheet; it
+// animates through the chat. The header's icon is the Nex mark (bare), which
+// draws itself on when the sheet opens and shimmers again when tapped.
 
 /** The hero orb's CSS size; small enough to leave the RS35's 664 px a transcript. */
 const HERO_ORB_PX = 120
-const HEADER_ORB_PX = 20
+const HEADER_MARK_PX = 20
 
 export interface VoiceAssistantSheetProps {
   open: boolean
@@ -87,9 +88,9 @@ export function VoiceAssistantSheet({ open, session, onClose }: VoiceAssistantSh
   const status = voiceStatus(session.phase, session.live, session.error, session.textOnly)
   const visual = orbVisual(session.phase, session.live, session.error, session.textOnly)
   const [headerPlays, setHeaderPlays] = useState(0)
-  const headerOrb = (
+  const headerMark = (
     <span className="inline-flex" onPointerDown={() => setHeaderPlays((n: number) => n + 1)}>
-      <NexOrb visual={visual} size={HEADER_ORB_PX} animate="burst" playToken={headerPlays} playOnMount />
+      <NexMark variant="bare" size={HEADER_MARK_PX} playToken={headerPlays} />
     </span>
   )
 
@@ -98,7 +99,7 @@ export function VoiceAssistantSheet({ open, session, onClose }: VoiceAssistantSh
       open={open}
       onClose={dismiss}
       title="Nex"
-      icon={headerOrb}
+      icon={headerMark}
       mobile="full"
       width="md"
       dismissOnBackdrop={false}

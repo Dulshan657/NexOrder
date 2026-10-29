@@ -53,3 +53,7 @@ deno.lock
 # scripts/demo-video output — rendered mp4s/scratch frames, and
 # app-identity.mjs's app_settings snapshot. Never commit.
 /demo-video-out/
+
+# Rendered campaign assets (npm run brand:nex-mark); the SVG masters are committed
+brand/nex-mark/dist/
+.harness/

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="185 170.5 452 452" role="img" aria-label="Nex"><style>
+.s { stroke-dasharray: 1 2; }
+.hd { transform-box: fill-box; transform-origin: 50% 50%; }
+.mk { animation: mk 4.5s linear infinite; }
+.bk { animation: bk 4.5s linear infinite; }
+.fr { animation: fr 4.5s linear infinite; }
+.in { animation: in 4.5s linear infinite; }
+.jn { animation: jn 4.5s linear infinite; }
+.hd { animation: hd 4.5s linear infinite; }
+.bd { animation: bd 4.5s linear infinite; }
+.gl { animation: gl 4.5s linear infinite; }
+@keyframes mk { 0%, 93.33% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes bk { 0%, 1.11% { stroke-dashoffset: 1.1; animation-timing-function: cubic-bezier(0.65, 0, 0.25, 1); } 16.67%, 100% { stroke-dashoffset: 0; } }
+@keyframes fr { 0%, 6.67% { stroke-dashoffset: 1.1; animation-timing-function: cubic-bezier(0.65, 0, 0.25, 1); } 25.56%, 100% { stroke-dashoffset: 0; } }
+@keyframes in { 0%, 16.67% { opacity: 0; } 22.22%, 100% { opacity: 1; } }
+@keyframes jn {
+  0%, 24.44% { opacity: 0; } 30.00% { opacity: 1; }
+  53.33% { opacity: 1; } 55.78%, 69.33% { opacity: 0; } 73.33%, 100% { opacity: 1; }
+}
+@keyframes hd {
+  0%, 22.67% { opacity: 0; transform: translate(-22px, 38px) scale(0.5); animation-timing-function: cubic-bezier(0.3, 1.5, 0.5, 1); }
+  32.67% { opacity: 1; transform: none; }
+  53.33% { transform: none; animation-timing-function: cubic-bezier(0.3, 1.5, 0.5, 1); }
+  61.33% { transform: translate(9px, -15.5px); animation-timing-function: cubic-bezier(0.3, 1.5, 0.5, 1); }
+  73.33%, 100% { opacity: 1; transform: none; }
+}
+@keyframes bd {
+  0%, 44.44% { transform: translateX(-300px); animation-timing-function: cubic-bezier(0.45, 0, 0.25, 1); }
+  73.33%, 100% { transform: translateX(650px); }
+}
+@keyframes gl {
+  0%, 44.44% { opacity: 0; animation-timing-function: ease-in-out; }
+  59.56% { opacity: 1; animation-timing-function: ease-in-out; }
+  77.78%, 100% { opacity: 0; }
+}
+</style><defs><linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="194" y1="593" x2="628" y2="176"><stop offset="0" stop-color="#1f6fbf"/><stop offset="1" stop-color="#2b9fd8"/></linearGradient></defs><g class="mk"><g fill="none" stroke="url(#ink)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><path class="s bk" pathLength="1" d="M202.9 424 L299.6 256.5 A49 49 0 0 1 384.4 256.5 L445.9 363"/><path class="s fr" pathLength="1" d="M329 476 C315.3 529.4 308.6 515.5 259.1 565 A24 24 0 0 1 221.3 536 L342 327 L439.5 495.9 L580.4 251.9"/></g><path class="in" d="M342 327 L326.4 390 A18 18 0 0 1 357.6 390 Z M439.5 495.9 L423.9 432.9 A18 18 0 0 0 455.1 432.9 Z" fill="url(#ink)"/><path class="jn" d="M586.8 264.8 L596.8 277.5 A9 9 0 0 0 584.5 280.8 Z M566 252.8 L550 250.5 A9 9 0 0 1 553.3 262.8 Z" fill="url(#ink)"/><path class="hd" d="M616.5 189.3 L618.9 282.2 L534.9 233.7 Z" fill="url(#ink)" stroke="url(#ink)" stroke-width="14" stroke-linejoin="round"/></g></svg>
