@@ -96,3 +96,25 @@ measured against the same questions rather than a feeling.
 - Any change to Amadiya, where Nex is off.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `get_visit_stats > reports logged visits apart from route stops` and `> has no stop counts when no route was planned` fail on base, pass on tip (check:brief) | Live on dev at 4615900: "You logged 28 visits last month, and 12 of those turned into orders" (case `rep-visits-last-month`). The same data on 2026-10-29 got "you completed 0 visits" |
+| A2 | claimed | `get_sales_summary > marks a period that ends before the first recorded order`, `> comparison with the previous period > marks a previous period before the first recorded order` (check:brief) | |
+| A3 | claimed | `get_customer_insights > returns the last order with its lines` (check:brief) | |
+| A4 | claimed | the three `buildInstructions > …` tests (check:brief); voice-session deployed to dev 2026-11-04 | |
+| A5 | claimed | `golden questions > has at least 30 cases`, `> every case names a tool its role is offered` (check:brief) | 35 cases: the 30 asked on 2026-10-29 minus one that only made sense mid-conversation, plus five more, including `rep-visits-last-month` |
+| A6 | claimed | the five named `scoreGoldenCase > …` tests (check:brief) | The scorer was then corrected against two live runs (commit 2213cb1, its own tests): zero said in words, earlier calls in the session, empty lists, "and N more", facts from any call |
+| A7 | claimed | `nexGoldenArgs > refuses any env but dev` (check:brief); `npm run nex:golden:dev` ran three times on 2026-11-04, every session ended (voice_sessions) | |
+| A8 | claimed | Golden report, re-scored with the final scorer: main ff50c5c **32/34**, tip 4615900 **33/34**. The two failures on main were exactly `rep-visits-this-month` (no `visitsLogged`) and `admin-seaside-last-order` (no `lastOrder`); both pass on tip, and so does `rep-visits-last-month` | Of the four misleading answers: "last month" for a partial window no longer reproduced on main (NX-0010). "Up on last year" is answered "the records only start on 31 December 2025" on tip, while main said "the same" for zero against zero |
+| A9 | not-claimed | | Not merged yet. Dev serves 4615900, the branch's first code commit. 2213cb1 changes only the scorer, the test cases and docs, none of which is in the app bundle |
+
+### Not claimed
+
+- **The one tip failure, `admin-revenue-vs-last-month`, is open.** Asked "compared to last month" on 4 November, Nex quoted the whole of October ($4,225), not the same point last month (1 to 4 Oct, $229) that the dashboard uses since NX-0010. That is a wording-of-the-question call for the owner, not fixed here.
+- **`rep-visits-this-month` cannot tell the fix from the bug while November has no visits.** Nex still says "you completed 0 visits" there, which is true this time. `rep-visits-last-month` is the case that discriminates.
+- **A golden run is one sample of a language model.** Each case was asked once per run, so a pass is not a rate.
+- **The live run is not in CI** (see Out of scope). The CI tests cover the scorer, the cases' shape and the tools.
+- **The baseline was asked on the demo after its data had gone stale.** The last order was on 21 Oct, so every "this month" case on 4 Nov was about an empty month.
+- **No Manager or Office Sales Rep cases.** The set covers Admin and Field Sales Rep only.
+- **One session from an interrupted run on 2026-10-29 was left open** (Alice, 05:59 UTC). It is outside the budget window now, and its ledger row was not closed.
