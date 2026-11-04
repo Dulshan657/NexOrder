@@ -38,7 +38,7 @@ const KitchenProfile: React.FC<{ currentUser: User; session: KitchenSession }> =
 
   return (
     <div className="border-t border-stone-200">
-      <div className="flex items-center gap-3 px-4 py-3">
+      <div className="flex items-center gap-3 px-6 py-3">
         <div
           aria-hidden="true"
           className="w-8 h-8 rounded-xl bg-nexgen-blue-dark flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
@@ -92,7 +92,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ currentUser, kitchenSession }
     <div className="border-t border-stone-200">
       <button
         onClick={() => setIsExpanded(v => !v)}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-stone-100 transition-colors cursor-pointer"
+        className="w-full flex items-center gap-3 px-6 py-3 hover:bg-stone-100 transition-colors cursor-pointer"
       >
         {currentUser.avatarUrl ? (
           <OptimizedImage src={currentUser.avatarUrl} alt={currentUser.name} className="w-8 h-8 rounded-xl flex-shrink-0" transformWidth={128} />

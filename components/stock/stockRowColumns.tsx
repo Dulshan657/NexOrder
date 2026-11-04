@@ -5,8 +5,8 @@
 //
 // Same reasoning as `receive/ReceiveLineCard.tsx`, and the same trap: the
 // quantity that matters is the width of THIS LIST, not of the viewport. The
-// AppShell sidebar is 208px and the page pads by 32px, so a viewport figure
-// overstates the space by ~240px on an ordinary laptop and the identity column
+// AppShell sidebar is 224px and the page pads by 32px, so a viewport figure
+// overstates the space by ~256px on an ordinary laptop and the identity column
 // computes to nothing. `@container` is declared once, on the card wrapping both
 // the headings and the rows.
 //

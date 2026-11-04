@@ -63,7 +63,7 @@ const ScheduledVisitForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-display font-bold text-stone-800">{isAdminMode ? 'Create & Assign ScheduledVisit' : 'New ScheduledVisit'}</h2>
+        <h2 className="text-xl font-display font-bold text-stone-800">{isAdminMode ? 'Create & Assign Scheduled Visit' : 'New Scheduled Visit'}</h2>
         <button onClick={onCancel} className="p-2 hover:bg-stone-100 rounded-lg transition-colors">
           <X className="w-5 h-5 text-stone-500" />
         </button>
@@ -72,7 +72,7 @@ const ScheduledVisitForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, 
       {/* Name, Date, and optional Assign To */}
       <div className={`grid grid-cols-1 ${isAdminMode ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-4`}>
         <div>
-          <label className="block text-sm font-medium text-stone-700 mb-1">ScheduledVisit Name</label>
+          <label className="block text-sm font-medium text-stone-700 mb-1">Scheduled Visit Name</label>
           <input
             type="text"
             value={name}
@@ -139,7 +139,7 @@ const ScheduledVisitForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, 
       {selectedHoReCaIds.length > 0 && (
         <div>
           <label className="block text-sm font-medium text-stone-700 mb-2">
-            ScheduledVisit Stops ({selectedHoReCaIds.length}) — drag to reorder
+            Scheduled Visit Stops ({selectedHoReCaIds.length}) — drag to reorder
           </label>
           <div className="space-y-2">
             {selectedHoReCaIds.map((hoReCaId, index) => {
@@ -186,7 +186,7 @@ const ScheduledVisitForm: React.FC<RouteFormProps> = ({ hoReCas, userId, users, 
           disabled={!name.trim() || selectedHoReCaIds.length === 0}
           className="px-5 py-2 text-sm font-medium text-white bg-nexgen-blue rounded-lg hover:bg-nexgen-blue-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Create ScheduledVisit
+          Create Scheduled Visit
         </button>
       </div>
     </div>

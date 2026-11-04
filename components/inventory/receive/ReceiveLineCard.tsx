@@ -40,7 +40,7 @@
 // the product column gets anything, and 1180 - 1048 = 132 is the row above.
 //
 // They were then encoded as `@min-[1180px]:`, a VIEWPORT breakpoint, and that is a
-// different quantity. The AppShell sidebar is 208px and the page pads by 32px,
+// different quantity. The AppShell sidebar was then 208px and the page pads by 32px,
 // so at a 1280px viewport this container is 997px — 51px SHORT of 1048, which
 // means the product column computed to literally 0px and the row overflowed.
 // The one thing the operator is reading was unreadable on an ordinary laptop,

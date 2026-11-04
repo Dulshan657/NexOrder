@@ -296,7 +296,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
                 onClick={() => onStartRoute(todayRoute)}
                 className="w-full flex items-center justify-center gap-2 mt-3 px-4 py-3 rounded-lg bg-nexgen-blue text-white text-sm font-semibold hover:bg-nexgen-blue-dark btn-press cursor-pointer min-h-[44px]"
               >
-                <Play className="w-4 h-4" /> Start ScheduledVisit
+                <Play className="w-4 h-4" /> Start Scheduled Visit
               </button>
             )}
             {todayRoute.status === 'in_progress' && onViewRoute && (
@@ -304,7 +304,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
                 onClick={() => onViewRoute(todayRoute.id)}
                 className="w-full flex items-center justify-center gap-2 mt-3 px-4 py-3 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 btn-press cursor-pointer min-h-[44px]"
               >
-                <ArrowRight className="w-4 h-4" /> Continue ScheduledVisit
+                <ArrowRight className="w-4 h-4" /> Continue Scheduled Visit
               </button>
             )}
           </div>

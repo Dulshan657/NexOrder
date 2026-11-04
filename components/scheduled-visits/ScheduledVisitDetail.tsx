@@ -84,13 +84,13 @@ const ScheduledVisitDetail: React.FC<RouteDetailProps> = ({ route, hoReCas, visi
             {route.status === 'planned' && (
               <button onClick={handleStartRoute} className="flex items-center gap-1 text-sm font-medium text-white bg-nexgen-blue px-4 py-2 rounded-lg hover:bg-nexgen-blue-dark transition-colors">
                 <Play className="w-4 h-4" />
-                Start ScheduledVisit
+                Start Scheduled Visit
               </button>
             )}
             {route.status === 'in_progress' && allDone && (
               <button onClick={handleCompleteRoute} className="flex items-center gap-1 text-sm font-medium text-white bg-emerald-600 px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors">
                 <CheckCircle2 className="w-4 h-4" />
-                Complete ScheduledVisit
+                Complete Scheduled Visit
               </button>
             )}
           </div>

@@ -250,6 +250,27 @@ body {
   transition: margin-right 300ms ease-in-out;
 }
 
+/* Sidebar nav: a slim scrollbar, and a reserved gutter so rows sit in the same place on a nav too short to scroll. */
+.sidebar-nav-scroll {
+  /* Chrome ignores the ::-webkit-scrollbar rules below unless both of these are auto. */
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+  scrollbar-gutter: stable;
+}
+.sidebar-nav-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-nav-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-nav-scroll::-webkit-scrollbar-thumb {
+  background: #d6d3d1; /* stone-300 */
+  border-radius: 2px;
+}
+.sidebar-nav-scroll::-webkit-scrollbar-thumb:hover {
+  background: #a8a29e; /* stone-400 */
+}
+
 /* Action Items Board — subtle scrollbar */
 .action-items-scroll::-webkit-scrollbar {
   width: 4px;

@@ -93,7 +93,7 @@ const ScheduledVisitsView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, 
           className="flex items-center gap-1 text-sm font-medium text-white bg-nexgen-blue px-4 py-2 rounded-lg hover:bg-nexgen-blue-dark transition-colors"
         >
           <Plus className="w-4 h-4" />
-          New ScheduledVisit
+          New Scheduled Visit
         </button>
       </div>
 
@@ -147,7 +147,7 @@ const ScheduledVisitsView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, 
                   }}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-nexgen-blue text-white text-sm font-semibold hover:bg-nexgen-blue-dark btn-press cursor-pointer whitespace-nowrap min-h-[44px]"
                 >
-                  {plannedRoute ? <><Play className="w-4 h-4" /> Start ScheduledVisit</> : <><ArrowRight className="w-4 h-4" /> Continue ScheduledVisit</>}
+                  {plannedRoute ? <><Play className="w-4 h-4" /> Start Scheduled Visit</> : <><ArrowRight className="w-4 h-4" /> Continue Scheduled Visit</>}
                 </button>
               </div>
             );

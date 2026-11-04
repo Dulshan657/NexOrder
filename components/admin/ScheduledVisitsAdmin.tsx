@@ -60,13 +60,13 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
   const handleSaveNewRoute = (route: ScheduledVisit) => {
     onSetRoutes([...routes, route]);
     setShowCreateForm(false);
-    addToast('ScheduledVisit created and assigned', 'success');
+    addToast('Scheduled Visit created and assigned', 'success');
   };
 
   const handleSaveTemplate = (template: ScheduledVisit) => {
     onSetRoutes([...routes, template]);
     setShowTemplateForm(false);
-    addToast('ScheduledVisit template created', 'success');
+    addToast('Scheduled Visit template created', 'success');
   };
 
   const handleDeleteTemplate = (templateId: string) => {
@@ -83,7 +83,7 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
     setReassignRouteId(null);
     setReassignTarget('');
     const repName = userMap.get(reassignTarget)?.name ?? 'rep';
-    addToast(`ScheduledVisit reassigned to ${repName}`, 'success');
+    addToast(`Scheduled Visit reassigned to ${repName}`, 'success');
   };
 
   const subTabs: Array<{ key: SubTab; label: string; icon: React.ReactNode; badge?: number }> = [
@@ -98,7 +98,7 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <MapPin className="w-5 h-5 text-stone-700" />
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">ScheduledVisit Management</h1>
+          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Scheduled Visit Management</h1>
         </div>
         <div className="flex gap-2">
           {subTab === 'templates' && (
@@ -116,7 +116,7 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
               className="flex items-center gap-1 text-sm font-medium text-white bg-nexgen-blue px-4 py-2 rounded-lg hover:bg-nexgen-blue-dark transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Create & Assign ScheduledVisit
+              Create & Assign Scheduled Visit
             </button>
           )}
         </div>
@@ -193,7 +193,7 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
               <table className="w-full text-sm">
                 <thead className="bg-stone-50 border-b border-stone-200">
                   <tr>
-                    <th className="text-left px-4 py-3 font-medium text-stone-600">ScheduledVisit</th>
+                    <th className="text-left px-4 py-3 font-medium text-stone-600">Scheduled Visit</th>
                     <th className="text-left px-4 py-3 font-medium text-stone-600">Date</th>
                     <th className="text-left px-4 py-3 font-medium text-stone-600">Assigned To</th>
                     <th className="text-left px-4 py-3 font-medium text-stone-600">Status</th>

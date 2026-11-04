@@ -91,7 +91,7 @@ const ScheduledVisitList: React.FC<RouteListProps> = ({ routes, hoReCas, users, 
         <table className="w-full text-sm text-left min-w-[600px]">
           <thead>
             <tr className="border-b border-stone-200 bg-stone-50/50">
-              <SortHeader column="name" label="ScheduledVisit" />
+              <SortHeader column="name" label="Scheduled Visit" />
               <SortHeader column="date" label="Date" />
               <SortHeader column="stops" label="Stops" />
               <th className="px-4 py-3 font-semibold text-stone-600">Progress</th>
@@ -146,7 +146,7 @@ const ScheduledVisitList: React.FC<RouteListProps> = ({ routes, hoReCas, users, 
                     )}
                   </td>
                   <td className="px-4 py-3 align-middle text-right">
-                    <button onClick={() => onSelectRoute(route.id)} className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer" title="View ScheduledVisit">
+                    <button onClick={() => onSelectRoute(route.id)} className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer" title="View Scheduled Visit">
                       <Eye className="w-4 h-4" />
                     </button>
                   </td>

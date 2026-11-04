@@ -93,7 +93,7 @@ const ChangeRequestModal: React.FC<ChangeRequestModalProps> = ({ route, hoReCas,
       open
       onClose={onClose}
       dirty={isDirty}
-      title="Request ScheduledVisit Change"
+      title="Request Scheduled Visit Change"
       footer={({ requestClose }) => (
         <>
           <Button variant="ghost" onClick={requestClose}>

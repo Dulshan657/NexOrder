@@ -48,7 +48,7 @@ const ScheduledVisitTemplateForm: React.FC<RouteTemplateFormProps> = ({ hoReCas,
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-display font-bold text-stone-800">New ScheduledVisit Template</h2>
+        <h2 className="text-xl font-display font-bold text-stone-800">New Scheduled Visit Template</h2>
         <button onClick={onCancel} className="p-2 hover:bg-stone-100 rounded-lg transition-colors">
           <X className="w-5 h-5 text-stone-500" />
         </button>
