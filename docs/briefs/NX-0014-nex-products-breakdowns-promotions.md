@@ -89,3 +89,26 @@ shows the effect.
 - Amadiya: Nex is off there.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `findProduct > folds spoken units`, `> says ambiguous when two products match equally` (check:brief) | `find_customer`'s own tests pass unchanged on the shared `nameMatch.ts` |
+| A2 | claimed | `filterOrders — product is a line-level scope > narrows lines to one product`, `> a stored-total metric refuses the product scope` (check:brief) | |
+| A3 | claimed | `get_product_summary > reports stock and sales for one product`, `> leaves stock out without the warehouse module` (check:brief) | Live: "628 units on hand, with 568 available" for Coconut Milk 400ml |
+| A4 | claimed | `get_product_summary > counts only a rep's own orders`, `get_sales_breakdown > counts only a rep's own orders` (check:brief) | |
+| A5 | claimed | `get_sales_breakdown > ranks customers by revenue with totals`, `> names the drivers of a change with their share` (check:brief) | |
+| A6 | claimed | `get_sales_breakdown > values categories at line value and says so`, `> refuses a rep ranking to a rep` (check:brief) | Live `rep-rep-ranking`: "rep sales breakdowns are only available to managers and admins" |
+| A7 | claimed | `get_promotions > lists only promotions active now, with what they cover`, `toolsForRole > offers get_promotions only with the promotions module` (check:brief) | Live: the four promotions running on dev, each with its discount and who it is for |
+| A8 | claimed | `buildInstructions > sends product questions through find_product`, `> answers what drove a change from the breakdown drivers` (check:brief) | |
+| A9 | claimed | `golden questions > answers what NX-0012 had to refuse` (check:brief) | 36 cases |
+| A10 | claimed | Golden run on dev, 2026-11-04, build 68d3498 (this branch plus NX-0013 and NX-0011), voice-session deployed from it: **35/36** as scored live, **36/36** re-scored after 1745206 | The one live failure was the scorer, not Nex: "Executive Heating and Cooling" for "Executive Heating & Cooling". All seven converted cases pass, and `admin-top-rep-last-month` says Charlie Brown, $2,463, as SQL does |
+| A11 | not-claimed | | Not merged. Dev serves the local combined build 68d3498 |
+
+### Not claimed
+
+- **Every "this month" case ran against an empty month.** The demo has had no orders since 21 Oct, so `admin-best-category` is *unchecked* (its list is empty), and the drivers for "which customers drove the change" are simply every customer, down to zero.
+- **The new tools were exercised once each, by one model run.** A pass is not a rate.
+- **Two Receive Stock UI tests timed out (about 5.5 s) in one full-suite run** while a browser run shared the machine. That file passes alone (10/10). It is unrelated to this change, and not listed as a known flake.
+- **`isPromotionActive` compares UTC dates.** Reused as-is so Nex agrees with the Shop; around Sydney midnight both can be a day out.
+- **Nothing was tried by voice**, only typed. NX-0009's spec covers the spoken path for the sales summary only.
+- **Stacked on #29.** It cannot merge before #29 does.
