@@ -79,6 +79,7 @@
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:perf": "playwright test --project=perf",
     "soak:session:dev": "node scripts/session-soak.mjs --env=dev",
+    "nex:golden:dev": "tsx scripts/nex-golden.mjs --env=dev",
     "embed:products:dev": "node supabase/embed-products.mjs --env=dev",
     "embed:products:amadiya": "node supabase/embed-products.mjs --env=amadiya",
     "report:hardware": "tsx scripts/build-hardware-report.ts",

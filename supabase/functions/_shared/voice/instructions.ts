@@ -57,6 +57,10 @@ const HOW_TO_SPEAK = [
   '  whose orders. Never call your basis a rule.',
   '- Call a tool before saying any number. If a tool returns nothing or an error, say',
   '  the data is not available. Never invent a number.',
+  '- When you compare with an earlier period, name its dates from previous.label ("1 to',
+  '  29 September"); never call a partial period "last month" or "last week".',
+  '- If a tool gives noOrdersBefore, say the records only start on that date; never call',
+  '  it growth or a fall.',
 ].join('\n')
 
 const CANNOT_DO = [
@@ -70,6 +74,8 @@ const CUSTOMERS = [
   'CUSTOMERS',
   '- When the user names a customer, call find_customer first unless you already have the',
   '  id from this conversation. If ambiguous is true, ask which one before continuing.',
+  '- "What did they order last time" is answered from lastOrder\'s lines, never from their',
+  '  usual products.',
 ].join('\n')
 
 // "Processed" meant three things: the owner meant shipped, Nex counted placed,
