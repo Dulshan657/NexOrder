@@ -9,7 +9,7 @@
     { "id": "A1", "check": "A sidebar row's icon cannot shrink and its label cannot wrap: the icon carries shrink-0 and the label carries truncate and min-w-0." },
     { "id": "A2", "check": "A row sets aria-current=\"page\" only when active, and calls onClick when pressed." },
     { "id": "A3", "check": "Every count badge has the same shape and differs only in colour; no badge renders when the count is 0." },
-    { "id": "A4", "check": "AppShell's sidebar is w-54 and its nav is px-3, and no nav row is hand-written any more (no 'w-5 h-5 mr-3' left in AppShell)." },
+    { "id": "A4", "check": "AppShell's sidebar is w-56 and its nav is px-3, and no nav row is hand-written any more (no 'w-5 h-5 mr-3' left in AppShell)." },
     { "id": "A5", "check": "No user-visible text under components/admin or components/scheduled-visits reads 'ScheduledVisit'; the heading reads 'Scheduled Visit Management'." },
     { "id": "A6", "check": "For Admin, Manager, Field Rep, Warehouse and Customer, no nav label wraps or truncates, including when active; icon and label left edges match across rows, and icons line up with the logo.", "manual": "Chrome on nexorder.vercel.app, measured on Windows with real scrollbars" },
     { "id": "A7", "check": "Products at a 1280px viewport is measured before and after, and the result is reported. If it flips to cards, the owner decides; the 1000px threshold is not lowered.", "manual": "Chrome at 1280px on dev" },
@@ -20,7 +20,7 @@
     { "file": "__tests__/sidebarNavItem.test.tsx", "test": "SidebarNavItem > keeps the icon from shrinking and the label from wrapping", "proves": ["A1"] },
     { "file": "__tests__/sidebarNavItem.test.tsx", "test": "SidebarNavItem > marks only the active row as the current page and fires onClick", "proves": ["A2"] },
     { "file": "__tests__/sidebarNavItem.test.tsx", "test": "SidebarNavItem > draws every badge in one shape and hides a zero count", "proves": ["A3"] },
-    { "file": "__tests__/appShellSidebarLayout.test.ts", "test": "AppShell sidebar layout > is 216px wide with the nav padded to the logo edge", "proves": ["A4"] },
+    { "file": "__tests__/appShellSidebarLayout.test.ts", "test": "AppShell sidebar layout > is 224px wide with the nav padded to the logo edge", "proves": ["A4"] },
     { "file": "__tests__/appShellSidebarLayout.test.ts", "test": "AppShell sidebar layout > has no hand-written nav rows left", "proves": ["A4"] },
     { "file": "__tests__/appShellSidebarLayout.test.ts", "test": "Scheduled Visit wording > shows no 'ScheduledVisit' to a user", "proves": ["A5"] }
   ],
@@ -31,18 +31,19 @@
 ## Goal
 
 The sidebar's rows don't line up, and "Scheduled Visits" and "HoReCa Insights" wrap
-onto two lines. The owner wants tidy rows on one line, at 216px with tighter padding.
-That width was chosen because 224px or more flips the Products table to cards on a
-1280px laptop. "ScheduledVisit" with no space is also fixed everywhere a user sees it.
+onto two lines. The owner wants tidy rows on one line, at 224px with tighter padding.
+Revised from 216px on 2026-11-04 with the owner: measured on dev, Products already shows
+cards at 1280px on Windows, so 216px protected nothing, and it still cut off a Field
+Rep's "Scheduled Visits" beside a count badge. "ScheduledVisit" with no space is also fixed everywhere a user sees it.
 
 ## Approach
 
 - New `components/SidebarNavItem.tsx`: one definition of a row, replacing every
   hand-copied nav button in `components/AppShell.tsx`. Gates, order and labels are unchanged.
-- `aside` w-52 → w-54 and `nav` px-4 → px-3, so icons and headings start at the logo's
+- `aside` w-52 → w-56 and `nav` px-4 → px-3, so icons and headings start at the logo's
   24px edge. The `<ProfileMenu>` footer is aligned too if it differs.
 - `.sidebar-nav-scroll` in `index.css`: 4px scrollbar, stable gutter.
-- Text-only fixes in `ScheduledVisitsAdmin`, `ChangeRequestModal`, `ScheduledVisitForm`,
+- Text-only fixes in `RepDashboardV2`, `ScheduledVisitDetail`, `ScheduledVisitList`, `ScheduledVisitsView`, `ScheduledVisitsAdmin`, `ChangeRequestModal`, `ScheduledVisitForm`,
   `ScheduledVisitTemplateForm` and `ScheduledVisitWizard`. Type names are untouched.
 - Comments stating 208px are updated in the five files that carry them.
 
