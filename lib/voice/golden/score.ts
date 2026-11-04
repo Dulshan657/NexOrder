@@ -148,11 +148,16 @@ function statesCountInWords(answer: string, value: number): boolean {
   return word !== undefined && new RegExp(`\\b${word}\\b`, 'i').test(answer)
 }
 
+/** A name as it is said aloud: "&" is "and", punctuation and spacing do not count. */
+function spoken(text: string): string {
+  return ` ${text.toLowerCase().replace(/&/g, ' and ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `
+}
+
 function statesValue(answer: string, value: unknown): boolean {
   if (typeof value === 'number') return numbersIn(answer).some((n) => close(n, value)) || statesCountInWords(answer, value)
   if (typeof value === 'string') {
     if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return statesDate(answer, value)
-    return answer.toLowerCase().includes(value.toLowerCase())
+    return spoken(answer).includes(spoken(value))
   }
   return false
 }
