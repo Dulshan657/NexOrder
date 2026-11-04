@@ -175,7 +175,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                     ref={panelRef}
                     // PORTALLED, and it has to be. The sidebar that hosts this
                     // bell is `backdrop-blur-md`, which makes it a containing
-                    // block — a `fixed` child would position against the 216px
+                    // block — a `fixed` child would position against the 224px
                     // sidebar rather than the viewport, so it could never be
                     // clamped to a 360px screen from in there.
                     //

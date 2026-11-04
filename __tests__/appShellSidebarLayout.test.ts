@@ -9,8 +9,8 @@ import { join, resolve } from 'node:path'
 const src = readFileSync(resolve(process.cwd(), 'components/AppShell.tsx'), 'utf8')
 
 describe('AppShell sidebar layout', () => {
-  it('is 216px wide with the nav padded to the logo edge', () => {
-    expect(src).toMatch(/<aside className=\{`[^`]*\bw-54\b/)
+  it('is 224px wide with the nav padded to the logo edge', () => {
+    expect(src).toMatch(/<aside className=\{`[^`]*\bw-56\b/)
     // nav px-3 + row px-3 = 24px, the header's px-6.
     expect(src).toMatch(/<nav className="[^"]*\bpx-3\b/)
     expect(src).toMatch(/h-\[73px\][^"]*\bpx-6\b/)

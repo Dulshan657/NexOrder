@@ -26,12 +26,12 @@ const SidebarNavItem = ({ icon: Icon, onClick, active, badge, children }: Sideba
     <button
         onClick={onClick}
         aria-current={active ? 'page' : undefined}
-        className={`flex items-center gap-3 w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${active ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${active ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
     >
-        <Icon className="w-5 h-5 shrink-0" />
+        <Icon className="w-5 h-5 mr-3 shrink-0" />
         <span className="flex-1 min-w-0 truncate text-left">{children}</span>
         {badge && badge.count > 0 && (
-            <span className={`shrink-0 ml-2 min-w-[18px] text-[10px] font-bold rounded-full px-1.5 py-0.5 text-center text-white ${badge.colorClass}`}>
+            <span className={`shrink-0 ml-1 min-w-[18px] text-[10px] font-bold rounded-full px-1.5 py-0.5 text-center text-white ${badge.colorClass}`}>
                 {badge.count}
             </span>
         )}

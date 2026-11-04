@@ -252,6 +252,9 @@ body {
 
 /* Sidebar nav: a slim scrollbar, and a reserved gutter so rows sit in the same place on a nav too short to scroll. */
 .sidebar-nav-scroll {
+  /* Chrome ignores the ::-webkit-scrollbar rules below unless both of these are auto. */
+  scrollbar-width: auto;
+  scrollbar-color: auto;
   scrollbar-gutter: stable;
 }
 .sidebar-nav-scroll::-webkit-scrollbar {

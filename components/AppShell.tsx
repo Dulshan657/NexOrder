@@ -839,7 +839,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
             )}
 
             {/* Sidebar */}
-            <aside className={`fixed md:static inset-y-0 left-0 z-50 w-54 bg-white/80 backdrop-blur-md text-stone-600 border-r border-stone-200/50 flex flex-col transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+            <aside className={`fixed md:static inset-y-0 left-0 z-50 w-56 bg-white/80 backdrop-blur-md text-stone-600 border-r border-stone-200/50 flex flex-col transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
                 <div className="h-[73px] flex items-center justify-between px-6 bg-white/80 border-b border-stone-200">
                     <div className="flex items-center">
                         <img
