@@ -48,3 +48,16 @@ whole of last month, on the dashboard and in Nex.
 - The comparison's dates are not shown on the dashboard (it shows only % change).
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `resolvePeriod > this_month > compares with the whole of last month` and `… on the 1st` fail on base, pass on tip (check:brief) | Includes 1 March against all of February (28 days) |
+| A2 | claimed | `dashboardRange > compares this month so far with the whole of last month` (check:brief) | The dashboard and Nex share `lib/period.ts`, so one change moves both |
+| A3 | claimed | Golden run on dev, 2026-11-04, build 8dad50e (this branch plus NX-0011): `admin-revenue-vs-last-month` PASS, "about 0 dollars, compared with about 4,225 dollars for 1 October to 31 October" | |
+| A4 | not-claimed | | Not merged. Dev serves a local, unpushed build of this branch combined with NX-0011 (8dad50e), so the new Nex mark stays visible until #28 merges |
+
+### Not claimed
+
+- **Today and this week still compare with the same point** (NX-0010), deliberately: the owner named the month only.
+- **The dashboard was not opened in a browser.** Its comparison is pinned by `dashboardRange`'s test, and it shows only % change, no dates.
+- **Stacked on #29 (NX-0012).** This PR's diff includes nothing of #29, but it cannot merge before #29 does.
