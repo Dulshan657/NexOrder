@@ -53,3 +53,22 @@ Row spacing, group spacing, colours, the active and hover styles, heading styles
 colours, nav order, collapsing the sidebar, and the Products 1000px threshold.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `SidebarNavItem > keeps the icon from shrinking and the label from wrapping` fails on base, passes on tip (check:brief) | |
+| A2 | claimed | `SidebarNavItem > marks only the active row as the current page and fires onClick` fails on base, passes on tip | |
+| A3 | claimed | `SidebarNavItem > draws every badge in one shape and hides a zero count` fails on base, passes on tip | |
+| A4 | claimed | `AppShell sidebar layout > is 224px wide with the nav padded to the logo edge` and `> has no hand-written nav rows left` fail on base, pass on tip | Revised from 216px with the owner after measuring |
+| A5 | claimed | `Scheduled Visit wording > shows no 'ScheduledVisit' to a user` fails on base, passes on tip | Two more strings fixed in RepDashboardV2, outside the folders the test scans |
+| A6 | not-claimed | | Admin measured on dev at 224px: all 27 rows one line, icons at 24px, labels at 56px, profile at 24px, no clipping with or without active weight. Field Rep, Warehouse, Manager and Customer were not logged in; their labels were checked by text-width calculation only |
+| A7 | claimed | Measured with Windows scrollbars, app constrained to the width in a maximised window: at 208px the container is 993px at 1280; at 224px it is 977px at 1280, 993px at 1296, 1001px at 1304. Cards at 1280 before and after; table from about 1303px | Threshold not changed |
+| A8 | not-claimed | | `--project=mobile`: 24 passed, 2 skipped, 3 failed. All 3 are products-handheld and stopped on the missing E2E_ADMIN_EMAIL, so they never ran. The Warehouse specs do open the drawer and navigate by row name |
+| A9 | claimed | /version.json = 7271130bfef474faba7ee77f612702ccbc57ba42, health 200 | A throwaway merge of this branch onto 68d3498, so the NX-0011/0013/0014 demo work stayed on dev. Not pushed |
+
+### Not claimed
+
+- No login as Field Rep, Manager, Warehouse or Customer. A two-digit badge beside an active "Scheduled Visits" fits by calculation (110.2px + 4px + about 24px against 139px), not by observation.
+- No check on macOS, or with overlay scrollbars generally. There the content area is about 12px wider than measured here.
+- No browser walk on the RS35 handheld.
+- The 1280px readings constrain the app inside a wider window, because the window could not be resized. Viewport breakpoints still saw the wide window; only the container width was at 1280.
