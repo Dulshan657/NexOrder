@@ -46,4 +46,28 @@ describe('order numbers parity', () => {
     // reports exactly those two beside the chart.
     expect(pipeline.cancelled).toBe(2)
   })
+
+  it('Nex and the dashboard arrows compare with the same previous window', () => {
+    // NOW is Tue 20 Oct, 15:00 in Sydney. Yesterday's order at 08:00 is before
+    // that time of day; the one at 20:00 is after it, so it is not "yesterday
+    // up to the same time" and must count in neither previous figure.
+    const morning = { ...order('YDAY-AM', REP_A, C1, 1, [[P1, 1]]), orderDate: '2026-10-18T21:00:00.000Z' }
+    const evening = { ...order('YDAY-PM', REP_A, C1, 1, [[P1, 1]]), orderDate: '2026-10-19T09:00:00.000Z' }
+    const orders = [...buildOrders(), morning, evening]
+    const ctx = ctxFor(MANAGER, { orders })
+    const mctx = { orders, products: [], settings: { lowStockThreshold: 10 }, now: NOW }
+
+    for (const period of ['today', 'this_week', 'this_month'] as const) {
+      const nex = runVoiceTool('get_sales_summary', { period }, ctx)
+      if (nex.ok === false) throw new Error(nex.error)
+      const nexPrevious = (nex.data as { previous: { orderCount: number } }).previous.orderCount
+      const range = dashboardRange(period, NOW)
+      const dashboardPrevious = evaluateMetric<number>('sales.orderCount', mctx, range.previous)
+      expect(nexPrevious, period).toBe(dashboardPrevious)
+    }
+
+    const todayNex = runVoiceTool('get_sales_summary', { period: 'today' }, ctx)
+    if (todayNex.ok === false) throw new Error(todayNex.error)
+    expect((todayNex.data as { previous: { orderCount: number } }).previous.orderCount).toBe(1)
+  })
 })

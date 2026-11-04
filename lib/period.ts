@@ -19,10 +19,16 @@
 // two days are 23 and 25 hours long. No Sydney transition happens at midnight,
 // so local midnight always exists and is unique.
 //
-// `previous` is the window of EQUAL LENGTH IN DAYS immediately before the
-// current one, touching it with no gap and no overlap. "This week so far" (Mon
-// to Wed) is therefore compared with the same number of days before Monday, not
-// with last week's Mon to Wed.
+// A period still in progress (today, this week, this month) is compared with
+// the SAME POINT of the period before (NX-0010, owner's call):
+// today until 3 pm against yesterday until 3 pm; Monday to Wednesday 3 pm
+// against last Monday to last Wednesday 3 pm; 1 to 29 October against 1 to 29
+// September, ending at the end of a shorter previous month. Comparing "so far"
+// with a whole previous period made every morning's arrows point down.
+//
+// A finished period (last month, the last 30 days, a custom range) is compared
+// with the window of EQUAL LENGTH IN DAYS immediately before it, touching it
+// with no gap and no overlap.
 //
 // Internally a calendar day is carried as a Date at UTC midnight of that date
 // (a "civil date"), only ever read with getUTC*. It is NOT an instant anything
@@ -184,11 +190,67 @@ function localWindow(first: Date, last: Date): DateWindow {
 export function resolvePeriod(period: PeriodName, now: Date, custom?: CustomRange): ResolvedPeriod {
   if (Number.isNaN(now.getTime())) throw new RangeError('now is not a valid date')
   const days = calendarDays(period, now, custom)
+  const label = `${days.label} (${formatCivilRange(days.from, days.to)})`
+  const sameSpanBefore = inProgressPrevious(period, days.from, now)
+  if (sameSpanBefore) {
+    // The current window still ends at the END OF TODAY, not at `now`: a caller
+    // that resolves once (the dashboard) would otherwise stop counting orders
+    // that arrive after it did, and a date-only value dated today (a route,
+    // read as UTC midnight = 10 or 11 am here) would sit outside "today" all
+    // morning. Nothing is placed in the future, so the counts are the same.
+    return { ...localWindow(days.from, days.to), previous: sameSpanBefore, label }
+  }
   const length = Math.round((days.to.getTime() - days.from.getTime()) / DAY_MS) + 1
   const current = localWindow(days.from, days.to)
   const previous = localWindow(addDays(days.from, -length), addDays(days.from, -1))
-  const label = `${days.label} (${formatCivilRange(days.from, days.to)})`
   return { from: current.from, to: current.to, previous, label }
+}
+
+/**
+ * For a period still in progress, the previous period up to the same point:
+ * its first day's midnight to the same time of day on the matching day, or the
+ * end of a previous month too short to have that day. Null for a finished period.
+ *
+ * "The same time of day" is the time elapsed since local midnight today, laid
+ * onto the matching day; on the two daylight-saving change days that is an hour
+ * off the wall clock, which no daily comparison can avoid.
+ */
+function inProgressPrevious(period: PeriodName, first: Date, now: Date): DateWindow | null {
+  const today = localDayOf(now)
+  const sinceMidnight = now.getTime() - startOfLocalDay(today).getTime()
+  let previousFirst: Date
+  let matchingDay: Date
+  switch (period) {
+    case 'today':
+      previousFirst = addDays(today, -1)
+      matchingDay = previousFirst
+      break
+    case 'this_week':
+      previousFirst = addDays(first, -7)
+      matchingDay = addDays(today, -7)
+      break
+    case 'this_month': {
+      const year = today.getUTCFullYear()
+      const month = today.getUTCMonth()
+      previousFirst = new Date(Date.UTC(year, month - 1, 1))
+      const lastOfPrevious = new Date(Date.UTC(year, month, 0))
+      if (today.getUTCDate() > lastOfPrevious.getUTCDate()) {
+        return { from: startOfLocalDay(previousFirst), to: endOfLocalDay(lastOfPrevious) }
+      }
+      matchingDay = new Date(Date.UTC(year, month - 1, today.getUTCDate()))
+      break
+    }
+    default:
+      return null
+  }
+  // Capped at the end of the matching day: on the 25-hour day daylight time
+  // ends, the hours since midnight can outrun a 24-hour day and the window
+  // would overlap the current one.
+  const sameTime = startOfLocalDay(matchingDay).getTime() + sinceMidnight
+  return {
+    from: startOfLocalDay(previousFirst),
+    to: new Date(Math.min(sameTime, endOfLocalDay(matchingDay).getTime())),
+  }
 }
 
 /**
