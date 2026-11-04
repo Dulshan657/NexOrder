@@ -121,6 +121,11 @@ Ten tools, defined once in `supabase/functions/_shared/voice/toolSchemas.ts`:
 `lib/voice/tools/` (one file each), arguments are validated by `lib/voice/toolArgs.ts`, and
 `find_customer` must come before any customer-specific tool (the prompt says so).
 
+**What a period is compared with** (`lib/period.ts`, shared with the Admin Dashboard):
+today and this week against the same point of the period before (NX-0010); this month
+against the **whole** of last month (NX-0013, owner's call 2026-11-04); a finished period
+(last month, the last 30 days, a custom range) against the equal-length window before it.
+
 **`toolsForRole(role, modules)` is the one permission source of truth.** The server offers
 exactly that list at mint time and `runVoiceTool` refuses anything outside it with
 `Not available for your role` BEFORE parsing arguments. Never compare a role to a literal

@@ -19,12 +19,15 @@
 // two days are 23 and 25 hours long. No Sydney transition happens at midnight,
 // so local midnight always exists and is unique.
 //
-// A period still in progress (today, this week, this month) is compared with
-// the SAME POINT of the period before (NX-0010, owner's call):
-// today until 3 pm against yesterday until 3 pm; Monday to Wednesday 3 pm
-// against last Monday to last Wednesday 3 pm; 1 to 29 October against 1 to 29
-// September, ending at the end of a shorter previous month. Comparing "so far"
-// with a whole previous period made every morning's arrows point down.
+// Today and this week, still in progress, are compared with the SAME POINT of
+// the period before (NX-0010, owner's call): today until 3 pm against yesterday
+// until 3 pm; Monday to Wednesday 3 pm against last Monday to last Wednesday
+// 3 pm. Comparing "so far" with a whole previous period made every morning's
+// arrows point down.
+//
+// This month is the exception (NX-0013, owner's call, 2026-11-04): it is
+// compared with the WHOLE of last month, 1 to 4 November against all of
+// October, on the dashboard and in Nex alike.
 //
 // A finished period (last month, the last 30 days, a custom range) is compared
 // with the window of EQUAL LENGTH IN DAYS immediately before it, touching it
@@ -207,9 +210,10 @@ export function resolvePeriod(period: PeriodName, now: Date, custom?: CustomRang
 }
 
 /**
- * For a period still in progress, the previous period up to the same point:
- * its first day's midnight to the same time of day on the matching day, or the
- * end of a previous month too short to have that day. Null for a finished period.
+ * For a period still in progress, the previous period it is compared with: for
+ * today and this week, up to the same point (its first day's midnight to the same
+ * time of day on the matching day); for this month, the whole previous calendar
+ * month. Null for a finished period.
  *
  * "The same time of day" is the time elapsed since local midnight today, laid
  * onto the matching day; on the two daylight-saving change days that is an hour
@@ -230,15 +234,10 @@ function inProgressPrevious(period: PeriodName, first: Date, now: Date): DateWin
       matchingDay = addDays(today, -7)
       break
     case 'this_month': {
+      // The WHOLE of last month, not last month to the same point (NX-0013).
       const year = today.getUTCFullYear()
       const month = today.getUTCMonth()
-      previousFirst = new Date(Date.UTC(year, month - 1, 1))
-      const lastOfPrevious = new Date(Date.UTC(year, month, 0))
-      if (today.getUTCDate() > lastOfPrevious.getUTCDate()) {
-        return { from: startOfLocalDay(previousFirst), to: endOfLocalDay(lastOfPrevious) }
-      }
-      matchingDay = new Date(Date.UTC(year, month - 1, today.getUTCDate()))
-      break
+      return { from: startOfLocalDay(new Date(Date.UTC(year, month - 1, 1))), to: endOfLocalDay(new Date(Date.UTC(year, month, 0))) }
     }
     default:
       return null

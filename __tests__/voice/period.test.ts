@@ -113,16 +113,19 @@ describe('resolvePeriod', () => {
   })
 
   describe('this_month', () => {
-    it('runs the 1st to the end of today, previous is last month to the same day and time', () => {
-      const now = at('2026-10-20T04:00:00.000Z')
-      const got = resolvePeriod('this_month', now)
-      expectInProgress(got, now, '2026-10-20', '2026-10-01', '2026-09-01', '2026-09-20')
+    it('compares with the whole of last month', () => {
+      // Owner, 2026-11-04 (NX-0013): all of this month so far against ALL of last
+      // month, not last month up to the same day (NX-0010's rule, kept for today and this week).
+      const got = resolvePeriod('this_month', at('2026-10-20T04:00:00.000Z'))
+      expectWindow(got, '2026-10-01', '2026-10-20', '2026-09-01', '2026-09-30')
       expect(got.label).toBe('this month (1 Oct to 20 Oct 2026)')
     })
 
-    it('is a single day on the 1st', () => {
-      const now = at('2026-10-01T12:00:00.000Z')
-      expectInProgress(resolvePeriod('this_month', now), now, '2026-10-01', '2026-10-01', '2026-09-01', '2026-09-01')
+    it('compares with the whole of last month on the 1st', () => {
+      const got = resolvePeriod('this_month', at('2026-10-01T12:00:00.000Z'))
+      expectWindow(got, '2026-10-01', '2026-10-01', '2026-09-01', '2026-09-30')
+      // February has 28 days in 2026: March 1st compares with all of it.
+      expectWindow(resolvePeriod('this_month', at('2026-03-01T03:00:00.000Z')), '2026-03-01', '2026-03-01', '2026-02-01', '2026-02-28')
     })
   })
 

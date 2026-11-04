@@ -56,12 +56,13 @@ describe('dashboardRange', () => {
     expect(range.previous.to.toISOString()).toBe('2026-10-13T04:00:00.000Z') // Tue 13 Oct 15:00
   })
 
-  it('compares this month so far with last month up to the same day and time', () => {
+  it('compares this month so far with the whole of last month', () => {
+    // Owner, 2026-11-04 (NX-0013): the same rule as Nex, so the arrows and Nex agree.
     const range = dashboardRange('this_month', NOW)
     expect(range.to.toISOString()).toBe('2026-10-20T12:59:59.999Z')
-    // 1 Sep 00:00 and 20 Sep 15:00 in Sydney, both standard time (UTC+10).
+    // 1 Sep 00:00 to the end of 30 Sep in Sydney, both standard time (UTC+10).
     expect(range.previous.from.toISOString()).toBe('2026-08-31T14:00:00.000Z')
-    expect(range.previous.to.toISOString()).toBe('2026-09-20T05:00:00.000Z')
+    expect(range.previous.to.toISOString()).toBe('2026-09-30T13:59:59.999Z')
   })
 
   it('keeps counting orders placed after the dashboard was opened', () => {
