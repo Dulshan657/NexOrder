@@ -1,5 +1,5 @@
 {
-  "about": "Nex golden questions. Asked in order, one session per role, by scripts/nex-golden.mjs (npm run nex:golden:dev). Facts are paths into the LAST output of the named tool, so expected values are whatever dev's data says that day. Cases marked refuse are questions Nex cannot answer today; a later PR that adds the tool changes the case.",
+  "about": "Nex golden questions. Asked in order, one session per role, by scripts/nex-golden.mjs (npm run nex:golden:dev). Facts are paths into the output of the named tool (any call made for that question), so expected values are whatever dev's data says that day. Cases marked refuse are questions Nex cannot answer today; a later PR that adds the tool changes the case.",
   "cases": [
     {
       "id": "admin-placed-this-month",
@@ -313,6 +313,22 @@
       "role": "Field Sales Rep",
       "question": "Draft an order for Harbour Lane Dumplings so I can send it.",
       "refuse": true
+    },
+    {
+      "id": "rep-visits-last-month",
+      "role": "Field Sales Rep",
+      "question": "How many visits did I do last month, and how many turned into orders?",
+      "tools": [
+        "get_visit_stats"
+      ],
+      "states": [
+        "get_visit_stats.visitsLogged",
+        "get_visit_stats.visitsWithOrder"
+      ],
+      "avoids": [
+        "\\bcompleted (0|no|zero)\\b"
+      ],
+      "note": "rep-visits-this-month cannot tell the fix from the bug while the month has no visits; Charlie logged 28 in October 2026"
     }
   ]
 }

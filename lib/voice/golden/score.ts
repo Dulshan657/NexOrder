@@ -7,7 +7,7 @@
 //
 // Four checks, each a problem string when it fails:
 //   - every tool in `tools` was called;
-//   - every fact in `states` ("tool.path.to.field", read from the LAST call of
+//   - every fact in `states` ("tool.path.to.field", read from any call of
 //     that tool) appears in the answer;
 //   - every number in the answer appears in some tool output or in the question
 //     (whole-dollar rounding tolerated): Nex never does arithmetic of its own;
@@ -157,14 +157,23 @@ function statesValue(answer: string, value: unknown): boolean {
   return false
 }
 
+/**
+ * A fact holds when the answer states its value from ANY call of that tool made
+ * for this question (or, when none was, from the session's earlier calls). Nex
+ * often answers "this month against last month" with two calls, one per month,
+ * and then neither call alone carries both figures.
+ */
 function checkFact(run: GoldenRun, fact: string): { problem?: string; unchecked?: true } {
   const [tool, ...path] = fact.split('.')
-  const call = lastCall(run, tool)
-  if (!call) return {} // reported once as a missing call
-  const value = at(dataOf(call.output), path)
-  if (value === EMPTY_LIST) return { unchecked: true }
-  if (value === undefined || value === null) return { problem: `${fact} is not in the tool output` }
-  return statesValue(run.answer, value) ? {} : { problem: `did not state ${fact} (${String(value)})` }
+  const own = run.calls.filter((c) => c.name === tool)
+  const calls = (own.length > 0 ? own : (run.earlierCalls ?? []).filter((c) => c.name === tool)).reverse()
+  if (calls.length === 0) return {} // reported once as a missing call
+  const values = calls.map((call) => at(dataOf(call.output), path))
+  const present = values.filter((v) => v !== undefined && v !== null && v !== EMPTY_LIST)
+  if (present.some((v) => statesValue(run.answer, v))) return {}
+  if (present.length > 0) return { problem: `did not state ${fact} (${String(present[0])})` }
+  if (values.includes(EMPTY_LIST)) return { unchecked: true }
+  return { problem: `${fact} is not in the tool output` }
 }
 
 // "and 2 more" is a count the instructions ask for ("Say \"and N more\" instead"),

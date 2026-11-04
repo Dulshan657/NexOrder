@@ -48,10 +48,19 @@ describe('scoreGoldenCase', () => {
     expect(score.problems).toEqual(['did not state get_sales_summary.previous.revenue (6102)'])
   })
 
-  it('reads a fact from the last call of that tool', () => {
+  it('reads a fact from a later call of that tool', () => {
     const first = { ok: true, basis: 'x', data: { revenue: 1, previous: { revenue: 2 } } }
     const score = scoreGoldenCase(revenue, runOf('$4,225 against $6,102.', [{ name: 'get_sales_summary', output: first }, { name: 'get_sales_summary', output: summaryOutput }]))
     expect(score.problems).not.toContain('did not state get_sales_summary.revenue (4225)')
+  })
+
+  it('takes a fact from any call of the tool made for the question', () => {
+    // After-run, 2026-11-04: this month, then last month in a call of its own; neither carried previous.
+    const now = { ok: true, basis: 'x', data: { revenue: 0 } }
+    const last = { ok: true, basis: 'x', data: { revenue: 4225, previous: { revenue: 6791 } } }
+    const both: GoldenCase = { ...revenue, states: ['get_sales_summary.revenue'] }
+    const calls = [{ name: 'get_sales_summary', output: now }, { name: 'get_sales_summary', output: last }]
+    expect(scoreGoldenCase(both, runOf('Nothing yet this month, against $4,225 in October.', calls)).pass).toBe(true)
   })
 
   it('flags a missing tool call', () => {
