@@ -115,16 +115,18 @@ describe('VoiceAssistantLauncher', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('shows a static orb instead of the mic icon, keeping its label', () => {
+  it('shows the Nex mark instead of an orb, keeping its label', () => {
     useVoiceSession.mockReturnValue(fakeSession())
     renderLauncher()
     const b = button()!
     expect(b.querySelector('.lucide-mic')).toBeNull()
-    const orb = b.querySelector('[data-orb-animate]')
-    expect(orb).toBeTruthy()
-    expect(orb!.getAttribute('data-orb-animate')).toBe('burst')
-    expect(orb!.getAttribute('data-orb-playing')).toBe('false')
-    expect(orb!.getAttribute('aria-hidden')).toBe('true')
+    expect(b.querySelector('[data-orb-animate]')).toBeNull()
+    const mark = b.querySelector('[data-nex-mark]')
+    expect(mark).toBeTruthy()
+    expect(mark!.getAttribute('data-nex-mark')).toBe('disc')
+    expect(mark!.getAttribute('aria-hidden')).toBe('true')
+    expect(b.getAttribute('aria-label')).toBe('Talk to Nex')
+    expect(b.id).toBe('nex-assistant-launcher')
   })
 
   it('invites the rep to talk to Nex by name', () => {
