@@ -13,7 +13,7 @@
 import { ORDER_STATUS_LABELS, ORDER_STATUS_SEQUENCE } from '../../../constants'
 import { UserRole } from '../../../types'
 import type { Order, OrderStatus } from '../../../types'
-import { filterOrders, rangeBounds, withinRange } from '../filter'
+import { filterOrders, hasLineScope, rangeBounds, withinRange } from '../filter'
 import { appDateKey } from '../../period'
 import type { MetricDef, OrderFilter } from '../types'
 
@@ -114,7 +114,7 @@ function lineTotal(order: Order): number {
  * so the basis switches together or not at all.
  */
 function effectiveRevenue(order: Order, filter: OrderFilter): number {
-  return filter.category !== undefined ? lineTotal(order) : (order.total ?? 0)
+  return hasLineScope(filter) ? lineTotal(order) : (order.total ?? 0)
 }
 
 /** The roles whose orders count as rep credit. An admin placing an order is not a rep sale. */

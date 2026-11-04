@@ -114,20 +114,39 @@ separately and is not in it.
 
 ## Tools
 
-Ten tools, defined once in `supabase/functions/_shared/voice/toolSchemas.ts`:
+Fourteen tools, defined once in `supabase/functions/_shared/voice/toolSchemas.ts`:
 `get_sales_summary`, `get_target_progress`, `get_follow_up_list`, `find_customer`,
 `get_customer_insights`, `get_suggested_order_for_customer`, `get_stock_status`,
-`get_reorder_recommendations`, `get_product_movement`, `get_visit_stats`. Runners are in
+`get_reorder_recommendations`, `get_product_movement`, `get_visit_stats`, and since NX-0014
+`find_product`, `get_product_summary`, `get_sales_breakdown`, `get_promotions`. Runners are in
 `lib/voice/tools/` (one file each), arguments are validated by `lib/voice/toolArgs.ts`, and
-`find_customer` must come before any customer-specific tool (the prompt says so).
+`find_customer` / `find_product` must come before any customer- or product-specific tool (the
+prompt says so).
+
+The NX-0014 tools, and what to keep true when changing them:
+- **`find_product`** shares its scoring with `find_customer` (`lib/voice/nameMatch.ts`) and
+  folds SPOKEN UNITS first (`lib/voice/findProduct.ts` `foldUnits`): "210 mill",
+  "210 millilitres" and "210 ml" all become the catalogue's "210ml". Without the fold the size,
+  which is the only thing telling two sizes of one sauce apart, never matches.
+- **`get_product_summary`** counts one product's LINES through the semantic layer's
+  `OrderFilter.productId` line scope. Like `category`, it makes stored-total metrics throw
+  (`sales.revenue`): an order total belongs to the whole order. Stock is omitted without
+  `inventory_dispatch`.
+- **`get_sales_breakdown`** values customers and reps at the order total, products and
+  categories at line value, and says which in `measure`. With a comparison it returns
+  `drivers`, the rows that moved WITH the total, each with `sharePercent` of the total change.
+  That share can pass 100% when other rows moved against it; those rows are `offsets`.
+  `by: 'rep'` is refused to reps in the tool, because toolsForRole cannot see arguments.
+- **`get_promotions`** uses the Shop's `isPromotionActive`, which compares UTC dates; Nex and
+  the Shop agree, and are both a day out around Sydney midnight. Offered only with `promotions`.
 
 **`toolsForRole(role, modules)` is the one permission source of truth.** The server offers
 exactly that list at mint time and `runVoiceTool` refuses anything outside it with
 `Not available for your role` BEFORE parsing arguments. Never compare a role to a literal
 anywhere else. Today it drops `get_reorder_recommendations` for reps, the three stock tools
 (`get_stock_status`, `get_reorder_recommendations`, `get_product_movement`) without
-`inventory_dispatch`, and `get_visit_stats` for anyone but a Field Sales Rep with `field_ops`;
-a role outside the four gets `[]`.
+`inventory_dispatch`, `get_visit_stats` for anyone but a Field Sales Rep with `field_ops`, and
+`get_promotions` without `promotions`; a role outside the four gets `[]`.
 
 **Adding a tool:**
 1. Schema: `defineTool(...)` in `toolSchemas.ts`; add it to `VOICE_TOOL_NAMES` and `VOICE_TOOLS`,

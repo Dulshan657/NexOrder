@@ -50,6 +50,7 @@ describe('order numbers parity on dev (live)', () => {
         salesTargets: [],
         visits: [],
         routes: [],
+        promotions: [],
         settings: { lowStockThreshold: 10 },
         now,
         user: { numericId: 1, uuid: '00000000-0000-4000-8000-000000000001', role: UserRole.ADMIN, name: 'Parity' },

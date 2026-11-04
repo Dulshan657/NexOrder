@@ -4,7 +4,7 @@ import { useToastActions } from '@/hooks/useToasts'
 import { reportError } from '@/lib/errorReporter'
 import { runVoiceTool } from '@/lib/voice/runVoiceTool'
 import type { VoiceToolContext, VoiceToolResult } from '@/lib/voice/runVoiceTool'
-import type { AppSettings, HoReCa, Order, Product, SalesTarget, ScheduledVisit, User, Visit } from '@/types'
+import type { AppSettings, HoReCa, Order, Product, Promotion, SalesTarget, ScheduledVisit, User, Visit } from '@/types'
 import { VOICE_BUTTON_ID, VoiceAssistantButton } from './VoiceAssistantButton'
 import { VoiceAssistantSheet } from './VoiceAssistantSheet'
 import { enabledModules } from './enabledModules'
@@ -27,13 +27,19 @@ export interface VoiceAssistantLauncherProps {
   salesTargets: SalesTarget[]
   visits: Visit[]
   routes: ScheduledVisit[]
+  /** Optional: a caller without the promotions module passes none, and get_promotions is not offered. */
+  promotions?: Promotion[]
   appSettings: AppSettings
 }
 
 type StableContext = Omit<VoiceToolContext, 'now'>
 
+// One shared empty list, so a missing prop does not rebuild the context every render.
+const NO_PROMOTIONS: Promotion[] = []
+
 function useStableContext(props: VoiceAssistantLauncherProps): StableContext {
   const { currentUser, currentUserUuid, allOrders, products, hoReCas, salesTargets, visits, routes, appSettings } = props
+  const promotions = props.promotions ?? NO_PROMOTIONS
   const lowStockThreshold = appSettings.lowStockThreshold
   const user = useMemo(
     () => ({ numericId: currentUser.id, uuid: currentUserUuid, role: currentUser.role, name: currentUser.name }),
@@ -41,8 +47,8 @@ function useStableContext(props: VoiceAssistantLauncherProps): StableContext {
   )
   const settings = useMemo(() => ({ lowStockThreshold }), [lowStockThreshold])
   return useMemo(
-    () => ({ orders: allOrders, products, hoReCas, salesTargets, visits, routes, settings, user, modules: enabledModules() }),
-    [allOrders, products, hoReCas, salesTargets, visits, routes, settings, user],
+    () => ({ orders: allOrders, products, hoReCas, salesTargets, visits, routes, promotions, settings, user, modules: enabledModules() }),
+    [allOrders, products, hoReCas, salesTargets, visits, routes, promotions, settings, user],
   )
 }
 

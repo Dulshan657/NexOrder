@@ -1780,6 +1780,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 salesTargets={salesTargets}
                                 visits={visits}
                                 routes={routes}
+                                promotions={promotions}
                                 appSettings={appSettings}
                             />
                         </Suspense>

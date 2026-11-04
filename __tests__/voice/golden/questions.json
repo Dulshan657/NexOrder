@@ -41,8 +41,12 @@
       "role": "Admin",
       "question": "Which customers drove that change?",
       "tools": [
-        "get_sales_summary"
-      ]
+        "get_sales_breakdown"
+      ],
+      "states": [
+        "get_sales_breakdown.drivers.0.name"
+      ],
+      "note": "answerable since NX-0014"
     },
     {
       "id": "admin-best-customer-year",
@@ -68,15 +72,26 @@
       "role": "Admin",
       "question": "How many units of Oyster Sauce 210ml did we sell this month?",
       "tools": [
-        "get_sales_summary"
-      ]
+        "find_product",
+        "get_product_summary"
+      ],
+      "states": [
+        "get_product_summary.sales.units"
+      ],
+      "note": "answerable since NX-0014"
     },
     {
       "id": "admin-coconut-stock",
       "role": "Admin",
       "question": "How much Coconut Milk 400ml do we have in stock?",
-      "refuse": true,
-      "note": "no single-product stock tool yet"
+      "note": "answerable since NX-0014",
+      "tools": [
+        "find_product",
+        "get_product_summary"
+      ],
+      "states": [
+        "get_product_summary.stock.onHand"
+      ]
     },
     {
       "id": "admin-reorder",
@@ -132,15 +147,25 @@
       "id": "admin-promotions",
       "role": "Admin",
       "question": "What promotions are running right now?",
-      "refuse": true,
-      "note": "no promotions tool yet"
+      "note": "answerable since NX-0014",
+      "tools": [
+        "get_promotions"
+      ],
+      "states": [
+        "get_promotions.total"
+      ]
     },
     {
       "id": "admin-best-category",
       "role": "Admin",
       "question": "Which product category is selling best this month?",
-      "refuse": true,
-      "note": "no category breakdown yet"
+      "note": "answerable since NX-0014",
+      "tools": [
+        "get_sales_breakdown"
+      ],
+      "states": [
+        "get_sales_breakdown.rows.0.name"
+      ]
     },
     {
       "id": "admin-same-month-last-year",
@@ -173,8 +198,13 @@
       "id": "admin-top-rep-last-month",
       "role": "Admin",
       "question": "Which rep sold the most last month?",
-      "refuse": true,
-      "note": "no rep ranking yet"
+      "note": "answerable since NX-0014",
+      "tools": [
+        "get_sales_breakdown"
+      ],
+      "states": [
+        "get_sales_breakdown.rows.0.name"
+      ]
     },
     {
       "id": "admin-orders-today",
@@ -279,8 +309,14 @@
       "id": "rep-rice-noodles-available",
       "role": "Field Sales Rep",
       "question": "How much Rice Noodles 200g is available right now?",
-      "refuse": true,
-      "note": "no single-product stock tool yet"
+      "note": "answerable since NX-0014",
+      "tools": [
+        "find_product",
+        "get_product_summary"
+      ],
+      "states": [
+        "get_product_summary.stock.available"
+      ]
     },
     {
       "id": "rep-visits-this-month",
@@ -299,6 +335,13 @@
       "role": "Field Sales Rep",
       "question": "What was the company's total revenue this month?",
       "refuse": true
+    },
+    {
+      "id": "rep-rep-ranking",
+      "role": "Field Sales Rep",
+      "question": "Which rep sold the most last month?",
+      "refuse": true,
+      "note": "rep rankings are for managers and admins (NX-0014)"
     },
     {
       "id": "rep-declining",

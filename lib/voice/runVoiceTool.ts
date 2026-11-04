@@ -25,10 +25,14 @@ import type { ToolOutcome, VoiceToolContext, VoiceToolResult } from './context'
 import { fitToBudget } from './resultBudget'
 import { TOOL_ARG_SCHEMAS } from './toolArgs'
 import { findCustomerTool } from './tools/findCustomerTool'
+import { findProductTool } from './tools/findProductTool'
 import { getCustomerInsights } from './tools/getCustomerInsights'
 import { getFollowUpList } from './tools/getFollowUpList'
 import { getProductMovement } from './tools/getProductMovement'
+import { getProductSummary } from './tools/getProductSummary'
+import { getPromotions } from './tools/getPromotions'
 import { getReorderRecommendations } from './tools/getReorderRecommendations'
+import { getSalesBreakdown } from './tools/getSalesBreakdown'
 import { getSalesSummary } from './tools/getSalesSummary'
 import { getStockStatus } from './tools/getStockStatus'
 import { getSuggestedOrderForCustomer } from './tools/getSuggestedOrderForCustomer'
@@ -71,6 +75,10 @@ const RUNNERS: Readonly<Record<VoiceToolName, Runner>> = {
   get_reorder_recommendations: bind(TOOL_ARG_SCHEMAS.get_reorder_recommendations, getReorderRecommendations),
   get_product_movement: bind(TOOL_ARG_SCHEMAS.get_product_movement, getProductMovement),
   get_visit_stats: bind(TOOL_ARG_SCHEMAS.get_visit_stats, getVisitStats),
+  find_product: bind(TOOL_ARG_SCHEMAS.find_product, findProductTool),
+  get_product_summary: bind(TOOL_ARG_SCHEMAS.get_product_summary, getProductSummary),
+  get_sales_breakdown: bind(TOOL_ARG_SCHEMAS.get_sales_breakdown, getSalesBreakdown),
+  get_promotions: bind(TOOL_ARG_SCHEMAS.get_promotions, getPromotions),
 }
 
 function isToolName(name: string): name is VoiceToolName {

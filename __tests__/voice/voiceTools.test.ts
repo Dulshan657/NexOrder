@@ -3,7 +3,7 @@
 // fixture, not read back from the code under test.
 
 import { describe, it, expect } from 'vitest'
-import { mkHoReCa, mkProduct } from '../fixtures'
+import { mkFixedPricePromo, mkHoReCa, mkPercentPromo, mkProduct } from '../fixtures'
 import { runVoiceTool } from '../../lib/voice/runVoiceTool'
 import type { VoiceToolResult } from '../../lib/voice/runVoiceTool'
 import type { VoiceToolContext } from '../../lib/voice/context'
@@ -813,5 +813,152 @@ describe('fixtures sanity', () => {
   it('keeps product ids stable for the stock tests', () => {
     const ids = buildProducts().map((p: Product) => p.id)
     expect(ids).toEqual([P1.id, P2.id, 3, P4.id, 5, P6.id])
+  })
+})
+
+// NX-0014. The last 30 days (21 Sep to 20 Oct) hold O6 (C1: 24 P1, 6 P4), O7 (C1: 16 P1,
+// 4 P4), O8 (C1: 30 P1), O11 (C3: 12 P1) and O12 (C3: 12 P1, 4 P4); O13 is cancelled.
+// The 30 days before that hold O1 to O5, O9 and O10. P1 is $4, P4 is $6.
+
+describe('find_product', () => {
+  it('finds a product by a spoken name, active products only', () => {
+    const data = dataOf<{ candidates: Array<{ id: number; name: string }> }>(run('find_product', { query: 'red curry paste' }))
+    expect(data.candidates[0]).toMatchObject({ id: P1.id, name: 'Red Curry Paste' })
+    // P6 is retired: nobody can be told about it as if it were for sale.
+    expect(dataOf<{ candidates: unknown[] }>(run('find_product', { query: 'retired sauce' })).candidates).toEqual([])
+  })
+})
+
+describe('get_product_summary', () => {
+  interface Summary {
+    productId: number
+    name: string
+    stock?: { onHand: number; available: number; threshold: number; status: string }
+    sales: {
+      units: number
+      value: number
+      orders: number
+      customers: number
+      topCustomers: Array<{ horecaId: number; name: string; units: number; value: number }>
+      previousUnits?: number
+    }
+  }
+  const summary = (args: Record<string, unknown>, ctx?: VoiceToolContext): Summary => dataOf<Summary>(run('get_product_summary', args, ctx))
+
+  it('reports stock and sales for one product', () => {
+    // Red Curry Paste: 24 + 16 + 30 + 12 + 12 = 94 units, $376, in five orders, to C1 (70) and C3 (24).
+    // The 30 days before: O4 20, O5 20, O9 10, O10 10 = 60.
+    const data = summary({ product_id: P1.id, period: 'last_30_days' })
+    expect(data.name).toBe('Red Curry Paste')
+    expect(data.stock).toEqual({ onHand: 100, available: 80, threshold: 10, status: 'in_stock' })
+    expect(data.sales).toMatchObject({ units: 94, value: 376, orders: 5, customers: 2, previousUnits: 60 })
+    expect(data.sales.topCustomers).toEqual([
+      { horecaId: C1.id, name: 'Harbour Cafe', units: 70, value: 280 },
+      { horecaId: C3.id, name: 'The Grove Restaurant', units: 24, value: 96 },
+    ])
+    expect(summary({ product_id: P2.id, period: 'last_30_days' }).stock?.status).toBe('low_stock')
+  })
+
+  it('leaves stock out without the warehouse module', () => {
+    const data = summary({ product_id: P1.id, period: 'last_30_days' }, ctxFor(MANAGER, { modules: ['sales_orders', 'voice_assistant'] }))
+    expect(data).not.toHaveProperty('stock')
+    expect(data.sales.units).toBe(94)
+  })
+
+  it("counts only a rep's own orders", () => {
+    // Alice placed O6 and O7 in the window (O13 is cancelled): 24 + 16 = 40 units at Harbour Cafe.
+    const data = summary({ product_id: P1.id, period: 'last_30_days' }, ctxFor(REP_A))
+    expect(data.sales).toMatchObject({ units: 40, value: 160, orders: 2, customers: 1 })
+    expect(basisOf(run('get_product_summary', { product_id: P1.id, period: 'last_30_days' }, ctxFor(REP_A)))).toContain('your own orders')
+  })
+
+  it('refuses a product it has never heard of, or a retired one', () => {
+    expect(run('get_product_summary', { product_id: 9999, period: 'today' })).toEqual({ ok: false, error: 'Unknown product' })
+    expect(run('get_product_summary', { product_id: P6.id, period: 'today' })).toEqual({ ok: false, error: 'Unknown product' })
+  })
+})
+
+describe('get_sales_breakdown', () => {
+  interface Row { key: string; name: string; value: number; previous?: number; change?: number }
+  interface Driver { key: string; name: string; change: number; sharePercent: number | null }
+  interface Breakdown {
+    by: string
+    measure: string
+    total: number
+    previousTotal?: number
+    change?: number
+    rows: Row[]
+    drivers?: Driver[]
+    offsets?: Driver[]
+  }
+  const breakdown = (args: Record<string, unknown>, ctx?: VoiceToolContext): Breakdown => dataOf<Breakdown>(run('get_sales_breakdown', args, ctx))
+
+  it('ranks customers by revenue with totals', () => {
+    // C1 132 + 88 + 120 = 340, C3 48 + 72 = 120: 460, the sales summary's revenue.
+    const data = breakdown({ period: 'last_30_days', by: 'customer', compare_previous: false })
+    expect(data.total).toBe(460)
+    expect(data.rows.map((r) => [r.name, r.value])).toEqual([['Harbour Cafe', 340], ['The Grove Restaurant', 120]])
+    expect(data).not.toHaveProperty('drivers')
+  })
+
+  it('names the drivers of a change with their share', () => {
+    // Before: C1 91 + 121 = 212, C2 55 + 96.4 + 48.3 = 199.7, C3 40 + 64 = 104; 515.7 in all.
+    // Revenue fell 55.7. Bayside Bistro fell 199.7 on its own (359% of the fall);
+    // Harbour Cafe (+128) and The Grove (+16) went the other way.
+    const data = breakdown({ period: 'last_30_days', by: 'customer' })
+    expect(data).toMatchObject({ total: 460, previousTotal: 516, change: -56 })
+    expect(data.drivers).toEqual([{ key: String(C2.id), name: 'Bayside Bistro', change: -200, sharePercent: 359 }])
+    expect(data.offsets?.map((o) => [o.name, o.change])).toEqual([['Harbour Cafe', 128], ['The Grove Restaurant', 16]])
+    // A customer that bought nothing now but did before is still in the comparison.
+    expect(data.rows.find((r) => r.name === 'Bayside Bistro')).toMatchObject({ value: 0, previous: 200, change: -200 })
+  })
+
+  it('values categories at line value and says so', () => {
+    // Meal Pastes: 94 x $4 = 376. Sauces: (6 + 4 + 4) x $6 = 84.
+    const result = run('get_sales_breakdown', { period: 'last_30_days', by: 'category', compare_previous: false })
+    const data = dataOf<Breakdown>(result)
+    expect(data.measure).toBe('line value')
+    expect(data.rows.map((r) => [r.name, r.value])).toEqual([['Meal Pastes', 376], ['Sauces', 84]])
+    expect(basisOf(result)).toContain('line value')
+    expect(breakdown({ period: 'last_30_days', by: 'customer' }).measure).toBe('order total')
+    const products = breakdown({ period: 'last_30_days', by: 'product', compare_previous: false })
+    expect(products.rows[0]).toMatchObject({ name: 'Red Curry Paste', value: 376 })
+  })
+
+  it('ranks reps for a manager', () => {
+    // Alice: O6 132 + O7 88 = 220. Bob: O8 120 + O11 48 + O12 72 = 240.
+    const data = breakdown({ period: 'last_30_days', by: 'rep', compare_previous: false })
+    expect(data.rows.map((r) => [r.name, r.value])).toEqual([['Bob Rep', 240], ['Alice Rep', 220]])
+  })
+
+  it('refuses a rep ranking to a rep', () => {
+    expect(run('get_sales_breakdown', { period: 'last_30_days', by: 'rep' }, ctxFor(REP_A))).toEqual({
+      ok: false, error: 'Rep rankings are for managers and admins',
+    })
+  })
+
+  it("counts only a rep's own orders", () => {
+    const data = breakdown({ period: 'last_30_days', by: 'customer', compare_previous: false }, ctxFor(REP_A))
+    expect(data.rows.map((r) => [r.name, r.value])).toEqual([['Harbour Cafe', 220]])
+    expect(data.total).toBe(220)
+  })
+})
+
+describe('get_promotions', () => {
+  const promos = [
+    mkPercentPromo({ id: 'A', name: 'Spring Sale', percentOff: 15, endDate: '2026-10-31' }),
+    mkFixedPricePromo({ id: 'B', name: 'Curry Deal', fixedPrice: 3, scope: { kind: 'products', productIds: [P1.id] }, targeting: { kind: 'tier', tiers: ['Gold'] } }),
+    mkPercentPromo({ id: 'C', name: 'Switched Off', isActive: false }),
+    mkPercentPromo({ id: 'D', name: 'Winter Sale', endDate: '2026-08-31' }),
+    mkPercentPromo({ id: 'E', name: 'Next Month', startDate: '2026-11-01' }),
+  ]
+
+  it('lists only promotions active now, with what they cover', () => {
+    const ctx = ctxFor(MANAGER, { promotions: deepFreeze(promos) })
+    const data = dataOf<{ promotions: Array<Record<string, unknown>> }>(run('get_promotions', {}, ctx))
+    expect(data.promotions).toEqual([
+      { name: 'Spring Sale', kind: 'percentage', discount: '15% off', covers: 'storewide', forWhom: 'all customers', endsOn: '2026-10-31' },
+      { name: 'Curry Deal', kind: 'fixed_price', discount: '$3.00 each', covers: 'Red Curry Paste', forWhom: 'Gold tier customers', endsOn: null },
+    ])
   })
 })

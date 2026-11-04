@@ -25,6 +25,10 @@ export const VOICE_TOOL_NAMES = [
   'get_reorder_recommendations',
   'get_product_movement',
   'get_visit_stats',
+  'find_product',
+  'get_product_summary',
+  'get_sales_breakdown',
+  'get_promotions',
 ] as const
 
 export type VoiceToolName = (typeof VOICE_TOOL_NAMES)[number]
@@ -194,6 +198,53 @@ const VISIT_STATS = defineTool(
   ['period'],
 )
 
+// The period properties get_sales_summary takes, shared by the NX-0014 tools.
+const periodProperties = {
+  period: {
+    type: 'string',
+    enum: ['today', 'this_week', 'this_month', 'last_month', 'last_30_days', 'custom'],
+    description: 'The period. Use custom only together with from and to.',
+  },
+  from: { type: 'string', description: 'First day as YYYY-MM-DD. Only with period custom.' },
+  to: { type: 'string', description: 'Last day as YYYY-MM-DD. Only with period custom.' },
+}
+
+const FIND_PRODUCT = defineTool(
+  'find_product',
+  'Fuzzy-match an active product by name, sizes included ("oyster sauce 210 mill" finds Oyster Sauce 210ml). Returns up to 5 candidates with id, name, sku and category, and ambiguous=true when more than one is a strong match. Call this before get_product_summary unless the id is already known from this conversation. If ambiguous, ask the user which one.',
+  { query: { type: 'string', description: 'The product name as the user said it, with its size if they said one.' } },
+  ['query'],
+)
+
+const PRODUCT_SUMMARY = defineTool(
+  'get_product_summary',
+  "One product: its stock (onHand, available, threshold, status in_stock / low_stock / out_of_stock; left out where there is no warehouse module) and its sales for the period from that product's order lines only: units (base units), value (line price), orders, customers, the top 5 customers and previousUnits for the period before. For sales reps the sales are their own orders.",
+  {
+    product_id: { type: 'integer', description: 'Product id from find_product.' },
+    ...periodProperties,
+  },
+  ['product_id', 'period'],
+)
+
+const SALES_BREAKDOWN = defineTool(
+  'get_sales_breakdown',
+  'Sales for a period split by customer, product, category or rep, highest first, with the total. measure says the value: order total for customers and reps, line value for products and categories. With compare_previous (default) it also gives previousTotal, change, and drivers: the rows that moved most in the direction of the change, each with change and sharePercent of the total change (it can pass 100 when others moved the other way, listed as offsets). by rep is for managers and admins only. For sales reps everything is their own orders.',
+  {
+    ...periodProperties,
+    by: { type: 'string', enum: ['customer', 'product', 'category', 'rep'], description: 'What to split the sales by.' },
+    compare_previous: { type: 'boolean', default: true, description: 'Also compare with the previous period and name the drivers of the change.' },
+    limit: limitProperty(10),
+  },
+  ['period', 'by'],
+)
+
+const PROMOTIONS = defineTool(
+  'get_promotions',
+  'The promotions running today: name, kind, discount in words, what it covers (storewide, products or categories), who it is for, and its end date (null when it has none).',
+  {},
+  [],
+)
+
 /** Every tool, in the order VOICE_TOOL_NAMES declares. Deeply frozen. */
 export const VOICE_TOOLS: readonly VoiceToolSchema[] = deepFreeze([
   SALES_SUMMARY,
@@ -206,11 +257,16 @@ export const VOICE_TOOLS: readonly VoiceToolSchema[] = deepFreeze([
   REORDER_RECOMMENDATIONS,
   PRODUCT_MOVEMENT,
   VISIT_STATS,
+  FIND_PRODUCT,
+  PRODUCT_SUMMARY,
+  SALES_BREAKDOWN,
+  PROMOTIONS,
 ])
 
 function isOffered(name: VoiceToolName, role: string, modules: readonly string[]): boolean {
   if (name === 'get_reorder_recommendations' && REP_ROLES.includes(role)) return false
   if (WAREHOUSE_TOOLS.includes(name) && !modules.includes('inventory_dispatch')) return false
+  if (name === 'get_promotions' && !modules.includes('promotions')) return false
   if (name === 'get_visit_stats') {
     return role === 'Field Sales Rep' && modules.includes('field_ops')
   }
