@@ -12,7 +12,7 @@
 // any of those fields. Whose figures a tool returns is decided by `numericId`.
 
 import type { MetricContext } from '@/lib/semantic'
-import type { HoReCa, Order, Product, SalesTarget, ScheduledVisit, Visit } from '@/types'
+import type { HoReCa, Order, Product, Promotion, SalesTarget, ScheduledVisit, Visit } from '@/types'
 
 export interface VoiceToolUser {
   /** The frontend's numeric id (hash of the uuid). The only id tools compare. */
@@ -30,6 +30,8 @@ export interface VoiceToolContext {
   readonly salesTargets: readonly SalesTarget[]
   readonly visits: readonly Visit[]
   readonly routes: readonly ScheduledVisit[]
+  /** Every promotion the app loaded (RLS-filtered); get_promotions picks the live ones. */
+  readonly promotions: readonly Promotion[]
   readonly settings: { readonly lowStockThreshold: number }
   /** The instant the question is answered at. Tools never read the system clock. */
   readonly now: Date

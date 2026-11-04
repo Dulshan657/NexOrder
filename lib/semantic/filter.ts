@@ -68,7 +68,7 @@ export function withinRange(ms: number, bounds: RangeBounds): boolean {
  * Apply an `OrderFilter`.
  *
  * Order-level predicates (date, customer, rep, role, status) select whole
- * orders. The line-level `category` predicate additionally returns a copy of
+ * orders. The line-level `category` and `productId` predicates additionally return a copy of
  * each surviving order with its `items` narrowed, dropping orders left with no
  * matching line. The copy is why this never mutates its input.
  *
@@ -107,8 +107,8 @@ export function filterOrders(
       continue
     }
 
-    if (filter.category !== undefined) {
-      const items = (order.items ?? []).filter(item => item.category === filter.category)
+    if (hasLineScope(filter)) {
+      const items = (order.items ?? []).filter(item => lineInScope(item, filter))
       if (items.length === 0) continue
       out.push({ ...order, items })
       continue
@@ -118,4 +118,19 @@ export function filterOrders(
   }
 
   return out
+}
+
+/**
+ * Whether the filter narrows LINES (category or product), not just orders. Under
+ * a line scope a stored order total no longer answers the question; see
+ * evaluateMetric and sales.ts effectiveRevenue.
+ */
+export function hasLineScope(filter: Pick<OrderFilter, 'category' | 'productId'>): boolean {
+  return filter.category !== undefined || filter.productId !== undefined
+}
+
+function lineInScope(item: Order['items'][number], filter: OrderFilter): boolean {
+  if (filter.category !== undefined && item.category !== filter.category) return false
+  if (filter.productId !== undefined && item.id !== filter.productId) return false
+  return true
 }

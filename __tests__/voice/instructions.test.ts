@@ -83,6 +83,21 @@ describe('buildInstructions', () => {
     expect(text).toContain('never call a partial period "last month" or "last week"')
   })
 
+  it('sends product questions through find_product', () => {
+    // NX-0014: "how much Coconut Milk 400ml do we have?" was refused for want of a tool.
+    const text = flat(build())
+    expect(text).toContain('call find_product, then get_product_summary')
+    for (const role of ROLES) expect(build({ role, modules: [...EVERY_MODULE, 'promotions'] }).length).toBeLessThan(MAX_INSTRUCTION_CHARS)
+  })
+
+  it('answers what drove a change from the breakdown drivers', () => {
+    // NX-0014: "which customers drove that change?" got "I can't say exactly".
+    const text = flat(build())
+    expect(text).toContain('get_sales_breakdown')
+    expect(text).toContain('drivers')
+    expect(text).toContain('offsets')
+  })
+
   it('says the history does not reach back instead of calling it growth', () => {
     // On dev, 2026-10-29: "up on last year, because there were no sales then".
     const text = flat(build())

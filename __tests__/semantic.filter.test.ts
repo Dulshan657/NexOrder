@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import { dayRange, filterOrders } from '../lib/semantic/filter'
+import { evaluateMetric } from '../lib/semantic/evaluate'
 import { UserRole } from '../types'
 import { makeHoReCa, makeItem, makeOrder, makeUser } from './support/metricFixtures'
 
@@ -136,5 +137,34 @@ describe('filterOrders — category is a line-level scope', () => {
   it('does not mutate the input order', () => {
     filterOrders([order], { category: 'Frozen' })
     expect(order.items).toHaveLength(2)
+  })
+})
+
+describe('filterOrders — product is a line-level scope', () => {
+  // NX-0014: "how many Oyster Sauce did we sell" needs one product's lines, the
+  // same way "revenue from Frozen" needs one category's.
+  const order = makeOrder({
+    id: 'A',
+    total: 100,
+    items: [
+      makeItem({ id: 1, category: 'Dry Goods', price: 10, quantity: 2 }),
+      makeItem({ id: 2, category: 'Dry Goods', price: 30, quantity: 1 }),
+    ],
+  })
+  const other = makeOrder({ id: 'B', total: 30, items: [makeItem({ id: 2, category: 'Dry Goods', price: 30, quantity: 1 })] })
+
+  it('narrows lines to one product', () => {
+    const out = filterOrders([order, other], { productId: 1 })
+    expect(out.map(o => o.id)).toEqual(['A'])
+    expect(out[0].items.map(i => i.id)).toEqual([1])
+    expect(out[0].total).toBe(100)
+    expect(order.items).toHaveLength(2)
+  })
+
+  it('a stored-total metric refuses the product scope', () => {
+    const ctx = { orders: [order, other], products: [], settings: { lowStockThreshold: 10 }, now: new Date('2026-10-20T00:00:00Z') }
+    expect(() => evaluateMetric('sales.revenue', ctx, { productId: 1 })).toThrow(/line-level scope/)
+    // Line value is the right question: 10 x 2.
+    expect(evaluateMetric('sales.lineRevenue', ctx, { productId: 1 })).toBe(20)
   })
 })

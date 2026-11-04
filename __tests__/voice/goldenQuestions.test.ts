@@ -35,6 +35,28 @@ describe('golden questions', () => {
     }
   })
 
+  it('answers what NX-0012 had to refuse', () => {
+    // NX-0014 added the tools; each of these was a refuse case until then.
+    const now = new Map(cases.map((c) => [c.id, c]))
+    const expected: Array<[string, string]> = [
+      ['admin-coconut-stock', 'get_product_summary'],
+      ['rep-rice-noodles-available', 'get_product_summary'],
+      ['admin-oyster-units', 'get_product_summary'],
+      ['admin-best-category', 'get_sales_breakdown'],
+      ['admin-top-rep-last-month', 'get_sales_breakdown'],
+      ['admin-customers-drove-change', 'get_sales_breakdown'],
+      ['admin-promotions', 'get_promotions'],
+    ]
+    for (const [id, tool] of expected) {
+      const c = now.get(id)
+      expect(c?.refuse, id).toBeFalsy()
+      expect(c?.tools, id).toContain(tool)
+      expect(c?.states?.length ?? 0, `${id} states no fact`).toBeGreaterThan(0)
+    }
+    // A rep may not rank reps; that stays a refusal.
+    expect(now.get('rep-rep-ranking')?.refuse).toBe(true)
+  })
+
   it('refuses malformed cases', () => {
     expect(() => parseGoldenCases([{ id: 'x', role: 'Admin', question: 'q' }])).toThrow(/x/)
     expect(() => parseGoldenCases([{ id: 'x', role: 'Admin', question: 'q', refuse: true, tools: ['a'] }])).toThrow(/x/)

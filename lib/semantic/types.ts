@@ -82,6 +82,12 @@ export interface OrderFilter {
    * `supportsLineScope`.
    */
   category?: Category
+  /**
+   * LINE-level scope, like `category`: narrows each order's items to one
+   * product (by id) and drops orders left with none. The same rule applies:
+   * a stored order total cannot be attributed to one product (NX-0014).
+   */
+  productId?: number
 }
 
 export interface MetricDef<TValue = unknown> {

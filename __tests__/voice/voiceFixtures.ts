@@ -28,6 +28,7 @@ export const ALL_MODULES: readonly string[] = [
   'shop',
   'inventory_dispatch',
   'field_ops',
+  'promotions',
   'voice_assistant',
 ]
 
@@ -166,6 +167,7 @@ export function ctxFor(as: User, over: Partial<VoiceToolContext> = {}): VoiceToo
     now: NOW,
     user: userBlock(as),
     modules: [...ALL_MODULES],
+    promotions: [],
     ...over,
   })
 }
@@ -202,4 +204,8 @@ export const MINIMAL_ARGS: Readonly<Record<string, Record<string, unknown>>> = {
   get_reorder_recommendations: {},
   get_product_movement: { kind: 'top' },
   get_visit_stats: { period: 'this_week' },
+  find_product: { query: 'curry' },
+  get_product_summary: { product_id: 1, period: 'today' },
+  get_sales_breakdown: { period: 'today', by: 'customer' },
+  get_promotions: {},
 }

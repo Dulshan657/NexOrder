@@ -111,6 +111,15 @@ describe('scoreGoldenCase', () => {
     expect(scoreGoldenCase(place, runOf("I can't send orders, but add the usual six lines, and 2 more items.", [])).pass).toBe(true)
   })
 
+  it('matches a name however its ampersand and punctuation are spoken', () => {
+    // NX-0014 run, 2026-11-04: "Executive Heating and Cooling" for "Executive Heating & Cooling".
+    const best: GoldenCase = { id: 'b', role: 'Admin', question: 'Best customer?', tools: ['get_sales_summary'], states: ['get_sales_summary.topCustomers.0.name'] }
+    const calls = [{ name: 'get_sales_summary', output: { ok: true, basis: 'x', data: { topCustomers: [{ name: 'Executive Heating & Cooling' }] } } }]
+    expect(scoreGoldenCase(best, runOf('It is Executive Heating and Cooling.', calls)).pass).toBe(true)
+    expect(scoreGoldenCase(best, runOf('It is Executive Heating & Cooling.', calls)).pass).toBe(true)
+    expect(scoreGoldenCase(best, runOf('It is Executive Plumbing.', calls)).pass).toBe(false)
+  })
+
   it('treats numbers in the question as grounded', () => {
     const stock: GoldenCase = { id: 's', role: 'Admin', question: 'How much Coconut Milk 400ml do we have?', refuse: true }
     expect(scoreGoldenCase(stock, runOf("I can't look up Coconut Milk 400ml on its own yet.", [])).pass).toBe(true)

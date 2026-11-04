@@ -1,6 +1,7 @@
 // Evaluating a metric. Thin on purpose — the meaning lives in the registry, and
 // this file only enforces the rules that no individual metric can enforce alone.
 
+import { hasLineScope } from './filter'
 import { getMetric } from './registry'
 import type { MetricContext, OrderFilter } from './types'
 
@@ -21,10 +22,11 @@ export function evaluateMetric<TValue = unknown>(
 ): TValue {
   const def = getMetric(id)
 
-  if (filter.category !== undefined && !def.supportsLineScope) {
+  if (hasLineScope(filter) && !def.supportsLineScope) {
+    const scope = filter.category !== undefined ? `category=${String(filter.category)}` : `productId=${String(filter.productId)}`
     throw new Error(
-      `[semantic] ${id} does not accept a line-level scope (category=${String(filter.category)}). ` +
-        `It is built on the stored order total, which cannot be attributed to one category. ` +
+      `[semantic] ${id} does not accept a line-level scope (${scope}). ` +
+        `It is built on the stored order total, which cannot be attributed to one category or product. ` +
         `Use a line-based metric such as sales.lineRevenue.`,
     )
   }

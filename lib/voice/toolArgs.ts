@@ -18,10 +18,11 @@ import { parseYmd } from './period'
 
 const horecaId = z.number().int().positive()
 const limit = (fallback: number) => z.number().int().min(1).max(15).default(fallback)
+const period = z.enum(['today', 'this_week', 'this_month', 'last_month', 'last_30_days', 'custom'])
 
 const salesSummary = z
   .object({
-    period: z.enum(['today', 'this_week', 'this_month', 'last_month', 'last_30_days', 'custom']),
+    period,
     from: z.string().optional(),
     to: z.string().optional(),
     compare_previous: z.boolean().default(true),
@@ -60,6 +61,30 @@ const productMovement = z
 
 const visitStats = z.object({ period: z.enum(['this_week', 'this_month', 'last_month']) }).strict()
 
+const findProductArgs = z.object({ query: z.string().trim().min(1).max(100) }).strict()
+
+const productSummary = z
+  .object({
+    product_id: z.number().int().positive(),
+    period,
+    from: z.string().optional(),
+    to: z.string().optional(),
+  })
+  .strict()
+
+const salesBreakdown = z
+  .object({
+    period,
+    from: z.string().optional(),
+    to: z.string().optional(),
+    by: z.enum(['customer', 'product', 'category', 'rep']),
+    compare_previous: z.boolean().default(true),
+    limit: limit(10),
+  })
+  .strict()
+
+const promotionsArgs = z.object({}).strict()
+
 export const TOOL_ARG_OBJECTS = {
   get_sales_summary: salesSummary,
   get_target_progress: targetProgress,
@@ -71,10 +96,14 @@ export const TOOL_ARG_OBJECTS = {
   get_reorder_recommendations: reorderRecommendations,
   get_product_movement: productMovement,
   get_visit_stats: visitStats,
+  find_product: findProductArgs,
+  get_product_summary: productSummary,
+  get_sales_breakdown: salesBreakdown,
+  get_promotions: promotionsArgs,
 } as const satisfies Record<VoiceToolName, z.ZodObject>
 
 /** A custom period needs two real dates in order; any other period must not carry dates. */
-function checkDates(value: z.infer<typeof salesSummary>, ctx: z.RefinementCtx): void {
+function checkDates(value: { period: string; from?: string; to?: string }, ctx: z.RefinementCtx): void {
   const issue = (path: 'from' | 'to', message: string): void =>
     ctx.addIssue({ code: 'custom', path: [path], message })
 
@@ -95,6 +124,8 @@ function checkDates(value: z.infer<typeof salesSummary>, ctx: z.RefinementCtx): 
 export const TOOL_ARG_SCHEMAS = {
   ...TOOL_ARG_OBJECTS,
   get_sales_summary: salesSummary.superRefine(checkDates),
+  get_product_summary: productSummary.superRefine(checkDates),
+  get_sales_breakdown: salesBreakdown.superRefine(checkDates),
 } as const
 
 export type ToolArgs<N extends VoiceToolName> = z.infer<(typeof TOOL_ARG_SCHEMAS)[N]>

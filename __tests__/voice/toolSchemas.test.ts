@@ -29,10 +29,11 @@ function props(name: string): Record<string, Record<string, unknown>> {
 }
 
 describe('VOICE_TOOLS', () => {
-  it('defines exactly the ten named tools, once each, in the declared order', () => {
-    expect(VOICE_TOOL_NAMES).toHaveLength(10)
+  it('defines exactly the fourteen named tools, once each, in the declared order', () => {
+    // Ten until NX-0014 added find_product, get_product_summary, get_sales_breakdown and get_promotions.
+    expect(VOICE_TOOL_NAMES).toHaveLength(14)
     expect(names(VOICE_TOOLS)).toEqual([...VOICE_TOOL_NAMES])
-    expect(new Set(names(VOICE_TOOLS)).size).toBe(10)
+    expect(new Set(names(VOICE_TOOLS)).size).toBe(14)
   })
 
   it('gives every tool the function type and a real description', () => {
@@ -144,6 +145,15 @@ describe('VOICE_TOOLS', () => {
 })
 
 describe('toolsForRole', () => {
+  it('offers get_promotions only with the promotions module', () => {
+    for (const role of ['Admin', 'Manager', 'Field Sales Rep', 'Office Sales Rep']) {
+      expect(names(toolsForRole(role, [...EVERY_MODULE, 'promotions'])), role).toContain('get_promotions')
+      expect(names(toolsForRole(role, EVERY_MODULE)), role).not.toContain('get_promotions')
+      expect(names(toolsForRole(role, AMADIYA)), role).not.toContain('get_promotions')
+    }
+  })
+
+
   it('withholds reorder recommendations from reps', () => {
     for (const role of ['Field Sales Rep', 'Office Sales Rep']) {
       expect(names(toolsForRole(role, EVERY_MODULE))).not.toContain(REORDER)
@@ -181,7 +191,8 @@ describe('toolsForRole', () => {
   it('gives a Manager on the Amadiya module set no visit stats but everything else', () => {
     const offered = names(toolsForRole('Manager', AMADIYA))
     expect(offered).not.toContain('get_visit_stats')
-    expect(offered).toEqual(VOICE_TOOL_NAMES.filter((n) => n !== 'get_visit_stats'))
+    // Amadiya has no promotions module (NX-0014).
+    expect(offered).toEqual(VOICE_TOOL_NAMES.filter((n) => n !== 'get_visit_stats' && n !== 'get_promotions'))
   })
 
   it('gives an Amadiya rep the sales and stock tools but no reorder or visits', () => {
@@ -194,10 +205,13 @@ describe('toolsForRole', () => {
       'get_suggested_order_for_customer',
       'get_stock_status',
       'get_product_movement',
+      'find_product',
+      'get_product_summary',
+      'get_sales_breakdown',
     ])
   })
 
-  it('always keeps the six sales tools, whatever the modules', () => {
+  it('always keeps the nine sales tools, whatever the modules', () => {
     expect(names(toolsForRole('Office Sales Rep', ['sales_orders']))).toEqual([
       'get_sales_summary',
       'get_target_progress',
@@ -205,13 +219,16 @@ describe('toolsForRole', () => {
       'find_customer',
       'get_customer_insights',
       'get_suggested_order_for_customer',
+      'find_product',
+      'get_product_summary',
+      'get_sales_breakdown',
     ])
-    expect(names(toolsForRole('Admin', []))).toHaveLength(6)
+    expect(names(toolsForRole('Admin', []))).toHaveLength(9)
   })
 
-  it('gives a Field Sales Rep with every module nine tools, in declared order', () => {
+  it('gives a Field Sales Rep every tool but reorder (and promotions, without its module), in declared order', () => {
     expect(names(toolsForRole('Field Sales Rep', EVERY_MODULE))).toEqual(
-      VOICE_TOOL_NAMES.filter((n) => n !== REORDER),
+      VOICE_TOOL_NAMES.filter((n) => n !== REORDER && n !== 'get_promotions'),
     )
   })
 
@@ -229,7 +246,7 @@ describe('toolsForRole', () => {
   it('does not change the shared list or the modules it is given', () => {
     const modules = Object.freeze([...AMADIYA])
     toolsForRole('Field Sales Rep', modules)
-    expect(VOICE_TOOLS).toHaveLength(10)
+    expect(VOICE_TOOLS).toHaveLength(14)
     expect(modules).toEqual(AMADIYA)
   })
 })
