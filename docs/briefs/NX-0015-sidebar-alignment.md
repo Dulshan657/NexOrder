@@ -1,0 +1,54 @@
+# NX-0015 — Sidebar: rows that line up, labels on one line
+
+```json brief
+{
+  "id": "NX-0015-sidebar-alignment",
+  "base": "d645c55f2e41045a04ca5477a9b1793deb6d7d40",
+  "approved": "2026-11-04 owner",
+  "acceptance": [
+    { "id": "A1", "check": "A sidebar row's icon cannot shrink and its label cannot wrap: the icon carries shrink-0 and the label carries truncate and min-w-0." },
+    { "id": "A2", "check": "A row sets aria-current=\"page\" only when active, and calls onClick when pressed." },
+    { "id": "A3", "check": "Every count badge has the same shape and differs only in colour; no badge renders when the count is 0." },
+    { "id": "A4", "check": "AppShell's sidebar is w-54 and its nav is px-3, and no nav row is hand-written any more (no 'w-5 h-5 mr-3' left in AppShell)." },
+    { "id": "A5", "check": "No user-visible text under components/admin or components/scheduled-visits reads 'ScheduledVisit'; the heading reads 'Scheduled Visit Management'." },
+    { "id": "A6", "check": "For Admin, Manager, Field Rep, Warehouse and Customer, no nav label wraps or truncates, including when active; icon and label left edges match across rows, and icons line up with the logo.", "manual": "Chrome on nexorder.vercel.app, measured on Windows with real scrollbars" },
+    { "id": "A7", "check": "Products at a 1280px viewport is measured before and after, and the result is reported. If it flips to cards, the owner decides; the 1000px threshold is not lowered.", "manual": "Chrome at 1280px on dev" },
+    { "id": "A8", "check": "The mobile suite still passes at 360x720, and the drawer opens and navigates by row name.", "manual": "npx playwright test --project=mobile" },
+    { "id": "A9", "check": "Deployed to dev without removing the NX-0011, NX-0013 and NX-0014 demo work; /version.json shows the deployed sha.", "manual": "deploy:dev stacked on the current dev commit" }
+  ],
+  "failFirst": [
+    { "file": "__tests__/sidebarNavItem.test.tsx", "test": "SidebarNavItem > keeps the icon from shrinking and the label from wrapping", "proves": ["A1"] },
+    { "file": "__tests__/sidebarNavItem.test.tsx", "test": "SidebarNavItem > marks only the active row as the current page and fires onClick", "proves": ["A2"] },
+    { "file": "__tests__/sidebarNavItem.test.tsx", "test": "SidebarNavItem > draws every badge in one shape and hides a zero count", "proves": ["A3"] },
+    { "file": "__tests__/appShellSidebarLayout.test.ts", "test": "AppShell sidebar layout > is 216px wide with the nav padded to the logo edge", "proves": ["A4"] },
+    { "file": "__tests__/appShellSidebarLayout.test.ts", "test": "AppShell sidebar layout > has no hand-written nav rows left", "proves": ["A4"] },
+    { "file": "__tests__/appShellSidebarLayout.test.ts", "test": "Scheduled Visit wording > shows no 'ScheduledVisit' to a user", "proves": ["A5"] }
+  ],
+  "allow": []
+}
+```
+
+## Goal
+
+The sidebar's rows don't line up, and "Scheduled Visits" and "HoReCa Insights" wrap
+onto two lines. The owner wants tidy rows on one line, at 216px with tighter padding.
+That width was chosen because 224px or more flips the Products table to cards on a
+1280px laptop. "ScheduledVisit" with no space is also fixed everywhere a user sees it.
+
+## Approach
+
+- New `components/SidebarNavItem.tsx`: one definition of a row, replacing every
+  hand-copied nav button in `components/AppShell.tsx`. Gates, order and labels are unchanged.
+- `aside` w-52 → w-54 and `nav` px-4 → px-3, so icons and headings start at the logo's
+  24px edge. The `<ProfileMenu>` footer is aligned too if it differs.
+- `.sidebar-nav-scroll` in `index.css`: 4px scrollbar, stable gutter.
+- Text-only fixes in `ScheduledVisitsAdmin`, `ChangeRequestModal`, `ScheduledVisitForm`,
+  `ScheduledVisitTemplateForm` and `ScheduledVisitWizard`. Type names are untouched.
+- Comments stating 208px are updated in the five files that carry them.
+
+## Out of scope
+
+Row spacing, group spacing, colours, the active and hover styles, heading styles, badge
+colours, nav order, collapsing the sidebar, and the Products 1000px threshold.
+
+## FINAL
