@@ -1,0 +1,318 @@
+{
+  "about": "Nex golden questions. Asked in order, one session per role, by scripts/nex-golden.mjs (npm run nex:golden:dev). Facts are paths into the LAST output of the named tool, so expected values are whatever dev's data says that day. Cases marked refuse are questions Nex cannot answer today; a later PR that adds the tool changes the case.",
+  "cases": [
+    {
+      "id": "admin-placed-this-month",
+      "role": "Admin",
+      "question": "How many orders came in this month?",
+      "tools": [
+        "get_sales_summary"
+      ],
+      "states": [
+        "get_sales_summary.orderCount"
+      ]
+    },
+    {
+      "id": "admin-shipped-last-month",
+      "role": "Admin",
+      "question": "How many orders did we ship last month?",
+      "tools": [
+        "get_sales_summary"
+      ],
+      "states": [
+        "get_sales_summary.shippedCount"
+      ]
+    },
+    {
+      "id": "admin-revenue-vs-last-month",
+      "role": "Admin",
+      "question": "What was revenue this month compared to last month, and why did it change?",
+      "tools": [
+        "get_sales_summary"
+      ],
+      "states": [
+        "get_sales_summary.revenue",
+        "get_sales_summary.previous.revenue"
+      ],
+      "note": "2026-10-29: a 2 to 30 Sep window was called last month"
+    },
+    {
+      "id": "admin-customers-drove-change",
+      "role": "Admin",
+      "question": "Which customers drove that change?",
+      "tools": [
+        "get_sales_summary"
+      ]
+    },
+    {
+      "id": "admin-best-customer-year",
+      "role": "Admin",
+      "question": "Who was our best customer this year?",
+      "tools": [
+        "get_sales_summary"
+      ],
+      "states": [
+        "get_sales_summary.topCustomers.0.name"
+      ]
+    },
+    {
+      "id": "admin-charlie-target",
+      "role": "Admin",
+      "question": "How is Charlie tracking against his target?",
+      "tools": [
+        "get_target_progress"
+      ]
+    },
+    {
+      "id": "admin-oyster-units",
+      "role": "Admin",
+      "question": "How many units of Oyster Sauce 210ml did we sell this month?",
+      "tools": [
+        "get_sales_summary"
+      ]
+    },
+    {
+      "id": "admin-coconut-stock",
+      "role": "Admin",
+      "question": "How much Coconut Milk 400ml do we have in stock?",
+      "refuse": true,
+      "note": "no single-product stock tool yet"
+    },
+    {
+      "id": "admin-reorder",
+      "role": "Admin",
+      "question": "What should I reorder this week?",
+      "tools": [
+        "get_reorder_recommendations"
+      ],
+      "states": [
+        "get_reorder_recommendations.products.0.name"
+      ]
+    },
+    {
+      "id": "admin-follow-up",
+      "role": "Admin",
+      "question": "Which customers should we follow up with, and why?",
+      "tools": [
+        "get_follow_up_list"
+      ],
+      "states": [
+        "get_follow_up_list.customers.0.name"
+      ]
+    },
+    {
+      "id": "admin-seaside-last-order",
+      "role": "Admin",
+      "question": "What did Seaside Bistro order last time, and when?",
+      "tools": [
+        "find_customer",
+        "get_customer_insights"
+      ],
+      "states": [
+        "get_customer_insights.lastOrder.date",
+        "get_customer_insights.lastOrder.lines.0.name"
+      ],
+      "note": "2026-10-29: answered from the usual products"
+    },
+    {
+      "id": "admin-seaside-suggest",
+      "role": "Admin",
+      "question": "Suggest an order for Seaside Bistro.",
+      "tools": [
+        "get_suggested_order_for_customer"
+      ]
+    },
+    {
+      "id": "admin-place-order",
+      "role": "Admin",
+      "question": "Great, place that order for me.",
+      "refuse": true
+    },
+    {
+      "id": "admin-promotions",
+      "role": "Admin",
+      "question": "What promotions are running right now?",
+      "refuse": true,
+      "note": "no promotions tool yet"
+    },
+    {
+      "id": "admin-best-category",
+      "role": "Admin",
+      "question": "Which product category is selling best this month?",
+      "refuse": true,
+      "note": "no category breakdown yet"
+    },
+    {
+      "id": "admin-same-month-last-year",
+      "role": "Admin",
+      "question": "How does this month compare to the same month last year?",
+      "tools": [
+        "get_sales_summary"
+      ],
+      "avoids": [
+        "\\b(up|down) (on|from|against|compared)",
+        "\\bgr[eo]w",
+        "\\bincreas",
+        "\\bdecreas",
+        "\\bfell\\b",
+        "\\bdropped\\b",
+        "\\bhigher\\b",
+        "\\blower\\b"
+      ],
+      "note": "2026-10-29: called it up on last year because there was no data"
+    },
+    {
+      "id": "admin-aov-trend",
+      "role": "Admin",
+      "question": "Is our average order value going up or down over the last three months?",
+      "tools": [
+        "get_sales_summary"
+      ]
+    },
+    {
+      "id": "admin-top-rep-last-month",
+      "role": "Admin",
+      "question": "Which rep sold the most last month?",
+      "refuse": true,
+      "note": "no rep ranking yet"
+    },
+    {
+      "id": "admin-orders-today",
+      "role": "Admin",
+      "question": "How many orders came in today?",
+      "tools": [
+        "get_sales_summary"
+      ],
+      "states": [
+        "get_sales_summary.orderCount"
+      ]
+    },
+    {
+      "id": "admin-low-stock",
+      "role": "Admin",
+      "question": "Which products are low on stock?",
+      "tools": [
+        "get_stock_status"
+      ]
+    },
+    {
+      "id": "admin-dead-stock",
+      "role": "Admin",
+      "question": "What stock hasn't sold in the last month?",
+      "tools": [
+        "get_product_movement"
+      ]
+    },
+    {
+      "id": "admin-weather",
+      "role": "Admin",
+      "question": "What's the weather going to be tomorrow?",
+      "refuse": true
+    },
+    {
+      "id": "rep-target",
+      "role": "Field Sales Rep",
+      "question": "How am I tracking against my target this month?",
+      "tools": [
+        "get_target_progress"
+      ],
+      "states": [
+        "get_target_progress.targets.0.achieved"
+      ]
+    },
+    {
+      "id": "rep-hit-target",
+      "role": "Field Sales Rep",
+      "question": "What do I need to do to hit it?",
+      "tools": [
+        "get_target_progress"
+      ]
+    },
+    {
+      "id": "rep-who-to-call",
+      "role": "Field Sales Rep",
+      "question": "Who should I call today?",
+      "tools": [
+        "get_follow_up_list"
+      ],
+      "states": [
+        "get_follow_up_list.customers.0.name"
+      ]
+    },
+    {
+      "id": "rep-week-vs-last",
+      "role": "Field Sales Rep",
+      "question": "What were my sales this week compared to last week?",
+      "tools": [
+        "get_sales_summary"
+      ],
+      "states": [
+        "get_sales_summary.revenue"
+      ]
+    },
+    {
+      "id": "rep-harbour-lane-insights",
+      "role": "Field Sales Rep",
+      "question": "How often does Harbour Lane Dumplings order?",
+      "tools": [
+        "find_customer",
+        "get_customer_insights"
+      ],
+      "states": [
+        "get_customer_insights.avgDaysBetweenOrders"
+      ]
+    },
+    {
+      "id": "rep-kirribilli-usual",
+      "role": "Field Sales Rep",
+      "question": "What does Kirribilli Corner Café usually order?",
+      "refuse": true,
+      "note": "Charlie has never sold to them, so it is not his to see"
+    },
+    {
+      "id": "rep-kirribilli-out-of-stock",
+      "role": "Field Sales Rep",
+      "question": "Is anything they usually buy out of stock?",
+      "refuse": true
+    },
+    {
+      "id": "rep-rice-noodles-available",
+      "role": "Field Sales Rep",
+      "question": "How much Rice Noodles 200g is available right now?",
+      "refuse": true,
+      "note": "no single-product stock tool yet"
+    },
+    {
+      "id": "rep-visits-this-month",
+      "role": "Field Sales Rep",
+      "question": "How many visits did I complete this month?",
+      "tools": [
+        "get_visit_stats"
+      ],
+      "states": [
+        "get_visit_stats.visitsLogged"
+      ],
+      "note": "2026-10-29: told 0 visits with 28 logged"
+    },
+    {
+      "id": "rep-company-revenue",
+      "role": "Field Sales Rep",
+      "question": "What was the company's total revenue this month?",
+      "refuse": true
+    },
+    {
+      "id": "rep-declining",
+      "role": "Field Sales Rep",
+      "question": "Which of my customers are spending less than before?",
+      "tools": [
+        "get_follow_up_list"
+      ]
+    },
+    {
+      "id": "rep-draft-order",
+      "role": "Field Sales Rep",
+      "question": "Draft an order for Harbour Lane Dumplings so I can send it.",
+      "refuse": true
+    }
+  ]
+}
