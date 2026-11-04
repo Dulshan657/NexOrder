@@ -102,6 +102,7 @@ import OrderConfirmation from './OrderConfirmation';
 import NotificationCenter from './NotificationCenter';
 import MobileTopBar from './MobileTopBar';
 import ProfileMenu from './auth/ProfileMenu';
+import SidebarNavItem from './SidebarNavItem';
 import { LoadingSkeleton } from './Skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
@@ -713,40 +714,40 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     // default ordering share one definition. Only one of the two positions
     // renders for a given user, so reusing the element is safe.
     const adminShopNavButton = (
-        <button
+        <SidebarNavItem
+            icon={ShoppingBag}
+            active={adminView === 'Shop'}
             onClick={() => { setAdminView('Shop'); setIsSidebarOpen(false); }}
-            aria-current={adminView === 'Shop' ? 'page' : undefined}
-            className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Shop' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
         >
-            <ShoppingBag className="w-5 h-5 mr-3" /> Shop
-        </button>
+            Shop
+        </SidebarNavItem>
     );
     const adminNewOrderNavButton = (
-        <button
+        <SidebarNavItem
+            icon={FilePlus}
+            active={adminView === 'New Order'}
             onClick={() => { setAdminView('New Order'); setIsSidebarOpen(false); }}
-            aria-current={adminView === 'New Order' ? 'page' : undefined}
-            className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'New Order' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
         >
-            <FilePlus className="w-5 h-5 mr-3" /> New Order
-        </button>
+            New Order
+        </SidebarNavItem>
     );
     const adminOrderImportNavButton = (
-        <button
+        <SidebarNavItem
+            icon={ShoppingCart}
+            active={adminView === 'Order Import'}
             onClick={() => { setAdminView('Order Import'); setIsSidebarOpen(false); }}
-            aria-current={adminView === 'Order Import' ? 'page' : undefined}
-            className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Order Import' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
         >
-            <ShoppingCart className="w-5 h-5 mr-3" /> Order Import
-        </button>
+            Order Import
+        </SidebarNavItem>
     );
     const adminPoInboxNavButton = (
-        <button
+        <SidebarNavItem
+            icon={Inbox}
+            active={adminView === 'PO Inbox'}
             onClick={() => { setAdminView('PO Inbox'); setIsSidebarOpen(false); }}
-            aria-current={adminView === 'PO Inbox' ? 'page' : undefined}
-            className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'PO Inbox' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
         >
-            <Inbox className="w-5 h-5 mr-3" /> PO Inbox
-        </button>
+            PO Inbox
+        </SidebarNavItem>
     );
 
     // `view === 'orders'` renders a DIFFERENT PAGE per role — `OrdersHistoryView`
@@ -838,7 +839,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
             )}
 
             {/* Sidebar */}
-            <aside className={`fixed md:static inset-y-0 left-0 z-50 w-52 bg-white/80 backdrop-blur-md text-stone-600 border-r border-stone-200/50 flex flex-col transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+            <aside className={`fixed md:static inset-y-0 left-0 z-50 w-54 bg-white/80 backdrop-blur-md text-stone-600 border-r border-stone-200/50 flex flex-col transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
                 <div className="h-[73px] flex items-center justify-between px-6 bg-white/80 border-b border-stone-200">
                     <div className="flex items-center">
                         <img
@@ -864,64 +865,64 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                         </button>
                     </div>
                 </div>
-                <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+                <nav className="sidebar-nav-scroll flex-1 px-3 py-6 space-y-2 overflow-y-auto">
                     {(isRep || isHoReCaUser) && (
                         <>
                             {isRep && (
-                                <button
+                                <SidebarNavItem
+                                    icon={LayoutDashboard}
+                                    active={view === 'dashboard'}
                                     onClick={() => { setView('dashboard'); setIsSidebarOpen(false); }}
-                                    aria-current={view === 'dashboard' ? 'page' : undefined}
-                                    className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'dashboard' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                 >
-                                    <LayoutDashboard className="w-5 h-5 mr-3" /> Dashboard
-                                </button>
+                                    Dashboard
+                                </SidebarNavItem>
                             )}
 
                             {(MODULE_SHOP || MODULE_SALES_ORDERS || MODULE_INVOICING) && (
                                 <>
                                     <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Orders</p>
                                     {MODULE_SHOP && (
-                                    <button
+                                    <SidebarNavItem
+                                        icon={ShoppingCart}
+                                        active={view === 'ordering' && !(isQrStaff && orderingTab === 'pantry')}
                                         onClick={() => {
                                             if (view !== 'ordering') { resetOrder(); setView('ordering'); }
                                             setIsSidebarOpen(false);
                                         }}
-                                        aria-current={view === 'ordering' && !(isQrStaff && orderingTab === 'pantry') ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'ordering' && !(isQrStaff && orderingTab === 'pantry') ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <ShoppingCart className="w-5 h-5 mr-3" /> Shop
-                                    </button>
+                                        Shop
+                                    </SidebarNavItem>
                                     )}
                                     {/* The pantry list is a tab inside the Shop, so this is a
                                         shortcut to it. QR Staff logins get it as a nav item
                                         because their phone has no tab bar to find it from;
                                         a Customer's nav is left as it was. */}
                                     {MODULE_SHOP && isQrStaff && (
-                                    <button
+                                    <SidebarNavItem
+                                        icon={ClipboardList}
+                                        active={view === 'ordering' && orderingTab === 'pantry'}
                                         onClick={() => openShopOnTab('pantry')}
-                                        aria-current={view === 'ordering' && orderingTab === 'pantry' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'ordering' && orderingTab === 'pantry' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <ClipboardList className="w-5 h-5 mr-3" /> Pantry
-                                    </button>
+                                        Pantry
+                                    </SidebarNavItem>
                                     )}
                                     {MODULE_SALES_ORDERS && (
-                                    <button
+                                    <SidebarNavItem
+                                        icon={History}
+                                        active={view === 'orders'}
                                         onClick={() => { setView('orders'); setIsSidebarOpen(false); }}
-                                        aria-current={view === 'orders' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'orders' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <History className="w-5 h-5 mr-3" /> {ordersViewLabel}
-                                    </button>
+                                        {ordersViewLabel}
+                                    </SidebarNavItem>
                                     )}
                                     {MODULE_INVOICING && !isQrStaff && (
-                                    <button
+                                    <SidebarNavItem
+                                        icon={Wallet}
+                                        active={view === 'accounts'}
                                         onClick={() => { setView('accounts'); setIsSidebarOpen(false); }}
-                                        aria-current={view === 'accounts' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <Wallet className="w-5 h-5 mr-3" /> Accounts
-                                    </button>
+                                        Accounts
+                                    </SidebarNavItem>
                                     )}
                                 </>
                             )}
@@ -929,26 +930,22 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             {isRep && (
                                 <>
                                     <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Field</p>
-                                    <button
+                                    <SidebarNavItem
+                                        icon={UsersIcon}
+                                        active={view === 'hoReCas'}
                                         onClick={() => { setView('hoReCas'); setIsSidebarOpen(false); }}
-                                        aria-current={view === 'hoReCas' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'hoReCas' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <UsersIcon className="w-5 h-5 mr-3" /> HoReCa
-                                    </button>
+                                        HoReCa
+                                    </SidebarNavItem>
                                     {isFieldRep && MODULE_FIELD_OPS && (
-                                        <button
+                                        <SidebarNavItem
+                                            icon={MapPin}
+                                            active={view === 'scheduled_visits'}
                                             onClick={() => { setView('scheduled_visits'); setIsSidebarOpen(false); }}
-                                            aria-current={view === 'scheduled_visits' ? 'page' : undefined}
-                                            className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'scheduled_visits' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                            badge={{ count: newAssignmentCount, colorClass: 'bg-teal-500' }}
                                         >
-                                            <MapPin className="w-5 h-5 mr-3" /> Scheduled Visits
-                                            {newAssignmentCount > 0 && (
-                                                <span className="ml-auto text-xs font-bold text-white bg-teal-500 px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                                                    {newAssignmentCount}
-                                                </span>
-                                            )}
-                                        </button>
+                                            Scheduled Visits
+                                        </SidebarNavItem>
                                     )}
                                 </>
                             )}
@@ -956,13 +953,13 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             {MODULE_INVENTORY_DISPATCH && showStockTab && (
                                 <>
                                     <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
-                                    <button
+                                    <SidebarNavItem
+                                        icon={Package}
+                                        active={view === 'stock'}
                                         onClick={() => { setView('stock'); setIsSidebarOpen(false); }}
-                                        aria-current={view === 'stock' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'stock' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <Package className="w-5 h-5 mr-3" /> Stock
-                                    </button>
+                                        Stock
+                                    </SidebarNavItem>
                                 </>
                             )}
 
@@ -974,24 +971,24 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             {MODULE_SHOP && isHoReCaUser && (
                                 <>
                                     <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Staff ordering</p>
-                                    <button
+                                    <SidebarNavItem
+                                        icon={Home}
+                                        active={view === 'kitchen'}
                                         onClick={() => { setView('kitchen'); setIsSidebarOpen(false); }}
-                                        aria-current={view === 'kitchen' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${view === 'kitchen' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <Home className="w-5 h-5 mr-3" /> Order home
-                                    </button>
+                                        Order home
+                                    </SidebarNavItem>
                                     {isCustomerLogin && currentUser.hoReCaId != null && (
-                                        <button
+                                        <SidebarNavItem
+                                            icon={QrCode}
                                             onClick={() => {
                                                 setQrPanelMounted(true);
                                                 setQrPanelOpen(true);
                                                 setIsSidebarOpen(false);
                                             }}
-                                            className="flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press hover:bg-stone-100 hover:text-stone-900"
                                         >
-                                            <QrCode className="w-5 h-5 mr-3" /> Staff QR &amp; PINs
-                                        </button>
+                                            Staff QR &amp; PINs
+                                        </SidebarNavItem>
                                     )}
                                 </>
                             )}
@@ -1008,13 +1005,13 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     {MODULE_SALES_ORDERS && adminOrderImportNavButton}
                                 </>
                             )}
-                            <button
+                            <SidebarNavItem
+                                icon={LayoutDashboard}
+                                active={adminView === 'Dashboard'}
                                 onClick={() => { setAdminView('Dashboard'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Dashboard' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Dashboard' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <LayoutDashboard className="w-5 h-5 mr-3" /> Dashboard
-                            </button>
+                                Dashboard
+                            </SidebarNavItem>
 
                             {/* One heading, five separately-gated members. "Sales & Orders"
                                 held one module until 2026-08-20; a tenant may now buy the
@@ -1031,22 +1028,22 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                     {MODULE_SALES_ORDERS && !demoPersona?.leadWithPoInbox && adminOrderImportNavButton}
                                     {MODULE_PO_INBOX && !demoPersona?.leadWithPoInbox && adminPoInboxNavButton}
                                     {MODULE_INVOICING && (
-                                    <button
+                                    <SidebarNavItem
+                                        icon={Wallet}
+                                        active={adminView === 'Accounts'}
                                         onClick={() => { setAdminView('Accounts'); setIsSidebarOpen(false); }}
-                                        aria-current={adminView === 'Accounts' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Accounts' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <Wallet className="w-5 h-5 mr-3" /> Accounts
-                                    </button>
+                                        Accounts
+                                    </SidebarNavItem>
                                     )}
                                     {MODULE_PROMOTIONS && (
-                                    <button
+                                    <SidebarNavItem
+                                        icon={Tag}
+                                        active={adminView === 'Promotions'}
                                         onClick={() => { setAdminView('Promotions'); setIsSidebarOpen(false); }}
-                                        aria-current={adminView === 'Promotions' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Promotions' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <Tag className="w-5 h-5 mr-3" /> Promotions
-                                    </button>
+                                        Promotions
+                                    </SidebarNavItem>
                                     )}
                                 </>
                             )}
@@ -1056,42 +1053,37 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 where an operator looks for it. Only the three surfaces that
                                 are actually sold as Field Ops are gated. */}
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Field Ops</p>
-                            <button
+                            <SidebarNavItem
+                                icon={UsersIcon}
+                                active={adminView === 'HoReCa'}
                                 onClick={() => { setAdminView('HoReCa'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'HoReCa' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'HoReCa' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <UsersIcon className="w-5 h-5 mr-3" /> HoReCa
-                            </button>
+                                HoReCa
+                            </SidebarNavItem>
                             {MODULE_FIELD_OPS && (
                                 <>
-                                    <button
+                                    <SidebarNavItem
+                                        icon={BarChart3}
+                                        active={adminView === 'HoReCa Insights'}
                                         onClick={() => { setAdminView('HoReCa Insights'); setIsSidebarOpen(false); }}
-                                        aria-current={adminView === 'HoReCa Insights' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'HoReCa Insights' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <BarChart3 className="w-5 h-5 mr-3" /> HoReCa Insights
-                                    </button>
-                                    <button
+                                        HoReCa Insights
+                                    </SidebarNavItem>
+                                    <SidebarNavItem
+                                        icon={MapPin}
+                                        active={adminView === 'Scheduled Visits'}
                                         onClick={() => { setAdminView('Scheduled Visits'); setIsSidebarOpen(false); }}
-                                        aria-current={adminView === 'Scheduled Visits' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Scheduled Visits' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                     >
-                                        <MapPin className="w-5 h-5 mr-3" /> Scheduled Visits
-                                    </button>
-                                    <button
+                                        Scheduled Visits
+                                    </SidebarNavItem>
+                                    <SidebarNavItem
+                                        icon={UserPlus}
+                                        active={adminView === 'Walk-in Review'}
                                         onClick={() => { setAdminView('Walk-in Review'); setIsSidebarOpen(false); }}
-                                        aria-current={adminView === 'Walk-in Review' ? 'page' : undefined}
-                                        className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Walk-in Review' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                        badge={{ count: walkInReviewCount, colorClass: 'bg-amber-500' }}
                                     >
-                                        <UserPlus className="w-5 h-5 mr-3" />
-                                        <span className="flex-1 text-left">Walk-in Review</span>
-                                        {walkInReviewCount > 0 && (
-                                            <span className="text-[10px] font-bold bg-amber-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-                                                {walkInReviewCount}
-                                            </span>
-                                        )}
-                                    </button>
+                                        Walk-in Review
+                                    </SidebarNavItem>
                                 </>
                             )}
 
@@ -1099,144 +1091,133 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 even though the sidebar files it under this heading. Grouping is
                                 a UI fact, licensing is a commercial one, and they differ here. */}
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
-                            <button
+                            <SidebarNavItem
+                                icon={Package}
+                                active={adminView === 'Products'}
                                 onClick={() => { setAdminView('Products'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Products' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Products' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <Package className="w-5 h-5 mr-3" /> Products
-                            </button>
+                                Products
+                            </SidebarNavItem>
                             {MODULE_INVENTORY_DISPATCH && (<>
-                            <button
+                            <SidebarNavItem
+                                icon={Warehouse}
+                                active={adminView === 'Stock'}
                                 onClick={() => { setAdminView('Stock'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Stock' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Stock' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <Warehouse className="w-5 h-5 mr-3" /> Stock
-                            </button>
-                            <button
+                                Stock
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={PackagePlus}
+                                active={adminView === 'Receiving'}
                                 onClick={() => { setAdminView('Receiving'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Receiving' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Receiving' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <PackagePlus className="w-5 h-5 mr-3" /> Receive Stock
-                            </button>
-                            <button
+                                Receive Stock
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={PackageOpen}
+                                active={adminView === 'Putaway'}
                                 onClick={() => { setAdminView('Putaway'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Putaway' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Putaway' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                badge={{ count: putawayPendingCount, colorClass: 'bg-amber-500' }}
                             >
-                                <PackageOpen className="w-5 h-5 mr-3" />
-                                <span className="flex-1 text-left">Putaway</span>
-                                {putawayPendingCount > 0 && (
-                                    <span className="text-[10px] font-bold bg-amber-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-                                        {putawayPendingCount}
-                                    </span>
-                                )}
-                            </button>
-                            <button
+                                Putaway
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={ArrowDownToLine}
+                                active={adminView === 'Replenishment'}
                                 onClick={() => { setAdminView('Replenishment'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Replenishment' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Replenishment' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                badge={{ count: replenPendingCount, colorClass: 'bg-indigo-500' }}
                             >
-                                <ArrowDownToLine className="w-5 h-5 mr-3" />
-                                <span className="flex-1 text-left">Replenishment</span>
-                                {replenPendingCount > 0 && (
-                                    <span className="text-[10px] font-bold bg-indigo-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-                                        {replenPendingCount}
-                                    </span>
-                                )}
-                            </button>
+                                Replenishment
+                            </SidebarNavItem>
                             {/* No badge, deliberately: off-home stock is not
                                 work that must be done, and a permanent red
                                 number on a queue nobody is obliged to clear
                                 trains people to ignore badges. */}
-                            <button
+                            <SidebarNavItem
+                                icon={Boxes}
+                                active={adminView === 'Off-home'}
                                 onClick={() => { setAdminView('Off-home'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Off-home' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Off-home' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <Boxes className="w-5 h-5 mr-3" />
-                                <span className="flex-1 text-left">Off-home</span>
-                            </button>
-                            <button
+                                Off-home
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={ClipboardList}
+                                active={adminView === 'Stocktake'}
                                 onClick={() => { setAdminView('Stocktake'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Stocktake' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Stocktake' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <ClipboardList className="w-5 h-5 mr-3" /> Stocktake
-                            </button>
-                            <button
+                                Stocktake
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={ClipboardCheck}
+                                active={adminView === 'Pick Queue'}
                                 onClick={() => { setAdminView('Pick Queue'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Pick Queue' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Pick Queue' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <ClipboardCheck className="w-5 h-5 mr-3" /> Pick Queue
-                            </button>
-                            <button
+                                Pick Queue
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={Send}
+                                active={adminView === 'Dispatched'}
                                 onClick={() => { setAdminView('Dispatched'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Dispatched' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Dispatched' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <Send className="w-5 h-5 mr-3" /> Dispatched
-                            </button>
-                            <button
+                                Dispatched
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={FileText}
+                                active={adminView === 'Documents'}
                                 onClick={() => { setAdminView('Documents'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Documents' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Documents' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <FileText className="w-5 h-5 mr-3" /> Documents
-                            </button>
-                            <button
+                                Documents
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={LayoutGrid}
+                                active={adminView === 'Warehouse'}
                                 onClick={() => { setAdminView('Warehouse'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Warehouse' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Warehouse' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <LayoutGrid className="w-5 h-5 mr-3" /> Warehouse
-                            </button>
+                                Warehouse
+                            </SidebarNavItem>
                             </>)}
 
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">System</p>
-                            <button
+                            <SidebarNavItem
+                                icon={UsersIcon}
+                                active={adminView === 'Users'}
                                 onClick={() => { setAdminView('Users'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Users' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Users' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <UsersIcon className="w-5 h-5 mr-3" /> Users
-                            </button>
-                            <button
+                                Users
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={Truck}
+                                active={adminView === 'Suppliers'}
                                 onClick={() => { setAdminView('Suppliers'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Suppliers' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Suppliers' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <Truck className="w-5 h-5 mr-3" /> Suppliers
-                            </button>
+                                Suppliers
+                            </SidebarNavItem>
                             {isAdmin && (
-                                <button
+                                <SidebarNavItem
+                                    icon={Settings}
+                                    active={adminView === 'Settings'}
                                     onClick={() => { setAdminView('Settings'); setIsSidebarOpen(false); }}
-                                    aria-current={adminView === 'Settings' ? 'page' : undefined}
-                                    className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Settings' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                 >
-                                    <Settings className="w-5 h-5 mr-3" /> Settings
-                                </button>
+                                    Settings
+                                </SidebarNavItem>
                             )}
                             {isAdmin && (
-                                <button
+                                <SidebarNavItem
+                                    icon={ScrollText}
+                                    active={adminView === 'Audit Log'}
                                     onClick={() => { setAdminView('Audit Log'); setIsSidebarOpen(false); }}
-                                    aria-current={adminView === 'Audit Log' ? 'page' : undefined}
-                                    className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Audit Log' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                 >
-                                    <ScrollText className="w-5 h-5 mr-3" /> Audit Log
-                                </button>
+                                    Audit Log
+                                </SidebarNavItem>
                             )}
                             {isAdmin && (
-                                <button
+                                <SidebarNavItem
+                                    icon={Activity}
+                                    active={adminView === 'System Health'}
                                     onClick={() => { setAdminView('System Health'); setIsSidebarOpen(false); }}
-                                    aria-current={adminView === 'System Health' ? 'page' : undefined}
-                                    className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'System Health' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                                 >
-                                    <Activity className="w-5 h-5 mr-3" /> System Health
-                                </button>
+                                    System Health
+                                </SidebarNavItem>
                             )}
                         </>
                     )}
@@ -1247,93 +1228,82 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                     {isWarehouse && MODULE_INVENTORY_DISPATCH && (
                         <>
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Inventory &amp; Dispatch</p>
-                            <button
+                            <SidebarNavItem
+                                icon={ClipboardCheck}
+                                active={adminView === 'Pick Queue'}
                                 onClick={() => { setAdminView('Pick Queue'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Pick Queue' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Pick Queue' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <ClipboardCheck className="w-5 h-5 mr-3" /> Pick Queue
-                            </button>
-                            <button
+                                Pick Queue
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={Send}
+                                active={adminView === 'Dispatched'}
                                 onClick={() => { setAdminView('Dispatched'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Dispatched' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Dispatched' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <Send className="w-5 h-5 mr-3" /> Dispatched
-                            </button>
-                            <button
+                                Dispatched
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={PackagePlus}
+                                active={adminView === 'Receiving'}
                                 onClick={() => { setAdminView('Receiving'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Receiving' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Receiving' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <PackagePlus className="w-5 h-5 mr-3" /> Receive Stock
-                            </button>
-                            <button
+                                Receive Stock
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={PackageOpen}
+                                active={adminView === 'Putaway'}
                                 onClick={() => { setAdminView('Putaway'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Putaway' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Putaway' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                badge={{ count: putawayPendingCount, colorClass: 'bg-amber-500' }}
                             >
-                                <PackageOpen className="w-5 h-5 mr-3" />
-                                <span className="flex-1 text-left">Putaway</span>
-                                {putawayPendingCount > 0 && (
-                                    <span className="text-[10px] font-bold bg-amber-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-                                        {putawayPendingCount}
-                                    </span>
-                                )}
-                            </button>
-                            <button
+                                Putaway
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={ArrowDownToLine}
+                                active={adminView === 'Replenishment'}
                                 onClick={() => { setAdminView('Replenishment'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Replenishment' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Replenishment' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
+                                badge={{ count: replenPendingCount, colorClass: 'bg-indigo-500' }}
                             >
-                                <ArrowDownToLine className="w-5 h-5 mr-3" />
-                                <span className="flex-1 text-left">Replenishment</span>
-                                {replenPendingCount > 0 && (
-                                    <span className="text-[10px] font-bold bg-indigo-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-                                        {replenPendingCount}
-                                    </span>
-                                )}
-                            </button>
+                                Replenishment
+                            </SidebarNavItem>
                             {/* No badge, deliberately: off-home stock is not
                                 work that must be done, and a permanent red
                                 number on a queue nobody is obliged to clear
                                 trains people to ignore badges. */}
-                            <button
+                            <SidebarNavItem
+                                icon={Boxes}
+                                active={adminView === 'Off-home'}
                                 onClick={() => { setAdminView('Off-home'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Off-home' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Off-home' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <Boxes className="w-5 h-5 mr-3" />
-                                <span className="flex-1 text-left">Off-home</span>
-                            </button>
-                            <button
+                                Off-home
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={ClipboardList}
+                                active={adminView === 'Stocktake'}
                                 onClick={() => { setAdminView('Stocktake'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Stocktake' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Stocktake' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <ClipboardList className="w-5 h-5 mr-3" /> Stocktake
-                            </button>
-                            <button
+                                Stocktake
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={Warehouse}
+                                active={adminView === 'Stock'}
                                 onClick={() => { setAdminView('Stock'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Stock' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Stock' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <Warehouse className="w-5 h-5 mr-3" /> Stock
-                            </button>
-                            <button
+                                Stock
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={FileText}
+                                active={adminView === 'Documents'}
                                 onClick={() => { setAdminView('Documents'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Documents' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Documents' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <FileText className="w-5 h-5 mr-3" /> Documents
-                            </button>
-                            <button
+                                Documents
+                            </SidebarNavItem>
+                            <SidebarNavItem
+                                icon={LayoutGrid}
+                                active={adminView === 'Warehouse'}
                                 onClick={() => { setAdminView('Warehouse'); setIsSidebarOpen(false); }}
-                                aria-current={adminView === 'Warehouse' ? 'page' : undefined}
-                                className={`flex items-center w-full px-3 py-2.5 touch-target-y rounded-lg text-sm btn-press ${adminView === 'Warehouse' ? 'bg-nexgen-blue/10 text-nexgen-blue font-medium' : 'hover:bg-stone-100 hover:text-stone-900'}`}
                             >
-                                <LayoutGrid className="w-5 h-5 mr-3" /> Warehouse
-                            </button>
+                                Warehouse
+                            </SidebarNavItem>
                         </>
                     )}
                 </nav>

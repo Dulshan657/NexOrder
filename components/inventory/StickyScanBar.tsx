@@ -113,7 +113,7 @@ const EDGE: Record<'top' | 'bottom' | 'adaptive', string> = {
  * `sticky`, never `fixed`. `scripts/check-overlays.mjs` fails CI on a hand-rolled
  * full-screen backdrop outside `components/ui`, and more to the point a fixed bar
  * would have to be positioned against the viewport while it belongs to a
- * column that is offset by the 208px sidebar above `md`.
+ * column that is offset by the 216px sidebar above `md`.
  *
  * `top-0` with NO offset, and that is load-bearing. `main[data-scroll-container]`
  * is the scroll container and the mobile top bar is a flow-positioned sibling

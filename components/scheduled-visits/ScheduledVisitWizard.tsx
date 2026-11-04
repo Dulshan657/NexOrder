@@ -79,12 +79,12 @@ const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, use
         {step === 1 && (
           <div className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1.5">ScheduledVisit name</label>
+              <label className="block text-sm font-medium text-stone-700 mb-1.5">Scheduled Visit name</label>
               <input
                 type="text"
                 value={name}
                 onChange={e => setName(e.target.value)}
-                placeholder="e.g. Monday CBD ScheduledVisit"
+                placeholder="e.g. Monday CBD Scheduled Visit"
                 className="w-full px-4 py-3 rounded-lg border-0 bg-stone-50 ring-1 ring-inset ring-stone-200 text-stone-900 focus:ring-2 focus:ring-nexgen-blue placeholder:text-stone-500 text-sm"
                 autoFocus
               />
@@ -161,7 +161,7 @@ const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, use
             {/* Right: selected stops with drag reorder */}
             <div className="space-y-3">
               <p className="text-xs font-medium text-stone-500 uppercase tracking-wider">
-                ScheduledVisit order ({selectedHoReCaIds.length} stop{selectedHoReCaIds.length !== 1 ? 's' : ''}) — drag to reorder
+                Scheduled Visit order ({selectedHoReCaIds.length} stop{selectedHoReCaIds.length !== 1 ? 's' : ''}) — drag to reorder
               </p>
               <DraggableStopList
                 hoReCaIds={selectedHoReCaIds}
@@ -178,7 +178,7 @@ const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, use
           <div className="space-y-4">
             <div className="bg-stone-50 rounded-xl p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-stone-500">ScheduledVisit name</span>
+                <span className="text-sm text-stone-500">Scheduled Visit name</span>
                 <span className="text-sm font-semibold text-stone-900">{name}</span>
               </div>
               <div className="flex items-center justify-between">
@@ -236,7 +236,7 @@ const ScheduledVisitWizard: React.FC<RouteWizardProps> = ({ hoReCas, userId, use
             className="flex items-center gap-1 text-sm font-medium text-white bg-emerald-600 px-5 py-2 rounded-lg hover:bg-emerald-700 btn-press cursor-pointer"
           >
             <Check className="w-4 h-4" />
-            Create ScheduledVisit
+            Create Scheduled Visit
           </button>
         )}
       </div>

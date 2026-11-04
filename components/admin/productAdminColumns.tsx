@@ -11,10 +11,10 @@
 // 1000 is a CONTAINER width, not a viewport one, and the distinction is the
 // whole reason this constant exists — `ReceiveLineCard.tsx:42-52` is a
 // written-up account of encoding one as the other and computing a 0px column on
-// an ordinary laptop. The AppShell sidebar is 208px and the page pads by 64px,
-// so a 1280px viewport gives this container 1008px: just over, and the table
+// an ordinary laptop. The AppShell sidebar is 216px and the page pads by 64px,
+// so a 1280px viewport gives this container 1000px: exactly on it, and the table
 // layout that a desk has always had is preserved. A 1024px viewport gives it
-// 752px and gets the card layout, which is strictly better than the sideways
+// 744px and gets the card layout, which is strictly better than the sideways
 // scroll it had before.
 //
 // THESE FIGURES ARE CALCULATED, NOT MEASURED. Resize the built page and record
