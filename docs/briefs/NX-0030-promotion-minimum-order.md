@@ -22,6 +22,8 @@
     { "file": "__tests__/placeOrderCore.test.ts", "test": "placeOrderCore > live mode > a discount that takes the total under the minimum does not switch the promotion off", "proves": ["A2"] },
     { "file": "__tests__/promotionMinimum.test.ts", "test": "eligibleForOrderValue > keeps a promotion with no minimum and one that is met, and drops one that is not", "proves": ["A1"] },
     { "file": "__tests__/orderContextPromotionMinimum.test.tsx", "test": "OrderContext promotion minimum > lines already in the cart reprice when it reaches the minimum, and go back when it falls under", "proves": ["A3"] },
+    { "file": "__tests__/promotionMinimumCart.test.ts", "test": "applyPromotionMinimums > a carton line with no unit id costs what the server charges, on both sides of a minimum", "proves": ["A3"] },
+    { "file": "__tests__/promotionMinimumCart.test.ts", "test": "applyPromotionMinimums > a line in an explicit unit costs what the server charges", "proves": ["A3"] },
     { "file": "__tests__/orderContextPromotionMinimum.test.tsx", "test": "OrderContext promotion minimum > with no minimum on any live promotion a line keeps the price it was added at", "proves": ["A6"] },
     { "file": "__tests__/promotionMinimumPreview.test.tsx", "test": "New Order preview > a promotion below its minimum gives no discount until the lines reach it", "proves": ["A4"] },
     { "file": "__tests__/promotionMinimumPreview.test.tsx", "test": "reorder plan > a promotion below its minimum gives no discount on the plan", "proves": ["A4"] },
@@ -43,15 +45,20 @@ promotion applies to a $20 order. This makes the server, the cart and the other 
 - `_shared/placeOrderCore.ts`: `loadActivePromotions` maps `min_order_value`. The core prices the
   lines with no promotions to get the order's value, filters the promotions, and uses that list for
   line prices, cart promotions and recording. A dry run gets this too, so QR previews agree.
-- `lib/promotionMinimumCart.ts` (new, pure): the cart's value and its repriced lines, both through
-  `priceReorderLine`, which already prices a line in its own unit. A line it cannot price keeps its
-  price.
+- `lib/promotionMinimumCart.ts` (new, pure): the cart's value and its repriced lines, priced by the
+  same choice the server makes: an explicit non-base unit by its own price, anything else by the unit
+  price and the carton formula. Not through `priceReorderLine`, as first written here: it matches a
+  line with no unit id by pack factor, which the server does not do, so the gate found the two
+  disagreeing by up to the whole promotion. A line whose product is gone keeps its price.
 - `context/OrderContext.tsx`: derives the eligible promotions and the repriced lines. Nothing is
   repriced unless a live promotion has a minimum. `AppShell` passes the eligible list to the Shop.
 - `components/admin/newOrder/OrderLinesGrid.tsx`, `lib/kitchen/reorderPlan.ts`: the same filter on
   their own lines.
 - `components/PromotionsBanner.tsx`: keeps showing a promotion that has not been reached, with its
-  minimum, so a buyer can see how to qualify.
+  minimum, so a buyer can see how to qualify. `components/BundleSelectModal.tsx` states it too.
+- `components/ReorderTab.tsx`: measures a minimum on its own lines. Added after review.
+- `context/OrderContext.tsx`: a free-goods offer with a minimum says so when added, rather than
+  "Promo applied". Added after review.
 
 ## Out of scope
 
