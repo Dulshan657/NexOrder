@@ -10,6 +10,8 @@ import PaymentStatusBadge, {
 import { RefreshCw, Eye, ChevronUp, ChevronDown, Copy, Check, Download } from 'lucide-react';
 import { ORDER_STATUS_SEQUENCE } from '../constants';
 import { SortableHeader } from './ui/SortableHeader'
+import { PageFrame } from './ui/PageFrame'
+import { PageHeader } from './ui/PageHeader'
 import { ErrorBoundary } from './ErrorBoundary'
 import { lazyWithRetry } from '../lib/lazyWithRetry'
 import { MODULE_SHOP } from '../lib/modules'
@@ -292,15 +294,16 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
   );
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Order History</h1>
-        {currentUser.role !== UserRole.FIELD_REP && currentUser.role !== UserRole.OFFICE_REP && (
-          <button onClick={onBack} className="text-sm font-medium text-stone-500 hover:text-stone-900 transition-colors cursor-pointer">
+    <PageFrame>
+      <PageHeader
+        title="Order History"
+        description="Your past orders, ready to view or reorder."
+        actions={currentUser.role !== UserRole.FIELD_REP && currentUser.role !== UserRole.OFFICE_REP ? (
+          <button onClick={onBack} className="px-3 py-1.5 touch-target-y text-sm font-medium text-stone-500 hover:text-stone-900 transition-colors cursor-pointer">
             &larr; Back
           </button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {PendingQrRequests && currentUser.hoReCaId != null && isVenueUser && (
         <ErrorBoundary label="Orders awaiting approval">
@@ -533,7 +536,7 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ orders, hoReCas, invoices, 
           </div>
         </div>
       )}
-    </div>
+    </PageFrame>
   );
 };
 

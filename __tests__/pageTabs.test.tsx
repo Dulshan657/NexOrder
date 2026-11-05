@@ -12,6 +12,26 @@ const TABS = [
 ]
 
 describe('PageTabs', () => {
+  it('a disabled tab cannot be chosen and says why', () => {
+    const onChange = vi.fn()
+    render(
+      <PageTabs
+        ariaLabel="Shop"
+        tabs={[
+          { id: 'catalogue', label: 'Catalogue' },
+          { id: 'pantry', label: 'Pantry List', disabled: true, title: 'Select a HoReCa first' },
+        ]}
+        activeId="catalogue"
+        onChange={onChange}
+      />,
+    )
+
+    const pantry = screen.getByRole('button', { name: 'Pantry List' })
+    fireEvent.click(pantry)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(pantry.getAttribute('title')).toBe('Select a HoReCa first')
+  })
+
   it('marks the selected tab and reports a change', () => {
     const onChange = vi.fn()
     render(<PageTabs ariaLabel="Putaway stage" tabs={TABS} activeId="assign" onChange={onChange} />)

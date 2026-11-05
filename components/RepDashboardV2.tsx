@@ -2,6 +2,8 @@ import React, { Suspense, useState, useMemo } from 'react';
 import type { User, HoReCa, Product, Order, Invoice, SalesTarget, Visit, ScheduledVisit } from '../types';
 import { UserRole } from '../types';
 import { MapPin, Target, ShoppingBag, DollarSign, BarChart3, CheckCircle2, AlertCircle, Clock, Phone, ArrowRight, Package, UserCheck, Play } from 'lucide-react';
+import { PageFrame } from './ui/PageFrame';
+import { PageHeader } from './ui/PageHeader';
 import KPICard from './dashboard/KPICard';
 import ActionItemsBoard from './ActionItemsBoard';
 import type { ActionItemColumn, ActionItem } from './ActionItemsBoard';
@@ -240,18 +242,13 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
   };
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+    <PageFrame>
       {/* A. Morning Header + Quick Stats */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">
-            Good {greetingTime}, {currentUser.name.split(' ')[0]}
-          </h1>
-          <p className="text-xs text-stone-500 mt-0.5">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
+      <PageHeader
+        visibleOnMobile
+        title={`Good ${greetingTime}, ${currentUser.name.split(' ')[0]}`}
+        description={new Date().toLocaleDateString('en-AU', { weekday: 'long', month: 'long', day: 'numeric' })}
+        actions={todayRoute || (targetGap && targetGap.remaining > 0) ? <>
           {todayRoute && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-nexgen-blue/10 text-nexgen-blue text-xs font-semibold">
               <MapPin className="w-3.5 h-3.5" />
@@ -261,11 +258,11 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
           {targetGap && targetGap.remaining > 0 && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">
               <Target className="w-3.5 h-3.5" />
-              ${targetGap.remaining.toLocaleString(undefined, { maximumFractionDigits: 0 })} to go
+              ${targetGap.remaining.toLocaleString('en-AU', { maximumFractionDigits: 0 })} to go
             </span>
           )}
-        </div>
-      </div>
+        </> : undefined}
+      />
 
       {/* Kitchen QR orders waiting on this rep (RLS limits the list to assigned venues).
           Renders nothing when there are none. */}
@@ -508,7 +505,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
           onClose={() => { setShowVisitModal(false); setVisitHoReCaId(null); }}
         />
       )}
-    </div>
+    </PageFrame>
   );
 };
 

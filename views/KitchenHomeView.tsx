@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { ClipboardList, History, Package, Pencil, RotateCcw, ShoppingCart } from 'lucide-react'
 import { Button } from '@/components/ui'
+import { PageHeader } from '@/components/ui/PageHeader'
 import StatusBadge from '@/components/StatusBadge'
 import PromotionsBanner from '@/components/PromotionsBanner'
 import PendingQrRequests from '@/components/qr/PendingQrRequests'
@@ -173,10 +174,11 @@ const KitchenHomeView: React.FC<KitchenHomeViewProps> = ({
 
   return (
     <div className="mx-auto max-w-2xl space-y-5 p-4 sm:p-6 lg:p-8">
-      <header>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-stone-900">{hoReCa.name}</h1>
-        {isQrStaff && firstName && <p className="mt-0.5 text-sm text-stone-600">Hi {firstName}</p>}
-      </header>
+      <PageHeader
+        visibleOnMobile
+        title={hoReCa.name}
+        description={isQrStaff && firstName ? `Hi ${firstName}` : undefined}
+      />
 
       <PendingQrRequests horecaId={hoReCa.id} mode={isQrStaff ? 'requester' : 'approver'} compact />
 
