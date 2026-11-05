@@ -46,6 +46,14 @@ function mentions(reasons: string[], text: string): boolean {
   return reasons.some((reason) => reason.includes(text))
 }
 
+// The two customer-match failures read differently, and a test about one must not pass on the other.
+const NO_MATCH_WORDING = 'is not in the customer list'
+const TWO_MATCHES_WORDING = 'matches more than one customer'
+
+function reasonsMentioning(reasons: string[], ...texts: string[]): string[] {
+  return reasons.filter((reason) => texts.every((text) => reason.includes(text)))
+}
+
 const BASE = { invoiceNumber: 'INV-1001', invoiceDate: '2026-10-01', customerName: 'Harbour Cafe' }
 
 function ln(
@@ -164,7 +172,9 @@ describe('classifyInvoices', () => {
     )
     expect(verdicts).toHaveLength(names.length)
     verdicts.forEach((verdict, i) => {
-      expect(mentions(expectRejected(verdict), names[i])).toBe(true)
+      const reasons = expectRejected(verdict)
+      expect(reasonsMentioning(reasons, names[i], NO_MATCH_WORDING)).toHaveLength(1)
+      expect(mentions(reasons, TWO_MATCHES_WORDING)).toBe(false)
     })
   })
 
@@ -178,7 +188,9 @@ describe('classifyInvoices', () => {
         ],
       }),
     )
-    expect(mentions(expectRejected(verdict), 'Corner Deli')).toBe(true)
+    const reasons = expectRejected(verdict)
+    expect(reasonsMentioning(reasons, 'Corner Deli', TWO_MATCHES_WORDING)).toHaveLength(1)
+    expect(mentions(reasons, NO_MATCH_WORDING)).toBe(false)
   })
 
   it('skips an invoice with no mapped lines even for an unknown customer', async () => {
@@ -666,6 +678,159 @@ describe('classifyInvoices', () => {
       expect(source).not.toMatch(/\bDeno\b|\bfetch\s*\(|Date\.now|new Date|Math\.random/)
       // The only brand-like string in these tests is the stand-in below; the rule must come from the caller.
       expect(source.toLowerCase()).not.toContain('acme')
+    })
+  })
+
+  describe('stored prices, invoice numbers and dates', () => {
+    const TWO_PRICES = [
+      { productId: 101, quantity: 2, unitPrice: 1 },
+      { productId: 101, quantity: 3, unitPrice: 2 },
+    ]
+
+    it('never calls a stored product held at two prices unchanged, whichever price is uploaded', async () => {
+      const ctx = makeCtx({ storedImports: [stored({ lines: TWO_PRICES })] })
+      for (const price of [1, 2]) {
+        const verdict = await classifyOne([ln(2, SAUCE, 5, price)], ctx)
+        const changed = expectKind(verdict, 'changed')
+        expect(changed.lines).toEqual([
+          { productId: 101, quantity: 5, packSize: 12, unitPrice: price, qbProductName: SAUCE },
+        ])
+        expect(changed.differences).toHaveLength(3)
+        expect(changed.differences).toEqual(
+          expect.arrayContaining([
+            { kind: 'removed', productId: 101, quantity: 2, unitPrice: 1 },
+            { kind: 'removed', productId: 101, quantity: 3, unitPrice: 2 },
+            { kind: 'added', productId: 101, qbProductName: SAUCE, quantity: 5, unitPrice: price },
+          ]),
+        )
+      }
+    })
+
+    it('reports each stored price when the file drops a product held at two prices', async () => {
+      const ctx = makeCtx({
+        storedImports: [stored({ lines: [...TWO_PRICES, { productId: 102, quantity: 2, unitPrice: 3 }] })],
+      })
+      const verdict = await classifyOne([ln(2, MUSTARD, 2, 3)], ctx)
+      const changed = expectKind(verdict, 'changed')
+      expect(changed.differences).toHaveLength(2)
+      expect(changed.differences).toEqual(
+        expect.arrayContaining([
+          { kind: 'removed', productId: 101, quantity: 2, unitPrice: 1 },
+          { kind: 'removed', productId: 101, quantity: 3, unitPrice: 2 },
+        ]),
+      )
+    })
+
+    it('still adds up stored lines of one product that share a price in cents', async () => {
+      const ctx = makeCtx({
+        storedImports: [
+          stored({
+            lines: [
+              { productId: 101, quantity: 2, unitPrice: 0.3 },
+              { productId: 101, quantity: 3, unitPrice: 0.1 + 0.2 },
+            ],
+          }),
+        ],
+      })
+      const verdict = await classifyOne([ln(2, SAUCE, 5, 0.3)], ctx)
+      expect(verdict.kind).toBe('unchanged')
+    })
+
+    it('quotes the invoice number exactly as written when it rejects it', async () => {
+      for (const invoiceNumber of ['INV-1001\n', 'INV-1001 ', ' INV-1001', 'INV-1001\t']) {
+        const verdict = await classifyOne([ln(2, SAUCE, 1, 4.5, { invoiceNumber })], makeCtx())
+        const reasons = expectRejected(verdict)
+        expect(mentions(reasons, `Invoice number "${invoiceNumber}"`), JSON.stringify(invoiceNumber)).toBe(true)
+      }
+    })
+
+    it('rejects a date that is not a real YYYY-MM-DD on an invoice with mapped lines', async () => {
+      const bad = [
+        '',
+        '   ',
+        '2026-13-01',
+        '2026-00-10',
+        '2026-10-00',
+        '2026-02-30',
+        '2025-02-29',
+        '1900-02-29',
+        '2100-02-29',
+        '2026-04-31',
+        '2026-2-3',
+        '01/10/2026',
+        '2026-10-01T00:00:00',
+        '20261001',
+        '0000-01-01',
+        'yesterday',
+      ]
+      const verdicts = await classify(
+        bad.map((invoiceDate, i) =>
+          ln(i + 2, SAUCE, 1, 4.5, { invoiceNumber: `INV-4${String(i).padStart(3, '0')}`, invoiceDate }),
+        ),
+        makeCtx(),
+      )
+      expect(verdicts).toHaveLength(bad.length)
+      verdicts.forEach((verdict, i) => {
+        expect(mentions(expectRejected(verdict), 'Invoice date'), JSON.stringify(bad[i])).toBe(true)
+      })
+    })
+
+    it('accepts real dates, including 29 February in a leap year, and keeps the date trimmed', async () => {
+      const good = ['2026-10-01', '2024-02-29', '2000-02-29', '2026-12-31', '2026-01-01']
+      const verdicts = await classify(
+        [
+          ...good.map((invoiceDate, i) =>
+            ln(i + 2, SAUCE, 1, 4.5, { invoiceNumber: `INV-5${i}`, invoiceDate }),
+          ),
+          ln(20, SAUCE, 1, 4.5, { invoiceNumber: 'INV-59', invoiceDate: ' 2026-10-01 ' }),
+        ],
+        makeCtx(),
+      )
+      expect(verdicts.map((v) => expectKind(v, 'add').invoiceDate)).toEqual([...good, '2026-10-01'])
+    })
+
+    it('rejects a bad date on an invoice that was imported before, when it has mapped lines', async () => {
+      const verdict = await classifyOne(
+        [ln(2, SAUCE, 5, 4.5, { invoiceDate: '' }), ln(3, MUSTARD, 2, 3, { invoiceDate: '' })],
+        makeCtx({ storedImports: [stored()] }),
+      )
+      expect(mentions(expectRejected(verdict), 'Invoice date')).toBe(true)
+    })
+
+    it('reports a bad date alongside mixed dates', async () => {
+      const verdict = await classifyOne(
+        [ln(2, SAUCE, 5, 4.5, { invoiceDate: '' }), ln(3, MUSTARD, 2, 3, { invoiceDate: '2026-10-01' })],
+        makeCtx(),
+      )
+      const reasons = expectRejected(verdict)
+      expect(mentions(reasons, 'more than one invoice date')).toBe(true)
+      expect(mentions(reasons, 'Invoice date ""')).toBe(true)
+    })
+
+    it('does not check the date of an invoice with no mapped lines', async () => {
+      const upload = [ln(2, PASTA, 3, 9, { invoiceDate: '' }), ln(3, FEE, 1, 10, { invoiceDate: 'yesterday' })]
+      const unknown = await classifyOne(upload, makeCtx())
+      expect(unknown.kind).toBe('no_mapped_lines')
+      const imported = await classifyOne(upload, makeCtx({ storedImports: [stored()] }))
+      expect(imported.kind).toBe('changed')
+    })
+
+    it('calls a stored import with no lines unchanged when the file has no mapped lines', async () => {
+      const verdict = await classifyOne([ln(2, PASTA, 3, 9)], makeCtx({ storedImports: [stored({ lines: [] })] }))
+      expect(verdict).toEqual({
+        kind: 'unchanged',
+        invoiceNumber: 'INV-1001',
+        skippedLines: [PASTA],
+        rowNumbers: [2],
+      })
+    })
+
+    it('reports added lines for a stored import with no lines when the file has mapped lines', async () => {
+      const verdict = await classifyOne([ln(2, SAUCE, 5, 4.5)], makeCtx({ storedImports: [stored({ lines: [] })] }))
+      const changed = expectKind(verdict, 'changed')
+      expect(changed.differences).toEqual([
+        { kind: 'added', productId: 101, qbProductName: SAUCE, quantity: 5, unitPrice: 4.5 },
+      ])
     })
   })
 })
