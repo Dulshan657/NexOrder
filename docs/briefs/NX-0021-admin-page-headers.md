@@ -12,13 +12,15 @@
     { "id": "A4", "check": "New Order and System Health start at the standard spot, no longer flush to the edge, and New Order's form stays capped at max-w-5xl.", "manual": "Measured on dev at 1280px." },
     { "id": "A5", "check": "At 360px all fourteen pages have no sideways overflow, and header buttons and menus stay reachable, including PO Inbox's two menus.", "manual": "Measured on dev at 360px; --project=mobile against a build of the branch, with any skipped spec named in FINAL." },
     { "id": "A6", "check": "Reps and customers see the same header on the pages they share: HoReCa, Accounts and Order Import.", "manual": "Logged in as Field Rep and Customer on dev." },
+    { "id": "A8", "check": "From 640px to 1279px, PO Inbox's Auto-approval and Mailboxes panels open fully inside the page, because wrapped header controls stay on the right from sm up.", "manual": "Both panels opened as Admin on dev at 640, 700, 744, 768, 820, 912, 1024 and 1280px." },
     { "id": "A7", "check": "Merged and deployed to dev; /version.json shows the sha serving it.", "manual": "deploy:dev verification, keeping the unmerged demo work on dev." }
   ],
   "failFirst": [
     { "file": "__tests__/pageHeaderConsistency.test.ts", "test": "page header adoption > the admin pages use PageFrame and PageHeader with no hand-rolled h1 or header icon", "proves": ["A1"] },
     { "file": "__tests__/pageHeaderConsistency.test.ts", "test": "page header adoption > the admin pages take their title from ADMIN_TAB_LABELS", "proves": ["A2"] },
     { "file": "__tests__/pageHeaderConsistency.test.ts", "test": "page header adoption > Promotions, Walk-in Review, PO Inbox, Order Import and Scheduled Visits use PageTabs", "proves": ["A3"] },
-    { "file": "__tests__/pageHeaderConsistency.test.ts", "test": "page header adoption > Audit Log's mode switch uses PageTabs", "proves": ["A3"] }
+    { "file": "__tests__/pageHeaderConsistency.test.ts", "test": "page header adoption > Audit Log's mode switch uses PageTabs", "proves": ["A3"] },
+    { "file": "__tests__/pageHeader.test.tsx", "test": "PageHeader > keeps wrapped actions on the right from sm up", "proves": ["A8"] }
   ],
   "allow": []
 }
@@ -35,7 +37,8 @@ covers the pages reps and customers share with admins.
 - Each page swaps its header for `PageFrame` and `PageHeader`; header buttons drop to
   the standard size (`px-3 py-1.5 touch-target-y text-sm`), keeping their colours.
 - **Products:** picker, "Hide not stocked here", Import and Add go in the header.
-- **HoReCa:** the count leaves the header; the list already shows it.
+- **HoReCa:** the count leaves the header; the list already shows it, as the filtered
+  count while a filter is on.
 - **HoReCa Insights:** the count leaves the header and isn't moved; the segment cards show the split.
 - **Promotions:** the filter becomes `PageTabs`, with counts as badges.
 - **Audit Log:** the count leaves the header; the page's footer already shows it.
@@ -48,9 +51,13 @@ covers the pages reps and customers share with admins.
   pushed the menus to a second row for Admins at 1280px).
 - **New Order:** standard frame, with the form below still capped at `max-w-5xl`.
 - **Order Import:** tabs become `PageTabs` and move from centre to left; the QR approval
-  panel stays above them; the Back button is unchanged.
+  panel stays above them; the Back button keeps its behaviour and takes the standard size;
+  a tab with no orders shows no count, where it used to show 0.
 - **Scheduled Visits:** tabs become `PageTabs` and lose their icons.
 - **Walk-in Review:** the two filter buttons become `PageTabs`.
+- `PageHeader`: wrapped actions stay on the right from `sm` up (`sm:ml-auto`). Added after
+  the gate found PO Inbox's right-anchored menu panels cut off between 640px and 912px, where
+  the actions wrapped to the left. Phones keep left-aligned controls.
 - `__tests__/appShellSidebarLayout.test.ts`: its check for the text "Scheduled Visit
   Management" becomes a check for the shared title. Same number of assertions.
 
