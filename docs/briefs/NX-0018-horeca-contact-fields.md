@@ -9,12 +9,24 @@
     { "id": "A1", "check": "A customer row's phone, ABN, billing email and brand list reach the HoReCa type." },
     { "id": "A2", "check": "An ABN that is not 11 digits is refused; spaces are ignored." },
     { "id": "A3", "check": "Two customers can share a billing email, and no customer email is sent to it." },
-    { "id": "A4", "check": "Merged and deployed to dev; the fields save and reload in the customer form.", "manual": "deploy:dev and a browser walk" }
+    { "id": "A4", "check": "Merged and deployed to dev; the fields save and reload in the customer form.", "manual": "deploy:dev and a browser walk" },
+    { "id": "A5", "check": "The customer form refuses a billing email, phone or contact name the server would refuse (`a@b`, a phone over 40 characters, a contact name over 100), using the rules in `_shared/horecaBody.ts`, with a message on the field and no request sent." },
+    { "id": "A6", "check": "When saving a customer fails, the add and edit dialogs (customer list and customer profile) stay open with what was typed and show the reason; a failed save is never reported as a success." },
+    { "id": "A7", "check": "A refused save carries the server's reason to the person, not the generic 'non-2xx status code' text." }
   ],
   "failFirst": [
     { "file": "__tests__/horecaContactFields.test.ts", "test": "horeca contact fields > maps the new contact fields from a row", "proves": ["A1"] },
     { "file": "__tests__/horecaContactFields.test.ts", "test": "horeca contact fields > rejects an ABN that is not 11 digits", "proves": ["A2"] },
-    { "file": "__tests__/horecaContactFields.test.ts", "test": "horeca contact fields > allows two customers to share a billing email", "proves": ["A3"] }
+    { "file": "__tests__/horecaContactFields.test.ts", "test": "horeca contact fields > allows two customers to share a billing email", "proves": ["A3"] },
+    { "file": "__tests__/hoReCaCustomerSave.test.tsx", "test": "customer form validation > refuses a billing email of a@b on the field and sends nothing", "proves": ["A5"] },
+    { "file": "__tests__/hoReCaCustomerSave.test.tsx", "test": "customer form validation > refuses a phone or contact name over its limit on its own field", "proves": ["A5"] },
+    { "file": "__tests__/horecaContactFields.test.ts", "test": "horeca contact fields > has the form check and the server schema agree on the same values", "proves": ["A5"] },
+    { "file": "__tests__/hoReCaCustomerSave.test.tsx", "test": "customer save failure > keeps the form open with what was typed and says why when the save fails", "proves": ["A6"] },
+    { "file": "__tests__/hoReCaCustomerSave.test.tsx", "test": "customer save failure > keeps the edit dialog in the customer list open, then closes it once a save works", "proves": ["A6"] },
+    { "file": "__tests__/hoReCaCustomerSave.test.tsx", "test": "customer save failure > keeps the add dialog in the customer list open when the save fails", "proves": ["A6"] },
+    { "file": "__tests__/hoReCaCustomerSave.test.tsx", "test": "customer save failure > keeps the edit dialog on the customer profile open when the save fails", "proves": ["A6"] },
+    { "file": "__tests__/horecaSaveMessage.test.ts", "test": "customer save errors > reports a failed save as a value and a good one as ok, and never rejects", "proves": ["A6"] },
+    { "file": "__tests__/horecaSaveMessage.test.ts", "test": "customer save errors > carries the server's reason for a refused save, not the generic status text", "proves": ["A7"] }
   ],
   "allow": []
 }
@@ -24,11 +36,12 @@
 
 Amadiya's customers need a phone and ABN on record, many share an email, and a brand's buyers must be identifiable.
 Revised 2026-11-05: the client's list also gives a contact person for most customers, and nothing else stores it, so `contact_name` joins the other fields.
+Revised again 2026-11-05, after the end-to-end run on dev (scenario S6): a billing email of `a@b` passes the browser's check, the server refuses it, and the customer dialog has already closed, so the person sees only "Edge Function returned a non-2xx status code" and loses what they typed. The form now checks email, phone and contact name itself with the shared rules (A5), a failed save keeps the dialog open (A6), and the reason reaches the person (A7).
 `horeca_addresses.recipient_name` is not used for it: that is the recipient on one delivery address, not a contact for the customer.
 
 ## Approach
 
-Migration `00138_horeca_contact_fields.sql` adds `phone`, `abn`, `billing_email` (not unique), `buys_brands` and a nullable `contact_name`. Changes to `mutate-horeca`, `types.ts`, `lib/adapters.ts` and `HoReCaForm`. Comment update in `config/environments.mjs`. The column is not named `email`, because `send-email:186` reads `horecas.email`.
+Migration `00138_horeca_contact_fields.sql` adds `phone`, `abn`, `billing_email` (not unique), `buys_brands` and a nullable `contact_name`. Changes to `mutate-horeca`, `types.ts`, `lib/adapters.ts` and `HoReCaForm`. Comment update in `config/environments.mjs`. Revision 2: `_shared/horecaBody.ts` also exports the pure rules the form uses, `HoReCaForm` validates with them and waits for the save, and every place the form is mounted (customer list add and edit, customer profile, the customer table) keeps its dialog open on a failed save. A save reports its outcome as a value (`lib/horecaSave.ts`), so the settings screens that also call `onUpdateHoReCa` cannot raise an unhandled rejection. The service throws the server's reason instead of the generic status text. The column is not named `email`, because `send-email:186` reads `horecas.email`.
 
 ## Out of scope
 
