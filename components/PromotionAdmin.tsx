@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Promotion, Product, HoReCa, User } from '../types';
 import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, Tag, Calendar } from 'lucide-react';
 import PromotionForm from './PromotionForm';
+import { ConfirmDialog } from './ui/ConfirmDialog';
 import { PageFrame } from './ui/PageFrame';
 import { PageHeader } from './ui/PageHeader';
 import { PageTabs } from './ui/PageTabs';
@@ -13,9 +14,10 @@ interface PromotionAdminProps {
     products: Product[];
     hoReCas: HoReCa[];
     users: User[];
-    onAdd: (promo: Promotion) => void;
-    onUpdate: (promo: Promotion) => void;
+    onAdd: (promo: Promotion) => Promise<void>;
+    onUpdate: (promo: Pick<Promotion, 'id'> & Partial<Promotion>) => Promise<void>;
     onDelete: (promoId: string) => void;
+    onError?: (message: string) => void;
 }
 
 type FilterTab = 'all' | 'active' | 'scheduled' | 'expired' | 'disabled';
@@ -89,9 +91,10 @@ function formatValue(promo: Promotion): string {
     return '';
 }
 
-const PromotionAdmin: React.FC<PromotionAdminProps> = ({ promotions, products, hoReCas, users, onAdd, onUpdate, onDelete }) => {
+const PromotionAdmin: React.FC<PromotionAdminProps> = ({ promotions, products, hoReCas, users, onAdd, onUpdate, onDelete, onError }) => {
     const [filter, setFilter] = useState<FilterTab>('all');
     const [editingPromo, setEditingPromo] = useState<Promotion | null>(null);
+    const [promoToDelete, setPromoToDelete] = useState<Promotion | null>(null);
     const [showForm, setShowForm] = useState(false);
 
     const filtered = useMemo(() => {
@@ -108,14 +111,20 @@ const PromotionAdmin: React.FC<PromotionAdminProps> = ({ promotions, products, h
     }), [promotions]);
 
     const handleToggle = (promo: Promotion) => {
-        onUpdate({ ...promo, isActive: !promo.isActive });
+        // Only is_active, so the server can tell this apart from an edit: a promotion used on
+        // orders is frozen, but can still be switched on or off.
+        onUpdate({ id: promo.id, isActive: !promo.isActive }).catch((err: unknown) => {
+            onError?.(err instanceof Error ? err.message : 'The promotion could not be changed.');
+        });
     };
 
-    const handleSave = (promo: Promotion) => {
+    // Throws on a refusal, which the form catches: it stays open and says why, and only a
+    // save that succeeded closes it.
+    const handleSave = async (promo: Promotion) => {
         if (editingPromo) {
-            onUpdate(promo);
+            await onUpdate(promo);
         } else {
-            onAdd(promo);
+            await onAdd(promo);
         }
         setShowForm(false);
         setEditingPromo(null);
@@ -200,7 +209,7 @@ const PromotionAdmin: React.FC<PromotionAdminProps> = ({ promotions, products, h
                                                       className="p-1.5 rounded-lg text-stone-500 hover:text-stone-700 hover:bg-stone-100 cursor-pointer">
                                                       <Pencil className="w-4 h-4" />
                                                   </button>
-                                                  <button onClick={() => onDelete(promo.id)}
+                                                  <button onClick={() => setPromoToDelete(promo)} title="Delete" aria-label={`Delete ${promo.name}`}
                                                       className="p-1.5 rounded-lg text-stone-500 hover:text-red-600 hover:bg-red-50 cursor-pointer">
                                                       <Trash2 className="w-4 h-4" />
                                                   </button>
@@ -233,6 +242,18 @@ const PromotionAdmin: React.FC<PromotionAdminProps> = ({ promotions, products, h
                     onClose={() => { setShowForm(false); setEditingPromo(null); }}
                 />
             )}
+
+            <ConfirmDialog
+                open={!!promoToDelete}
+                title="Delete promotion"
+                message={`Delete "${promoToDelete?.name}"? This cannot be undone.`}
+                confirmLabel="Delete"
+                onConfirm={() => {
+                    if (promoToDelete) onDelete(promoToDelete.id);
+                    setPromoToDelete(null);
+                }}
+                onCancel={() => setPromoToDelete(null)}
+            />
         </PageFrame>
     );
 };

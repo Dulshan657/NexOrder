@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { fromPromotion } from '../lib/adapters';
+import { promotionProblem } from '../supabase/functions/_shared/promotionBody';
 import type { Promotion, PromotionType, PromotionScope, PromotionTargeting, Product, HoReCa, User, Category, HoReCaTier } from '../types';
 import { Tag } from 'lucide-react';
 import { categoryOptions } from '../lib/productTaxonomy';
@@ -63,6 +65,8 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
     const [name, setName] = useState(promotion?.name ?? '');
     const [description, setDescription] = useState(promotion?.description ?? '');
     const [type, setType] = useState<PromotionType>(promotion?.type ?? 'percentage');
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
     const [percentOff, setPercentOff] = useState(String(promotion?.percentOff ?? ''));
     const [fixedPrice, setFixedPrice] = useState(String(promotion?.fixedPrice ?? ''));
     const [clearancePercent, setClearancePercent] = useState(String(promotion?.clearancePercent ?? ''));
@@ -117,8 +121,8 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
 
     const reps = users.filter(u => u.role === 'Field Sales Rep' || u.role === 'Office Sales Rep');
 
-    const handleSave = () => {
-        if (!name.trim()) return;
+    const handleSave = async () => {
+        if (!name.trim() || saving) return;
 
         const scope: PromotionScope =
             scopeKind === 'products' ? { kind: 'products', productIds: type === 'bundle' ? bundleProductIds : (type === 'bogo' ? [Number(bogoBuyProductId)] : scopeProductIds) } :
@@ -139,13 +143,15 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
             scope,
             targeting,
             stackWithHoReCaPricing,
-            startDate: startDate || undefined,
-            endDate: endDate || undefined,
+            // null on an edit, not undefined: undefined is left out of the update, so an
+            // emptied field would silently keep its old value.
+            startDate: startDate || (promotion ? null : undefined),
+            endDate: endDate || (promotion ? null : undefined),
             isActive: promotion?.isActive ?? true,
             createdAt: promotion?.createdAt ?? new Date().toISOString(),
             createdBy: promotion?.createdBy ?? 1,
             priority: Number(priority) || 10,
-            minOrderValue: minOrderValue ? Number(minOrderValue) : undefined,
+            minOrderValue: minOrderValue ? Number(minOrderValue) : (promotion ? null : undefined),
             appliesTo: (type === 'bogo' || type === 'bundle') ? appliesTo : undefined,
         };
 
@@ -165,7 +171,20 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
             promo.bundleConfig = { productIds: bundleProductIds, bundlePrice: Number(bundlePrice) };
         }
 
-        onSave(promo);
+        const problem = promotionProblem(fromPromotion(promo));
+        if (problem) {
+            setSaveError(problem);
+            return;
+        }
+
+        setSaving(true);
+        setSaveError(null);
+        try {
+            await onSave(promo);
+        } catch (err) {
+            setSaveError(err instanceof Error ? err.message : 'The promotion could not be saved. Please try again.');
+            setSaving(false);
+        }
     };
 
     const filteredProducts = products.filter(p =>
@@ -190,13 +209,19 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
             footer={({ requestClose }) => (
                 <>
                     <Button variant="secondary" onClick={requestClose}>Cancel</Button>
-                    <Button onClick={handleSave} disabled={!name.trim()}>
+                    <Button onClick={handleSave} disabled={!name.trim() || saving}>
                         {promotion ? 'Update Promotion' : 'Create Promotion'}
                     </Button>
                 </>
             )}
         >
             <div className="space-y-5">
+                {saveError && (
+                    <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                        {saveError}
+                    </p>
+                )}
+
                 {/* Name & Description */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>

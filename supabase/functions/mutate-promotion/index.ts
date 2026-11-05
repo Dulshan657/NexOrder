@@ -21,53 +21,13 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { requireModule } from '../_shared/modules.ts'
+import { buildPromotionInputSchema, isOnOffOnly, promotionProblem } from '../_shared/promotionBody.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
 // ---- Zod helpers ----
 
-const promotionTypeEnum = z.enum(['percentage', 'fixed_price', 'bogo', 'bundle', 'clearance'])
-
-// Shared promotion body — all fields optional for partial update
-const promotionBodySchema = z.object({
-  name: z.string().min(1).optional(),
-  description: z.string().nullable().optional(),
-  type: promotionTypeEnum.optional(),
-  percent_off: z.number().min(0).max(100).nullable().optional(),
-  fixed_price: z.number().min(0).nullable().optional(),
-  bogo_config: z.unknown().nullable().optional(),
-  bundle_config: z.unknown().nullable().optional(),
-  clearance_percent: z.number().min(0).max(100).nullable().optional(),
-  scope: z.unknown().optional(),
-  targeting: z.unknown().optional(),
-  min_order_value: z.number().min(0).nullable().optional(),
-  stack_with_horeca_pricing: z.boolean().optional(),
-  start_date: z.string().nullable().optional(),
-  end_date: z.string().nullable().optional(),
-  is_active: z.boolean().optional(),
-  created_by: z.string().optional(),
-  priority: z.number().int().optional(),
-  // Frontend-level field captured in spec; not a DB column — used for carton check
-  applies_to: z.enum(['unit', 'carton']).optional(),
-})
-
-// Required fields when creating
-const promotionCreateBodySchema = promotionBodySchema.extend({
-  name: z.string().min(1),
-  type: promotionTypeEnum,
-  scope: z.unknown(),
-  targeting: z.unknown(),
-  stack_with_horeca_pricing: z.boolean(),
-  is_active: z.boolean(),
-  created_by: z.string(),
-  priority: z.number().int(),
-})
-
-const inputSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('create'), data: promotionCreateBodySchema }),
-  z.object({ action: z.literal('update'), id: z.string().uuid(), data: promotionBodySchema }),
-  z.object({ action: z.literal('delete'), id: z.string().uuid() }),
-])
+const inputSchema = buildPromotionInputSchema(z)
 
 // ---- Helpers ----
 
@@ -215,6 +175,9 @@ serve(async (req: Request) => {
     if (input.action === 'create') {
       const d = input.data as any
 
+      const problem = promotionProblem(d)
+      if (problem) throw new EdgeFunctionError('INVALID_INPUT', problem)
+
       // Date range validation
       const startDate = parseDateOrNull(d.start_date)
       const endDate = parseDateOrNull(d.end_date)
@@ -230,7 +193,8 @@ serve(async (req: Request) => {
 
       const { data: createdRow, error: insertError } = await admin
         .from('promotions')
-        .insert(insertData as any)
+        // The server decides both. promotions.id is text with no default.
+        .insert({ ...insertData, id: crypto.randomUUID(), created_by: auth.userId } as any)
         .select()
         .single()
 
@@ -271,13 +235,20 @@ serve(async (req: Request) => {
 
       const beforeData = existingRow as Record<string, unknown>
 
-      // Immutability check
-      await assertNotUsedInOrders(admin, input.id)
-
       const d = input.data as any
 
-      // Date range validation — merge with existing values
+      // Immutability check. Turning a used promotion off or on is still allowed: it rewrites
+      // nothing on those orders, and without it a used promotion could never be stopped.
+      if (!isOnOffOnly(d)) await assertNotUsedInOrders(admin, input.id)
+
       const existing = existingRow as any
+
+      if (!isOnOffOnly(d)) {
+        const problem = promotionProblem({ ...existing, ...d })
+        if (problem) throw new EdgeFunctionError('INVALID_INPUT', problem)
+      }
+
+      // Date range validation — merge with existing values
       const startDate = parseDateOrNull(d.start_date !== undefined ? d.start_date : existing.start_date)
       const endDate = parseDateOrNull(d.end_date !== undefined ? d.end_date : existing.end_date)
       if (startDate && endDate && startDate > endDate) {

@@ -42,8 +42,8 @@ export function useCreatePromotion() {
   })
 }
 
-// Optimistic, so the on/off toggle flips on click. The server's role gate is
-// the only thing that refuses it, and a refusal rolls the toggle back.
+// Optimistic, so the on/off toggle flips on click. A refusal from the server
+// rolls the toggle back.
 export function useUpdatePromotion() {
   const qc = useQueryClient()
   return useMutation({
