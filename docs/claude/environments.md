@@ -14,8 +14,11 @@
   - **The gate is no longer inert. Amadiya's registry entry is
     `['sales_orders', 'inventory_dispatch']`** — warehouse management with
     orders keyed in by their own office. `voice_assistant` is deliberately
-    absent: the owner's call on 2026-10-22 is that Amadiya gets no new features
-    yet. A registry edit takes effect on a tenant when the owner cuts the next
+    absent and stays `dev`-only. The module list is unchanged, but by owner
+    decision of 2026-11-05 Amadiya moves to current code for the McCurrie run
+    (`docs/superpowers/specs/2026-11-05-amadiya-mccurrie-run-design.md`); that
+    replaces the owner's 2026-10-22 call that it get no new features yet.
+    A registry edit takes effect on a tenant when the owner cuts the next
     `rel-*` tag and redeploys. Only `dev` has everything. The split
     happened because three slugs could not express "orders and a warehouse, but
     no Shop, no PO Inbox, no Promotions and no Accounts", which is what a
