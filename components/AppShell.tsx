@@ -1188,13 +1188,15 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             </>)}
 
                             <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">System</p>
-                            <SidebarNavItem
-                                icon={UsersIcon}
-                                active={adminView === 'Users'}
-                                onClick={() => { setAdminView('Users'); setIsSidebarOpen(false); }}
-                            >
-                                Users
-                            </SidebarNavItem>
+                            {isAdmin && (
+                                <SidebarNavItem
+                                    icon={UsersIcon}
+                                    active={adminView === 'Users'}
+                                    onClick={() => { setAdminView('Users'); setIsSidebarOpen(false); }}
+                                >
+                                    Users
+                                </SidebarNavItem>
+                            )}
                             <SidebarNavItem
                                 icon={Truck}
                                 active={adminView === 'Suppliers'}
