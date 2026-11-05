@@ -245,6 +245,43 @@ export async function newWarehouse(client: pg.Client): Promise<{ warehouseId: nu
   return { warehouseId: wh.rows[0].id, bin: b.rows[0].id }
 }
 
+export async function newBatch(client: pg.Client, productId: number, expiry: string): Promise<number> {
+  const r = await client.query<{ id: number }>(
+    'INSERT INTO public.batches (product_id, lot_code, expiry_date) VALUES ($1, $2, $3::date) RETURNING id',
+    [productId, `LOT-${uniq()}`, expiry],
+  )
+  return r.rows[0].id
+}
+
+export async function newPlate(client: pg.Client, s: Scene, binId: number): Promise<number> {
+  const r = await client.query<{ id: number }>(
+    `INSERT INTO public.handling_units (hu_type, warehouse_id, location_id) VALUES ('pallet', $1, $2) RETURNING id`,
+    [s.warehouseId, binId],
+  )
+  return r.rows[0].id
+}
+
+/** Run the real rack conversion on a bin and return its new level 1. */
+export async function convertRack(client: pg.Client, s: Scene, binId: number): Promise<number> {
+  const layout = await client.query<{ id: number }>(
+    `INSERT INTO public.warehouse_layouts (warehouse_id, name, status, cell_size_m)
+     VALUES ($1, 'Test', 'published', 2) RETURNING id`,
+    [s.warehouseId],
+  )
+  await client.query(
+    `INSERT INTO public.layout_placements (layout_id, location_id, floor, x, y, w, h, rotation, graph_node_id, access_offset_m)
+     VALUES ($1, $2, 0, 0, 0, 1, 1, 0, NULL, 0)`,
+    [layout.rows[0].id, binId],
+  )
+  const role = await client.query<{ key: string }>('SELECT key FROM public.level_roles WHERE is_active ORDER BY key LIMIT 1')
+  await client.query('SELECT public.wie_convert_rack_to_levels_tx($1, $2, $3::jsonb, $4)', [
+    binId, layout.rows[0].id, JSON.stringify([{ role: role.rows[0].key, capacity_slots: 100 }]), s.actor,
+  ])
+  const l1 = await client.query<{ id: number }>(
+    'SELECT id FROM public.locations WHERE parent_id=$1 AND level_index=1', [binId])
+  return l1.rows[0].id
+}
+
 export async function fulfilmentsOf(
   client: pg.Client, orderId: string,
 ): Promise<Array<{ location_id: number; status: string; status_history: Array<Record<string, unknown>> }>> {

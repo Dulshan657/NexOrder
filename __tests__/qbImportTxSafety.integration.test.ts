@@ -11,12 +11,15 @@ import {
   allocatedAt,
   callImport,
   callUpdate,
+  convertRack,
   fulfilmentsOf,
   importRow,
   itemsOf,
   line,
   netOf,
+  newBatch,
   newInvoice,
+  newPlate,
   newProduct,
   newWarehouse,
   onHandOf,
@@ -30,6 +33,14 @@ import {
 
 const UPDATE_SQL = `SELECT public.qb_update_invoice_tx($1, $2, '2026-10-01'::date, $3::jsonb, $4, $5::int[])`
 const UNKNOWN_ACTOR = '00000000-0000-4000-8000-000000000000'
+
+async function batchAllocated(client: pg.Client, productId: number, batchId: number): Promise<number> {
+  const r = await client.query<{ q: number }>(
+    'SELECT COALESCE(SUM(allocated),0)::numeric AS q FROM public.inventory_balances WHERE product_id=$1 AND batch_id=$2',
+    [productId, batchId],
+  )
+  return r.rows[0].q
+}
 
 async function callWith(
   client: pg.Client,
@@ -148,6 +159,139 @@ describe('NX-0025 import transactions: fix round (live RPCs, rollback-isolated)'
         expect((await callUpdate(client, s, x, [line(p, 2)])).status).toBe('updated')
 
         expect(await allocatedAt(client, p, s.binA)).toBe(2)
+      })
+    })
+  })
+
+  describe('the guard and the release work per product and bin', () => {
+    it("raises after a rack conversion leaves another order's holding on a different ledger key in the bin", async () => {
+      await withRollbackTx(async (client) => {
+        const s = await seed(client)
+        const p = await newProduct(client, s.supplierId)
+        const batch = await newBatch(client, p, '2030-01-01')
+        await receive(client, p, s.binA, 15, { batchId: batch })
+        const y = await plainOrder(client, s, p, 5)
+        // Y's balance moves to level 1 on its batch; its ledger moves to the NULL-batch key.
+        const l1 = await convertRack(client, s, s.binA)
+        expect(await allocatedAt(client, p, l1)).toBe(5)
+        expect(await netOf(client, y.orderId, p, l1)).toBe(5)
+
+        const x = newInvoice()
+        const xOrder = `QB-${x}`
+        await callImport(client, s, x, [line(p, 5)])
+        expect(await netOf(client, xOrder, p, l1)).toBe(5)
+        expect(await allocatedAt(client, p, l1)).toBe(10)
+        const z = await plainOrder(client, s, p, 5, false)
+        await client.query('SELECT public.inv_pick_order_line($1, 5, $2, $3)', [z.itemId, l1, s.actor])
+        expect(await allocatedAt(client, p, l1)).toBe(5)
+        const before = await snapshot(client, xOrder, x, p)
+
+        await expectRaise(
+          client, UPDATE_SQL,
+          [x, s.horecaId, JSON.stringify([line(p, 2)]), s.actor, [s.warehouseId]],
+          /^QB_ALLOCATION_MISMATCH:/,
+        )
+
+        expect(await snapshot(client, xOrder, x, p)).toEqual(before)
+        expect(await allocatedAt(client, p, l1)).toBe(5)
+        expect(await netOf(client, y.orderId, p, l1)).toBe(5)
+      })
+    })
+
+    it('updates an order whose own reservation went through a rack conversion', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await seed(client)
+        const p = await newProduct(client, s.supplierId)
+        const batch = await newBatch(client, p, '2030-01-01')
+        await receive(client, p, s.binA, 10, { batchId: batch })
+        const x = newInvoice()
+        const xOrder = `QB-${x}`
+        await callImport(client, s, x, [line(p, 5)])
+        const l1 = await convertRack(client, s, s.binA)
+
+        expect((await callUpdate(client, s, x, [line(p, 2)])).status).toBe('updated')
+
+        expect(await allocatedAt(client, p, l1)).toBe(2)
+        expect(await netOf(client, xOrder, p)).toBe(2)
+        expect(await onHandOf(client, p)).toBe(10)
+      })
+    })
+
+    it('updates when a later order picked first from this order\'s batch, leaving the bin figures whole', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await seed(client)
+        const p = await newProduct(client, s.supplierId)
+        const soon = await newBatch(client, p, '2030-01-01')
+        const late = await newBatch(client, p, '2031-01-01')
+        await receive(client, p, s.binA, 5, { batchId: soon })
+        await receive(client, p, s.binA, 5, { batchId: late })
+        const x = newInvoice()
+        const xOrder = `QB-${x}`
+        await callImport(client, s, x, [line(p, 5)])
+        const y = await plainOrder(client, s, p, 5)
+        // Picks draw by expiry, not by who reserved: Y takes X's batch.
+        await client.query('SELECT public.inv_pick_order_line($1, 5, $2, $3)', [y.itemId, s.binA, s.actor])
+        expect(await allocatedAt(client, p, s.binA)).toBe(5)
+
+        expect((await callUpdate(client, s, x, [line(p, 3)])).status).toBe('updated')
+
+        expect(await allocatedAt(client, p, s.binA)).toBe(3)
+        expect(await netOf(client, xOrder, p, s.binA)).toBe(3)
+        expect(await netOf(client, y.orderId, p, s.binA)).toBe(5)
+        expect(await onHandOf(client, p)).toBe(5)
+      })
+    })
+
+    it("keeps the unpicked part of a later order's reservation when it picked from this order's plate", async () => {
+      await withRollbackTx(async (client) => {
+        const s = await seed(client)
+        const p = await newProduct(client, s.supplierId)
+        const first = await newPlate(client, s, s.binA)
+        const second = await newPlate(client, s, s.binA)
+        await receive(client, p, s.binA, 5, { huId: first })
+        await receive(client, p, s.binA, 5, { huId: second })
+        const x = newInvoice()
+        const xOrder = `QB-${x}`
+        await callImport(client, s, x, [line(p, 5)])
+        const y = await plainOrder(client, s, p, 5)
+        await client.query('SELECT public.inv_pick_order_line($1, 2, $2, $3)', [y.itemId, s.binA, s.actor])
+        expect(await allocatedAt(client, p, s.binA)).toBe(8)
+
+        expect((await callUpdate(client, s, x, [line(p, 1)])).status).toBe('updated')
+
+        // Y still holds the 3 it has not picked, and X holds its new 1.
+        expect(await allocatedAt(client, p, s.binA)).toBe(4)
+        expect(await netOf(client, xOrder, p, s.binA)).toBe(1)
+        expect(await onHandOf(client, p)).toBe(8)
+      })
+    })
+
+    it("reverses this order's own rows by its own share, leaving other orders' rows as they were", async () => {
+      await withRollbackTx(async (client) => {
+        const s = await seed(client)
+        const p = await newProduct(client, s.supplierId)
+        const late = await newBatch(client, p, '2031-01-01')
+        const soon = await newBatch(client, p, '2030-01-01')
+        // The late batch has the lower row id, so going by row id alone would start there.
+        await receive(client, p, s.binA, 3, { batchId: late })
+        await receive(client, p, s.binA, 3, { batchId: soon })
+        const y = await plainOrder(client, s, p, 1)
+        const x = newInvoice()
+        await callImport(client, s, x, [line(p, 3)])
+        const z = await plainOrder(client, s, p, 1)
+        // soon: Y 1 + X 2. late: X 1 + Z 1.
+        expect(await batchAllocated(client, p, soon)).toBe(3)
+        expect(await batchAllocated(client, p, late)).toBe(2)
+
+        // Moving X to another product shows where the release itself landed.
+        const q = await newProduct(client, s.supplierId)
+        await callUpdate(client, s, x, [line(q, 1)])
+
+        expect(await batchAllocated(client, p, soon)).toBe(1)
+        expect(await batchAllocated(client, p, late)).toBe(1)
+        expect(await netOf(client, y.orderId, p)).toBe(1)
+        expect(await netOf(client, z.orderId, p)).toBe(1)
+        expect(await netOf(client, `QB-${x}`, p)).toBe(0)
       })
     })
   })
@@ -371,6 +515,33 @@ describe('NX-0025 import transactions: fix round (live RPCs, rollback-isolated)'
           }
         }
         expect(await importRow(client, number)).toBeUndefined()
+      })
+    })
+
+    it('names an order id or invoice number that another order already holds', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await seed(client)
+        const p = await newProduct(client, s.supplierId)
+        const byId = newInvoice()
+        await client.query(
+          `INSERT INTO public.orders (id, horeca_id, submitted_by, total) VALUES ($1, $2, $3, 0)`,
+          [`QB-${byId}`, s.horecaId, s.actor],
+        )
+        await callWith(
+          client, 'qb_import_invoice_tx',
+          [byId, s.horecaId, '2026-10-01', [line(p, 1)], s.actor, [s.warehouseId]], /^QB_ORDER_ID_TAKEN:/,
+        )
+        const byNumber = newInvoice()
+        await client.query(
+          `INSERT INTO public.orders (id, horeca_id, submitted_by, total, qb_invoice_number) VALUES ($1, $2, $3, 0, $4)`,
+          [`ORD-QBT-${byNumber}`, s.horecaId, s.actor, byNumber],
+        )
+        await callWith(
+          client, 'qb_import_invoice_tx',
+          [byNumber, s.horecaId, '2026-10-01', [line(p, 1)], s.actor, [s.warehouseId]], /^QB_ORDER_ID_TAKEN:/,
+        )
+        expect(await importRow(client, byId)).toBeUndefined()
+        expect(await importRow(client, byNumber)).toBeUndefined()
       })
     })
 

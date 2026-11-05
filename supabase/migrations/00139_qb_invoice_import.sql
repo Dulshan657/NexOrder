@@ -25,37 +25,43 @@
 -- NO INVOICE ROW. QuickBooks holds the invoice. An `invoices` row here would be a
 -- second bill for the same goods, so these functions never write that table.
 --
--- GIVING A RESERVATION BACK NETS THE LEDGER. qb_release_own_allocation reverses
--- what this order's own allocate and deallocate rows net to, per product, bin,
--- batch and plate. It does not use inv_release_reservation, which works out the
--- amount from the order's lines and takes it from any allocated row of the
+-- GIVING A RESERVATION BACK NETS THE LEDGER, PER PRODUCT AND BIN.
+-- qb_release_own_allocation reverses what this order's own allocate and deallocate
+-- rows net to in each bin. It does not use inv_release_reservation, which works out
+-- the amount from the order's lines and takes it from any allocated row of the
 -- product: on a partly reserved order that takes units from other orders.
 --
--- THE NET CAN EXCEED THE ROW, AND THEN THIS RAISES. A row's `allocated` is not
--- attributed per order, and three existing paths move it without touching this
--- order's ledger:
---   - inv_pick_order_line for ANOTHER order deallocates whatever the row holds;
---   - inv_release_reservation for another order takes from any allocated row
---     (its deallocate row names that order, not this one);
---   - wie_convert_rack_to_levels_tx (00085) moves `allocated` to level 1 keeping
---     batch and plate, but re-points the ledger with NULL batch and NULL plate,
---     so a batched or plated reservation nets on a row that no longer holds it.
--- Capping would hide that this order's units have gone, so the update raises
--- QB_ALLOCATION_MISMATCH and changes nothing. Plain transfers cannot cause it:
--- inv_transfer_stock, 00109, 00126 and 00137 move `available` with an alloc delta
--- of 0, and inv_adjust_stock refuses to go below `allocated`.
+-- THE BIN IS THE UNIT, NOT THE BALANCE ROW. It is how wie_order_alloc_bins groups, and
+-- below it the ledger and the balances routinely disagree:
+--   - picks draw by expiry and then row id, not by who reserved, so with two batches
+--     or plates in a bin one order's pick can empty the row another order reserved;
+--   - wie_convert_rack_to_levels_tx (00085) moves `allocated` to level 1 keeping batch
+--     and plate, but re-points the ledger with NULL batch and NULL plate, so a holding
+--     sits on a different key from the row that holds it.
+-- Within a bin, a row's `allocated` says how many units there are reserved, not whose
+-- they are, so moving a holding between a bin's rows loses nothing.
 --
--- THE ROW MUST ALSO COVER EVERY OTHER ORDER. Those same paths can drain this
--- order's units from a row a third order also holds, and the row then still covers
--- this order's net alone: reversing it would take the third order's units. So the
--- check is allocated - what other orders still hold >= this order's net. "Still
--- hold" is the app's netting (wie_order_alloc_bins, then pickTasks.ts takes off what
--- was picked at that bin): per other order, allocate + deallocate + pick on this
--- exact row, floored at 0. inv_apply_leg writes a pick's on_hand delta to qty_delta,
--- so a pick is negative and a finished pick nets to nothing. A closed order holds
--- nothing, whatever its ledger says. An order whose ledger overstates what it holds
--- (rack conversion, or a dispatch that left stock stranded on an order still open)
--- can make this raise when the units are in fact there. That fails closed.
+-- THE BIN MUST COVER THIS ORDER AND EVERY OTHER ORDER. A row's `allocated` is not
+-- attributed per order, and a bin can be drained without touching this order's ledger:
+--   - inv_pick_order_line for ANOTHER order deallocates whatever the row holds;
+--   - inv_release_reservation for another order takes from any allocated row (its
+--     deallocate row names that order, not this one).
+-- So the guard is: allocated in the bin - what other orders hold in the bin >= this
+-- order's net in the bin. Otherwise the update raises QB_ALLOCATION_MISMATCH and
+-- changes nothing, because capping would hide that units have gone, and going ahead
+-- would take another order's.
+--
+-- "Hold" is the app's netting (wie_order_alloc_bins, then pickTasks.ts takes off what
+-- was picked at that bin): per other order, allocate + deallocate + pick in this bin,
+-- floored at 0. inv_apply_leg writes a pick's on_hand delta to qty_delta, so a pick is
+-- negative and a finished pick nets to nothing. A closed order holds nothing, whatever
+-- its ledger says. Plain transfers do not disturb this: inv_transfer_stock, 00109,
+-- 00126 and 00137 move `available` with an alloc delta of 0, and inv_adjust_stock
+-- refuses to go below `allocated`.
+--
+-- This still fails closed when an open order's ledger overstates what it holds (it
+-- picked in another bin, or a residual release on a flat warehouse took this order's
+-- units), and it raises although the units may be there.
 --
 -- A PICK CANNOT SLIP PAST THE PICK CHECK. record-pick does not lock the order, but
 -- its pick_progress insert takes a key-share lock on the order row through the
@@ -362,16 +368,20 @@ REVOKE ALL ON FUNCTION public.qb_write_order_lines(TEXT, JSONB, INT[], UUID)
 GRANT EXECUTE ON FUNCTION public.qb_write_order_lines(TEXT, JSONB, INT[], UUID) TO service_role;
 
 -- ---------------------------------------------------------------------------
--- 5. qb_release_own_allocation: give back exactly what this order's ledger holds
+-- 5. qb_release_own_allocation: give back what this order's ledger holds, per bin
 -- ---------------------------------------------------------------------------
--- inv_apply_leg writes the alloc delta to qty_delta for allocate and deallocate
--- rows (00075), so the sum is this order's reservation. GROUP BY treats NULLs as
--- equal, so a NULL batch or plate is its own group, as it is its own balance row.
--- A negative net is not a reservation (see the header on rack conversion and
--- other orders' releases), so only positive nets are reversed.
+-- inv_apply_leg writes the alloc delta to qty_delta for allocate and deallocate rows
+-- (00075), so the sum is this order's reservation. A negative net is not a reservation
+-- (see the header on other orders' releases), so only positive nets are reversed.
 --
--- What other orders hold is read after the row is locked: a reservation or pick on
--- this row needs that lock too, so the figure cannot move before the reversal.
+-- Every balance row of the product in the bin is locked before anything is read: a
+-- reservation or pick there needs one of those locks, so the figures cannot move
+-- before the reversal. Bins go in product and location order and rows in id order.
+--
+-- The reversal takes two passes over the bin's rows. The first takes from rows on this
+-- order's own batch and plate keys, up to what its ledger nets on each. The second
+-- takes any remainder from whatever the bin has, which is where a pick or a rack
+-- conversion has put it. The guard has already shown the bin can cover it.
 
 CREATE OR REPLACE FUNCTION public.qb_release_own_allocation(
     p_order_id TEXT,
@@ -384,27 +394,32 @@ SET search_path = public
 AS $$
 DECLARE
     v_own       RECORD;
+    v_row       RECORD;
     v_allocated NUMERIC;
     v_others    NUMERIC;
+    v_remaining NUMERIC;
+    v_take      NUMERIC;
+    v_pass      INT;
 BEGIN
     FOR v_own IN
-        SELECT m.product_id, m.location_id, m.batch_id, m.handling_unit_id,
-               SUM(m.qty_delta) AS net
+        SELECT m.product_id, m.location_id, SUM(m.qty_delta) AS net
           FROM public.inventory_movements m
          WHERE m.ref_type = 'order'
            AND m.ref_id = p_order_id
            AND m.movement_type IN ('allocate', 'deallocate')
-         GROUP BY m.product_id, m.location_id, m.batch_id, m.handling_unit_id
+         GROUP BY m.product_id, m.location_id
         HAVING SUM(m.qty_delta) > 0
-         ORDER BY m.product_id, m.location_id, m.batch_id, m.handling_unit_id
+         ORDER BY m.product_id, m.location_id
     LOOP
-        SELECT b.allocated INTO v_allocated
-          FROM public.inventory_balances b
-         WHERE b.product_id = v_own.product_id
-           AND b.location_id = v_own.location_id
-           AND COALESCE(b.batch_id, 0) = COALESCE(v_own.batch_id, 0)
-           AND COALESCE(b.handling_unit_id, 0) = COALESCE(v_own.handling_unit_id, 0)
-           FOR UPDATE;
+        SELECT COALESCE(SUM(t.allocated), 0) INTO v_allocated
+          FROM (
+              SELECT b.allocated
+                FROM public.inventory_balances b
+               WHERE b.product_id = v_own.product_id
+                 AND b.location_id = v_own.location_id
+               ORDER BY b.id
+                 FOR UPDATE
+          ) t;
 
         SELECT COALESCE(SUM(GREATEST(t.held, 0)), 0) INTO v_others
           FROM (
@@ -416,25 +431,51 @@ BEGIN
                  AND m.movement_type IN ('allocate', 'deallocate', 'pick')
                  AND m.product_id = v_own.product_id
                  AND m.location_id = v_own.location_id
-                 AND COALESCE(m.batch_id, 0) = COALESCE(v_own.batch_id, 0)
-                 AND COALESCE(m.handling_unit_id, 0) = COALESCE(v_own.handling_unit_id, 0)
                  AND COALESCE(o.status, '') NOT IN ('cancelled', 'dispatched', 'delivered')
                GROUP BY m.ref_id
           ) t;
 
-        IF v_allocated IS NULL OR v_allocated - v_others < v_own.net THEN
+        IF v_allocated - v_others < v_own.net THEN
             RAISE EXCEPTION
-                'QB_ALLOCATION_MISMATCH: order % nets % of product % at location % (batch %, plate %) but the row holds % with % held by other orders',
-                p_order_id, v_own.net, v_own.product_id, v_own.location_id,
-                COALESCE(v_own.batch_id::TEXT, 'none'), COALESCE(v_own.handling_unit_id::TEXT, 'none'),
-                COALESCE(v_allocated, 0), v_others
+                'QB_ALLOCATION_MISMATCH: order % nets % of product % at location % but the bin holds % with % held by other orders',
+                p_order_id, v_own.net, v_own.product_id, v_own.location_id, v_allocated, v_others
                 USING ERRCODE = 'P0001';
         END IF;
 
-        PERFORM public.inv_apply_leg(
-            v_own.product_id, v_own.location_id, v_own.batch_id, 0, -v_own.net,
-            'deallocate', p_actor, 'order', p_order_id, 'qb invoice updated',
-            NULL, v_own.handling_unit_id);
+        v_remaining := v_own.net;
+        FOR v_pass IN 1..2 LOOP
+            FOR v_row IN
+                SELECT b.batch_id, b.handling_unit_id, b.allocated,
+                       COALESCE((
+                           SELECT SUM(m.qty_delta)
+                             FROM public.inventory_movements m
+                            WHERE m.ref_type = 'order'
+                              AND m.ref_id = p_order_id
+                              AND m.movement_type IN ('allocate', 'deallocate')
+                              AND m.product_id = b.product_id
+                              AND m.location_id = b.location_id
+                              AND COALESCE(m.batch_id, 0) = COALESCE(b.batch_id, 0)
+                              AND COALESCE(m.handling_unit_id, 0) = COALESCE(b.handling_unit_id, 0)
+                       ), 0) AS own_share
+                  FROM public.inventory_balances b
+                 WHERE b.product_id = v_own.product_id
+                   AND b.location_id = v_own.location_id
+                   AND b.allocated > 0
+                 ORDER BY b.id
+            LOOP
+                EXIT WHEN v_remaining <= 0;
+                v_take := LEAST(v_remaining, v_row.allocated);
+                IF v_pass = 1 THEN
+                    v_take := LEAST(v_take, v_row.own_share);
+                END IF;
+                CONTINUE WHEN v_take <= 0;
+                PERFORM public.inv_apply_leg(
+                    v_own.product_id, v_own.location_id, v_row.batch_id, 0, -v_take,
+                    'deallocate', p_actor, 'order', p_order_id, 'qb invoice updated',
+                    NULL, v_row.handling_unit_id);
+                v_remaining := v_remaining - v_take;
+            END LOOP;
+        END LOOP;
     END LOOP;
 END;
 $$;
@@ -536,6 +577,16 @@ BEGIN
     END IF;
 
     v_order_id := 'QB-' || p_invoice_number;
+
+    -- Names the clash rather than surfacing a raw unique violation: no import row
+    -- exists, so this order did not come from this invoice.
+    IF EXISTS (
+        SELECT 1 FROM public.orders o
+         WHERE o.id = v_order_id OR o.qb_invoice_number = p_invoice_number
+    ) THEN
+        RAISE EXCEPTION 'QB_ORDER_ID_TAKEN: order % or invoice number % already belongs to another order',
+            v_order_id, p_invoice_number USING ERRCODE = 'P0001';
+    END IF;
 
     INSERT INTO public.orders
         (id, horeca_id, submitted_by, total, status, status_history, qb_invoice_number)
