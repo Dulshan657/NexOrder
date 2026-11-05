@@ -50,7 +50,7 @@
   },
   "components/HoReCaListView.tsx": {
     "jsx-a11y/control-has-associated-label": {
-      "count": 2
+      "count": 1
     }
   },
   "components/HoReCaSearchDropdown.tsx": {

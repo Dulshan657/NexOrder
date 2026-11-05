@@ -2,10 +2,11 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { HoReCa, Order, Invoice, User, Visit, HoReCaSegment, HoReCaTier } from '../types';
 import { UserRole } from '../types';
 import { Search, X, MoreVertical, Plus, ShoppingBag, Building2, Pencil, Trash2 } from 'lucide-react';
-import SegmentBadge from './SegmentBadge';
 import HoReCaForm from './HoReCaForm';
 import ConfirmationDialog from './ConfirmationDialog';
 import HoReCaProfile from './HoReCaProfile';
+import HoReCaViewToggle, { type CustomerView } from './HoReCaViewToggle';
+import { DetailsTable, SalesTable } from './HoReCaListTables';
 import VisitModal from './visits/VisitModal';
 import { PageFrame } from './ui/PageFrame';
 import { PageHeader } from './ui/PageHeader';
@@ -13,6 +14,7 @@ import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 import { getHoReCaOutstanding } from '../services/accountingService';
 import { computeAllHoReCaInsights } from '../services/buyingPatternsService';
 import { isFailedSave, type HoReCaSaveOutcome } from '../lib/horecaSave';
+import { brandOptions, hasMissingDetails, matchesBrand, matchesSearch, resolveBrand } from '../lib/horecaListFilters';
 
 interface HoReCaListViewProps {
   hoReCas: HoReCa[];
@@ -92,6 +94,11 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [segmentFilter, setSegmentFilter] = useState<HoReCaSegment | 'all'>('all');
   const [tierFilter, setTierFilter] = useState<HoReCaTier | 'all'>('all');
+  // The tab opens on Details; Sales is the figures it showed before NX-0027.
+  const [view, setView] = useState<CustomerView>('details');
+  // '' is every brand. A brand is kept as the spelling on offer in the select.
+  const [brandFilter, setBrandFilter] = useState('');
+  const [missingOnly, setMissingOnly] = useState(false);
   const [selectedHoReCa, setSelectedHoReCa] = useState<HoReCa | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [hoReCaToEdit, setHoReCaToEdit] = useState<HoReCa | null>(null);
@@ -132,38 +139,24 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
     return map;
   }, [orders]);
 
+  // Sorted once per list; the filters below keep that order.
+  const byName = useMemo(() => [...hoReCas].sort((a, b) => a.name.localeCompare(b.name)), [hoReCas]);
+
+  // The brands the customers buy, never written in code. A brand chosen earlier that nobody
+  // buys any more (an edit removed it) falls back to every brand rather than an empty list.
+  const brandChoices = useMemo(() => brandOptions(hoReCas), [hoReCas]);
+  const activeBrand = resolveBrand(brandChoices, brandFilter);
+
   // Filter
   const filtered = useMemo(() => {
-    let list = [...hoReCas];
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(h =>
-        h.name.toLowerCase().includes(q) ||
-        h.address.toLowerCase().includes(q)
-      );
-    }
-
-    if (segmentFilter !== 'all') {
-      list = list.filter(h => {
-        const insight = insightsMap.get(h.id);
-        return insight?.segment === segmentFilter;
-      });
-    }
-
-    if (tierFilter !== 'all') {
-      list = list.filter(h => h.tier === tierFilter);
-    }
-
-    list.sort((a, b) => a.name.localeCompare(b.name));
-    return list;
-  }, [hoReCas, searchQuery, segmentFilter, tierFilter, insightsMap]);
-
-  const tierColors: Record<string, string> = {
-    Gold: 'bg-amber-50 text-amber-800 border-amber-200',
-    Silver: 'bg-stone-100 text-stone-700 border-stone-300',
-    Bronze: 'bg-orange-50 text-orange-800 border-orange-200',
-  };
+    return byName.filter(h =>
+      matchesSearch(h, searchQuery) &&
+      (segmentFilter === 'all' || insightsMap.get(h.id)?.segment === segmentFilter) &&
+      (tierFilter === 'all' || h.tier === tierFilter) &&
+      matchesBrand(h, activeBrand) &&
+      (!missingOnly || hasMissingDetails(h))
+    );
+  }, [byName, searchQuery, segmentFilter, tierFilter, insightsMap, activeBrand, missingOnly]);
 
   const handleAction = (hoReCa: HoReCa, action: string) => {
     switch (action) {
@@ -181,6 +174,11 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
     if (isAdmin && onUpdateHoReCa) actions.push({ key: 'edit', label: 'Edit', icon: <Pencil className="w-3.5 h-3.5" /> });
     if (isAdmin && onDeleteHoReCa) actions.push({ key: 'delete', label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5" />, danger: true });
     return actions;
+  };
+
+  const renderActions = (hoReCa: HoReCa) => {
+    const actions = getActions(hoReCa);
+    return actions.length > 0 ? <ActionMenu actions={actions} onAction={(a) => handleAction(hoReCa, a)} /> : null;
   };
 
   // Profile view
@@ -215,6 +213,8 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
         ) : undefined}
       />
 
+      <HoReCaViewToggle view={view} onChange={setView} />
+
       {/* Filters */}
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row gap-3">
@@ -222,7 +222,7 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
             <input
               type="text"
-              placeholder="Search by name or address..."
+              placeholder="Search by name, contact, phone, email, address or ABN..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-9 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"
@@ -240,9 +240,18 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
           >
             {TIER_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
+          <select
+            aria-label="Brand"
+            value={activeBrand}
+            onChange={e => setBrandFilter(e.target.value)}
+            className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 cursor-pointer"
+          >
+            <option value="">All brands</option>
+            {brandChoices.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
         </div>
 
-        {/* Segment Chips */}
+        {/* Segment Chips, then the missing details filter */}
         <div className="flex gap-2 overflow-x-auto pb-1">
           {SEGMENT_OPTIONS.map(seg => (
             <button key={seg.value}
@@ -256,6 +265,17 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
               {seg.label}
             </button>
           ))}
+          <button type="button"
+            aria-pressed={missingOnly}
+            onClick={() => setMissingOnly(!missingOnly)}
+            className={`shrink-0 ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              missingOnly
+                ? 'bg-stone-900 text-white'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            Missing details
+          </button>
         </div>
       </div>
 
@@ -264,75 +284,24 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
         {filtered.length} {filtered.length === 1 ? 'customer' : 'customers'}
         {segmentFilter !== 'all' && ` (${segmentFilter.replace('_', ' ')})`}
         {tierFilter !== 'all' && ` - ${tierFilter}`}
+        {activeBrand && ` - ${activeBrand}`}
+        {missingOnly && ' - missing details'}
       </p>
 
       {/* Table */}
       {filtered.length > 0 ? (
-        <div className="glass-card rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b border-stone-200">
-                  <th className="px-5 py-3.5 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider">Customer</th>
-                  <th className="px-5 py-3.5 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider">Tier</th>
-                  <th className="px-5 py-3.5 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider">Segment</th>
-                  <th className="px-5 py-3.5 text-right text-xs font-semibold text-stone-500 uppercase tracking-wider">Credit Limit</th>
-                  <th className="px-5 py-3.5 text-left text-xs font-semibold text-stone-500 uppercase tracking-wider">Last Order</th>
-                  <th className="px-5 py-3.5 text-right text-xs font-semibold text-stone-500 uppercase tracking-wider">Outstanding</th>
-                  <th className="px-5 py-3.5 text-right text-xs font-semibold text-stone-500 uppercase tracking-wider w-12"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((h, idx) => {
-                  const insight = insightsMap.get(h.id);
-                  const outstanding = outstandingMap.get(h.id);
-                  const lastOrder = lastOrderMap.get(h.id);
-                  const actions = getActions(h);
-
-                  return (
-                    <tr key={h.id}
-                      onClick={() => setSelectedHoReCa(h)}
-                      className={`transition-colors hover:bg-stone-50/50 cursor-pointer ${idx < filtered.length - 1 ? 'border-b border-stone-100' : ''}`}
-                    >
-                      <td className="px-5 py-3.5">
-                        <p className="text-sm font-medium text-stone-900">{h.name}</p>
-                        <p className="text-xs text-stone-500 mt-0.5 truncate max-w-[250px]">{h.address}</p>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        {h.tier ? (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border ${tierColors[h.tier] ?? 'bg-stone-100 text-stone-600 border-stone-200'}`}>
-                            {h.tier}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-stone-500">--</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        {insight ? <SegmentBadge segment={insight.segment} /> : <span className="text-xs text-stone-500">--</span>}
-                      </td>
-                      <td className="px-5 py-3.5 text-right text-sm tabular-nums text-stone-700">
-                        {h.creditLimit ? `$${h.creditLimit.toLocaleString()}` : '--'}
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-stone-600">
-                        {lastOrder ? new Date(lastOrder).toLocaleDateString() : '--'}
-                      </td>
-                      <td className="px-5 py-3.5 text-right text-sm tabular-nums">
-                        {outstanding ? (
-                          <span className="font-semibold text-amber-700">${outstanding.toFixed(2)}</span>
-                        ) : (
-                          <span className="text-stone-500">--</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5 text-right">
-                        {actions.length > 0 && <ActionMenu actions={actions} onAction={(a) => handleAction(h, a)} />}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        view === 'details' ? (
+          <DetailsTable customers={filtered} onOpen={setSelectedHoReCa} renderActions={renderActions} />
+        ) : (
+          <SalesTable
+            customers={filtered}
+            onOpen={setSelectedHoReCa}
+            renderActions={renderActions}
+            insights={insightsMap}
+            outstanding={outstandingMap}
+            lastOrders={lastOrderMap}
+          />
+        )
       ) : (
         <div className="glass-card rounded-xl p-8 text-center">
           <Building2 className="w-8 h-8 text-stone-300 mx-auto mb-2" />
