@@ -10,6 +10,12 @@
 // is which. Credit notes and negative quantities are valid here: the classifier
 // rejects them on mapped lines and ignores them on other brands.
 //
+// TWO KINDS OF BAD ROW. No invoice number, a bad date or extra cells mean the row
+// cannot be trusted at all. A bad quantity or price, or a blank product, may only
+// mean a freight or discount line. Whether that matters depends on whether the
+// product is the tenant's, which this file cannot know, so those rows are also
+// listed in `doubtfulRows` for `runImport` to decide.
+//
 // PURITY: no platform globals, no I/O, no clock, and no imports but types, so the
 // browser, the Deno function and Vitest all load this one file.
 
@@ -44,6 +50,9 @@ export interface QbParseResult {
   errors: QbParseError[]
   /** The invoice each non-blank row names, good or bad. A row naming none is absent. */
   rowInvoice: ReadonlyMap<number, string>
+  /** Rows in `errors` only for a bad quantity or price or a blank product. An unreadable
+   *  value is NaN. Their structure and date are sound. */
+  doubtfulRows: QbLine[]
 }
 
 interface CsvRow {
@@ -185,19 +194,32 @@ export function parseDateCell(text: string): string | null {
 const PLAIN_NUMBER = /^-?(\d{1,3}(,\d{3})+|\d+)?(\.\d+)?$/
 const MONEY = /^(-?)\$(-?)(.*)$/
 
-function parsePlainNumber(text: string): number | null {
+/** `(12.50)` is how an accounting export writes a credit: the value, negated. */
+function readBracketed(text: string, read: (inner: string) => number | null): number | null {
+  const inner = /^\((.*)\)$/.exec(text)?.[1]
+  if (inner === undefined) return read(text)
+  if (/[-()]/.test(inner)) return null
+  const value = read(inner)
+  return value === null ? null : 0 - value
+}
+
+function readUnsignedForm(text: string): number | null {
   if (!/\d/.test(text) || !PLAIN_NUMBER.test(text)) return null
   const value = Number(text.replace(/,/g, ''))
   return Number.isFinite(value) ? value : null
 }
 
-/** `$1,234.50`, `-$5`, `$-5` or a plain number; else null. */
-function parseMoneyCell(text: string): number | null {
+const parsePlainNumber = (text: string): number | null => readBracketed(text, readUnsignedForm)
+
+function readMoneyForm(text: string): number | null {
   const money = MONEY.exec(text)
   if (!money) return parsePlainNumber(text)
   if (money[1] && money[2]) return null
   return parsePlainNumber(`${money[1] || money[2]}${money[3]}`)
 }
+
+/** `$1,234.50`, `-$5`, `$-5`, `($5)`, `$(5)` or a plain number; else null. */
+const parseMoneyCell = (text: string): number | null => readBracketed(text, readMoneyForm)
 
 // ---------------------------------------------------------------------------
 // One row
@@ -216,51 +238,53 @@ interface RowValues {
   invoiceDate: string | null
   quantity: number | null
   unitPrice: number | null
-  problems: RowProblem[]
+  badDate: RowProblem[]
+  badValues: RowProblem[]
 }
 
 function readValues(cell: (field: QbField) => string): RowValues {
   const invoiceDate = parseDateCell(cell('invoiceDate'))
   const quantity = parsePlainNumber(cell('quantity'))
   const unitPrice = parseMoneyCell(cell('unitPrice'))
-  const problems = [
-    ...(invoiceDate === null ? [`invoice date "${cell('invoiceDate')}" is not a date written as DD/MM/YYYY or YYYY-MM-DD`] : []),
+  const badDate = invoiceDate === null ? [`invoice date "${cell('invoiceDate')}" is not a date written as DD/MM/YYYY or YYYY-MM-DD`] : []
+  const badValues = [
     ...(cell('qbProductName') === '' ? ['has no product'] : []),
     ...(quantity === null ? [`quantity "${cell('quantity')}" is not a number`] : []),
     ...(unitPrice === null ? [`unit price "${cell('unitPrice')}" is not an amount of money`] : []),
   ]
-  return { invoiceDate, quantity, unitPrice, problems }
+  return { invoiceDate, quantity, unitPrice, badDate, badValues }
 }
 
-type RowResult = { line: QbLine; errors: [] } | { line: null; errors: QbParseError[] }
+interface RowResult {
+  line: QbLine | null
+  errors: QbParseError[]
+  doubtful: QbLine | null
+}
 
 function parseRow(row: CsvRow, columns: ColumnIndex, columnCount: number): RowResult {
   const cell = (field: QbField): string => row.cells[columns[field]] ?? ''
   const { rowNumber } = row
   const invoiceNumber = cell('invoiceNumber')
   if (invoiceNumber === '') {
-    return { line: null, errors: [{ rowNumber, invoiceNumber: null, message: 'has no invoice number' }] }
+    return { line: null, doubtful: null, errors: [{ rowNumber, invoiceNumber: null, message: 'has no invoice number' }] }
   }
-  const asErrors = (problems: RowProblem[]): RowResult => ({
-    line: null,
-    errors: problems.map((message) => ({ rowNumber, invoiceNumber, message })),
-  })
+  const asErrors = (problems: RowProblem[]): QbParseError[] => problems.map((message) => ({ rowNumber, invoiceNumber, message }))
   const shifted = shiftProblem(row, columnCount)
-  if (shifted.length > 0) return asErrors(shifted)
-  const { invoiceDate, quantity, unitPrice, problems } = readValues(cell)
-  if (invoiceDate === null || quantity === null || unitPrice === null || problems.length > 0) return asErrors(problems)
-  return {
-    line: {
-      invoiceNumber,
-      invoiceDate,
-      customerName: cell('customerName'),
-      qbProductName: cell('qbProductName'),
-      quantity,
-      unitPrice,
-      rowNumber,
-    },
-    errors: [],
+  if (shifted.length > 0) return { line: null, doubtful: null, errors: asErrors(shifted) }
+  const { invoiceDate, quantity, unitPrice, badDate, badValues } = readValues(cell)
+  if (invoiceDate === null) return { line: null, doubtful: null, errors: asErrors([...badDate, ...badValues]) }
+  const line: QbLine = {
+    invoiceNumber,
+    invoiceDate,
+    customerName: cell('customerName'),
+    qbProductName: cell('qbProductName'),
+    quantity: quantity ?? Number.NaN,
+    unitPrice: unitPrice ?? Number.NaN,
+    rowNumber,
   }
+  return badValues.length > 0
+    ? { line: null, doubtful: line, errors: asErrors(badValues) }
+    : { line, doubtful: null, errors: [] }
 }
 
 function invoiceOfRows(rows: readonly CsvRow[], columns: ColumnIndex): Map<number, string> {
@@ -276,7 +300,7 @@ function invoiceOfRows(rows: readonly CsvRow[], columns: ColumnIndex): Map<numbe
 // The file
 // ---------------------------------------------------------------------------
 
-const refused = (errors: QbParseError[]): QbParseResult => ({ lines: [], errors, rowInvoice: new Map() })
+const refused = (errors: QbParseError[]): QbParseResult => ({ lines: [], errors, rowInvoice: new Map(), doubtfulRows: [] })
 
 export function parseInvoices(csvText: string): QbParseResult {
   const { rows, unclosedQuoteRow } = tokenise(csvText)
@@ -301,5 +325,6 @@ export function parseInvoices(csvText: string): QbParseResult {
     lines: results.flatMap((result) => (result.line ? [result.line] : [])),
     errors: results.flatMap((result) => result.errors),
     rowInvoice: invoiceOfRows(dataRows, columns),
+    doubtfulRows: results.flatMap((result) => (result.doubtful ? [result.doubtful] : [])),
   }
 }

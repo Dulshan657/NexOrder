@@ -36,6 +36,7 @@ const PREVIEW: ImportOk = {
     { invoiceNumber: 'INV-8', name: 'Other Brand Lime' },
   ],
   unfinishedInvoices: [],
+  staleFlagInvoices: [],
   verdicts: [
     {
       kind: 'add',
@@ -289,6 +290,22 @@ describe('Import PO', () => {
       unattachedRowErrors: [],
       skippedLines: [],
       unfinishedInvoices: ['INV-2'],
+      verdicts: [{ kind: 'unchanged', invoiceNumber: 'INV-2', skippedLines: [], rowNumbers: [2] }],
+    })
+    renderView()
+    upload()
+    await screen.findByRole('list', { name: /what this file will do/i })
+    expect(screen.getByRole('button', { name: /confirm/i })).toBeTruthy()
+    expect(screen.getByText(/INV-2/)).toBeTruthy()
+  })
+
+  it('offers confirm when the only work is clearing a flag the file no longer supports', async () => {
+    runImportPo.mockResolvedValue({
+      ...PREVIEW,
+      counts: { added: 0, unchanged: 1, changed: 0, skipped: 0, rejected: 0 },
+      unattachedRowErrors: [],
+      skippedLines: [],
+      staleFlagInvoices: ['INV-2'],
       verdicts: [{ kind: 'unchanged', invoiceNumber: 'INV-2', skippedLines: [], rowNumbers: [2] }],
     })
     renderView()

@@ -64,7 +64,10 @@ function describeDifference(difference: InvoiceDifference): string {
 }
 
 const hasWork = (preview: ImportOk): boolean =>
-  preview.counts.added > 0 || preview.counts.changed > 0 || preview.unfinishedInvoices.length > 0;
+  preview.counts.added > 0 ||
+  preview.counts.changed > 0 ||
+  preview.unfinishedInvoices.length > 0 ||
+  preview.staleFlagInvoices.length > 0;
 
 const Counts: React.FC<{ preview: ImportOk }> = ({ preview }) => {
   const { added, unchanged, changed, skipped, rejected } = preview.counts;
@@ -128,7 +131,7 @@ const ChangedList: React.FC<{
 const SkippedList: React.FC<{ preview: ImportOk }> = ({ preview }) => (
   <section className="space-y-1.5">
     <h3 className={SECTION_HEADING}>Skipped lines</h3>
-    <p className="text-xs text-stone-500">These lines are not in the product map and are not imported.</p>
+    <p className="text-xs text-stone-500">These lines are not in the product map, or have no product, and are not imported.</p>
     <ul aria-label="Skipped lines" className={LIST_BOX}>
       {preview.skippedLines.map((line, index) => (
         <li key={`${line.invoiceNumber}-${index}`} className={LIST_ROW}>
@@ -176,6 +179,11 @@ const Preview: React.FC<{
       {preview.unfinishedInvoices.length > 0 && (
         <Callout tone="info" dense title="Earlier orders to finish">
           Confirm moves these to the Pick Queue: {preview.unfinishedInvoices.join(', ')}.
+        </Callout>
+      )}
+      {preview.staleFlagInvoices.length > 0 && (
+        <Callout tone="info" dense title="Old differences to clear">
+          These match their orders again, so Confirm clears what was stored: {preview.staleFlagInvoices.join(', ')}.
         </Callout>
       )}
       {changed.length > 0 && <ChangedList verdicts={changed} selected={selected} onToggle={onToggle} />}

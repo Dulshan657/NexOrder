@@ -203,6 +203,35 @@ describe('buildImportDeps', () => {
     expect(update?.filters).toEqual([['eq', 'invoice_number', 'INV-1']])
   })
 
+  it('returns stored flags apart from the stored imports, leaving out rows with no flag', async () => {
+    const fake = fakeAdmin({
+      horecas: [],
+      qb_product_map: [],
+      app_settings: [SETTINGS],
+      qb_invoice_imports: [
+        { invoice_number: 'INV-1', order_id: 'QB-INV-1', lines: [], flagged_change: [{ kind: 'customer' }], flag_resolved_at: null },
+        { invoice_number: 'INV-2', order_id: 'QB-INV-2', lines: [], flagged_change: null, flag_resolved_at: '2026-03-01T00:00:00Z' },
+        { invoice_number: 'INV-3', order_id: 'QB-INV-3', lines: [], flagged_change: null, flag_resolved_at: null },
+      ],
+      orders: [],
+      pick_progress: [],
+    })
+    const facts = await buildImportDeps(fake.client, ACTOR).loadFacts(['INV-1', 'INV-2', 'INV-3'])
+    expect(facts.storedFlags).toEqual([
+      { invoiceNumber: 'INV-1', flaggedChange: [{ kind: 'customer' }], flagResolvedAt: null },
+      { invoiceNumber: 'INV-2', flaggedChange: null, flagResolvedAt: '2026-03-01T00:00:00Z' },
+    ])
+  })
+
+  it('clears both the flag and its resolution', async () => {
+    const fake = fakeAdmin({ qb_invoice_imports: [{ invoice_number: 'INV-1' }] })
+    await buildImportDeps(fake.client, ACTOR).clearFlag('INV-1')
+    const update = fake.calls.find((call) => call.op === 'update')
+    expect(update?.table).toBe('qb_invoice_imports')
+    expect(update?.payload).toEqual({ flagged_change: null, flag_resolved_at: null })
+    expect(update?.filters).toEqual([['eq', 'invoice_number', 'INV-1']])
+  })
+
   it('throws when a flag finds no import row to land on', async () => {
     const fake = fakeAdmin({ qb_invoice_imports: [] })
     await expect(buildImportDeps(fake.client, ACTOR).flagChange('INV-1', [])).rejects.toThrow(/INV-1/)

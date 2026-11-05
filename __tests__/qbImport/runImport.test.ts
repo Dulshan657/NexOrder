@@ -22,6 +22,7 @@ const FACTS: ImportFacts = {
   customers: [{ id: 7, name: 'Harbour Bistro' }],
   productMap: [{ qbName: 'Widget', productId: 11, packSize: 12 }],
   storedImports: [],
+  storedFlags: [],
   ownProductPrefixes: [],
   ownProductTerms: [],
 }
@@ -50,13 +51,22 @@ function makeDeps(facts: Partial<ImportFacts> = {}, overrides: Partial<ImportDep
       orderId: `QB-${invoiceNumber}`,
     })),
     flagChange: vi.fn(async () => undefined),
+    clearFlag: vi.fn(async () => undefined),
     advanceToProcessed: vi.fn(async () => ({ ok: true as const })),
     logError: vi.fn(),
     ...overrides,
   } as unknown as { [K in keyof ImportDeps]-?: ReturnType<typeof vi.fn> } & ImportDeps
 }
 
-const WRITES = ['importInvoice', 'updateInvoice', 'flagChange', 'advanceToProcessed'] as const
+const WRITES = ['importInvoice', 'updateInvoice', 'flagChange', 'clearFlag', 'advanceToProcessed'] as const
+
+const ALTERED_TO_9 = {
+  kind: 'altered',
+  productId: 11,
+  qbProductName: 'Widget',
+  from: { quantity: 3, unitPrice: 2.5 },
+  to: { quantity: 9, unitPrice: 2.5 },
+}
 
 function okResponse(response: ImportResponse): ImportOk {
   if (response.status !== 'ok') throw new Error('expected ok')
@@ -452,7 +462,7 @@ describe('runImport', () => {
 
   it('an invoice whose rows have a parse error alongside good rows is never partly imported', async () => {
     const deps = makeDeps({ storedImports: [storedFor()] })
-    const text = csv(WIDGET_A_CHANGED, 'INV-1,05/03/2026,Harbour Bistro,Gadget,x,2.50')
+    const text = csv(WIDGET_A_CHANGED, 'INV-1,05/03/2026,Harbour Bistro,Widget,x,2.50')
     const done = await commit(deps, text, ['INV-1'])
 
     expect(deps.updateInvoice).not.toHaveBeenCalled()
@@ -492,13 +502,204 @@ describe('runImport', () => {
         ',x,x,x,x,x',
         'INV-9,05/03/2026,Harbour Bistro,Other Brand Lime,5,1.00',
         'INV-5,bad,Harbour Bistro,Widget,3,2.50',
+        // Skipped despite a bad value, on a good invoice and on one with nothing else.
+        'INV-1,05/03/2026,Harbour Bistro,Freight,,',
+        'INV-1,05/03/2026,Harbour Bistro,,1,1.00',
+        'INV-7,05/03/2026,Harbour Bistro,Freight,x,x',
+        // Rejected, with a skipped line beside the bad one.
+        'INV-6,05/03/2026,Harbour Bistro,Widget,x,2.50',
+        'INV-6,05/03/2026,Harbour Bistro,Freight,,',
       ),
     )
     const rows = [
       ...seen.verdicts.flatMap((verdict) => verdict.rowNumbers),
       ...seen.unattachedRowErrors.map((error) => Number(error.rowNumber)),
     ].sort((a, b) => a - b)
-    expect(rows).toEqual([2, 3, 4, 5, 6])
+    expect(rows).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+  })
+
+  describe('a bad value on a line that is not ours', () => {
+    const FREIGHT_BLANK = 'INV-1,05/03/2026,Harbour Bistro,Freight,,'
+
+    it('skips and names a freight line with a blank quantity on an otherwise good invoice', async () => {
+      const deps = makeDeps()
+      const text = csv(WIDGET_A, FREIGHT_BLANK)
+
+      const seen = await preview(deps, text)
+      expect(seen.verdicts).toEqual([
+        {
+          kind: 'add',
+          invoiceNumber: 'INV-1',
+          invoiceDate: '2026-03-05',
+          horecaId: 7,
+          lines: [{ productId: 11, quantity: 3, packSize: 12, unitPrice: 2.5, qbProductName: 'Widget' }],
+          skippedLines: ['Freight'],
+          rowNumbers: [2, 3],
+        },
+      ])
+      expect(seen.counts).toMatchObject({ added: 1, skipped: 1, rejected: 0 })
+      expect(seen.skippedLines).toEqual([{ invoiceNumber: 'INV-1', name: 'Freight' }])
+
+      await commit(deps, text)
+      expect(deps.importInvoice).toHaveBeenCalledTimes(1)
+    })
+
+    it('still rejects a bad quantity on a mapped line', async () => {
+      const seen = await preview(makeDeps(), csv(WIDGET_A, 'INV-1,05/03/2026,Harbour Bistro,Widget,lots,2.50', FREIGHT_BLANK))
+      const verdict = seen.verdicts[0]
+      expect(verdict).toMatchObject({ kind: 'rejected', rowNumbers: [2, 3, 4] })
+      expect(verdict.kind === 'rejected' && verdict.reasons).toEqual([expect.stringContaining('Row 3')])
+    })
+
+    it('matches a mapped line the way the classifier does, ignoring case and spacing', async () => {
+      const seen = await preview(makeDeps(), csv('INV-1,05/03/2026,Harbour Bistro,  WIDGET ,x,2.50'))
+      expect(seen.verdicts[0].kind).toBe('rejected')
+    })
+
+    it('still rejects a bad price on one of the own products, even with no map row', async () => {
+      const seen = await preview(
+        makeDeps({ ownProductPrefixes: ['Acme'] }),
+        csv(WIDGET_A, 'INV-1,05/03/2026,Harbour Bistro,Acme Sprocket,1,x'),
+      )
+      expect(seen.verdicts[0].kind).toBe('rejected')
+    })
+
+    it('still rejects a bad date, a column shift or extra cells on a line that is not ours', async () => {
+      for (const row of [
+        'INV-1,bad,Harbour Bistro,Freight,,',
+        'INV-1,05/03/2026,Harbour Bistro,Freight,1,2,3',
+      ]) {
+        const seen = await preview(makeDeps(), csv(WIDGET_A, row))
+        expect(seen.verdicts[0].kind, row).toBe('rejected')
+      }
+    })
+
+    it('skips a row with a blank product, named by its row, unless the date is bad', async () => {
+      const seen = await preview(makeDeps(), csv(WIDGET_A, 'INV-1,05/03/2026,Harbour Bistro,,x,'))
+      expect(seen.verdicts[0]).toMatchObject({ kind: 'add', skippedLines: ['row 3 (no product)'], rowNumbers: [2, 3] })
+
+      const badDate = await preview(makeDeps(), csv(WIDGET_A, 'INV-1,bad,Harbour Bistro,,1,1'))
+      expect(badDate.verdicts[0].kind).toBe('rejected')
+    })
+
+    it('does not let an own-product term catch the name given to a row with no product', async () => {
+      const seen = await preview(
+        makeDeps({ ownProductTerms: ['product', 'row'] }),
+        csv(WIDGET_A, 'INV-1,05/03/2026,Harbour Bistro,,1,1'),
+      )
+      expect(seen.verdicts[0]).toMatchObject({ kind: 'add', skippedLines: ['row 3 (no product)'] })
+    })
+
+    it('does not let a blank customer on the skipped row block the invoice', async () => {
+      const seen = await preview(makeDeps(), csv(WIDGET_A, 'INV-1,05/03/2026,,Freight,,'))
+      expect(seen.verdicts[0].kind).toBe('add')
+    })
+
+    it('reads an invoice holding only such lines as nothing to import', async () => {
+      const seen = await preview(makeDeps(), csv('INV-1,05/03/2026,,Freight,,', 'INV-1,05/03/2026,,,,'))
+      expect(seen.verdicts).toEqual([
+        { kind: 'no_mapped_lines', invoiceNumber: 'INV-1', skippedLines: ['Freight', 'row 3 (no product)'], rowNumbers: [2, 3] },
+      ])
+    })
+
+    it('reads an imported invoice left holding only such lines as having lost its mapped lines', async () => {
+      const seen = await preview(makeDeps({ storedImports: [storedFor()] }), csv(FREIGHT_BLANK))
+      expect(seen.verdicts[0]).toMatchObject({ kind: 'changed', editable: false })
+    })
+  })
+
+  it('reads (12.50) as a negative, so the usual rule for a negative applies', async () => {
+    const mapped = await preview(makeDeps(), csv('CN-1,05/03/2026,Harbour Bistro,Widget,3,(12.50)'))
+    expect(mapped.verdicts[0].kind === 'rejected' && mapped.verdicts[0].reasons.join(' ')).toContain('unit price -12.5')
+
+    const other = await preview(makeDeps(), csv('CN-2,05/03/2026,Harbour Bistro,Other Brand Cola,3,(12.50)'))
+    expect(other.verdicts[0].kind).toBe('no_mapped_lines')
+  })
+
+  describe('stored flags', () => {
+    const facts = (flaggedChange: unknown, flagResolvedAt: string | null = null) => ({
+      storedImports: [storedFor()],
+      storedFlags: [{ invoiceNumber: 'INV-1', flaggedChange, flagResolvedAt }],
+    })
+
+    it('leaves the flag alone when the differences are the same, whatever their key or array order', async () => {
+      const reordered = {
+        to: { unitPrice: 2.5, quantity: 9 },
+        from: { unitPrice: 2.5, quantity: 3 },
+        qbProductName: 'Widget',
+        productId: 11,
+        kind: 'altered',
+      }
+      const deps = makeDeps(facts([reordered], '2026-03-01T00:00:00Z'))
+      const done = await commit(deps, csv(WIDGET_A_CHANGED))
+      expect(deps.flagChange).not.toHaveBeenCalled()
+      expect(deps.clearFlag).not.toHaveBeenCalled()
+      expect(resultOf(done, 'INV-1')).toMatchObject({ outcome: 'flagged' })
+
+      const twoLines = {
+        customers: FACTS.customers,
+        productMap: [...FACTS.productMap, { qbName: 'Gadget', productId: 12, packSize: null }],
+        storedImports: [storedFor({ lines: [{ productId: 11, quantity: 3, unitPrice: 2.5 }, { productId: 12, quantity: 1, unitPrice: 4 }] })],
+      }
+      const text = csv(WIDGET_A_CHANGED, 'INV-1,05/03/2026,Harbour Bistro,Gadget,2,4')
+      const seen = await preview(makeDeps(twoLines), text)
+      const differences = seen.verdicts[0].kind === 'changed' ? seen.verdicts[0].differences : []
+      expect(differences).toHaveLength(2)
+
+      const swapped = makeDeps({ ...twoLines, storedFlags: [{ invoiceNumber: 'INV-1', flaggedChange: [...differences].reverse(), flagResolvedAt: null }] })
+      await commit(swapped, text)
+      expect(swapped.flagChange).not.toHaveBeenCalled()
+    })
+
+    it('replaces the flag when the differences are different', async () => {
+      const deps = makeDeps(facts([{ ...ALTERED_TO_9, to: { quantity: 5, unitPrice: 2.5 } }], '2026-03-01T00:00:00Z'))
+      await commit(deps, csv(WIDGET_A_CHANGED))
+      expect(deps.flagChange).toHaveBeenCalledWith('INV-1', [ALTERED_TO_9])
+    })
+
+    it('clears the flag when a later file matches the order again', async () => {
+      for (const stored of [facts([ALTERED_TO_9]), facts(null, '2026-03-01T00:00:00Z')]) {
+        const deps = makeDeps(stored)
+        const done = await commit(deps, csv(WIDGET_A))
+        expect(deps.clearFlag).toHaveBeenCalledWith('INV-1')
+        expect(deps.flagChange).not.toHaveBeenCalled()
+        expect(resultOf(done, 'INV-1')).toMatchObject({ outcome: 'unchanged' })
+      }
+    })
+
+    it('does not clear anything for an unchanged invoice with no flag, or on a preview', async () => {
+      const none = makeDeps({ storedImports: [storedFor()] })
+      await commit(none, csv(WIDGET_A))
+      expect(none.clearFlag).not.toHaveBeenCalled()
+
+      const previewed = makeDeps(facts([ALTERED_TO_9]))
+      const seen = await preview(previewed, csv(WIDGET_A))
+      expect(previewed.clearFlag).not.toHaveBeenCalled()
+      expect(seen.staleFlagInvoices).toEqual(['INV-1'])
+    })
+
+    it('finishes a stuck order and clears its flag', async () => {
+      const deps = makeDeps({
+        storedImports: [storedFor({ orderStatus: 'processing' })],
+        storedFlags: [{ invoiceNumber: 'INV-1', flaggedChange: [ALTERED_TO_9], flagResolvedAt: null }],
+      })
+      const done = await commit(deps, csv(WIDGET_A))
+      expect(deps.advanceToProcessed).toHaveBeenCalledTimes(1)
+      expect(deps.clearFlag).toHaveBeenCalledTimes(1)
+      expect(resultOf(done, 'INV-1')).toMatchObject({ outcome: 'finished' })
+    })
+
+    it('reports a flag it could not clear per invoice and carries on', async () => {
+      const deps = makeDeps(facts([ALTERED_TO_9]), {
+        clearFlag: vi.fn(async () => {
+          throw new Error('update failed')
+        }),
+      })
+      const done = await commit(deps, csv(WIDGET_A, WIDGET_B))
+      expect(resultOf(done, 'INV-1')).toMatchObject({ outcome: 'failed' })
+      expect(resultOf(done, 'INV-1')?.message).not.toContain('update failed')
+      expect(resultOf(done, 'INV-2')).toMatchObject({ outcome: 'added' })
+    })
   })
 
   it('takes the invoice date from the file when updating, because the verdict has none', async () => {

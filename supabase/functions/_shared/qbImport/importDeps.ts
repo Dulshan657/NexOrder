@@ -11,7 +11,7 @@
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { ensureProcessedFulfilments, writeProcessedStatus } from '../fulfillment.ts'
 import type { InvoiceDifference, MappedLine, StoredImport, StoredLine } from './classifyInvoices.ts'
-import type { AdvanceResult, ImportDeps, ImportFacts, ImportTxResult, InvoiceWrite, UpdateTxResult } from './runImport.ts'
+import type { AdvanceResult, ImportDeps, ImportFacts, ImportTxResult, InvoiceWrite, StoredFlag, UpdateTxResult } from './runImport.ts'
 
 const PAGE_SIZE = 1000
 /** Keeps an `.in(...)` list short enough for the request URL. */
@@ -49,9 +49,9 @@ const toStoredLine = (line: any): StoredLine => ({
   unitPrice: Number(line.unit_price),
 })
 
-async function loadStoredImports(admin: SupabaseClient, invoiceNumbers: readonly string[]): Promise<StoredImport[]> {
+async function loadStoredImports(admin: SupabaseClient, invoiceNumbers: readonly string[]): Promise<Pick<ImportFacts, 'storedImports' | 'storedFlags'>> {
   const imports = await fetchInChunks('earlier imports', invoiceNumbers, (chunk, from, to) =>
-    admin.from('qb_invoice_imports').select('invoice_number, order_id, lines').in('invoice_number', chunk).order('invoice_number').range(from, to),
+    admin.from('qb_invoice_imports').select('invoice_number, order_id, lines, flagged_change, flag_resolved_at').in('invoice_number', chunk).order('invoice_number').range(from, to),
   )
   const orderIds = imports.map((row) => row.order_id as string)
   const [orders, picks] = await Promise.all([
@@ -64,7 +64,7 @@ async function loadStoredImports(admin: SupabaseClient, invoiceNumbers: readonly
   ])
   const orderById = new Map(orders.map((order) => [order.id as string, order]))
   const picked = new Set(picks.map((pick) => pick.order_id as string))
-  return imports.map((row): StoredImport => {
+  const storedImports = imports.map((row): StoredImport => {
     const order = orderById.get(row.order_id)
     return {
       invoiceNumber: row.invoice_number,
@@ -75,6 +75,14 @@ async function loadStoredImports(admin: SupabaseClient, invoiceNumbers: readonly
       orderStatus: String(order?.status),
     }
   })
+  const storedFlags = imports
+    .filter((row) => row.flagged_change != null || row.flag_resolved_at != null)
+    .map((row): StoredFlag => ({
+      invoiceNumber: row.invoice_number,
+      flaggedChange: row.flagged_change,
+      flagResolvedAt: row.flag_resolved_at,
+    }))
+  return { storedImports, storedFlags }
 }
 
 async function loadOwnProductRule(admin: SupabaseClient): Promise<Pick<ImportFacts, 'ownProductPrefixes' | 'ownProductTerms'>> {
@@ -91,7 +99,7 @@ async function loadOwnProductRule(admin: SupabaseClient): Promise<Pick<ImportFac
 }
 
 async function loadFacts(admin: SupabaseClient, invoiceNumbers: readonly string[]): Promise<ImportFacts> {
-  const [customers, productMap, storedImports, rule] = await Promise.all([
+  const [customers, productMap, stored, rule] = await Promise.all([
     fetchAll('customers', (from, to) => admin.from('horecas').select('id, name').order('id').range(from, to)),
     fetchAll('the product map', (from, to) =>
       admin.from('qb_product_map').select('qb_name, product_id, pack_size').order('qb_name').range(from, to),
@@ -102,7 +110,7 @@ async function loadFacts(admin: SupabaseClient, invoiceNumbers: readonly string[
   return {
     customers: customers.map((row) => ({ id: row.id, name: row.name })),
     productMap: productMap.map((row) => ({ qbName: row.qb_name, productId: row.product_id, packSize: row.pack_size })),
-    storedImports,
+    ...stored,
     ...rule,
   }
 }
@@ -139,11 +147,10 @@ async function updateInvoice(admin: SupabaseClient, write: InvoiceWrite, actorId
   return { status: 'not_found' }
 }
 
-/** A new flag is an open flag, even if the office had resolved an earlier one. */
-async function flagChange(admin: SupabaseClient, invoiceNumber: string, differences: InvoiceDifference[]): Promise<void> {
+async function writeFlag(admin: SupabaseClient, invoiceNumber: string, flaggedChange: InvoiceDifference[] | null): Promise<void> {
   const { data, error } = await admin
     .from('qb_invoice_imports')
-    .update({ flagged_change: differences, flag_resolved_at: null } as any)
+    .update({ flagged_change: flaggedChange, flag_resolved_at: null } as any)
     .eq('invoice_number', invoiceNumber)
     .select('invoice_number')
   if (error) throw new Error(`Storing the differences for ${invoiceNumber} failed: ${error.message}`)
@@ -171,7 +178,9 @@ export function buildImportDeps(admin: SupabaseClient, actorId: string): ImportD
     loadFacts: (invoiceNumbers) => loadFacts(admin, invoiceNumbers),
     importInvoice: (write) => importInvoice(admin, write, actorId),
     updateInvoice: (write) => updateInvoice(admin, write, actorId),
-    flagChange: (invoiceNumber, differences) => flagChange(admin, invoiceNumber, differences),
+    // New differences are an open flag, even if the office resolved an earlier one.
+    flagChange: (invoiceNumber, differences) => writeFlag(admin, invoiceNumber, differences),
+    clearFlag: (invoiceNumber) => writeFlag(admin, invoiceNumber, null),
     advanceToProcessed: (orderId) => advanceToProcessed(admin, orderId, actorId),
     logError: (invoiceNumber, error) =>
       console.error(`[import-qb-invoices] ${invoiceNumber}: ${error instanceof Error ? error.message : String(error)}`),

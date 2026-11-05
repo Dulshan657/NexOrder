@@ -7,6 +7,9 @@
 //
 // A ROW THAT FAILED TO PARSE REJECTS ITS WHOLE INVOICE, even if other rows parsed.
 // Importing the rest would create an order short of a line nobody was told about.
+// The exception is a sound row with a bad quantity or price, or no product, whose
+// product is neither mapped nor the tenant's own. That is a freight or discount line,
+// nothing is short without it, and it is skipped and named like any other brand's.
 //
 // Every row of the file ends up in a verdict's `rowNumbers` or in
 // `unattachedRowErrors`, so no line can vanish.
@@ -28,10 +31,18 @@ import type { QbLine } from './types.ts'
 
 const ALLOWED_ROLES: readonly string[] = ['Admin', 'Manager']
 
+/** What is stored against an import that has, or has had, a flag. */
+export interface StoredFlag {
+  invoiceNumber: string
+  flaggedChange: unknown
+  flagResolvedAt: string | null
+}
+
 export interface ImportFacts {
   customers: ClassifyCustomer[]
   productMap: ProductMapRow[]
   storedImports: StoredImport[]
+  storedFlags: StoredFlag[]
   ownProductPrefixes: readonly string[]
   ownProductTerms: readonly string[]
 }
@@ -56,8 +67,10 @@ export interface ImportDeps {
   loadFacts(invoiceNumbers: readonly string[]): Promise<ImportFacts>
   importInvoice(write: InvoiceWrite): Promise<ImportTxResult>
   updateInvoice(write: InvoiceWrite): Promise<UpdateTxResult>
-  /** Replaces whatever is stored: the latest upload's differences are the ones that count. */
+  /** Replaces whatever is stored and reopens the flag. Called only for new differences. */
   flagChange(invoiceNumber: string, differences: InvoiceDifference[]): Promise<void>
+  /** Removes the flag and its resolution: the file matches the order again. */
+  clearFlag(invoiceNumber: string): Promise<void>
   advanceToProcessed(orderId: string): Promise<AdvanceResult>
   logError?(invoiceNumber: string, error: unknown): void
 }
@@ -121,6 +134,8 @@ export interface ImportOk {
   skippedLines: SkippedLine[]
   /** Already imported, unchanged, and still short of the Pick Queue: commit finishes them. */
   unfinishedInvoices: string[]
+  /** Unchanged, with an old flag this file no longer supports: commit clears it. */
+  staleFlagInvoices: string[]
   results?: InvoiceResult[]
   resultCounts?: ResultCounts
   ignoredApplyChanges?: IgnoredSelection[]
@@ -190,6 +205,8 @@ const NOT_YET_IN_QUEUE =
 
 const advanceFailureMessage = (code: string): string => ADVANCE_MESSAGES[code] ?? NOT_YET_IN_QUEUE
 
+const FLAG_NOT_CLEARED = 'This invoice matches its order again, but its old stored differences could not be cleared. Upload the file again to retry.'
+
 // ---------------------------------------------------------------------------
 // Parse errors -> rejected verdicts
 // ---------------------------------------------------------------------------
@@ -220,8 +237,8 @@ const rowsByInvoice = (rowInvoice: QbParseResult['rowInvoice']): Map<string, num
 /** Applies parse errors to the classifier's verdicts: an invoice with one is rejected,
  *  keeping any reasons the classifier found in its good rows. File order is restored
  *  afterwards because an invoice with no good rows has no classifier verdict. */
-function mergeParseErrors(verdicts: readonly InvoiceVerdict[], parsed: QbParseResult): InvoiceVerdict[] {
-  const parseReasons = reasonsByInvoice(parsed.errors)
+function mergeParseErrors(verdicts: readonly InvoiceVerdict[], parsed: QbParseResult, errors: readonly QbParseError[]): InvoiceVerdict[] {
+  const parseReasons = reasonsByInvoice(errors)
   const rows = rowsByInvoice(parsed.rowInvoice)
   const byInvoice = new Map(verdicts.map((verdict) => [verdict.invoiceNumber, verdict]))
   const rejected = [...parseReasons.entries()].map(([invoiceNumber, reasons]): InvoiceVerdict => {
@@ -235,6 +252,61 @@ function mergeParseErrors(verdicts: readonly InvoiceVerdict[], parsed: QbParseRe
   })
   const untouched = verdicts.filter((verdict) => !parseReasons.has(verdict.invoiceNumber))
   return [...untouched, ...rejected].sort((a, b) => a.rowNumbers[0] - b.rowNumbers[0])
+}
+
+// ---------------------------------------------------------------------------
+// Doubtful rows: a bad value only matters on a line that is ours
+// ---------------------------------------------------------------------------
+
+interface Settled {
+  /** The parse errors that still count. */
+  errors: QbParseError[]
+  /** The rows let through, written so the classifier skips them as other lines. */
+  otherLines: QbLine[]
+  /** Names made up for rows with no product, which no own-product rule may match. */
+  madeUpNames: Set<string>
+}
+
+const noProductName = (rowNumber: number): string => `row ${rowNumber} (no product)`
+
+function customersByInvoice(lines: readonly QbLine[]): Map<string, string> {
+  const named = lines.filter((line) => line.customerName !== '')
+  return new Map([...named].reverse().map((line) => [line.invoiceNumber, line.customerName]))
+}
+
+function settleDoubtfulRows(parsed: QbParseResult, productMap: readonly ProductMapRow[], isOwn: (name: string) => boolean): Settled {
+  const mapped = new Set(productMap.map((row) => normaliseName(row.qbName)))
+  const isOurs = ({ qbProductName }: QbLine): boolean =>
+    qbProductName !== '' && (mapped.has(normaliseName(qbProductName)) || isOwn(qbProductName))
+  const notOurs = parsed.doubtfulRows.filter((row) => !isOurs(row))
+  const forgiven = new Set(notOurs.map((row) => row.rowNumber))
+  const customers = customersByInvoice(parsed.lines)
+  // A blank customer on a line being skipped says nothing about whose invoice it is,
+  // and the classifier would read it as a second customer.
+  const otherLines = notOurs.map((row): QbLine => ({
+    ...row,
+    qbProductName: row.qbProductName === '' ? noProductName(row.rowNumber) : row.qbProductName,
+    customerName: row.customerName === '' ? customers.get(row.invoiceNumber) ?? '' : row.customerName,
+  }))
+  return {
+    errors: parsed.errors.filter((error) => error.rowNumber === null || !forgiven.has(error.rowNumber)),
+    otherLines,
+    madeUpNames: new Set(notOurs.filter((row) => row.qbProductName === '').map((row) => noProductName(row.rowNumber))),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Comparing differences with the stored flag
+// ---------------------------------------------------------------------------
+
+/** One text for equal values, whatever the order of their keys or array items. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).sort().join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`)
+    return `{${entries.sort().join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +356,7 @@ const isStuck = (stored: StoredImport | undefined): boolean => stored?.orderStat
 interface CommitContext {
   deps: ImportDeps
   storedByInvoice: ReadonlyMap<string, StoredImport>
+  flagsByInvoice: ReadonlyMap<string, StoredFlag>
   datesByInvoice: ReadonlyMap<string, string>
   selected: ReadonlySet<string>
 }
@@ -324,6 +397,11 @@ async function commitAdd(ctx: CommitContext, verdict: AddVerdict): Promise<Invoi
 
 function commitFlag(ctx: CommitContext, verdict: ChangedVerdict, outcome: 'flagged' | 'refused', message: string): Promise<InvoiceResult> {
   const { invoiceNumber, orderId, differences } = verdict
+  const stored = ctx.flagsByInvoice.get(invoiceNumber)
+  // The same differences again: a flag the office has resolved stays resolved.
+  if (stored && canonical(stored.flaggedChange) === canonical(differences)) {
+    return Promise.resolve({ invoiceNumber, outcome, orderId, message })
+  }
   return failingAs(ctx.deps, invoiceNumber, orderId, plainMessage, async () => {
     await ctx.deps.flagChange(invoiceNumber, differences)
     return { invoiceNumber, outcome, orderId, message }
@@ -366,8 +444,16 @@ function commitChanged(ctx: CommitContext, verdict: ChangedVerdict): Promise<Inv
 
 async function commitUnchanged(ctx: CommitContext, invoiceNumber: string): Promise<InvoiceResult> {
   const stored = ctx.storedByInvoice.get(invoiceNumber)
-  if (!stored || !isStuck(stored)) return { invoiceNumber, outcome: 'unchanged', ...(stored ? { orderId: stored.orderId } : {}) }
-  return advanceThen(ctx, invoiceNumber, stored.orderId, { invoiceNumber, outcome: 'finished', orderId: stored.orderId })
+  const orderId = stored?.orderId
+  const result: InvoiceResult =
+    stored && isStuck(stored)
+      ? await advanceThen(ctx, invoiceNumber, stored.orderId, { invoiceNumber, outcome: 'finished', orderId: stored.orderId })
+      : { invoiceNumber, outcome: 'unchanged', ...(orderId ? { orderId } : {}) }
+  if (result.outcome === 'failed' || !ctx.flagsByInvoice.has(invoiceNumber)) return result
+  return failingAs(ctx.deps, invoiceNumber, orderId, () => FLAG_NOT_CLEARED, async () => {
+    await ctx.deps.clearFlag(invoiceNumber)
+    return result
+  })
 }
 
 function commitVerdict(ctx: CommitContext, verdict: InvoiceVerdict): Promise<InvoiceResult> | InvoiceResult {
@@ -422,20 +508,27 @@ function fileRefusal(action: ImportRequest['action'], errors: readonly QbParseEr
     unattachedRowErrors: [],
     skippedLines: [],
     unfinishedInvoices: [],
+    staleFlagInvoices: [],
   }
 }
 
 /** Reads the facts and works out the verdicts. The one path both actions take. */
 async function assess(parsed: QbParseResult, deps: ImportDeps) {
   const facts = await deps.loadFacts([...new Set(parsed.rowInvoice.values())])
-  const classified = classifyInvoices(parsed.lines, {
+  const isOwn = buildOwnProductRule(facts.ownProductPrefixes, facts.ownProductTerms)
+  const { errors, otherLines, madeUpNames } = settleDoubtfulRows(parsed, facts.productMap, isOwn)
+  const lines = [...parsed.lines, ...otherLines].sort((a, b) => a.rowNumber - b.rowNumber)
+  const classified = classifyInvoices(lines, {
     customers: facts.customers,
     productMap: facts.productMap,
     storedImports: facts.storedImports,
-    isOwnProductName: buildOwnProductRule(facts.ownProductPrefixes, facts.ownProductTerms),
+    isOwnProductName: (name) => !madeUpNames.has(name) && isOwn(name),
   })
-  const verdicts = mergeParseErrors(classified, parsed)
-  return { verdicts, storedByInvoice: new Map(facts.storedImports.map((stored) => [stored.invoiceNumber, stored])) }
+  return {
+    verdicts: mergeParseErrors(classified, parsed, errors),
+    storedByInvoice: new Map(facts.storedImports.map((stored) => [stored.invoiceNumber, stored])),
+    flagsByInvoice: new Map(facts.storedFlags.map((flag) => [flag.invoiceNumber, flag])),
+  }
 }
 
 export async function runImport(request: ImportRequest, deps: ImportDeps): Promise<ImportResponse> {
@@ -447,9 +540,10 @@ export async function runImport(request: ImportRequest, deps: ImportDeps): Promi
   const refusals = parsed.errors.filter((error) => error.rowNumber === null)
   if (refusals.length > 0) return fileRefusal(request.action, refusals)
 
-  const { verdicts, storedByInvoice } = await assess(parsed, deps)
+  const { verdicts, storedByInvoice, flagsByInvoice } = await assess(parsed, deps)
   const unattachedRowErrors = parsed.errors.filter((error) => error.invoiceNumber === null)
   const skippedLines = skippedOf(verdicts)
+  const unchanged = verdicts.filter((verdict) => verdict.kind === 'unchanged').map((verdict) => verdict.invoiceNumber)
   const summary: ImportOk = {
     status: 'ok',
     action: request.action,
@@ -458,15 +552,14 @@ export async function runImport(request: ImportRequest, deps: ImportDeps): Promi
     fileErrors: [],
     unattachedRowErrors,
     skippedLines,
-    unfinishedInvoices: verdicts
-      .filter((verdict) => verdict.kind === 'unchanged' && isStuck(storedByInvoice.get(verdict.invoiceNumber)))
-      .map((verdict) => verdict.invoiceNumber),
+    unfinishedInvoices: unchanged.filter((invoiceNumber) => isStuck(storedByInvoice.get(invoiceNumber))),
+    staleFlagInvoices: unchanged.filter((invoiceNumber) => flagsByInvoice.has(invoiceNumber)),
   }
   if (request.action === 'preview') return summary
 
   const selected = new Set(request.applyChanges ?? [])
   const results = await commitAll(
-    { deps, storedByInvoice, datesByInvoice: firstDates(parsed.lines), selected },
+    { deps, storedByInvoice, flagsByInvoice, datesByInvoice: firstDates(parsed.lines), selected },
     verdicts,
   )
   return { ...summary, results, resultCounts: countResults(results), ignoredApplyChanges: ignoredSelections(selected, verdicts) }

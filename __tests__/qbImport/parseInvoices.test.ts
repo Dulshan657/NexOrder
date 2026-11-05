@@ -114,6 +114,47 @@ describe('parseInvoices', () => {
     expect(lines[0]).toMatchObject({ quantity: -3, unitPrice: -1250 })
   })
 
+  it('reads an accounting-style (12.50) as a negative', () => {
+    const cases: Array<[string, number]> = [
+      ['(12.50)', -12.5],
+      ['($12.50)', -12.5],
+      ['$(12.50)', -12.5],
+      ['"($1,234.50)"', -1234.5],
+      ['(0)', 0],
+    ]
+    for (const [cell, expected] of cases) {
+      const { lines, errors } = parseInvoices(csv(`CN-1,05/03/2026,Cafe,Widget,1,${cell}`))
+      expect(errors, cell).toEqual([])
+      expect(lines[0].unitPrice, cell).toBe(expected)
+    }
+    expect(parseInvoices(csv('CN-1,05/03/2026,Cafe,Widget,(3),1')).lines[0].quantity).toBe(-3)
+  })
+
+  it('refuses brackets that are not one negative number', () => {
+    for (const bad of ['(-5)', '-(5)', '((5))', '()', '(5', '5)', '(x)', '-$(5)', '($-5)']) {
+      const { errors } = parseInvoices(csv(`INV-1,05/03/2026,Cafe,Widget,1,${bad}`))
+      expect(errors, bad).toHaveLength(1)
+    }
+  })
+
+  it('tells a row with only a bad value from a row whose structure is wrong', () => {
+    const { lines, errors, doubtfulRows } = parseInvoices(
+      csv(
+        'INV-1,05/03/2026,Cafe,Freight,,',
+        'INV-2,05/03/2026,Cafe,,3,2.00',
+        'INV-3,bad,Cafe,Freight,,',
+        'INV-4,05/03/2026,Cafe,Freight,1,2,3',
+        ',05/03/2026,Cafe,Freight,,',
+      ),
+    )
+    expect(lines).toEqual([])
+    expect(doubtfulRows.map((row) => [row.rowNumber, row.invoiceNumber, row.qbProductName, row.invoiceDate])).toEqual([
+      [2, 'INV-1', 'Freight', '2026-03-05'],
+      [3, 'INV-2', '', '2026-03-05'],
+    ])
+    expect(new Set(errors.map((error) => error.rowNumber))).toEqual(new Set([2, 3, 4, 5, 6]))
+  })
+
   it('keeps a fractional quantity as a line for the classifier', () => {
     expect(parseInvoices(csv('INV-1,05/03/2026,Cafe,Widget,1.5,2')).lines[0].quantity).toBe(1.5)
   })
