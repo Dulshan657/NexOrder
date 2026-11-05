@@ -23,6 +23,7 @@
 - The server sets `id` and `created_by` on a create and takes neither from a client. `promotions.id` is text with no default, and ids are not all UUIDs.
 - A promotion an order records as used is frozen against edit and delete, except a change to `is_active` alone, so it can still be stopped.
 - **Orders record every promotion they used** (`buildAppliedPromotions`, NX-0028), so all five types freeze once used. `[]` means recorded and none used. `null` means the order is from before recording, or came from `approve-po`, which applies no promotions: ROI's baseline leaves those out. Bundles recorded before NX-0028 use the older `promoId` key, and both the freeze and `toAppliedPromotions` read it.
+- A promotion's minimum order value is measured on the whole order at the customer's own prices, before any promotion, so a discount cannot switch itself off (`_shared/promotionMinimum.ts`, NX-0030). It is separate from the tenant-wide minimum in Settings, which is measured on the total. The cart reprices its lines only while a live promotion has a minimum (`lib/promotionMinimumCart.ts`).
 - A buy-one-get-one's recorded `discount` is the value of the free goods. It is not taken off the total, and the goods are not yet order lines: nothing reserves or picks them.
 
 ## Rate limiting

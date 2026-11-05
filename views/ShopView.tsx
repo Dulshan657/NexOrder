@@ -34,6 +34,8 @@ export interface ShopViewProps {
     products: Product[];
     hoReCas: HoReCa[];
     promotions: Promotion[];
+    /** The promotions this cart qualifies for. Prices come from these, the banner from all. */
+    eligiblePromotions: Promotion[];
     invoices: Invoice[];
     allOrders: Order[];
     currentUser: User;
@@ -101,6 +103,7 @@ const ShopView: React.FC<ShopViewProps> = ({
     products,
     hoReCas,
     promotions,
+    eligiblePromotions,
     invoices,
     allOrders,
     currentUser,
@@ -227,7 +230,7 @@ const ShopView: React.FC<ShopViewProps> = ({
                                             cartonDiscountPercent={appSettings.cartonDiscountPercent}
                                             lowStockThreshold={appSettings.lowStockThreshold}
                                             hints={hintsPerProduct.get(product.id)}
-                                            promotions={promotions}
+                                            promotions={eligiblePromotions}
                                             currentUser={currentUser}
                                         />
                                     ))
@@ -301,7 +304,7 @@ const ShopView: React.FC<ShopViewProps> = ({
                 errors={errors}
                 invoices={invoices}
                 isAdminOrManager={isAdminOrManager}
-                promotions={promotions}
+                promotions={eligiblePromotions}
                 products={products}
             />
         </>
