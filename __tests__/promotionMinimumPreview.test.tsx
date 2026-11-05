@@ -2,6 +2,7 @@ import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 
+import BundleSelectModal from '../components/BundleSelectModal'
 import OrderLinesGrid from '../components/admin/newOrder/OrderLinesGrid'
 import PromotionsBanner from '../components/PromotionsBanner'
 import ReorderTab from '../components/ReorderTab'
@@ -82,6 +83,21 @@ describe('Shop reorder tab', () => {
     expect(tab(1)).toContain('$100.00')
     cleanup()
     expect(tab(2)).toContain('$50.00') // the unit price, once the two lines reach it
+  })
+})
+
+describe('BundleSelectModal', () => {
+  it('names the minimum', () => {
+    render(
+      <BundleSelectModal
+        promotion={{ ...promo, type: 'bundle', bundleConfig: { productIds: [1], bundlePrice: 9 } } as never}
+        products={[product]}
+        cartonDiscountPercent={5}
+        onClose={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    )
+    expect(screen.getByText(/on orders of \$200\.00 or more/)).toBeTruthy()
   })
 })
 

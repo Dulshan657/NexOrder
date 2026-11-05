@@ -33,6 +33,9 @@ const BundleSelectModal: React.FC<BundleSelectModalProps> = ({ promotion, produc
 
     if (!bundle) return null;
 
+    const minimum = promotion.minOrderValue ?? 0;
+    const minimumNote = minimum > 0 ? ` • on orders of $${minimum.toFixed(2)} or more` : '';
+
     const handleSubmit = () => {
         const rows = bundleProducts
             .map(product => {
@@ -59,7 +62,7 @@ const BundleSelectModal: React.FC<BundleSelectModalProps> = ({ promotion, produc
             dirty={isDirty}
             icon={<Package2 className="w-4 h-4 text-nexgen-blue" />}
             title={promotion.name}
-            description={`Bundle price: $${bundle.bundlePrice.toFixed(2)} • per ${appliesTo}`}
+            description={`Bundle price: $${bundle.bundlePrice.toFixed(2)} • per ${appliesTo}${minimumNote}`}
             footer={({ requestClose }) => (
                 <>
                     <Button variant="secondary" onClick={requestClose}>Cancel</Button>

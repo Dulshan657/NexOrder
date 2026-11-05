@@ -4,10 +4,15 @@
 // whole cart, so lines must be repriced as the cart changes or the cart would disagree with what
 // place-order charges. Nothing is repriced unless a live promotion has a minimum: a cart holding
 // none behaves exactly as it did.
+//
+// The price is chosen the way the server chooses it (`normalizeOrderItems` and `priceOrderLines` in
+// `_shared/orderPricing.ts`): an explicit non-base unit is priced from that unit, and anything else
+// from the unit price, with the carton formula when it has a pack. `priceReorderLine` is NOT used
+// here: it finds a line with no unit id by its pack factor, which the server does not do, and the
+// two then differ wherever a carton unit's own price differs from the formula.
 
 import type { HoReCa, OrderItem, Product, Promotion, User } from '@/types'
-import { isPromotionActive } from '@/pricing'
-import { priceReorderLine } from '@/lib/reorderLinePrice'
+import { cartonPrice, isPromotionActive, resolvePromotionPrice, resolveUomLinePrice } from '@/pricing'
 import { eligibleForOrderValue } from '@/supabase/functions/_shared/promotionMinimum'
 
 export interface CartPricingContext {
@@ -23,6 +28,15 @@ export interface CartUnderMinimums {
   eligiblePromotions: Promotion[]
 }
 
+function priceAsServer(item: OrderItem, product: Product, ctx: CartPricingContext, promotions: Promotion[]): number {
+  const uom = item.uomId != null ? product.uoms?.find((u) => u.id === item.uomId) : undefined
+  if (uom && !uom.isBase) return resolveUomLinePrice(product, uom, ctx.hoReCa, ctx.currentUser, promotions)
+
+  const perUnit = resolvePromotionPrice(product, ctx.hoReCa, ctx.currentUser, promotions).finalPrice
+  const packSize = uom ? null : item.packSize
+  return packSize != null && packSize > 1 ? cartonPrice(perUnit, packSize, ctx.cartonDiscountPercent) : perUnit
+}
+
 export function applyPromotionMinimums(
   items: OrderItem[],
   products: readonly Product[],
@@ -33,12 +47,10 @@ export function applyPromotionMinimums(
   if (!hasMinimum) return { items, eligiblePromotions: ctx.promotions }
 
   const byId = new Map(products.map((p): [number, Product] => [p.id, p]))
-  // Priced in the line's own unit. A line that cannot be priced keeps the price it has.
+  // A line whose product is gone keeps the price it has. The server will refuse it.
   const priceWith = (item: OrderItem, promotions: Promotion[]): number => {
     const product = byId.get(item.id)
-    if (!product) return item.price
-    const priced = priceReorderLine(item, product, { ...ctx, promotions })
-    return priced.ok === true ? priced.unitPrice : item.price
+    return product ? priceAsServer(item, product, ctx, promotions) : item.price
   }
 
   const orderValue = items.reduce((sum, item) => sum + priceWith(item, []) * item.quantity, 0)
