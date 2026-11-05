@@ -93,9 +93,10 @@ interface AdminViewProps {
     salesTargets?: SalesTarget[];
     onUpdateSalesTargets?: (targets: SalesTarget[]) => void;
     promotions?: Promotion[];
-    onAddPromotion?: (promo: Promotion) => void;
-    onUpdatePromotion?: (promo: Promotion) => void;
+    onAddPromotion?: (promo: Promotion) => Promise<void>;
+    onUpdatePromotion?: (promo: Pick<Promotion, 'id'> & Partial<Promotion>) => Promise<void>;
     onDeletePromotion?: (promoId: string) => void;
+    onPromotionError?: (message: string) => void;
     onUpdateInvoiceStatus: (invoiceId: string, status: Invoice['status']) => void;
     onUpdateOrderStatus: (orderId: string, newStatus: OrderStatus, note?: string) => void;
     onReorder: (order: Order) => void;
@@ -184,7 +185,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                 )}
                 {MODULE_SALES_ORDERS && props.activeTab === 'Order Import' && <OrderImportPage orders={props.allOrders} invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} onReorder={props.onReorder} onViewDetail={props.onViewOrderDetail} onUpdateStatus={props.onUpdateOrderStatus} onBack={() => {}} highlightOrderId={props.highlightOrderId ?? null} onClearHighlightOrderId={props.onClearHighlightOrderId} />}
                 {MODULE_PROMOTIONS && props.activeTab === 'Promotions' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER) && props.promotions && props.onAddPromotion && props.onUpdatePromotion && props.onDeletePromotion && (
-                    <PromotionAdmin promotions={props.promotions} products={props.products} hoReCas={props.hoReCas} users={props.users} onAdd={props.onAddPromotion} onUpdate={props.onUpdatePromotion} onDelete={props.onDeletePromotion} />
+                    <PromotionAdmin promotions={props.promotions} products={props.products} hoReCas={props.hoReCas} users={props.users} onAdd={props.onAddPromotion} onUpdate={props.onUpdatePromotion} onDelete={props.onDeletePromotion} onError={props.onPromotionError} />
                 )}
                 {MODULE_INVOICING && props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
                 {MODULE_INVENTORY_DISPATCH && props.activeTab === 'Stock' && <StockView products={props.products} currentUser={props.currentUser} addToast={props.addToast} onCountBin={openStocktakeBin} />}

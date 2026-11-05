@@ -1519,17 +1519,14 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 salesTargets={salesTargets}
                                 onUpdateSalesTargets={setSalesTargets}
                                 promotions={promotions}
-                                onAddPromotion={p => {
-                                    createPromotionMutation.mutate(fromPromotion(p) as any, {
-                                        onSuccess: () => addToast('Promotion created!', 'success'),
-                                        onError: err => addToast(`Error: ${err.message}`, 'error'),
-                                    });
+                                onAddPromotion={async p => {
+                                    // A refusal goes back to the form, which stays open and says why.
+                                    await createPromotionMutation.mutateAsync(fromPromotion(p) as any);
+                                    addToast('Promotion created!', 'success');
                                 }}
-                                onUpdatePromotion={p => {
-                                    updatePromotionMutation.mutate({ id: p.id, updates: fromPromotion(p) as any }, {
-                                        onSuccess: () => addToast('Promotion updated!', 'success'),
-                                        onError: err => addToast(`Error: ${err.message}`, 'error'),
-                                    });
+                                onUpdatePromotion={async p => {
+                                    await updatePromotionMutation.mutateAsync({ id: p.id, updates: fromPromotion(p) as any });
+                                    addToast('Promotion updated!', 'success');
                                 }}
                                 onDeletePromotion={id => {
                                     deletePromotionMutation.mutate(id, {
@@ -1537,6 +1534,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         onError: err => addToast(`Error: ${err.message}`, 'error'),
                                     });
                                 }}
+                                onPromotionError={message => addToast(`Error: ${message}`, 'error')}
                                 onUpdateInvoiceStatus={handleUpdateInvoiceStatus}
                                 onUpdateOrderStatus={handleUpdateOrderStatus}
                                 onReorder={handleReorderWithNav}

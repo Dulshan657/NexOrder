@@ -1,3 +1,4 @@
+import { extractFunctionErrorMessage } from '@/lib/functionError'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 
@@ -31,12 +32,14 @@ export async function getActivePromotions() {
   })
 }
 
+const REFUSED = 'The promotion could not be saved. Please try again.'
+
 export async function createPromotion(promo: PromotionInsert): Promise<PromotionRow> {
   const { data, error } = await supabase.functions.invoke<{ ok: true; promotion: PromotionRow }>(
     'mutate-promotion',
     { body: { action: 'create', data: promo } },
   )
-  if (error) throw error
+  if (error) throw new Error(await extractFunctionErrorMessage(error, REFUSED))
   return data!.promotion
 }
 
@@ -45,7 +48,7 @@ export async function updatePromotion(id: string, updates: PromotionUpdate): Pro
     'mutate-promotion',
     { body: { action: 'update', id, data: updates } },
   )
-  if (error) throw error
+  if (error) throw new Error(await extractFunctionErrorMessage(error, REFUSED))
   return data!.promotion
 }
 
@@ -54,5 +57,5 @@ export async function deletePromotion(id: string): Promise<void> {
     'mutate-promotion',
     { body: { action: 'delete', id } },
   )
-  if (error) throw error
+  if (error) throw new Error(await extractFunctionErrorMessage(error, REFUSED))
 }

@@ -1217,12 +1217,12 @@ export interface Promotion {
 
     scope: PromotionScope;
     targeting: PromotionTargeting;
-    minOrderValue?: number;         // optional minimum cart value
+    minOrderValue?: number | null;  // optional minimum cart value
     appliesTo?: 'unit' | 'carton';  // for bogo/bundle: whether quantities are units or cartons (default 'unit')
 
     stackWithHoReCaPricing: boolean;
-    startDate?: string;             // ISO date string; undefined = manual control
-    endDate?: string;               // ISO date string; undefined = no expiry
+    startDate?: string | null;      // ISO date string; undefined = manual control
+    endDate?: string | null;        // ISO date string; undefined = no expiry
     isActive: boolean;              // admin manual toggle
 
     createdAt: string;

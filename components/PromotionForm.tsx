@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { fromPromotion } from '../lib/adapters';
+import { promotionProblem } from '../supabase/functions/_shared/promotionBody';
 import type { Promotion, PromotionType, PromotionScope, PromotionTargeting, Product, HoReCa, User, Category, HoReCaTier } from '../types';
 import { Tag } from 'lucide-react';
 import { categoryOptions } from '../lib/productTaxonomy';
@@ -9,7 +11,7 @@ interface PromotionFormProps {
     products: Product[];
     hoReCas: HoReCa[];
     users: User[];
-    onSave: (promo: Promotion) => void;
+    onSave: (promo: Promotion) => Promise<void>;
     onClose: () => void;
 }
 
@@ -63,6 +65,25 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
     const [name, setName] = useState(promotion?.name ?? '');
     const [description, setDescription] = useState(promotion?.description ?? '');
     const [type, setType] = useState<PromotionType>(promotion?.type ?? 'percentage');
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [refusals, setRefusals] = useState(0);
+    const saveErrorRef = useRef<HTMLParagraphElement>(null);
+
+    // The reason sits above a long scrolling form, and the field at fault may be far below it.
+    useEffect(() => {
+        if (refusals > 0) saveErrorRef.current?.scrollIntoView?.({ block: 'nearest' });
+    }, [refusals]);
+
+    const refuse = (reason: string) => {
+        setSaveError(reason);
+        setRefusals(count => count + 1);
+    };
+
+    // A save cannot be called back once sent, so closing now would hide its outcome.
+    const closeUnlessSaving = () => {
+        if (!saving) onClose();
+    };
     const [percentOff, setPercentOff] = useState(String(promotion?.percentOff ?? ''));
     const [fixedPrice, setFixedPrice] = useState(String(promotion?.fixedPrice ?? ''));
     const [clearancePercent, setClearancePercent] = useState(String(promotion?.clearancePercent ?? ''));
@@ -117,11 +138,18 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
 
     const reps = users.filter(u => u.role === 'Field Sales Rep' || u.role === 'Office Sales Rep');
 
-    const handleSave = () => {
-        if (!name.trim()) return;
+    const handleSave = async () => {
+        if (!name.trim() || saving) return;
+
+        // A bundle or buy-one-get-one has no scope control: its scope is its own products, whatever
+        // the hidden control was left on before the type changed.
+        const offerProducts = type === 'bundle'
+            ? bundleProductIds
+            : [...new Set([Number(bogoBuyProductId), bogoSameProduct ? Number(bogoBuyProductId) : Number(bogoGetProductId)])];
 
         const scope: PromotionScope =
-            scopeKind === 'products' ? { kind: 'products', productIds: type === 'bundle' ? bundleProductIds : (type === 'bogo' ? [Number(bogoBuyProductId)] : scopeProductIds) } :
+            type === 'bundle' || type === 'bogo' ? { kind: 'products', productIds: offerProducts } :
+            scopeKind === 'products' ? { kind: 'products', productIds: scopeProductIds } :
             scopeKind === 'categories' ? { kind: 'categories', categories: scopeCategories } :
             { kind: 'storewide' };
 
@@ -132,20 +160,22 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
             { kind: 'all' };
 
         const promo: Promotion = {
-            id: promotion?.id ?? `PROMO-${Date.now()}`,
+            id: promotion?.id ?? '', // the server sets a new promotion's id
             name: name.trim(),
             description: description.trim(),
             type,
             scope,
             targeting,
             stackWithHoReCaPricing,
-            startDate: startDate || undefined,
-            endDate: endDate || undefined,
+            // null on an edit, not undefined: undefined is left out of the update, so an
+            // emptied field would silently keep its old value.
+            startDate: startDate || (promotion ? null : undefined),
+            endDate: endDate || (promotion ? null : undefined),
             isActive: promotion?.isActive ?? true,
             createdAt: promotion?.createdAt ?? new Date().toISOString(),
             createdBy: promotion?.createdBy ?? 1,
             priority: Number(priority) || 10,
-            minOrderValue: minOrderValue ? Number(minOrderValue) : undefined,
+            minOrderValue: minOrderValue ? Number(minOrderValue) : (promotion ? null : undefined),
             appliesTo: (type === 'bogo' || type === 'bundle') ? appliesTo : undefined,
         };
 
@@ -165,7 +195,20 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
             promo.bundleConfig = { productIds: bundleProductIds, bundlePrice: Number(bundlePrice) };
         }
 
-        onSave(promo);
+        const problem = promotionProblem(fromPromotion(promo));
+        if (problem) {
+            refuse(problem);
+            return;
+        }
+
+        setSaving(true);
+        setSaveError(null);
+        try {
+            await onSave(promo);
+        } catch (err) {
+            refuse(err instanceof Error ? err.message : 'The promotion could not be saved. Please try again.');
+            setSaving(false);
+        }
     };
 
     const filteredProducts = products.filter(p =>
@@ -182,21 +225,27 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
     return (
         <Modal
             open
-            onClose={onClose}
+            onClose={closeUnlessSaving}
             size="2xl"
             dirty={isDirty}
             icon={<Tag className="w-4 h-4 text-nexgen-blue" />}
             title={promotion ? 'Edit Promotion' : 'Create Promotion'}
             footer={({ requestClose }) => (
                 <>
-                    <Button variant="secondary" onClick={requestClose}>Cancel</Button>
-                    <Button onClick={handleSave} disabled={!name.trim()}>
+                    <Button variant="secondary" onClick={requestClose} disabled={saving}>Cancel</Button>
+                    <Button onClick={handleSave} disabled={!name.trim() || saving}>
                         {promotion ? 'Update Promotion' : 'Create Promotion'}
                     </Button>
                 </>
             )}
         >
             <div className="space-y-5">
+                {saveError && (
+                    <p ref={saveErrorRef} role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                        {saveError}
+                    </p>
+                )}
+
                 {/* Name & Description */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
