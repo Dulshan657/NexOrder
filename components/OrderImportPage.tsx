@@ -39,6 +39,10 @@ import {
   Truck,
 } from 'lucide-react';
 import { SortableHeader } from './ui/SortableHeader';
+import { PageFrame } from './ui/PageFrame';
+import { PageHeader } from './ui/PageHeader';
+import { PageTabs } from './ui/PageTabs';
+import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 import { ErrorBoundary } from './ErrorBoundary';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { MODULE_SHOP } from '../lib/modules';
@@ -607,22 +611,19 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6 font-sans">
-
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900 tracking-tight">
-          Order Import
-        </h1>
-        {!isCustomer && (
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS['Order Import']}
+        description="Review incoming orders and move them through to completion."
+        actions={!isCustomer ? (
           <button
             onClick={onBack}
-            className="text-sm font-medium text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
+            className="px-3 py-1.5 touch-target-y text-sm font-medium text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
           >
             &larr; Back
           </button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Kitchen QR orders awaiting approval. Admin/Manager see every venue; a rep sees
           their assigned venues (RLS narrows the list, not this component). */}
@@ -634,42 +635,12 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
         </ErrorBoundary>
       )}
 
-      {/* Tabs */}
-      <div className="border-b border-stone-200">
-        <nav className="-mb-px flex justify-center gap-0" aria-label="Order workflow tabs">
-          {ALL_TABS.map((tab) => {
-            const isActive = activeTab === tab;
-            const count = tabCounts[tab];
-            return (
-              <button
-                key={tab}
-                onClick={() => handleTabChange(tab)}
-                className={`
-                  relative px-5 py-3 text-sm font-medium border-b-2 transition-colors duration-150 cursor-pointer whitespace-nowrap
-                  ${isActive
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'}
-                `}
-                aria-selected={isActive}
-                role="tab"
-              >
-                <span className="inline-flex items-center gap-2">
-                  {TAB_LABELS[tab]}
-                  <span
-                    className={`inline-flex items-center justify-center rounded-full text-xs font-semibold px-2 py-0.5 min-w-[20px] tabular-nums
-                      ${isActive
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'bg-stone-200 text-stone-600'}
-                    `}
-                  >
-                    {count}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-      </div>
+      <PageTabs
+        ariaLabel="Order workflow tabs"
+        tabs={ALL_TABS.map((tab) => ({ id: tab, label: TAB_LABELS[tab], badge: tabCounts[tab] }))}
+        activeId={activeTab}
+        onChange={handleTabChange}
+      />
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-stone-200/60 shadow-card overflow-hidden">
@@ -1388,7 +1359,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
           });
         }}
       />
-    </div>
+    </PageFrame>
   );
 };
 

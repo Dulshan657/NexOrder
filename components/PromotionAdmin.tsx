@@ -2,6 +2,10 @@ import React, { useState, useMemo } from 'react';
 import type { Promotion, Product, HoReCa, User } from '../types';
 import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, Tag, Calendar } from 'lucide-react';
 import PromotionForm from './PromotionForm';
+import { PageFrame } from './ui/PageFrame';
+import { PageHeader } from './ui/PageHeader';
+import { PageTabs } from './ui/PageTabs';
+import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 import { isPromotionActive } from '../pricing';
 
 interface PromotionAdminProps {
@@ -15,6 +19,14 @@ interface PromotionAdminProps {
 }
 
 type FilterTab = 'all' | 'active' | 'scheduled' | 'expired' | 'disabled';
+
+const FILTER_TABS: Array<{ id: FilterTab; label: string }> = [
+    { id: 'all', label: 'All' },
+    { id: 'active', label: 'Active' },
+    { id: 'scheduled', label: 'Scheduled' },
+    { id: 'expired', label: 'Expired' },
+    { id: 'disabled', label: 'Disabled' },
+];
 
 const TYPE_BADGES: Record<string, { bg: string; text: string }> = {
     percentage: { bg: 'bg-amber-100', text: 'text-amber-700' },
@@ -110,27 +122,24 @@ const PromotionAdmin: React.FC<PromotionAdminProps> = ({ promotions, products, h
     };
 
     return (
-        <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                    <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">Promotions</h2>
-                    <p className="text-sm text-stone-500 mt-1">Manage discounts, deals, and clearance pricing</p>
-                </div>
-                <button onClick={() => { setEditingPromo(null); setShowForm(true); }}
-                    className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-medium hover:bg-emerald-700 flex items-center gap-2 cursor-pointer shadow-sm">
-                    <Plus className="w-4 h-4" /> Create Promotion
-                </button>
-            </div>
-
-            {/* Filter Tabs */}
-            <div className="flex gap-1 mb-4 bg-stone-100 p-1 rounded-xl w-fit">
-                {(['all', 'active', 'scheduled', 'expired', 'disabled'] as FilterTab[]).map(tab => (
-                    <button key={tab} onClick={() => setFilter(tab)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize cursor-pointer transition-colors ${filter === tab ? 'bg-white shadow-sm text-stone-900' : 'text-stone-500 hover:text-stone-700'}`}>
-                        {tab} {counts[tab] > 0 && <span className="text-xs ml-1 opacity-60">({counts[tab]})</span>}
+        <PageFrame>
+            <PageHeader
+                title={ADMIN_TAB_LABELS.Promotions}
+                description="Manage discounts, deals, and clearance pricing"
+                actions={
+                    <button onClick={() => { setEditingPromo(null); setShowForm(true); }}
+                        className="bg-emerald-600 text-white px-3 py-1.5 touch-target-y text-sm rounded-lg font-medium hover:bg-emerald-700 flex items-center gap-2 cursor-pointer shadow-sm">
+                        <Plus className="w-4 h-4" /> Create Promotion
                     </button>
-                ))}
-            </div>
+                }
+            />
+
+            <PageTabs
+                ariaLabel="Promotion status"
+                tabs={FILTER_TABS.map(tab => ({ ...tab, badge: counts[tab.id] }))}
+                activeId={filter}
+                onChange={setFilter}
+            />
 
             {/* Table */}
             {filtered.length > 0 ? (
@@ -224,7 +233,7 @@ const PromotionAdmin: React.FC<PromotionAdminProps> = ({ promotions, products, h
                     onClose={() => { setShowForm(false); setEditingPromo(null); }}
                 />
             )}
-        </div>
+        </PageFrame>
     );
 };
 

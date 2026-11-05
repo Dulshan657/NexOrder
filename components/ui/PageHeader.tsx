@@ -32,7 +32,7 @@ export function PageHeader({ title, description, actions, visibleOnMobile = fals
         <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">{title}</h1>
         {description && <p className="text-xs text-stone-500 mt-0.5">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-3 min-w-0 max-w-full">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-3 min-w-0 max-w-full sm:ml-auto">{actions}</div>}
     </header>
   )
 }

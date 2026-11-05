@@ -16,6 +16,14 @@ describe('PageHeader', () => {
     expect(description.className).toContain('text-xs text-stone-500 mt-0.5')
   })
 
+  it('keeps wrapped actions on the right from sm up', () => {
+    render(<PageHeader title="PO Inbox" actions={<button type="button">Mailboxes</button>} />)
+
+    // Menus in the header open leftwards from the button, so a row that wraps to
+    // the left would push them off the page on a tablet.
+    expect(screen.getByRole('button', { name: 'Mailboxes' }).parentElement!.className).toContain('sm:ml-auto')
+  })
+
   it('hides the text below md but keeps it accessible, and always shows actions', () => {
     render(
       <PageHeader title="Stock" description="Live stock by product." actions={<button type="button">Import</button>} />,

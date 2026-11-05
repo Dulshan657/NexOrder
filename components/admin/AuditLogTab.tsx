@@ -18,6 +18,10 @@ import type {
     AuditAction,
 } from '../../services/supabase/auditService';
 import AuditMutationRow from './AuditMutationRow';
+import { PageFrame } from '../ui/PageFrame';
+import { PageHeader } from '../ui/PageHeader';
+import { PageTabs } from '../ui/PageTabs';
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl';
 import AuditErrorRow from './AuditErrorRow';
 
 const PAGE_SIZE = 50;
@@ -36,6 +40,11 @@ const KNOWN_RESOURCES = [
 const KNOWN_ACTIONS: AuditAction[] = ['create', 'update', 'delete'];
 
 type Mode = 'mutations' | 'errors';
+
+const MODE_TABS: Array<{ id: Mode; label: string }> = [
+    { id: 'mutations', label: 'Mutations' },
+    { id: 'errors', label: 'Errors' },
+];
 
 interface AuditLogTabProps {
     users: User[];
@@ -169,24 +178,16 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
         'w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue cursor-pointer';
 
     return (
-        <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                    <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Audit Log</h1>
-                    <p className="text-xs text-stone-500 mt-0.5">
-                        {isLoading
-                            ? 'Loading…'
-                            : `${total.toLocaleString()} ${totalLabel}`}
-                        {isFetching && !isLoading ? ' · refreshing' : ''}
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
+        <PageFrame>
+            <PageHeader
+                title={ADMIN_TAB_LABELS['Audit Log']}
+                description="A record of every sensitive change and client error."
+                actions={<>
                     <button
                         type="button"
                         onClick={handleRefresh}
                         disabled={isFetching}
-                        className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-white text-stone-700 border border-stone-200 hover:bg-stone-50 text-sm font-medium transition-colors disabled:opacity-60 cursor-pointer btn-press"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y text-sm rounded-lg bg-white text-stone-700 border border-stone-200 hover:bg-stone-50 font-medium transition-colors disabled:opacity-60 cursor-pointer btn-press"
                         title="Refresh"
                     >
                         <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
@@ -196,40 +197,21 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                         type="button"
                         onClick={handleDownloadCsv}
                         disabled={total === 0}
-                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors disabled:opacity-50 cursor-pointer btn-press"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y text-sm rounded-lg bg-stone-900 text-white font-medium hover:bg-stone-800 transition-colors disabled:opacity-50 cursor-pointer btn-press"
                         title="Download visible page as CSV"
                     >
                         <Download className="w-4 h-4" />
                         Export CSV
                     </button>
-                </div>
-            </div>
+                </>}
+            />
 
-            {/* Mode chips */}
-            <div className="flex gap-2 overflow-x-auto pb-1">
-                <button
-                    type="button"
-                    onClick={() => handleSwitchMode('mutations')}
-                    className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                        mode === 'mutations'
-                            ? 'bg-nexgen-blue text-white'
-                            : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-                    }`}
-                >
-                    Mutations
-                </button>
-                <button
-                    type="button"
-                    onClick={() => handleSwitchMode('errors')}
-                    className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                        mode === 'errors'
-                            ? 'bg-nexgen-blue text-white'
-                            : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-                    }`}
-                >
-                    Errors
-                </button>
-            </div>
+            <PageTabs
+                ariaLabel="Audit log type"
+                tabs={MODE_TABS}
+                activeId={mode}
+                onChange={handleSwitchMode}
+            />
 
             {/* Filters */}
             <div className="space-y-3">
@@ -424,7 +406,7 @@ const AuditLogTab: React.FC<AuditLogTabProps> = ({ users }) => {
                     </div>
                 </div>
             )}
-        </div>
+        </PageFrame>
     );
 };
 

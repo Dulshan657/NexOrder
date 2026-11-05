@@ -3,9 +3,9 @@
 // Two presentation variants:
 //   * 'card' — original chunky tile used by AdminDashboard, where the tile is
 //     one of several elevated surfaces competing for attention.
-//   * 'inline' — flat horizontal KPI strip used inside POInboxView, where the
-//     tile lives in a page header and needs to feel quiet, not stack another
-//     card on top of the existing page chrome.
+//   * 'inline' — flat KPI strip used inside POInboxView, in a row under the page
+//     title, where it needs to feel quiet, not stack another card on top of the
+//     existing page chrome. Two by two below `sm`, a single row above it.
 
 import React from 'react'
 import { AlertTriangle, CheckCircle2, DollarSign, Inbox } from 'lucide-react'
@@ -38,7 +38,7 @@ const POInboxStatsTile: React.FC<POInboxStatsTileProps> = ({
 
   if (variant === 'inline') {
     return (
-      <dl className="inline-flex items-stretch rounded-xl border border-stone-200 bg-white overflow-hidden divide-x divide-stone-200/70">
+      <dl className="grid grid-cols-2 sm:inline-flex sm:items-stretch rounded-xl border border-stone-200 bg-white overflow-hidden sm:divide-x divide-stone-200/70">
         <RibbonStat label="Received" value={received} />
         <RibbonStat label="Auto-approved" value={autoApproved} tone="emerald" />
         <RibbonStat label="Needs review" value={backlog} tone={backlogTone} emphasise />

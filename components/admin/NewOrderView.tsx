@@ -15,9 +15,12 @@
 // here would be a number the operator trusts and the order does not carry.
 
 import React, { useMemo, useState } from 'react'
-import { FilePlus, Loader2, ShoppingCart } from 'lucide-react'
+import { Loader2, ShoppingCart } from 'lucide-react'
 
 import { Button, Field, Input, Textarea } from '../ui'
+import { PageFrame } from '../ui/PageFrame'
+import { PageHeader } from '../ui/PageHeader'
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl'
 import HoReCaSearchDropdown from '../HoReCaSearchDropdown'
 import OrderLinesGrid from './newOrder/OrderLinesGrid'
 import CsvPastePanel from './newOrder/CsvPastePanel'
@@ -127,19 +130,13 @@ const NewOrderView: React.FC<NewOrderViewProps> = ({
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <header className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-nexgen-blue/10 text-nexgen-blue">
-          <FilePlus className="w-5 h-5" />
-        </div>
-        <div>
-          <h1 className="text-xl font-semibold text-stone-900">New Order</h1>
-          <p className="text-sm text-stone-500">
-            Key an order in for a customer. It goes to the warehouse to be picked.
-          </p>
-        </div>
-      </header>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS['New Order']}
+        description="Key an order in for a customer and send it to the warehouse to pick."
+      />
 
+      <div className="max-w-5xl space-y-6">
       <section className="glass-panel rounded-xl p-5 space-y-4">
         <Field label="Customer">
           <HoReCaSearchDropdown
@@ -204,7 +201,8 @@ const NewOrderView: React.FC<NewOrderViewProps> = ({
           )}
         </Button>
       </div>
-    </div>
+      </div>
+    </PageFrame>
   )
 }
 

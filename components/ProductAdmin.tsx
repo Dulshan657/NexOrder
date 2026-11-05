@@ -11,6 +11,9 @@ import { ProductAdminFilters } from './admin/ProductAdminFilters';
 import { PRODUCT_ROW_COLUMNS } from './admin/productAdminColumns';
 import { categoryOptions } from '../lib/productTaxonomy';
 import { matchesProductQuery } from '../lib/productSuppliers';
+import { PageFrame } from './ui/PageFrame';
+import { PageHeader } from './ui/PageHeader';
+import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 import { WarehousePicker } from './inventory/WarehousePicker';
 import { useWarehouseScope } from '../context/WarehouseScopeContext';
 import { useProductStockByWarehouse } from '../hooks/queries/useInventoryBalances';
@@ -161,10 +164,11 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
     };
     
     return (
-        <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-                <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">Manage Products</h2>
-                <div className="flex flex-wrap items-center gap-2">
+        <PageFrame>
+            <PageHeader
+                title={ADMIN_TAB_LABELS.Products}
+                description="Your catalogue: add, edit and import products."
+                actions={<>
                     <WarehousePicker />
                     {scope !== 'all' && (
                         <label className="inline-flex items-center gap-1.5 text-sm text-stone-600 cursor-pointer select-none">
@@ -179,18 +183,18 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
                     )}
                     <button
                         onClick={() => setIsImportOpen(true)}
-                        className="inline-flex items-center gap-1.5 border border-stone-300 text-stone-700 font-medium py-2 px-4 rounded-lg hover:bg-stone-50 transition-colors btn-press"
+                        className="inline-flex items-center gap-1.5 border border-stone-300 text-stone-700 font-medium px-3 py-1.5 touch-target-y text-sm rounded-lg hover:bg-stone-50 transition-colors btn-press"
                     >
                         <FileUp className="w-4 h-4" /> Import
                     </button>
                     <button
                         onClick={handleOpenFormForNew}
-                        className="bg-stone-900 text-white font-medium py-2 px-4 rounded-lg hover:bg-stone-800 transition-colors shadow-sm btn-press"
+                        className="bg-stone-900 text-white font-medium px-3 py-1.5 touch-target-y text-sm rounded-lg hover:bg-stone-800 transition-colors shadow-sm btn-press"
                     >
                         Add New Product
                     </button>
-                </div>
-            </div>
+                </>}
+            />
             {selectedProducts.length > 0 && (
                 <div
                     role="status"
@@ -325,7 +329,7 @@ const ProductAdmin: React.FC<ProductAdminProps> = ({ products, suppliers, onAddP
                     onClose={() => setIsImportOpen(false)}
                 />
             )}
-        </div>
+        </PageFrame>
     );
 };
 

@@ -1,7 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import type { HoReCa, User } from '../../types';
 import { useMarkHoReCaReviewed, useUpdateHoReCa } from '../../hooks/queries/useHoReCas';
-import { UserPlus, MapPin, Check, ExternalLink, Loader2, Inbox } from 'lucide-react';
+import { MapPin, Check, ExternalLink, Loader2, Inbox } from 'lucide-react';
+import { PageFrame } from '../ui/PageFrame';
+import { PageHeader } from '../ui/PageHeader';
+import { PageTabs } from '../ui/PageTabs';
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl';
 
 interface WalkInReviewTabProps {
   hoReCas: HoReCa[];
@@ -62,41 +66,21 @@ const WalkInReviewTab: React.FC<WalkInReviewTabProps> = ({ hoReCas, users, curre
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <UserPlus className="w-5 h-5 text-stone-700" />
-          <div>
-            <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Walk-in Review</h1>
-            <p className="text-sm text-stone-500">
-              Temporary customers reps added during scheduled visits. Review and promote to the CRM.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setFilter('unreviewed')}
-            className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${
-              filter === 'unreviewed'
-                ? 'bg-nexgen-blue text-white'
-                : 'bg-white text-stone-700 ring-1 ring-inset ring-stone-200 hover:bg-stone-50'
-            }`}
-          >
-            Unreviewed {unreviewedCount > 0 && `(${unreviewedCount})`}
-          </button>
-          <button
-            onClick={() => setFilter('all')}
-            className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${
-              filter === 'all'
-                ? 'bg-nexgen-blue text-white'
-                : 'bg-white text-stone-700 ring-1 ring-inset ring-stone-200 hover:bg-stone-50'
-            }`}
-          >
-            All walk-ins
-          </button>
-        </div>
-      </div>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS['Walk-in Review']}
+        description="Temporary customers reps added during visits, ready to review and promote."
+      />
+
+      <PageTabs
+        ariaLabel="Walk-in filter"
+        tabs={[
+          { id: 'unreviewed', label: 'Unreviewed', badge: unreviewedCount },
+          { id: 'all', label: 'All walk-ins' },
+        ]}
+        activeId={filter}
+        onChange={setFilter}
+      />
 
       {/* List */}
       {walkIns.length === 0 ? (
@@ -176,7 +160,7 @@ const WalkInReviewTab: React.FC<WalkInReviewTabProps> = ({ hoReCas, users, curre
           })}
         </div>
       )}
-    </div>
+    </PageFrame>
   );
 };
 

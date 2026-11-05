@@ -2,6 +2,9 @@ import React, { useState, useMemo } from 'react';
 import type { User } from '../types';
 import UserForm from './UserForm';
 import ConfirmationDialog from './ConfirmationDialog';
+import { PageFrame } from './ui/PageFrame';
+import { PageHeader } from './ui/PageHeader';
+import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 import { directoryUsers } from '../lib/userDirectory';
 
 interface UserAdminProps {
@@ -59,16 +62,19 @@ const UserAdmin: React.FC<UserAdminProps> = ({ users, onAddUser, onUpdateUser, o
     };
 
     return (
-        <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-            <div className="flex flex-wrap gap-4 justify-between items-center">
-                <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">Manage Users</h2>
-                <button
-                    onClick={handleOpenFormForNew}
-                    className="bg-stone-900 text-white font-medium py-2.5 px-5 rounded-lg hover:bg-stone-800 transition-colors shadow-sm"
-                >
-                    + Add New User
-                </button>
-            </div>
+        <PageFrame>
+            <PageHeader
+                title={ADMIN_TAB_LABELS.Users}
+                description="Invite staff and customers and manage their roles."
+                actions={
+                    <button
+                        onClick={handleOpenFormForNew}
+                        className="bg-stone-900 text-white font-medium px-3 py-1.5 touch-target-y text-sm rounded-lg hover:bg-stone-800 transition-colors shadow-sm"
+                    >
+                        + Add New User
+                    </button>
+                }
+            />
 
             <div className="mb-6 relative">
                 <label htmlFor="user-search" className="sr-only">Search by Name or Email</label>
@@ -136,7 +142,7 @@ const UserAdmin: React.FC<UserAdminProps> = ({ users, onAddUser, onUpdateUser, o
                 onConfirm={confirmDelete}
                 onCancel={() => setUserToDelete(null)}
             />
-        </div>
+        </PageFrame>
     );
 };
 

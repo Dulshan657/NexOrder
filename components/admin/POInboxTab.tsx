@@ -103,7 +103,7 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
   return (
     <div>
       <div className="flex items-center justify-between gap-3 border-b border-stone-200/70">
-        <nav className="flex items-center gap-6 -mb-px" aria-label="PO status filter">
+        <nav className="flex min-w-0 items-center gap-6 -mb-px overflow-x-auto" aria-label="PO status filter">
           {tabs.map(tab => (
             <FilterTab
               key={tab.key}
@@ -120,7 +120,7 @@ const POInboxTab: React.FC<POInboxTabProps> = ({
           type="button"
           onClick={handleRefresh}
           disabled={isRefreshing}
-          className="text-stone-500 hover:text-stone-800 p-1.5 rounded-md hover:bg-stone-100 btn-press disabled:opacity-60"
+          className="shrink-0 touch-target text-stone-500 hover:text-stone-800 p-1.5 rounded-md hover:bg-stone-100 btn-press disabled:opacity-60"
           aria-label="Refresh"
           title="Refresh"
         >
@@ -180,7 +180,7 @@ const FilterTab: React.FC<FilterTabProps> = ({ active, onClick, title, count, ch
     type="button"
     onClick={onClick}
     title={title}
-    className={`py-2.5 text-sm transition-colors border-b-2 inline-flex items-center gap-2 ${
+    className={`shrink-0 whitespace-nowrap py-2.5 touch-target-y text-sm transition-colors border-b-2 inline-flex items-center gap-2 ${
       active
         ? 'border-stone-900 text-stone-900 font-medium'
         : 'border-transparent text-stone-500 hover:text-stone-800'

@@ -5,6 +5,9 @@ import { UserRole } from '../types';
 import { getAllOutstanding, getHoReCaOutstanding } from '../services/accountingService';
 import type { HoReCaOutstanding } from '../services/accountingService';
 import { SortableHeader } from './ui/SortableHeader';
+import { PageFrame } from './ui/PageFrame';
+import { PageHeader } from './ui/PageHeader';
+import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 
 interface AccountsAgingTableProps {
     invoices: Invoice[];
@@ -120,8 +123,11 @@ const AccountsAgingTable: React.FC<AccountsAgingTableProps> = ({ invoices, hoReC
 
 
     return (
-        <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-            <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Accounts Receivable</h1>
+        <PageFrame>
+            <PageHeader
+                title={ADMIN_TAB_LABELS.Accounts}
+                description="Outstanding balances and how long they have been owing."
+            />
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -278,7 +284,7 @@ const AccountsAgingTable: React.FC<AccountsAgingTableProps> = ({ invoices, hoReC
                     <p className="text-stone-500">All accounts are clear. No outstanding balances.</p>
                 </div>
             )}
-        </div>
+        </PageFrame>
     );
 };
 

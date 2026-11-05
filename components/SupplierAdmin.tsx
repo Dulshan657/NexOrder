@@ -3,6 +3,9 @@ import React, { useState } from 'react';
 import type { Product, ProductSupplierLink, Supplier } from '../types';
 import SupplierForm from './SupplierForm';
 import ConfirmationDialog from './ConfirmationDialog';
+import { PageFrame } from './ui/PageFrame';
+import { PageHeader } from './ui/PageHeader';
+import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 import SupplierProductsSheet from './admin/SupplierProductsSheet';
 import { linksForProduct } from '../lib/productSuppliers';
 
@@ -56,16 +59,19 @@ const SupplierAdmin: React.FC<SupplierAdminProps> = ({
     };
 
     return (
-        <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-            <div className="flex justify-between items-center">
-                <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">Manage Suppliers</h2>
-                <button
-                    onClick={handleOpenFormForNew}
-                    className="bg-stone-900 text-white font-medium py-2.5 px-5 rounded-lg hover:bg-stone-800 transition-colors shadow-sm"
-                >
-                    + Add New Supplier
-                </button>
-            </div>
+        <PageFrame>
+            <PageHeader
+                title={ADMIN_TAB_LABELS.Suppliers}
+                description="The suppliers you buy stock from."
+                actions={
+                    <button
+                        onClick={handleOpenFormForNew}
+                        className="bg-stone-900 text-white font-medium px-3 py-1.5 touch-target-y text-sm rounded-lg hover:bg-stone-800 transition-colors shadow-sm"
+                    >
+                        + Add New Supplier
+                    </button>
+                }
+            />
             <div className="overflow-x-auto border border-stone-200 rounded-xl shadow-sm bg-white">
                 <table className="min-w-full divide-y divide-stone-200">
                     <thead className="bg-stone-50">
@@ -130,7 +136,7 @@ const SupplierAdmin: React.FC<SupplierAdminProps> = ({
                 onConfirm={confirmDelete}
                 onCancel={() => setSupplierToDelete(null)}
             />
-        </div>
+        </PageFrame>
     );
 };
 

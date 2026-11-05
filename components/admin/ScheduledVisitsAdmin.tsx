@@ -2,11 +2,15 @@ import React, { useState, useMemo } from 'react';
 import type { ScheduledVisit, User, HoReCa, Visit } from '../../types';
 import { UserRole } from '../../types';
 import { getPendingChangeRequests, reassignScheduledVisit, isAssignedScheduledVisit, createAssignedScheduledVisit } from '../../services/scheduledVisitService';
+import { PageFrame } from '../ui/PageFrame';
+import { PageHeader } from '../ui/PageHeader';
+import { PageTabs } from '../ui/PageTabs';
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl';
 import ScheduledVisitApprovalQueue from './ScheduledVisitApprovalQueue';
 import ScheduledVisitTrackingMap from './ScheduledVisitTrackingMap';
 import ScheduledVisitForm from '../scheduled-visits/ScheduledVisitForm';
 import ScheduledVisitTemplateForm from '../scheduled-visits/ScheduledVisitTemplateForm';
-import { MapPin, ClipboardList, Repeat, Navigation, Plus, Calendar, Clock, Play, CheckCircle2, UserCheck, ArrowRightLeft, Trash2 } from 'lucide-react';
+import { MapPin, Repeat, Plus, Calendar, Clock, Play, CheckCircle2, UserCheck, ArrowRightLeft, Trash2 } from 'lucide-react';
 
 type SubTab = 'all' | 'approvals' | 'templates' | 'tracking';
 
@@ -86,64 +90,45 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
     addToast(`Scheduled Visit reassigned to ${repName}`, 'success');
   };
 
-  const subTabs: Array<{ key: SubTab; label: string; icon: React.ReactNode; badge?: number }> = [
-    { key: 'all', label: 'All Scheduled Visits', icon: <ClipboardList className="w-4 h-4" /> },
-    { key: 'approvals', label: 'Approvals', icon: <UserCheck className="w-4 h-4" />, badge: pendingCount },
-    { key: 'templates', label: 'Templates', icon: <Repeat className="w-4 h-4" />, badge: templates.length },
-    { key: 'tracking', label: 'Live Tracking', icon: <Navigation className="w-4 h-4" /> },
+  const subTabs: Array<{ id: SubTab; label: string; badge?: number }> = [
+    { id: 'all', label: 'All Scheduled Visits' },
+    { id: 'approvals', label: 'Approvals', badge: pendingCount },
+    { id: 'templates', label: 'Templates', badge: templates.length },
+    { id: 'tracking', label: 'Live Tracking' },
   ];
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <MapPin className="w-5 h-5 text-stone-700" />
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Scheduled Visit Management</h1>
-        </div>
-        <div className="flex gap-2">
-          {subTab === 'templates' && (
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS['Scheduled Visits']}
+        description="Plan, assign and track visits to customers."
+        actions={
+          subTab === 'templates' ? (
             <button
               onClick={() => setShowTemplateForm(true)}
-              className="flex items-center gap-1 text-sm font-medium text-white bg-purple-600 px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 touch-target-y text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
             >
               <Plus className="w-4 h-4" />
               New Template
             </button>
-          )}
-          {subTab === 'all' && (
+          ) : subTab === 'all' ? (
             <button
               onClick={() => setShowCreateForm(true)}
-              className="flex items-center gap-1 text-sm font-medium text-white bg-nexgen-blue px-4 py-2 rounded-lg hover:bg-nexgen-blue-dark transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 touch-target-y text-sm font-medium text-white bg-nexgen-blue rounded-lg hover:bg-nexgen-blue-dark transition-colors"
             >
               <Plus className="w-4 h-4" />
               Create & Assign Scheduled Visit
             </button>
-          )}
-        </div>
-      </div>
+          ) : undefined
+        }
+      />
 
-      {/* Sub-tab bar */}
-      <div className="flex bg-white rounded-xl border border-stone-200 p-1">
-        {subTabs.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setSubTab(tab.key)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-colors ${
-              subTab === tab.key ? 'bg-nexgen-blue text-white' : 'text-stone-600 hover:bg-stone-50'
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-            {tab.badge !== undefined && tab.badge > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                subTab === tab.key ? 'bg-white/20' : 'bg-orange-100 text-orange-700'
-              }`}>
-                {tab.badge}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      <PageTabs
+        ariaLabel="Scheduled visit views"
+        tabs={subTabs}
+        activeId={subTab}
+        onChange={setSubTab}
+      />
 
       {/* Content */}
       {showCreateForm && subTab === 'all' ? (
@@ -332,7 +317,7 @@ const ScheduledVisitsAdmin: React.FC<RoutesAdminProps> = ({ routes, users, hoReC
       ) : (
         <ScheduledVisitTrackingMap routes={routes} hoReCas={hoReCas} users={users} visits={visits} />
       )}
-    </div>
+    </PageFrame>
   );
 };
 

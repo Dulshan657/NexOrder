@@ -7,6 +7,9 @@ import HoReCaForm from './HoReCaForm';
 import ConfirmationDialog from './ConfirmationDialog';
 import HoReCaProfile from './HoReCaProfile';
 import VisitModal from './visits/VisitModal';
+import { PageFrame } from './ui/PageFrame';
+import { PageHeader } from './ui/PageHeader';
+import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 import { getHoReCaOutstanding } from '../services/accountingService';
 import { computeAllHoReCaInsights } from '../services/buyingPatternsService';
 import { isFailedSave, type HoReCaSaveOutcome } from '../lib/horecaSave';
@@ -200,20 +203,17 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
   }
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">HoReCa Customers</h1>
-          <p className="text-xs text-stone-500 mt-0.5">{hoReCas.length} customers</p>
-        </div>
-        {onAddHoReCa && (
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS.HoReCa}
+        description="Your restaurant, hotel and café customers."
+        actions={onAddHoReCa ? (
           <button onClick={() => setShowAddForm(true)}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-colors cursor-pointer">
+            className="flex items-center gap-1.5 px-3 py-1.5 touch-target-y text-sm rounded-lg bg-stone-900 text-white font-medium hover:bg-stone-800 transition-colors cursor-pointer">
             <Plus className="w-4 h-4" /> Add HoReCa
           </button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Filters */}
       <div className="space-y-3">
@@ -389,7 +389,7 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
           onClose={() => setVisitHoReCaId(null)}
         />
       )}
-    </div>
+    </PageFrame>
   );
 };
 

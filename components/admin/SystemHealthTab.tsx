@@ -14,6 +14,9 @@ import {
 import { uptimePercent, latencySeries, formatSha, statusTone } from './systemHealthFormat';
 import { readSessionBreadcrumbs } from '@/lib/auth/sessionBreadcrumbs';
 import { describeSession } from './sessionHealthFormat';
+import { PageFrame } from '../ui/PageFrame';
+import { PageHeader } from '../ui/PageHeader';
+import { ADMIN_TAB_LABELS } from '@/lib/adminTabUrl';
 
 const SPARK_POINTS = 48;
 
@@ -124,7 +127,12 @@ const SystemHealthTab: React.FC = () => {
   const spark = latencySeries(history, SPARK_POINTS);
 
   return (
-    <div className="space-y-6">
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS['System Health']}
+        description="Live status of the database, app and client errors."
+      />
+
       {/* Status banner */}
       <div className={`rounded-2xl border p-5 ${tone.bg}`}>
         <div className="flex items-center gap-3">
@@ -205,7 +213,7 @@ const SystemHealthTab: React.FC = () => {
       <p className="text-center text-xs text-stone-500 font-mono">
         client build {formatSha(__APP_VERSION__)} · {__BUILD_TIME__}
       </p>
-    </div>
+    </PageFrame>
   );
 };
 
