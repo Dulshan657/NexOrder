@@ -7,6 +7,7 @@ import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { ErrorBoundary } from './ErrorBoundary';
 import { MODULE_SHOP } from '../lib/modules';
 import type { PendingSave } from '../lib/qr/assignedReps';
+import { isValidAbn } from '@/supabase/functions/_shared/horecaBody';
 
 // Which reps look after a venue only matters to kitchen QR orders, which ship with
 // the shop module. Gated at the declaration so a tenant without it ships no chunk --
@@ -34,6 +35,12 @@ interface FormFields {
     creditLimit: string;
     tier: HoReCaTier | '';
     discountPercent: string;
+    contactName: string;
+    phone: string;
+    abn: string;
+    billingEmail: string;
+    // One text box, brands separated by commas; see parseBrands.
+    buysBrands: string;
 }
 
 const toFormFields = (hoReCa: HoReCa | null): FormFields => ({
@@ -42,7 +49,16 @@ const toFormFields = (hoReCa: HoReCa | null): FormFields => ({
     creditLimit: hoReCa?.creditLimit !== undefined ? String(hoReCa.creditLimit) : '',
     tier: hoReCa?.tier ?? '',
     discountPercent: hoReCa?.discountPercent !== undefined ? String(hoReCa.discountPercent) : '',
+    contactName: hoReCa?.contactName ?? '',
+    phone: hoReCa?.phone ?? '',
+    abn: hoReCa?.abn ?? '',
+    billingEmail: hoReCa?.billingEmail ?? '',
+    buysBrands: (hoReCa?.buysBrands ?? []).join(', '),
 });
+
+// "McCURRIE, Bega,, McCURRIE" -> ['McCURRIE', 'Bega']: trimmed, no blanks, no repeats.
+const parseBrands = (text: string): string[] =>
+    [...new Set(text.split(',').map((brand) => brand.trim()).filter((brand) => brand !== ''))];
 
 // Payment methods are edited in place, so the dirty check compares them element-wise
 // against the list the form opened with.
@@ -65,6 +81,7 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
     const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(initialPaymentMethods);
     const [editingMethod, setEditingMethod] = useState<Partial<PaymentMethod> | null>(null);
     const [reason, setReason] = useState('');
+    const [abnError, setAbnError] = useState<string | null>(null);
     // The assigned-reps section's unsaved change, or null when it has none. The
     // section persists it itself (mutate-horeca `set_reps` -- a different table with
     // a different audit trail from the venue update, hence a separate call); the
@@ -79,6 +96,7 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
         setPaymentMethods(initialPaymentMethods);
         setReason('');
         setEditingMethod(null);
+        setAbnError(null);
     }, [initialFields, initialPaymentMethods]);
 
     // Derive whether any sensitive fields have changed vs original or defaults.
@@ -132,6 +150,7 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
+        if (name === 'abn') setAbnError(null);
     };
 
     const handleSavePaymentMethod = (methodToSave: Partial<PaymentMethod>) => {
@@ -181,12 +200,24 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
             return;
         }
 
+        // The same rule mutate-horeca applies: 11 digits once spaces are ignored. Blank is allowed.
+        if (formData.abn.trim() !== '' && !isValidAbn(formData.abn)) {
+            setAbnError('An ABN is 11 digits. Spaces are fine.');
+            return;
+        }
+
         const customerData = {
             name: formData.name,
             address: formData.address,
             creditLimit: formData.creditLimit ? parseFloat(formData.creditLimit) : undefined,
             tier: (formData.tier || undefined) as HoReCaTier | undefined,
             discountPercent: formData.discountPercent ? parseFloat(formData.discountPercent) : undefined,
+            // Blank strings, not undefined: on an edit a blank must clear the saved value.
+            contactName: formData.contactName,
+            phone: formData.phone,
+            abn: formData.abn,
+            billingEmail: formData.billingEmail,
+            buysBrands: parseBrands(formData.buysBrands),
             pricing: hoReCaToEdit?.pricing,
             paymentMethods: paymentMethods.length > 0 ? paymentMethods : undefined,
         };
@@ -250,6 +281,31 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
                 <div>
                     <label htmlFor="address" className="block text-sm font-medium text-stone-700 mb-1.5">Address</label>
                     <input type="text" name="address" id="address" value={formData.address} onChange={handleFormChange} required className={inputClasses} />
+                </div>
+                <div>
+                    <label htmlFor="contactName" className="block text-sm font-medium text-stone-700 mb-1.5">Contact name</label>
+                    <input type="text" name="contactName" id="contactName" aria-label="Contact name" value={formData.contactName} onChange={handleFormChange} maxLength={100} autoComplete="off" className={inputClasses} placeholder="e.g., Jane Citizen" />
+                </div>
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    <div>
+                        <label htmlFor="phone" className="block text-sm font-medium text-stone-700 mb-1.5">Phone</label>
+                        <input type="tel" name="phone" id="phone" aria-label="Phone" value={formData.phone} onChange={handleFormChange} maxLength={40} autoComplete="off" className={inputClasses} placeholder="e.g., 0400 000 001" />
+                    </div>
+                    <div>
+                        <label htmlFor="abn" className="block text-sm font-medium text-stone-700 mb-1.5">ABN</label>
+                        <input type="text" name="abn" id="abn" aria-label="ABN" value={formData.abn} onChange={handleFormChange} autoComplete="off" aria-invalid={abnError !== null} aria-describedby={abnError ? 'abn-error' : undefined} className={inputClasses} placeholder="e.g., 51 824 753 556" />
+                        {abnError && <p id="abn-error" role="alert" className="mt-1.5 text-sm font-medium text-red-700">{abnError}</p>}
+                    </div>
+                </div>
+                <div>
+                    <label htmlFor="billingEmail" className="block text-sm font-medium text-stone-700 mb-1.5">Billing email</label>
+                    <input type="email" name="billingEmail" id="billingEmail" aria-label="Billing email" value={formData.billingEmail} onChange={handleFormChange} maxLength={254} autoComplete="off" className={inputClasses} placeholder="e.g., accounts@example.com" />
+                    <p className="mt-1.5 text-xs text-stone-500">Where invoices are addressed. Other customers may use the same address.</p>
+                </div>
+                <div>
+                    <label htmlFor="buysBrands" className="block text-sm font-medium text-stone-700 mb-1.5">Brands bought</label>
+                    <input type="text" name="buysBrands" id="buysBrands" aria-label="Brands bought" value={formData.buysBrands} onChange={handleFormChange} autoComplete="off" className={inputClasses} placeholder="e.g., McCURRIE, Bega" />
+                    <p className="mt-1.5 text-xs text-stone-500">Separate brands with commas.</p>
                 </div>
                 <div>
                     <label htmlFor="creditLimit" className="block text-sm font-medium text-stone-700 mb-1.5">Credit Limit ($)</label>

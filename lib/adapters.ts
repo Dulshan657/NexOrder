@@ -300,8 +300,16 @@ export function toHoReCa(
     createdByUserId: row.created_by_user_id != null ? uuidToNumericId(row.created_by_user_id) : undefined,
     reviewedAt: row.reviewed_at ?? undefined,
     reviewedByUserId: row.reviewed_by != null ? uuidToNumericId(row.reviewed_by) : undefined,
+    contactName: row.contact_name ?? undefined,
+    phone: row.phone ?? undefined,
+    abn: row.abn ?? undefined,
+    billingEmail: row.billing_email ?? undefined,
+    buysBrands: row.buys_brands ?? [],
   }
 }
+
+// A blank text field on the form means "clear it", which the column stores as NULL.
+const blankToNull = (value: string): string | null => (value.trim() === '' ? null : value)
 
 export function fromHoReCa(h: Partial<HoReCa>): Record<string, unknown> {
   const row: Record<string, unknown> = {}
@@ -317,6 +325,12 @@ export function fromHoReCa(h: Partial<HoReCa>): Record<string, unknown> {
   if (h.createdByUserId !== undefined) row.created_by_user_id = numericIdToUuid(h.createdByUserId)
   if (h.reviewedAt !== undefined) row.reviewed_at = h.reviewedAt
   if (h.reviewedByUserId !== undefined) row.reviewed_by = numericIdToUuid(h.reviewedByUserId)
+  if (h.contactName !== undefined) row.contact_name = blankToNull(h.contactName)
+  if (h.phone !== undefined) row.phone = blankToNull(h.phone)
+  // Sent as typed ("51 824 753 556"); mutate-horeca drops the spaces before it checks.
+  if (h.abn !== undefined) row.abn = blankToNull(h.abn)
+  if (h.billingEmail !== undefined) row.billing_email = blankToNull(h.billingEmail)
+  if (h.buysBrands !== undefined) row.buys_brands = h.buysBrands
   return row
 }
 
