@@ -8,7 +8,7 @@
   "acceptance": [
     { "id": "A1", "check": "Products, HoReCa, HoReCa Insights, Promotions, Users, Suppliers, Accounts, Audit Log, System Health, PO Inbox, New Order, Order Import, Scheduled Visits and Walk-in Review render through PageFrame and PageHeader, with no hand-rolled page h1 and no header icon." },
     { "id": "A2", "check": "Those fourteen titles come from ADMIN_TAB_LABELS, so 'Manage Users', 'HoReCa Customers', 'Accounts Receivable' and 'Scheduled Visit Management' are gone." },
-    { "id": "A3", "check": "Promotions, Walk-in Review, PO Inbox, Order Import and Scheduled Visits use PageTabs; their hand-rolled tab rows are gone." },
+    { "id": "A3", "check": "Promotions, Walk-in Review, PO Inbox, Order Import and Scheduled Visits use PageTabs; their hand-rolled tab rows are gone. Audit Log's Mutations / Errors switch does too." },
     { "id": "A4", "check": "New Order and System Health start at the standard spot, no longer flush to the edge, and New Order's form stays capped at max-w-5xl.", "manual": "Measured on dev at 1280px." },
     { "id": "A5", "check": "At 360px all fourteen pages have no sideways overflow, and header buttons and menus stay reachable, including PO Inbox's two menus.", "manual": "Measured on dev at 360px; --project=mobile against a build of the branch, with any skipped spec named in FINAL." },
     { "id": "A6", "check": "Reps and customers see the same header on the pages they share: HoReCa, Accounts and Order Import.", "manual": "Logged in as Field Rep and Customer on dev." },
@@ -17,7 +17,8 @@
   "failFirst": [
     { "file": "__tests__/pageHeaderConsistency.test.ts", "test": "page header adoption > the admin pages use PageFrame and PageHeader with no hand-rolled h1 or header icon", "proves": ["A1"] },
     { "file": "__tests__/pageHeaderConsistency.test.ts", "test": "page header adoption > the admin pages take their title from ADMIN_TAB_LABELS", "proves": ["A2"] },
-    { "file": "__tests__/pageHeaderConsistency.test.ts", "test": "page header adoption > Promotions, Walk-in Review, PO Inbox, Order Import and Scheduled Visits use PageTabs", "proves": ["A3"] }
+    { "file": "__tests__/pageHeaderConsistency.test.ts", "test": "page header adoption > Promotions, Walk-in Review, PO Inbox, Order Import and Scheduled Visits use PageTabs", "proves": ["A3"] },
+    { "file": "__tests__/pageHeaderConsistency.test.ts", "test": "page header adoption > Audit Log's mode switch uses PageTabs", "proves": ["A3"] }
   ],
   "allow": []
 }
@@ -38,7 +39,8 @@ covers the pages reps and customers share with admins.
 - **HoReCa Insights:** the count leaves the header and isn't moved; the segment cards show the split.
 - **Promotions:** the filter becomes `PageTabs`, with counts as badges.
 - **Audit Log:** the count leaves the header; the page's footer already shows it.
-  "Refreshing" text goes, and the Refresh button's spinner still shows it.
+  "Refreshing" text goes, and the Refresh button's spinner still shows it. The Mutations /
+  Errors chips are a tab switch, so they become `PageTabs` (added during the work).
 - **System Health:** the title is "System Health"; the status banner stays in the body.
 - **PO Inbox:** its private tab button goes; the stats tile and the Auto-approval and
   Mailboxes menus move to the header, right.
