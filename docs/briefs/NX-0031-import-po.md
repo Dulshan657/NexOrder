@@ -69,3 +69,32 @@ A client's office raises invoices in QuickBooks and must get one brand's lines i
 - Loading the map or rule onto a client tenant, and any release to one. That waits for the short-pick work and a real export.
 
 ## FINAL
+
+The function and migration 00141 ran on dev on 2026-11-06 from this branch, with a made-up file and product map. Stock returned to its starting figures after cancelling, and the test orders, map rows and rule were then removed. Two reviews ran; the first failed A1, A2, A3 and A9's intent, which led to raw cell counts, the line-level preview, canonical invoice numbers and comparing carton size.
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `parseInvoices > reads the six columns, a byte order mark, quoted commas and money`, `> reads both date formats and refuses an ambiguous or unreal date`, `> refuses a missing column by name`, `> reports a bad row by number without shifting columns` (check:brief) | See Not claimed for the shift that cannot be told apart, and for month-first dates |
+| A2 | claimed | `runImport > rejects a whole invoice that has a bad row`, `parseInvoices > reports a row with no invoice number` (check:brief). Dev run: a blank freight line was skipped and named | Revised during the work: a bad value on a line that would be skipped anyway does not reject the invoice |
+| A3 | claimed | `readImportFile > gives the same text for Excel and CSV, including a true Excel date`, `> refuses a file over the size or row limit` (check:brief) | Not run in a browser. Excel error cells read as blank |
+| A4 | claimed | `Import PO > shows the button to Admin and Manager only`, `runImport > refuses any role but Admin and Manager` (check:brief) | |
+| A5 | claimed | `Import PO > shows every count, skipped line and rejection before confirming`, `> writes nothing until confirmed and offers the template` (check:brief). Dev run: 0 orders after preview | Beyond the check, the preview also lists each invoice's customer and lines |
+| A6 | claimed | `runImport > commit classifies again rather than trusting the preview` (check:brief) | |
+| A7 | claimed | `runImport > a failure on one invoice leaves the others committed and reports it`, `> uploading the same file twice adds nothing` (check:brief). Dev run: re-upload left 2 orders | |
+| A8 | claimed | `runImport > moves a new order to processed with a fulfilment`, `> the next upload finishes an order stuck in processing` (check:brief). Dev run: both orders `processed` with a fulfilment | Appearing in the Pick Queue rests on the query filter until A13. A stuck order with only a flagged change stays put, so stale quantities cannot reach the queue |
+| A9 | claimed | `runImport > updates a changed invoice only when selected and editable`, `> flags a changed invoice it may not update and never edits the order` (check:brief). Dev run: one applied, one flagged | |
+| A10 | claimed | `runImport > applies the stored own-product rule, and skips and names a line with no rule` (check:brief). Dev run: an unmapped line under the rule was rejected and named | |
+| A11 | claimed | `import po schema > stores the own-product rule without a new client write path`, `> assigns import-qb-invoices to sales_orders` (check:brief) | The brief said only the function reads the rule. Any signed-in user can read it through `app_settings`. It holds brand markers, not secrets |
+| A12 | claimed | Dev run: quantities and prices as filed, pack size per map (2 cartons of 6 reserved 12), total 3021, 0 invoice rows | No customer email rests on the function not calling `send-email` or `place-order` |
+| A13 | not-claimed | | Needs the merge. Walked on dev afterwards; the result is in the PR |
+
+### Not claimed
+
+- The format is a best guess, and no real export has been tried. Nothing here goes to a client tenant.
+- `A1,05/03/2026,Cafe,Prod A,1,234` under six columns cannot be told from quantity 1 at $234. The preview shows it for a person to catch.
+- A month-first date such as `03/05/2026` reads as 3 May, affecting only the stored invoice date. A date-only change reads as `unchanged`.
+- Excel error cells such as `#N/A` read as blank.
+- A very large commit could hit the edge time limit. Re-uploading is safe, but that run writes no audit event.
+- `update-order-status`'s handler has no direct test after the helper extraction. Only the helpers are tested.
+- Imported orders must not go live before NX-0029: cancelling a partly reserved one can take other orders' stock until then.
+- Coverage was not measured. The upload was not run through a browser before the merge.
