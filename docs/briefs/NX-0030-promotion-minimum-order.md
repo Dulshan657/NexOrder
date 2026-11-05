@@ -64,3 +64,25 @@ promotion applies to a $20 order. This makes the server, the cart and the other 
   `qr-order-request` reach it at its next release, where no promotion exists to be affected.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `placeOrderCore > live mode > a promotion below its minimum does not apply and is not recorded`, `placeOrderCore > live mode > an order at exactly the minimum qualifies, measured at the customer's own prices`, `placeOrderCore > live mode > a bundle and a buy-one-get-one below their minimum do not apply` and `eligibleForOrderValue > keeps a promotion with no minimum and one that is met, and drops one that is not` fail on base, pass on tip. On dev through `place-order`: an order worth exactly 7.80 got the 7.80 promotion and not the 7.81 one, an order worth 11.70 got the 7.81 one, an order worth 3.90 got neither, and a buy-one-get-one with a $100 minimum gave no free goods and was not recorded | On dev these were percentage and buy-one-get-one. Bundle is in the test above, and fixed price and clearance share the same filter |
+| A2 | claimed | `placeOrderCore > live mode > a discount that takes the total under the minimum does not switch the promotion off` fails on base, passes on tip. On dev, the order worth 7.80 kept its promotion at a total of 3.90 | |
+| A3 | claimed | `OrderContext promotion minimum > lines already in the cart reprice when it reaches the minimum, and go back when it falls under` fails on base, passes on tip | jsdom only. Not seen on screen, see A7 |
+| A4 | claimed | `New Order preview > a promotion below its minimum gives no discount until the lines reach it` and `reorder plan > a promotion below its minimum gives no discount on the plan` fail on base, pass on tip. Added after review: `Shop reorder tab > measures a minimum on the lines being reordered, not on the cart` passes on tip | jsdom only. The Shop's reorder tab was not named in the brief. Review found it measured on the cart, so it was brought under the same rule |
+| A5 | claimed | `PromotionsBanner > names the minimum` fails on base, passes on tip | Not seen on screen |
+| A6 | claimed | `OrderContext promotion minimum > with no minimum on any live promotion a line keeps the price it was added at` fails on base, passes on tip. A minimum on an expired promotion does not trigger repricing either | |
+| A7 | claimed | Script calling the deployed `place-order` as the demo Admin and Customer on dev: 17 of 17 checks, confirmed by SELECT, with the test promotions deleted and the stock of both products back as it was | The script half only. No screen was opened, because this session may not enter a password in a browser on that host. The Shop screens are for the owner |
+| A8 | not-claimed | | Written before the merge. `place-order` and `qr-order-request` are on dev from 9054df7, with the owner's consent for `--yes`. `mutate-promotion` did not change. Dev serves 7ec9669, a throwaway merge of this branch with main and the unmerged NX-0012 to NX-0015 work |
+
+### Not claimed
+
+- No screen was opened on any width, or on the RS35: not the cart repricing, the banner line, New Order or either reorder surface.
+- No QR order was requested or approved on dev. The dry run uses the same core.
+- No carton or UOM line was placed on dev. The value is the same line pricing the order uses.
+- The Deals filter and its "has deals" flag still read every live promotion, so Deals can list a product whose card shows no discount until the cart reaches the minimum. Left as it is.
+- A cart line that cannot be repriced, because its pack changed or its product is gone, keeps its stored price, which could be an old discounted one. It counts at that price towards the minimum. The server prices it for real or refuses it.
+- A buy-one-get-one added from the banner with a minimum says the free items apply at that figure. Nothing says how far off the cart is.
+- The walk left three cancelled orders on dev (ORD-1793885697584, ORD-1793885698623, ORD-1793885699375) and their audit rows, plus audit rows for three test promotions. Dev's 6 promotions are unchanged.
+- The walk's logins used the demo accounts the dev login page publishes.
