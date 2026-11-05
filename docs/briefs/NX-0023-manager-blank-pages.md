@@ -33,7 +33,9 @@ since the server refuses a Manager's invites and role changes.
 
 - `components/AdminView.tsx`: Promotions and Suppliers render for Admin and Manager.
   Users stays Admin-only.
-- `lib/adminTabUrl.ts`: Manager's tab list gains Promotions and Suppliers.
+- `lib/adminTabUrl.ts`: Manager's tab list gains Promotions and Suppliers, and also Shop
+  (added during the work). Shop renders for Managers through `AppShell`, but was missing from
+  the list, so a `?tab=Shop` link dropped them on their normal page. The new test found it.
 - `components/AppShell.tsx`: the Users link sits behind `isAdmin`, like Settings. The
   "System" sidebar heading stays, because Suppliers is still under it.
 - `__tests__/adminTabUrl.test.ts`: the two checks that keep Managers out of Promotions and
