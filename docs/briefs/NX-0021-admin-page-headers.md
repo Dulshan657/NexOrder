@@ -42,8 +42,10 @@ covers the pages reps and customers share with admins.
   "Refreshing" text goes, and the Refresh button's spinner still shows it. The Mutations /
   Errors chips are a tab switch, so they become `PageTabs` (added during the work).
 - **System Health:** the title is "System Health"; the status banner stays in the body.
-- **PO Inbox:** its private tab button goes; the stats tile and the Auto-approval and
-  Mailboxes menus move to the header, right.
+- **PO Inbox:** its private tab button goes; the Auto-approval and Mailboxes menus move
+  to the header, right; the stats tile sits in a row under the title, as Warehouse's KPI
+  strip does (changed during the work: in the header it moved the title for Managers and
+  pushed the menus to a second row for Admins at 1280px).
 - **New Order:** standard frame, with the form below still capped at `max-w-5xl`.
 - **Order Import:** tabs become `PageTabs` and move from centre to left; the QR approval
   panel stays above them; the Back button is unchanged.
