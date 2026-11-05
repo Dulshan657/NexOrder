@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
 
 import {
   encryptToken,
@@ -46,17 +46,41 @@ describe('encryption helper', () => {
     expect(a).not.toBe(b)
   })
 
-  it('produces an envelope that does NOT match the migration plaintext-prefix CHECKs', async () => {
-    // The DB CHECK rejects values starting with these well-known OAuth
-    // token prefixes. The envelope must never start with any of them so
-    // legitimate inserts succeed.
+  it('no IV can make an envelope start with a prefix the database refuses', async () => {
+    // Migration 00018's CHECK refuses values starting with these well-known OAuth token
+    // prefixes. Forcing the IV, rather than trying many at random, means this cannot pass or
+    // fail by luck: a random IV used to start with 'ey' about 1 time in 4,096.
     const forbidden = ['1//', 'ya29.', 'ey', 'M.C', 'OAQABAA']
-    for (let i = 0; i < 50; i++) {
+
+    // The three that base64 can spell. The other two hold a '.', which it cannot.
+    for (const start of ['eyAA', '1//A', 'OAQABAAA']) {
+      const iv = Buffer.from(start, 'base64')
+      const spy = vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation(((target: Uint8Array) => {
+        target.fill(0)
+        target.set(iv)
+        return target
+      }) as never)
       const env = await encryptToken('ya29.this-would-be-plaintext')
+      expect(spy).toHaveBeenCalled()
+      spy.mockRestore()
+
       for (const p of forbidden) {
-        expect(env.startsWith(p)).toBe(false)
+        expect(env.startsWith(p), `an IV starting ${start} gave ${env}`).toBe(false)
       }
+      expect(await decryptToken(env)).toBe('ya29.this-would-be-plaintext')
     }
+  })
+
+  it('writes the versioned envelope', async () => {
+    expect(await encryptToken('refresh-token')).toMatch(/^v1:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/)
+  })
+
+  it('still reads an envelope written before the version prefix', async () => {
+    const envelope = await encryptToken('stored-last-year')
+    const beforeThePrefix = envelope.slice('v1:'.length)
+
+    expect(beforeThePrefix.startsWith('v1:')).toBe(false)
+    expect(await decryptToken(beforeThePrefix)).toBe('stored-last-year')
   })
 
   it('rejects empty plaintext', async () => {
@@ -67,14 +91,17 @@ describe('encryption helper', () => {
     await expect(decryptToken('not-a-valid-envelope')).rejects.toThrow(/malformed/)
     await expect(decryptToken(':')).rejects.toThrow(/malformed/)
     await expect(decryptToken('only-one-half:')).rejects.toThrow(/malformed/)
+    await expect(decryptToken('v1:')).rejects.toThrow(/malformed/)
+    await expect(decryptToken('v1:only-one-part')).rejects.toThrow(/malformed/)
+    await expect(decryptToken('v1::')).rejects.toThrow(/malformed/)
   })
 
   it('decryption fails when ciphertext is tampered', async () => {
     const envelope = await encryptToken('sensitive-data')
-    const [iv, ct] = envelope.split(':')
+    const [version, iv, ct] = envelope.split(':')
     // Flip one byte in the ciphertext portion.
     const tampered = ct.length > 4
-      ? `${iv}:${ct.slice(0, -2)}${ct[ct.length - 2] === 'A' ? 'B' : 'A'}A`
+      ? `${version}:${iv}:${ct.slice(0, -2)}${ct[ct.length - 2] === 'A' ? 'B' : 'A'}A`
       : envelope
     await expect(decryptToken(tampered)).rejects.toThrow()
   })

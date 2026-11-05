@@ -23,10 +23,5 @@
     "file": "__tests__/kitchenHomeView.test.tsx",
     "reason": "jsdom timeout in the loaded full suite (31s against a 5s limit, with about 1.65 GB of memory free afterwards); passes 3/3 alone on tip and base. Seen by the gate on PR #33, 2026-11-05. Fix the test's render cost, then delete this entry.",
     "since": "2026-11-05"
-  },
-  {
-    "file": "__tests__/poInbox.encryption.test.ts",
-    "reason": "A live product bug, not test noise: encryptToken's envelope starts with random base64, so about 1 in 4,096 start with 'ey', which migration 00018's plaintext-prefix CHECK refuses. The test's 50 encryptions hit that about 1.18% of runs; passes 3/3 alone on tip and base. Seen by the gate on PR #33, 2026-11-05. Fix the envelope, then delete this entry.",
-    "since": "2026-11-05"
   }
 ]

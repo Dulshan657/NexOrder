@@ -19,15 +19,15 @@ const flakes: KnownFlake[] = JSON.parse(
 const entry = (file: string): KnownFlake | undefined => flakes.find((flake) => flake.file === file)
 
 describe('known flakes list', () => {
-  it('names the Order home and PO Inbox encryption flakes with a reason and a date', () => {
-    for (const file of ['__tests__/kitchenHomeView.test.tsx', '__tests__/poInbox.encryption.test.ts']) {
+  it('names the Order home flake, and no longer excuses the PO Inbox encryption test', () => {
+    for (const file of ['__tests__/kitchenHomeView.test.tsx']) {
       const flake = entry(file)
       expect(flake, `${file} is not listed`).toBeDefined()
       expect(flake?.reason.trim(), `${file} has no reason`).toBeTruthy()
       expect(flake?.since).toBe('2026-11-05')
     }
-    // This one is a live product bug, so the entry has to say so or it reads as test noise.
-    expect(entry('__tests__/poInbox.encryption.test.ts')?.reason).toContain('00018')
+    // NX-0025 fixed the bug behind this one, so a failure there is real again.
+    expect(entry('__tests__/poInbox.encryption.test.ts')).toBeUndefined()
   })
 
   it('still holds the four earlier entries', () => {
@@ -38,6 +38,6 @@ describe('known flakes list', () => {
       '__tests__/productImportCategories.test.tsx',
       '__tests__/hoReCaFormReps.test.tsx',
     ])
-    expect(flakes).toHaveLength(6)
+    expect(flakes).toHaveLength(5)
   })
 })
