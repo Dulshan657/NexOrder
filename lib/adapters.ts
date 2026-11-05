@@ -493,9 +493,7 @@ function orderFromRow(row: OrderRowWithEmbeds, { hoReCaById, userById, productBy
         }
       : undefined,
     verification: (row.verification as unknown as OrderVerification) ?? undefined,
-    appliedPromotions: Array.isArray(row.applied_promotions)
-      ? (row.applied_promotions as unknown as AppliedPromotion[])
-      : undefined,
+    appliedPromotions: toAppliedPromotions(row.applied_promotions),
     inboundMessageId: pendingPo?.inbound_message_id ?? undefined,
     autoApproved: pendingPo ? pendingPo.status === 'auto_approved' : undefined,
     qrRequest: qrEmbed ? { staffName: qrEmbed.staff_name ?? '' } : undefined,
@@ -570,6 +568,26 @@ export function toPurchaseOrder(
     status: row.status as PurchaseOrder['status'],
     submittedBy,
   }
+}
+
+/**
+ * What an order recorded, or undefined when it recorded nothing, which means it is from before
+ * recording began. An empty list means it was recorded and used none. Orders before NX-0028
+ * hold bundles only, under promoId and promoName with no type.
+ */
+export function toAppliedPromotions(value: unknown): AppliedPromotion[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  // One bad entry must not stop the whole order list loading.
+  return value.filter(entry => entry && typeof entry === 'object').map((entry: Record<string, unknown>) => {
+    const { promoId, promoName, ...rest } = entry
+    return {
+      type: 'bundle',
+      ...rest,
+      promotionId: (entry.promotionId ?? promoId) as string,
+      promotionName: (entry.promotionName ?? promoName) as string,
+      discount: Number(entry.discount ?? 0),
+    } as AppliedPromotion
+  })
 }
 
 // ── Promotion ─────────────────────────────────────────────────────

@@ -28,6 +28,7 @@ type Profile = Database['public']['Tables']['profiles']['Row'];
 export function profileToUser(p: Profile): User {
   return {
     id: numericIdForProfile(p.id),
+    profileId: p.id,
     name: p.name,
     email: p.email,
     role: p.role as User['role'],

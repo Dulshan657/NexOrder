@@ -49,6 +49,15 @@ describe('promotion rules', () => {
     expect(promotionProblem({ ...ok, targeting: { kind: 'rep', repUserId: 0 } })).toMatch(/rep/i)
   })
 
+  it('a rep target must be a profile id', async () => {
+    const { promotionProblem } = await load()
+    const ok = { type: 'percentage', percent_off: 10 }
+
+    expect(promotionProblem({ ...ok, targeting: { kind: 'rep', repUserId: '6f1d2c3e-1111-4222-8333-444455556666' } })).toBeNull()
+    expect(promotionProblem({ ...ok, targeting: { kind: 'rep', repUserId: 1234 } })).toMatch(/rep/i)
+    expect(promotionProblem({ ...ok, targeting: { kind: 'rep', repUserId: '' } })).toMatch(/rep/i)
+  })
+
   it('a stored offer must hold real ids and whole quantities', async () => {
     const { promotionProblem } = await load()
     const bogo = { buyProductId: 1, buyQuantity: 2, getProductId: 1, getQuantity: 1 }

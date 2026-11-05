@@ -36,6 +36,11 @@ const toNumber = (value: unknown): number => {
 // would save and then silently never apply.
 const isCount = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value > 0
 
+// A rep target is the rep's profile id. It was the in-memory number from profileToUser until
+// NX-0028, which is a hash of the id into 10,000 buckets and matched nothing on the server.
+const isProfileId = (value: unknown): boolean =>
+  typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+
 const positive = (value: unknown): boolean => {
   const number = toNumber(value)
   return Number.isFinite(number) && number > 0
@@ -64,7 +69,7 @@ function audienceProblem(draft: PromotionDraft): string | null {
   const targeting = (draft.targeting ?? {}) as Record<string, unknown>
   if (targeting.kind === 'horecas' && none(targeting.hoReCaIds)) return 'Choose at least one customer, or target everyone.'
   if (targeting.kind === 'tier' && none(targeting.tiers)) return 'Choose at least one tier, or target everyone.'
-  if (targeting.kind === 'rep' && !isCount(targeting.repUserId)) return 'Choose a rep, or target everyone.'
+  if (targeting.kind === 'rep' && !isProfileId(targeting.repUserId)) return 'Choose a rep, or target everyone.'
   return null
 }
 
@@ -104,8 +109,6 @@ function valueProblem(draft: PromotionDraft): string | null {
  * True when an update changes nothing but whether the promotion is on. That stays allowed on a
  * promotion an order records as used, which is otherwise frozen: turning it off rewrites nothing
  * on those orders, and without it a used promotion could never be stopped.
- *
- * Orders record bundle promotions only (`placeOrderCore`), so only bundles are ever frozen.
  */
 export function isOnOffOnly(data: Record<string, unknown>): boolean {
   const keys = Object.keys(data)

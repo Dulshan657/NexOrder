@@ -44,6 +44,7 @@ import type { HoReCa, Promotion, UserContext } from './pricing.ts'
 import {
   aggregateOrderItems,
   baseUnitsByProduct,
+  buildAppliedPromotions,
   checkCreditLimit,
   checkMinimumOrder,
   collectAppliedPromotionIds,
@@ -81,7 +82,7 @@ export interface PlaceOrderCoreInput {
    * order on another person's behalf.
    */
   actorId?: string
-  /** Role of the actor, passed to pricing's `UserContext`. */
+  /** Role of the actor, passed to pricing's `UserContext` with the actor's id. */
   actorRole: string
   hoReCaId: number
   items: OrderLineInput[]
@@ -430,7 +431,8 @@ export async function placeOrderCore(
 
   // Resolve prices. The carton discount (from settings) feeds per-line pricing.
   const cartonDiscountPercent = Number(settings?.carton_discount_percent ?? 5)
-  const userContext: UserContext = { id: 0, role: input.actorRole } // numeric id only used by 'rep' targeting; safe to leave 0 for now
+  // The person placing or approving the order, which is who a rep-targeted promotion is for.
+  const userContext: UserContext = { id: actorId, role: input.actorRole }
   const resolvedItems = priceOrderLines(aggregated, productMap, hoReCa, userContext, promotions, cartonDiscountPercent)
   const { subtotal, cartDiscount, total, bogoFreeItems, bundleDiscounts } = computeOrderTotals(
     resolvedItems,
@@ -473,6 +475,21 @@ export async function placeOrderCore(
 
   // ── from here on this writes; the dry run has returned ────────────────────
 
+  // A free product need not be in the cart, and its value is recorded on the order.
+  const freeProductIds = [...new Set(bogoFreeItems.map((b) => b.productId))].filter((id) => !productMap.has(id))
+  const freeProducts = freeProductIds.length > 0 ? await loadProducts(service, freeProductIds) : new Map<number, PricedProduct>()
+  const appliedPromotions = buildAppliedPromotions({
+    aggregated,
+    resolved: resolvedItems,
+    bundleDiscounts,
+    bogoFreeItems,
+    promotions,
+    productMap: new Map([...productMap, ...freeProducts]),
+    hoReCa,
+    user: userContext,
+    cartonDiscountPercent,
+  })
+
   // Insert order, items, invoice
   const orderIdPrefix = settings?.order_id_prefix ?? 'ORD'
   const orderId = `${orderIdPrefix}-${Date.now()}`
@@ -490,7 +507,7 @@ export async function placeOrderCore(
     delivery_date: input.deliveryDate ?? null,
     delivery_time_slot: input.deliveryTimeSlot ?? null,
     verification: (input.verification ?? null) as any,
-    applied_promotions: bundleDiscounts.length > 0 ? (bundleDiscounts as any) : null,
+    applied_promotions: appliedPromotions as any,
   })
   if (orderError) {
     throw new EdgeFunctionError('DB_ORDER_INSERT_FAILED', orderError.message)

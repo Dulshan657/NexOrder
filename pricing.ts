@@ -84,7 +84,7 @@ export function isPromotionApplicable(
     const { targeting } = promo;
     if (targeting.kind === 'horecas' && (!customer || !targeting.hoReCaIds.includes(customer.id))) return false;
     if (targeting.kind === 'tier' && (!customer?.tier || !targeting.tiers.includes(customer.tier))) return false;
-    if (targeting.kind === 'rep' && (!currentUser || currentUser.id !== targeting.repUserId)) return false;
+    if (targeting.kind === 'rep' && (!currentUser?.profileId || currentUser.profileId !== targeting.repUserId)) return false;
     // 'all' always matches targeting
 
     return true;
