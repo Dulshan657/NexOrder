@@ -7,7 +7,7 @@
   "approved": "2026-11-06 owner",
   "acceptance": [
     { "id": "A1", "check": "The parser turns a file with the six named columns into invoice lines, handling a byte order mark, quoted commas, `$1,234.50`, `DD/MM/YYYY` and `YYYY-MM-DD`. A missing column is refused by name, and a bad row is reported by row number, never shifted into another column." },
-    { "id": "A2", "check": "An invoice with a bad row is rejected whole, and no line is silently dropped. A row with no invoice number is reported, not attached to another invoice." },
+    { "id": "A2", "check": "A bad value on a mapped or own line, or a structural error such as a bad date, rejects the whole invoice. A bad value or blank customer on any other line is skipped and named, because real exports carry freight lines, and no line is silently dropped. A row with no invoice number is reported, not attached to another invoice." },
     { "id": "A3", "check": "An Excel file gives the same lines as the same data in CSV, including a date stored as a true Excel date. A file over 5 MB or over the row limit is refused with a reason." },
     { "id": "A4", "check": "The Order Import header shows an Import PO button to Admin and Manager only. The server refuses any other role." },
     { "id": "A5", "check": "The screen offers a template to download and shows added, unchanged, changed, skipped and rejected counts before confirming, naming each skipped line and each rejection reason. Nothing is written until the person confirms." },
