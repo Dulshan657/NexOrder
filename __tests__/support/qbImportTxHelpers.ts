@@ -1,5 +1,5 @@
 /**
- * Seeding and reading helpers for the NX-0025 import transaction tests. Everything
+ * Seeding and reading helpers for the NX-0026 import transaction tests. Everything
  * here runs on the caller's client, inside the caller's rolled-back transaction.
  */
 import { readFileSync } from 'node:fs'

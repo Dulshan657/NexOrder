@@ -10,7 +10,7 @@ import type {
 } from '@/supabase/functions/_shared/qbImport/classifyInvoices'
 import type { QbLine } from '@/supabase/functions/_shared/qbImport/types'
 
-// NX-0025: the rules that decide what happens to each QuickBooks invoice in an upload.
+// NX-0026: the rules that decide what happens to each QuickBooks invoice in an upload.
 //
 // The module is loaded INSIDE each test, not imported at the top. On the base
 // commit it does not exist, and a top-level import would stop this whole file

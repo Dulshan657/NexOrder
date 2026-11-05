@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import { LOCKED_TABLES } from '../../config/lockedTables.mjs'
 
-// NX-0025: what migration 00139 must say about who can touch the import tables
+// NX-0026: what migration 00139 must say about who can touch the import tables
 // and transactions. SQL behaviour is proven in qbImportTx.integration.test.ts;
 // this is the offline half, so the gate can run it fail-first. A missing file
 // reads as empty, so on the base these fail by assertion rather than by a throw.

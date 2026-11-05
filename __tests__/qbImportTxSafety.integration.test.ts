@@ -1,5 +1,5 @@
 /**
- * NX-0025 fix round: other orders' stock, input validation, fulfilments and prices,
+ * NX-0026 fix round: other orders' stock, input validation, fulfilments and prices,
  * against the live database. Rolled back like qbImportTx.integration.test.ts.
  *
  * Run with: `npx vitest run -c vitest.integration.config.ts qbImportTx`
@@ -69,7 +69,7 @@ async function markProcessed(
   )
 }
 
-describe('NX-0025 import transactions: fix round (live RPCs, rollback-isolated)', () => {
+describe('NX-0026 import transactions: fix round (live RPCs, rollback-isolated)', () => {
   describe("another order's reservation", () => {
     it("raises when a third order's pick from the bin leaves too little for the order that did not move", async () => {
       await withRollbackTx(async (client) => {

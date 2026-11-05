@@ -1,5 +1,5 @@
 -- =============================================================================
--- QuickBooks invoice import: tables and transactions (NX-0025)
+-- QuickBooks invoice import: tables and transactions (NX-0026)
 -- Migration: 00139_qb_invoice_import.sql
 -- =============================================================================
 -- A client keeps invoicing in QuickBooks and will pick, pack and dispatch from

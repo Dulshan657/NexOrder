@@ -1,5 +1,5 @@
 /**
- * NX-0025 — the QuickBooks import transactions against the live database (mig 00139).
+ * NX-0026 — the QuickBooks import transactions against the live database (mig 00139).
  *
  * Every test runs inside BEGIN … ROLLBACK via `withRollbackTx`. If 00139 is not
  * applied yet, its text runs on the same client inside that same transaction, so
@@ -31,7 +31,7 @@ import {
   type Scene,
 } from './support/qbImportTxHelpers'
 
-describe('NX-0025 QuickBooks import transactions (live RPCs, rollback-isolated)', () => {
+describe('NX-0026 QuickBooks import transactions (live RPCs, rollback-isolated)', () => {
   it('has database credentials', () => {
     expect(hasDbCreds()).toBe(true)
   })
