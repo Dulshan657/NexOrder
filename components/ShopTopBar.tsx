@@ -74,7 +74,7 @@ const ShopTopBar: React.FC<ShopTopBarProps> = ({
         <select
           value={sortOption}
           onChange={(e) => onSortChange(e.target.value as SortOption)}
-          className="rounded-lg border-0 bg-stone-50 py-2.5 px-3 pr-8 text-stone-700 ring-1 ring-inset ring-stone-200 text-sm focus:ring-2 focus:ring-nexgen-blue hover:ring-stone-300 transition-all cursor-pointer min-w-[140px]"
+          className="touch-target-y rounded-lg border-0 bg-stone-50 py-2.5 px-3 pr-8 text-stone-700 ring-1 ring-inset ring-stone-200 text-sm focus:ring-2 focus:ring-nexgen-blue hover:ring-stone-300 transition-all cursor-pointer min-w-[140px]"
         >
           <option value="">Sort by...</option>
           <option value="price-asc">Price: Low to High</option>

@@ -14,6 +14,8 @@ import type {
 } from '../types';
 import { categoryOptions } from '../lib/productTaxonomy';
 import { resolveHoReCaPrice } from '../pricing';
+import { PageFrame } from '../components/ui/PageFrame';
+import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 import OrderingTabBar from '../components/OrderingTabBar';
 import type { OrderingTabKey } from '../components/OrderingTabBar';
 import ShopTopBar from '../components/ShopTopBar';
@@ -153,7 +155,9 @@ const ShopView: React.FC<ShopViewProps> = ({
     return (
         <>
             <div className={isCartOpen ? 'cart-push' : ''}>
-                <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+                <PageFrame>
+                    {/* Shop shows no title by owner decision; this keeps a page heading for a screen reader. */}
+                    <h1 className="sr-only">{ADMIN_TAB_LABELS.Shop}</h1>
                     <OrderingTabBar
                         activeTab={orderingTab}
                         onTabChange={onOrderingTabChange}
@@ -272,7 +276,7 @@ const ShopView: React.FC<ShopViewProps> = ({
                             onAddItems={onReorderItems}
                         />
                     )}
-                </div>
+                </PageFrame>
             </div>
 
             <CartSlidePanel

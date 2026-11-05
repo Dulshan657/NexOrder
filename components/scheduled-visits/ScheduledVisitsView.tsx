@@ -5,7 +5,11 @@ import ScheduledVisitList from './ScheduledVisitList';
 import ScheduledVisitDetail from './ScheduledVisitDetail';
 import ScheduledVisitWizard from './ScheduledVisitWizard';
 import VisitModal from '../visits/VisitModal';
-import { Plus, MapPin, Calendar, History, Play, ArrowRight } from 'lucide-react';
+import { Plus, MapPin, Play, ArrowRight } from 'lucide-react';
+import { PageFrame } from '../ui/PageFrame';
+import { PageHeader } from '../ui/PageHeader';
+import { PageTabs } from '../ui/PageTabs';
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl';
 
 type RoutesTab = 'today' | 'upcoming' | 'past';
 
@@ -69,10 +73,10 @@ const ScheduledVisitsView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, 
     }
   };
 
-  const tabs: Array<{ key: RoutesTab; label: string; icon: React.ReactNode; count: number }> = [
-    { key: 'today', label: 'Today', icon: <MapPin className="w-4 h-4" />, count: todaysRoutes.length },
-    { key: 'upcoming', label: 'Upcoming', icon: <Calendar className="w-4 h-4" />, count: upcomingRoutes.length },
-    { key: 'past', label: 'Past', icon: <History className="w-4 h-4" />, count: pastRoutes.length },
+  const tabs: Array<{ id: RoutesTab; label: string; badge: number }> = [
+    { id: 'today', label: 'Today', badge: todaysRoutes.length },
+    { id: 'upcoming', label: 'Upcoming', badge: upcomingRoutes.length },
+    { id: 'past', label: 'Past', badge: pastRoutes.length },
   ];
 
   // Determine which customer is at the stop being checked into
@@ -81,21 +85,20 @@ const ScheduledVisitsView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, 
     : undefined;
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <MapPin className="w-5 h-5 text-stone-700" />
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Scheduled Visits & Check-ins</h1>
-        </div>
-        <button
-          onClick={() => { setShowForm(true); setSelectedRouteId(null); }}
-          className="flex items-center gap-1 text-sm font-medium text-white bg-nexgen-blue px-4 py-2 rounded-lg hover:bg-nexgen-blue-dark transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          New Scheduled Visit
-        </button>
-      </div>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS['Scheduled Visits']}
+        description="Your visits for today and ahead, with check-ins at each stop."
+        actions={
+          <button
+            onClick={() => { setShowForm(true); setSelectedRouteId(null); }}
+            className="flex items-center gap-1 px-3 py-1.5 touch-target-y text-sm font-medium text-white bg-nexgen-blue rounded-lg hover:bg-nexgen-blue-dark transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            New Scheduled Visit
+          </button>
+        }
+      />
 
       {showForm ? (
         <ScheduledVisitWizard
@@ -153,30 +156,12 @@ const ScheduledVisitsView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, 
             );
           })()}
 
-          {/* Tab Bar */}
-          <div className="flex bg-white rounded-xl border border-stone-200 p-1">
-            {tabs.map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-colors ${
-                  activeTab === tab.key
-                    ? 'bg-nexgen-blue text-white'
-                    : 'text-stone-600 hover:bg-stone-50'
-                }`}
-              >
-                {tab.icon}
-                {tab.label}
-                {tab.count > 0 && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                    activeTab === tab.key ? 'bg-white/20' : 'bg-stone-100'
-                  }`}>
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+          <PageTabs
+            ariaLabel="Scheduled visit period"
+            tabs={tabs}
+            activeId={activeTab}
+            onChange={setActiveTab}
+          />
 
           <ScheduledVisitList routes={currentRoutes} hoReCas={hoReCas} users={users} onSelectRoute={setSelectedRouteId} />
         </>
@@ -193,7 +178,7 @@ const ScheduledVisitsView: React.FC<RoutesViewProps> = ({ currentUser, hoReCas, 
           onClose={() => setCheckInStopIndex(null)}
         />
       )}
-    </div>
+    </PageFrame>
   );
 };
 

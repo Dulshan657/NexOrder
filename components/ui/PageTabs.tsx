@@ -5,6 +5,9 @@ export interface PageTab<Id extends string = string> {
   label: React.ReactNode
   /** A count shown beside the label. Zero or absent shows nothing. */
   badge?: number
+  /** The tab cannot be chosen yet; say why in `title`. */
+  disabled?: boolean
+  title?: string
 }
 
 export interface PageTabsProps<Id extends string = string> {
@@ -32,11 +35,13 @@ export function PageTabs<Id extends string = string>({ ariaLabel, tabs, activeId
             key={tab.id}
             type="button"
             aria-current={active ? 'true' : undefined}
+            disabled={tab.disabled}
+            title={tab.title}
             onClick={() => onChange(tab.id)}
             className={`relative -mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap py-2.5 touch-target-y text-sm transition-colors border-b-2 ${
               active
                 ? 'border-stone-900 text-stone-900 font-medium'
-                : 'border-transparent text-stone-500 hover:text-stone-800'
+                : 'border-transparent text-stone-500 hover:text-stone-800 disabled:hover:text-stone-500 disabled:cursor-not-allowed'
             }`}
           >
             {tab.label}
