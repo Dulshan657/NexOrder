@@ -40,6 +40,7 @@
 
 import type { HoReCa, Order, OrderItem, Product, Promotion, User } from '@/types'
 import { applyCartPromotions } from '@/services/promotionService'
+import { eligibleForOrderValue } from '@/supabase/functions/_shared/promotionMinimum'
 import { priceReorderLine } from '@/lib/reorderLinePrice'
 import { lineBaseUnits } from '@/supabase/functions/_shared/pricing'
 
@@ -148,12 +149,18 @@ function planLine(source: OrderItem, product: Product, input: ReorderPlanInput):
 export function buildReorderPlan(input: ReorderPlanInput): ReorderPlan {
   const byId = new Map<number, Product>(input.products.map((p): [number, Product] => [p.id, p]))
 
-  const lines = input.order.items.map((source): ReorderLine => {
+  const lineWith = (source: OrderItem, promotions: readonly Promotion[]): ReorderLine => {
     const product = byId.get(source.id)
     if (!product || product.isActive === false) return excludedLine(source, 'No longer sold')
     if (product.available <= 0) return excludedLine(source, 'Out of stock')
-    return planLine(source, product, input)
-  })
+    return planLine(source, product, { ...input, promotions })
+  }
+
+  // A promotion's minimum is measured on the lines being ordered, before any promotion.
+  const orderValue = input.order.items.reduce((sum, source) => sum + lineWith(source, []).lineTotal, 0)
+  const eligible = eligibleForOrderValue(input.promotions, orderValue)
+
+  const lines = input.order.items.map((source) => lineWith(source, eligible))
 
   const included = lines.filter((l) => l.item !== null)
   const excluded = lines.filter((l) => l.item === null)
@@ -161,7 +168,7 @@ export function buildReorderPlan(input: ReorderPlanInput): ReorderPlan {
   const subtotal = cents(included.reduce((sum, l) => sum + l.lineTotal, 0))
 
   const cart = items.length > 0
-    ? applyCartPromotions(items, [...input.promotions], input.hoReCa, input.currentUser, [...input.products])
+    ? applyCartPromotions(items, eligible, input.hoReCa, input.currentUser, [...input.products])
     : null
   const promoDiscount = cart ? Math.min(cents(cart.totalDiscount), subtotal) : 0
 

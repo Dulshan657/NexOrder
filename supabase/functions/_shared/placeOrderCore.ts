@@ -40,6 +40,7 @@
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { EdgeFunctionError } from './errors.ts'
 import { orderedWarehousesFor } from './warehouseRouting.ts'
+import { eligibleForOrderValue } from './promotionMinimum.ts'
 import type { HoReCa, Promotion, UserContext } from './pricing.ts'
 import {
   aggregateOrderItems,
@@ -52,6 +53,7 @@ import {
   findMissingProducts,
   findStockShortages,
   normalizeOrderItems,
+  orderValueBeforePromotions,
   priceOrderLines,
   resolveCreditLimit,
   stockPositions,
@@ -240,6 +242,7 @@ async function loadActivePromotions(service: SupabaseClient): Promise<Promotion[
     endDate: row.end_date,
     isActive: !!row.is_active,
     priority: Number(row.priority ?? 10),
+    minOrderValue: row.min_order_value != null ? Number(row.min_order_value) : null,
   }))
 }
 
@@ -365,7 +368,7 @@ export async function placeOrderCore(
   // milliseconds earlier changes nothing it guarantees.
   const productIds = [...new Set(input.items.map((i) => i.productId))]
   const HORECA_MISSING = Symbol('horeca-missing')
-  const [hoReCaOrMissing, productMap, promotions, settings, outstanding] = await Promise.all([
+  const [hoReCaOrMissing, productMap, activePromotions, settings, outstanding] = await Promise.all([
     loadHoReCa(service, input.hoReCaId).catch(() => HORECA_MISSING),
     loadProducts(service, productIds),
     loadActivePromotions(service),
@@ -433,6 +436,11 @@ export async function placeOrderCore(
   const cartonDiscountPercent = Number(settings?.carton_discount_percent ?? 5)
   // The person placing or approving the order, which is who a rep-targeted promotion is for.
   const userContext: UserContext = { id: actorId, role: input.actorRole }
+  // From here on, only the promotions this order qualifies for.
+  const promotions = eligibleForOrderValue(
+    activePromotions,
+    orderValueBeforePromotions(aggregated, productMap, hoReCa, userContext, cartonDiscountPercent),
+  )
   const resolvedItems = priceOrderLines(aggregated, productMap, hoReCa, userContext, promotions, cartonDiscountPercent)
   const { subtotal, cartDiscount, total, bogoFreeItems, bundleDiscounts } = computeOrderTotals(
     resolvedItems,
