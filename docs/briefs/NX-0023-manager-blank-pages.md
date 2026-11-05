@@ -52,3 +52,25 @@ since the server refuses a Manager's invites and role changes.
   harmless so far, and reported separately.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `roleCanOpenTab > lets Manager open Promotions and Suppliers` and `Manager tabs > AdminView renders Promotions and Suppliers for a Manager` fail on base by assertion, pass on tip. On dev at 0f5344e as Manager: both open from the sidebar and from `?tab=` | Opening is what is claimed. Saving promotions does not work: see A5 |
+| A2 | claimed | `Manager tabs > the Users link is for Admins only` fails on base by assertion, passes on tip. On dev at 0f5344e: no Users link for Manager, `?tab=Users` lands on Dashboard. As Admin, `?tab=Users` opens Users and the link is there | |
+| A3 | claimed | `Manager tabs > every link a Manager can see opens a tab they can render` fails on base by assertion, passes on tip | The test reads `AppShell`'s source for `SidebarNavItem` links; it does not mount the sidebar. It found Shop, added during the work |
+| A4 | claimed | On dev at 0f5344e as Manager at 1280px: all 23 sidebar links clicked, each showed a page with an h1, 0 blank. `?tab=Shop` and a refresh on it stay on Shop | |
+| A5 | not-claimed | | Suppliers works: as Manager on dev at 0f5344e a test supplier was created (201), edited (200) and deleted (200), each confirmed after a reload. Promotions does not: create, edit, toggle and delete all return 400, for Admin as well as Manager. Create needs `created_by`, which the app never sends. Edit, toggle and delete require a UUID, while every promotion id is text such as `PROMO-001`. `promotions.id` also has no default. The cause dates from the lockdown of 2026-04-29, not from this change. By owner decision this merges as it is and the server fix follows in its own brief |
+| A6 | not-claimed | | Dev serves 0f5344e64eacddfdd82257d3bab5615566c97e89, health 200, but that is a throwaway merge so the unmerged NX-0012/0013/0014 demo work stays on dev, and this is before the merge. Not pushed |
+
+### Not claimed
+
+- Managers can now reach a Promotions page whose Create, edit, toggle and delete controls all fail, with only "Edge Function returned a non-2xx status code" on screen. Admins already see the same.
+- Promotion create was tried in a browser as Admin and Manager. Toggle and delete were tried as both on a test row. Edit was not tried on its own; the toggle uses the same update request, which is refused on the id before anything else is read.
+- Supplier's Phone looks optional in the form, but the server requires it, so a save without one fails with the same unhelpful message. Not changed here.
+- Promotion delete has no confirmation step. Not changed here.
+- Only 1280px was walked as Manager. No phone or tablet width, and no RS35.
+- Nothing about what Managers may do inside these pages was changed or audited beyond what the server already enforces.
+- Linking a supplier to products from the Suppliers page was not exercised.
+- `--project=mobile` and `--project=contrast` were not run: this change adds no layout.
+- Test records on dev: a promotion `PROMO-NX0023` was inserted and removed by SQL, because the screen cannot create or delete one, and supplier 32 went through the screen. Both are gone, and dev is back to 6 promotions. The supplier's three saves remain in the audit log.
+- The login used the demo accounts the dev login page publishes.
