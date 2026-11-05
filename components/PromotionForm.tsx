@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { fromPromotion } from '../lib/adapters';
 import { promotionProblem } from '../supabase/functions/_shared/promotionBody';
 import type { Promotion, PromotionType, PromotionScope, PromotionTargeting, Product, HoReCa, User, Category, HoReCaTier } from '../types';
@@ -11,7 +11,7 @@ interface PromotionFormProps {
     products: Product[];
     hoReCas: HoReCa[];
     users: User[];
-    onSave: (promo: Promotion) => void;
+    onSave: (promo: Promotion) => Promise<void>;
     onClose: () => void;
 }
 
@@ -67,6 +67,17 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
     const [type, setType] = useState<PromotionType>(promotion?.type ?? 'percentage');
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    const saveErrorRef = useRef<HTMLParagraphElement>(null);
+
+    // The reason sits above a long scrolling form, and the field at fault may be far below it.
+    useEffect(() => {
+        if (saveError) saveErrorRef.current?.scrollIntoView?.({ block: 'nearest' });
+    }, [saveError]);
+
+    // A save cannot be called back once sent, so closing now would hide its outcome.
+    const closeUnlessSaving = () => {
+        if (!saving) onClose();
+    };
     const [percentOff, setPercentOff] = useState(String(promotion?.percentOff ?? ''));
     const [fixedPrice, setFixedPrice] = useState(String(promotion?.fixedPrice ?? ''));
     const [clearancePercent, setClearancePercent] = useState(String(promotion?.clearancePercent ?? ''));
@@ -136,7 +147,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
             { kind: 'all' };
 
         const promo: Promotion = {
-            id: promotion?.id ?? `PROMO-${Date.now()}`,
+            id: promotion?.id ?? '', // the server sets a new promotion's id
             name: name.trim(),
             description: description.trim(),
             type,
@@ -201,14 +212,14 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
     return (
         <Modal
             open
-            onClose={onClose}
+            onClose={closeUnlessSaving}
             size="2xl"
             dirty={isDirty}
             icon={<Tag className="w-4 h-4 text-nexgen-blue" />}
             title={promotion ? 'Edit Promotion' : 'Create Promotion'}
             footer={({ requestClose }) => (
                 <>
-                    <Button variant="secondary" onClick={requestClose}>Cancel</Button>
+                    <Button variant="secondary" onClick={requestClose} disabled={saving}>Cancel</Button>
                     <Button onClick={handleSave} disabled={!name.trim() || saving}>
                         {promotion ? 'Update Promotion' : 'Create Promotion'}
                     </Button>
@@ -217,7 +228,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
         >
             <div className="space-y-5">
                 {saveError && (
-                    <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    <p ref={saveErrorRef} role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
                         {saveError}
                     </p>
                 )}

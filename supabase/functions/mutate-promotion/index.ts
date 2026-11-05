@@ -4,12 +4,13 @@
 //
 // Business rules:
 //   - start_date <= end_date (when both are provided)
-//   - percent_off in 0–100 (when provided)
+//   - promotionProblem in _shared/promotionBody.ts, which the form also runs
 //   - If the promotion type is 'bogo' and bogo_config.buyProductId resolves to a
 //     product with carton_size <= 1, and the caller requests applies_to='carton',
-//     the write is rejected.
-//   - A promotion that has already been applied to at least one non-cancelled
-//     order is immutable: update and delete are both blocked (409 CONFLICT).
+//     the write is rejected. The app never sends applies_to, so today this cannot fire.
+//   - A promotion recorded on at least one non-cancelled order is immutable: update and
+//     delete are blocked (409 CONFLICT), except a change to is_active alone. Orders record
+//     bundle promotions only, so the other four types are not protected by this.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -49,8 +50,8 @@ async function assertNotUsedInOrders(
   //
   // We use textSearch via .ilike on the JSON cast for simplicity:
   // applied_promotions::text ILIKE '%<promoId>%'
-  // This may have false positives for overlapping UUID substrings, which is
-  // effectively impossible but we double-check the actual JSON value too.
+  // This may have false positives for overlapping id substrings, so we
+  // double-check the actual JSON value too.
   const { data, error } = await admin
     .from('orders')
     .select('id, applied_promotions')
@@ -182,7 +183,7 @@ serve(async (req: Request) => {
       const startDate = parseDateOrNull(d.start_date)
       const endDate = parseDateOrNull(d.end_date)
       if (startDate && endDate && startDate > endDate) {
-        throw new EdgeFunctionError('INVALID_INPUT', 'start_date must be on or before end_date')
+        throw new EdgeFunctionError('INVALID_INPUT', 'The start date must be on or before the end date.')
       }
 
       // Carton validation
@@ -252,7 +253,7 @@ serve(async (req: Request) => {
       const startDate = parseDateOrNull(d.start_date !== undefined ? d.start_date : existing.start_date)
       const endDate = parseDateOrNull(d.end_date !== undefined ? d.end_date : existing.end_date)
       if (startDate && endDate && startDate > endDate) {
-        throw new EdgeFunctionError('INVALID_INPUT', 'start_date must be on or before end_date')
+        throw new EdgeFunctionError('INVALID_INPUT', 'The start date must be on or before the end date.')
       }
 
       // Carton validation — merge with existing values

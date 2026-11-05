@@ -36,6 +36,37 @@ describe('promotion rules', () => {
     expect(promotionProblem({ type: 'bundle', bundle_config: { productIds: [1, 2], bundlePrice: 0 } })).toMatch(/price/i)
   })
 
+  it('a scope or audience with nothing chosen is refused', async () => {
+    const { promotionProblem } = await load()
+    const ok = { type: 'percentage', percent_off: 10 }
+
+    expect(promotionProblem({ ...ok, scope: { kind: 'storewide' }, targeting: { kind: 'all' } })).toBeNull()
+    expect(promotionProblem({ ...ok, scope: { kind: 'products', productIds: [1] } })).toBeNull()
+    expect(promotionProblem({ ...ok, scope: { kind: 'products', productIds: [] } })).toMatch(/product/i)
+    expect(promotionProblem({ ...ok, scope: { kind: 'categories', categories: [] } })).toMatch(/categor/i)
+    expect(promotionProblem({ ...ok, targeting: { kind: 'horecas', hoReCaIds: [] } })).toMatch(/customer/i)
+    expect(promotionProblem({ ...ok, targeting: { kind: 'tier', tiers: [] } })).toMatch(/tier/i)
+    expect(promotionProblem({ ...ok, targeting: { kind: 'rep', repUserId: 0 } })).toMatch(/rep/i)
+  })
+
+  it('reads a stored value that comes back as text', async () => {
+    const { promotionProblem } = await load()
+
+    expect(promotionProblem({ type: 'percentage', percent_off: '15.00' as never })).toBeNull()
+    expect(promotionProblem({ type: 'fixed_price', fixed_price: '3.00' as never })).toBeNull()
+    expect(promotionProblem({ type: 'clearance', clearance_percent: '40.00' as never })).toBeNull()
+    expect(promotionProblem({ type: 'percentage', percent_off: '' as never })).toMatch(/discount/i)
+  })
+
+  it('the limits match the form, and the wording', async () => {
+    const { promotionProblem } = await load()
+
+    expect(promotionProblem({ type: 'percentage', percent_off: 0.5 })).toMatch(/discount/i)
+    expect(promotionProblem({ type: 'clearance', clearance_percent: 90 })).toBeNull()
+    expect(promotionProblem({ type: 'clearance', clearance_percent: 95 })).toMatch(/90%/)
+    expect(promotionProblem({ type: 'percentage', percent_off: 10, priority: 1.5 })).toMatch(/whole number/i)
+  })
+
   it('only an on or off change is allowed on a promotion used on orders', async () => {
     const { isOnOffOnly } = await load()
 

@@ -19,26 +19,62 @@ export interface PromotionDraft {
   clearance_percent?: number | null
   bogo_config?: unknown
   bundle_config?: unknown
+  scope?: unknown
+  targeting?: unknown
+  priority?: number | null
 }
 
-const positive = (value: unknown): boolean => typeof value === 'number' && Number.isFinite(value) && value > 0
+// A numeric column can read back as text ("15.00") depending on the client, and an update
+// checks the stored row merged with the change.
+const toNumber = (value: unknown): number => {
+  if (typeof value === 'number') return value
+  return typeof value === 'string' && value.trim() !== '' ? Number(value) : Number.NaN
+}
+
+const positive = (value: unknown): boolean => {
+  const number = toNumber(value)
+  return Number.isFinite(number) && number > 0
+}
 
 /**
  * Why this promotion cannot be saved, in words for the person filling in the form, or null
- * when it can. A promotion with no real discount would go live and change nothing, or worse.
+ * when it can. A promotion with no real discount, or that can apply to nothing, would go live
+ * and change nothing, or worse.
  */
 export function promotionProblem(draft: PromotionDraft): string | null {
+  return valueProblem(draft) ?? audienceProblem(draft)
+}
+
+// Reads only the kinds the app writes. Dev's PROMO-006 carries an older 'hoReCas' kind, which
+// must not stop it being saved.
+function audienceProblem(draft: PromotionDraft): string | null {
+  if (draft.priority != null && !Number.isInteger(draft.priority)) return 'Priority must be a whole number.'
+
+  const scope = (draft.scope ?? {}) as Record<string, unknown>
+  const none = (list: unknown): boolean => !Array.isArray(list) || list.length === 0
+  if (scope.kind === 'products' && none(scope.productIds)) return 'Choose at least one product, or apply it storewide.'
+  if (scope.kind === 'categories' && none(scope.categories)) return 'Choose at least one category, or apply it storewide.'
+
+  const targeting = (draft.targeting ?? {}) as Record<string, unknown>
+  if (targeting.kind === 'horecas' && none(targeting.hoReCaIds)) return 'Choose at least one customer, or target everyone.'
+  if (targeting.kind === 'tier' && none(targeting.tiers)) return 'Choose at least one tier, or target everyone.'
+  if (targeting.kind === 'rep' && !positive(targeting.repUserId)) return 'Choose a rep, or target everyone.'
+  return null
+}
+
+function valueProblem(draft: PromotionDraft): string | null {
+  const inRange = (value: unknown, max: number): boolean => {
+    const number = toNumber(value)
+    return number >= 1 && number <= max
+  }
+
   switch (draft.type) {
-    case 'percentage': {
-      const value = draft.percent_off
-      return positive(value) && (value as number) <= 100 ? null : 'Enter a discount between 1% and 100%.'
-    }
+    case 'percentage':
+      return inRange(draft.percent_off, 100) ? null : 'Enter a discount between 1% and 100%.'
     case 'fixed_price':
       return positive(draft.fixed_price) ? null : 'Enter a fixed price above zero.'
-    case 'clearance': {
-      const value = draft.clearance_percent
-      return positive(value) && (value as number) <= 100 ? null : 'Enter a clearance discount between 1% and 100%.'
-    }
+    case 'clearance':
+      return inRange(draft.clearance_percent, 90) ? null : 'Enter a clearance discount between 1% and 90%.'
     case 'bogo': {
       const config = (draft.bogo_config ?? {}) as Record<string, unknown>
       if (!positive(config.buyProductId) || !positive(config.getProductId)) return 'Choose the buy and free products.'
@@ -58,8 +94,10 @@ export function promotionProblem(draft: PromotionDraft): string | null {
 
 /**
  * True when an update changes nothing but whether the promotion is on. That stays allowed on a
- * promotion already used on orders, which is otherwise frozen: turning it off rewrites nothing
+ * promotion an order records as used, which is otherwise frozen: turning it off rewrites nothing
  * on those orders, and without it a used promotion could never be stopped.
+ *
+ * Orders record bundle promotions only (`placeOrderCore`), so only bundles are ever frozen.
  */
 export function isOnOffOnly(data: Record<string, unknown>): boolean {
   const keys = Object.keys(data)
