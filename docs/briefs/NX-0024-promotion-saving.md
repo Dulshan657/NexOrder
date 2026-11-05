@@ -64,3 +64,32 @@ the app. This makes the page work for Admins and Managers.
 - Amadiya: it does not have the promotions module, so nothing is deployed there.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `promotion saving > the server sets id and created_by itself` fails on base by assertion, passes on tip. `promotion rules > a create needs no id or created_by, and drops any a client sends` passes on tip. On dev as Admin and Manager: create returned 201 and the row survived a reload. In the audit log each create has `created_by` equal to the acting user, one Admin and one Manager | |
+| A2 | claimed | `promotion saving > the function no longer requires a UUID id` fails on base by assertion, passes on tip. On dev as Admin and Manager, on a row seeded with a text id (`PROMO-NX0024-A`, `-M`): toggle, edit and delete each returned 200, confirmed after a reload | The six real promotions were not changed |
+| A3 | claimed | `promotion saving > a refused save reports the server's reason` fails on base by assertion, passes on tip. On dev as Manager, a start date after the end date: server 400, and the form showed "start_date must be on or before end_date" | That message is the server's own wording, and reads like a developer's. Not reworded here |
+| A4 | claimed | `promotion rules > the form and the server agree on what is a valid promotion` and `promotion saving > the form stays open when a save is refused` fail on base, the second by assertion, and pass on tip. `PromotionForm > stays open and shows the reason when the server refuses` passes on tip. On dev as Admin and Manager, an empty discount showed "Enter a discount between 1% and 100%.", sent nothing, and left the form open. After the server refusal in A3 the typed name was still there | The function's own use of the rule was not triggered in a browser, because the form stops it first |
+| A5 | claimed | `promotion saving > delete asks first` fails on base by assertion, passes on tip. On dev as Admin and Manager: the dialog offers Cancel and Delete, Cancel kept the row, Delete removed it | |
+| A6 | claimed | `promotion rules > only an on or off change is allowed on a promotion used on orders` fails on base, passes on tip. `promotion saving > the used-on-orders check is skipped only for an on or off change, and never for a delete` passes on tip | Tests only. No order on dev has used a promotion, so a used promotion was never toggled or refused on a real server. On dev the toggle sends `is_active` alone, as the server log of each request shows |
+| A7 | claimed | On dev at f955130, with `mutate-promotion` deployed, as Admin and as Manager: create 201, edit 200, toggle off and on 200 each, delete 200, each confirmed after a reload, on promotions set to start in 2099. Clearing an end date on the edit took the row from "1 Jan – 1 Feb" to "1 Jan" | Dev is back to its original 6 promotions, and 0 test rows are left |
+| A8 | not-claimed | | `mutate-promotion` is deployed to dev, and dev serves f955130cd4b46d59fdcedc74b9b41ba999df6df4, but that is a throwaway merge so the unmerged demo work stays on dev, and this is before the merge. Not pushed. The deploy-functions script could not do it: the Supabase CLI refuses a hosted change in agent mode without `--yes`. The owner approved `--yes` for this one function on dev, and a small script resolving the target the same way ran it |
+| A9 | claimed | `PromotionForm > clearing an end date on an edit sends null` fails on base, passes on tip. Seen on dev in A7 | Clearing a start date or minimum order uses the same code but was not tried in a browser |
+
+Added during the work: `eslint-suppressions.json` loses PromotionAdmin's one entry through `npm run lint:prune`, because the delete button now has a label.
+
+### Not claimed
+
+- New promotions go live on save, as the form has always defaulted. This restores that for Admins and Managers. Every test promotion here started in 2099, so no real price changed.
+- Only the percentage type was saved in a browser. Fixed price, clearance, buy-one-get-one and bundle were covered by the rules test, not by a save.
+- Scope and targeting other than storewide and all customers were not tried.
+- No customer order was priced against a promotion created this way.
+- The form's "Quantities are per" setting is still not stored, and its carton check never runs.
+- Promotion ids created now are UUIDs, while the older ones stay `PROMO-001` style. Both work, and nothing reads their shape.
+- Only 1280px was walked. No phone or tablet width, and no RS35.
+- Test rows `PROMO-NX0024-A` and `-M` were inserted by SQL on dev, then deleted through the screen. Their saves, and those of the two created promotions, remain in dev's audit log. The first attempt, before the function was deployed, sent one refused create.
+- A form-side date check was not added, so a start date after the end date is caught by the server only.
+- `--project=mobile` and `--project=contrast` were not run: the only new layout is a message inside the form and a confirmation dialog from `components/ui`.
+- One full-suite run failed `receiveMixedPallet`, a listed flake, which passed alone (10 passed).
+- The logins used the demo accounts the dev login page publishes.
