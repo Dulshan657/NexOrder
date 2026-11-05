@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { fetchAllRows } from '@/lib/fetchAllRows'
-import { extractFunctionErrorMessage } from '@/lib/functionError'
+import { extractFunctionErrorEnvelope, extractFunctionErrorMessage } from '@/lib/functionError'
 import type { Database } from '@/lib/database.types'
 
 type HoReCaRow = Database['public']['Tables']['horecas']['Row']
@@ -40,12 +40,39 @@ export async function getHoReCaById(id: number) {
   return data as unknown as HoReCaRowWithJoins
 }
 
+// A refused save says why, in words. supabase-js's own message for any non-2xx answer
+// is "Edge Function returned a non-2xx status code", which tells the person nothing;
+// the reason is in the response body. A body zod refused arrives as "Invalid request
+// body" with the field messages in details.fieldErrors (zod's flatten()), so those are
+// appended -- the form catches the common ones itself, this is for the rest.
+function refusedFieldMessages(details: unknown): string[] {
+  const fieldErrors = (details as { fieldErrors?: unknown } | null | undefined)?.fieldErrors
+  if (!fieldErrors || typeof fieldErrors !== 'object') return []
+  return Object.values(fieldErrors as Record<string, unknown>)
+    .flatMap((messages) => (Array.isArray(messages) ? messages : []))
+    .filter((message): message is string => typeof message === 'string' && message.length > 0)
+    .slice(0, 3)
+}
+
+async function saveError(error: unknown): Promise<Error> {
+  const envelope = await extractFunctionErrorEnvelope(error)
+  // No response at all (offline, aborted): the error's own message is the best there is.
+  if (!envelope) {
+    return error instanceof Error && error.message.trim().length > 0
+      ? error
+      : new Error('Could not reach the server. Check the connection and try again.')
+  }
+  const reason = envelope.message ?? `The server could not save this (HTTP ${envelope.status}). Please try again.`
+  const fields = refusedFieldMessages(envelope.details)
+  return new Error(fields.length > 0 ? `${reason}: ${fields.join('; ')}` : reason)
+}
+
 export async function createHoReCa(horeca: HoReCaInsert, reason?: string): Promise<HoReCaRow> {
   const { data, error } = await supabase.functions.invoke<{ ok: true; horeca: HoReCaRow }>(
     'mutate-horeca',
     { body: { action: 'create', data: horeca, reason } },
   )
-  if (error) throw error
+  if (error) throw await saveError(error)
   return data!.horeca
 }
 
@@ -54,7 +81,7 @@ export async function updateHoReCa(id: number, updates: HoReCaUpdate, reason?: s
     'mutate-horeca',
     { body: { action: 'update', id, data: updates, reason } },
   )
-  if (error) throw error
+  if (error) throw await saveError(error)
   return data!.horeca
 }
 

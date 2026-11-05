@@ -488,9 +488,11 @@ export const TARGETS = {
      * the functions, in that order. The frontend half is compiled out rather
      * than hidden, so nothing here takes effect until the bundle is rebuilt.
      *
-     * `voice_assistant` (2026-10-20) is deliberately NOT listed: the owner's
-     * call on 2026-10-22 was that Amadiya gets no new features yet. Adding it
-     * later is this one edit plus the release steps above.
+     * `voice_assistant` (2026-10-20) is deliberately NOT listed. The owner's call
+     * of 2026-10-22 was that Amadiya gets no new features yet; by owner decision
+     * of 2026-11-05 Amadiya moves to current code for the McCurrie run, and
+     * `voice_assistant` remains deliberately unlisted. Adding it later is this
+     * one edit plus the release steps above.
      */
     modules: ['sales_orders', 'inventory_dispatch'],
 

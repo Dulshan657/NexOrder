@@ -15,6 +15,7 @@ import type { AdminTab } from '../lib/adminTabUrl';
 import type { NavTarget as SetupNavTarget } from '../lib/warehouseSetup/steps';
 import ProductAdmin from './ProductAdmin';
 import HoReCaListView from './HoReCaListView';
+import type { HoReCaSaveOutcome } from '../lib/horecaSave';
 import UserAdmin from './UserAdmin';
 import SupplierAdmin from './SupplierAdmin';
 import WalkInReviewTab from './admin/WalkInReviewTab';
@@ -79,8 +80,8 @@ interface AdminViewProps {
     onDeleteProduct: (productId: number) => void;
     /** Replace one product's supplier links (mig 00070) — Suppliers → Products panel. */
     onSaveProductSupplierLinks: (productId: number, links: ProductSupplierLink[]) => Promise<void>;
-    onAddHoReCa: (customer: Omit<HoReCa, 'id'>, reason?: string) => void;
-    onUpdateHoReCa: (customer: HoReCa, reason?: string) => void;
+    onAddHoReCa: (customer: Omit<HoReCa, 'id'>, reason?: string) => HoReCaSaveOutcome;
+    onUpdateHoReCa: (customer: HoReCa, reason?: string) => HoReCaSaveOutcome;
     onDeleteHoReCa: (hoReCaId: number) => void;
     onAddUser: (user: Omit<User, 'id'>) => void;
     onUpdateUser: (user: User) => void;

@@ -12,6 +12,13 @@ declare module 'https://esm.sh/@supabase/supabase-js@2.103.0' {
   export * from '@supabase/supabase-js'
 }
 
+// `_shared/horecaBody.ts` types its zod argument from the URL the functions pin, and
+// a unit test passes in the client's `zod/v3` (same API as the 3.23.8 the functions
+// run), so alias the URL to it for the same reason.
+declare module 'https://esm.sh/zod@3.23.8' {
+  export * from 'zod/v3'
+}
+
 // Anything else imported by URL is only ever reached through Deno-side code.
 declare module 'https://esm.sh/*'
 declare module 'https://deno.land/*'

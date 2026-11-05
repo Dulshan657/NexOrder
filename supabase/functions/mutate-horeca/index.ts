@@ -6,6 +6,9 @@
 //   - discount_percent must be in 0–50
 //   - credit_limit must be >= 0
 //   - tier must be 'Gold' | 'Silver' | 'Bronze' | null
+//   - contact_name, phone, abn, billing_email, buys_brands (mig 00138): abn is 11 digits once its
+//     spaces are removed (and is stored without them); billing_email is NOT unique and
+//     is never a send-email recipient. The shapes live in _shared/horecaBody.ts.
 //   - Sensitive fields (credit_limit, tier, discount_percent): if the caller is
 //     a Manager (not Admin) and any of these fields differ from the current row,
 //     a non-empty `reason` field is required in the request. Missing reason →
@@ -25,31 +28,19 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
+import { buildHorecaBodySchema } from '../_shared/horecaBody.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
 type HoReCaTier = 'Gold' | 'Silver' | 'Bronze'
 const TIER_VALUES: ReadonlyArray<HoReCaTier> = ['Gold', 'Silver', 'Bronze']
-const tierEnum = z.enum(['Gold', 'Silver', 'Bronze'])
 
 const SENSITIVE_FIELDS = ['credit_limit', 'tier', 'discount_percent'] as const
 type SensitiveField = (typeof SENSITIVE_FIELDS)[number]
 
-// Shared body — all fields optional for partial update
-const horecaBodySchema = z.object({
-  name: z.string().min(1).optional(),
-  address: z.string().min(1).optional(),
-  discount_percent: z.number().min(0).max(50).nullable().optional(),
-  credit_limit: z.number().min(0).nullable().optional(),
-  show_stock_tab: z.boolean().nullable().optional(),
-  tier: tierEnum.nullable().optional(),
-  lat: z.number().nullable().optional(),
-  lng: z.number().nullable().optional(),
-  is_temporary: z.boolean().optional(),
-  created_by_user_id: z.string().uuid().nullable().optional(),
-  reviewed_at: z.string().nullable().optional(),
-  reviewed_by: z.string().nullable().optional(),
-})
+// Shared body -- all fields optional for partial update. Built in _shared/horecaBody
+// (unit-tested there) from the zod this function runs with.
+const horecaBodySchema = buildHorecaBodySchema(z)
 
 // Required fields for create
 const horecaCreateBodySchema = horecaBodySchema.extend({

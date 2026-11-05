@@ -9,6 +9,7 @@ import HoReCaProfile from './HoReCaProfile';
 import VisitModal from './visits/VisitModal';
 import { getHoReCaOutstanding } from '../services/accountingService';
 import { computeAllHoReCaInsights } from '../services/buyingPatternsService';
+import { isFailedSave, type HoReCaSaveOutcome } from '../lib/horecaSave';
 
 interface HoReCaListViewProps {
   hoReCas: HoReCa[];
@@ -16,8 +17,9 @@ interface HoReCaListViewProps {
   invoices: Invoice[];
   currentUser: User;
   visits?: Visit[];
-  onAddHoReCa?: (customer: Omit<HoReCa, 'id'>, reason?: string) => void;
-  onUpdateHoReCa?: (customer: HoReCa, reason?: string) => void;
+  // A save reports how it went, so the dialog below stays open when it fails (NX-0018).
+  onAddHoReCa?: (customer: Omit<HoReCa, 'id'>, reason?: string) => HoReCaSaveOutcome;
+  onUpdateHoReCa?: (customer: HoReCa, reason?: string) => HoReCaSaveOutcome;
   onDeleteHoReCa?: (hoReCaId: number) => void;
   onStartOrder?: (hoReCaId: number) => void;
   setVisits?: (visits: Visit[]) => void;
@@ -343,7 +345,12 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
       {showAddForm && onAddHoReCa && (
         <HoReCaForm
           hoReCaToEdit={null}
-          onSave={(data, reason) => { onAddHoReCa(data as Omit<HoReCa, 'id'>, reason); setShowAddForm(false); }}
+          onSave={async (data, reason) => {
+            // Close only once the save is known to have worked; a failure goes back to the form.
+            const outcome = await onAddHoReCa(data as Omit<HoReCa, 'id'>, reason);
+            if (isFailedSave(outcome)) return outcome;
+            setShowAddForm(false);
+          }}
           onClose={() => setShowAddForm(false)}
           userRole={currentUser.role}
         />
@@ -353,7 +360,11 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
       {hoReCaToEdit && onUpdateHoReCa && (
         <HoReCaForm
           hoReCaToEdit={hoReCaToEdit}
-          onSave={(data, reason) => { onUpdateHoReCa(data as HoReCa, reason); setHoReCaToEdit(null); }}
+          onSave={async (data, reason) => {
+            const outcome = await onUpdateHoReCa(data as HoReCa, reason);
+            if (isFailedSave(outcome)) return outcome;
+            setHoReCaToEdit(null);
+          }}
           onClose={() => setHoReCaToEdit(null)}
           userRole={currentUser.role}
         />

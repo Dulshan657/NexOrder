@@ -13,6 +13,7 @@ import { computeAllHoReCaInsights } from '../services/buyingPatternsService';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { ErrorBoundary } from './ErrorBoundary';
 import { MODULE_SHOP } from '../lib/modules';
+import { isFailedSave, type HoReCaSaveOutcome } from '../lib/horecaSave';
 
 // Kitchen QR reorder ships with the shop module. Both pieces are declared HERE, at
 // the one place a profile is rendered, so neither AppShell nor AdminView needs to
@@ -28,7 +29,7 @@ interface HoReCaProfileProps {
   visits?: Visit[];
   hoReCas: HoReCa[];
   onBack: () => void;
-  onUpdateHoReCa?: (customer: HoReCa, reason?: string) => void;
+  onUpdateHoReCa?: (customer: HoReCa, reason?: string) => HoReCaSaveOutcome;
   onStartOrder?: (hoReCaId: number) => void;
   onLogVisit?: (hoReCaId: number) => void;
   setVisits?: (visits: Visit[]) => void;
@@ -257,7 +258,12 @@ const HoReCaProfile: React.FC<HoReCaProfileProps> = ({
       {showEditForm && onUpdateHoReCa && (
         <HoReCaForm
           hoReCaToEdit={hoReCa}
-          onSave={(updated, reason) => { onUpdateHoReCa(updated as HoReCa, reason); setShowEditForm(false); }}
+          onSave={async (updated, reason) => {
+            // Close only once the save is known to have worked; a failure goes back to the form.
+            const outcome = await onUpdateHoReCa(updated as HoReCa, reason);
+            if (isFailedSave(outcome)) return outcome;
+            setShowEditForm(false);
+          }}
           onClose={() => setShowEditForm(false)}
           userRole={currentUser.role}
         />

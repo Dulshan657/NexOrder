@@ -181,6 +181,11 @@ export type Database = {
           created_by_user_id: string | null
           reviewed_at: string | null
           reviewed_by: string | null
+          contact_name: string | null
+          phone: string | null
+          abn: string | null
+          billing_email: string | null
+          buys_brands: string[]
         }
         Insert: {
           id?: number
@@ -197,6 +202,11 @@ export type Database = {
           created_by_user_id?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
+          contact_name?: string | null
+          phone?: string | null
+          abn?: string | null
+          billing_email?: string | null
+          buys_brands?: string[]
         }
         Update: {
           id?: number
@@ -213,6 +223,11 @@ export type Database = {
           created_by_user_id?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
+          contact_name?: string | null
+          phone?: string | null
+          abn?: string | null
+          billing_email?: string | null
+          buys_brands?: string[]
         }
         Relationships: []
       }
