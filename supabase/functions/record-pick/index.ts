@@ -217,6 +217,16 @@ serve(async (req: Request) => {
     })
     if (rpcError) {
       const msg = rpcError.message ?? 'pick failed'
+      if (/LINE_CLOSED_SHORT/.test(msg)) {
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          'This line was already finished short, so it cannot be picked. Put anything taken back.',
+          { reason: 'LINE_CLOSED_SHORT' },
+        )
+      }
+      if (/BAD_LOCATION/.test(msg)) {
+        throw new EdgeFunctionError('INVALID_INPUT', 'That bin is not in an active warehouse.', { reason: 'BAD_LOCATION' })
+      }
       const conflict = /OVER_PICK|INSUFFICIENT_STOCK/.test(msg)
       throw new EdgeFunctionError(conflict ? 'CONFLICT' : 'INTERNAL', `pick failed: ${msg}`)
     }

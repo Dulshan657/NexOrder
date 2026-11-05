@@ -155,6 +155,7 @@ export const FUNCTION_MODULES = {
   'recommend-putaway-route': 'inventory_dispatch',
   'recommend-replen-route': 'inventory_dispatch',
   'record-pick': 'inventory_dispatch',
+  'record-short-pick': 'inventory_dispatch',
   'release-quarantine': 'inventory_dispatch',
   'transfer-stock': 'inventory_dispatch',
   'unassign-replenishment': 'inventory_dispatch',

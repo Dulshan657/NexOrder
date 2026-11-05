@@ -128,4 +128,8 @@ export const LOCKED_TABLES = [
   // the later upload brief; nothing calls the transactions yet.
   { table: 'qb_product_map', fn: 'import-qb-invoices', migration: '00139' },
   { table: 'qb_invoice_imports', fn: 'import-qb-invoices', migration: '00139' },
+  // Differences found while picking an imported order (00140). Service role only:
+  // created with REVOKE ALL from PUBLIC/anon/authenticated and no policies. Readable
+  // only in the database until the office screen arrives with its own brief.
+  { table: 'pick_differences', fn: 'record-short-pick / record-pick', migration: '00140' },
 ]

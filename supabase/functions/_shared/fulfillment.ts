@@ -86,7 +86,8 @@ export async function pruneFulfillments(
  * reserved at that warehouse (allocate − deallocate, resolved bin→warehouse)
  * against base units picked there. Delegated to inv_warehouse_pick_complete
  * (mig 00040) so the bin→warehouse resolution is consistent. A site with nothing
- * reserved is vacuously complete.
+ * reserved is vacuously complete, except on an imported order, where an open line
+ * also counts unless another warehouse still holds it (mig 00140).
  */
 export async function isLocationFullyPicked(
   admin: SupabaseClient,
@@ -103,11 +104,11 @@ export async function isLocationFullyPicked(
 
 /**
  * On a dispatch transition, release any residual reservation this warehouse
- * still holds for the order — deallocates only the un-picked remainder via
- * inv_release_reservation (mig 00036). A no-op for every other status. A
- * correctly-picked fulfilment has nothing left to release: the RPC nets
- * ordered-vs-picked internally and only deallocates what's actually left, so
- * calling it unconditionally on dispatch is always safe. This is what stops a
+ * still holds for the order — deallocates only this order's own remainder, across
+ * the warehouse's bins, via inv_release_reservation (mig 00140). A no-op for every
+ * other status. A correctly-picked fulfilment has nothing left to release: the RPC
+ * nets this order's ledger against its picks per bin and only deallocates what's
+ * actually left, so calling it unconditionally on dispatch is always safe. This is what stops a
  * short-picked-then-dispatched fulfilment from leaving `allocated` units
  * stranded at this location, unreachable to `inv_transfer_stock` (which moves
  * available stock only) and therefore un-puttable-away forever.
