@@ -157,7 +157,11 @@ export function buildReorderPlan(input: ReorderPlanInput): ReorderPlan {
   }
 
   // A promotion's minimum is measured on the lines being ordered, before any promotion.
-  const orderValue = input.order.items.reduce((sum, source) => sum + lineWith(source, []).lineTotal, 0)
+  // Summed unrounded and rounded once, as the server does.
+  const orderValue = input.order.items.reduce((sum, source) => {
+    const line = lineWith(source, [])
+    return sum + line.unitPrice * line.quantity
+  }, 0)
   const eligible = eligibleForOrderValue(input.promotions, orderValue)
 
   const lines = input.order.items.map((source) => lineWith(source, eligible))

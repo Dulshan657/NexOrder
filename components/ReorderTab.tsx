@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Order, Product, HoReCa, OrderItem, Promotion, User } from '../types';
 import { RotateCcw, ShoppingCart, Trash2, AlertTriangle, UserRound, Package } from 'lucide-react';
 import { priceReorderLine } from '../lib/reorderLinePrice';
+import { eligibleForOrderValue } from '../supabase/functions/_shared/promotionMinimum';
 import { classifyStock, lowStockThresholdFor } from '../lib/stockStatus';
 import { useSettings } from '../hooks/queries/useSettings';
 import OptimizedImage from './OptimizedImage';
@@ -52,7 +53,15 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
 
     // Resolve items with current product data
     const resolvedItems = useMemo(() => {
-        const pricing = { hoReCa: selectedHoReCa, promotions, currentUser, cartonDiscountPercent };
+        const unpromoted = { hoReCa: selectedHoReCa, promotions: [] as Promotion[], currentUser, cartonDiscountPercent };
+        // A promotion's minimum is measured on the lines being reordered, before any promotion.
+        const orderValue = editedItems.reduce((sum, item) => {
+            const product = products.find(p => p.id === item.id);
+            if (item.removed || !product || product.available <= 0) return sum;
+            const priced = priceReorderLine(item, product, unpromoted);
+            return priced.ok === true ? sum + priced.unitPrice * item.quantity : sum;
+        }, 0);
+        const pricing = { ...unpromoted, promotions: eligibleForOrderValue<Promotion>(promotions, orderValue) };
         return editedItems.map(item => {
             const currentProduct = products.find(p => p.id === item.id);
             const isLowStock = !!currentProduct

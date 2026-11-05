@@ -227,7 +227,13 @@ export function OrderProvider({
                     ? calcCartonPrice(buyProduct.price, buyProduct.cartonSize, appSettings.cartonDiscountPercent)
                     : buyProduct.price;
                 handleAddItem(buyProduct, { packSize, price, unit }, promo.bogoConfig.buyQuantity);
-                addToast(`Promo applied: ${promo.name}. Free items will be added automatically.`, 'success');
+                const minimum = promo.minOrderValue ?? 0;
+                addToast(
+                    minimum > 0
+                        ? `${promo.name} added. Free items apply on orders of $${minimum.toFixed(2)} or more.`
+                        : `Promo applied: ${promo.name}. Free items will be added automatically.`,
+                    'success',
+                );
             }
         },
         [products, appSettings.cartonDiscountPercent, addToast, handleAddItem],

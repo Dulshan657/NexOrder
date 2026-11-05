@@ -4,9 +4,12 @@ import { cleanup, render, screen } from '@testing-library/react'
 
 import OrderLinesGrid from '../components/admin/newOrder/OrderLinesGrid'
 import PromotionsBanner from '../components/PromotionsBanner'
+import ReorderTab from '../components/ReorderTab'
 import { buildReorderPlan } from '../lib/kitchen/reorderPlan'
 import { mkCartItem, mkHoReCa, mkPercentPromo, mkProduct, mkUser } from './fixtures'
 import type { ParsedOrderLine } from '../lib/newOrder/resolveOrderLines'
+
+vi.mock('../hooks/queries/useSettings', () => ({ useSettings: () => ({ data: { low_stock_threshold: 10 } }) }))
 
 afterEach(cleanup)
 
@@ -55,6 +58,30 @@ describe('reorder plan', () => {
     expect(plan(1).estimatedTotal).toBe(100)
     expect(plan(2).estimatedTotal).toBe(100)
     expect(plan(3).estimatedTotal).toBe(150)
+  })
+})
+
+describe('Shop reorder tab', () => {
+  const tab = (quantity: number) => {
+    const { container } = render(
+      <ReorderTab
+        lastOrder={{ id: 'O-1', items: [mkCartItem(product, quantity)] } as never}
+        products={[product]}
+        selectedHoReCa={mkHoReCa()}
+        promotions={[promo]}
+        currentUser={mkUser()}
+        cartonDiscountPercent={5}
+        cartItemCount={0}
+        onAddItems={vi.fn()}
+      />,
+    )
+    return container.textContent
+  }
+
+  it('measures a minimum on the lines being reordered, not on the cart', () => {
+    expect(tab(1)).toContain('$100.00')
+    cleanup()
+    expect(tab(2)).toContain('$50.00') // the unit price, once the two lines reach it
   })
 })
 
