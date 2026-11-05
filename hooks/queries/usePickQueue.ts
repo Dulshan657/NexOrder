@@ -33,6 +33,10 @@ interface RecordPickVariables {
   locationId?: number
   /** Scan evidence (Phase 3); re-validated server-side. */
   scan?: PickScanEvidence
+  /** True for a pick outside the order's reservation (an unreserved offer, or a bin the
+   *  system shows no stock at). Free stock moved, so this order's tasks are refetched;
+   *  an ordinary pick patches its own task and nothing more. */
+  refreshTasks?: boolean
 }
 
 const recordPickKey = ['pick_queue', 'record'] as const
@@ -117,12 +121,13 @@ export function useRecordPick() {
       qc.invalidateQueries({ queryKey: tasksKey })
       qc.invalidateQueries({ queryKey: pickKeys.queue, exact: true })
     },
-    onSuccess: (result, { orderId, orderItemId, locationId }) => {
+    onSuccess: (result, { orderId, orderItemId, locationId, refreshTasks }) => {
       // Only the task this pick finished: another pick's row at 0 is still
       // awaiting its own answer and must stay mounted to show a refusal.
       qc.setQueryData<PickTask[]>(pickTaskKeys.forOrder(orderId), (tasks) =>
         tasks?.filter((t) => !(isTask(t, orderItemId, locationId) && t.remaining <= 0)),
       )
+      if (refreshTasks) qc.invalidateQueries({ queryKey: pickTaskKeys.forOrder(orderId) })
       if (result.line_fully_picked || result.order_fully_picked) {
         qc.invalidateQueries({ queryKey: pickKeys.queue })
         qc.invalidateQueries({ queryKey: ['orders'] })

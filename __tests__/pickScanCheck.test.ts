@@ -135,3 +135,47 @@ describe('codeMatchesProduct', () => {
     expect(codeMatchesProduct('', { sku: 'X', barcode: 'Y' })).toBe(false)
   })
 })
+
+// A product with no barcode is picked by its SKU label. The imported-order
+// screens (NX-0029) lean on this: an invoice-driven catalogue can hold products
+// nobody ever gave a supplier EAN, and the SKU label is then the only thing the
+// picker can scan. These pin that the shared check accepts it, in the browser
+// and at record-pick alike, so the walk can finish without a barcode.
+describe('checkPickScan: a product with no barcode', () => {
+  const NO_BARCODE: PickTaskContext = {
+    taskLocationCode: 'TST-A-B11',
+    product: { id: 11, sku: 'TST-NOBAR-01', name: 'Test Widget', barcode: null },
+    remainingQty: 4,
+  }
+
+  it('accepts its SKU label and counts the pick as verified', () => {
+    const v = checkPickScan(NO_BARCODE, { locationCode: 'TST-A-B11', productCode: 'TST-NOBAR-01' }, 2)
+    expect(v.ok).toBe(true)
+    if (v.ok) expect(v.verified).toBe(true)
+  })
+
+  it('accepts the label scanned in lower case with a gun terminator', () => {
+    const v = checkPickScan(NO_BARCODE, { locationCode: 'TST-A-B11', productCode: 'tst-nobar-01\r\n' }, 2)
+    expect(v.ok).toBe(true)
+  })
+
+  it('accepts it when the barcode is absent rather than null', () => {
+    const task = { ...NO_BARCODE, product: { id: 11, sku: 'TST-NOBAR-01', name: 'Test Widget' } }
+    expect(checkPickScan(task, { productCode: 'TST-NOBAR-01' }, 1).ok).toBe(true)
+  })
+
+  it('accepts an all-digit SKU label', () => {
+    const task = { ...NO_BARCODE, product: { id: 12, sku: '4471', name: 'Test Bolt', barcode: null } }
+    expect(checkPickScan(task, { productCode: '4471' }, 1).ok).toBe(true)
+  })
+
+  it('still refuses a number that is not its SKU', () => {
+    const v = checkPickScan(NO_BARCODE, { locationCode: 'TST-A-B11', productCode: '9999999999999' }, 1)
+    expect(v.ok).toBe(false)
+    if (v.ok === false) expect(v.code).toBe('WRONG_PRODUCT')
+  })
+
+  it('still refuses another product\'s SKU label', () => {
+    expect(checkPickScan(NO_BARCODE, { productCode: 'TST-NOBAR-02' }, 1).ok).toBe(false)
+  })
+})
