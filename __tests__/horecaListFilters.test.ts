@@ -159,8 +159,60 @@ describe('customer list filters', () => {
     expect(resolveBrand([], 'Harbour Dairy')).toBe('')
   })
 
+  it('matches a search against name, address, contact, phone, billing email and ABN', async () => {
+    const { matchesSearch } = await load()
+
+    const c = customer({ phone: '0400 000 001', abn: '12345678901' })
+
+    for (const text of ['acme', 'FOODS', '1 test st', 'jo example', 'accounts@example', '0400 000 001', '000 001', '12345678901', '345678']) {
+      expect(matchesSearch(c, text), text).toBe(true)
+    }
+    // A phone or ABN is found however its spaces are typed, in the search or in the record.
+    expect(matchesSearch(c, '0400000001')).toBe(true)
+    expect(matchesSearch(c, '12 345 678 901')).toBe(true)
+    expect(matchesSearch(customer({ abn: '12 345 678 901' }), '12345678901')).toBe(true)
+
+    expect(matchesSearch(c, 'northfield')).toBe(false)
+    expect(matchesSearch(c, '0499')).toBe(false)
+    // Brands have their own filter and are not searched.
+    expect(matchesSearch(c, 'harbour dairy')).toBe(false)
+  })
+
+  it('matches everyone when the search is blank', async () => {
+    const { matchesSearch } = await load()
+
+    expect(matchesSearch(customer(), '')).toBe(true)
+    expect(matchesSearch(customer(), '   ')).toBe(true)
+  })
+
+  it('searches a customer with undefined, null or blank values without failing', async () => {
+    const { matchesSearch } = await load()
+
+    const bare = { id: 9, name: 'Dunes Hotel', address: '4 Beach Rd' } as HoReCa
+    const odd = customer({ contactName: null, phone: null, billingEmail: null, abn: null, address: null } as unknown as Partial<HoReCa>)
+
+    for (const c of [bare, odd, customer({ contactName: '', phone: '  ', billingEmail: '', abn: '' })]) {
+      expect(() => matchesSearch(c, 'sample')).not.toThrow()
+      expect(matchesSearch(c, 'sample')).toBe(false)
+    }
+    expect(matchesSearch(bare, 'beach')).toBe(true)
+    expect(matchesSearch(odd, 'acme')).toBe(true)
+  })
+
+  it('never matches the address placeholder', async () => {
+    const { matchesSearch, ADDRESS_PLACEHOLDER } = await load()
+
+    const unaddressed = customer({ address: ADDRESS_PLACEHOLDER })
+
+    expect(matchesSearch(unaddressed, 'needed')).toBe(false)
+    expect(matchesSearch(unaddressed, 'address needed')).toBe(false)
+    expect(matchesSearch(unaddressed, ADDRESS_PLACEHOLDER)).toBe(false)
+    // The rest of the customer is still found.
+    expect(matchesSearch(unaddressed, 'acme')).toBe(true)
+  })
+
   it('reads a customer without changing it', async () => {
-    const { hasMissingDetails, brandOptions, matchesBrand } = await load()
+    const { hasMissingDetails, brandOptions, matchesBrand, matchesSearch } = await load()
 
     const original = frozen(customer({ buysBrands: ['Harbour Dairy', ' harbour dairy'] }))
     const before = JSON.stringify(original)
@@ -168,6 +220,7 @@ describe('customer list filters', () => {
     hasMissingDetails(original)
     brandOptions([original])
     matchesBrand(original, 'harbour dairy')
+    matchesSearch(original, 'acme')
 
     expect(JSON.stringify(original)).toBe(before)
   })

@@ -14,7 +14,7 @@ import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 import { getHoReCaOutstanding } from '../services/accountingService';
 import { computeAllHoReCaInsights } from '../services/buyingPatternsService';
 import { isFailedSave, type HoReCaSaveOutcome } from '../lib/horecaSave';
-import { brandOptions, cleanAddress, hasMissingDetails, matchesBrand, resolveBrand } from '../lib/horecaListFilters';
+import { brandOptions, hasMissingDetails, matchesBrand, matchesSearch, resolveBrand } from '../lib/horecaListFilters';
 
 interface HoReCaListViewProps {
   hoReCas: HoReCa[];
@@ -149,9 +149,8 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
 
   // Filter
   const filtered = useMemo(() => {
-    const q = searchQuery.trim() ? searchQuery.toLowerCase() : '';
     return byName.filter(h =>
-      (!q || h.name.toLowerCase().includes(q) || cleanAddress(h.address).toLowerCase().includes(q)) &&
+      matchesSearch(h, searchQuery) &&
       (segmentFilter === 'all' || insightsMap.get(h.id)?.segment === segmentFilter) &&
       (tierFilter === 'all' || h.tier === tierFilter) &&
       matchesBrand(h, activeBrand) &&
@@ -223,7 +222,7 @@ const HoReCaListView: React.FC<HoReCaListViewProps> = ({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
             <input
               type="text"
-              placeholder="Search by name or address..."
+              placeholder="Search by name, contact, phone, email, address or ABN..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-9 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-900 placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 focus:border-nexgen-blue"

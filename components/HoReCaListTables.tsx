@@ -31,6 +31,17 @@ export const MissingValue: React.FC<{ field: string }> = ({ field }) => (
   </span>
 );
 
+/**
+ * A customer who buys none of the tracked brands. That is not a missing detail (most do not),
+ * so it is a dash, like the empty cells of the Sales view, with the words for a screen reader.
+ */
+const NoBrands: React.FC = () => (
+  <span className="text-sm text-stone-500">
+    <span aria-hidden="true">--</span>
+    <span className="sr-only">No brands</span>
+  </span>
+);
+
 const Head: React.FC<{ align?: Align; children?: React.ReactNode }> = ({ align = 'left', children }) => (
   <th scope="col" className={`${HEAD} ${align === 'right' ? 'text-right' : 'text-left'}`}>
     {children}
@@ -109,7 +120,7 @@ const DetailsRow: React.FC<RowProps> = ({ customer: h, last, onOpen, actions }) 
       </td>
       <TextCell value={h.abn} field="ABN" className="whitespace-nowrap tabular-nums" />
       <td className={`${CELL} text-sm text-stone-700`}>
-        {brands.length > 0 ? <div className="max-w-[200px]">{brands.join(', ')}</div> : <MissingValue field="brands" />}
+        {brands.length > 0 ? <div className="max-w-[200px]">{brands.join(', ')}</div> : <NoBrands />}
       </td>
       <ActionsCell actions={actions} />
     </tr>

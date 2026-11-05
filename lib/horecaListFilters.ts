@@ -73,6 +73,29 @@ export const matchesBrand = (customer: HoReCa, brand: string): boolean => {
   return wanted === '' || customerBrands(customer).some((owned) => compareKey(owned) === wanted);
 };
 
+const withoutSpaces = (value: string): string => value.replace(/\s+/g, '');
+
+/**
+ * True when the search text is found in the customer's name, real address, contact, phone,
+ * billing email or ABN, ignoring case. A phone or ABN is also found however its spaces are
+ * typed ("0400000001" finds "0400 000 001"). Brands have their own filter, and the address
+ * placeholder is not an address, so it is never found. A blank search matches everyone.
+ */
+export const matchesSearch = (customer: HoReCa, query: string): boolean => {
+  if (query.trim() === '') return true;
+  const q = query.toLowerCase();
+  const compact = withoutSpaces(q);
+  const text = [customer.name, cleanAddress(customer.address), customer.contactName, customer.billingEmail];
+  const numbers = [customer.phone, customer.abn];
+  return (
+    text.some((value) => cleanText(value).toLowerCase().includes(q)) ||
+    numbers.some((value) => {
+      const own = cleanText(value).toLowerCase();
+      return own.includes(q) || withoutSpaces(own).includes(compact);
+    })
+  );
+};
+
 /**
  * The option a chosen brand stands for, or '' (no brand) when none of the options is that
  * brand any more, e.g. after the last buyer was edited.

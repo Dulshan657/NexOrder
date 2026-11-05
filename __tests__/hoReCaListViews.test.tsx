@@ -15,6 +15,7 @@ vi.mock('@/components/qr/QrAccessPanel', () => ({ default: () => null }))
 
 import HoReCaListView from '@/components/HoReCaListView'
 
+const SEARCH_PLACEHOLDER = 'Search by name, contact, phone, email, address or ABN...'
 const DETAILS_HEADERS = ['Customer', 'Contact', 'Phone', 'Email', 'Address', 'ABN', 'Brands', 'Actions']
 const SALES_HEADERS = ['Customer', 'Tier', 'Segment', 'Credit Limit', 'Last Order', 'Outstanding', 'Actions']
 
@@ -41,7 +42,7 @@ const button = (name: string) => screen.getByRole('button', { name })
 const brandSelect = () => screen.getByLabelText('Brand') as HTMLSelectElement
 const pickBrand = (brand: string) => fireEvent.change(brandSelect(), { target: { value: brand } })
 const search = (text: string) =>
-  fireEvent.change(screen.getByPlaceholderText('Search by name or address...'), { target: { value: text } })
+  fireEvent.change(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), { target: { value: text } })
 
 afterEach(() => {
   cleanup()
@@ -135,7 +136,6 @@ describe('customer tab views', () => {
       ['Phone', 'phone'],
       ['Email', 'email'],
       ['ABN', 'ABN'],
-      ['Brands', 'brands'],
     ]) {
       const missing = within(cell('Dunes Hotel', header)).getByText('Missing')
       expect(missing.textContent, header).toBe(`Missing ${field}`)
@@ -143,6 +143,14 @@ describe('customer tab views', () => {
       expect(missing.className, header).toMatch(/text-stone-(500|600)/)
     }
     expect(cell('Dunes Hotel', 'Address').textContent).toBe('4 Beach Rd, Sydney NSW 2000')
+
+    // No brands is not a missing detail (most customers buy none of the tracked brands): a
+    // plain dash, named for a screen reader, and never the word "Missing".
+    const noBrands = cell('Dunes Hotel', 'Brands')
+    expect(within(noBrands).getByText('--')).toBeTruthy()
+    expect(noBrands.textContent).toContain('No brands')
+    expect(within(noBrands).queryByText('Missing')).toBeNull()
+    expect(noBrands.textContent).not.toMatch(/missing/i)
 
     // The placeholder reads as missing, never as an address.
     expect(within(cell('Corner Kitchen', 'Address')).getByText('Missing').textContent).toBe('Missing address')
@@ -157,12 +165,20 @@ describe('customer tab views', () => {
 })
 
 describe('customer tab views, around the edges', () => {
-  it('reads a value that is only spaces as missing', () => {
+  it('reads a value that is only spaces as missing, and brands that are only spaces as none', () => {
     renderList([{ ...ACME, phone: '   ', contactName: '', buysBrands: ['', '  '] }])
 
     expect(within(cell('Acme Foods', 'Phone')).getByText('Missing')).toBeTruthy()
     expect(within(cell('Acme Foods', 'Contact')).getByText('Missing')).toBeTruthy()
-    expect(within(cell('Acme Foods', 'Brands')).getByText('Missing')).toBeTruthy()
+    expect(within(cell('Acme Foods', 'Brands')).getByText('--')).toBeTruthy()
+    expect(within(cell('Acme Foods', 'Brands')).queryByText('Missing')).toBeNull()
+  })
+
+  it('reads an empty brand list as a dash too', () => {
+    renderList([{ ...ACME, buysBrands: [] }])
+
+    expect(cell('Acme Foods', 'Brands').textContent).toContain('No brands')
+    expect(within(cell('Acme Foods', 'Brands')).queryByText('Missing')).toBeNull()
   })
 
   it('keeps both toggle buttons, the filters and a 0 count when there are no customers', () => {
@@ -258,10 +274,59 @@ describe('customer tab views, around the edges', () => {
     expect(shown()).toEqual(['Dunes Hotel'])
   })
 
+  it('finds a customer by contact, phone, billing email or ABN', () => {
+    renderList()
+
+    search('sample')
+    expect(shown()).toEqual(['Eastside Bistro', 'Harbour Cafe'])
+
+    search('Pat PLACEHOLDER')
+    expect(shown()).toEqual(['Corner Kitchen'])
+
+    search('harbourcafe.example')
+    expect(shown()).toEqual(['Harbour Cafe'])
+
+    search('0400 000 003')
+    expect(shown()).toEqual(['Corner Kitchen'])
+    // A phone or ABN is found however its spaces are typed.
+    search('0400000005')
+    expect(shown()).toEqual(['Eastside Bistro'])
+    search('23 456 789 012')
+    expect(shown()).toEqual(['Harbour Cafe'])
+    search('567890123')
+    expect(shown()).toEqual(['Corner Kitchen'])
+
+    search('')
+    expect(shown()).toEqual(CUSTOMER_NAMES)
+  })
+
+  it('searches without failing on a customer who has none of those values', () => {
+    renderList()
+
+    // Dunes Hotel has no contact, phone, email or ABN at all.
+    expect(() => search('0400')).not.toThrow()
+    expect(shown()).toEqual(['Acme Foods', 'Corner Kitchen', 'Eastside Bistro'])
+    search('beach')
+    expect(shown()).toEqual(['Dunes Hotel'])
+  })
+
+  it('searches the contact details along with the brand and missing details filters', () => {
+    renderList()
+
+    pickBrand('Quill Biscuits')
+    search('sample')
+    expect(shown()).toEqual(['Eastside Bistro', 'Harbour Cafe'])
+
+    fireEvent.click(button('Missing details'))
+    expect(shown()).toEqual(['Harbour Cafe'])
+  })
+
   it('does not find the address placeholder when searching addresses', () => {
     renderList()
 
     search('needed')
+    expect(shown()).toEqual([])
+    search('Address needed')
     expect(shown()).toEqual([])
   })
 
