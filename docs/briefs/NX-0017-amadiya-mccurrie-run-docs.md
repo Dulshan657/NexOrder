@@ -27,3 +27,14 @@ Docs only: add `docs/superpowers/specs/2026-11-05-amadiya-mccurrie-run-design.md
 No code, no release tag and no deploy. The tag and deploy remain owner steps. The matching comment in `config/environments.mjs` moves to NX-0018, because this brief must stay docs-only to have no failFirst.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | not-claimed | | Needs the files present on origin/main after merge. They are on this branch only (commit b75fbf1), unmerged and unpushed |
+| A2 | not-claimed | | The check is to read the merged text. The edit to `CLAUDE.md:173-176` is on this branch only (commit b75fbf1); the module list is unchanged |
+
+### Not claimed
+
+- No release tag and no Amadiya deploy has happened. Both remain owner steps.
+- The old "no new features yet" wording is still in `config/environments.mjs` (moves to NX-0018), a comment in `__tests__/voice/moduleFlag.test.ts`, and `docs/claude/environments.md`. This brief changes `CLAUDE.md` only.
+- The spec and plan were copied as written, apart from the plan's brief number and Task 1 file list. They were not re-reviewed here.
