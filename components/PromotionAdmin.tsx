@@ -111,8 +111,8 @@ const PromotionAdmin: React.FC<PromotionAdminProps> = ({ promotions, products, h
     }), [promotions]);
 
     const handleToggle = (promo: Promotion) => {
-        // Only is_active, so the server can tell this apart from an edit: a promotion used on
-        // orders is frozen, but can still be switched on or off.
+        // Only is_active, so the server can tell this apart from an edit: a promotion an order
+        // records as used (bundles only, today) is frozen, but can still be switched on or off.
         onUpdate({ id: promo.id, isActive: !promo.isActive }).catch((err: unknown) => {
             onError?.(err instanceof Error ? err.message : 'The promotion could not be changed.');
         });

@@ -22,6 +22,7 @@ export interface PromotionDraft {
   scope?: unknown
   targeting?: unknown
   priority?: number | null
+  min_order_value?: number | null
 }
 
 // A numeric column can read back as text ("15.00") depending on the client, and an update
@@ -30,6 +31,10 @@ const toNumber = (value: unknown): number => {
   if (typeof value === 'number') return value
   return typeof value === 'string' && value.trim() !== '' ? Number(value) : Number.NaN
 }
+
+// Inside a stored config, which no schema types: pricing compares these with ===, so a string
+// would save and then silently never apply.
+const isCount = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value > 0
 
 const positive = (value: unknown): boolean => {
   const number = toNumber(value)
@@ -48,7 +53,8 @@ export function promotionProblem(draft: PromotionDraft): string | null {
 // Reads only the kinds the app writes. Dev's PROMO-006 carries an older 'hoReCas' kind, which
 // must not stop it being saved.
 function audienceProblem(draft: PromotionDraft): string | null {
-  if (draft.priority != null && !Number.isInteger(draft.priority)) return 'Priority must be a whole number.'
+  if (draft.priority != null && (!Number.isInteger(draft.priority) || draft.priority < 1)) return 'Priority must be a whole number of 1 or more.'
+  if (draft.min_order_value != null && toNumber(draft.min_order_value) < 0) return 'A minimum order cannot be negative.'
 
   const scope = (draft.scope ?? {}) as Record<string, unknown>
   const none = (list: unknown): boolean => !Array.isArray(list) || list.length === 0
@@ -58,7 +64,7 @@ function audienceProblem(draft: PromotionDraft): string | null {
   const targeting = (draft.targeting ?? {}) as Record<string, unknown>
   if (targeting.kind === 'horecas' && none(targeting.hoReCaIds)) return 'Choose at least one customer, or target everyone.'
   if (targeting.kind === 'tier' && none(targeting.tiers)) return 'Choose at least one tier, or target everyone.'
-  if (targeting.kind === 'rep' && !positive(targeting.repUserId)) return 'Choose a rep, or target everyone.'
+  if (targeting.kind === 'rep' && !isCount(targeting.repUserId)) return 'Choose a rep, or target everyone.'
   return null
 }
 
@@ -77,15 +83,17 @@ function valueProblem(draft: PromotionDraft): string | null {
       return inRange(draft.clearance_percent, 90) ? null : 'Enter a clearance discount between 1% and 90%.'
     case 'bogo': {
       const config = (draft.bogo_config ?? {}) as Record<string, unknown>
-      if (!positive(config.buyProductId) || !positive(config.getProductId)) return 'Choose the buy and free products.'
-      if (!positive(config.buyQuantity) || !positive(config.getQuantity)) return 'Enter the buy and free quantities.'
+      if (!isCount(config.buyProductId) || !isCount(config.getProductId)) return 'Choose the buy and free products.'
+      if (!isCount(config.buyQuantity) || !isCount(config.getQuantity)) return 'Enter whole buy and free quantities.'
       return null
     }
     case 'bundle': {
       const config = (draft.bundle_config ?? {}) as Record<string, unknown>
-      const count = Array.isArray(config.productIds) ? config.productIds.length : 0
-      if (count < 2 || count > 5) return 'Choose between 2 and 5 products for the bundle.'
-      return positive(config.bundlePrice) ? null : 'Enter a bundle price above zero.'
+      const ids = Array.isArray(config.productIds) ? config.productIds : []
+      if (ids.length < 2 || ids.length > 5 || !ids.every(isCount) || new Set(ids).size !== ids.length) {
+        return 'Choose between 2 and 5 different products for the bundle.'
+      }
+      return typeof config.bundlePrice === 'number' && positive(config.bundlePrice) ? null : 'Enter a bundle price above zero.'
     }
     default:
       return null

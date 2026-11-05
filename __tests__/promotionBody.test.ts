@@ -49,6 +49,20 @@ describe('promotion rules', () => {
     expect(promotionProblem({ ...ok, targeting: { kind: 'rep', repUserId: 0 } })).toMatch(/rep/i)
   })
 
+  it('a stored offer must hold real ids and whole quantities', async () => {
+    const { promotionProblem } = await load()
+    const bogo = { buyProductId: 1, buyQuantity: 2, getProductId: 1, getQuantity: 1 }
+
+    expect(promotionProblem({ type: 'bogo', bogo_config: { ...bogo, getQuantity: 0.5 } })).toMatch(/quantities/i)
+    expect(promotionProblem({ type: 'bogo', bogo_config: { ...bogo, buyProductId: '12' } })).toMatch(/product/i)
+    expect(promotionProblem({ type: 'bundle', bundle_config: { productIds: ['a', 'b'], bundlePrice: 9 } })).toMatch(/products/i)
+    expect(promotionProblem({ type: 'bundle', bundle_config: { productIds: [1, 1], bundlePrice: 9 } })).toMatch(/products/i)
+    expect(promotionProblem({ type: 'bundle', bundle_config: { productIds: [1, 2], bundlePrice: '9' } })).toMatch(/price/i)
+    expect(promotionProblem({ type: 'percentage', percent_off: 10, targeting: { kind: 'rep', repUserId: '12' } })).toMatch(/rep/i)
+    expect(promotionProblem({ type: 'percentage', percent_off: 10, min_order_value: -5 })).toMatch(/minimum/i)
+    expect(promotionProblem({ type: 'percentage', percent_off: 10, priority: 0 })).toMatch(/priority/i)
+  })
+
   it('reads a stored value that comes back as text', async () => {
     const { promotionProblem } = await load()
 

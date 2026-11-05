@@ -67,12 +67,18 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
     const [type, setType] = useState<PromotionType>(promotion?.type ?? 'percentage');
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    const [refusals, setRefusals] = useState(0);
     const saveErrorRef = useRef<HTMLParagraphElement>(null);
 
     // The reason sits above a long scrolling form, and the field at fault may be far below it.
     useEffect(() => {
-        if (saveError) saveErrorRef.current?.scrollIntoView?.({ block: 'nearest' });
-    }, [saveError]);
+        if (refusals > 0) saveErrorRef.current?.scrollIntoView?.({ block: 'nearest' });
+    }, [refusals]);
+
+    const refuse = (reason: string) => {
+        setSaveError(reason);
+        setRefusals(count => count + 1);
+    };
 
     // A save cannot be called back once sent, so closing now would hide its outcome.
     const closeUnlessSaving = () => {
@@ -135,8 +141,15 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
     const handleSave = async () => {
         if (!name.trim() || saving) return;
 
+        // A bundle or buy-one-get-one has no scope control: its scope is its own products, whatever
+        // the hidden control was left on before the type changed.
+        const offerProducts = type === 'bundle'
+            ? bundleProductIds
+            : [...new Set([Number(bogoBuyProductId), bogoSameProduct ? Number(bogoBuyProductId) : Number(bogoGetProductId)])];
+
         const scope: PromotionScope =
-            scopeKind === 'products' ? { kind: 'products', productIds: type === 'bundle' ? bundleProductIds : (type === 'bogo' ? [Number(bogoBuyProductId)] : scopeProductIds) } :
+            type === 'bundle' || type === 'bogo' ? { kind: 'products', productIds: offerProducts } :
+            scopeKind === 'products' ? { kind: 'products', productIds: scopeProductIds } :
             scopeKind === 'categories' ? { kind: 'categories', categories: scopeCategories } :
             { kind: 'storewide' };
 
@@ -184,7 +197,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
 
         const problem = promotionProblem(fromPromotion(promo));
         if (problem) {
-            setSaveError(problem);
+            refuse(problem);
             return;
         }
 
@@ -193,7 +206,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
         try {
             await onSave(promo);
         } catch (err) {
-            setSaveError(err instanceof Error ? err.message : 'The promotion could not be saved. Please try again.');
+            refuse(err instanceof Error ? err.message : 'The promotion could not be saved. Please try again.');
             setSaving(false);
         }
     };

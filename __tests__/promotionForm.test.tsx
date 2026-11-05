@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import PromotionAdmin from '../components/PromotionAdmin'
 import PromotionForm from '../components/PromotionForm'
 import { fromPromotion } from '../lib/adapters'
-import type { Promotion } from '../types'
+import type { Product, Promotion } from '../types'
 
 afterEach(cleanup)
 
@@ -48,6 +48,11 @@ const renderAdmin = () => {
   )
   return { onUpdate, onDelete }
 }
+
+const PRODUCTS = [
+  { id: 1, name: 'Oyster Sauce', sku: 'A1', price: 5 },
+  { id: 2, name: 'Fish Sauce', sku: 'A2', price: 6 },
+] as unknown as Product[]
 
 describe('PromotionAdmin', () => {
   it('delete does nothing until confirmed', () => {
@@ -114,6 +119,39 @@ describe('PromotionForm', () => {
     expect(fromPromotion(sent).end_date).toBeNull()
   })
 
+  it('a bundle takes its scope from its products, whatever a hidden control was left on', async () => {
+    const onSave = vi.fn(async (_promo: Promotion) => {})
+    render(<PromotionForm products={PRODUCTS} hoReCas={[]} users={[]} onSave={onSave} onClose={vi.fn()} />)
+
+    fireEvent.change(nameBox(), { target: { value: 'Sauce pack' } })
+    // Left on Categories with nothing chosen, then the scope control goes away.
+    fireEvent.click(screen.getByRole('button', { name: /categories/i }))
+    fireEvent.click(screen.getByRole('button', { name: /bundle/i }))
+    expect(screen.queryByRole('button', { name: /categories/i })).toBeNull()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Oyster Sauce/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /Fish Sauce/ }))
+    fireEvent.change(document.querySelector('input[type="number"][min="0.01"]') as Element, { target: { value: '9' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create Promotion' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    expect(onSave.mock.calls[0][0].scope).toEqual({ kind: 'products', productIds: [1, 2] })
+  })
+
+  it('scrolls to a refusal every time, even the same one again', () => {
+    const scroll = vi.fn()
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scroll
+    renderForm(vi.fn(async () => {}))
+
+    fireEvent.change(nameBox(), { target: { value: 'No discount' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create Promotion' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create Promotion' }))
+
+    expect(scroll).toHaveBeenCalledTimes(2)
+    Element.prototype.scrollIntoView = original
+  })
+
   it('cannot be cancelled while a save is in flight', async () => {
     let finish: () => void = () => {}
     const onSave = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
@@ -125,6 +163,9 @@ describe('PromotionForm', () => {
     const cancel = screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement
     expect(cancel.disabled).toBe(true)
     fireEvent.click(cancel)
+    // Escape reaches the modal's own close, which Cancel's disabled state does not cover.
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     expect(onClose).not.toHaveBeenCalled()
     finish()
   })
