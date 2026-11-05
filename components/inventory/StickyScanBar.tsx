@@ -130,7 +130,7 @@ const EDGE: Record<'top' | 'bottom' | 'adaptive', string> = {
  * The negative margins cancel the host page's padding so the bar reaches both
  * edges. Without them the page's content shows through a 16px gutter on each
  * side as cards slide underneath, which reads as a rendering fault. The host's
- * scale is declared by the `bleed` prop, because it is NOT uniform — see there.
+ * scale is declared by the `bleed` prop — see there.
  *
  * `z-10` sits above the cards and below the top bar's `z-20`; they cannot
  * collide anyway, since this pins to the scrollport's top edge, which already

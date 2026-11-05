@@ -87,9 +87,9 @@ Descriptions:
 | A4 | claimed | `StockModeTabs > is underlined, and keeps aria-pressed and full-width tap targets` fails on base by assertion, passes on tip | |
 | A5 | claimed | `PageFrame > column swaps the spacing for a flex column` fails on base by assertion, passes on tip | |
 | A6 | claimed | `page header adoption > Receive Stock's dock bleed matches the standard frame` fails on base by assertion, passes on tip | |
-| A7 | claimed | `--project=mobile` against a build of this branch: 27 passed, 2 skipped, 0 failed. Skipped: `touch-targets.spec.ts:35` Putaway and Replenishment walk cards. Measured on dev at b0183e1 as Warehouse at 360px: Receive Stock and Stock docks end at 664 of 664, 0px overflow on all eight, tabs 44px | Stock's filter clamp came after the full mobile run; `stock-lookup.spec.ts` was rerun after it (5 passed) |
+| A7 | claimed | Replenishment has no scan dock at this commit, so that part of the check does not apply; the brief was wrong to name it. `--project=mobile` against a build of this branch: 27 passed, 2 skipped, 0 failed. Skipped: `touch-targets.spec.ts:35` Putaway and Replenishment walk cards. Measured on dev at b0183e1 as Warehouse at 360px: Receive Stock and Stock docks end at 664 of 664, 0px overflow on all eight, tabs 44px | Stock's filter clamp came after the full mobile run; `stock-lookup.spec.ts` was rerun after it (5 passed) |
 | A8 | claimed | Measured on dev at b0183e1 as Warehouse with a real line added and opened, at 1024, 1100, 1279 and 1280px: 0px overflow, no control past the page edge | Nothing was posted |
-| A9 | claimed | Seen on a build of this branch as Admin at 1280px: map, KPI strip and setup panel render, with the KPI strip in a row under the title. 0px overflow on dev at 1280px and 360px | Map not exercised beyond rendering. The badge did not appear in the screenshot, so it was not confirmed |
+| A9 | not-claimed | | Seen on a build of this branch as Admin at 1280px: map, KPI strip and setup panel render, with the KPI strip in a row under the title, and 0px overflow on dev at 1280px and 360px. But the check also covers the layout badge, which did not appear in the screenshot and was not confirmed, and the map was not exercised beyond rendering |
 | A10 | claimed | `--project=contrast` against a build of this branch: 1 passed | Run before the two clamps, which change layout only |
 | A11 | not-claimed | | Dev serves b0183e1269cdc5dca0033e791bb0ed63ee459759, health 200, but that is a throwaway merge onto 16824f9 so the unmerged NX-0013/0014 demo work stays on dev, not the merge sha. Not pushed |
 
@@ -99,6 +99,7 @@ Added during the work: `WarehousePicker` and Stock's two filter selects are clam
 
 - No walk on the RS35 handheld. All 360px evidence is Playwright or Chromium at that viewport.
 - Manager was not logged in. Admin and Warehouse were.
+- All page descriptions are hidden below `md`, so handheld users do not see them. Off-home's sentence was also shortened and no longer says that nothing there is wrong.
 - The two skipped specs need a walk with stops at the Warehouse user's site, so walk-card touch targets on Putaway and Replenishment were not measured by them.
 - The chromium run (8 passed, excluding `rack-levels`) was against a build before the two clamps, and from an accepted CORS origin. The six `rack-levels` specs were not rerun; they failed the same way on main in NX-0016.
 - Nothing was saved through these pages in a browser: no stock was received, moved or counted.
