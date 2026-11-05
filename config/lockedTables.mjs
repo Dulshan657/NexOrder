@@ -123,4 +123,9 @@ export const LOCKED_TABLES = [
   // Nex Assistant session ledger (00133). Service role only: created with
   // REVOKE ALL from anon/authenticated and no policies; no client reads it.
   { table: 'voice_sessions', fn: 'voice-session Edge Function', migration: '00133' },
+  // QuickBooks invoice import (00139). Service role only: created with REVOKE ALL
+  // from PUBLIC/anon/authenticated and no policies. The Edge Function arrives with
+  // the later upload brief; nothing calls the transactions yet.
+  { table: 'qb_product_map', fn: 'import-qb-invoices', migration: '00139' },
+  { table: 'qb_invoice_imports', fn: 'import-qb-invoices', migration: '00139' },
 ]
