@@ -24,6 +24,9 @@
     { "file": "__tests__/orderContextPromotionMinimum.test.tsx", "test": "OrderContext promotion minimum > lines already in the cart reprice when it reaches the minimum, and go back when it falls under", "proves": ["A3"] },
     { "file": "__tests__/promotionMinimumCart.test.ts", "test": "applyPromotionMinimums > a carton line with no unit id costs what the server charges, on both sides of a minimum", "proves": ["A3"] },
     { "file": "__tests__/promotionMinimumCart.test.ts", "test": "applyPromotionMinimums > a line in an explicit unit costs what the server charges", "proves": ["A3"] },
+    { "file": "__tests__/pricing.test.ts", "test": "resolvePromotionPrice in cents > a venue discount gives the unit price the server charges", "proves": ["A3", "A4"] },
+    { "file": "__tests__/promotionMinimumCart.test.ts", "test": "applyPromotionMinimums > a venue with a percent discount is measured the same on both sides", "proves": ["A3"] },
+    { "file": "__tests__/promotionMinimumPreview.test.tsx", "test": "Shop reorder tab > a carton line with no unit id is sent in the unit it was priced in", "proves": ["A4"] },
     { "file": "__tests__/orderContextPromotionMinimum.test.tsx", "test": "OrderContext promotion minimum > with no minimum on any live promotion a line keeps the price it was added at", "proves": ["A6"] },
     { "file": "__tests__/promotionMinimumPreview.test.tsx", "test": "New Order preview > a promotion below its minimum gives no discount until the lines reach it", "proves": ["A4"] },
     { "file": "__tests__/promotionMinimumPreview.test.tsx", "test": "reorder plan > a promotion below its minimum gives no discount on the plan", "proves": ["A4"] },
@@ -56,7 +59,13 @@ promotion applies to a $20 order. This makes the server, the cart and the other 
   their own lines.
 - `components/PromotionsBanner.tsx`: keeps showing a promotion that has not been reached, with its
   minimum, so a buyer can see how to qualify. `components/BundleSelectModal.tsx` states it too.
-- `components/ReorderTab.tsx`: measures a minimum on its own lines. Added after review.
+- `components/ReorderTab.tsx`: measures a minimum on its own lines, added after review. It also sends
+  a line in the unit it priced it in, as the kitchen's reorder plan already does, added after the
+  second gate: it showed a unit's price and sent no unit, so the server charged something else.
+- `pricing.ts`: `resolvePromotionPrice` returns its `finalPrice` in cents, as the server's
+  `resolveUnitPrice` does. Added after the second gate: for a venue with a percent discount the two
+  measured a different order value, which can flip a promotion. Every screen reading it moves by up
+  to a cent, towards what the server charges.
 - `context/OrderContext.tsx`: a free-goods offer with a minimum says so when added, rather than
   "Promo applied". Added after review.
 
