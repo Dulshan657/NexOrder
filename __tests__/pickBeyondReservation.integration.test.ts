@@ -18,6 +18,7 @@ import {
   onHandOf,
   plainOrder,
   receive,
+  uniq,
 } from './support/qbImportTxHelpers'
 import {
   addLine,
@@ -45,6 +46,92 @@ async function expectRowBounds(client: pg.Client, productId: number): Promise<vo
       WHERE product_id=$1 AND NOT (allocated >= 0 AND allocated <= on_hand)`, [productId])
   expect(r.rows).toEqual([])
 }
+
+/** A bin under a zone whose profile holds its stock. Clearing the zone's profile releases it. */
+async function heldBin(client: pg.Client, warehouseId: number): Promise<{ bin: number; zone: number }> {
+  const token = uniq()
+  const profile = await client.query<{ id: number }>(
+    `INSERT INTO public.zone_profiles (name, zone_type, is_hold)
+     VALUES ($1, 'quarantine', true) RETURNING id`, [`Test Hold ${token}`])
+  const zone = await client.query<{ id: number; materialized_path: string }>(
+    `INSERT INTO public.locations (parent_id, kind, code, name, materialized_path, is_active, zone_profile_id)
+     SELECT w.id, 'ZONE', $2, $2, w.materialized_path || '/' || $2, true, $3
+       FROM public.locations w WHERE w.id = $1 RETURNING id, materialized_path`,
+    [warehouseId, `QB-HZ-${token}`, profile.rows[0].id])
+  const code = `QB-HB-${token}`
+  const b = await client.query<{ id: number }>(
+    `INSERT INTO public.locations (parent_id, kind, code, name, materialized_path, is_active, capacity_slots)
+     VALUES ($1, 'BIN', $2, $2, $3, true, 100) RETURNING id`,
+    [zone.rows[0].id, code, `${zone.rows[0].materialized_path}/${code}`])
+  return { bin: b.rows[0].id, zone: zone.rows[0].id }
+}
+
+describe('NX-0029 a held bin (live RPCs, rollback-isolated)', () => {
+  it('refuses an imported pick from it with nothing written, and picks normally once released', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      const held = await heldBin(client, s.warehouseId)
+      await receive(client, p, held.bin, 10)
+      const x = await importedOrder(client, s, p, 5)
+      const before = await movementCount(client, p)
+
+      await expectRaise(client, PICK, [x.itemId, 2, held.bin, s.actor], /LOCATION_HELD/)
+
+      expect(await bin(client, p, held.bin)).toEqual({ onHand: 10, allocated: 0 })
+      expect(await movementCount(client, p)).toBe(before)
+      expect(await picksOf(client, x.orderId)).toEqual([])
+      expect(await differences(client, x.orderId)).toEqual([])
+
+      await client.query('UPDATE public.locations SET zone_profile_id = NULL WHERE id = $1', [held.zone])
+
+      expect((await pick(client, s, x.itemId, 2, held.bin)).unrecorded_qty_base).toBe(0)
+      expect(await bin(client, p, held.bin)).toEqual({ onHand: 8, allocated: 0 })
+      expect(await differences(client, x.orderId)).toEqual([])
+    })
+  })
+
+  it('refuses it even where the bin has no stock on record', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      const held = await heldBin(client, s.warehouseId)
+      const x = await importedOrder(client, s, p, 5)
+
+      await expectRaise(client, PICK, [x.itemId, 2, held.bin, s.actor], /LOCATION_HELD/)
+
+      expect(await differences(client, x.orderId)).toEqual([])
+    })
+  })
+
+  it('leaves an ordinary order’s pick from it as today', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      const held = await heldBin(client, s.warehouseId)
+      await receive(client, p, held.bin, 10)
+      const x = await plainOrder(client, s, p, 5, false)
+
+      expect(await pick(client, s, x.itemId, 2, held.bin)).toEqual({ line_fully_picked: false, order_fully_picked: false })
+
+      expect(await bin(client, p, held.bin)).toEqual({ onHand: 8, allocated: 0 })
+    })
+  })
+
+  it('may still be named as the recount flag when closing a line short', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      const held = await heldBin(client, s.warehouseId)
+      await receive(client, p, s.binA, 5)
+      const x = await importedOrder(client, s, p, 5)
+
+      expect((await closeShort(client, s, x.itemId, held.bin)).status).toBe('closed')
+
+      expect(await differences(client, x.orderId)).toMatchObject([{ location_id: held.bin, recount_needed: true }])
+    })
+  })
+})
 
 describe('NX-0029 own units settled when free stock is taken first (live RPCs, rollback-isolated)', () => {
   it('leaves no allocation stranded on the later batch, and the release finds nothing', async () => {

@@ -690,6 +690,12 @@ BEGIN
 
     PERFORM public.inv_assert_pick_location(p_location_id);
 
+    -- Held stock must not be sold (mig 00101). Not in the assert above, because a close
+    -- may still name a held bin as the one to recount.
+    IF EXISTS (SELECT 1 FROM public.v_held_locations h WHERE h.location_id = p_location_id) THEN
+        RAISE EXCEPTION 'LOCATION_HELD: location % is on hold', p_location_id USING ERRCODE = 'P0001';
+    END IF;
+
     v_factor := COALESCE(v_item.pack_size, 1);
 
     SELECT COALESCE(SUM(pp.picked_qty), 0) INTO v_already

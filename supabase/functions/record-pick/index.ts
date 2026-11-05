@@ -232,6 +232,9 @@ serve(async (req: Request) => {
           { reason: 'ORDER_CANCELLED' },
         )
       }
+      if (/LOCATION_HELD/.test(msg)) {
+        throw new EdgeFunctionError('CONFLICT', "This bin is on hold and can't be picked from.", { reason: 'LOCATION_HELD' })
+      }
       if (/BAD_LOCATION/.test(msg)) {
         throw new EdgeFunctionError('INVALID_INPUT', 'That bin is not in an active warehouse.', { reason: 'BAD_LOCATION' })
       }

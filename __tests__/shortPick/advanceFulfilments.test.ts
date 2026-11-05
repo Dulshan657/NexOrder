@@ -163,6 +163,12 @@ describe('who advances which sites', () => {
     expect(source('record-short-pick')).toMatch(/advanceCompletedFulfilments\(\s*admin, orderId,/)
   })
 
+  it('record-pick tells the operator a held bin cannot be picked from', () => {
+    const text = source('record-pick')
+    expect(text).toMatch(/LOCATION_HELD/)
+    expect(text).toContain("This bin is on hold and can't be picked from.")
+  })
+
   it('record-short-pick guards the Warehouse role only, and maps a refused close', () => {
     const text = source('record-short-pick')
     expect(text).toMatch(/if \(auth\.role === 'Warehouse' && item\) \{\s*const refusal = await closeShortRefusal\(admin,/)
