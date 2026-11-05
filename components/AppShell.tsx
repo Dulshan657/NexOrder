@@ -314,6 +314,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     // ── Context consumption ───────────────────────────────────────────────────
     const {
         orderItems,
+        eligiblePromotions,
         selectedHoReCaId,
         selectedHoReCa,
         notes,
@@ -1362,6 +1363,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 products={products}
                                 hoReCas={hoReCas}
                                 promotions={promotions}
+                                eligiblePromotions={eligiblePromotions}
                                 invoices={invoices}
                                 allOrders={allOrders}
                                 currentUser={currentUser}
@@ -1618,6 +1620,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         products={products}
                                         hoReCas={hoReCas}
                                         promotions={promotions}
+                                        eligiblePromotions={eligiblePromotions}
                                         invoices={invoices}
                                         allOrders={allOrders}
                                         currentUser={currentUser}
@@ -1820,7 +1823,7 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 onClose={() => setIsCartOpen(false)}
                                 invoices={invoices}
                                 isAdminOrManager={isAdminOrManager}
-                                promotions={promotions}
+                                promotions={eligiblePromotions}
                                 products={products}
                             />
                         </div>

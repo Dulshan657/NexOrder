@@ -61,6 +61,9 @@ const PromotionsBanner: React.FC<PromotionsBannerProps> = ({ promotions, custome
                             <div className="min-w-0">
                                 <p className={`text-sm font-semibold ${config.text} truncate`}>{promo.name}</p>
                                 <p className="text-xs text-stone-500 truncate">{promo.description}{unitNote}</p>
+                                {(promo.minOrderValue ?? 0) > 0 && (
+                                    <p className="text-xs font-medium text-stone-600">On orders of {`$${promo.minOrderValue!.toFixed(2)}`} or more</p>
+                                )}
                                 {clickable && <p className="text-[10px] text-stone-500 mt-0.5">Tap to add to order</p>}
                             </div>
                         </button>

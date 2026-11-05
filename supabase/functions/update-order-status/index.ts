@@ -24,8 +24,8 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { loadOrderForDoc, buildOrderDocPdf, uploadAndRecordDoc } from '../_shared/orderDocuments.ts'
 import {
   FULFILLMENT_LADDER,
-  fulfillmentLocations,
-  ensureFulfillments,
+  ensureProcessedFulfilments,
+  writeProcessedStatus,
   pruneFulfillments,
   isLocationFullyPicked,
   releaseResidualOnDispatch,
@@ -246,20 +246,7 @@ serve(async (req: Request) => {
 
     // Fulfilment sites = warehouses holding a NET reservation; fall back to the
     // default warehouse so there is always something to pick.
-    const reservedLocs = await fulfillmentLocations(serviceClient, body.orderId)
-    let locs = reservedLocs
-    if (locs.length === 0) {
-      const { data: def } = await serviceClient
-        .from('locations')
-        .select('id')
-        .eq('kind', 'WAREHOUSE')
-        .eq('is_active', true)
-        .order('id')
-        .limit(1)
-        .maybeSingle()
-      if ((def as any)?.id) locs = [(def as any).id]
-    }
-    await ensureFulfillments(serviceClient, body.orderId, locs, profile.id, nowIso)
+    const { reservedLocs, locs } = await ensureProcessedFulfilments(serviceClient, body.orderId, profile.id, nowIso)
 
     // On an operator re-route, prune the origin warehouse's now-stockless
     // 'processed' fulfilment so the rollup doesn't freeze the order at
@@ -272,11 +259,11 @@ serve(async (req: Request) => {
 
     let verdict: SetOrderStatusVerdict
     try {
-      verdict = await setOrderStatus(serviceClient, {
+      verdict = await writeProcessedStatus(serviceClient, {
         orderId: body.orderId,
-        from: statusesUpTo(STATUS_ORDER, 'processed'),
-        to: 'processed',
-        entry: { status: 'processed', timestamp: nowIso, actor: profile.id, ...(body.note ? { note: body.note } : {}) },
+        actorId: profile.id,
+        stampIso: nowIso,
+        note: body.note,
       })
     } catch (e) {
       return errorResponse('DB_UPDATE_FAILED', e instanceof Error ? e.message : String(e), 500)
