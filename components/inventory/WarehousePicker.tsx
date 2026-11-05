@@ -44,7 +44,7 @@ export function WarehousePicker({ className, showAllOption = true, effectiveId }
             aria-label="Warehouse scope"
             value={selectValue}
             onChange={e => setScope(e.target.value ? Number(e.target.value) : 'all')}
-            className={`text-sm rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 ${className ?? ''}`}
+            className={`min-w-0 max-w-full truncate text-sm rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 ${className ?? ''}`}
         >
             {showAllWarehousesOption && <option value="">All warehouses</option>}
             {activeWarehouses.map(w => (

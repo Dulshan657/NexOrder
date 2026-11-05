@@ -6,6 +6,10 @@ import { useDocumentViewer } from '../../context/DocumentViewerContext';
 import { downloadSignedDoc } from '../../lib/openSignedDoc';
 import type { OrderDocument, OrderDocumentType } from '../../types';
 import { FileText, Search, X, ExternalLink, Download, ClipboardList, Truck, ChevronDown, ChevronRight } from 'lucide-react';
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl';
+import { PageFrame } from '../../components/ui/PageFrame';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { PageTabs } from '../../components/ui/PageTabs';
 
 const typeMeta: Record<OrderDocumentType, { label: string; cls: string; Icon: React.FC<{ className?: string }> }> = {
   pick_slip: { label: 'Pick slip', cls: 'bg-nexgen-blue/10 text-nexgen-blue', Icon: ClipboardList },
@@ -85,17 +89,22 @@ const DocumentsView: React.FC = () => {
   const isEmpty = typeFilter === 'all' ? groups.length === 0 : flat.length === 0;
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-nexgen-blue/10">
-          <FileText className="w-5 h-5 text-nexgen-blue" />
-        </div>
-        <div>
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Documents</h1>
-          <p className="text-xs text-stone-500 mt-0.5">Pick slips &amp; dispatch advices generated for orders.</p>
-        </div>
-      </div>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS.Documents}
+        description="Pick slips & dispatch advices generated for orders."
+      />
+
+      <PageTabs
+        ariaLabel="Document type"
+        tabs={[
+          { id: 'all' as const, label: 'All' },
+          { id: 'pick_slip' as const, label: typeMeta.pick_slip.label },
+          { id: 'dispatch_advice' as const, label: typeMeta.dispatch_advice.label },
+        ]}
+        activeId={typeFilter}
+        onChange={setTypeFilter}
+      />
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -111,17 +120,6 @@ const DocumentsView: React.FC = () => {
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-600 cursor-pointer"><X className="w-4 h-4" /></button>
           )}
-        </div>
-        <div className="flex gap-2">
-          {(['all', 'pick_slip', 'dispatch_advice'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors btn-press ${typeFilter === t ? 'bg-nexgen-blue text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
-            >
-              {t === 'all' ? 'All' : typeMeta[t].label}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -201,7 +199,7 @@ const DocumentsView: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+    </PageFrame>
   );
 };
 

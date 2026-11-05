@@ -22,6 +22,17 @@ const MUST_NOT_HEAD_A_PAGE = ['components/inventory/PutawayQueueView.tsx']
 
 const ICON_TILE = /p-2 rounded-lg bg-/
 
+const WAREHOUSE_PAGES = [
+  { path: 'components/inventory/ReceiveStockView.tsx', titleFrom: 'ADMIN_TAB_LABELS.Receiving' },
+  { path: 'components/inventory/ReplenQueuePage.tsx', titleFrom: 'ADMIN_TAB_LABELS.Replenishment' },
+  { path: 'components/inventory/OffHomeQueuePage.tsx', titleFrom: "ADMIN_TAB_LABELS['Off-home']" },
+  { path: 'components/inventory/StocktakePage.tsx', titleFrom: 'ADMIN_TAB_LABELS.Stocktake' },
+  { path: 'components/inventory/DispatchedOrdersView.tsx', titleFrom: 'ADMIN_TAB_LABELS.Dispatched' },
+  { path: 'components/inventory/DocumentsView.tsx', titleFrom: 'ADMIN_TAB_LABELS.Documents' },
+  { path: 'components/inventory/warehouse/WarehousePage.tsx', titleFrom: 'ADMIN_TAB_LABELS.Warehouse' },
+  { path: 'components/StockView.tsx', titleFrom: 'ADMIN_TAB_LABELS.Stock' },
+]
+
 describe('page header adoption', () => {
   it('the four proof pages use PageFrame and PageHeader with no hand-rolled h1 or header icon', () => {
     for (const { path } of PROOF_PAGES) {
@@ -57,5 +68,42 @@ describe('page header adoption', () => {
       expect(code, `${path} still has a hand-rolled sub-tab`).not.toContain('SubtabButton')
     }
     expect(source('components/inventory/PickQueueView.tsx')).not.toContain("tab === t ? 'bg-nexgen-blue")
+  })
+
+  it('the warehouse pages use PageFrame and PageHeader with no hand-rolled h1 or header icon', () => {
+    for (const { path } of WAREHOUSE_PAGES) {
+      const code = source(path)
+      expect(code, `${path} should render <PageFrame>`).toContain('<PageFrame')
+      expect(code, `${path} should render <PageHeader>`).toContain('<PageHeader')
+      expect(code, `${path} hand-rolls an h1`).not.toContain('<h1')
+      expect(code, `${path} still has an icon tile`).not.toMatch(ICON_TILE)
+    }
+  })
+
+  it('the warehouse pages take their title from ADMIN_TAB_LABELS', () => {
+    for (const { path, titleFrom } of WAREHOUSE_PAGES) {
+      expect(source(path), `${path} types its own title`).toContain(`title={${titleFrom}}`)
+    }
+    expect(source('components/StockView.tsx')).not.toContain('Stock Levels')
+    expect(source('components/inventory/OffHomeQueuePage.tsx')).not.toContain('Off-home stock')
+  })
+
+  it('Replenishment, Off-home and Documents use PageTabs', () => {
+    const withTabs = [
+      'components/inventory/ReplenQueuePage.tsx',
+      'components/inventory/OffHomeQueuePage.tsx',
+      'components/inventory/DocumentsView.tsx',
+    ]
+    for (const path of withTabs) {
+      const code = source(path)
+      expect(code, `${path} should render <PageTabs>`).toContain('<PageTabs')
+      expect(code, `${path} still has the grey pill`).not.toContain('role="tablist"')
+    }
+    expect(source('components/inventory/DocumentsView.tsx')).not.toContain("typeFilter === t ? 'bg-nexgen-blue")
+  })
+
+  it("Receive Stock's dock bleed matches the standard frame", () => {
+    expect(source('components/inventory/ReceiveStockView.tsx')).not.toContain('bleed="xl"')
+    expect(source('components/inventory/StickyScanBar.tsx')).not.toContain("xl: '")
   })
 })

@@ -2,6 +2,9 @@ import React from 'react';
 import type { Order, User } from '../../types';
 import { Truck, PackageCheck, Clock, ChevronRight } from 'lucide-react';
 import { canSeeOrderValue } from '../../lib/canSeeOrderValue';
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl';
+import { PageFrame } from '../../components/ui/PageFrame';
+import { PageHeader } from '../../components/ui/PageHeader';
 
 interface DispatchedOrdersViewProps {
   orders: Order[];
@@ -59,16 +62,11 @@ const DispatchedOrdersView: React.FC<DispatchedOrdersViewProps> = ({ orders, cur
     .sort((a, b) => dispatchedAt(b).localeCompare(dispatchedAt(a)));
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-teal-500/10">
-          <Truck className="w-5 h-5 text-teal-600" />
-        </div>
-        <div>
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Dispatched</h1>
-          <p className="text-xs text-stone-500 mt-0.5">Orders that have left the warehouse, most recent first.</p>
-        </div>
-      </div>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS.Dispatched}
+        description="Orders that have left the warehouse, most recent first."
+      />
 
       {dispatched.length === 0 ? (
         <div className="glass-card rounded-xl p-10 text-center">
@@ -88,7 +86,7 @@ const DispatchedOrdersView: React.FC<DispatchedOrdersViewProps> = ({ orders, cur
           ))}
         </div>
       )}
-    </div>
+    </PageFrame>
   );
 };
 

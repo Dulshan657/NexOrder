@@ -24,6 +24,9 @@ import { RackedWorkspace } from './RackedWorkspace'
 import { WarehouseEmptyState } from './WarehouseEmptyState'
 import { KpiStrip } from './KpiStrip'
 import LayoutLabelBadge from '@/components/admin/labels/LayoutLabelBadge'
+import { ADMIN_TAB_LABELS } from '@/lib/adminTabUrl'
+import { PageFrame } from '@/components/ui/PageFrame'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 interface WarehousePageProps {
   currentUser: User
@@ -113,29 +116,29 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
   const isRacked = selectedWarehouse?.locationType === 'racked' && publishedLayout != null
 
   return (
-    <div className="bg-white">
-      <div className="px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="flex items-center gap-2 text-base font-semibold text-stone-900">
-            <LayoutGrid className="h-5 w-5 text-nexgen-blue" /> Warehouse
-          </h1>
-          {effectiveWarehouseId != null && isRacked && <KpiStrip warehouseId={effectiveWarehouseId} />}
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {isRacked && publishedLayout && (
-            <LayoutLabelBadge
-              layoutId={publishedLayout.id}
-              layoutName={selectedWarehouse?.name}
-              warehouseId={effectiveWarehouseId ?? undefined}
-              dense
-            />
-          )}
-          <label className="inline-flex items-center gap-2 text-sm text-stone-600">
-            <span className="font-medium">Warehouse</span>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS.Warehouse}
+        description="See your site's map, locations and stock at a glance."
+        actions={
+          <label className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm text-stone-600">
+            <span className="shrink-0 font-medium">Warehouse</span>
             <WarehousePicker showAllOption={false} effectiveId={effectiveWarehouseId ?? undefined} />
           </label>
+        }
+      />
+
+      {effectiveWarehouseId != null && isRacked && publishedLayout && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <KpiStrip warehouseId={effectiveWarehouseId} />
+          <LayoutLabelBadge
+            layoutId={publishedLayout.id}
+            layoutName={selectedWarehouse?.name}
+            warehouseId={effectiveWarehouseId}
+            dense
+          />
         </div>
-      </div>
+      )}
 
       {/* Above the map, and above the empty state — the checklist is the first
           thing an incompletely-set-up site should say. It renders nothing once
@@ -149,18 +152,16 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
         // the new site's key. Fragment carries the key because there is no
         // @types/react, so `key` on a typed component is a tsc error.
         <React.Fragment key={effectiveWarehouseId}>
-          <div className="px-4 sm:px-6 lg:px-8 pt-4">
-            <WarehouseSetupPanel
-              warehouseId={effectiveWarehouseId}
-              warehouseName={selectedWarehouse.name}
-              currentUser={currentUser}
-              onNavigate={onNavigateSetup}
-            />
-          </div>
+          <WarehouseSetupPanel
+            warehouseId={effectiveWarehouseId}
+            warehouseName={selectedWarehouse.name}
+            currentUser={currentUser}
+            onNavigate={onNavigateSetup}
+          />
         </React.Fragment>
       )}
 
-      <div className="px-4 sm:px-6 lg:px-8 py-6">
+      <div>
         {selectedWarehouse == null || effectiveWarehouseId == null ? (
           <div className="glass-card rounded-xl p-10 text-center">
             <LayoutGrid className="w-9 h-9 text-stone-300 mx-auto mb-3" />
@@ -186,7 +187,7 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
           />
         )}
       </div>
-    </div>
+    </PageFrame>
   )
 }
 

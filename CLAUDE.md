@@ -582,8 +582,8 @@ module is off.
     walk/queue surfaces (F42). Not cosmetic: under the RS35's default
     `Input Method` mode `useWedgeScanner` catches nothing, so a scan field
     that has scrolled away means a scan that silently does not happen. Its
-    `bleed` prop must match the host page's padding scale — Receive Stock is
-    `xl:p-8`, the others `lg:p-8`.
+    `bleed` prop must match the host page's padding, and every host now
+    pads through `PageFrame` (`lg:p-8`).
   - **Fonts are self-hosted from `/fonts`** as variable faces (F45). The
     `@import "tailwindcss"` must stay ABOVE the `@font-face` block: CSS
     ignores an `@import` that follows any other rule, and the failure is
