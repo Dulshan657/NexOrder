@@ -16,6 +16,7 @@
   "failFirst": [
     { "file": "__tests__/poInbox.encryption.test.ts", "test": "encryption helper > no IV can make an envelope start with a prefix the database refuses", "proves": ["A1"] },
     { "file": "__tests__/poInbox.encryption.test.ts", "test": "encryption helper > writes the versioned envelope", "proves": ["A1"] },
+    { "file": "__tests__/poInbox.encryption.test.ts", "test": "encryption helper > still reads an envelope written before the version prefix", "proves": ["A2"] },
     { "file": "__tests__/knownFlakesList.test.ts", "test": "known flakes list > names the Order home flake, and no longer excuses the PO Inbox encryption test", "proves": ["A3"] }
   ],
   "allow": []
