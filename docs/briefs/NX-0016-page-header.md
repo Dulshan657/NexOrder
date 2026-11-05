@@ -72,3 +72,26 @@ Descriptions:
 - Manager blank pages and the dead Order Import Back button.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `PageHeader > renders a level 1 title and its description` fails on base, passes on tip (check:brief) | |
+| A2 | claimed | `PageHeader > hides the text below md but keeps it accessible, and always shows actions` and `PageHeader > visibleOnMobile keeps the text visible` fail on base, pass on tip | Class checks in jsdom. Measured in a browser at 360px: the h1 is 1px wide and still in the DOM |
+| A3 | claimed | `PageTabs > marks the selected tab and reports a change` and `PageTabs > shows a count badge and the tap floor` fail on base, pass on tip | Measured on dev: 44px at 360px, 42px on desktop, where the floor does not apply by design |
+| A4 | claimed | `PageFrame > applies the standard padding and spacing` fails on base, passes on tip | |
+| A5 | claimed | `page header adoption > the four proof pages use PageFrame and PageHeader with no hand-rolled h1 or header icon` fails on base by assertion, passes on tip | |
+| A6 | claimed | `page header adoption > the four proof pages take their title from ADMIN_TAB_LABELS` fails on base by assertion, passes on tip | |
+| A7 | claimed | `page header adoption > Pick Queue, Putaway and Settings use PageTabs` fails on base by assertion, passes on tip | |
+| A8 | claimed | Measured on nexorder.vercel.app at 16824f9 as Admin: on Walk at 1280px the Putaway h1 is shown and the picker is in the title row (top 38px, right edge 1248px); at 360px the picker is the first row (top 68px, right edge 344px of 360px) | |
+| A9 | claimed | Measured on dev at 360px: all four pages have content starting 16px below the top bar and 0px sideways overflow. `--project=mobile` against a build of this branch: 27 passed, 2 skipped, 0 failed, including `nav-clearance` | |
+| A10 | not-claimed | | Dev serves 16824f938a5d16530e5cb6f4e9561bb2364a13ef, health 200, but that is a throwaway merge of this branch onto 7271130 so the unmerged NX-0013/0014 demo work stays on dev, not the merge sha. Not pushed |
+
+The brief's Approach said PO Inbox would change one import line. It has its own private tab button and never imported the shared one, so it was not touched. It moves to `PageTabs` in batch 3.
+
+### Not claimed
+
+- No walk on the RS35 handheld. All 360px evidence is Playwright or Chromium at that viewport.
+- Only Admin was walked on dev. The Warehouse role ran only through the `mobile` and `contrast` suites; Manager was not logged in.
+- Six `rack-levels` specs in `--project=chromium` do not pass, so they prove nothing here. They fail with the same errors on a clean build of base 137b739. The first stops at "draft created", because the designer now opens a dialog with a "Create draft" button the spec never clicks. The spec files were last edited in July. Eight other chromium tests passed, and `--project=contrast` passed.
+- Those eight chromium tests and the contrast run were served from localhost:3010, which the Edge Functions' CORS list refuses, so anything in them that saves through a function was not exercised. The mobile run used the same port.
+- The Playwright admin login used the demo account the dev login page publishes, because this machine has no `E2E_ADMIN_*` set.
