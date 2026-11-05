@@ -124,6 +124,7 @@ const PickLineRow: React.FC<PickLineRowProps> = ({
                     task={t}
                     line={line}
                     binName={binNames?.get(t.locationId)?.name}
+                    imported={imported}
                     disabled={!canPick || !canActAt(warehouseId)}
                   />
                 ))}
@@ -326,7 +327,9 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
                 binNames={binNames}
                 imported={imported}
                 closedShort={closedShort.has(line.orderItemId)}
-                foundQty={foundByLine[line.orderItemId] ?? line.picked}
+                // The queue's count moves the moment a pick lands; the tasks answer's can lag
+                // behind it. Found only ever grows, so the larger of the two is never stale.
+                foundQty={Math.max(foundByLine[line.orderItemId] ?? 0, line.picked)}
               />
             ))}
           </div>

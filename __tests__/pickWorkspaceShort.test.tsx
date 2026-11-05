@@ -124,6 +124,8 @@ interface Backend {
   imported: boolean | undefined
   closed: number[]
   warehouses: number[]
+  /** What the server says was found per line, when it should differ from the queue's count. */
+  found?: Record<number, number>
 }
 let backend: Backend
 let qc: QueryClient
@@ -172,7 +174,7 @@ beforeEach(() => {
     // An older function knows no `imported`; the screen must treat that as "not imported".
     ...(backend.imported === undefined ? {} : { imported: backend.imported }),
     closedShortLineIds: [...backend.closed],
-    foundByLine: Object.fromEntries(backend.lines.map((l) => [l.orderItemId, found(l)])),
+    foundByLine: backend.found ?? Object.fromEntries(backend.lines.map((l) => [l.orderItemId, found(l)])),
   }))
   svc.recordShortPick.mockImplementation(async (orderItemId: number) => {
     backend.closed = [...backend.closed, orderItemId]
@@ -562,6 +564,138 @@ describe('pick workspace short picks', () => {
       fireEvent.click(within(confirmPanel()).getByRole('button', { name: 'Finish short' }))
 
       expect((await within(confirmPanel()).findByRole('alert')).textContent).toMatch(/rate limit exceeded/i)
+    })
+  })
+
+  describe('after a pick', () => {
+    // Bin 501 holds the reserved 3 of a line of 6 (2 already picked, 1 unreserved). Once the 3
+    // are picked there, the server offers the last 1 at the SAME bin as an unreserved pick.
+    const seedPartlyReserved = (over: Partial<Backend> = {}) =>
+      seed({
+        lines: [line({ orderItemId: 1, quantity: 6, picked: 2 })],
+        tasks: [task({ orderItemId: 1, locationId: 501, remaining: 3 })],
+        ...over,
+      })
+
+    async function pickAtDirectedBin() {
+      fireEvent.click(await screen.findByRole('button', { name: /scan to pick 3/i }))
+      scan(/scan the bin/i, 'TST-A-B501')
+      await screen.findByLabelText(/scan the item/i)
+      scan(/scan the item/i, 'TST-1')
+      fireEvent.click(await screen.findByRole('button', { name: /confirm pick/i }))
+    }
+
+    it('refetches the tasks on an imported order, so the unreserved offer at the same bin appears', async () => {
+      seedPartlyReserved()
+      // The server's answer to the pick: 5 of 6 are in, and 1 more is on offer at bin 501.
+      svc.recordPick.mockImplementation(async () => {
+        backend.lines = [line({ orderItemId: 1, quantity: 6, picked: 5 })]
+        backend.tasks = [task({ orderItemId: 1, locationId: 501, remaining: 1, allocatedQty: 1, unreserved: true })]
+        return { line_fully_picked: false, order_fully_picked: false }
+      })
+      await openWorkspace()
+      const before = svc.getOrderPickTasks.mock.calls.length
+
+      await pickAtDirectedBin()
+
+      await waitFor(() => expect(svc.getOrderPickTasks.mock.calls.length).toBeGreaterThan(before))
+      expect(await screen.findByText(/not reserved for this order/i)).toBeTruthy()
+      expect(screen.getByRole('button', { name: /scan to pick 1/i })).toBeTruthy()
+    })
+
+    it('never tells the picker the system shows no stock while it is waiting for that answer', async () => {
+      seedPartlyReserved()
+      let answer!: (v: unknown) => void
+      svc.recordPick.mockImplementation(async () => {
+        backend.lines = [line({ orderItemId: 1, quantity: 6, picked: 5 })]
+        backend.tasks = [task({ orderItemId: 1, locationId: 501, remaining: 1, allocatedQty: 1, unreserved: true })]
+        // From here the next read of the tasks hangs until the test lets it through.
+        svc.getOrderPickTasks.mockImplementationOnce(
+          () => new Promise((res) => { answer = res }),
+        )
+        return { line_fully_picked: false, order_fully_picked: false }
+      })
+      await openWorkspace()
+
+      await pickAtDirectedBin()
+      await waitFor(() => expect(answer).toBeTypeOf('function'))
+
+      // The reserved task is picked and the refetch has not landed: no line may read as "none".
+      expect(screen.queryByText(/no available stock/i)).toBeNull()
+      expect(screen.queryByRole('button', { name: /scan a bin to pick/i })).toBeNull()
+
+      await act(async () => {
+        answer({
+          tasks: structuredClone(backend.tasks),
+          imported: true,
+          closedShortLineIds: [],
+          foundByLine: { 1: 5 },
+        })
+      })
+      expect(await screen.findByText(/not reserved for this order/i)).toBeTruthy()
+      expect(screen.queryByText(/no available stock/i)).toBeNull()
+    })
+
+    it('leaves an ordinary order as it was: no extra refetch, the finished task goes at once', async () => {
+      seedPartlyReserved({ imported: false })
+      await openWorkspace()
+      const before = svc.getOrderPickTasks.mock.calls.length
+
+      await pickAtDirectedBin()
+
+      await waitFor(() => expect(ui.addToast).toHaveBeenCalledWith(expect.stringMatching(/^Picked 3/), 'success'))
+      expect(svc.getOrderPickTasks.mock.calls.length).toBe(before)
+      expect(screen.queryByRole('button', { name: /scan to pick/i })).toBeNull()
+    })
+  })
+
+  describe('found quantity while the server catches up', () => {
+    it('does not show a stale 0 for a line that has picks, after it is closed short', async () => {
+      // The queue already counts 2 picked; the tasks answer is older and still says 0.
+      seed({
+        lines: [line({ orderItemId: 1, quantity: 5, picked: 2 })],
+        tasks: [],
+        closed: [1],
+        found: { 1: 0 },
+      })
+      await openWorkspace()
+
+      expect(await screen.findByText('Short: found 2 of 5')).toBeTruthy()
+      expect(screen.queryByText('Short: found 0 of 5')).toBeNull()
+    })
+
+    it('still shows what the server found when the queue has not caught up', async () => {
+      seed({
+        lines: [line({ orderItemId: 1, quantity: 5, picked: 0 })],
+        tasks: [],
+        closed: [1],
+        found: { 1: 3 },
+      })
+      await openWorkspace()
+
+      expect(await screen.findByText('Short: found 3 of 5')).toBeTruthy()
+    })
+  })
+
+  describe('a 360px screen', () => {
+    // jsdom has no layout, so the class list is what can be asserted (the real width is checked
+    // in a browser). The old row truncated its label to one line beside two fixed-width controls,
+    // which on 360px left the bin name as an ellipsis. It now wraps, and the controls drop below.
+    it('lets a bin label wrap instead of truncating it, and lets the row wrap under it', async () => {
+      seed({ tasks: [task({ orderItemId: 1, locationId: 501, remaining: 3, unreserved: true })] })
+      await openWorkspace()
+
+      const note = await screen.findByText(/not reserved for this order/i)
+      const label = note.parentElement as HTMLElement
+      const row = label.parentElement as HTMLElement
+      expect(row.className).toMatch(/\bflex-wrap\b/)
+      expect(label.className).not.toMatch(/\btruncate\b/)
+      expect(label.className).toMatch(/min-w-\[/)
+      for (const el of [note, screen.getByText('TST-A-B501')]) {
+        expect(el.className).not.toMatch(/\btruncate\b/)
+      }
+      // The count and the button keep their size; they move rather than shrink.
+      expect(screen.getByRole('button', { name: /scan to pick 3/i }).className).toMatch(/\bshrink-0\b/)
     })
   })
 

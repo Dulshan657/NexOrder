@@ -46,6 +46,9 @@ interface PickTaskRowProps {
    *  the bin is found by scanning. `resolveBin` turns what was scanned into a bin, or
    *  says why it is not one. */
   anyBin?: { resolveBin: (raw: string) => PickBinResolution }
+  /** An order imported from an invoice (NX-0029). A pick on it refetches the order's tasks,
+   *  because it can take stock outside the reservation and so change what is on offer. */
+  imported?: boolean
 }
 
 type Step = 'idle' | 'bin' | 'item' | 'qty'
@@ -54,7 +57,7 @@ type Step = 'idle' | 'bin' | 'item' | 'qty'
 // function component's props interface does not include `key`, and callers
 // rendering it in a list fail to type-check. Same reason the rest of the
 // codebase uses React.FC. (See the types gotcha in CLAUDE.md.)
-export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, disabled, binName, anyBin }) => {
+export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, disabled, binName, anyBin, imported }) => {
   const bin = { code: task.code, name: binName ?? null }
   const { addToast } = useToastActions()
   const recordPick = useRecordPick()
@@ -164,8 +167,9 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
         pickedQty: picked,
         locationId,
         scan: { locationCode: binCode, productCode: itemCode },
-        // Stock moved outside the reservation, so what is on offer has changed.
-        refreshTasks: anyBin != null || task.unreserved === true,
+        // On an imported order a pick can move stock outside the reservation, so what is
+        // on offer changes. An ordinary order keeps its optimistic patch and nothing more.
+        refreshTasks: imported === true,
       })
       // A toast is a receipt, so it carries both — unlike the scan prompt below,
       // which must quote the code alone.
@@ -202,16 +206,19 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
 
   if (step === 'idle') {
     return (
-      <div className="flex items-center gap-3 py-1.5 pl-5">
+      // Wraps: on a 360px screen the label, the count and the button do not fit on one
+      // line, and truncating the label left the bin name as an ellipsis. The label keeps
+      // a floor of 8rem and the button drops below it instead.
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-1.5 pl-5">
         <MapPin className="w-3 h-3 text-stone-500 shrink-0" aria-hidden="true" />
         {/* Name first, code beneath — the same order as the walk cards. */}
-        <span className="flex-1 min-w-0 truncate">
-          <span className="block text-xs text-stone-600 truncate">{locationTitle(bin)}</span>
+        <span className="flex-1 min-w-[8rem] break-words">
+          <span className="block text-xs text-stone-600 break-words">{locationTitle(bin)}</span>
           {locationSubtitle(bin) && (
-            <span className="block font-mono text-[10px] text-stone-500 truncate">{locationSubtitle(bin)}</span>
+            <span className="block font-mono text-[10px] text-stone-500 break-all">{locationSubtitle(bin)}</span>
           )}
           {task.unreserved && (
-            <span className="block text-[11px] text-stone-600 truncate">Not reserved for this order</span>
+            <span className="block text-[11px] text-stone-600 break-words">Not reserved for this order</span>
           )}
         </span>
         <span className="font-mono text-xs text-stone-500 shrink-0">

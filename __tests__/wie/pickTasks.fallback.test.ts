@@ -328,6 +328,20 @@ describe('stockBinsInWarehouses', () => {
     expect(bins).toEqual([])
   })
 
+  it('never offers a held location, whoever else has stock', () => {
+    const bins = stockBinsInWarehouses(
+      [row({ locationId: 11, onHand: 40 }), row({ locationId: 12, onHand: 4 })],
+      draws,
+      new Set([11]),
+    )
+    expect(bins.map((b) => b.locationId)).toEqual([12])
+  })
+
+  it('offers everything when nothing is held', () => {
+    const rows = [row({ locationId: 11, onHand: 40 }), row({ locationId: 12, onHand: 4 })]
+    expect(stockBinsInWarehouses(rows, draws, new Set())).toEqual(stockBinsInWarehouses(rows, draws))
+  })
+
   it('never lets one over-allocated row cancel another\'s free stock', () => {
     const bins = stockBinsInWarehouses(
       [row({ locationId: 11, onHand: 5, allocated: 9 }), row({ locationId: 11, onHand: 6 })],

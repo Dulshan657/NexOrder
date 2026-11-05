@@ -52,5 +52,6 @@ export const UnlistedBinRow: React.FC<UnlistedBinRowProps> = ({ orderId, line, d
     [line.orderItemId, line.productId, open],
   )
 
-  return <PickTaskRow orderId={orderId} task={task} line={line} disabled={disabled} anyBin={anyBin} />
+  // Only an imported order ever gets here, so its picks always refetch the tasks.
+  return <PickTaskRow orderId={orderId} task={task} line={line} disabled={disabled} anyBin={anyBin} imported />
 }

@@ -322,10 +322,14 @@ export function buildFallbackTasks(
  * database holds allocated <= on_hand per row and one corrupt row must not cancel a
  * neighbour's real stock. Bins with nothing free are dropped. A bin that appears
  * under two draws goes to the first.
+ *
+ * `heldLocationIds` are locations under a hold (quarantine) zone: on hand, but not
+ * for sale. inv_reserve_order skips them, so a picker is never directed to them.
  */
 export function stockBinsInWarehouses(
   rows: readonly StockRow[],
   draws: readonly WarehouseDraw[],
+  heldLocationIds: ReadonlySet<number> = new Set(),
 ): StockBin[] {
   const warehouseOf = new Map<number, WarehouseDraw>()
   for (const draw of draws) {
@@ -335,7 +339,7 @@ export function stockBinsInWarehouses(
   const bins = new Map<string, StockBin>()
   for (const row of rows) {
     const warehouse = warehouseOf.get(row.locationId)
-    if (!warehouse) continue
+    if (!warehouse || heldLocationIds.has(row.locationId)) continue
     const free = Math.max(row.onHand - row.allocated, 0)
     const key = `${row.productId}:${row.locationId}`
     const existing = bins.get(key)

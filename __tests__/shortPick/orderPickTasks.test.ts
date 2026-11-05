@@ -15,8 +15,12 @@ interface Db {
 /** Just enough of a PostgREST query builder: filters, paging and an awaitable result. */
 function fakeAdmin(db: Db) {
   const reads: string[] = []
+  /** Every query, with the `in` filters it carried: what was asked of the database. */
+  const calls: Array<{ table: string; in: Record<string, unknown[]> }> = []
   const from = (table: string) => {
     reads.push(table)
+    const call = { table, in: {} as Record<string, unknown[]> }
+    calls.push(call)
     let rows = [...(db.tables[table] ?? [])]
     const result = () =>
       db.fail === table
@@ -34,6 +38,7 @@ function fakeAdmin(db: Db) {
       return builder
     }
     builder.in = (col: string, vs: unknown[]) => {
+      call.in[col] = vs
       rows = rows.filter((r) => vs.includes(r[col]))
       return builder
     }
@@ -57,7 +62,7 @@ function fakeAdmin(db: Db) {
     const fn = db.rpc[name]
     return fn ? { data: fn(args), error: null } : { data: null, error: { message: `no rpc ${name}` } }
   })
-  return { admin: { from, rpc } as never, reads, rpc }
+  return { admin: { from, rpc } as never, reads, rpc, calls }
 }
 
 const ORDER = 'ORD-TEST-1'
@@ -264,5 +269,165 @@ describe('loadOrderPickTasks: an imported order', () => {
     db.fail = 'pick_differences'
     const { admin } = fakeAdmin(db)
     await expect(loadOrderPickTasks(admin, ORDER)).rejects.toMatchObject({ code: 'INTERNAL' })
+  })
+})
+
+// ── review round: closed lines own no reservation, held stock is never offered ──
+
+describe('loadOrderPickTasks: reserved tasks belong to open lines only', () => {
+  // One product on two lines, 5 each. Line 10 was closed short, so it needs nothing; the
+  // 5 still reserved at bin 7 are line 11's. Attributing by ascending line id without
+  // dropping the closed line would hand them to line 10, which renders no tasks, and
+  // leave line 11 with no bin at all.
+  const twoLines = (): Db => {
+    const db = baseDb()
+    db.tables.order_items = [
+      { id: 10, order_id: ORDER, product_id: 1, quantity: 5, pack_size: 1 },
+      { id: 11, order_id: ORDER, product_id: 1, quantity: 5, pack_size: 1 },
+    ]
+    db.tables.pick_differences = [{ order_id: ORDER, order_item_id: 10, kind: 'short' }]
+    db.tables.locations = [...(db.tables.locations as Row[]), { id: 7, code: 'TST-1-B7' }]
+    db.rpc.wie_order_pick_tasks = () => [ALLOC(1, 1, 7, 5)]
+    return db
+  }
+
+  it('gives the reserved bin to the open line and nothing to the closed one', async () => {
+    const { admin } = fakeAdmin(twoLines())
+
+    const body = await loadOrderPickTasks(admin, ORDER)
+
+    expect(body.closedShortLineIds).toEqual([10])
+    expect(body.tasks.map((t) => [t.orderItemId, t.locationId, t.remaining, t.unreserved ?? false])).toEqual([
+      [11, 7, 5, false],
+    ])
+  })
+
+  it('still does when the closed line had picked some before it was closed', async () => {
+    // Line 10 found 2 at bin 7 and was closed, its other 3 released: 10 allocated, 3 given
+    // back, 7 net at the bin = the 2 line 10 took plus the 5 line 11 still needs.
+    const db = twoLines()
+    db.rpc.wie_order_pick_tasks = () => [ALLOC(1, 1, 7, 7)]
+    db.tables.pick_progress = [{ order_id: ORDER, order_item_id: 10, location_id: 7, picked_qty: 2 }]
+    const { admin } = fakeAdmin(db)
+
+    const body = await loadOrderPickTasks(admin, ORDER)
+
+    expect(body.tasks.map((t) => [t.orderItemId, t.locationId, t.remaining])).toEqual([[11, 7, 5]])
+    expect(body.foundByLine).toEqual({ '10': 2, '11': 0 })
+  })
+
+  it('leaves an ordinary order\'s attribution exactly as it was', async () => {
+    // No differences exist for such an order, so nothing is dropped, and the lowest line
+    // id still takes a bin first.
+    const db = twoLines()
+    db.tables.orders = [{ id: ORDER, qb_invoice_number: null }]
+    const { admin } = fakeAdmin(db)
+
+    const body = await loadOrderPickTasks(admin, ORDER)
+
+    expect(body.tasks.map((t) => [t.orderItemId, t.locationId, t.remaining])).toEqual([[10, 7, 5]])
+  })
+})
+
+describe('loadOrderPickTasks: held stock is never offered', () => {
+  const heldDb = (): Db => {
+    const db = baseDb()
+    // Bin 11 sits under a quarantine zone: on hand, but not for sale. inv_reserve_order skips it.
+    db.tables.v_held_locations = [{ location_id: 11 }]
+    db.tables.inventory_balances = [balance(1, 11, 40), balance(1, 12, 4)]
+    return db
+  }
+
+  it('skips a bin under a hold zone and offers the next', async () => {
+    const { admin } = fakeAdmin(heldDb())
+
+    const body = await loadOrderPickTasks(admin, ORDER)
+
+    expect(body.tasks.map((t) => [t.locationId, t.remaining])).toEqual([[12, 4]])
+  })
+
+  it('reads the hold state from v_held_locations, the one definition allocation uses', async () => {
+    const { admin, reads } = fakeAdmin(heldDb())
+    await loadOrderPickTasks(admin, ORDER)
+    expect(reads).toContain('v_held_locations')
+  })
+
+  it('offers nothing at all when every bin with stock is held', async () => {
+    const db = heldDb()
+    db.tables.v_held_locations = [{ location_id: 11 }, { location_id: 12 }]
+    const { admin } = fakeAdmin(db)
+    expect((await loadOrderPickTasks(admin, ORDER)).tasks).toEqual([])
+  })
+
+  it('fails closed: if the hold state cannot be read, nothing is offered by guesswork', async () => {
+    const db = heldDb()
+    db.fail = 'v_held_locations'
+    const { admin } = fakeAdmin(db)
+    await expect(loadOrderPickTasks(admin, ORDER)).rejects.toMatchObject({ code: 'INTERNAL' })
+  })
+
+  it('does not look at the hold view for an ordinary order', async () => {
+    const db = heldDb()
+    db.tables.orders = [{ id: ORDER, qb_invoice_number: null }]
+    const { admin, reads } = fakeAdmin(db)
+    await loadOrderPickTasks(admin, ORDER)
+    expect(reads).not.toContain('v_held_locations')
+  })
+})
+
+describe('loadOrderPickTasks: the stock read is scoped and says when it stops short', () => {
+  it('asks only for the bins of the warehouses the order is fulfilled from', async () => {
+    const db = baseDb()
+    db.tables.inventory_balances = [balance(1, 12, 4), balance(1, 31, 99)]
+    const { admin, calls } = fakeAdmin(db)
+
+    await loadOrderPickTasks(admin, ORDER)
+
+    const stock = calls.filter((c) => c.table === 'inventory_balances')
+    const asked = new Set(stock.flatMap((c) => (c.in.location_id ?? []) as number[]))
+    expect([...asked].sort((a, b) => a - b)).toEqual([1, 2, 11, 12, 21])
+    expect(asked.has(31)).toBe(false)
+    // Every stock query carries a location filter: none reads the whole table by product.
+    expect(stock.every((c) => c.in.location_id)).toBe(true)
+  })
+
+  it('splits a long bin list across several queries and still finds all of it', async () => {
+    const db = baseDb()
+    db.tables.inventory_balances = [balance(1, 11, 2), balance(1, 12, 3), balance(2, 21, 1)]
+    const { admin, calls } = fakeAdmin(db)
+
+    const body = await loadOrderPickTasks(admin, ORDER, { chunkSize: 2 })
+
+    const stock = calls.filter((c) => c.table === 'inventory_balances')
+    expect(stock.length).toBeGreaterThan(1)
+    expect(stock.every((c) => (c.in.location_id ?? []).length <= 2)).toBe(true)
+    expect(body.tasks.map((t) => [t.orderItemId, t.locationId, t.remaining]).sort()).toEqual([
+      [100, 11, 2], [100, 12, 3], [101, 21, 1],
+    ])
+  })
+
+  it('logs, rather than silently truncating, when it stops at the page ceiling', async () => {
+    const db = baseDb()
+    db.tables.inventory_balances = [balance(1, 11, 1), balance(1, 12, 1), balance(2, 21, 1)]
+    const { admin } = fakeAdmin(db)
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const body = await loadOrderPickTasks(admin, ORDER, { pageSize: 1, maxPages: 1, chunkSize: 100 })
+
+    expect(log).toHaveBeenCalledTimes(1)
+    expect(String(log.mock.calls[0][0])).toMatch(/order-pick-tasks.*stock.*stopped.*page/i)
+    // What it did read is still offered; the reserved tasks are never at risk.
+    expect(body.imported).toBe(true)
+    log.mockRestore()
+  })
+
+  it('stays quiet when the stock fits', async () => {
+    const db = baseDb()
+    db.tables.inventory_balances = [balance(1, 11, 1)]
+    const { admin } = fakeAdmin(db)
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await loadOrderPickTasks(admin, ORDER)
+    expect(log).not.toHaveBeenCalled()
+    log.mockRestore()
   })
 })
