@@ -334,6 +334,18 @@ export function priceOrderLines(
   return resolved
 }
 
+/** What the order is worth at the customer's own prices, before any promotion. */
+export function orderValueBeforePromotions(
+  aggregated: ReadonlyArray<OrderLineInput>,
+  productMap: ReadonlyMap<number, PricedProduct>,
+  hoReCa: HoReCa,
+  user: UserContext,
+  cartonDiscountPercent: number,
+): number {
+  return priceOrderLines(aggregated, productMap, hoReCa, user, [], cartonDiscountPercent)
+    .reduce((sum, line) => sum + line.unitPrice * line.quantity, 0)
+}
+
 /** Subtotal, cart-level promotion discount and the rounded order total. */
 export function computeOrderTotals(
   resolved: ReadonlyArray<ResolvedItem>,

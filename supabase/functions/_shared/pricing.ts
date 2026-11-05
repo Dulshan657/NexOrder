@@ -72,6 +72,7 @@ export interface Promotion {
   isActive: boolean
   priority: number
   appliesTo?: 'unit' | 'carton'
+  minOrderValue?: number | null
 }
 
 export interface CartItemInput {

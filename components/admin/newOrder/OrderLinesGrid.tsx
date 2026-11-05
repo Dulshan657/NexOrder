@@ -18,6 +18,7 @@ import { Trash2, Plus } from 'lucide-react'
 import { Button, NumberInput } from '../../ui'
 import ProductSearchDropdown from '../ProductSearchDropdown'
 import { resolvePromotionPrice } from '../../../pricing'
+import { eligibleForOrderValue } from '../../../supabase/functions/_shared/promotionMinimum'
 import type { ParsedOrderLine } from '../../../lib/newOrder/resolveOrderLines'
 import type { HoReCa, Product, Promotion, User } from '../../../types'
 
@@ -45,11 +46,15 @@ const OrderLinesGrid: React.FC<OrderLinesGridProps> = ({
   onAddProduct,
 }) => {
   const byId = new Map<number, Product>(products.map((p): [number, Product] => [p.id, p]))
-  const priceOf = (productId: number) => {
+  const priceWith = (productId: number, list: Promotion[]) => {
     const product = byId.get(productId)
     if (!product) return 0
-    return resolvePromotionPrice(product, customer, currentUser, promotions).finalPrice
+    return resolvePromotionPrice(product, customer, currentUser, list).finalPrice
   }
+  // A promotion's minimum is measured on these lines before any promotion, as place-order does.
+  const orderValue = lines.reduce((sum, l) => sum + priceWith(l.productId, []) * l.quantity, 0)
+  const eligible = eligibleForOrderValue<Promotion>(promotions, orderValue)
+  const priceOf = (productId: number) => priceWith(productId, eligible)
   const total = lines.reduce((sum, l) => sum + priceOf(l.productId) * l.quantity, 0)
 
   // Already-chosen products drop out of the picker: a repeated pick is a

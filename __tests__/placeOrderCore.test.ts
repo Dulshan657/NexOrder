@@ -202,6 +202,59 @@ describe('placeOrderCore', () => {
       ])
     })
 
+    it('a promotion below its minimum does not apply and is not recorded', async () => {
+      const { service, writes } = makeService(baseFixture({
+        promotions: [promoRow({ id: 'MIN', name: 'Half off', type: 'percentage', percent_off: 50, min_order_value: 41 })],
+      }))
+      const result = await placeOrderCore(service, input())
+
+      expect(result.total).toBe(40)
+      expect(result.appliedPromotionIds).toEqual([])
+      expect((writes[0].payload as Record<string, unknown>).applied_promotions).toEqual([])
+    })
+
+    it("an order at exactly the minimum qualifies, measured at the customer's own prices", async () => {
+      // List value 40. This customer pays half, so the order is worth 20.
+      const horeca = {
+        id: 7, name: 'Cafe Nero', discount_percent: 50, credit_limit: 0, tier: null, lat: null, lng: null, horeca_pricing: [],
+      }
+      const withMinimum = (min: number) => [
+        promoRow({ id: 'MIN', name: 'Half again', type: 'percentage', percent_off: 50, stack_with_horeca_pricing: true, min_order_value: min }),
+      ]
+
+      const atMinimum = await placeOrderCore(makeService(baseFixture({ horeca, promotions: withMinimum(20) })).service, input())
+      expect(atMinimum.total).toBe(10)
+
+      const justOver = await placeOrderCore(makeService(baseFixture({ horeca, promotions: withMinimum(20.01) })).service, input())
+      expect(justOver.total).toBe(20)
+      expect(justOver.appliedPromotionIds).toEqual([])
+    })
+
+    it('a bundle and a buy-one-get-one below their minimum do not apply', async () => {
+      const promotions = [
+        promoRow({ id: 'BUN', name: 'Pair', type: 'bundle', bundle_config: { productIds: [1, 2], bundlePrice: 20 }, scope: { kind: 'products', productIds: [1, 2] }, min_order_value: 41 }),
+        promoRow({ id: 'BOGO', name: 'Free', type: 'bogo', bogo_config: { buyProductId: 1, buyQuantity: 2, getProductId: 2, getQuantity: 1 }, scope: { kind: 'products', productIds: [1, 2] }, min_order_value: 41 }),
+      ]
+      const { service, writes } = makeService(baseFixture({ promotions }))
+      const result = await placeOrderCore(service, input())
+
+      expect(result.total).toBe(40)
+      expect(result.bogoFreeItems).toEqual([])
+      expect((writes[0].payload as Record<string, unknown>).applied_promotions).toEqual([])
+    })
+
+    it('a discount that takes the total under the minimum does not switch the promotion off', async () => {
+      const withMinimum = (min: number) => [promoRow({ id: 'MIN', name: 'Half off', type: 'percentage', percent_off: 50, min_order_value: min })]
+
+      // The order is worth 40 before the promotion and 20 after it.
+      const kept = await placeOrderCore(makeService(baseFixture({ promotions: withMinimum(40) })).service, input())
+      expect(kept.total).toBe(20)
+      expect(kept.appliedPromotionIds).toEqual(['MIN'])
+
+      const missed = await placeOrderCore(makeService(baseFixture({ promotions: withMinimum(40.01) })).service, input())
+      expect(missed.total).toBe(40)
+    })
+
     it('writes an empty list when the order used no promotion', async () => {
       const { service, writes } = makeService(baseFixture())
       await placeOrderCore(service, input())
