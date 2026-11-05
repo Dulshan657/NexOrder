@@ -45,16 +45,37 @@
 -- inv_transfer_stock, 00109, 00126 and 00137 move `available` with an alloc delta
 -- of 0, and inv_adjust_stock refuses to go below `allocated`.
 --
--- WHAT THE ROW CHECK CANNOT SEE. If another order's pick or release took this
--- order's units from a row that a third order also holds, the row can still
--- cover the net, and the release takes the third order's units. That comes from
--- the unattributed column above and is what the later short-pick brief addresses.
+-- THE ROW MUST ALSO COVER EVERY OTHER ORDER. Those same paths can drain this
+-- order's units from a row a third order also holds, and the row then still covers
+-- this order's net alone: reversing it would take the third order's units. So the
+-- check is allocated - what other orders still hold >= this order's net. "Still
+-- hold" is the app's netting (wie_order_alloc_bins, then pickTasks.ts takes off what
+-- was picked at that bin): per other order, allocate + deallocate + pick on this
+-- exact row, floored at 0. inv_apply_leg writes a pick's on_hand delta to qty_delta,
+-- so a pick is negative and a finished pick nets to nothing. A closed order holds
+-- nothing, whatever its ledger says. An order whose ledger overstates what it holds
+-- (rack conversion, or a dispatch that left stock stranded on an order still open)
+-- can make this raise when the units are in fact there. That fails closed.
 --
--- PICKS RACE ON THE ITEM ROWS. record-pick does not lock the order. The update
--- locks the order's item rows before it looks at pick_progress: a pick still in
--- flight holds a key-share lock on its item through the pick_progress foreign
--- key, so the update waits, then sees the pick and refuses. Without this, the
--- delete would cascade through that foreign key and erase a committed pick.
+-- A PICK CANNOT SLIP PAST THE PICK CHECK. record-pick does not lock the order, but
+-- its pick_progress insert takes a key-share lock on the order row through the
+-- foreign key on order_id, and the update's FOR UPDATE conflicts with that. A pick
+-- that has inserted makes the update wait, then be refused. A pick that inserts
+-- after the lock waits, then fails its foreign key to the deleted item, and rolls
+-- back with its stock. The key-share lock is only taken at that insert, so until
+-- then a pick and an update can deadlock on balance rows; the database rolls one
+-- of them back whole.
+--
+-- FULFILMENTS FOLLOW THE RESERVATION. A `processed` order has one order_fulfillments
+-- row per warehouse holding stock, and orders.status rolls up from them, so a row
+-- left at a warehouse the reservation has moved away from freezes the order.
+-- qb_sync_fulfilments applies update-order-status's re-route rule. A `processing`
+-- order has none until it is processed, and gets none here.
+--
+-- PRICES ARE STORED AT 2DP, SO THE TOTAL IS TOO. order_items.unit_price is
+-- NUMERIC(10,2). The total adds the rounded prices, so it equals the sum of the
+-- stored lines. qb_invoice_imports.lines keeps the file's value for comparing a
+-- later upload.
 --
 -- LOCKDOWN. New tables inherit client grants from the default privileges (finding
 -- DB-3), so both are created with an explicit REVOKE, RLS on and no policies. Both
@@ -74,9 +95,11 @@
 -- Rollback:
 --   DROP FUNCTION public.qb_update_invoice_tx(TEXT, INT, DATE, JSONB, UUID, INT[]);
 --   DROP FUNCTION public.qb_import_invoice_tx(TEXT, INT, DATE, JSONB, UUID, INT[]);
+--   DROP FUNCTION public.qb_sync_fulfilments(TEXT, UUID);
 --   DROP FUNCTION public.qb_release_own_allocation(TEXT, UUID);
 --   DROP FUNCTION public.qb_write_order_lines(TEXT, JSONB, INT[], UUID);
---   DROP FUNCTION public.qb_validate_invoice_input(TEXT, JSONB);
+--   DROP FUNCTION public.qb_validate_invoice_input(TEXT, INT, DATE, JSONB, UUID, INT[]);
+--   DROP FUNCTION public.qb_lines_total(JSONB);
 --   DROP TABLE public.qb_invoice_imports;
 --   DROP TABLE public.qb_product_map;
 --   DROP INDEX public.idx_orders_qb_invoice_number;
@@ -137,13 +160,38 @@ COMMENT ON TABLE public.qb_invoice_imports IS
 -- ---------------------------------------------------------------------------
 -- 3. qb_validate_invoice_input: refuse a bad call before anything is locked
 -- ---------------------------------------------------------------------------
--- The classifier has already checked these. This is the boundary, so it checks
--- them again rather than trusting its caller. JSON types are tested, not cast:
--- "5" is not a quantity, and a whole 5.0 is one.
+-- The classifier has already checked some of these. This is the boundary, so it
+-- checks them again rather than trusting its caller, and turns what would surface
+-- as a raw foreign key, not-null or overflow error into a coded one. JSON types are
+-- tested, not cast: "5" is not a quantity, and a whole 5.0 is one.
+--
+-- A preference id that is not an active warehouse must be refused here.
+-- inv_reserve_order finds no stock at such an id, which looks just like an
+-- out-of-stock product, and an update would then release the order's reservation
+-- and hold nothing. A NULL or empty preference means the default warehouse.
+
+CREATE OR REPLACE FUNCTION public.qb_lines_total(p_lines JSONB)
+RETURNS NUMERIC
+LANGUAGE sql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT ROUND(SUM((l->>'quantity')::NUMERIC * ROUND((l->>'unit_price')::NUMERIC, 2)), 2)
+      FROM jsonb_array_elements(p_lines) AS l;
+$$;
+
+REVOKE ALL ON FUNCTION public.qb_lines_total(JSONB)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.qb_lines_total(JSONB) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.qb_validate_invoice_input(
     p_invoice_number TEXT,
-    p_lines          JSONB
+    p_horeca_id      INT,
+    p_invoice_date   DATE,
+    p_lines          JSONB,
+    p_actor          UUID,
+    p_location_pref  INT[]
 )
 RETURNS VOID
 LANGUAGE plpgsql
@@ -151,7 +199,9 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-    c_int_max CONSTANT NUMERIC := 2147483647;
+    c_int_max   CONSTANT NUMERIC := 2147483647;
+    c_price_cap CONSTANT NUMERIC := 100000000;    -- unit_price NUMERIC(10,2)
+    c_total_cap CONSTANT NUMERIC := 10000000000;  -- orders.total NUMERIC(12,2)
     v_line    JSONB;
     v_row     BIGINT;
     v_pid     NUMERIC;
@@ -162,6 +212,33 @@ BEGIN
     IF p_invoice_number IS NULL OR p_invoice_number !~ '^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$' THEN
         RAISE EXCEPTION 'QB_BAD_INVOICE_NUMBER: % is not letters, digits and single hyphens',
             COALESCE(p_invoice_number, 'NULL') USING ERRCODE = 'P0001';
+    END IF;
+
+    IF p_invoice_date IS NULL THEN
+        RAISE EXCEPTION 'QB_BAD_DATE: invoice % has no date', p_invoice_number USING ERRCODE = 'P0001';
+    END IF;
+
+    IF p_horeca_id IS NULL OR NOT EXISTS (SELECT 1 FROM public.horecas h WHERE h.id = p_horeca_id) THEN
+        RAISE EXCEPTION 'QB_BAD_CUSTOMER: customer % does not exist', COALESCE(p_horeca_id::TEXT, 'NULL')
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    IF p_actor IS NULL OR NOT EXISTS (SELECT 1 FROM public.profiles a WHERE a.id = p_actor) THEN
+        RAISE EXCEPTION 'QB_BAD_ACTOR: actor % does not exist', COALESCE(p_actor::TEXT, 'NULL')
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM unnest(p_location_pref) AS pref(id)
+         WHERE pref.id IS NULL
+            OR NOT EXISTS (
+                SELECT 1 FROM public.locations l
+                 WHERE l.id = pref.id AND l.kind = 'WAREHOUSE' AND l.is_active
+            )
+    ) THEN
+        RAISE EXCEPTION 'QB_BAD_LOCATION: % must all be active warehouses',
+            array_to_string(p_location_pref, ',', 'NULL') USING ERRCODE = 'P0001';
     END IF;
 
     IF jsonb_typeof(p_lines) IS DISTINCT FROM 'array' THEN
@@ -204,6 +281,9 @@ BEGIN
            OR (v_line->>'unit_price')::NUMERIC < 0 THEN
             RAISE EXCEPTION 'QB_BAD_PRICE: line % needs a price of zero or more', v_row USING ERRCODE = 'P0001';
         END IF;
+        IF ROUND((v_line->>'unit_price')::NUMERIC, 2) >= c_price_cap THEN
+            RAISE EXCEPTION 'QB_BAD_PRICE: line % has a price too large to store', v_row USING ERRCODE = 'P0001';
+        END IF;
 
         -- A missing key and a JSON null both mean "counted in units".
         IF COALESCE(jsonb_typeof(v_line->'pack_size'), 'null') <> 'null' THEN
@@ -217,12 +297,17 @@ BEGIN
             END IF;
         END IF;
     END LOOP;
+
+    IF public.qb_lines_total(p_lines) >= c_total_cap THEN
+        RAISE EXCEPTION 'QB_BAD_PRICE: invoice % has a total too large to store', p_invoice_number
+            USING ERRCODE = 'P0001';
+    END IF;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.qb_validate_invoice_input(TEXT, JSONB)
+REVOKE ALL ON FUNCTION public.qb_validate_invoice_input(TEXT, INT, DATE, JSONB, UUID, INT[])
     FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.qb_validate_invoice_input(TEXT, JSONB) TO service_role;
+GRANT EXECUTE ON FUNCTION public.qb_validate_invoice_input(TEXT, INT, DATE, JSONB, UUID, INT[]) TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 4. qb_write_order_lines: item rows, then their reservation in base units
@@ -284,6 +369,9 @@ GRANT EXECUTE ON FUNCTION public.qb_write_order_lines(TEXT, JSONB, INT[], UUID) 
 -- equal, so a NULL batch or plate is its own group, as it is its own balance row.
 -- A negative net is not a reservation (see the header on rack conversion and
 -- other orders' releases), so only positive nets are reversed.
+--
+-- What other orders hold is read after the row is locked: a reservation or pick on
+-- this row needs that lock too, so the figure cannot move before the reversal.
 
 CREATE OR REPLACE FUNCTION public.qb_release_own_allocation(
     p_order_id TEXT,
@@ -297,6 +385,7 @@ AS $$
 DECLARE
     v_own       RECORD;
     v_allocated NUMERIC;
+    v_others    NUMERIC;
 BEGIN
     FOR v_own IN
         SELECT m.product_id, m.location_id, m.batch_id, m.handling_unit_id,
@@ -317,12 +406,28 @@ BEGIN
            AND COALESCE(b.handling_unit_id, 0) = COALESCE(v_own.handling_unit_id, 0)
            FOR UPDATE;
 
-        IF v_allocated IS NULL OR v_allocated < v_own.net THEN
+        SELECT COALESCE(SUM(GREATEST(t.held, 0)), 0) INTO v_others
+          FROM (
+              SELECT SUM(m.qty_delta) AS held
+                FROM public.inventory_movements m
+                LEFT JOIN public.orders o ON o.id = m.ref_id
+               WHERE m.ref_type = 'order'
+                 AND m.ref_id <> p_order_id
+                 AND m.movement_type IN ('allocate', 'deallocate', 'pick')
+                 AND m.product_id = v_own.product_id
+                 AND m.location_id = v_own.location_id
+                 AND COALESCE(m.batch_id, 0) = COALESCE(v_own.batch_id, 0)
+                 AND COALESCE(m.handling_unit_id, 0) = COALESCE(v_own.handling_unit_id, 0)
+                 AND COALESCE(o.status, '') NOT IN ('cancelled', 'dispatched', 'delivered')
+               GROUP BY m.ref_id
+          ) t;
+
+        IF v_allocated IS NULL OR v_allocated - v_others < v_own.net THEN
             RAISE EXCEPTION
-                'QB_ALLOCATION_MISMATCH: order % nets % of product % at location % (batch %, plate %) but the row holds %',
+                'QB_ALLOCATION_MISMATCH: order % nets % of product % at location % (batch %, plate %) but the row holds % with % held by other orders',
                 p_order_id, v_own.net, v_own.product_id, v_own.location_id,
                 COALESCE(v_own.batch_id::TEXT, 'none'), COALESCE(v_own.handling_unit_id::TEXT, 'none'),
-                COALESCE(v_allocated, 0)
+                COALESCE(v_allocated, 0), v_others
                 USING ERRCODE = 'P0001';
         END IF;
 
@@ -337,6 +442,66 @@ $$;
 REVOKE ALL ON FUNCTION public.qb_release_own_allocation(TEXT, UUID)
     FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.qb_release_own_allocation(TEXT, UUID) TO service_role;
+
+-- ---------------------------------------------------------------------------
+-- 5a. qb_sync_fulfilments: a processed order's rows follow its reservation
+-- ---------------------------------------------------------------------------
+-- The same rule as update-order-status Mode A on a re-route (index.ts:245-269, with
+-- ensureFulfillments and pruneFulfillments):
+--   - the sites are the warehouses holding a net reservation;
+--   - with none, the first active warehouse by id, so there is something to pick;
+--   - a row is added for each site in the 'processed' shape, an existing row is left;
+--   - 'processed' rows elsewhere are deleted, but only when real reservations exist,
+--     so a fully out-of-stock order keeps the rows it has. An advanced row is real
+--     work and is never deleted.
+
+CREATE OR REPLACE FUNCTION public.qb_sync_fulfilments(
+    p_order_id TEXT,
+    p_actor    UUID
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_reserved INT[];
+    v_sites    INT[];
+BEGIN
+    SELECT COALESCE(array_agg(w.warehouse_id), '{}') INTO v_reserved
+      FROM public.inv_order_fulfilment_warehouses(p_order_id) AS w;
+
+    v_sites := v_reserved;
+    IF cardinality(v_sites) = 0 THEN
+        v_sites := ARRAY(
+            SELECT l.id FROM public.locations l
+             WHERE l.kind = 'WAREHOUSE' AND l.is_active
+             ORDER BY l.id
+             LIMIT 1
+        );
+    END IF;
+
+    INSERT INTO public.order_fulfillments (order_id, location_id, status, status_history)
+    SELECT p_order_id, site.id, 'processed',
+           jsonb_build_array(jsonb_build_object(
+               'status',    'processed',
+               'timestamp', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+               'actor',     p_actor))
+      FROM unnest(v_sites) AS site(id)
+    ON CONFLICT (order_id, location_id) DO NOTHING;
+
+    IF cardinality(v_reserved) > 0 THEN
+        DELETE FROM public.order_fulfillments f
+         WHERE f.order_id = p_order_id
+           AND f.status = 'processed'
+           AND f.location_id <> ALL (v_reserved);
+    END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.qb_sync_fulfilments(TEXT, UUID)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.qb_sync_fulfilments(TEXT, UUID) TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 6. qb_import_invoice_tx
@@ -357,9 +522,9 @@ SET search_path = public
 AS $$
 DECLARE
     v_order_id TEXT;
-    v_total    NUMERIC;
 BEGIN
-    PERFORM public.qb_validate_invoice_input(p_invoice_number, p_lines);
+    PERFORM public.qb_validate_invoice_input(
+        p_invoice_number, p_horeca_id, p_invoice_date, p_lines, p_actor, p_location_pref);
 
     PERFORM pg_advisory_xact_lock(hashtext('qb_invoice:' || p_invoice_number));
 
@@ -372,14 +537,10 @@ BEGIN
 
     v_order_id := 'QB-' || p_invoice_number;
 
-    SELECT ROUND(SUM((l->>'quantity')::NUMERIC * (l->>'unit_price')::NUMERIC), 2)
-      INTO v_total
-      FROM jsonb_array_elements(p_lines) AS l;
-
     INSERT INTO public.orders
         (id, horeca_id, submitted_by, total, status, status_history, qb_invoice_number)
     VALUES
-        (v_order_id, p_horeca_id, p_actor, v_total, 'processing',
+        (v_order_id, p_horeca_id, p_actor, public.qb_lines_total(p_lines), 'processing',
          jsonb_build_array(jsonb_build_object(
              'status',    'processing',
              'timestamp', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))),
@@ -425,9 +586,9 @@ AS $$
 DECLARE
     v_order_id TEXT;
     v_status   TEXT;
-    v_total    NUMERIC;
 BEGIN
-    PERFORM public.qb_validate_invoice_input(p_invoice_number, p_lines);
+    PERFORM public.qb_validate_invoice_input(
+        p_invoice_number, p_horeca_id, p_invoice_date, p_lines, p_actor, p_location_pref);
 
     PERFORM pg_advisory_xact_lock(hashtext('qb_invoice:' || p_invoice_number));
 
@@ -446,9 +607,6 @@ BEGIN
         RETURN jsonb_build_object('status', 'refused', 'reason', 'order_closed');
     END IF;
 
-    -- Before the pick check, not after: see the header on picks.
-    PERFORM 1 FROM public.order_items oi WHERE oi.order_id = v_order_id FOR UPDATE;
-
     IF EXISTS (SELECT 1 FROM public.pick_progress pp WHERE pp.order_id = v_order_id) THEN
         RETURN jsonb_build_object('status', 'refused', 'reason', 'picking_started');
     END IF;
@@ -459,12 +617,8 @@ BEGIN
     -- check above has just shown this order has none of its rows.
     DELETE FROM public.order_items oi WHERE oi.order_id = v_order_id;
 
-    SELECT ROUND(SUM((l->>'quantity')::NUMERIC * (l->>'unit_price')::NUMERIC), 2)
-      INTO v_total
-      FROM jsonb_array_elements(p_lines) AS l;
-
     UPDATE public.orders o
-       SET total          = v_total,
+       SET total          = public.qb_lines_total(p_lines),
            horeca_id      = p_horeca_id,
            status_history = COALESCE(o.status_history, '[]'::jsonb)
                             || jsonb_build_object(
@@ -475,6 +629,10 @@ BEGIN
      WHERE o.id = v_order_id;
 
     PERFORM public.qb_write_order_lines(v_order_id, p_lines, p_location_pref, p_actor);
+
+    IF v_status = 'processed' THEN
+        PERFORM public.qb_sync_fulfilments(v_order_id, p_actor);
+    END IF;
 
     UPDATE public.qb_invoice_imports i
        SET lines          = p_lines,

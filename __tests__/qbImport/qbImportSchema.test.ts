@@ -12,7 +12,7 @@ import { LOCKED_TABLES } from '../../config/lockedTables.mjs'
 const MIGRATION = join(process.cwd(), 'supabase', 'migrations', '00139_qb_invoice_import.sql')
 const TABLES = ['qb_product_map', 'qb_invoice_imports']
 const TRANSACTIONS = ['qb_import_invoice_tx', 'qb_update_invoice_tx']
-const HELPERS = ['qb_release_own_allocation']
+const HELPERS = ['qb_release_own_allocation', 'qb_validate_invoice_input', 'qb_write_order_lines', 'qb_lines_total', 'qb_sync_fulfilments']
 
 /** The migration with comments removed, so prose can neither satisfy nor trip a check. */
 function migrationSql(): string {
