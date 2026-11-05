@@ -150,6 +150,7 @@ const VoiceAssistantLauncher = MODULE_VOICE_ASSISTANT ? lazyWithRetry(() => impo
 
 import { inviteUser, updateUserProfile } from '../services/supabase/inviteUserService';
 import { fromProduct, fromHoReCa, fromSupplier, fromPromotion, fromScheduledVisit, fromVisit, visitUpdateFields } from '../lib/adapters';
+import { isFailedSave, settleHoReCaSave, type HoReCaSaveResult } from '../lib/horecaSave';
 import { numericIdToUuid } from '../lib/userIdMap';
 import type { SortOption } from './ShopTopBar';
 import type { OrderingTabKey } from './OrderingTabBar';
@@ -372,6 +373,15 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
     const createHoReCaMutation = useCreateHoReCa();
     const updateHoReCaMutation = useUpdateHoReCa();
     const deleteHoReCaMutation = useDeleteHoReCa();
+    // A customer save toasts the outcome AND returns it. The dialogs read the returned
+    // result to stay open on a failure; the Settings screens call the same handlers and
+    // ignore it. A value, not a rejection, so ignoring it cannot raise an unhandled one.
+    const reportHoReCaSave = async (save: () => Promise<unknown>, done: string): Promise<HoReCaSaveResult> => {
+        const result = await settleHoReCaSave(save);
+        if (isFailedSave(result)) addToast(`Error: ${result.message}`, 'error');
+        else addToast(done, 'success');
+        return result;
+    };
     const createSupplierMutation = useCreateSupplier();
     const updateSupplierMutation = useUpdateSupplier();
     const deleteSupplierMutation = useDeleteSupplier();
@@ -1438,18 +1448,14 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         updates: fromProduct({ suppliers: links }) as any,
                                     });
                                 }}
-                                onAddHoReCa={(c, reason) => {
-                                    createHoReCaMutation.mutate({ horeca: fromHoReCa(c) as any, reason }, {
-                                        onSuccess: () => addToast('HoReCa added', 'success'),
-                                        onError: err => addToast(`Error: ${err.message}`, 'error'),
-                                    });
-                                }}
-                                onUpdateHoReCa={(c, reason) => {
-                                    updateHoReCaMutation.mutate({ id: c.id, updates: fromHoReCa(c) as any, reason }, {
-                                        onSuccess: () => addToast('HoReCa updated', 'success'),
-                                        onError: err => addToast(`Error: ${err.message}`, 'error'),
-                                    });
-                                }}
+                                onAddHoReCa={(c, reason) => reportHoReCaSave(
+                                    () => createHoReCaMutation.mutateAsync({ horeca: fromHoReCa(c) as any, reason }),
+                                    'HoReCa added',
+                                )}
+                                onUpdateHoReCa={(c, reason) => reportHoReCaSave(
+                                    () => updateHoReCaMutation.mutateAsync({ id: c.id, updates: fromHoReCa(c) as any, reason }),
+                                    'HoReCa updated',
+                                )}
                                 onDeleteHoReCa={id => {
                                     deleteHoReCaMutation.mutate(id, {
                                         onSuccess: () => addToast('HoReCa deleted', 'success'),
@@ -1684,12 +1690,10 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                         invoices={invoices}
                                         currentUser={currentUser}
                                         visits={visits}
-                                        onAddHoReCa={(c, reason) => {
-                                            createHoReCaMutation.mutate({ horeca: fromHoReCa(c) as any, reason }, {
-                                                onSuccess: () => addToast('HoReCa added', 'success'),
-                                                onError: err => addToast(`Error: ${err.message}`, 'error'),
-                                            });
-                                        }}
+                                        onAddHoReCa={(c, reason) => reportHoReCaSave(
+                                            () => createHoReCaMutation.mutateAsync({ horeca: fromHoReCa(c) as any, reason }),
+                                            'HoReCa added',
+                                        )}
                                         onStartOrder={handleStartOrderWithNav}
                                         setVisits={setVisits}
                                     />

@@ -801,6 +801,15 @@ export interface HoReCa {
     createdByUserId?: number;
     reviewedAt?: string;
     reviewedByUserId?: number;
+    // Contact and billing record (mig 00138). All optional: a customer entered before
+    // they existed has none, and `buysBrands` reads [] rather than undefined.
+    contactName?: string; // who to ask for at the customer
+    phone?: string;
+    abn?: string; // 11 digits, no spaces
+    // Where invoices are addressed. Several customers may share one. Not `email`:
+    // send-email reads `horecas.email` to decide who gets an order confirmation.
+    billingEmail?: string;
+    buysBrands?: string[]; // supplier brands this customer buys, e.g. 'McCURRIE'
 }
 
 export interface OrderItem extends Product {

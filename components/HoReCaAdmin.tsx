@@ -3,12 +3,13 @@ import { Search, X } from 'lucide-react';
 import type { HoReCa, User } from '../types';
 import HoReCaForm from './HoReCaForm';
 import ConfirmationDialog from './ConfirmationDialog';
+import { isFailedSave, type HoReCaSaveOutcome } from '../lib/horecaSave';
 
 interface HoReCaAdminProps {
     hoReCas: HoReCa[];
     currentUser?: User;
-    onAddHoReCa: (customer: Omit<HoReCa, 'id'>, reason?: string) => void;
-    onUpdateHoReCa: (customer: HoReCa, reason?: string) => void;
+    onAddHoReCa: (customer: Omit<HoReCa, 'id'>, reason?: string) => HoReCaSaveOutcome;
+    onUpdateHoReCa: (customer: HoReCa, reason?: string) => HoReCaSaveOutcome;
     onDeleteHoReCa: (hoReCaId: number) => void;
 }
 
@@ -41,12 +42,12 @@ const HoReCaAdmin: React.FC<HoReCaAdminProps> = ({ hoReCas, currentUser, onAddHo
         setIsFormOpen(true);
     };
 
-    const handleSaveCustomer = (customerData: HoReCa | Omit<HoReCa, 'id'>, reason?: string) => {
-        if ('id' in customerData) {
-            onUpdateHoReCa(customerData, reason);
-        } else {
-            onAddHoReCa(customerData, reason);
-        }
+    const handleSaveCustomer = async (customerData: HoReCa | Omit<HoReCa, 'id'>, reason?: string) => {
+        // Close only once the save is known to have worked; a failure goes back to the form.
+        const outcome = 'id' in customerData
+            ? await onUpdateHoReCa(customerData, reason)
+            : await onAddHoReCa(customerData, reason);
+        if (isFailedSave(outcome)) return outcome;
         setIsFormOpen(false);
     };
 
