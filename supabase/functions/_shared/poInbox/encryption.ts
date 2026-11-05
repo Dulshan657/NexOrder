@@ -1,19 +1,23 @@
 // AES-256-GCM encryption helpers for OAuth refresh tokens.
 //
-// Tokens are stored in the DB as a base64 envelope:
+// Tokens are stored in the DB as a versioned base64 envelope:
 //
-//     {iv-base64}:{ciphertext-and-tag-base64}
+//     v1:{iv-base64}:{ciphertext-and-tag-base64}
 //
 // The CHECK constraint in migration 00018 rejects obvious plaintext token
-// prefixes ('1//', 'ya29.', 'ey', 'M.C', 'OAQABAA'). Our envelope never
-// matches any of those because the IV portion is 12 random bytes of base64.
+// prefixes ('1//', 'ya29.', 'ey', 'M.C', 'OAQABAA'). The fixed 'v1:' start is what keeps an
+// envelope clear of those. Until NX-0025 it began with the random IV, so about 1 in 4,096
+// began 'ey' and the save failed. decryptToken still reads that older {iv}:{ciphertext}
+// form, which cannot be confused with this one: 12 bytes of base64 is 16 characters, not 'v1'.
+//
+// ORDER MATTERS when deploying a change to the format: readers before writers. Code from
+// before NX-0025 cannot read a 'v1:' token, so rolling back past it strands any written since.
 //
 // The key is a 32-byte secret stored in the PO_ENCRYPTION_KEY secret as
 // base64. Generate it once with `openssl rand -base64 32` and store via
 // `npx supabase secrets set PO_ENCRYPTION_KEY=...`. ROTATING the key is a
 // two-step operation: decrypt all rows with the old key, write the new
-// key, encrypt all rows with the new key — out of scope for the MVP, but
-// the envelope reserves space for a key version prefix in Phase 2.
+// key, encrypt all rows with the new key — out of scope for the MVP.
 //
 // Scope note: cachedKey is module-level by design. Deno Edge Function
 // isolates are single-tenant under Supabase's current runtime, so the
@@ -31,6 +35,7 @@ const ENV_KEY = 'PO_ENCRYPTION_KEY'
 const AES_KEY_BYTES = 32
 const IV_BYTES = 12
 const ENVELOPE_SEPARATOR = ':'
+const ENVELOPE_VERSION = 'v1:'
 
 // Typed over ArrayBuffer (not ArrayBufferLike) because WebCrypto takes a
 // BufferSource, which since TS 5.7 excludes SharedArrayBuffer-backed views.
@@ -95,7 +100,7 @@ export async function encryptToken(plaintext: string): Promise<string> {
   const ciphertext = new Uint8Array(
     await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintextBytes),
   )
-  return `${base64Encode(iv)}${ENVELOPE_SEPARATOR}${base64Encode(ciphertext)}`
+  return `${ENVELOPE_VERSION}${base64Encode(iv)}${ENVELOPE_SEPARATOR}${base64Encode(ciphertext)}`
 }
 
 /**
@@ -103,8 +108,12 @@ export async function encryptToken(plaintext: string): Promise<string> {
  * envelope, wrong key, or tampered ciphertext (AES-GCM's auth tag
  * verification fails closed).
  */
-export async function decryptToken(envelope: string): Promise<string> {
-  if (typeof envelope !== 'string' || !envelope.includes(ENVELOPE_SEPARATOR)) {
+export async function decryptToken(stored: string): Promise<string> {
+  if (typeof stored !== 'string') {
+    throw new Error('decryptToken: malformed envelope')
+  }
+  const envelope = stored.startsWith(ENVELOPE_VERSION) ? stored.slice(ENVELOPE_VERSION.length) : stored
+  if (!envelope.includes(ENVELOPE_SEPARATOR)) {
     throw new Error('decryptToken: malformed envelope')
   }
   // split with limit=2 keeps the ciphertext intact even on the (impossible
