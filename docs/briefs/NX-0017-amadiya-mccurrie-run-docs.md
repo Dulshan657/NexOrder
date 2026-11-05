@@ -30,12 +30,11 @@ No code, no release tag and no deploy. The tag and deploy remain owner steps. Th
 
 | Acceptance | Status | Evidence | Note |
 |---|---|---|---|
-| A1 | not-claimed | | Needs the files present on origin/main after merge. They are on this branch only (commit b75fbf1), unmerged and unpushed |
-| A2 | not-claimed | | The check is to read the merged text. The edit to `CLAUDE.md:173-176` is on this branch only (commit b75fbf1); the module list is unchanged. The matching note in `docs/claude/environments.md` was aligned in commit 5cb03a7 |
+| A1 | not-claimed | | The check is to read the merged text of `CLAUDE.md` and `docs/claude/environments.md`. Both edits are on this branch only, unmerged and unpushed |
+| A2 | not-claimed | | The check is to read the merged text. The `CLAUDE.md:173-176` edit is on this branch only; the module list is unchanged and `voice_assistant` stays `dev`-only |
 
 ### Not claimed
 
 - No release tag and no Amadiya deploy has happened. Both remain owner steps.
 - The old "no new features yet" wording is still in `config/environments.mjs` (moves to NX-0018) and in a comment in `__tests__/voice/moduleFlag.test.ts`. The test file is code, so it stays out of this docs-only brief.
-- This brief's Approach section names the spec, the plan and `CLAUDE.md`, but not `docs/claude/environments.md`. That file was edited as well (commit 5cb03a7) so it does not contradict `CLAUDE.md`. The approved text above `## FINAL` was not revised to say so.
-- The spec and plan were copied as written, apart from the plan's brief number, its Task 1 file list and Step 2 wording. They were not re-reviewed here.
+- This brief was revised above `## FINAL` after approval, in a brief-only commit, to cover notes only (owner decision).
