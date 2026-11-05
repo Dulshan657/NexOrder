@@ -12,7 +12,10 @@ import { LoadingSkeleton } from '../../Skeleton'
 import { lazyWithRetry } from '../../../lib/lazyWithRetry'
 import { settingsSubtabFromSearch, type SettingsSubTab } from '../../../lib/subtabUrl'
 import { MODULE_PO_INBOX } from '../../../lib/modules'
-import { SubtabButton } from './primitives'
+import { ADMIN_TAB_LABELS } from '../../../lib/adminTabUrl'
+import { PageFrame } from '../../ui/PageFrame'
+import { PageHeader } from '../../ui/PageHeader'
+import { PageTabs } from '../../ui/PageTabs'
 import type { HoReCa, Product } from '../../../types'
 
 const GeneralTab = lazyWithRetry(() => import('./GeneralTab'))
@@ -96,33 +99,20 @@ const SettingsView: React.FC<SettingsViewProps> = ({ hoReCas, products, onUpdate
   }, [])
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <header>
-        <h1 className="text-2xl font-display font-semibold tracking-tight text-stone-900">
-          Settings
-        </h1>
-        <p className="mt-1 text-sm text-stone-500">
-          Company profile, ordering rules, inventory, warehouses and automation.
-        </p>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS.Settings}
+        description="Company profile, ordering rules, inventory, warehouses and automation."
+      />
 
-        <nav
-          className="mt-6 flex items-center gap-6 border-b border-stone-200/70 overflow-x-auto"
-          aria-label="Settings sub-navigation"
-        >
-          {TABS.map(t => (
-            <SubtabButton key={t.id} active={subtab === t.id} onClick={() => switchSubtab(t.id)}>
-              {t.label}
-            </SubtabButton>
-          ))}
-        </nav>
-      </header>
+      <PageTabs ariaLabel="Settings sub-navigation" tabs={TABS} activeId={subtab} onChange={switchSubtab} />
 
       {/* A <section>, not a <main>. AppShell already renders the document's one
           <main> and this view is inside it -- nesting a second is invalid HTML,
           and a screen reader listing landmarks then offers two "main" regions
           with no way to tell which is the real one. The label is what makes it
           worth being a landmark at all. */}
-      <section aria-label="Settings" className="mt-6">
+      <section aria-label="Settings">
         <Suspense fallback={<LoadingSkeleton />}>
           {visited.has('general') && (
             <div hidden={subtab !== 'general'}>
@@ -161,7 +151,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ hoReCas, products, onUpdate
           )}
         </Suspense>
       </section>
-    </div>
+    </PageFrame>
   )
 }
 

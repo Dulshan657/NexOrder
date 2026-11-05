@@ -5,7 +5,7 @@
 // -> AdminView -> here) and a page refresh both land on the right warehouse.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardList, Footprints, PackageOpen } from 'lucide-react';
+import { PackageOpen } from 'lucide-react';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import { usePendingPutawayCounts } from '../../hooks/queries/usePendingPutawayCounts';
 import { useAssignedPutaways } from '../../hooks/queries/usePutawayWalk';
@@ -14,6 +14,10 @@ import { resolvePutawayWarehouse } from './putawayWarehouse';
 import { UserRole, type User } from '../../types';
 import PutawayQueueView from './PutawayQueueView';
 import PutawayWalkView from './PutawayWalkView';
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl';
+import { PageFrame } from '../ui/PageFrame';
+import { PageHeader } from '../ui/PageHeader';
+import { PageTabs } from '../ui/PageTabs';
 
 type Stage = 'assign' | 'walk';
 
@@ -117,62 +121,45 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
   };
 
   return (
-    <div className="bg-white min-h-svh">
-      <div className="px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8">
-        {/* Clamped for the reason spelled out in StocktakePage: a native
-            <select> sizes to its widest OPTION, so this ran 53px off a 360px
-            screen and worsened with every site added. `min-w-0` is what lets
-            `max-w-full` bite. */}
-        <label className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm text-stone-600">
-          <span className="shrink-0 font-medium">Warehouse</span>
-          <select
-            value={effectiveWarehouseId ?? ''}
-            onChange={(e) => pickWarehouse(e.target.value ? Number(e.target.value) : null)}
-            className="min-w-0 max-w-full truncate text-sm rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
-          >
-            <option value="">Select a warehouse…</option>
-            {activeWarehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {optionLabel(w)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS.Putaway}
+        description="Move received stock from the dock into its bins."
+        actions={
+          // Clamped for the reason spelled out in StocktakePage: a native
+          // <select> sizes to its widest OPTION, so this ran 53px off a 360px
+          // screen and worsened with every site added. `min-w-0` is what lets
+          // `max-w-full` bite.
+          <label className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm text-stone-600">
+            <span className="shrink-0 font-medium">Warehouse</span>
+            <select
+              value={effectiveWarehouseId ?? ''}
+              onChange={(e) => pickWarehouse(e.target.value ? Number(e.target.value) : null)}
+              className="min-w-0 max-w-full truncate text-sm rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+            >
+              <option value="">Select a warehouse…</option>
+              {activeWarehouses.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {optionLabel(w)}
+                </option>
+              ))}
+            </select>
+          </label>
+        }
+      />
 
       {effectiveWarehouseId != null ? (
         <>
-          <div className="px-4 sm:px-6 lg:px-8 pt-4">
-            <div
-              role="tablist"
-              aria-label="Putaway stage"
-              className="inline-flex p-0.5 rounded-lg bg-stone-100 border border-stone-200"
-            >
-              {(['assign', 'walk'] as const).map((t) => (
-                <button
-                  key={t}
-                  role="tab"
-                  aria-selected={stage === t}
-                  onClick={() => setStage(t)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-md text-sm btn-press ${
-                    stage === t ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
-                  }`}
-                >
-                  {t === 'assign' ? (
-                    <><ClipboardList className="w-4 h-4" aria-hidden="true" /> Assign</>
-                  ) : (
-                    <>
-                      <Footprints className="w-4 h-4" aria-hidden="true" /> Walk
-                      {assignedCount > 0 && (
-                        <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-nexgen-blue text-white text-[10px] tabular-nums">
-                          {assignedCount}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </button>
-              ))}
-            </div>
+          <div>
+            <PageTabs
+              ariaLabel="Putaway stage"
+              tabs={[
+                { id: 'assign', label: 'Assign' },
+                { id: 'walk', label: 'Walk', badge: assignedCount },
+              ]}
+              activeId={stage}
+              onChange={setStage}
+            />
             <p className="mt-2 text-xs text-stone-500">
               {stage === 'assign'
                 ? 'Decide which bin each line goes to. Nothing moves until someone carries it.'
@@ -183,13 +170,11 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
           {stage === 'assign' ? (
             <PutawayQueueView warehouseId={effectiveWarehouseId} />
           ) : (
-            <div className="p-4 sm:p-6 lg:p-8">
-              <PutawayWalkView warehouseId={effectiveWarehouseId} canPlace={canPlaceHere} />
-            </div>
+            <PutawayWalkView warehouseId={effectiveWarehouseId} canPlace={canPlaceHere} />
           )}
         </>
       ) : (
-        <div className="px-4 sm:px-6 lg:px-8 py-16">
+        <div className="py-16">
           <div className="glass-card rounded-xl p-10 text-center">
             <PackageOpen className="w-9 h-9 text-stone-300 mx-auto mb-3" />
             <p className="text-sm text-stone-600">Pick a warehouse to see its putaway queue</p>
@@ -197,7 +182,7 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
           </div>
         </div>
       )}
-    </div>
+    </PageFrame>
   );
 };
 
