@@ -43,3 +43,16 @@ in advance is the route the gate's rules provide.
 - The six stale `rack-levels` specs.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `known flakes list > names the Order home and PO Inbox encryption flakes with a reason and a date` fails on base by assertion, passes on tip | |
+| A2 | claimed | `known flakes list > still holds the four earlier entries` fails on base by assertion, passes on tip; the diff to `config/knownFlakes.json` removes no lines | The test fails on base only through its length check, because the four earlier entries are already there |
+| A3 | not-claimed | | An entry takes effect only once on the base, so this can only be seen in the re-gate of PR #33, after this merges |
+
+### Not claimed
+
+- Neither flaky test is fixed. Listing only stops them blocking other PRs.
+- The PO Inbox encryption bug stays live: about 1 in 4,096 token saves would fail wherever PO Inbox is on.
+- A listing covers the whole test file, so a new intermittent failure in either file could be excused until the entry is deleted. A test failing alone is still not excused.
+- The 1.65 GB memory figure was read after the gate run, not during it, so load as the cause of the Order home timeout is likely rather than proven.
