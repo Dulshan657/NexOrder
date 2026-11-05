@@ -10,6 +10,7 @@ import {
   type ImportResponse,
   type InvoiceWrite,
 } from '../../supabase/functions/_shared/qbImport/runImport'
+import { excelRowsToCsv } from '../../lib/readImportFile'
 
 const HEADER = 'Invoice Number,Invoice Date,Customer,Product,Quantity,Unit Price'
 const csv = (...rows: string[]): string => [HEADER, ...rows].join('\n')
@@ -32,7 +33,7 @@ function storedFor(partial: Partial<StoredImport> = {}): StoredImport {
     invoiceNumber: 'INV-1',
     orderId: 'QB-INV-1',
     horecaId: 7,
-    lines: [{ productId: 11, quantity: 3, unitPrice: 2.5 }],
+    lines: [{ productId: 11, quantity: 3, packSize: 12, unitPrice: 2.5 }],
     pickingStarted: false,
     orderStatus: 'processed',
     ...partial,
@@ -52,6 +53,7 @@ function makeDeps(facts: Partial<ImportFacts> = {}, overrides: Partial<ImportDep
     })),
     flagChange: vi.fn(async () => undefined),
     clearFlag: vi.fn(async () => undefined),
+    loadStoredImport: vi.fn(async () => ({ stored: storedFor(), flag: null })),
     advanceToProcessed: vi.fn(async () => ({ ok: true as const })),
     logError: vi.fn(),
     ...overrides,
@@ -353,7 +355,7 @@ describe('runImport', () => {
 
     const noRule = await preview(makeDeps(), text)
     expect(noRule.counts).toMatchObject({ added: 1, rejected: 0, skipped: 1 })
-    expect(noRule.skippedLines).toEqual([{ invoiceNumber: 'INV-1', name: 'Acme Sprocket' }])
+    expect(noRule.skippedLines).toEqual([{ invoiceNumber: 'INV-1', name: 'Acme Sprocket', rowNumber: 3 }])
 
     const byPrefix = await preview(makeDeps({ ownProductPrefixes: ['  ACME '] }), text)
     expect(byPrefix.counts).toMatchObject({ added: 0, rejected: 1 })
@@ -518,6 +520,119 @@ describe('runImport', () => {
     expect(rows).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
   })
 
+  describe('a shifted row', () => {
+    it('rejects the invoice, never skipping the product', async () => {
+      for (const text of [csv(WIDGET_A, 'INV-1,05/03/2026,Harbour Bistro,Widget, Ctn,3,'), csv(WIDGET_A, 'INV-1,05/03/2026,Harbour Bistro,Freight, Ctn,3,')]) {
+        const seen = await preview(makeDeps(), text)
+        expect(seen.verdicts[0], text).toMatchObject({ kind: 'rejected', rowNumbers: [2, 3] })
+        expect(seen.skippedLines, text).toEqual([])
+      }
+    })
+
+    it('rejects under a header with an unnamed last column', async () => {
+      const seen = await preview(makeDeps(), `${HEADER},\n${WIDGET_A},\nINV-1,05/03/2026,Harbour Bistro,Widget,1,234,12.50`)
+      expect(seen.verdicts[0].kind).toBe('rejected')
+    })
+  })
+
+  it('gives the customer of each invoice, so a person can check it', async () => {
+    const seen = await preview(makeDeps(), csv('INV-1,05/03/2026,,Other Brand Cola,1,1', WIDGET_A))
+    expect(seen.invoiceCustomers).toEqual({ 'INV-1': 'Harbour Bistro' })
+  })
+
+  it('gives CSV 01001 and Excel 1001 one identity, so the second adds nothing', async () => {
+    const stored = storedFor({ invoiceNumber: '1001', orderId: 'QB-1001' })
+    const fromCsv = await preview(makeDeps({ storedImports: [stored] }), csv('01001,05/03/2026,Harbour Bistro,Widget,3,2.50'))
+    expect(fromCsv.verdicts[0]).toMatchObject({ kind: 'unchanged', invoiceNumber: '1001' })
+
+    const excelText = excelRowsToCsv([HEADER.split(','), [1001, '2026-03-05', 'Harbour Bistro', 'Widget', 3, 2.5]])
+    const deps = makeDeps({ storedImports: [stored] })
+    await commit(deps, excelText)
+    expect(deps.importInvoice).not.toHaveBeenCalled()
+  })
+
+  it('matches product 00123 to a map row 123', async () => {
+    const seen = await preview(
+      makeDeps({ productMap: [{ qbName: '123', productId: 11, packSize: 12 }] }),
+      csv('INV-1,05/03/2026,Harbour Bistro,00123,3,2.50'),
+    )
+    expect(seen.verdicts[0].kind).toBe('add')
+  })
+
+  it('treats a bad value on a product whose name differs only by leading zeros as ours', async () => {
+    const seen = await preview(
+      makeDeps({ productMap: [{ qbName: '123', productId: 11, packSize: 12 }] }),
+      csv('INV-1,05/03/2026,Harbour Bistro,00123,x,2.50'),
+    )
+    expect(seen.verdicts[0].kind).toBe('rejected')
+  })
+
+  it('reads the same quantity and price at a new carton size as changed, never unchanged', async () => {
+    const seen = await preview(
+      makeDeps({ storedImports: [storedFor({ lines: [{ productId: 11, quantity: 3, packSize: 6, unitPrice: 2.5 }] })] }),
+      csv(WIDGET_A),
+    )
+    expect(seen.counts).toMatchObject({ changed: 1, unchanged: 0 })
+  })
+
+  describe('another upload getting there first', () => {
+    const raced = (loadStoredImport: ImportDeps['loadStoredImport']) =>
+      makeDeps({}, { importInvoice: vi.fn(async () => ({ status: 'already_imported' as const, orderId: 'QB-INV-1' })), loadStoredImport })
+
+    it('is unchanged when the order holds the same lines and customer', async () => {
+      const deps = raced(vi.fn(async () => ({ stored: storedFor(), flag: null })))
+      const done = await commit(deps, csv(WIDGET_A))
+      expect(deps.loadStoredImport).toHaveBeenCalledWith('INV-1')
+      expect(resultOf(done, 'INV-1')).toMatchObject({ outcome: 'unchanged', orderId: 'QB-INV-1' })
+      expect(deps.flagChange).not.toHaveBeenCalled()
+    })
+
+    it('flags different lines, saying what happened, and does not edit the order', async () => {
+      const deps = raced(vi.fn(async () => ({ stored: storedFor(), flag: null })))
+      const done = await commit(deps, csv(WIDGET_A_CHANGED))
+      expect(deps.flagChange).toHaveBeenCalledWith('INV-1', [ALTERED_TO_9])
+      expect(deps.updateInvoice).not.toHaveBeenCalled()
+      expect(deps.advanceToProcessed).not.toHaveBeenCalled()
+      const result = resultOf(done, 'INV-1')
+      expect(result).toMatchObject({ outcome: 'flagged', orderId: 'QB-INV-1' })
+      expect(result?.message).toMatch(/another upload/i)
+    })
+
+    it('flags a different customer', async () => {
+      const deps = raced(vi.fn(async () => ({ stored: storedFor({ horecaId: 99 }), flag: null })))
+      await commit(deps, csv(WIDGET_A))
+      expect(deps.flagChange).toHaveBeenCalledWith('INV-1', [{ kind: 'customer', fromHorecaId: 99, toHorecaId: 7 }])
+    })
+
+    it('leaves a flag alone when it already holds the same differences', async () => {
+      const deps = raced(
+        vi.fn(async () => ({
+          stored: storedFor(),
+          flag: { invoiceNumber: 'INV-1', flaggedChange: [ALTERED_TO_9], flagResolvedAt: '2026-03-01T00:00:00Z' },
+        })),
+      )
+      await commit(deps, csv(WIDGET_A_CHANGED))
+      expect(deps.flagChange).not.toHaveBeenCalled()
+    })
+
+    it('reports it plainly when the order cannot be re-read, and carries on', async () => {
+      for (const loadStoredImport of [
+        vi.fn(async () => null),
+        vi.fn(async () => {
+          throw new Error('read failed')
+        }),
+      ]) {
+        const deps = raced(loadStoredImport)
+        const done = await commit(deps, csv(WIDGET_A, WIDGET_B))
+        const result = resultOf(done, 'INV-1')
+        expect(result).toMatchObject({ outcome: 'failed', orderId: 'QB-INV-1' })
+        expect(result?.message).toMatch(/upload/i)
+        expect(result?.message).not.toContain('read failed')
+        expect(resultOf(done, 'INV-2')).toBeTruthy()
+      }
+    })
+  })
+
   describe('a blank customer on a good row', () => {
     it('does not stop a freight line being skipped and named', async () => {
       const seen = await preview(makeDeps(), csv(WIDGET_A, 'INV-1,05/03/2026,,Freight,1,10.00'))
@@ -593,7 +708,7 @@ describe('runImport', () => {
         },
       ])
       expect(seen.counts).toMatchObject({ added: 1, skipped: 1, rejected: 0 })
-      expect(seen.skippedLines).toEqual([{ invoiceNumber: 'INV-1', name: 'Freight' }])
+      expect(seen.skippedLines).toEqual([{ invoiceNumber: 'INV-1', name: 'Freight', rowNumber: 3 }])
 
       await commit(deps, text)
       expect(deps.importInvoice).toHaveBeenCalledTimes(1)
@@ -694,7 +809,7 @@ describe('runImport', () => {
       const twoLines = {
         customers: FACTS.customers,
         productMap: [...FACTS.productMap, { qbName: 'Gadget', productId: 12, packSize: null }],
-        storedImports: [storedFor({ lines: [{ productId: 11, quantity: 3, unitPrice: 2.5 }, { productId: 12, quantity: 1, unitPrice: 4 }] })],
+        storedImports: [storedFor({ lines: [{ productId: 11, quantity: 3, packSize: 12, unitPrice: 2.5 }, { productId: 12, quantity: 1, packSize: null, unitPrice: 4 }] })],
       }
       const text = csv(WIDGET_A_CHANGED, 'INV-1,05/03/2026,Harbour Bistro,Gadget,2,4')
       const seen = await preview(makeDeps(twoLines), text)

@@ -36,7 +36,9 @@ function csvCell(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
 }
 
-/** A date reads the same in any time zone: the package builds it in UTC. */
+/** A date reads the same in any time zone: the package builds it in UTC. A cell holding
+ *  a formula error such as #N/A reaches here as empty, because the package drops the
+ *  error and offers no way to see it, so it reads the same as a blank cell. */
 function excelCellToText(cell: unknown): string {
   if (cell === null || cell === undefined) return ''
   if (cell instanceof Date) return Number.isNaN(cell.getTime()) ? '' : cell.toISOString().slice(0, 10)
@@ -71,7 +73,8 @@ async function readExcel(file: File): Promise<ReadImportResult> {
 }
 
 async function readCsv(file: File): Promise<ReadImportResult> {
-  const text = await file.text()
+  const text = await file.text().catch(() => null)
+  if (text === null) return { ok: false, reason: 'We could not read this file. Check it is still there and try again.' }
   // A file in an older encoding decodes with this mark where each accented letter was,
   // and a mangled customer or product name would then fail to match.
   if (text.includes('\uFFFD')) {

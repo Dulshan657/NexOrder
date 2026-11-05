@@ -155,6 +155,53 @@ describe('parseInvoices', () => {
     expect(new Set(errors.map((error) => error.rowNumber))).toEqual(new Set([2, 3, 4, 5, 6]))
   })
 
+  describe('column shift', () => {
+    const structural = (text: string, rowNumber = 2) => {
+      const { lines, errors, doubtfulRows } = parseInvoices(text)
+      expect(lines, text).toEqual([])
+      expect(doubtfulRows, text).toEqual([])
+      expect(errors.map((error) => error.rowNumber), text).toContain(rowNumber)
+    }
+
+    it('catches a shift hidden by a blank cell, under a header with an unnamed last column', () => {
+      structural(`${HEADER},\nA1,05/03/2026,Cafe,Prod A,1,234,12.50`)
+      expect(parseInvoices(`${HEADER},\nA1,05/03/2026,Cafe,Prod A,1,234,12.50`).errors[0].invoiceNumber).toBe('A1')
+    })
+
+    it('catches a row with more raw cells than the header, even when the last are blank', () => {
+      structural(csv('A3,05/03/2026,Cafe,Widget, Ctn,3,'))
+      structural(csv('A3,05/03/2026,Cafe,Freight,,,'))
+    })
+
+    it('catches a filled cell under an unnamed column in the middle', () => {
+      const header = 'Invoice Number,Invoice Date,,Customer,Product,Quantity,Unit Price'
+      structural(`${header}\nA1,05/03/2026,oops,Cafe,Widget,1,2`)
+      expect(parseInvoices(`${header}\nA1,05/03/2026,,Cafe,Widget,1,2`).errors).toEqual([])
+    })
+
+    it('catches a row too short to reach a named column', () => {
+      structural(csv('A1,05/03/2026,Cafe,Widget,3'))
+      structural(csv('A1,05/03/2026,Cafe,Freight'))
+    })
+
+    it('allows a row to stop short of columns nobody asked for', () => {
+      const header = `${HEADER},Memo,`
+      const { lines, errors } = parseInvoices(`${header}\nA1,05/03/2026,Cafe,Widget,3,2.00`)
+      expect(errors).toEqual([])
+      expect(lines).toHaveLength(1)
+    })
+  })
+
+  it('gives an all-digit invoice number one identity, however many leading zeros it has', () => {
+    const { lines, rowInvoice } = parseInvoices(csv('01001,05/03/2026,Cafe,Widget,3,2', '1001,05/03/2026,Cafe,Gadget,3,2', '000,05/03/2026,Cafe,Gadget,3,2', 'INV-01,05/03/2026,Cafe,Gadget,3,2', '01A,05/03/2026,Cafe,Gadget,3,2'))
+    expect(lines.map((line) => line.invoiceNumber)).toEqual(['1001', '1001', '0', 'INV-01', '01A'])
+    expect(rowInvoice.get(2)).toBe('1001')
+
+    const bad = parseInvoices(csv('01001,05/03/2026,Cafe,Widget,x,2'))
+    expect(bad.errors[0].invoiceNumber).toBe('1001')
+    expect(bad.rowInvoice.get(2)).toBe('1001')
+  })
+
   it('keeps a fractional quantity as a line for the classifier', () => {
     expect(parseInvoices(csv('INV-1,05/03/2026,Cafe,Widget,1.5,2')).lines[0].quantity).toBe(1.5)
   })
@@ -181,7 +228,9 @@ describe('parseInvoices', () => {
   })
 
   it('skips blank rows while keeping the real row numbers, and allows trailing empty cells', () => {
-    const { lines, errors } = parseInvoices(csv(',,,,,', 'INV-1,05/03/2026,Cafe,Widget,3,2.00,,,', '', 'INV-1,05/03/2026,Cafe,Gadget,1,2.00'))
+    const { lines, errors } = parseInvoices(
+      [`${HEADER},,,`, ',,,,,', 'INV-1,05/03/2026,Cafe,Widget,3,2.00,,,', '', 'INV-1,05/03/2026,Cafe,Gadget,1,2.00'].join('\n'),
+    )
     expect(errors).toEqual([])
     expect(lines.map((line) => line.rowNumber)).toEqual([3, 5])
   })

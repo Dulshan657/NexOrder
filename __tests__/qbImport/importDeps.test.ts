@@ -136,7 +136,7 @@ describe('buildImportDeps', () => {
         invoiceNumber: 'INV-1',
         orderId: 'QB-INV-1',
         horecaId: 7,
-        lines: [{ productId: 11, quantity: 3, unitPrice: 2.5 }],
+        lines: [{ productId: 11, quantity: 3, packSize: 12, unitPrice: 2.5 }],
         pickingStarted: false,
         orderStatus: 'processed',
       },
@@ -230,6 +230,33 @@ describe('buildImportDeps', () => {
     expect(update?.table).toBe('qb_invoice_imports')
     expect(update?.payload).toEqual({ flagged_change: null, flag_resolved_at: null })
     expect(update?.filters).toEqual([['eq', 'invoice_number', 'INV-1']])
+  })
+
+  it('reads a stored line with no pack size as counted in units', async () => {
+    const fake = fakeAdmin({
+      horecas: [],
+      qb_product_map: [],
+      app_settings: [SETTINGS],
+      qb_invoice_imports: [{ invoice_number: 'INV-1', order_id: 'QB-INV-1', lines: [{ product_id: 11, quantity: 3, unit_price: 2.5 }] }],
+      orders: [{ id: 'QB-INV-1', status: 'processed', horeca_id: 7 }],
+      pick_progress: [],
+    })
+    const facts = await buildImportDeps(fake.client, ACTOR).loadFacts(['INV-1'])
+    expect(facts.storedImports[0].lines).toEqual([{ productId: 11, quantity: 3, packSize: null, unitPrice: 2.5 }])
+  })
+
+  it('re-reads one stored import and its flag, or says there is none', async () => {
+    const fake = fakeAdmin({
+      qb_invoice_imports: [{ invoice_number: 'INV-1', order_id: 'QB-INV-1', lines: [], flagged_change: [{ kind: 'customer' }], flag_resolved_at: null }],
+      orders: [{ id: 'QB-INV-1', status: 'processed', horeca_id: 7 }],
+      pick_progress: [],
+    })
+    const deps = buildImportDeps(fake.client, ACTOR)
+    expect(await deps.loadStoredImport('INV-1')).toEqual({
+      stored: { invoiceNumber: 'INV-1', orderId: 'QB-INV-1', horecaId: 7, lines: [], pickingStarted: false, orderStatus: 'processed' },
+      flag: { invoiceNumber: 'INV-1', flaggedChange: [{ kind: 'customer' }], flagResolvedAt: null },
+    })
+    expect(await deps.loadStoredImport('NOPE')).toBeNull()
   })
 
   it('throws when a flag finds no import row to land on', async () => {

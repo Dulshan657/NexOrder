@@ -46,6 +46,8 @@ async function fetchInChunks(what: string, values: readonly string[], pageOf: (c
 const toStoredLine = (line: any): StoredLine => ({
   productId: Number(line.product_id),
   quantity: Number(line.quantity),
+  // A missing key and a JSON null both mean "counted in units" (mig 00139).
+  packSize: line.pack_size == null ? null : Number(line.pack_size),
   unitPrice: Number(line.unit_price),
 })
 
@@ -83,6 +85,11 @@ async function loadStoredImports(admin: SupabaseClient, invoiceNumbers: readonly
       flagResolvedAt: row.flag_resolved_at,
     }))
   return { storedImports, storedFlags }
+}
+
+async function loadStoredImport(admin: SupabaseClient, invoiceNumber: string) {
+  const { storedImports, storedFlags } = await loadStoredImports(admin, [invoiceNumber])
+  return storedImports[0] ? { stored: storedImports[0], flag: storedFlags[0] ?? null } : null
 }
 
 async function loadOwnProductRule(admin: SupabaseClient): Promise<Pick<ImportFacts, 'ownProductPrefixes' | 'ownProductTerms'>> {
@@ -181,6 +188,7 @@ export function buildImportDeps(admin: SupabaseClient, actorId: string): ImportD
     // New differences are an open flag, even if the office resolved an earlier one.
     flagChange: (invoiceNumber, differences) => writeFlag(admin, invoiceNumber, differences),
     clearFlag: (invoiceNumber) => writeFlag(admin, invoiceNumber, null),
+    loadStoredImport: (invoiceNumber) => loadStoredImport(admin, invoiceNumber),
     advanceToProcessed: (orderId) => advanceToProcessed(admin, orderId, actorId),
     logError: (invoiceNumber, error) =>
       console.error(`[import-qb-invoices] ${invoiceNumber}: ${error instanceof Error ? error.message : String(error)}`),

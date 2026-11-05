@@ -104,8 +104,8 @@ function stored(over: Partial<StoredImport> = {}): StoredImport {
     orderId: 'QB-INV-1001',
     horecaId: 1,
     lines: [
-      { productId: 101, quantity: 5, unitPrice: 4.5 },
-      { productId: 102, quantity: 2, unitPrice: 3 },
+      { productId: 101, quantity: 5, packSize: 12, unitPrice: 4.5 },
+      { productId: 102, quantity: 2, packSize: null, unitPrice: 3 },
     ],
     pickingStarted: false,
     orderStatus: 'processing',
@@ -285,9 +285,9 @@ describe('classifyInvoices', () => {
       storedImports: [
         stored({
           lines: [
-            { productId: 101, quantity: 5, unitPrice: 4.5 },
-            { productId: 102, quantity: 2, unitPrice: 3 },
-            { productId: 103, quantity: 1, unitPrice: 7 },
+            { productId: 101, quantity: 5, packSize: 12, unitPrice: 4.5 },
+            { productId: 102, quantity: 2, packSize: null, unitPrice: 3 },
+            { productId: 103, quantity: 1, packSize: 6, unitPrice: 7 },
           ],
         }),
       ],
@@ -469,7 +469,7 @@ describe('classifyInvoices', () => {
       const verdict = await classifyOne([ln(2, SAUCE, 5, 0.1 + 0.2), ln(3, SAUCE, 3, 0.3)], makeCtx())
       expect(expectKind(verdict, 'add').lines).toHaveLength(1)
       const storedCtx = makeCtx({
-        storedImports: [stored({ lines: [{ productId: 101, quantity: 8, unitPrice: 0.3 }] })],
+        storedImports: [stored({ lines: [{ productId: 101, quantity: 8, packSize: 12, unitPrice: 0.3 }] })],
       })
       const same = await classifyOne([ln(2, SAUCE, 5, 0.1 + 0.2), ln(3, SAUCE, 3, 0.3)], storedCtx)
       expect(same.kind).toBe('unchanged')
@@ -561,6 +561,71 @@ describe('classifyInvoices', () => {
       expect(mentions(expectRejected(verdict), 'more than one customer')).toBe(true)
     })
 
+    it('counts a different carton size as a change, showing old and new', async () => {
+      const verdict = await classifyOne(
+        [ln(2, SAUCE, 5, 4.5), ln(3, MUSTARD, 2, 3)],
+        makeCtx({
+          storedImports: [
+            stored({
+              lines: [
+                { productId: 101, quantity: 5, packSize: 6, unitPrice: 4.5 },
+                { productId: 102, quantity: 2, packSize: null, unitPrice: 3 },
+              ],
+            }),
+          ],
+        }),
+      )
+      expect(expectKind(verdict, 'changed').differences).toEqual([
+        {
+          kind: 'altered',
+          productId: 101,
+          qbProductName: SAUCE,
+          from: { quantity: 5, unitPrice: 4.5 },
+          to: { quantity: 5, unitPrice: 4.5 },
+          packSize: { from: 6, to: 12 },
+        },
+      ])
+    })
+
+    it('counts a carton size going from units to cartons as a change', async () => {
+      const verdict = await classifyOne(
+        [ln(2, SAUCE, 5, 4.5)],
+        makeCtx({ storedImports: [stored({ lines: [{ productId: 101, quantity: 5, packSize: null, unitPrice: 4.5 }] })] }),
+      )
+      expect(expectKind(verdict, 'changed').differences[0]).toMatchObject({ packSize: { from: null, to: 12 } })
+    })
+
+    it('matches an all-digit product name ignoring leading zeros', async () => {
+      const verdict = await classifyOne(
+        [ln(2, '00123', 1, 2)],
+        makeCtx({ productMap: [{ qbName: '123', productId: 101, packSize: null }] }),
+      )
+      expect(expectKind(verdict, 'add').lines[0]).toMatchObject({ productId: 101, qbProductName: '00123' })
+    })
+
+    it('rejects when two all-digit map rows collide once leading zeros are ignored', async () => {
+      const verdict = await classifyOne(
+        [ln(2, '123', 1, 2)],
+        makeCtx({
+          productMap: [
+            { qbName: '0123', productId: 101, packSize: null },
+            { qbName: '123', productId: 102, packSize: null },
+          ],
+        }),
+      )
+      expect(mentions(expectRejected(verdict), 'more than one row')).toBe(true)
+    })
+
+    it('keeps leading zeros in a name that is not all digits, and in customer names', async () => {
+      const product = await classifyOne([ln(2, '00A', 1, 2)], makeCtx({ productMap: [{ qbName: '0A', productId: 101, packSize: null }] }))
+      expect(product.kind).toBe('no_mapped_lines')
+      const customer = await classifyOne(
+        [ln(2, SAUCE, 1, 4.5, { customerName: '007' })],
+        makeCtx({ customers: [{ id: 1, name: '7' }] }),
+      )
+      expect(customer.kind).toBe('rejected')
+    })
+
     it('rejects a product name that two map rows share, rather than choosing one', async () => {
       const verdict = await classifyOne(
         [ln(2, SAUCE, 5, 4.5)],
@@ -647,7 +712,7 @@ describe('classifyInvoices', () => {
       expect(expectKind(unchanged, 'unchanged').skippedLines).toEqual([PASTA])
       const changed = await classifyOne(
         upload,
-        makeCtx({ storedImports: [stored({ lines: [{ productId: 101, quantity: 1, unitPrice: 4.5 }] })] }),
+        makeCtx({ storedImports: [stored({ lines: [{ productId: 101, quantity: 1, packSize: 12, unitPrice: 4.5 }] })] }),
       )
       expect(expectKind(changed, 'changed').skippedLines).toEqual([PASTA])
     })
@@ -709,8 +774,8 @@ describe('classifyInvoices', () => {
 
   describe('stored prices, invoice numbers and dates', () => {
     const TWO_PRICES = [
-      { productId: 101, quantity: 2, unitPrice: 1 },
-      { productId: 101, quantity: 3, unitPrice: 2 },
+      { productId: 101, quantity: 2, packSize: 12, unitPrice: 1 },
+      { productId: 101, quantity: 3, packSize: 12, unitPrice: 2 },
     ]
 
     it('never calls a stored product held at two prices unchanged, whichever price is uploaded', async () => {
@@ -734,7 +799,7 @@ describe('classifyInvoices', () => {
 
     it('reports each stored price when the file drops a product held at two prices', async () => {
       const ctx = makeCtx({
-        storedImports: [stored({ lines: [...TWO_PRICES, { productId: 102, quantity: 2, unitPrice: 3 }] })],
+        storedImports: [stored({ lines: [...TWO_PRICES, { productId: 102, quantity: 2, packSize: null, unitPrice: 3 }] })],
       })
       const verdict = await classifyOne([ln(2, MUSTARD, 2, 3)], ctx)
       const changed = expectKind(verdict, 'changed')
@@ -752,8 +817,8 @@ describe('classifyInvoices', () => {
         storedImports: [
           stored({
             lines: [
-              { productId: 101, quantity: 2, unitPrice: 0.3 },
-              { productId: 101, quantity: 3, unitPrice: 0.1 + 0.2 },
+              { productId: 101, quantity: 2, packSize: 12, unitPrice: 0.3 },
+              { productId: 101, quantity: 3, packSize: 12, unitPrice: 0.1 + 0.2 },
             ],
           }),
         ],

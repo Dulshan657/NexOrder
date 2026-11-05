@@ -18,7 +18,9 @@
 
 import {
   classifyInvoices,
+  diffAgainstStored,
   normaliseName,
+  normaliseProductName,
   type ClassifyCustomer,
   type InvoiceDifference,
   type InvoiceVerdict,
@@ -71,6 +73,8 @@ export interface ImportDeps {
   flagChange(invoiceNumber: string, differences: InvoiceDifference[]): Promise<void>
   /** Removes the flag and its resolution: the file matches the order again. */
   clearFlag(invoiceNumber: string): Promise<void>
+  /** What is stored now, for when a transaction says another upload got there first. */
+  loadStoredImport(invoiceNumber: string): Promise<{ stored: StoredImport; flag: StoredFlag | null } | null>
   advanceToProcessed(orderId: string): Promise<AdvanceResult>
   logError?(invoiceNumber: string, error: unknown): void
 }
@@ -115,6 +119,7 @@ export type ResultCounts = Record<InvoiceOutcome, number>
 export interface SkippedLine {
   invoiceNumber: string
   name: string
+  rowNumber: number
 }
 
 export interface IgnoredSelection {
@@ -136,6 +141,8 @@ export interface ImportOk {
   unfinishedInvoices: string[]
   /** Unchanged, with an old flag this file no longer supports: commit clears it. */
   staleFlagInvoices: string[]
+  /** The customer as the file names it, by invoice, so a person can check the preview. */
+  invoiceCustomers: Record<string, string>
   results?: InvoiceResult[]
   resultCounts?: ResultCounts
   ignoredApplyChanges?: IgnoredSelection[]
@@ -205,6 +212,12 @@ const NOT_YET_IN_QUEUE =
 
 const advanceFailureMessage = (code: string): string => ADVANCE_MESSAGES[code] ?? NOT_YET_IN_QUEUE
 
+const RACE_FLAGGED =
+  'Another upload imported this invoice a moment ago with different lines. The order was not changed, and the differences are stored for the office.'
+
+const RACE_NOT_COMPARED =
+  'Another upload imported this invoice a moment ago, and its lines could not be compared. Upload the file again to check them.'
+
 const FLAG_NOT_CLEARED = 'This invoice matches its order again, but its old stored differences could not be cleared. Upload the file again to retry.'
 
 // ---------------------------------------------------------------------------
@@ -270,9 +283,9 @@ interface Settled {
 const noProductName = (rowNumber: number): string => `row ${rowNumber} (no product)`
 
 function settleDoubtfulRows(parsed: QbParseResult, productMap: readonly ProductMapRow[], isOwn: (name: string) => boolean): Settled {
-  const mapped = new Set(productMap.map((row) => normaliseName(row.qbName)))
+  const mapped = new Set(productMap.map((row) => normaliseProductName(row.qbName)))
   const isOurs = ({ qbProductName }: QbLine): boolean =>
-    qbProductName !== '' && (mapped.has(normaliseName(qbProductName)) || isOwn(qbProductName))
+    qbProductName !== '' && (mapped.has(normaliseProductName(qbProductName)) || isOwn(qbProductName))
   const notOurs = parsed.doubtfulRows.filter((row) => !isOurs(row))
   const forgiven = new Set(notOurs.map((row) => row.rowNumber))
   const otherLines = notOurs.map((row): QbLine => ({
@@ -304,12 +317,22 @@ function canonical(value: unknown): string {
 // Summaries
 // ---------------------------------------------------------------------------
 
-function skippedOf(verdicts: readonly InvoiceVerdict[]): SkippedLine[] {
-  return verdicts.flatMap((verdict) =>
-    verdict.kind === 'rejected'
-      ? []
-      : verdict.skippedLines.map((name) => ({ invoiceNumber: verdict.invoiceNumber, name })),
-  )
+/** A rejected invoice names none: nothing from it is imported, and its reasons say why. */
+function skippedOf(verdicts: readonly InvoiceVerdict[], lines: readonly QbLine[]): SkippedLine[] {
+  const byRow = new Map(lines.map((line) => [line.rowNumber, line]))
+  return verdicts.flatMap((verdict) => {
+    if (verdict.kind === 'rejected') return []
+    const skipped = new Set(verdict.skippedLines)
+    return verdict.rowNumbers.flatMap((rowNumber): SkippedLine[] => {
+      const name = byRow.get(rowNumber)?.qbProductName
+      return name !== undefined && skipped.has(name) ? [{ invoiceNumber: verdict.invoiceNumber, name, rowNumber }] : []
+    })
+  })
+}
+
+function customersOf(lines: readonly QbLine[]): Record<string, string> {
+  const named = lines.filter((line) => line.customerName !== '')
+  return Object.fromEntries([...named].reverse().map((line) => [line.invoiceNumber, line.customerName]))
 }
 
 function countVerdicts(verdicts: readonly InvoiceVerdict[], unattached: number, skipped: number): ImportCounts {
@@ -380,13 +403,35 @@ async function commitAdd(ctx: CommitContext, verdict: AddVerdict): Promise<Invoi
     const tx = await ctx.deps.importInvoice({ invoiceNumber, horecaId, invoiceDate, lines })
     return tx.status === 'created'
       ? { invoiceNumber, outcome: 'added', orderId: tx.orderId }
-      : { invoiceNumber, outcome: 'unchanged', orderId: tx.orderId, message: 'Another upload imported this invoice a moment ago.' }
+      : commitRaced(ctx, verdict, tx.orderId)
   })
   if (imported.outcome !== 'added' || !imported.orderId) return imported
   return advanceThen(ctx, invoiceNumber, imported.orderId, imported)
 }
 
-function commitFlag(ctx: CommitContext, verdict: ChangedVerdict, outcome: 'flagged' | 'refused', message: string): Promise<InvoiceResult> {
+/** Our classification found no import, and the transaction found one under its lock.
+ *  What this upload holds may differ from what the other one imported, so it is
+ *  compared now: flagged if so, rather than lost until the next upload. */
+function commitRaced(ctx: CommitContext, verdict: AddVerdict, orderId: string): Promise<InvoiceResult> {
+  const { invoiceNumber, horecaId, lines } = verdict
+  return failingAs(ctx.deps, invoiceNumber, orderId, () => RACE_NOT_COMPARED, async () => {
+    const latest = await ctx.deps.loadStoredImport(invoiceNumber)
+    if (!latest) throw new Error(`No import record for ${invoiceNumber} after the transaction reported one`)
+    const differences = diffAgainstStored(latest.stored, lines, horecaId)
+    if (differences.length === 0) {
+      return { invoiceNumber, outcome: 'unchanged', orderId, message: 'Another upload imported this invoice a moment ago.' }
+    }
+    const flags = new Map(latest.flag ? [[invoiceNumber, latest.flag]] : [])
+    return commitFlag({ ...ctx, flagsByInvoice: flags }, { invoiceNumber, orderId, differences }, 'flagged', RACE_FLAGGED)
+  })
+}
+
+function commitFlag(
+  ctx: CommitContext,
+  verdict: Pick<ChangedVerdict, 'invoiceNumber' | 'orderId' | 'differences'>,
+  outcome: 'flagged' | 'refused',
+  message: string,
+): Promise<InvoiceResult> {
   const { invoiceNumber, orderId, differences } = verdict
   const stored = ctx.flagsByInvoice.get(invoiceNumber)
   // The same differences again: a flag the office has resolved stays resolved.
@@ -509,6 +554,7 @@ function fileRefusal(action: ImportRequest['action'], errors: readonly QbParseEr
     skippedLines: [],
     unfinishedInvoices: [],
     staleFlagInvoices: [],
+    invoiceCustomers: {},
   }
 }
 
@@ -525,6 +571,7 @@ async function assess(parsed: QbParseResult, deps: ImportDeps) {
     isOwnProductName: (name) => !madeUpNames.has(name) && isOwn(name),
   })
   return {
+    lines,
     verdicts: mergeParseErrors(classified, parsed, errors),
     storedByInvoice: new Map(facts.storedImports.map((stored) => [stored.invoiceNumber, stored])),
     flagsByInvoice: new Map(facts.storedFlags.map((flag) => [flag.invoiceNumber, flag])),
@@ -540,9 +587,9 @@ export async function runImport(request: ImportRequest, deps: ImportDeps): Promi
   const refusals = parsed.errors.filter((error) => error.rowNumber === null)
   if (refusals.length > 0) return fileRefusal(request.action, refusals)
 
-  const { verdicts, storedByInvoice, flagsByInvoice } = await assess(parsed, deps)
+  const { lines, verdicts, storedByInvoice, flagsByInvoice } = await assess(parsed, deps)
   const unattachedRowErrors = parsed.errors.filter((error) => error.invoiceNumber === null)
-  const skippedLines = skippedOf(verdicts)
+  const skippedLines = skippedOf(verdicts, lines)
   const unchanged = verdicts.filter((verdict) => verdict.kind === 'unchanged').map((verdict) => verdict.invoiceNumber)
   const summary: ImportOk = {
     status: 'ok',
@@ -554,6 +601,7 @@ export async function runImport(request: ImportRequest, deps: ImportDeps): Promi
     skippedLines,
     unfinishedInvoices: unchanged.filter((invoiceNumber) => isStuck(storedByInvoice.get(invoiceNumber))),
     staleFlagInvoices: unchanged.filter((invoiceNumber) => flagsByInvoice.has(invoiceNumber)),
+    invoiceCustomers: customersOf(lines),
   }
   if (request.action === 'preview') return summary
 

@@ -5,9 +5,11 @@
 // else in the import knows them.
 //
 // A ROW IS NEVER REPAIRED. A cell that is not what its column needs is reported by
-// row number. A row with more filled cells than the header has columns has moved
-// along (an unquoted comma), so it is an error rather than a guess at which cell
-// is which. Credit notes and negative quantities are valid here: the classifier
+// row number. A row whose cells do not line up with the header has moved along (an
+// unquoted comma), so it is an error rather than a guess at which cell is which.
+// One limit: a shift that leaves the same number of cells and sensible values, such
+// as "1,234" unquoted with the price missing, cannot be told from quantity 1 at $234.
+// The preview shows every line so a person can see it. Credit notes and negative quantities are valid here: the classifier
 // rejects them on mapped lines and ignores them on other brands.
 //
 // TWO KINDS OF BAD ROW. No invoice number, a bad date or extra cells mean the row
@@ -227,12 +229,20 @@ const parseMoneyCell = (text: string): number | null => readBracketed(text, read
 
 type RowProblem = string
 
-function shiftProblem(row: CsvRow, columnCount: number): RowProblem[] {
-  const filled = row.cells.reduce((last, cell, index) => (cell === '' ? last : index + 1), 0)
-  return filled > columnCount
-    ? [`has ${filled} cells but the header has ${columnCount} columns; a comma in a name may need quotes`]
-    : []
+/** Raw cells, not filled ones: a blank cell in the middle of a row hides a shift from
+ *  any count of what is filled. A short row is fine only if it stops after the last
+ *  column this import reads. */
+function shiftProblem(row: CsvRow, header: CsvRow, columns: ColumnIndex): RowProblem[] {
+  const had = `has ${row.cells.length} cells but the header has ${header.cells.length} columns`
+  if (row.cells.length > header.cells.length) return [`${had}; a comma in a name may need quotes`]
+  if (row.cells.length <= Math.max(...Object.values(columns))) return [`${had}; a cell is missing`]
+  const stray = header.cells.findIndex((title, index) => title === '' && (row.cells[index] ?? '') !== '')
+  return stray >= 0 ? [`has "${row.cells[stray]}" under a column with no name; a comma in a name may need quotes`] : []
 }
+
+/** An all-digit invoice number has one identity: Excel reads a cell formatted 00000
+ *  holding 01001 as 1001, and a CSV keeps 01001. */
+const canonicalInvoiceNumber = (text: string): string => (/^\d+$/.test(text) ? text.replace(/^0+(?=\d)/, '') : text)
 
 interface RowValues {
   invoiceDate: string | null
@@ -261,15 +271,15 @@ interface RowResult {
   doubtful: QbLine | null
 }
 
-function parseRow(row: CsvRow, columns: ColumnIndex, columnCount: number): RowResult {
+function parseRow(row: CsvRow, columns: ColumnIndex, header: CsvRow): RowResult {
   const cell = (field: QbField): string => row.cells[columns[field]] ?? ''
   const { rowNumber } = row
-  const invoiceNumber = cell('invoiceNumber')
+  const invoiceNumber = canonicalInvoiceNumber(cell('invoiceNumber'))
   if (invoiceNumber === '') {
     return { line: null, doubtful: null, errors: [{ rowNumber, invoiceNumber: null, message: 'has no invoice number' }] }
   }
   const asErrors = (problems: RowProblem[]): QbParseError[] => problems.map((message) => ({ rowNumber, invoiceNumber, message }))
-  const shifted = shiftProblem(row, columnCount)
+  const shifted = shiftProblem(row, header, columns)
   if (shifted.length > 0) return { line: null, doubtful: null, errors: asErrors(shifted) }
   const { invoiceDate, quantity, unitPrice, badDate, badValues } = readValues(cell)
   if (invoiceDate === null) return { line: null, doubtful: null, errors: asErrors([...badDate, ...badValues]) }
@@ -290,7 +300,7 @@ function parseRow(row: CsvRow, columns: ColumnIndex, columnCount: number): RowRe
 function invoiceOfRows(rows: readonly CsvRow[], columns: ColumnIndex): Map<number, string> {
   return new Map(
     rows.flatMap((row): Array<[number, string]> => {
-      const invoiceNumber = row.cells[columns.invoiceNumber] ?? ''
+      const invoiceNumber = canonicalInvoiceNumber(row.cells[columns.invoiceNumber] ?? '')
       return invoiceNumber === '' ? [] : [[row.rowNumber, invoiceNumber]]
     }),
   )
@@ -320,7 +330,7 @@ export function parseInvoices(csvText: string): QbParseResult {
     ])
   }
 
-  const results = dataRows.map((row) => parseRow(row, columns, header.cells.length))
+  const results = dataRows.map((row) => parseRow(row, columns, header))
   return {
     lines: results.flatMap((result) => (result.line ? [result.line] : [])),
     errors: results.flatMap((result) => result.errors),

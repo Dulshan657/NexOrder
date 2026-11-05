@@ -32,18 +32,19 @@ const PREVIEW: ImportOk = {
   fileErrors: [],
   unattachedRowErrors: [{ rowNumber: 9, invoiceNumber: null, message: 'has no invoice number' }],
   skippedLines: [
-    { invoiceNumber: 'INV-1', name: 'Other Brand Cola' },
-    { invoiceNumber: 'INV-8', name: 'Other Brand Lime' },
+    { invoiceNumber: 'INV-1', name: 'Other Brand Cola', rowNumber: 3 },
+    { invoiceNumber: 'INV-8', name: 'Other Brand Lime', rowNumber: 7 },
   ],
   unfinishedInvoices: [],
   staleFlagInvoices: [],
+  invoiceCustomers: { 'INV-1': 'Harbour Bistro', 'INV-3': 'Corner Cafe', 'INV-4': 'Pier Deli' },
   verdicts: [
     {
       kind: 'add',
       invoiceNumber: 'INV-1',
       invoiceDate: '2026-03-05',
       horecaId: 7,
-      lines: [],
+      lines: [{ productId: 11, quantity: 1, packSize: 12, unitPrice: 234, qbProductName: 'Prod A' }],
       skippedLines: ['Other Brand Cola'],
       rowNumbers: [2, 3],
     },
@@ -53,9 +54,10 @@ const PREVIEW: ImportOk = {
       invoiceNumber: 'INV-3',
       orderId: 'QB-INV-3',
       horecaId: 7,
-      lines: [],
+      lines: [{ productId: 11, quantity: 9, packSize: null, unitPrice: 2.5, qbProductName: 'Widget' }],
       differences: [
         { kind: 'altered', productId: 11, qbProductName: 'Widget', from: { quantity: 3, unitPrice: 2.5 }, to: { quantity: 9, unitPrice: 2.5 } },
+        { kind: 'altered', productId: 12, qbProductName: 'Gadget', from: { quantity: 1, unitPrice: 4 }, to: { quantity: 1, unitPrice: 4 }, packSize: { from: 6, to: 12 } },
       ],
       editable: true,
       skippedLines: [],
@@ -100,9 +102,17 @@ function renderView(client = new QueryClient({ defaultOptions: { queries: { retr
   return { ...view, onClose, client }
 }
 
-const upload = (name = 'invoices.csv', text = 'Invoice Number\nINV-1') => {
-  const file = new File([text], name, { type: 'text/csv' })
+const pick = (file: File) =>
   fireEvent.change(screen.getByLabelText(/choose a csv or excel file/i), { target: { files: [file] } })
+
+const upload = (name = 'invoices.csv', text = 'Invoice Number\nINV-1') => pick(new File([text], name, { type: 'text/csv' }))
+
+/** A file whose text arrives only when the test says so. */
+function slowFile(name: string, text: string) {
+  const file = new File([text], name, { type: 'text/csv' })
+  let finish: (value: string) => void = () => undefined
+  file.text = () => new Promise<string>((resolve) => { finish = resolve })
+  return { file, finish: () => finish(text) }
 }
 
 const userWith = (role: UserRole): User => ({ id: 'u-1', name: 'Pat Example', email: 'pat@example.test', role }) as unknown as User
@@ -313,6 +323,142 @@ describe('Import PO', () => {
     await screen.findByRole('list', { name: /what this file will do/i })
     expect(screen.getByRole('button', { name: /confirm/i })).toBeTruthy()
     expect(screen.getByText(/INV-2/)).toBeTruthy()
+  })
+
+  it('shows the customer and every line of each added and changed invoice', async () => {
+    runImportPo.mockResolvedValue(PREVIEW)
+    renderView()
+    upload()
+
+    const added = await screen.findByRole('list', { name: /new orders/i })
+    const row = within(added).getByText(/INV-1/).closest('li')
+    expect(row?.textContent).toContain('Harbour Bistro')
+    const cells = within(row as HTMLElement).getAllByRole('cell').map((cell) => cell.textContent)
+    expect(cells).toEqual(['Prod A', '1', '$234.00', '12'])
+
+    const changed = screen.getByRole('list', { name: /changed invoices/i })
+    const changedRow = within(changed).getByRole('checkbox', { name: /INV-3/ }).closest('li')
+    expect(changedRow?.textContent).toContain('Corner Cafe')
+    expect(within(changedRow as HTMLElement).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['Widget', '9', '$2.50', 'Units'])
+  })
+
+  it('shows old and new carton size for a carton change', async () => {
+    runImportPo.mockResolvedValue(PREVIEW)
+    renderView()
+    upload()
+    await screen.findByRole('list', { name: /what this file will do/i })
+    expect(screen.getByText(/Gadget.*carton size.*6.*12/i)).toBeTruthy()
+  })
+
+  it('names the file above the preview and on Confirm', async () => {
+    runImportPo.mockResolvedValue(PREVIEW)
+    renderView()
+    upload('march-invoices.csv')
+    await screen.findByRole('list', { name: /what this file will do/i })
+    expect(screen.getByTestId('import-po-file-name').textContent).toContain('march-invoices.csv')
+    expect(screen.getByRole('button', { name: /confirm/i }).textContent).toContain('march-invoices.csv')
+  })
+
+  it('disables the picker while reading, and ignores a read another file has overtaken', async () => {
+    runImportPo.mockResolvedValue(PREVIEW)
+    renderView()
+    const first = slowFile('first.csv', 'FIRST')
+    pick(first.file)
+    await waitFor(() => expect((screen.getByLabelText(/choose a csv or excel file/i) as HTMLInputElement).disabled).toBe(true))
+
+    upload('second.csv', 'SECOND')
+    await screen.findByRole('list', { name: /what this file will do/i })
+    first.finish()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(runImportPo).toHaveBeenCalledTimes(1)
+    expect(runImportPo.mock.calls[0][0]).toMatchObject({ csvText: 'SECOND' })
+    expect(screen.getByTestId('import-po-file-name').textContent).toContain('second.csv')
+  })
+
+  it('clears the old preview as soon as another file is picked', async () => {
+    runImportPo.mockResolvedValue(PREVIEW)
+    renderView()
+    upload('first.csv', 'FIRST')
+    await screen.findByRole('list', { name: /what this file will do/i })
+
+    pick(slowFile('second.csv', 'SECOND').file)
+    await waitFor(() => expect(screen.queryByRole('list', { name: /what this file will do/i })).toBeNull())
+    expect(screen.queryByRole('button', { name: /confirm/i })).toBeNull()
+  })
+
+  it('commits what the second file sent when a different file is picked after a preview', async () => {
+    runImportPo.mockResolvedValue(PREVIEW)
+    renderView()
+    upload('first.csv', 'FIRST')
+    await screen.findByRole('list', { name: /what this file will do/i })
+    fireEvent.click(screen.getByRole('checkbox', { name: /INV-3/ }))
+
+    upload('second.csv', 'SECOND')
+    await waitFor(() => expect(runImportPo).toHaveBeenCalledTimes(2))
+    await screen.findByRole('list', { name: /what this file will do/i })
+
+    runImportPo.mockResolvedValue(COMMITTED)
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+    await screen.findByRole('list', { name: /results/i })
+    expect(runImportPo.mock.calls[2][0]).toMatchObject({ action: 'commit', csvText: 'SECOND', applyChanges: [] })
+  })
+
+  it('keeps the screen open while a commit runs, whatever is pressed', async () => {
+    runImportPo.mockResolvedValue(PREVIEW)
+    const { onClose } = renderView()
+    upload()
+    await screen.findByRole('list', { name: /what this file will do/i })
+
+    let finish: (value: ImportOk) => void = () => undefined
+    runImportPo.mockReturnValue(new Promise<ImportOk>((resolve) => { finish = resolve }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+    await waitFor(() => expect(screen.getByText(/importing/i)).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+
+    finish(COMMITTED)
+    await screen.findByRole('list', { name: /results/i })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0])
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('collapses skipped lines to distinct names with a count, and rows on expanding', async () => {
+    const skippedLines = Array.from({ length: 3000 }, (_, i) => ({
+      invoiceNumber: `INV-${i}`,
+      name: i % 2 === 0 ? 'Freight' : 'Discount',
+      rowNumber: i + 2,
+    }))
+    runImportPo.mockResolvedValue({ ...PREVIEW, skippedLines, counts: { ...PREVIEW.counts, skipped: 3000 } })
+    renderView()
+    upload()
+
+    const list = await screen.findByRole('list', { name: /skipped lines/i })
+    const rows = within(list).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toMatch(/Freight.*1,?500/)
+    expect(rows[1].textContent).toMatch(/Discount.*1,?500/)
+    expect(rows[0].querySelector('details')).toBeTruthy()
+    expect(rows[0].querySelector('details')?.textContent).toContain('INV-0 row 2')
+    expect(rows[0].querySelector('details')?.textContent).toContain('INV-2998 row 3000')
+  })
+
+  it('never hides a name silently: a long list says how many more and shows them', async () => {
+    const skippedLines = Array.from({ length: 250 }, (_, i) => ({ invoiceNumber: 'INV-1', name: `Name ${i}`, rowNumber: i + 2 }))
+    runImportPo.mockResolvedValue({ ...PREVIEW, skippedLines })
+    renderView()
+    upload()
+
+    const list = await screen.findByRole('list', { name: /skipped lines/i })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(100)
+    fireEvent.click(screen.getByRole('button', { name: /show 100 more.*150/i }))
+    expect(within(list).getAllByRole('listitem')).toHaveLength(200)
+    fireEvent.click(screen.getByRole('button', { name: /show 50 more/i }))
+    expect(within(list).getAllByRole('listitem')).toHaveLength(250)
+    expect(within(list).getByText(/Name 249/)).toBeTruthy()
   })
 
   it('shows a server failure and lets the person try again', async () => {
