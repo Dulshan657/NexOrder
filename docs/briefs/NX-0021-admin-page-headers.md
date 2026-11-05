@@ -98,7 +98,7 @@ Added during the work, each recorded in a brief-only revision or here: Audit Log
 
 - No walk on the RS35 handheld. All 360px evidence is Playwright at that viewport.
 - Field Rep and Customer were measured at 1280px only. Manager was measured at 1280px only, on the nine of the fourteen pages a Manager can open by link: Promotions, Users, Suppliers, Audit Log and System Health sent them to the Dashboard, so those five were not seen as Manager.
-- Nothing was saved through these pages in a browser. Buttons were not pressed except PO Inbox's two menus, and New Order was not submitted.
+- Nothing was saved through these pages in a browser, and New Order was not submitted. The controls pressed were sign-in, sidebar links, toast close buttons and PO Inbox's two menus. A script's stray click also opened one PO's detail window against a local build, and it was left without any action.
 - PO Inbox's row cards are still cramped at 360px, with badges overlapping. Cards are out of scope and the layout there was not changed.
 - Scheduled Visits' body table still scrolls inside its own box at 360px. Tables are out of scope.
 - Order Import's Back button still does nothing for Admin and Manager, and Manager blank pages were not looked at. Both are a separate task by owner decision.
