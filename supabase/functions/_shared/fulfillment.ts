@@ -9,7 +9,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { rollupOrderStatus, type FulfillmentStatus } from './orderStatusRollup.ts'
-import { ORDER_STATUS_LADDER, setOrderStatus, statusesUpTo } from './orderStatus.ts'
+import { ORDER_STATUS_LADDER, setOrderStatus, statusesUpTo, type SetOrderStatusVerdict } from './orderStatus.ts'
 
 export const FULFILLMENT_LADDER: FulfillmentStatus[] = [
   'processed',
@@ -56,6 +56,51 @@ export async function ensureFulfillments(
   await admin.from('order_fulfillments').upsert(rows as any, {
     onConflict: 'order_id,location_id',
     ignoreDuplicates: true,
+  })
+}
+
+/**
+ * The fulfilments an order needs to reach 'processed'. The sites are the warehouses
+ * holding a NET reservation, falling back to the default warehouse so there is
+ * always something to pick. `reservedLocs` is the real reservations alone, for a
+ * caller that must tell the fallback from them.
+ */
+export async function ensureProcessedFulfilments(
+  admin: SupabaseClient,
+  orderId: string,
+  actorId: string | null,
+  stampIso: string,
+): Promise<{ reservedLocs: number[]; locs: number[] }> {
+  const reservedLocs = await fulfillmentLocations(admin, orderId)
+  let locs = reservedLocs
+  if (locs.length === 0) {
+    const { data: def } = await admin
+      .from('locations')
+      .select('id')
+      .eq('kind', 'WAREHOUSE')
+      .eq('is_active', true)
+      .order('id')
+      .limit(1)
+      .maybeSingle()
+    if ((def as any)?.id) locs = [(def as any).id]
+  }
+  await ensureFulfillments(admin, orderId, locs, actorId, stampIso)
+  return { reservedLocs, locs }
+}
+
+/**
+ * Move orders.status to 'processed' from any status up to it, with its history
+ * entry. Throws if the transaction errors; a refusal comes back as the verdict.
+ */
+export function writeProcessedStatus(
+  admin: Pick<SupabaseClient, 'rpc'>,
+  { orderId, actorId, stampIso, note }: { orderId: string; actorId: string | null; stampIso: string; note?: string | null },
+): Promise<SetOrderStatusVerdict> {
+  return setOrderStatus(admin, {
+    orderId,
+    from: statusesUpTo(ORDER_STATUS_LADDER, 'processed'),
+    to: 'processed',
+    entry: { status: 'processed', timestamp: stampIso, actor: actorId, ...(note ? { note } : {}) },
   })
 }
 

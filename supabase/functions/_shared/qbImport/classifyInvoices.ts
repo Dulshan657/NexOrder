@@ -33,6 +33,8 @@ export interface ProductMapRow {
 export interface StoredLine {
   productId: number
   quantity: number
+  /** The carton size it was imported at. Null means counted in units. */
+  packSize: number | null
   unitPrice: number
 }
 
@@ -70,6 +72,8 @@ export type InvoiceDifference =
       qbProductName: string
       from: { quantity: number; unitPrice: number }
       to: { quantity: number; unitPrice: number }
+      /** Present only when the carton size differs. Null means counted in units. */
+      packSize?: { from: number | null; to: number | null }
     }
   | { kind: 'customer'; fromHorecaId: number; toHorecaId: number }
 
@@ -108,6 +112,14 @@ const EDITABLE_ORDER_STATUSES: readonly string[] = ['processing', 'processed']
  *  whitespace to one space, fold case. Punctuation is kept. */
 export function normaliseName(name: string): string {
   return name.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+/** Product names compare as `normaliseName`, and an all-digit name also ignores
+ *  leading zeros, because Excel drops them from a code held as a number. Customer
+ *  names do not get this: 007 and 7 may be two customers. */
+export function normaliseProductName(name: string): string {
+  const normal = normaliseName(name)
+  return /^\d+$/.test(normal) ? normal.replace(/^0+(?=\d)/, '') : normal
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +182,7 @@ interface Lookups {
 
 function buildLookups(ctx: ClassifyContext): Lookups {
   return {
-    products: indexBy(ctx.productMap, (row) => normaliseName(row.qbName)),
+    products: indexBy(ctx.productMap, (row) => normaliseProductName(row.qbName)),
     customers: indexBy(ctx.customers, (customer) => normaliseName(customer.name)),
     stored: new Map(ctx.storedImports.map((entry) => [entry.invoiceNumber, entry])),
     isOwnProductName: ctx.isOwnProductName,
@@ -196,7 +208,7 @@ interface Partition {
 
 function partitionLines(group: readonly QbLine[], lookups: Lookups): Partition {
   const tagged = group.map((line) => {
-    const rows = lookups.products.get(normaliseName(line.qbProductName)) ?? []
+    const rows = lookups.products.get(normaliseProductName(line.qbProductName)) ?? []
     const isOwn = rows.length === 0 && lookups.isOwnProductName(line.qbProductName)
     return { line, rows, isOwn }
   })
@@ -341,10 +353,11 @@ function ownUnmappedReasons(ownUnmapped: readonly QbLine[]): string[] {
  *  one price keeps one entry per price: those entries are never merged, because
  *  a single quantity and price cannot stand for them. */
 function storedByProduct(stored: StoredImport): StoredLine[][] {
-  const perPrice = groupInOrder(stored.lines, (line) => `${line.productId}:${toCents(line.unitPrice)}`).map(
+  const perPrice = groupInOrder(stored.lines, (line) => `${line.productId}:${toCents(line.unitPrice)}:${line.packSize}`).map(
     (group): StoredLine => ({
       productId: group[0].productId,
       quantity: group.reduce((sum, line) => sum + line.quantity, 0),
+      packSize: group[0].packSize,
       unitPrice: group[0].unitPrice,
     }),
   )
@@ -368,7 +381,8 @@ function lineDifference(line: MappedLine, before: readonly StoredLine[]): Invoic
   // file's one line, whichever price the file has. Say so line by line.
   if (before.length > 1) return [...before.map(removedLine), addedLine(line)]
   const [only] = before
-  if (only.quantity === line.quantity && toCents(only.unitPrice) === toCents(line.unitPrice)) return []
+  const samePack = only.packSize === line.packSize
+  if (samePack && only.quantity === line.quantity && toCents(only.unitPrice) === toCents(line.unitPrice)) return []
   return [
     {
       kind: 'altered',
@@ -376,11 +390,12 @@ function lineDifference(line: MappedLine, before: readonly StoredLine[]): Invoic
       qbProductName: line.qbProductName,
       from: { quantity: only.quantity, unitPrice: only.unitPrice },
       to: { quantity: line.quantity, unitPrice: line.unitPrice },
+      ...(samePack ? {} : { packSize: { from: only.packSize, to: line.packSize } }),
     },
   ]
 }
 
-function diffAgainstStored(stored: StoredImport, lines: readonly MappedLine[], horecaId: number): InvoiceDifference[] {
+export function diffAgainstStored(stored: StoredImport, lines: readonly MappedLine[], horecaId: number): InvoiceDifference[] {
   const before = storedByProduct(stored)
   const beforeById = new Map(before.map((entries): [number, StoredLine[]] => [entries[0].productId, entries]))
   const nowIds = new Set(lines.map((line) => line.productId))
@@ -455,7 +470,10 @@ function classifyInvoice(group: readonly QbLine[], lookups: Lookups): InvoiceVer
   }
 
   const aggregate = aggregateMapped(parts.mapped)
-  const customer = resolveCustomer(group, lookups)
+  // A blank customer on a line that is not ours says nothing about whose invoice this
+  // is, as freight and discount lines often have none. A name there still counts.
+  const unnamedOther = new Set(parts.other.filter((line) => normaliseName(line.customerName) === ''))
+  const customer = resolveCustomer(group.filter((line) => !unnamedOther.has(line)), lookups)
   const reasons = [
     ...invoiceNumberReasons(invoiceNumber),
     ...customer.reasons,
