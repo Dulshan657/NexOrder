@@ -103,6 +103,42 @@ export async function isLocationFullyPicked(
 }
 
 /**
+ * Advance every 'processed' fulfilment of this order that is now fully picked, not only
+ * the caller's. Closing a line, or picking the last of one at another warehouse, can leave
+ * a site with nothing to pick and so no event of its own to advance it. Returns how many
+ * fulfilments the order has, so a caller can tell a legacy order, which has none. The
+ * caller recomputes the order status afterwards.
+ */
+export async function advanceCompletedFulfilments(
+  admin: SupabaseClient,
+  orderId: string,
+  actorId: string | null,
+  stampIso: string,
+  note: string,
+): Promise<number> {
+  const { data } = await admin
+    .from('order_fulfillments')
+    .select('id, location_id, status, status_history')
+    .eq('order_id', orderId)
+  const rows = (data ?? []) as any[]
+  for (const ful of rows) {
+    if (ful.status !== 'processed') continue
+    if (!(await isLocationFullyPicked(admin, orderId, ful.location_id))) continue
+    const hist = Array.isArray(ful.status_history) ? ful.status_history : []
+    await admin
+      .from('order_fulfillments')
+      .update({
+        status: 'picked',
+        status_history: [...hist, { status: 'picked', timestamp: stampIso, actor: actorId, note }],
+      })
+      .eq('id', ful.id)
+      // A concurrent advance already moved it on; don't overwrite its history.
+      .eq('status', 'processed')
+  }
+  return rows.length
+}
+
+/**
  * On a dispatch transition, release any residual reservation this warehouse
  * still holds for the order — deallocates only this order's own remainder, across
  * the warehouse's bins, via inv_release_reservation (mig 00140). A no-op for every

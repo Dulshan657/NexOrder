@@ -505,6 +505,108 @@ describe('NX-0029 closing a line short (live RPCs, rollback-isolated)', () => {
     })
   })
 
+  describe('A13: a product with no open units cannot hold an imported order back', () => {
+    it('a closed line whose release the bin could not cover is complete, and dispatch takes nothing', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await scene(client)
+        const p = await newProduct(client, s.supplierId)
+        await receive(client, p, s.binA, 20)
+        const other = await plainOrder(client, s, p, 10)
+        const x = await importedOrder(client, s, p, 10)
+        const thief = await plainOrder(client, s, p, 15, false)
+        await pick(client, s, thief.itemId, 15, s.binA)
+        await closeShort(client, s, x.itemId, s.binA)
+        expect(await netOf(client, x.orderId, p)).toBe(10)
+
+        expect(await pickComplete(client, x.orderId, s.warehouseId)).toBe(true)
+
+        const warnings = await warningsDuring(client, () => release(client, s, x.orderId, s.warehouseId))
+        expect(warnings).toHaveLength(1)
+        expect(await bin(client, p, s.binA)).toEqual({ onHand: 5, allocated: 5 })
+        expect(await netOf(client, other.orderId, p)).toBe(10)
+      })
+    })
+
+    it('a line fully picked at one warehouse leaves both complete, and dispatch at the other frees its units', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await scene(client)
+        const p = await newProduct(client, s.supplierId)
+        const second = await newWarehouse(client)
+        await receive(client, p, s.binA, 5)
+        await receive(client, p, second.bin, 5)
+        const x = await importedOrder(client, s, p, 10, { pref: [s.warehouseId, second.warehouseId] })
+        await receive(client, p, s.binA, 5)
+        expect(await pickComplete(client, x.orderId, second.warehouseId)).toBe(false)
+
+        await pick(client, s, x.itemId, 10, s.binA)
+
+        expect(await pickComplete(client, x.orderId, s.warehouseId)).toBe(true)
+        expect(await pickComplete(client, x.orderId, second.warehouseId)).toBe(true)
+        expect(await closeShort(client, s, x.itemId)).toEqual({ status: 'already_picked' })
+        expect(await bin(client, p, second.bin)).toEqual({ onHand: 5, allocated: 5 })
+
+        // What update-order-status does when warehouse B dispatches.
+        await release(client, s, x.orderId, second.warehouseId)
+
+        expect(await bin(client, p, second.bin)).toEqual({ onHand: 5, allocated: 0 })
+        expect(await netOf(client, x.orderId, p, second.bin)).toBe(0)
+        expect((await bin(client, p, s.binA)).onHand).toBe(0)
+      })
+    })
+
+    it('an open line not covered elsewhere stays incomplete, closed line beside it or not', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await scene(client)
+        const p = await newProduct(client, s.supplierId)
+        await receive(client, p, s.binA, 10)
+        const x = await importedOrder(client, s, p, 5)
+        const second = await addLine(client, s, x.orderId, p, 5)
+        await closeShort(client, s, x.itemId)
+
+        expect(await pickComplete(client, x.orderId, s.warehouseId)).toBe(false)
+
+        await closeShort(client, s, second)
+        expect(await pickComplete(client, x.orderId, s.warehouseId)).toBe(true)
+      })
+    })
+
+    it('a product’s open units reserved here and unpicked stay incomplete, even if covered elsewhere', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await scene(client)
+        const p = await newProduct(client, s.supplierId)
+        const second = await newWarehouse(client)
+        await receive(client, p, s.binA, 5)
+        await receive(client, p, second.bin, 10)
+        const x = await importedOrder(client, s, p, 5, { pref: [s.warehouseId] })
+        await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, $3::int[], $4, true)', [
+          x.orderId, JSON.stringify([{ product_id: p, quantity: 5 }]), [second.warehouseId], s.actor,
+        ])
+
+        expect(await pickComplete(client, x.orderId, s.warehouseId)).toBe(false)
+      })
+    })
+
+    it('an ordinary order in the second scenario keeps today’s result', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await scene(client)
+        const p = await newProduct(client, s.supplierId)
+        const second = await newWarehouse(client)
+        await receive(client, p, s.binA, 5)
+        await receive(client, p, second.bin, 5)
+        const x = await plainOrder(client, s, p, 10, false)
+        await client.query('SELECT public.inv_reserve_order($1, $2::jsonb, $3::int[], $4, true)', [
+          x.orderId, JSON.stringify([{ product_id: p, quantity: 10 }]), [s.warehouseId, second.warehouseId], s.actor,
+        ])
+        await receive(client, p, s.binA, 5)
+
+        await pick(client, s, x.itemId, 10, s.binA)
+
+        expect(await pickComplete(client, x.orderId, s.warehouseId)).toBe(true)
+        expect(await pickComplete(client, x.orderId, second.warehouseId)).toBe(false)
+      })
+    })
+  })
+
   describe('A14: completion on an order with no invoice number', () => {
     it('stays vacuously complete with nothing reserved, whatever its lines say', async () => {
       await withRollbackTx(async (client) => {

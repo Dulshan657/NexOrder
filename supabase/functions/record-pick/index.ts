@@ -17,7 +17,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
-import { isLocationFullyPicked, recomputeOrderStatus } from '../_shared/fulfillment.ts'
+import { advanceCompletedFulfilments, isLocationFullyPicked, recomputeOrderStatus } from '../_shared/fulfillment.ts'
 import { setOrderStatus } from '../_shared/orderStatus.ts'
 import { checkPickScan } from '../_shared/pickScanCheck.ts'
 import { requireModule } from '../_shared/modules.ts'
@@ -235,10 +235,11 @@ serve(async (req: Request) => {
 
     const { data: itemRow } = await admin
       .from('order_items')
-      .select('order_id, product_id')
+      .select('order_id, product_id, orders(qb_invoice_number)')
       .eq('id', orderItemId)
       .single()
     const orderId = (itemRow as { order_id: string } | null)?.order_id ?? null
+    const isImported = ((itemRow as any)?.orders?.qb_invoice_number ?? null) !== null
     const pickedProductId = (itemRow as { product_id: number } | null)?.product_id ?? null
 
     // The bin's ROOT warehouse — a racked pick lands on a level whose id is
@@ -254,42 +255,64 @@ serve(async (req: Request) => {
       // hook at the end of this handler can reuse it.
       const warehouseId = pickWarehouseId
 
-      // Fulfilment model: advance this warehouse's fulfilment to 'picked' once its
-      // portion is fully picked, then recompute the derived order status.
-      const { data: ful } = await admin
-        .from('order_fulfillments')
-        .select('id, status, status_history')
-        .eq('order_id', orderId)
-        .eq('location_id', warehouseId)
-        .maybeSingle()
-
-      if (ful) {
-        if ((ful as any).status === 'processed' && (await isLocationFullyPicked(admin, orderId, warehouseId))) {
-          const hist = Array.isArray((ful as any).status_history) ? (ful as any).status_history : []
-          await admin
-            .from('order_fulfillments')
-            .update({
-              status: 'picked',
-              status_history: [...hist, { status: 'picked', timestamp: nowIso, actor: auth.userId, note: 'All lines picked at this warehouse' }],
-            })
-            .eq('id', (ful as any).id)
-            // A concurrent advance already moved it on; don't overwrite its history.
-            .eq('status', 'processed')
+      if (isImported) {
+        // An imported order may pick where it did not reserve, which can leave another
+        // warehouse with nothing to pick and no event to advance it (mig 00140). Dispatch
+        // there is what gives back what it still holds.
+        const sites = await advanceCompletedFulfilments(
+          admin, orderId, auth.userId, nowIso, 'All lines picked at this warehouse',
+        )
+        if (sites > 0) {
+          await recomputeOrderStatus(admin, orderId, auth.userId, nowIso)
+        } else if (result.order_fully_picked) {
+          const verdict = await setOrderStatus(admin, {
+            orderId,
+            from: ['processed'],
+            to: 'picked',
+            entry: { status: 'picked', timestamp: nowIso, actor: auth.userId, note: 'All lines picked' },
+          })
+          if (!verdict.ok && verdict.code !== 'CONFLICT') {
+            console.warn(`[record-pick] order ${orderId} not advanced to picked: ${verdict.code}`)
+          }
         }
-        await recomputeOrderStatus(admin, orderId, auth.userId, nowIso)
-      } else if (result.order_fully_picked) {
-        // Legacy order (no fulfilments): advance the order to 'picked', but
-        // only from 'processed' and never once cancelled — checked under the
-        // row lock by order_set_status_tx (mig 00128). The pick itself is
-        // already recorded, so a refusal is logged, not returned as an error.
-        const verdict = await setOrderStatus(admin, {
-          orderId,
-          from: ['processed'],
-          to: 'picked',
-          entry: { status: 'picked', timestamp: nowIso, actor: auth.userId, note: 'All lines picked' },
-        })
-        if (!verdict.ok && verdict.code !== 'CONFLICT') {
-          console.warn(`[record-pick] order ${orderId} not advanced to picked: ${verdict.code}`)
+      } else {
+        // Fulfilment model: advance this warehouse's fulfilment to 'picked' once its
+        // portion is fully picked, then recompute the derived order status.
+        const { data: ful } = await admin
+          .from('order_fulfillments')
+          .select('id, status, status_history')
+          .eq('order_id', orderId)
+          .eq('location_id', warehouseId)
+          .maybeSingle()
+
+        if (ful) {
+          if ((ful as any).status === 'processed' && (await isLocationFullyPicked(admin, orderId, warehouseId))) {
+            const hist = Array.isArray((ful as any).status_history) ? (ful as any).status_history : []
+            await admin
+              .from('order_fulfillments')
+              .update({
+                status: 'picked',
+                status_history: [...hist, { status: 'picked', timestamp: nowIso, actor: auth.userId, note: 'All lines picked at this warehouse' }],
+              })
+              .eq('id', (ful as any).id)
+              // A concurrent advance already moved it on; don't overwrite its history.
+              .eq('status', 'processed')
+          }
+          await recomputeOrderStatus(admin, orderId, auth.userId, nowIso)
+        } else if (result.order_fully_picked) {
+          // Legacy order (no fulfilments): advance the order to 'picked', but
+          // only from 'processed' and never once cancelled — checked under the
+          // row lock by order_set_status_tx (mig 00128). The pick itself is
+          // already recorded, so a refusal is logged, not returned as an error.
+          const verdict = await setOrderStatus(admin, {
+            orderId,
+            from: ['processed'],
+            to: 'picked',
+            entry: { status: 'picked', timestamp: nowIso, actor: auth.userId, note: 'All lines picked' },
+          })
+          if (!verdict.ok && verdict.code !== 'CONFLICT') {
+            console.warn(`[record-pick] order ${orderId} not advanced to picked: ${verdict.code}`)
+          }
         }
       }
     }

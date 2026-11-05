@@ -56,11 +56,28 @@
 -- THE IMPORTED PICK NEVER LOWERS ANOTHER ORDER'S ALLOCATED. Row by row, in FEFO order:
 --     dealloc = LEAST(remaining, own_left, row.allocated)
 --     take    = LEAST(remaining, row.on_hand - row.allocated + dealloc)
--- so allocated <= on_hand holds and the bin keeps every unit others hold. What is left of
--- the pick was physically taken but is not on record: it is recorded as picked and added
+-- so allocated <= on_hand holds and the bin keeps every unit others hold.
+--
+-- FREE STOCK ON AN EARLIER ROW MUST NOT STRAND THE ORDER'S OWN UNITS. FEFO can take the
+-- whole pick from a free row while this order's reservation sits on a later one. The
+-- picks then net its holding to zero with the later row's `allocated` still up, owned by
+-- nobody and out of reach of any release. So after the loop the bin's `allocated` falls by
+-- whatever of LEAST(picked, own holding at the start) the rows did not give up, through a
+-- pick leg with no on-hand change. A deallocate row would count against the holding twice,
+-- as the picks already come off it. Capped by what others hold, so a drained bin warns.
+-- qty_delta is 0, so no netting changes, but wie_refresh_velocity and
+-- wie_refresh_location_traffic COUNT pick rows, so each such leg counts as one more pick.
+-- The ordinary path has the same flaw and stays as it was.
+--
+-- What is left of the pick was physically taken but is not on record: it is recorded as picked and added
 -- to an `unrecorded_stock` row flagging the bin for a recount. The order row is locked
 -- first, which serialises the pick with inv_close_line_short, and it is the same order of
 -- locks as order_cancel_tx: the order, then its balances.
+--
+-- A PRODUCT WITH NOTHING OPEN CANNOT HOLD AN IMPORTED ORDER BACK. The ledger can still show
+-- a reservation for a product with no open units: a close the bin could not cover, or a
+-- line fully picked at one warehouse while another still holds a part. The dispatch of
+-- that warehouse is what gives those units back, so it must be allowed to happen.
 --
 -- LOCKDOWN. Created with an explicit REVOKE because new tables and sequences inherit client
 -- grants from the default privileges (finding DB-3). RLS on, no policies. In
@@ -584,6 +601,9 @@ DECLARE
     v_row        RECORD;
     v_last_batch INT;
     v_order_done BOOLEAN;
+    v_allocated  NUMERIC;
+    v_others     NUMERIC;
+    v_settle     NUMERIC;
 BEGIN
     SELECT oi.id, oi.order_id, oi.product_id, oi.quantity, oi.pack_size INTO v_item
       FROM public.order_items oi
@@ -643,6 +663,46 @@ BEGIN
         v_remaining := v_remaining - v_take;
         v_own_left := v_own_left - v_dealloc;
     END LOOP;
+
+    -- See the header. The loop above stops as soon as the pick is taken, so later rows
+    -- are not locked yet. Only rows with allocated > 0 get a leg, so 0 <= allocated holds,
+    -- and on_hand does not move, so allocated <= on_hand does.
+    IF v_own_left > 0 THEN
+        SELECT COALESCE(SUM(t.allocated), 0) INTO v_allocated
+          FROM (
+              SELECT b.allocated
+                FROM public.inventory_balances b
+               WHERE b.product_id = v_item.product_id
+                 AND b.location_id = p_location_id
+               ORDER BY b.id
+                 FOR UPDATE
+          ) t;
+        v_others := public.inv_others_bin_holdings(v_item.order_id, v_item.product_id, p_location_id);
+        v_settle := LEAST(v_own_left, GREATEST(v_allocated - v_others, 0));
+
+        IF v_settle < v_own_left THEN
+            RAISE WARNING
+                'PICK_SETTLE_SHORTFALL: order % wanted to settle % of product % at location % but settled %: the bin holds % with % held by other orders',
+                v_item.order_id, v_own_left, v_item.product_id, p_location_id, v_settle, v_allocated, v_others;
+        END IF;
+
+        FOR v_row IN
+            SELECT b.batch_id, b.handling_unit_id, b.allocated
+              FROM public.inventory_balances b
+             WHERE b.product_id = v_item.product_id
+               AND b.location_id = p_location_id
+               AND b.allocated > 0
+             ORDER BY b.id
+        LOOP
+            EXIT WHEN v_settle <= 0;
+            v_dealloc := LEAST(v_settle, v_row.allocated);
+            PERFORM public.inv_apply_leg(
+                v_item.product_id, p_location_id, v_row.batch_id, 0, -v_dealloc,
+                'pick', p_actor, 'order', v_item.order_id, 'own reservation settled',
+                NULL, v_row.handling_unit_id);
+            v_settle := v_settle - v_dealloc;
+        END LOOP;
+    END IF;
 
     INSERT INTO public.pick_progress
         (order_id, order_item_id, location_id, batch_id, picked_qty, picked_by)
@@ -793,10 +853,11 @@ BEGIN
 END;
 $$;
 
--- The loop is 00040's text. An imported order may also have an open line with little or
--- nothing reserved, which that loop cannot see: it is not complete at this warehouse unless
--- the order's holdings at other warehouses cover the product's open units, shared across
--- its lines. Written inline because this function is SECURITY INVOKER.
+-- For every other order, the loop at the end is 00040's text. An imported order is judged
+-- per product with open units, shared across its lines: it is not complete at this warehouse
+-- unless its holdings at other warehouses cover those units, and unless 00040's own test
+-- passes here. A product with nothing open cannot make it FALSE (see the header). Written
+-- inline because this function is SECURITY INVOKER.
 
 CREATE OR REPLACE FUNCTION public.inv_warehouse_pick_complete(p_order_id TEXT, p_warehouse_id INT)
 RETURNS BOOLEAN
@@ -807,33 +868,26 @@ AS $$
 DECLARE
     r RECORD;
 BEGIN
-    FOR r IN
-        SELECT res.product_id, res.reserved, COALESCE(pk.picked, 0) AS picked
-        FROM (
-            SELECT m.product_id, SUM(m.qty_delta) AS reserved
-            FROM public.inventory_movements m
-            WHERE m.ref_type = 'order' AND m.ref_id = p_order_id
-              AND m.movement_type IN ('allocate', 'deallocate')
-              AND public.inv_root_warehouse(m.location_id) = p_warehouse_id
-            GROUP BY m.product_id
-        ) res
-        LEFT JOIN (
-            SELECT oi.product_id, SUM(pp.picked_qty * COALESCE(oi.pack_size, 1)) AS picked
-            FROM public.pick_progress pp
-            JOIN public.order_items oi ON oi.id = pp.order_item_id
-            WHERE pp.order_id = p_order_id
-              AND public.inv_root_warehouse(pp.location_id) = p_warehouse_id
-            GROUP BY oi.product_id
-        ) pk ON pk.product_id = res.product_id
-    LOOP
-        IF r.reserved > 0.000001 AND r.picked < r.reserved - 0.000001 THEN
-            RETURN FALSE;
-        END IF;
-    END LOOP;
-
     IF (SELECT o.qb_invoice_number FROM public.orders o WHERE o.id = p_order_id) IS NOT NULL THEN
         FOR r IN
             SELECT open_lines.open_base,
+                   COALESCE((
+                       SELECT SUM(m.qty_delta)
+                         FROM public.inventory_movements m
+                        WHERE m.ref_type = 'order'
+                          AND m.ref_id = p_order_id
+                          AND m.movement_type IN ('allocate', 'deallocate')
+                          AND m.product_id = open_lines.product_id
+                          AND public.inv_root_warehouse(m.location_id) = p_warehouse_id
+                   ), 0) AS reserved_here,
+                   COALESCE((
+                       SELECT SUM(pp.picked_qty * COALESCE(oi.pack_size, 1))
+                         FROM public.pick_progress pp
+                         JOIN public.order_items oi ON oi.id = pp.order_item_id
+                        WHERE pp.order_id = p_order_id
+                          AND oi.product_id = open_lines.product_id
+                          AND public.inv_root_warehouse(pp.location_id) = p_warehouse_id
+                   ), 0) AS picked_here,
                    COALESCE((
                        SELECT SUM(GREATEST(held.net - COALESCE((
                                   SELECT SUM(pp.picked_qty * COALESCE(oi.pack_size, 1))
@@ -873,8 +927,36 @@ BEGIN
             IF r.open_base > r.elsewhere + 0.000001 THEN
                 RETURN FALSE;
             END IF;
+            IF r.reserved_here > 0.000001 AND r.picked_here < r.reserved_here - 0.000001 THEN
+                RETURN FALSE;
+            END IF;
         END LOOP;
+        RETURN TRUE;
     END IF;
+
+    FOR r IN
+        SELECT res.product_id, res.reserved, COALESCE(pk.picked, 0) AS picked
+        FROM (
+            SELECT m.product_id, SUM(m.qty_delta) AS reserved
+            FROM public.inventory_movements m
+            WHERE m.ref_type = 'order' AND m.ref_id = p_order_id
+              AND m.movement_type IN ('allocate', 'deallocate')
+              AND public.inv_root_warehouse(m.location_id) = p_warehouse_id
+            GROUP BY m.product_id
+        ) res
+        LEFT JOIN (
+            SELECT oi.product_id, SUM(pp.picked_qty * COALESCE(oi.pack_size, 1)) AS picked
+            FROM public.pick_progress pp
+            JOIN public.order_items oi ON oi.id = pp.order_item_id
+            WHERE pp.order_id = p_order_id
+              AND public.inv_root_warehouse(pp.location_id) = p_warehouse_id
+            GROUP BY oi.product_id
+        ) pk ON pk.product_id = res.product_id
+    LOOP
+        IF r.reserved > 0.000001 AND r.picked < r.reserved - 0.000001 THEN
+            RETURN FALSE;
+        END IF;
+    END LOOP;
 
     RETURN TRUE;
 END;

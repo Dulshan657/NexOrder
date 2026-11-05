@@ -19,7 +19,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError, type ErrorCode }
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
-import { isLocationFullyPicked, recomputeOrderStatus } from '../_shared/fulfillment.ts'
+import { advanceCompletedFulfilments, recomputeOrderStatus } from '../_shared/fulfillment.ts'
 import { setOrderStatus } from '../_shared/orderStatus.ts'
 import { requireModule } from '../_shared/modules.ts'
 
@@ -123,27 +123,11 @@ serve(async (req: Request) => {
     // pick left to come there, nothing else would ever advance it.
     if (orderId) {
       const nowIso = new Date().toISOString()
-      const { data: fulfilments } = await admin
-        .from('order_fulfillments')
-        .select('id, location_id, status, status_history')
-        .eq('order_id', orderId)
-      const rows = (fulfilments ?? []) as any[]
+      const sites = await advanceCompletedFulfilments(
+        admin, orderId, auth.userId, nowIso, 'All lines picked or closed short at this warehouse',
+      )
 
-      if (rows.length > 0) {
-        for (const ful of rows) {
-          if (ful.status === 'processed' && (await isLocationFullyPicked(admin, orderId, ful.location_id))) {
-            const hist = Array.isArray(ful.status_history) ? ful.status_history : []
-            await admin
-              .from('order_fulfillments')
-              .update({
-                status: 'picked',
-                status_history: [...hist, { status: 'picked', timestamp: nowIso, actor: auth.userId, note: 'All lines picked or closed short at this warehouse' }],
-              })
-              .eq('id', ful.id)
-              // A concurrent advance already moved it on; don't overwrite its history.
-              .eq('status', 'processed')
-          }
-        }
+      if (sites > 0) {
         await recomputeOrderStatus(admin, orderId, auth.userId, nowIso)
       } else if (result.order_fully_resolved) {
         // Legacy order (no fulfilments), as in record-pick: the line is already closed,

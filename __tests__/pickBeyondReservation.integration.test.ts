@@ -9,6 +9,7 @@
  * Run with: `npx vitest run -c vitest.integration.config.ts pickBeyondReservation`
  */
 import { describe, expect, it } from 'vitest'
+import type pg from 'pg'
 import { expectRaise, hasDbCreds, withRollbackTx } from './support/pgTestClient'
 import {
   netOf,
@@ -21,16 +22,199 @@ import {
 import {
   addLine,
   bin,
+  cancel,
   closeShort,
   differences,
   importedOrder,
+  movementCount,
   pick,
+  pickComplete,
   picksOf,
+  release,
   row,
   scene,
+  warningsDuring,
 } from './support/shortPickHelpers'
 
 const PICK = 'SELECT public.inv_pick_order_line($1, $2, $3, $4)'
+
+/** No balance row of the product may leave 0 <= allocated <= on_hand. */
+async function expectRowBounds(client: pg.Client, productId: number): Promise<void> {
+  const r = await client.query(
+    `SELECT id, on_hand, allocated FROM public.inventory_balances
+      WHERE product_id=$1 AND NOT (allocated >= 0 AND allocated <= on_hand)`, [productId])
+  expect(r.rows).toEqual([])
+}
+
+describe('NX-0029 own units settled when free stock is taken first (live RPCs, rollback-isolated)', () => {
+  it('leaves no allocation stranded on the later batch, and the release finds nothing', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      const early = await newBatch(client, p, '2027-01-01')
+      const late = await newBatch(client, p, '2027-06-01')
+      await receive(client, p, s.binA, 10, { batchId: early })
+      await receive(client, p, s.binA, 10, { batchId: late })
+      const y = await plainOrder(client, s, p, 10)
+      const x = await importedOrder(client, s, p, 10)
+      expect((await row(client, p, s.binA, late)).allocated).toBe(10)
+      await cancel(client, s, y.orderId)
+      expect(await row(client, p, s.binA, early)).toEqual({ on_hand: 10, allocated: 0 })
+
+      const res = await pick(client, s, x.itemId, 10, s.binA)
+
+      expect(res).toEqual({ line_fully_picked: true, order_fully_picked: true, unrecorded_qty_base: 0 })
+      expect(await row(client, p, s.binA, early)).toEqual({ on_hand: 0, allocated: 0 })
+      expect(await row(client, p, s.binA, late)).toEqual({ on_hand: 10, allocated: 0 })
+      expect(await differences(client, x.orderId)).toEqual([])
+      await expectRowBounds(client, p)
+
+      const before = await movementCount(client, p)
+      const warnings = await warningsDuring(client, () => release(client, s, x.orderId, s.warehouseId))
+      expect(warnings).toEqual([])
+      expect(await movementCount(client, p)).toBe(before)
+      expect(await row(client, p, s.binA, late)).toEqual({ on_hand: 10, allocated: 0 })
+    })
+  })
+
+  it('writes the settling leg as a pick with no on-hand change, which no netting reads as anything', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      const early = await newBatch(client, p, '2027-01-01')
+      const late = await newBatch(client, p, '2027-06-01')
+      await receive(client, p, s.binA, 10, { batchId: early })
+      await receive(client, p, s.binA, 10, { batchId: late })
+      const y = await plainOrder(client, s, p, 10)
+      const x = await importedOrder(client, s, p, 10)
+      await cancel(client, s, y.orderId)
+      const netBefore = await netOf(client, x.orderId, p)
+
+      await pick(client, s, x.itemId, 4, s.binA)
+
+      const legs = await client.query<{ batch_id: number; qty_delta: number }>(
+        `SELECT batch_id, qty_delta FROM public.inventory_movements
+          WHERE ref_id=$1 AND movement_type='pick' ORDER BY id`, [x.orderId])
+      expect(legs.rows).toEqual([
+        { batch_id: early, qty_delta: -4 },
+        { batch_id: late, qty_delta: 0 },
+      ])
+      // allocate and deallocate are all the holding reads; the picks come from pick_progress.
+      expect(await netOf(client, x.orderId, p)).toBe(netBefore)
+      const own = await client.query<{ q: number }>(
+        'SELECT public.inv_order_bin_remainder($1, $2, $3) AS q', [x.orderId, p, s.binA])
+      expect(own.rows[0].q).toBe(6)
+      const seenByOther = await client.query<{ q: number }>(
+        "SELECT public.inv_others_bin_holdings('NX0029-NO-SUCH-ORDER', $1, $2) AS q", [p, s.binA])
+      expect(seenByOther.rows[0].q).toBe(6)
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 16, allocated: 6 })
+
+      // The second part of the line settles the rest, and the order then holds nothing.
+      await pick(client, s, x.itemId, 6, s.binA)
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 10, allocated: 0 })
+      expect(await pickComplete(client, x.orderId, s.warehouseId)).toBe(true)
+    })
+  })
+
+  it('another order in the bin keeps its holding across the settling', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      const early = await newBatch(client, p, '2027-01-01')
+      const late = await newBatch(client, p, '2027-06-01')
+      await receive(client, p, s.binA, 10, { batchId: early })
+      await receive(client, p, s.binA, 20, { batchId: late })
+      const leaver = await plainOrder(client, s, p, 10)
+      const other = await plainOrder(client, s, p, 5)
+      const x = await importedOrder(client, s, p, 10)
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 30, allocated: 25 })
+      await cancel(client, s, leaver.orderId)
+
+      await pick(client, s, x.itemId, 10, s.binA)
+
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 20, allocated: 5 })
+      expect(await netOf(client, other.orderId, p)).toBe(5)
+      await expectRowBounds(client, p)
+
+      // The other order still gets all of its units.
+      const warnings = await warningsDuring(client, async () => { await pick(client, s, other.itemId, 5, s.binA) })
+      expect(warnings).toEqual([])
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 15, allocated: 0 })
+    })
+  })
+
+  it('settles across several later rows, within each row’s bounds', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      const a = await newBatch(client, p, '2027-01-01')
+      const b = await newBatch(client, p, '2027-02-01')
+      const c = await newBatch(client, p, '2027-03-01')
+      await receive(client, p, s.binA, 10, { batchId: a })
+      await receive(client, p, s.binA, 5, { batchId: b })
+      await receive(client, p, s.binA, 10, { batchId: c })
+      const leaver = await plainOrder(client, s, p, 10)
+      const x = await importedOrder(client, s, p, 10)
+      expect((await row(client, p, s.binA, b)).allocated).toBe(5)
+      expect((await row(client, p, s.binA, c)).allocated).toBe(5)
+      await cancel(client, s, leaver.orderId)
+
+      await pick(client, s, x.itemId, 10, s.binA)
+
+      expect(await row(client, p, s.binA, a)).toEqual({ on_hand: 0, allocated: 0 })
+      expect(await row(client, p, s.binA, b)).toEqual({ on_hand: 5, allocated: 0 })
+      expect(await row(client, p, s.binA, c)).toEqual({ on_hand: 10, allocated: 0 })
+      await expectRowBounds(client, p)
+    })
+  })
+
+  it('in a drained bin, warns and leaves what the other order holds', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      const late = await newBatch(client, p, '2027-06-01')
+      const mid = await newBatch(client, p, '2027-03-01')
+      await receive(client, p, s.binA, 10, { batchId: mid })
+      await receive(client, p, s.binA, 10, { batchId: late })
+      const y = await plainOrder(client, s, p, 10)
+      const x = await importedOrder(client, s, p, 10)
+      // An ordinary pick with no reservation draws what the earlier row holds.
+      const thief = await plainOrder(client, s, p, 10, false)
+      await pick(client, s, thief.itemId, 10, s.binA)
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 10, allocated: 10 })
+      const earliest = await newBatch(client, p, '2027-01-01')
+      await receive(client, p, s.binA, 10, { batchId: earliest })
+
+      const warnings = await warningsDuring(client, async () => { await pick(client, s, x.itemId, 10, s.binA) })
+
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('PICK_SETTLE_SHORTFALL')
+      expect(await row(client, p, s.binA, earliest)).toEqual({ on_hand: 0, allocated: 0 })
+      expect(await row(client, p, s.binA, late)).toEqual({ on_hand: 10, allocated: 10 })
+      expect(await netOf(client, y.orderId, p)).toBe(10)
+      await expectRowBounds(client, p)
+    })
+  })
+
+  it('an ordinary order is not settled: the same pick leaves its later row as today', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      const early = await newBatch(client, p, '2027-01-01')
+      const late = await newBatch(client, p, '2027-06-01')
+      await receive(client, p, s.binA, 10, { batchId: early })
+      await receive(client, p, s.binA, 10, { batchId: late })
+      const y = await plainOrder(client, s, p, 10)
+      const x = await plainOrder(client, s, p, 10)
+      await cancel(client, s, y.orderId)
+
+      await pick(client, s, x.itemId, 10, s.binA)
+
+      // The flaw recorded for FINAL: A14 keeps this path exactly as it was.
+      expect(await row(client, p, s.binA, late)).toEqual({ on_hand: 10, allocated: 10 })
+    })
+  })
+})
 
 describe('NX-0029 picking beyond a reservation (live RPCs, rollback-isolated)', () => {
   it('has database credentials', () => {
