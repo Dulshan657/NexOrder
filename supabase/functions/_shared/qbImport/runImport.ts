@@ -269,24 +269,15 @@ interface Settled {
 
 const noProductName = (rowNumber: number): string => `row ${rowNumber} (no product)`
 
-function customersByInvoice(lines: readonly QbLine[]): Map<string, string> {
-  const named = lines.filter((line) => line.customerName !== '')
-  return new Map([...named].reverse().map((line) => [line.invoiceNumber, line.customerName]))
-}
-
 function settleDoubtfulRows(parsed: QbParseResult, productMap: readonly ProductMapRow[], isOwn: (name: string) => boolean): Settled {
   const mapped = new Set(productMap.map((row) => normaliseName(row.qbName)))
   const isOurs = ({ qbProductName }: QbLine): boolean =>
     qbProductName !== '' && (mapped.has(normaliseName(qbProductName)) || isOwn(qbProductName))
   const notOurs = parsed.doubtfulRows.filter((row) => !isOurs(row))
   const forgiven = new Set(notOurs.map((row) => row.rowNumber))
-  const customers = customersByInvoice(parsed.lines)
-  // A blank customer on a line being skipped says nothing about whose invoice it is,
-  // and the classifier would read it as a second customer.
   const otherLines = notOurs.map((row): QbLine => ({
     ...row,
     qbProductName: row.qbProductName === '' ? noProductName(row.rowNumber) : row.qbProductName,
-    customerName: row.customerName === '' ? customers.get(row.invoiceNumber) ?? '' : row.customerName,
   }))
   return {
     errors: parsed.errors.filter((error) => error.rowNumber === null || !forgiven.has(error.rowNumber)),
@@ -416,6 +407,14 @@ const flaggedMessage = (verdict: ChangedVerdict, stuck: boolean): string => {
     : `${stored} It is not in the Pick Queue yet.`
 }
 
+/** Clears what is stored, then reports `result`, or the failure if it could not. */
+function clearingFlag(ctx: CommitContext, invoiceNumber: string, orderId: string | undefined, result: InvoiceResult): Promise<InvoiceResult> {
+  return failingAs(ctx.deps, invoiceNumber, orderId, () => FLAG_NOT_CLEARED, async () => {
+    await ctx.deps.clearFlag(invoiceNumber)
+    return result
+  })
+}
+
 async function commitApply(ctx: CommitContext, verdict: ChangedVerdict): Promise<InvoiceResult> {
   const { invoiceNumber, orderId, horecaId, lines } = verdict
   // The classifier checked the date on every row of an invoice it did not reject.
@@ -430,10 +429,14 @@ async function commitApply(ctx: CommitContext, verdict: ChangedVerdict): Promise
   })
   // It looked editable when classified and stopped being so: the same as not editable.
   if (applied.outcome === 'refused') return commitFlag(ctx, verdict, 'refused', applied.message ?? '')
-  if (applied.outcome === 'updated' && isStuck(ctx.storedByInvoice.get(invoiceNumber))) {
-    return advanceThen(ctx, invoiceNumber, orderId, applied)
-  }
-  return applied
+  if (applied.outcome !== 'updated') return applied
+  const moved = isStuck(ctx.storedByInvoice.get(invoiceNumber))
+    ? await advanceThen(ctx, invoiceNumber, orderId, applied)
+    : applied
+  // The transaction clears the flag but not its resolution, which would then sit
+  // against an invoice with nothing flagged.
+  if (moved.outcome === 'failed' || !ctx.flagsByInvoice.get(invoiceNumber)?.flagResolvedAt) return moved
+  return clearingFlag(ctx, invoiceNumber, orderId, moved)
 }
 
 function commitChanged(ctx: CommitContext, verdict: ChangedVerdict): Promise<InvoiceResult> {
@@ -450,10 +453,7 @@ async function commitUnchanged(ctx: CommitContext, invoiceNumber: string): Promi
       ? await advanceThen(ctx, invoiceNumber, stored.orderId, { invoiceNumber, outcome: 'finished', orderId: stored.orderId })
       : { invoiceNumber, outcome: 'unchanged', ...(orderId ? { orderId } : {}) }
   if (result.outcome === 'failed' || !ctx.flagsByInvoice.has(invoiceNumber)) return result
-  return failingAs(ctx.deps, invoiceNumber, orderId, () => FLAG_NOT_CLEARED, async () => {
-    await ctx.deps.clearFlag(invoiceNumber)
-    return result
-  })
+  return clearingFlag(ctx, invoiceNumber, orderId, result)
 }
 
 function commitVerdict(ctx: CommitContext, verdict: InvoiceVerdict): Promise<InvoiceResult> | InvoiceResult {

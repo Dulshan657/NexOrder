@@ -518,6 +518,61 @@ describe('runImport', () => {
     expect(rows).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
   })
 
+  describe('a blank customer on a good row', () => {
+    it('does not stop a freight line being skipped and named', async () => {
+      const seen = await preview(makeDeps(), csv(WIDGET_A, 'INV-1,05/03/2026,,Freight,1,10.00'))
+      expect(seen.verdicts[0]).toMatchObject({ kind: 'add', horecaId: 7, skippedLines: ['Freight'], rowNumbers: [2, 3] })
+    })
+
+    it('still rejects on a mapped line', async () => {
+      const seen = await preview(makeDeps(), csv(WIDGET_A, 'INV-1,05/03/2026,,Widget,1,2.50'))
+      expect(seen.verdicts[0].kind).toBe('rejected')
+    })
+  })
+
+  describe('a flag on a change that was applied', () => {
+    const resolved = (flaggedChange: unknown, flagResolvedAt: string | null) => ({
+      storedImports: [storedFor()],
+      storedFlags: [{ invoiceNumber: 'INV-1', flaggedChange, flagResolvedAt }],
+    })
+
+    it('clears a resolution straight away, because the transaction leaves it set', async () => {
+      const deps = makeDeps(resolved([{ kind: 'customer' }], '2026-03-01T00:00:00Z'))
+      const done = await commit(deps, csv(WIDGET_A_CHANGED), ['INV-1'])
+      expect(deps.updateInvoice).toHaveBeenCalledTimes(1)
+      expect(deps.clearFlag).toHaveBeenCalledWith('INV-1')
+      expect(resultOf(done, 'INV-1')).toMatchObject({ outcome: 'updated' })
+    })
+
+    it('writes nothing more when no resolution is set', async () => {
+      const deps = makeDeps(resolved([{ kind: 'customer' }], null))
+      await commit(deps, csv(WIDGET_A_CHANGED), ['INV-1'])
+      expect(deps.clearFlag).not.toHaveBeenCalled()
+    })
+
+    it('leaves a resolution alone when the update did not happen', async () => {
+      const deps = makeDeps(resolved([{ kind: 'customer' }], '2026-03-01T00:00:00Z'), {
+        updateInvoice: vi.fn(async () => {
+          throw new Error('QB_ALLOCATION_MISMATCH: no')
+        }),
+      })
+      await commit(deps, csv(WIDGET_A_CHANGED), ['INV-1'])
+      expect(deps.clearFlag).not.toHaveBeenCalled()
+    })
+
+    it('reports a resolution it could not clear, saying what to do', async () => {
+      const deps = makeDeps(resolved(null, '2026-03-01T00:00:00Z'), {
+        clearFlag: vi.fn(async () => {
+          throw new Error('update failed')
+        }),
+      })
+      const done = await commit(deps, csv(WIDGET_A_CHANGED, WIDGET_B), ['INV-1'])
+      expect(resultOf(done, 'INV-1')).toMatchObject({ outcome: 'failed', orderId: 'QB-INV-1' })
+      expect(resultOf(done, 'INV-1')?.message).toMatch(/upload/i)
+      expect(resultOf(done, 'INV-2')).toMatchObject({ outcome: 'added' })
+    })
+  })
+
   describe('a bad value on a line that is not ours', () => {
     const FREIGHT_BLANK = 'INV-1,05/03/2026,Harbour Bistro,Freight,,'
 

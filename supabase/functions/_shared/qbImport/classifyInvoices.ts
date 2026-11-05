@@ -455,7 +455,10 @@ function classifyInvoice(group: readonly QbLine[], lookups: Lookups): InvoiceVer
   }
 
   const aggregate = aggregateMapped(parts.mapped)
-  const customer = resolveCustomer(group, lookups)
+  // A blank customer on a line that is not ours says nothing about whose invoice this
+  // is, as freight and discount lines often have none. A name there still counts.
+  const unnamedOther = new Set(parts.other.filter((line) => normaliseName(line.customerName) === ''))
+  const customer = resolveCustomer(group.filter((line) => !unnamedOther.has(line)), lookups)
   const reasons = [
     ...invoiceNumberReasons(invoiceNumber),
     ...customer.reasons,

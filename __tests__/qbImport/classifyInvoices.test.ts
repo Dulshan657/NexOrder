@@ -535,6 +535,32 @@ describe('classifyInvoices', () => {
       expect(mentions(expectRejected(verdict), 'blank')).toBe(true)
     })
 
+    it('ignores a blank customer on a line that is neither mapped nor own', async () => {
+      const verdict = await classifyOne(
+        [ln(2, SAUCE, 1, 4.5), ln(3, FEE, 1, 10, { customerName: '   ' })],
+        makeCtx(),
+      )
+      const added = expectKind(verdict, 'add')
+      expect(added.horecaId).toBe(1)
+      expect(added.skippedLines).toEqual([FEE])
+      expect(added.rowNumbers).toEqual([2, 3])
+    })
+
+    it('still rejects a blank customer on a mapped line beside a named one', async () => {
+      const verdict = await classifyOne([ln(2, SAUCE, 1, 4.5), ln(3, MUSTARD, 1, 3, { customerName: '' })], makeCtx())
+      expect(mentions(expectRejected(verdict), 'more than one customer')).toBe(true)
+    })
+
+    it('still rejects a blank customer on an own line that is not mapped', async () => {
+      const verdict = await classifyOne([ln(2, SAUCE, 1, 4.5), ln(3, 'Acme Chutney 200g', 1, 6, { customerName: '' })], makeCtx())
+      expect(mentions(expectRejected(verdict), 'more than one customer')).toBe(true)
+    })
+
+    it('still rejects a different named customer on a line that is neither mapped nor own', async () => {
+      const verdict = await classifyOne([ln(2, SAUCE, 1, 4.5), ln(3, FEE, 1, 10, { customerName: 'Corner Deli' })], makeCtx())
+      expect(mentions(expectRejected(verdict), 'more than one customer')).toBe(true)
+    })
+
     it('rejects a product name that two map rows share, rather than choosing one', async () => {
       const verdict = await classifyOne(
         [ln(2, SAUCE, 5, 4.5)],
