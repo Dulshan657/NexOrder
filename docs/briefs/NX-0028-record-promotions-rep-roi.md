@@ -78,3 +78,28 @@ that record.
 - Amadiya: it does not have the promotions module, so nothing is deployed there.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `buildAppliedPromotions > records a percentage, fixed price and clearance promotion with its discount`, `buildAppliedPromotions > works out the discount on carton and UOM lines from their own prices`, `buildAppliedPromotions > records a bundle with its products and a buy-one-get-one with its free goods` and `placeOrderCore > live mode > writes every promotion the order used` fail on base and pass on tip. On dev, one real order through `place-order` recorded all five types, read back by SELECT: 3.90, 5.00, 4.80, 6.40 and 4.00 free goods value, total 11.55 | Carton and UOM discounts were tested in code, not on a real order |
+| A2 | claimed | `placeOrderCore > live mode > writes an empty list when the order used no promotion` fails on base, passes on tip | Not seen on dev: PROMO-006's `hoReCas` kind applies 10% to every order there, so no dev order can use none |
+| A3 | claimed | `promotion saving > the used-on-orders check asks the database about this promotion` fails on base, passes on tip. On dev through the real filter: a used percentage promotion refused an edit (409, count 3), a used fixed price promotion refused a delete (409), a used rep promotion refused an edit (409), toggles returned 200, and after the orders were cancelled the edit returned 200 | |
+| A4 | claimed | `placeOrderCore > live mode > a rep promotion applies to the rep placing the order and no one else` and `rep-targeted promotions > the preview matches on the profile id` fail on base, pass on tip. On dev: the targeted rep got it (recorded, total 11.55), and another rep and a customer did not (total 13.20 each) | The preview was tested in code. Nobody compared a preview on screen with a stored total |
+| A5 | claimed | `placeOrderCore > dry run > the approver counts for a rep promotion, not the requester` fails on base, passes on tip | Tests only: no QR order was approved on dev |
+| A6 | claimed | `PromotionForm > a rep target saves the rep's profile id and shows it again on an edit` and `promotion rules > a rep target must be a profile id` fail on base, pass on tip. On dev, a numeric rep target returned 400 and a profile id saved 201 | The form was tested in jsdom, not opened on dev |
+| A7 | claimed | `getPromotionROI > counts orders and discount, including the older promoId key` and `getPromotionROI > leaves out cancelled orders` fail on base, pass on tip | The ROI table was not opened on dev |
+| A8 | claimed | `getPromotionROI > the baseline uses only orders recorded as having no promotion` and `getPromotionROI > uplift is null with no promotion orders or no baseline` fail on base, pass on tip | The dash was not seen on screen. On dev every uplift will read as a dash for now, because of PROMO-006 (see A2) and because all earlier orders record nothing |
+| A9 | not-claimed | | No browser walk. Dev's login takes a password, and this session may not enter one in a browser on that host. The server half ran instead, 33 of 33 checks, with a script calling the deployed functions as the demo Admin, two reps and a customer. Left for the owner on dev: the rep dropdown, the Shop preview against a stored total, and the ROI table |
+| A10 | not-claimed | | Written before the merge. `mutate-promotion`, `place-order` and `qr-order-request` are on dev from 17f6b11, with the owner's consent for `--yes`. That commit differs from the tip only in comments and this brief's number. Dev serves d30d443, a throwaway merge of this branch into 22e3d61, which keeps the unmerged NX-0012 to NX-0015 work there |
+
+### Not claimed
+
+- No browser walk, and no screen was opened on any width, or on the RS35. See A9.
+- Free goods are recorded but still not on the order: nothing reserves or picks them, while the cart promises them. ROI's Discount column includes their value. By owner decision that is a follow-up brief.
+- Older orders are not backfilled, and `approve-po` orders still record nothing, so neither counts in ROI.
+- Revenue stays the whole order total, so an order using two promotions counts under both.
+- No QR order was approved on dev, and no carton or UOM line was placed there.
+- The walk left three cancelled orders on dev (ORD-1793882237960, ORD-1793882239216, ORD-1793882240161) and their audit rows, plus audit rows for the six test promotions. Dev's 6 promotions and the stock of the five products used are as they were.
+- The walk's logins used the demo accounts the dev login page publishes.
+- No confirmation email was checked. `send-email` selects `horecas.email`, a column dev's table does not have (`00138` notes the name), which reads as confirmations not being sent. Not changed here, and not confirmed by a run.
+- Numbered NX-0028 after approval as NX-0027: another session took that number. The approved text changed only in its number, its base and the two follow-up numbers.
