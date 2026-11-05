@@ -50,6 +50,8 @@ export const FUNCTION_MODULES = {
   'place-order': 'sales_orders',
   'update-order-status': 'sales_orders',
   'cancel-order': 'sales_orders',
+  // QuickBooks invoices become orders here, as they do through place-order.
+  'import-qb-invoices': 'sales_orders',
 
   // ── shop ──────────────────────────────────────────────────────────────────
   // Self-service ordering: the catalogue browse, the cart, the pantry, and the
