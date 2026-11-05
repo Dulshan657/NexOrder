@@ -71,12 +71,9 @@ test.describe('F8/F40 — the mobile top bar owns the ☰', () => {
       // sibling cannot. This is the assertion that fails if anyone "simplifies"
       // MobileTopBar back to fixed positioning.
       //
-      // Measured against the SCROLL CONTAINER, not against a heading. The first
-      // attempt compared the bar to `getByRole('heading').first()` and was wrong
-      // twice over: Stocktake, Putaway and Replenishment render no h1/h2 inside
-      // `main` at all, and on the pages that do, the heading sits after a 36px
-      // icon tile — so its x is 64 on some pages and 16 on others for reasons
-      // that have nothing to do with clearance.
+      // Measured against the SCROLL CONTAINER, not against a heading. A page's
+      // h1 comes from PageHeader, which hides it visually at this width, so its
+      // position says nothing about clearance.
       const barBox = await bar.boundingBox()
       const mainBox = await page.locator('main[data-scroll-container]').boundingBox()
       expect(Math.round(barBox!.y + barBox!.height), `${item}: the scroller must start below the bar`)

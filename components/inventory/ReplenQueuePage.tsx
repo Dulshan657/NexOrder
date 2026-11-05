@@ -8,7 +8,7 @@
 // bulk bin to pull FROM.
 
 import React, { useMemo, useState } from 'react';
-import { ClipboardList, Footprints, ArrowDownToLine, RefreshCw, SlidersHorizontal } from 'lucide-react';
+import { ArrowDownToLine, RefreshCw } from 'lucide-react';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import { useWarehouseScope } from '../../context/WarehouseScopeContext';
 import {
@@ -22,6 +22,10 @@ import ReplenQueueView from './ReplenQueueView';
 import ReplenWalkView from './ReplenWalkView';
 import ReplenSetupView from './replen/ReplenSetupView';
 import { parseSubtab } from '../../lib/subtabUrl';
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl';
+import { PageFrame } from '../../components/ui/PageFrame';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { PageTabs } from '../../components/ui/PageTabs';
 
 type Stage = 'assign' | 'walk' | 'setup';
 
@@ -133,73 +137,58 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
   };
 
   return (
-    <div className="bg-white min-h-svh">
-      <div className="px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8 flex flex-wrap items-center gap-3">
-        {/* Clamped for the reason spelled out in StocktakePage: a native
-            <select> sizes to its widest OPTION, so this ran 53px off a 360px
-            screen and worsened with every site added. `min-w-0` is what lets
-            `max-w-full` bite. */}
-        <label className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm text-stone-600">
-          <span className="shrink-0 font-medium">Warehouse</span>
-          <select
-            value={effectiveWarehouseId ?? ''}
-            onChange={(e) => e.target.value && setScope(Number(e.target.value))}
-            className="min-w-0 max-w-full truncate text-sm rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
-          >
-            <option value="">Select a warehouse…</option>
-            {activeWarehouses.map((w) => (
-              <option key={w.id} value={w.id}>{optionLabel(w)}</option>
-            ))}
-          </select>
-        </label>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS.Replenishment}
+        description="Top up pick slots from reserve stock when they run low."
+        actions={
+          <>
+            {/* Clamped for the reason spelled out in StocktakePage: a native
+                <select> sizes to its widest OPTION, so this ran 53px off a 360px
+                screen and worsened with every site added. `min-w-0` is what lets
+                `max-w-full` bite. */}
+            <label className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm text-stone-600">
+              <span className="shrink-0 font-medium">Warehouse</span>
+              <select
+                value={effectiveWarehouseId ?? ''}
+                onChange={(e) => e.target.value && setScope(Number(e.target.value))}
+                className="min-w-0 max-w-full truncate text-sm rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+              >
+                <option value="">Select a warehouse…</option>
+                {activeWarehouses.map((w) => (
+                  <option key={w.id} value={w.id}>{optionLabel(w)}</option>
+                ))}
+              </select>
+            </label>
 
-        {effectiveWarehouseId != null && (
-          <button
-            type="button"
-            onClick={runScan}
-            disabled={detect.isPending}
-            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 touch-target-y rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 btn-press disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${detect.isPending ? 'animate-spin' : ''}`} aria-hidden="true" />
-            {detect.isPending ? 'Scanning…' : 'Scan for shortfalls'}
-          </button>
-        )}
-      </div>
+            {effectiveWarehouseId != null && (
+              <button
+                type="button"
+                onClick={runScan}
+                disabled={detect.isPending}
+                className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 touch-target-y rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 btn-press disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${detect.isPending ? 'animate-spin' : ''}`} aria-hidden="true" />
+                {detect.isPending ? 'Scanning…' : 'Scan for shortfalls'}
+              </button>
+            )}
+          </>
+        }
+      />
 
       {effectiveWarehouseId != null ? (
         <>
-          <div className="px-4 sm:px-6 lg:px-8 pt-4">
-            <div
-              role="tablist"
-              aria-label="Replenishment stage"
-              className="inline-flex p-0.5 rounded-lg bg-stone-100 border border-stone-200"
-            >
-              {(canConfigure ? STAGES : (['assign', 'walk'] as const)).map((t) => {
-                const badge = t === 'assign' ? suggestedCount : t === 'walk' ? assignedCount : 0;
-                return (
-                  <button
-                    key={t}
-                    role="tab"
-                    aria-selected={stage === t}
-                    onClick={() => setStage(t)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-md text-sm btn-press ${
-                      stage === t ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
-                    }`}
-                  >
-                    {t === 'assign'
-                      ? <><ClipboardList className="w-4 h-4" aria-hidden="true" /> Assign</>
-                      : t === 'walk'
-                        ? <><Footprints className="w-4 h-4" aria-hidden="true" /> Walk</>
-                        : <><SlidersHorizontal className="w-4 h-4" aria-hidden="true" /> Min/max setup</>}
-                    {badge > 0 && (
-                      <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-nexgen-blue text-white text-[10px] tabular-nums">
-                        {badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+          <div>
+            <PageTabs
+              ariaLabel="Replenishment stage"
+              tabs={[
+                { id: 'assign' as Stage, label: 'Assign', badge: suggestedCount },
+                { id: 'walk' as Stage, label: 'Walk', badge: assignedCount },
+                ...(canConfigure ? [{ id: 'setup' as Stage, label: 'Min/max setup' }] : []),
+              ]}
+              activeId={stage}
+              onChange={setStage}
+            />
             <p className="mt-2 text-xs text-stone-500">
               {stage === 'assign'
                 ? 'Decide which bin each top-up comes from. Nothing moves until someone carries it.'
@@ -209,25 +198,23 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
             </p>
           </div>
 
-          <div className="p-4 sm:p-6 lg:p-8">
-            {stage === 'assign' && (
-              <ReplenQueueView warehouseId={effectiveWarehouseId} canWork={canWorkHere} />
-            )}
-            {stage === 'walk' && (
-              <ReplenWalkView warehouseId={effectiveWarehouseId} canWork={canWorkHere} />
-            )}
-            {stage === 'setup' && canConfigure && (
-              <ReplenSetupView
-                warehouseId={effectiveWarehouseId}
-                warehouseName={
-                  activeWarehouses.find((w) => w.id === effectiveWarehouseId)?.name ?? 'this warehouse'
-                }
-              />
-            )}
-          </div>
+          {stage === 'assign' && (
+            <ReplenQueueView warehouseId={effectiveWarehouseId} canWork={canWorkHere} />
+          )}
+          {stage === 'walk' && (
+            <ReplenWalkView warehouseId={effectiveWarehouseId} canWork={canWorkHere} />
+          )}
+          {stage === 'setup' && canConfigure && (
+            <ReplenSetupView
+              warehouseId={effectiveWarehouseId}
+              warehouseName={
+                activeWarehouses.find((w) => w.id === effectiveWarehouseId)?.name ?? 'this warehouse'
+              }
+            />
+          )}
         </>
       ) : (
-        <div className="px-4 sm:px-6 lg:px-8 py-16">
+        <div className="py-16">
           <div className="glass-card rounded-xl p-10 text-center">
             <ArrowDownToLine className="w-9 h-9 text-stone-300 mx-auto mb-3" />
             <p className="text-sm text-stone-600">Pick a warehouse to see its replenishment queue</p>
@@ -235,7 +222,7 @@ const ReplenQueuePage: React.FC<ReplenQueuePageProps> = ({ currentUser }) => {
           </div>
         </div>
       )}
-    </div>
+    </PageFrame>
   );
 };
 

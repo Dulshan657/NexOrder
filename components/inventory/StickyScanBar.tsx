@@ -5,13 +5,13 @@ interface StickyScanBarProps {
     /**
      * Which padding scale the HOST page uses, so the bleed cancels exactly it.
      *
-     * Not cosmetic: `ReceiveStockView` pads `p-4 sm:p-6 xl:p-8` while the three
-     * putaway/stocktake hosts use `lg:p-8`. Bleeding 32px against 24px of
-     * padding overhangs by 8px a side and puts a horizontal scrollbar on the
-     * page between 1024px and 1279px — which is precisely what
-     * `expectNoHorizontalOverflow` exists to catch, and what F25 was.
+     * Not cosmetic: bleeding 32px against 24px of padding overhangs by 8px a
+     * side and puts a horizontal scrollbar on the page between 1024px and
+     * 1279px — which is precisely what `expectNoHorizontalOverflow` exists to
+     * catch, and what F25 was. Every host now pads through `PageFrame`, so
+     * there is one scale; a page that pads differently has to add its own here.
      */
-    bleed?: 'lg' | 'xl';
+    bleed?: 'lg';
     /**
      * Which edge of the scrollport to pin to. `'top'` is the default so every
      * existing caller keeps its behaviour; `'bottom'` is for the handheld
@@ -51,11 +51,10 @@ interface StickyScanBarProps {
     className?: string;
 }
 
-/** The two padding scales in use across the inventory pages, and nothing else.
- *  Add a third only after checking the host actually pads that way. */
-const BLEED: Record<'lg' | 'xl', string> = {
+/** The padding scale in use across the inventory pages, and nothing else.
+ *  Add another only after checking the host actually pads that way. */
+const BLEED: Record<'lg', string> = {
     lg: '-mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8',
-    xl: '-mx-4 px-4 sm:-mx-6 sm:px-6 xl:-mx-8 xl:px-8',
 };
 
 /**
@@ -72,13 +71,12 @@ const BLEED: Record<'lg' | 'xl', string> = {
  * declared its padding scale there, and one declaration that can be wrong beats
  * two that can disagree.
  */
-const BLEED_BOTTOM: Record<'lg' | 'xl', string> = {
+const BLEED_BOTTOM: Record<'lg', string> = {
     lg: '-mb-4 sm:-mb-6 lg:-mb-8',
-    xl: '-mb-4 sm:-mb-6 xl:-mb-8',
 };
 
 /** An adaptive bar is only a bottom dock below `lg`, so it bleeds downwards only
- *  there. Both padding scales agree below `lg`, hence one string. */
+ *  there. */
 const BLEED_BOTTOM_ADAPTIVE = '-mb-4 sm:-mb-6 lg:mb-0';
 
 /** The border faces the content the bar overlaps, so it reads as an edge rather

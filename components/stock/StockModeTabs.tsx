@@ -7,7 +7,6 @@
 // actually is, and it is honest without extra machinery.
 
 import React from 'react'
-import { ScanLine, List } from 'lucide-react'
 
 export type StockMode = 'lookup' | 'levels'
 
@@ -16,15 +15,14 @@ export interface StockModeTabsProps {
   onChange: (mode: StockMode) => void
 }
 
+// Looks like PageTabs, but stays its own component because of the aria-pressed
+// reasoning above and the full-width halves below.
 const BASE =
-  'touch-target-y inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 ' +
-  'text-sm font-semibold btn-press focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark'
+  'touch-target-y relative -mb-px inline-flex flex-1 items-center justify-center py-2.5 ' +
+  'text-sm transition-colors border-b-2 focus:outline-none focus:ring-2 focus:ring-nexgen-blue-dark'
 
-// `nexgen-blue-dark` (4.93:1) rather than `nexgen-blue` (3.70:1): white text on
-// the selected segment has to clear 4.5:1, and the lighter brand blue is a
-// disclosed exception for large type only.
-const ON = 'bg-nexgen-blue-dark text-white'
-const OFF = 'text-stone-700 hover:bg-stone-100'
+const ON = 'border-stone-900 text-stone-900 font-medium'
+const OFF = 'border-transparent text-stone-500 hover:text-stone-800'
 
 export function StockModeTabs({ mode, onChange }: StockModeTabsProps) {
   return (
@@ -34,7 +32,7 @@ export function StockModeTabs({ mode, onChange }: StockModeTabsProps) {
       // Full width at 360px, where both halves want a thumb's worth of target;
       // capped on a desk, where a control stretched across 1200px reads as a
       // banner rather than a switch.
-      className="flex gap-1 rounded-xl border border-stone-200 bg-stone-50 p-1 sm:max-w-sm"
+      className="flex border-b border-stone-200/70 sm:max-w-sm"
     >
       <button
         type="button"
@@ -42,7 +40,7 @@ export function StockModeTabs({ mode, onChange }: StockModeTabsProps) {
         onClick={() => onChange('lookup')}
         className={`${BASE} ${mode === 'lookup' ? ON : OFF}`}
       >
-        <ScanLine className="w-4 h-4 shrink-0" aria-hidden="true" /> Look up
+        Look up
       </button>
       <button
         type="button"
@@ -50,7 +48,7 @@ export function StockModeTabs({ mode, onChange }: StockModeTabsProps) {
         onClick={() => onChange('levels')}
         className={`${BASE} ${mode === 'levels' ? ON : OFF}`}
       >
-        <List className="w-4 h-4 shrink-0" aria-hidden="true" /> Browse
+        Browse
       </button>
     </div>
   )

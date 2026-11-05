@@ -13,6 +13,9 @@
 
 import React, { useMemo, useState } from 'react'
 import { ClipboardList } from 'lucide-react'
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl'
+import { PageFrame } from '../../components/ui/PageFrame'
+import { PageHeader } from '../../components/ui/PageHeader'
 import { useWarehouses } from '../../hooks/queries/useWarehouses'
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations'
 import { useWarehouseScope } from '../../context/WarehouseScopeContext'
@@ -116,53 +119,55 @@ const StocktakePage: React.FC<StocktakePageProps> = ({ currentUser, products }) 
   }
 
   return (
-    <div className="min-h-svh bg-white">
-      <div className="flex flex-wrap items-center gap-3 px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8">
-        {/* A native <select> sizes itself to its WIDEST OPTION, not to its box.
-            At 360px that made this 267px starting at x=146 — 53px off the side
-            of the screen — and it got worse with every warehouse added, since
-            the culprit is whichever site has the longest name. Invisible on a
-            desktop, which is why it survived until the 360px Playwright
-            project existed to measure it. `min-w-0` is load-bearing: without
-            it the flex item refuses to shrink below its content and
-            `max-w-full` does nothing at all. */}
-        <label className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm text-stone-600">
-          <span className="shrink-0 font-medium">Warehouse</span>
-          <select
-            value={effectiveWarehouseId ?? ''}
-            onChange={(e) => e.target.value && changeWarehouse(Number(e.target.value))}
-            className="min-w-0 max-w-full truncate rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
-          >
-            <option value="">Select a warehouse…</option>
-            {activeWarehouses.map((w) => (
-              <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
-            ))}
-          </select>
-        </label>
-      </div>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS.Stocktake}
+        description="Count what is in a bin and post any difference."
+        actions={
+          // A native <select> sizes itself to its WIDEST OPTION, not to its box.
+          // At 360px that made this 267px starting at x=146 — 53px off the side
+          // of the screen — and it got worse with every warehouse added, since
+          // the culprit is whichever site has the longest name. Invisible on a
+          // desktop, which is why it survived until the 360px Playwright
+          // project existed to measure it. `min-w-0` is load-bearing: without
+          // it the flex item refuses to shrink below its content and
+          // `max-w-full` does nothing at all.
+          <label className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm text-stone-600">
+            <span className="shrink-0 font-medium">Warehouse</span>
+            <select
+              value={effectiveWarehouseId ?? ''}
+              onChange={(e) => e.target.value && changeWarehouse(Number(e.target.value))}
+              className="min-w-0 max-w-full truncate rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
+            >
+              <option value="">Select a warehouse…</option>
+              {activeWarehouses.map((w) => (
+                <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
+              ))}
+            </select>
+          </label>
+        }
+      />
 
       {effectiveWarehouseId != null ? (
-        <div className="p-4 sm:p-6 lg:p-8">
-          {selected ? (
-            <CountSheet
-              location={selected}
-              products={products}
-              canWork={canWorkHere}
-              onDone={() => setSelected(null)}
-            />
-          ) : (
-            <>
-              <p className="mb-4 text-xs text-stone-500">
-                Scan a bin to count it. Bulk and floor-stacked stock is counted on the site root.
-              </p>
-              <StickyScanBar>
-                <CountLocationFinder locations={locations} onPick={setSelected} />
-              </StickyScanBar>
-            </>
-          )}
-        </div>
+        selected ? (
+          <CountSheet
+            location={selected}
+            products={products}
+            canWork={canWorkHere}
+            onDone={() => setSelected(null)}
+          />
+        ) : (
+          <>
+            <p className="text-xs text-stone-500">
+              Scan a bin to count it. Bulk and floor-stacked stock is counted on the site root.
+            </p>
+            <StickyScanBar>
+              <CountLocationFinder locations={locations} onPick={setSelected} />
+            </StickyScanBar>
+          </>
+        )
       ) : (
-        <div className="px-4 py-16 sm:px-6 lg:px-8">
+        <div className="py-16">
           <div className="glass-card rounded-xl p-10 text-center">
             <ClipboardList className="mx-auto mb-3 h-9 w-9 text-stone-300" />
             <p className="text-sm text-stone-600">Pick a warehouse to start a count</p>
@@ -170,7 +175,7 @@ const StocktakePage: React.FC<StocktakePageProps> = ({ currentUser, products }) 
           </div>
         </div>
       )}
-    </div>
+    </PageFrame>
   )
 }
 

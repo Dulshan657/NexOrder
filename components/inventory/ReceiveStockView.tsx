@@ -35,7 +35,10 @@ import { buildScanIndex, normalizeScan } from '../../lib/scan/resolveScan'
 import { describeReceiveRefusal, resolveReceiveScan } from '../../lib/scan/receiveScan'
 import { useScanFlash } from '../../lib/scan/useScanFlash'
 import { useWedgeScanner } from '../../lib/scan/useWedgeScanner'
-import { History, PackagePlus, ScanLine } from 'lucide-react'
+import { History, ScanLine } from 'lucide-react'
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl'
+import { PageFrame } from '../../components/ui/PageFrame'
+import { PageHeader } from '../../components/ui/PageHeader'
 
 interface ReceiveStockViewProps {
   products: Product[]
@@ -628,18 +631,11 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
     // A flex column so the scan bar can be the LAST item below `lg` (a bottom
     // dock must be — see StickyScanBar) while sitting right under the delivery
     // strip in the DOM, which is where it belongs on a desk and in focus order.
-    <div className="bg-white min-h-svh p-4 sm:p-6 xl:p-8 flex flex-col gap-4 sm:gap-5">
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-nexgen-blue/10">
-          <PackagePlus className="w-5 h-5 text-nexgen-blue" aria-hidden="true" />
-        </div>
-        <div>
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Receive Stock</h1>
-          <p className="text-xs text-stone-600 mt-0.5">
-            Pick the supplier, then scan each carton. Scanning the same product again counts it.
-          </p>
-        </div>
-      </div>
+    <PageFrame column>
+      <PageHeader
+        title={ADMIN_TAB_LABELS.Receiving}
+        description="Pick the supplier, then scan each carton as it comes in."
+      />
 
       {received ? (
         <ReceiveSuccessCard
@@ -704,10 +700,10 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
             userName={currentUser.name}
           />
 
-          {/* `bleed="xl"` because THIS page pads `p-4 sm:p-6 xl:p-8`. The order
-              classes go on the bar ITSELF: a wrapper would become sticky's
-              containing block, exactly the bar's height, and it would never pin. */}
-          <StickyScanBar bleed="xl" position="adaptive" className="order-last mt-auto lg:order-none lg:mt-0">
+          {/* The order classes go on the bar ITSELF: a wrapper would become
+              sticky's containing block, exactly the bar's height, and it would
+              never pin. */}
+          <StickyScanBar position="adaptive" className="order-last mt-auto lg:order-none lg:mt-0">
               <ReceiveWorkBar
                 searchWrapRef={searchWrapRef}
                 search={search}
@@ -839,7 +835,7 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
       )}
 
       <RecentReceiptsPanel />
-    </div>
+    </PageFrame>
   )
 }
 

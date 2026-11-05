@@ -23,7 +23,7 @@
 
 import React, { useMemo, useState } from 'react'
 import {
-  Boxes, RefreshCw, ArrowRight, X, Loader2, PackageSearch, Undo2, MessageSquareQuote,
+  RefreshCw, ArrowRight, X, Loader2, PackageSearch, Undo2, MessageSquareQuote,
 } from 'lucide-react'
 import { useWarehouses } from '../../hooks/queries/useWarehouses'
 import { useWarehouseScope } from '../../context/WarehouseScopeContext'
@@ -39,6 +39,10 @@ import { UserRole, type User } from '../../types'
 import type { OffHomeTask, RestoreResult } from '../../services/supabase/offHomeService'
 import { parseSubtab } from '../../lib/subtabUrl'
 import { Modal } from '../ui'
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl'
+import { PageFrame } from '../../components/ui/PageFrame'
+import { PageHeader } from '../../components/ui/PageHeader'
+import { PageTabs } from '../../components/ui/PageTabs'
 
 interface OffHomeQueuePageProps {
   currentUser: User
@@ -212,69 +216,46 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
   const listLoading = view === 'todo' ? isLoading : leftLoading
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900 flex items-center gap-2">
-            <Boxes className="w-5 h-5 text-stone-500" /> Off-home stock
-          </h2>
-          <p className="mt-0.5 text-xs text-stone-500 max-w-[62ch]">
-            Stock sitting outside the blocks its slotting rules assign. Moving it
-            is optional — nothing here is wrong, it is just not where the rules say.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {activeWarehouses.length > 1 && (
-            <select
-              className="min-w-0 max-w-full truncate text-sm border border-stone-200 rounded-lg px-2 py-1.5 bg-white"
-              value={warehouseId ?? ''}
-              onChange={(e) => setScope(Number(e.target.value))}
-              aria-label="Warehouse"
-            >
-              {activeWarehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
-          )}
-          <button
-            type="button"
-            onClick={runScan}
-            disabled={detect.isPending || warehouseId == null}
-            className="btn-press inline-flex items-center gap-1.5 border border-stone-300 text-stone-700 font-medium py-2 px-4 rounded-lg hover:bg-stone-50 disabled:opacity-40"
-          >
-            {detect.isPending
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <RefreshCw className="w-4 h-4" />}
-            Check now
-          </button>
-        </div>
-      </div>
-
-      <div
-        role="tablist"
-        aria-label="Off-home list"
-        className="inline-flex p-0.5 rounded-lg bg-stone-100 border border-stone-200"
-      >
-        {VIEWS.map((v) => {
-          const count = v === 'todo' ? rows.length : dismissedRows.length
-          return (
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS['Off-home']}
+        description="Stock outside its slotted blocks, which you can choose to move."
+        actions={
+          <>
+            {activeWarehouses.length > 1 && (
+              <select
+                className="min-w-0 max-w-full truncate text-sm border border-stone-200 rounded-lg px-2 py-1.5 bg-white"
+                value={warehouseId ?? ''}
+                onChange={(e) => setScope(Number(e.target.value))}
+                aria-label="Warehouse"
+              >
+                {activeWarehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            )}
             <button
-              key={v}
-              role="tab"
-              aria-selected={view === v}
-              onClick={() => setView(v)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-md text-sm btn-press ${
-                view === v ? 'bg-white text-stone-900 shadow-sm font-medium' : 'text-stone-600 hover:text-stone-900'
-              }`}
+              type="button"
+              onClick={runScan}
+              disabled={detect.isPending || warehouseId == null}
+              className="btn-press inline-flex items-center gap-1.5 border border-stone-300 text-stone-700 text-sm font-medium py-1.5 px-3 touch-target-y rounded-lg hover:bg-stone-50 disabled:opacity-40"
             >
-              {v === 'todo' ? 'To do' : 'Left alone'}
-              {count > 0 && (
-                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-nexgen-blue text-white text-[10px] tabular-nums">
-                  {count}
-                </span>
-              )}
+              {detect.isPending
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <RefreshCw className="w-4 h-4" />}
+              Check now
             </button>
-          )
-        })}
-      </div>
+          </>
+        }
+      />
+
+      <PageTabs
+        ariaLabel="Off-home list"
+        tabs={[
+          { id: 'todo' as View, label: 'To do', badge: rows.length },
+          { id: 'left' as View, label: 'Left alone', badge: dismissedRows.length },
+        ]}
+        activeId={view}
+        onChange={setView}
+      />
 
       {view === 'left' && (
         <p className="text-xs text-stone-500 max-w-[68ch]">
@@ -448,7 +429,7 @@ const OffHomeQueuePage: React.FC<OffHomeQueuePageProps> = ({ currentUser }) => {
           </span>
         </label>
       </Modal>
-    </div>
+    </PageFrame>
   )
 }
 

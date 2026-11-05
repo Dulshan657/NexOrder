@@ -20,6 +20,9 @@ import { useWarehouses } from '../hooks/queries/useWarehouses';
 import TransferStockModal from './admin/TransferStockModal';
 import StockImportModal from './admin/StockImportModal';
 import { useFlagDeepLink } from '../hooks/useFlagDeepLink';
+import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
+import { PageFrame } from '../components/ui/PageFrame';
+import { PageHeader } from '../components/ui/PageHeader';
 
 interface StockViewProps {
   products: Product[];
@@ -153,39 +156,38 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast, 
     // 664px screen, measured, and stayed there. Every other scan surface hides
     // this by always having enough content to fill the page. Pushing the dock
     // down by layout means sticky is only ever asked to do the thing it does.
-    <div className={`bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6${lookupMode ? ' flex flex-col' : ''}`}>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Stock Levels</h1>
-          <p className="text-xs text-stone-500 mt-0.5">
-            {isCustomer
-              ? 'Product availability overview'
-              : `${products.length} products · live from the inventory ledger`}
-          </p>
-        </div>
-        {isOps && (
-          <div className="flex items-center gap-2 self-start">
-            <WarehousePicker />
-            {isAdminManager && (
-              <>
-                <button
-                  onClick={() => setImportOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold border border-stone-300 text-stone-700 hover:bg-stone-50 btn-press"
-                >
-                  <FileUp className="w-4 h-4" /> Import stock
-                </button>
-                <button
-                  onClick={() => setTransferOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-nexgen-blue text-white hover:bg-nexgen-blue/90 btn-press"
-                >
-                  <Repeat className="w-4 h-4" /> Transfer stock
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
+    <PageFrame column={lookupMode}>
+      <PageHeader
+        title={ADMIN_TAB_LABELS.Stock}
+        description={
+          isCustomer
+            ? 'Product availability overview'
+            : 'Scan to look something up, or browse levels across products.'
+        }
+        actions={
+          isOps ? (
+            <>
+              <WarehousePicker />
+              {isAdminManager && (
+                <>
+                  <button
+                    onClick={() => setImportOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-lg text-sm font-semibold border border-stone-300 text-stone-700 hover:bg-stone-50 btn-press"
+                  >
+                    <FileUp className="w-4 h-4" /> Import stock
+                  </button>
+                  <button
+                    onClick={() => setTransferOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 touch-target-y rounded-lg text-sm font-semibold bg-nexgen-blue text-white hover:bg-nexgen-blue/90 btn-press"
+                  >
+                    <Repeat className="w-4 h-4" /> Transfer stock
+                  </button>
+                </>
+              )}
+            </>
+          ) : undefined
+        }
+      />
 
       {transferOpen && <TransferStockModal products={products} onClose={() => setTransferOpen(false)} />}
       {importOpen && (
@@ -233,14 +235,14 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast, 
             )}
           </div>
           <div className="flex gap-2">
-            <select value={stockFilter} onChange={e => setStockFilter(e.target.value as StockFilter)} className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 cursor-pointer">
+            <select value={stockFilter} onChange={e => setStockFilter(e.target.value as StockFilter)} className="min-w-0 flex-1 truncate sm:flex-none px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 cursor-pointer">
               <option value="all">All Status</option>
               <option value="in_stock">In Stock</option>
               <option value="low_stock">Low Stock</option>
               <option value="out_of_stock">Out of Stock</option>
             </select>
             {!isCustomer && (
-              <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)} className="px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 cursor-pointer">
+              <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)} className="min-w-0 flex-1 truncate sm:flex-none px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30 cursor-pointer">
                 <option value="name">Sort: Name</option>
                 <option value="inventory_asc">Sort: Available (Low first)</option>
                 <option value="inventory_desc">Sort: Available (High first)</option>
@@ -376,7 +378,7 @@ const StockView: React.FC<StockViewProps> = ({ products, currentUser, addToast, 
           />
         </StickyScanBar>
       )}
-    </div>
+    </PageFrame>
   );
 };
 
