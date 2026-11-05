@@ -12,6 +12,7 @@
     { "id": "A4", "check": "The form and the server apply the same rules: a promotion with no real discount or missing products is refused, and the form stays open with its reason." },
     { "id": "A5", "check": "Deleting a promotion asks for confirmation first." },
     { "id": "A6", "check": "A promotion already used on orders can still be switched on or off, but cannot be otherwise edited or deleted." },
+    { "id": "A9", "check": "Clearing a promotion's start date, end date or minimum order during an edit really clears it." },
     { "id": "A7", "check": "The whole cycle works in a browser.", "manual": "As Admin and as Manager on dev: create, edit, toggle and delete clearly named test promotions set to start in 2099, each confirmed after a reload and removed afterwards. Results named in FINAL." },
     { "id": "A8", "check": "Merged, with mutate-promotion and the app deployed to dev in that order; /version.json shows the sha serving it.", "manual": "deploy-functions and deploy:dev verification, keeping the unmerged demo work on dev." }
   ],
@@ -22,7 +23,8 @@
     { "file": "__tests__/promotionBody.test.ts", "test": "promotion rules > the form and the server agree on what is a valid promotion", "proves": ["A4"] },
     { "file": "__tests__/promotionSaveWiring.test.ts", "test": "promotion saving > the form stays open when a save is refused", "proves": ["A4"] },
     { "file": "__tests__/promotionSaveWiring.test.ts", "test": "promotion saving > delete asks first", "proves": ["A5"] },
-    { "file": "__tests__/promotionBody.test.ts", "test": "promotion rules > only an on or off change is allowed on a promotion used on orders", "proves": ["A6"] }
+    { "file": "__tests__/promotionBody.test.ts", "test": "promotion rules > only an on or off change is allowed on a promotion used on orders", "proves": ["A6"] },
+    { "file": "__tests__/promotionForm.test.tsx", "test": "PromotionForm > clearing an end date on an edit sends null", "proves": ["A9"] }
   ],
   "allow": []
 }
@@ -48,6 +50,8 @@ the app. This makes the page work for Admins and Managers.
   - it closes only after the save succeeds
   - delete goes through a confirmation
   - the toggle sends only `is_active`
+  - an emptied date or minimum order is sent as `null` on an edit (added during the work: it
+    was sent as nothing, so the old value silently stayed, which working saves would expose)
 - `hooks/queries/usePromotions.ts`: corrects a comment that is no longer true.
 - `docs/claude/server-lockdown.md`: records the rules.
 
