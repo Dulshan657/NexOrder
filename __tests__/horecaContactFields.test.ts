@@ -175,4 +175,32 @@ describe('horeca contact fields', () => {
     expect(parsed.success && parsed.data.buys_brands).toEqual(['McCURRIE', 'Bega'])
     expect(horecaBodySchema.safeParse({ ...valid, buys_brands: ['McCURRIE', ' '] }).success).toBe(false)
   })
+
+  // The customer form checks these before it sends anything, with the rules the server
+  // applies. The form's check and the schema are two readers of one set of rules, so
+  // this holds them to the same answer on the same values. Blank is left out: the form
+  // sends a blank as null (a clear), which the schema accepts.
+  it('has the form check and the server schema agree on the same values', async () => {
+    const { validateHoReCaContact } = await import('@/supabase/functions/_shared/horecaBody')
+    const horecaBodySchema = await loadHorecaBodySchema()
+    const samples = {
+      billingEmail: ['a@b', 'a@b.c', 'ap@example.com', 'two words@example.com', ' padded@example.com ', 'a'.repeat(250) + '@b.co'],
+      phone: ['0400 000 001', '0'.repeat(40), '0'.repeat(41), '  0400  '],
+      contactName: ['Jane Citizen', 'x'.repeat(100), 'x'.repeat(101)],
+      abn: ['51 824 753 556', '51824753556', '123', '5182475355X', '518247535561'],
+    } as const
+    const column = { billingEmail: 'billing_email', phone: 'phone', contactName: 'contact_name', abn: 'abn' } as const
+    for (const field of Object.keys(samples) as Array<keyof typeof samples>) {
+      for (const sample of samples[field]) {
+        const formAccepts = validateHoReCaContact({ [field]: sample })[field] === undefined
+        const serverAccepts = horecaBodySchema.safeParse({ ...valid, [column[field]]: sample }).success
+        expect({ field, sample, accepted: formAccepts }).toEqual({ field, sample, accepted: serverAccepts })
+      }
+    }
+    // And the cases that matter most are not both wrongly lenient.
+    expect(validateHoReCaContact({ billingEmail: 'a@b' }).billingEmail).toMatch(/email/i)
+    expect(validateHoReCaContact({ phone: '0'.repeat(41) }).phone).toBeTruthy()
+    expect(validateHoReCaContact({ contactName: 'x'.repeat(101) }).contactName).toBeTruthy()
+    expect(validateHoReCaContact({ billingEmail: '', phone: '', contactName: '', abn: '' })).toEqual({})
+  })
 })

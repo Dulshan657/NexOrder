@@ -7,7 +7,8 @@ import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { ErrorBoundary } from './ErrorBoundary';
 import { MODULE_SHOP } from '../lib/modules';
 import type { PendingSave } from '../lib/qr/assignedReps';
-import { isValidAbn } from '@/supabase/functions/_shared/horecaBody';
+import { validateHoReCaContact, type HoReCaContactErrors } from '@/supabase/functions/_shared/horecaBody';
+import { isFailedSave, saveFailureMessage, type HoReCaSaveOutcome } from '../lib/horecaSave';
 
 // Which reps look after a venue only matters to kitchen QR orders, which ship with
 // the shop module. Gated at the declaration so a tenant without it ships no chunk --
@@ -24,7 +25,11 @@ const SENSITIVE_DEFAULTS = {
 
 interface HoReCaFormProps {
     hoReCaToEdit: HoReCa | null;
-    onSave: (customerData: HoReCa | Omit<HoReCa, 'id'>, reason?: string) => void;
+    // Return the save's outcome (a promise of it is fine) and the form waits: a failure
+    // leaves the dialog open with what was typed and says why. Return nothing and the form
+    // does not wait, so the caller closes the dialog itself. A caller that closes the dialog
+    // BEFORE it knows the save worked brings back the bug this guards against (NX-0018).
+    onSave: (customerData: HoReCa | Omit<HoReCa, 'id'>, reason?: string) => HoReCaSaveOutcome;
     onClose: () => void;
     userRole?: UserRole;
 }
@@ -71,6 +76,14 @@ const samePaymentMethods = (a: PaymentMethod[], b: PaymentMethod[]): boolean =>
         (method.isDefault ?? false) === (b[index].isDefault ?? false),
     );
 
+// The message under a flagged field. Rendered only when there is one, so there is nothing
+// for a screen reader to announce on a clean form.
+const FieldError: React.FC<{ id: string; message?: string }> = ({ id, message }) =>
+    message ? <p id={id} role="alert" className="mt-1.5 text-sm font-medium text-red-700">{message}</p> : null;
+
+// The order the contact fields appear in, for focusing the first flagged one.
+const CONTACT_FIELD_ORDER = ['contactName', 'phone', 'abn', 'billingEmail'] as const;
+
 const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, userRole }) => {
     // Derived from the prop rather than captured once with `useState(() => …)`, so the
     // dirty baseline stays in step with the resync effect below.
@@ -81,7 +94,10 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
     const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(initialPaymentMethods);
     const [editingMethod, setEditingMethod] = useState<Partial<PaymentMethod> | null>(null);
     const [reason, setReason] = useState('');
-    const [abnError, setAbnError] = useState<string | null>(null);
+    // Per-field messages for the contact fields, from the same rules the server applies.
+    const [fieldErrors, setFieldErrors] = useState<HoReCaContactErrors>({});
+    // Why the last save was refused, shown above the fields. Null until a save fails.
+    const [saveError, setSaveError] = useState<string | null>(null);
     // The assigned-reps section's unsaved change, or null when it has none. The
     // section persists it itself (mutate-horeca `set_reps` -- a different table with
     // a different audit trail from the venue update, hence a separate call); the
@@ -96,7 +112,8 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
         setPaymentMethods(initialPaymentMethods);
         setReason('');
         setEditingMethod(null);
-        setAbnError(null);
+        setFieldErrors({});
+        setSaveError(null);
     }, [initialFields, initialPaymentMethods]);
 
     // Derive whether any sensitive fields have changed vs original or defaults.
@@ -150,7 +167,10 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
-        if (name === 'abn') setAbnError(null);
+        // Typing in a flagged field withdraws its message; the rest stay until they are fixed.
+        setFieldErrors(prev => (name in prev
+            ? Object.fromEntries(Object.entries(prev).filter(([field]) => field !== name))
+            : prev));
     };
 
     const handleSavePaymentMethod = (methodToSave: Partial<PaymentMethod>) => {
@@ -200,11 +220,18 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
             return;
         }
 
-        // The same rule mutate-horeca applies: 11 digits once spaces are ignored. Blank is allowed.
-        if (formData.abn.trim() !== '' && !isValidAbn(formData.abn)) {
-            setAbnError('An ABN is 11 digits. Spaces are fine.');
+        // The rules mutate-horeca applies (_shared/horecaBody), checked here so a value the
+        // server would refuse is flagged on its field and never sent. A blank is allowed:
+        // it clears the value.
+        const contactErrors = validateHoReCaContact(formData);
+        const firstInvalid = CONTACT_FIELD_ORDER.find(field => contactErrors[field] !== undefined);
+        if (firstInvalid) {
+            setFieldErrors(contactErrors);
+            setSaveError(null);
+            document.getElementById(firstInvalid)?.focus();
             return;
         }
+        setFieldErrors({});
 
         const customerData = {
             name: formData.name,
@@ -246,10 +273,23 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
             }
         }
 
-        if (hoReCaToEdit) {
-            onSave({ ...customerData, id: hoReCaToEdit.id }, reasonToSend);
-        } else {
-            onSave(customerData, reasonToSend);
+        setSaveError(null);
+        const outcome = hoReCaToEdit
+            ? onSave({ ...customerData, id: hoReCaToEdit.id }, reasonToSend)
+            : onSave(customerData, reasonToSend);
+        // Nothing returned: this caller does not report back and closes the dialog itself.
+        if (outcome === undefined) return;
+
+        // Wait for the answer. Success: the caller closes the dialog. Failure: stay open,
+        // keep every value, and say why -- a thrown error counts as a failure too.
+        setSaving(true);
+        try {
+            const settled = await outcome;
+            if (isFailedSave(settled)) setSaveError(settled.message);
+        } catch (err) {
+            setSaveError(saveFailureMessage(err));
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -273,6 +313,11 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
                 </>
             )}
         >
+            {saveError && (
+                <p role="alert" className="mb-5 rounded-lg bg-red-50 px-3 py-2.5 text-sm font-medium text-red-800 ring-1 ring-inset ring-red-200">
+                    Could not save this customer: {saveError}
+                </p>
+            )}
             <div className="space-y-5">
                 <div>
                     <label htmlFor="name" className="block text-sm font-medium text-stone-700 mb-1.5">HoReCa Name</label>
@@ -284,22 +329,27 @@ const HoReCaForm: React.FC<HoReCaFormProps> = ({ hoReCaToEdit, onSave, onClose, 
                 </div>
                 <div>
                     <label htmlFor="contactName" className="block text-sm font-medium text-stone-700 mb-1.5">Contact name</label>
-                    <input type="text" name="contactName" id="contactName" aria-label="Contact name" value={formData.contactName} onChange={handleFormChange} maxLength={100} autoComplete="off" className={inputClasses} placeholder="e.g., Jane Citizen" />
+                    <input type="text" name="contactName" id="contactName" aria-label="Contact name" value={formData.contactName} onChange={handleFormChange} autoComplete="off" aria-invalid={fieldErrors.contactName !== undefined} aria-describedby={fieldErrors.contactName ? 'contactName-error' : undefined} className={inputClasses} placeholder="e.g., Jane Citizen" />
+                    <FieldError id="contactName-error" message={fieldErrors.contactName} />
                 </div>
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                     <div>
                         <label htmlFor="phone" className="block text-sm font-medium text-stone-700 mb-1.5">Phone</label>
-                        <input type="tel" name="phone" id="phone" aria-label="Phone" value={formData.phone} onChange={handleFormChange} maxLength={40} autoComplete="off" className={inputClasses} placeholder="e.g., 0400 000 001" />
+                        <input type="tel" name="phone" id="phone" aria-label="Phone" value={formData.phone} onChange={handleFormChange} autoComplete="off" aria-invalid={fieldErrors.phone !== undefined} aria-describedby={fieldErrors.phone ? 'phone-error' : undefined} className={inputClasses} placeholder="e.g., 0400 000 001" />
+                        <FieldError id="phone-error" message={fieldErrors.phone} />
                     </div>
                     <div>
                         <label htmlFor="abn" className="block text-sm font-medium text-stone-700 mb-1.5">ABN</label>
-                        <input type="text" name="abn" id="abn" aria-label="ABN" value={formData.abn} onChange={handleFormChange} autoComplete="off" aria-invalid={abnError !== null} aria-describedby={abnError ? 'abn-error' : undefined} className={inputClasses} placeholder="e.g., 51 824 753 556" />
-                        {abnError && <p id="abn-error" role="alert" className="mt-1.5 text-sm font-medium text-red-700">{abnError}</p>}
+                        <input type="text" name="abn" id="abn" aria-label="ABN" value={formData.abn} onChange={handleFormChange} autoComplete="off" aria-invalid={fieldErrors.abn !== undefined} aria-describedby={fieldErrors.abn ? 'abn-error' : undefined} className={inputClasses} placeholder="e.g., 51 824 753 556" />
+                        <FieldError id="abn-error" message={fieldErrors.abn} />
                     </div>
                 </div>
                 <div>
                     <label htmlFor="billingEmail" className="block text-sm font-medium text-stone-700 mb-1.5">Billing email</label>
-                    <input type="email" name="billingEmail" id="billingEmail" aria-label="Billing email" value={formData.billingEmail} onChange={handleFormChange} maxLength={254} autoComplete="off" className={inputClasses} placeholder="e.g., accounts@example.com" />
+                    {/* type="text", not "email": a browser accepts a@b, and its own wording for the rest would
+                        disagree with the message the server rules give. inputMode keeps the email keyboard. */}
+                    <input type="text" inputMode="email" autoCapitalize="off" spellCheck={false} name="billingEmail" id="billingEmail" aria-label="Billing email" value={formData.billingEmail} onChange={handleFormChange} autoComplete="off" aria-invalid={fieldErrors.billingEmail !== undefined} aria-describedby={fieldErrors.billingEmail ? 'billingEmail-error' : undefined} className={inputClasses} placeholder="e.g., accounts@example.com" />
+                    <FieldError id="billingEmail-error" message={fieldErrors.billingEmail} />
                     <p className="mt-1.5 text-xs text-stone-500">Where invoices are addressed. Other customers may use the same address.</p>
                 </div>
                 <div>
