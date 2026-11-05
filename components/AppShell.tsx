@@ -1058,11 +1058,13 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                                 </>
                             )}
 
-                            {/* The heading and HoReCa stay whatever Field Ops is: the customer
-                                list is CORE (orders need somewhere to come from) and this is
-                                where an operator looks for it. Only the three surfaces that
-                                are actually sold as Field Ops are gated. */}
-                            <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Field Ops</p>
+                            {/* The customer list has its own heading, and both are shown whatever
+                                Field Ops is: the list is CORE (orders need somewhere to come
+                                from; see moduleForTab) and this is where an operator looks for
+                                it. Until NX-0027 it sat under "Field Ops", which therefore had
+                                to stay as a heading; now that heading exists only with the
+                                module, so a build without it shows no empty one. */}
+                            <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Customers</p>
                             <SidebarNavItem
                                 icon={UsersIcon}
                                 active={adminView === 'HoReCa'}
@@ -1070,8 +1072,11 @@ const AppShellInner: React.FC<AppShellInnerProps> = ({
                             >
                                 HoReCa
                             </SidebarNavItem>
+
+                            {/* Only the three surfaces that are actually sold as Field Ops. */}
                             {MODULE_FIELD_OPS && (
                                 <>
+                                    <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-nexgen-blue">Field Ops</p>
                                     <SidebarNavItem
                                         icon={BarChart3}
                                         active={adminView === 'HoReCa Insights'}
