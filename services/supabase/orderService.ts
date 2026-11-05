@@ -147,9 +147,8 @@ export async function updateOrderStatus(
     },
   })
   if (error) {
-    const ctx = (error as { context?: { error?: { code?: string; message?: string } } }).context
-    const msg = ctx?.error?.message ?? error.message ?? 'Status update failed'
-    throw new Error(msg)
+    // The server's reason is on the raw Response at `.context`, as in placeOrder.
+    throw new Error(await extractFunctionErrorMessage(error, 'Status update failed'))
   }
   if (!data?.order) throw new Error('Status update returned no order')
   return data.order

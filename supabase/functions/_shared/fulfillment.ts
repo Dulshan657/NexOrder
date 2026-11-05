@@ -103,6 +103,41 @@ export async function isLocationFullyPicked(
 }
 
 /**
+ * May this move put an imported order at 'packed'? Nothing else leaves an order there with
+ * a line open safely: dispatch is refused, inv_close_line_short refuses 'packed' (mig
+ * 00140), cancelling refuses it and going backwards is refused, so the line could never be
+ * finished. Answers null to allow, or what to tell the operator. Fails closed. Any other
+ * status, and any order with no invoice number, is not asked about at all.
+ *
+ * warehouseId is the fulfilment moving. An order with no fulfilments has no warehouse to
+ * ask about, so its lines are read: each must be fully picked or closed short.
+ */
+export async function importedPackRefusal(
+  admin: Pick<SupabaseClient, 'from' | 'rpc'>,
+  input: { orderId: string; status: string; qbInvoiceNumber: string | null; warehouseId: number | null },
+): Promise<string | null> {
+  const { orderId, status, qbInvoiceNumber, warehouseId } = input
+  if (status !== 'packed' || qbInvoiceNumber == null) return null
+
+  const refusal = 'This order still has lines to pick. Pick them or finish them short before packing.'
+  if (warehouseId != null) {
+    return (await isLocationFullyPicked(admin as SupabaseClient, orderId, warehouseId)) ? null : refusal
+  }
+
+  const { data, error } = await admin
+    .from('order_items')
+    .select('quantity, pick_progress(picked_qty), pick_differences(kind)')
+    .eq('order_id', orderId)
+  if (error || !data) return refusal
+  const open = (data as any[]).some((l) => {
+    const picked = (l.pick_progress ?? []).reduce((sum: number, p: any) => sum + Number(p.picked_qty), 0)
+    const closed = (l.pick_differences ?? []).some((d: any) => d.kind === 'short')
+    return picked < Number(l.quantity) && !closed
+  })
+  return open ? refusal : null
+}
+
+/**
  * Advance every 'processed' fulfilment of this order that is now fully picked, not only
  * the caller's. Closing a line, or picking the last of one at another warehouse, can leave
  * a site with nothing to pick and so no event of its own to advance it. Returns how many
