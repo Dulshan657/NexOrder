@@ -98,11 +98,6 @@
       "count": 13
     }
   },
-  "components/PromotionAdmin.tsx": {
-    "jsx-a11y/control-has-associated-label": {
-      "count": 1
-    }
-  },
   "components/PromotionForm.tsx": {
     "jsx-a11y/control-has-associated-label": {
       "count": 19
