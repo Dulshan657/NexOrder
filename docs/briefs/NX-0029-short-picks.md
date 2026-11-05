@@ -63,3 +63,38 @@ A client will pick from invoices raised elsewhere, so stock can be short, missin
 - Any release to a client tenant.
 
 ## FINAL
+
+Migration 00140, the changed functions and this branch's build were applied to dev on 2026-11-06, ahead of the merge, for the walk. The walk used made-up imported orders, and afterwards stock, orders, differences and the product map were all restored. Four reviews ran on the way. They failed A3, A11 and A13 at different points, and found stranded allocation, frozen warehouses, a warehouse guard bypass, orphan ledger rows, an order stuck at `packed`, closed lines still offered, and held stock offered to pickers. All are fixed here.
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `short pick schema > keeps pick_differences and inv_close_line_short away from client roles`, `> replaces the pick, release and completion functions with their existing signatures`, `> applies the new pick and completion rules to imported orders only` (check:brief) | Also checked live: check:grants:dev reports no new write grants |
+| A2 | claimed | `short pick schema > locks pick_differences and assigns record-short-pick to inventory_dispatch` (check:brief) | |
+| A3 | claimed | `buildFallbackTasks > offers bins with stock for the unreserved part of a line`, `> offers nothing for a line already closed short` (check:brief) | "Stock" means free stock, because an imported pick can only take free stock and its own. Held bins are never offered |
+| A4 | claimed | `pick workspace short picks > offers finish short on an open imported line, behind a confirm step`, `> never offers finish short on any other order` (check:brief). Walked on dev | |
+| A5 | claimed | `pick workspace short picks > unlocks packing when every line is picked or closed short`, `> keeps packing locked while a line is open` (check:brief). Walked on dev | The server also refuses `packed`, `dispatched` and `delivered` on an imported order with an open line |
+| A6 | claimed | `pick workspace short picks > lets the picker scan any bin when no bin has recorded stock` (check:brief) | Not walked in a browser. A held bin is refused by the server |
+| A7 | claimed | `releaseOwnReservation` integration on dev with 00140 applied. The headline test fails against the old function | See Not claimed for bins whose ledger has already drifted |
+| A8 | claimed | `releaseOwnReservation` integration on dev. Walk: two-warehouse order left 0 allocated after dispatch | |
+| A9 | claimed | `shortPick` integration on dev. Walk: part pick and zero found each recorded one difference with on-hand unchanged, and a retry added nothing | |
+| A10 | claimed | `shortPick` and `pickBeyondReservation` integration on dev | |
+| A11 | claimed | `pickBeyondReservation` integration on dev, including another order's 10 surviving a drifted bin | |
+| A12 | claimed | `pickBeyondReservation` integration on dev | Not walked in a browser |
+| A13 | claimed | `shortPick` integration on dev. Walk: two sites advanced together and both dispatched | |
+| A14 | claimed | Integration on dev, including the existing pick suites. `stockAdjust > rejects a blank reason` fails, as recorded in NX-0006's FINAL | Ordinary orders now see the server's real refusal text on picks and status changes. Their moves are unchanged |
+| A15 | not-claimed | Walk on this branch's dev deploy at `2698479`: import, pick by barcode and by SKU label, short one line, zero another, pack, dispatch, plus a two-warehouse order through the functions | The check says merged, and this was walked before the merge. The second warehouse ran through the functions as an Admin, not through the screens |
+
+### Not claimed
+
+- No client tenant. Before any release, count orphan ledger rows and bins where the ledger exceeds allocated there.
+- On a bin whose ledger already exceeds its allocated figure, a release holds units back and warns rather than risk another order's stock. Seen on dev: a demo bin at 48 allocated against 60 on the ledger kept 1 unit allocated after a zero-found close. Dev also has ledger rows from deleted orders, which count as nothing and stay allocated until corrected by hand.
+- Real concurrency. Lock order was reasoned, and the imported pick's order lock is pinned only by a text check.
+- A retried pick can double-record, as there is no request key. The screen disables the button and mutations do not retry.
+- Ordinary orders can still strand allocation on a multi-batch bin and freeze at a second warehouse, because A14 keeps that path. Both are pinned by tests.
+- Warehouse-role behaviour ran only with a fake client: a Warehouse picker closing a line, and one at A advancing B. Warehouse staff are refused while another site holds units of the product, and a zero-reservation order on a multi-warehouse tenant may need an Admin or Manager.
+- Finish short flags a bin for recount only when exactly one bin is on offer.
+- Settling legs count as an extra pick or visit in `wie_refresh_velocity` and `wie_refresh_location_traffic`, read but not run. Rack conversion can overstate holdings until the order dispatches.
+- `qb_release_own_allocation` from NX-0026 still counts orphans as holding, so it differs from `inv_others_bin_holdings`.
+- `cancelOrder` still shows the generic error text. `p_picked_qty::INT` still rounds a fractional pick, and re-route still re-reserves the full quantity.
+- Migrations must go before functions on each target, because `update-order-status` and `record-pick` read `qb_invoice_number`.
+- Differences can only be read in the database until the office screen. No RS35 walk, and the 360px layout rests on class checks. Coverage was not measured.
