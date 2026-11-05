@@ -103,23 +103,24 @@ export async function isLocationFullyPicked(
 }
 
 /**
- * May this move put an imported order at 'packed'? Nothing else leaves an order there with
- * a line open safely: dispatch is refused, inv_close_line_short refuses 'packed' (mig
- * 00140), cancelling refuses it and going backwards is refused, so the line could never be
- * finished. Answers null to allow, or what to tell the operator. Fails closed. Any other
- * status, and any order with no invoice number, is not asked about at all.
+ * May this move take an imported order forward to 'packed', 'dispatched' or 'delivered'?
+ * Each needs every line picked or closed short. Past 'picked' nothing can finish an open
+ * line: inv_close_line_short refuses those statuses (mig 00140), cancelling refuses them
+ * and going backwards is refused. Answers null to allow, or what to tell the operator.
+ * Fails closed. Any other status, and any order with no invoice number, is not asked
+ * about at all. The caller leaves a retry at the same status alone.
  *
  * warehouseId is the fulfilment moving. An order with no fulfilments has no warehouse to
  * ask about, so its lines are read: each must be fully picked or closed short.
  */
-export async function importedPackRefusal(
+export async function importedForwardRefusal(
   admin: Pick<SupabaseClient, 'from' | 'rpc'>,
   input: { orderId: string; status: string; qbInvoiceNumber: string | null; warehouseId: number | null },
 ): Promise<string | null> {
   const { orderId, status, qbInvoiceNumber, warehouseId } = input
-  if (status !== 'packed' || qbInvoiceNumber == null) return null
+  if (!['packed', 'dispatched', 'delivered'].includes(status) || qbInvoiceNumber == null) return null
 
-  const refusal = 'This order still has lines to pick. Pick them or finish them short before packing.'
+  const refusal = 'This order still has lines to pick. Pick them or finish them short first.'
   if (warehouseId != null) {
     return (await isLocationFullyPicked(admin as SupabaseClient, orderId, warehouseId)) ? null : refusal
   }

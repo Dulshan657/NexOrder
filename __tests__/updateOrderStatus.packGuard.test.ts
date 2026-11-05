@@ -7,13 +7,13 @@ vi.mock('@/lib/supabase', () => ({
   supabase: { functions: { invoke } },
 }))
 
-import { importedPackRefusal } from '../supabase/functions/_shared/fulfillment'
+import { importedForwardRefusal } from '../supabase/functions/_shared/fulfillment'
 import { updateOrderStatus } from '../services/supabase/orderService'
 
 // ---------------------------------------------------------------------------
-// NX-0029: an imported order must not reach `packed` with a line open, because no
-// way out remains from there: dispatch is refused, closing short refuses `packed`,
-// cancelling refuses it and going backwards is refused.
+// NX-0029: an imported order must not move forward to `packed`, `dispatched` or
+// `delivered` with a line open. From `packed` no way out remains: dispatch is refused,
+// closing short refuses it, cancelling refuses it and going backwards is refused.
 //
 // update-order-status/index.ts is a Deno Edge Function that imports from esm.sh and
 // reads Deno.env at load, so it cannot run under vitest. As in
@@ -42,12 +42,12 @@ const line = (quantity: number, picked: number[], kinds: string[] = []): Line =>
 
 const IMPORTED = { orderId: 'QB-1', qbInvoiceNumber: 'INV-1' }
 
-describe('importedPackRefusal', () => {
+describe('importedForwardRefusal', () => {
   describe('a fulfilment moving to packed', () => {
     it('refuses an imported order with an open line, in plain words', async () => {
       const { admin, rpc } = fakeAdmin({ complete: false })
 
-      const refusal = await importedPackRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: 705 })
+      const refusal = await importedForwardRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: 705 })
 
       expect(refusal).toMatch(/still has lines to pick/i)
       expect(rpc).toHaveBeenCalledWith('inv_warehouse_pick_complete', { p_order_id: 'QB-1', p_warehouse_id: 705 })
@@ -56,13 +56,13 @@ describe('importedPackRefusal', () => {
     it('allows an imported order with every line picked or closed', async () => {
       const { admin } = fakeAdmin({ complete: true })
 
-      expect(await importedPackRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: 705 })).toBeNull()
+      expect(await importedForwardRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: 705 })).toBeNull()
     })
 
     it('refuses if the completion check fails', async () => {
       const { admin } = fakeAdmin({ rpcError: true })
 
-      expect(await importedPackRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: 705 })).not.toBeNull()
+      expect(await importedForwardRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: 705 })).not.toBeNull()
     })
   })
 
@@ -70,7 +70,7 @@ describe('importedPackRefusal', () => {
     it('refuses an open line', async () => {
       const { admin, rpc, from } = fakeAdmin({ lines: [line(10, [10]), line(10, [4])] })
 
-      const refusal = await importedPackRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: null })
+      const refusal = await importedForwardRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: null })
 
       expect(refusal).toMatch(/still has lines to pick/i)
       expect(from).toHaveBeenCalledWith('order_items')
@@ -82,19 +82,19 @@ describe('importedPackRefusal', () => {
         lines: [line(10, [6, 4]), line(10, [4], ['short']), line(5, [], ['unrecorded_stock', 'short'])],
       })
 
-      expect(await importedPackRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: null })).toBeNull()
+      expect(await importedForwardRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: null })).toBeNull()
     })
 
     it('does not count an unrecorded-stock row as closing a line', async () => {
       const { admin } = fakeAdmin({ lines: [line(10, [4], ['unrecorded_stock'])] })
 
-      expect(await importedPackRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: null })).not.toBeNull()
+      expect(await importedForwardRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: null })).not.toBeNull()
     })
 
     it('refuses if the lines cannot be read', async () => {
       const { admin } = fakeAdmin({ linesError: true })
 
-      expect(await importedPackRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: null })).not.toBeNull()
+      expect(await importedForwardRefusal(admin, { ...IMPORTED, status: 'packed', warehouseId: null })).not.toBeNull()
     })
   })
 
@@ -102,7 +102,7 @@ describe('importedPackRefusal', () => {
     for (const warehouseId of [705, null]) {
       const { admin, rpc, from } = fakeAdmin({ complete: false, lines: [line(10, [4])] })
 
-      expect(await importedPackRefusal(admin, {
+      expect(await importedForwardRefusal(admin, {
         orderId: 'ORD-1', qbInvoiceNumber: null, status: 'packed', warehouseId,
       })).toBeNull()
 
@@ -111,18 +111,46 @@ describe('importedPackRefusal', () => {
     }
   })
 
-  it.each(['processed', 'picked', 'dispatched', 'delivered'])('does not gate a move to %s', async (status) => {
+  it.each(['processed', 'picked'])('does not gate a move to %s', async (status) => {
     const { admin, rpc } = fakeAdmin({ complete: false })
 
-    expect(await importedPackRefusal(admin, { ...IMPORTED, status, warehouseId: 705 })).toBeNull()
+    expect(await importedForwardRefusal(admin, { ...IMPORTED, status, warehouseId: 705 })).toBeNull()
     expect(rpc).not.toHaveBeenCalled()
+  })
+
+  describe.each(['dispatched', 'delivered'])('a move to %s runs the same gate', (status) => {
+    it('on a fulfilment: refused with a line open, allowed with none', async () => {
+      expect(await importedForwardRefusal(fakeAdmin({ complete: false }).admin, { ...IMPORTED, status, warehouseId: 705 }))
+        .toMatch(/still has lines to pick/i)
+      expect(await importedForwardRefusal(fakeAdmin({ complete: true }).admin, { ...IMPORTED, status, warehouseId: 705 }))
+        .toBeNull()
+    })
+
+    it('at order level: a closed line does not count as short, an open one does', async () => {
+      const closed = fakeAdmin({ lines: [line(10, [10]), line(10, [4], ['short'])] })
+      expect(await importedForwardRefusal(closed.admin, { ...IMPORTED, status, warehouseId: null })).toBeNull()
+      const open = fakeAdmin({ lines: [line(10, [4])] })
+      expect(await importedForwardRefusal(open.admin, { ...IMPORTED, status, warehouseId: null }))
+        .toMatch(/still has lines to pick/i)
+    })
+
+    it('leaves an ordinary order alone, asking nothing', async () => {
+      const { admin, rpc, from } = fakeAdmin({ complete: false, lines: [line(10, [4])] })
+      for (const warehouseId of [705, null]) {
+        expect(await importedForwardRefusal(admin, {
+          orderId: 'ORD-1', qbInvoiceNumber: null, status, warehouseId,
+        })).toBeNull()
+      }
+      expect(rpc).not.toHaveBeenCalled()
+      expect(from).not.toHaveBeenCalled()
+    })
   })
 })
 
 describe('update-order-status wiring (source only: the handler cannot run here)', () => {
   const text = readFileSync(join(process.cwd(), 'supabase', 'functions', 'update-order-status', 'index.ts'), 'utf-8')
     .replace(/\r\n/g, '\n')
-  const guardCalls = [...text.matchAll(/importedPackRefusal\(serviceClient, \{/g)].map((m) => m.index)
+  const guardCalls = [...text.matchAll(/importedForwardRefusal\(serviceClient, \{/g)].map((m) => m.index)
 
   it('reads the invoice number from the order', () => {
     expect(text).toMatch(/\.select\('id, status, horeca_id, qb_invoice_number'\)/)
@@ -138,7 +166,7 @@ describe('update-order-status wiring (source only: the handler cannot run here)'
     expect(guardCalls[0]!).toBeLessThan(fulfilmentWrite)
     expect(guardCalls[1]!).toBeGreaterThan(legacyMarker)
     expect(guardCalls[1]!).toBeLessThan(legacyWrite)
-    expect(text.match(/errorResponse\('NOT_FULLY_PICKED', packRefusal, 422\)/g)).toHaveLength(2)
+    expect(text.match(/errorResponse\('NOT_FULLY_PICKED', forwardRefusal, 422\)/g)).toHaveLength(2)
   })
 
   it('passes the fulfilment warehouse on one path, and none on the order-level path', () => {
@@ -146,9 +174,19 @@ describe('update-order-status wiring (source only: the handler cannot run here)'
     expect(text.slice(guardCalls[1]!, guardCalls[1]! + 220)).toMatch(/warehouseId: null/)
   })
 
-  it('lets a retry at packed through', () => {
-    expect(text).toMatch(/if \(ful\.status !== 'packed'\) \{\s*const packRefusal/)
-    expect(text).toMatch(/if \(currentOrderStatus !== 'packed'\) \{\s*const packRefusal/)
+  it('lets a retry at the same status through, on both paths', () => {
+    expect(text).toMatch(/if \(ful\.status !== body\.status\) \{\s*const forwardRefusal/)
+    expect(text).toMatch(/if \(currentOrderStatus !== body\.status\) \{\s*const forwardRefusal/)
+  })
+
+  it('keeps the order-level dispatch check for ordinary orders only', () => {
+    const legacy = text.slice(text.indexOf('// ── Legacy path'))
+    expect(legacy).toMatch(/if \(body\.status === 'dispatched' && qbInvoiceNumber == null\) \{\s*const \{ data: lines \}/)
+    expect(legacy).toContain("'Cannot dispatch — one or more lines are not fully picked'")
+  })
+
+  it('keeps the fulfilment dispatch check for every order', () => {
+    expect(text).toMatch(/if \(body\.status === 'dispatched'\) \{\s*const done = await isLocationFullyPicked/)
   })
 })
 
