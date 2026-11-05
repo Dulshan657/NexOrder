@@ -238,11 +238,13 @@ const TABS_BY_ROLE: Record<string, ReadonlyArray<AdminTab>> = {
   Admin: ADMIN_TABS,
   Manager: [
     'Dashboard',
+    'Shop',
     'Products',
     'HoReCa',
     'HoReCa Insights',
     'New Order',
     'Order Import',
+    'Promotions',
     'Accounts',
     'Stock',
     'Receiving',
@@ -256,6 +258,7 @@ const TABS_BY_ROLE: Record<string, ReadonlyArray<AdminTab>> = {
     'Warehouse',
     'Scheduled Visits',
     'Walk-in Review',
+    'Suppliers',
     'PO Inbox',
   ],
   Warehouse: [

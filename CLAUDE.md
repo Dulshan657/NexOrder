@@ -523,7 +523,7 @@ All privileged writes route through `supabase/functions/<name>/index.ts`. Direct
 | Role | Views |
 |------|-------|
 | Admin | Dashboard, Products, HoReCas, Users, Suppliers, PO Inbox, Settings, Promotions, Invoicing, Routes, Stock, Stocktake, Warehouse (designer/putaway/picking), Audit Log |
-| Manager | Dashboard, Products, HoReCas |
+| Manager | Everything an Admin has except Users, Settings, Audit Log and System Health (`TABS_BY_ROLE` in `lib/adminTabUrl.ts`) |
 | Field Sales Rep | Rep Dashboard, Shop, Order History, Routes, Visits |
 | Office Sales Rep | Rep Dashboard, Shop, Order History |
 | Customer | Shop, Order History (scoped to own HoReCa) |

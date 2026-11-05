@@ -46,9 +46,12 @@ describe('roleCanOpenTab', () => {
     // AdminView gates these on ADMIN; without the check a deep link is a blank page.
     expect(roleCanOpenTab('Manager', 'Settings')).toBe(false)
     expect(roleCanOpenTab('Manager', 'Users')).toBe(false)
-    expect(roleCanOpenTab('Manager', 'Suppliers')).toBe(false)
     expect(roleCanOpenTab('Manager', 'Audit Log')).toBe(false)
-    expect(roleCanOpenTab('Manager', 'Promotions')).toBe(false)
+  })
+
+  it('lets Manager open Promotions and Suppliers', () => {
+    expect(roleCanOpenTab('Manager', 'Promotions')).toBe(true)
+    expect(roleCanOpenTab('Manager', 'Suppliers')).toBe(true)
   })
 
   it('lets Manager open the views it owns', () => {

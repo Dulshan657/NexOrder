@@ -183,7 +183,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                     />
                 )}
                 {MODULE_SALES_ORDERS && props.activeTab === 'Order Import' && <OrderImportPage orders={props.allOrders} invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} onReorder={props.onReorder} onViewDetail={props.onViewOrderDetail} onUpdateStatus={props.onUpdateOrderStatus} onBack={() => {}} highlightOrderId={props.highlightOrderId ?? null} onClearHighlightOrderId={props.onClearHighlightOrderId} />}
-                {MODULE_PROMOTIONS && props.activeTab === 'Promotions' && props.currentUser.role === UserRole.ADMIN && props.promotions && props.onAddPromotion && props.onUpdatePromotion && props.onDeletePromotion && (
+                {MODULE_PROMOTIONS && props.activeTab === 'Promotions' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER) && props.promotions && props.onAddPromotion && props.onUpdatePromotion && props.onDeletePromotion && (
                     <PromotionAdmin promotions={props.promotions} products={props.products} hoReCas={props.hoReCas} users={props.users} onAdd={props.onAddPromotion} onUpdate={props.onUpdatePromotion} onDelete={props.onDeletePromotion} />
                 )}
                 {MODULE_INVOICING && props.activeTab === 'Accounts' && <AccountsAgingTable invoices={props.invoices} hoReCas={props.hoReCas} currentUser={props.currentUser} />}
@@ -204,7 +204,7 @@ const AdminView: React.FC<AdminViewProps> = (props) => {
                     <WalkInReviewTab hoReCas={props.hoReCas} users={props.users} currentUser={props.currentUser} addToast={props.addToast} />
                 )}
                 {props.activeTab === 'Users' && props.currentUser.role === UserRole.ADMIN && <UserAdmin users={props.users} onAddUser={props.onAddUser} onUpdateUser={props.onUpdateUser} onDeleteUser={props.onDeleteUser} />}
-                {props.activeTab === 'Suppliers' && props.currentUser.role === UserRole.ADMIN && <SupplierAdmin suppliers={props.suppliers} products={props.products} onAddSupplier={props.onAddSupplier} onUpdateSupplier={props.onUpdateSupplier} onDeleteSupplier={props.onDeleteSupplier} onSaveProductSupplierLinks={props.onSaveProductSupplierLinks} />}
+                {props.activeTab === 'Suppliers' && (props.currentUser.role === UserRole.ADMIN || props.currentUser.role === UserRole.MANAGER) && <SupplierAdmin suppliers={props.suppliers} products={props.products} onAddSupplier={props.onAddSupplier} onUpdateSupplier={props.onUpdateSupplier} onDeleteSupplier={props.onDeleteSupplier} onSaveProductSupplierLinks={props.onSaveProductSupplierLinks} />}
                 {props.activeTab === 'Settings' && props.currentUser.role === UserRole.ADMIN && (
                     <SettingsView
                         hoReCas={props.hoReCas}
