@@ -28,6 +28,8 @@
     { "file": "__tests__/promotionForm.test.tsx", "test": "PromotionForm > clearing an end date on an edit sends null", "proves": ["A9"] },
     { "file": "__tests__/promotionBody.test.ts", "test": "promotion rules > a scope or audience with nothing chosen is refused", "proves": ["A4"] },
     { "file": "__tests__/promotionForm.test.tsx", "test": "PromotionForm > cannot be cancelled while a save is in flight", "proves": ["A10"] },
+    { "file": "__tests__/promotionForm.test.tsx", "test": "PromotionForm > a bundle takes its scope from its products, whatever a hidden control was left on", "proves": ["A4"] },
+    { "file": "__tests__/promotionBody.test.ts", "test": "promotion rules > a stored offer must hold real ids and whole quantities", "proves": ["A4"] },
     { "file": "__tests__/promotionForm.test.tsx", "test": "PromotionAdmin > delete does nothing until confirmed", "proves": ["A5"] },
     { "file": "__tests__/promotionForm.test.tsx", "test": "PromotionAdmin > the toggle sends only is_active", "proves": ["A6"] }
   ],
@@ -59,6 +61,9 @@ the app. This makes the page work for Admins and Managers.
     refusal into view (added after the gate)
   - delete goes through a confirmation
   - the toggle sends only `is_active`
+  - a bundle or buy-one-get-one always takes its scope from its own products, because the scope
+    control is hidden for those types (added after the second gate: a valid one could be refused
+    over the hidden control, and a hidden category could change what it applied to)
   - an emptied date or minimum order is sent as `null` on an edit (added during the work: it
     was sent as nothing, so the old value silently stayed, which working saves would expose)
 - `hooks/queries/usePromotions.ts`: corrects a comment that is no longer true.
