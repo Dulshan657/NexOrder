@@ -49,7 +49,7 @@ A client will pick from invoices raised elsewhere, so stock can be short, missin
 
 **Closing a line short.** New `pick_differences` table, `inv_close_line_short(p_order_item_id INT, p_location_id INT, p_actor UUID) RETURNS JSONB` and `POST record-short-pick { orderItemId, locationId? }` for Admin, Manager and Warehouse, following `record-pick`'s auth, rate limit and audit event. `p_location_id` may be null, because a product never counted has no bin to flag. A unique index makes a retry add nothing, and short rows with a bin are flagged for recount. No stock is written off: only a count changes on-hand.
 
-**Picking, imported orders only.** `inv_pick_order_line` keeps its signature. For an order with `qb_invoice_number`, each balance row gives up free stock first, then this order's own remainder, and never another order's allocation. Whatever is left is recorded as picked and added to an `unrecorded_stock` difference. Every other order follows today's path unchanged. A line closed short refuses further picks, and `OVER_PICK` stays.
+**Picking, imported orders only.** `inv_pick_order_line` keeps its signature. For an order with `qb_invoice_number`, each balance row gives up this order's own remainder first, then free stock, and never another order's allocation. Whatever is left is recorded as picked and added to an `unrecorded_stock` difference. Every other order follows today's path unchanged. A line closed short refuses further picks, and `OVER_PICK` stays.
 
 **Completion.** `inv_warehouse_pick_complete` adds a line check for imported orders, because it currently counts only reserved stock and passes an order with none. `NOT_FULLY_PICKED` then needs no change.
 
