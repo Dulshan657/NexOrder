@@ -6,7 +6,7 @@ import type { ProductUom } from '../types'
 
 // Server-side Product shape (subset used by pricing)
 const serverProduct = { id: 1, price: 10, category: 'Other' as const, inventory: 100 }
-const user = { id: 0, role: 'Admin' }
+const user = { id: 'user-1', role: 'Admin' }
 
 function uom(p: Partial<ProductUom>): ProductUom {
   return {

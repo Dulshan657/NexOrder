@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import {
   aggregateOrderItems,
   baseUnitsByProduct,
+  buildAppliedPromotions,
   checkCreditLimit,
   checkMinimumOrder,
   collectAppliedPromotionIds,
@@ -27,7 +28,7 @@ import type { HoReCa, Promotion, UserContext } from '../supabase/functions/_shar
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
-const user: UserContext = { id: 0, role: 'Restaurant/Hotel Customer' }
+const user: UserContext = { id: 'user-1', role: 'Restaurant/Hotel Customer' }
 
 const mkProduct = (o: Partial<PricedProduct> = {}): PricedProduct => ({
   id: 1,
@@ -353,6 +354,88 @@ describe('toPricedLines / collectAppliedPromotionIds', () => {
       [],
     )
     expect(ids).toEqual(['P-1', 'B-1'])
+  })
+})
+
+describe('buildAppliedPromotions', () => {
+  const build = (over: Partial<Parameters<typeof buildAppliedPromotions>[0]> & {
+    aggregated: OrderLineInput[]
+    productMap: Map<number, PricedProduct>
+    promotions: Promotion[]
+  }) => {
+    const hoReCa = mkHoReCa()
+    const resolved = priceOrderLines(over.aggregated, over.productMap, hoReCa, user, over.promotions, 5)
+    return buildAppliedPromotions({
+      resolved,
+      bundleDiscounts: [],
+      bogoFreeItems: [],
+      hoReCa,
+      user,
+      cartonDiscountPercent: 5,
+      ...over,
+    })
+  }
+
+  it('records a percentage, fixed price and clearance promotion with its discount', () => {
+    const productMap = mapOf(
+      mkProduct({ id: 1, price: 10 }),
+      mkProduct({ id: 2, price: 20 }),
+      mkProduct({ id: 3, price: 30 }),
+    )
+    const promotions = [
+      mkPromo({ id: 'PCT', name: 'Pct', scope: { kind: 'products', productIds: [1] } }),
+      mkPromo({ id: 'FIX', name: 'Fix', type: 'fixed_price', percentOff: undefined, fixedPrice: 15, scope: { kind: 'products', productIds: [2] } }),
+      mkPromo({ id: 'CLR', name: 'Clr', type: 'clearance', percentOff: undefined, clearancePercent: 50, scope: { kind: 'products', productIds: [3] } }),
+    ]
+    const applied = build({
+      aggregated: [{ productId: 1, quantity: 2 }, { productId: 2, quantity: 1 }, { productId: 3, quantity: 1 }],
+      productMap,
+      promotions,
+    })
+    expect(applied).toEqual([
+      { promotionId: 'PCT', promotionName: 'Pct', type: 'percentage', discount: 5 },
+      { promotionId: 'FIX', promotionName: 'Fix', type: 'fixed_price', discount: 5 },
+      { promotionId: 'CLR', promotionName: 'Clr', type: 'clearance', discount: 15 },
+    ])
+  })
+
+  it('works out the discount on carton and UOM lines from their own prices', () => {
+    const productMap = mapOf(
+      mkProduct({ id: 1, price: 10, cartonSize: 12 }),
+      mkProduct({ id: 2, price: 20, uoms: [{ id: 9, factorToBase: 6, price: 100, isBase: false }] }),
+    )
+    const applied = build({
+      // Carton: 114.00 becomes 85.50, twice. UOM: 100 becomes 75, once.
+      aggregated: [{ productId: 1, quantity: 2, packSize: 12 }, { productId: 2, quantity: 1, packSize: 6, uomId: 9 }],
+      productMap,
+      promotions: [mkPromo()],
+    })
+    expect(applied).toEqual([{ promotionId: 'P-1', promotionName: '25% off', type: 'percentage', discount: 82 }])
+  })
+
+  it('records a bundle with its products and a buy-one-get-one with its free goods', () => {
+    const productMap = mapOf(mkProduct({ id: 1, price: 10, cartonSize: 12 }), mkProduct({ id: 2, price: 20 }))
+    const promotions = [
+      mkPromo({ id: 'BUN', name: 'Bundle', type: 'bundle', percentOff: undefined }),
+      mkPromo({ id: 'BOGO', name: 'Free', type: 'bogo', percentOff: undefined }),
+      mkPromo({ id: 'CTN', name: 'Free carton', type: 'bogo', percentOff: undefined }),
+    ]
+    const free = { productName: 'x', triggerProductId: 1, triggerQuantityRequired: 2 }
+    const applied = build({
+      aggregated: [{ productId: 1, quantity: 2 }, { productId: 2, quantity: 1 }],
+      productMap,
+      promotions,
+      bundleDiscounts: [{ promoId: 'BUN', promoName: 'Bundle', discount: 5, productIds: [1, 2] }],
+      bogoFreeItems: [
+        { ...free, productId: 2, freeQuantity: 3, promoId: 'BOGO', promoName: 'Free', unit: 'unit' },
+        { ...free, productId: 1, freeQuantity: 1, promoId: 'CTN', promoName: 'Free carton', unit: 'carton' },
+      ],
+    })
+    expect(applied).toEqual([
+      { promotionId: 'BUN', promotionName: 'Bundle', type: 'bundle', discount: 5, productIds: [1, 2] },
+      { promotionId: 'BOGO', promotionName: 'Free', type: 'bogo', discount: 60, freeProductId: 2, freeQuantity: 3, unit: 'unit' },
+      { promotionId: 'CTN', promotionName: 'Free carton', type: 'bogo', discount: 114, freeProductId: 1, freeQuantity: 1, unit: 'carton' },
+    ])
   })
 })
 

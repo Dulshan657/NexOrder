@@ -48,6 +48,15 @@ describe('promotion saving', () => {
     expect(admin).not.toContain('onClick={() => onDelete(promo.id)}')
   })
 
+  it('the used-on-orders check asks the database about this promotion', () => {
+    const code = source(FUNCTION)
+    // A JSON string: given an array, supabase-js writes a Postgres array literal, not jsonb.
+    expect(code).toContain(".contains('applied_promotions', JSON.stringify([{ [key]: promoId }]))")
+    expect(code).toContain("['promotionId', 'promoId']")
+    // Reading every order that has a promotion would stop at the row cap.
+    expect(code).not.toContain(".not('applied_promotions', 'is', null)")
+  })
+
   it('the used-on-orders check is skipped only for an on or off change, and never for a delete', () => {
     const code = source(FUNCTION)
     expect(code).toContain('if (!isOnOffOnly(d)) await assertNotUsedInOrders(admin, input.id)')

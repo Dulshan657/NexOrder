@@ -425,9 +425,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <td className="py-2.5 pr-4 text-right text-red-600">${roi.totalDiscountGiven.toFixed(2)}</td>
                     <td className="py-2.5 pr-4 text-right text-emerald-600">${roi.revenueFromPromoOrders.toFixed(2)}</td>
                     <td className="py-2.5 text-right">
-                      <span className={`font-semibold ${roi.estimatedUplift >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {roi.estimatedUplift >= 0 ? '+' : ''}{roi.estimatedUplift}%
-                      </span>
+                      {roi.estimatedUplift === null ? (
+                        <span className="text-stone-500">—</span>
+                      ) : (
+                        <span className={`font-semibold ${roi.estimatedUplift >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {roi.estimatedUplift >= 0 ? '+' : ''}{roi.estimatedUplift}%
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

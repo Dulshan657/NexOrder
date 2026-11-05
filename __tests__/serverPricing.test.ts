@@ -20,7 +20,7 @@ const mkProduct = (o: Partial<Product> = {}): Product => ({
     ...o,
 });
 
-const user: UserContext = { id: 0, role: 'Field Sales Rep' };
+const user: UserContext = { id: 'user-1', role: 'Field Sales Rep' };
 
 const mkPercentPromo = (o: Partial<Promotion> = {}): Promotion => ({
     id: 'P-1',

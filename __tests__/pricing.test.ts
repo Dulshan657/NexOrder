@@ -82,8 +82,20 @@ describe('isPromotionApplicable', () => {
     });
 
     it('rep targeting requires matching currentUser id', () => {
-        const promo = mkPercentPromo({ targeting: { kind: 'rep', repUserId: 999 } });
+        const promo = mkPercentPromo({ targeting: { kind: 'rep', repUserId: 'someone-else' } });
         expect(isPromotionApplicable(promo, product, null, user)).toBe(false);
+    });
+});
+
+describe('rep-targeted promotions', () => {
+    it('the preview matches on the profile id', () => {
+        const promo = mkPercentPromo({ targeting: { kind: 'rep', repUserId: 'rep-uuid' } });
+        expect(isPromotionApplicable(promo, product, null, { ...user, profileId: 'rep-uuid' })).toBe(true);
+        expect(isPromotionApplicable(promo, product, null, { ...user, profileId: 'other-uuid' })).toBe(false);
+        expect(isPromotionApplicable(promo, product, null, user)).toBe(false);
+
+        const broken = mkPercentPromo({ targeting: { kind: 'rep' } as never });
+        expect(isPromotionApplicable(broken, product, null, user)).toBe(false);
     });
 });
 

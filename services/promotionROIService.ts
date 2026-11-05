@@ -5,15 +5,18 @@ export function getPromotionROI(
   orders: readonly Order[],
   products: readonly Product[],
 ): PromotionROI[] {
-  // Calculate overall average order value for non-promo orders as baseline
-  const nonPromoOrders = orders.filter(o => !o.appliedPromotions || o.appliedPromotions.length === 0);
+  const countable = orders.filter(o => o.status !== 'cancelled');
+
+  // Only orders recorded as using no promotion. An order with nothing recorded is from before
+  // recording began, so it may have used one.
+  const nonPromoOrders = countable.filter(o => o.appliedPromotions?.length === 0);
   const avgOrderValueWithout = nonPromoOrders.length > 0
     ? nonPromoOrders.reduce((sum, o) => sum + o.total, 0) / nonPromoOrders.length
     : 0;
 
   return promotions.map(promo => {
     // Find orders that used this promotion
-    const promoOrders = orders.filter(o =>
+    const promoOrders = countable.filter(o =>
       o.appliedPromotions?.some(ap => ap.promotionId === promo.id)
     );
 
@@ -30,10 +33,11 @@ export function getPromotionROI(
       ? revenueFromPromoOrders / ordersUsing
       : 0;
 
-    // Estimated uplift: how much higher is promo order AOV vs non-promo baseline
-    const estimatedUplift = avgOrderValueWithout > 0
+    // Estimated uplift: how much higher is promo order AOV vs non-promo baseline. There is
+    // nothing to compare without both, and a promotion nobody used is not 100% worse.
+    const estimatedUplift = ordersUsing > 0 && avgOrderValueWithout > 0
       ? Math.round(((avgOrderValueWithPromo - avgOrderValueWithout) / avgOrderValueWithout) * 100 * 10) / 10
-      : 0;
+      : null;
 
     return {
       promotionId: promo.id,

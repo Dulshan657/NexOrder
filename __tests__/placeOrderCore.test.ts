@@ -31,14 +31,14 @@ interface Recorded {
 function makeService(fx: Fixture) {
   const writes: Recorded[] = []
 
-  const readResult = (table: string): { data: unknown; error: unknown } => {
+  const readResult = (table: string, productIds?: unknown[]): { data: unknown; error: unknown } => {
     switch (table) {
       case 'horecas':
         return fx.horeca === null
           ? { data: null, error: { message: 'no rows' } }
           : { data: fx.horeca, error: null }
       case 'products':
-        return { data: fx.products ?? [], error: null }
+        return { data: (fx.products ?? []).filter((p) => !productIds || productIds.includes(p.id)), error: null }
       case 'promotions':
         return { data: fx.promotions ?? [], error: null }
       case 'app_settings':
@@ -63,13 +63,17 @@ function makeService(fx: Fixture) {
 
   const service = {
     from(table: string) {
+      let productIds: unknown[] | undefined
       const chain: any = {
         select: () => chain,
         eq: () => chain,
-        in: () => chain,
+        in: (col: string, values: unknown[]) => {
+          if (table === 'products' && col === 'id') productIds = values
+          return chain
+        },
         single: () => Promise.resolve(readResult(table)),
         then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
-          Promise.resolve(readResult(table)).then(resolve, reject),
+          Promise.resolve(readResult(table, productIds)).then(resolve, reject),
         insert: (payload: unknown) => {
           writes.push({ kind: 'insert', target: table, payload })
           return Promise.resolve({ error: insertError(table) })
@@ -137,6 +141,12 @@ async function thrownBy(run: () => Promise<unknown>): Promise<EdgeFunctionError>
   throw new Error('expected the call to throw')
 }
 
+const promoRow = (o: Record<string, unknown>) => ({
+  percent_off: null, fixed_price: null, clearance_percent: null, bogo_config: null, bundle_config: null,
+  scope: { kind: 'storewide' }, targeting: { kind: 'all' }, stack_with_horeca_pricing: false,
+  start_date: null, end_date: null, is_active: true, priority: 10, ...o,
+})
+
 describe('placeOrderCore', () => {
   const fetchMock = vi.fn()
 
@@ -156,6 +166,62 @@ describe('placeOrderCore', () => {
   })
 
   describe('live mode', () => {
+    it('writes every promotion the order used', async () => {
+      const { service, writes } = makeService(baseFixture({
+        promotions: [
+          promoRow({ id: 'PCT', name: 'Half off', type: 'percentage', percent_off: 50, scope: { kind: 'products', productIds: [1] } }),
+          promoRow({ id: 'BUN', name: 'Pair', type: 'bundle', bundle_config: { productIds: [1, 2], bundlePrice: 20 }, scope: { kind: 'products', productIds: [1, 2] } }),
+          promoRow({ id: 'BOGO', name: 'Free sauce', type: 'bogo', bogo_config: { buyProductId: 1, buyQuantity: 2, getProductId: 2, getQuantity: 1 }, scope: { kind: 'products', productIds: [1, 2] } }),
+        ],
+      }))
+      const result = await placeOrderCore(service, input())
+
+      expect(result.total).toBe(25)
+      expect((writes[0].payload as Record<string, unknown>).applied_promotions).toEqual([
+        { promotionId: 'PCT', promotionName: 'Half off', type: 'percentage', discount: 10 },
+        { promotionId: 'BUN', promotionName: 'Pair', type: 'bundle', discount: 5, productIds: [1, 2] },
+        { promotionId: 'BOGO', promotionName: 'Free sauce', type: 'bogo', discount: 20, freeProductId: 2, freeQuantity: 1, unit: 'unit' },
+      ])
+    })
+
+    it('values a free product that is not in the cart', async () => {
+      const { service, writes } = makeService(baseFixture({
+        products: [
+          { id: 1, sku: 'A-1', name: 'Coconut Milk', price: 10, category: 'Coconut', inventory: 500, carton_size: 12, product_uoms: [] },
+          { id: 2, sku: 'B-2', name: 'Fish Sauce', price: 20, category: 'Fish', inventory: 500, carton_size: null, product_uoms: [] },
+          { id: 3, sku: 'C-3', name: 'Free Noodles', price: 7, category: 'Noodles', inventory: 500, carton_size: null, product_uoms: [] },
+        ],
+        promotions: [
+          promoRow({ id: 'BOGO', name: 'Free noodles', type: 'bogo', bogo_config: { buyProductId: 1, buyQuantity: 2, getProductId: 3, getQuantity: 2 }, scope: { kind: 'products', productIds: [1, 3] } }),
+        ],
+      }))
+      await placeOrderCore(service, input())
+
+      expect((writes[0].payload as Record<string, unknown>).applied_promotions).toEqual([
+        { promotionId: 'BOGO', promotionName: 'Free noodles', type: 'bogo', discount: 14, freeProductId: 3, freeQuantity: 2, unit: 'unit' },
+      ])
+    })
+
+    it('writes an empty list when the order used no promotion', async () => {
+      const { service, writes } = makeService(baseFixture())
+      await placeOrderCore(service, input())
+      expect((writes[0].payload as Record<string, unknown>).applied_promotions).toEqual([])
+    })
+
+    it('a rep promotion applies to the rep placing the order and no one else', async () => {
+      const promotions = [promoRow({ id: 'REP', name: 'Rep deal', type: 'percentage', percent_off: 50, targeting: { kind: 'rep', repUserId: 'rep-uuid' } })]
+
+      const rep = await placeOrderCore(makeService(baseFixture({ promotions })).service, input({ submittedBy: 'rep-uuid', actorRole: 'Field Sales Rep' }))
+      expect(rep.total).toBe(20)
+      expect(rep.appliedPromotionIds).toEqual(['REP'])
+
+      const other = await placeOrderCore(makeService(baseFixture({ promotions })).service, input({ submittedBy: 'other-rep', actorRole: 'Field Sales Rep' }))
+      expect(other.total).toBe(40)
+
+      const customer = await placeOrderCore(makeService(baseFixture({ promotions })).service, input({ submittedBy: 'customer-1' }))
+      expect(customer.total).toBe(40)
+    })
+
     it('writes order, items, reservation and invoice in that order and returns the place-order response shape', async () => {
       const { service, writes } = makeService(baseFixture())
       const result = await placeOrderCore(service, input())
@@ -185,7 +251,7 @@ describe('placeOrderCore', () => {
         delivery_date: null,
         delivery_time_slot: null,
         verification: null,
-        applied_promotions: null,
+        applied_promotions: [],
       })
 
       const reserve = writes[2].payload as Record<string, unknown>
@@ -329,6 +395,16 @@ describe('placeOrderCore', () => {
   })
 
   describe('dry run', () => {
+    it('the approver counts for a rep promotion, not the requester', async () => {
+      const promotions = [promoRow({ id: 'REP', name: 'Rep deal', type: 'percentage', percent_off: 50, targeting: { kind: 'rep', repUserId: 'rep-uuid' } })]
+
+      const byRep = await placeOrderCore(makeService(baseFixture({ promotions })).service, input({ submittedBy: 'kitchen', actorId: 'rep-uuid' }), { dryRun: true })
+      expect(byRep.total).toBe(20)
+
+      const byOther = await placeOrderCore(makeService(baseFixture({ promotions })).service, input({ submittedBy: 'rep-uuid', actorId: 'manager' }), { dryRun: true })
+      expect(byOther.total).toBe(40)
+    })
+
     it('prices the cart and writes nothing', async () => {
       const { service, writes } = makeService(baseFixture())
       const preview = await placeOrderCore(service, input(), { dryRun: true })
