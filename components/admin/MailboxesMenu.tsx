@@ -248,7 +248,7 @@ const MailboxesMenu: React.FC<MailboxesMenuProps> = ({ addToast, autoOpenNonce }
         onClick={() => setOpen(o => !o)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className={`inline-flex items-center gap-2 text-sm font-medium rounded-lg border px-3 py-1.5 transition-colors btn-press ${
+        className={`inline-flex items-center gap-2 text-sm font-medium rounded-lg border px-3 py-1.5 touch-target-y transition-colors btn-press ${
           errored
             ? 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
             : 'bg-white border-stone-200 text-stone-800 hover:bg-stone-50'

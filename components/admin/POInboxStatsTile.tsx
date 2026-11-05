@@ -38,7 +38,7 @@ const POInboxStatsTile: React.FC<POInboxStatsTileProps> = ({
 
   if (variant === 'inline') {
     return (
-      <dl className="inline-flex items-stretch rounded-xl border border-stone-200 bg-white overflow-hidden divide-x divide-stone-200/70">
+      <dl className="grid grid-cols-2 sm:inline-flex sm:items-stretch rounded-xl border border-stone-200 bg-white overflow-hidden sm:divide-x divide-stone-200/70">
         <RibbonStat label="Received" value={received} />
         <RibbonStat label="Auto-approved" value={autoApproved} tone="emerald" />
         <RibbonStat label="Needs review" value={backlog} tone={backlogTone} emphasise />

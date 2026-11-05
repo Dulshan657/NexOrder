@@ -2,6 +2,9 @@ import React, { useMemo, useState } from 'react';
 import type { Order, HoReCa, Product, HoReCaSegment, HoReCaInsights } from '../types';
 import { computeAllHoReCaInsights, computeCoPurchasePatterns } from '../services/buyingPatternsService';
 import SegmentBadge from './SegmentBadge';
+import { PageFrame } from './ui/PageFrame';
+import { PageHeader } from './ui/PageHeader';
+import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
 import { Crown, TrendingUp, TrendingDown, AlertTriangle, UserPlus, Users, Calendar, DollarSign, ShoppingCart, Package, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface HoReCaInsightsPanelProps {
@@ -93,12 +96,11 @@ const HoReCaInsightsPanel: React.FC<HoReCaInsightsPanelProps> = ({ allOrders, ho
   };
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-      <div className="flex items-center gap-3">
-        <Users className="w-5 h-5 text-stone-700" />
-        <h2 className="text-lg sm:text-xl font-display font-bold text-stone-900">HoReCa Insights</h2>
-        <span className="text-sm text-stone-500">({hoReCas.length} hoReCas)</span>
-      </div>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS['HoReCa Insights']}
+        description="How your customers break down by segment."
+      />
 
       {/* Segment Overview Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -314,7 +316,7 @@ const HoReCaInsightsPanel: React.FC<HoReCaInsightsPanelProps> = ({ allOrders, ho
           </table>
         </div>
       </Section>
-    </div>
+    </PageFrame>
   );
 };
 

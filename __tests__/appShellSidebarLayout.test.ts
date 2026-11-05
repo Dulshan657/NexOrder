@@ -48,6 +48,6 @@ describe('Scheduled Visit wording', () => {
     expect(files.flatMap(visibleUses)).toEqual([])
 
     const admin = readFileSync(resolve(process.cwd(), 'components/admin/ScheduledVisitsAdmin.tsx'), 'utf8')
-    expect(admin).toContain('Scheduled Visit Management')
+    expect(admin).toContain("title={ADMIN_TAB_LABELS['Scheduled Visits']}")
   })
 })
