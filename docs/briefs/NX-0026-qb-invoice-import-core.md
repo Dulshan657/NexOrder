@@ -88,3 +88,37 @@ The order id is `QB-<invoice number>`, and the order starts in `processing`. Sto
 - Any deploy to a client tenant.
 
 ## FINAL
+
+Migration 00139 was applied to dev on 2026-11-05 from this branch, before it was renumbered from NX-0025; only the header comment has changed since, and the checksum on dev was updated to match. Nothing calls these functions yet, and dev's import tables and imported orders are empty. Three database reviews ran on the way. The first failed A15: after a pick from another bin, an update could silently take another order's stock. That led to the product-and-bin guard and release that are now in the migration.
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `classifyInvoices > keeps mapped lines and names the skipped ones` fails on base, passes on tip (check:brief) | |
+| A2 | claimed | `classifyInvoices > rejects an unmapped line the tenant rule marks as its own` (check:brief) | The caller supplies the rule. Where it comes from is out of scope |
+| A3 | claimed | `classifyInvoices > matches a customer despite spacing and case`, `> rejects an unknown customer and a name close to a real one`, `> rejects when two customers match` (check:brief) | Punctuation is not removed |
+| A4 | claimed | `classifyInvoices > skips an invoice with no mapped lines even for an unknown customer` (check:brief) | A stored invoice whose mapped lines have all gone is `changed` and not editable, so that change is not ignored |
+| A5 | claimed | `classifyInvoices > adds quantities for one product at one price`, `> rejects one product at two prices` (check:brief) | May catch free-goods lines; check against a real sample |
+| A6 | claimed | `classifyInvoices > rejects mixed customers, mixed dates, bad quantities, negative prices and bad invoice numbers` (check:brief) | Stricter than written: hyphens only between characters, and dates must be real `YYYY-MM-DD` |
+| A7 | claimed | `classifyInvoices > marks an identical re-upload unchanged in any line order`, `> reports added, removed and altered lines and a changed customer` (check:brief) | Prices compare in cents, as the column stores them |
+| A8 | claimed | `classifyInvoices > makes a changed invoice uneditable once picked or closed` (check:brief) | |
+| A9 | claimed | `classifyInvoices > accounts for every line exactly once` (check:brief) | Every verdict gained `rowNumbers` beyond the brief's types, so this can be tested |
+| A10 | claimed | `qb import schema > locks both import tables in the grant check` fails on base by assertion, passes on tip (check:brief) | |
+| A11 | claimed | `qb import schema > keeps the migration's tables and transactions away from client roles`, `> writes no invoice and uses no product-wide release` (check:brief) | Text checks. Client roles were also refused live inside a rolled-back transaction |
+| A12 | claimed | `npx vitest run -c vitest.integration.config.ts qbImportTx` on dev after applying: 42 of 42 | A price above 2dp is rounded per line for `unit_price` and `total`, and `qb_invoice_imports.lines` keeps the file's value |
+| A13 | claimed | Same run | Only one session was shown blocked by the advisory lock; two imports racing were not run |
+| A14 | claimed | Same run | |
+| A15 | claimed | Same run. With `inv_release_reservation` swapped in, 9 tests failed, including the headline test. A review ran 115 randomised bin states: rows stayed in bounds and other orders' ledgers were untouched | Fails closed with `QB_ALLOCATION_MISMATCH` where the ledger cannot show the units are free |
+| A16 | claimed | `migrate.mjs --env=dev` applied only 00139. check:grants:dev exits 0: "No new write grants. Every locked table is locked, or baselined." | |
+
+### Not claimed
+
+- Real concurrency. The pick-and-update and reserve-and-update lock orders were reasoned from code, not run in two sessions. A deadlock rolls back with balances intact, but `record-pick` would report INTERNAL. The update locks every row of a product in a bin, so it can conflict with more picks there.
+- `QB_ALLOCATION_MISMATCH` has no way forward in this change. On dev, 10 of 67 bins with open holdings already show more ledger holdings than allocated stock, so an update there refuses. An open order that picked from another bin, or a residual release on a flat warehouse taking this order's units, has the same effect. The upload function must show this to the office.
+- Cancelling a partly reserved imported order still uses the product-wide `inv_release_reservation` and can take other orders' stock. Imported orders must not go live until the short-pick brief rewrites that function. Nothing creates them yet.
+- A reversal can leave this order's own batch or plate ledger key negative while the bin total stays right. A review found no reader that nets per row, but not every report reading `inventory_movements` was audited.
+- When an order is fully out of stock, fulfilments follow `update-order-status`: a row is kept at the first active warehouse, so the rollup can stay at `processed`. The fulfilment tests set `processed` and insert the row by hand; the real status flow was not run.
+- `check:grants` exits 1 on a target until 00139 is applied there, because a missing locked table is fatal. The runbook runs it after migrating.
+- The schema tests read migration text, so behaviour rests on the integration suite, which the gate does not run.
+- The classifier was built without a real export file, so `QbLine`, the two-price rule and the invoice-number pattern could change.
+- `lib/database.types.ts` was not regenerated, `flag_resolved_at` is not set by an update, stored order documents may go stale after one, and the CLAUDE.md lockdown table has no row for the two new tables.
+- Coverage was not measured. Nothing was deployed to a client tenant, and no function or frontend changed on dev.
