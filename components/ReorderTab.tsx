@@ -72,6 +72,8 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
             // never the bare resolveHoReCaPrice, which misses promotions and made
             // "Reorder All" disagree with the cart.
             let currentPrice = item.price;
+            // The unit the line was priced in. Sent with it, or the server prices it some other way.
+            let pricedAs: Pick<OrderItem, 'packSize' | 'unit' | 'uomId'> = { packSize: item.packSize, unit: item.unit, uomId: item.uomId };
             let skipReason: string | null = !currentProduct || currentProduct.available <= 0 ? 'Out of Stock' : null;
             if (currentProduct) {
                 const priced = priceReorderLine(item, currentProduct, pricing);
@@ -79,12 +81,14 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
                     skipReason = skipReason ?? priced.reason;
                 } else {
                     currentPrice = priced.unitPrice;
+                    pricedAs = { packSize: priced.packSize, unit: priced.unit, uomId: priced.uomId };
                 }
             }
 
             return {
                 ...item,
                 currentPrice,
+                pricedAs,
                 isAvailable: skipReason === null,
                 skipReason,
                 isLowStock,
@@ -124,8 +128,9 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
     const buildOrderItems = (): OrderItem[] => {
         return activeItems
             .filter(i => i.isAvailable)
-            .map(({ removed, currentPrice, isAvailable, skipReason, isLowStock, currentProduct, ...item }) => ({
+            .map(({ removed, currentPrice, pricedAs, isAvailable, skipReason, isLowStock, currentProduct, ...item }) => ({
                 ...item,
+                ...pricedAs,
                 price: currentPrice,
             }));
     };
@@ -148,8 +153,8 @@ const ReorderTab: React.FC<ReorderTabProps> = ({
 
     const handleAddSingleItem = (item: typeof resolvedItems[0]) => {
         if (!item.isAvailable) return;
-        const { removed, currentPrice, isAvailable, skipReason, isLowStock, currentProduct, ...orderItem } = item;
-        const builtItem: OrderItem = { ...orderItem, price: currentPrice };
+        const { removed, currentPrice, pricedAs, isAvailable, skipReason, isLowStock, currentProduct, ...orderItem } = item;
+        const builtItem: OrderItem = { ...orderItem, ...pricedAs, price: currentPrice };
         handleAddToOrder([builtItem]);
     };
 

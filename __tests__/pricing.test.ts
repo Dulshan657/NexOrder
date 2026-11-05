@@ -7,6 +7,7 @@ import {
     getAllApplicablePromotions,
     resolvePromotionPrice,
 } from '../pricing';
+import { resolveUnitPrice } from '../supabase/functions/_shared/pricing';
 import {
     mkProduct, mkHoReCa, mkUser,
     mkPercentPromo, mkFixedPricePromo, mkClearancePromo, mkBogoPromo, mkBundlePromo,
@@ -84,6 +85,27 @@ describe('isPromotionApplicable', () => {
     it('rep targeting requires matching currentUser id', () => {
         const promo = mkPercentPromo({ targeting: { kind: 'rep', repUserId: 'someone-else' } });
         expect(isPromotionApplicable(promo, product, null, user)).toBe(false);
+    });
+});
+
+describe('resolvePromotionPrice in cents', () => {
+    it('a venue discount gives the unit price the server charges', () => {
+        // 3.90 at 5% is 3.705 before rounding. Measured unrounded, 27 of them reach $100, and at the
+        // price the server charges they do not.
+        const item = mkProduct({ id: 1, price: 3.9 });
+        const venue = mkHoReCa({ discountPercent: 5 });
+        const serverVenue = { id: venue.id, discountPercent: 5 };
+        const serverItem = { id: 1, price: 3.9, category: 'Coconut', inventory: 100 } as never;
+
+        const server = resolveUnitPrice(serverItem, serverVenue, null, []).unitPrice;
+        expect(resolvePromotionPrice(item, venue, user, []).finalPrice).toBe(server);
+        expect(27 * resolvePromotionPrice(item, venue, user, []).finalPrice).toBeLessThan(100);
+
+        const promo = mkPercentPromo({ percentOff: 7, stackWithHoReCaPricing: true });
+        const withPromo = resolveUnitPrice(serverItem, serverVenue, null, [promo as never]);
+        const client = resolvePromotionPrice(item, venue, user, [promo]);
+        expect(client.finalPrice).toBe(withPromo.unitPrice);
+        expect(client.appliedPromotion?.id).toBe(withPromo.appliedPromotionId);
     });
 });
 

@@ -1,6 +1,6 @@
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 import BundleSelectModal from '../components/BundleSelectModal'
 import OrderLinesGrid from '../components/admin/newOrder/OrderLinesGrid'
@@ -78,6 +78,29 @@ describe('Shop reorder tab', () => {
     )
     return container.textContent
   }
+
+  it('a carton line with no unit id is sent in the unit it was priced in', () => {
+    // Most past carton lines have no unit id. The tab prices one from the carton unit, so it has to
+    // say so, or the server falls back to the carton formula and charges something else.
+    const CARTON = { id: 5, code: 'CTN', factorToBase: 12, price: 147.6, isBase: false, isOrderable: true }
+    const carton = mkProduct({ id: 250, price: 12.3, cartonSize: 12, uoms: [CARTON] as never })
+    const onAddItems = vi.fn()
+    render(
+      <ReorderTab
+        lastOrder={{ id: 'O-1', items: [mkCartItem(carton, 1, 12)] } as never}
+        products={[carton]}
+        selectedHoReCa={mkHoReCa()}
+        promotions={[]}
+        currentUser={mkUser()}
+        cartonDiscountPercent={5}
+        cartItemCount={0}
+        onAddItems={onAddItems}
+      />,
+    )
+    expect(screen.getByRole('button', { name: /Reorder All/ }).textContent).toContain('$147.60')
+    fireEvent.click(screen.getByRole('button', { name: /Reorder All/ }))
+    expect(onAddItems.mock.calls[0][0][0]).toMatchObject({ uomId: 5, packSize: 12, price: 147.6 })
+  })
 
   it('measures a minimum on the lines being reordered, not on the cart', () => {
     expect(tab(1)).toContain('$100.00')
