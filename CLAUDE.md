@@ -170,10 +170,11 @@ environment", the file is stale, not the database.
   The gate mechanics, what still leaks, the server half and the per-role
   consequences are in [`docs/claude/environments.md`](docs/claude/environments.md).
   The rules that must hold without opening it:
-  - **The gate is live, not inert. Amadiya's registry entry is
-    `['sales_orders', 'inventory_dispatch']`, and it gets no new features yet
-    (owner, 2026-10-22) — `voice_assistant` is `dev`-only; only `dev` has
-    everything.**
+  - **The gate is live, not inert. Amadiya's registry entry stays
+    `['sales_orders', 'inventory_dispatch']`; by owner decision of 2026-11-05 it
+    is to move to current code at its next `rel-*` release, with that module
+    list. `voice_assistant` stays `dev`-only (voice is outside this warehouse
+    release); only `dev` has everything.**
   - **Every carved-out slug, and `voice_assistant`, REQUIRES `sales_orders`** — `MODULE_REQUIRES` states it
     and `assertModuleSet()` throws at import time, so a bad registry edit fails the
     build. `inventory_dispatch` deliberately does NOT declare the dependency.
