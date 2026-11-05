@@ -2,9 +2,22 @@ import React, { useState } from 'react';
 import { usePickQueue } from '../../hooks/queries/usePickQueue';
 import type { PickQueueOrder } from '../../services/supabase/pickService';
 import PickWorkspaceModal from './PickWorkspaceModal';
-import { ClipboardCheck, PackageCheck, Clock, ChevronRight } from 'lucide-react';
+import { PackageCheck, Clock, ChevronRight } from 'lucide-react';
+import { ADMIN_TAB_LABELS } from '../../lib/adminTabUrl';
+import { PageFrame } from '../ui/PageFrame';
+import { PageHeader } from '../ui/PageHeader';
+import { PageTabs } from '../ui/PageTabs';
 import type { User } from '../../types';
 import { UserRole } from '../../types';
+
+type PickTab = 'all' | 'processed' | 'picked' | 'packed';
+
+const PICK_TABS: ReadonlyArray<{ id: PickTab; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'processed', label: 'Ready to pick' },
+  { id: 'picked', label: 'Picked' },
+  { id: 'packed', label: 'Packed' },
+];
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
   processed: { label: 'Ready to pick', cls: 'bg-nexgen-blue/10 text-nexgen-blue' },
@@ -50,7 +63,7 @@ interface PickQueueViewProps {
 
 const PickQueueView: React.FC<PickQueueViewProps> = ({ currentUser }) => {
   const { data: orders, isLoading, isError } = usePickQueue();
-  const [tab, setTab] = useState<'all' | 'processed' | 'picked' | 'packed'>('all');
+  const [tab, setTab] = useState<PickTab>('all');
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
 
   // Warehouse staff see only orders fulfilled (in part) from their own site.
@@ -61,30 +74,13 @@ const PickQueueView: React.FC<PickQueueViewProps> = ({ currentUser }) => {
   const filtered = scoped.filter((o) => tab === 'all' || o.status === tab);
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-nexgen-blue/10">
-          <ClipboardCheck className="w-5 h-5 text-nexgen-blue" />
-        </div>
-        <div>
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Pick Queue</h1>
-          <p className="text-xs text-stone-500 mt-0.5">Open an order to pick its lines, then pack &amp; dispatch.</p>
-        </div>
-      </div>
+    <PageFrame>
+      <PageHeader
+        title={ADMIN_TAB_LABELS['Pick Queue']}
+        description="Open an order to pick its lines, then pack & dispatch."
+      />
 
-      <div className="flex gap-2">
-        {(['all', 'processed', 'picked', 'packed'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors btn-press ${
-              tab === t ? 'bg-nexgen-blue text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-            }`}
-          >
-            {t === 'processed' ? 'Ready to pick' : t}
-          </button>
-        ))}
-      </div>
+      <PageTabs ariaLabel="Pick status" tabs={PICK_TABS} activeId={tab} onChange={setTab} />
 
       {isLoading ? (
         <div className="glass-card rounded-xl divide-y divide-stone-100">
@@ -114,7 +110,7 @@ const PickQueueView: React.FC<PickQueueViewProps> = ({ currentUser }) => {
       {openOrderId && (
         <PickWorkspaceModal orderId={openOrderId} onClose={() => setOpenOrderId(null)} />
       )}
-    </div>
+    </PageFrame>
   );
 };
 

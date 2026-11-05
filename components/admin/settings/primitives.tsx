@@ -50,28 +50,6 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
   </section>
 )
 
-// ── Sub-tab button (moved verbatim from POInboxView) ──────────────
-
-interface SubtabButtonProps {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}
-
-export const SubtabButton: React.FC<SubtabButtonProps> = ({ active, onClick, children }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`relative -mb-px py-2.5 text-sm transition-colors border-b-2 ${
-      active
-        ? 'border-stone-900 text-stone-900 font-medium'
-        : 'border-transparent text-stone-500 hover:text-stone-800'
-    }`}
-  >
-    {children}
-  </button>
-)
-
 // ── SaveBar ───────────────────────────────────────────────────────
 
 interface SaveBarProps {

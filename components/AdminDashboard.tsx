@@ -13,6 +13,9 @@ import InventoryDispatchSection from './admin/InventoryDispatchSection';
 import HorizontalBarChart from './charts/HorizontalBarChart';
 import { MODULE_FIELD_OPS, MODULE_INVOICING, MODULE_PO_INBOX, MODULE_PROMOTIONS } from '../lib/modules';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
+import { PageFrame } from './ui/PageFrame';
+import { PageHeader } from './ui/PageHeader';
 
 // The Dashboard is CORE — every tenant lands on it — but four of its panels
 // report on modules a tenant may not have. Gated on the DECLARATION as well as
@@ -258,30 +261,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const myTargets = salesTargets.filter(t => t.userId === currentUser.id);
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+    <PageFrame>
       {/* A. Command Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Dashboard</h1>
-          <p className="text-xs text-stone-500 mt-0.5">Overview of business performance</p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <TimePeriodToggle value={period} onChange={setPeriod} />
-          {period === 'custom' && (
-            <div className="flex items-center gap-2">
-              <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
-                className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
-              <span className="text-stone-500 text-xs">to</span>
-              <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
-                className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
-            </div>
-          )}
-          <button onClick={handleExportCSV} disabled={filteredOrders.length === 0}
-            className="bg-nexgen-blue/10 text-nexgen-blue border border-nexgen-blue/20 font-semibold py-1.5 px-3 rounded-lg hover:bg-nexgen-blue/20 disabled:opacity-40 flex items-center gap-1.5 text-xs transition-colors cursor-pointer">
-            <Download className="w-3.5 h-3.5" /> CSV
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title={ADMIN_TAB_LABELS.Dashboard}
+        description="Overview of business performance"
+        actions={
+          <>
+            <TimePeriodToggle value={period} onChange={setPeriod} />
+            {period === 'custom' && (
+              <div className="flex items-center gap-2">
+                <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
+                  className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
+                <span className="text-stone-500 text-xs">to</span>
+                <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+                  className="bg-stone-50 border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-900" />
+              </div>
+            )}
+            <button onClick={handleExportCSV} disabled={filteredOrders.length === 0}
+              className="bg-nexgen-blue/10 text-nexgen-blue border border-nexgen-blue/20 font-semibold py-1.5 px-3 touch-target-y rounded-lg hover:bg-nexgen-blue/20 disabled:opacity-40 flex items-center gap-1.5 text-sm transition-colors cursor-pointer">
+              <Download className="w-4 h-4" /> CSV
+            </button>
+          </>
+        }
+      />
 
       {/* B. Operational Alerts Banner */}
       <ActionItemsBoard
@@ -498,7 +501,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           onClose={() => setShowTargetModal(false)}
         />
       )}
-    </div>
+    </PageFrame>
   );
 };
 
