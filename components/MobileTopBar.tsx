@@ -42,9 +42,11 @@ interface MobileTopBarProps {
  * for the notification panel it hosts (F37). A bar that hosts the bell must not
  * repeat it.
  *
- * The title is a `<span>`, not a heading. Every page already renders its own
- * `<h1>` with the same words; a second one would mean two `h1`s per page and
- * would capture `getByRole('heading', { name })` in the existing specs.
+ * The title is a `<span>`, not a heading. A page's own `<h1>` comes from
+ * `PageHeader`, which hides it visually at this width but keeps it for screen
+ * readers; a second one would mean two `h1`s per page and would capture
+ * `getByRole('heading', { name })` in the existing specs. Pages not yet on
+ * `PageHeader` may still show their own title below this bar.
  */
 const MobileTopBar: React.FC<MobileTopBarProps> = ({ title, onOpenMenu, notifications }) => {
     return (

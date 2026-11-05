@@ -174,17 +174,7 @@ const PutawayQueueView: React.FC<PutawayQueueViewProps> = ({ warehouseId }) => {
   const allPlaceable = placeableRows(visible);
 
   return (
-    <div className="bg-white min-h-svh p-4 sm:p-6 lg:p-8 space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-emerald-50">
-          <PackageOpen className="w-5 h-5 text-emerald-600" />
-        </div>
-        <div>
-          <h1 className="text-lg sm:text-xl font-display font-bold text-stone-900">Putaway</h1>
-          <p className="text-xs text-stone-600 mt-0.5">Decide where each line goes. Nothing moves until someone carries it.</p>
-        </div>
-      </div>
-
+    <div className="space-y-6">
       {rows.length > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="relative flex-1 min-w-0">
