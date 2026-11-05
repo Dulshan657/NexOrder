@@ -8,8 +8,10 @@
  * Run with: `npx vitest run -c vitest.integration.config.ts shortPick`
  */
 import { describe, expect, it } from 'vitest'
+import type pg from 'pg'
 import { expectRaise, hasDbCreds, withRollbackTx } from './support/pgTestClient'
 import {
+  uniq,
   callUpdate,
   itemsOf,
   line,
@@ -38,6 +40,18 @@ import {
 } from './support/shortPickHelpers'
 
 const CLOSE = 'SELECT public.inv_close_line_short($1, $2, $3)'
+
+/** Another bin under a warehouse. */
+async function siblingBin(client: pg.Client, warehouseId: number): Promise<number> {
+  const code = `QB-S-${uniq()}`
+  const r = await client.query<{ id: number }>(
+    `INSERT INTO public.locations (parent_id, kind, code, name, materialized_path, is_active, capacity_slots)
+     SELECT w.id, 'BIN', $2, $2, w.materialized_path || '/' || $2, true, 100
+       FROM public.locations w WHERE w.id = $1 RETURNING id`,
+    [warehouseId, code],
+  )
+  return r.rows[0].id
+}
 
 describe('NX-0029 closing a line short (live RPCs, rollback-isolated)', () => {
   it('has database credentials', () => {
@@ -69,8 +83,9 @@ describe('NX-0029 closing a line short (live RPCs, rollback-isolated)', () => {
             WHERE p.pronamespace = 'public'::regnamespace
               AND p.proname IN ('inv_close_line_short', 'inv_pick_imported_line', 'inv_release_bin',
                                 'inv_order_bin_remainder', 'inv_others_bin_holdings', 'inv_assert_pick_location',
+                                'inv_order_held_outside_warehouse',
                                 'inv_pick_order_line', 'inv_release_reservation', 'qb_update_invoice_tx')`)
-        expect(fns.rows).toHaveLength(9)
+        expect(fns.rows).toHaveLength(10)
         for (const { sig } of fns.rows) {
           for (const role of ['anon', 'authenticated']) {
             const r = await client.query<{ ok: boolean }>(
@@ -603,6 +618,87 @@ describe('NX-0029 closing a line short (live RPCs, rollback-isolated)', () => {
 
         expect(await pickComplete(client, x.orderId, s.warehouseId)).toBe(true)
         expect(await pickComplete(client, x.orderId, second.warehouseId)).toBe(false)
+      })
+    })
+  })
+
+  describe('A13: two warehouses cannot cover each other', () => {
+    /** Ordered 15, 5 reserved at each site, then 5 picked at each from a different bin. */
+    async function coveringEachOther(client: pg.Client) {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      const second = await newWarehouse(client)
+      const secondOther = await siblingBin(client, second.warehouseId)
+      await receive(client, p, s.binA, 5)
+      await receive(client, p, second.bin, 5)
+      const x = await importedOrder(client, s, p, 15, { pref: [s.warehouseId, second.warehouseId] })
+      expect(await netOf(client, x.orderId, p, s.binA)).toBe(5)
+      expect(await netOf(client, x.orderId, p, second.bin)).toBe(5)
+      await receive(client, p, s.binB, 5)
+      await receive(client, p, secondOther, 5)
+      await pick(client, s, x.itemId, 5, s.binB)
+      await pick(client, s, x.itemId, 5, secondOther)
+      return { s, p, second, x }
+    }
+
+    it('neither site is complete with 5 open, until 5 more are picked', async () => {
+      await withRollbackTx(async (client) => {
+        const { s, second, x } = await coveringEachOther(client)
+
+        expect(await pickComplete(client, x.orderId, s.warehouseId)).toBe(false)
+        expect(await pickComplete(client, x.orderId, second.warehouseId)).toBe(false)
+
+        await pick(client, s, x.itemId, 5, s.binA)
+        expect(await pickComplete(client, x.orderId, s.warehouseId)).toBe(true)
+        expect(await pickComplete(client, x.orderId, second.warehouseId)).toBe(true)
+      })
+    })
+
+    for (const status of ['processed', 'picked']) {
+      it(`the line can still be closed at ${status}, which completes both`, async () => {
+        await withRollbackTx(async (client) => {
+          const { s, second, x } = await coveringEachOther(client)
+          await setStatus(client, x.orderId, status)
+
+          expect((await closeShort(client, s, x.itemId, s.binA)).status).toBe('closed')
+
+          expect(await pickComplete(client, x.orderId, s.warehouseId)).toBe(true)
+          expect(await pickComplete(client, x.orderId, second.warehouseId)).toBe(true)
+        })
+      })
+    }
+  })
+
+  describe('A10: a bin must belong to a warehouse fulfilling the order', () => {
+    it('refuses a bin from another warehouse, and allows each of the order’s own', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await scene(client)
+        const p = await newProduct(client, s.supplierId)
+        const stranger = await newWarehouse(client)
+        const second = await newWarehouse(client)
+        await receive(client, p, s.binA, 5)
+        await receive(client, p, second.bin, 5)
+        const x = await importedOrder(client, s, p, 5, { pref: [s.warehouseId] })
+        const y = await importedOrder(client, s, p, 5, { pref: [second.warehouseId] })
+
+        await expectRaise(client, CLOSE, [x.itemId, stranger.bin, s.actor], /BAD_LOCATION/)
+        await expectRaise(client, CLOSE, [x.itemId, second.bin, s.actor], /BAD_LOCATION/)
+        expect(await differences(client, x.orderId)).toEqual([])
+        expect((await bin(client, p, s.binA)).allocated).toBe(5)
+
+        expect((await closeShort(client, s, x.itemId, s.binB)).status).toBe('closed')
+        expect((await closeShort(client, s, y.itemId, second.bin)).status).toBe('closed')
+      })
+    })
+
+    it('allows any active bin on an order with no fulfilments', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await scene(client)
+        const p = await newProduct(client, s.supplierId)
+        const x = await importedOrder(client, s, p, 5)
+        await client.query('DELETE FROM public.order_fulfillments WHERE order_id=$1', [x.orderId])
+
+        expect((await closeShort(client, s, x.itemId, s.binA)).status).toBe('closed')
       })
     })
   })

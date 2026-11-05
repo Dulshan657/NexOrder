@@ -29,8 +29,9 @@
 -- allocated minus what other open orders hold there, floored at 0). Unlike
 -- qb_release_own_allocation it never raises for a shortfall, because dispatch and cancel
 -- must finish: it emits a WARNING and releases what is safe. Other orders whose status is
--- cancelled, dispatched or delivered hold nothing, whatever their ledger says. A movement
--- naming an order that no longer exists is counted as held, as in 00139, so it fails safe.
+-- cancelled, dispatched or delivered hold nothing, whatever their ledger says. Nor does a
+-- movement naming an order with no row in `orders`: place-order and approve-po delete an
+-- order when they fail part way, and counting those rows would hold stock forever.
 --
 -- A RELEASE IS NOW IDEMPOTENT AND KEYED BY ORDER. Its deallocate rows net the holding to
 -- zero, so a second call finds nothing. 00111's header and the old comments that say
@@ -56,7 +57,11 @@
 -- THE IMPORTED PICK NEVER LOWERS ANOTHER ORDER'S ALLOCATED. Row by row, in FEFO order:
 --     dealloc = LEAST(remaining, own_left, row.allocated)
 --     take    = LEAST(remaining, row.on_hand - row.allocated + dealloc)
--- so allocated <= on_hand holds and the bin keeps every unit others hold.
+-- so allocated <= on_hand holds. The ledger can overstate this order's units, because an
+-- ordinary order's pick draws whatever the row holds, so own_left starts capped by the
+-- bin's allocated minus what others hold, read with the bin's rows locked. Then the bin
+-- keeps every unit others hold, and what the cap removes comes from free stock or is
+-- recorded as unrecorded stock like any other.
 --
 -- FREE STOCK ON AN EARLIER ROW MUST NOT STRAND THE ORDER'S OWN UNITS. FEFO can take the
 -- whole pick from a free row while this order's reservation sits on a later one. The
@@ -64,7 +69,7 @@
 -- nobody and out of reach of any release. So after the loop the bin's `allocated` falls by
 -- whatever of LEAST(picked, own holding at the start) the rows did not give up, through a
 -- pick leg with no on-hand change. A deallocate row would count against the holding twice,
--- as the picks already come off it. Capped by what others hold, so a drained bin warns.
+-- as the picks already come off it.
 -- qty_delta is 0, so no netting changes, but wie_refresh_velocity and
 -- wie_refresh_location_traffic COUNT pick rows, so each such leg counts as one more pick.
 -- The ordinary path has the same flaw and stays as it was.
@@ -73,6 +78,10 @@
 -- to an `unrecorded_stock` row flagging the bin for a recount. The order row is locked
 -- first, which serialises the pick with inv_close_line_short, and it is the same order of
 -- locks as order_cancel_tx: the order, then its balances.
+--
+-- ANOTHER WAREHOUSE COVERS AN OPEN LINE ONLY WITH WHAT IT STILL HOLDS. Held elsewhere nets
+-- reservations minus picks per warehouse, not per bin, so a pick from another bin there
+-- uses up that warehouse's holding, and two warehouses cannot each count the other.
 --
 -- A PRODUCT WITH NOTHING OPEN CANNOT HOLD AN IMPORTED ORDER BACK. The ledger can still show
 -- a reservation for a product with no open units: a close the bin could not cover, or a
@@ -102,6 +111,7 @@
 --   DROP FUNCTION public.inv_pick_imported_line(INT, NUMERIC, INT, UUID);
 --   DROP FUNCTION public.inv_assert_pick_location(INT);
 --   DROP FUNCTION public.inv_release_bin(TEXT, INT, INT, NUMERIC, UUID, TEXT);
+--   DROP FUNCTION public.inv_order_held_outside_warehouse(TEXT, INT, INT);
 --   DROP FUNCTION public.inv_others_bin_holdings(TEXT, INT, INT);
 --   DROP FUNCTION public.inv_order_bin_remainder(TEXT, INT, INT);
 --   DROP TABLE public.pick_differences;
@@ -145,6 +155,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pick_differences_one_unrecorded
 
 CREATE INDEX IF NOT EXISTS idx_pick_differences_order
     ON public.pick_differences (order_id);
+
+CREATE INDEX IF NOT EXISTS idx_pick_differences_order_item
+    ON public.pick_differences (order_item_id);
+
+CREATE INDEX IF NOT EXISTS idx_pick_differences_location
+    ON public.pick_differences (location_id);
 
 ALTER TABLE public.pick_differences ENABLE ROW LEVEL SECURITY;
 
@@ -216,13 +232,13 @@ AS $$
       FROM (
           SELECT m.ref_id, SUM(m.qty_delta) AS net
             FROM public.inventory_movements m
-            LEFT JOIN public.orders o ON o.id = m.ref_id
+            JOIN public.orders o ON o.id = m.ref_id
            WHERE m.ref_type = 'order'
              AND m.ref_id <> p_order_id
              AND m.movement_type IN ('allocate', 'deallocate')
              AND m.product_id = p_product_id
              AND m.location_id = p_location_id
-             AND COALESCE(o.status, '') NOT IN ('cancelled', 'dispatched', 'delivered')
+             AND o.status NOT IN ('cancelled', 'dispatched', 'delivered')
            GROUP BY m.ref_id
       ) t
       LEFT JOIN LATERAL (
@@ -238,6 +254,43 @@ $$;
 REVOKE ALL ON FUNCTION public.inv_others_bin_holdings(TEXT, INT, INT)
     FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.inv_others_bin_holdings(TEXT, INT, INT) TO service_role;
+
+-- What this order still holds of a product outside one warehouse, netted per warehouse.
+CREATE OR REPLACE FUNCTION public.inv_order_held_outside_warehouse(
+    p_order_id     TEXT,
+    p_product_id   INT,
+    p_warehouse_id INT
+)
+RETURNS NUMERIC
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT COALESCE(SUM(GREATEST(held.net - COALESCE(pk.picked, 0), 0)), 0)
+      FROM (
+          SELECT public.inv_root_warehouse(m.location_id) AS warehouse_id, SUM(m.qty_delta) AS net
+            FROM public.inventory_movements m
+           WHERE m.ref_type = 'order'
+             AND m.ref_id = p_order_id
+             AND m.movement_type IN ('allocate', 'deallocate')
+             AND m.product_id = p_product_id
+           GROUP BY 1
+      ) held
+      LEFT JOIN LATERAL (
+          SELECT SUM(pp.picked_qty * COALESCE(oi.pack_size, 1)) AS picked
+            FROM public.pick_progress pp
+            JOIN public.order_items oi ON oi.id = pp.order_item_id
+           WHERE pp.order_id = p_order_id
+             AND oi.product_id = p_product_id
+             AND public.inv_root_warehouse(pp.location_id) = held.warehouse_id
+      ) pk ON true
+     WHERE held.warehouse_id <> p_warehouse_id;
+$$;
+
+REVOKE ALL ON FUNCTION public.inv_order_held_outside_warehouse(TEXT, INT, INT)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.inv_order_held_outside_warehouse(TEXT, INT, INT) TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 3. inv_release_bin: give back up to p_limit of this order's holding in one bin
@@ -461,6 +514,16 @@ BEGIN
     END IF;
     IF p_location_id IS NOT NULL THEN
         PERFORM public.inv_assert_pick_location(p_location_id);
+        IF EXISTS (
+            SELECT 1 FROM public.order_fulfillments f WHERE f.order_id = v_item.order_id
+        ) AND NOT EXISTS (
+            SELECT 1 FROM public.order_fulfillments f
+             WHERE f.order_id = v_item.order_id
+               AND f.location_id = public.inv_root_warehouse(p_location_id)
+        ) THEN
+            RAISE EXCEPTION 'BAD_LOCATION: location % is not under a warehouse fulfilling order %',
+                p_location_id, v_item.order_id USING ERRCODE = 'P0001';
+        END IF;
     END IF;
 
     SELECT COALESCE(SUM(pp.picked_qty), 0) INTO v_picked
@@ -575,8 +638,8 @@ COMMENT ON FUNCTION public.inv_close_line_short(INT, INT, UUID) IS
 -- ---------------------------------------------------------------------------
 -- 7. Picking
 -- ---------------------------------------------------------------------------
--- p_location_id is already resolved by inv_pick_order_line. A cancelled order is not
--- refused here, as it is not on the other path: record-pick refuses it before the RPC.
+-- p_location_id is already resolved by inv_pick_order_line. record-pick also refuses a
+-- cancelled order before the RPC, from a read with no lock; this is the check that holds.
 
 CREATE OR REPLACE FUNCTION public.inv_pick_imported_line(
     p_order_item_id INT,
@@ -603,13 +666,19 @@ DECLARE
     v_order_done BOOLEAN;
     v_allocated  NUMERIC;
     v_others     NUMERIC;
-    v_settle     NUMERIC;
+    v_wanted     NUMERIC;
+    v_status     TEXT;
 BEGIN
     SELECT oi.id, oi.order_id, oi.product_id, oi.quantity, oi.pack_size INTO v_item
       FROM public.order_items oi
      WHERE oi.id = p_order_item_id;
 
-    PERFORM 1 FROM public.orders o WHERE o.id = v_item.order_id FOR UPDATE;
+    SELECT o.status INTO v_status FROM public.orders o WHERE o.id = v_item.order_id FOR UPDATE;
+
+    IF v_status = 'cancelled' THEN
+        RAISE EXCEPTION 'ORDER_CANCELLED: This order was cancelled. Stop picking it and put anything already taken back.'
+            USING ERRCODE = 'P0001';
+    END IF;
 
     IF EXISTS (
         SELECT 1 FROM public.pick_differences d
@@ -633,9 +702,27 @@ BEGIN
     END IF;
 
     v_remaining := p_picked_qty * v_factor;
-    v_own_left := LEAST(
+
+    SELECT COALESCE(SUM(t.allocated), 0) INTO v_allocated
+      FROM (
+          SELECT b.allocated
+            FROM public.inventory_balances b
+           WHERE b.product_id = v_item.product_id
+             AND b.location_id = p_location_id
+           ORDER BY b.id
+             FOR UPDATE
+      ) t;
+    v_others := public.inv_others_bin_holdings(v_item.order_id, v_item.product_id, p_location_id);
+    v_wanted := LEAST(
         public.inv_order_bin_remainder(v_item.order_id, v_item.product_id, p_location_id),
         v_remaining);
+    v_own_left := LEAST(v_wanted, GREATEST(v_allocated - v_others, 0));
+
+    IF v_own_left < v_wanted THEN
+        RAISE WARNING
+            'PICK_OWN_SHORTFALL: order % nets % of product % at location % but can use %: the bin holds % with % held by other orders',
+            v_item.order_id, v_wanted, v_item.product_id, p_location_id, v_own_left, v_allocated, v_others;
+    END IF;
 
     FOR v_row IN
         SELECT b.id, b.batch_id, b.handling_unit_id, b.allocated, b.on_hand
@@ -664,28 +751,10 @@ BEGIN
         v_own_left := v_own_left - v_dealloc;
     END LOOP;
 
-    -- See the header. The loop above stops as soon as the pick is taken, so later rows
-    -- are not locked yet. Only rows with allocated > 0 get a leg, so 0 <= allocated holds,
-    -- and on_hand does not move, so allocated <= on_hand does.
+    -- See the header. Only rows with allocated > 0 get a leg, so 0 <= allocated holds, and
+    -- on_hand does not move, so allocated <= on_hand does. own_left is within what is safely
+    -- this order's, so the bin keeps what others hold.
     IF v_own_left > 0 THEN
-        SELECT COALESCE(SUM(t.allocated), 0) INTO v_allocated
-          FROM (
-              SELECT b.allocated
-                FROM public.inventory_balances b
-               WHERE b.product_id = v_item.product_id
-                 AND b.location_id = p_location_id
-               ORDER BY b.id
-                 FOR UPDATE
-          ) t;
-        v_others := public.inv_others_bin_holdings(v_item.order_id, v_item.product_id, p_location_id);
-        v_settle := LEAST(v_own_left, GREATEST(v_allocated - v_others, 0));
-
-        IF v_settle < v_own_left THEN
-            RAISE WARNING
-                'PICK_SETTLE_SHORTFALL: order % wanted to settle % of product % at location % but settled %: the bin holds % with % held by other orders',
-                v_item.order_id, v_own_left, v_item.product_id, p_location_id, v_settle, v_allocated, v_others;
-        END IF;
-
         FOR v_row IN
             SELECT b.batch_id, b.handling_unit_id, b.allocated
               FROM public.inventory_balances b
@@ -694,13 +763,13 @@ BEGIN
                AND b.allocated > 0
              ORDER BY b.id
         LOOP
-            EXIT WHEN v_settle <= 0;
-            v_dealloc := LEAST(v_settle, v_row.allocated);
+            EXIT WHEN v_own_left <= 0;
+            v_dealloc := LEAST(v_own_left, v_row.allocated);
             PERFORM public.inv_apply_leg(
                 v_item.product_id, p_location_id, v_row.batch_id, 0, -v_dealloc,
                 'pick', p_actor, 'order', v_item.order_id, 'own reservation settled',
                 NULL, v_row.handling_unit_id);
-            v_settle := v_settle - v_dealloc;
+            v_own_left := v_own_left - v_dealloc;
         END LOOP;
     END IF;
 
@@ -856,8 +925,7 @@ $$;
 -- For every other order, the loop at the end is 00040's text. An imported order is judged
 -- per product with open units, shared across its lines: it is not complete at this warehouse
 -- unless its holdings at other warehouses cover those units, and unless 00040's own test
--- passes here. A product with nothing open cannot make it FALSE (see the header). Written
--- inline because this function is SECURITY INVOKER.
+-- passes here. A product with nothing open cannot make it FALSE (see the header).
 
 CREATE OR REPLACE FUNCTION public.inv_warehouse_pick_complete(p_order_id TEXT, p_warehouse_id INT)
 RETURNS BOOLEAN
@@ -888,26 +956,7 @@ BEGIN
                           AND oi.product_id = open_lines.product_id
                           AND public.inv_root_warehouse(pp.location_id) = p_warehouse_id
                    ), 0) AS picked_here,
-                   COALESCE((
-                       SELECT SUM(GREATEST(held.net - COALESCE((
-                                  SELECT SUM(pp.picked_qty * COALESCE(oi.pack_size, 1))
-                                    FROM public.pick_progress pp
-                                    JOIN public.order_items oi ON oi.id = pp.order_item_id
-                                   WHERE pp.order_id = p_order_id
-                                     AND pp.location_id = held.location_id
-                                     AND oi.product_id = open_lines.product_id
-                              ), 0), 0))
-                         FROM (
-                             SELECT m.location_id, SUM(m.qty_delta) AS net
-                               FROM public.inventory_movements m
-                              WHERE m.ref_type = 'order'
-                                AND m.ref_id = p_order_id
-                                AND m.movement_type IN ('allocate', 'deallocate')
-                                AND m.product_id = open_lines.product_id
-                                AND public.inv_root_warehouse(m.location_id) <> p_warehouse_id
-                              GROUP BY m.location_id
-                         ) held
-                   ), 0) AS elsewhere
+                   public.inv_order_held_outside_warehouse(p_order_id, open_lines.product_id, p_warehouse_id) AS elsewhere
               FROM (
                   SELECT oi.product_id,
                          SUM(GREATEST(oi.quantity - COALESCE((

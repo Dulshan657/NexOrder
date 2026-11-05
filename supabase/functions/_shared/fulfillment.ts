@@ -139,6 +139,51 @@ export async function advanceCompletedFulfilments(
 }
 
 /**
+ * May a Warehouse-role caller close this line short? They act for their own warehouse
+ * only, and closing a line gives back the line's units wherever the order holds them. So
+ * the order must have a fulfilment at their warehouse, a bin they name must be under it,
+ * and the order must hold none of this product elsewhere: that decision belongs to the
+ * other site or to an Admin or Manager, who are not asked this. Fails closed.
+ */
+export async function closeShortRefusal(
+  admin: Pick<SupabaseClient, 'from' | 'rpc'>,
+  input: { orderId: string; productId: number; homeWarehouseId: number | null; locationId: number | null },
+): Promise<{ code: 'FORBIDDEN' | 'CONFLICT'; reason: string; message: string } | null> {
+  const { orderId, productId, homeWarehouseId, locationId } = input
+  const notYours = {
+    code: 'FORBIDDEN' as const,
+    reason: 'NOT_YOUR_WAREHOUSE',
+    message: 'You can only finish a line short at your own warehouse.',
+  }
+  if (homeWarehouseId == null) return notYours
+
+  const { data: sites } = await admin
+    .from('order_fulfillments')
+    .select('location_id')
+    .eq('order_id', orderId)
+  if (!((sites ?? []) as any[]).some((s) => s.location_id === homeWarehouseId)) return notYours
+
+  if (locationId != null) {
+    const { data: root } = await admin.rpc('inv_root_warehouse', { p_location_id: locationId })
+    if (root !== homeWarehouseId) return notYours
+  }
+
+  const { data: held, error } = await admin.rpc('inv_order_held_outside_warehouse', {
+    p_order_id: orderId,
+    p_product_id: productId,
+    p_warehouse_id: homeWarehouseId,
+  })
+  if (error || !(Number(held) <= 0)) {
+    return {
+      code: 'CONFLICT',
+      reason: 'HELD_AT_OTHER_WAREHOUSE',
+      message: 'Another warehouse still holds stock for this line. Ask them to pick it, or ask a manager to finish the line short.',
+    }
+  }
+  return null
+}
+
+/**
  * On a dispatch transition, release any residual reservation this warehouse
  * still holds for the order — deallocates only this order's own remainder, across
  * the warehouse's bins, via inv_release_reservation (mig 00140). A no-op for every

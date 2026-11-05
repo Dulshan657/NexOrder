@@ -224,6 +224,14 @@ serve(async (req: Request) => {
           { reason: 'LINE_CLOSED_SHORT' },
         )
       }
+      if (/ORDER_CANCELLED/.test(msg)) {
+        // The check under the order lock (mig 00140): a cancel landed after the read above.
+        throw new EdgeFunctionError(
+          'CONFLICT',
+          'This order was cancelled. Stop picking it and put anything already taken back.',
+          { reason: 'ORDER_CANCELLED' },
+        )
+      }
       if (/BAD_LOCATION/.test(msg)) {
         throw new EdgeFunctionError('INVALID_INPUT', 'That bin is not in an active warehouse.', { reason: 'BAD_LOCATION' })
       }

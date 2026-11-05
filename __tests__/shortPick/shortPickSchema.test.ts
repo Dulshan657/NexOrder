@@ -15,6 +15,7 @@ const MIGRATION = '00140_pick_differences.sql'
 const HELPERS = [
   'inv_order_bin_remainder',
   'inv_others_bin_holdings',
+  'inv_order_held_outside_warehouse',
   'inv_release_bin',
   'inv_assert_pick_location',
   'inv_pick_imported_line',
@@ -121,6 +122,21 @@ describe('short pick schema', () => {
     const oldLoop = bodyFrom(oldComplete, loopStart).split('END LOOP;')[0]
     expect(oldLoop.length).toBeGreaterThan(300)
     expect(squash(complete)).toContain(oldLoop)
+  })
+
+  it('serialises an imported pick with a close: it reads the status under the order lock', () => {
+    // A text check, because the behaviour cannot be pinned on this suite's terms. It needs a
+    // second session to block on the order row, and a second session cannot see an order
+    // created in a transaction that is never committed.
+    const pick = functionsIn(read(MIGRATION)).get('inv_pick_imported_line') ?? ''
+    expect(pick).toMatch(/SELECT\s+o\.status\s+INTO\s+v_status\s+FROM\s+public\.orders\s+o\s+WHERE\s+o\.id\s*=\s*v_item\.order_id\s+FOR\s+UPDATE\s*;/i)
+    expect(pick.indexOf('FOR UPDATE')).toBeLessThan(pick.indexOf('pick_differences'))
+  })
+
+  it('indexes pick_differences by line and by bin', () => {
+    const sql = read(MIGRATION)
+    expect(sql).toMatch(/CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+\w+\s+ON\s+public\.pick_differences\s*\(\s*order_item_id\s*\)\s*;/i)
+    expect(sql).toMatch(/CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+\w+\s+ON\s+public\.pick_differences\s*\(\s*location_id\s*\)\s*;/i)
   })
 
   it('locks pick_differences and assigns record-short-pick to inventory_dispatch', () => {

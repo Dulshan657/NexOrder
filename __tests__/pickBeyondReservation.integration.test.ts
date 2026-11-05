@@ -188,11 +188,72 @@ describe('NX-0029 own units settled when free stock is taken first (live RPCs, r
       const warnings = await warningsDuring(client, async () => { await pick(client, s, x.itemId, 10, s.binA) })
 
       expect(warnings).toHaveLength(1)
-      expect(warnings[0]).toContain('PICK_SETTLE_SHORTFALL')
+      expect(warnings[0]).toContain('PICK_OWN_SHORTFALL')
       expect(await row(client, p, s.binA, earliest)).toEqual({ on_hand: 0, allocated: 0 })
       expect(await row(client, p, s.binA, late)).toEqual({ on_hand: 10, allocated: 10 })
       expect(await netOf(client, y.orderId, p)).toBe(10)
       await expectRowBounds(client, p)
+    })
+  })
+
+  it('when the ledger overstates this order’s units, takes free stock and leaves the other order whole', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      await receive(client, p, s.binA, 30)
+      const x = await importedOrder(client, s, p, 10)
+      const z = await plainOrder(client, s, p, 10, false)
+      await pick(client, s, z.itemId, 10, s.binA)
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 20, allocated: 0 })
+      const y = await plainOrder(client, s, p, 10)
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 20, allocated: 10 })
+
+      const warnings = await warningsDuring(client, async () => {
+        expect((await pick(client, s, x.itemId, 10, s.binA)).unrecorded_qty_base).toBe(0)
+      })
+
+      expect(warnings).toHaveLength(1)
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 10, allocated: 10 })
+      expect(await netOf(client, y.orderId, p)).toBe(10)
+      expect(await differences(client, x.orderId)).toEqual([])
+      await pick(client, s, y.itemId, 10, s.binA)
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 0, allocated: 0 })
+    })
+  })
+
+  it('when that leaves nothing free, records the rest as unrecorded stock', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      await receive(client, p, s.binA, 10)
+      const x = await importedOrder(client, s, p, 10)
+      const z = await plainOrder(client, s, p, 10, false)
+      await pick(client, s, z.itemId, 10, s.binA)
+      await receive(client, p, s.binA, 13)
+      const y = await plainOrder(client, s, p, 10)
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 13, allocated: 10 })
+
+      expect((await pick(client, s, x.itemId, 10, s.binA)).unrecorded_qty_base).toBe(7)
+
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 10, allocated: 10 })
+      expect(await netOf(client, y.orderId, p)).toBe(10)
+      expect(await differences(client, x.orderId)).toMatchObject([{ kind: 'unrecorded_stock', unrecorded_qty_base: 7 }])
+    })
+  })
+
+  it('refuses a pick on a cancelled order, under the order lock', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await scene(client)
+      const p = await newProduct(client, s.supplierId)
+      await receive(client, p, s.binA, 10)
+      const x = await importedOrder(client, s, p, 5)
+      expect((await cancel(client, s, x.orderId)).ok).toBe(true)
+
+      await expectRaise(client, PICK, [x.itemId, 1, s.binA, s.actor],
+        /ORDER_CANCELLED: This order was cancelled\. Stop picking it and put anything already taken back\./)
+
+      expect(await picksOf(client, x.orderId)).toEqual([])
+      expect(await bin(client, p, s.binA)).toEqual({ onHand: 10, allocated: 0 })
     })
   })
 

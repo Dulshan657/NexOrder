@@ -19,7 +19,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError, type ErrorCode }
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
-import { advanceCompletedFulfilments, recomputeOrderStatus } from '../_shared/fulfillment.ts'
+import { advanceCompletedFulfilments, closeShortRefusal, recomputeOrderStatus } from '../_shared/fulfillment.ts'
 import { setOrderStatus } from '../_shared/orderStatus.ts'
 import { requireModule } from '../_shared/modules.ts'
 
@@ -36,7 +36,7 @@ const REFUSALS: Record<string, { code: ErrorCode; message: string }> = {
   NOT_IMPORTED: { code: 'CONFLICT', message: 'Only an order imported from an invoice can be finished short.' },
   ORDER_CANCELLED: { code: 'CONFLICT', message: 'This order was cancelled. Stop picking it and put anything already taken back.' },
   INVALID_STATUS: { code: 'CONFLICT', message: 'This order is not being picked any more, so a line cannot be finished short.' },
-  BAD_LOCATION: { code: 'INVALID_INPUT', message: 'That bin is not in an active warehouse.' },
+  BAD_LOCATION: { code: 'INVALID_INPUT', message: 'That bin is not in an active warehouse picking this order.' },
 }
 
 interface CloseResult {
@@ -75,31 +75,21 @@ serve(async (req: Request) => {
 
     const { data: itemRow } = await admin
       .from('order_items')
-      .select('order_id')
+      .select('order_id, product_id')
       .eq('id', orderItemId)
       .maybeSingle()
-    const orderId = (itemRow as { order_id: string } | null)?.order_id ?? null
+    const item = itemRow as { order_id: string; product_id: number } | null
+    const orderId = item?.order_id ?? null
 
-    // Warehouse staff may only act at their own site. A bin resolves to its ROOT
-    // warehouse first (mig 00040), as in record-pick. With no bin to go on, the order
-    // must have a fulfilment at their warehouse.
-    if (auth.role === 'Warehouse') {
-      if (locationId) {
-        const { data: rootData } = await admin.rpc('inv_root_warehouse', { p_location_id: locationId })
-        const warehouseId = typeof rootData === 'number' ? rootData : locationId
-        if (warehouseId !== auth.profile.home_warehouse_id) {
-          throw new EdgeFunctionError('FORBIDDEN', 'You can only pick at your own warehouse')
-        }
-      } else if (orderId) {
-        const { data: sites } = await admin
-          .from('order_fulfillments')
-          .select('location_id')
-          .eq('order_id', orderId)
-        const list = (sites ?? []) as Array<{ location_id: number }>
-        if (list.length > 0 && !list.some((s) => s.location_id === auth.profile.home_warehouse_id)) {
-          throw new EdgeFunctionError('FORBIDDEN', 'You can only pick at your own warehouse')
-        }
-      }
+    // An unknown line falls through to the RPC, which names it.
+    if (auth.role === 'Warehouse' && item) {
+      const refusal = await closeShortRefusal(admin, {
+        orderId: item.order_id,
+        productId: item.product_id,
+        homeWarehouseId: auth.profile.home_warehouse_id ?? null,
+        locationId: locationId ?? null,
+      })
+      if (refusal) throw new EdgeFunctionError(refusal.code, refusal.message, { reason: refusal.reason })
     }
 
     const { data: closeResult, error: rpcError } = await admin.rpc('inv_close_line_short', {

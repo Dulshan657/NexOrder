@@ -161,6 +161,80 @@ describe('NX-0029 releasing an order’s own reservation (live RPCs, rollback-is
     })
   })
 
+  describe('A7: what counts as another order’s holding', () => {
+    it('takes off what the other order has already picked', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await scene(client)
+        const p = await newProduct(client, s.supplierId)
+        await receive(client, p, s.binA, 20)
+        const other = await plainOrder(client, s, p, 10)
+        const x = await plainOrder(client, s, p, 10)
+        await pick(client, s, other.itemId, 4, s.binA)
+        expect(await bin(client, p, s.binA)).toEqual({ onHand: 16, allocated: 16 })
+
+        const warnings = await warningsDuring(client, () => release(client, s, x.orderId))
+
+        expect(warnings).toEqual([])
+        expect(await bin(client, p, s.binA)).toEqual({ onHand: 16, allocated: 6 })
+      })
+    })
+
+    it('takes those picks off in base units on a carton line', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await scene(client)
+        const p = await newProduct(client, s.supplierId)
+        await receive(client, p, s.binA, 34)
+        const other = await importedOrder(client, s, p, 2, { pack: 12 })
+        const x = await plainOrder(client, s, p, 10)
+        await pick(client, s, other.itemId, 1, s.binA)
+        expect(await bin(client, p, s.binA)).toEqual({ onHand: 22, allocated: 22 })
+
+        const warnings = await warningsDuring(client, () => release(client, s, x.orderId))
+
+        expect(warnings).toEqual([])
+        expect(await bin(client, p, s.binA)).toEqual({ onHand: 22, allocated: 12 })
+      })
+    })
+
+    it('still counts an order at packed, which has not left yet', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await scene(client)
+        const p = await newProduct(client, s.supplierId)
+        await receive(client, p, s.binA, 15)
+        const packed = await plainOrder(client, s, p, 5)
+        const x = await plainOrder(client, s, p, 10)
+        const thief = await plainOrder(client, s, p, 5, false)
+        await pick(client, s, thief.itemId, 5, s.binA)
+        await setStatus(client, thief.orderId, 'dispatched')
+        await setStatus(client, packed.orderId, 'packed')
+        expect(await bin(client, p, s.binA)).toEqual({ onHand: 10, allocated: 10 })
+
+        const warnings = await warningsDuring(client, () => release(client, s, x.orderId))
+
+        expect(warnings).toHaveLength(1)
+        expect(await bin(client, p, s.binA)).toEqual({ onHand: 10, allocated: 5 })
+      })
+    })
+
+    it('counts nothing for ledger rows of an order that no longer exists', async () => {
+      await withRollbackTx(async (client) => {
+        const s = await scene(client)
+        const p = await newProduct(client, s.supplierId)
+        await receive(client, p, s.binA, 10)
+        const x = await plainOrder(client, s, p, 10)
+        await client.query(
+          `INSERT INTO public.inventory_movements
+             (product_id, location_id, qty_delta, movement_type, ref_type, ref_id)
+           VALUES ($1, $2, 10, 'allocate', 'order', 'NX0029-DELETED-ORDER')`, [p, s.binA])
+
+        const warnings = await warningsDuring(client, async () => { await cancel(client, s, x.orderId) })
+
+        expect(warnings).toEqual([])
+        expect(await bin(client, p, s.binA)).toEqual({ onHand: 10, allocated: 0 })
+      })
+    })
+  })
+
   describe('A7: a release never raises', () => {
     it('warns with the counts and releases what is safe when the bin cannot cover it', async () => {
       await withRollbackTx(async (client) => {
