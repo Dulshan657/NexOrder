@@ -22,6 +22,9 @@ import {
 /** The panels are `max-h-[70svh]` (RackedWorkspace). */
 const PANEL_CAP = 0.7
 
+/** A wheel turn far longer than the list, so the body runs to its last row. */
+const WHEEL_TO_THE_END = 10_000
+
 let world: WheelWorld
 
 test.describe('Warehouse panels scroll with the mouse wheel', () => {
@@ -73,7 +76,7 @@ test.describe('Warehouse panels scroll with the mouse wheel', () => {
       .toBeGreaterThan(0)
 
     // And it reaches the end of the list, so the last product is reachable.
-    await page.mouse.wheel(0, 10_000)
+    await page.mouse.wheel(0, WHEEL_TO_THE_END)
     await expect
       .poll(() => body.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop), {
         message: 'the Bin detail body scrolled to its last row',
