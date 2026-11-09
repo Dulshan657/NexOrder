@@ -32,15 +32,21 @@
 
 import { createClient } from '@supabase/supabase-js'
 
-import { resolveTarget, orExit } from './lib/env.mjs'
-import { exitCodeFor, formatProblem, normaliseTargetArgs } from './lib/homeBinsCli.mjs'
+import { resolveTarget } from './lib/env.mjs'
+import {
+  couldNotRunMessage,
+  exitCodeFor,
+  exitCodeForError,
+  formatProblem,
+  normaliseTargetArgs,
+} from './lib/homeBinsCli.mjs'
 import { loadHomeBinHealth } from '../supabase/functions/_shared/homeBinHealthLoad.ts'
 
-const EXIT_COULD_NOT_RUN = 2
-
 async function main() {
-  const argv = orExit(() => normaliseTargetArgs(process.argv.slice(2)))
-  const target = orExit(() => resolveTarget({ argv, require: ['SUPABASE_SERVICE_ROLE_KEY'] }))
+  // Not orExit: that exits 1 on a TargetError, and 1 means "problems found".
+  // A target or credential problem is "could not run" (2), like a failed read.
+  const argv = normaliseTargetArgs(process.argv.slice(2))
+  const target = resolveTarget({ argv, require: ['SUPABASE_SERVICE_ROLE_KEY'] })
 
   console.error(`[check:home-bins] target ${target.name} (${target.config.projectRef})`)
 
@@ -79,6 +85,6 @@ async function main() {
 try {
   process.exitCode = await main()
 } catch (e) {
-  console.error(`[check:home-bins] could not run the check: ${e instanceof Error ? e.message : e}`)
-  process.exitCode = EXIT_COULD_NOT_RUN
+  console.error(couldNotRunMessage(e))
+  process.exitCode = exitCodeForError(e)
 }

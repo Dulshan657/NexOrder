@@ -44,14 +44,42 @@ export function formatProblem(warehouse, row, problem) {
   return `${warehouse.code} | ${row.sku} | ${row.binCode} | ${problem.code} | ${problem.message}`
 }
 
+/** "The check could not run": a gate must never read "could not look" as "all clear". */
+export const EXIT_COULD_NOT_RUN = 2
+
 /**
- * 0 when every home is usable, 1 when any is not. (2 is reserved by the script
- * for "could not run the check": a gate must never read "could not look" as
- * "all clear".)
+ * 0 when every home is usable, 1 when any is not. (2, EXIT_COULD_NOT_RUN, is
+ * for a check that could not run; see exitCodeForError.)
  *
  * @param {number} problemCount
  * @returns {0 | 1}
  */
 export function exitCodeFor(problemCount) {
   return problemCount > 0 ? 1 : 0
+}
+
+/**
+ * The exit code for a check that threw before it could judge anything. Always
+ * 2: a TargetError (missing credentials, a bare --target, no target, or
+ * credentials that belong to another project) is as much "could not run" as a
+ * failed read, and must not share 1 with "problems found".
+ *
+ * @param {unknown} _error
+ * @returns {2}
+ */
+export function exitCodeForError(_error) {
+  return EXIT_COULD_NOT_RUN
+}
+
+/**
+ * The one line printed for a check that could not run. A TargetError's message
+ * is already written for the operator, so it is shown as it is.
+ *
+ * @param {unknown} error
+ * @returns {string}
+ */
+export function couldNotRunMessage(error) {
+  if (error instanceof TargetError) return `[check:home-bins] could not run the check:
+${error.message}`
+  return `[check:home-bins] could not run the check: ${error instanceof Error ? error.message : String(error)}`
 }

@@ -95,7 +95,25 @@ destination changes is the proof the repair is complete.
 
 ---
 
-## 1b. Check the home bins
+## 2. Migrations
+
+```bash
+node supabase/migrate.mjs --env=amadiya --dry-run
+npm run migrate:amadiya
+```
+
+Expect exactly 13 files, `00114_products_brand.sql` through
+`00126_pallet_break_down.sql`, in that order. Each commits together with its own
+row in `public.schema_migrations`, checksummed — so a partial run is resumable
+and an edited file is a hard error rather than a silent re-run.
+
+---
+
+## 2b. Check the home bins
+
+Run this **after step 2**, once the migrations are in, and before the Edge
+Functions. It reads `wie_home_bin_facts`, which arrives with migration `00142`,
+so on a target without that migration it cannot run and exits 2.
 
 Putaway must send a product to its home bin while the home has room, so a home
 bin it can never use (retired, in a hold zone, on a level that takes no cartons,
@@ -110,26 +128,9 @@ npm run check:home-bins -- --target <tenant>
 Expect no output lines and exit code 0. Each line names a warehouse, a SKU, a
 bin, a problem code and what is wrong; fix them in **Replenishment setup**, where
 the same list shows as **Home bin problems**, then run it again. Exit code 1
-means problems were found; exit code 2 means the check could not run, which is
-**not** an all-clear.
-
-It reads `wie_home_bin_facts` (migration `00142`), so a target that has not had
-that migration yet cannot be checked: for the release that first carries it, run
-this after step 2.
-
----
-
-## 2. Migrations
-
-```bash
-node supabase/migrate.mjs --env=amadiya --dry-run
-npm run migrate:amadiya
-```
-
-Expect exactly 13 files, `00114_products_brand.sql` through
-`00126_pallet_break_down.sql`, in that order. Each commits together with its own
-row in `public.schema_migrations`, checksummed — so a partial run is resumable
-and an edited file is a hard error rather than a silent re-run.
+means problems were found; exit code 2 means the check could not run (missing
+credentials, no target or the wrong one, a failed read), which is **not** an
+all-clear.
 
 ---
 
