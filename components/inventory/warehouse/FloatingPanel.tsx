@@ -64,11 +64,20 @@ export function FloatingPanel({
         className="grid min-h-0 flex-1 transition-[grid-template-rows] duration-[250ms] ease-out"
         style={{ gridTemplateRows: open ? '1fr' : '0fr' }}
       >
-        <div className="min-h-0 overflow-hidden">
+        {/* The body is the scroll box, so it has to be bounded by this row and not
+            by its own content. It used to be a plain block child of an
+            `overflow-hidden` div: that div was exactly as tall as the row, the
+            body grew to its content inside it, and the wrapper clipped it. The
+            body was never taller than itself, so there was nothing for a wheel to
+            scroll and the wheel went to the page (NX-0033, C7). Making this a flex
+            column that may shrink (`min-h-0`) and the body its `flex-1` child makes
+            the row the bound. `overflow-hidden` stays for the collapse animation:
+            the body's own padding and border cannot shrink to a 0fr row. */}
+        <div className="flex min-h-0 flex-col overflow-hidden">
           <div
             id={bodyId}
             hidden={!open}
-            className={`overflow-y-auto border-t border-stone-200/80 px-3 py-2 ${bodyClassName}`}
+            className={`min-h-0 flex-1 overflow-y-auto border-t border-stone-200/80 px-3 py-2 ${bodyClassName}`}
           >
             {children}
           </div>
