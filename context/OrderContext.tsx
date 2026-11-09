@@ -14,6 +14,7 @@ import {
     type User,
 } from '../types';
 import { applyCartPromotions } from '../services/promotionService';
+import { applyPromotionMinimums } from '../lib/promotionMinimumCart';
 import { getHoReCaOutstanding } from '../services/accountingService';
 import { isPromotionActive, cartonPrice as calcCartonPrice } from '../pricing';
 import type { usePlaceOrder } from '../hooks/queries/useOrders';
@@ -66,6 +67,8 @@ export interface OrderContextValue {
     showVerificationModal: boolean;
     bundleModalPromo: Promotion | null;
     total: number;
+    /** The promotions this cart qualifies for, after any minimum order value. */
+    eligiblePromotions: Promotion[];
 
     // Setters needed by forms / modals
     setSelectedHoReCaId: (id: number | null) => void;
@@ -136,7 +139,7 @@ export function OrderProvider({
     onResetView,
     onQrSubmitted,
 }: OrderProviderProps) {
-    const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
+    const [cartItems, setOrderItems] = useState<OrderItem[]>([]);
     const [selectedHoReCaId, setSelectedHoReCaId] = useState<number | null>(null);
     const [notes, setNotes] = useState('');
     const [deliveryDate, setDeliveryDate] = useState('');
@@ -167,6 +170,17 @@ export function OrderProvider({
         }
         return hoReCas.find(c => c.id === selectedHoReCaId);
     }, [hoReCas, selectedHoReCaId, currentUser, isVenueLogin]);
+
+    // What the customer sees and pays: the cart repriced for any promotion with a minimum.
+    const { items: orderItems, eligiblePromotions } = useMemo(
+        () => applyPromotionMinimums(cartItems, products, {
+            hoReCa: selectedHoReCa ?? null,
+            promotions,
+            currentUser,
+            cartonDiscountPercent: appSettings.cartonDiscountPercent,
+        }),
+        [cartItems, products, selectedHoReCa, promotions, currentUser, appSettings.cartonDiscountPercent],
+    );
 
     const total = useMemo(
         () => Math.round(orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0) * 100) / 100,
@@ -213,7 +227,13 @@ export function OrderProvider({
                     ? calcCartonPrice(buyProduct.price, buyProduct.cartonSize, appSettings.cartonDiscountPercent)
                     : buyProduct.price;
                 handleAddItem(buyProduct, { packSize, price, unit }, promo.bogoConfig.buyQuantity);
-                addToast(`Promo applied: ${promo.name}. Free items will be added automatically.`, 'success');
+                const minimum = promo.minOrderValue ?? 0;
+                addToast(
+                    minimum > 0
+                        ? `${promo.name} added. Free items apply on orders of $${minimum.toFixed(2)} or more.`
+                        : `Promo applied: ${promo.name}. Free items will be added automatically.`,
+                    'success',
+                );
             }
         },
         [products, appSettings.cartonDiscountPercent, addToast, handleAddItem],
@@ -442,8 +462,8 @@ export function OrderProvider({
 
             // Re-validate promotions: warn for any that are no longer active/applicable.
             const now = new Date();
-            const stillActive = promotions.filter(p => isPromotionActive(p, now));
-            const previousResult = applyCartPromotions(args.items, promotions, hoReCaForOrder, currentUser, products);
+            const stillActive = eligiblePromotions.filter(p => isPromotionActive(p, now));
+            const previousResult = applyCartPromotions(args.items, eligiblePromotions, hoReCaForOrder, currentUser, products);
             const currentResult = applyCartPromotions(args.items, stillActive, hoReCaForOrder, currentUser, products);
             const droppedPromoNames = new Set<string>();
             previousResult.bogoFreeItems.forEach(b => {
@@ -471,7 +491,7 @@ export function OrderProvider({
             selectedHoReCa,
             invoices,
             isAdminOrManager,
-            promotions,
+            eligiblePromotions,
             products,
             addToast,
             runSubmitForApproval,
@@ -594,6 +614,7 @@ export function OrderProvider({
         showVerificationModal,
         bundleModalPromo,
         total,
+        eligiblePromotions,
         setSelectedHoReCaId,
         setNotes,
         setDeliveryDate,
@@ -616,7 +637,7 @@ export function OrderProvider({
         holdsForApproval,
     }), [
         orderItems, selectedHoReCaId, selectedHoReCa, notes, deliveryDate, deliveryTimeSlot,
-        isLoading, errors, confirmation, showVerificationModal, bundleModalPromo, total,
+        isLoading, errors, confirmation, showVerificationModal, bundleModalPromo, total, eligiblePromotions,
         setSelectedHoReCaId, setNotes, setDeliveryDate, setDeliveryTimeSlot,
         setShowVerificationModal, setBundleModalPromo, setConfirmation, setErrors, handleAddItem,
         handleApplyPromo, handleBundleConfirm, handleUpdateQuantity, handleSubmitOrder, placeOrder,

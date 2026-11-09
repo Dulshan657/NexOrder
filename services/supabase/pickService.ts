@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { toPickCallError } from '@/lib/pickRefusal'
 
 export interface PickQueueLine {
   orderItemId: number
@@ -42,6 +43,21 @@ export interface PickTask {
   allocatedQty: number
   pickedQty: number
   remaining: number
+  /** An imported order's offer at a bin the order holds no reservation on (NX-0029). */
+  unreserved?: boolean
+}
+
+/** Everything order-pick-tasks answers with. */
+export interface OrderPickTasks {
+  tasks: PickTask[]
+  /** True for an order imported from an invoice: it can be finished short and picked
+   *  beyond its reservation. False for every other order, and for a function that
+   *  predates the field. */
+  imported: boolean
+  /** Order lines closed short. Always empty for an order that is not imported. */
+  closedShortLineIds: number[]
+  /** order_item_id -> found quantity (what has been picked), LINE units. */
+  foundByLine: Record<number, number>
 }
 
 // Orders that the warehouse acts on: processed (ready to pick), picked, packed.
@@ -106,20 +122,51 @@ export async function recordPick(
       },
     },
   )
-  if (error) throw error
+  if (error) throw await toPickCallError(error, 'Could not record the pick.')
+  return data!
+}
+
+/** What record-short-pick answers: `closed` the first time, `already_closed` on a retry,
+ *  `already_picked` when the line was in fact complete. */
+export interface ShortPickResult {
+  status: 'closed' | 'already_closed' | 'already_picked'
+  line_closed?: boolean
+  order_fully_resolved?: boolean
+}
+
+/** Finish an open line of an imported order with what was found, including nothing.
+ *  `locationId` is the bin that was checked, sent only when one is known: the server
+ *  flags it for a recount and does not default it. */
+export async function recordShortPick(orderItemId: number, locationId?: number): Promise<ShortPickResult> {
+  const { data, error } = await supabase.functions.invoke<{ ok: true } & ShortPickResult>(
+    'record-short-pick',
+    { body: { orderItemId, ...(locationId != null ? { locationId } : {}) } },
+  )
+  if (error) throw await toPickCallError(error, 'Could not finish the line short.')
   return data!
 }
 
 // Directed per-bin pick tasks for one order — the same allocation netting the
 // route and the pick slip use, split into per-line-per-bin tasks with a
 // remaining qty (see order-pick-tasks Edge Function / _shared/wie/pickTasks.ts).
-export async function getOrderPickTasks(orderId: string): Promise<PickTask[]> {
-  const { data, error } = await supabase.functions.invoke<{ ok: true; tasks: PickTask[] }>(
-    'order-pick-tasks',
-    { body: { orderId } },
-  )
+// For an imported order the answer also says which lines are closed short, how much
+// of each was found, and offers the unreserved part at bins with free stock.
+export async function getOrderPickTasks(orderId: string): Promise<OrderPickTasks> {
+  const { data, error } = await supabase.functions.invoke<{
+    ok: true
+    tasks: PickTask[]
+    imported?: boolean
+    closedShortLineIds?: number[]
+    foundByLine?: Record<string, number>
+  }>('order-pick-tasks', { body: { orderId } })
   if (error) throw error
-  return data?.tasks ?? []
+  return {
+    tasks: data?.tasks ?? [],
+    // Exactly true, so a function deployed before this field exists reads as "not imported".
+    imported: data?.imported === true,
+    closedShortLineIds: data?.closedShortLineIds ?? [],
+    foundByLine: Object.fromEntries(Object.entries(data?.foundByLine ?? {}).map(([id, n]) => [Number(id), Number(n)])),
+  }
 }
 
 export async function generatePickSlip(orderId: string): Promise<GenerateDocResult> {

@@ -20,11 +20,10 @@
 // tooltip are the server's verdict, not a guess at it.
 //
 // THE WRITE IS NOT MADE HERE EITHER. `order_cancel_tx` (mig 00111) does the
-// claim, the release and the invoice in one transaction, because
-// `inv_release_reservation` is not idempotent and is not keyed by order:
-// releasing twice lowers a shared `allocated` counter twice and eats another
-// order's reservation. The conditional UPDATE inside that function is what
-// serialises two operators pressing Cancel at the same moment.
+// claim, the release and the invoice in one transaction, so they succeed or fail
+// together. `inv_release_reservation` is keyed by order and idempotent since mig
+// 00140. The conditional UPDATE inside that function is what serialises two
+// operators pressing Cancel at the same moment.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'

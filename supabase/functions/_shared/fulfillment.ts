@@ -9,7 +9,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import { rollupOrderStatus, type FulfillmentStatus } from './orderStatusRollup.ts'
-import { ORDER_STATUS_LADDER, setOrderStatus, statusesUpTo } from './orderStatus.ts'
+import { ORDER_STATUS_LADDER, setOrderStatus, statusesUpTo, type SetOrderStatusVerdict } from './orderStatus.ts'
 
 export const FULFILLMENT_LADDER: FulfillmentStatus[] = [
   'processed',
@@ -60,6 +60,51 @@ export async function ensureFulfillments(
 }
 
 /**
+ * The fulfilments an order needs to reach 'processed'. The sites are the warehouses
+ * holding a NET reservation, falling back to the default warehouse so there is
+ * always something to pick. `reservedLocs` is the real reservations alone, for a
+ * caller that must tell the fallback from them.
+ */
+export async function ensureProcessedFulfilments(
+  admin: SupabaseClient,
+  orderId: string,
+  actorId: string | null,
+  stampIso: string,
+): Promise<{ reservedLocs: number[]; locs: number[] }> {
+  const reservedLocs = await fulfillmentLocations(admin, orderId)
+  let locs = reservedLocs
+  if (locs.length === 0) {
+    const { data: def } = await admin
+      .from('locations')
+      .select('id')
+      .eq('kind', 'WAREHOUSE')
+      .eq('is_active', true)
+      .order('id')
+      .limit(1)
+      .maybeSingle()
+    if ((def as any)?.id) locs = [(def as any).id]
+  }
+  await ensureFulfillments(admin, orderId, locs, actorId, stampIso)
+  return { reservedLocs, locs }
+}
+
+/**
+ * Move orders.status to 'processed' from any status up to it, with its history
+ * entry. Throws if the transaction errors; a refusal comes back as the verdict.
+ */
+export function writeProcessedStatus(
+  admin: Pick<SupabaseClient, 'rpc'>,
+  { orderId, actorId, stampIso, note }: { orderId: string; actorId: string | null; stampIso: string; note?: string | null },
+): Promise<SetOrderStatusVerdict> {
+  return setOrderStatus(admin, {
+    orderId,
+    from: statusesUpTo(ORDER_STATUS_LADDER, 'processed'),
+    to: 'processed',
+    entry: { status: 'processed', timestamp: stampIso, actor: actorId, ...(note ? { note } : {}) },
+  })
+}
+
+/**
  * Delete unadvanced ('processed') fulfilment rows whose warehouse is no longer in
  * keepLocationIds. Used after an operator re-route: the origin warehouse, now
  * net-zero reserved, would otherwise leave a phantom 'processed' fulfilment that
@@ -86,7 +131,8 @@ export async function pruneFulfillments(
  * reserved at that warehouse (allocate − deallocate, resolved bin→warehouse)
  * against base units picked there. Delegated to inv_warehouse_pick_complete
  * (mig 00040) so the bin→warehouse resolution is consistent. A site with nothing
- * reserved is vacuously complete.
+ * reserved is vacuously complete, except on an imported order, where an open line
+ * also counts unless another warehouse still holds it (mig 00140).
  */
 export async function isLocationFullyPicked(
   admin: SupabaseClient,
@@ -102,12 +148,129 @@ export async function isLocationFullyPicked(
 }
 
 /**
+ * May this move take an imported order forward to 'packed', 'dispatched' or 'delivered'?
+ * Each needs every line picked or closed short. Past 'picked' nothing can finish an open
+ * line: inv_close_line_short refuses those statuses (mig 00140), cancelling refuses them
+ * and going backwards is refused. Answers null to allow, or what to tell the operator.
+ * Fails closed. Any other status, and any order with no invoice number, is not asked
+ * about at all. The caller leaves a retry at the same status alone.
+ *
+ * warehouseId is the fulfilment moving. An order with no fulfilments has no warehouse to
+ * ask about, so its lines are read: each must be fully picked or closed short.
+ */
+export async function importedForwardRefusal(
+  admin: Pick<SupabaseClient, 'from' | 'rpc'>,
+  input: { orderId: string; status: string; qbInvoiceNumber: string | null; warehouseId: number | null },
+): Promise<string | null> {
+  const { orderId, status, qbInvoiceNumber, warehouseId } = input
+  if (!['packed', 'dispatched', 'delivered'].includes(status) || qbInvoiceNumber == null) return null
+
+  const refusal = 'This order still has lines to pick. Pick them or finish them short first.'
+  if (warehouseId != null) {
+    return (await isLocationFullyPicked(admin as SupabaseClient, orderId, warehouseId)) ? null : refusal
+  }
+
+  const { data, error } = await admin
+    .from('order_items')
+    .select('quantity, pick_progress(picked_qty), pick_differences(kind)')
+    .eq('order_id', orderId)
+  if (error || !data) return refusal
+  const open = (data as any[]).some((l) => {
+    const picked = (l.pick_progress ?? []).reduce((sum: number, p: any) => sum + Number(p.picked_qty), 0)
+    const closed = (l.pick_differences ?? []).some((d: any) => d.kind === 'short')
+    return picked < Number(l.quantity) && !closed
+  })
+  return open ? refusal : null
+}
+
+/**
+ * Advance every 'processed' fulfilment of this order that is now fully picked, not only
+ * the caller's. Closing a line, or picking the last of one at another warehouse, can leave
+ * a site with nothing to pick and so no event of its own to advance it. Returns how many
+ * fulfilments the order has, so a caller can tell a legacy order, which has none. The
+ * caller recomputes the order status afterwards.
+ */
+export async function advanceCompletedFulfilments(
+  admin: SupabaseClient,
+  orderId: string,
+  actorId: string | null,
+  stampIso: string,
+  note: string,
+): Promise<number> {
+  const { data } = await admin
+    .from('order_fulfillments')
+    .select('id, location_id, status, status_history')
+    .eq('order_id', orderId)
+  const rows = (data ?? []) as any[]
+  for (const ful of rows) {
+    if (ful.status !== 'processed') continue
+    if (!(await isLocationFullyPicked(admin, orderId, ful.location_id))) continue
+    const hist = Array.isArray(ful.status_history) ? ful.status_history : []
+    await admin
+      .from('order_fulfillments')
+      .update({
+        status: 'picked',
+        status_history: [...hist, { status: 'picked', timestamp: stampIso, actor: actorId, note }],
+      })
+      .eq('id', ful.id)
+      // A concurrent advance already moved it on; don't overwrite its history.
+      .eq('status', 'processed')
+  }
+  return rows.length
+}
+
+/**
+ * May a Warehouse-role caller close this line short? They act for their own warehouse
+ * only, and closing a line gives back the line's units wherever the order holds them. So
+ * the order must have a fulfilment at their warehouse, a bin they name must be under it,
+ * and the order must hold none of this product elsewhere: that decision belongs to the
+ * other site or to an Admin or Manager, who are not asked this. Fails closed.
+ */
+export async function closeShortRefusal(
+  admin: Pick<SupabaseClient, 'from' | 'rpc'>,
+  input: { orderId: string; productId: number; homeWarehouseId: number | null; locationId: number | null },
+): Promise<{ code: 'FORBIDDEN' | 'CONFLICT'; reason: string; message: string } | null> {
+  const { orderId, productId, homeWarehouseId, locationId } = input
+  const notYours = {
+    code: 'FORBIDDEN' as const,
+    reason: 'NOT_YOUR_WAREHOUSE',
+    message: 'You can only finish a line short at your own warehouse.',
+  }
+  if (homeWarehouseId == null) return notYours
+
+  const { data: sites } = await admin
+    .from('order_fulfillments')
+    .select('location_id')
+    .eq('order_id', orderId)
+  if (!((sites ?? []) as any[]).some((s) => s.location_id === homeWarehouseId)) return notYours
+
+  if (locationId != null) {
+    const { data: root } = await admin.rpc('inv_root_warehouse', { p_location_id: locationId })
+    if (root !== homeWarehouseId) return notYours
+  }
+
+  const { data: held, error } = await admin.rpc('inv_order_held_outside_warehouse', {
+    p_order_id: orderId,
+    p_product_id: productId,
+    p_warehouse_id: homeWarehouseId,
+  })
+  if (error || !(Number(held) <= 0)) {
+    return {
+      code: 'CONFLICT',
+      reason: 'HELD_AT_OTHER_WAREHOUSE',
+      message: 'Another warehouse still holds stock for this line. Ask them to pick it, or ask a manager to finish the line short.',
+    }
+  }
+  return null
+}
+
+/**
  * On a dispatch transition, release any residual reservation this warehouse
- * still holds for the order — deallocates only the un-picked remainder via
- * inv_release_reservation (mig 00036). A no-op for every other status. A
- * correctly-picked fulfilment has nothing left to release: the RPC nets
- * ordered-vs-picked internally and only deallocates what's actually left, so
- * calling it unconditionally on dispatch is always safe. This is what stops a
+ * still holds for the order — deallocates only this order's own remainder, across
+ * the warehouse's bins, via inv_release_reservation (mig 00140). A no-op for every
+ * other status. A correctly-picked fulfilment has nothing left to release: the RPC
+ * nets this order's ledger against its picks per bin and only deallocates what's
+ * actually left, so calling it unconditionally on dispatch is always safe. This is what stops a
  * short-picked-then-dispatched fulfilment from leaving `allocated` units
  * stranded at this location, unreachable to `inv_transfer_stock` (which moves
  * available stock only) and therefore un-puttable-away forever.

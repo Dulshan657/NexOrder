@@ -156,7 +156,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
         const targeting: PromotionTargeting =
             targetingKind === 'horecas' ? { kind: 'horecas', hoReCaIds: targetHoReCaIds } :
             targetingKind === 'tier' ? { kind: 'tier', tiers: targetTiers } :
-            targetingKind === 'rep' ? { kind: 'rep', repUserId: Number(targetRepId) } :
+            targetingKind === 'rep' ? { kind: 'rep', repUserId: targetRepId } :
             { kind: 'all' };
 
         const promo: Promotion = {
@@ -472,7 +472,7 @@ const PromotionForm: React.FC<PromotionFormProps> = ({ promotion, products, hoRe
                     {targetingKind === 'rep' && (
                         <select value={targetRepId} onChange={e => setTargetRepId(e.target.value)} className={inputClass}>
                             <option value="">Select sales rep...</option>
-                            {reps.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                            {reps.map(u => <option key={u.id} value={u.profileId}>{u.name} ({u.role})</option>)}
                         </select>
                     )}
                 </div>

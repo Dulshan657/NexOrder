@@ -8,6 +8,12 @@
 // buildPickTasks helper (_shared/wie/pickTasks.ts) to split allocation-per-bin
 // into pick-per-order-line-per-bin tasks with a `remaining` qty.
 //
+// For an order imported from an invoice (qb_invoice_number set, NX-0029) it also
+// offers the part no reservation covers at bins with free stock, and reports the
+// lines closed short and the found quantity of each line. The work lives in
+// _shared/orderPickTasks.ts so it can be tested with a fake database; the response
+// of every other order is unchanged apart from `imported: false` and an empty list.
+//
 // Any warehouse's tasks are returned — the caller (PickWorkspaceModal) disables
 // buttons for bins outside a Warehouse-role user's home site, mirroring the
 // server-side guard record-pick enforces on the actual write.
@@ -20,7 +26,7 @@ import { requireAuth, type UserRole } from '../_shared/auth.ts'
 import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
-import { buildPickTasks, type AllocBin, type OrderLine, type PickRecord } from '../_shared/wie/pickTasks.ts'
+import { loadOrderPickTasks } from '../_shared/orderPickTasks.ts'
 import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
@@ -50,47 +56,9 @@ serve(async (req: Request) => {
       auth: { persistSession: false },
     })
 
-    const { data: binRows, error: binErr } = await admin.rpc('wie_order_pick_tasks', { p_order_id: orderId })
-    if (binErr) throw new EdgeFunctionError('INTERNAL', `allocation load failed: ${binErr.message}`)
+    const answer = await loadOrderPickTasks(admin, orderId)
 
-    const { data: lineRows, error: lineErr } = await admin
-      .from('order_items')
-      .select('id, product_id, quantity, pack_size')
-      .eq('order_id', orderId)
-    if (lineErr) throw new EdgeFunctionError('INTERNAL', `order lines load failed: ${lineErr.message}`)
-
-    const { data: pickRows, error: pickErr } = await admin
-      .from('pick_progress')
-      .select('order_item_id, location_id, picked_qty')
-      .eq('order_id', orderId)
-    if (pickErr) throw new EdgeFunctionError('INTERNAL', `pick progress load failed: ${pickErr.message}`)
-
-    const allocBins: AllocBin[] = ((binRows ?? []) as any[]).map((r) => ({
-      productId: r.product_id,
-      warehouseId: r.warehouse_id,
-      warehouseCode: r.warehouse_code,
-      locationId: r.location_id,
-      code: r.code,
-      graphNodeId: r.graph_node_id ?? null,
-      qtyBase: Number(r.qty_base) || 0,
-    }))
-
-    const orderLines: OrderLine[] = ((lineRows ?? []) as any[]).map((r) => ({
-      orderItemId: r.id,
-      productId: r.product_id,
-      quantity: Number(r.quantity) || 0,
-      packSize: Number(r.pack_size) || 1,
-    }))
-
-    const picks: PickRecord[] = ((pickRows ?? []) as any[]).map((r) => ({
-      orderItemId: r.order_item_id,
-      locationId: r.location_id,
-      pickedQty: Number(r.picked_qty) || 0,
-    }))
-
-    const tasks = buildPickTasks(allocBins, orderLines, picks)
-
-    return new Response(JSON.stringify({ ok: true, tasks }), {
+    return new Response(JSON.stringify({ ok: true, ...answer }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
