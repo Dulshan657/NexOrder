@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { generatePutawayTasks } from '../../supabase/functions/_shared/putawayTasks'
 
 // Minimal in-memory Supabase-ish stub covering exactly the calls
@@ -11,6 +11,8 @@ interface StubOpts {
   product?: Record<string, unknown>
   /** product_home_bins rows for the warehouse (NX-0006). */
   homeBins?: Array<Record<string, unknown>>
+  /** Tables whose read answers `{ error: { message: 'boom' } }` (NX-0032). */
+  failReads?: string[]
 }
 
 function candidate(o: Partial<{
@@ -49,16 +51,17 @@ function makeAdmin(opts: StubOpts) {
     }
   }
 
-  const builder = (rows: Array<Record<string, unknown>>) => {
+  const builder = (rows: Array<Record<string, unknown>>, failed: boolean) => {
+    const error = failed ? { message: 'boom' } : null
     const b = {
       eq: () => b,
       in: () => b,
       or: () => b,
       order: () => b,
-      maybeSingle: async () => ({ data: rows[0] ?? null, error: null }),
-      single: async () => ({ data: rows[0] ?? null, error: null }),
-      then: (res: (v: { data: unknown; error: null }) => unknown) =>
-        Promise.resolve({ data: rows, error: null }).then(res),
+      maybeSingle: async () => ({ data: failed ? null : rows[0] ?? null, error }),
+      single: async () => ({ data: failed ? null : rows[0] ?? null, error }),
+      then: (res: (v: { data: unknown; error: { message: string } | null }) => unknown) =>
+        Promise.resolve({ data: failed ? null : rows, error }).then(res),
     }
     return b
   }
@@ -66,7 +69,7 @@ function makeAdmin(opts: StubOpts) {
   const admin = {
     from(table: string) {
       return {
-        select: () => builder(listFor(table)),
+        select: () => builder(listFor(table), (opts.failReads ?? []).includes(table)),
         insert: (row: Record<string, unknown>) => ({
           select: () => ({
             single: async () => {
@@ -321,5 +324,68 @@ describe('generatePutawayTasks — home bin', () => {
     if (res.mode !== 'engine') throw new Error('expected engine')
     expect(inserted[0]).toMatchObject({ recommended_location_id: 7, suggestion_source: 'engine' })
     expect(res.recommendations[0].suggestMakeHome).toBe(true)
+  })
+
+  // NX-0032: home bins are an enforced rule now, so a home that cannot be read
+  // is not "no home" -- it stops putaway, like the rule and slotting loads.
+  describe('when the home bin cannot be read', () => {
+    const MESSAGE = 'Home bin unavailable, try again.'
+    let logged: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+      logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    })
+    afterEach(() => {
+      logged.mockRestore()
+    })
+
+    it('a failed home read creates no tasks and says so', async () => {
+      const { admin, inserted } = makeAdmin({
+        warehouse: racked,
+        failReads: ['product_home_bins'],
+        candidates: [candidate({ location_id: 7 })],
+      })
+      await expect(
+        generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 30 }], actorId: 'u1' }),
+      ).rejects.toThrow(MESSAGE)
+      expect(inserted).toHaveLength(0)
+      // The detail goes to the server log, with where and why.
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('boom'))
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('warehouse 9'))
+    })
+
+    it.each(['inventory_balances', 'wie_putaway_recommendations'])(
+      'a failed home slot usage read (%s) creates no tasks and says so',
+      async (table) => {
+        const { admin, inserted } = makeAdmin({
+          warehouse: racked,
+          // A capped home is the only kind whose usage is read.
+          homeBins: [{ product_id: 1, bin_id: 20, max_qty: 100 }],
+          failReads: [table],
+          candidates: [
+            candidate({ location_id: 7, distance_from_dock_m: 1 }),
+            candidate({ location_id: 20, code: 'H20', distance_from_dock_m: 80 }),
+          ],
+        })
+        await expect(
+          generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 30 }], actorId: 'u1' }),
+        ).rejects.toThrow(MESSAGE)
+        expect(inserted).toHaveLength(0)
+        expect(logged).toHaveBeenCalledWith(expect.stringContaining('boom'))
+        expect(logged).toHaveBeenCalledWith(expect.stringContaining('product 1'))
+      },
+    )
+
+    it('an uncapped home reads no usage, so a usage table outage does not stop it', async () => {
+      const { admin, inserted } = makeAdmin({
+        warehouse: racked,
+        homeBins: [{ product_id: 1, bin_id: 20, max_qty: null }],
+        failReads: ['inventory_balances', 'wie_putaway_recommendations'],
+        candidates: [candidate({ location_id: 20, code: 'H20' })],
+      })
+      await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 30 }], actorId: 'u1' })
+      expect(inserted).toHaveLength(1)
+      expect(inserted[0]).toMatchObject({ recommended_location_id: 20, suggestion_source: 'home' })
+    })
   })
 })

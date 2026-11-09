@@ -13,10 +13,15 @@
 // caller reads its task first and asks this afterwards.
 
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
-import { EdgeFunctionError } from './errors.ts'
+import { EdgeFunctionError, isEdgeFunctionError } from './errors.ts'
 
 /** What the floor sees when the home could not be read. Detail goes to the log. */
 export const HOME_UNAVAILABLE = 'Home bin unavailable, try again.'
+
+/** True for the fail-closed answer above, wherever it was thrown. */
+export function isHomeUnavailable(e: unknown): boolean {
+  return isEdgeFunctionError(e) && e.code === 'INTERNAL' && e.message === HOME_UNAVAILABLE
+}
 
 /**
  * Throw CONFLICT with the refusal text when `toLocationId` is not an allowed

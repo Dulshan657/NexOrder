@@ -18,7 +18,8 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
-import { generatePutawayTasks, type GeneratePutawayResult } from '../_shared/putawayTasks.ts'
+import { generatePutawayTasks } from '../_shared/putawayTasks.ts'
+import { putawayForReceipt, receiveStockBody, type ReceivePutawayOutcome } from '../_shared/receivePutaway.ts'
 import { resolveReceiveDestination } from '../_shared/receiveDestination.ts'
 import { requireModule } from '../_shared/modules.ts'
 
@@ -352,16 +353,21 @@ serve(async (req: Request) => {
     // EVERY receipt path — the receiving screen AND the CSV opening-stock import
     // both land here. Putaway is advisory: a failure must never fail the receipt,
     // and non-racked/unpublished warehouses simply no-op (mode 'legacy').
-    let putaway: GeneratePutawayResult | null = null
+    //
+    // One failure is reported rather than swallowed (NX-0032): when a product's
+    // home bin cannot be read, putaway creates nothing and the response carries
+    // `putaway_error`, so the receive screen can offer a Retry. The receipt
+    // above stays committed either way. See _shared/receivePutaway.ts.
+    let outcome: ReceivePutawayOutcome = { putaway: null }
     const destLocationId = (result as any)?.location_id as number | undefined
     if (destLocationId) {
-      try {
+      outcome = await putawayForReceipt(() => {
         // hu_type rides along so the engine steers pallets to bulk/reserve
         // levels and cartons to pick faces (mig 00072 roles + 00075 plates).
         const typeByKey = new Map<string, 'pallet' | 'carton'>(
           (plates ?? []).map((p) => [p.key, p.hu_type]),
         )
-        putaway = await generatePutawayTasks(admin, {
+        return generatePutawayTasks(admin, {
           warehouseId: destLocationId,
           // hu_id rides along too, so the several lines of a MIXED pallet are
           // recognised as one physical object: they all follow it to a single
@@ -385,13 +391,11 @@ serve(async (req: Request) => {
           actorId: auth.userId,
           goodsReceiptId: (result as any)?.receipt_id as number | undefined,
         })
-      } catch (_e) {
-        putaway = null
-      }
+      })
     }
 
     return new Response(
-      JSON.stringify({ ok: true, result, putaway }),
+      JSON.stringify(receiveStockBody(result, outcome)),
       { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   } catch (e) {
