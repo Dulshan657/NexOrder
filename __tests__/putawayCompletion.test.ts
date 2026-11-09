@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   MAKE_HOME_FORBIDDEN,
+  MAKE_HOME_HELD,
   allocateAcrossTasks,
+  heldLineHomeRefusal,
   canPlaceNow,
   decisionActsOnStatus,
   canSetHome,
@@ -92,6 +94,23 @@ describe('canSetHome', () => {
     expect(canSetHome('Warehouse')).toBe(false)
     expect(canSetHome('Field Sales Rep')).toBe(false)
     expect(canSetHome('')).toBe(false)
+  })
+})
+
+// I1 (final review): a quarantined line is on its way to a hold bin, and the
+// stock it carries is held. Giving the product a home from that line would put
+// held stock in a pick face, so the server refuses it whatever bin was scanned.
+describe('heldLineHomeRefusal', () => {
+  it('refuses make_home on a held line with CONFLICT and the fixed copy', () => {
+    expect(MAKE_HOME_HELD).toBe("A held line can't make a home bin.")
+    expect(heldLineHomeRefusal({ makeHome: true, anyHeld: true }))
+      .toEqual({ ok: false, code: 'CONFLICT', message: MAKE_HOME_HELD })
+  })
+
+  it('says nothing when no home is asked for, or no line is held', () => {
+    expect(heldLineHomeRefusal({ makeHome: false, anyHeld: true })).toBeNull()
+    expect(heldLineHomeRefusal({ makeHome: true, anyHeld: false })).toBeNull()
+    expect(heldLineHomeRefusal({ makeHome: false, anyHeld: false })).toBeNull()
   })
 })
 

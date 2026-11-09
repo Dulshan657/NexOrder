@@ -53,7 +53,8 @@
 //   'confirm_overflow' → wie_confirm_overflow_tx. The Walk's confirmation of a
 //                       loose line whose home was full (a suggested overflow
 //                       line). The walker scans the bin the card names and that
-//                       bin id comes here as chosen_location_id. Compare-and-set
+//                       code comes here as chosen_location_code (resolved here;
+//                       an id as chosen_location_id also works). Compare-and-set
 //                       under the same row lock the desk's Assign takes, so the
 //                       desk and the walk cannot both win, and a desk redirect
 //                       made after the walk loaded cannot be confirmed by a
@@ -81,6 +82,8 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { decideDeskAction, decisionActsOnStatus } from '../_shared/putawayCompletion.ts'
 import { refuseIfHomeBlocked } from '../_shared/putawayHomeBlock.ts'
+import { binIsHold } from '../_shared/holdBins.ts'
+import { normalizeScan } from '../_shared/scanNormalize.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
@@ -91,6 +94,10 @@ const inputSchema = z.object({
   resolution: z.enum(['found', 'write_off']).optional(),
   reason: z.string().max(500).nullish(),
   chosen_location_id: z.number().int().positive().optional(),
+  // confirm_overflow only (M1): the bin code as the walker scanned it, resolved
+  // here, so the compare-and-set judges the physical scan and not the card's
+  // own idea of the bin. With chosen_location_id too, the two must agree.
+  chosen_location_code: z.string().trim().min(1).max(100).optional(),
   // Partial putaway. Omitted = the whole remaining quantity.
   quantity: z.number().positive().optional(),
   // Two-stage putaway (mig 00080). True = decide the bin and move NOTHING; the
@@ -108,9 +115,13 @@ const inputSchema = z.object({
   // cross it anyway (e.g. no compliant level had room). The crossing is
   // recorded in audit_events, never silently allowed.
   role_override: z.boolean().optional(),
-}).refine((d) => (d.decision !== 'override' && d.decision !== 'redirect' && d.decision !== 'confirm_overflow')
-  || d.chosen_location_id !== undefined, {
-  message: 'override, redirect and confirm_overflow require chosen_location_id',
+}).refine((d) => (d.decision !== 'override' && d.decision !== 'redirect') || d.chosen_location_id !== undefined, {
+  message: 'override and redirect require chosen_location_id',
+}).refine((d) => d.decision !== 'confirm_overflow'
+  || d.chosen_location_id !== undefined || d.chosen_location_code !== undefined, {
+  message: 'confirm_overflow requires chosen_location_code or chosen_location_id',
+}).refine((d) => d.decision === 'confirm_overflow' || d.chosen_location_code === undefined, {
+  message: 'chosen_location_code is for confirm_overflow only',
 }).refine((d) => d.decision !== 'resolve_short' || d.resolution !== undefined, {
   message: 'resolve_short requires resolution',
 })
@@ -140,21 +151,6 @@ interface DeskActionArgs {
   chosenLocationId: number | null
   resolution: 'found' | 'write_off' | null
   reason: string | null
-}
-
-/** Is this location in a HOLD zone (mig 00101)? Nearest ZONE ancestor by
- *  materialized path — the rule wie_putaway_candidates uses — read from the
- *  path's own prefixes, so no reversed LIKE is needed over PostgREST. */
-async function binIsHold(admin: any, locationId: number): Promise<boolean> {
-  const { data: loc } = await admin.from('locations').select('materialized_path').eq('id', locationId).maybeSingle()
-  const segments = String(loc?.materialized_path ?? '').split('/').filter(Boolean)
-  const prefixes = segments.slice(0, -1).map((_, i) => segments.slice(0, i + 1).join('/'))
-  if (prefixes.length === 0) return false
-  const { data: zones } = await admin.from('locations')
-    .select('materialized_path, zone_profiles(is_hold)').eq('kind', 'ZONE').in('materialized_path', prefixes)
-  const nearest = ((zones ?? []) as any[])
-    .sort((a, b) => String(b.materialized_path).length - String(a.materialized_path).length)[0]
-  return nearest?.zone_profiles?.is_hold === true
 }
 
 /** NX-0006 desk actions: change a suggested bin, or resolve a shortage. */
@@ -272,8 +268,8 @@ serve(async (req: Request) => {
     const parsed = inputSchema.safeParse(body)
     if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
     const {
-      recommendation_id, decision, chosen_location_id, quantity, role_override, assign_only,
-      resolution, reason,
+      recommendation_id, decision, chosen_location_id, chosen_location_code, quantity, role_override,
+      assign_only, resolution, reason,
     } = parsed.data
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
@@ -308,12 +304,30 @@ serve(async (req: Request) => {
     }
 
     if (decision === 'confirm_overflow') {
-      // chosen_location_id is the bin the worker scanned; the transaction
-      // compares it with the line's suggested bin under its row lock and
-      // refuses a stale one, so no bin lookup is needed out here.
+      // The bin the worker scanned: its code resolved here (the walk sends the
+      // code, M1), or its id. The transaction compares it with the line's
+      // suggested bin under its row lock and refuses a stale one.
+      // locations.code is globally unique (mig 00027), so a code names one bin.
+      let scannedId = chosen_location_id ?? null
+      const scannedCode = normalizeScan(chosen_location_code ?? '')
+      if (scannedCode) {
+        const { data: byCode, error: codeErr } = await admin.from('locations')
+          .select('id').ilike('code', scannedCode).maybeSingle()
+        if (codeErr) {
+          console.error('[decide-putaway] scanned bin lookup failed', codeErr)
+          throw new EdgeFunctionError('INTERNAL', 'Could not confirm the bin, try again.')
+        }
+        if (!byCode) throw new EdgeFunctionError('NOT_FOUND', `No location has the code ${scannedCode}`)
+        if (scannedId != null && scannedId !== (byCode as any).id) {
+          throw new EdgeFunctionError(
+            'INVALID_INPUT', 'The scanned bin and the selected bin disagree — rescan the bin label')
+        }
+        scannedId = (byCode as any).id as number
+      }
+      if (scannedId == null) throw new EdgeFunctionError('INVALID_INPUT', 'No bin given')
       const { data: confirmed, error: cErr } = await admin.rpc('wie_confirm_overflow_tx', {
         p_rec_id: recommendation_id,
-        p_location: chosen_location_id!,
+        p_location: scannedId,
         p_actor: auth.userId,
       })
       if (cErr) throw rpcError(cErr.message)
@@ -327,7 +341,8 @@ serve(async (req: Request) => {
         metadata: {
           decision,
           stage: 'confirm_overflow',
-          chosen_location_id,
+          chosen_location_id: scannedId,
+          chosen_location_code: scannedCode || null,
           source_recommendation_id: recommendation_id,
           result: confirmed,
         },

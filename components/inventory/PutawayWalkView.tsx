@@ -21,6 +21,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Footprints, MapPin, PackageOpen, Search } from 'lucide-react';
 import { usePutawayRoute, useWalkPutaways } from '../../hooks/queries/usePutawayWalk';
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
+import { useZoneProfiles } from '../../hooks/queries/useZoneProfiles';
+import { buildHeldLocationIds } from '@/lib/heldLocations';
 import { PutawayStopCard } from './putaway/PutawayStopCard';
 import { PutawayScanFinder } from './putaway/PutawayScanFinder';
 import { walkBinId } from './putaway/walkStops';
@@ -73,6 +75,24 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
   }, [activeId]);
 
   const binById = useMemo(() => buildDisplayLookup(locationsQuery.data), [locationsQuery.data]);
+
+  // Which bins are HELD (I1): a stop at one carries a held line, which never
+  // offers to give its product a home. The same rule the warehouse screens use
+  // (lib/heldLocations.ts; v_held_locations is service_role only). Null while
+  // either list is unknown, and a stop then counts as held: the offer waits
+  // rather than appearing for a line that turns out to be held.
+  const zoneProfilesQuery = useZoneProfiles();
+  const heldIds = useMemo(
+    () => (locationsQuery.data && zoneProfilesQuery.data
+      ? buildHeldLocationIds(locationsQuery.data, zoneProfilesQuery.data)
+      : null),
+    [locationsQuery.data, zoneProfilesQuery.data],
+  );
+  const binHeldFor = (row: { assignedLocationId: number | null; recommendedLocationId: number | null }): boolean => {
+    if (heldIds === null) return true;
+    const id = walkBinId(row);
+    return id != null && heldIds.has(id);
+  };
 
   const tasks = tasksQuery.data ?? [];
 
@@ -294,6 +314,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
                 disabled={!canPlace}
                 warehouseId={warehouseId}
                 canSetHome={canSetHome}
+                binHeld={binHeldFor(row)}
                 unlabelledTwins={twinsById.get(row.id) ?? EMPTY_TWINS}
                 onActivate={() => setActiveId(row.id)}
                 onDone={() => setActiveId(null)}

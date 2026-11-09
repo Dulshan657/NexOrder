@@ -209,6 +209,31 @@ async function overflowLine(client: pg.Client, w: World, qty: number): Promise<n
   return task(client, w, qty, w.o1, { source: 'overflow' })
 }
 
+/** A bin inside a made-up hold (quarantine) zone of the world's warehouse, on its layout. */
+async function addHoldBin(client: pg.Client, w: World): Promise<number> {
+  const zp = await client.query<{ id: number }>(
+    `INSERT INTO public.zone_profiles (name, zone_type, is_hold) VALUES ($1, 'quarantine', true) RETURNING id`,
+    [`TST-WALK hold ${w.token}`])
+  const zoneCode = `TST-WALK-QZ-${w.token}`
+  const zonePath = `${w.warehousePath}/${zoneCode}`
+  await client.query(
+    `INSERT INTO public.locations (parent_id, kind, code, name, materialized_path, is_active, zone_profile_id)
+     VALUES ($1, 'ZONE', $2, $2, $3, true, $4)`,
+    [w.warehouseId, zoneCode, zonePath, zp.rows[0].id])
+  // Parented to the warehouse, pathed under the zone: the hold test reads the
+  // path, and the HTTP teardown deletes the warehouse's direct children.
+  const code = `TST-WALK-Q-${w.token}`
+  const r = await client.query<{ id: number }>(
+    `INSERT INTO public.locations (parent_id, kind, code, name, materialized_path, is_active, capacity_slots)
+     VALUES ($1, 'BIN', $2, $2, $3, true, 100) RETURNING id`,
+    [w.warehouseId, code, `${zonePath}/${code}`])
+  await client.query(
+    `INSERT INTO public.layout_placements (layout_id, location_id, floor, x, y, w, h, rotation, graph_node_id, access_offset_m)
+     VALUES ($1, $2, 0, 8, 0, 1, 1, 0, NULL, 0)`,
+    [w.layoutId, r.rows[0].id])
+  return r.rows[0].id
+}
+
 interface Row {
   id: number
   status: string
@@ -365,6 +390,23 @@ describe('NX-0033 straight to the walk (live RPCs, rollback-isolated)', () => {
       await adjust(client, w.productId, w.h, -5)
       await expectRaise(client, confirm, [id, w.o1, actor], HOME_HAS_ROOM)
       expect((await row(client, id)).status).toBe('suggested')
+    })
+  })
+
+  // NX-0033 I1 (mig 00146): a held line's overflow bin is a hold bin, which is
+  // never a home, so the home having room says nothing about it. A held line
+  // made before the planner stopped tagging it 'overflow' can still be confirmed.
+  it('a held overflow line is confirmed to its hold bin while the home has room (I1, 00146)', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      const [actor] = await actors(client)
+      const held = await addHoldBin(client, w)
+      // H is empty: the home has room for 10.
+      const id = await task(client, w, 4, held, { source: 'overflow' })
+      await client.query(confirm, [id, held, actor])
+      expect(await row(client, id)).toMatchObject({ status: 'assigned', assigned_location_id: held, assigned_by: actor })
+      await client.query(complete, [id, held, null])
+      expect(await onHand(client, w.productId, held)).toBe(4)
     })
   })
 
@@ -945,6 +987,10 @@ interface HttpWorld {
   roomy: HomedProduct
   tight: HomedProduct
   pallet: HomedProduct
+  /** A homed product with room at home, for the quarantine case (I1): home capacity 100. */
+  guarded: HomedProduct
+  /** A bin in a made-up hold zone, on the layout and routed. */
+  held: number
   manager: HttpUser
   warehouse: HttpUser
   warehouseOther: HttpUser
@@ -1042,6 +1088,8 @@ async function buildHttpWorld(): Promise<HttpWorld> {
     const roomy = await addHomedProduct(client, w, '-R', 10, 10)
     const tight = await addHomedProduct(client, w, '-T', 11, 3)
     const pallet = await addHomedProduct(client, w, '-Q', 12, 100)
+    const guarded = await addHomedProduct(client, w, '-G', 13, 100)
+    const held = await addHoldBin(client, w)
     const loose = await newProduct(client, w.token, '-X')
     // One active bin that is in the warehouse but not on the layout.
     const off = (await client.query<{ id: number }>(
@@ -1058,7 +1106,10 @@ async function buildHttpWorld(): Promise<HttpWorld> {
     await client.query('UPDATE public.profiles SET home_warehouse_id = $1 WHERE id = $2', [w.warehouseId, warehouse.id])
     await client.query('UPDATE public.profiles SET home_warehouse_id = $1 WHERE id = $2', [other.rows[0].id, warehouseOther.id])
     await client.query('COMMIT')
-    return { w, otherWarehouseId: other.rows[0].id, off, loose, roomy, tight, pallet, manager, warehouse, warehouseOther }
+    return {
+      w, otherWarehouseId: other.rows[0].id, off, loose, roomy, tight, pallet, guarded, held,
+      manager, warehouse, warehouseOther,
+    }
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined)
     // The users outlive a failed seed otherwise.
@@ -1074,7 +1125,7 @@ async function tearDownHttpWorld(h: HttpWorld): Promise<void> {
   const { w } = h
   const userIds = [h.manager.id, h.warehouse.id, h.warehouseOther.id]
   const warehouseIds = [w.warehouseId, h.otherWarehouseId]
-  const productIds = [w.productId, w.otherProductId, h.loose.id, h.roomy.id, h.tight.id, h.pallet.id]
+  const productIds = [w.productId, w.otherProductId, h.loose.id, h.roomy.id, h.tight.id, h.pallet.id, h.guarded.id]
   const limiterNames = ['recommend-putaway', 'complete-putaway', 'decide-putaway', 'decide-putaway:desk', 'home-bin-choices']
   const client = await connect()
   try {
@@ -1100,6 +1151,7 @@ async function tearDownHttpWorld(h: HttpWorld): Promise<void> {
     await client.query('DELETE FROM public.warehouse_layouts WHERE id = $1', [w.layoutId])
     await client.query('DELETE FROM public.locations WHERE parent_id = ANY ($1)', [warehouseIds])
     await client.query('DELETE FROM public.locations WHERE id = ANY ($1)', [warehouseIds])
+    await client.query('DELETE FROM public.zone_profiles WHERE name = $1', [`TST-WALK hold ${w.token}`])
     await client.query('DELETE FROM public.products WHERE id = ANY ($1)', [productIds])
     await client.query('DELETE FROM public.suppliers WHERE email LIKE $1', [`tst-walk-${w.token}%@test.local`])
     // audit_events.actor_id references the user, so the user cannot go while its rows stay.
@@ -1238,7 +1290,39 @@ describe('NX-0033 functions on dev (live HTTP, committed made-up data)', () => {
     })
   })
 
+  it('recommend-putaway for a quarantined line of a homed product with room goes straight to the walk at a hold bin (I1)', async () => {
+    const recs = await recommend({ product_id: h.guarded.id, quantity: 4, quarantine: true })
+    expect(recs).toHaveLength(1)
+    expect(recs[0]).toMatchObject({
+      suggestionSource: 'engine', recommendedLocationId: h.held, assignedLocationId: h.held, quantity: 4,
+    })
+    await withClient(async (client) => {
+      expect(await row(client, recs[0].recommendationId)).toMatchObject({
+        status: 'assigned', assigned_location_id: h.held, assigned_by: null,
+      })
+    })
+  })
+
   // ── complete-putaway: make_home ────────────────────────────────────────────
+  it("complete-putaway refuses make_home on a held line with CONFLICT 'A held line can't make a home bin.', and moves nothing (I1)", async () => {
+    const line = await withClient((client) =>
+      task(client, h.w, 3, h.held, {
+        productId: h.loose.id, source: 'engine', status: 'assigned', assignedTo: h.held, assignedBy: null,
+      }))
+    // Scanned into a bin that could be a home: the line being held is what refuses it.
+    const r = await postFn('complete-putaway', h.manager.jwt, {
+      recommendation_id: line, actual_location_id: h.w.n, make_home: true,
+    })
+    expect(r.status).toBe(409)
+    expect(r.body.error).toEqual({ code: 'CONFLICT', message: "A held line can't make a home bin." })
+    await withClient(async (client) => {
+      expect(await row(client, line)).toMatchObject({ status: 'assigned', assigned_location_id: h.held })
+      const homes = await client.query<{ n: string }>(
+        'SELECT count(*) AS n FROM public.product_home_bins WHERE product_id = $1', [h.loose.id])
+      expect(Number(homes.rows[0].n)).toBe(0)
+    })
+  })
+
   it('complete-putaway refuses make_home from a Warehouse user with FORBIDDEN before reading the task', async () => {
     // No such task: a task lookup would answer NOT_FOUND, so FORBIDDEN proves the role came first.
     const r = await postFn('complete-putaway', h.warehouse.jwt, {
@@ -1292,6 +1376,34 @@ describe('NX-0033 functions on dev (live HTTP, committed made-up data)', () => {
     expect(again.body.error).toEqual({ code: 'CONFLICT', message: ALREADY_DEALT_TEXT })
   })
 
+  it('decide-putaway confirm_overflow resolves the scanned bin code; an unknown code is NOT_FOUND (M1)', async () => {
+    const id = await waitingOverflowLine()
+    const unknown = await postFn('decide-putaway', h.warehouse.jwt, {
+      recommendation_id: id, decision: 'confirm_overflow', chosen_location_code: `TST-WALK-NOPE-${h.w.token}`,
+    })
+    expect(unknown.status).toBe(404)
+    expect(unknown.body.error?.code).toBe('NOT_FOUND')
+
+    // Typed as a gun might send it: lower case, padded.
+    const r = await postFn('decide-putaway', h.warehouse.jwt, {
+      recommendation_id: id, decision: 'confirm_overflow', chosen_location_code: ` tst-walk-o1-${h.w.token} `,
+    })
+    expect({ status: r.status, error: r.body.error }).toEqual({ status: 200, error: undefined })
+    expect(r.body.location_id).toBe(h.w.o1)
+    await withClient(async (client) => {
+      expect(await row(client, id)).toMatchObject({ status: 'assigned', assigned_location_id: h.w.o1 })
+    })
+  })
+
+  it('decide-putaway confirm_overflow of another bin by code names the current one', async () => {
+    const id = await waitingOverflowLine()
+    const r = await postFn('decide-putaway', h.warehouse.jwt, {
+      recommendation_id: id, decision: 'confirm_overflow', chosen_location_code: `TST-WALK-O2-${h.w.token}`,
+    })
+    expect(r.status).toBe(409)
+    expect(r.body.error?.message).toMatch(/^The suggested bin for this line is now TST-WALK-O1-[^;]+; scan that one\.$/)
+  })
+
   it('decide-putaway confirm_overflow from a Warehouse user of another site is FORBIDDEN (Review Focus 5)', async () => {
     const id = await waitingOverflowLine()
     const r = await postFn('decide-putaway', h.warehouseOther.jwt, {
@@ -1338,6 +1450,26 @@ describe('NX-0033 functions on dev (live HTTP, committed made-up data)', () => {
     expect(denied.status).toBe(403)
     expect(denied.body.error?.code).toBe('FORBIDDEN')
     expect(denied.body.bins).toBeUndefined()
+  })
+
+  it('home-bin-choices refuses a recommendationId that is not an open line of this product here (M3)', async () => {
+    // An open line of ANOTHER product at this warehouse.
+    const other = await withClient((client) => task(client, h.w, 2, h.w.o2, { source: 'overflow' }))
+    const r = await getFn('home-bin-choices', h.manager.jwt, {
+      warehouseId: String(h.w.warehouseId), productId: String(h.loose.id), recommendationId: String(other),
+    })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toEqual({
+      code: 'INVALID_INPUT',
+      message: 'recommendationId must be an open putaway line of this product at this warehouse',
+    })
+
+    // The stop's own line is accepted.
+    const own = await systemAssignedLine()
+    const ok = await getFn('home-bin-choices', h.manager.jwt, {
+      warehouseId: String(h.w.warehouseId), productId: String(h.loose.id), recommendationId: String(own),
+    })
+    expect({ status: ok.status, error: ok.body.error }).toEqual({ status: 200, error: undefined })
   })
 
   it('home-bin-choices with recommendationId=abc is INVALID_INPUT', async () => {

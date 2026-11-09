@@ -419,8 +419,13 @@ export async function generatePutawayTasks(
       })),
     })
     // An unusable home must not offer "make this the home bin": there is one.
-    const suggestMakeHome = home === null
-    const remainderSource: SuggestionSource = home ? 'overflow' : 'engine'
+    // A quarantined line may only go to a hold bin (p_hold_only), and a hold bin
+    // is never a home (NX-0033 I1). So its bin is neither a home to make nor an
+    // overflow from a full home: it goes straight to the walk like a homeless
+    // line (G3), and is never a "Home full" line waiting for a yes.
+    const held = line.quarantine === true
+    const suggestMakeHome = home === null && !held
+    const remainderSource: SuggestionSource = home && !held ? 'overflow' : 'engine'
 
     const tagged: Array<{ alloc: ReturnType<typeof planPutaway>['allocations'][number]; source: SuggestionSource }> = []
     let remainder = home && homeCand ? homePlan.remainder : line.quantity

@@ -19,6 +19,9 @@
 // homeless product's line is already assigned to the bin the planner chose, and
 // a bin with room for exactly that line would otherwise read as full and never
 // be offered. Any other open line to the bin still counts.
+// It must be an open line of this product at this warehouse (M3,
+// _shared/homeChoiceScope.ts), else INVALID_INPUT: another line's space was
+// never this stop's to give back.
 //
 // `bins` is in code order and may be empty. Read-only: nothing is written, and
 // nothing here sets a home. The home is set at completion, in the same
@@ -40,6 +43,7 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { assertMayActAtWarehouse } from '../_shared/receiveDestination.ts'
 import { loadHomeBinChoices } from '../_shared/homeBinHealthLoad.ts'
+import { recommendationScopeRefusal } from '../_shared/homeChoiceScope.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 
@@ -121,6 +125,17 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError('INTERNAL', LIST_FAILED)
     }
     if (!product) throw new EdgeFunctionError('NOT_FOUND', 'Product not found')
+
+    if (recommendationId !== null) {
+      const { data: rec, error: recError } = await admin.from('wie_putaway_recommendations')
+        .select('product_id, warehouse_id, status').eq('id', recommendationId).maybeSingle()
+      if (recError) {
+        console.error('[home-bin-choices] line read failed', recError)
+        throw new EdgeFunctionError('INTERNAL', LIST_FAILED)
+      }
+      const outOfScope = recommendationScopeRefusal(rec as any, { productId, warehouseId })
+      if (outOfScope !== null) throw new EdgeFunctionError('INVALID_INPUT', outOfScope)
+    }
 
     let bins
     try {

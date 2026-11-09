@@ -135,7 +135,9 @@ describe('putaway walk card — overflow awaiting confirmation', () => {
 
     await waitFor(() => expect(screen.getByLabelText(/How much did you put away/)).toBeTruthy())
     expect(confirmMock).toHaveBeenCalledTimes(1)
-    expect(confirmMock).toHaveBeenCalledWith({ recommendationId: 901, locationId: 5002 })
+    // The code the walker scanned, not the card's own idea of the bin (M1): the
+    // server resolves it and compares it with the line's bin under the row lock.
+    expect(confirmMock).toHaveBeenCalledWith({ recommendationId: 901, locationCode: SUGGESTED })
     expect(toastMock).toHaveBeenCalledWith(`Confirmed — put it in ${SUGGESTED}`, 'success')
     // Nothing is placed by a confirmation: that is the count step's Confirm.
     expect(completeMock).not.toHaveBeenCalled()
@@ -150,6 +152,7 @@ describe('putaway walk card — overflow awaiting confirmation', () => {
     scanBin(` ${SUGGESTED.toLowerCase()}\n`)
 
     await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1))
+    expect(confirmMock).toHaveBeenCalledWith({ recommendationId: 901, locationCode: SUGGESTED })
   })
 
   it('another bin is refused at the scan and nothing is sent', () => {

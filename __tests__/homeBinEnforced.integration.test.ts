@@ -624,6 +624,40 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
     })
   })
 
+  // NX-0033 I1 (mig 00146): quarantined stock may only go to a hold bin, and a
+  // hold bin is never a home. So a putaway INTO a hold bin is not held to the
+  // home, however much room the home has; the rule still holds every other bin.
+  it('a putaway to a hold bin is not held to the home while the home has room (I1, 00146)', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      const zp = await client.query<{ id: number }>(
+        `INSERT INTO public.zone_profiles (name, zone_type, is_hold) VALUES ($1, 'quarantine', true) RETURNING id`,
+        [`TST-HOME hold ${s.token}`])
+      const zoneCode = `TST-HOME-QZ-${s.token}`
+      const zonePath = `${s.warehousePath}/${zoneCode}`
+      const zone = await client.query<{ id: number }>(
+        `INSERT INTO public.locations (parent_id, kind, code, name, materialized_path, is_active, zone_profile_id)
+         VALUES ($1, 'ZONE', $2, $2, $3, true, $4) RETURNING id`,
+        [s.warehouseId, zoneCode, zonePath, zp.rows[0].id])
+      const held = await addBin(client, s, 'Q', 6, 100, { id: zone.rows[0].id, path: zonePath })
+
+      const a = await task(client, s, 4, held, { source: 'engine' })
+      const b = await task(client, s, 3, held, { source: 'engine' })
+      const r = await client.query<{ b: string | null }>('SELECT public.wie_home_block($1, $2) AS b', [a, held])
+      expect(r.rows[0].b).toBeNull()
+      // Only the hold bin is exempt: an ordinary bin is still refused for the home.
+      await expectRaise(client, complete, [a, s.other], HOME_ROOM(10))
+
+      // Every entry takes it: assign, complete, and Place now.
+      await client.query('SELECT public.wie_assign_putaway_tx($1, $2)', [a, held])
+      await client.query(complete, [a, held])
+      await client.query("SELECT public.wie_decide_putaway_tx($1, 'accept', $2)", [b, held])
+      expect(await onHand(client, s.productId, held)).toBe(7)
+      expect(await onHand(client, s.productId, s.home)).toBe(0)
+    })
+  })
+
   it('product with no home is unchanged', async () => {
     await withRollbackTx(async (client) => {
       const s = await seed(client)

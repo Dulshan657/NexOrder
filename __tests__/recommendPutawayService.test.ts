@@ -119,6 +119,14 @@ describe('confirmOverflowPutaway', () => {
     expect(options.body.role_override).toBeUndefined()
   })
 
+  it('sends the scanned bin code as chosen_location_code, for the server to resolve (M1)', async () => {
+    invoke.mockResolvedValue({ data: { ok: true, assigned_id: 9, location_id: 44 }, error: null })
+    await expect(confirmOverflowPutaway(9, { locationCode: 'TST-WALK-O1' })).resolves.toEqual({ assignedId: 9 })
+    const [name, options] = invoke.mock.calls[0]
+    expect(name).toBe('decide-putaway')
+    expect(options.body).toEqual({ recommendation_id: 9, decision: 'confirm_overflow', chosen_location_code: 'TST-WALK-O1' })
+  })
+
   it("throws the server's words on a refusal", async () => {
     const stale = 'The suggested bin for this line is now TST-WALK-O2; scan that one.'
     invoke.mockResolvedValue({ data: null, error: httpError(stale, 409, 'CONFLICT') })

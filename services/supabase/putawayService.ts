@@ -158,16 +158,18 @@ export function resolveShortPutaway(
 }
 
 /** The Walk (NX-0033): confirm a loose overflow line (its home was full) by
- *  scanning the bin it names. `locationId` is the bin the worker SCANNED, not
- *  the card's own idea of the suggested bin: the server compares the two under
- *  the line's row lock, so a desk redirect made after the walk loaded cannot be
- *  confirmed by a stale scan. Assigns the whole line to that bin; moves nothing.
+ *  scanning the bin it names. `bin` is the bin the worker SCANNED: its code as
+ *  scanned (`{ locationCode }`, which the walk sends, M1), resolved on the
+ *  server, or a bin id. Never the card's own idea of the suggested bin: the
+ *  server compares the scanned bin with the line's under its row lock, so a
+ *  desk redirect made after the walk loaded cannot be confirmed by a stale scan.
+ *  Assigns the whole line to that bin; moves nothing.
  *
  *  A refusal (the desk got there first, the bin changed, the home has room
  *  again) throws the server's own words for the card to show as they are. */
 export async function confirmOverflowPutaway(
   recommendationId: number,
-  locationId: number,
+  bin: number | { locationCode: string },
 ): Promise<{ assignedId: number }> {
   const { data, error } = await supabase.functions.invoke<{
     ok: true
@@ -177,7 +179,9 @@ export async function confirmOverflowPutaway(
     body: {
       recommendation_id: recommendationId,
       decision: 'confirm_overflow',
-      chosen_location_id: locationId,
+      ...(typeof bin === 'number'
+        ? { chosen_location_id: bin }
+        : { chosen_location_code: bin.locationCode }),
     },
   })
   if (error) {

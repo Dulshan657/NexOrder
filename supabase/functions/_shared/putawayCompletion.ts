@@ -46,6 +46,19 @@ const refuse = (code: RefusalCode, message: string): Refusal => ({ ok: false, co
 /** NX-0033: giving a product a home from the walk is a Manager's or Admin's call. */
 export const MAKE_HOME_FORBIDDEN = 'Only a Manager or Admin can give a product a home bin.'
 
+/** NX-0033 I1: a quarantined (held) line is going to a hold bin, never a home. */
+export const MAKE_HOME_HELD = "A held line can't make a home bin."
+
+/**
+ * May a home be made from these lines? Not when any of them is held: its stock
+ * may only go to a hold bin, and a hold bin is never a home, so `make_home` from
+ * it could only put held stock in a pick face. `anyHeld` is the caller's reading
+ * of the lines' own bins (assigned, else suggested) against the hold zones.
+ */
+export function heldLineHomeRefusal(args: { makeHome: boolean; anyHeld: boolean }): Refusal | null {
+  return args.makeHome && args.anyHeld ? refuse('CONFLICT', MAKE_HOME_HELD) : null
+}
+
 /** May this role give a product a home bin? Admin and Manager only. */
 export function canSetHome(role: UserRole): boolean {
   return DESK_ROLES.includes(role)

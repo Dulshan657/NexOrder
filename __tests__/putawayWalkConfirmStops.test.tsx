@@ -7,13 +7,14 @@
 // stop is there, it sits at its suggested bin (it has no assigned bin yet), it
 // says it needs a decision, and a plain assigned stop does not say so.
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 
-const { tasksMock, routeMock, locationsMock } = vi.hoisted(() => ({
+const { tasksMock, routeMock, locationsMock, zoneProfilesMock } = vi.hoisted(() => ({
   tasksMock: vi.fn(),
   routeMock: vi.fn(),
   locationsMock: vi.fn(),
+  zoneProfilesMock: vi.fn(),
 }))
 
 vi.mock('@/hooks/queries/usePutawayWalk', () => ({
@@ -25,6 +26,10 @@ vi.mock('@/hooks/queries/usePutawayWalk', () => ({
 }))
 vi.mock('@/hooks/queries/useWarehouseLocations', () => ({
   useWarehouseLocations: () => locationsMock(),
+}))
+// Which bins are held (I1) comes from the zone profiles; none are, unless a case says so.
+vi.mock('@/hooks/queries/useZoneProfiles', () => ({
+  useZoneProfiles: () => zoneProfilesMock(),
 }))
 vi.mock('@/hooks/queries/usePalletBreakdown', () => ({
   usePrintPlateLabels: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -113,6 +118,9 @@ function mountLegacy(rows: PendingPutawayRow[]) {
 }
 
 afterEach(cleanup)
+beforeEach(() => {
+  zoneProfilesMock.mockReturnValue({ data: [], isLoading: false, isError: false })
+})
 
 describe('PutawayWalkView — overflow lines awaiting confirmation', () => {
   it('lists an overflow line awaiting confirmation at its suggested bin', () => {
@@ -220,6 +228,34 @@ describe('PutawayWalkView — the give-a-home offer reaches the stop card', () =
     expect(screen.queryByText(OFFER)).toBeNull()
   })
 
+  it('offers nothing on a stop at a hold bin: a held line never makes a home (I1)', () => {
+    zoneProfilesMock.mockReturnValue({
+      data: [{ id: 41, name: 'TST-WALK hold', isHold: true }], isLoading: false, isError: false,
+    })
+    tasksMock.mockReturnValue({ data: [NO_HOME_STOP], isLoading: false, isError: false })
+    routeMock.mockReturnValue({ data: { mode: 'legacy' }, isLoading: false, isError: false })
+    locationsMock.mockReturnValue({
+      data: [
+        { id: 4100, kind: 'ZONE', code: 'TST-WALK-QZ', name: 'TST-WALK-QZ', isActive: true,
+          materializedPath: 'TSTWALKWH/TST-WALK-QZ', zoneProfileId: 41 },
+        { id: 5001, kind: 'BIN', code: HOME_BIN, name: HOME_BIN, isActive: true,
+          materializedPath: `TSTWALKWH/TST-WALK-QZ/${HOME_BIN}` },
+      ],
+      isLoading: false,
+      isError: false,
+    })
+    render(<PutawayWalkView warehouseId={WAREHOUSE_ID} canSetHome />)
+    openStop()
+    expect(screen.queryByText(OFFER)).toBeNull()
+  })
+
+  it('offers nothing until it knows whether the stop is at a hold bin', () => {
+    zoneProfilesMock.mockReturnValue({ data: undefined, isLoading: true, isError: false })
+    mountWalk([NO_HOME_STOP], true)
+    openStop()
+    expect(screen.queryByText(OFFER)).toBeNull()
+  })
+
   it('offers nothing for a product that already has a home', () => {
     mountWalk([{ ...NO_HOME_STOP, homeLocationId: 6001 }], true)
     openStop()
@@ -247,6 +283,12 @@ describe('PutawayRow — the Assign queue', () => {
   it('marks an overflow line Home full', () => {
     renderRow(CONFIRM_STOP)
     expect(screen.getByText('Home full')).toBeTruthy()
+  })
+
+  it('does not mark an overflow line with no bin to confirm (M5)', () => {
+    // A residual nothing could hold: not on the Walk, so not "Home full — confirm".
+    renderRow(line({ recommendedLocationId: null }))
+    expect(screen.queryByText('Home full')).toBeNull()
   })
 
   it('does not mark a single-product pallet: it stays an ordinary queue line', () => {

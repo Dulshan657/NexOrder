@@ -43,6 +43,9 @@ vi.mock('@/hooks/queries/usePutawayWalk', () => ({
 vi.mock('@/hooks/queries/useWarehouseLocations', () => ({
   useWarehouseLocations: () => locationsMock(),
 }))
+vi.mock('@/hooks/queries/useZoneProfiles', () => ({
+  useZoneProfiles: () => ({ data: [], isLoading: false, isError: false }),
+}))
 vi.mock('@/hooks/queries/usePalletBreakdown', () => ({
   usePrintPlateLabels: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePlanBreakdown: () => ({ mutateAsync: vi.fn(), isPending: false }),

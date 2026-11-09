@@ -40,6 +40,7 @@ import { ScanField } from '@/components/ui/ScanField'
 import { Callout } from '@/components/ui'
 import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkPutawayScan } from '@/supabase/functions/_shared/putawayScanCheck'
+import { normalizeScan } from '@/supabase/functions/_shared/scanNormalize'
 import { useCompletePutaway, useConfirmOverflow, useUnassignPutaway } from '@/hooks/queries/usePutawayWalk'
 import { usePrintPlateLabels } from '@/hooks/queries/usePalletBreakdown'
 import { useToastActions } from '@/hooks/useToasts'
@@ -82,6 +83,12 @@ interface PutawayStopCardProps {
   /** A Manager or Admin: a stop for a product with no home bin may offer to
    *  give it one. The server refuses anyone else; this only hides the offer. */
   canSetHome?: boolean
+  /** The stop's bin is in a hold (quarantine) zone, so the line is held (I1).
+   *  A held line never offers a home: its stock may only go to a hold bin, and
+   *  a hold bin is never a home. The walk passes true while it cannot tell yet.
+   *  The server refuses make_home on a held line anyway; this only hides the
+   *  offer. */
+  binHeld?: boolean
   /** Other queued tasks for this SAME product whose plates are also unlabelled.
    *  A product barcode identifies the SKU and nothing finer, so when two such
    *  plates are in the walk at once the evidence genuinely cannot say which one
@@ -98,7 +105,7 @@ type Step = 'idle' | 'identify' | 'bin' | 'qty'
 // component's props do not include `key`, and the walk renders these in a list.
 export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   row, bin, sequence, legDistanceM, reachable, active, disabled, warehouseId,
-  canSetHome = false, unlabelledTwins, onActivate, onDone,
+  canSetHome = false, binHeld = false, unlabelledTwins, onActivate, onDone,
 }) => {
   const { addToast } = useToastActions()
   const complete = useCompletePutaway()
@@ -165,9 +172,10 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   // this walk, a sibling line or remainder of the SKU, the desk's editor) stops
   // the offer once the walk refreshes. The planner's `engine` tag would not: it
   // says what was true when the line was made. Unknown (undefined) is not none.
-  // A pallet is not held to a home, and an overflow line's product has one.
+  // A pallet is not held to a home, an overflow line's product has one, and a
+  // held line goes to a hold bin, which is never a home (I1).
   const offersHome = canSetHome && row.homeLocationId === null
-    && !row.unitLoad && !isOverflowConfirmStop(row)
+    && !row.unitLoad && !isOverflowConfirmStop(row) && !binHeld
     && homeTarget === null && homeOffer !== 'declined'
 
   // The code is the hero on this card and the name is the supporting line — the
@@ -324,9 +332,11 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       }
       if (confirmOverflow.isPending) return
       try {
+        // The code as scanned (M1), not the card's idea of the bin: the server
+        // resolves it and compares it with the line's own bin under the lock.
         await confirmOverflow.mutateAsync({
           recommendationId: row.id,
-          locationId: row.recommendedLocationId,
+          locationCode: normalizeScan(raw),
         })
       } catch (e) {
         // Shown as the server wrote it, where the walker is looking and as a toast

@@ -71,11 +71,11 @@ export function useUnassignPutaway() {
   })
 }
 
-export interface ConfirmOverflowInput {
-  recommendationId: number
-  /** The bin the worker scanned. The server compares it with the line's suggested bin. */
-  locationId: number
-}
+/** The bin the worker scanned: its code as scanned (the walk, resolved on the
+ *  server) or its id. The server compares it with the line's suggested bin. */
+export type ConfirmOverflowInput =
+  | { recommendationId: number; locationCode: string; locationId?: never }
+  | { recommendationId: number; locationId: number; locationCode?: never }
 
 /** The Walk confirms an overflow line (NX-0033). Races the desk's Assign and
  *  Redirect, so BOTH outcomes refresh both lists: a win takes the line off the
@@ -89,7 +89,10 @@ export function useConfirmOverflow() {
     qc.invalidateQueries({ queryKey: ['putaway-route'] })
   }
   return useMutation<{ assignedId: number }, Error, ConfirmOverflowInput>({
-    mutationFn: ({ recommendationId, locationId }) => confirmOverflowPutaway(recommendationId, locationId),
+    mutationFn: (input) => confirmOverflowPutaway(
+      input.recommendationId,
+      input.locationCode !== undefined ? { locationCode: input.locationCode } : input.locationId,
+    ),
     onSuccess: refresh,
     onError: refresh,
   })

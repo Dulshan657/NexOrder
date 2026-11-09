@@ -7,6 +7,7 @@ import type { PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import { formatRelative } from '@/components/admin/emailAccountFormat'
 import { PutawayExplanationCard } from '../PutawayExplanationCard'
 import { describeQuantity } from './putawayFormat'
+import { isOverflowConfirmStop } from './walkStops'
 import { LocationLabel } from '@/components/inventory/LocationLabel'
 import type { DisplayLocation } from '@/lib/locationDisplay'
 
@@ -80,9 +81,10 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
               {/* The product's home had no room (NX-0033): this line waits for a
                   person to confirm the engine's overflow bin, here with Assign /
                   Choose bin or by scanning it on the Walk. First one wins. A
-                  single-product pallet is never held to a home, so it is not
-                  marked. */}
-              {row.suggestionSource === 'overflow' && !row.unitLoad && (
+                  single-product pallet is never held to a home, and a line with
+                  no bin has nothing to confirm, so neither is marked: the same
+                  predicate as the Walk's confirm stop. */}
+              {isOverflowConfirmStop(row) && (
                 <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
                   Home full
                 </span>

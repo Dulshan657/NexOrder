@@ -45,7 +45,11 @@
 //     and not another product's home. The lines being completed do not count
 //     against the bin's room: their own promise to it is given back (mig 00144).
 //     A bin that fails is CONFLICT, so a hand-made request cannot pick a bin the
-//     chooser would not have offered.
+//     chooser would not have offered;
+//   * a held (quarantined) line cannot make a home at all (I1): its stock may
+//     only go to a hold bin, and a hold bin is never a home. A line is held when
+//     the bin it is headed for (assigned, else suggested) is in a hold zone
+//     (_shared/holdBins.ts). CONFLICT MAKE_HOME_HELD, whatever bin was scanned.
 // The home itself is still set inside wie_complete_putaway_many_tx, in the same
 // transaction as the move, so a failed move leaves no home behind.
 
@@ -69,7 +73,9 @@ import {
   allocateAcrossTasks,
   canSetHome,
   decidePutawayCompletion,
+  heldLineHomeRefusal,
 } from '../_shared/putawayCompletion.ts'
+import { anyLineHeld } from '../_shared/holdBins.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 const MAX_POOLED_TASKS = 50
@@ -174,6 +180,21 @@ serve(async (req: Request) => {
     const warehouseId = (rec as any).warehouse_id as number
     if (auth.role === 'Warehouse' && auth.profile.home_warehouse_id !== warehouseId) {
       throw new EdgeFunctionError('FORBIDDEN', 'You can only put away stock at your own warehouse')
+    }
+
+    // ── A held line never makes a home (NX-0033 I1) ──────────────────────────
+    // Before the scan is resolved, so the answer does not depend on which bin
+    // was scanned: held stock goes to a hold bin, and no hold bin is a home.
+    if (make_home) {
+      let anyHeld: boolean
+      try {
+        anyHeld = await anyLineHeld(admin, ordered)
+      } catch (e) {
+        console.error('[complete-putaway] hold check failed', e)
+        throw new EdgeFunctionError('INTERNAL', 'Could not check that bin, try again.')
+      }
+      const held = heldLineHomeRefusal({ makeHome: true, anyHeld })
+      if (held) throw new EdgeFunctionError(held.code, held.message)
     }
 
     // ── Resolve where it actually went ───────────────────────────────────────

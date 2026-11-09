@@ -206,6 +206,31 @@ describe('putaway walk card — a product with no home', () => {
     expect(screen.queryByText(OFFER)).toBeNull()
   })
 
+  it('offers nothing on a held line: its bin is a hold bin, never a home (I1)', () => {
+    render(
+      <PutawayStopCard
+        row={row()}
+        bin={BIN}
+        sequence={1}
+        legDistanceM={5}
+        reachable
+        active
+        disabled={false}
+        warehouseId={2873}
+        canSetHome
+        binHeld
+        unlabelledTwins={[]}
+        onActivate={() => {}}
+        onDone={() => {}}
+      />,
+    )
+    open()
+
+    expect(screen.queryByText(OFFER)).toBeNull()
+    // The stop itself goes on as usual: scan the hold bin it was sent to.
+    expect(screen.getByLabelText(/Scan the bin/)).toBeTruthy()
+  })
+
   it('offers nothing on a single-product pallet', () => {
     mount({ unitLoad: true })
     open()
