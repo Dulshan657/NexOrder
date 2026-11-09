@@ -17,7 +17,9 @@
 //     task at the dock for a manager, instead of an open task for the floor;
 //   * "make this the home bin" only fills a gap. The floor cannot move an
 //     existing home; Admin/Manager do that in the home-bin editor, where min/max
-//     is visible;
+//     is visible. Since NX-0033 only Admin and Manager may ask for it at all:
+//     a Warehouse user is refused FORBIDDEN, whether or not the product has a
+//     home, so a hand-made request cannot give a product a home from the floor;
 //   * several loose tasks of one product complete together, oldest first. Tasks
 //     carry no batch (inv_transfer_stock draws loose dock stock earliest-expiry
 //     first), so loose tasks of one product are interchangeable. A plated task
@@ -40,6 +42,24 @@ const DESK_ROLES: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 const EPS = 1e-9
 
 const refuse = (code: RefusalCode, message: string): Refusal => ({ ok: false, code, message })
+
+/** NX-0033: giving a product a home from the walk is a Manager's or Admin's call. */
+export const MAKE_HOME_FORBIDDEN = 'Only a Manager or Admin can give a product a home bin.'
+
+/** May this role give a product a home bin? Admin and Manager only. */
+export function canSetHome(role: UserRole): boolean {
+  return DESK_ROLES.includes(role)
+}
+
+/**
+ * May the floor place this line now (accept or override it) without the desk
+ * assigning it first? A suggested line, or one the SYSTEM assigned
+ * (`assigned_by` NULL, NX-0033) and nobody has touched since. A line a person
+ * assigned is that person's decision and is not re-decided here.
+ */
+export function canPlaceNow(task: { status: string; assignedBy: string | null }): boolean {
+  return task.status === 'suggested' || (task.status === 'assigned' && task.assignedBy === null)
+}
 
 export function isOverrideReason(v: unknown): v is OverrideReason {
   return typeof v === 'string' && (OVERRIDE_REASONS as readonly string[]).includes(v)
@@ -106,10 +126,11 @@ export function decidePutawayCompletion(input: CompletionInput): CompletionDecis
 
   let setHome = false
   if (input.makeHome) {
+    // The role comes first (NX-0033): a Warehouse user is refused whatever the
+    // product's home looks like, so the answer does not reveal whether it has one.
+    if (!canSetHome(role)) return refuse('FORBIDDEN', MAKE_HOME_FORBIDDEN)
     if (input.existingHomeLocationId !== null) {
-      return DESK_ROLES.includes(role)
-        ? refuse('INVALID_INPUT', 'this product already has a home bin; change it in the home bin editor')
-        : refuse('FORBIDDEN', 'this product already has a home bin; ask a manager to change it')
+      return refuse('INVALID_INPUT', 'this product already has a home bin; change it in the home bin editor')
     }
     setHome = true
   }

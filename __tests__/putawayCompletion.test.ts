@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
+  MAKE_HOME_FORBIDDEN,
   allocateAcrossTasks,
+  canPlaceNow,
+  canSetHome,
   decideDeskAction,
   decidePutawayCompletion,
   type CompletionInput,
@@ -59,14 +62,45 @@ describe('decidePutawayCompletion', () => {
   })
 
   it('make_home only when the product has no home', () => {
-    expect(decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: null })))
+    expect(decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: null, role: 'Manager' })))
       .toMatchObject({ ok: true, setHome: true })
-    expect(decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: 20 })))
-      .toMatchObject({ ok: false, code: 'FORBIDDEN' })
+    const warehouse = decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: 20 }))
+    expect(warehouse).toMatchObject({ ok: false, code: 'FORBIDDEN' })
+    expect(warehouse.ok === false && warehouse.message).toBe(MAKE_HOME_FORBIDDEN)
     const manager = decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: 20, role: 'Manager' }))
     expect(manager).toMatchObject({ ok: false, code: 'INVALID_INPUT' })
     expect(manager.ok === false && manager.message).toMatch(/home bin/i)
     expect(decidePutawayCompletion(input())).toMatchObject({ ok: true, setHome: false })
+  })
+
+  it('make_home is refused for a Warehouse user even when the product has no home', () => {
+    expect(decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: null })))
+      .toEqual({ ok: false, code: 'FORBIDDEN', message: 'Only a Manager or Admin can give a product a home bin.' })
+  })
+
+  it('make_home from an Admin sets the home when the product has none', () => {
+    expect(decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: null, role: 'Admin' })))
+      .toMatchObject({ ok: true, setHome: true })
+  })
+})
+
+describe('canSetHome', () => {
+  it('only Admin and Manager', () => {
+    expect(canSetHome('Admin')).toBe(true)
+    expect(canSetHome('Manager')).toBe(true)
+    expect(canSetHome('Warehouse')).toBe(false)
+    expect(canSetHome('Field Sales Rep')).toBe(false)
+    expect(canSetHome('')).toBe(false)
+  })
+})
+
+describe('canPlaceNow', () => {
+  it('a suggested line, or one the system assigned and nobody touched', () => {
+    expect(canPlaceNow({ status: 'suggested', assignedBy: null })).toBe(true)
+    expect(canPlaceNow({ status: 'assigned', assignedBy: null })).toBe(true)
+    // A person assigned it: it is theirs to place, not a line anyone may re-decide.
+    expect(canPlaceNow({ status: 'assigned', assignedBy: '00000000-0000-4000-8000-000000000001' })).toBe(false)
+    expect(canPlaceNow({ status: 'accepted', assignedBy: null })).toBe(false)
   })
 })
 

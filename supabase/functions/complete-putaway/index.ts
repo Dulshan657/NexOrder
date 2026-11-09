@@ -34,6 +34,18 @@
 // that is asked BEFORE the reason above, so the floor is not first sent to say
 // why it went elsewhere only to be refused for going there. No role, reason or
 // flag lifts it; wie_complete_putaway_many_tx asks again under its row lock.
+//
+// Since NX-0033 `make_home` is for a Manager or Admin only, and only for a bin a
+// home can be:
+//   * the role is checked FIRST, before any task is read, so a Warehouse user
+//     learns nothing about the task or the product and a forged request is
+//     stopped at the door (MAKE_HOME_FORBIDDEN, FORBIDDEN);
+//   * the bin must pass the same test the Walk's chooser applies
+//     (home-bin-choices, loadHomeChoiceRefusal): usable by putaway, with room,
+//     and not another product's home. A bin that fails is CONFLICT, so a hand-
+//     made request cannot pick a bin the chooser would not have offered.
+// The home itself is still set inside wie_complete_putaway_many_tx, in the same
+// transaction as the move, so a failed move leaves no home behind.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -48,9 +60,12 @@ import { checkPutawayScan } from '../_shared/putawayScanCheck.ts'
 import { normalizeScan } from '../_shared/scanNormalize.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { refuseIfHomeBlocked } from '../_shared/putawayHomeBlock.ts'
+import { loadHomeChoiceRefusal } from '../_shared/homeBinHealthLoad.ts'
 import {
+  MAKE_HOME_FORBIDDEN,
   OVERRIDE_REASONS,
   allocateAcrossTasks,
+  canSetHome,
   decidePutawayCompletion,
 } from '../_shared/putawayCompletion.ts'
 
@@ -122,6 +137,12 @@ serve(async (req: Request) => {
       override_reason, short, make_home,
     } = parsed.data
     const ids = task_ids ?? [recommendation_id!]
+
+    // NX-0033 (G5): only a Manager or Admin gives a product a home. Asked before
+    // any task is read, so the answer cannot depend on what the task is.
+    if (make_home && !canSetHome(auth.role)) {
+      throw new EdgeFunctionError('FORBIDDEN', MAKE_HOME_FORBIDDEN)
+    }
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
       auth: { persistSession: false },
@@ -261,6 +282,25 @@ serve(async (req: Request) => {
       homeDecisionMade = true
       setHome = setHome || decision.setHome
       anyElsewhere = anyElsewhere || decision.status === 'overridden'
+    }
+
+    // ── A home must be a bin a home can be (NX-0033, C6) ─────────────────────
+    // The chooser only lists such bins, but a request is not obliged to come from
+    // the chooser, and the bin may have filled or been taken as another product's
+    // home since it was listed. Before the scan checks, so a bin that cannot be
+    // a home is refused whatever else is wrong with the request.
+    if (setHome) {
+      let homeRefusal: string | null
+      try {
+        homeRefusal = await loadHomeChoiceRefusal(admin, warehouseId, productId, actualId)
+      } catch (e) {
+        // The detail goes to the server log; the operator gets a message they can act on.
+        console.error('[complete-putaway] home bin fitness read failed', e)
+        throw new EdgeFunctionError('INTERNAL', 'Could not check that bin, try again.')
+      }
+      if (homeRefusal !== null) {
+        throw new EdgeFunctionError('CONFLICT', `${(binRow as any).code} can't be a home bin: ${homeRefusal}`)
+      }
     }
 
     const verdict = checkPutawayScan(
