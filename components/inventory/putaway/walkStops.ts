@@ -61,3 +61,17 @@ export function overflowConfirmCopy(binCode: string) {
     confirmed: `Confirmed — put it in ${binCode}`,
   } as const
 }
+
+/**
+ * What the Walk says once a manager has chosen a home for a product that has
+ * none (NX-0033, G4). The stop is retargeted to `chosenCode` and the home is set
+ * when the stock lands there, so the words are about that bin.
+ */
+export function homeTargetCopy(chosenCode: string, sku: string) {
+  return {
+    scanLabel: `Scan ${chosenCode} — it becomes the home bin`,
+    wrongBin: `Scan ${chosenCode}, the bin you chose as its home.`,
+    placedAndSet: (placedIn: string) => `Placed in ${placedIn} — it is now ${sku}'s home bin`,
+    placedNotSet: (placedIn: string) => `Placed in ${placedIn} — someone set a home for ${sku} meanwhile`,
+  } as const
+}

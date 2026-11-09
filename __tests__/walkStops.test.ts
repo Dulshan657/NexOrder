@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isOverflowConfirmStop, overflowConfirmCopy, walkBinId } from '@/components/inventory/putaway/walkStops'
+import { homeTargetCopy, isOverflowConfirmStop, overflowConfirmCopy, walkBinId } from '@/components/inventory/putaway/walkStops'
 
 // NX-0033: a Walk stop is either an assigned line or a loose overflow line (its
 // home was full) still waiting for someone to confirm the bin. These two pure
@@ -55,5 +55,15 @@ describe('overflowConfirmCopy', () => {
       wrongBin: 'Scan TST-WALK-O1 to confirm this overflow bin, or leave it for the desk to choose another.',
       confirmed: 'Confirmed — put it in TST-WALK-O1',
     })
+  })
+})
+
+describe('homeTargetCopy', () => {
+  it('is the plan copy table, verbatim, with the bin and the product filled in', () => {
+    const copy = homeTargetCopy('TST-WALK-N1', 'TST-WALK-200')
+    expect(copy.scanLabel).toBe('Scan TST-WALK-N1 — it becomes the home bin')
+    expect(copy.wrongBin).toBe('Scan TST-WALK-N1, the bin you chose as its home.')
+    expect(copy.placedAndSet('TST-WALK-N1')).toBe("Placed in TST-WALK-N1 — it is now TST-WALK-200's home bin")
+    expect(copy.placedNotSet('TST-WALK-N1')).toBe('Placed in TST-WALK-N1 — someone set a home for TST-WALK-200 meanwhile')
   })
 })

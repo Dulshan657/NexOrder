@@ -28,9 +28,16 @@
 // card says so at the bin scan and stays there for a rescan, instead of letting
 // the walker enter a count only to be refused at Confirm. Overflow and engine
 // tasks keep the rule above.
+//
+// NX-0033 adds two decisions the walker can make from here. An OVERFLOW line (the
+// home was full) waits for a yes: scanning the bin it names confirms it. A product
+// with NO home can be given one by a Manager or Admin, who picks the bin; the
+// stop retargets to it and the home is set when the stock lands (make_home). The
+// card's pieces that are only presentation live in the Stop*.tsx and GiveHome*.tsx
+// files beside it, and its small pure rules and copy in walkStops.ts.
 
-import React, { useId, useMemo, useState } from 'react'
-import { AlertTriangle, ArrowRight, Check, Layers, PackageCheck, Printer, Undo2, X } from 'lucide-react'
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, Layers, PackageCheck, Printer, Undo2, X } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
 import { Callout } from '@/components/ui'
 import { useScanFlash } from '@/lib/scan/useScanFlash'
@@ -52,7 +59,13 @@ import {
 } from '@/lib/putawayIdentity'
 import { describeQuantity, trimNumber } from './putawayFormat'
 import { PalletBreakdownSheet } from './PalletBreakdownSheet'
-import { isOverflowConfirmStop, overflowConfirmCopy } from './walkStops'
+import { StopCollapsedRow } from './StopCollapsedRow'
+import { StopDestination } from './StopDestination'
+import { StopProgressRail } from './StopProgressRail'
+import { GiveHomeOffer } from './GiveHomeOffer'
+import { GiveHomeSheet } from './GiveHomeSheet'
+import { homeTargetCopy, isOverflowConfirmStop, overflowConfirmCopy } from './walkStops'
+import type { HomeBinChoice } from '@/services/supabase/homeBinHealthService'
 
 interface PutawayStopCardProps {
   row: PendingPutawayRow
@@ -87,12 +100,8 @@ type Step = 'idle' | 'identify' | 'bin' | 'qty'
 // component's props do not include `key`, and the walk renders these in a list.
 export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   row, bin, sequence, legDistanceM, reachable, active, disabled, warehouseId,
-  unlabelledTwins, onActivate, onDone,
+  canSetHome = false, unlabelledTwins, onActivate, onDone,
 }) => {
-  // The scan identity. Every scan check, placeholder and refusal message below
-  // quotes this rather than the friendly name — the operator is matching a
-  // string against the big text on a sticker, and that text is the code.
-  const binCode = bin.code
   const { addToast } = useToastActions()
   const complete = useCompletePutaway()
   const unassign = useUnassignPutaway()
@@ -124,7 +133,23 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   // only catches up once the walk has refetched, so the card remembers it
   // meanwhile and does not go back to asking.
   const [overflowConfirmed, setOverflowConfirmed] = useState(false)
+  // Giving a product with no home one (NX-0033, G4). `homeOffer`: the chooser is
+  // open, or the manager said "Not now". `homeTarget`: the bin they chose, which
+  // the stop is retargeted to; the home is only SET when the stock lands there,
+  // in the same transaction (make_home), so neither outlives the stop.
+  const [homeOffer, setHomeOffer] = useState<'open' | 'declined' | null>(null)
+  const [homeTarget, setHomeTarget] = useState<HomeBinChoice | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const qtyFieldId = useId()
+  // The bin this stop is at: the one it was sent to, or the one a manager chose
+  // as the product's home. The scan identity. Every scan check, placeholder and
+  // refusal message below quotes this rather than the friendly name — the
+  // operator is matching a string against the big text on a sticker, and that
+  // text is the code.
+  const shownBin: DisplayLocation = homeTarget
+    ? { code: homeTarget.binCode, name: homeTarget.binName, isActive: true }
+    : bin
+  const binCode = shownBin.code
 
   const name = row.product?.name ?? `Product #${row.productId}`
   const qtyLabel = describeQuantity(row.quantity, row.product)
@@ -135,6 +160,12 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   // A loose line whose home was full: scanning its suggested bin is the yes.
   const awaitingConfirm = isOverflowConfirmStop(row) && !overflowConfirmed
   const confirmCopy = overflowConfirmCopy(binCode)
+  const sku = row.product?.sku ?? name
+  const homeCopy = homeTarget ? homeTargetCopy(homeTarget.binCode, sku) : null
+  // A product with no home goes through the engine; only a Manager or Admin may
+  // give it one, and only before the bin is settled.
+  const offersHome = canSetHome && row.suggestionSource === 'engine'
+    && homeTarget === null && homeOffer !== 'declined'
 
   // The code is the hero on this card and the name is the supporting line — the
   // reverse of how `locationDisplay` orders them, and deliberately so. That module
@@ -143,7 +174,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   // `locationTitle` falls back to the code when the name says nothing, so guard
   // against printing the same string twice — that is exactly what
   // `locationSubtitle` returning '' exists to prevent.
-  const binName = locationTitle(bin)
+  const binName = locationTitle(shownBin)
   const hasBinName = binName !== binCode
 
   const context = useMemo(
@@ -183,7 +214,16 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     setQty('')
     setError(null)
     setRoleGate(null)
+    setHomeOffer(null)
+    setHomeTarget(null)
   }
+
+  // Choosing a home swaps the sheet for the stop's scan field. A scan only
+  // reaches the FOCUSED field, so put the focus back where the gun is aimed:
+  // after the sheet's own cleanup, which hands it to a button that is gone.
+  useEffect(() => {
+    if (homeTarget) rootRef.current?.querySelector<HTMLInputElement>('[data-scan-field]')?.focus()
+  }, [homeTarget])
 
   const start = () => {
     setError(null)
@@ -260,6 +300,14 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       signalFlash('reject')
       return
     }
+    // A chosen home is the bin this stock is going to (NX-0033): it becomes the
+    // home when it lands, so the engine's bay is no longer an option.
+    if (homeCopy && verdict.placedElsewhere) {
+      setError(homeCopy.wrongBin)
+      setScannedBin('')
+      signalFlash('reject')
+      return
+    }
     // An overflow line waits for a yes (NX-0033), and only the bin it names can
     // give it: another bay is left for the desk, not decided here. The server
     // compares the scanned bin with the line's own under its row lock, so a desk
@@ -320,6 +368,10 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         recommendationId: row.id,
         quantity: placed < row.quantity ? placed : undefined,
         roleOverride: roleOverride || undefined,
+        // Only with a home chosen: the server sets it in the same transaction as
+        // the move, and refuses a bin that can't be one (or a product that has
+        // meanwhile got one) in words the catch below shows as they are.
+        ...(homeTarget ? { makeHome: true } : {}),
         // No actualLocationId: the scanned code is authoritative and the server
         // resolves it, so a stale client-side location list can't misdirect stock.
         // productCode is carried as well as the plate — the server has always
@@ -332,14 +384,24 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           ...evidence,
         },
       })
-      addToast(
-        result.remainderQty > 0
-          ? `Placed in ${result.actualLocationCode} — ${trimNumber(result.remainderQty)} still to carry`
-          : result.placedElsewhere
-            ? `Placed in ${result.actualLocationCode} instead of ${binCode} — recorded`
-            : `Placed in ${result.actualLocationCode}`,
-        result.placedElsewhere ? 'info' : 'success',
-      )
+      if (homeCopy) {
+        // Said either way: a home set by someone else meanwhile is news to the
+        // manager who meant to set it.
+        const placedIn = result.actualLocationCode ?? binCode
+        addToast(
+          result.homeSet ? homeCopy.placedAndSet(placedIn) : homeCopy.placedNotSet(placedIn),
+          result.homeSet ? 'success' : 'info',
+        )
+      } else {
+        addToast(
+          result.remainderQty > 0
+            ? `Placed in ${result.actualLocationCode} — ${trimNumber(result.remainderQty)} still to carry`
+            : result.placedElsewhere
+              ? `Placed in ${result.actualLocationCode} instead of ${binCode} — recorded`
+              : `Placed in ${result.actualLocationCode}`,
+          result.placedElsewhere ? 'info' : 'success',
+        )
+      }
       reset()
       onDone()
     } catch (e) {
@@ -367,42 +429,18 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   // ── Collapsed ──────────────────────────────────────────────────────────────
   if (!active || step === 'idle') {
     return (
-      <button
-        onClick={start}
+      <StopCollapsedRow
+        sequence={sequence}
+        binCode={binCode}
+        name={name}
+        qtyPrimary={qtyLabel.primary}
+        huCode={row.huCode}
+        legDistanceM={legDistanceM}
+        reachable={reachable}
         disabled={disabled}
-        className="touch-target-y flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-stone-50/70 btn-press disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <span className="w-8 h-8 shrink-0 rounded-full bg-stone-100 text-stone-600 text-xs font-mono font-semibold flex items-center justify-center tabular-nums">
-          {sequence ?? '·'}
-        </span>
-        <span className="min-w-0 flex-1">
-          {/* The DESTINATION leads, because the only question a collapsed row has
-              to answer is "where am I taking this". The old row led with the
-              product name and rendered the code at 10px on a 60%-opacity emerald
-              — roughly 1.9:1 — which is the one string on the row that gets
-              matched against a printed sticker. */}
-          <span className="block font-mono text-sm font-semibold text-emerald-700 truncate">{binCode}</span>
-          <span className="block text-xs text-stone-600 truncate">{name}</span>
-          {/* A loose line whose home was full waits for someone to confirm its
-              bin (NX-0033). Said on the row, so the walker knows before opening
-              it that scanning this bin is a decision and not just a delivery. */}
-          {isOverflowConfirmStop(row) && (
-            <span className="mt-1 inline-block rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
-              Home full — confirm
-            </span>
-          )}
-        </span>
-        <span className="shrink-0 text-right max-w-[38%] sm:max-w-none">
-          <span className="block text-xs font-medium text-stone-700 tabular-nums">{qtyLabel.primary}</span>
-          {row.huCode && <span className="block font-mono text-xs text-stone-600 truncate">{row.huCode}</span>}
-          <span className="block text-xs text-stone-600 tabular-nums">
-            {reachable
-              ? legDistanceM != null ? `${Math.round(legDistanceM)}m` : ''
-              : 'off the map'}
-          </span>
-        </span>
-        <ArrowRight className="w-4 h-4 text-stone-400 shrink-0" aria-hidden="true" />
-      </button>
+        awaitingConfirm={awaitingConfirm}
+        onOpen={start}
+      />
     )
   }
 
@@ -419,83 +457,21 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     { key: 'qty', label: 'Count', value: step === 'qty' ? qty : '' },
   ]
   const STAGE_ORDER: ReadonlyArray<Step> = ['identify', 'bin', 'qty']
-  const currentStage = STAGE_ORDER.indexOf(step)
 
   return (
     <div
+      ref={rootRef}
       className={`bg-nexgen-blue/5 border-y border-nexgen-blue/20 ${flash === 'ok' ? 'scan-accept' : ''}`}
     >
-      {/* Progress rail. Replaces the old inline chip row: at 360px a row of
-          pill-shaped chips wrapped onto two lines as soon as an accepted code was
-          echoed into it, and the echo was the useful part. */}
-      <ol
-        aria-label="Putaway progress"
-        className="flex items-stretch divide-x divide-nexgen-blue/15 border-b border-nexgen-blue/20 bg-white/70"
-      >
-        {stages.map((stage) => {
-          const done = STAGE_ORDER.indexOf(stage.key) < currentStage
-          const isNow = stage.key === step
-          return (
-            <li
-              key={stage.key}
-              aria-current={isNow ? 'step' : undefined}
-              /* `nexgen-blue-dark`, not `nexgen-blue`: white on the brand blue is
-                 3.70:1 and only survives as a DISCLOSED exception, while the dark
-                 shade measures 4.93:1 and simply passes. Same reasoning as the
-                 focus ring. */
-              className={`min-w-0 flex-1 px-2 py-2 text-center ${
-                isNow ? 'bg-nexgen-blue-dark text-white' : done ? 'text-emerald-700' : 'text-stone-600'
-              }`}
-            >
-              <span className="flex items-center justify-center gap-1 text-xs font-semibold">
-                {done && <Check className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}
-                <span className="truncate">{stage.label}</span>
-              </span>
-              {done && stage.value && (
-                <span className="mt-0.5 block truncate font-mono text-xs text-emerald-700">{stage.value}</span>
-              )}
-            </li>
-          )
-        })}
-      </ol>
+      <StopProgressRail stages={stages} order={STAGE_ORDER} step={step} />
 
-      {/* The destination, and nothing competing with it. The code is set in mono
-          at the size it is printed on the bin label, because that is the
-          comparison the operator is actually making. `break-all` rather than
-          `truncate`: a code the operator cannot finish reading is worse than a
-          code on two lines. */}
-      <div className="px-4 pt-4 pb-3 text-center">
-        {awaitingConfirm && (
-          <p className="mb-2 inline-block rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-900">
-            {confirmCopy.heading}
-          </p>
-        )}
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600">Take it to</p>
-        <p className="mt-1.5 font-mono text-3xl sm:text-4xl font-bold leading-none tracking-tight text-stone-900 break-all">
-          {binCode}
-        </p>
-        {hasBinName && <p className="mt-2 text-base font-semibold text-emerald-700">{binName}</p>}
-      </div>
-
-      {/* Facts, separated by rules rather than boxed into cards — the card is
-          already the box. */}
-      <dl
-        className={`grid ${row.huCode ? 'grid-cols-2' : 'grid-cols-1'} divide-x divide-nexgen-blue/15 border-y border-nexgen-blue/20 bg-white/50 text-center`}
-      >
-        <div className="min-w-0 px-3 py-2.5">
-          <dt className="text-xs text-stone-600">Quantity</dt>
-          <dd className="mt-0.5 font-mono text-xl font-semibold tabular-nums text-stone-900">
-            {qtyLabel.primary}
-          </dd>
-          {qtyLabel.secondary && <dd className="text-xs text-stone-600">{qtyLabel.secondary}</dd>}
-        </div>
-        {row.huCode && (
-          <div className="min-w-0 px-3 py-2.5">
-            <dt className="text-xs text-stone-600">Plate</dt>
-            <dd className="mt-0.5 truncate font-mono text-xl font-semibold text-stone-900">{row.huCode}</dd>
-          </div>
-        )}
-      </dl>
+      <StopDestination
+        heading={awaitingConfirm ? confirmCopy.heading : undefined}
+        binCode={binCode}
+        binName={hasBinName ? binName : undefined}
+        qty={qtyLabel}
+        huCode={row.huCode}
+      />
 
       <div className="p-4 space-y-3">
         <div className="flex items-start gap-3">
@@ -514,7 +490,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           this the card sends someone to a bay that is no longer on the map and
           says nothing. `complete-putaway` refuses an inactive bin outright, so
           the walk would otherwise fail only after the walk. */}
-      {bin.isActive === false && (
+      {shownBin.isActive === false && (
         <Callout tone="warning" dense icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}>
           This bin has been retired from the layout. Send the line back to the
           Assign queue and re-run it so the engine picks a live bay.
@@ -641,7 +617,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       {step === 'bin' && (
         <div className="step-advance">
           <ScanField
-            label={awaitingConfirm ? confirmCopy.scanLabel : `Scan the bin — expecting ${binCode}`}
+            label={homeCopy?.scanLabel ?? (awaitingConfirm ? confirmCopy.scanLabel : `Scan the bin — expecting ${binCode}`)}
             value={scannedBin}
             onChange={setScannedBin}
             onScan={onBinScan}
@@ -649,14 +625,23 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
             placeholder={binCode}
             cameraTitle="Scan the bin label"
             autoFocus
-            helper={awaitingConfirm
-              ? confirmCopy.helper
-              : isHomeTask
-                ? "This product's home bin. It goes here while the home has room."
-                : 'A different bay is fine — it gets recorded.'}
+            helper={homeCopy
+              ? undefined
+              : awaitingConfirm
+                ? confirmCopy.helper
+                : isHomeTask
+                  ? "This product's home bin. It goes here while the home has room."
+                  : 'A different bay is fine — it gets recorded.'}
             error={error ?? undefined}
           />
         </div>
+      )}
+
+      {/* A product with no home: a manager can name one before the stock is put
+          down. Shown while the thing and the bin are still being proved, not at
+          the count, when the stop is already committed to a bin. */}
+      {(step === 'identify' || step === 'bin') && offersHome && (
+        <GiveHomeOffer onGive={() => setHomeOffer('open')} onDecline={() => setHomeOffer('declined')} />
       )}
 
       {step === 'qty' && (
@@ -779,6 +764,18 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
         </div>
       )}
       </div>
+
+      {canSetHome && homeOffer === 'open' && (
+        <GiveHomeSheet
+          open
+          warehouseId={warehouseId}
+          productId={row.productId}
+          sku={sku}
+          recommendationId={row.id}
+          onClose={() => setHomeOffer(null)}
+          onChoose={(chosen) => { setHomeTarget(chosen); setHomeOffer(null); setError(null) }}
+        />
+      )}
 
       {breakingDown && (
         <PalletBreakdownSheet
