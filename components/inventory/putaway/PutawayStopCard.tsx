@@ -35,7 +35,7 @@ import { ScanField } from '@/components/ui/ScanField'
 import { Callout } from '@/components/ui'
 import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkPutawayScan } from '@/supabase/functions/_shared/putawayScanCheck'
-import { useCompletePutaway, useUnassignPutaway } from '@/hooks/queries/usePutawayWalk'
+import { useCompletePutaway, useConfirmOverflow, useUnassignPutaway } from '@/hooks/queries/usePutawayWalk'
 import { usePrintPlateLabels } from '@/hooks/queries/usePalletBreakdown'
 import { useToastActions } from '@/hooks/useToasts'
 import { CompletePutawayError } from '@/services/supabase/putawayService'
@@ -52,7 +52,7 @@ import {
 } from '@/lib/putawayIdentity'
 import { describeQuantity, trimNumber } from './putawayFormat'
 import { PalletBreakdownSheet } from './PalletBreakdownSheet'
-import { isOverflowConfirmStop } from './walkStops'
+import { isOverflowConfirmStop, overflowConfirmCopy } from './walkStops'
 
 interface PutawayStopCardProps {
   row: PendingPutawayRow
@@ -96,6 +96,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   const { addToast } = useToastActions()
   const complete = useCompletePutaway()
   const unassign = useUnassignPutaway()
+  const confirmOverflow = useConfirmOverflow()
   const print = usePrintPlateLabels()
 
   const [step, setStep] = useState<Step>('idle')
@@ -119,6 +120,10 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   // Set when the server refuses a level-role mismatch; the operator can force it.
   const [roleGate, setRoleGate] = useState<string | null>(null)
   const [breakingDown, setBreakingDown] = useState(false)
+  // The walker's bin scan said yes to this overflow bin (NX-0033). The row prop
+  // only catches up once the walk has refetched, so the card remembers it
+  // meanwhile and does not go back to asking.
+  const [overflowConfirmed, setOverflowConfirmed] = useState(false)
   const qtyFieldId = useId()
 
   const name = row.product?.name ?? `Product #${row.productId}`
@@ -127,6 +132,9 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     row.suggestionSource === 'home' &&
     row.recommendedLocationId != null &&
     row.assignedLocationId === row.recommendedLocationId
+  // A loose line whose home was full: scanning its suggested bin is the yes.
+  const awaitingConfirm = isOverflowConfirmStop(row) && !overflowConfirmed
+  const confirmCopy = overflowConfirmCopy(binCode)
 
   // The code is the hero on this card and the name is the supporting line — the
   // reverse of how `locationDisplay` orders them, and deliberately so. That module
@@ -234,7 +242,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     }
   }
 
-  const onBinScan = (raw: string) => {
+  const onBinScan = async (raw: string) => {
     const verdict = checkPutawayScan(context, { ...evidence, locationCode: raw }, row.quantity)
     if (verdict.ok === false) {
       setError(verdict.message)
@@ -251,6 +259,39 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       setScannedBin('')
       signalFlash('reject')
       return
+    }
+    // An overflow line waits for a yes (NX-0033), and only the bin it names can
+    // give it: another bay is left for the desk, not decided here. The server
+    // compares the scanned bin with the line's own under its row lock, so a desk
+    // redirect that landed after this walk loaded is refused, in its words.
+    if (awaitingConfirm) {
+      if (verdict.placedElsewhere || row.recommendedLocationId == null) {
+        setError(confirmCopy.wrongBin)
+        setScannedBin('')
+        signalFlash('reject')
+        return
+      }
+      if (confirmOverflow.isPending) return
+      try {
+        await confirmOverflow.mutateAsync({
+          recommendationId: row.id,
+          locationId: row.recommendedLocationId,
+        })
+      } catch (e) {
+        // Shown as the server wrote it, where the walker is looking and as a toast
+        // too, because the refresh the hook triggers can take this stop away (a
+        // desk redirect puts the line back on the Assign tab). The card stays on
+        // the bin step: whatever the refreshed stop turns out to be, it is
+        // scanned from here.
+        const message = e instanceof Error ? e.message : 'Could not confirm the bin, try again.'
+        setError(message)
+        setScannedBin('')
+        signalFlash('reject')
+        addToast(message, 'error')
+        return
+      }
+      setOverflowConfirmed(true)
+      addToast(confirmCopy.confirmed, 'success')
     }
     setError(null)
     // A DIFFERENT bin is accepted here on purpose — the operator is standing at
@@ -315,6 +356,8 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     try {
       await unassign.mutateAsync(row.id)
       addToast('Back on the putaway queue', 'success')
+      // Back to `suggested`: an overflow line asks for its yes again.
+      setOverflowConfirmed(false)
       reset()
     } catch (e) {
       addToast(e instanceof Error ? e.message : 'Could not unassign', 'error')
@@ -422,6 +465,11 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           `truncate`: a code the operator cannot finish reading is worse than a
           code on two lines. */}
       <div className="px-4 pt-4 pb-3 text-center">
+        {awaitingConfirm && (
+          <p className="mb-2 inline-block rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-900">
+            {confirmCopy.heading}
+          </p>
+        )}
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600">Take it to</p>
         <p className="mt-1.5 font-mono text-3xl sm:text-4xl font-bold leading-none tracking-tight text-stone-900 break-all">
           {binCode}
@@ -593,7 +641,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       {step === 'bin' && (
         <div className="step-advance">
           <ScanField
-            label={`Scan the bin — expecting ${binCode}`}
+            label={awaitingConfirm ? confirmCopy.scanLabel : `Scan the bin — expecting ${binCode}`}
             value={scannedBin}
             onChange={setScannedBin}
             onScan={onBinScan}
@@ -601,9 +649,11 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
             placeholder={binCode}
             cameraTitle="Scan the bin label"
             autoFocus
-            helper={isHomeTask
-              ? "This product's home bin. It goes here while the home has room."
-              : 'A different bay is fine — it gets recorded.'}
+            helper={awaitingConfirm
+              ? confirmCopy.helper
+              : isHomeTask
+                ? "This product's home bin. It goes here while the home has room."
+                : 'A different bay is fine — it gets recorded.'}
             error={error ?? undefined}
           />
         </div>
@@ -699,7 +749,11 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
       )}
 
       {/* Both escape hatches on one line. They are the rarest controls on the
-          card and they were costing two stacked 44px rows of the height budget. */}
+          card and they were costing two stacked 44px rows of the height budget.
+          Neither applies while the line still waits for its yes (NX-0033): it is
+          not assigned, so there is nothing to put back, and a pallet is broken
+          down once the bin is settled. */}
+      {!awaitingConfirm && (
       <div className="flex items-center justify-between gap-3 border-t border-nexgen-blue/15 pt-1">
         <button
           onClick={putBack}
@@ -723,6 +777,7 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
           </button>
         )}
         </div>
+      )}
       </div>
 
       {breakingDown && (

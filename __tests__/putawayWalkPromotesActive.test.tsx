@@ -38,6 +38,7 @@ vi.mock('@/hooks/queries/usePutawayWalk', () => ({
   usePutawayRoute: () => routeMock(),
   useCompletePutaway: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUnassignPutaway: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useConfirmOverflow: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 vi.mock('@/hooks/queries/useWarehouseLocations', () => ({
   useWarehouseLocations: () => locationsMock(),

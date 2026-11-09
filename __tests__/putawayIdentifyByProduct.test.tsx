@@ -25,6 +25,7 @@ const { completeMock, unassignMock, printMock } = vi.hoisted(() => ({
 vi.mock('@/hooks/queries/usePutawayWalk', () => ({
   useCompletePutaway: () => ({ mutateAsync: completeMock, isPending: false }),
   useUnassignPutaway: () => ({ mutateAsync: unassignMock, isPending: false }),
+  useConfirmOverflow: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 vi.mock('@/hooks/queries/usePalletBreakdown', () => ({
   usePrintPlateLabels: () => ({ mutateAsync: printMock, isPending: false }),

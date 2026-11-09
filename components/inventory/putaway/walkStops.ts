@@ -46,3 +46,18 @@ export function walkBinId(
 ): number | null {
   return row.assignedLocationId ?? row.recommendedLocationId
 }
+
+/**
+ * What the Walk says about an overflow line waiting for its yes (NX-0033). One
+ * place, so the card, its tests and the plan's copy table stay the same words.
+ */
+export function overflowConfirmCopy(binCode: string) {
+  return {
+    /** Above "Take it to" on the open stop. */
+    heading: `Home full — put in ${binCode}?`,
+    scanLabel: `Scan ${binCode} to confirm`,
+    helper: 'Scanning this bin confirms it. The desk can choose another bin instead.',
+    wrongBin: `Scan ${binCode} to confirm this overflow bin, or leave it for the desk to choose another.`,
+    confirmed: `Confirmed — put it in ${binCode}`,
+  } as const
+}

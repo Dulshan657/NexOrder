@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isOverflowConfirmStop, walkBinId } from '@/components/inventory/putaway/walkStops'
+import { isOverflowConfirmStop, overflowConfirmCopy, walkBinId } from '@/components/inventory/putaway/walkStops'
 
 // NX-0033: a Walk stop is either an assigned line or a loose overflow line (its
 // home was full) still waiting for someone to confirm the bin. These two pure
@@ -43,5 +43,17 @@ describe('walkBinId', () => {
 
   it('is null when the line has neither', () => {
     expect(walkBinId({ assignedLocationId: null, recommendedLocationId: null })).toBeNull()
+  })
+})
+
+describe('overflowConfirmCopy', () => {
+  it('is the plan copy table, verbatim, with the bin code filled in', () => {
+    expect(overflowConfirmCopy('TST-WALK-O1')).toEqual({
+      heading: 'Home full — put in TST-WALK-O1?',
+      scanLabel: 'Scan TST-WALK-O1 to confirm',
+      helper: 'Scanning this bin confirms it. The desk can choose another bin instead.',
+      wrongBin: 'Scan TST-WALK-O1 to confirm this overflow bin, or leave it for the desk to choose another.',
+      confirmed: 'Confirmed — put it in TST-WALK-O1',
+    })
   })
 })
