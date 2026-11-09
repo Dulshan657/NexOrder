@@ -18,7 +18,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
-import { generatePutawayTasks } from '../_shared/putawayTasks.ts'
+import { generatePutawayTasks, type PutawayLineInput } from '../_shared/putawayTasks.ts'
 import { putawayForReceipt, receiveStockBody, type ReceivePutawayOutcome } from '../_shared/receivePutaway.ts'
 import { resolveReceiveDestination } from '../_shared/receiveDestination.ts'
 import { requireModule } from '../_shared/modules.ts'
@@ -361,37 +361,41 @@ serve(async (req: Request) => {
     let outcome: ReceivePutawayOutcome = { putaway: null }
     const destLocationId = (result as any)?.location_id as number | undefined
     if (destLocationId) {
-      outcome = await putawayForReceipt(() => {
-        // hu_type rides along so the engine steers pallets to bulk/reserve
-        // levels and cartons to pick faces (mig 00072 roles + 00075 plates).
-        const typeByKey = new Map<string, 'pallet' | 'carton'>(
-          (plates ?? []).map((p) => [p.key, p.hu_type]),
-        )
-        return generatePutawayTasks(admin, {
+      // hu_type rides along so the engine steers pallets to bulk/reserve
+      // levels and cartons to pick faces (mig 00072 roles + 00075 plates).
+      const typeByKey = new Map<string, 'pallet' | 'carton'>(
+        (plates ?? []).map((p) => [p.key, p.hu_type]),
+      )
+      // Built here, not inside the call, so the failure response can hand the
+      // very same lines back for a Retry.
+      const putawayLines: PutawayLineInput[] = baseLines.map((l, i) => ({
+        product_id: l.product_id,
+        quantity: l.quantity,
+        // hu_id rides along too, so the several lines of a MIXED pallet are
+        // recognised as one physical object: they all follow it to a single
+        // bin and it consumes one position, not one per line (mig 00078).
+        //
+        // Only an EXPLICITLY built plate declares its type. An auto-minted
+        // one takes createPlates' inference from the destination, which for
+        // a warehouse ROOT (slot_kind always NULL) is the 'pallet' default —
+        // meaningless, and feeding it here would both steer the line to
+        // bulk/reserve levels and claim a whole position for it. Undefined
+        // keeps the pre-00078 per-unit treatment for those lines.
+        hu_type: lines[i].plate_key ? typeByKey.get(lines[i].plate_key!) : undefined,
+        hu_id: (platedLines[i] as any)?.handling_unit_id as number | undefined,
+        // The header flag sets every line; a line may opt itself out by
+        // saying false explicitly (mig 00101). `?? ` and not `||`, so an
+        // explicit false on the line is honoured rather than swallowed.
+        quarantine: lines[i].quarantine ?? receipt?.quarantine ?? false,
+      }))
+      outcome = await putawayForReceipt(putawayLines, (toPlace) =>
+        generatePutawayTasks(admin, {
           warehouseId: destLocationId,
-          // hu_id rides along too, so the several lines of a MIXED pallet are
-          // recognised as one physical object: they all follow it to a single
-          // bin and it consumes one position, not one per line (mig 00078).
-          lines: baseLines.map((l, i) => ({
-            product_id: l.product_id,
-            quantity: l.quantity,
-            // Only an EXPLICITLY built plate declares its type. An auto-minted
-            // one takes createPlates' inference from the destination, which for
-            // a warehouse ROOT (slot_kind always NULL) is the 'pallet' default —
-            // meaningless, and feeding it here would both steer the line to
-            // bulk/reserve levels and claim a whole position for it. Undefined
-            // keeps the pre-00078 per-unit treatment for those lines.
-            hu_type: lines[i].plate_key ? typeByKey.get(lines[i].plate_key!) : undefined,
-            hu_id: (platedLines[i] as any)?.handling_unit_id as number | undefined,
-            // The header flag sets every line; a line may opt itself out by
-            // saying false explicitly (mig 00101). `?? ` and not `||`, so an
-            // explicit false on the line is honoured rather than swallowed.
-            quarantine: lines[i].quarantine ?? receipt?.quarantine ?? false,
-          })),
+          lines: toPlace,
           actorId: auth.userId,
           goodsReceiptId: (result as any)?.receipt_id as number | undefined,
-        })
-      })
+        }),
+      )
     }
 
     return new Response(

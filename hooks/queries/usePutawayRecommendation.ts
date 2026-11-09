@@ -17,6 +17,22 @@ export function useRecommendPutaway() {
   })
 }
 
+/** Put a receipt away again after receive-stock could not read a home bin
+ *  (NX-0032). The receipt was booked and no task exists, so this is a real run,
+ *  not a preview: it creates the tasks the first attempt would have. `lines` are
+ *  the ones receive-stock returned as `putaway_lines`. */
+export function useRetryReceiptPutaway() {
+  const qc = useQueryClient()
+  return useMutation<PutawayResponse, Error, { warehouseId: number; lines: PutawayLineInput[]; goodsReceiptId?: number }>({
+    mutationFn: ({ warehouseId, lines, goodsReceiptId }) => recommendPutaway(warehouseId, lines, goodsReceiptId),
+    onSuccess: () => {
+      // The queue and its nav badge gained tasks.
+      qc.invalidateQueries({ queryKey: putawayKeys.all })
+      qc.invalidateQueries({ queryKey: putawayKeys.counts })
+    },
+  })
+}
+
 /** Accept or override a recommendation; the stock move happens server-side.
  *  Pass `quantity` to put away part of the line — the remainder stays queued. */
 export function useDecidePutaway() {

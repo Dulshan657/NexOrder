@@ -218,6 +218,21 @@ export async function generatePutawayTasks(
   // second line of the same SKU sees the max_qty headroom the first one used.
   const homeQtyPlaced = new Map<number, number>()
   const homes = await loadHomeBins(admin, warehouseId)
+  // How full each CAPPED home already is, read now and never again (NX-0032).
+  // Home reads fail closed, and every read that can fail that way has to come
+  // before the first task is inserted: a line-by-line read would leave the
+  // earlier lines' tasks behind when a later one failed, and the Retry that
+  // follows would put them in twice. Reading once per product, up front, also
+  // means the open tasks counted here are other receipts' -- this call's own
+  // placements are added from `homeQtyPlaced`, not read back from the rows it
+  // just wrote.
+  const homeUsage = new Map<number, { onHand: number; pendingQty: number }>()
+  for (const productId of new Set(lines.map((l) => l.product_id))) {
+    const h = homes.get(productId)
+    if (h && h.maxQty !== null) {
+      homeUsage.set(productId, await loadHomeSlotUsage(admin, { warehouseId, productId, binId: h.binId }))
+    }
+  }
   // A plate carrying more than one line is a MIXED pallet: broken down at
   // putaway, each product planned loose to its own home (NX-0006).
   const linesPerPlate = new Map<number, number>()
@@ -368,9 +383,7 @@ export async function generatePutawayTasks(
 
     // ── Home first (NX-0006) ──────────────────────────────────────────────
     const homeCand = home ? candidates.find((c) => c.locationId === home.binId) : undefined
-    const usage = home && homeCand && home.maxQty !== null
-      ? await loadHomeSlotUsage(admin, { warehouseId, productId: line.product_id, binId: home.binId })
-      : { onHand: 0, pendingQty: 0 }
+    const usage = homeUsage.get(line.product_id) ?? { onHand: 0, pendingQty: 0 }
     const homePlan = planHomeFirst({
       quantity: line.quantity,
       sizeFactor: sku.sizeFactor,

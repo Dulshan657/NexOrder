@@ -13,6 +13,9 @@ interface StubOpts {
   homeBins?: Array<Record<string, unknown>>
   /** Tables whose read answers `{ error: { message: 'boom' } }` (NX-0032). */
   failReads?: string[]
+  /** Fail only the nth (1-based) read of one table, so a later line can fail
+   *  after an earlier one succeeded. */
+  failNthRead?: { table: string; n: number }
 }
 
 function candidate(o: Partial<{
@@ -35,6 +38,9 @@ function candidate(o: Partial<{
 
 function makeAdmin(opts: StubOpts) {
   const inserted: Array<Record<string, unknown>> = []
+  /** Every read (by table) and insert, in the order they happened. */
+  const calls: string[] = []
+  const readsByTable = new Map<string, number>()
   const product = opts.product ?? { id: 1, sku: 'S1', name: 'S', size_factor: 1, category: null }
 
   const listFor = (table: string): Array<Record<string, unknown>> => {
@@ -69,10 +75,18 @@ function makeAdmin(opts: StubOpts) {
   const admin = {
     from(table: string) {
       return {
-        select: () => builder(listFor(table), (opts.failReads ?? []).includes(table)),
+        select: () => {
+          const n = (readsByTable.get(table) ?? 0) + 1
+          readsByTable.set(table, n)
+          calls.push(table)
+          const failed = (opts.failReads ?? []).includes(table)
+            || (opts.failNthRead?.table === table && opts.failNthRead.n === n)
+          return builder(listFor(table), failed)
+        },
         insert: (row: Record<string, unknown>) => ({
           select: () => ({
             single: async () => {
+              calls.push('insert')
               const id = inserted.length + 1
               inserted.push({ ...row, id })
               return { data: { id }, error: null }
@@ -87,7 +101,7 @@ function makeAdmin(opts: StubOpts) {
         : { data: null, error: null },
   }
   // deno/edge SupabaseClient type is stubbed for the test.
-  return { admin: admin as unknown as Parameters<typeof generatePutawayTasks>[0], inserted }
+  return { admin: admin as unknown as Parameters<typeof generatePutawayTasks>[0], inserted, calls }
 }
 
 const racked = { id: 9, kind: 'WAREHOUSE', location_type: 'racked', active_layout_id: 3 }
@@ -375,6 +389,70 @@ describe('generatePutawayTasks — home bin', () => {
         expect(logged).toHaveBeenCalledWith(expect.stringContaining('product 1'))
       },
     )
+
+    it('reads every home before the first task is created, so a late failure leaves none', async () => {
+      // Two homed products, both capped. The second product's usage read fails;
+      // the first has already been planned by then in the old order.
+      const { admin, inserted } = makeAdmin({
+        warehouse: racked,
+        homeBins: [
+          { product_id: 1, bin_id: 20, max_qty: 100 },
+          { product_id: 2, bin_id: 21, max_qty: 100 },
+        ],
+        failNthRead: { table: 'wie_putaway_recommendations', n: 2 },
+        candidates: [
+          candidate({ location_id: 7, distance_from_dock_m: 1 }),
+          candidate({ location_id: 20, code: 'H20', distance_from_dock_m: 80 }),
+          candidate({ location_id: 21, code: 'H21', distance_from_dock_m: 82 }),
+        ],
+      })
+      await expect(
+        generatePutawayTasks(admin, {
+          warehouseId: 9,
+          lines: [{ product_id: 1, quantity: 30 }, { product_id: 2, quantity: 30 }],
+          actorId: 'u1',
+        }),
+      ).rejects.toThrow(MESSAGE)
+      expect(inserted).toHaveLength(0)
+    })
+
+    it('has read all home usage before it inserts the first task', async () => {
+      const { admin, inserted, calls } = makeAdmin({
+        warehouse: racked,
+        homeBins: [
+          { product_id: 1, bin_id: 20, max_qty: 100 },
+          { product_id: 2, bin_id: 21, max_qty: 100 },
+        ],
+        candidates: [
+          candidate({ location_id: 20, code: 'H20', distance_from_dock_m: 80 }),
+          candidate({ location_id: 21, code: 'H21', distance_from_dock_m: 82 }),
+        ],
+      })
+      await generatePutawayTasks(admin, {
+        warehouseId: 9,
+        lines: [{ product_id: 1, quantity: 30 }, { product_id: 2, quantity: 30 }],
+        actorId: 'u1',
+      })
+      expect(inserted).toHaveLength(2)
+      expect(calls.lastIndexOf('wie_putaway_recommendations')).toBeLessThan(calls.indexOf('insert'))
+      expect(calls.lastIndexOf('inventory_balances')).toBeLessThan(calls.indexOf('insert'))
+      expect(calls.lastIndexOf('product_home_bins')).toBeLessThan(calls.indexOf('insert'))
+    })
+
+    it('reads the home usage of a product once, however many lines it has', async () => {
+      const { admin, calls } = makeAdmin({
+        warehouse: racked,
+        homeBins: [{ product_id: 1, bin_id: 20, max_qty: 100 }],
+        candidates: [candidate({ location_id: 20, code: 'H20' })],
+      })
+      await generatePutawayTasks(admin, {
+        warehouseId: 9,
+        lines: [{ product_id: 1, quantity: 10 }, { product_id: 1, quantity: 10 }],
+        actorId: 'u1',
+      })
+      expect(calls.filter((c) => c === 'inventory_balances')).toHaveLength(1)
+      expect(calls.filter((c) => c === 'wie_putaway_recommendations')).toHaveLength(1)
+    })
 
     it('an uncapped home reads no usage, so a usage table outage does not stop it', async () => {
       const { admin, inserted } = makeAdmin({

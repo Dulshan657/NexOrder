@@ -5,7 +5,15 @@ import type { OverrideReason } from '@/supabase/functions/_shared/putawayComplet
 
 export interface PutawayLineInput {
   product_id: number
+  /** Base units. */
   quantity: number
+  /** The plate this quantity arrived on, its type, and whether it is held. The
+   *  receive screen's Retry sends back what receive-stock returned as
+   *  `putaway_lines`, so a held line is still offered only hold bins and a plate
+   *  still drains. Server rule: `hu_id` must be on `goodsReceiptId`. */
+  hu_type?: 'pallet' | 'carton'
+  hu_id?: number
+  quarantine?: boolean
 }
 
 export type PutawayResponse =
@@ -39,7 +47,12 @@ export async function recommendPutaway(
       replaces_recommendation_id: replacesRecommendationId,
     },
   })
-  if (error) throw error
+  if (error) {
+    // The raw FunctionsHttpError says only "non-2xx status code". Since NX-0032
+    // the words matter here: a Retry after "Home bin unavailable, try again."
+    // can fail the same way, and a refused plate says which one.
+    throw new Error(await extractFunctionErrorMessage(error, 'Could not get putaway recommendations'))
+  }
   if (!data || data.mode === 'legacy') return { mode: 'legacy' }
   return { mode: 'engine', layoutId: data.layout_id!, recommendations: data.recommendations ?? [] }
 }

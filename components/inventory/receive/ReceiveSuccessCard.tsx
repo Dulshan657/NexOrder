@@ -9,7 +9,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { ArrowRight, CheckCircle2, ChevronDown, RotateCcw } from 'lucide-react'
 import type { PutawayLineRecommendation } from '../../../types'
+import type { PutawayLineInput } from '../../../services/supabase/putawayService'
 import { ReceiptPlateLabels } from './ReceiptPlateLabels'
+import { PutawayRetryNotice } from './PutawayRetryNotice'
 import { PutawayPanel } from '../PutawayPanel'
 
 export interface ReceivedSummary {
@@ -21,6 +23,11 @@ export interface ReceivedSummary {
   /** Where the stock landed; drives Go to putaway. */
   warehouseId: number | null
   recommendations: PutawayLineRecommendation[]
+  /** NX-0032: set when a product's home bin could not be read. The receipt is
+   *  booked and no putaway task exists yet; the card offers a Retry. */
+  putawayError?: string | null
+  /** With `putawayError`: the lines to send to recommend-putaway to retry. */
+  putawayLines?: PutawayLineInput[]
 }
 
 interface ReceiveSuccessCardProps {
@@ -34,6 +41,8 @@ export function ReceiveSuccessCard({
   summary, productNameById, onOpenPutaway, onStartNext,
 }: ReceiveSuccessCardProps) {
   const [showSuggestions, setShowSuggestions] = useState(false)
+  // Set by a successful Retry: the suggestions for the tasks it just created.
+  const [retried, setRetried] = useState<PutawayLineRecommendation[] | null>(null)
   const rootRef = useRef<HTMLElement | null>(null)
 
   // Bring the card into view: the receipt it replaces may have been scrolled
@@ -42,7 +51,8 @@ export function ReceiveSuccessCard({
     rootRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
   }, [summary.receiptId])
 
-  const { linesReceived, units, destName, warehouseId, recommendations } = summary
+  const { linesReceived, units, destName, warehouseId, putawayError, putawayLines } = summary
+  const recommendations = retried ?? summary.recommendations
 
   return (
     <section ref={rootRef} aria-label="Receipt recorded" className="space-y-4">
@@ -76,6 +86,18 @@ export function ReceiveSuccessCard({
           </button>
         </div>
       </div>
+
+      {/* The receipt is booked but putaway could not read a home bin, so no task
+          exists. Gone as soon as a Retry makes them. */}
+      {putawayError && retried === null && warehouseId != null && (
+        <PutawayRetryNotice
+          message={putawayError}
+          warehouseId={warehouseId}
+          receiptId={summary.receiptId}
+          lines={putawayLines ?? []}
+          onPlaced={setRetried}
+        />
+      )}
 
       {/* Mounted only once a receipt exists: the panel owns a query and a
           mutation, and running both against no receipt is work for nothing. */}

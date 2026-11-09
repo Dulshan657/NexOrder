@@ -567,6 +567,9 @@ const ReceiveStockView: React.FC<ReceiveStockViewProps> = ({ products, currentUs
         destName,
         warehouseId: result.location_id ?? null,
         recommendations,
+        // NX-0032: booked, but a home bin could not be read, so no task exists.
+        putawayError: result.putaway_error ?? null,
+        putawayLines: result.putaway_lines,
       })
       resetReceipt()
     } catch (err) {
