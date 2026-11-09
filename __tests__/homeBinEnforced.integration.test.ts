@@ -7,11 +7,21 @@
  * A bin that is ANOTHER product's primary home is neither offered by
  * `wie_putaway_candidates` nor accepted by any of them.
  *
- * Made-up data only (TST-HOME-* products on made-up bins). Every test runs
- * inside BEGIN … ROLLBACK via `withRollbackTx`, so nothing it writes survives.
+ * Made-up data only (TST-HOME-* products on made-up bins). Two kinds of test:
+ *
+ *  1. "live RPCs": every test runs inside BEGIN … ROLLBACK via `withRollbackTx`,
+ *     so nothing it writes survives.
+ *  2. "live HTTP" (last describe): calls the deployed `complete-putaway` and
+ *     `decide-putaway` functions, which read through their own connections, so
+ *     it COMMITS its made-up data (warehouse, bins, product, two tasks) and
+ *     creates a made-up Admin auth user, and deletes all of it again in
+ *     afterAll. It moves no stock. It needs VITE_SUPABASE_ANON_KEY and
+ *     SUPABASE_SERVICE_ROLE_KEY as well as the database password, and it fails
+ *     until the two functions with the pre-check are deployed to dev
+ *     (`npm run fn:deploy:dev -- complete-putaway decide-putaway`).
  *
  * Run with: `npm run test:integration -- homeBinEnforced` (dev credentials;
- * migration 00142 applied).
+ * migration 00142 applied). Add `-t "live RPCs"` to run only the first kind.
  */
 import { randomUUID } from 'node:crypto'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'

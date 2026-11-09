@@ -24,6 +24,9 @@ export function PutawayPanel({ warehouseId, recommendations, productNameById }: 
   const [statuses, setStatuses] = useState<Record<number, LineStatus>>({})
   const [expanded, setExpanded] = useState<number | null>(null)
   const [overrideChoice, setOverrideChoice] = useState<Record<number, number>>({})
+  // The server's refusal for a line, in its own words (a home bin refusal, a full
+  // bin, a level role). Kept beside the line so the operator can pick another bin.
+  const [errors, setErrors] = useState<Record<number, string>>({})
 
   const codeById = useMemo(() => {
     const m = new Map<number, string>()
@@ -37,17 +40,39 @@ export function PutawayPanel({ warehouseId, recommendations, productNameById }: 
   )
 
   const setStatus = (id: number, s: LineStatus) => setStatuses((prev) => ({ ...prev, [id]: s }))
+  const setError = (id: number, message: string | null) =>
+    setErrors((prev) => {
+      if (message === null) {
+        if (!(id in prev)) return prev
+        const { [id]: _cleared, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [id]: message }
+    })
 
-  const accept = async (rec: PutawayLineRecommendation) => {
-    await decide.mutateAsync({ recommendationId: rec.recommendationId, decision: 'accept' })
-    setStatus(rec.recommendationId, 'accepted')
+  // Since NX-0032 an off-home bin is refused while the home has room, and no
+  // button here lifts that. decidePutaway throws the server's message as written;
+  // show it instead of letting the rejection go unhandled and the button do nothing.
+  const decideLine = async (
+    rec: PutawayLineRecommendation,
+    input: { decision: 'accept' } | { decision: 'override'; chosenLocationId: number },
+    done: LineStatus,
+  ) => {
+    setError(rec.recommendationId, null)
+    try {
+      await decide.mutateAsync({ recommendationId: rec.recommendationId, ...input })
+      setStatus(rec.recommendationId, done)
+    } catch (e) {
+      setError(rec.recommendationId, e instanceof Error ? e.message : 'Could not put this away')
+    }
   }
 
-  const override = async (rec: PutawayLineRecommendation) => {
+  const accept = (rec: PutawayLineRecommendation) => decideLine(rec, { decision: 'accept' }, 'accepted')
+
+  const override = (rec: PutawayLineRecommendation) => {
     const chosen = overrideChoice[rec.recommendationId]
-    if (!chosen) return
-    await decide.mutateAsync({ recommendationId: rec.recommendationId, decision: 'override', chosenLocationId: chosen })
-    setStatus(rec.recommendationId, 'overridden')
+    if (!chosen) return Promise.resolve()
+    return decideLine(rec, { decision: 'override', chosenLocationId: chosen }, 'overridden')
   }
 
   return (
@@ -101,6 +126,12 @@ export function PutawayPanel({ warehouseId, recommendations, productNameById }: 
                   </div>
                 )}
               </div>
+
+              {errors[rec.recommendationId] && !done && (
+                <p className="text-xs text-red-600 mt-2" role="alert">
+                  {errors[rec.recommendationId]}
+                </p>
+              )}
 
               {expanded === rec.recommendationId && !done && (
                 <div className="mt-3 pl-1 space-y-3">

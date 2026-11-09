@@ -20,8 +20,9 @@ export const HOME_UNAVAILABLE = 'Home bin unavailable, try again.'
 
 /**
  * Throw CONFLICT with the refusal text when `toLocationId` is not an allowed
- * place for task `recId`. Fails closed: if the rule cannot be read, nothing is
- * placed and the floor is told to try again.
+ * place for task `recId`. Fails closed: if the rule cannot be read, or answers
+ * with anything other than NULL or a text, nothing is placed and the floor is
+ * told to try again.
  */
 export async function refuseIfHomeBlocked(
   admin: SupabaseClient,
@@ -36,7 +37,13 @@ export async function refuseIfHomeBlocked(
     console.error(`[wie_home_block] task ${recId} -> bin ${toLocationId}: ${error.message}`)
     throw new EdgeFunctionError('INTERNAL', HOME_UNAVAILABLE)
   }
+  // NULL is the only "allowed". Anything else that is not a refusal text is a
+  // reply this code does not understand, and an unknown reply must not read as
+  // permission.
+  if (data === null || data === undefined) return
   if (typeof data === 'string' && data.length > 0) {
     throw new EdgeFunctionError('CONFLICT', data)
   }
+  console.error(`[wie_home_block] task ${recId} -> bin ${toLocationId}: unexpected reply ${JSON.stringify(data)}`)
+  throw new EdgeFunctionError('INTERNAL', HOME_UNAVAILABLE)
 }
