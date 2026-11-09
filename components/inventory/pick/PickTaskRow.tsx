@@ -10,9 +10,18 @@
 // (_shared/pickScanCheck), so the browser can never accept something the server
 // will reject, or vice versa. The server re-checks regardless — this is for
 // instant feedback at the rack face, not for security.
+//
+// Two additions for an order imported from an invoice (NX-0029), where the system's
+// stock records may not match the shelf:
+//  - an UNRESERVED task (`task.unreserved`) is a bin with free stock offered for the
+//    part of the line no reservation covers. It is picked exactly like a directed one.
+//  - ANY-BIN mode (`anyBin`) is for a line with no bin holding recorded stock. The bin
+//    is not given, it is scanned: any bin, then the item, then the count. The bin's
+//    location id comes from resolving the scanned code, and the row says plainly that
+//    the system shows none of the item there.
 
-import React, { useMemo, useState } from 'react'
-import { Check, MapPin, PackageCheck, ScanLine, X } from 'lucide-react'
+import React, { useMemo, useRef, useState } from 'react'
+import { MapPin, PackageCheck, ScanLine, X } from 'lucide-react'
 import { ScanField } from '@/components/ui/ScanField'
 import { useScanFlash } from '@/lib/scan/useScanFlash'
 import { checkPickScan } from '@/supabase/functions/_shared/pickScanCheck'
@@ -20,6 +29,9 @@ import { useRecordPick } from '@/hooks/queries/usePickQueue'
 import { useToastActions } from '@/hooks/useToasts'
 import type { PickQueueLine, PickTask } from '@/services/supabase/pickService'
 import { locationOneLine, locationSubtitle, locationTitle } from '@/lib/locationDisplay'
+import { refusalMessage } from '@/lib/pickRefusal'
+import { StepChip } from './StepChip'
+import type { PickBinResolution, ResolvedPickBin } from './resolvePickBin'
 
 interface PickTaskRowProps {
   orderId: string
@@ -30,6 +42,13 @@ interface PickTaskRowProps {
    *  useLocationNames — the pick path is ORDER-scoped, so it has no warehouse
    *  locations query to read from. Absent falls back to the code. */
   binName?: string | null
+  /** Any-bin mode: `task` is then the line's open amount (it names no real bin), and
+   *  the bin is found by scanning. `resolveBin` turns what was scanned into a bin, or
+   *  says why it is not one. */
+  anyBin?: { resolveBin: (raw: string) => PickBinResolution }
+  /** An order imported from an invoice (NX-0029). A pick on it refetches the order's tasks,
+   *  because it can take stock outside the reservation and so change what is on offer. */
+  imported?: boolean
 }
 
 type Step = 'idle' | 'bin' | 'item' | 'qty'
@@ -38,7 +57,7 @@ type Step = 'idle' | 'bin' | 'item' | 'qty'
 // function component's props interface does not include `key`, and callers
 // rendering it in a list fail to type-check. Same reason the rest of the
 // codebase uses React.FC. (See the types gotcha in CLAUDE.md.)
-export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, disabled, binName }) => {
+export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, disabled, binName, anyBin, imported }) => {
   const bin = { code: task.code, name: binName ?? null }
   const { addToast } = useToastActions()
   const recordPick = useRecordPick()
@@ -49,10 +68,18 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
   const [itemCode, setItemCode] = useState('')
   const [qty, setQty] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // Any-bin mode only: the bin the picker's scan resolved to.
+  const [found, setFound] = useState<ResolvedPickBin | null>(null)
+  // A second tap can land before the button has re-rendered as disabled, and a pick
+  // posted twice is counted twice: a ref is read synchronously, `isPending` is not.
+  const posting = useRef(false)
+
+  // The bin the scans are checked against: the task's own, or the one just resolved.
+  const expectedCode = anyBin ? (found?.code ?? '') : task.code
 
   const context = useMemo(
     () => ({
-      taskLocationCode: task.code,
+      taskLocationCode: expectedCode,
       product: {
         id: line.productId,
         sku: line.productSku,
@@ -61,7 +88,7 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
       },
       remainingQty: task.remaining,
     }),
-    [task.code, task.remaining, line.productId, line.productSku, line.productName, line.productBarcode],
+    [expectedCode, task.remaining, line.productId, line.productSku, line.productName, line.productBarcode],
   )
 
   const reset = () => {
@@ -70,6 +97,7 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
     setItemCode('')
     setQty('')
     setError(null)
+    setFound(null)
   }
 
   const start = () => {
@@ -79,6 +107,21 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
   }
 
   const onBinScan = (raw: string) => {
+    if (anyBin) {
+      // Any bin will do, so there is nothing to compare against: find out which bin it is.
+      const resolution = anyBin.resolveBin(raw)
+      if (resolution.ok === false) {
+        setError(resolution.message)
+        setBinCode('')
+        signalFlash('reject')
+        return
+      }
+      setFound(resolution.location)
+      setError(null)
+      signalFlash('ok')
+      setStep('item')
+      return
+    }
     // Validate the bin ALONE by passing only that evidence — a wrong bay must
     // stop the operator here rather than after they have also picked an item.
     const verdict = checkPickScan(context, { locationCode: raw }, task.remaining)
@@ -113,33 +156,69 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
       setError(verdict.message)
       return
     }
-    if (recordPick.isPending) return
+    if (recordPick.isPending || posting.current) return
+    const locationId = anyBin ? found?.id : task.locationId
+    if (locationId == null) return
+    posting.current = true
     try {
       await recordPick.mutateAsync({
         orderId,
         orderItemId: task.orderItemId,
         pickedQty: picked,
-        locationId: task.locationId,
+        locationId,
         scan: { locationCode: binCode, productCode: itemCode },
+        // On an imported order a pick can move stock outside the reservation, so what is
+        // on offer changes. An ordinary order keeps its optimistic patch and nothing more.
+        refreshTasks: imported === true,
       })
       // A toast is a receipt, so it carries both — unlike the scan prompt below,
       // which must quote the code alone.
-      addToast(`Picked ${picked} × ${locationOneLine(bin)}`, 'success')
+      addToast(`Picked ${picked} × ${locationOneLine(anyBin ? { code: expectedCode, name: found?.name } : bin)}`, 'success')
       reset()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to record pick')
+      // A refusal is shown in the row and everything scanned is kept, so the picker
+      // can read why and correct one thing instead of starting again.
+      setError(refusalMessage(err, 'Could not record the pick.'))
+    } finally {
+      posting.current = false
     }
+  }
+
+  if (step === 'idle' && anyBin) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-1.5 pl-5">
+        <MapPin className="w-3 h-3 text-stone-500 shrink-0" aria-hidden="true" />
+        <span className="flex-1 min-w-[10rem] text-xs text-stone-600">
+          The system shows no available stock of this item in any bin.
+        </span>
+        <button
+          onClick={start}
+          disabled={disabled || task.remaining <= 0}
+          // The dark brand shade: white on plain nexgen-blue is 3.70:1, one of the disclosed
+          // exceptions, and new controls are not added to that list (docs/claude/accessibility.md).
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 touch-target-y bg-nexgen-blue-dark text-white text-xs font-medium rounded-lg btn-press disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+        >
+          <ScanLine className="w-3 h-3" aria-hidden="true" /> Scan a bin to pick
+        </button>
+      </div>
+    )
   }
 
   if (step === 'idle') {
     return (
-      <div className="flex items-center gap-3 py-1.5 pl-5">
+      // Wraps: on a 360px screen the label, the count and the button do not fit on one
+      // line, and truncating the label left the bin name as an ellipsis. The label keeps
+      // a floor of 8rem and the button drops below it instead.
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-1.5 pl-5">
         <MapPin className="w-3 h-3 text-stone-500 shrink-0" aria-hidden="true" />
         {/* Name first, code beneath — the same order as the walk cards. */}
-        <span className="flex-1 min-w-0 truncate">
-          <span className="block text-xs text-stone-600 truncate">{locationTitle(bin)}</span>
+        <span className="flex-1 min-w-[8rem] break-words">
+          <span className="block text-xs text-stone-600 break-words">{locationTitle(bin)}</span>
           {locationSubtitle(bin) && (
-            <span className="block font-mono text-[10px] text-stone-500 truncate">{locationSubtitle(bin)}</span>
+            <span className="block font-mono text-[10px] text-stone-500 break-all">{locationSubtitle(bin)}</span>
+          )}
+          {task.unreserved && (
+            <span className="block text-[11px] text-stone-600 break-words">Not reserved for this order</span>
           )}
         </span>
         <span className="font-mono text-xs text-stone-500 shrink-0">
@@ -175,23 +254,32 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
         </button>
       </div>
 
+      {anyBin && step !== 'bin' && found && (
+        // Said again once the bin is known, because the picker is about to take stock
+        // from a shelf the records say is empty: count what is really there.
+        <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800" role="note">
+          Not in the stock record: the system shows no available stock of this item at {found.code}. Pick only what you can see on the shelf.
+        </p>
+      )}
+
       {/* The prompt quotes the CODE. generate-labels prints the code in large
           type and the name only as a small context line, so an operator
           cross-checking the sticker must be shown the string that is big on it.
           The name is stated above the field instead. */}
-      {step === 'bin' && locationSubtitle(bin) && (
+      {!anyBin && step === 'bin' && locationSubtitle(bin) && (
         <p className="text-xs text-stone-500">Go to <span className="font-medium">{locationTitle(bin)}</span></p>
       )}
       {step === 'bin' && (
         <ScanField
-          label={`Scan the bin — expecting ${task.code}`}
+          label={anyBin ? 'Scan the bin you found it in' : `Scan the bin — expecting ${task.code}`}
           value={binCode}
           onChange={setBinCode}
           onScan={onBinScan}
           flash={step === 'bin' ? flash : null}
-          placeholder={task.code}
+          placeholder={anyBin ? 'Any bin code' : task.code}
           cameraTitle="Scan the bin label"
           autoFocus
+          helper={anyBin ? 'The system shows no available stock of this item in any bin.' : undefined}
           error={error ?? undefined}
         />
       )}
@@ -229,7 +317,9 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
               className="w-28 px-3 py-2 min-h-[44px] rounded-lg border border-stone-300 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-nexgen-blue/30"
               aria-label="Quantity picked"
             />
-            <span className="text-xs text-stone-500">of {task.remaining} on this task</span>
+            <span className="text-xs text-stone-500">
+              {anyBin ? `of ${task.remaining} still open on this line` : `of ${task.remaining} on this task`}
+            </span>
             <button
               onClick={confirm}
               disabled={recordPick.isPending}
@@ -247,28 +337,5 @@ export const PickTaskRow: React.FC<PickTaskRowProps> = ({ orderId, task, line, d
         </div>
       )}
     </div>
-  )
-}
-
-const StepChip: React.FC<{
-  label: string
-  done: boolean
-  active: boolean
-  value: string
-}> = ({ label, done, active, value }) => {
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${
-        done
-          ? 'bg-emerald-100 text-emerald-700'
-          : active
-            ? 'bg-nexgen-blue text-white'
-            : 'bg-stone-100 text-stone-600'
-      }`}
-    >
-      {done && <Check className="w-3 h-3" aria-hidden="true" />}
-      {label}
-      {done && value && <span className="font-mono opacity-70 max-w-[90px] truncate">{value}</span>}
-    </span>
   )
 }

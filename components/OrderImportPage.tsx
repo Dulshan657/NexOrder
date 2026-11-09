@@ -37,7 +37,9 @@ import {
   FileText,
   ExternalLink,
   Truck,
+  Upload,
 } from 'lucide-react';
+import { Button } from './ui/Button';
 import { SortableHeader } from './ui/SortableHeader';
 import { PageFrame } from './ui/PageFrame';
 import { PageHeader } from './ui/PageHeader';
@@ -50,6 +52,9 @@ import { MODULE_SHOP } from '../lib/modules';
 // Kitchen QR orders held for approval. Gated at the declaration, so a tenant
 // without the shop module (Amadiya) ships no chunk for it.
 const PendingQrRequests = MODULE_SHOP ? lazyWithRetry(() => import('./qr/PendingQrRequests')) : null;
+
+// Only Admin and Manager open this, so nobody else downloads its chunk.
+const ImportPoView = lazyWithRetry(() => import('./admin/ImportPoView'));
 
 // ---------------------------------------------------------------------------
 // Types
@@ -247,6 +252,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
 
   // Stock-assignment modal: which Receiving order is staff currently processing.
   const [processingOrder, setProcessingOrder] = useState<Order | null>(null);
+  const [importPoOpen, setImportPoOpen] = useState(false);
 
   const isAdminOrManager = canAdvanceStatus(currentUser);
   const isCustomer = currentUser.role === UserRole.CUSTOMER;
@@ -616,14 +622,27 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
         title={ADMIN_TAB_LABELS['Order Import']}
         description="Review incoming orders and move them through to completion."
         actions={!isCustomer ? (
-          <button
-            onClick={onBack}
-            className="px-3 py-1.5 touch-target-y text-sm font-medium text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
-          >
-            &larr; Back
-          </button>
+          <>
+            {isAdminOrManager && (
+              <Button variant="secondary" size="sm" icon={<Upload className="h-4 w-4" />} onClick={() => setImportPoOpen(true)}>
+                Import PO
+              </Button>
+            )}
+            <button
+              onClick={onBack}
+              className="px-3 py-1.5 touch-target-y text-sm font-medium text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
+            >
+              &larr; Back
+            </button>
+          </>
         ) : undefined}
       />
+
+      {importPoOpen && (
+        <Suspense fallback={null}>
+          <ImportPoView onClose={() => setImportPoOpen(false)} />
+        </Suspense>
+      )}
 
       {/* Kitchen QR orders awaiting approval. Admin/Manager see every venue; a rep sees
           their assigned venues (RLS narrows the list, not this component). */}

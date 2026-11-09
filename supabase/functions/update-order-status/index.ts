@@ -24,12 +24,13 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { loadOrderForDoc, buildOrderDocPdf, uploadAndRecordDoc } from '../_shared/orderDocuments.ts'
 import {
   FULFILLMENT_LADDER,
-  fulfillmentLocations,
-  ensureFulfillments,
+  ensureProcessedFulfilments,
+  writeProcessedStatus,
   pruneFulfillments,
   isLocationFullyPicked,
   releaseResidualOnDispatch,
   recomputeOrderStatus,
+  importedForwardRefusal,
 } from '../_shared/fulfillment.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { setOrderStatus, statusesUpTo, type SetOrderStatusVerdict } from '../_shared/orderStatus.ts'
@@ -173,13 +174,14 @@ serve(async (req: Request) => {
 
   const { data: order, error: orderError } = await serviceClient
     .from('orders')
-    .select('id, status, horeca_id')
+    .select('id, status, horeca_id, qb_invoice_number')
     .eq('id', body.orderId)
     .single()
   if (orderError || !order) {
     return errorResponse('ORDER_NOT_FOUND', `Order ${body.orderId} not found`, 404)
   }
   const currentOrderStatus = (order as { status: StoredOrderStatus }).status
+  const qbInvoiceNumber = (order as { qb_invoice_number: string | null }).qb_invoice_number
 
   // `cancelled` is TERMINAL and has no rung on STATUS_ORDER (mig 00111). That is
   // deliberate — it is not a seventh step after `delivered` — but it means the
@@ -244,20 +246,7 @@ serve(async (req: Request) => {
 
     // Fulfilment sites = warehouses holding a NET reservation; fall back to the
     // default warehouse so there is always something to pick.
-    const reservedLocs = await fulfillmentLocations(serviceClient, body.orderId)
-    let locs = reservedLocs
-    if (locs.length === 0) {
-      const { data: def } = await serviceClient
-        .from('locations')
-        .select('id')
-        .eq('kind', 'WAREHOUSE')
-        .eq('is_active', true)
-        .order('id')
-        .limit(1)
-        .maybeSingle()
-      if ((def as any)?.id) locs = [(def as any).id]
-    }
-    await ensureFulfillments(serviceClient, body.orderId, locs, profile.id, nowIso)
+    const { reservedLocs, locs } = await ensureProcessedFulfilments(serviceClient, body.orderId, profile.id, nowIso)
 
     // On an operator re-route, prune the origin warehouse's now-stockless
     // 'processed' fulfilment so the rollup doesn't freeze the order at
@@ -270,11 +259,11 @@ serve(async (req: Request) => {
 
     let verdict: SetOrderStatusVerdict
     try {
-      verdict = await setOrderStatus(serviceClient, {
+      verdict = await writeProcessedStatus(serviceClient, {
         orderId: body.orderId,
-        from: statusesUpTo(STATUS_ORDER, 'processed'),
-        to: 'processed',
-        entry: { status: 'processed', timestamp: nowIso, actor: profile.id, ...(body.note ? { note: body.note } : {}) },
+        actorId: profile.id,
+        stampIso: nowIso,
+        note: body.note,
       })
     } catch (e) {
       return errorResponse('DB_UPDATE_FAILED', e instanceof Error ? e.message : String(e), 500)
@@ -332,6 +321,17 @@ serve(async (req: Request) => {
       if (!done) {
         return errorResponse('NOT_FULLY_PICKED', 'Cannot dispatch — this warehouse has not fully picked its portion', 422)
       }
+    }
+
+    // A retry at the same status is left alone: it changes nothing.
+    if (ful.status !== body.status) {
+      const forwardRefusal = await importedForwardRefusal(serviceClient, {
+        orderId: body.orderId,
+        status: body.status,
+        qbInvoiceNumber,
+        warehouseId: locationId as number,
+      })
+      if (forwardRefusal) return errorResponse('NOT_FULLY_PICKED', forwardRefusal, 422)
     }
 
     const fHistory = Array.isArray(ful.status_history) ? ful.status_history : []
@@ -395,7 +395,9 @@ serve(async (req: Request) => {
   }
 
   // ── Legacy path: order without fulfilments (pre-00036) ─────────────────────
-  if (body.status === 'dispatched') {
+  // An imported order answers to the gate below instead, where a line closed short is
+  // not an open one.
+  if (body.status === 'dispatched' && qbInvoiceNumber == null) {
     const { data: lines } = await serviceClient
       .from('order_items')
       .select('id, quantity, pick_progress(picked_qty)')
@@ -413,6 +415,17 @@ serve(async (req: Request) => {
   const newIdx = STATUS_ORDER.indexOf(body.status)
   if (newIdx < currentIdx) {
     return errorResponse('INVALID_TRANSITION', `Cannot move order from ${currentOrderStatus} backwards to ${body.status}`, 422)
+  }
+
+  // An imported order still in 'processing' has no fulfilments and reaches here.
+  if (currentOrderStatus !== body.status) {
+    const forwardRefusal = await importedForwardRefusal(serviceClient, {
+      orderId: body.orderId,
+      status: body.status,
+      qbInvoiceNumber,
+      warehouseId: null,
+    })
+    if (forwardRefusal) return errorResponse('NOT_FULLY_PICKED', forwardRefusal, 422)
   }
 
   const newEntry: StatusHistoryEntry = {

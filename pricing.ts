@@ -84,7 +84,7 @@ export function isPromotionApplicable(
     const { targeting } = promo;
     if (targeting.kind === 'horecas' && (!customer || !targeting.hoReCaIds.includes(customer.id))) return false;
     if (targeting.kind === 'tier' && (!customer?.tier || !targeting.tiers.includes(customer.tier))) return false;
-    if (targeting.kind === 'rep' && (!currentUser || currentUser.id !== targeting.repUserId)) return false;
+    if (targeting.kind === 'rep' && (!currentUser?.profileId || currentUser.profileId !== targeting.repUserId)) return false;
     // 'all' always matches targeting
 
     return true;
@@ -154,7 +154,9 @@ export function resolvePromotionPrice(
         const savingsPercent = customerPrice < originalPrice
             ? Math.round((1 - customerPrice / originalPrice) * 100)
             : 0;
-        return { finalPrice: customerPrice, originalPrice, customerPrice, appliedPromotion: null, badge: null, savingsPercent };
+        // In cents, as the server's resolveUnitPrice is. Unrounded, a venue with a percent discount
+        // measured a different order value from the server, which can flip a promotion's minimum.
+        return { finalPrice: Math.round(customerPrice * 100) / 100, originalPrice, customerPrice, appliedPromotion: null, badge: null, savingsPercent };
     }
 
     // Check for BOGO/bundle badges (even though they don't affect unit price)
@@ -176,8 +178,9 @@ export function resolvePromotionPrice(
         }
     }
 
-    const finalPrice = Math.min(bestPrice, customerPrice);
-    const appliedPromotion = finalPrice < customerPrice ? bestPromo : null;
+    const lowest = Math.min(bestPrice, customerPrice);
+    const finalPrice = Math.round(lowest * 100) / 100;
+    const appliedPromotion = lowest < customerPrice ? bestPromo : null;
     const badge = appliedPromotion ? promoBadge(appliedPromotion) : (bogoOrBundle ? promoBadge(bogoOrBundle) : null);
     const savingsPercent = finalPrice < originalPrice
         ? Math.round((1 - finalPrice / originalPrice) * 100)

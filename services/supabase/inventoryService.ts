@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import { positionsUsed } from '@/supabase/functions/_shared/wie/capacity'
 import type { HuType, SlotKind } from '@/supabase/functions/_shared/wie/capacity'
 
@@ -365,13 +366,13 @@ export async function getProductStockByWarehouse(warehouseId: number): Promise<P
   }))
 }
 
+/** Every location. Paged past the API's 1000-row cap (lib/fetchAllRows): a racked site has a
+ *  row per bin level and the rest used to vanish without an error, so a scan of such a bin
+ *  read as "no bin matches". `id` makes the order unique, as the pager requires. */
 export async function getLocations() {
-  const { data, error } = await supabase
-    .from('locations')
-    .select('*')
-    .order('id')
-  if (error) throw error
-  return data
+  return fetchAllRows((from, to) =>
+    supabase.from('locations').select('*').order('id').range(from, to),
+  )
 }
 
 /** A recent goods-receipt movement, for the Receive Stock activity panel. */

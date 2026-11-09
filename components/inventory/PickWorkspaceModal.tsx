@@ -6,15 +6,17 @@ import {
   useGeneratePickSlip,
   useGenerateDispatchAdvice,
 } from '../../hooks/queries/usePickQueue';
-import { useOrderPickTasks } from '../../hooks/queries/useOrderPickTasks';
+import { useOrderPickFacts, useOrderPickTasks } from '../../hooks/queries/useOrderPickTasks';
 import { useToastActions } from '../../hooks/useToasts';
 import { useAuth } from '../../hooks/useAuth';
 import { useDocumentViewer } from '../../context/DocumentViewerContext';
 import { PickRoutePanel } from './PickRoutePanel';
 import { PickTaskRow } from './pick/PickTaskRow';
+import { FinishShortControl } from './pick/FinishShortControl';
+import { UnlistedBinRow } from './pick/UnlistedBinRow';
 import { Button, Modal } from '../ui';
 import type { PickQueueLine, PickTask } from '../../services/supabase/pickService';
-import { Check, FileText, Truck, Box, PackageCheck as PackIcon } from 'lucide-react';
+import { Check, FileText, Truck, Box, PackageCheck as PackIcon, TriangleAlert } from 'lucide-react';
 import { useLocationNames } from '@/hooks/queries/useLocationNames';
 import type { DisplayLocation } from '@/lib/locationDisplay';
 
@@ -37,6 +39,13 @@ interface PickLineRowProps {
    *  has no warehouse locations query, so the workspace resolves these once for
    *  every bin in the wave and hands them down. */
   binNames?: ReadonlyMap<number, DisplayLocation>;
+  /** An order imported from an invoice (NX-0029): its lines can be finished short,
+   *  and picked from a bin the system does not show. False for every other order. */
+  imported: boolean;
+  /** The line was closed short: it is finished, with whatever was found. */
+  closedShort: boolean;
+  /** What was found on the line, shown as "Short: found X of Y" once it is closed. */
+  foundQty: number;
 }
 
 /** One order line, grouped line → warehouse → bin: each allocated bin is its
@@ -44,9 +53,17 @@ interface PickLineRowProps {
  *  to pick and the recorded pick decrements that exact bin. */
 const PickLineRow: React.FC<PickLineRowProps> = ({
   line, orderId, tasks, tasksLoading, canPick, homeWarehouseId, isWarehouseRole, binNames,
+  imported, closedShort, foundQty,
 }) => {
   const remaining = Math.max(line.quantity - line.picked, 0);
   const done = remaining === 0;
+  const open = !done && !closedShort;
+  const canActAt = (warehouseId: number) => !isWarehouseRole || warehouseId === homeWarehouseId;
+  // The bin to flag for a recount when the line is finished short: only when exactly
+  // one bin is on offer to this user. With several, or none, the server is not told
+  // a bin, because naming the wrong one sends someone to recount the wrong shelf.
+  const reachable = tasks.filter((t) => canActAt(t.warehouseId));
+  const checkedBin = reachable.length === 1 ? { id: reachable[0].locationId, code: reachable[0].code } : null;
 
   const byWarehouse = useMemo(() => {
     const groups = new Map<number, { warehouseCode: string; tasks: PickTask[] }>();
@@ -77,11 +94,22 @@ const PickLineRow: React.FC<PickLineRowProps> = ({
           )}
         </div>
       </div>
-      {!done && (
+      {closedShort && (
+        <p className="pl-5 pt-1">
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-800">
+            <TriangleAlert className="w-3 h-3" aria-hidden="true" /> Short: found {foundQty} of {line.quantity}
+          </span>
+        </p>
+      )}
+      {open && (
         tasksLoading ? (
           <p className="pl-5 pt-1 text-xs text-stone-500">loading pick tasks…</p>
         ) : byWarehouse.length === 0 ? (
-          <p className="pl-5 pt-1 text-xs text-amber-600">No allocated bin for this line yet.</p>
+          imported ? (
+            <UnlistedBinRow orderId={orderId} line={line} disabled={!canPick} />
+          ) : (
+            <p className="pl-5 pt-1 text-xs text-amber-600">No allocated bin for this line yet.</p>
+          )
         ) : (
           <div className="mt-1">
             {byWarehouse.map(([warehouseId, group]) => (
@@ -96,13 +124,17 @@ const PickLineRow: React.FC<PickLineRowProps> = ({
                     task={t}
                     line={line}
                     binName={binNames?.get(t.locationId)?.name}
-                    disabled={!canPick || (isWarehouseRole && warehouseId !== homeWarehouseId)}
+                    imported={imported}
+                    disabled={!canPick || !canActAt(warehouseId)}
                   />
                 ))}
               </div>
             ))}
           </div>
         )
+      )}
+      {open && imported && !tasksLoading && (
+        <FinishShortControl orderId={orderId} line={line} bin={checkedBin} disabled={!canPick} />
       )}
     </div>
   );
@@ -125,6 +157,9 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
   // Directed, per-bin pick tasks — the same allocation the route and the pick
   // slip read, so the panel names the exact bin the recorded pick decrements.
   const { data: pickTasks, isLoading: tasksLoading } = useOrderPickTasks(orderId);
+  // Whether the order is imported, which lines are closed short, what was found on each.
+  const { imported, closedShortLineIds, foundByLine } = useOrderPickFacts(orderId);
+  const closedShort = useMemo(() => new Set(closedShortLineIds), [closedShortLineIds]);
   const tasksByLine = useMemo(() => {
     const map = new Map<number, PickTask[]>();
     for (const t of pickTasks ?? []) {
@@ -157,7 +192,9 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
 
   const totalOrdered = order.lines.reduce((s, l) => s + l.quantity, 0);
   const totalPicked = order.lines.reduce((s, l) => s + Math.min(l.picked, l.quantity), 0);
-  const allPicked = order.lines.length > 0 && order.lines.every((l) => l.picked >= l.quantity);
+  // Packing unlocks when every line is picked OR closed short. An open line keeps it locked.
+  const allPicked =
+    order.lines.length > 0 && order.lines.every((l) => l.picked >= l.quantity || closedShort.has(l.orderItemId));
   const pct = totalOrdered > 0 ? Math.round((totalPicked / totalOrdered) * 100) : 0;
   const canPick = order.status === 'processed' || order.status === 'picked';
   const badge = statusBadge[order.status] ?? { label: order.status, cls: 'bg-stone-100 text-stone-600' };
@@ -204,7 +241,11 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
       footer={
         <div className="w-full space-y-3">
           {!allPicked ? (
-            <p className="text-xs text-stone-500 text-center">Pick every line to unlock packing &amp; dispatch.</p>
+            <p className="text-xs text-stone-500 text-center">
+              {imported
+                ? 'Pick every line, or finish it short, to unlock packing & dispatch.'
+                : 'Pick every line to unlock packing & dispatch.'}
+            </p>
           ) : (
             <div className="flex items-center justify-center gap-2">
               {order.status === 'picked' && (
@@ -284,6 +325,11 @@ const PickWorkspaceModal: React.FC<PickWorkspaceModalProps> = ({ orderId, onClos
                 homeWarehouseId={homeWarehouseId}
                 isWarehouseRole={isWarehouseRole}
                 binNames={binNames}
+                imported={imported}
+                closedShort={closedShort.has(line.orderItemId)}
+                // The queue's count moves the moment a pick lands; the tasks answer's can lag
+                // behind it. Found only ever grows, so the larger of the two is never stale.
+                foundQty={Math.max(foundByLine[line.orderItemId] ?? 0, line.picked)}
               />
             ))}
           </div>

@@ -25,7 +25,8 @@ export interface HoReCa {
 }
 
 export interface UserContext {
-  id: number
+  /** The profile id of whoever is placing or approving the order. */
+  id: string
   role: string
 }
 
@@ -40,7 +41,7 @@ export type PromotionTargeting =
   | { kind: 'all' }
   | { kind: 'horecas'; hoReCaIds: number[] }
   | { kind: 'tier'; tiers: HoReCaTier[] }
-  | { kind: 'rep'; repUserId: number }
+  | { kind: 'rep'; repUserId: string }
 
 export interface BogoConfig {
   buyProductId: number
@@ -71,6 +72,7 @@ export interface Promotion {
   isActive: boolean
   priority: number
   appliesTo?: 'unit' | 'carton'
+  minOrderValue?: number | null
 }
 
 export interface CartItemInput {

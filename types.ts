@@ -55,6 +55,7 @@ export type Category = string;
 
 export interface User {
     id: number;
+    profileId?: string; // The profile's real id. `id` is an in-memory number derived from it.
     name: string;
     email: string;
     role: UserRole;
@@ -1183,7 +1184,7 @@ export type PromotionTargeting =
     | { kind: 'all' }
     | { kind: 'horecas'; hoReCaIds: number[] }
     | { kind: 'tier'; tiers: HoReCaTier[] }
-    | { kind: 'rep'; repUserId: number };
+    | { kind: 'rep'; repUserId: string }; // the rep's profile id
 
 export type PromotionScope =
     | { kind: 'storewide' }
@@ -1236,7 +1237,11 @@ export interface AppliedPromotion {
     promotionId: string;
     promotionName: string;
     type: PromotionType;
-    discount: number;
+    discount: number; // for 'bogo', the value of the free goods: not taken off the order total
+    productIds?: number[];
+    freeProductId?: number;
+    freeQuantity?: number;
+    unit?: 'unit' | 'carton';
 }
 
 export interface PriceResolution {
@@ -1404,5 +1409,5 @@ export interface PromotionROI {
     revenueFromPromoOrders: number;
     avgOrderValueWithPromo: number;
     avgOrderValueWithout: number;
-    estimatedUplift: number;
+    estimatedUplift: number | null; // null when there are no promotion orders or no baseline
 }

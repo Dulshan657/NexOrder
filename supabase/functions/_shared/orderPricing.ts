@@ -30,6 +30,7 @@ import {
   type HoReCa,
   type Product,
   type Promotion,
+  type PromotionType,
   type ResolvedItem,
   type UserContext,
 } from './pricing.ts'
@@ -333,6 +334,18 @@ export function priceOrderLines(
   return resolved
 }
 
+/** What the order is worth at the customer's own prices, before any promotion. */
+export function orderValueBeforePromotions(
+  aggregated: ReadonlyArray<OrderLineInput>,
+  productMap: ReadonlyMap<number, PricedProduct>,
+  hoReCa: HoReCa,
+  user: UserContext,
+  cartonDiscountPercent: number,
+): number {
+  return priceOrderLines(aggregated, productMap, hoReCa, user, [], cartonDiscountPercent)
+    .reduce((sum, line) => sum + line.unitPrice * line.quantity, 0)
+}
+
 /** Subtotal, cart-level promotion discount and the rounded order total. */
 export function computeOrderTotals(
   resolved: ReadonlyArray<ResolvedItem>,
@@ -375,6 +388,85 @@ export function collectAppliedPromotionIds(
       ...bogoFreeItems.map((b) => b.promoId),
     ]),
   ]
+}
+
+/**
+ * One promotion as an order records it in `orders.applied_promotions`.
+ *
+ * `discount` is what the promotion gave. For a buy-one-get-one that is the value of the free
+ * goods, which is NOT taken off the order total: only line prices and bundles are.
+ */
+export interface AppliedPromotionRecord {
+  promotionId: string
+  promotionName: string
+  type: PromotionType
+  discount: number
+  productIds?: number[]
+  freeProductId?: number
+  freeQuantity?: number
+  unit?: 'unit' | 'carton'
+}
+
+const toCents = (value: number): number => Math.round(value * 100) / 100
+
+/**
+ * Every promotion the order used. A line's discount is the same line priced with no promotions,
+ * less what it was priced at, so a carton or UOM line is measured in its own price. An order that
+ * used none gets an empty list, which is what tells it apart from an order placed before
+ * recording began, whose column is null. ROI's baseline depends on that difference.
+ */
+export function buildAppliedPromotions(input: {
+  aggregated: ReadonlyArray<OrderLineInput>
+  resolved: ReadonlyArray<ResolvedItem>
+  bundleDiscounts: ReadonlyArray<BundleDiscountLine>
+  bogoFreeItems: ReadonlyArray<BogoFreeLine>
+  promotions: ReadonlyArray<Promotion>
+  /** Must also hold any free product that is not in the cart. */
+  productMap: ReadonlyMap<number, PricedProduct>
+  hoReCa: HoReCa
+  user: UserContext
+  cartonDiscountPercent: number
+}): AppliedPromotionRecord[] {
+  const { aggregated, resolved, bundleDiscounts, bogoFreeItems, promotions, productMap, hoReCa, user, cartonDiscountPercent } = input
+  const promotionById = new Map(promotions.map((p) => [p.id, p]))
+  const unpromoted = priceOrderLines(aggregated, productMap, hoReCa, user, [], cartonDiscountPercent)
+
+  const lineDiscounts = new Map<string, number>()
+  resolved.forEach((line, index) => {
+    if (!line.appliedPromotionId) return
+    const saved = (unpromoted[index].unitPrice - line.unitPrice) * line.quantity
+    lineDiscounts.set(line.appliedPromotionId, (lineDiscounts.get(line.appliedPromotionId) ?? 0) + saved)
+  })
+
+  const fromLines = [...lineDiscounts].flatMap(([id, saved]): AppliedPromotionRecord[] => {
+    const promo = promotionById.get(id)
+    return promo ? [{ promotionId: id, promotionName: promo.name, type: promo.type, discount: toCents(saved) }] : []
+  })
+
+  const fromBundles = bundleDiscounts.map((b): AppliedPromotionRecord => ({
+    promotionId: b.promoId,
+    promotionName: b.promoName,
+    type: 'bundle',
+    discount: b.discount,
+    productIds: b.productIds,
+  }))
+
+  const fromFreeGoods = bogoFreeItems.map((b): AppliedPromotionRecord => {
+    const product = productMap.get(b.productId)
+    const packSize = b.unit === 'carton' ? product?.cartonSize ?? null : null
+    const each = product ? resolveLineUnitPrice(product, hoReCa, user, [], packSize, cartonDiscountPercent).unitPrice : 0
+    return {
+      promotionId: b.promoId,
+      promotionName: b.promoName,
+      type: 'bogo',
+      discount: toCents(each * b.freeQuantity),
+      freeProductId: b.productId,
+      freeQuantity: b.freeQuantity,
+      unit: b.unit,
+    }
+  })
+
+  return [...fromLines, ...fromBundles, ...fromFreeGoods]
 }
 
 /** The trimmed shape the API returns for free-item promotions. */

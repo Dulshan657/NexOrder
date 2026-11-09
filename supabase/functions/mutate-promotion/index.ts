@@ -9,8 +9,8 @@
 //     product with carton_size <= 1, and the caller requests applies_to='carton',
 //     the write is rejected. The app never sends applies_to, so today this cannot fire.
 //   - A promotion recorded on at least one non-cancelled order is immutable: update and
-//     delete are blocked (409 CONFLICT), except a change to is_active alone. Orders record
-//     bundle promotions only, so the other four types are not protected by this.
+//     delete are blocked (409 CONFLICT), except a change to is_active alone. Orders record every
+//     promotion they used from NX-0028, and bundles under an older key before it.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -42,46 +42,33 @@ async function assertNotUsedInOrders(
   admin: SupabaseClient,
   promoId: string,
 ): Promise<void> {
-  // applied_promotions stores a JSON array. We check if any element contains
-  // the promoId using the Postgres JSONB containment operator via a raw RPC
-  // or a filter. supabase-js doesn't expose @> natively, so we use a stored
-  // procedure approach via .rpc, or fall back to fetching rows and filtering
-  // in JS. Using count + filter is safer for correctness.
-  //
-  // We use textSearch via .ilike on the JSON cast for simplicity:
-  // applied_promotions::text ILIKE '%<promoId>%'
-  // This may have false positives for overlapping id substrings, so we
-  // double-check the actual JSON value too.
-  const { data, error } = await admin
-    .from('orders')
-    .select('id, applied_promotions')
-    .neq('status', 'cancelled')
-    .not('applied_promotions', 'is', null)
+  // A JSON string, not an array: given an array, supabase-js writes a Postgres array literal,
+  // which is not jsonb. Asking about this promotion, rather than reading every order that has
+  // one and filtering, is what stops the row cap hiding a use.
+  const results = await Promise.all(
+    ['promotionId', 'promoId'].map((key) =>
+      admin
+        .from('orders')
+        .select('id', { count: 'exact' })
+        .neq('status', 'cancelled')
+        .contains('applied_promotions', JSON.stringify([{ [key]: promoId }]))
+        .limit(1),
+    ),
+  )
 
-  if (error) {
-    throw new EdgeFunctionError('INTERNAL', `Failed to query orders: ${error.message}`)
+  const failed = results.find((r) => r.error)
+  if (failed?.error) {
+    throw new EdgeFunctionError('INTERNAL', `Failed to query orders: ${failed.error.message}`)
   }
 
-  const usedInOrders = (data ?? []).filter((row: any) => {
-    const ap = row.applied_promotions
-    if (!ap) return false
-    // applied_promotions is a JSON array of objects; each may have promoId or promotionId
-    if (Array.isArray(ap)) {
-      return ap.some(
-        (entry: any) =>
-          entry?.promoId === promoId ||
-          entry?.promotionId === promoId ||
-          entry?.id === promoId,
-      )
-    }
-    return false
-  })
+  const usedInOrderCount = results.reduce((sum, r) => sum + (r.count ?? 0), 0)
+  const firstOrderId = results.flatMap((r) => (r.data ?? []) as Array<{ id: string }>)[0]?.id
 
-  if (usedInOrders.length > 0) {
+  if (usedInOrderCount > 0) {
     throw new EdgeFunctionError(
       'CONFLICT',
       'This promotion has already been applied to confirmed orders and cannot be modified or deleted',
-      { usedInOrderCount: usedInOrders.length, firstOrderId: usedInOrders[0].id },
+      { usedInOrderCount, firstOrderId },
     )
   }
 }

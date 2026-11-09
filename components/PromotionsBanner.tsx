@@ -34,7 +34,7 @@ const PromotionsBanner: React.FC<PromotionsBannerProps> = ({ promotions, custome
         // Check targeting
         if (promo.targeting.kind === 'horecas' && customer && promo.targeting.hoReCaIds.includes(customer.id)) return true;
         if (promo.targeting.kind === 'tier' && customer?.tier && promo.targeting.tiers.includes(customer.tier)) return true;
-        if (promo.targeting.kind === 'rep' && currentUser && promo.targeting.repUserId === currentUser.id) return true;
+        if (promo.targeting.kind === 'rep' && currentUser?.profileId && promo.targeting.repUserId === currentUser.profileId) return true;
         return false;
     }).slice(0, 4);
 
@@ -61,6 +61,9 @@ const PromotionsBanner: React.FC<PromotionsBannerProps> = ({ promotions, custome
                             <div className="min-w-0">
                                 <p className={`text-sm font-semibold ${config.text} truncate`}>{promo.name}</p>
                                 <p className="text-xs text-stone-500 truncate">{promo.description}{unitNote}</p>
+                                {(promo.minOrderValue ?? 0) > 0 && (
+                                    <p className="text-xs font-medium text-stone-600">On orders of {`$${promo.minOrderValue!.toFixed(2)}`} or more</p>
+                                )}
                                 {clickable && <p className="text-[10px] text-stone-500 mt-0.5">Tap to add to order</p>}
                             </div>
                         </button>

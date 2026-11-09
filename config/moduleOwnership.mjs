@@ -50,6 +50,8 @@ export const FUNCTION_MODULES = {
   'place-order': 'sales_orders',
   'update-order-status': 'sales_orders',
   'cancel-order': 'sales_orders',
+  // QuickBooks invoices become orders here, as they do through place-order.
+  'import-qb-invoices': 'sales_orders',
 
   // ── shop ──────────────────────────────────────────────────────────────────
   // Self-service ordering: the catalogue browse, the cart, the pantry, and the
@@ -156,6 +158,7 @@ export const FUNCTION_MODULES = {
   'recommend-putaway-route': 'inventory_dispatch',
   'recommend-replen-route': 'inventory_dispatch',
   'record-pick': 'inventory_dispatch',
+  'record-short-pick': 'inventory_dispatch',
   'release-quarantine': 'inventory_dispatch',
   'transfer-stock': 'inventory_dispatch',
   'unassign-replenishment': 'inventory_dispatch',

@@ -79,6 +79,27 @@ describe('PromotionAdmin', () => {
 })
 
 describe('PromotionForm', () => {
+  it("a rep target saves the rep's profile id and shows it again on an edit", async () => {
+    const RITA = '6f1d2c3e-1111-4222-8333-444455556666'
+    const SAM = '7a2e3d4f-1111-4222-8333-444455556666'
+    const users = [
+      { id: 123, profileId: RITA, name: 'Rita', email: 'r@x', role: 'Field Sales Rep' },
+      { id: 456, profileId: SAM, name: 'Sam', email: 's@x', role: 'Office Sales Rep' },
+    ] as never
+    const onSave = vi.fn(async (_promo: Promotion) => {})
+    const promotion = { ...scheduled, targeting: { kind: 'rep', repUserId: RITA } } as Promotion
+    render(<PromotionForm promotion={promotion} products={[]} hoReCas={[]} users={users} onSave={onSave} onClose={vi.fn()} />)
+
+    const select = screen.getByDisplayValue(/Rita/) as HTMLSelectElement
+    expect(select.value).toBe(RITA)
+
+    fireEvent.change(select, { target: { value: SAM } })
+    fireEvent.click(screen.getByRole('button', { name: 'Update Promotion' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    expect(onSave.mock.calls[0][0].targeting).toEqual({ kind: 'rep', repUserId: SAM })
+  })
+
   it('refuses an empty discount with its reason, and sends nothing', () => {
     const onSave = vi.fn(async () => {})
     renderForm(onSave)
