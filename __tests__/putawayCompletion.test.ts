@@ -133,13 +133,6 @@ describe('decisionActsOnStatus', () => {
     }
   })
 
-  it('every other decision needs a suggested line', () => {
-    for (const decision of ['redirect', 'resolve_short'] as const) {
-      expect(acts(decision, 'suggested')).toBe(true)
-      expect(acts(decision, 'assigned', { assignedBy: null })).toBe(false)
-    }
-  })
-
   it('a walk confirm leaves the status check to the database, which says why in plain words', () => {
     for (const status of ['suggested', 'assigned', 'accepted', 'expired']) {
       expect(acts('confirm_overflow', status)).toBe(true)

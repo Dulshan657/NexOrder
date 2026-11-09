@@ -57,6 +57,10 @@ export interface PendingPutawayRow {
   /** Why this bin (NX-0006, mig 00135): the product's home, near its home, the
    *  plain engine (no home yet), or a desk redirect. NULL before 00135. */
   suggestionSource?: PutawaySuggestionSource | null
+  /** The planner made this a single-product pallet (mig 00142 unit_load), which
+   *  is never held to the product's home and so never waits for an overflow
+   *  confirmation (NX-0033, C5). Absent means false. */
+  unitLoad?: boolean
 }
 
 export type PutawaySuggestionSource = 'home' | 'overflow' | 'engine' | 'desk'
@@ -96,6 +100,7 @@ function toQueueRow(row: any): PendingPutawayRow {
     assignedLocationId: row.assigned_location_id ?? null,
     assignedAt: row.assigned_at ?? null,
     suggestionSource: row.suggestion_source ?? null,
+    unitLoad: Boolean(row.unit_load),
   }
 }
 
@@ -119,8 +124,9 @@ export async function getPendingPutaways(warehouseId: number): Promise<PendingPu
  *    * overflow lines awaiting confirmation: the home was full, the engine
  *      suggested another bin, and nobody has confirmed it. The walker confirms it
  *      by scanning that bin, or the desk does from the Assign queue, and the
- *      first wins. The same predicate as wie_putaway_stops (mig 00143) and
- *      `isOverflowConfirmStop`.
+ *      first wins. A single-product pallet (unit_load) never waits: it is not
+ *      held to a home, so it is not "home full". The same predicate as
+ *      wie_putaway_stops (mig 00143, 00145) and `isOverflowConfirmStop`.
  *
  *  Oldest first, the opposite of the Assign queue: this is a work list, and the
  *  thing that has been waiting on the dock longest should be placed first. */
@@ -129,7 +135,7 @@ export async function getWalkPutaways(warehouseId: number): Promise<PendingPutaw
     .from('wie_putaway_recommendations')
     .select(QUEUE_SELECT)
     .eq('warehouse_id', warehouseId)
-    .or('status.eq.assigned,and(status.eq.suggested,suggestion_source.eq.overflow,recommended_location_id.not.is.null)')
+    .or('status.eq.assigned,and(status.eq.suggested,suggestion_source.eq.overflow,recommended_location_id.not.is.null,unit_load.eq.false)')
     .order('created_at', { ascending: true })
   if (error) throw error
   return (data ?? []).map(toQueueRow)

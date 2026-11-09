@@ -79,8 +79,10 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
               <span className="truncate">{name}</span>
               {/* The product's home had no room (NX-0033): this line waits for a
                   person to confirm the engine's overflow bin, here with Assign /
-                  Choose bin or by scanning it on the Walk. First one wins. */}
-              {row.suggestionSource === 'overflow' && (
+                  Choose bin or by scanning it on the Walk. First one wins. A
+                  single-product pallet is never held to a home, so it is not
+                  marked. */}
+              {row.suggestionSource === 'overflow' && !row.unitLoad && (
                 <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
                   Home full
                 </span>

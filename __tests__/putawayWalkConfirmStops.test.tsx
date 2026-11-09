@@ -128,6 +128,12 @@ describe('PutawayWalkView — overflow lines awaiting confirmation', () => {
     expect(screen.getByText('Home full — confirm')).toBeTruthy()
   })
 
+  it('does not mark a single-product pallet, which never waits for confirmation', () => {
+    mountRouted([line({ unitLoad: true })], [{ id: 901, code: OVERFLOW_BIN }])
+    expect(screen.getByText(OVERFLOW_BIN)).toBeTruthy()
+    expect(screen.queryByText('Home full — confirm')).toBeNull()
+  })
+
   it('does not mark a plain assigned stop', () => {
     mountRouted([ASSIGNED_STOP], [{ id: 902, code: HOME_BIN }])
     expect(screen.getByText(HOME_BIN)).toBeTruthy()
@@ -193,6 +199,11 @@ describe('PutawayRow — the Assign queue', () => {
   it('marks an overflow line Home full', () => {
     renderRow(CONFIRM_STOP)
     expect(screen.getByText('Home full')).toBeTruthy()
+  })
+
+  it('does not mark a single-product pallet: it stays an ordinary queue line', () => {
+    renderRow(line({ unitLoad: true }))
+    expect(screen.queryByText('Home full')).toBeNull()
   })
 
   it('does not mark a line that was suggested for any other reason', () => {

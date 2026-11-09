@@ -61,9 +61,10 @@ export function canPlaceNow(task: { status: string; assignedBy: string | null })
   return task.status === 'suggested' || (task.status === 'assigned' && task.assignedBy === null)
 }
 
-/** The decisions decide-putaway takes. */
-export type PutawayDecision =
-  | 'accept' | 'override' | 'unassign' | 'redirect' | 'resolve_short' | 'confirm_overflow'
+/** The decisions decide-putaway resolves on the task row itself. The two desk
+ *  actions (redirect, resolve_short) are answered earlier by decideDeskAction,
+ *  which has its own status rules, so they are not asked here. */
+export type PutawayDecision = 'accept' | 'override' | 'unassign' | 'confirm_overflow'
 
 /**
  * Does `decision` act on a task in this state? decide-putaway asks this before
@@ -81,8 +82,7 @@ export type PutawayDecision =
  *                                   whole check under its row lock (status, still
  *                                   awaiting confirmation, which bin) and answers
  *                                   in the words the walk shows. Refusing here
- *                                   would hide those words behind a generic one;
- *   * anything else                 a suggested task.
+ *                                   would hide those words behind a generic one.
  */
 export function decisionActsOnStatus(args: {
   decision: PutawayDecision
@@ -93,9 +93,7 @@ export function decisionActsOnStatus(args: {
   const { decision, assignOnly, status, assignedBy } = args
   if (decision === 'confirm_overflow') return true
   if (decision === 'unassign') return status === 'assigned'
-  if ((decision === 'accept' || decision === 'override') && !assignOnly) {
-    return canPlaceNow({ status, assignedBy })
-  }
+  if (!assignOnly) return canPlaceNow({ status, assignedBy })
   return status === 'suggested'
 }
 

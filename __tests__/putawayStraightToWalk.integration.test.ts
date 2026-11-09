@@ -8,7 +8,8 @@
  *   wie_decide_putaway_tx          Place now / accept / override also act on a
  *                                  line the system assigned (assigned_by NULL)
  *   wie_putaway_stops              the walk lists assigned lines and overflow
- *                                  lines awaiting confirmation
+ *                                  lines awaiting confirmation (a unit-load
+ *                                  pallet never waits, mig 00145)
  *   wie_home_bin_candidate_facts   every bin in a warehouse read as if it were
  *                                  the product's home (for "Give it a home"),
  *                                  with the line being placed given its own
@@ -24,7 +25,7 @@
  *     tests/e2e/rack-levels/homeBlockWorld.ts tears down).
  *
  * Run with: `npm run test:integration -- putawayStraightToWalk` (dev
- * credentials; migrations 00143 and 00144 applied). Add `-t "live RPCs|at once"` to pick.
+ * credentials; migrations 00143, 00144 and 00145 applied). Add `-t "live RPCs|at once"` to pick.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import type pg from 'pg'
@@ -44,6 +45,8 @@ const ALREADY_DEALT = /CONFLICT: This line was already dealt with \(it is now (a
 const NO_LONGER_WAITS = /CONFLICT: This line no longer waits for an overflow confirmation\./
 const SUGGESTED_IS_NOW_O1 = /CONFLICT: The suggested bin for this line is now TST-WALK-O1-[^;]+; scan that one\./
 const HOME_HAS_ROOM = /CONFLICT: Put this in its home bin TST-WALK-H-/
+const BIN_INACTIVE = /CONFLICT: That bin is no longer active — re-run the recommendation/
+const LAYOUT_CHANGED = /CONFLICT: The layout changed since this recommendation — re-run it/
 
 type Source = 'home' | 'overflow' | 'engine' | 'desk' | null
 
@@ -166,6 +169,8 @@ interface TaskOpts {
   assignedBy?: string | null
   /** The plate the line carries, if any. */
   handlingUnitId?: number | null
+  /** The planner made it a single-product pallet (never held to a home). */
+  unitLoad?: boolean
 }
 
 /** A putaway line. `bin` is the suggested bin (recommended_location_id), or null. */
@@ -174,12 +179,12 @@ async function task(client: pg.Client, w: World, qty: number, bin: number | null
     `INSERT INTO public.wie_putaway_recommendations
        (warehouse_id, layout_id, product_id, quantity, recommended_location_id,
         explanation, engine_version, status, suggestion_source,
-        assigned_location_id, assigned_at, assigned_by, handling_unit_id)
+        assigned_location_id, assigned_at, assigned_by, handling_unit_id, unit_load)
      VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, 'test', $6, $7, $8,
-             CASE WHEN $8::int IS NULL THEN NULL ELSE now() END, $9, $10) RETURNING id`,
+             CASE WHEN $8::int IS NULL THEN NULL ELSE now() END, $9, $10, $11) RETURNING id`,
     [w.warehouseId, w.layoutId, o.productId ?? w.productId, qty, bin,
       o.status ?? 'suggested', o.source === undefined ? 'home' : o.source,
-      o.assignedTo ?? null, o.assignedBy ?? null, o.handlingUnitId ?? null],
+      o.assignedTo ?? null, o.assignedBy ?? null, o.handlingUnitId ?? null, o.unitLoad ?? false],
   )
   // BIGINT comes back as a string; the RPCs take numbers.
   return Number(r.rows[0].id)
@@ -280,6 +285,46 @@ describe('NX-0033 straight to the walk (live RPCs, rollback-isolated)', () => {
       const noBin = await task(client, w, 4, null, { source: 'overflow' })
       await expectRaise(client, confirm, [noBin, w.o1, actor], NO_LONGER_WAITS)
       expect((await row(client, noBin)).status).toBe('suggested')
+    })
+  })
+
+  it('refuses a single-product pallet (a unit load never waits for confirmation)', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      const [actor] = await actors(client)
+      await receive(client, w.productId, w.h, 10)
+      // The planner tags a unit load 'overflow' too when the product has a home,
+      // and it can come back to 'suggested' by being put back on the queue.
+      const pallet = await task(client, w, 4, w.o1, { source: 'overflow', unitLoad: true })
+      await expectRaise(client, confirm, [pallet, w.o1, actor], NO_LONGER_WAITS)
+      expect(await row(client, pallet)).toMatchObject({ status: 'suggested', assigned_location_id: null })
+    })
+  })
+
+  it('refuses a suggested bin that has been deactivated since', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      const [actor] = await actors(client)
+      const id = await overflowLine(client, w, 4)
+      await client.query('UPDATE public.locations SET is_active = false WHERE id = $1', [w.o1])
+      await expectRaise(client, confirm, [id, w.o1, actor], BIN_INACTIVE)
+      expect((await row(client, id)).status).toBe('suggested')
+    })
+  })
+
+  it('refuses a line made on a layout that is no longer the active one', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      const [actor] = await actors(client)
+      const id = await overflowLine(client, w, 4)
+      const next = await client.query<{ id: number }>(
+        `INSERT INTO public.warehouse_layouts (warehouse_id, name, status, cell_size_m, version)
+         VALUES ($1, 'Test 2', 'draft', 2,
+                 (SELECT COALESCE(MAX(version), 0) + 1 FROM public.warehouse_layouts WHERE warehouse_id = $1))
+         RETURNING id`, [w.warehouseId])
+      await client.query('UPDATE public.locations SET active_layout_id = $1 WHERE id = $2', [next.rows[0].id, w.warehouseId])
+      await expectRaise(client, confirm, [id, w.o1, actor], LAYOUT_CHANGED)
+      expect((await row(client, id)).status).toBe('suggested')
     })
   })
 
@@ -405,6 +450,25 @@ describe('NX-0033 straight to the walk (live RPCs, rollback-isolated)', () => {
       expect(stops.rows.map((s) => [Number(s.rec_id), s.location_id, s.code, s.qty_base, s.sku])).toEqual([
         [assigned, w.n, `TST-WALK-N-${w.token}`, 2, w.sku],
         [waiting, w.o1, `TST-WALK-O1-${w.token}`, 3, w.sku],
+      ])
+    })
+  })
+
+  it('wie_putaway_stops does not list a suggested unit-load pallet as a confirm stop', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      const [actor] = await actors(client)
+      const waiting = await task(client, w, 3, w.o1, { source: 'overflow' })
+      await task(client, w, 2, w.o2, { source: 'overflow', unitLoad: true })
+      // An ASSIGNED pallet is an ordinary stop whatever its source.
+      const assignedPallet = await task(client, w, 2, w.o2, {
+        source: 'overflow', unitLoad: true, status: 'assigned', assignedTo: w.o2, assignedBy: actor,
+      })
+      const stops = await client.query<{ rec_id: string; location_id: number }>(
+        'SELECT rec_id, location_id FROM public.wie_putaway_stops($1)', [w.warehouseId])
+      expect(stops.rows.map((s) => [Number(s.rec_id), s.location_id])).toEqual([
+        [waiting, w.o1],
+        [assignedPallet, w.o2],
       ])
     })
   })

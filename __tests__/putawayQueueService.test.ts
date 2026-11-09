@@ -178,7 +178,7 @@ describe('getWalkPutaways (the query)', () => {
     expect(from).toHaveBeenCalledWith('wie_putaway_recommendations')
     expect(calls).toEqual([
       ['eq', 'warehouse_id', 12],
-      ['or', 'status.eq.assigned,and(status.eq.suggested,suggestion_source.eq.overflow,recommended_location_id.not.is.null)'],
+      ['or', 'status.eq.assigned,and(status.eq.suggested,suggestion_source.eq.overflow,recommended_location_id.not.is.null,unit_load.eq.false)'],
       ['order', 'created_at', { ascending: true }],
     ])
   })
@@ -201,6 +201,21 @@ describe('getWalkPutaways (the query)', () => {
     expect(confirm).toMatchObject({
       status: 'suggested', suggestionSource: 'overflow', recommendedLocationId: 5002, assignedLocationId: null,
     })
+  })
+
+  it('carries unit_load onto the row, so a pallet is not read as a confirm stop', async () => {
+    const base = {
+      product_id: 42, quantity: '2', explanation: {}, created_at: '2026-07-20T01:00:00Z',
+      products: null, goods_receipts: null, status: 'suggested', suggestion_source: 'overflow',
+      recommended_location_id: 5002, assigned_location_id: null,
+    }
+    const { chain } = recordingChain({
+      data: [{ ...base, id: 1, unit_load: true }, { ...base, id: 2, unit_load: false }, { ...base, id: 3 }],
+      error: null,
+    })
+    from.mockReturnValue(chain)
+    const rows = await getWalkPutaways(12)
+    expect(rows.map((r) => r.unitLoad)).toEqual([true, false, false])
   })
 
   it('throws on a query error rather than returning an empty walk', async () => {

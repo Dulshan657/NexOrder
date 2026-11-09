@@ -127,6 +127,6 @@ describe('confirmOverflowPutaway', () => {
 
   it('falls back to a plain sentence when the failure carried no body', async () => {
     invoke.mockResolvedValue({ data: null, error: new Error('Failed to fetch') })
-    await expect(confirmOverflowPutaway(9, 44)).rejects.toThrow(/Failed to fetch|Could not confirm/)
+    await expect(confirmOverflowPutaway(9, 44)).rejects.toThrow('Failed to fetch')
   })
 })

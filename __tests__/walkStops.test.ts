@@ -26,6 +26,13 @@ describe('isOverflowConfirmStop', () => {
   it('is false for a suggested overflow line with no bin to confirm', () => {
     expect(isOverflowConfirmStop({ ...overflow, recommendedLocationId: null })).toBe(false)
   })
+
+  it('is false for a single-product pallet: a unit load never waits for confirmation (C5)', () => {
+    // A pallet of a homed product is tagged overflow by the planner and can come
+    // back to 'suggested' when the walker puts it back on the queue.
+    expect(isOverflowConfirmStop({ ...overflow, unitLoad: true })).toBe(false)
+    expect(isOverflowConfirmStop({ ...overflow, unitLoad: false })).toBe(true)
+  })
 })
 
 describe('walkBinId', () => {
