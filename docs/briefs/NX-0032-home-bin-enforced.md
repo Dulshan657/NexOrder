@@ -3,7 +3,7 @@
 ```json brief
 {
   "id": "NX-0032-home-bin-enforced",
-  "base": "81f03c956a02b1e2ece5f0c0b3073cf87f641370",
+  "base": "5b931e530e391e147e141ee747091abbfb5730c6",
   "approved": "2026-11-09 owner, by standing go-ahead; text not yet read, owner to confirm before the PR",
   "acceptance": [
     { "id": "A1", "check": "While a product's home bin has room, putaway to any other bin is refused with code CONFLICT and the text `Put this in its home bin {code}; it still has room for {n}. If it is full, ask a manager to set its maximum.` ({n} is whole base units, rounded down). This holds at every entry: complete, complete-many, Place now, accept, override, assign and redirect. No role, reason or flag lifts it, and it comes before any prompt for a reason.", "manual": "npm run test:integration -- homeBinEnforced on dev, made-up data, with a case per entry including complete-many, plus the same refusal through complete-putaway and through decide-putaway over HTTP" },
