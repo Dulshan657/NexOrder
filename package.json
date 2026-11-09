@@ -26,6 +26,7 @@
     "check:grants:amadiya": "node scripts/check-grants.mjs --env=amadiya",
     "check:storage:dev": "node scripts/check-storage.mjs --env=dev",
     "check:storage:amadiya": "node scripts/check-storage.mjs --env=amadiya",
+    "check:home-bins": "tsx scripts/check-home-bins.mjs",
     "deploy:dev": "node scripts/deploy.mjs --env=dev",
     "deploy:amadiya": "node scripts/deploy.mjs --env=amadiya",
     "migrate:dev": "node supabase/migrate.mjs --env=dev",

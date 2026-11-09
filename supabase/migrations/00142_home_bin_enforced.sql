@@ -45,7 +45,12 @@
 -- Every signature is unchanged, so CREATE OR REPLACE replaces in place and each
 -- function keeps ONE overload (see Verify).
 --
--- Service-role only. Idempotent.
+-- And one new READ, for the home-bin health check (panel and CLI):
+--   wie_home_bin_facts(warehouse) -- per primary home, the facts that decide
+--                                    whether putaway can use it at all; the
+--                                    judging is _shared/wie/homeBinHealth.ts
+--
+-- Service-role only. Idempotent, the whole file: re-running it converges.
 -- =============================================================================
 
 BEGIN;
@@ -892,7 +897,130 @@ AS $$
 $$;
 
 
--- ── 8. Grants: service_role only, restated so a re-run converges ─────────────
+-- ── 8. Home-bin health facts ─────────────────────────────────────────────────
+-- One row per PRIMARY home in a warehouse, with every fact the health check
+-- (_shared/wie/homeBinHealth.ts) needs to say whether putaway can use it. It
+-- reports facts and judges nothing: the judging is TypeScript, so the room is
+-- homeHeadroom's (the same maths as planHomeFirst) and not a second copy here
+-- that could drift from wie_home_block. Each flag mirrors a test putaway makes:
+--   is_active, is_hold, level_role / allowed_level_roles   wie_putaway_candidates
+--   is_pick_zone, level_hu_types   the level_roles row (an INACTIVE role claims
+--                                  nothing, as sortedRoles drops it)
+--   in_active_layout   the bin has a placement on the warehouse's active layout
+--   has_dock_route     scoring.ts rejects a bin with no distance from a dock;
+--                      that distance is the one wie_putaway_candidates joins
+--   zone_allowed_categories   the nearest ZONE ancestor's profile
+--   bin_warehouse_id   the nearest WAREHOUSE ancestor of the bin
+-- Room: used_slots is stock in the bin, pending_slots is space promised to open
+-- tasks (v_bin_pending_putaway), pending_qty is base units of THIS product that
+-- open tasks already send here (wie_home_block's "other tasks to home"; there is
+-- no task of its own to give back here).
+CREATE OR REPLACE FUNCTION public.wie_home_bin_facts(p_warehouse_id INT)
+RETURNS TABLE(
+    product_id               INT,
+    sku                      TEXT,
+    bin_id                   INT,
+    bin_code                 TEXT,
+    bin_warehouse_id         INT,
+    is_active                BOOLEAN,
+    is_hold                  BOOLEAN,
+    level_role               TEXT,
+    is_pick_zone             BOOLEAN,
+    level_hu_types           TEXT[],
+    allowed_level_roles      TEXT[],
+    in_active_layout         BOOLEAN,
+    has_dock_route           BOOLEAN,
+    zone_allowed_categories  JSONB,
+    category                 TEXT,
+    capacity_slots           NUMERIC,
+    used_slots               NUMERIC,
+    pending_slots            NUMERIC,
+    size_factor              NUMERIC,
+    max_qty                  NUMERIC,
+    on_hand_at_home          NUMERIC,
+    pending_qty              NUMERIC
+)
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+    SELECT
+        h.product_id,
+        pr.sku::TEXT,
+        h.bin_id,
+        b.code::TEXT,
+        bw.id,
+        b.is_active,
+        COALESCE(zp.is_hold, false),
+        b.level_role::TEXT,
+        COALESCE(lr.is_active AND lr.is_pick_zone, false),
+        CASE WHEN lr.is_active THEN lr.hu_types ELSE ARRAY[]::TEXT[] END,
+        COALESCE(wa.allowed_level_roles, ARRAY[]::TEXT[]),
+        EXISTS (SELECT 1
+                  FROM public.layout_placements pl
+                 WHERE pl.layout_id = w.active_layout_id
+                   AND pl.location_id = h.bin_id),
+        EXISTS (SELECT 1
+                  FROM public.layout_placements pl
+                  JOIN public.layout_travel_distances d
+                    ON d.layout_id = pl.layout_id
+                   AND d.to_node_id = pl.graph_node_id
+                  JOIN public.layout_graph_nodes dn
+                    ON dn.id = d.from_node_id
+                   AND dn.layout_id = pl.layout_id
+                   AND dn.node_type = 'dock'
+                 WHERE pl.layout_id = w.active_layout_id
+                   AND pl.location_id = h.bin_id),
+        zp.allowed_categories,
+        pr.category::TEXT,
+        b.capacity_slots,
+        COALESCE(bf.used_slots, 0),
+        COALESCE(pend.pending_slots, 0),
+        pr.size_factor,
+        h.max_qty,
+        COALESCE((SELECT SUM(ib.on_hand)
+                    FROM public.inventory_balances ib
+                   WHERE ib.product_id = h.product_id
+                     AND ib.location_id = h.bin_id), 0),
+        COALESCE((SELECT SUM(r.quantity)
+                    FROM public.wie_putaway_recommendations r
+                   WHERE r.product_id = h.product_id
+                     AND r.status IN ('suggested', 'assigned')
+                     AND COALESCE(r.assigned_location_id, r.recommended_location_id)
+                         = h.bin_id), 0)
+    FROM public.product_home_bins h
+    JOIN public.products pr ON pr.id = h.product_id
+    JOIN public.locations b ON b.id = h.bin_id
+    LEFT JOIN public.locations w ON w.id = h.warehouse_id
+    LEFT JOIN LATERAL (
+        SELECT wh.id FROM public.locations wh
+         WHERE wh.kind = 'WAREHOUSE'
+           AND b.materialized_path LIKE wh.materialized_path || '/%'
+         ORDER BY length(wh.materialized_path) DESC
+         LIMIT 1
+    ) bw ON true
+    LEFT JOIN LATERAL (
+        SELECT z.zone_profile_id FROM public.locations z
+         WHERE z.kind = 'ZONE'
+           AND b.materialized_path LIKE z.materialized_path || '/%'
+         ORDER BY length(z.materialized_path) DESC
+         LIMIT 1
+    ) zone ON true
+    LEFT JOIN public.zone_profiles zp ON zp.id = zone.zone_profile_id
+    LEFT JOIN public.level_roles lr ON lr.key = b.level_role
+    LEFT JOIN public.product_wms_attributes wa ON wa.product_id = h.product_id
+    LEFT JOIN public.v_bin_fill bf ON bf.location_id = h.bin_id
+    LEFT JOIN public.v_bin_pending_putaway pend ON pend.location_id = h.bin_id
+    WHERE h.warehouse_id = p_warehouse_id
+      AND h.purpose = 'primary'
+    ORDER BY pr.sku, h.product_id;
+$$;
+
+-- ── 9. Grants: service_role only, restated so a re-run converges ─────────────
+REVOKE ALL ON FUNCTION public.wie_home_bin_facts(INT)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.wie_home_bin_facts(INT)
+    TO service_role;
 REVOKE ALL ON FUNCTION public.wie_complete_putaway_tx(BIGINT,INT,NUMERIC,UUID,TEXT,BOOLEAN)
     FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.wie_complete_putaway_tx(BIGINT,INT,NUMERIC,UUID,TEXT,BOOLEAN)
@@ -930,8 +1058,8 @@ COMMIT;
 --      AND p.proname IN ('wie_home_block','wie_complete_putaway_tx',
 --                        'wie_complete_putaway_many_tx','wie_decide_putaway_tx',
 --                        'wie_assign_putaway_tx','wie_redirect_putaway_tx',
---                        'wie_putaway_candidates')
---    ORDER BY 1::text;                                   -- SEVEN rows
+--                        'wie_putaway_candidates','wie_home_bin_facts')
+--    ORDER BY 1::text;                                   -- EIGHT rows
 --
 --   -- b. Open tasks that would now be refused where they are pointed (each
 --   --    is still completable INTO its home):
@@ -951,7 +1079,11 @@ COMMIT;
 --                       WHERE m.bin_id = c.location_id AND m.purpose = 'primary'
 --                         AND m.product_id = <product>);       -- expect 0
 --
+--   -- d. The health check's facts, for a warehouse (one row per primary home):
+--   SELECT * FROM public.wie_home_bin_facts(<warehouse>);
+--
 -- Rollback: re-apply 00137 sections 3-4, 00080 section 3 and 00135 sections
 --   2 and 5 (the bodies here are theirs plus the wie_home_block call), then
---   DROP FUNCTION public.wie_home_block(BIGINT,INT).
+--   DROP FUNCTION public.wie_home_block(BIGINT,INT) and
+--   DROP FUNCTION public.wie_home_bin_facts(INT).
 -- =============================================================================

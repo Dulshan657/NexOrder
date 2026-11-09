@@ -28,6 +28,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import type pg from 'pg'
 import { createClient } from '@supabase/supabase-js'
 import { connect, hasDbCreds, withRollbackTx, expectRaise } from './support/pgTestClient'
+import {
+  homeBinFactsFromRow,
+  homeBinProblems,
+  type HomeBinFactsRow,
+} from '../supabase/functions/_shared/wie/homeBinHealth'
 
 let seq = 0
 const uniq = (): string => `${Date.now()}-${++seq}`
@@ -173,6 +178,12 @@ async function status(client: pg.Client, id: number): Promise<string> {
   const r = await client.query<{ status: string }>(
     'SELECT status FROM public.wie_putaway_recommendations WHERE id=$1', [id])
   return r.rows[0].status
+}
+
+/** The home-bin health facts for one warehouse (mig 00142), one row per primary home. */
+async function factsRows(client: pg.Client, warehouseId: number): Promise<HomeBinFactsRow[]> {
+  const r = await client.query<HomeBinFactsRow>('SELECT * FROM public.wie_home_bin_facts($1)', [warehouseId])
+  return r.rows
 }
 
 const complete = 'SELECT public.wie_complete_putaway_tx($1, $2)'
@@ -449,6 +460,201 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
       expect(r.rows).toHaveLength(1)
       expect(r.rows[0].sig).toBe('wie_home_block(bigint,integer)')
       expect(r.rows[0].definer).toBe(true)
+      expect(r.rows[0].acl).toContain('service_role=X')
+      expect(r.rows[0].acl).not.toMatch(/(^|[{,])=X|anon=|authenticated=/)
+    })
+  })
+
+  // ── Task 5: the home-bin health facts ─────────────────────────────────────
+  it('wie_home_bin_facts returns the made-up home with the expected flags', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await client.query("UPDATE public.locations SET level_role = 'pick' WHERE id = $1", [s.home])
+      await setHome(client, s, s.home, { maxQty: 6 })
+      await receive(client, s.productId, s.home, 2)
+      await task(client, s, 3, s.home)
+
+      const rows = await factsRows(client, s.warehouseId)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({
+        product_id: s.productId,
+        sku: s.sku,
+        bin_id: s.home,
+        bin_code: `TST-HOME-H-${s.token}`,
+        bin_warehouse_id: s.warehouseId,
+        is_active: true,
+        is_hold: false,
+        level_role: 'pick',
+        is_pick_zone: true,
+        allowed_level_roles: [],
+        in_active_layout: true,
+        // The made-up placement has no walk node, so there is no route.
+        has_dock_route: false,
+        zone_allowed_categories: null,
+        category: 'Other',
+        capacity_slots: 10,
+        used_slots: 2,
+        pending_slots: 3,
+        size_factor: 1,
+        max_qty: 6,
+        on_hand_at_home: 2,
+        pending_qty: 3,
+      })
+      expect(rows[0].level_hu_types).toContain('carton')
+    })
+  })
+
+  it('wie_home_bin_facts reads the route, layout, activity, role rule, zone and warehouse', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+
+      // A dock and a walk node joined by a precomputed distance: a route.
+      const dock = await client.query<{ id: number }>(
+        "INSERT INTO public.layout_graph_nodes (layout_id, floor, x, y, node_type) VALUES ($1, 0, 0, 0, 'dock') RETURNING id",
+        [s.layoutId])
+      const walk = await client.query<{ id: number }>(
+        "INSERT INTO public.layout_graph_nodes (layout_id, floor, x, y, node_type) VALUES ($1, 0, 1, 0, 'walk') RETURNING id",
+        [s.layoutId])
+      await client.query(
+        'INSERT INTO public.layout_travel_distances (layout_id, from_node_id, to_node_id, distance_m) VALUES ($1, $2, $3, 4)',
+        [s.layoutId, dock.rows[0].id, walk.rows[0].id])
+      await client.query(
+        'UPDATE public.layout_placements SET graph_node_id = $1 WHERE layout_id = $2 AND location_id = $3',
+        [walk.rows[0].id, s.layoutId, s.home])
+      expect((await factsRows(client, s.warehouseId))[0]).toMatchObject({ has_dock_route: true, in_active_layout: true })
+
+      // Off the published layout, and retired.
+      await client.query('DELETE FROM public.layout_placements WHERE layout_id = $1 AND location_id = $2', [s.layoutId, s.home])
+      await client.query('UPDATE public.locations SET is_active = false WHERE id = $1', [s.home])
+      expect((await factsRows(client, s.warehouseId))[0]).toMatchObject({
+        in_active_layout: false, has_dock_route: false, is_active: false,
+      })
+
+      // The product's own level-role rule.
+      await client.query(
+        "INSERT INTO public.product_wms_attributes (product_id, allowed_level_roles) VALUES ($1, ARRAY['reserve'])",
+        [s.productId])
+      expect((await factsRows(client, s.warehouseId))[0].allowed_level_roles).toEqual(['reserve'])
+
+      // A hold zone with a category allow-list around a second home.
+      const zp = await client.query<{ id: number }>(
+        `INSERT INTO public.zone_profiles (name, zone_type, is_hold, allowed_categories)
+         VALUES ($1, 'quarantine', true, '["Frozen"]'::jsonb) RETURNING id`,
+        [`TST-HOME zone ${s.token}`])
+      const zoneCode = `TST-HOME-Z-${s.token}`
+      const zonePath = `${s.warehousePath}/${zoneCode}`
+      const zone = await client.query<{ id: number }>(
+        `INSERT INTO public.locations (parent_id, kind, code, name, materialized_path, is_active, zone_profile_id)
+         VALUES ($1, 'ZONE', $2, $2, $3, true, $4) RETURNING id`,
+        [s.warehouseId, zoneCode, zonePath, zp.rows[0].id])
+      const zoned = await addBin(client, s, 'H-ZONE', 5, 10, { id: zone.rows[0].id, path: zonePath })
+      const second = await newProduct(client, s.token, '-B')
+      await setHome(client, s, zoned, { productId: second.id })
+      const zonedRow = (await factsRows(client, s.warehouseId)).find((r) => r.product_id === second.id)
+      expect(zonedRow).toMatchObject({
+        bin_id: zoned, is_hold: true, zone_allowed_categories: ['Frozen'], category: 'Other',
+      })
+
+      // A home whose bin sits in another warehouse than the one the row is for.
+      const otherWh = await client.query<{ id: number }>(
+        `INSERT INTO public.locations (parent_id, kind, code, name, materialized_path, is_active, location_type)
+         VALUES (NULL, 'WAREHOUSE', $1, $1, $2, true, 'racked') RETURNING id`,
+        [`TST-HOME-WH2-${s.token}`, `TSTHOMEWH2${s.token}`])
+      const third = await newProduct(client, s.token, '-C')
+      await client.query(
+        `INSERT INTO public.product_home_bins (product_id, warehouse_id, bin_id, purpose)
+         VALUES ($1, $2, $3, 'primary')`,
+        [third.id, otherWh.rows[0].id, s.other])
+      const crossed = await factsRows(client, otherWh.rows[0].id)
+      expect(crossed).toHaveLength(1)
+      expect(crossed[0]).toMatchObject({ bin_id: s.other, bin_warehouse_id: s.warehouseId, in_active_layout: false })
+    })
+  })
+
+  it('a home that is a legacy bin with no level role reports no role at all', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      const row = (await factsRows(client, s.warehouseId))[0]
+      expect(row.level_role).toBeNull()
+      expect(row.is_pick_zone).toBe(false)
+      expect(row.level_hu_types ?? []).toEqual([])
+      const found = homeBinProblems(homeBinFactsFromRow(row, s.warehouseId)).map((p) => p.code)
+      expect(found).not.toContain('not_pick_level')
+      expect(found).not.toContain('carton_not_allowed')
+      expect(found).not.toContain('level_role_not_allowed')
+    })
+  })
+
+  it('homeBinProblems reports full exactly when wie_home_block would allow an off-home putaway', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      const probe = await task(client, s, 1, s.other)
+
+      // Room 0 here means wie_home_block lets the product go elsewhere.
+      const agree = async (why: string, expectFull: boolean, productId = s.productId, rec = probe): Promise<void> => {
+        const row = (await factsRows(client, s.warehouseId)).find((r) => r.product_id === productId)
+        if (!row) throw new Error(`no facts row for product ${productId}`)
+        const full = homeBinProblems(homeBinFactsFromRow(row, s.warehouseId)).some((p) => p.code === 'full')
+        const block = await client.query<{ b: string | null }>(
+          'SELECT public.wie_home_block($1, $2) AS b', [rec, s.other])
+        const allows = block.rows[0].b === null
+        expect({ why, full, allows }).toEqual({ why, full: expectFull, allows: expectFull })
+      }
+
+      await agree('empty home, capacity 10', false)
+
+      await task(client, s, 7, s.home)
+      await agree('7 promised to the home, room 3', false)
+      await task(client, s, 3, s.home)
+      await agree('10 promised to the home, room 0', true)
+      await client.query('DELETE FROM public.wie_putaway_recommendations WHERE recommended_location_id = $1', [s.home])
+
+      await client.query('UPDATE public.product_home_bins SET max_qty = 4 WHERE product_id = $1', [s.productId])
+      await agree('max 4, nothing there', false)
+      await receive(client, s.productId, s.home, 4)
+      await agree('max 4, 4 there', true)
+      await task(client, s, 2, s.home)
+      await agree('still full with a task heading there', true)
+      await client.query('DELETE FROM public.wie_putaway_recommendations WHERE recommended_location_id = $1', [s.home])
+
+      await client.query('UPDATE public.product_home_bins SET max_qty = 5 WHERE product_id = $1', [s.productId])
+      await agree('max 5, 4 there, room 1', false)
+      await task(client, s, 1, s.home)
+      await agree('max 5, 4 there and 1 on the way', true)
+      await client.query('DELETE FROM public.wie_putaway_recommendations WHERE recommended_location_id = $1', [s.home])
+
+      await client.query('UPDATE public.product_home_bins SET max_qty = NULL WHERE product_id = $1', [s.productId])
+      await client.query('UPDATE public.locations SET capacity_slots = NULL WHERE id = $1', [s.home])
+      await receive(client, s.productId, s.home, 500)
+      await agree('blank capacity and blank max never fill', false)
+
+      await client.query('UPDATE public.locations SET capacity_slots = 10 WHERE id = $1', [s.home])
+      await agree('capacity 10 with 504 there', true)
+
+      // A size factor makes room a fraction of a unit: floor(1.5) = 1, floor(0.5) = 0.
+      const big = await newProduct(client, s.token, '-S')
+      await client.query('UPDATE public.products SET size_factor = 4 WHERE id = $1', [big.id])
+      await client.query('UPDATE public.locations SET capacity_slots = 10 WHERE id = $1', [s.spare])
+      await setHome(client, s, s.spare, { productId: big.id })
+      const bigProbe = await task(client, s, 1, s.other, { productId: big.id })
+      await receive(client, big.id, s.spare, 1)
+      await agree('size factor 4, one there: 6 slots free = room 1.5', false, big.id, bigProbe)
+      await receive(client, big.id, s.spare, 1)
+      await agree('size factor 4, two there: 2 slots free = room 0.5', true, big.id, bigProbe)
+    })
+  })
+
+  it('wie_home_bin_facts is service_role only, one overload', async () => {
+    await withRollbackTx(async (client) => {
+      const r = await client.query<{ sig: string; acl: string }>(
+        `SELECT p.oid::regprocedure::text AS sig, p.proacl::text AS acl
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public' AND p.proname = 'wie_home_bin_facts'`)
+      expect(r.rows).toHaveLength(1)
+      expect(r.rows[0].sig).toBe('wie_home_bin_facts(integer)')
       expect(r.rows[0].acl).toContain('service_role=X')
       expect(r.rows[0].acl).not.toMatch(/(^|[{,])=X|anon=|authenticated=/)
     })

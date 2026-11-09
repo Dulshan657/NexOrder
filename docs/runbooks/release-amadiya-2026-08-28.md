@@ -95,6 +95,30 @@ destination changes is the proof the repair is complete.
 
 ---
 
+## 1b. Check the home bins
+
+Putaway must send a product to its home bin while the home has room, so a home
+bin it can never use (retired, in a hold zone, on a level that takes no cartons,
+off the published layout, with no route from a dock, refused by a slotting rule,
+full, or in another warehouse) strands the floor. This lists every one.
+Read-only.
+
+```bash
+npm run check:home-bins -- --target <tenant>
+```
+
+Expect no output lines and exit code 0. Each line names a warehouse, a SKU, a
+bin, a problem code and what is wrong; fix them in **Replenishment setup**, where
+the same list shows as **Home bin problems**, then run it again. Exit code 1
+means problems were found; exit code 2 means the check could not run, which is
+**not** an all-clear.
+
+It reads `wie_home_bin_facts` (migration `00142`), so a target that has not had
+that migration yet cannot be checked: for the release that first carries it, run
+this after step 2.
+
+---
+
 ## 2. Migrations
 
 ```bash
