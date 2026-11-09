@@ -6,7 +6,7 @@ vi.mock('@/lib/supabase', () => ({
   supabase: { functions: { invoke } },
 }))
 
-import { getHomeBinHealth } from '../services/supabase/homeBinHealthService'
+import { getHomeBinChoices, getHomeBinHealth } from '../services/supabase/homeBinHealthService'
 
 function httpError(status: number, body: unknown): Error {
   // Mirror supabase-js FunctionsHttpError: a generic message plus the raw
@@ -64,5 +64,48 @@ describe('getHomeBinHealth', () => {
   it('throws when the call succeeds but returns nothing', async () => {
     invoke.mockResolvedValue({ data: null, error: null })
     await expect(getHomeBinHealth(7)).rejects.toThrow('Could not check the home bins')
+  })
+})
+
+describe('getHomeBinChoices', () => {
+  beforeEach(() => invoke.mockReset())
+
+  it('GETs home-bin-choices with both ids in the query string', async () => {
+    invoke.mockResolvedValue({ data: { ok: true, warehouseId: 7, productId: 3, bins: [] }, error: null })
+    await getHomeBinChoices(7, 3)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(invoke).toHaveBeenCalledWith('home-bin-choices?warehouseId=7&productId=3', { method: 'GET' })
+  })
+
+  it('returns the bins the server offers', async () => {
+    const bins = [
+      { binId: 21, binCode: 'TST-WALK-B1', binName: null },
+      { binId: 22, binCode: 'TST-WALK-B2', binName: 'Bay two' },
+    ]
+    invoke.mockResolvedValue({ data: { ok: true, warehouseId: 7, productId: 3, bins }, error: null })
+    expect(await getHomeBinChoices(7, 3)).toEqual(bins)
+  })
+
+  it('tolerates a reply with no bins', async () => {
+    invoke.mockResolvedValue({ data: { ok: true, warehouseId: 7, productId: 3 }, error: null })
+    expect(await getHomeBinChoices(7, 3)).toEqual([])
+  })
+
+  it('surfaces the server message on a failure, not the generic non-2xx one', async () => {
+    invoke.mockResolvedValue({
+      data: null,
+      error: httpError(500, { error: { code: 'INTERNAL', message: 'Could not list bins for a home, try again.' } }),
+    })
+    await expect(getHomeBinChoices(7, 3)).rejects.toThrow('Could not list bins for a home, try again.')
+  })
+
+  it('falls back to a readable message when the body carries none', async () => {
+    invoke.mockResolvedValue({ data: null, error: httpError(500, { nope: true }) })
+    await expect(getHomeBinChoices(7, 3)).rejects.toThrow('Could not list the bins for a home')
+  })
+
+  it('throws when the call succeeds but returns nothing', async () => {
+    invoke.mockResolvedValue({ data: null, error: null })
+    await expect(getHomeBinChoices(7, 3)).rejects.toThrow('Could not list the bins for a home')
   })
 })

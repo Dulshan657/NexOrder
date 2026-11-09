@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { loadHomeBinHealth } from '../supabase/functions/_shared/homeBinHealthLoad'
-import type { HomeBinFactsRow } from '../supabase/functions/_shared/wie/homeBinHealth'
+import {
+  loadHomeBinChoices,
+  loadHomeBinHealth,
+  loadHomeChoiceRefusal,
+} from '../supabase/functions/_shared/homeBinHealthLoad'
+import type { HomeBinCandidateFactsRow, HomeBinFactsRow } from '../supabase/functions/_shared/wie/homeBinHealth'
 
 // A stub covering exactly the reads loadHomeBinHealth makes: the facts rpc, the
 // three slotting reads, the products brand read and product_suppliers.
@@ -39,6 +43,7 @@ const ruleRow = (o: Record<string, unknown> = {}) => ({
 
 interface StubOpts {
   facts?: HomeBinFactsRow[]
+  candidates?: HomeBinCandidateFactsRow[]
   factsError?: string
   rules?: Array<Record<string, unknown>>
   ruleError?: string
@@ -49,6 +54,7 @@ interface StubOpts {
 
 function makeAdmin(o: StubOpts) {
   const reads: string[] = []
+  const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = []
   const rowsFor = (table: string): { rows: unknown[]; error: string | null } => {
     switch (table) {
       case 'slotting_rules': return { rows: o.rules ?? [], error: o.ruleError ?? null }
@@ -71,13 +77,13 @@ function makeAdmin(o: StubOpts) {
     }
     return b
   }
-  const rpc = async (name: string) => {
+  const rpc = async (name: string, args: Record<string, unknown> = {}) => {
     reads.push(`rpc:${name}`)
-    return o.factsError
-      ? { data: null, error: { message: o.factsError } }
-      : { data: o.facts ?? [], error: null }
+    rpcCalls.push({ name, args })
+    if (o.factsError) return { data: null, error: { message: o.factsError } }
+    return { data: (name === 'wie_home_bin_candidate_facts' ? o.candidates : o.facts) ?? [], error: null }
   }
-  return { admin: { from, rpc } as never, reads }
+  return { admin: { from, rpc } as never, reads, rpcCalls }
 }
 
 describe('loadHomeBinHealth', () => {
@@ -152,5 +158,108 @@ describe('loadHomeBinHealth', () => {
   it('fails closed when the slotting rules cannot be read', async () => {
     const { admin } = makeAdmin({ facts: [factsRow()], ruleError: 'boom' })
     await expect(loadHomeBinHealth(admin, 7)).rejects.toThrow('slotting rule load failed: boom')
+  })
+})
+
+const candidateRow = (o: Partial<HomeBinCandidateFactsRow> = {}): HomeBinCandidateFactsRow => ({
+  ...factsRow({ sku: 'TST-WALK-100', bin_code: 'TST-WALK-B1' }),
+  bin_name: null,
+  other_home_skus: [],
+  ...o,
+})
+
+describe('loadHomeBinChoices', () => {
+  it('calls wie_home_bin_candidate_facts with the warehouse and product, and throws on a read error', async () => {
+    const { admin, rpcCalls } = makeAdmin({ candidates: [candidateRow()] })
+    await loadHomeBinChoices(admin, 7, 1)
+    expect(rpcCalls).toEqual([{
+      name: 'wie_home_bin_candidate_facts',
+      args: { p_warehouse_id: 7, p_product_id: 1 },
+    }])
+
+    const failing = makeAdmin({ factsError: 'boom' })
+    await expect(loadHomeBinChoices(failing.admin, 7, 1))
+      .rejects.toThrow('home bin candidates load failed: boom')
+  })
+
+  it('returns the bins that qualify, by code, and drops the rest', async () => {
+    const { admin } = makeAdmin({
+      candidates: [
+        candidateRow({ bin_id: 22, bin_code: 'TST-WALK-B2', bin_name: 'Bay two' }),
+        candidateRow({ bin_id: 21, bin_code: 'TST-WALK-B1' }),
+        candidateRow({ bin_id: 23, bin_code: 'TST-WALK-B3', is_active: false }),
+        candidateRow({ bin_id: 24, bin_code: 'TST-WALK-B4', other_home_skus: ['TST-WALK-900'] }),
+      ],
+    })
+    expect(await loadHomeBinChoices(admin, 7, 1)).toEqual([
+      { binId: 21, binCode: 'TST-WALK-B1', binName: null },
+      { binId: 22, binCode: 'TST-WALK-B2', binName: 'Bay two' },
+    ])
+  })
+
+  it('fills in the slotting refusal, so a bin a hard rule excludes is not offered', async () => {
+    const { admin } = makeAdmin({
+      candidates: [
+        candidateRow({ bin_id: 20, bin_code: 'TST-WALK-B1' }),
+        candidateRow({ bin_id: 21, bin_code: 'TST-WALK-B2' }),
+      ],
+      rules: [ruleRow({ match_product_id: 1 })],
+      blockBins: [{ block_id: 10, location_id: 21 }, { block_id: 11, location_id: 20 }],
+    })
+    expect((await loadHomeBinChoices(admin, 7, 1)).map((c) => c.binCode)).toEqual(['TST-WALK-B2'])
+  })
+
+  it('fails closed when the slotting rules cannot be read', async () => {
+    const { admin } = makeAdmin({ candidates: [candidateRow()], ruleError: 'boom' })
+    await expect(loadHomeBinChoices(admin, 7, 1)).rejects.toThrow('slotting rule load failed: boom')
+  })
+})
+
+describe('loadHomeChoiceRefusal', () => {
+  it('passes p_bin_id and returns the refusal for that one bin', async () => {
+    const { admin, rpcCalls } = makeAdmin({
+      candidates: [candidateRow({ bin_id: 21, bin_code: 'TST-WALK-B2', is_active: false })],
+    })
+    expect(await loadHomeChoiceRefusal(admin, 7, 1, 21))
+      .toBe('Bin TST-WALK-B2 is inactive, so putaway never offers it.')
+    expect(rpcCalls).toEqual([{
+      name: 'wie_home_bin_candidate_facts',
+      args: { p_warehouse_id: 7, p_product_id: 1, p_bin_id: 21 },
+    }])
+  })
+
+  it('names the other product when the bin is already somebody else\'s home', async () => {
+    const { admin } = makeAdmin({
+      candidates: [candidateRow({ bin_id: 21, bin_code: 'TST-WALK-B2', other_home_skus: ['TST-WALK-900'] })],
+    })
+    expect(await loadHomeChoiceRefusal(admin, 7, 1, 21))
+      .toBe('TST-WALK-B2 is the home bin of TST-WALK-900; choose another bin.')
+  })
+
+  it('is null for a bin that can be the home', async () => {
+    const { admin } = makeAdmin({ candidates: [candidateRow({ bin_id: 21 })] })
+    expect(await loadHomeChoiceRefusal(admin, 7, 1, 21)).toBeNull()
+  })
+
+  it('refuses a location the function returns no row for, as not a bin of this warehouse', async () => {
+    const { admin } = makeAdmin({ candidates: [] })
+    expect(await loadHomeChoiceRefusal(admin, 7, 1, 99)).toBe('That location is not a bin in this warehouse.')
+  })
+
+  it('throws on a read error', async () => {
+    const { admin } = makeAdmin({ factsError: 'boom' })
+    await expect(loadHomeChoiceRefusal(admin, 7, 1, 21))
+      .rejects.toThrow('home bin candidates load failed: boom')
+  })
+
+  it('applies a slotting refusal to the one bin', async () => {
+    const { admin } = makeAdmin({
+      candidates: [candidateRow({ bin_id: 20, bin_code: 'TST-WALK-B1' })],
+      rules: [ruleRow({ match_product_id: 1 })],
+      blockBins: [{ block_id: 11, location_id: 20 }],
+    })
+    const refusal = await loadHomeChoiceRefusal(admin, 7, 1, 20)
+    expect(refusal).toContain('Slotting rules refuse bin TST-WALK-B1')
+    expect(refusal).toContain('Block A')
   })
 })
