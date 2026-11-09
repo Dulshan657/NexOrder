@@ -61,6 +61,15 @@ export interface PendingPutawayRow {
    *  is never held to the product's home and so never waits for an overflow
    *  confirmation (NX-0033, C5). Absent means false. */
   unitLoad?: boolean
+  /** The product's CURRENT home bin in this warehouse (`product_home_bins`,
+   *  purpose 'primary'), read with the Walk and refreshed with it (NX-0033).
+   *  `null`: the product has no home right now. Absent: not read (the Assign
+   *  queue does not need it), which must be taken as "unknown", never as "none".
+   *
+   *  Distinct from `suggestionSource`, which is a snapshot of the planner's
+   *  reasoning when the line was made: 'engine' said "no home THEN". A home set
+   *  since (from this very Walk, from the desk's editor) is only visible here. */
+  homeLocationId?: number | null
 }
 
 export type PutawaySuggestionSource = 'home' | 'overflow' | 'engine' | 'desk'
@@ -138,7 +147,30 @@ export async function getWalkPutaways(warehouseId: number): Promise<PendingPutaw
     .or('status.eq.assigned,and(status.eq.suggested,suggestion_source.eq.overflow,recommended_location_id.not.is.null,unit_load.eq.false)')
     .order('created_at', { ascending: true })
   if (error) throw error
-  return (data ?? []).map(toQueueRow)
+  const rows = (data ?? []).map(toQueueRow)
+  // Whether a stop may offer to give its product a home depends on whether the
+  // product has one NOW, so it is read with the walk and refreshed with it.
+  const homes = await getLiveHomeBins(warehouseId, rows.map((r) => r.productId))
+  return rows.map((r) => ({ ...r, homeLocationId: homes.get(r.productId) ?? null }))
+}
+
+/** The current primary home bin of each product in a warehouse, by product id.
+ *  One read for all of them, not one per row. A product with no home is simply
+ *  absent from the map. `product_home_bins` is readable by every role that can
+ *  open the Putaway tab. */
+async function getLiveHomeBins(warehouseId: number, productIds: number[]): Promise<Map<number, number>> {
+  const ids = [...new Set(productIds)]
+  if (ids.length === 0) return new Map()
+  const { data, error } = await supabase
+    .from('product_home_bins')
+    .select('product_id, bin_id')
+    .eq('warehouse_id', warehouseId)
+    // Cast: lib/database.types.ts predates mig 00082 and does not know `purpose`.
+    // Same documented workaround as warehouseSetupService.countReplenConfigured.
+    .eq('purpose' as 'warehouse_id', 'primary' as unknown as number)
+    .in('product_id', ids)
+  if (error) throw error
+  return new Map((data ?? []).map((h) => [h.product_id, h.bin_id] as const))
 }
 
 /** Shortages (NX-0006): a count came up short and the operator flagged it.

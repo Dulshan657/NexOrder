@@ -1,6 +1,7 @@
 // NX-0033: a Manager or Admin can give a product with no home bin one, from the
-// Walk. The offer shows on a stop for such a product (the planner tagged it
-// `engine`); choosing a bin retargets the stop to it, insists on that bin at the
+// Walk. The offer shows on a stop whose product has no home RIGHT NOW (the walk
+// reads it live: `homeLocationId` null), not on the planner's `engine` tag, which
+// only says what was true when the line was made. Choosing a bin retargets the stop to it, insists on that bin at the
 // scan, and sends make_home with the move. The home is set at completion, in the
 // same transaction as the stock, so "Not now" and abandoning the stop leave
 // nothing behind (plan ruling R5).
@@ -47,8 +48,9 @@ const BIN = { code: ENGINE, name: ENGINE, isActive: true }
 
 const OFFER = 'This product has no home bin. Give it one?'
 
-/** A loose line the planner put through the engine because its product has no
- *  home. No plate and no product barcode, so the stop opens on the bin scan. */
+/** A loose line the planner put through the engine because its product had no
+ *  home, and which still has none (`homeLocationId: null`). No plate and no
+ *  product barcode, so the stop opens on the bin scan. */
 function row(over: Partial<PendingPutawayRow> = {}): PendingPutawayRow {
   return {
     id: 901,
@@ -71,12 +73,13 @@ function row(over: Partial<PendingPutawayRow> = {}): PendingPutawayRow {
     assignedLocationId: 5001,
     assignedAt: '2026-11-09T00:01:00Z',
     suggestionSource: 'engine',
+    homeLocationId: null,
     ...over,
   }
 }
 
-function mount(over: Partial<PendingPutawayRow> = {}, canSetHome = true) {
-  return render(
+function card(over: Partial<PendingPutawayRow> = {}, canSetHome = true) {
+  return (
     <PutawayStopCard
       row={row(over)}
       bin={BIN}
@@ -90,8 +93,14 @@ function mount(over: Partial<PendingPutawayRow> = {}, canSetHome = true) {
       unlabelledTwins={[]}
       onActivate={() => {}}
       onDone={() => {}}
-    />,
+    />
   )
+}
+
+function mount(over: Partial<PendingPutawayRow> = {}, canSetHome = true) {
+  const view = render(card(over, canSetHome))
+  // The walk refetches and hands the same card a fresh row.
+  return { ...view, refreshWith: (next: Partial<PendingPutawayRow>) => view.rerender(card(next, canSetHome)) }
 }
 
 function open() {
@@ -146,12 +155,59 @@ describe('putaway walk card — a product with no home', () => {
   })
 
   it.each([
-    ['a home task', { suggestionSource: 'home' as const }],
-    ['an overflow task', { suggestionSource: 'overflow' as const }],
-    ['a desk-redirected task', { suggestionSource: 'desk' as const }],
-    ['a task with no recorded source', { suggestionSource: null }],
+    ['a home task', { suggestionSource: 'home' as const, homeLocationId: 5001 }],
+    ['an overflow task that is already assigned', { suggestionSource: 'overflow' as const, homeLocationId: 5009 }],
+    ['a desk-redirected task of a product with a home', { suggestionSource: 'desk' as const, homeLocationId: 5009 }],
   ])('offers nothing on %s', (_name, over) => {
     mount(over)
+    open()
+
+    expect(screen.queryByText(OFFER)).toBeNull()
+  })
+
+  // The planner's tag is a snapshot of what was true when the line was made.
+  // What decides is whether the product has a home now (F1).
+  it.each([
+    ['engine', 'a sibling line of the same SKU, after its home was just set'],
+    ['engine', 'the remainder of a partial count that set the home'],
+    ['home', 'a line planned to a home that has since been given a different one'],
+  ])('offers nothing on a %s line when the product has a home now: %s', (source, _why) => {
+    mount({ suggestionSource: source as 'engine' | 'home', homeLocationId: 6001 })
+    open()
+
+    expect(screen.queryByText(OFFER)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Give it a home' })).toBeNull()
+  })
+
+  it.each([
+    ['desk', 'a desk-redirected line'],
+    [null, 'a line with no recorded source'],
+    ['home', 'a line whose home has since been removed'],
+  ])('offers it on a %s-tagged line whose product has no home now: %s', (source, _why) => {
+    mount({ suggestionSource: source as 'desk' | 'home' | null, homeLocationId: null })
+    open()
+
+    expect(screen.getByText(OFFER)).toBeTruthy()
+  })
+
+  it('stops offering when the walk refreshes and the product has a home (set at the desk, or by a sibling)', () => {
+    const view = mount()
+    open()
+    expect(screen.getByText(OFFER)).toBeTruthy()
+
+    view.refreshWith({ homeLocationId: 6001 })
+    expect(screen.queryByText(OFFER)).toBeNull()
+  })
+
+  it('offers nothing when the walk did not say whether the product has a home', () => {
+    mount({ homeLocationId: undefined })
+    open()
+
+    expect(screen.queryByText(OFFER)).toBeNull()
+  })
+
+  it('offers nothing on a single-product pallet', () => {
+    mount({ unitLoad: true })
     open()
 
     expect(screen.queryByText(OFFER)).toBeNull()

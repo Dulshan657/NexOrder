@@ -29,12 +29,10 @@
 // the walker enter a count only to be refused at Confirm. Overflow and engine
 // tasks keep the rule above.
 //
-// NX-0033 adds two decisions the walker can make from here. An OVERFLOW line (the
-// home was full) waits for a yes: scanning the bin it names confirms it. A product
-// with NO home can be given one by a Manager or Admin, who picks the bin; the
-// stop retargets to it and the home is set when the stock lands (make_home). The
-// card's pieces that are only presentation live in the Stop*.tsx and GiveHome*.tsx
-// files beside it, and its small pure rules and copy in walkStops.ts.
+// NX-0033: an OVERFLOW line (the home was full) waits for a yes, and scanning the
+// bin it names confirms it. A Manager or Admin can give a product with NO home one:
+// the stop retargets to the chosen bin and the home is set when the stock lands
+// (make_home). Presentation lives in Stop*.tsx / GiveHome*.tsx, rules in walkStops.ts.
 
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Layers, PackageCheck, Printer, Undo2, X } from 'lucide-react'
@@ -162,9 +160,14 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
   const confirmCopy = overflowConfirmCopy(binCode)
   const sku = row.product?.sku ?? name
   const homeCopy = homeTarget ? homeTargetCopy(homeTarget.binCode, sku) : null
-  // A product with no home goes through the engine; only a Manager or Admin may
-  // give it one, and only before the bin is settled.
-  const offersHome = canSetHome && row.suggestionSource === 'engine'
+  // Only a Manager or Admin may give a product a home, and only while it has none
+  // NOW: `homeLocationId` is read with the walk, so a home set meanwhile (from
+  // this walk, a sibling line or remainder of the SKU, the desk's editor) stops
+  // the offer once the walk refreshes. The planner's `engine` tag would not: it
+  // says what was true when the line was made. Unknown (undefined) is not none.
+  // A pallet is not held to a home, and an overflow line's product has one.
+  const offersHome = canSetHome && row.homeLocationId === null
+    && !row.unitLoad && !isOverflowConfirmStop(row)
     && homeTarget === null && homeOffer !== 'declined'
 
   // The code is the hero on this card and the name is the supporting line — the

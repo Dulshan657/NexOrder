@@ -179,6 +179,54 @@ describe('PutawayWalkView — overflow lines awaiting confirmation', () => {
   })
 })
 
+// The Walk hands each stop card the role-derived `canSetHome`. The card's own
+// tests mount the card directly with the prop, and the page test mounts a mocked
+// Walk, so this is the one place the wiring between them is proved: without it a
+// dropped prop would leave the give-a-home offer dead for managers and nothing red.
+describe('PutawayWalkView — the give-a-home offer reaches the stop card', () => {
+  const OFFER = 'This product has no home bin. Give it one?'
+
+  /** A line for a product that has no home: assigned to an engine bin. */
+  const NO_HOME_STOP = line({
+    id: 903, status: 'assigned', suggestionSource: 'engine',
+    recommendedLocationId: 5001, assignedLocationId: 5001, assignedAt: '2026-11-09T00:01:00Z',
+    homeLocationId: null,
+  })
+
+  function mountWalk(rows: PendingPutawayRow[], canSetHome?: boolean) {
+    tasksMock.mockReturnValue({ data: rows, isLoading: false, isError: false })
+    routeMock.mockReturnValue({ data: { mode: 'legacy' }, isLoading: false, isError: false })
+    locationsMock.mockReturnValue({ data: LOCATIONS, isLoading: false, isError: false })
+    return render(<PutawayWalkView warehouseId={WAREHOUSE_ID} canSetHome={canSetHome} />)
+  }
+
+  const openStop = () => fireEvent.click(screen.getByRole('button', { name: /TST-WALK Product 100/ }))
+
+  it('offers a Manager or Admin the chance to give the product a home', () => {
+    mountWalk([NO_HOME_STOP], true)
+    openStop()
+    expect(screen.getByText(OFFER)).toBeTruthy()
+  })
+
+  it('offers a Warehouse user nothing', () => {
+    mountWalk([NO_HOME_STOP], false)
+    openStop()
+    expect(screen.queryByText(OFFER)).toBeNull()
+  })
+
+  it('offers nothing by default, when the page does not say the user may', () => {
+    mountWalk([NO_HOME_STOP])
+    openStop()
+    expect(screen.queryByText(OFFER)).toBeNull()
+  })
+
+  it('offers nothing for a product that already has a home', () => {
+    mountWalk([{ ...NO_HOME_STOP, homeLocationId: 6001 }], true)
+    openStop()
+    expect(screen.queryByText(OFFER)).toBeNull()
+  })
+})
+
 describe('PutawayRow — the Assign queue', () => {
   function renderRow(row: PendingPutawayRow) {
     return render(

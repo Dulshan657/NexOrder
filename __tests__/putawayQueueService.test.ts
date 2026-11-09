@@ -43,6 +43,21 @@ function queueChain(result: { data: unknown; error: unknown }, seen: { cols?: st
   }
 }
 
+// The Walk also reads each product's live home (NX-0033), in ONE batched read of
+// product_home_bins. Answer per table so a test controls both reads.
+function homesChain(result: { data: unknown; error: unknown }, calls: Array<[string, ...unknown[]]> = []) {
+  const tail: Record<string, unknown> = {
+    eq: (...a: unknown[]) => { calls.push(['eq', ...a]); return tail },
+    in: (...a: unknown[]) => { calls.push(['in', ...a]); return Promise.resolve(result) },
+  }
+  return { select: (cols: string) => { calls.push(['select', cols]); return tail } }
+}
+
+/** `from(table)`: the queue table answers with `queue`, product_home_bins with `homes`. */
+function routeTables(queue: unknown, homes: unknown) {
+  from.mockImplementation((table: string) => (table === 'product_home_bins' ? homes : queue))
+}
+
 describe('getPendingPutaways', () => {
   beforeEach(() => from.mockReset())
 
@@ -123,7 +138,7 @@ describe('getWalkPutaways', () => {
   // The walk needs the destination bin, and it is NOT recommended_location_id:
   // the desk can assign somewhere the engine never suggested.
   it('maps the assigned bin and its timestamp onto the row', async () => {
-    from.mockReturnValue(queueChain({
+    routeTables(queueChain({
       data: [{
         id: 7, product_id: 42, quantity: '48.000', recommended_location_id: 100,
         explanation: {}, created_at: '2026-07-20T01:00:00Z',
@@ -132,7 +147,7 @@ describe('getWalkPutaways', () => {
         assigned_location_id: 205, assigned_at: '2026-07-24T09:00:00Z',
       }],
       error: null,
-    }))
+    }), homesChain({ data: [], error: null }))
     const [row] = await getWalkPutaways(1)
     expect(row.assignedLocationId).toBe(205)
     expect(row.assignedAt).toBe('2026-07-24T09:00:00Z')
@@ -142,14 +157,14 @@ describe('getWalkPutaways', () => {
   })
 
   it('leaves the assigned bin null for a row that has none', async () => {
-    from.mockReturnValue(queueChain({
+    routeTables(queueChain({
       data: [{
         id: 8, product_id: 42, quantity: '1', recommended_location_id: null,
         explanation: {}, created_at: '2026-07-20T01:00:00Z',
         products: null, goods_receipts: null,
       }],
       error: null,
-    }))
+    }), homesChain({ data: [], error: null }))
     const [row] = await getWalkPutaways(1)
     expect(row.assignedLocationId).toBeNull()
     expect(row.huCode).toBeNull()
@@ -195,7 +210,7 @@ describe('getWalkPutaways (the query)', () => {
       ],
       error: null,
     })
-    from.mockReturnValue(chain)
+    routeTables(chain, homesChain({ data: [], error: null }))
     const [assigned, confirm] = await getWalkPutaways(12)
     expect(assigned.status).toBe('assigned')
     expect(confirm).toMatchObject({
@@ -213,7 +228,7 @@ describe('getWalkPutaways (the query)', () => {
       data: [{ ...base, id: 1, unit_load: true }, { ...base, id: 2, unit_load: false }, { ...base, id: 3 }],
       error: null,
     })
-    from.mockReturnValue(chain)
+    routeTables(chain, homesChain({ data: [], error: null }))
     const rows = await getWalkPutaways(12)
     expect(rows.map((r) => r.unitLoad)).toEqual([true, false, false])
   })
@@ -222,6 +237,65 @@ describe('getWalkPutaways (the query)', () => {
     const { chain } = recordingChain({ data: null, error: { message: 'boom' } })
     from.mockReturnValue(chain)
     await expect(getWalkPutaways(12)).rejects.toEqual({ message: 'boom' })
+  })
+
+  describe("each product's live home (NX-0033)", () => {
+    const base = {
+      quantity: '2', explanation: {}, created_at: '2026-07-20T01:00:00Z',
+      products: null, goods_receipts: null, status: 'assigned',
+      recommended_location_id: 100, assigned_location_id: 100, suggestion_source: 'engine',
+    }
+
+    it('reads the homes of every product on the walk in ONE batched read', async () => {
+      const { chain } = recordingChain({
+        data: [
+          { ...base, id: 1, product_id: 42 },
+          { ...base, id: 2, product_id: 43 },
+          { ...base, id: 3, product_id: 42 },
+        ],
+        error: null,
+      })
+      const homeCalls: Array<[string, ...unknown[]]> = []
+      routeTables(chain, homesChain({ data: [], error: null }, homeCalls))
+      await getWalkPutaways(12)
+
+      expect(from.mock.calls.filter(([t]) => t === 'product_home_bins')).toHaveLength(1)
+      // This warehouse's primary homes, for the distinct products only.
+      expect(homeCalls).toEqual([
+        ['select', 'product_id, bin_id'],
+        ['eq', 'warehouse_id', 12],
+        ['eq', 'purpose', 'primary'],
+        ['in', 'product_id', [42, 43]],
+      ])
+    })
+
+    it("puts each product's current home on its rows, and null where it has none", async () => {
+      const { chain } = recordingChain({
+        data: [
+          { ...base, id: 1, product_id: 42 },
+          { ...base, id: 2, product_id: 43 },
+          { ...base, id: 3, product_id: 42 },
+        ],
+        error: null,
+      })
+      routeTables(chain, homesChain({ data: [{ product_id: 42, bin_id: 6001 }], error: null }))
+      const rows = await getWalkPutaways(12)
+
+      expect(rows.map((r) => [r.id, r.homeLocationId])).toEqual([[1, 6001], [2, null], [3, 6001]])
+    })
+
+    it('does not read homes for an empty walk', async () => {
+      const { chain } = recordingChain({ data: [], error: null })
+      from.mockReturnValue(chain)
+      await getWalkPutaways(12)
+      expect(from.mock.calls.map(([t]) => t)).toEqual(['wie_putaway_recommendations'])
+    })
+
+    it('throws when the homes cannot be read, rather than offering a home to a homed product', async () => {
+      const { chain } = recordingChain({ data: [{ ...base, id: 1, product_id: 42 }], error: null })
+      routeTables(chain, homesChain({ data: null, error: { message: 'no homes' } }))
+      await expect(getWalkPutaways(12)).rejects.toEqual({ message: 'no homes' })
+    })
   })
 })
 

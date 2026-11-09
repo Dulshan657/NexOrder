@@ -25,7 +25,7 @@ vi.mock('@/hooks/useToasts', () => ({
 }))
 
 import { useReceiveStock } from '@/hooks/queries/useReceiveStock'
-import { useConfirmOverflow } from '@/hooks/queries/usePutawayWalk'
+import { useCompletePutaway, useConfirmOverflow } from '@/hooks/queries/usePutawayWalk'
 import { putawayKeys } from '@/hooks/queries/putawayKeys'
 import PutawayQueueView from '@/components/inventory/PutawayQueueView'
 
@@ -151,5 +151,51 @@ describe('useConfirmOverflow cache invalidation', () => {
       ),
     })
     await run({ data: null, error: lost })
+  })
+})
+
+// NX-0033: whether a stop offers to give its product a home is read with the walk
+// (`homeLocationId`). When a completion sets the home (make_home), every sibling
+// line and remainder of that SKU is still on screen with the old answer, so the
+// walk must refetch the moment the completion lands, or they keep offering a home
+// the server will now refuse.
+describe('useCompletePutaway cache invalidation (a give-home completion)', () => {
+  beforeEach(() => invoke.mockReset())
+  afterEach(() => cleanup())
+
+  function Probes({ onFetch }: { onFetch: (name: string) => void }) {
+    const probe = (name: string, queryKey: readonly unknown[]) =>
+      useQuery({ queryKey, queryFn: async () => { onFetch(name); return [] }, staleTime: Infinity })
+    probe('walk', [...putawayKeys.all, 'walk', 705])
+    probe('queue', putawayKeys.byWarehouse(705))
+    probe('counts', putawayKeys.counts)
+    probe('route', ['putaway-route', 705])
+    const complete = useCompletePutaway()
+    return (
+      <button onClick={() => complete.mutate({ recommendationId: 9, makeHome: true, scan: { locationCode: 'TST-WALK-N1' } })}>
+        Place
+      </button>
+    )
+  }
+
+  it('refreshes the walk, so sibling lines of the SKU stop offering a home', async () => {
+    invoke.mockResolvedValue({
+      data: { ok: true, status: 'overridden', placedElsewhere: true, scanVerified: true, actualLocationCode: 'TST-WALK-N1', homeSet: true },
+      error: null,
+    })
+    const fetches: string[] = []
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Probes onFetch={(name) => fetches.push(name)} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(fetches.length).toBe(4))
+    fetches.length = 0
+    fireEvent.click(screen.getByText('Place'))
+    await waitFor(() => expect(new Set(fetches)).toEqual(new Set(['walk', 'queue', 'counts', 'route'])))
+    expect(invoke).toHaveBeenCalledWith('complete-putaway', {
+      body: expect.objectContaining({ recommendation_id: 9, make_home: true }),
+    })
   })
 })
