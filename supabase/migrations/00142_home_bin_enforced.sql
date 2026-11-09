@@ -15,10 +15,15 @@
 --      for a product with no home and for a pallet:
 --      '{code} is the home bin of {sku}; choose another bin.'
 --   3. the product has no primary home in this warehouse     -> allowed
---   4. the task's plate is a single-product pallet           -> allowed (a unit
---      load never goes to a pick face; a mixed pallet's lines are not exempt)
---   5. the home is one putaway could not use: inactive, in a hold zone, or on a
---      level role outside the product's allowed_level_roles -> allowed
+--   4. the planner treated the line as a unit load: a single-product pallet
+--      whose task it did NOT send home (suggestion_source <> 'home'; a unit
+--      load is planned as 'overflow', _shared/wie/homeFirst.ts) -> allowed.
+--      A mixed pallet's lines are not exempt, nor is the last product left on
+--      one, nor a 'pallet'-typed plate the planner sent home.
+--   5. the home is one putaway could not use: inactive, in a hold zone, on a
+--      level role outside the product's allowed_level_roles, not placed on
+--      the task warehouse's active layout, or not inside that warehouse
+--      -> allowed
 --   6. room at the home, in base units, rounded down:
 --        by_cap = (capacity - v_bin_fill - v_bin_pending_putaway + own) / size_factor
 --        by_max = max_qty - on hand at home - this product's OTHER open tasks to home
@@ -71,6 +76,7 @@ DECLARE
     v_rec        public.wie_putaway_recommendations%ROWTYPE;
     v_home       public.product_home_bins%ROWTYPE;
     v_home_loc   public.locations%ROWTYPE;
+    v_wh         public.locations%ROWTYPE;
     v_other_sku  TEXT;
     v_to_code    TEXT;
     v_plate_type TEXT;
@@ -132,8 +138,13 @@ BEGIN
         RETURN NULL;
     END IF;
 
-    -- 4. A single-product pallet is a unit load; it never goes to a pick face.
-    IF v_rec.handling_unit_id IS NOT NULL THEN
+    -- 4. A unit load never goes to a pick face. Only the planner knows a line
+    --    was one: it plans a single-product pallet past the home ('overflow',
+    --    homeFirst.ts). A task it sent home is held to the home whatever the
+    --    plate is now: the last product left on a mixed pallet, or a root
+    --    plate minted as 'pallet', is not a unit load.
+    IF v_rec.handling_unit_id IS NOT NULL
+       AND v_rec.suggestion_source IS DISTINCT FROM 'home' THEN
         SELECT hu_type INTO v_plate_type
         FROM public.handling_units WHERE id = v_rec.handling_unit_id;
         IF v_plate_type = 'pallet' AND (
@@ -146,11 +157,24 @@ BEGIN
     END IF;
 
     -- 5. A home putaway could not use does not block. Same tests as
-    --    wie_putaway_candidates: is_active, the nearest ZONE ancestor's
+    --    wie_putaway_candidates: is_active, placed on the task warehouse's
+    --    active layout and inside that warehouse, the nearest ZONE ancestor's
     --    is_hold, and a level role outside the product's allowed roles (a bin
     --    with no level role is legacy and allowed, as there).
     SELECT * INTO v_home_loc FROM public.locations WHERE id = v_home.bin_id;
     IF NOT FOUND OR NOT v_home_loc.is_active THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT * INTO v_wh FROM public.locations WHERE id = v_rec.warehouse_id;
+    IF NOT FOUND
+       OR v_wh.active_layout_id IS NULL
+       OR NOT EXISTS (SELECT 1 FROM public.layout_placements pl
+                       WHERE pl.layout_id = v_wh.active_layout_id
+                         AND pl.location_id = v_home.bin_id)
+       OR v_wh.materialized_path IS NULL
+       OR v_home_loc.materialized_path IS NULL
+       OR v_home_loc.materialized_path NOT LIKE v_wh.materialized_path || '/%' THEN
         RETURN NULL;
     END IF;
 

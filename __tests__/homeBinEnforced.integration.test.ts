@@ -140,14 +140,14 @@ async function setHome(
 
 async function task(
   client: pg.Client, s: Scenario, qty: number, binId: number,
-  o: { productId?: number; huId?: number } = {},
+  o: { productId?: number; huId?: number; source?: 'home' | 'overflow' | 'engine' } = {},
 ): Promise<number> {
   const r = await client.query<{ id: number }>(
     `INSERT INTO public.wie_putaway_recommendations
        (warehouse_id, layout_id, product_id, quantity, recommended_location_id,
         explanation, engine_version, status, suggestion_source, handling_unit_id)
-     VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, 'test', 'suggested', 'home', $6) RETURNING id`,
-    [s.warehouseId, s.layoutId, o.productId ?? s.productId, qty, binId, o.huId ?? null],
+     VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, 'test', 'suggested', $7, $6) RETURNING id`,
+    [s.warehouseId, s.layoutId, o.productId ?? s.productId, qty, binId, o.huId ?? null, o.source ?? 'home'],
   )
   return r.rows[0].id
 }
@@ -373,12 +373,15 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
   })
 
   // ── A4: pallets ───────────────────────────────────────────────────────────
+  // A unit load is what the planner sends past the home: homeFirst.ts plans a
+  // single-product pallet line with homeQty 0, so every task it makes is
+  // 'overflow'. Only those are exempt (final review C1/I1).
   it('single-product pallet is exempt; mixed pallet line is not', async () => {
     await withRollbackTx(async (client) => {
       const s = await seed(client)
       await setHome(client, s, s.home)
       const single = await plate(client, s, [[s.productId, 6]])
-      const t1 = await task(client, s, 6, s.other, { huId: single })
+      const t1 = await task(client, s, 6, s.other, { huId: single, source: 'overflow' })
       await client.query(complete, [t1, s.other])
       expect(await onHand(client, s.productId, s.other)).toBe(6)
 
@@ -386,6 +389,50 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
       const mixed = await plate(client, s, [[s.productId, 4], [b.id, 4]])
       const t2 = await task(client, s, 4, s.other, { huId: mixed })
       await expectRaise(client, complete, [t2, s.other], HOME_ROOM(10))
+    })
+  })
+
+  it('mixed pallet: once product A is home, product B left alone on the plate is refused off-home', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      const b = await newProduct(client, s.token, '-B')
+      await setHome(client, s, s.spare, { productId: b.id })
+      const mixed = await plate(client, s, [[s.productId, 4], [b.id, 4]])
+      const tA = await task(client, s, 4, s.home, { huId: mixed })
+      const tB = await task(client, s, 4, s.spare, { productId: b.id, huId: mixed })
+      await client.query(complete, [tA, s.home])
+      expect(await onHand(client, s.productId, s.home)).toBe(4)
+
+      // The plate now holds B alone, but the planner sent B home.
+      await expectRaise(client, complete, [tB, s.other],
+        /CONFLICT: Put this in its home bin TST-HOME-Y-[^;]+; it still has room for 100\./)
+      expect(await onHand(client, b.id, s.other)).toBe(0)
+    })
+  })
+
+  it("a 'pallet' plate on a line the planner sent home is refused off-home", async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      // An auto-minted root plate is typed 'pallet' whatever it carries.
+      const minted = await plate(client, s, [[s.productId, 6]])
+      const id = await task(client, s, 6, s.home, { huId: minted, source: 'home' })
+      await expectRaise(client, complete, [id, s.other], HOME_ROOM(10))
+      expect(await onHand(client, s.productId, s.other)).toBe(0)
+    })
+  })
+
+  it("a single-product unit load the planner sent to overflow is still exempt", async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      const unit = await plate(client, s, [[s.productId, 6]])
+      const id = await task(client, s, 6, s.other, { huId: unit, source: 'overflow' })
+      const r = await client.query<{ b: string | null }>('SELECT public.wie_home_block($1, $2) AS b', [id, s.other])
+      expect(r.rows[0].b).toBeNull()
+      await client.query(complete, [id, s.other])
+      expect(await onHand(client, s.productId, s.other)).toBe(6)
     })
   })
 
@@ -413,6 +460,38 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
         [s.productId])
       const t3 = await task(client, s, 4, s.other)
       await expectRaise(client, complete, [t3, s.other], HOME_ROOM(10))
+    })
+  })
+
+  it("a home not on the warehouse's active layout does not block (M1)", async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      await client.query('DELETE FROM public.layout_placements WHERE layout_id = $1 AND location_id = $2', [s.layoutId, s.home])
+      const id = await task(client, s, 4, s.other)
+      const r = await client.query<{ b: string | null }>('SELECT public.wie_home_block($1, $2) AS b', [id, s.other])
+      expect(r.rows[0].b).toBeNull()
+      await client.query(complete, [id, s.other])
+      expect(await onHand(client, s.productId, s.other)).toBe(4)
+    })
+  })
+
+  it("a home outside the task's warehouse does not block, even when placed on its layout (M1)", async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      const wh2Path = `TSTHOMEWH2${s.token}`
+      const wh2 = await client.query<{ id: number }>(
+        `INSERT INTO public.locations (parent_id, kind, code, name, materialized_path, is_active, location_type)
+         VALUES (NULL, 'WAREHOUSE', $1, $1, $2, true, 'racked') RETURNING id`,
+        [`TST-HOME-WH2-${s.token}`, wh2Path])
+      // On THIS warehouse's layout, so only the path test can tell.
+      const foreign = await addBin(client, s, 'H-FAR', 6, 10, { id: wh2.rows[0].id, path: wh2Path })
+      await setHome(client, s, foreign)
+      const id = await task(client, s, 4, s.other)
+      const r = await client.query<{ b: string | null }>('SELECT public.wie_home_block($1, $2) AS b', [id, s.other])
+      expect(r.rows[0].b).toBeNull()
+      await client.query(complete, [id, s.other])
+      expect(await onHand(client, s.productId, s.other)).toBe(4)
     })
   })
 

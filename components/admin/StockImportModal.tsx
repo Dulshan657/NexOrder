@@ -294,12 +294,16 @@ export function StockImportModal({ products, onClose, addToast }: StockImportMod
             continue;
           }
           const first = rejected[0] as PromiseRejectedResult;
-          const reason = first.reason instanceof Error ? first.reason.message : String(first.reason);
+          const reason = (first.reason instanceof Error ? first.reason.message : String(first.reason)).trim();
+          // The server's own words first: since NX-0032 a homed product is
+          // refused a non-home bin while its home has room, and the refusal
+          // says which bin to use. The advice comes after it.
+          const lead = /[.!?]$/.test(reason) ? reason : `${reason}.`;
           failures.push({
             ...rowRange,
             message:
-              `Received into the warehouse, but ${rejected.length} of ${recommendations.length} placements into ` +
-              `${binCode} failed (${reason}). The stock is at the warehouse root — finish it from the Putaway queue.`,
+              `${lead} ${rejected.length} of ${recommendations.length} placements into ${binCode} were refused. ` +
+              'The stock was received and is at the warehouse root — finish it from the Putaway queue.',
           });
         }
       }
