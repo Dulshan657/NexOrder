@@ -4,7 +4,7 @@
 {
   "id": "NX-0033-putaway-straight-to-walk",
   "base": "abc4337b2ae1bd3de5ffc9956151acdf0dea05d4",
-  "approved": "2026-11-09 owner, by standing go-ahead on the design; text not yet read, owner to confirm before the PR",
+  "approved": "2026-11-09 owner, by standing go-ahead on the design; 2026-11-10 owner: \"push and PR, then release to amadiya\"",
   "acceptance": [
     { "id": "A1", "check": "A line whose product's home has room is created assigned to the home bin with no assigner (assigned_by NULL) and is on the Walk; it never appears in the Assign queue.", "manual": "npm run test:integration -- putawayStraightToWalk (recommend-putaway over HTTP) on dev; the Playwright run (A9) for the Walk-and-not-the-queue half" },
     { "id": "A2", "check": "A loose line sent to overflow (home full) is created suggested; it is listed in the Assign queue and as a confirm stop on the Walk ('Home full — put in {bin}?'). Assign or Choose bin at the desk, or scanning the suggested bin on the walk, confirms it; the first wins, the other is refused with CONFLICT, and the line leaves the other list. A scan of any other bin on a confirm stop is refused. A single-product pallet is never a confirm stop.", "manual": "npm run test:integration -- putawayStraightToWalk (wie_confirm_overflow_tx, wie_putaway_stops, decide-putaway confirm_overflow over HTTP) on dev; the Playwright run (A9)" },
