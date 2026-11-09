@@ -114,17 +114,22 @@ export async function loadHomeBinHealth(
 }
 
 /**
- * Every bin in the warehouse read as if it were this product's home (mig 00143),
- * judged. `binId` narrows it to one bin. Throws on any read failure.
+ * Every bin in the warehouse read as if it were this product's home (mig 00143, 00144),
+ * judged. `binId` narrows it to one bin. `excludeRecIds` are the putaway line(s)
+ * being placed: their own promise to a bin is not counted against it (mig 00144),
+ * so a bin with room for exactly the line is not read as full. Throws on any read
+ * failure.
  */
 async function loadCandidates(
   admin: SupabaseClient,
   warehouseId: number,
   productId: number,
   binId?: number,
+  excludeRecIds: readonly number[] = [],
 ): Promise<HomeBinCandidateFacts[]> {
-  const args: Record<string, number> = { p_warehouse_id: warehouseId, p_product_id: productId }
+  const args: Record<string, number | number[]> = { p_warehouse_id: warehouseId, p_product_id: productId }
   if (binId !== undefined) args.p_bin_id = binId
+  if (excludeRecIds.length > 0) args.p_exclude_rec_ids = [...excludeRecIds]
   const { data, error } = await admin.rpc('wie_home_bin_candidate_facts', args)
   if (error) throw new Error(`home bin candidates load failed: ${error.message}`)
 
@@ -135,28 +140,33 @@ async function loadCandidates(
 
 /**
  * The bins a Manager may give this product as its home (NX-0033): active, usable
- * by putaway, not full, and nobody else's home. Throws on any read failure.
+ * by putaway, not full, and nobody else's home. `excludeRecIds` are the line(s)
+ * on the stop the Manager is standing at, so the bin that line is already going to
+ * is not crowded out by the line itself. Throws on any read failure.
  */
 export async function loadHomeBinChoices(
   admin: SupabaseClient,
   warehouseId: number,
   productId: number,
+  excludeRecIds: readonly number[] = [],
 ): Promise<HomeBinChoice[]> {
-  return homeBinChoices(await loadCandidates(admin, warehouseId, productId))
+  return homeBinChoices(await loadCandidates(admin, warehouseId, productId, undefined, excludeRecIds))
 }
 
 /**
  * Why this one bin cannot be the product's home, or null when it can. The check
  * complete-putaway makes before it sets a home, so a hand-made request cannot
- * pick a bin the chooser would not have offered. Throws on any read failure.
+ * pick a bin the chooser would not have offered. `excludeRecIds` are the line(s)
+ * being completed, as for loadHomeBinChoices. Throws on any read failure.
  */
 export async function loadHomeChoiceRefusal(
   admin: SupabaseClient,
   warehouseId: number,
   productId: number,
   binId: number,
+  excludeRecIds: readonly number[] = [],
 ): Promise<string | null> {
-  const [facts] = await loadCandidates(admin, warehouseId, productId, binId)
+  const [facts] = await loadCandidates(admin, warehouseId, productId, binId, excludeRecIds)
   // No row: the id is not a bin under this warehouse (a rack, a zone, another site).
   if (!facts) return 'That location is not a bin in this warehouse.'
   return homeChoiceRefusal(facts)

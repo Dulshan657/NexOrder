@@ -11,8 +11,14 @@
 //   refused by a slotting rule, with room for at least one unit, in this
 //   warehouse, and not already another product's home.
 //
-//   GET ?warehouseId=<id>&productId=<id>        Admin / Manager
+//   GET ?warehouseId=<id>&productId=<id>[&recommendationId=<id>]   Admin / Manager
 //   -> { ok: true, warehouseId, productId, bins: [{ binId, binCode, binName }] }
+//
+// `recommendationId` is the putaway line on the stop the Manager is standing at.
+// Its own promise to a bin is not counted against that bin (mig 00144): a
+// homeless product's line is already assigned to the bin the planner chose, and
+// a bin with room for exactly that line would otherwise read as full and never
+// be offered. Any other open line to the bin still counts.
 //
 // `bins` is in code order and may be empty. Read-only: nothing is written, and
 // nothing here sets a home. The home is set at completion, in the same
@@ -20,7 +26,7 @@
 // question again (loadHomeChoiceRefusal) so a hand-made request cannot pick a
 // bin this list would not have offered.
 //
-// The facts come from wie_home_bin_candidate_facts (mig 00143), judged by the
+// The facts come from wie_home_bin_candidate_facts (mig 00143, 00144), judged by the
 // pure _shared/wie/homeBinHealth.ts, with the slotting rules read through the
 // same loader putaway uses (_shared/homeBinHealthLoad.ts).
 
@@ -42,10 +48,23 @@ const RATE = { windowMs: 60_000, max: 30 }
 
 const LIST_FAILED = 'Could not list bins for a home, try again.'
 
+const isPositiveWhole = (raw: string): boolean =>
+  /^\d+$/.test(raw) && Number.isSafeInteger(Number(raw)) && Number(raw) > 0
+
 function parseId(req: Request, name: 'warehouseId' | 'productId'): number {
   const raw = new URL(req.url).searchParams.get(name)
-  if (raw === null || !/^\d+$/.test(raw) || Number(raw) <= 0) {
+  if (raw === null || !isPositiveWhole(raw)) {
     throw new EdgeFunctionError('INVALID_INPUT', `${name} must be a positive whole number`)
+  }
+  return Number(raw)
+}
+
+/** Optional: absent is fine, present must be a positive whole number. */
+function parseRecommendationId(req: Request): number | null {
+  const raw = new URL(req.url).searchParams.get('recommendationId')
+  if (raw === null) return null
+  if (!isPositiveWhole(raw)) {
+    throw new EdgeFunctionError('INVALID_INPUT', 'recommendationId must be a positive whole number')
   }
   return Number(raw)
 }
@@ -63,6 +82,7 @@ serve(async (req: Request) => {
     }
     const warehouseId = parseId(req, 'warehouseId')
     const productId = parseId(req, 'productId')
+    const recommendationId = parseRecommendationId(req)
 
     // Admin and Manager are not confined to a site, so this never fires today.
     // It stays so that widening ALLOWED later cannot let a Warehouse user list
@@ -104,7 +124,9 @@ serve(async (req: Request) => {
 
     let bins
     try {
-      bins = await loadHomeBinChoices(admin, warehouseId, productId)
+      bins = await loadHomeBinChoices(
+        admin, warehouseId, productId, recommendationId === null ? [] : [recommendationId],
+      )
     } catch (e) {
       // The detail goes to the server log; the operator gets a message they can act on.
       console.error('[home-bin-choices] load failed', e)

@@ -44,15 +44,24 @@ export async function getHomeBinHealth(warehouseId: number): Promise<HomeBinHeal
  * The bins a Manager or Admin may give this product as its home (NX-0033), from
  * the home-bin-choices Edge Function. The server has already dropped every bin
  * putaway could not use, one that is full, and another product's home.
+ *
+ * `recommendationId` is the line on the stop being worked: its own promise to a
+ * bin is not counted against that bin, so a bin with room for exactly that line
+ * is still offered.
  */
-export async function getHomeBinChoices(warehouseId: number, productId: number): Promise<HomeBinChoice[]> {
+export async function getHomeBinChoices(
+  warehouseId: number,
+  productId: number,
+  recommendationId?: number,
+): Promise<HomeBinChoice[]> {
+  const line = recommendationId === undefined ? '' : `&recommendationId=${recommendationId}`
   const { data, error } = await supabase.functions.invoke<{
     ok: true
     warehouseId: number
     productId: number
     bins: HomeBinChoice[]
   }>(
-    `home-bin-choices?warehouseId=${warehouseId}&productId=${productId}`,
+    `home-bin-choices?warehouseId=${warehouseId}&productId=${productId}${line}`,
     { method: 'GET' },
   )
   if (error) {

@@ -10,7 +10,9 @@
  *   wie_putaway_stops              the walk lists assigned lines and overflow
  *                                  lines awaiting confirmation
  *   wie_home_bin_candidate_facts   every bin in a warehouse read as if it were
- *                                  the product's home (for "Give it a home")
+ *                                  the product's home (for "Give it a home"),
+ *                                  with the line being placed given its own
+ *                                  reservation back (mig 00144)
  *
  * Made-up data only (TST-WALK-* products on made-up bins). Two kinds of test:
  *
@@ -22,11 +24,18 @@
  *     tests/e2e/rack-levels/homeBlockWorld.ts tears down).
  *
  * Run with: `npm run test:integration -- putawayStraightToWalk` (dev
- * credentials; migration 00143 applied). Add `-t "live RPCs|at once"` to pick.
+ * credentials; migrations 00143 and 00144 applied). Add `-t "live RPCs|at once"` to pick.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import type pg from 'pg'
 import { connect, hasDbCreds, withRollbackTx, expectRaise } from './support/pgTestClient'
+import {
+  homeBinCandidateFactsFromRow,
+  homeBinChoices,
+  homeChoiceRefusal,
+  type HomeBinCandidateFacts,
+  type HomeBinCandidateFactsRow,
+} from '../supabase/functions/_shared/wie/homeBinHealth'
 
 let seq = 0
 const uniq = (): string => `${Date.now()}-${++seq}`
@@ -155,6 +164,8 @@ interface TaskOpts {
   /** The bin a desk or the system assigned it to (status 'assigned'). */
   assignedTo?: number
   assignedBy?: string | null
+  /** The plate the line carries, if any. */
+  handlingUnitId?: number | null
 }
 
 /** A putaway line. `bin` is the suggested bin (recommended_location_id), or null. */
@@ -163,12 +174,12 @@ async function task(client: pg.Client, w: World, qty: number, bin: number | null
     `INSERT INTO public.wie_putaway_recommendations
        (warehouse_id, layout_id, product_id, quantity, recommended_location_id,
         explanation, engine_version, status, suggestion_source,
-        assigned_location_id, assigned_at, assigned_by)
+        assigned_location_id, assigned_at, assigned_by, handling_unit_id)
      VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, 'test', $6, $7, $8,
-             CASE WHEN $8::int IS NULL THEN NULL ELSE now() END, $9) RETURNING id`,
+             CASE WHEN $8::int IS NULL THEN NULL ELSE now() END, $9, $10) RETURNING id`,
     [w.warehouseId, w.layoutId, o.productId ?? w.productId, qty, bin,
       o.status ?? 'suggested', o.source === undefined ? 'home' : o.source,
-      o.assignedTo ?? null, o.assignedBy ?? null],
+      o.assignedTo ?? null, o.assignedBy ?? null, o.handlingUnitId ?? null],
   )
   // BIGINT comes back as a string; the RPCs take numbers.
   return Number(r.rows[0].id)
@@ -459,12 +470,165 @@ describe('NX-0033 straight to the walk (live RPCs, rollback-isolated)', () => {
     })
   })
 
+  // ── wie_home_bin_candidate_facts: the line's own reservation (mig 00144) ──
+  /** Every bin of the warehouse, read for `productId`, with `exclude` lines given back. */
+  async function candidateRows(
+    client: pg.Client, w: World, productId: number, exclude: number[] | null,
+  ): Promise<HomeBinCandidateFactsRow[]> {
+    const r = await client.query<HomeBinCandidateFactsRow>(
+      'SELECT * FROM public.wie_home_bin_candidate_facts($1, $2, NULL, $3::bigint[])',
+      [w.warehouseId, productId, exclude])
+    return r.rows
+  }
+
+  /** A pallet plate at the warehouse root. */
+  async function newPlate(client: pg.Client, w: World): Promise<number> {
+    const r = await client.query<{ id: string }>(
+      `INSERT INTO public.handling_units (hu_type, warehouse_id, location_id) VALUES ('pallet', $1, $1) RETURNING id`,
+      [w.warehouseId])
+    return Number(r.rows[0].id)
+  }
+
+  it('wie_home_bin_candidate_facts: no excluded lines (NULL, empty, or lines that are nowhere) reads exactly what v_bin_pending_putaway says, for every bin', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      // Loose lines to O1 (two products), and a pallet-slot bin O2 where a plate
+      // is shared by two lines and a second plate stands alone.
+      await task(client, w, 3, w.o1, { status: 'suggested' })
+      await task(client, w, 4, w.o1, { productId: w.otherProductId, status: 'assigned', assignedTo: w.o1 })
+      await client.query("UPDATE public.locations SET slot_kind = 'pallet' WHERE id = $1", [w.o2])
+      const shared = await newPlate(client, w)
+      const alone = await newPlate(client, w)
+      await task(client, w, 2, w.o2, { status: 'assigned', assignedTo: w.o2, handlingUnitId: shared })
+      await task(client, w, 5, w.o2, { productId: w.otherProductId, status: 'assigned', assignedTo: w.o2, handlingUnitId: shared })
+      await task(client, w, 1, w.o2, { status: 'assigned', assignedTo: w.o2, handlingUnitId: alone })
+
+      const bins = [w.h, w.o1, w.o2, w.n, w.i, w.p]
+      const view = await client.query<{ location_id: number; pending_slots: number }>(
+        'SELECT location_id, pending_slots FROM public.v_bin_pending_putaway WHERE location_id = ANY ($1)', [bins])
+      const expected = new Map<number, number>(view.rows.map((r) => [r.location_id, Number(r.pending_slots)]))
+      // The world is not trivial: loose stock counts as quantity x size factor,
+      // and a pallet-slot bin counts distinct plates.
+      expect(expected.get(w.o1)).toBe(7)
+      expect(expected.get(w.o2)).toBe(2)
+
+      for (const exclude of [null, [], [2147483000]]) {
+        const rows = await candidateRows(client, w, w.productId, exclude)
+        expect(rows).toHaveLength(bins.length)
+        const got = new Map<number, number>(rows.map((r) => [r.bin_id, Number(r.pending_slots)]))
+        for (const bin of bins) {
+          expect({ exclude, bin, slots: got.get(bin) }).toEqual({ exclude, bin, slots: expected.get(bin) ?? 0 })
+        }
+      }
+    })
+  })
+
+  it('wie_home_bin_candidate_facts: excluded lines give back their own space and quantity, and nothing else', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      const a = await task(client, w, 3, w.o1, { status: 'suggested' })
+      const b = await task(client, w, 4, w.o1, { productId: w.otherProductId, status: 'assigned', assignedTo: w.o1 })
+      const at = async (exclude: number[] | null) => {
+        const row = (await candidateRows(client, w, w.productId, exclude)).find((r) => r.bin_id === w.o1)
+        return { slots: Number(row?.pending_slots), qty: Number(row?.pending_qty) }
+      }
+
+      // Read for A: the slots are everyone's, the quantity is A's own.
+      expect(await at(null)).toEqual({ slots: 7, qty: 3 })
+      expect(await at([a])).toEqual({ slots: 4, qty: 0 })
+      // B's line is another product's: its space comes back, A's quantity does not move.
+      expect(await at([b])).toEqual({ slots: 3, qty: 3 })
+      expect(await at([a, b])).toEqual({ slots: 0, qty: 0 })
+      // A line that is no longer open promises nothing, so excluding it changes nothing.
+      await client.query("UPDATE public.wie_putaway_recommendations SET status = 'expired' WHERE id = $1", [a])
+      expect(await at([a])).toEqual({ slots: 4, qty: 0 })
+    })
+  })
+
+  it('wie_home_bin_candidate_facts: a plate shared by two lines keeps its slot until both are excluded', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      await client.query("UPDATE public.locations SET slot_kind = 'pallet' WHERE id = $1", [w.o2])
+      const shared = await newPlate(client, w)
+      const alone = await newPlate(client, w)
+      const a = await task(client, w, 2, w.o2, { status: 'assigned', assignedTo: w.o2, handlingUnitId: shared })
+      const b = await task(client, w, 5, w.o2, { productId: w.otherProductId, status: 'assigned', assignedTo: w.o2, handlingUnitId: shared })
+      const c = await task(client, w, 1, w.o2, { status: 'assigned', assignedTo: w.o2, handlingUnitId: alone })
+      const slots = async (exclude: number[] | null) =>
+        Number((await candidateRows(client, w, w.productId, exclude)).find((r) => r.bin_id === w.o2)?.pending_slots)
+
+      expect(await slots(null)).toBe(2)
+      // B still holds the shared plate's slot after A is given back.
+      expect(await slots([a])).toBe(2)
+      expect(await slots([a, b])).toBe(1)
+      expect(await slots([c])).toBe(1)
+      expect(await slots([a, b, c])).toBe(0)
+    })
+  })
+
+  it('a bin with room for exactly the line is offered as a home, and make_home onto it is accepted', async () => {
+    await withRollbackTx(async (client) => {
+      const w = await seed(client)
+      // A route from a dock, so putaway could use the bin: the rule judges that too.
+      const dock = await client.query<{ id: number }>(
+        "INSERT INTO public.layout_graph_nodes (layout_id, floor, x, y, node_type) VALUES ($1, 0, 0, 0, 'dock') RETURNING id",
+        [w.layoutId])
+      const walk = await client.query<{ id: number }>(
+        "INSERT INTO public.layout_graph_nodes (layout_id, floor, x, y, node_type) VALUES ($1, 0, 9, 0, 'walk') RETURNING id",
+        [w.layoutId])
+      await client.query(
+        'INSERT INTO public.layout_travel_distances (layout_id, from_node_id, to_node_id, distance_m) VALUES ($1, $2, $3, 4)',
+        [w.layoutId, dock.rows[0].id, walk.rows[0].id])
+
+      // A product with no home, twelve of it at the dock, and a bin of exactly twelve.
+      const x = await newProduct(client, w.token, '-X')
+      await receive(client, x.id, w.warehouseId, 12)
+      const t = await addBin(client, w, 'T', 9, 12)
+      await client.query(
+        'UPDATE public.layout_placements SET graph_node_id = $1 WHERE layout_id = $2 AND location_id = $3',
+        [walk.rows[0].id, w.layoutId, t])
+      // The planner has already sent the whole line there: assigned straight to T.
+      const line = await task(client, w, 12, t, { productId: x.id, status: 'assigned', source: 'engine' })
+
+      const judged = async (exclude: number[] | null): Promise<HomeBinCandidateFacts[]> =>
+        (await candidateRows(client, w, x.id, exclude)).map((r) => homeBinCandidateFactsFromRow(r, w.warehouseId))
+
+      // Counting the line against its own bin, T reads full and is not offered.
+      const crowded = (await judged(null)).find((f) => f.binId === t)!
+      expect(homeChoiceRefusal(crowded)).toMatch(/^Bin TST-WALK-T-.* is full/)
+      expect(homeBinChoices(await judged(null)).map((c) => c.binId)).not.toContain(t)
+
+      // Giving the line its own space back, T has room for exactly it: offered, and fit.
+      const fit = (await judged([line])).find((f) => f.binId === t)!
+      expect(fit).toMatchObject({ capacitySlots: 12, usedSlots: 0, pendingSlots: 0, pendingQty: 0 })
+      expect(homeChoiceRefusal(fit)).toBeNull()
+      expect(homeBinChoices(await judged([line])).map((c) => c.binCode)).toContain(`TST-WALK-T-${w.token}`)
+
+      // Another line's promise to T still counts: only the line's own is given back.
+      const other = await task(client, w, 12, t, { productId: w.otherProductId, status: 'suggested' })
+      expect(homeChoiceRefusal((await judged([line])).find((f) => f.binId === t)!)).toMatch(/is full/)
+      await client.query("UPDATE public.wie_putaway_recommendations SET status = 'expired' WHERE id = $1", [other])
+
+      // make_home onto it is accepted: the stock moves and the home is set in the same call.
+      const done = await client.query<{ r: { home_set: boolean } }>(
+        'SELECT public.wie_complete_putaway_many_tx($1::jsonb, $2, NULL, NULL, false, true) AS r',
+        [JSON.stringify([{ id: line, qty: 12 }]), t])
+      expect(done.rows[0].r.home_set).toBe(true)
+      expect(await onHand(client, x.id, t)).toBe(12)
+      const home = await client.query<{ bin_id: number }>(
+        'SELECT bin_id FROM public.product_home_bins WHERE product_id = $1 AND warehouse_id = $2 AND purpose = $3',
+        [x.id, w.warehouseId, 'primary'])
+      expect(home.rows).toEqual([{ bin_id: t }])
+    })
+  })
+
+
   // ── Grants ────────────────────────────────────────────────────────────────
   it('the new and redefined functions are service_role only, one overload', async () => {
     await withRollbackTx(async (client) => {
       const sigs: Array<[string, string]> = [
         ['wie_confirm_overflow_tx', 'wie_confirm_overflow_tx(bigint,integer,uuid)'],
-        ['wie_home_bin_candidate_facts', 'wie_home_bin_candidate_facts(integer,integer,integer)'],
+        ['wie_home_bin_candidate_facts', 'wie_home_bin_candidate_facts(integer,integer,integer,bigint[])'],
         ['wie_decide_putaway_tx', 'wie_decide_putaway_tx(bigint,text,integer,numeric,uuid)'],
         ['wie_putaway_stops', 'wie_putaway_stops(integer)'],
       ]

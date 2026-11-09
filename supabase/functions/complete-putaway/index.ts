@@ -42,8 +42,10 @@
 //     stopped at the door (MAKE_HOME_FORBIDDEN, FORBIDDEN);
 //   * the bin must pass the same test the Walk's chooser applies
 //     (home-bin-choices, loadHomeChoiceRefusal): usable by putaway, with room,
-//     and not another product's home. A bin that fails is CONFLICT, so a hand-
-//     made request cannot pick a bin the chooser would not have offered.
+//     and not another product's home. The lines being completed do not count
+//     against the bin's room: their own promise to it is given back (mig 00144).
+//     A bin that fails is CONFLICT, so a hand-made request cannot pick a bin the
+//     chooser would not have offered.
 // The home itself is still set inside wie_complete_putaway_many_tx, in the same
 // transaction as the move, so a failed move leaves no home behind.
 
@@ -292,7 +294,11 @@ serve(async (req: Request) => {
     if (setHome) {
       let homeRefusal: string | null
       try {
-        homeRefusal = await loadHomeChoiceRefusal(admin, warehouseId, productId, actualId)
+        // The lines being completed give back their own promise to the bin, so a
+        // bin with room for exactly this stock is not read as full because of it.
+        homeRefusal = await loadHomeChoiceRefusal(
+          admin, warehouseId, productId, actualId, ordered.map((r) => Number(r.id)),
+        )
       } catch (e) {
         // The detail goes to the server log; the operator gets a message they can act on.
         console.error('[complete-putaway] home bin fitness read failed', e)

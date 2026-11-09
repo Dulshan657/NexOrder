@@ -182,6 +182,19 @@ describe('loadHomeBinChoices', () => {
       .rejects.toThrow('home bin candidates load failed: boom')
   })
 
+  it('gives the lines being placed their own space back: p_exclude_rec_ids goes through, and only when there are some', async () => {
+    const withLines = makeAdmin({ candidates: [candidateRow()] })
+    await loadHomeBinChoices(withLines.admin, 7, 1, [55, 56])
+    expect(withLines.rpcCalls).toEqual([{
+      name: 'wie_home_bin_candidate_facts',
+      args: { p_warehouse_id: 7, p_product_id: 1, p_exclude_rec_ids: [55, 56] },
+    }])
+
+    const none = makeAdmin({ candidates: [candidateRow()] })
+    await loadHomeBinChoices(none.admin, 7, 1, [])
+    expect(none.rpcCalls[0].args).toEqual({ p_warehouse_id: 7, p_product_id: 1 })
+  })
+
   it('returns the bins that qualify, by code, and drops the rest', async () => {
     const { admin } = makeAdmin({
       candidates: [
@@ -226,6 +239,21 @@ describe('loadHomeChoiceRefusal', () => {
       name: 'wie_home_bin_candidate_facts',
       args: { p_warehouse_id: 7, p_product_id: 1, p_bin_id: 21 },
     }])
+  })
+
+  it('passes the lines being placed as p_exclude_rec_ids, with the bin', async () => {
+    const { admin, rpcCalls } = makeAdmin({ candidates: [candidateRow({ bin_id: 21 })] })
+    expect(await loadHomeChoiceRefusal(admin, 7, 1, 21, [55, 56])).toBeNull()
+    expect(rpcCalls).toEqual([{
+      name: 'wie_home_bin_candidate_facts',
+      args: { p_warehouse_id: 7, p_product_id: 1, p_bin_id: 21, p_exclude_rec_ids: [55, 56] },
+    }])
+  })
+
+  it('leaves p_exclude_rec_ids out when no line is named', async () => {
+    const { admin, rpcCalls } = makeAdmin({ candidates: [candidateRow({ bin_id: 21 })] })
+    await loadHomeChoiceRefusal(admin, 7, 1, 21, [])
+    expect(rpcCalls[0].args).toEqual({ p_warehouse_id: 7, p_product_id: 1, p_bin_id: 21 })
   })
 
   it('names the other product when the bin is already somebody else\'s home', async () => {

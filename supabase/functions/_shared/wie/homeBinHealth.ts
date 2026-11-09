@@ -144,7 +144,7 @@ export interface HomeBinFactsRow {
 
 /**
  * A bin read as if it were a product's home (NX-0033), from
- * wie_home_bin_candidate_facts (mig 00143). The same facts as a real home, plus
+ * wie_home_bin_candidate_facts (mig 00143, 00144). The same facts as a real home, plus
  * the bin's name for the chooser and the OTHER products already homed there.
  */
 export interface HomeBinCandidateFactsRow extends HomeBinFactsRow {

@@ -77,6 +77,13 @@ describe('getHomeBinChoices', () => {
     expect(invoke).toHaveBeenCalledWith('home-bin-choices?warehouseId=7&productId=3', { method: 'GET' })
   })
 
+  it('adds the line being placed to the query string, so its own space is not counted', async () => {
+    invoke.mockResolvedValue({ data: { ok: true, warehouseId: 7, productId: 3, bins: [] }, error: null })
+    await getHomeBinChoices(7, 3, 55)
+    expect(invoke).toHaveBeenCalledWith(
+      'home-bin-choices?warehouseId=7&productId=3&recommendationId=55', { method: 'GET' })
+  })
+
   it('returns the bins the server offers', async () => {
     const bins = [
       { binId: 21, binCode: 'TST-WALK-B1', binName: null },
