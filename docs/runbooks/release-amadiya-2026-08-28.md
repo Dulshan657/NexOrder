@@ -109,6 +109,31 @@ and an edited file is a hard error rather than a silent re-run.
 
 ---
 
+## 2b. Check the home bins
+
+Run this **after step 2**, once the migrations are in, and before the Edge
+Functions. It reads `wie_home_bin_facts`, which arrives with migration `00142`,
+so on a target without that migration it cannot run and exits 2.
+
+Putaway must send a product to its home bin while the home has room, so a home
+bin it can never use (retired, in a hold zone, on a level that takes no cartons,
+off the published layout, with no route from a dock, refused by a slotting rule,
+full, or in another warehouse) strands the floor. This lists every one.
+Read-only.
+
+```bash
+npm run check:home-bins -- --target <tenant>
+```
+
+Expect no output lines and exit code 0. Each line names a warehouse, a SKU, a
+bin, a problem code and what is wrong; fix them in **Replenishment setup**, where
+the same list shows as **Home bin problems**, then run it again. Exit code 1
+means problems were found; exit code 2 means the check could not run (missing
+credentials, no target or the wrong one, a failed read), which is **not** an
+all-clear.
+
+---
+
 ## 3. Edge Functions
 
 ```bash

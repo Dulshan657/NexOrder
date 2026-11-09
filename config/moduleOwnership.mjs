@@ -135,6 +135,7 @@ export const FUNCTION_MODULES = {
   'generate-dispatch-advice': 'inventory_dispatch',
   'generate-labels': 'inventory_dispatch',
   'generate-pick-slip': 'inventory_dispatch',
+  'home-bin-health': 'inventory_dispatch',
   'mutate-layout': 'inventory_dispatch',
   'mutate-level-role': 'inventory_dispatch',
   'mutate-slotting-rule': 'inventory_dispatch',

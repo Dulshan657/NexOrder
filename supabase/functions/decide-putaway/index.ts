@@ -38,6 +38,15 @@
 //                       `found` puts the task back on the floor's list,
 //                       `write_off` adjusts the missing units off at the dock
 //                       (reason required).
+//
+// NX-0032 (mig 00142) makes the home bin a rule: accept, override, assign_only
+// and redirect to a bin that is not the product's home are refused with
+// CONFLICT while the home has room, whatever role_override says. The question
+// (wie_home_block, via _shared/putawayHomeBlock.ts) is asked as soon as the
+// target bin is known to exist and be usable, and BEFORE the rack-level role
+// gate and the hold-zone check, so a flag that lifts those cannot be mistaken
+// for one that lifts this. Each transaction asks it again under its row lock;
+// this is the same answer given earlier, with the same words.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -50,6 +59,7 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { decideDeskAction } from '../_shared/putawayCompletion.ts'
+import { refuseIfHomeBlocked } from '../_shared/putawayHomeBlock.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
@@ -156,6 +166,10 @@ async function handleDeskAction(
     const { data: root, error: rootErr } = await admin.rpc('inv_root_warehouse', { p_location_id: to })
     if (rootErr) throw new EdgeFunctionError('INTERNAL', `warehouse resolution failed: ${rootErr.message}`)
     if (root !== rec.warehouse_id) throw new EdgeFunctionError('INVALID_INPUT', 'That bin is not inside this warehouse')
+
+    // The home rule first (NX-0032): a redirect is the desk choosing where the
+    // floor will be sent, so it is refused the same way the walk would be.
+    await refuseIfHomeBlocked(admin, rec.id, to)
 
     // The same guards the floor would meet, checked before anyone walks there.
     // A held (quarantined) line may only go to a hold bin, and an ordinary line
@@ -315,6 +329,12 @@ serve(async (req: Request) => {
     if (root !== warehouseId) {
       throw new EdgeFunctionError('INVALID_INPUT', 'Chosen bin is not inside this warehouse')
     }
+
+    // The home rule (NX-0032), for accept, override and assign_only alike: `chosen`
+    // is the bin whichever of them is about to use. It sits before the level-role
+    // gate on purpose: role_override crosses THAT gate and must not be read as
+    // crossing this one, which nothing lifts.
+    await refuseIfHomeBlocked(admin, recommendation_id, chosen)
 
     // Rack-level role gate (mig 00072). Checked on BOTH accept and override —
     // a live re-level (mutate-warehouse-location's set_levels, which doesn't

@@ -25,6 +25,29 @@ export interface ReceiveDestinationActor {
 }
 
 /**
+ * The rule for which warehouse a Warehouse-role user may act at, in one place so
+ * receiving and putting away cannot disagree about it (NX-0032: they did, and the
+ * receive screen's Retry failed for dock users). A Warehouse-role user with a
+ * home site may act only there; with NO home site (NULL) they are unrestricted,
+ * as are Admin and Manager. Nothing to check when no warehouse is named.
+ * Throws FORBIDDEN with the caller's own words.
+ */
+export function assertMayActAtWarehouse(
+  actor: ReceiveDestinationActor,
+  warehouseId: number | null | undefined,
+  message: string,
+): void {
+  if (
+    actor.role === 'Warehouse' &&
+    actor.homeWarehouseId != null &&
+    warehouseId != null &&
+    warehouseId !== actor.homeWarehouseId
+  ) {
+    throw new EdgeFunctionError('FORBIDDEN', message)
+  }
+}
+
+/**
  * Resolve the destination `location_id` for a goods receipt, throwing an
  * `EdgeFunctionError` if the request is disallowed or under-specified.
  *
@@ -37,14 +60,7 @@ export function resolveReceiveDestination(
   actor: ReceiveDestinationActor,
   activeWarehouseCount: number,
 ): number | null {
-  if (
-    actor.role === 'Warehouse' &&
-    actor.homeWarehouseId != null &&
-    requestedLocationId != null &&
-    requestedLocationId !== actor.homeWarehouseId
-  ) {
-    throw new EdgeFunctionError('FORBIDDEN', 'You can only receive stock at your own warehouse')
-  }
+  assertMayActAtWarehouse(actor, requestedLocationId, 'You can only receive stock at your own warehouse')
 
   const locationId = requestedLocationId ?? actor.homeWarehouseId ?? null
 

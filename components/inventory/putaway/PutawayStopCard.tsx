@@ -22,6 +22,12 @@
 // error. The walker can see that the assigned bay is full or blocked, and the
 // next one along is the right answer. The card warns, names both bins, and
 // records where it actually went.
+//
+// The exception is a task sent to the product's HOME bin (NX-0032). While a home
+// has room putaway must land there, and the server refuses anything else, so the
+// card says so at the bin scan and stays there for a rescan, instead of letting
+// the walker enter a count only to be refused at Confirm. Overflow and engine
+// tasks keep the rule above.
 
 import React, { useId, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, Check, Layers, PackageCheck, Printer, Undo2, X } from 'lucide-react'
@@ -113,6 +119,10 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
 
   const name = row.product?.name ?? `Product #${row.productId}`
   const qtyLabel = describeQuantity(row.quantity, row.product)
+  const isHomeTask =
+    row.suggestionSource === 'home' &&
+    row.recommendedLocationId != null &&
+    row.assignedLocationId === row.recommendedLocationId
 
   // The code is the hero on this card and the name is the supporting line — the
   // reverse of how `locationDisplay` orders them, and deliberately so. That module
@@ -224,6 +234,16 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
     const verdict = checkPutawayScan(context, { ...evidence, locationCode: raw }, row.quantity)
     if (verdict.ok === false) {
       setError(verdict.message)
+      setScannedBin('')
+      signalFlash('reject')
+      return
+    }
+    // A task the planner sent to the product's HOME goes there or is refused
+    // (NX-0032): do not advance to the count with the wrong bay. Only while the
+    // task still points at that suggested bin: a desk that assigned it elsewhere
+    // made its own call, and the server judges that against the room at the home.
+    if (isHomeTask && verdict.placedElsewhere) {
+      setError(`This product's home bin is ${binCode}. Scan ${binCode}.`)
       setScannedBin('')
       signalFlash('reject')
       return
@@ -569,7 +589,9 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
             placeholder={binCode}
             cameraTitle="Scan the bin label"
             autoFocus
-            helper="A different bay is fine — it gets recorded."
+            helper={isHomeTask
+              ? "This product's home bin. It goes here while the home has room."
+              : 'A different bay is fine — it gets recorded.'}
             error={error ?? undefined}
           />
         </div>

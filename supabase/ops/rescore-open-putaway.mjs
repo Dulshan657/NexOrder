@@ -49,6 +49,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { resolveTarget, orExit } from '../../scripts/lib/env.mjs'
+import { buildRescoreBody, rescoreRow, formatSkippedSummary } from './rescoreRows.mjs'
 
 const argv = process.argv.slice(2)
 const flag = (name) => {
@@ -162,8 +163,11 @@ for (const r of rows.filter((x) => x.status === 'assigned')) {
 }
 
 // 2. Re-score each line. One call per row; each expires the row it supersedes.
+// A row recommend-putaway refuses is logged and skipped, not fatal: the run
+// carries on and names every skipped row at the end (NX-0032).
 let rescored = 0
 let unplaceable = 0
+const skipped = []
 for (const r of rows) {
   const { data: cur } = await admin
     .from('wie_putaway_recommendations')
@@ -177,21 +181,14 @@ for (const r of rows) {
     ? await admin.from('handling_units').select('id, hu_type').eq('id', cur.handling_unit_id).maybeSingle()
     : { data: null }
 
-  const { data, error: e } = await sb.functions.invoke('recommend-putaway', {
-    body: {
-      warehouse_id: warehouseId,
-      goods_receipt_id: cur.goods_receipt_id ?? undefined,
-      replaces_recommendation_id: r.id,
-      lines: [{
-        product_id: cur.product_id,
-        quantity: Number(cur.quantity),
-        hu_id: hu?.id ?? undefined,
-        hu_type: hu?.hu_type ?? undefined,
-      }],
-    },
-  })
-  if (e) throw new Error(`rescore ${r.id} failed: ${e.message}`)
-  const recs = data?.recommendations ?? []
+  const body = buildRescoreBody({ warehouseId, rowId: r.id, cur, hu })
+  const result = await rescoreRow((fn, opts) => sb.functions.invoke(fn, opts), r.id, body)
+  if (!result.ok) {
+    skipped.push(result.skipped)
+    console.log(`  skip ${r.id} (refused: ${result.skipped.reason})`)
+    continue
+  }
+  const recs = result.recs
   const placed = recs.filter((x) => x.recommendedLocationId != null)
   if (placed.length < recs.length) unplaceable += recs.length - placed.length
   console.log(`  rescored ${r.id} → ${recs.length} row(s) [${recs.map((x) => x.recommendedLocationId ?? 'manual').join(', ')}]`)
@@ -200,6 +197,7 @@ for (const r of rows) {
 
 console.log(`\n[rescore] re-scored ${rescored} task(s)` +
   (unplaceable ? `, ${unplaceable} line(s) need manual placement (the site is full)` : ''))
+for (const line of formatSkippedSummary(skipped)) console.log(line)
 console.log(`[rescore] Verify: no bay may be booked past its ceiling —`)
 console.log(`  SELECT l.code, l.capacity_slots, f.used_slots, p.pending_slots`)
 console.log(`    FROM public.locations l`)

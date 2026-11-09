@@ -8,6 +8,7 @@ import { detectReplenishment } from '@/services/supabase/replenService'
 import { replenKeys } from '@/hooks/queries/useReplenishment'
 import { productHomeBinKeys } from '@/hooks/queries/useProductHomeBins'
 import { warehouseSetupKeys } from '@/hooks/queries/useWarehouseSetup'
+import { homeBinHealthKeys } from '@/hooks/queries/useHomeBinHealth'
 
 export const replenConfigKeys = {
   all: ['replenConfig'] as const,
@@ -45,6 +46,8 @@ export function useBulkSetHomeBins() {
       qc.invalidateQueries({ queryKey: productHomeBinKeys.all })
       qc.invalidateQueries({ queryKey: replenKeys.all })
       qc.invalidateQueries({ queryKey: warehouseSetupKeys.all })
+      // Moving a home bin changes whether putaway can use it.
+      qc.invalidateQueries({ queryKey: homeBinHealthKeys.all })
     },
   })
 }

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { PutawayLineRecommendation } from '@/types'
+import type { PutawayLineInput } from './putawayService'
 
 export interface ReceiptLine {
   product_id: number
@@ -60,6 +61,12 @@ export interface ReceiveStockResult {
   location_id?: number
   /** Server-generated putaway tasks for this receipt; null when unavailable. */
   putaway?: ReceivePutaway | null
+  /** NX-0032: set when a product's home bin could not be read. The receipt is
+   *  booked and no putaway task exists yet. */
+  putaway_error?: string
+  /** With `putaway_error`: the lines receive-stock tried, in base units with
+   *  their plate and hold flag, to send to recommend-putaway for a Retry. */
+  putaway_lines?: PutawayLineInput[]
 }
 
 // Records a goods receipt (stock IN) via the receive-stock Edge Function, which
@@ -75,9 +82,17 @@ export async function receiveStock(
     ok: true
     result: ReceiveStockResult
     putaway?: ReceivePutaway | null
+    putaway_error?: string
+    putaway_lines?: PutawayLineInput[]
   }>('receive-stock', { body: { receipt: header, lines, ...(plates?.length ? { plates } : {}) } })
   if (error) throw error
-  return { ...data!.result, putaway: data!.putaway ?? null }
+  return {
+    ...data!.result,
+    putaway: data!.putaway ?? null,
+    ...(data!.putaway_error
+      ? { putaway_error: data!.putaway_error, putaway_lines: data!.putaway_lines ?? [] }
+      : {}),
+  }
 }
 
 /** Plates created by a receipt, so the operator can print their labels

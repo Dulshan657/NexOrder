@@ -1,16 +1,49 @@
 import { supabase } from '@/lib/supabase'
-import { extractFunctionErrorDetails, extractFunctionErrorMessage } from '@/lib/functionError'
+import { extractFunctionErrorDetails, extractFunctionErrorEnvelope, extractFunctionErrorMessage } from '@/lib/functionError'
 import type { PutawayLineRecommendation } from '@/types'
 import type { OverrideReason } from '@/supabase/functions/_shared/putawayCompletion'
 
 export interface PutawayLineInput {
   product_id: number
+  /** Base units. */
   quantity: number
+  /** The plate this quantity arrived on, its type, and whether it is held. The
+   *  receive screen's Retry sends back what receive-stock returned as
+   *  `putaway_lines`, so a held line is still offered only hold bins and a plate
+   *  still drains. Server rule: `hu_id` must be on `goodsReceiptId`. */
+  hu_type?: 'pallet' | 'carton'
+  hu_id?: number
+  quarantine?: boolean
 }
 
 export type PutawayResponse =
   | { mode: 'legacy' }
   | { mode: 'engine'; layoutId: number; recommendations: PutawayLineRecommendation[] }
+
+/** A refusal from recommend-putaway, carrying the server's own words plus the
+ *  stable markers a caller may branch on (never branch on the prose). */
+export class RecommendPutawayError extends Error {
+  /** The envelope's `error.code`, e.g. 'CONFLICT'; null when there was no response. */
+  readonly code: string | null
+  /** `error.details.reason`, e.g. 'putaway_tasks_exist'; null when absent. */
+  readonly reason: string | null
+  constructor(message: string, code: string | null, reason: string | null) {
+    super(message)
+    this.name = 'RecommendPutawayError'
+    this.code = code
+    this.reason = reason
+  }
+}
+
+/** `details.reason` recommend-putaway sends with the CONFLICT it answers when a
+ *  receipt already has open putaway tasks (_shared/putawayReceiptGuards.ts). */
+const PUTAWAY_TASKS_EXIST_REASON = 'putaway_tasks_exist'
+
+/** True when the receipt already has open putaway tasks, i.e. a Retry that found
+ *  its work already done. The screen treats this as success, not as a failure. */
+export function isPutawayTasksExist(e: unknown): boolean {
+  return e instanceof RecommendPutawayError && e.code === 'CONFLICT' && e.reason === PUTAWAY_TASKS_EXIST_REASON
+}
 
 /** Ask the engine for putaway recommendations for freshly-received lines. A
  *  warehouse without a published layout returns { mode: 'legacy' } and the caller
@@ -39,7 +72,17 @@ export async function recommendPutaway(
       replaces_recommendation_id: replacesRecommendationId,
     },
   })
-  if (error) throw error
+  if (error) {
+    // The raw FunctionsHttpError says only "non-2xx status code". Since NX-0032
+    // the words matter here: a Retry after "Home bin unavailable, try again."
+    // can fail the same way, and a refused plate says which one.
+    const [message, envelope] = await Promise.all([
+      extractFunctionErrorMessage(error, 'Could not get putaway recommendations'),
+      extractFunctionErrorEnvelope(error),
+    ])
+    const reason = (envelope?.details as { reason?: unknown } | null | undefined)?.reason
+    throw new RecommendPutawayError(message, envelope?.code ?? null, typeof reason === 'string' ? reason : null)
+  }
   if (!data || data.mode === 'legacy') return { mode: 'legacy' }
   return { mode: 'engine', layoutId: data.layout_id!, recommendations: data.recommendations ?? [] }
 }
@@ -87,7 +130,14 @@ export async function decidePutaway(input: DecidePutawayInput): Promise<DecidePu
       reason: input.reason,
     },
   })
-  if (error) throw error
+  if (error) {
+    // The raw FunctionsHttpError says only "non-2xx status code"; the server's
+    // own words are on the response body. Since NX-0032 those words matter: an
+    // off-home bin is refused with "Put this in its home bin ..." (or "... is
+    // the home bin of ...") and the queue's Place now, Choose bin and the
+    // opening-stock import all show whatever message this throws.
+    throw new Error(await extractFunctionErrorMessage(error, 'Could not record the putaway decision'))
+  }
   return { remainderQty: Number(data?.remainder_qty ?? 0) }
 }
 

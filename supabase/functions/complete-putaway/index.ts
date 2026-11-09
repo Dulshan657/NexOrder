@@ -22,11 +22,18 @@
 // Since NX-0006 (mig 00135) a SUGGESTED task completes directly — the home bin
 // is the plan, so nobody has to assign it first — and the request may also:
 //   * name several loose tasks of one product (`task_ids`), pooled oldest first;
-//   * give an `override_reason`, REQUIRED when a suggested task goes elsewhere;
+//   * give an `override_reason`, REQUIRED when a suggested task goes elsewhere
+//     (but only once the home rule below has passed);
 //   * flag a short count (`short`), leaving the remainder for a manager;
 //   * ask to make the bin the product's home (`make_home`), only if it has none.
 // The rules live in _shared/putawayCompletion.ts; ASSIGNED tasks behave exactly
 // as before, so the pre-NX-0006 Walk view keeps working.
+//
+// Since NX-0032 (mig 00142) the home bin is a rule, not a hint: a bin that is
+// not the product's home is refused with CONFLICT while the home has room, and
+// that is asked BEFORE the reason above, so the floor is not first sent to say
+// why it went elsewhere only to be refused for going there. No role, reason or
+// flag lifts it; wie_complete_putaway_many_tx asks again under its row lock.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -40,6 +47,7 @@ import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { checkPutawayScan } from '../_shared/putawayScanCheck.ts'
 import { normalizeScan } from '../_shared/scanNormalize.ts'
 import { requireModule } from '../_shared/modules.ts'
+import { refuseIfHomeBlocked } from '../_shared/putawayHomeBlock.ts'
 import {
   OVERRIDE_REASONS,
   allocateAcrossTasks,
@@ -200,6 +208,13 @@ serve(async (req: Request) => {
 
     const remaining = ordered.reduce((sum, r) => sum + Number(r.quantity), 0)
     const placedQty = quantity ?? remaining
+
+    // ── The home bin comes first (NX-0032, mig 00142) ────────────────────────
+    // Asked before decidePutawayCompletion so the floor reads the home message
+    // and is not first sent to say why it went to a different bin. Nothing lifts
+    // it. The oldest task stands for the pool: they are one product in one
+    // warehouse, and wie_complete_putaway_many_tx re-checks every line anyway.
+    await refuseIfHomeBlocked(admin, ordered[0].id, actualId)
 
     // ── Pool and decide (NX-0006) ────────────────────────────────────────────
     const pooled = allocateAcrossTasks(

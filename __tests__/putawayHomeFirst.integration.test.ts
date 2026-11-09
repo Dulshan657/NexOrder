@@ -234,7 +234,12 @@ describe('NX-0006 putaway, home first (live RPCs, rollback-isolated)', () => {
         [s.productId, s.warehouseId])
       expect(home.rows[0].bin_id).toBe(s.otherBin)
 
-      // A second "make home" never moves an existing home.
+      // A second "make home" never moves an existing home. Since NX-0032
+      // (mig 00142) another bin is only allowed once the home is full, so
+      // fill it by its maximum first: the 10 already there.
+      await client.query(
+        'UPDATE public.product_home_bins SET max_qty = 10 WHERE product_id=$1 AND warehouse_id=$2',
+        [s.productId, s.warehouseId])
       await client.query(
         `SELECT public.inv_apply_leg($1, $2, NULL, 3, 0, 'receipt', NULL, 'test', NULL, NULL)`,
         [s.productId, s.warehouseId])

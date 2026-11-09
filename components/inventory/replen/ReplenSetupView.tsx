@@ -21,6 +21,7 @@ import { useLocalStorage } from '../../../hooks/useLocalStorage';
 import { useToastActions } from '../../../hooks/useToasts';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import ReplenPolicyBar from './ReplenPolicyBar';
+import HomeBinProblemsPanel from './HomeBinProblemsPanel';
 import ReplenSetupRow, { type BinOption } from './ReplenSetupRow';
 import { applyReplenCsv, exportReplenCsv } from './replenCsv';
 import {
@@ -315,6 +316,8 @@ const ReplenSetupView: React.FC<ReplenSetupViewProps> = ({ warehouseId, warehous
           </p>
         </div>
       )}
+
+      <HomeBinProblemsPanel warehouseId={warehouseId} />
 
       <ReplenPolicyBar
         policy={policy}
