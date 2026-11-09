@@ -8,7 +8,11 @@
 //   * a SUGGESTED task scanned into a different bin needs a reason, picked from
 //     a short fixed list. An ASSIGNED task does not: that is the pre-NX-0006
 //     walk, which never sent one, and it must keep working for rows already in
-//     flight and for a tab that has not reloaded;
+//     flight and for a tab that has not reloaded. Since NX-0032 the reason is
+//     asked only once the home rule has passed: a bin that is not the product's
+//     home while the home has room is refused first (wie_home_block, asked by
+//     complete-putaway before this runs), and no reason lifts that. So the
+//     reason covers only a bin the home rule allows, e.g. a home that is full;
 //   * a short count may be FLAGGED, and then the remainder becomes a 'short'
 //     task at the dock for a manager, instead of an open task for the floor;
 //   * "make this the home bin" only fills a gap. The floor cannot move an

@@ -87,7 +87,14 @@ export async function decidePutaway(input: DecidePutawayInput): Promise<DecidePu
       reason: input.reason,
     },
   })
-  if (error) throw error
+  if (error) {
+    // The raw FunctionsHttpError says only "non-2xx status code"; the server's
+    // own words are on the response body. Since NX-0032 those words matter: an
+    // off-home bin is refused with "Put this in its home bin ..." (or "... is
+    // the home bin of ...") and the queue's Place now, Choose bin and the
+    // opening-stock import all show whatever message this throws.
+    throw new Error(await extractFunctionErrorMessage(error, 'Could not record the putaway decision'))
+  }
   return { remainderQty: Number(data?.remainder_qty ?? 0) }
 }
 

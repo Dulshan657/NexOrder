@@ -13,9 +13,11 @@
  * Run with: `npm run test:integration -- homeBinEnforced` (dev credentials;
  * migration 00142 applied).
  */
-import { describe, it, expect } from 'vitest'
+import { randomUUID } from 'node:crypto'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import type pg from 'pg'
-import { hasDbCreds, withRollbackTx, expectRaise } from './support/pgTestClient'
+import { createClient } from '@supabase/supabase-js'
+import { connect, hasDbCreds, withRollbackTx, expectRaise } from './support/pgTestClient'
 
 let seq = 0
 const uniq = (): string => `${Date.now()}-${++seq}`
@@ -75,7 +77,7 @@ async function addBin(
   return r.rows[0].id
 }
 
-async function seed(client: pg.Client): Promise<Scenario> {
+async function seed(client: pg.Client, o: { stock?: boolean } = {}): Promise<Scenario> {
   const token = uniq()
   const p = await newProduct(client, token, '')
   const warehousePath = `TSTHOMEWH${token}`
@@ -98,7 +100,9 @@ async function seed(client: pg.Client): Promise<Scenario> {
   const spare = await addBin(client, base, 'Y', 2, 100)
 
   // Twenty units received at the warehouse root: where un-placed goods sit.
-  await receive(client, p.id, warehouseId, 20)
+  // The HTTP cases below commit their data and never move stock, so they skip
+  // the receipt: a ledger row could not be cleaned up afterwards.
+  if (o.stock !== false) await receive(client, p.id, warehouseId, 20)
   return { ...base, home, other, spare, productId: p.id, sku: p.sku }
 }
 
@@ -438,5 +442,232 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
       expect(r.rows[0].acl).toContain('service_role=X')
       expect(r.rows[0].acl).not.toMatch(/(^|[{,])=X|anon=|authenticated=/)
     })
+  })
+})
+
+// ── The edge functions refuse FIRST (live HTTP, committed made-up data) ──────
+//
+// The transactions above are the backstop; these prove the functions say the
+// home message before anything else is asked of the floor. An edge function
+// reads through PostgREST on its own connections, so the data has to be
+// COMMITTED: it is made up (TST-HOME-*), moves no stock, and is deleted again
+// in afterAll. The caller is a made-up Admin created for the run, so nothing
+// depends on a seeded login.
+const SUPABASE_URL = (process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL ?? '').replace(/\/+$/, '')
+const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? ''
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+
+/** The refusal as the floor reads it: no "CONFLICT:" prefix, that is the wire code. */
+const HOME_ROOM_MSG = (n: number | string): RegExp =>
+  new RegExp(`^Put this in its home bin TST-HOME-H-[^;]+; it still has room for ${n}\\. If it is full, ask a manager to set its maximum\\.$`)
+const SAY_WHY = /say why it went to a different bin/
+const LEVEL_ROLE = /level; .* is only allowed on/
+
+interface HttpFixture {
+  s: Scenario
+  userId: string
+  jwt: string
+  /** Suggested to the home; 4 units. */
+  taskAtHome: number
+  /** Suggested to another bin; 3 units. */
+  taskAtOther: number
+  /** A bin whose level role this product may not use. */
+  levelBin: number
+}
+
+interface Reply { status: number; body: { error?: { code: string; message: string } } & Record<string, unknown> }
+
+async function callFn(fn: string, jwt: string, body: unknown): Promise<Reply> {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${fn}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${jwt}`, apikey: ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return { status: res.status, body: await res.json() }
+}
+
+async function buildHttpFixture(): Promise<HttpFixture> {
+  const token = uniq()
+  const email = `tst-home-${token}@test.local`
+  const password = `Tst-${randomUUID()}`
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+
+  // handle_new_user() makes the profile from user_metadata; the role lives there.
+  const created = await admin.auth.admin.createUser({
+    email, password, email_confirm: true, user_metadata: { name: 'TST-HOME Tester', role: 'Admin' },
+  })
+  if (created.error || !created.data.user) throw new Error(`create test user: ${created.error?.message}`)
+  const userId = created.data.user.id
+
+  const anon = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } })
+  const signedIn = await anon.auth.signInWithPassword({ email, password })
+  if (signedIn.error || !signedIn.data.session) throw new Error(`sign in test user: ${signedIn.error?.message}`)
+
+  const client = await connect()
+  try {
+    await client.query('BEGIN')
+    const s = await seed(client, { stock: false })
+    await setHome(client, s, s.home)
+    // BIGINT ids come back from pg as strings; the functions want numbers.
+    const taskAtHome = Number(await task(client, s, 4, s.home))
+    const taskAtOther = Number(await task(client, s, 3, s.other))
+    // A pick-level bin the product is not allowed on: the level-role gate the
+    // home rule has to come before.
+    const levelBin = await addBin(client, s, 'L', 3, 100)
+    await client.query("UPDATE public.locations SET level_role = 'pick' WHERE id = $1", [levelBin])
+    await client.query(
+      "INSERT INTO public.product_wms_attributes (product_id, allowed_level_roles) VALUES ($1, ARRAY['reserve'])",
+      [s.productId])
+    await client.query('COMMIT')
+    return { s, userId, jwt: signedIn.data.session.access_token, taskAtHome, taskAtOther, levelBin }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    // The user outlives a failed seed otherwise.
+    await admin.auth.admin.deleteUser(userId)
+    throw err
+  } finally {
+    await client.end()
+  }
+}
+
+/** Delete every row the fixture committed, children first. */
+async function tearDownHttpFixture(f: HttpFixture): Promise<void> {
+  const { s } = f
+  const client = await connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('DELETE FROM public.wie_putaway_recommendations WHERE warehouse_id = $1', [s.warehouseId])
+    await client.query('DELETE FROM public.product_wms_attributes WHERE product_id = $1', [s.productId])
+    await client.query('DELETE FROM public.product_home_bins WHERE warehouse_id = $1', [s.warehouseId])
+    await client.query('UPDATE public.locations SET active_layout_id = NULL WHERE id = $1', [s.warehouseId])
+    await client.query('DELETE FROM public.layout_placements WHERE layout_id = $1', [s.layoutId])
+    await client.query('DELETE FROM public.warehouse_layouts WHERE id = $1', [s.layoutId])
+    await client.query('DELETE FROM public.locations WHERE parent_id = $1', [s.warehouseId])
+    await client.query('DELETE FROM public.locations WHERE id = $1', [s.warehouseId])
+    await client.query('DELETE FROM public.products WHERE id = $1', [s.productId])
+    await client.query('DELETE FROM public.suppliers WHERE email = $1', [`tst-home-${s.token}@test.local`])
+    await client.query('DELETE FROM public.rate_limit_counters WHERE key = ANY ($1)', [
+      [`complete-putaway:${f.userId}`, `decide-putaway:${f.userId}`, `decide-putaway:desk:${f.userId}`],
+    ])
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    await client.end()
+  }
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+  const removed = await admin.auth.admin.deleteUser(f.userId)
+  if (removed.error) throw new Error(`delete test user: ${removed.error.message}`)
+}
+
+describe('NX-0032 edge functions refuse an off-home putaway first (live HTTP)', () => {
+  let f: HttpFixture
+
+  beforeAll(async () => {
+    expect(Boolean(SUPABASE_URL && ANON_KEY && SERVICE_KEY)).toBe(true)
+    f = await buildHttpFixture()
+  })
+
+  afterAll(async () => {
+    if (f) await tearDownHttpFixture(f)
+  })
+
+  it('refuses with the home message before asking for a reason', async () => {
+    const r = await callFn('complete-putaway', f.jwt, {
+      recommendation_id: f.taskAtHome, actual_location_id: f.s.other,
+    })
+    expect(r.body.error?.message).toMatch(HOME_ROOM_MSG(10))
+    expect(r.body.error?.message).not.toMatch(SAY_WHY)
+    expect(r.body.error?.code).toBe('CONFLICT')
+    expect(r.status).toBe(409)
+  })
+
+  it('complete-putaway refuses the same way when the bin comes from a scan', async () => {
+    const r = await callFn('complete-putaway', f.jwt, {
+      recommendation_id: f.taskAtHome, scan: { locationCode: `TST-HOME-X-${f.s.token}` },
+    })
+    expect(r.body.error?.message).toMatch(HOME_ROOM_MSG(10))
+    expect(r.status).toBe(409)
+  })
+
+  it('decide-putaway override to another bin is refused even with role_override', async () => {
+    // The opening-stock importer's path: decision override, role_override on.
+    const r = await callFn('decide-putaway', f.jwt, {
+      recommendation_id: f.taskAtHome, decision: 'override',
+      chosen_location_id: f.s.other, role_override: true,
+    })
+    expect(r.body.error?.message).toMatch(HOME_ROOM_MSG(10))
+    expect(r.body.error?.code).toBe('CONFLICT')
+    expect(r.status).toBe(409)
+  })
+
+  it('decide-putaway accept of a suggestion that is not the home is refused', async () => {
+    // Three units suggested elsewhere; four more are already on their way home.
+    const r = await callFn('decide-putaway', f.jwt, {
+      recommendation_id: f.taskAtOther, decision: 'accept',
+    })
+    expect(r.body.error?.message).toMatch(HOME_ROOM_MSG(6))
+    expect(r.status).toBe(409)
+  })
+
+  it('decide-putaway assign_only to another bin is refused', async () => {
+    const r = await callFn('decide-putaway', f.jwt, {
+      recommendation_id: f.taskAtHome, decision: 'override',
+      chosen_location_id: f.s.other, assign_only: true,
+    })
+    expect(r.body.error?.message).toMatch(HOME_ROOM_MSG(10))
+    expect(r.status).toBe(409)
+  })
+
+  it('decide-putaway redirect to another bin is refused', async () => {
+    const r = await callFn('decide-putaway', f.jwt, {
+      recommendation_id: f.taskAtHome, decision: 'redirect', chosen_location_id: f.s.other,
+    })
+    expect(r.body.error?.message).toMatch(HOME_ROOM_MSG(10))
+    expect(r.status).toBe(409)
+  })
+
+  it('the home message comes before the level-role gate, and role_override does not lift it', async () => {
+    const plain = await callFn('decide-putaway', f.jwt, {
+      recommendation_id: f.taskAtHome, decision: 'override', chosen_location_id: f.levelBin,
+    })
+    expect(plain.body.error?.message).not.toMatch(LEVEL_ROLE)
+    expect(plain.body.error?.message).toMatch(HOME_ROOM_MSG(10))
+    expect(plain.status).toBe(409)
+
+    const forced = await callFn('decide-putaway', f.jwt, {
+      recommendation_id: f.taskAtHome, decision: 'override',
+      chosen_location_id: f.levelBin, role_override: true,
+    })
+    expect(forced.body.error?.message).toMatch(HOME_ROOM_MSG(10))
+    expect(forced.status).toBe(409)
+  })
+
+  it('a redirect hears the home message before the level-role message', async () => {
+    const r = await callFn('decide-putaway', f.jwt, {
+      recommendation_id: f.taskAtHome, decision: 'redirect', chosen_location_id: f.levelBin,
+    })
+    expect(r.body.error?.message).not.toMatch(LEVEL_ROLE)
+    expect(r.body.error?.message).toMatch(HOME_ROOM_MSG(10))
+    expect(r.status).toBe(409)
+  })
+
+  it('left both tasks untouched and moved no stock', async () => {
+    const client = await connect()
+    try {
+      const rows = await client.query<{ id: number; status: string; recommended_location_id: number }>(
+        'SELECT id, status, recommended_location_id FROM public.wie_putaway_recommendations WHERE warehouse_id = $1 ORDER BY id',
+        [f.s.warehouseId])
+      expect(rows.rows.map((r) => [Number(r.id), r.status, r.recommended_location_id])).toEqual([
+        [f.taskAtHome, 'suggested', f.s.home],
+        [f.taskAtOther, 'suggested', f.s.other],
+      ])
+      const moved = await client.query<{ n: string }>(
+        'SELECT COUNT(*) AS n FROM public.inventory_balances WHERE product_id = $1', [f.s.productId])
+      expect(Number(moved.rows[0].n)).toBe(0)
+    } finally {
+      await client.end()
+    }
   })
 })
