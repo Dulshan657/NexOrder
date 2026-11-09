@@ -12,7 +12,7 @@
 // `processing` and `processed` are the two statuses that mean stock is reserved
 // and nothing has moved, so releasing the reservation restores the world
 // exactly. That is what `inv_release_reservation` can do and all it can do:
-// it nets (ordered − picked) and deallocates the remainder, so it CANNOT undo a
+// it deallocates what this order still holds, so it CANNOT undo a
 // pick, and picked units have already left on_hand.
 //
 // But status alone is not sufficient, which is the subtle part. An order's
