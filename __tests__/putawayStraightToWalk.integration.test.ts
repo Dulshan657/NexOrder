@@ -207,8 +207,8 @@ async function onHand(client: pg.Client, productId: number, locationId: number):
 /** Two existing profiles, to stamp assigned_by (it references profiles). Read only. */
 async function actors(client: pg.Client): Promise<[string, string]> {
   const r = await client.query<{ id: string }>('SELECT id FROM public.profiles ORDER BY id LIMIT 2')
-  if (r.rows.length === 0) throw new Error('dev has no profiles to act as')
-  return [r.rows[0].id, (r.rows[1] ?? r.rows[0]).id]
+  if (r.rows.length < 2) throw new Error('dev needs two profiles to tell the walker from the desk')
+  return [r.rows[0].id, r.rows[1].id]
 }
 
 const confirm = 'SELECT public.wie_confirm_overflow_tx($1, $2, $3) AS out'
@@ -611,6 +611,34 @@ describe('NX-0033 desk and walk at once (two connections, committed made-up data
       const moved = await a.query<{ n: string }>(
         'SELECT count(*) AS n FROM public.inventory_balances WHERE product_id = $1', [w.productId])
       expect(Number(moved.rows[0].n)).toBe(0)
+    } finally {
+      await a.end()
+      await b.end()
+    }
+  })
+
+  it('walk confirm waits for a desk assign holding the line: the desk keeps its bin, the walk is refused', async () => {
+    // The mirror of the test above. Without FOR UPDATE in wie_confirm_overflow_tx
+    // the walk would read the line as still waiting, pass every check, block
+    // only at its UPDATE, and then overwrite the desk's bin once the desk commits.
+    const { w } = r
+    const a = await connect()
+    const b = await connect()
+    try {
+      const [walker, desk] = await actors(a)
+      // H full by what is on its way there, so this test stands on its own.
+      await task(a, w, 10, w.h, { source: 'home' })
+      const id = await task(a, w, 3, w.o1, { source: 'overflow' })
+      const bPid = (await b.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0].pid
+
+      await a.query('BEGIN')
+      await a.query('SELECT public.wie_assign_putaway_tx($1, $2, NULL, $3)', [id, w.o2, desk])
+      const walkConfirm = errorOf(b.query(confirm, [id, w.o1, walker]))
+      await waitUntilBlocked(a, bPid)
+      await a.query('COMMIT')
+
+      expect((await walkConfirm)?.message).toMatch(/already dealt with \(it is now assigned\)/)
+      expect(await row(a, id)).toMatchObject({ status: 'assigned', assigned_location_id: w.o2, assigned_by: desk, quantity: 3 })
     } finally {
       await a.end()
       await b.end()
