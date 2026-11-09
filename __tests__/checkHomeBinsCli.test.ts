@@ -81,18 +81,18 @@ describe('check-home-bins exit code', () => {
   const run = (args: string[]) => spawnSync(
     process.execPath,
     [resolve(ROOT, 'node_modules/tsx/dist/cli.mjs'), 'scripts/check-home-bins.mjs', ...args],
-    { cwd: ROOT, encoding: 'utf8', env: { ...process.env, NEXORDER_ENV: '' }, timeout: 60_000 },
+    { cwd: ROOT, encoding: 'utf8', env: { ...process.env, NEXORDER_ENV: '' } },
   )
 
   it('exits 2 for a bare --target, before it reads anything', () => {
     const r = run(['--target'])
     expect(r.stderr).toContain('--target needs a name')
     expect(r.status).toBe(2)
-  }, 60_000)
+  })
 
   it('exits 2 when no target is named', () => {
     const r = run([])
     expect(r.stderr).toMatch(/No target environment/)
     expect(r.status).toBe(2)
-  }, 60_000)
+  })
 })
