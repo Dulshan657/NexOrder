@@ -11,6 +11,7 @@ import React from 'react'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import type { PutawayLineRecommendation } from '../../../types'
 import type { PutawayLineInput } from '../../../services/supabase/putawayService'
+import { isPutawayTasksExist } from '../../../services/supabase/putawayService'
 import { useRetryReceiptPutaway } from '../../../hooks/queries/usePutawayRecommendation'
 
 interface PutawayRetryNoticeProps {
@@ -20,17 +21,25 @@ interface PutawayRetryNoticeProps {
   receiptId: number | null
   /** The lines receive-stock tried. Empty = nothing to retry with. */
   lines: PutawayLineInput[]
-  /** The retry made the tasks; these are their suggestions. */
-  onPlaced: (recommendations: PutawayLineRecommendation[]) => void
+  /** The retry is over: it made the tasks (these are their suggestions), or found
+   *  them already there (`existed` says so in the server's words, no suggestions). */
+  onResolved: (recommendations: PutawayLineRecommendation[], existed: string | null) => void
 }
 
-export function PutawayRetryNotice({ message, warehouseId, receiptId, lines, onPlaced }: PutawayRetryNoticeProps) {
+export function PutawayRetryNotice({ message, warehouseId, receiptId, lines, onResolved }: PutawayRetryNoticeProps) {
   const retry = useRetryReceiptPutaway()
 
   const run = () => {
     retry.mutate(
       { warehouseId, lines, goodsReceiptId: receiptId ?? undefined },
-      { onSuccess: (res) => onPlaced(res.mode === 'engine' ? res.recommendations : []) },
+      {
+        onSuccess: (res) => onResolved(res.mode === 'engine' ? res.recommendations : [], null),
+        // Already queued, by an earlier attempt or another tab: that is the job
+        // done, so the notice goes, and it is not shown as a failure.
+        onError: (e) => {
+          if (isPutawayTasksExist(e)) onResolved([], e.message)
+        },
+      },
     )
   }
 

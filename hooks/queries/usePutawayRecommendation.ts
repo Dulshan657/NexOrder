@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   recommendPutaway,
   decidePutaway,
+  isPutawayTasksExist,
   type PutawayLineInput,
   type PutawayResponse,
   type DecidePutawayInput,
@@ -20,7 +21,9 @@ export function useRecommendPutaway() {
 /** Put a receipt away again after receive-stock could not read a home bin
  *  (NX-0032). The receipt was booked and no task exists, so this is a real run,
  *  not a preview: it creates the tasks the first attempt would have. `lines` are
- *  the ones receive-stock returned as `putaway_lines`. */
+ *  the ones receive-stock returned as `putaway_lines`. Safe to repeat: when the
+ *  receipt already has open tasks the server answers CONFLICT and nothing is
+ *  queued twice (see isPutawayTasksExist). */
 export function useRetryReceiptPutaway() {
   const qc = useQueryClient()
   return useMutation<PutawayResponse, Error, { warehouseId: number; lines: PutawayLineInput[]; goodsReceiptId?: number }>({
@@ -29,6 +32,14 @@ export function useRetryReceiptPutaway() {
       // The queue and its nav badge gained tasks.
       qc.invalidateQueries({ queryKey: putawayKeys.all })
       qc.invalidateQueries({ queryKey: putawayKeys.counts })
+    },
+    onError: (e) => {
+      // The tasks were already there (a lost response, a second tab): the work
+      // is done, so the queue is what needs a look, not an error.
+      if (isPutawayTasksExist(e)) {
+        qc.invalidateQueries({ queryKey: putawayKeys.all })
+        qc.invalidateQueries({ queryKey: putawayKeys.counts })
+      }
     },
   })
 }

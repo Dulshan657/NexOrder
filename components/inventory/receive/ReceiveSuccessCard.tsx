@@ -41,8 +41,9 @@ export function ReceiveSuccessCard({
   summary, productNameById, onOpenPutaway, onStartNext,
 }: ReceiveSuccessCardProps) {
   const [showSuggestions, setShowSuggestions] = useState(false)
-  // Set by a successful Retry: the suggestions for the tasks it just created.
-  const [retried, setRetried] = useState<PutawayLineRecommendation[] | null>(null)
+  // Set when a Retry is over: the suggestions for the tasks it just created, or
+  // (no suggestions) the server's words that they were already there.
+  const [retried, setRetried] = useState<{ recommendations: PutawayLineRecommendation[]; existed: string | null } | null>(null)
   const rootRef = useRef<HTMLElement | null>(null)
 
   // Bring the card into view: the receipt it replaces may have been scrolled
@@ -52,7 +53,7 @@ export function ReceiveSuccessCard({
   }, [summary.receiptId])
 
   const { linesReceived, units, destName, warehouseId, putawayError, putawayLines } = summary
-  const recommendations = retried ?? summary.recommendations
+  const recommendations = retried?.recommendations ?? summary.recommendations
 
   return (
     <section ref={rootRef} aria-label="Receipt recorded" className="space-y-4">
@@ -95,8 +96,11 @@ export function ReceiveSuccessCard({
           warehouseId={warehouseId}
           receiptId={summary.receiptId}
           lines={putawayLines ?? []}
-          onPlaced={setRetried}
+          onResolved={(recs, existed) => setRetried({ recommendations: recs, existed })}
         />
+      )}
+      {retried?.existed && (
+        <p role="status" className="px-1 text-sm text-stone-600">{retried.existed}</p>
       )}
 
       {/* Mounted only once a receipt exists: the panel owns a query and a

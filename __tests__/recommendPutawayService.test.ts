@@ -9,13 +9,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('@/lib/supabase', () => ({ supabase: { functions: { invoke } } }))
 
-import { recommendPutaway } from '@/services/supabase/putawayService'
+import { isPutawayTasksExist, recommendPutaway } from '@/services/supabase/putawayService'
 
 const HOME_UNAVAILABLE = 'Home bin unavailable, try again.'
 
-function httpError(message: string, status = 500, code = 'INTERNAL') {
+function httpError(message: string, status = 500, code = 'INTERNAL', details?: unknown) {
   return Object.assign(new Error('Edge Function returned a non-2xx status code'), {
-    context: new Response(JSON.stringify({ error: { code, message } }), {
+    context: new Response(JSON.stringify({ error: { code, message, ...(details ? { details } : {}) } }), {
       status,
       headers: { 'Content-Type': 'application/json' },
     }),
@@ -63,6 +63,38 @@ describe('recommendPutaway', () => {
     expect(res).toEqual({ mode: 'engine', layoutId: 3, recommendations: [] })
     expect(invoke).toHaveBeenCalledWith('recommend-putaway', {
       body: expect.objectContaining({ warehouse_id: 9, goods_receipt_id: 501, lines }),
+    })
+  })
+
+  describe('isPutawayTasksExist', () => {
+    const EXISTS = 'Putaway tasks already exist for this receipt.'
+
+    it('is true for the idempotency CONFLICT, read from its code and reason', async () => {
+      invoke.mockResolvedValue({
+        data: null,
+        error: httpError(EXISTS, 409, 'CONFLICT', { reason: 'putaway_tasks_exist' }),
+      })
+      const err = await recommendPutaway(9, [{ product_id: 1, quantity: 4 }], 501).then(() => null, (e: unknown) => e)
+      expect(err).toBeInstanceOf(Error)
+      expect((err as Error).message).toBe(EXISTS)
+      expect(isPutawayTasksExist(err)).toBe(true)
+    })
+
+    it('is false for any other failure, whatever its words', async () => {
+      const other = [
+        httpError(EXISTS, 409, 'CONFLICT'),
+        httpError(EXISTS, 409, 'CONFLICT', { reason: 'something_else' }),
+        httpError(EXISTS, 500, 'INTERNAL', { reason: 'putaway_tasks_exist' }),
+        httpError('Home bin unavailable, try again.'),
+        new Error('Failed to fetch'),
+      ]
+      for (const error of other) {
+        invoke.mockResolvedValueOnce({ data: null, error })
+        const err = await recommendPutaway(9, [{ product_id: 1, quantity: 4 }], 501).then(() => null, (e: unknown) => e)
+        expect(isPutawayTasksExist(err)).toBe(false)
+      }
+      expect(isPutawayTasksExist(undefined)).toBe(false)
+      expect(isPutawayTasksExist('boom')).toBe(false)
     })
   })
 })

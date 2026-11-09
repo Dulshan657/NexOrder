@@ -19,6 +19,8 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { generatePutawayTasks } from '../_shared/putawayTasks.ts'
 import { assertPlatesOnReceipt } from '../_shared/putawayPlateOwnership.ts'
+import { assertReceiptRequestAllowed } from '../_shared/putawayReceiptGuards.ts'
+import { assertMayActAtWarehouse } from '../_shared/receiveDestination.ts'
 import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
@@ -67,16 +69,28 @@ serve(async (req: Request) => {
       throw new EdgeFunctionError('INVALID_INPUT', 'A dry run cannot replace a recommendation')
     }
 
-    if (auth.role === 'Warehouse' && auth.profile.home_warehouse_id !== warehouse_id) {
-      throw new EdgeFunctionError('FORBIDDEN', 'You can only put away stock at your own warehouse')
-    }
+    // The same rule receive-stock applies (a dock user with no home site is
+    // unrestricted), so the receive screen's Retry works for whoever received.
+    assertMayActAtWarehouse(
+      { role: auth.role, homeWarehouseId: auth.profile.home_warehouse_id },
+      warehouse_id,
+      'You can only put away stock at your own warehouse',
+    )
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
       auth: { persistSession: false },
     })
 
-    // Before anything is expired or written: a plate this request does not own
-    // is refused, not planned around.
+    // Before anything is expired or written: a receipt that is not this
+    // warehouse's, a receipt that already has open tasks (a Retry must not queue
+    // the stock twice) and a plate this request does not own are refused, not
+    // planned around.
+    await assertReceiptRequestAllowed(admin, {
+      warehouseId: warehouse_id,
+      goodsReceiptId: goods_receipt_id,
+      replacesRecommendationId: replaces_recommendation_id,
+      dryRun: dry_run,
+    })
     await assertPlatesOnReceipt(admin, goods_receipt_id, lines)
 
     // Expire the row being replaced BEFORE generating, so the queue is never

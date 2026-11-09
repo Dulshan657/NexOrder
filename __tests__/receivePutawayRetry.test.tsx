@@ -79,19 +79,25 @@ const engineReply = {
   error: null,
 }
 
-function httpError(message: string, status = 500, code = 'INTERNAL') {
+function httpError(message: string, status = 500, code = 'INTERNAL', details?: unknown) {
   return Object.assign(new Error('Edge Function returned a non-2xx status code'), {
-    context: new Response(JSON.stringify({ error: { code, message } }), {
+    context: new Response(JSON.stringify({ error: { code, message, ...(details ? { details } : {}) } }), {
       status,
       headers: { 'Content-Type': 'application/json' },
     }),
   })
 }
 
+let queryClient: QueryClient
+
 function wrap(ui: ReactElement) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
 }
+
+/** What recommend-putaway answers when the receipt already has open tasks. */
+const tasksExist = () =>
+  httpError('Putaway tasks already exist for this receipt.', 409, 'CONFLICT', { reason: 'putaway_tasks_exist' })
 
 const failedSummary: ReceivedSummary = {
   receiptId: 501,
@@ -197,6 +203,46 @@ describe('ReceiveSuccessCard after a failed home read', () => {
 
     await act(async () => { finish(engineReply) })
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  describe('when the tasks already exist (the retry is idempotent)', () => {
+    it('treats the CONFLICT as done: clears the notice and refreshes the queue', async () => {
+      invoke.mockResolvedValue({ data: null, error: tasksExist() })
+      renderCard()
+      const refresh = vi.spyOn(queryClient, 'invalidateQueries')
+
+      fireEvent.click(retryButton())
+
+      await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+      expect(screen.queryByRole('button', { name: /^Retry/ })).toBeNull()
+      expect(refresh).toHaveBeenCalledWith({ queryKey: ['putaway-queue'] })
+      expect(refresh).toHaveBeenCalledWith({ queryKey: ['putaway-counts'] })
+      // Said once, as a status, not as a failure.
+      expect(screen.getByRole('status').textContent).toContain('Putaway tasks already exist for this receipt.')
+    })
+
+    it('does not treat another CONFLICT as done', async () => {
+      invoke.mockResolvedValue({ data: null, error: httpError('Something else is in the way', 409, 'CONFLICT') })
+      renderCard()
+
+      fireEvent.click(retryButton())
+
+      await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Something else is in the way'))
+      expect(retryButton().disabled).toBe(false)
+    })
+
+    it('does not treat the same words from a different reason as done', async () => {
+      invoke.mockResolvedValue({
+        data: null,
+        error: httpError('Putaway tasks already exist for this receipt.', 409, 'CONFLICT', { reason: 'other' }),
+      })
+      renderCard()
+
+      fireEvent.click(retryButton())
+
+      await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+      expect(screen.queryByRole('status')).toBeNull()
+    })
   })
 
   it('has no message and no Retry when putaway worked', () => {
