@@ -1,4 +1,4 @@
-// The walk half of two-stage putaway (mig 00080): the assigned tasks, the route
+// The walk half of two-stage putaway (mig 00080): the walk's stops, the route
 // through them, and the mutations that complete or abandon one.
 //
 // Every mutation invalidates `putawayKeys.all` + `.counts` for the same reason
@@ -8,7 +8,7 @@
 // moment stock actually moves.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getAssignedPutaways, type PendingPutawayRow } from '@/services/supabase/putawayQueueService'
+import { getWalkPutaways, type PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import { getPutawayRoute, type PutawayRouteResult } from '@/services/supabase/putawayRouteService'
 import {
   completePutaway,
@@ -20,12 +20,13 @@ import {
 import { putawayKeys } from './putawayKeys'
 import { inventoryKeys } from './useInventoryBalances'
 
-/** Tasks assigned to a bin but not yet carried there. */
-export function useAssignedPutaways(warehouseId: number | null) {
+/** The Walk's stops (NX-0033): lines assigned to a bin but not yet carried
+ *  there, plus overflow lines awaiting a confirmation. */
+export function useWalkPutaways(warehouseId: number | null) {
   return useQuery<PendingPutawayRow[]>({
-    queryKey: [...putawayKeys.all, 'assigned', warehouseId],
+    queryKey: [...putawayKeys.all, 'walk', warehouseId],
     enabled: warehouseId != null,
-    queryFn: () => getAssignedPutaways(warehouseId as number),
+    queryFn: () => getWalkPutaways(warehouseId as number),
     // Same reasoning as the Assign queue: a walker returning to this tab must
     // never be shown a task someone else already placed.
     staleTime: 0,

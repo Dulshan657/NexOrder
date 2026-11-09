@@ -56,6 +56,7 @@ function row(over: Partial<PendingPutawayRow> = {}): PendingPutawayRow {
     huCode: null,
     huLabelPrinted: null,
     huStatus: null,
+    status: 'assigned',
     assignedLocationId: 5001,
     assignedAt: '2026-11-09T00:01:00Z',
     suggestionSource: 'home',

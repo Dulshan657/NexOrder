@@ -26,8 +26,8 @@ import type { InventoryLocation } from '@/types'
 interface PutawayScanFinderProps {
   rows: PendingPutawayRow[]
   locations: InventoryLocation[]
-  /** Which bin a row is destined for — the assigned bin on the walk, the
-   *  engine's recommendation on the assign queue. */
+  /** Which bin a row is destined for — on the walk the assigned bin, else the
+   *  suggested one (`walkBinId`); on the assign queue the engine's recommendation. */
   binIdOf: (row: PendingPutawayRow) => number | null
   /** Exactly one line matched: open it. */
   onFound: (recommendationId: number) => void

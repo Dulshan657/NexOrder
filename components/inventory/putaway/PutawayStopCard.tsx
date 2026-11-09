@@ -52,6 +52,7 @@ import {
 } from '@/lib/putawayIdentity'
 import { describeQuantity, trimNumber } from './putawayFormat'
 import { PalletBreakdownSheet } from './PalletBreakdownSheet'
+import { isOverflowConfirmStop } from './walkStops'
 
 interface PutawayStopCardProps {
   row: PendingPutawayRow
@@ -67,6 +68,9 @@ interface PutawayStopCardProps {
   /** Needed by the break-down sheet, which scopes its bin picker and its engine
    *  suggestions to this site. */
   warehouseId: number
+  /** A Manager or Admin: a stop for a product with no home bin may offer to
+   *  give it one. The server refuses anyone else; this only hides the offer. */
+  canSetHome?: boolean
   /** Other queued tasks for this SAME product whose plates are also unlabelled.
    *  A product barcode identifies the SKU and nothing finer, so when two such
    *  plates are in the walk at once the evidence genuinely cannot say which one
@@ -336,6 +340,14 @@ export const PutawayStopCard: React.FC<PutawayStopCardProps> = ({
               matched against a printed sticker. */}
           <span className="block font-mono text-sm font-semibold text-emerald-700 truncate">{binCode}</span>
           <span className="block text-xs text-stone-600 truncate">{name}</span>
+          {/* A loose line whose home was full waits for someone to confirm its
+              bin (NX-0033). Said on the row, so the walker knows before opening
+              it that scanning this bin is a decision and not just a delivery. */}
+          {isOverflowConfirmStop(row) && (
+            <span className="mt-1 inline-block rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+              Home full — confirm
+            </span>
+          )}
         </span>
         <span className="shrink-0 text-right max-w-[38%] sm:max-w-none">
           <span className="block text-xs font-medium text-stone-700 tabular-nums">{qtyLabel.primary}</span>

@@ -45,6 +45,10 @@ export interface PendingPutawayRow {
    *  balance rows with no plate named, `hu_recompute` marks the plate 'empty',
    *  and nothing touches this task. The stop warns rather than hiding the work. */
   huStatus: string | null
+  /** 'suggested' | 'assigned' | 'accepted' | 'overridden' | 'short' | ... The
+   *  Walk needs it (NX-0033): it lists assigned lines AND suggested overflow
+   *  lines awaiting confirmation, and the two read differently. */
+  status: string
   /** Where the desk sent it, once assigned (mig 00080). NULL while the line is
    *  still `suggested`. Distinct from `recommendedLocationId` (what the engine
    *  said) — an operator can assign somewhere else entirely. */
@@ -88,6 +92,7 @@ function toQueueRow(row: any): PendingPutawayRow {
     huCode: row.handling_units?.code ?? null,
     huLabelPrinted: Boolean(row.handling_units?.label_printed),
     huStatus: row.handling_units?.status ?? null,
+    status: row.status,
     assignedLocationId: row.assigned_location_id ?? null,
     assignedAt: row.assigned_at ?? null,
     suggestionSource: row.suggestion_source ?? null,
@@ -106,18 +111,25 @@ export async function getPendingPutaways(warehouseId: number): Promise<PendingPu
   return (data ?? []).map(toQueueRow)
 }
 
-/** Assigned tasks — a bin has been decided but nobody has carried the stock
- *  there yet (mig 00080). These are the stops on the Walk run, and the stock
- *  they describe is still sitting at the warehouse root.
+/** The Walk's stops (mig 00080, NX-0033): what a person can carry to a bin now.
+ *
+ *    * assigned lines: a bin has been decided, by the system when the line was
+ *      received (NX-0033) or by the desk, and nobody has carried the stock there
+ *      yet. The stock they describe is still sitting at the warehouse root;
+ *    * overflow lines awaiting confirmation: the home was full, the engine
+ *      suggested another bin, and nobody has confirmed it. The walker confirms it
+ *      by scanning that bin, or the desk does from the Assign queue, and the
+ *      first wins. The same predicate as wie_putaway_stops (mig 00143) and
+ *      `isOverflowConfirmStop`.
  *
  *  Oldest first, the opposite of the Assign queue: this is a work list, and the
  *  thing that has been waiting on the dock longest should be placed first. */
-export async function getAssignedPutaways(warehouseId: number): Promise<PendingPutawayRow[]> {
+export async function getWalkPutaways(warehouseId: number): Promise<PendingPutawayRow[]> {
   const { data, error } = await supabase
     .from('wie_putaway_recommendations')
     .select(QUEUE_SELECT)
     .eq('warehouse_id', warehouseId)
-    .eq('status', 'assigned')
+    .or('status.eq.assigned,and(status.eq.suggested,suggestion_source.eq.overflow,recommended_location_id.not.is.null)')
     .order('created_at', { ascending: true })
   if (error) throw error
   return (data ?? []).map(toQueueRow)

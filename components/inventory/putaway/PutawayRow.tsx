@@ -75,7 +75,17 @@ export const PutawayRow: React.FC<PutawayRowProps> = ({
           )}
 
           <div className="min-w-0 flex-1">
-            <p className="text-sm text-stone-800 truncate">{name}</p>
+            <p className="text-sm text-stone-800 flex items-center gap-2 min-w-0">
+              <span className="truncate">{name}</span>
+              {/* The product's home had no room (NX-0033): this line waits for a
+                  person to confirm the engine's overflow bin, here with Assign /
+                  Choose bin or by scanning it on the Walk. First one wins. */}
+              {row.suggestionSource === 'overflow' && (
+                <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+                  Home full
+                </span>
+              )}
+            </p>
             <p className="text-xs text-stone-600 flex flex-wrap items-center gap-x-1.5">
               {product?.sku && <span className="font-mono">{product.sku}</span>}
               <span className="text-stone-700 tabular-nums">{qty.primary}</span>

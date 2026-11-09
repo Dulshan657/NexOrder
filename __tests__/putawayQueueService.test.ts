@@ -9,7 +9,7 @@ vi.mock('@/lib/supabase', () => ({
 }))
 
 import {
-  getAssignedPutaways,
+  getWalkPutaways,
   getPendingPutaways,
   getPendingPutawayCounts,
 } from '../services/supabase/putawayQueueService'
@@ -32,6 +32,7 @@ function selectInChain(result: { data: unknown; error: unknown }, seen: { status
 function queueChain(result: { data: unknown; error: unknown }, seen: { cols?: string } = {}) {
   const tail = {
     eq: () => tail,
+    or: () => tail,
     order: (_col: string, _opts: unknown) => Promise.resolve(result),
   }
   return {
@@ -116,7 +117,7 @@ describe('getPendingPutaways', () => {
   })
 })
 
-describe('getAssignedPutaways', () => {
+describe('getWalkPutaways', () => {
   beforeEach(() => from.mockReset())
 
   // The walk needs the destination bin, and it is NOT recommended_location_id:
@@ -132,7 +133,7 @@ describe('getAssignedPutaways', () => {
       }],
       error: null,
     }))
-    const [row] = await getAssignedPutaways(1)
+    const [row] = await getWalkPutaways(1)
     expect(row.assignedLocationId).toBe(205)
     expect(row.assignedAt).toBe('2026-07-24T09:00:00Z')
     // The plate is what the walker scans, so it has to survive the mapping.
@@ -149,9 +150,63 @@ describe('getAssignedPutaways', () => {
       }],
       error: null,
     }))
-    const [row] = await getAssignedPutaways(1)
+    const [row] = await getWalkPutaways(1)
     expect(row.assignedLocationId).toBeNull()
     expect(row.huCode).toBeNull()
+  })
+})
+
+describe('getWalkPutaways (the query)', () => {
+  beforeEach(() => from.mockReset())
+
+  // Records each call in order, so the test pins the query's shape and not just
+  // the rows it returns.
+  function recordingChain(result: { data: unknown; error: unknown }) {
+    const calls: Array<[string, ...unknown[]]> = []
+    const tail: Record<string, unknown> = {
+      eq: (...a: unknown[]) => { calls.push(['eq', ...a]); return tail },
+      or: (...a: unknown[]) => { calls.push(['or', ...a]); return tail },
+      order: (...a: unknown[]) => { calls.push(['order', ...a]); return Promise.resolve(result) },
+    }
+    return { calls, chain: { select: (_cols: string) => tail } }
+  }
+
+  it('asks for assigned lines and overflow lines awaiting confirmation, oldest first', async () => {
+    const { calls, chain } = recordingChain({ data: [], error: null })
+    from.mockReturnValue(chain)
+    await getWalkPutaways(12)
+    expect(from).toHaveBeenCalledWith('wie_putaway_recommendations')
+    expect(calls).toEqual([
+      ['eq', 'warehouse_id', 12],
+      ['or', 'status.eq.assigned,and(status.eq.suggested,suggestion_source.eq.overflow,recommended_location_id.not.is.null)'],
+      ['order', 'created_at', { ascending: true }],
+    ])
+  })
+
+  it('maps the status onto the row, so a confirm stop can be told from an assigned one', async () => {
+    const base = {
+      product_id: 42, quantity: '2', explanation: {}, created_at: '2026-07-20T01:00:00Z',
+      products: null, goods_receipts: null,
+    }
+    const { chain } = recordingChain({
+      data: [
+        { ...base, id: 1, status: 'assigned', recommended_location_id: 100, assigned_location_id: 100, suggestion_source: 'home' },
+        { ...base, id: 2, status: 'suggested', recommended_location_id: 5002, assigned_location_id: null, suggestion_source: 'overflow' },
+      ],
+      error: null,
+    })
+    from.mockReturnValue(chain)
+    const [assigned, confirm] = await getWalkPutaways(12)
+    expect(assigned.status).toBe('assigned')
+    expect(confirm).toMatchObject({
+      status: 'suggested', suggestionSource: 'overflow', recommendedLocationId: 5002, assignedLocationId: null,
+    })
+  })
+
+  it('throws on a query error rather than returning an empty walk', async () => {
+    const { chain } = recordingChain({ data: null, error: { message: 'boom' } })
+    from.mockReturnValue(chain)
+    await expect(getWalkPutaways(12)).rejects.toEqual({ message: 'boom' })
   })
 })
 

@@ -22,6 +22,7 @@ function row(over: Partial<PendingPutawayRow> = {}): PendingPutawayRow {
     huCode: null,
     huLabelPrinted: false,
     huStatus: null,
+    status: 'suggested',
     assignedLocationId: null,
     assignedAt: null,
     ...over,
