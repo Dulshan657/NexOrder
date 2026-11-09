@@ -15,20 +15,33 @@
  *                                  with the line being placed given its own
  *                                  reservation back (mig 00144)
  *
- * Made-up data only (TST-WALK-* products on made-up bins). Two kinds of test:
+ * Made-up data only (TST-WALK-* products on made-up bins). Three kinds of test:
  *
  *  1. "live RPCs": every test runs inside BEGIN … ROLLBACK via `withRollbackTx`,
  *     so nothing it writes survives.
- *  2. "at once" (last describe): two connections race for one row's lock, so the
- *     made-up world has to be COMMITTED for the second connection to see it. It
- *     is deleted again in afterAll, ledger rows included (the way
+ *  2. "at once": two connections race for one row's lock, so the made-up world
+ *     has to be COMMITTED for the second connection to see it. It is deleted
+ *     again in afterAll, ledger rows included (the way
  *     tests/e2e/rack-levels/homeBlockWorld.ts tears down).
+ *  3. "live HTTP" (last describe): calls the deployed `recommend-putaway`,
+ *     `complete-putaway`, `decide-putaway` and `home-bin-choices` functions,
+ *     which read through their own connections, so it COMMITTED a made-up
+ *     world and three made-up auth users (Manager, Warehouse at that site,
+ *     Warehouse at another site), and deletes all of it again in afterAll. It
+ *     moves no stock. It needs VITE_SUPABASE_ANON_KEY and
+ *     SUPABASE_SERVICE_ROLE_KEY as well as the database password, and it fails
+ *     until the NX-0033 functions are deployed to dev
+ *     (`npm run fn:deploy:dev -- <names>`; the list is in the task report).
  *
  * Run with: `npm run test:integration -- putawayStraightToWalk` (dev
- * credentials; migrations 00143, 00144 and 00145 applied). Add `-t "live RPCs|at once"` to pick.
+ * credentials; migrations 00143, 00144 and 00145 applied). Add
+ * `-t "live RPCs|at once|live HTTP"` to pick. Run the integration files one at
+ * a time: they number their suppliers by MAX(id) and race when run together.
  */
+import { randomUUID } from 'node:crypto'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import type pg from 'pg'
+import { createClient } from '@supabase/supabase-js'
 import { connect, hasDbCreds, withRollbackTx, expectRaise } from './support/pgTestClient'
 import {
   homeBinCandidateFactsFromRow,
@@ -897,5 +910,441 @@ describe('NX-0033 desk and walk at once (two connections, committed made-up data
       await a.end()
       await b.end()
     }
+  })
+})
+
+// ── The functions on dev (live HTTP, committed made-up data) ─────────────────
+//
+// An edge function reads through PostgREST on its own connections, so this world
+// is COMMITTED. It is made up (TST-WALK-*), moves no stock (recommend-putaway
+// moves none, and every other call below is refused or stops at "no stock to
+// move"), and is deleted again in afterAll, together with the three made-up
+// auth users that call the functions.
+const SUPABASE_URL = (process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL ?? '').replace(/\/+$/, '')
+const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? ''
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+
+/** Exact copy fixed by the plan; a drift in the words is a failing test. */
+const MAKE_HOME_FORBIDDEN_TEXT = 'Only a Manager or Admin can give a product a home bin.'
+const ALREADY_DEALT_TEXT = 'This line was already dealt with (it is now assigned).'
+
+interface HttpUser { id: string; jwt: string }
+
+/** A product homed at a bin of its own. */
+interface HomedProduct { id: number; sku: string; home: number }
+
+interface HttpWorld {
+  w: World
+  /** A second made-up warehouse, where the other-site Warehouse user works. */
+  otherWarehouseId: number
+  /** An active bin of the warehouse that is not on the published layout. */
+  off: number
+  /** A product with no home bin. */
+  loose: { id: number; sku: string }
+  /** Homed products for the planner cases: home capacity 10, 3 and 100. */
+  roomy: HomedProduct
+  tight: HomedProduct
+  pallet: HomedProduct
+  manager: HttpUser
+  warehouse: HttpUser
+  warehouseOther: HttpUser
+}
+
+interface Reply { status: number; body: { error?: { code: string; message: string } } & Record<string, any> }
+
+/** Never throws on a body that is not JSON (a function that is not deployed answers in plain text). */
+async function readReply(res: Response): Promise<Reply> {
+  const text = await res.text()
+  try {
+    return { status: res.status, body: JSON.parse(text) }
+  } catch {
+    return { status: res.status, body: { error: { code: 'NOT_JSON', message: text.slice(0, 200) } } }
+  }
+}
+
+async function postFn(fn: string, jwt: string, body: unknown): Promise<Reply> {
+  return readReply(await fetch(`${SUPABASE_URL}/functions/v1/${fn}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${jwt}`, apikey: ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
+async function getFn(fn: string, jwt: string, query: Record<string, string>): Promise<Reply> {
+  return readReply(await fetch(`${SUPABASE_URL}/functions/v1/${fn}?${new URLSearchParams(query)}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${jwt}`, apikey: ANON_KEY },
+  }))
+}
+
+/** A made-up auth user. handle_new_user() makes the profile from user_metadata. */
+async function createHttpUser(
+  token: string, label: string, role: 'Manager' | 'Warehouse',
+): Promise<HttpUser> {
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+  const email = `tst-walk-${token}-${label.toLowerCase().replace(/\s+/g, '-')}@test.local`
+  const password = `Tst-${randomUUID()}`
+  const created = await admin.auth.admin.createUser({
+    email, password, email_confirm: true, user_metadata: { name: `TST-WALK ${label}`, role },
+  })
+  if (created.error || !created.data.user) throw new Error(`create test user ${label}: ${created.error?.message}`)
+  const id = created.data.user.id
+
+  const anon = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } })
+  const signedIn = await anon.auth.signInWithPassword({ email, password })
+  if (signedIn.error || !signedIn.data.session) {
+    await admin.auth.admin.deleteUser(id)
+    throw new Error(`sign in test user ${label}: ${signedIn.error?.message}`)
+  }
+  return { id, jwt: signedIn.data.session.access_token }
+}
+
+/** A product homed at a new bin of its own (placed on the layout, capacity `capacity`). */
+async function addHomedProduct(
+  client: pg.Client, w: World, suffix: string, x: number, capacity: number,
+): Promise<HomedProduct> {
+  const product = await newProduct(client, w.token, suffix)
+  const home = await addBin(client, w, `H${suffix}`, x, capacity)
+  await client.query(
+    `INSERT INTO public.product_home_bins (product_id, warehouse_id, bin_id, purpose)
+     VALUES ($1, $2, $3, 'primary')`,
+    [product.id, w.warehouseId, home])
+  return { id: product.id, sku: product.sku, home }
+}
+
+/** A dock and one walkway node, and every bin placed so far routed to it. */
+async function routeBinsFromDock(client: pg.Client, layoutId: number): Promise<void> {
+  const dock = await client.query<{ id: number }>(
+    "INSERT INTO public.layout_graph_nodes (layout_id, floor, x, y, node_type) VALUES ($1, 0, 0, 0, 'dock') RETURNING id",
+    [layoutId])
+  const walk = await client.query<{ id: number }>(
+    "INSERT INTO public.layout_graph_nodes (layout_id, floor, x, y, node_type) VALUES ($1, 0, 9, 0, 'walk') RETURNING id",
+    [layoutId])
+  await client.query(
+    'INSERT INTO public.layout_travel_distances (layout_id, from_node_id, to_node_id, distance_m) VALUES ($1, $2, $3, 4)',
+    [layoutId, dock.rows[0].id, walk.rows[0].id])
+  await client.query('UPDATE public.layout_placements SET graph_node_id = $1 WHERE layout_id = $2', [walk.rows[0].id, layoutId])
+}
+
+async function buildHttpWorld(): Promise<HttpWorld> {
+  const token = uniq()
+  const users: HttpUser[] = []
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+  const client = await connect()
+  try {
+    users.push(await createHttpUser(token, 'Manager', 'Manager'))
+    users.push(await createHttpUser(token, 'Warehouse', 'Warehouse'))
+    users.push(await createHttpUser(token, 'Warehouse Other', 'Warehouse'))
+    const [manager, warehouse, warehouseOther] = users
+
+    await client.query('BEGIN')
+    const w = await seed(client, { stock: false })
+    const roomy = await addHomedProduct(client, w, '-R', 10, 10)
+    const tight = await addHomedProduct(client, w, '-T', 11, 3)
+    const pallet = await addHomedProduct(client, w, '-Q', 12, 100)
+    const loose = await newProduct(client, w.token, '-X')
+    // One active bin that is in the warehouse but not on the layout.
+    const off = (await client.query<{ id: number }>(
+      `INSERT INTO public.locations (parent_id, kind, code, name, materialized_path, is_active, capacity_slots)
+       VALUES ($1, 'BIN', $2, $2, $3, true, 100) RETURNING id`,
+      [w.warehouseId, `TST-WALK-Z-${w.token}`, `${w.warehousePath}/TST-WALK-Z-${w.token}`])).rows[0].id
+    // After the last bin is placed: every placement gets a route from the dock.
+    await routeBinsFromDock(client, w.layoutId)
+
+    const other = await client.query<{ id: number }>(
+      `INSERT INTO public.locations (parent_id, kind, code, name, materialized_path, is_active, location_type)
+       VALUES (NULL, 'WAREHOUSE', $1, $1, $2, true, 'racked') RETURNING id`,
+      [`TST-WALK-WH2-${w.token}`, `TSTWALKWHB${w.token}`])
+    await client.query('UPDATE public.profiles SET home_warehouse_id = $1 WHERE id = $2', [w.warehouseId, warehouse.id])
+    await client.query('UPDATE public.profiles SET home_warehouse_id = $1 WHERE id = $2', [other.rows[0].id, warehouseOther.id])
+    await client.query('COMMIT')
+    return { w, otherWarehouseId: other.rows[0].id, off, loose, roomy, tight, pallet, manager, warehouse, warehouseOther }
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    // The users outlive a failed seed otherwise.
+    for (const u of users) await admin.auth.admin.deleteUser(u.id)
+    throw err
+  } finally {
+    await client.end()
+  }
+}
+
+/** Delete every row the world committed, or the functions it called wrote. Children first. */
+async function tearDownHttpWorld(h: HttpWorld): Promise<void> {
+  const { w } = h
+  const userIds = [h.manager.id, h.warehouse.id, h.warehouseOther.id]
+  const warehouseIds = [w.warehouseId, h.otherWarehouseId]
+  const productIds = [w.productId, w.otherProductId, h.loose.id, h.roomy.id, h.tight.id, h.pallet.id]
+  const limiterNames = ['recommend-putaway', 'complete-putaway', 'decide-putaway', 'decide-putaway:desk', 'home-bin-choices']
+  const client = await connect()
+  try {
+    await client.query('BEGIN')
+    const locs = await client.query<{ id: number }>(
+      'SELECT id FROM public.locations WHERE id = ANY ($1) OR parent_id = ANY ($1)', [warehouseIds])
+    const locationIds = locs.rows.map((x) => x.id)
+    await client.query(
+      'DELETE FROM public.wie_putaway_recommendations WHERE warehouse_id = ANY ($1) OR product_id = ANY ($2)',
+      [warehouseIds, productIds])
+    await client.query(
+      'DELETE FROM public.inventory_movements WHERE product_id = ANY ($1) OR location_id = ANY ($2)',
+      [productIds, locationIds])
+    await client.query('DELETE FROM public.inventory_balances WHERE product_id = ANY ($1)', [productIds])
+    await client.query('DELETE FROM public.handling_units WHERE warehouse_id = ANY ($1)', [warehouseIds])
+    await client.query('DELETE FROM public.product_home_bins WHERE warehouse_id = ANY ($1) OR product_id = ANY ($2)',
+      [warehouseIds, productIds])
+    await client.query('UPDATE public.profiles SET home_warehouse_id = NULL WHERE id = ANY ($1)', [userIds])
+    await client.query('UPDATE public.locations SET active_layout_id = NULL WHERE id = $1', [w.warehouseId])
+    await client.query('DELETE FROM public.layout_travel_distances WHERE layout_id = $1', [w.layoutId])
+    await client.query('DELETE FROM public.layout_placements WHERE layout_id = $1', [w.layoutId])
+    await client.query('DELETE FROM public.layout_graph_nodes WHERE layout_id = $1', [w.layoutId])
+    await client.query('DELETE FROM public.warehouse_layouts WHERE id = $1', [w.layoutId])
+    await client.query('DELETE FROM public.locations WHERE parent_id = ANY ($1)', [warehouseIds])
+    await client.query('DELETE FROM public.locations WHERE id = ANY ($1)', [warehouseIds])
+    await client.query('DELETE FROM public.products WHERE id = ANY ($1)', [productIds])
+    await client.query('DELETE FROM public.suppliers WHERE email LIKE $1', [`tst-walk-${w.token}%@test.local`])
+    // audit_events.actor_id references the user, so the user cannot go while its rows stay.
+    await client.query('DELETE FROM public.audit_events WHERE actor_id = ANY ($1)', [userIds])
+    await client.query('DELETE FROM public.rate_limit_counters WHERE key = ANY ($1)',
+      [userIds.flatMap((id) => limiterNames.map((name) => `${name}:${id}`))])
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    await client.end()
+  }
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+  const failed: string[] = []
+  for (const id of userIds) {
+    const removed = await admin.auth.admin.deleteUser(id)
+    if (removed.error) failed.push(`${id}: ${removed.error.message}`)
+  }
+  if (failed.length > 0) throw new Error(`delete test users: ${failed.join('; ')}`)
+}
+
+interface PlannedRec {
+  recommendationId: number
+  suggestionSource: string
+  recommendedLocationId: number | null
+  assignedLocationId: number | null
+  quantity: number
+}
+
+describe('NX-0033 functions on dev (live HTTP, committed made-up data)', () => {
+  let h: HttpWorld
+
+  beforeAll(async () => {
+    expect(Boolean(SUPABASE_URL && ANON_KEY && SERVICE_KEY)).toBe(true)
+    h = await buildHttpWorld()
+  })
+
+  afterAll(async () => {
+    if (h) await tearDownHttpWorld(h)
+  })
+
+  /** recommend-putaway as the Manager, for one line; the recommendations it answers with. */
+  async function recommend(line: Record<string, unknown>): Promise<PlannedRec[]> {
+    const r = await postFn('recommend-putaway', h.manager.jwt, { warehouse_id: h.w.warehouseId, lines: [line] })
+    expect({ status: r.status, error: r.body.error }).toEqual({ status: 200, error: undefined })
+    expect(r.body.mode).toBe('engine')
+    return (r.body.recommendations as PlannedRec[]).map((x) => ({ ...x, recommendationId: Number(x.recommendationId) }))
+  }
+
+  /** Run `body` on a short-lived connection that is always closed. */
+  async function withClient<T>(body: (client: pg.Client) => Promise<T>): Promise<T> {
+    const client = await connect()
+    try {
+      return await body(client)
+    } finally {
+      await client.end()
+    }
+  }
+
+  /** A loose overflow line waiting at O1, with the made-up product's home (H) full. */
+  async function waitingOverflowLine(): Promise<number> {
+    return withClient(async (client) => {
+      await task(client, h.w, 10, h.w.h, { source: 'home' })
+      return task(client, h.w, 4, h.w.o1, { source: 'overflow' })
+    })
+  }
+
+  /** An engine line for the homeless product, already assigned by the system, with no stock behind it. */
+  async function systemAssignedLine(): Promise<number> {
+    return withClient((client) =>
+      task(client, h.w, 3, h.w.n, {
+        productId: h.loose.id, source: 'engine', status: 'assigned', assignedTo: h.w.n, assignedBy: null,
+      }))
+  }
+
+  // ── recommend-putaway ──────────────────────────────────────────────────────
+  it('recommend-putaway for a homed product with room creates an assigned task to the home with no assigner', async () => {
+    const recs = await recommend({ product_id: h.roomy.id, quantity: 4 })
+    expect(recs).toHaveLength(1)
+    expect(recs[0]).toMatchObject({
+      suggestionSource: 'home', recommendedLocationId: h.roomy.home, assignedLocationId: h.roomy.home, quantity: 4,
+    })
+    await withClient(async (client) => {
+      expect(await row(client, recs[0].recommendationId)).toMatchObject({
+        status: 'assigned', quantity: 4, assigned_location_id: h.roomy.home, assigned_by: null,
+      })
+    })
+  })
+
+  it('recommend-putaway with the home full creates a suggested overflow task', async () => {
+    // Three units fill the home (capacity 3); the next line has nowhere to go but overflow.
+    const first = await recommend({ product_id: h.tight.id, quantity: 3 })
+    expect(first[0]).toMatchObject({ suggestionSource: 'home', assignedLocationId: h.tight.home })
+
+    const recs = await recommend({ product_id: h.tight.id, quantity: 2 })
+    expect(recs).toHaveLength(1)
+    expect(recs[0].suggestionSource).toBe('overflow')
+    expect(recs[0].assignedLocationId).toBeNull()
+    expect([h.w.o1, h.w.o2, h.w.n]).toContain(recs[0].recommendedLocationId)
+    await withClient(async (client) => {
+      expect(await row(client, recs[0].recommendationId)).toMatchObject({
+        status: 'suggested', quantity: 2, assigned_location_id: null, assigned_by: null,
+        recommended_location_id: recs[0].recommendedLocationId,
+      })
+    })
+  })
+
+  it('recommend-putaway for a product with no home creates an assigned task to the engine bin', async () => {
+    const recs = await recommend({ product_id: h.loose.id, quantity: 4 })
+    expect(recs).toHaveLength(1)
+    expect(recs[0].suggestionSource).toBe('engine')
+    expect([h.w.o1, h.w.o2, h.w.n]).toContain(recs[0].recommendedLocationId)
+    expect(recs[0].assignedLocationId).toBe(recs[0].recommendedLocationId)
+    await withClient(async (client) => {
+      expect(await row(client, recs[0].recommendationId)).toMatchObject({
+        status: 'assigned', quantity: 4, assigned_location_id: recs[0].recommendedLocationId, assigned_by: null,
+      })
+    })
+  })
+
+  it('recommend-putaway for a single-product pallet creates an assigned task (C5)', async () => {
+    // The product has a home, so the pallet's bin is an overflow bin; a pallet never waits.
+    const recs = await recommend({ product_id: h.pallet.id, quantity: 4, hu_type: 'pallet' })
+    expect(recs).toHaveLength(1)
+    expect(recs[0].suggestionSource).toBe('overflow')
+    expect(recs[0].recommendedLocationId).not.toBe(h.pallet.home)
+    expect(recs[0].assignedLocationId).toBe(recs[0].recommendedLocationId)
+    await withClient(async (client) => {
+      expect(await row(client, recs[0].recommendationId)).toMatchObject({
+        status: 'assigned', assigned_location_id: recs[0].recommendedLocationId, assigned_by: null,
+      })
+      const unit = await client.query<{ unit_load: boolean }>(
+        'SELECT unit_load FROM public.wie_putaway_recommendations WHERE id = $1', [recs[0].recommendationId])
+      expect(unit.rows[0].unit_load).toBe(true)
+    })
+  })
+
+  // ── complete-putaway: make_home ────────────────────────────────────────────
+  it('complete-putaway refuses make_home from a Warehouse user with FORBIDDEN before reading the task', async () => {
+    // No such task: a task lookup would answer NOT_FOUND, so FORBIDDEN proves the role came first.
+    const r = await postFn('complete-putaway', h.warehouse.jwt, {
+      recommendation_id: 2147483000, actual_location_id: h.w.n, make_home: true,
+    })
+    expect(r.status).toBe(403)
+    expect(r.body.error).toEqual({ code: 'FORBIDDEN', message: MAKE_HOME_FORBIDDEN_TEXT })
+  })
+
+  it('complete-putaway refuses make_home from a Manager into a bin that cannot be a home, and moves nothing', async () => {
+    const line = await systemAssignedLine()
+    // An active bin of this warehouse that is not on the published layout.
+    const r = await postFn('complete-putaway', h.manager.jwt, {
+      recommendation_id: line, actual_location_id: h.off, make_home: true,
+    })
+    expect(r.status).toBe(409)
+    expect(r.body.error?.code).toBe('CONFLICT')
+    expect(r.body.error?.message).toMatch(/can't be a home bin: /)
+    expect(r.body.error?.message).toContain(`TST-WALK-Z-${h.w.token}`)
+
+    await withClient(async (client) => {
+      expect(await row(client, line)).toMatchObject({ status: 'assigned', assigned_location_id: h.w.n })
+      const balances = await client.query<{ n: string }>(
+        'SELECT count(*) AS n FROM public.inventory_balances WHERE product_id = $1', [h.loose.id])
+      expect(Number(balances.rows[0].n)).toBe(0)
+      const homes = await client.query<{ n: string }>(
+        'SELECT count(*) AS n FROM public.product_home_bins WHERE product_id = $1', [h.loose.id])
+      expect(Number(homes.rows[0].n)).toBe(0)
+    })
+  })
+
+  // ── decide-putaway ─────────────────────────────────────────────────────────
+  it('decide-putaway confirm_overflow from a Warehouse user at its own site assigns; a second confirm is CONFLICT', async () => {
+    const id = await waitingOverflowLine()
+    const first = await postFn('decide-putaway', h.warehouse.jwt, {
+      recommendation_id: id, decision: 'confirm_overflow', chosen_location_id: h.w.o1,
+    })
+    expect({ status: first.status, error: first.body.error }).toEqual({ status: 200, error: undefined })
+    expect(Number(first.body.assigned_id)).toBe(id)
+    expect(first.body.location_id).toBe(h.w.o1)
+    await withClient(async (client) => {
+      expect(await row(client, id)).toMatchObject({
+        status: 'assigned', quantity: 4, assigned_location_id: h.w.o1, assigned_by: h.warehouse.id,
+      })
+    })
+
+    const again = await postFn('decide-putaway', h.warehouse.jwt, {
+      recommendation_id: id, decision: 'confirm_overflow', chosen_location_id: h.w.o1,
+    })
+    expect(again.status).toBe(409)
+    expect(again.body.error).toEqual({ code: 'CONFLICT', message: ALREADY_DEALT_TEXT })
+  })
+
+  it('decide-putaway confirm_overflow from a Warehouse user of another site is FORBIDDEN (Review Focus 5)', async () => {
+    const id = await waitingOverflowLine()
+    const r = await postFn('decide-putaway', h.warehouseOther.jwt, {
+      recommendation_id: id, decision: 'confirm_overflow', chosen_location_id: h.w.o1,
+    })
+    expect(r.status).toBe(403)
+    expect(r.body.error?.code).toBe('FORBIDDEN')
+    await withClient(async (client) => {
+      expect(await row(client, id)).toMatchObject({ status: 'suggested', assigned_location_id: null, assigned_by: null })
+    })
+  })
+
+  it('decide-putaway accept on a system-assigned line is no longer refused as already assigned', async () => {
+    // A product with no stock anywhere: the transfer itself must be what fails, not the status gate.
+    const line = await systemAssignedLine()
+    const r = await postFn('decide-putaway', h.manager.jwt, { recommendation_id: line, decision: 'accept' })
+    expect(r.body.error?.message).not.toMatch(/already (assigned|accepted)/i)
+    // The stock message of the transfer: the line was let through to the move.
+    expect(r.body.error?.message).toMatch(new RegExp(String.raw`^product ${h.loose.id} short by 3(\.0+)? for transfer$`))
+    expect(r.body.error?.code).toBe('CONFLICT')
+    expect(r.status).toBe(409)
+    await withClient(async (client) => {
+      expect(await row(client, line)).toMatchObject({ status: 'assigned', assigned_by: null })
+      expect(await onHand(client, h.loose.id, h.w.n)).toBe(0)
+    })
+  })
+
+  // ── home-bin-choices ───────────────────────────────────────────────────────
+  it('home-bin-choices gives a Manager only fit bins and a Warehouse user FORBIDDEN', async () => {
+    const query = { warehouseId: String(h.w.warehouseId), productId: String(h.loose.id) }
+    const ok = await getFn('home-bin-choices', h.manager.jwt, query)
+    expect({ status: ok.status, error: ok.body.error }).toEqual({ status: 200, error: undefined })
+    expect(ok.body.ok).toBe(true)
+    const codes = (ok.body.bins as Array<{ binCode: string }>).map((b) => b.binCode)
+    const code = (name: string): string => `TST-WALK-${name}-${h.w.token}`
+    // Offered: bins nobody owns that putaway can use.
+    expect(codes).toEqual(expect.arrayContaining([code('N'), code('O1'), code('O2')]))
+    // Not offered: inactive (I), another product's home (P, H and the planner products' homes),
+    // and a bin that is not on the layout (Z).
+    for (const name of ['I', 'P', 'H', 'H-R', 'H-T', 'H-Q', 'Z']) expect(codes).not.toContain(code(name))
+    expect(codes).toEqual([...codes].sort((a, b) => a.localeCompare(b, 'en-AU')))
+
+    const denied = await getFn('home-bin-choices', h.warehouse.jwt, query)
+    expect(denied.status).toBe(403)
+    expect(denied.body.error?.code).toBe('FORBIDDEN')
+    expect(denied.body.bins).toBeUndefined()
+  })
+
+  it('home-bin-choices with recommendationId=abc is INVALID_INPUT', async () => {
+    const r = await getFn('home-bin-choices', h.manager.jwt, {
+      warehouseId: String(h.w.warehouseId), productId: String(h.loose.id), recommendationId: 'abc',
+    })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toEqual({ code: 'INVALID_INPUT', message: 'recommendationId must be a positive whole number' })
   })
 })
