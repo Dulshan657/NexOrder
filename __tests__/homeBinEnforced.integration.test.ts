@@ -140,14 +140,18 @@ async function setHome(
 
 async function task(
   client: pg.Client, s: Scenario, qty: number, binId: number,
-  o: { productId?: number; huId?: number; source?: 'home' | 'overflow' | 'engine' } = {},
+  o: { productId?: number; huId?: number; source?: 'home' | 'overflow' | 'engine'; unitLoad?: boolean } = {},
 ): Promise<number> {
+  // unit_load (00142) only when a case sets it, so the default (false) is what
+  // every other case gets, exactly as a pre-00142 row does.
+  const withUnitLoad = o.unitLoad !== undefined
   const r = await client.query<{ id: number }>(
     `INSERT INTO public.wie_putaway_recommendations
        (warehouse_id, layout_id, product_id, quantity, recommended_location_id,
-        explanation, engine_version, status, suggestion_source, handling_unit_id)
-     VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, 'test', 'suggested', $7, $6) RETURNING id`,
-    [s.warehouseId, s.layoutId, o.productId ?? s.productId, qty, binId, o.huId ?? null, o.source ?? 'home'],
+        explanation, engine_version, status, suggestion_source, handling_unit_id${withUnitLoad ? ', unit_load' : ''})
+     VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, 'test', 'suggested', $7, $6${withUnitLoad ? ', $8' : ''}) RETURNING id`,
+    [s.warehouseId, s.layoutId, o.productId ?? s.productId, qty, binId, o.huId ?? null, o.source ?? 'home',
+      ...(withUnitLoad ? [o.unitLoad] : [])],
   )
   return r.rows[0].id
 }
@@ -374,14 +378,15 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
 
   // ── A4: pallets ───────────────────────────────────────────────────────────
   // A unit load is what the planner sends past the home: homeFirst.ts plans a
-  // single-product pallet line with homeQty 0, so every task it makes is
-  // 'overflow'. Only those are exempt (final review C1/I1).
+  // single-product pallet line with homeQty 0, and putawayTasks.ts records
+  // that decision as unit_load. Only those are exempt (final review C1/I1),
+  // and a desk redirect does not change it.
   it('single-product pallet is exempt; mixed pallet line is not', async () => {
     await withRollbackTx(async (client) => {
       const s = await seed(client)
       await setHome(client, s, s.home)
       const single = await plate(client, s, [[s.productId, 6]])
-      const t1 = await task(client, s, 6, s.other, { huId: single, source: 'overflow' })
+      const t1 = await task(client, s, 6, s.other, { huId: single, source: 'overflow', unitLoad: true })
       await client.query(complete, [t1, s.other])
       expect(await onHand(client, s.productId, s.other)).toBe(6)
 
@@ -428,11 +433,71 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
       const s = await seed(client)
       await setHome(client, s, s.home)
       const unit = await plate(client, s, [[s.productId, 6]])
-      const id = await task(client, s, 6, s.other, { huId: unit, source: 'overflow' })
+      const id = await task(client, s, 6, s.other, { huId: unit, source: 'overflow', unitLoad: true })
       const r = await client.query<{ b: string | null }>('SELECT public.wie_home_block($1, $2) AS b', [id, s.other])
       expect(r.rows[0].b).toBeNull()
       await client.query(complete, [id, s.other])
       expect(await onHand(client, s.productId, s.other)).toBe(6)
+    })
+  })
+
+  it('a home-sent pallet the desk redirected to its home is still refused elsewhere', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      const p = await plate(client, s, [[s.productId, 6]])
+      const id = await task(client, s, 6, s.home, { huId: p, source: 'home', unitLoad: false })
+      await client.query('SELECT public.wie_redirect_putaway_tx($1, $2, NULL)', [id, s.home])
+      const r = await client.query<{ suggestion_source: string; unit_load: boolean }>(
+        'SELECT suggestion_source, unit_load FROM public.wie_putaway_recommendations WHERE id = $1', [id])
+      expect(r.rows[0]).toEqual({ suggestion_source: 'desk', unit_load: false })
+      await expectRaise(client, complete, [id, s.other], HOME_ROOM(10))
+      expect(await onHand(client, s.productId, s.other)).toBe(0)
+    })
+  })
+
+  it('a genuine unit load the desk redirected to another reserve bin stays exempt', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      const p = await plate(client, s, [[s.productId, 6]])
+      const id = await task(client, s, 6, s.other, { huId: p, source: 'overflow', unitLoad: true })
+      await client.query('SELECT public.wie_redirect_putaway_tx($1, $2, NULL)', [id, s.spare])
+      await client.query(complete, [id, s.spare])
+      expect(await onHand(client, s.productId, s.spare)).toBe(6)
+    })
+  })
+
+  it('a split keeps unit_load: partial complete, partial assign and partial Place now', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      const p = await plate(client, s, [[s.productId, 9]])
+      const id = await task(client, s, 9, s.other, { huId: p, source: 'overflow', unitLoad: true })
+      await client.query('SELECT public.wie_complete_putaway_tx($1, $2, 2)', [id, s.other])
+      await client.query('SELECT public.wie_assign_putaway_tx($1, $2, 3, NULL)', [id, s.spare])
+      await client.query("SELECT public.wie_decide_putaway_tx($1, 'accept', $2, 1, NULL)", [id, s.other])
+      const rows = await client.query<{ id: number; quantity: string; status: string; unit_load: boolean }>(
+        `SELECT id, quantity, status, unit_load FROM public.wie_putaway_recommendations
+          WHERE product_id = $1 ORDER BY id`, [s.productId])
+      expect(rows.rows).toHaveLength(4)
+      expect(rows.rows.map((r) => r.unit_load)).toEqual([true, true, true, true])
+      const original = rows.rows.find((r) => String(r.id) === String(id))
+      expect(original?.status).toBe('suggested')
+      expect(Number(original?.quantity)).toBe(3)
+    })
+  })
+
+  it('a row written before 00142 (unit_load default false) is not exempt', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      const p = await plate(client, s, [[s.productId, 6]])
+      const id = await task(client, s, 6, s.other, { huId: p, source: 'overflow' })
+      const r = await client.query<{ unit_load: boolean }>(
+        'SELECT unit_load FROM public.wie_putaway_recommendations WHERE id = $1', [id])
+      expect(r.rows[0].unit_load).toBe(false)
+      await expectRaise(client, complete, [id, s.other], HOME_ROOM(10))
     })
   })
 

@@ -15,11 +15,11 @@
 --      for a product with no home and for a pallet:
 --      '{code} is the home bin of {sku}; choose another bin.'
 --   3. the product has no primary home in this warehouse     -> allowed
---   4. the planner treated the line as a unit load: a single-product pallet
---      whose task it did NOT send home (suggestion_source <> 'home'; a unit
---      load is planned as 'overflow', _shared/wie/homeFirst.ts) -> allowed.
---      A mixed pallet's lines are not exempt, nor is the last product left on
---      one, nor a 'pallet'-typed plate the planner sent home.
+--   4. the planner treated the line as a unit load (unit_load, below) and
+--      its plate still carries that one product -> allowed. A mixed pallet's
+--      lines are not exempt, nor is the last product left on one, nor a
+--      'pallet'-typed plate the planner sent home, and a desk redirect does
+--      not change the planner's decision.
 --   5. the home is one putaway could not use: inactive, in a hold zone, on a
 --      level role outside the product's allowed_level_roles, not placed on
 --      the task warehouse's active layout, or not inside that warehouse
@@ -48,7 +48,9 @@
 --                                            primary home unless this product
 --                                            is homed there too
 -- Every signature is unchanged, so CREATE OR REPLACE replaces in place and each
--- function keeps ONE overload (see Verify).
+-- function keeps ONE overload (see Verify). The three that split a task
+-- (complete, decide, assign) also copy the new unit_load column onto the row
+-- they split off; redirect updates in place and leaves it alone.
 --
 -- And one new READ, for the home-bin health check (panel and CLI):
 --   wie_home_bin_facts(warehouse) -- per primary home, the facts that decide
@@ -59,6 +61,18 @@
 -- =============================================================================
 
 BEGIN;
+
+-- ── 0. The planner's unit-load decision ──────────────────────────────────────
+-- _shared/putawayTasks.ts writes TRUE on the tasks it plans for a single-
+-- product pallet line (homeFirst.ts unitLoad), FALSE otherwise. Step 4 of the
+-- rule reads it. It is a fact about the plan, so it is copied unchanged onto
+-- every row split off a task (complete, Place now, assign) and survives a
+-- desk redirect, which rewrites suggestion_source but not this. Rows from
+-- before this migration read FALSE: not exempt, the safe side.
+ALTER TABLE public.wie_putaway_recommendations
+    ADD COLUMN IF NOT EXISTS unit_load BOOLEAN NOT NULL DEFAULT false;
+COMMENT ON COLUMN public.wie_putaway_recommendations.unit_load IS
+    'NX-0032: the planner treated this line as a unit load (single-product pallet). Read by wie_home_block step 4; copied onto splits.';
 
 -- ── 1. The rule ──────────────────────────────────────────────────────────────
 -- Not STABLE on purpose: the pooled completion calls it between writes of its
@@ -139,12 +153,11 @@ BEGIN
     END IF;
 
     -- 4. A unit load never goes to a pick face. Only the planner knows a line
-    --    was one: it plans a single-product pallet past the home ('overflow',
-    --    homeFirst.ts). A task it sent home is held to the home whatever the
-    --    plate is now: the last product left on a mixed pallet, or a root
-    --    plate minted as 'pallet', is not a unit load.
-    IF v_rec.handling_unit_id IS NOT NULL
-       AND v_rec.suggestion_source IS DISTINCT FROM 'home' THEN
+    --    was one, and it records that as unit_load. A task it did not plan as
+    --    a unit load is held to the home whatever the plate is now and
+    --    whatever the desk did since: the last product left on a mixed
+    --    pallet, or a root plate minted as 'pallet', is not a unit load.
+    IF v_rec.handling_unit_id IS NOT NULL AND v_rec.unit_load THEN
         SELECT hu_type INTO v_plate_type
         FROM public.handling_units WHERE id = v_rec.handling_unit_id;
         IF v_plate_type = 'pallet' AND (
@@ -356,7 +369,7 @@ BEGIN
              status, assigned_location_id, assigned_at, assigned_by,
              chosen_location_id, handling_unit_id, actor_id, created_at, decided_at,
              off_home, slotting_rule_id, suggestion_source, override_reason,
-             redirected_from_location_id)
+             redirected_from_location_id, unit_load)
         VALUES
             (v_rec.warehouse_id, v_rec.layout_id, v_rec.product_id, v_qty,
              v_rec.goods_receipt_id, v_rec.recommended_location_id,
@@ -365,7 +378,7 @@ BEGIN
              p_actual, v_rec.handling_unit_id, p_actor, v_rec.created_at, now(),
              v_rec.off_home, v_rec.slotting_rule_id, v_rec.suggestion_source,
              CASE WHEN v_status = 'overridden' THEN p_override_reason END,
-             v_rec.redirected_from_location_id)
+             v_rec.redirected_from_location_id, v_rec.unit_load)
         RETURNING id INTO v_placed_id;
     END IF;
 
@@ -473,12 +486,14 @@ BEGIN
         INSERT INTO public.wie_putaway_recommendations
             (warehouse_id, layout_id, product_id, quantity, goods_receipt_id,
              recommended_location_id, alternatives, explanation, engine_version,
-             status, chosen_location_id, actor_id, created_at, decided_at)
+             status, chosen_location_id, actor_id, created_at, decided_at,
+             unit_load)
         VALUES
             (v_rec.warehouse_id, v_rec.layout_id, v_rec.product_id, v_qty,
              v_rec.goods_receipt_id, v_rec.recommended_location_id,
              v_rec.alternatives, v_rec.explanation, v_rec.engine_version,
-             v_status, p_chosen, p_actor, v_rec.created_at, now())
+             v_status, p_chosen, p_actor, v_rec.created_at, now(),
+             v_rec.unit_load)
         RETURNING id INTO v_decided_id;
     END IF;
 
@@ -671,13 +686,13 @@ BEGIN
             (warehouse_id, layout_id, product_id, quantity, goods_receipt_id,
              recommended_location_id, alternatives, explanation, engine_version,
              status, assigned_location_id, assigned_at, assigned_by,
-             handling_unit_id, created_at)
+             handling_unit_id, created_at, unit_load)
         VALUES
             (v_rec.warehouse_id, v_rec.layout_id, v_rec.product_id, v_qty,
              v_rec.goods_receipt_id, v_rec.recommended_location_id,
              v_rec.alternatives, v_rec.explanation, v_rec.engine_version,
              'assigned', p_chosen, now(), p_actor,
-             v_rec.handling_unit_id, v_rec.created_at)
+             v_rec.handling_unit_id, v_rec.created_at, v_rec.unit_load)
         RETURNING id INTO v_assigned_id;
     END IF;
 
@@ -1107,7 +1122,8 @@ COMMIT;
 --   SELECT * FROM public.wie_home_bin_facts(<warehouse>);
 --
 -- Rollback: re-apply 00137 sections 3-4, 00080 section 3 and 00135 sections
---   2 and 5 (the bodies here are theirs plus the wie_home_block call), then
---   DROP FUNCTION public.wie_home_block(BIGINT,INT) and
---   DROP FUNCTION public.wie_home_bin_facts(INT).
+--   2 and 5 (the bodies here are theirs plus the wie_home_block call and the
+--   unit_load copies), then DROP FUNCTION public.wie_home_block(BIGINT,INT),
+--   DROP FUNCTION public.wie_home_bin_facts(INT) and, last, ALTER TABLE
+--   public.wie_putaway_recommendations DROP COLUMN unit_load.
 -- =============================================================================

@@ -467,6 +467,10 @@ export async function generatePutawayTasks(
           off_home: alloc.offHome === true,
           slotting_rule_id: alloc.slotting?.ruleId ?? null,
           suggestion_source: source,
+          // NX-0032 (mig 00142): the planner's unit-load decision, which the
+          // home rule reads. A desk redirect rewrites suggestion_source, never
+          // this, so a pallet the planner sent home stays held to the home.
+          unit_load: planHu === 'pallet',
         } as any).select('id').single()
         if (rErr) throw new Error(`failed to persist recommendation: ${rErr.message}`)
         recommendationId = (recRow as any).id

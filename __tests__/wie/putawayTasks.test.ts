@@ -261,6 +261,54 @@ describe('generatePutawayTasks — unit loads', () => {
     expect(inserted.map((r) => r.suggestion_source)).toEqual(['home', 'home'])
   })
 
+  // NX-0032: the planner's unit-load decision is persisted, so the home rule
+  // (wie_home_block step 4) reads what the planner decided, not a source tag a
+  // desk redirect can overwrite.
+  it('writes unit_load true for a single-product pallet and false for a loose line', async () => {
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      homeBins: [{ product_id: 1, bin_id: 20, max_qty: null }],
+      candidates: [
+        candidate({ location_id: 22, capacity_slots: 5, slot_kind: 'pallet', same_rack: true, anchor_distance_m: 3 }),
+        candidate({ location_id: 20, code: 'H20', capacity_slots: 100, same_rack: true, anchor_distance_m: 0 }),
+      ],
+    })
+    const res = await generatePutawayTasks(admin, {
+      warehouseId: 9,
+      lines: [
+        { product_id: 1, quantity: 48, hu_type: 'pallet', hu_id: 900 },
+        { product_id: 1, quantity: 6 },
+      ],
+      actorId: 'u1',
+    })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted.map((r) => [r.quantity, r.unit_load])).toEqual([[48, true], [6, false]])
+  })
+
+  it('writes unit_load false for every line of a mixed pallet', async () => {
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      homeBins: [
+        { product_id: 1, bin_id: 20, max_qty: null },
+        { product_id: 2, bin_id: 30, max_qty: null },
+      ],
+      candidates: [
+        candidate({ location_id: 20, code: 'H20', capacity_slots: 100 }),
+        candidate({ location_id: 30, code: 'H30', capacity_slots: 100 }),
+      ],
+    })
+    const res = await generatePutawayTasks(admin, {
+      warehouseId: 9,
+      lines: [
+        { product_id: 1, quantity: 40, hu_type: 'pallet', hu_id: 500 },
+        { product_id: 2, quantity: 25, hu_type: 'pallet', hu_id: 500 },
+      ],
+      actorId: 'u1',
+    })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted.map((r) => r.unit_load)).toEqual([false, false])
+  })
+
   it('still charges per-unit for a carton-denominated bin', async () => {
     const { admin, inserted } = makeAdmin({
       warehouse: racked,
