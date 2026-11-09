@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
+  MAKE_HOME_FORBIDDEN,
+  MAKE_HOME_HELD,
   allocateAcrossTasks,
+  heldLineHomeRefusal,
+  canPlaceNow,
+  decisionActsOnStatus,
+  canSetHome,
   decideDeskAction,
   decidePutawayCompletion,
   type CompletionInput,
@@ -59,14 +65,97 @@ describe('decidePutawayCompletion', () => {
   })
 
   it('make_home only when the product has no home', () => {
-    expect(decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: null })))
+    expect(decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: null, role: 'Manager' })))
       .toMatchObject({ ok: true, setHome: true })
-    expect(decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: 20 })))
-      .toMatchObject({ ok: false, code: 'FORBIDDEN' })
+    const warehouse = decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: 20 }))
+    expect(warehouse).toMatchObject({ ok: false, code: 'FORBIDDEN' })
+    expect(warehouse.ok === false && warehouse.message).toBe(MAKE_HOME_FORBIDDEN)
     const manager = decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: 20, role: 'Manager' }))
     expect(manager).toMatchObject({ ok: false, code: 'INVALID_INPUT' })
     expect(manager.ok === false && manager.message).toMatch(/home bin/i)
     expect(decidePutawayCompletion(input())).toMatchObject({ ok: true, setHome: false })
+  })
+
+  it('make_home is refused for a Warehouse user even when the product has no home', () => {
+    expect(decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: null })))
+      .toEqual({ ok: false, code: 'FORBIDDEN', message: 'Only a Manager or Admin can give a product a home bin.' })
+  })
+
+  it('make_home from an Admin sets the home when the product has none', () => {
+    expect(decidePutawayCompletion(input({ makeHome: true, existingHomeLocationId: null, role: 'Admin' })))
+      .toMatchObject({ ok: true, setHome: true })
+  })
+})
+
+describe('canSetHome', () => {
+  it('only Admin and Manager', () => {
+    expect(canSetHome('Admin')).toBe(true)
+    expect(canSetHome('Manager')).toBe(true)
+    expect(canSetHome('Warehouse')).toBe(false)
+    expect(canSetHome('Field Sales Rep')).toBe(false)
+    expect(canSetHome('')).toBe(false)
+  })
+})
+
+// I1 (final review): a quarantined line is on its way to a hold bin, and the
+// stock it carries is held. Giving the product a home from that line would put
+// held stock in a pick face, so the server refuses it whatever bin was scanned.
+describe('heldLineHomeRefusal', () => {
+  it('refuses make_home on a held line with CONFLICT and the fixed copy', () => {
+    expect(MAKE_HOME_HELD).toBe("A held line can't make a home bin.")
+    expect(heldLineHomeRefusal({ makeHome: true, anyHeld: true }))
+      .toEqual({ ok: false, code: 'CONFLICT', message: MAKE_HOME_HELD })
+  })
+
+  it('says nothing when no home is asked for, or no line is held', () => {
+    expect(heldLineHomeRefusal({ makeHome: false, anyHeld: true })).toBeNull()
+    expect(heldLineHomeRefusal({ makeHome: true, anyHeld: false })).toBeNull()
+    expect(heldLineHomeRefusal({ makeHome: false, anyHeld: false })).toBeNull()
+  })
+})
+
+describe('canPlaceNow', () => {
+  it('a suggested line, or one the system assigned and nobody touched', () => {
+    expect(canPlaceNow({ status: 'suggested', assignedBy: null })).toBe(true)
+    expect(canPlaceNow({ status: 'assigned', assignedBy: null })).toBe(true)
+    // A person assigned it: it is theirs to place, not a line anyone may re-decide.
+    expect(canPlaceNow({ status: 'assigned', assignedBy: '00000000-0000-4000-8000-000000000001' })).toBe(false)
+    expect(canPlaceNow({ status: 'accepted', assignedBy: null })).toBe(false)
+  })
+})
+
+describe('decisionActsOnStatus', () => {
+  const person = '00000000-0000-4000-8000-000000000001'
+  const acts = (decision: Parameters<typeof decisionActsOnStatus>[0]['decision'], status: string,
+    o: { assignOnly?: boolean; assignedBy?: string | null } = {}) =>
+    decisionActsOnStatus({ decision, status, assignedBy: o.assignedBy ?? null, assignOnly: o.assignOnly })
+
+  it('unassign acts on an assigned line only', () => {
+    expect(acts('unassign', 'assigned')).toBe(true)
+    expect(acts('unassign', 'suggested')).toBe(false)
+  })
+
+  it('place now (accept / override) also acts on a line the system assigned', () => {
+    for (const decision of ['accept', 'override'] as const) {
+      expect(acts(decision, 'suggested')).toBe(true)
+      expect(acts(decision, 'assigned', { assignedBy: null })).toBe(true)
+      expect(acts(decision, 'assigned', { assignedBy: person })).toBe(false)
+      expect(acts(decision, 'accepted')).toBe(false)
+    }
+  })
+
+  it('a desk assign (assign_only) still needs a suggested line, whoever assigned it', () => {
+    for (const decision of ['accept', 'override'] as const) {
+      expect(acts(decision, 'suggested', { assignOnly: true })).toBe(true)
+      expect(acts(decision, 'assigned', { assignOnly: true, assignedBy: null })).toBe(false)
+      expect(acts(decision, 'assigned', { assignOnly: true, assignedBy: person })).toBe(false)
+    }
+  })
+
+  it('a walk confirm leaves the status check to the database, which says why in plain words', () => {
+    for (const status of ['suggested', 'assigned', 'accepted', 'expired']) {
+      expect(acts('confirm_overflow', status)).toBe(true)
+    }
   })
 })
 

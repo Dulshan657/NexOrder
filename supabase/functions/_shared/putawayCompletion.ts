@@ -17,7 +17,9 @@
 //     task at the dock for a manager, instead of an open task for the floor;
 //   * "make this the home bin" only fills a gap. The floor cannot move an
 //     existing home; Admin/Manager do that in the home-bin editor, where min/max
-//     is visible;
+//     is visible. Since NX-0033 only Admin and Manager may ask for it at all:
+//     a Warehouse user is refused FORBIDDEN, whether or not the product has a
+//     home, so a hand-made request cannot give a product a home from the floor;
 //   * several loose tasks of one product complete together, oldest first. Tasks
 //     carry no batch (inv_transfer_stock draws loose dock stock earliest-expiry
 //     first), so loose tasks of one product are interchangeable. A plated task
@@ -40,6 +42,73 @@ const DESK_ROLES: ReadonlyArray<UserRole> = ['Admin', 'Manager']
 const EPS = 1e-9
 
 const refuse = (code: RefusalCode, message: string): Refusal => ({ ok: false, code, message })
+
+/** NX-0033: giving a product a home from the walk is a Manager's or Admin's call. */
+export const MAKE_HOME_FORBIDDEN = 'Only a Manager or Admin can give a product a home bin.'
+
+/** NX-0033 I1: a quarantined (held) line is going to a hold bin, never a home. */
+export const MAKE_HOME_HELD = "A held line can't make a home bin."
+
+/**
+ * May a home be made from these lines? Not when any of them is held: its stock
+ * may only go to a hold bin, and a hold bin is never a home, so `make_home` from
+ * it could only put held stock in a pick face. `anyHeld` is the caller's reading
+ * of the lines' own bins (assigned, else suggested) against the hold zones.
+ */
+export function heldLineHomeRefusal(args: { makeHome: boolean; anyHeld: boolean }): Refusal | null {
+  return args.makeHome && args.anyHeld ? refuse('CONFLICT', MAKE_HOME_HELD) : null
+}
+
+/** May this role give a product a home bin? Admin and Manager only. */
+export function canSetHome(role: UserRole): boolean {
+  return DESK_ROLES.includes(role)
+}
+
+/**
+ * May the floor place this line now (accept or override it) without the desk
+ * assigning it first? A suggested line, or one the SYSTEM assigned
+ * (`assigned_by` NULL, NX-0033) and nobody has touched since. A line a person
+ * assigned is that person's decision and is not re-decided here.
+ */
+export function canPlaceNow(task: { status: string; assignedBy: string | null }): boolean {
+  return task.status === 'suggested' || (task.status === 'assigned' && task.assignedBy === null)
+}
+
+/** The decisions decide-putaway resolves on the task row itself. The two desk
+ *  actions (redirect, resolve_short) are answered earlier by decideDeskAction,
+ *  which has its own status rules, so they are not asked here. */
+export type PutawayDecision = 'accept' | 'override' | 'unassign' | 'confirm_overflow'
+
+/**
+ * Does `decision` act on a task in this state? decide-putaway asks this before
+ * it touches anything (the transactions ask again under their row lock):
+ *
+ *   * unassign                      an assigned task;
+ *   * accept / override, one step   {@link canPlaceNow}: a suggested task, or one
+ *                                   the system assigned (NX-0033), so the receive
+ *                                   card and the opening-stock import can still
+ *                                   place what no longer waits in the queue;
+ *   * accept / override assign_only a suggested task, as a desk assign always
+ *                                   was: a system-assigned line is already
+ *                                   assigned, and a person's is theirs;
+ *   * confirm_overflow              always yes. wie_confirm_overflow_tx owns the
+ *                                   whole check under its row lock (status, still
+ *                                   awaiting confirmation, which bin) and answers
+ *                                   in the words the walk shows. Refusing here
+ *                                   would hide those words behind a generic one.
+ */
+export function decisionActsOnStatus(args: {
+  decision: PutawayDecision
+  assignOnly?: boolean
+  status: string
+  assignedBy: string | null
+}): boolean {
+  const { decision, assignOnly, status, assignedBy } = args
+  if (decision === 'confirm_overflow') return true
+  if (decision === 'unassign') return status === 'assigned'
+  if (!assignOnly) return canPlaceNow({ status, assignedBy })
+  return status === 'suggested'
+}
 
 export function isOverrideReason(v: unknown): v is OverrideReason {
   return typeof v === 'string' && (OVERRIDE_REASONS as readonly string[]).includes(v)
@@ -106,10 +175,11 @@ export function decidePutawayCompletion(input: CompletionInput): CompletionDecis
 
   let setHome = false
   if (input.makeHome) {
+    // The role comes first (NX-0033): a Warehouse user is refused whatever the
+    // product's home looks like, so the answer does not reveal whether it has one.
+    if (!canSetHome(role)) return refuse('FORBIDDEN', MAKE_HOME_FORBIDDEN)
     if (input.existingHomeLocationId !== null) {
-      return DESK_ROLES.includes(role)
-        ? refuse('INVALID_INPUT', 'this product already has a home bin; change it in the home bin editor')
-        : refuse('FORBIDDEN', 'this product already has a home bin; ask a manager to change it')
+      return refuse('INVALID_INPUT', 'this product already has a home bin; change it in the home bin editor')
     }
     setHome = true
   }

@@ -11,6 +11,13 @@
 //   homeBinFactsFromRow(row, w)  a wie_home_bin_facts row -> HomeBinFacts
 //   slottingRefusalFor(...)      whether slotting excludes the home, in words
 //
+// NX-0033 asks the same question of a bin that is NOT yet a home: may a Manager
+// give this product a home here?
+//
+//   homeBinCandidateFactsFromRow  a wie_home_bin_candidate_facts row -> facts
+//   homeChoiceRefusal(facts)      why not, in words (another product's home first)
+//   homeBinChoices(facts)         the bins that can be, in code order
+//
 // Every test below mirrors a test putaway itself makes:
 //
 //   inactive, hold_zone, level_role_not_allowed, carton_not_allowed, and the
@@ -135,6 +142,29 @@ export interface HomeBinFactsRow {
   pending_qty: number | null
 }
 
+/**
+ * A bin read as if it were a product's home (NX-0033), from
+ * wie_home_bin_candidate_facts (mig 00143, 00144). The same facts as a real home, plus
+ * the bin's name for the chooser and the OTHER products already homed there.
+ */
+export interface HomeBinCandidateFactsRow extends HomeBinFactsRow {
+  bin_name: string | null
+  /** Primary homes of other products at this bin, lowest product id first. */
+  other_home_skus: string[] | null
+}
+
+export interface HomeBinCandidateFacts extends HomeBinFacts {
+  binName: string | null
+  otherHomeSkus: string[]
+}
+
+/** One bin a Manager may pick as a product's home. */
+export interface HomeBinChoice {
+  binId: number
+  binCode: string
+  binName: string | null
+}
+
 /** Float noise guard for the whole-unit rule, as planHomeFirst uses. */
 const EPS = 1e-6
 
@@ -171,6 +201,17 @@ export function homeBinFactsFromRow(row: HomeBinFactsRow, warehouseId: number): 
     onHandAtHome: num(row.on_hand_at_home),
     pendingQty: num(row.pending_qty),
     slottingRefusal: null,
+  }
+}
+
+export function homeBinCandidateFactsFromRow(
+  row: HomeBinCandidateFactsRow,
+  warehouseId: number,
+): HomeBinCandidateFacts {
+  return {
+    ...homeBinFactsFromRow(row, warehouseId),
+    binName: row.bin_name ?? null,
+    otherHomeSkus: row.other_home_skus ?? [],
   }
 }
 
@@ -243,6 +284,29 @@ export function homeBinProblems(f: HomeBinFacts): HomeBinProblem[] {
   }
 
   return out
+}
+
+/**
+ * Why this bin cannot be the product's home, in words, or null when it can
+ * (NX-0033). Another product's home is named first: it is the plainest thing to
+ * tell a Manager, and wie_home_block step 2 refuses to put a different product
+ * in a home bin. Otherwise the first thing homeBinProblems finds, because a
+ * bin putaway would never offer is no home. Reads the bin as the product's home,
+ * so `full` means no room for even one unit and a bin that is empty passes.
+ */
+export function homeChoiceRefusal(f: HomeBinCandidateFacts): string | null {
+  if (f.otherHomeSkus.length > 0) {
+    return `${f.binCode} is the home bin of ${f.otherHomeSkus[0]}; choose another bin.`
+  }
+  return homeBinProblems(f)[0]?.message ?? null
+}
+
+/** The bins a product can be given as its home, in code order. */
+export function homeBinChoices(facts: readonly HomeBinCandidateFacts[]): HomeBinChoice[] {
+  return facts
+    .filter((f) => homeChoiceRefusal(f) === null)
+    .map((f) => ({ binId: f.binId, binCode: f.binCode, binName: f.binName }))
+    .sort((a, b) => a.binCode.localeCompare(b.binCode, 'en-AU'))
 }
 
 /** Judge every home in a warehouse and keep the ones with problems. */

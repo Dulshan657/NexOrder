@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import {
+  homeBinCandidateFactsFromRow,
+  homeBinChoices,
   homeBinFactsFromRow,
   homeBinProblems,
   homeBinReport,
+  homeChoiceRefusal,
   slottingRefusalFor,
+  type HomeBinCandidateFacts,
+  type HomeBinCandidateFactsRow,
   type HomeBinFacts,
   type HomeBinFactsRow,
   type HomeBinProblemCode,
@@ -276,5 +281,110 @@ describe('homeBinReport', () => {
   it('is empty when every home is healthy', () => {
     expect(homeBinReport(7, [healthy()])).toEqual({ warehouseId: 7, checked: 1, rows: [] })
     expect(homeBinReport(7, [])).toEqual({ warehouseId: 7, checked: 0, rows: [] })
+  })
+})
+
+// ── Which bins can be a product's home (NX-0033, C6) ─────────────────────────
+// A candidate is a bin read as if it were the product's home. Same facts as a
+// real home, plus the bin's name and the OTHER products already homed there.
+const candidate = (o: Partial<HomeBinCandidateFacts> = {}): HomeBinCandidateFacts => ({
+  ...healthy({ sku: 'TST-WALK-100', binCode: 'TST-WALK-B1' }),
+  binName: null,
+  otherHomeSkus: [],
+  ...o,
+})
+
+describe('homeBinCandidateFactsFromRow', () => {
+  const row = (o: Partial<HomeBinCandidateFactsRow> = {}): HomeBinCandidateFactsRow => ({
+    product_id: 1,
+    sku: 'TST-WALK-100',
+    bin_id: 20,
+    bin_code: 'TST-WALK-B1',
+    bin_warehouse_id: 7,
+    is_active: true,
+    is_hold: false,
+    level_role: 'pick',
+    is_pick_zone: true,
+    level_hu_types: ['carton'],
+    allowed_level_roles: null,
+    in_active_layout: true,
+    has_dock_route: true,
+    zone_allowed_categories: null,
+    category: 'Dry',
+    capacity_slots: 10,
+    used_slots: 2,
+    pending_slots: 0,
+    size_factor: 1,
+    max_qty: null,
+    on_hand_at_home: 2,
+    pending_qty: 0,
+    bin_name: 'Bay one',
+    other_home_skus: ['TST-WALK-900'],
+    ...o,
+  })
+
+  it('maps the shared columns like a home, and adds the bin name and the other homes', () => {
+    const facts = homeBinCandidateFactsFromRow(row(), 7)
+    expect(facts).toEqual({
+      ...homeBinFactsFromRow(row(), 7),
+      binName: 'Bay one',
+      otherHomeSkus: ['TST-WALK-900'],
+    })
+  })
+
+  it('reads a blank name as null and a blank list of homes as none', () => {
+    const facts = homeBinCandidateFactsFromRow(row({ bin_name: null, other_home_skus: null }), 7)
+    expect(facts.binName).toBeNull()
+    expect(facts.otherHomeSkus).toEqual([])
+  })
+})
+
+describe('homeChoiceRefusal', () => {
+  it("names the other product's home first, then the first problem, else null", () => {
+    // Another product's home wins over any other problem the bin has.
+    expect(homeChoiceRefusal(candidate({ isActive: false, otherHomeSkus: ['TST-WALK-900', 'TST-WALK-901'] })))
+      .toBe('TST-WALK-B1 is the home bin of TST-WALK-900; choose another bin.')
+    // Otherwise the first problem, in homeBinProblems' fixed order.
+    expect(homeChoiceRefusal(candidate({ isActive: false, capacitySlots: 10, usedSlots: 10 })))
+      .toBe('Bin TST-WALK-B1 is inactive, so putaway never offers it.')
+    // A healthy bin that is nobody's home has no refusal.
+    expect(homeChoiceRefusal(candidate())).toBeNull()
+  })
+})
+
+describe('homeBinChoices', () => {
+  it("keeps only bins with no problems that are not another product's home, by code", () => {
+    const choices = homeBinChoices([
+      candidate({ binId: 22, binCode: 'TST-WALK-B2', binName: 'Bay two' }),
+      candidate({ binId: 21, binCode: 'TST-WALK-B1', binName: null }),
+      candidate({ binId: 23, binCode: 'TST-WALK-B3', isActive: false }),
+      candidate({ binId: 24, binCode: 'TST-WALK-B4', capacitySlots: 10, usedSlots: 10 }),
+      candidate({ binId: 25, binCode: 'TST-WALK-B5', otherHomeSkus: ['TST-WALK-900'] }),
+    ])
+    expect(choices).toEqual([
+      { binId: 21, binCode: 'TST-WALK-B1', binName: null },
+      { binId: 22, binCode: 'TST-WALK-B2', binName: 'Bay two' },
+    ])
+  })
+
+  it('lists the bins in code order, whatever order the facts came in', () => {
+    const choices = homeBinChoices([
+      candidate({ binId: 2, binCode: 'TST-WALK-C' }),
+      candidate({ binId: 1, binCode: 'TST-WALK-A' }),
+      candidate({ binId: 3, binCode: 'TST-WALK-B' }),
+    ])
+    expect(choices.map((c) => c.binCode)).toEqual(['TST-WALK-A', 'TST-WALK-B', 'TST-WALK-C'])
+  })
+
+  it('is empty when no bin qualifies, and for no facts at all', () => {
+    expect(homeBinChoices([candidate({ isActive: false })])).toEqual([])
+    expect(homeBinChoices([])).toEqual([])
+  })
+
+  it('does not change the list it is given', () => {
+    const facts = [candidate({ binId: 2, binCode: 'TST-WALK-B2' }), candidate({ binId: 1, binCode: 'TST-WALK-B1' })]
+    const before = facts.map((f) => f.binCode)
+    homeBinChoices(facts)
+    expect(facts.map((f) => f.binCode)).toEqual(before)
   })
 })

@@ -8,7 +8,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PackageOpen } from 'lucide-react';
 import { useWarehouses } from '../../hooks/queries/useWarehouses';
 import { usePendingPutawayCounts } from '../../hooks/queries/usePendingPutawayCounts';
-import { useAssignedPutaways } from '../../hooks/queries/usePutawayWalk';
+import { useWalkPutaways } from '../../hooks/queries/usePutawayWalk';
 import { useWarehouseScope } from '../../context/WarehouseScopeContext';
 import { resolvePutawayWarehouse } from './putawayWarehouse';
 import { UserRole, type User } from '../../types';
@@ -76,8 +76,11 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
   const [stage, setStage] = useState<Stage>(defaultStage);
   // Drives the Walk tab's badge. Cheap: the walk view reads the same query key,
   // so opening the tab costs no second round trip.
-  const { data: assignedTasks } = useAssignedPutaways(effectiveWarehouseId);
-  const assignedCount = assignedTasks?.length ?? 0;
+  const { data: walkStops } = useWalkPutaways(effectiveWarehouseId);
+  const walkCount = walkStops?.length ?? 0;
+  // Only a Manager or Admin may give a product a home bin from the walk. The
+  // server refuses anyone else (complete-putaway); this hides the offer.
+  const canSetHome = currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER;
   // Warehouse staff can only place stock at their own site (the same rule
   // complete-putaway enforces server-side, mirrored here so the buttons are
   // disabled rather than failing on tap).
@@ -155,7 +158,7 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
               ariaLabel="Putaway stage"
               tabs={[
                 { id: 'assign', label: 'Assign' },
-                { id: 'walk', label: 'Walk', badge: assignedCount },
+                { id: 'walk', label: 'Walk', badge: walkCount },
               ]}
               activeId={stage}
               onChange={setStage}
@@ -170,7 +173,7 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
           {stage === 'assign' ? (
             <PutawayQueueView warehouseId={effectiveWarehouseId} />
           ) : (
-            <PutawayWalkView warehouseId={effectiveWarehouseId} canPlace={canPlaceHere} />
+            <PutawayWalkView warehouseId={effectiveWarehouseId} canPlace={canPlaceHere} canSetHome={canSetHome} />
           )}
         </>
       ) : (

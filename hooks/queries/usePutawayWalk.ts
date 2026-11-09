@@ -1,4 +1,4 @@
-// The walk half of two-stage putaway (mig 00080): the assigned tasks, the route
+// The walk half of two-stage putaway (mig 00080): the walk's stops, the route
 // through them, and the mutations that complete or abandon one.
 //
 // Every mutation invalidates `putawayKeys.all` + `.counts` for the same reason
@@ -8,10 +8,11 @@
 // moment stock actually moves.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getAssignedPutaways, type PendingPutawayRow } from '@/services/supabase/putawayQueueService'
+import { getWalkPutaways, type PendingPutawayRow } from '@/services/supabase/putawayQueueService'
 import { getPutawayRoute, type PutawayRouteResult } from '@/services/supabase/putawayRouteService'
 import {
   completePutaway,
+  confirmOverflowPutaway,
   unassignPutaway,
   type CompletePutawayInput,
   type CompletePutawayResult,
@@ -19,12 +20,13 @@ import {
 import { putawayKeys } from './putawayKeys'
 import { inventoryKeys } from './useInventoryBalances'
 
-/** Tasks assigned to a bin but not yet carried there. */
-export function useAssignedPutaways(warehouseId: number | null) {
+/** The Walk's stops (NX-0033): lines assigned to a bin but not yet carried
+ *  there, plus overflow lines awaiting a confirmation. */
+export function useWalkPutaways(warehouseId: number | null) {
   return useQuery<PendingPutawayRow[]>({
-    queryKey: [...putawayKeys.all, 'assigned', warehouseId],
+    queryKey: [...putawayKeys.all, 'walk', warehouseId],
     enabled: warehouseId != null,
-    queryFn: () => getAssignedPutaways(warehouseId as number),
+    queryFn: () => getWalkPutaways(warehouseId as number),
     // Same reasoning as the Assign queue: a walker returning to this tab must
     // never be shown a task someone else already placed.
     staleTime: 0,
@@ -66,5 +68,32 @@ export function useUnassignPutaway() {
       qc.invalidateQueries({ queryKey: putawayKeys.counts })
       qc.invalidateQueries({ queryKey: ['putaway-route'] })
     },
+  })
+}
+
+/** The bin the worker scanned: its code as scanned (the walk, resolved on the
+ *  server) or its id. The server compares it with the line's suggested bin. */
+export type ConfirmOverflowInput =
+  | { recommendationId: number; locationCode: string; locationId?: never }
+  | { recommendationId: number; locationId: number; locationCode?: never }
+
+/** The Walk confirms an overflow line (NX-0033). Races the desk's Assign and
+ *  Redirect, so BOTH outcomes refresh both lists: a win takes the line off the
+ *  desk's queue and a loss (it was already dealt with, the bin changed) shows
+ *  the walker the state the desk left. */
+export function useConfirmOverflow() {
+  const qc = useQueryClient()
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: putawayKeys.all })
+    qc.invalidateQueries({ queryKey: putawayKeys.counts })
+    qc.invalidateQueries({ queryKey: ['putaway-route'] })
+  }
+  return useMutation<{ assignedId: number }, Error, ConfirmOverflowInput>({
+    mutationFn: (input) => confirmOverflowPutaway(
+      input.recommendationId,
+      input.locationCode !== undefined ? { locationCode: input.locationCode } : input.locationId,
+    ),
+    onSuccess: refresh,
+    onError: refresh,
   })
 }

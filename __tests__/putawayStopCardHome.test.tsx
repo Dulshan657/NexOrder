@@ -17,6 +17,7 @@ const { completeMock, unassignMock } = vi.hoisted(() => ({
 vi.mock('@/hooks/queries/usePutawayWalk', () => ({
   useCompletePutaway: () => ({ mutateAsync: completeMock, isPending: false }),
   useUnassignPutaway: () => ({ mutateAsync: unassignMock, isPending: false }),
+  useConfirmOverflow: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 vi.mock('@/hooks/queries/usePalletBreakdown', () => ({
   usePrintPlateLabels: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -56,6 +57,7 @@ function row(over: Partial<PendingPutawayRow> = {}): PendingPutawayRow {
     huCode: null,
     huLabelPrinted: null,
     huStatus: null,
+    status: 'assigned',
     assignedLocationId: 5001,
     assignedAt: '2026-11-09T00:01:00Z',
     suggestionSource: 'home',

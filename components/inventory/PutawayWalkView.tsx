@@ -1,7 +1,13 @@
-// The walk: assigned putaway tasks, in the order they should be walked.
+// The walk: the putaway stops, in the order they should be walked.
 //
-// A "run" is derived, not stored — it is simply every task currently assigned
-// at this warehouse, sequenced by the WIE engine from the dock
+// A stop is a line that is assigned to a bin (the system does that when it
+// receives a line whose home has room, whose product has no home, or which is a
+// single-product pallet; the desk can do it too), or a loose overflow line whose
+// home was full and which waits for someone to confirm the bin (NX-0033, see
+// putaway/walkStops.ts). Either way the stock is still at the dock.
+//
+// A "run" is derived, not stored — it is simply every stop currently at this
+// warehouse, sequenced by the WIE engine from the dock
 // (recommend-putaway-route → sequencePickRoute). Nobody claims a run, so two
 // people can walk at once; wie_complete_putaway_tx's row lock makes the loser
 // of a race get a clean "someone else already placed this" rather than a double
@@ -13,10 +19,13 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Footprints, MapPin, PackageOpen, Search } from 'lucide-react';
-import { useAssignedPutaways, usePutawayRoute } from '../../hooks/queries/usePutawayWalk';
+import { usePutawayRoute, useWalkPutaways } from '../../hooks/queries/usePutawayWalk';
 import { useWarehouseLocations } from '../../hooks/queries/useWarehouseLocations';
+import { useZoneProfiles } from '../../hooks/queries/useZoneProfiles';
+import { buildHeldLocationIds } from '@/lib/heldLocations';
 import { PutawayStopCard } from './putaway/PutawayStopCard';
 import { PutawayScanFinder } from './putaway/PutawayScanFinder';
+import { walkBinId } from './putaway/walkStops';
 import StickyScanBar from './StickyScanBar';
 import { buildDisplayLookup, displayFor, searchTextFor } from '@/lib/locationLookup';
 
@@ -28,10 +37,14 @@ interface PutawayWalkViewProps {
   warehouseId: number;
   /** False for a Warehouse-role user looking at someone else's site. */
   canPlace?: boolean;
+  /** True for a Manager or Admin: a stop for a product with no home bin may
+   *  offer to give it one. The server enforces the same rule (complete-putaway);
+   *  this only decides whether the offer is shown. */
+  canSetHome?: boolean;
 }
 
-const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace = true }) => {
-  const tasksQuery = useAssignedPutaways(warehouseId);
+const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace = true, canSetHome = false }) => {
+  const tasksQuery = useWalkPutaways(warehouseId);
   const routeQuery = usePutawayRoute(warehouseId);
   const locationsQuery = useWarehouseLocations(warehouseId);
 
@@ -62,6 +75,24 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
   }, [activeId]);
 
   const binById = useMemo(() => buildDisplayLookup(locationsQuery.data), [locationsQuery.data]);
+
+  // Which bins are HELD (I1): a stop at one carries a held line, which never
+  // offers to give its product a home. The same rule the warehouse screens use
+  // (lib/heldLocations.ts; v_held_locations is service_role only). Null while
+  // either list is unknown, and a stop then counts as held: the offer waits
+  // rather than appearing for a line that turns out to be held.
+  const zoneProfilesQuery = useZoneProfiles();
+  const heldIds = useMemo(
+    () => (locationsQuery.data && zoneProfilesQuery.data
+      ? buildHeldLocationIds(locationsQuery.data, zoneProfilesQuery.data)
+      : null),
+    [locationsQuery.data, zoneProfilesQuery.data],
+  );
+  const binHeldFor = (row: { assignedLocationId: number | null; recommendedLocationId: number | null }): boolean => {
+    if (heldIds === null) return true;
+    const id = walkBinId(row);
+    return id != null && heldIds.has(id);
+  };
 
   const tasks = tasksQuery.data ?? [];
 
@@ -94,8 +125,12 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
    * supplying only the friendly NAME (which no RPC returns) and the retired
    * flag. On a `legacy` site there is no route, so the map is all there is.
    */
-  const binFor = useMemo(() => (row: { id: number; assignedLocationId: number | null }) => {
-    const cached = displayFor(binById, row.assignedLocationId);
+  const binFor = useMemo(() => (row: {
+    id: number; assignedLocationId: number | null; recommendedLocationId: number | null;
+  }) => {
+    // The assigned bin, else the suggested one: an overflow line awaiting
+    // confirmation is a stop at its suggested bin.
+    const cached = displayFor(binById, walkBinId(row));
     const live = routeById.get(row.id)?.code;
     if (!live) return cached;
     // A code disagreement means the cached list is stale; the name that came
@@ -253,7 +288,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
           <PackageOpen className="w-9 h-9 text-stone-300 mx-auto mb-3" />
           <p className="text-sm text-stone-700">Nothing to carry</p>
           <p className="text-xs text-stone-600 mt-1">
-            Assign lines on the Assign tab and they'll show up here as stops.
+            Received lines show up here. Lines that need a decision wait on the Assign tab.
           </p>
         </div>
       ) : visible.length === 0 ? (
@@ -278,6 +313,8 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
                 active={activeId === row.id}
                 disabled={!canPlace}
                 warehouseId={warehouseId}
+                canSetHome={canSetHome}
+                binHeld={binHeldFor(row)}
                 unlabelledTwins={twinsById.get(row.id) ?? EMPTY_TWINS}
                 onActivate={() => setActiveId(row.id)}
                 onDone={() => setActiveId(null)}
@@ -306,7 +343,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
           <PutawayScanFinder
             rows={tasks}
             locations={locationsQuery.data ?? []}
-            binIdOf={(row) => row.assignedLocationId}
+            binIdOf={walkBinId}
             onFound={(id) => { setActiveId(id); setSearch(''); }}
             onFilter={setSearch}
           />

@@ -24,14 +24,21 @@
 // deno-lint-ignore-file no-explicit-any
 import { type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
 import {
+  homeBinCandidateFactsFromRow,
+  homeBinChoices,
   homeBinFactsFromRow,
   homeBinReport,
+  homeChoiceRefusal,
   slottingRefusalFor,
+  type HomeBinCandidateFacts,
+  type HomeBinCandidateFactsRow,
+  type HomeBinChoice,
   type HomeBinFacts,
   type HomeBinFactsRow,
   type HomeBinHealthReport,
 } from './wie/homeBinHealth.ts'
 import { contextFor, loadSlottingProduct, loadWarehouseSlotting } from './slottingLoad.ts'
+import type { SlottingProduct } from './wie/slotting.ts'
 
 /** Product ids per `.in()` read: a long list becomes a long URL. */
 const IN_CHUNK = 200
@@ -54,35 +61,44 @@ async function brandsByProduct(
   return brands
 }
 
-/** Facts with `slottingRefusal` filled in. New objects; the input is untouched. */
-async function withSlottingRefusals(
+/**
+ * Facts with `slottingRefusal` filled in. New objects; the input is untouched.
+ *
+ * The product side of a rule match is read ONCE per distinct product, not once
+ * per fact: the health check has one product per home, but a candidate list is
+ * one product against every bin in the warehouse.
+ */
+async function withSlottingRefusals<T extends HomeBinFacts>(
   admin: SupabaseClient,
   warehouseId: number,
-  facts: readonly HomeBinFacts[],
-): Promise<HomeBinFacts[]> {
+  facts: readonly T[],
+): Promise<T[]> {
   const slotting = await loadWarehouseSlotting(admin, warehouseId)
   // A site with no rules never consults slotting, here or at putaway.
   if (slotting.empty || facts.length === 0) return [...facts]
 
-  const brands = await brandsByProduct(admin, facts.map((f) => f.productId))
-  const out: HomeBinFacts[] = []
-  for (let i = 0; i < facts.length; i += SLOTTING_BATCH) {
-    const batch = facts.slice(i, i + SLOTTING_BATCH)
-    const judged = await Promise.all(batch.map(async (f) => {
-      const product = await loadSlottingProduct(admin, {
-        id: f.productId,
-        brand: brands.get(f.productId) ?? null,
-        category: f.category,
-      })
-      // A hold bin is pinned by planSlotting and never excluded, as at putaway.
-      const context = contextFor(slotting, product, f.isHold ? new Set([f.binId]) : undefined)
-      if (!context) return f
-      const slottingRefusal = slottingRefusalFor({ ...context, candidates: [] }, f.binId, f.binCode)
-      return { ...f, slottingRefusal }
-    }))
-    out.push(...judged)
+  const categoryByProduct = new Map<number, string | null>()
+  for (const f of facts) if (!categoryByProduct.has(f.productId)) categoryByProduct.set(f.productId, f.category)
+  const productIds = [...categoryByProduct.keys()]
+
+  const brands = await brandsByProduct(admin, productIds)
+  const products = new Map<number, SlottingProduct>()
+  for (let i = 0; i < productIds.length; i += SLOTTING_BATCH) {
+    const loaded = await Promise.all(productIds.slice(i, i + SLOTTING_BATCH).map((id) =>
+      loadSlottingProduct(admin, {
+        id,
+        brand: brands.get(id) ?? null,
+        category: categoryByProduct.get(id) ?? null,
+      })))
+    for (const product of loaded) products.set(product.productId, product)
   }
-  return out
+
+  return facts.map((f) => {
+    // A hold bin is pinned by planSlotting and never excluded, as at putaway.
+    const context = contextFor(slotting, products.get(f.productId)!, f.isHold ? new Set([f.binId]) : undefined)
+    if (!context) return f
+    return { ...f, slottingRefusal: slottingRefusalFor({ ...context, candidates: [] }, f.binId, f.binCode) }
+  })
 }
 
 /** Every primary home in a warehouse, judged. Throws on any read failure. */
@@ -95,4 +111,63 @@ export async function loadHomeBinHealth(
 
   const facts = ((data ?? []) as HomeBinFactsRow[]).map((row) => homeBinFactsFromRow(row, warehouseId))
   return homeBinReport(warehouseId, await withSlottingRefusals(admin, warehouseId, facts))
+}
+
+/**
+ * Every bin in the warehouse read as if it were this product's home (mig 00143, 00144),
+ * judged. `binId` narrows it to one bin. `excludeRecIds` are the putaway line(s)
+ * being placed: their own promise to a bin is not counted against it (mig 00144),
+ * so a bin with room for exactly the line is not read as full. Throws on any read
+ * failure.
+ */
+async function loadCandidates(
+  admin: SupabaseClient,
+  warehouseId: number,
+  productId: number,
+  binId?: number,
+  excludeRecIds: readonly number[] = [],
+): Promise<HomeBinCandidateFacts[]> {
+  const args: Record<string, number | number[]> = { p_warehouse_id: warehouseId, p_product_id: productId }
+  if (binId !== undefined) args.p_bin_id = binId
+  if (excludeRecIds.length > 0) args.p_exclude_rec_ids = [...excludeRecIds]
+  const { data, error } = await admin.rpc('wie_home_bin_candidate_facts', args)
+  if (error) throw new Error(`home bin candidates load failed: ${error.message}`)
+
+  const facts = ((data ?? []) as HomeBinCandidateFactsRow[])
+    .map((row) => homeBinCandidateFactsFromRow(row, warehouseId))
+  return withSlottingRefusals(admin, warehouseId, facts)
+}
+
+/**
+ * The bins a Manager may give this product as its home (NX-0033): active, usable
+ * by putaway, not full, and nobody else's home. `excludeRecIds` are the line(s)
+ * on the stop the Manager is standing at, so the bin that line is already going to
+ * is not crowded out by the line itself. Throws on any read failure.
+ */
+export async function loadHomeBinChoices(
+  admin: SupabaseClient,
+  warehouseId: number,
+  productId: number,
+  excludeRecIds: readonly number[] = [],
+): Promise<HomeBinChoice[]> {
+  return homeBinChoices(await loadCandidates(admin, warehouseId, productId, undefined, excludeRecIds))
+}
+
+/**
+ * Why this one bin cannot be the product's home, or null when it can. The check
+ * complete-putaway makes before it sets a home, so a hand-made request cannot
+ * pick a bin the chooser would not have offered. `excludeRecIds` are the line(s)
+ * being completed, as for loadHomeBinChoices. Throws on any read failure.
+ */
+export async function loadHomeChoiceRefusal(
+  admin: SupabaseClient,
+  warehouseId: number,
+  productId: number,
+  binId: number,
+  excludeRecIds: readonly number[] = [],
+): Promise<string | null> {
+  const [facts] = await loadCandidates(admin, warehouseId, productId, binId, excludeRecIds)
+  // No row: the id is not a bin under this warehouse (a rack, a zone, another site).
+  if (!facts) return 'That location is not a bin in this warehouse.'
+  return homeChoiceRefusal(facts)
 }

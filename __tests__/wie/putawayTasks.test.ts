@@ -515,3 +515,178 @@ describe('generatePutawayTasks — home bin', () => {
     })
   })
 })
+
+// ── Straight to the walk (NX-0033) ───────────────────────────────────────────
+// A task is written already assigned, with assigned_by NULL meaning "the system
+// did it", unless it is a loose overflow line (or has no bin) that a person has
+// to confirm.
+
+describe('generatePutawayTasks — straight to the walk (NX-0033)', () => {
+  const homeBins = [{ product_id: 1, bin_id: 20, max_qty: null }]
+
+  it('a line to a home with room is written assigned to the home, with no assigner', async () => {
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      homeBins,
+      candidates: [
+        candidate({ location_id: 7, distance_from_dock_m: 1 }),
+        candidate({ location_id: 20, code: 'H20', distance_from_dock_m: 80 }),
+      ],
+    })
+    const res = await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 30 }], actorId: 'u1' })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({
+      status: 'assigned', assigned_location_id: 20, assigned_by: null, suggestion_source: 'home',
+    })
+    expect(typeof inserted[0].assigned_at).toBe('string')
+    expect(Number.isNaN(Date.parse(inserted[0].assigned_at as string))).toBe(false)
+  })
+
+  it('a loose overflow line is written suggested, with no assigned bin', async () => {
+    // The home is full (capacity used), so the whole line spills to overflow.
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      homeBins,
+      candidates: [
+        candidate({ location_id: 20, code: 'H20', capacity_slots: 10, used_slots: 10, same_rack: true, anchor_distance_m: 0 }),
+        candidate({ location_id: 21, code: 'H21', same_rack: true, anchor_distance_m: 2 }),
+      ],
+    })
+    const res = await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 30 }], actorId: 'u1' })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({
+      status: 'suggested', recommended_location_id: 21, suggestion_source: 'overflow',
+    })
+    expect(inserted[0].assigned_location_id ?? null).toBeNull()
+    expect(inserted[0].assigned_by ?? null).toBeNull()
+    expect(inserted[0].assigned_at ?? null).toBeNull()
+  })
+
+  it('a line for a product with no home is written assigned to the engine bin', async () => {
+    const { admin, inserted } = makeAdmin({ warehouse: racked, candidates: [candidate({ location_id: 7 })] })
+    const res = await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 5 }], actorId: 'u1' })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted[0]).toMatchObject({
+      status: 'assigned', assigned_location_id: 7, assigned_by: null, suggestion_source: 'engine',
+    })
+  })
+
+  it('a single-product pallet is written assigned even though its source is overflow', async () => {
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      homeBins,
+      candidates: [
+        candidate({ location_id: 20, code: 'H20', capacity_slots: 100, same_rack: true, anchor_distance_m: 0 }),
+        candidate({ location_id: 22, capacity_slots: 1, slot_kind: 'pallet', same_rack: true, anchor_distance_m: 3 }),
+      ],
+    })
+    const res = await generatePutawayTasks(admin, {
+      warehouseId: 9, lines: [{ product_id: 1, quantity: 48, hu_type: 'pallet', hu_id: 900 }], actorId: 'u1',
+    })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({
+      status: 'assigned', assigned_location_id: 22, assigned_by: null,
+      suggestion_source: 'overflow', unit_load: true,
+    })
+  })
+
+  it('a residual with no eligible bin stays suggested', async () => {
+    const { admin, inserted } = makeAdmin({ warehouse: racked, candidates: [candidate({ location_id: 7, capacity_slots: 10 })] })
+    const res = await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 25 }], actorId: 'u1' })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(inserted).toHaveLength(2)
+    expect(inserted[0]).toMatchObject({ recommended_location_id: 7, status: 'assigned', assigned_location_id: 7 })
+    expect(inserted[1]).toMatchObject({ recommended_location_id: null, status: 'suggested' })
+    expect(inserted[1].assigned_location_id ?? null).toBeNull()
+  })
+
+  it('reports assignedLocationId on each result, null for a line that waits', async () => {
+    const homeLine = {
+      warehouse: racked,
+      homeBins,
+      candidates: [candidate({ location_id: 7, distance_from_dock_m: 1 }), candidate({ location_id: 20, code: 'H20', distance_from_dock_m: 80 })],
+    }
+    for (const dryRun of [true, false]) {
+      const { admin } = makeAdmin(homeLine)
+      const res = await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 30 }], actorId: 'u1', dryRun })
+      if (res.mode !== 'engine') throw new Error('expected engine')
+      expect(res.recommendations[0]).toMatchObject({ suggestionSource: 'home', assignedLocationId: 20 })
+    }
+
+    const overflow = {
+      warehouse: racked,
+      homeBins,
+      candidates: [
+        candidate({ location_id: 20, code: 'H20', capacity_slots: 10, used_slots: 10, same_rack: true, anchor_distance_m: 0 }),
+        candidate({ location_id: 21, code: 'H21', same_rack: true, anchor_distance_m: 2 }),
+      ],
+    }
+    for (const dryRun of [true, false]) {
+      const { admin } = makeAdmin(overflow)
+      const res = await generatePutawayTasks(admin, { warehouseId: 9, lines: [{ product_id: 1, quantity: 30 }], actorId: 'u1', dryRun })
+      if (res.mode !== 'engine') throw new Error('expected engine')
+      expect(res.recommendations[0]).toMatchObject({
+        suggestionSource: 'overflow', recommendedLocationId: 21, assignedLocationId: null,
+      })
+    }
+  })
+})
+
+// I1 (final review): a quarantined line may only go to a hold bin, and a hold
+// bin is never a home, so its bin says nothing about whether the home is full.
+// It goes straight onto the walk to the hold bin, like a homeless line (G3), and
+// is never a "Home full" overflow line waiting for a yes.
+describe('generatePutawayTasks — a quarantined line (NX-0033 I1)', () => {
+  const homeBins = [{ product_id: 1, bin_id: 20, max_qty: null }]
+  // What wie_putaway_candidates answers with p_hold_only: hold bins only, so the
+  // home (20) is not among them.
+  const holdOnly = [candidate({ location_id: 40, code: 'Q40', is_hold: true } as never)]
+
+  it('of a homed product goes straight to the walk at its hold bin, not as an overflow line', async () => {
+    for (const dryRun of [true, false]) {
+      const { admin, inserted } = makeAdmin({ warehouse: racked, homeBins, candidates: holdOnly })
+      const res = await generatePutawayTasks(admin, {
+        warehouseId: 9, lines: [{ product_id: 1, quantity: 6, quarantine: true }], actorId: 'u1', dryRun,
+      })
+      if (res.mode !== 'engine') throw new Error('expected engine')
+      expect(res.recommendations).toHaveLength(1)
+      expect(res.recommendations[0]).toMatchObject({
+        suggestionSource: 'engine', recommendedLocationId: 40, assignedLocationId: 40, suggestMakeHome: false,
+      })
+      if (!dryRun) {
+        expect(inserted[0]).toMatchObject({
+          status: 'assigned', assigned_location_id: 40, assigned_by: null, suggestion_source: 'engine',
+        })
+      }
+    }
+  })
+
+  it('of a product with no home is not offered as the place to make a home', async () => {
+    const { admin } = makeAdmin({ warehouse: racked, candidates: holdOnly })
+    const res = await generatePutawayTasks(admin, {
+      warehouseId: 9, lines: [{ product_id: 1, quantity: 6, quarantine: true }], actorId: 'u1',
+    })
+    if (res.mode !== 'engine') throw new Error('expected engine')
+    expect(res.recommendations[0]).toMatchObject({
+      suggestionSource: 'engine', assignedLocationId: 40, suggestMakeHome: false,
+    })
+  })
+
+  it('an ordinary line of the same homed product, home full, is still an overflow line', async () => {
+    const { admin, inserted } = makeAdmin({
+      warehouse: racked,
+      homeBins,
+      candidates: [
+        candidate({ location_id: 20, code: 'H20', capacity_slots: 10, used_slots: 10, same_rack: true, anchor_distance_m: 0 }),
+        candidate({ location_id: 21, code: 'H21', same_rack: true, anchor_distance_m: 2 }),
+      ],
+    })
+    await generatePutawayTasks(admin, {
+      warehouseId: 9, lines: [{ product_id: 1, quantity: 6, quarantine: false }], actorId: 'u1',
+    })
+    expect(inserted[0]).toMatchObject({ status: 'suggested', suggestion_source: 'overflow' })
+  })
+})

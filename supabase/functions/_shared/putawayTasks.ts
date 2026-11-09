@@ -12,6 +12,14 @@
 // (multi-bin placement); a residual no bin can hold persists as a null-bin
 // "needs manual placement" task.
 //
+// NX-0033: a task is written already assigned (status 'assigned', the engine's
+// bin as assigned_location_id, assigned_by NULL) when it goes straight onto the
+// Walk: the home has room, the product has no home, or it is a single-product
+// pallet. assigned_by NULL means "the system assigned it" -- no desk person
+// touched it. Only a loose overflow line (the home is full) and a residual no
+// bin can hold are written 'suggested', for a person to confirm or place.
+// The rule is goesStraightToWalk in _shared/wie/homeFirst.ts.
+//
 // Self-guards: returns { mode: 'legacy' } for anything that isn't the root of a
 // racked, published warehouse — so callers can invoke it unconditionally after a
 // stock-in and bins / bulk warehouses simply no-op.
@@ -26,7 +34,7 @@ import { resolveRolesForPutaway, rolesForHuType } from './wie/levelRoles.ts'
 import { loadLevelRoles } from './levelRoleLookup.ts'
 import { loadWarehouseSlotting, loadSlottingProduct, contextFor, priorityLocationsFor } from './slottingLoad.ts'
 import { resolveSlotting } from './wie/slotting.ts'
-import { planHomeFirst, type SuggestionSource } from './wie/homeFirst.ts'
+import { goesStraightToWalk, planHomeFirst, type SuggestionSource } from './wie/homeFirst.ts'
 import { loadHomeBins, loadHomeSlotUsage } from './putawayHome.ts'
 import type { LevelRoleRecord } from './wie/levelRoles.ts'
 import type { CandidateBin, LevelRole, RuleDefinition, ScoringWeights, SkuProfile } from './wie/types.ts'
@@ -128,6 +136,9 @@ export interface PutawayTaskResult {
   suggestionSource: SuggestionSource
   /** The product has no home bin yet; the operator may make the chosen bin its home. */
   suggestMakeHome: boolean
+  /** The bin the task was written assigned to (NX-0033), so it is on the Walk.
+   *  Null when the line waits for a person: loose overflow, or no bin at all. */
+  assignedLocationId: number | null
 }
 
 export type GeneratePutawayResult =
@@ -408,8 +419,13 @@ export async function generatePutawayTasks(
       })),
     })
     // An unusable home must not offer "make this the home bin": there is one.
-    const suggestMakeHome = home === null
-    const remainderSource: SuggestionSource = home ? 'overflow' : 'engine'
+    // A quarantined line may only go to a hold bin (p_hold_only), and a hold bin
+    // is never a home (NX-0033 I1). So its bin is neither a home to make nor an
+    // overflow from a full home: it goes straight to the walk like a homeless
+    // line (G3), and is never a "Home full" line waiting for a yes.
+    const held = line.quarantine === true
+    const suggestMakeHome = home === null && !held
+    const remainderSource: SuggestionSource = home && !held ? 'overflow' : 'engine'
 
     const tagged: Array<{ alloc: ReturnType<typeof planPutaway>['allocations'][number]; source: SuggestionSource }> = []
     let remainder = home && homeCand ? homePlan.remainder : line.quantity
@@ -454,6 +470,13 @@ export async function generatePutawayTasks(
         })
       }
 
+      // NX-0033: straight onto the Walk, or wait for a person (see the header).
+      const direct = goesStraightToWalk({
+        source,
+        unitLoad: planHu === 'pallet',
+        locationId: alloc.locationId,
+      })
+
       let recommendationId = 0
       if (!dryRun) {
         const { data: recRow, error: rErr } = await admin.from('wie_putaway_recommendations').insert({
@@ -471,6 +494,16 @@ export async function generatePutawayTasks(
           // home rule reads. A desk redirect rewrites suggestion_source, never
           // this, so a pallet the planner sent home stays held to the home.
           unit_load: planHu === 'pallet',
+          // NX-0033: written assigned (assigned_by NULL = the system did it) or
+          // left for a person to confirm.
+          ...(direct
+            ? {
+              status: 'assigned',
+              assigned_location_id: alloc.locationId,
+              assigned_at: new Date().toISOString(),
+              assigned_by: null,
+            }
+            : { status: 'suggested' }),
         } as any).select('id').single()
         if (rErr) throw new Error(`failed to persist recommendation: ${rErr.message}`)
         recommendationId = (recRow as any).id
@@ -486,6 +519,7 @@ export async function generatePutawayTasks(
         explanation: alloc.explanation,
         suggestionSource: source,
         suggestMakeHome,
+        assignedLocationId: direct ? alloc.locationId : null,
       })
     }
   }

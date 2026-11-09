@@ -34,13 +34,17 @@ const { tasksMock, routeMock, locationsMock } = vi.hoisted(() => ({
 }))
 
 vi.mock('@/hooks/queries/usePutawayWalk', () => ({
-  useAssignedPutaways: () => tasksMock(),
+  useWalkPutaways: () => tasksMock(),
   usePutawayRoute: () => routeMock(),
   useCompletePutaway: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUnassignPutaway: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useConfirmOverflow: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 vi.mock('@/hooks/queries/useWarehouseLocations', () => ({
   useWarehouseLocations: () => locationsMock(),
+}))
+vi.mock('@/hooks/queries/useZoneProfiles', () => ({
+  useZoneProfiles: () => ({ data: [], isLoading: false, isError: false }),
 }))
 vi.mock('@/hooks/queries/usePalletBreakdown', () => ({
   usePrintPlateLabels: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -81,6 +85,7 @@ function stop(n: number): PendingPutawayRow {
     huCode: `HU-00050${n}`,
     huLabelPrinted: true,
     huStatus: 'stored',
+    status: 'assigned',
     assignedLocationId: 3000 + n,
     assignedAt: '2026-08-27T01:01:45Z',
   }
