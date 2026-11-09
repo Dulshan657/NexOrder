@@ -16,7 +16,28 @@
     { "id": "A8", "check": "End to end on dev in a browser, with made-up data the spec creates and removes: set a home and the health panel shows no problems; receive and the task suggests the home with source `home`; scanning another bin shows the home refusal with no override control; scanning the home completes; with the home full, the next receipt goes to overflow and another bin is accepted with a reason; deactivating the home makes the panel list it.", "manual": "npx playwright test tests/e2e/rack-levels/putaway-home-block.spec.ts against dev, trace and screenshots kept" },
     { "id": "A9", "check": "A bin that is another product's primary home is never offered to a product not homed there (including one with no home of its own), and completing into it is refused with `{code} is the home bin of {sku}; choose another bin.` Two products may share one home bin, and neither is refused it.", "manual": "npm run test:integration -- homeBinEnforced on dev, including a shared home and wie_putaway_candidates" }
   ],
-  "failFirst": [],
+  "failFirst": [
+    {"file":"__tests__/wie/putawayTasks.test.ts","test":"generatePutawayTasks — home bin > when the home bin cannot be read > a failed home read creates no tasks and says so","proves":["A6"]},
+    {"file":"__tests__/wie/putawayTasks.test.ts","test":"generatePutawayTasks — home bin > when the home bin cannot be read > a failed home slot usage read (inventory_balances) creates no tasks and says so","proves":["A6"]},
+    {"file":"__tests__/wie/putawayTasks.test.ts","test":"generatePutawayTasks — home bin > when the home bin cannot be read > a failed home slot usage read (wie_putaway_recommendations) creates no tasks and says so","proves":["A6"]},
+    {"file":"__tests__/wie/putawayTasks.test.ts","test":"generatePutawayTasks — home bin > when the home bin cannot be read > reads every home before the first task is created, so a late failure leaves none","proves":["A6"]},
+    {"file":"__tests__/receivePutaway.test.ts","test":"receive-stock with an unreadable home bin > books the receipt, creates no task and returns putaway_error","proves":["A6"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > a healthy home has no problems","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > is_active = false gives inactive","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > is_hold gives hold_zone","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > is_pick_zone = false gives not_pick_level","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > a level that does not take cartons gives carton_not_allowed","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > allowed_level_roles that leave out the home level give level_role_not_allowed","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > in_active_layout = false gives not_on_layout","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > has_dock_route = false gives no_dock_route","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > a category outside the zone allow-list gives zone_category","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > a slotting refusal gives slotting_refused and carries its words","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > capacity 10, used 10 gives full","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > capacity null (blank) with 900 used is never full","proves":["A7"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinProblems > a bin in another warehouse gives other_warehouse","proves":["A7"]},
+    {"file":"__tests__/checkHomeBinsCli.test.ts","test":"exitCodeFor > is 0 with no problems and 1 with any","proves":["A7"]},
+    {"file":"__tests__/homeBinProblemsPanel.test.tsx","test":"HomeBinProblemsPanel > shows the SKU, the bin and every problem message for each home","proves":["A7"]}
+  ],
   "allow": []
 }
 ```
@@ -60,21 +81,27 @@ A product with no home is not held to one. It is only refused another product's 
 
 ## FINAL
 
-Written with the brief, before any code. Every acceptance id is not claimed yet and this is rewritten last.
+Rewritten last, after the code and the proving runs. The owner has not yet read the brief text: `approved` above records a standing go-ahead only, and the owner confirms before the PR is opened.
+
+Everything ran on dev with made-up data: migration 00142 applied, and `complete-putaway`, `decide-putaway`, `receive-stock`, `recommend-putaway` and `home-bin-health` deployed at 34f7104.
 
 | Acceptance | Status | Evidence | Note |
 |---|---|---|---|
-| A1 | not-claimed | | No proving test yet |
-| A2 | not-claimed | | No proving test yet |
-| A3 | not-claimed | | No proving test yet |
-| A4 | not-claimed | | No proving test yet |
-| A5 | not-claimed | | No proving test yet |
-| A6 | not-claimed | | No proving test yet |
-| A7 | not-claimed | | No proving test yet |
-| A8 | not-claimed | | No proving test yet |
-| A9 | not-claimed | | No proving test yet |
+| A1 | claimed | `npm run test:integration -- homeBinEnforced putawayHomeFirst` on dev, 43 of 43: `refuses completing to X while H has room, before asking for a reason`, `refuses Place now / accept / override / assign / redirect to X`, `complete-many refuses X while H has room`; over HTTP `complete-putaway` (by id and by scan) and `decide-putaway` (override with role_override, accept, assign_only, redirect) all answer 409 CONFLICT with the text. E2E `putaway-home-block` steps 3 and 4: the receive card (role=alert) and the walk show the text, with no override control | The home is asked before any reason: `refuses with the home message before asking for a reason` |
+| A2 | claimed | Integration `allows X when H is full by capacity`, `allows X when H is full by max_qty`, `a blank capacity and a blank max never fill, so X is refused`, `partial room: refuses 12 elsewhere naming 5; 5 home then 7 elsewhere is allowed`. E2E step 7: with the home at its maximum the next receipt is suggested to overflow and another bin is accepted | |
+| A3 | claimed | Integration `excludes the task's own pending from the home's room`, `another task's pending does count against the home's room`. E2E steps 3 and 4: a task suggested to the empty home and tried elsewhere is refused naming the whole room (24) | |
+| A4 | claimed | Integration `single-product pallet is exempt; mixed pallet line is not` | |
+| A5 | claimed | Integration `ineligible home does not block: inactive, then a level role outside allowed_level_roles`, `a home in a hold zone does not block`, `product with no home is unchanged` | |
+| A6 | claimed | failFirst: four `generatePutawayTasks` unit tests (home lookup, both slot-usage reads, every home read before the first task) and `receive-stock with an unreadable home bin > books the receipt, creates no task and returns putaway_error`; `npm run check:brief` reports each one against the base | The Retry is covered by `__tests__/receivePutawayRetry.test.tsx` only, not walked in a browser (see Not claimed) |
+| A7 | claimed | failFirst: the `homeBinProblems` cases for every code, `exitCodeFor`, and the panel test. Integration `wie_home_bin_facts returns the made-up home with the expected flags`, `wie_home_bin_facts reads the route, layout, activity, role rule, zone and warehouse`, `homeBinProblems reports full exactly when wie_home_block would allow an off-home putaway`. E2E steps 1, 6 and 10: the panel says "No problems", then lists full, then lists inactive. `npm run check:home-bins -- --target dev` run by hand: exit 1, 6 warehouses, 221 home bins checked, 32 problems (29 full, one each of level_role_not_allowed, no_dock_route, not_on_layout); it changed nothing | The exit 0 case is covered by unit test only: dev has problems |
+| A8 | claimed | `npx playwright test tests/e2e/rack-levels/putaway-home-block.spec.ts --project=chromium` passed three runs in a row against dev on the committed spec; the trace and a screenshot per step were kept outside git | Not driven through the screens: deactivating the home is done in SQL (the app refuses to deactivate a bin that holds stock); the reason on an overflow placement is sent to `complete-putaway` as the signed-in page, because no screen asks for one; the suggestion source and stock on hand are read from the database. The walk accepted another bin with no reason, because it sends none |
+| A9 | claimed | Integration `another product's home is not offered, and completing into it is refused`, `an unhomed product is refused another product's home`, `two products may share one home bin`. E2E step 9: a product with no home is not offered the home (the engine considered the three other bins) and is refused it on the receive card with the text | |
 
 ### Not claimed
 
-- Nothing is proven: no code or test exists on this branch yet, and every row above is a placeholder to be replaced when the work is done.
-- `failFirst` is empty by necessity. Until a brief-only revision names the A6 and A7 unit tests, check:brief will refuse any commit that adds code.
+- The Retry in A6 is covered by unit tests only, as A6 says. A failed home read cannot be made to happen on dev, so it was not walked in a browser.
+- The browser run used this branch's frontend, served by a local Vite against dev's database and deployed functions. The branch's frontend is not deployed to dev, and nothing was released.
+- The walk still tells the worker "A different bay is fine" and "That's allowed" before Confirm, and the home refusal only appears after the count step. `PutawayStopCard` is unchanged by this branch, so that copy now disagrees with the rule while a home has room.
+- No screen asks for the reason a suggested task goes elsewhere, so the browser run could not give one through a screen.
+- The existing `putaway-override` and `putaway-roles` e2e specs were run and fail in their shared helpers, before any putaway step: the layout designer has had no "Close designer" button since 72c2e64, and the next helper step, the Products table's row Edit button, then times out. This branch touches neither screen. They were not made green here.
+- The spec is one story of ten screens and sets its own four-minute test timeout (the 30-second default is for a single screen). No timeout on an existing test was raised, and the receipt step waits for the `receive-stock` call rather than for a longer guess.
