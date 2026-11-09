@@ -18,6 +18,11 @@ export function homeRoomMessage(homeCode: string, room: number): string {
   return `Put this in its home bin ${homeCode}; it still has room for ${room}. If it is full, ask a manager to set its maximum.`
 }
 
+/** What the walk card says at the bin scan when a home task is scanned into another bin. */
+export function walkHomeMessage(homeCode: string): string {
+  return `This product's home bin is ${homeCode}. Scan ${homeCode}.`
+}
+
 /** The refusal copy for another product's home (A9). */
 export function othersHomeMessage(binCode: string, sku: string): string {
   return `${binCode} is the home bin of ${sku}; choose another bin.`
@@ -135,30 +140,40 @@ export async function assignInQueue(page: Page, product: WorldProduct): Promise<
 }
 
 /**
- * On the Walk tab: open `product`'s stop (assigned to `assignedCode`), identify
- * what is being carried, and scan `scannedCode` as the bin. Stops at the count
- * step, ready to Confirm.
+ * On the Walk tab: open `product`'s stop (assigned to `assignedCode`) and identify
+ * what is being carried. Stops on the bin scan.
  */
+export async function openWalkStop(page: Page, product: WorldProduct, assignedCode: string): Promise<void> {
+  await page.getByRole('navigation', { name: 'Putaway stage' }).getByRole('button', { name: /^Walk/ }).click()
+  await page.getByRole('button').filter({ hasText: product.name }).filter({ hasText: assignedCode }).click()
+  const identify = page.getByLabel(/^Scan the (product|plate)/)
+  if (await identify.isVisible()) await scan(identify, product.barcode)
+  await expect(binField(page)).toBeVisible()
+}
+
+/** The bin scan field of the open stop: present only while the card is on the bin step. */
+export function binField(page: Page): Locator {
+  return page.getByLabel(/^Scan the bin/)
+}
+
+export async function scanBin(page: Page, binCode: string): Promise<void> {
+  await scan(binField(page), binCode)
+}
+
+/** Open the stop and scan `scannedCode` as the bin. Stops at the count step, ready to Confirm. */
 export async function walkAndScanBin(
   page: Page,
   product: WorldProduct,
   assignedCode: string,
   scannedCode: string,
 ): Promise<void> {
-  await page.getByRole('navigation', { name: 'Putaway stage' }).getByRole('button', { name: /^Walk/ }).click()
-  await page.getByRole('button').filter({ hasText: product.name }).filter({ hasText: assignedCode }).click()
-  const identify = page.getByLabel(/^Scan the (product|plate)/)
-  if (await identify.isVisible()) await scan(identify, product.barcode)
-  await scan(page.getByLabel(/^Scan the bin/), scannedCode)
+  await openWalkStop(page, product, assignedCode)
+  await scanBin(page, scannedCode)
   await expect(page.getByRole('button', { name: 'Confirm' })).toBeVisible()
 }
 
 export async function confirmCount(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Confirm' }).click()
-}
-
-export async function cancelStop(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Cancel this stop' }).click()
 }
 
 // ── The deployed function, called as the signed-in person ─────────────────────

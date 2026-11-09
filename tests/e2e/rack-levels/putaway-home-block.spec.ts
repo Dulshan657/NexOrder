@@ -11,7 +11,8 @@
 //   - receive 4 cartons on Receive Stock (carton plates: a pallet is a unit load
 //     and is never sent to a pick home), and read the suggestion;
 //   - try another bin from the receive card ("Choose another bin" > "Put here");
-//   - Putaway > Assign, then Walk: scan X (refused), scan H (placed);
+//   - Putaway > Assign, then Walk: scan X (the card sends the worker back to H and
+//     stays on the bin step), scan H on the same card (placed);
 //   - with H full, receive again, and place the line in another bin on the walk;
 //   - receive the second product and try to put it in H.
 //
@@ -32,7 +33,7 @@ import { expect, test } from '../fixtures/auth'
 import {
   assignInQueue,
   callFunction,
-  cancelStop,
+  binField,
   checkHomesAgain,
   confirmCount,
   expectNoWayPastTheBlock,
@@ -40,11 +41,14 @@ import {
   homeRoomMessage,
   openMinMaxSetup,
   openSuggestions,
+  openWalkStop,
   othersHomeMessage,
   putHereInstead,
   receiveCartons,
+  scanBin,
   setHomeBin,
   walkAndScanBin,
+  walkHomeMessage,
 } from './homeBlockSteps'
 import {
   CARTON_SIZE,
@@ -53,6 +57,7 @@ import {
   leftovers,
   onHandAt,
   seedWorld,
+  snapshotWorld,
   tasksOf,
   tearDownWorld,
   type TaskRow,
@@ -86,11 +91,16 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
   })
 
   test.afterAll(async () => {
+    // The ids are taken from the database before the teardown, so the counts
+    // afterwards look for rows that still point at what was removed.
+    const ids = await snapshotWorld()
+    if (world) expect(ids.warehouseId, 'the world was there to remove').toBe(world.warehouseId)
+    // What the run left on dev for the teardown to remove, for the run's log.
+    console.log('before teardown:', JSON.stringify(await leftovers(ids)))
     await tearDownWorld()
-    const left = await leftovers()
-    expect(left, 'nothing the spec made may remain on dev').toEqual({
-      warehouses: 0, locationsUnder: 0, products: 0, tasks: 0, balances: 0, movements: 0,
-    })
+    const left = await leftovers(ids)
+    const remaining = Object.entries(left).filter(([, n]) => n !== 0)
+    expect(remaining, 'nothing the spec made may remain on dev').toEqual([])
   })
 
   test('home bin or refused, from the setup screen to the health panel', async ({ adminPage: page }, testInfo) => {
@@ -98,10 +108,14 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
     const { h, x, y, z } = world.bins
     const sku = world.home.sku
 
-    await test.step('1. Admin sets H as the home of TST-HOME-200; the health panel says "No problems"', async () => {
+    await test.step('1. Admin sets H as the home of TST-HOME-200; the health panel checks it and says "No problems"', async () => {
       await openMinMaxSetup(page, world)
+      // Nothing is homed yet, so "No problems" here means nothing: it says 0 checked.
+      await expect(healthPanel(page).getByText(/0 home bins checked/)).toBeVisible()
       await setHomeBin(page, world.home, h.code, 1, CARTONS)
+      await checkHomesAgain(page)
       await expect(healthPanel(page).getByText('No problems')).toBeVisible()
+      await expect(healthPanel(page).getByText(/1 home bin checked/)).toBeVisible()
       await shot(page, testInfo, '1-home-set-no-problems')
       // The maximum was typed in cartons; the database holds base units.
       expect(await homeOf(world, world.home.id)).toEqual({ binId: h.id, maxQty: LINE_UNITS })
@@ -129,20 +143,26 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
       expect(await onHandAt(world.home.id, x.id)).toBe(0)
     })
 
-    await test.step('4. Scanning bin X on the walk is refused with the home message and no override', async () => {
+    await test.step('4. Scanning bin X on the walk sends the worker back to H, and the card stays on the bin step', async () => {
       await assignInQueue(page, world.home)
-      await walkAndScanBin(page, world.home, h.code, x.code)
-      await confirmCount(page)
-      await expect(page.getByRole('alert').filter({ hasText: homeRoomMessage(h.code, LINE_UNITS) })).toBeVisible()
+      await openWalkStop(page, world.home, h.code)
+      await expect(page.getByText(/This product's home bin. It goes here while the home has room/)).toBeVisible()
+      await scanBin(page, x.code)
+      await expect(page.getByRole('alert').filter({ hasText: walkHomeMessage(h.code) })).toBeVisible()
+      // Not on the count step: the bin field is still there to rescan, there is
+      // nothing to Confirm, and the "different bay is fine" copy never appeared.
+      await expect(binField(page)).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Confirm' })).toHaveCount(0)
+      await expect(page.getByText(/That's allowed|different bay is fine/)).toHaveCount(0)
       await expectNoWayPastTheBlock(page)
-      await shot(page, testInfo, '4-walk-refusal')
+      await shot(page, testInfo, '4-walk-sends-it-home')
       expect((await newestTask(world.home.id)).status).toBe('assigned')
       expect(await onHandAt(world.home.id, x.id)).toBe(0)
     })
 
-    await test.step('5. Scanning H completes', async () => {
-      await cancelStop(page)
-      await walkAndScanBin(page, world.home, h.code, h.code)
+    await test.step('5. Scanning H on the same card completes', async () => {
+      await scanBin(page, h.code)
+      await expect(page.getByRole('alert').filter({ hasText: walkHomeMessage(h.code) })).toHaveCount(0)
       await confirmCount(page)
       await expect(page.getByText(`Placed in ${h.code}`)).toBeVisible()
       await shot(page, testInfo, '5-placed-in-the-home')
