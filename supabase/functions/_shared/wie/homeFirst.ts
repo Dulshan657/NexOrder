@@ -20,6 +20,9 @@
 // capacity that stopped it -- otherwise the planner would quietly pour the
 // remainder back into the slot the max exists to protect.
 //
+// A third question, added by NX-0033: does the line go straight onto the Walk,
+// or does a person have to confirm it first? See goesStraightToWalk below.
+//
 // Pure: no I/O. The caller (putawayTasks.ts) loads the home row and candidates,
 // and the fill itself stays planPutaway's job.
 
@@ -66,6 +69,24 @@ export interface HomeFirstPlan {
   overflowOrder: number[]
   /** No home yet: the operator is offered to make the chosen bin its home. */
   suggestMakeHome: boolean
+}
+
+/**
+ * Does a line go straight onto the Walk (NX-0033), or wait for a person?
+ *
+ * Straight to the walk: the home has room (source 'home'), the product has no
+ * home (source 'engine'), or the line is a single-product pallet (a unit load)
+ * whatever its source. The one exception is a loose overflow line -- the home
+ * is full, or unusable -- where a person confirms the overflow bin first. A line
+ * with no bin at all (the residual no bin can hold) has nothing to assign, so it
+ * stays a suggestion for the desk.
+ */
+export function goesStraightToWalk(a: {
+  source: SuggestionSource
+  unitLoad: boolean
+  locationId: number | null
+}): boolean {
+  return a.locationId !== null && (a.source !== 'overflow' || a.unitLoad)
 }
 
 /** Base units the home bin can still take, bounded by max_qty AND capacity. */

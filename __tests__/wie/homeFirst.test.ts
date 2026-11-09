@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { planHomeFirst, type HomeSlot } from '../../supabase/functions/_shared/wie/homeFirst'
+import { goesStraightToWalk, planHomeFirst, type HomeSlot } from '../../supabase/functions/_shared/wie/homeFirst'
 
 const home = (o: Partial<HomeSlot> = {}): HomeSlot => ({
   locationId: 20, maxQty: null, onHand: 0, pendingQty: 0,
@@ -83,5 +83,16 @@ describe('planHomeFirst', () => {
     })
     expect(plan.homeQty).toBe(0)
     expect(plan.remainder).toBe(10)
+  })
+})
+
+// NX-0033: which lines go straight onto the Walk without anyone pressing Assign.
+describe('goesStraightToWalk', () => {
+  it('home, engine and a unit load go straight to the walk; a loose overflow line and a line with no bin do not', () => {
+    expect(goesStraightToWalk({ source: 'home', unitLoad: false, locationId: 20 })).toBe(true)
+    expect(goesStraightToWalk({ source: 'engine', unitLoad: false, locationId: 7 })).toBe(true)
+    expect(goesStraightToWalk({ source: 'overflow', unitLoad: true, locationId: 7 })).toBe(true)
+    expect(goesStraightToWalk({ source: 'overflow', unitLoad: false, locationId: 7 })).toBe(false)
+    expect(goesStraightToWalk({ source: 'engine', unitLoad: false, locationId: null })).toBe(false)
   })
 })
