@@ -7,12 +7,9 @@
 // to scroll the page. The Locations tree is the same FloatingPanel, so it had the
 // same fault.
 //
-// Made-up data only (binDetailWheelWorld.ts): one warehouse TST-WALK-WHL with one bin
+// Made-up data only (walkWorld.ts, the wheel half): one warehouse TST-WALK-WHL with one bin
 // that holds 40 products, created before the browser starts and removed after.
 // Setup only reads; nothing here is driven through the app but the screen under test.
-//
-// The shared putaway-walk world (walkWorld.ts) is Task 12's; this spec uses its own
-// small seed so Task 12 can fold it in.
 import { expect, test } from '../fixtures/auth'
 import { openWarehouseTab, selectWarehouseScope } from './helpers'
 import {
@@ -20,7 +17,7 @@ import {
   tearDownWheelWorld,
   wheelLeftovers,
   type WheelWorld,
-} from './binDetailWheelWorld'
+} from './walkWorld'
 
 /** The panels are `max-h-[70svh]` (RackedWorkspace). */
 const PANEL_CAP = 0.7

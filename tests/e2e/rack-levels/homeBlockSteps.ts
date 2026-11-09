@@ -4,7 +4,7 @@
 // Each one drives the real screens; none of them touches the database.
 import type { Locator, Page } from '@playwright/test'
 import { expect } from '../fixtures/auth'
-import { openPutawayQueue } from './helpers'
+import { openPutawayQueue, selectPutawayWarehouse } from './helpers'
 import { WORLD_NAMES, type World, type WorldProduct } from './homeBlockWorld'
 
 /** Type a code into a scan field and press Enter, as a scan gun would. */
@@ -82,8 +82,16 @@ export async function checkHomesAgain(page: Page): Promise<void> {
 
 // ── Receiving ─────────────────────────────────────────────────────────────────
 
-/** Receive `cartons` cartons of `product`, arriving on a carton plate. */
-export async function receiveCartons(page: Page, world: World, product: WorldProduct, cartons: number): Promise<void> {
+/**
+ * Receive `cartons` cartons of `product`, arriving on a carton plate. Takes any
+ * world that names its warehouse (this suite's, or NX-0033's walkWorld).
+ */
+export async function receiveCartons(
+  page: Page,
+  world: Pick<World, 'warehouseName'>,
+  product: WorldProduct,
+  cartons: number,
+): Promise<void> {
   await page.getByRole('button', { name: 'Receive Stock', exact: true }).click()
   const next = page.getByRole('button', { name: 'Start next delivery' })
   if (await next.isVisible()) await next.click()
@@ -91,7 +99,12 @@ export async function receiveCartons(page: Page, world: World, product: WorldPro
   await page.getByLabel('Supplier').fill(WORLD_NAMES.supplierName)
   await page.getByLabel('Destination warehouse').selectOption({ label: world.warehouseName })
   // Enter in the search box takes the product when the search has narrowed to one.
+  // The results arrive after the typing does, and Enter before they have only
+  // finds "Nothing in the catalogue matches", so wait for the row first.
   await page.getByLabel('Search products').fill(product.sku)
+  await expect(
+    page.getByRole('button').filter({ has: page.getByText(product.name, { exact: true }) }),
+  ).toBeVisible()
   await page.getByLabel('Search products').press('Enter')
   await page.getByLabel(`Quantity for ${product.name}`).fill(String(cartons))
   await page.getByLabel(`Unit for ${product.name}`).selectOption({ label: `carton (×${product.cartonSize})` })
@@ -128,9 +141,14 @@ export async function putHereInstead(page: Page, binCode: string): Promise<void>
 
 // ── Putaway queue ─────────────────────────────────────────────────────────────
 
-/** Assign every suggestion of `product` on the Assign tab: decide the bin, move nothing. */
-export async function assignInQueue(page: Page, product: WorldProduct): Promise<void> {
+/**
+ * Assign every suggestion of `product` on the Assign tab: decide the bin, move
+ * nothing. Pass `warehouseCode` to pick that warehouse first, when the page has
+ * not been told which one to show.
+ */
+export async function assignInQueue(page: Page, product: WorldProduct, warehouseCode?: string): Promise<void> {
   await openPutawayQueue(page)
+  if (warehouseCode) await selectPutawayWarehouse(page, warehouseCode)
   await page.getByRole('navigation', { name: 'Putaway stage' }).getByRole('button', { name: /^Assign/ }).click()
   const row = page.locator('div.px-4.py-3', {
     has: page.getByRole('button', { name: `Why this bin for ${product.name}?` }),

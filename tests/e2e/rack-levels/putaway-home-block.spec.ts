@@ -11,8 +11,10 @@
 //   - receive 4 cartons on Receive Stock (carton plates: a pallet is a unit load
 //     and is never sent to a pick home), and read the suggestion;
 //   - try another bin from the receive card ("Choose another bin" > "Put here");
-//   - Putaway > Assign, then Walk: scan X (the card sends the worker back to H and
-//     stays on the bin step), scan H on the same card (placed);
+//   - Putaway > Walk: scan X (the card sends the worker back to H and stays on the
+//     bin step), scan H on the same card (placed). Since NX-0033 a line whose home
+//     has room is on the Walk the moment it is received, so the desk's Assign is no
+//     longer a step for it (it still is for the overflow line, step 7);
 //   - with H full, receive again, and place the line in another bin on the walk;
 //   - receive the second product and try to put it in H.
 //
@@ -30,6 +32,7 @@
 //     sent to the deployed complete-putaway with the page's own session.
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from '../fixtures/auth'
+import { openPutawayQueue, selectPutawayWarehouse } from './helpers'
 import {
   assignInQueue,
   callFunction,
@@ -129,8 +132,10 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
       ).toBeVisible()
       await shot(page, testInfo, '2-suggestion-is-the-home')
       const task = await newestTask(world.home.id)
+      // NX-0033: a line whose home has room is assigned to it by the system on receipt.
       expect(task).toMatchObject({
-        status: 'suggested', quantity: LINE_UNITS, recommendedLocationId: h.id, suggestionSource: 'home',
+        status: 'assigned', quantity: LINE_UNITS, recommendedLocationId: h.id, assignedLocationId: h.id,
+        suggestionSource: 'home',
       })
     })
 
@@ -139,12 +144,14 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
       await expect(page.getByRole('alert').filter({ hasText: homeRoomMessage(h.code, LINE_UNITS) })).toBeVisible()
       await expectNoWayPastTheBlock(page)
       await shot(page, testInfo, '3-receive-card-refusal')
-      expect((await newestTask(world.home.id)).status).toBe('suggested')
+      expect((await newestTask(world.home.id)).status).toBe('assigned')
       expect(await onHandAt(world.home.id, x.id)).toBe(0)
     })
 
     await test.step('4. Scanning bin X on the walk sends the worker back to H, and the card stays on the bin step', async () => {
-      await assignInQueue(page, world.home)
+      // Already on the walk (NX-0033): open Putaway and go straight to it.
+      await openPutawayQueue(page)
+      await selectPutawayWarehouse(page, world.warehouseCode)
       await openWalkStop(page, world.home, h.code)
       await expect(page.getByText(/This product's home bin. It goes here while the home has room/)).toBeVisible()
       await scanBin(page, x.code)
@@ -227,7 +234,8 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
       await receiveCartons(page, world, world.other, CARTONS)
       await openSuggestions(page)
       const task = await newestTask(world.other.id)
-      expect(task.status).toBe('suggested')
+      // NX-0033: a product with no home goes straight onto the walk, with the engine's bin.
+      expect(task.status).toBe('assigned')
       expect(task.recommendedLocationId).not.toBeNull()
       expect(task.recommendedLocationId).not.toBe(h.id)
       expect(task.suggestionSource).toBe('engine')
@@ -239,7 +247,7 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
       await expect(page.getByRole('alert').filter({ hasText: othersHomeMessage(h.code, sku) })).toBeVisible()
       await expectNoWayPastTheBlock(page)
       await shot(page, testInfo, '9b-other-product-refused-h')
-      expect((await newestTask(world.other.id)).status).toBe('suggested')
+      expect((await newestTask(world.other.id)).status).toBe('assigned')
       expect(await onHandAt(world.other.id, h.id)).toBe(0)
     })
 
