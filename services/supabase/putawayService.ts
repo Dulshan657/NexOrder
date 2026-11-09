@@ -89,7 +89,7 @@ export async function recommendPutaway(
 
 export interface DecidePutawayInput {
   recommendationId: number
-  decision: 'accept' | 'override' | 'unassign' | 'redirect' | 'resolve_short'
+  decision: 'accept' | 'override' | 'unassign' | 'redirect' | 'resolve_short' | 'confirm_overflow'
   chosenLocationId?: number
   /** resolve_short only (NX-0006). */
   resolution?: 'found' | 'write_off'
@@ -155,6 +155,35 @@ export function resolveShortPutaway(
   reason?: string,
 ): Promise<DecidePutawayResult> {
   return decidePutaway({ recommendationId, decision: 'resolve_short', resolution, reason })
+}
+
+/** The Walk (NX-0033): confirm a loose overflow line (its home was full) by
+ *  scanning the bin it names. `locationId` is the bin the worker SCANNED, not
+ *  the card's own idea of the suggested bin: the server compares the two under
+ *  the line's row lock, so a desk redirect made after the walk loaded cannot be
+ *  confirmed by a stale scan. Assigns the whole line to that bin; moves nothing.
+ *
+ *  A refusal (the desk got there first, the bin changed, the home has room
+ *  again) throws the server's own words for the card to show as they are. */
+export async function confirmOverflowPutaway(
+  recommendationId: number,
+  locationId: number,
+): Promise<{ assignedId: number }> {
+  const { data, error } = await supabase.functions.invoke<{
+    ok: true
+    assigned_id: number
+    location_id: number
+  }>('decide-putaway', {
+    body: {
+      recommendation_id: recommendationId,
+      decision: 'confirm_overflow',
+      chosen_location_id: locationId,
+    },
+  })
+  if (error) {
+    throw new Error(await extractFunctionErrorMessage(error, 'Could not confirm the bin, try again.'))
+  }
+  return { assignedId: Number(data?.assigned_id ?? recommendationId) }
 }
 
 /** Send a queued line to the Walk run without moving any stock. */

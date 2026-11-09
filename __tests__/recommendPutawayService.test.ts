@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('@/lib/supabase', () => ({ supabase: { functions: { invoke } } }))
 
-import { isPutawayTasksExist, recommendPutaway } from '@/services/supabase/putawayService'
+import { confirmOverflowPutaway, isPutawayTasksExist, recommendPutaway } from '@/services/supabase/putawayService'
 
 const HOME_UNAVAILABLE = 'Home bin unavailable, try again.'
 
@@ -96,5 +96,37 @@ describe('recommendPutaway', () => {
       expect(isPutawayTasksExist(undefined)).toBe(false)
       expect(isPutawayTasksExist('boom')).toBe(false)
     })
+  })
+})
+
+// NX-0033: the walk confirms an overflow line by scanning its suggested bin.
+// Like every other decide-putaway call it must hand the worker the server's own
+// words: a desk redirect made after the walk loaded is refused with the current
+// bin's name, and that sentence is what the card shows.
+describe('confirmOverflowPutaway', () => {
+  beforeEach(() => invoke.mockReset())
+
+  it("sends decision confirm_overflow with the scanned bin's id", async () => {
+    invoke.mockResolvedValue({ data: { ok: true, assigned_id: 9, location_id: 44 }, error: null })
+    await expect(confirmOverflowPutaway(9, 44)).resolves.toEqual({ assignedId: 9 })
+    expect(invoke).toHaveBeenCalledTimes(1)
+    const [name, options] = invoke.mock.calls[0]
+    expect(name).toBe('decide-putaway')
+    expect(options.body).toMatchObject({ recommendation_id: 9, decision: 'confirm_overflow', chosen_location_id: 44 })
+    // Not a desk assign and not a place-now: nothing else rides along.
+    expect(options.body.assign_only).toBeUndefined()
+    expect(options.body.quantity).toBeUndefined()
+    expect(options.body.role_override).toBeUndefined()
+  })
+
+  it("throws the server's words on a refusal", async () => {
+    const stale = 'The suggested bin for this line is now TST-WALK-O2; scan that one.'
+    invoke.mockResolvedValue({ data: null, error: httpError(stale, 409, 'CONFLICT') })
+    await expect(confirmOverflowPutaway(9, 44)).rejects.toThrow(stale)
+  })
+
+  it('falls back to a plain sentence when the failure carried no body', async () => {
+    invoke.mockResolvedValue({ data: null, error: new Error('Failed to fetch') })
+    await expect(confirmOverflowPutaway(9, 44)).rejects.toThrow(/Failed to fetch|Could not confirm/)
   })
 })

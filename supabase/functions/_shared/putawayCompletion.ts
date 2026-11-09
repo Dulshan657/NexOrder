@@ -61,6 +61,44 @@ export function canPlaceNow(task: { status: string; assignedBy: string | null })
   return task.status === 'suggested' || (task.status === 'assigned' && task.assignedBy === null)
 }
 
+/** The decisions decide-putaway takes. */
+export type PutawayDecision =
+  | 'accept' | 'override' | 'unassign' | 'redirect' | 'resolve_short' | 'confirm_overflow'
+
+/**
+ * Does `decision` act on a task in this state? decide-putaway asks this before
+ * it touches anything (the transactions ask again under their row lock):
+ *
+ *   * unassign                      an assigned task;
+ *   * accept / override, one step   {@link canPlaceNow}: a suggested task, or one
+ *                                   the system assigned (NX-0033), so the receive
+ *                                   card and the opening-stock import can still
+ *                                   place what no longer waits in the queue;
+ *   * accept / override assign_only a suggested task, as a desk assign always
+ *                                   was: a system-assigned line is already
+ *                                   assigned, and a person's is theirs;
+ *   * confirm_overflow              always yes. wie_confirm_overflow_tx owns the
+ *                                   whole check under its row lock (status, still
+ *                                   awaiting confirmation, which bin) and answers
+ *                                   in the words the walk shows. Refusing here
+ *                                   would hide those words behind a generic one;
+ *   * anything else                 a suggested task.
+ */
+export function decisionActsOnStatus(args: {
+  decision: PutawayDecision
+  assignOnly?: boolean
+  status: string
+  assignedBy: string | null
+}): boolean {
+  const { decision, assignOnly, status, assignedBy } = args
+  if (decision === 'confirm_overflow') return true
+  if (decision === 'unassign') return status === 'assigned'
+  if ((decision === 'accept' || decision === 'override') && !assignOnly) {
+    return canPlaceNow({ status, assignedBy })
+  }
+  return status === 'suggested'
+}
+
 export function isOverrideReason(v: unknown): v is OverrideReason {
   return typeof v === 'string' && (OVERRIDE_REASONS as readonly string[]).includes(v)
 }

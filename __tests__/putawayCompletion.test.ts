@@ -3,6 +3,7 @@ import {
   MAKE_HOME_FORBIDDEN,
   allocateAcrossTasks,
   canPlaceNow,
+  decisionActsOnStatus,
   canSetHome,
   decideDeskAction,
   decidePutawayCompletion,
@@ -101,6 +102,48 @@ describe('canPlaceNow', () => {
     // A person assigned it: it is theirs to place, not a line anyone may re-decide.
     expect(canPlaceNow({ status: 'assigned', assignedBy: '00000000-0000-4000-8000-000000000001' })).toBe(false)
     expect(canPlaceNow({ status: 'accepted', assignedBy: null })).toBe(false)
+  })
+})
+
+describe('decisionActsOnStatus', () => {
+  const person = '00000000-0000-4000-8000-000000000001'
+  const acts = (decision: Parameters<typeof decisionActsOnStatus>[0]['decision'], status: string,
+    o: { assignOnly?: boolean; assignedBy?: string | null } = {}) =>
+    decisionActsOnStatus({ decision, status, assignedBy: o.assignedBy ?? null, assignOnly: o.assignOnly })
+
+  it('unassign acts on an assigned line only', () => {
+    expect(acts('unassign', 'assigned')).toBe(true)
+    expect(acts('unassign', 'suggested')).toBe(false)
+  })
+
+  it('place now (accept / override) also acts on a line the system assigned', () => {
+    for (const decision of ['accept', 'override'] as const) {
+      expect(acts(decision, 'suggested')).toBe(true)
+      expect(acts(decision, 'assigned', { assignedBy: null })).toBe(true)
+      expect(acts(decision, 'assigned', { assignedBy: person })).toBe(false)
+      expect(acts(decision, 'accepted')).toBe(false)
+    }
+  })
+
+  it('a desk assign (assign_only) still needs a suggested line, whoever assigned it', () => {
+    for (const decision of ['accept', 'override'] as const) {
+      expect(acts(decision, 'suggested', { assignOnly: true })).toBe(true)
+      expect(acts(decision, 'assigned', { assignOnly: true, assignedBy: null })).toBe(false)
+      expect(acts(decision, 'assigned', { assignOnly: true, assignedBy: person })).toBe(false)
+    }
+  })
+
+  it('every other decision needs a suggested line', () => {
+    for (const decision of ['redirect', 'resolve_short'] as const) {
+      expect(acts(decision, 'suggested')).toBe(true)
+      expect(acts(decision, 'assigned', { assignedBy: null })).toBe(false)
+    }
+  })
+
+  it('a walk confirm leaves the status check to the database, which says why in plain words', () => {
+    for (const status of ['suggested', 'assigned', 'accepted', 'expired']) {
+      expect(acts('confirm_overflow', status)).toBe(true)
+    }
   })
 })
 

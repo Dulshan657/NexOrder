@@ -12,6 +12,7 @@ import { getAssignedPutaways, type PendingPutawayRow } from '@/services/supabase
 import { getPutawayRoute, type PutawayRouteResult } from '@/services/supabase/putawayRouteService'
 import {
   completePutaway,
+  confirmOverflowPutaway,
   unassignPutaway,
   type CompletePutawayInput,
   type CompletePutawayResult,
@@ -66,5 +67,29 @@ export function useUnassignPutaway() {
       qc.invalidateQueries({ queryKey: putawayKeys.counts })
       qc.invalidateQueries({ queryKey: ['putaway-route'] })
     },
+  })
+}
+
+export interface ConfirmOverflowInput {
+  recommendationId: number
+  /** The bin the worker scanned. The server compares it with the line's suggested bin. */
+  locationId: number
+}
+
+/** The Walk confirms an overflow line (NX-0033). Races the desk's Assign and
+ *  Redirect, so BOTH outcomes refresh both lists: a win takes the line off the
+ *  desk's queue and a loss (it was already dealt with, the bin changed) shows
+ *  the walker the state the desk left. */
+export function useConfirmOverflow() {
+  const qc = useQueryClient()
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: putawayKeys.all })
+    qc.invalidateQueries({ queryKey: putawayKeys.counts })
+    qc.invalidateQueries({ queryKey: ['putaway-route'] })
+  }
+  return useMutation<{ assignedId: number }, Error, ConfirmOverflowInput>({
+    mutationFn: ({ recommendationId, locationId }) => confirmOverflowPutaway(recommendationId, locationId),
+    onSuccess: refresh,
+    onError: refresh,
   })
 }

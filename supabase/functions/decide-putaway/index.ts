@@ -47,6 +47,27 @@
 // gate and the hold-zone check, so a flag that lifts those cannot be mistaken
 // for one that lifts this. Each transaction asks it again under its row lock;
 // this is the same answer given earlier, with the same words.
+//
+// NX-0033 (mig 00143) makes two changes here:
+//
+//   'confirm_overflow' → wie_confirm_overflow_tx. The Walk's confirmation of a
+//                       loose line whose home was full (a suggested overflow
+//                       line). The walker scans the bin the card names and that
+//                       bin id comes here as chosen_location_id. Compare-and-set
+//                       under the same row lock the desk's Assign takes, so the
+//                       desk and the walk cannot both win, and a desk redirect
+//                       made after the walk loaded cannot be confirmed by a
+//                       stale scan. Assigns the whole line; moves nothing. It
+//                       skips the status pre-check below on purpose: the
+//                       transaction owns that check and its words.
+//   accept / override  (one step, not assign_only) also act on a line the system
+//                       assigned and nobody has touched since (status 'assigned',
+//                       assigned_by NULL), because a received line now goes
+//                       straight onto the Walk. The receive card's Accept /
+//                       Choose another and the opening-stock import keep working
+//                       on such lines. assign_only and redirect still need
+//                       'suggested' (_shared/putawayCompletion.ts
+//                       decisionActsOnStatus).
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
@@ -58,14 +79,14 @@ import { logAuditEvent } from '../_shared/audit.ts'
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { requireModule } from '../_shared/modules.ts'
-import { decideDeskAction } from '../_shared/putawayCompletion.ts'
+import { decideDeskAction, decisionActsOnStatus } from '../_shared/putawayCompletion.ts'
 import { refuseIfHomeBlocked } from '../_shared/putawayHomeBlock.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
 
 const inputSchema = z.object({
   recommendation_id: z.number().int().positive(),
-  decision: z.enum(['accept', 'override', 'unassign', 'redirect', 'resolve_short']),
+  decision: z.enum(['accept', 'override', 'unassign', 'redirect', 'resolve_short', 'confirm_overflow']),
   // resolve_short only.
   resolution: z.enum(['found', 'write_off']).optional(),
   reason: z.string().max(500).nullish(),
@@ -87,8 +108,9 @@ const inputSchema = z.object({
   // cross it anyway (e.g. no compliant level had room). The crossing is
   // recorded in audit_events, never silently allowed.
   role_override: z.boolean().optional(),
-}).refine((d) => (d.decision !== 'override' && d.decision !== 'redirect') || d.chosen_location_id !== undefined, {
-  message: 'override and redirect require chosen_location_id',
+}).refine((d) => (d.decision !== 'override' && d.decision !== 'redirect' && d.decision !== 'confirm_overflow')
+  || d.chosen_location_id !== undefined, {
+  message: 'override, redirect and confirm_overflow require chosen_location_id',
 }).refine((d) => d.decision !== 'resolve_short' || d.resolution !== undefined, {
   message: 'resolve_short requires resolution',
 })
@@ -272,14 +294,51 @@ serve(async (req: Request) => {
     // Unassign is the only decision that acts on an ALREADY-assigned task —
     // it walks the state back for a run someone started and abandoned. No stock
     // has moved at that point, so it is a pure state reversal.
-    const requiredStatus = decision === 'unassign' ? 'assigned' : 'suggested'
-    if ((rec as any).status !== requiredStatus) {
+    // Which states each decision acts on is decisionActsOnStatus's call (a
+    // confirm_overflow is always let through: the transaction answers it).
+    if (!decisionActsOnStatus({
+      decision, assignOnly: assign_only, status: (rec as any).status, assignedBy: (rec as any).assigned_by ?? null,
+    })) {
       throw new EdgeFunctionError('CONFLICT', `Recommendation already ${(rec as any).status}`)
     }
 
     const warehouseId = (rec as any).warehouse_id as number
     if (auth.role === 'Warehouse' && auth.profile.home_warehouse_id !== warehouseId) {
       throw new EdgeFunctionError('FORBIDDEN', 'You can only put away stock at your own warehouse')
+    }
+
+    if (decision === 'confirm_overflow') {
+      // chosen_location_id is the bin the worker scanned; the transaction
+      // compares it with the line's suggested bin under its row lock and
+      // refuses a stale one, so no bin lookup is needed out here.
+      const { data: confirmed, error: cErr } = await admin.rpc('wie_confirm_overflow_tx', {
+        p_rec_id: recommendation_id,
+        p_location: chosen_location_id!,
+        p_actor: auth.userId,
+      })
+      if (cErr) throw rpcError(cErr.message)
+
+      const { data: assigned } = await admin.from('wie_putaway_recommendations')
+        .select('*').eq('id', recommendation_id).single()
+      await logAuditEvent(admin, {
+        actorId: auth.userId, actorRole: auth.role, action: 'update', resource: 'wie_putaway_recommendations',
+        resourceId: String(recommendation_id), before: rec as Record<string, unknown>,
+        after: (assigned ?? {}) as Record<string, unknown>,
+        metadata: {
+          decision,
+          stage: 'confirm_overflow',
+          chosen_location_id,
+          source_recommendation_id: recommendation_id,
+          result: confirmed,
+        },
+      })
+
+      const raw = confirmed as Record<string, any>
+      return new Response(JSON.stringify({
+        ok: true, assigned_id: raw.assigned_id, location_id: raw.location_id,
+      }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     if (decision === 'unassign') {
