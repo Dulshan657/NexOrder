@@ -6,18 +6,141 @@
   "base": "abc4337b2ae1bd3de5ffc9956151acdf0dea05d4",
   "approved": "2026-11-09 owner, by standing go-ahead on the design; text not yet read, owner to confirm before the PR",
   "acceptance": [
-    { "id": "A1", "check": "A line whose product's home has room is created assigned to the home bin with no assigner (assigned_by NULL) and is on the Walk; it never appears in the Assign queue.", "manual": "unit tests in __tests__/wie/putawayTasks.test.ts, named in failFirst by a brief-only revision once they exist; npm run test:integration -- putawayStraightToWalk (recommend-putaway over HTTP) on dev" },
-    { "id": "A2", "check": "A loose line sent to overflow (home full) is created suggested; it is listed in the Assign queue and as a confirm stop on the Walk ('Home full — put in {bin}?'). Assign or Choose bin at the desk, or scanning the suggested bin on the walk, confirms it; the first wins, the other is refused with CONFLICT, and the line leaves the other list. A scan of any other bin on a confirm stop is refused.", "manual": "unit and component tests named in failFirst by revision; npm run test:integration -- putawayStraightToWalk (wie_confirm_overflow_tx, wie_putaway_stops) on dev" },
-    { "id": "A3", "check": "A line for a product with no home, and a single-product pallet (unit load) of any product, is created assigned to the engine's bin and is on the Walk.", "manual": "unit tests named in failFirst by revision; integration over HTTP on dev" },
-    { "id": "A4", "check": "On a walk stop for a product with no home, a Manager or Admin is offered 'This product has no home bin. Give it one?' and can choose a bin by scanning, typing or a dropdown that lists only bins that pass the home-bin health rules and are no other product's home; the putaway then goes to that bin and the bin becomes the product's primary home in the same transaction. 'Not now' keeps the engine's bin. complete-putaway refuses make_home into a bin that fails those rules with '{code} can't be a home bin: ...'.", "manual": "component tests named in failFirst by revision; integration over HTTP on dev; the Playwright run (A9)" },
-    { "id": "A5", "check": "complete-putaway refuses make_home from any role other than Admin or Manager with FORBIDDEN 'Only a Manager or Admin can give a product a home bin.', before reading the task; a Warehouse user is not offered the choice on the walk.", "manual": "unit tests named in failFirst by revision; npm run test:integration -- putawayStraightToWalk (Warehouse user over HTTP) on dev" },
+    { "id": "A1", "check": "A line whose product's home has room is created assigned to the home bin with no assigner (assigned_by NULL) and is on the Walk; it never appears in the Assign queue.", "manual": "npm run test:integration -- putawayStraightToWalk (recommend-putaway over HTTP) on dev; the Playwright run (A9) for the Walk-and-not-the-queue half" },
+    { "id": "A2", "check": "A loose line sent to overflow (home full) is created suggested; it is listed in the Assign queue and as a confirm stop on the Walk ('Home full — put in {bin}?'). Assign or Choose bin at the desk, or scanning the suggested bin on the walk, confirms it; the first wins, the other is refused with CONFLICT, and the line leaves the other list. A scan of any other bin on a confirm stop is refused. A single-product pallet is never a confirm stop.", "manual": "npm run test:integration -- putawayStraightToWalk (wie_confirm_overflow_tx, wie_putaway_stops, decide-putaway confirm_overflow over HTTP) on dev; the Playwright run (A9)" },
+    { "id": "A3", "check": "A line for a product with no home, and a single-product pallet (unit load) of any product, is created assigned to the engine's bin and is on the Walk.", "manual": "npm run test:integration -- putawayStraightToWalk (recommend-putaway over HTTP: a product with no home, and a hu_type pallet) on dev" },
+    { "id": "A4", "check": "On a walk stop for a product with no home, a Manager or Admin is offered 'This product has no home bin. Give it one?' and can choose a bin by scanning, typing or a dropdown that lists only bins that pass the home-bin health rules and are no other product's home; the putaway then goes to that bin and the bin becomes the product's primary home in the same transaction. The line's own reservation does not make its bin read as full. 'Not now' keeps the engine's bin. complete-putaway refuses make_home into a bin that fails those rules with '{code} can't be a home bin: ...'.", "manual": "npm run test:integration -- putawayStraightToWalk (home-bin-choices and complete-putaway make_home over HTTP, wie_home_bin_candidate_facts) on dev; the Playwright run (A9)" },
+    { "id": "A5", "check": "complete-putaway refuses make_home from any role other than Admin or Manager with FORBIDDEN 'Only a Manager or Admin can give a product a home bin.', before reading the task; a Warehouse user is not offered the choice on the walk.", "manual": "npm run test:integration -- putawayStraightToWalk (made-up Warehouse user over HTTP) on dev; the Playwright run (A9) for a forged make_home" },
     { "id": "A6", "check": "The same overflow line confirmed at the desk and on the walk at once ends with exactly one assignment and no stock moved; a walk completion and a desk Place now at once move the stock exactly once.", "manual": "npm run test:integration -- putawayStraightToWalk, race describe (two connections) on dev" },
-    { "id": "A7", "check": "A line the system assigned and nobody has touched can still be placed from the receive card (Accept, Choose another) and by the opening-stock import (decide override); a line a person assigned cannot be placed that way.", "manual": "npm run test:integration -- putawayStraightToWalk on dev" },
-    { "id": "A8", "check": "The Bin detail panel (and the Locations panel) on Warehouse setup scrolls with the mouse wheel.", "manual": "component test named in failFirst by revision; npx playwright test tests/e2e/rack-levels/bin-detail-wheel.spec.ts against dev" },
-    { "id": "A9", "check": "End to end on dev in a browser with made-up products only: a homed product's line is on the Walk and not the Assign queue and completes at the home; with the home full the overflow line shows in both lists and confirming on the walk removes it from the Assign queue, and confirming at the desk turns the walk stop into a plain stop; a product with no home is on the walk and an Admin gives it a home by scan, by typing and by dropdown; a Warehouse user is offered nothing and a forged make_home is refused.", "manual": "npx playwright test tests/e2e/rack-levels/putaway-straight-to-walk.spec.ts --project=chromium against dev, trace and screenshots kept outside git" },
-    { "id": "A10", "check": "Migration 00143 applied to dev and the changed functions deployed to dev.", "manual": "npm run migrate:dev; npm run fn:deploy:dev -- <list in Task 11>" }
+    { "id": "A7", "check": "A line the system assigned and nobody has touched can still be placed from the receive card (Accept, Choose another) and by the opening-stock import (decide override); a line a person assigned cannot be placed that way.", "manual": "npm run test:integration -- putawayStraightToWalk (wie_decide_putaway_tx, and decide-putaway accept on a system-assigned line over HTTP) on dev" },
+    { "id": "A8", "check": "The Bin detail panel (and the Locations panel) on Warehouse setup scrolls with the mouse wheel.", "manual": "npx playwright test tests/e2e/rack-levels/bin-detail-wheel.spec.ts against dev (red on the base, green on the tip)" },
+    { "id": "A9", "check": "End to end on dev in a browser with made-up products only: a homed product's line is on the Walk and not the Assign queue and completes at the home; with the home full the overflow line shows in both lists and confirming on the walk removes it from the Assign queue, and confirming at the desk turns the walk stop into a plain stop; a product with no home is on the walk and an Admin gives it a home by scan, by typing and by dropdown; a Warehouse user is offered nothing and a forged make_home is refused.", "manual": "npx playwright test tests/e2e/rack-levels/putaway-straight-to-walk.spec.ts --project=chromium against dev with this branch's frontend served locally, trace and screenshots kept outside git" },
+    { "id": "A10", "check": "Migrations 00143, 00144 and 00145 applied to dev and the changed functions deployed to dev.", "manual": "npm run migrate:dev; the Supabase CLI deploy to dev, with the owner's consent, of the 10 functions that bundle a changed shared module: adjust-stock, break-down-putaway, complete-putaway, count-bin, decide-putaway, home-bin-choices, home-bin-health, receive-stock, recommend-putaway, transfer-stock, built from a merge of origin/main and this branch" }
   ],
-  "failFirst": [],
+  "failFirst": [
+    {"file":"__tests__/floatingPanel.test.tsx","test":"FloatingPanel > the body is bounded by its row, so it is the element that scrolls","proves":["A8"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > is titled with the product","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > asks for the bins of this product, on this line's own terms, only while open","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > a scanned code that is offered is chosen","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > a scanned code that is not offered is refused with the copy","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > typing a code and pressing Make this its home chooses it","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > typing a code that is not offered and pressing Make this its home refuses it","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > picking from the dropdown and pressing Make this its home chooses it","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > lists each bin as its code and its name, or the code alone when it has no name","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > does nothing until a bin is named","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > prefers the typed code over the dropdown when both are filled","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > a refused code is cleared when a bin is picked from the list instead","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > says when no bin can be a home","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > says it is loading rather than that no bin can be a home","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > shows the server's words when the list could not be read","proves":["A4"]},
+    {"file":"__tests__/giveHomeSheet.test.tsx","test":"GiveHomeSheet > closes without choosing","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeBinChoices > calls wie_home_bin_candidate_facts with the warehouse and product, and throws on a read error","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeBinChoices > gives the lines being placed their own space back: p_exclude_rec_ids goes through, and only when there are some","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeBinChoices > returns the bins that qualify, by code, and drops the rest","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeBinChoices > fills in the slotting refusal, so a bin a hard rule excludes is not offered","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeBinChoices > fails closed when the slotting rules cannot be read","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeChoiceRefusal > passes p_bin_id and returns the refusal for that one bin","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeChoiceRefusal > passes the lines being placed as p_exclude_rec_ids, with the bin","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeChoiceRefusal > leaves p_exclude_rec_ids out when no line is named","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeChoiceRefusal > names the other product when the bin is already somebody else's home","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeChoiceRefusal > is null for a bin that can be the home","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeChoiceRefusal > refuses a location the function returns no row for, as not a bin of this warehouse","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeChoiceRefusal > throws on a read error","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthLoad.test.ts","test":"loadHomeChoiceRefusal > applies a slotting refusal to the one bin","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthService.test.ts","test":"getHomeBinChoices > GETs home-bin-choices with both ids in the query string","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthService.test.ts","test":"getHomeBinChoices > adds the line being placed to the query string, so its own space is not counted","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthService.test.ts","test":"getHomeBinChoices > returns the bins the server offers","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthService.test.ts","test":"getHomeBinChoices > tolerates a reply with no bins","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthService.test.ts","test":"getHomeBinChoices > surfaces the server message on a failure, not the generic non-2xx one","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthService.test.ts","test":"getHomeBinChoices > falls back to a readable message when the body carries none","proves":["A4"]},
+    {"file":"__tests__/homeBinHealthService.test.ts","test":"getHomeBinChoices > throws when the call succeeds but returns nothing","proves":["A4"]},
+    {"file":"__tests__/putawayCompletion.test.ts","test":"decidePutawayCompletion > make_home only when the product has no home","proves":["A4"]},
+    {"file":"__tests__/putawayCompletion.test.ts","test":"decidePutawayCompletion > make_home is refused for a Warehouse user even when the product has no home","proves":["A5"]},
+    {"file":"__tests__/putawayCompletion.test.ts","test":"canSetHome > only Admin and Manager","proves":["A5"]},
+    {"file":"__tests__/putawayCompletion.test.ts","test":"canPlaceNow > a suggested line, or one the system assigned and nobody touched","proves":["A7"]},
+    {"file":"__tests__/putawayCompletion.test.ts","test":"decisionActsOnStatus > unassign acts on an assigned line only","proves":["A7"]},
+    {"file":"__tests__/putawayCompletion.test.ts","test":"decisionActsOnStatus > place now (accept / override) also acts on a line the system assigned","proves":["A7"]},
+    {"file":"__tests__/putawayCompletion.test.ts","test":"decisionActsOnStatus > a desk assign (assign_only) still needs a suggested line, whoever assigned it","proves":["A7"]},
+    {"file":"__tests__/putawayCompletion.test.ts","test":"decisionActsOnStatus > a walk confirm leaves the status check to the database, which says why in plain words","proves":["A2"]},
+    {"file":"__tests__/putawayInvalidation.test.tsx","test":"useConfirmOverflow cache invalidation > refreshes the queue, the counts and the route after a confirm","proves":["A2"]},
+    {"file":"__tests__/putawayInvalidation.test.tsx","test":"useConfirmOverflow cache invalidation > refreshes the queue, the counts and the route after a refusal","proves":["A2"]},
+    {"file":"__tests__/putawayQueuePageCanSetHome.test.tsx","test":"PutawayQueuePage — who is offered \"give it a home\" > Admin -> canSetHome true","proves":["A4"]},
+    {"file":"__tests__/putawayQueuePageCanSetHome.test.tsx","test":"PutawayQueuePage — who is offered \"give it a home\" > Manager -> canSetHome true","proves":["A4"]},
+    {"file":"__tests__/putawayQueuePageCanSetHome.test.tsx","test":"PutawayQueuePage — who is offered \"give it a home\" > Warehouse -> canSetHome false","proves":["A4","A5"]},
+    {"file":"__tests__/putawayQueueService.test.ts","test":"getWalkPutaways > maps the assigned bin and its timestamp onto the row","proves":["A1","A2"]},
+    {"file":"__tests__/putawayQueueService.test.ts","test":"getWalkPutaways > leaves the assigned bin null for a row that has none","proves":["A1","A2"]},
+    {"file":"__tests__/putawayQueueService.test.ts","test":"getWalkPutaways (the query) > asks for assigned lines and overflow lines awaiting confirmation, oldest first","proves":["A2"]},
+    {"file":"__tests__/putawayQueueService.test.ts","test":"getWalkPutaways (the query) > maps the status onto the row, so a confirm stop can be told from an assigned one","proves":["A2"]},
+    {"file":"__tests__/putawayQueueService.test.ts","test":"getWalkPutaways (the query) > carries unit_load onto the row, so a pallet is not read as a confirm stop","proves":["A2"]},
+    {"file":"__tests__/putawayQueueService.test.ts","test":"getWalkPutaways (the query) > throws on a query error rather than returning an empty walk","proves":["A2"]},
+    {"file":"__tests__/putawayQueueService.test.ts","test":"getWalkPutaways (the query) > each product's live home (NX-0033) > reads the homes of every product on the walk in ONE batched read","proves":["A4"]},
+    {"file":"__tests__/putawayQueueService.test.ts","test":"getWalkPutaways (the query) > each product's live home (NX-0033) > puts each product's current home on its rows, and null where it has none","proves":["A4"]},
+    {"file":"__tests__/putawayQueueService.test.ts","test":"getWalkPutaways (the query) > each product's live home (NX-0033) > does not read homes for an empty walk","proves":["A4"]},
+    {"file":"__tests__/putawayQueueService.test.ts","test":"getWalkPutaways (the query) > each product's live home (NX-0033) > throws when the homes cannot be read, rather than offering a home to a homed product","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > offers a Manager \"This product has no home bin. Give it one?\"","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > offers it on a desk-tagged line whose product has no home now: a desk-redirected line","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > offers it on a null-tagged line whose product has no home now: a line with no recorded source","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > offers it on a home-tagged line whose product has no home now: a line whose home has since been removed","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > stops offering when the walk refreshes and the product has a home (set at the desk, or by a sibling)","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > offers it on the identify step as well as the bin step, and not at the count","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > \"Not now\" keeps the engine bin and sends no make_home","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > closing the chooser without choosing brings the offer back","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > asks for the bins with the stop's own line, so its reservation does not count","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > choosing a home retargets the stop and sends make_home with a scan of that bin","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > puts the focus on the scan field of the stop once a home is chosen, so the gun can scan","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > sends the scan of the chosen bin as the manager typed it","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > says so when someone set a home for the product meanwhile and it was placed anyway","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > keeps the stop open with the server's words when the home was set meanwhile","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardGiveHome.test.tsx","test":"putaway walk card — a product with no home > cancelling the stop after choosing leaves nothing behind","proves":["A4"]},
+    {"file":"__tests__/putawayStopCardOverflow.test.tsx","test":"putaway walk card — overflow awaiting confirmation > shows \"Home full — put in <bin>?\" and asks to scan that bin to confirm","proves":["A2"]},
+    {"file":"__tests__/putawayStopCardOverflow.test.tsx","test":"putaway walk card — overflow awaiting confirmation > says it is a decision on the collapsed row too","proves":["A2"]},
+    {"file":"__tests__/putawayStopCardOverflow.test.tsx","test":"putaway walk card — overflow awaiting confirmation > scanning the suggested bin confirms it, then moves on to the count","proves":["A2"]},
+    {"file":"__tests__/putawayStopCardOverflow.test.tsx","test":"putaway walk card — overflow awaiting confirmation > accepts the suggested bin however it is typed","proves":["A2"]},
+    {"file":"__tests__/putawayStopCardOverflow.test.tsx","test":"putaway walk card — overflow awaiting confirmation > another bin is refused at the scan and nothing is sent","proves":["A2"]},
+    {"file":"__tests__/putawayStopCardOverflow.test.tsx","test":"putaway walk card — overflow awaiting confirmation > shows the server's refusal and refreshes the walk when the desk got there first","proves":["A2"]},
+    {"file":"__tests__/putawayStopCardOverflow.test.tsx","test":"putaway walk card — overflow awaiting confirmation > stays on the bin step after a refusal so the refreshed stop can be scanned","proves":["A2"]},
+    {"file":"__tests__/putawayStopCardOverflow.test.tsx","test":"putaway walk card — overflow awaiting confirmation > hides \"Put it back on the queue\" until confirmed","proves":["A2"]},
+    {"file":"__tests__/putawayStopCardOverflow.test.tsx","test":"putaway walk card — overflow awaiting confirmation > hides \"Break down\" on a pallet until confirmed","proves":["A2"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — overflow lines awaiting confirmation > lists an overflow line awaiting confirmation at its suggested bin","proves":["A2"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — overflow lines awaiting confirmation > finds the suggested bin in the bin list when there is no route","proves":["A2"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — overflow lines awaiting confirmation > does not mark a single-product pallet, which never waits for confirmation","proves":["A2"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — overflow lines awaiting confirmation > does not mark a plain assigned stop","proves":["A2"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — overflow lines awaiting confirmation > marks only the stop that needs confirming when both kinds are listed","proves":["A2"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — overflow lines awaiting confirmation > finds the stop when its suggested bin is scanned","proves":["A2"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — overflow lines awaiting confirmation > does not find the stop by a bin it is not at","proves":["A2"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — overflow lines awaiting confirmation > tells an empty walk where the lines that need a decision are","proves":["A2"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — the give-a-home offer reaches the stop card > offers a Manager or Admin the chance to give the product a home","proves":["A4"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — the give-a-home offer reaches the stop card > offers a Warehouse user nothing","proves":["A4","A5"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — the give-a-home offer reaches the stop card > offers nothing by default, when the page does not say the user may","proves":["A4"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayWalkView — the give-a-home offer reaches the stop card > offers nothing for a product that already has a home","proves":["A4"]},
+    {"file":"__tests__/putawayWalkConfirmStops.test.tsx","test":"PutawayRow — the Assign queue > marks an overflow line Home full","proves":["A2"]},
+    {"file":"__tests__/recommendPutawayService.test.ts","test":"confirmOverflowPutaway > sends decision confirm_overflow with the scanned bin's id","proves":["A2"]},
+    {"file":"__tests__/recommendPutawayService.test.ts","test":"confirmOverflowPutaway > throws the server's words on a refusal","proves":["A2"]},
+    {"file":"__tests__/recommendPutawayService.test.ts","test":"confirmOverflowPutaway > falls back to a plain sentence when the failure carried no body","proves":["A2"]},
+    {"file":"__tests__/walkStops.test.ts","test":"isOverflowConfirmStop > is true only for a suggested overflow line with a bin","proves":["A2"]},
+    {"file":"__tests__/walkStops.test.ts","test":"isOverflowConfirmStop > is false once the line is assigned, even if it began as overflow","proves":["A2"]},
+    {"file":"__tests__/walkStops.test.ts","test":"isOverflowConfirmStop > is false for a suggested line that is not overflow","proves":["A2"]},
+    {"file":"__tests__/walkStops.test.ts","test":"isOverflowConfirmStop > is false for a suggested overflow line with no bin to confirm","proves":["A2"]},
+    {"file":"__tests__/walkStops.test.ts","test":"isOverflowConfirmStop > is false for a single-product pallet: a unit load never waits for confirmation (C5)","proves":["A2"]},
+    {"file":"__tests__/walkStops.test.ts","test":"walkBinId > is the assigned bin, else the suggested one","proves":["A2"]},
+    {"file":"__tests__/walkStops.test.ts","test":"walkBinId > is null when the line has neither","proves":["A2"]},
+    {"file":"__tests__/walkStops.test.ts","test":"overflowConfirmCopy > is the plan copy table, verbatim, with the bin code filled in","proves":["A2"]},
+    {"file":"__tests__/walkStops.test.ts","test":"homeTargetCopy > is the plan copy table, verbatim, with the bin and the product filled in","proves":["A4"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinCandidateFactsFromRow > maps the shared columns like a home, and adds the bin name and the other homes","proves":["A4"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinCandidateFactsFromRow > reads a blank name as null and a blank list of homes as none","proves":["A4"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeChoiceRefusal > names the other product's home first, then the first problem, else null","proves":["A4"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinChoices > keeps only bins with no problems that are not another product's home, by code","proves":["A4"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinChoices > lists the bins in code order, whatever order the facts came in","proves":["A4"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinChoices > is empty when no bin qualifies, and for no facts at all","proves":["A4"]},
+    {"file":"__tests__/wie/homeBinHealth.test.ts","test":"homeBinChoices > does not change the list it is given","proves":["A4"]},
+    {"file":"__tests__/wie/homeFirst.test.ts","test":"goesStraightToWalk > home, engine and a unit load go straight to the walk; a loose overflow line and a line with no bin do not","proves":["A1","A3"]},
+    {"file":"__tests__/wie/putawayTasks.test.ts","test":"generatePutawayTasks — straight to the walk (NX-0033) > a line to a home with room is written assigned to the home, with no assigner","proves":["A1"]},
+    {"file":"__tests__/wie/putawayTasks.test.ts","test":"generatePutawayTasks — straight to the walk (NX-0033) > a loose overflow line is written suggested, with no assigned bin","proves":["A2"]},
+    {"file":"__tests__/wie/putawayTasks.test.ts","test":"generatePutawayTasks — straight to the walk (NX-0033) > a line for a product with no home is written assigned to the engine bin","proves":["A3"]},
+    {"file":"__tests__/wie/putawayTasks.test.ts","test":"generatePutawayTasks — straight to the walk (NX-0033) > a single-product pallet is written assigned even though its source is overflow","proves":["A3"]},
+    {"file":"__tests__/wie/putawayTasks.test.ts","test":"generatePutawayTasks — straight to the walk (NX-0033) > a residual with no eligible bin stays suggested","proves":["A2"]},
+    {"file":"__tests__/wie/putawayTasks.test.ts","test":"generatePutawayTasks — straight to the walk (NX-0033) > reports assignedLocationId on each result, null for a line that waits","proves":["A1"]}
+  ],
   "allow": []
 }
 ```
@@ -40,24 +163,26 @@ This change makes that so, for every product and every warehouse:
 |---|---|
 | `supabase/functions/_shared/wie/homeFirst.ts`, `_shared/putawayTasks.ts` | `goesStraightToWalk` (pure routing rule). Tasks are written with `status` and `assigned_*` per that rule, and report `assignedLocationId`. |
 | `supabase/migrations/00143_putaway_straight_to_walk.sql` | New `wie_confirm_overflow_tx` and `wie_home_bin_candidate_facts`. Redefined `wie_decide_putaway_tx` and `wie_putaway_stops`. |
+| `supabase/migrations/00144_home_bin_candidate_exclude.sql` | `wie_home_bin_candidate_facts` takes `p_exclude_rec_ids`, so a line's own reservation is not counted against its bin when that bin is offered as a home or checked for `make_home`. |
+| `supabase/migrations/00145_putaway_confirm_tightening.sql` | Redefined `wie_confirm_overflow_tx` and `wie_putaway_stops`: a single-product pallet is never a confirm stop, and the confirm refuses an inactive bin and an older layout in the desk's words. |
 | `_shared/wie/homeBinHealth.ts`, `_shared/homeBinHealthLoad.ts`, new `home-bin-choices` function, `config/moduleOwnership.mjs` | The pure rule for which bins can be a home, its loaders, and a read-only function that feeds the chooser. |
 | `_shared/putawayCompletion.ts`, `complete-putaway`, `decide-putaway` | The role gate and fitness check on `make_home`. `confirm_overflow`. Place now on system-assigned rows. |
 | `services/supabase/*`, `hooks/queries/*` | `getWalkPutaways`, `confirmOverflowPutaway`, `getHomeBinChoices` and their hooks. |
-| `components/inventory/putaway/walkStops.ts`, `GiveHomeSheet.tsx`, `PutawayStopCard.tsx`, `PutawayWalkView.tsx`, `PutawayQueuePage.tsx`, `PutawayRow.tsx` | Confirm stops on the Walk, the `Home full` badge in the queue, the give-home offer and chooser. |
+| `components/inventory/putaway/walkStops.ts`, `GiveHomeSheet.tsx`, `GiveHomeOffer.tsx`, `PutawayStopCard.tsx` (with `StopCollapsedRow.tsx`, `StopDestination.tsx`, `StopProgressRail.tsx` split out of it), `PutawayWalkView.tsx`, `PutawayQueuePage.tsx`, `PutawayRow.tsx` | Confirm stops on the Walk, the `Home full` badge in the queue, the give-home offer and chooser. |
 | `components/inventory/warehouse/FloatingPanel.tsx` | The scroll fix. |
 | `__tests__/**`, `tests/e2e/rack-levels/*` | Unit, component, integration (dev) and Playwright (dev) proof. |
 | `docs/claude/warehouse-stock-ops.md` | An NX-0033 paragraph. |
 
 **Rulings, one line each.**
-- **R2.** "Needs confirmation" is the row predicate `status='suggested' AND suggestion_source='overflow' AND recommended_location_id IS NOT NULL`, so overflow lines already in the Assign queue also appear on the Walk as confirm stops, and no other existing row changes lists.
-- **R3.** A loose overflow line always waits for confirmation, including one sent to overflow because its home is unusable. A unit-load pallet goes straight to the Walk whatever its source.
+- **R2.** "Needs confirmation" is the row predicate `status='suggested' AND suggestion_source='overflow' AND recommended_location_id IS NOT NULL AND NOT unit_load`, so overflow lines already in the Assign queue also appear on the Walk as confirm stops, and no other existing row changes lists.
+- **R3.** A loose overflow line always waits for confirmation, including one sent to overflow because its home is unusable. A unit-load pallet goes straight to the Walk whatever its source, and never waits for confirmation, even when it is put back on the queue (migration 00145).
 - **R4.** `wie_decide_putaway_tx` (accept and override, not assign-only) also acts on a row that is `assigned` with `assigned_by IS NULL`, so the receive card and the opening-stock import still work. A redirect still needs `suggested`.
 - **R5.** The home is set at completion, in the same transaction as the move, through the existing `make_home` path. It is not set when the manager picks the bin, so "Not now" or an abandoned stop leaves nothing behind.
 - **R6.** The walk confirmation is the new compare-and-set function `wie_confirm_overflow_tx`, reached through `decide-putaway` `decision:'confirm_overflow'`. It takes the row lock the desk's Assign takes, accepts only the suggested bin, and refuses a stale scan.
 - **R7.** The reason rule follows the status: an auto-assigned line placed in another bay is recorded without a reason, like any assigned walk line. The NX-0032 home rule still refuses an off-home bin while the home has room.
 - **R8.** The wheel cause is `FloatingPanel`'s unbounded scroll body inside an `overflow-hidden` wrapper, to be confirmed in a browser before the fix. The fix goes in `FloatingPanel`, so the Locations tree is fixed too.
 
-**Proof.** Unit tests cover the routing rule, the role gate and the walk stops. Integration tests on dev cover the SQL rules (A1 to A3, A6, A7), the functions over HTTP, and a two-connection race. One Playwright spec on dev covers A9 and a second covers the wheel. `failFirst` is empty in this commit because check:brief cannot run a test that is not written yet. Brief-only revisions add the tests that fail on the base once they exist, and each is listed in the report as a revision.
+**Proof.** Unit tests cover the routing rule, the role gate and the walk stops. Integration tests on dev cover the SQL rules (A1 to A3, A6, A7), the functions over HTTP, and a two-connection race. One Playwright spec on dev covers A9 and a second covers the wheel. `failFirst` was empty in the first commit because check:brief cannot run a test that is not written yet. One brief-only revision names the unit and component tests that fail on the base, by assertion or because the module they test is new; the SQL, the functions over HTTP and the browser are `manual` and proven on dev.
 
 ## Out of scope
 
