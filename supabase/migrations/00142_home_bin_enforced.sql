@@ -44,6 +44,7 @@
 --   wie_complete_putaway_many_tx (00137)  -- checks every line first
 --   wie_assign_putaway_tx        (00080)
 --   wie_redirect_putaway_tx      (00135)
+--   wie_break_down_putaway_tx    (00126)  -- children record unit_load only
 --   wie_putaway_candidates       (00135)  -- leaves out another product's
 --                                            primary home unless this product
 --                                            is homed there too
@@ -1085,6 +1086,222 @@ REVOKE ALL ON FUNCTION public.wie_putaway_candidates(INT,INT,INT,TEXT[],BOOLEAN,
 GRANT EXECUTE ON FUNCTION public.wie_putaway_candidates(INT,INT,INT,TEXT[],BOOLEAN,INT[],INT)
     TO service_role;
 
+-- ── 7. Break-down (from 00126) ───────────────────────────────────────────────
+-- Body verbatim from 00126 except that each child task records unit_load from
+-- its portion's hu_type, the same rule the edge function plans with
+-- (huTypeForUnit: pallet and layer -> 'pallet'). Without it a pallet portion
+-- read unit_load false and was held to the home on its way to the reserve bin
+-- the planner chose for it.
+CREATE OR REPLACE FUNCTION public.wie_break_down_putaway_tx(
+    p_rec_id   BIGINT,
+    p_portions JSONB,
+    p_actor    UUID DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_rec        public.wie_putaway_recommendations%ROWTYPE;
+    v_portion    JSONB;
+    v_total      NUMERIC := 0;
+    v_qty        NUMERIC;
+    v_hu_type    TEXT;
+    v_loc        INT;
+    v_new_hu     BIGINT;
+    v_new_code   TEXT;
+    v_new_rec    BIGINT;
+    v_remaining  NUMERIC;
+    v_take       NUMERIC;
+    v_row        RECORD;
+    v_plates     JSONB := '[]'::JSONB;
+BEGIN
+    IF p_portions IS NULL OR jsonb_typeof(p_portions) <> 'array'
+       OR jsonb_array_length(p_portions) = 0 THEN
+        RAISE EXCEPTION 'INVALID_INPUT: at least one portion is required'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    -- The row lock is what stops two walkers breaking the same pallet down
+    -- twice, and it is what makes the quantity check below true rather than
+    -- merely true a moment ago.
+    SELECT * INTO v_rec
+    FROM public.wie_putaway_recommendations
+    WHERE id = p_rec_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'NOT_FOUND: recommendation % not found', p_rec_id
+            USING ERRCODE = 'P0001';
+    END IF;
+    IF v_rec.status <> 'assigned' THEN
+        RAISE EXCEPTION 'CONFLICT: recommendation is %, not assigned', v_rec.status
+            USING ERRCODE = 'P0001';
+    END IF;
+    -- Loose stock has no plate to break. The units are already unattached; the
+    -- operator wants a partial putaway, which complete-putaway already does.
+    IF v_rec.handling_unit_id IS NULL THEN
+        RAISE EXCEPTION
+            'INVALID_INPUT: this line is not on a plate -- place part of it instead'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    -- -- Validate the whole sheet BEFORE minting anything --------------------
+    -- A refused break-down must leave no orphan handling_units rows behind. The
+    -- transaction rolls those back anyway, but handling_unit_code_seq is a
+    -- SEQUENCE and sequences do not roll back, so validating first is what keeps
+    -- the plate codes on a site contiguous rather than pocked with gaps from
+    -- attempts that never happened.
+    FOR v_portion IN SELECT * FROM jsonb_array_elements(p_portions)
+    LOOP
+        v_qty     := (v_portion->>'qty')::NUMERIC;
+        v_hu_type := v_portion->>'hu_type';
+        v_loc     := (v_portion->>'location_id')::INT;
+
+        IF v_qty IS NULL OR v_qty <= 0 THEN
+            RAISE EXCEPTION 'INVALID_QTY: every portion needs a positive quantity'
+                USING ERRCODE = 'P0001';
+        END IF;
+        IF v_hu_type IS NULL OR v_hu_type NOT IN ('pallet', 'carton') THEN
+            RAISE EXCEPTION 'INVALID_INPUT: portion hu_type must be pallet or carton'
+                USING ERRCODE = 'P0001';
+        END IF;
+        IF v_loc IS NULL THEN
+            RAISE EXCEPTION 'INVALID_INPUT: every portion needs a destination bin'
+                USING ERRCODE = 'P0001';
+        END IF;
+
+        v_total := v_total + v_qty;
+    END LOOP;
+
+    IF v_total > v_rec.quantity THEN
+        RAISE EXCEPTION
+            'INVALID_QTY: % exceeds the % on this task', v_total, v_rec.quantity
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    -- -- Mint, re-plate, and fan out -----------------------------------------
+    FOR v_portion IN SELECT * FROM jsonb_array_elements(p_portions)
+    LOOP
+        v_qty     := (v_portion->>'qty')::NUMERIC;
+        v_hu_type := v_portion->>'hu_type';
+        v_loc     := (v_portion->>'location_id')::INT;
+
+        -- `code` comes from the column DEFAULT (hu_next_code(), mig 00077) --
+        -- never composed here, so there is one minting rule. status and
+        -- location_id are left alone: hu_recompute derives both from the balance
+        -- rows the legs below are about to write, which is what stops a plate
+        -- ever disagreeing with the stock it describes.
+        INSERT INTO public.handling_units
+            (hu_type, warehouse_id, goods_receipt_id, created_by)
+        VALUES
+            (v_hu_type, v_rec.warehouse_id, v_rec.goods_receipt_id, p_actor)
+        RETURNING id, code INTO v_new_hu, v_new_code;
+
+        -- Re-plate at the root, FEFO. Same ORDER BY as inv_transfer_stock.
+        v_remaining := v_qty;
+        FOR v_row IN
+            SELECT b.id, b.batch_id, b.available
+            FROM public.inventory_balances b
+            LEFT JOIN public.batches bt ON bt.id = b.batch_id
+            WHERE b.product_id       = v_rec.product_id
+              AND b.location_id      = v_rec.warehouse_id
+              AND b.handling_unit_id = v_rec.handling_unit_id
+              AND b.available > 0
+            ORDER BY bt.expiry_date NULLS LAST, bt.received_at NULLS FIRST, b.id
+            FOR UPDATE OF b
+        LOOP
+            EXIT WHEN v_remaining <= 0;
+            v_take := LEAST(v_remaining, v_row.available);
+            CONTINUE WHEN v_take <= 0;
+
+            PERFORM public.inv_apply_leg(
+                v_rec.product_id, v_rec.warehouse_id, v_row.batch_id, -v_take, 0,
+                'transfer_out', p_actor, 'hu_split', v_rec.handling_unit_id::TEXT,
+                'break down ' || v_new_code, NULL, v_rec.handling_unit_id);
+            PERFORM public.inv_apply_leg(
+                v_rec.product_id, v_rec.warehouse_id, v_row.batch_id, v_take, 0,
+                'transfer_in', p_actor, 'hu_split', v_rec.handling_unit_id::TEXT,
+                'break down ' || v_new_code, NULL, v_new_hu);
+
+            v_remaining := v_remaining - v_take;
+        END LOOP;
+
+        IF v_remaining > 0 THEN
+            -- The gap between assigning a task and walking it is minutes or
+            -- hours, so an order can reserve this stock while the pallet stands
+            -- on the dock. Name the plate: the operator is holding it.
+            RAISE EXCEPTION
+                'INSUFFICIENT_STOCK: plate % is short by % of product % at the dock',
+                v_rec.handling_unit_id, v_remaining, v_rec.product_id
+                USING ERRCODE = 'P0001';
+        END IF;
+
+        -- One assigned task per portion. recommended_location_id keeps what the
+        -- ENGINE said for THIS portion (scored as the container it became), so
+        -- "did the floor follow the engine" stays answerable per plate rather
+        -- than being inherited from a decision made about a whole pallet.
+        INSERT INTO public.wie_putaway_recommendations
+            (warehouse_id, layout_id, product_id, quantity, goods_receipt_id,
+             recommended_location_id, alternatives, explanation, engine_version,
+             status, assigned_location_id, assigned_at, assigned_by,
+             handling_unit_id, created_at, unit_load)
+        VALUES
+            (v_rec.warehouse_id, v_rec.layout_id, v_rec.product_id, v_qty,
+             v_rec.goods_receipt_id,
+             NULLIF(v_portion->>'recommended_location_id', '')::INT,
+             COALESCE(v_portion->'alternatives', '[]'::JSONB),
+             COALESCE(v_portion->'explanation', '{}'::JSONB),
+             v_rec.engine_version,
+             'assigned', v_loc, now(), p_actor,
+             v_new_hu, now(),
+             -- 00142 (NX-0032): a 'pallet' portion (huTypeForUnit: a pallet or
+             -- a layer) was planned by break-down-putaway as a unit load, on a
+             -- new single-product plate; a carton portion was not.
+             v_hu_type = 'pallet')
+        RETURNING id INTO v_new_rec;
+
+        v_plates := v_plates || jsonb_build_object(
+            'recommendation_id', v_new_rec,
+            'handling_unit_id',  v_new_hu,
+            'code',              v_new_code,
+            'hu_type',           v_hu_type,
+            'quantity',          v_qty,
+            'location_id',       v_loc);
+    END LOOP;
+
+    -- -- What is left of the parent ------------------------------------------
+    -- At zero the task is over: 'expired' is the status this table already uses
+    -- for a task that no longer exists, and 00123's pending view excludes it, so
+    -- the bay it was holding stops being spoken for in the same statement. The
+    -- parent PLATE needs no update -- it now has no balance rows, and
+    -- hu_recompute has already marked it 'empty'.
+    IF v_rec.quantity - v_total = 0 THEN
+        UPDATE public.wie_putaway_recommendations
+        SET quantity   = 0,
+            status     = 'expired',
+            decided_at = now(),
+            actor_id   = p_actor
+        WHERE id = p_rec_id;
+    ELSE
+        UPDATE public.wie_putaway_recommendations
+        SET quantity = v_rec.quantity - v_total
+        WHERE id = p_rec_id;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'parent_id',        p_rec_id,
+        'parent_remaining', v_rec.quantity - v_total,
+        'parent_closed',    (v_rec.quantity - v_total) = 0,
+        'plates',           v_plates);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.wie_break_down_putaway_tx(BIGINT,JSONB,UUID)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.wie_break_down_putaway_tx(BIGINT,JSONB,UUID)
+    TO service_role;
+
 COMMIT;
 
 -- =============================================================================
@@ -1097,8 +1314,9 @@ COMMIT;
 --      AND p.proname IN ('wie_home_block','wie_complete_putaway_tx',
 --                        'wie_complete_putaway_many_tx','wie_decide_putaway_tx',
 --                        'wie_assign_putaway_tx','wie_redirect_putaway_tx',
---                        'wie_putaway_candidates','wie_home_bin_facts')
---    ORDER BY 1::text;                                   -- EIGHT rows
+--                        'wie_putaway_candidates','wie_home_bin_facts',
+--                        'wie_break_down_putaway_tx')
+--    ORDER BY 1::text;                                   -- NINE rows
 --
 --   -- b. Open tasks that would now be refused where they are pointed (each
 --   --    is still completable INTO its home):
@@ -1122,8 +1340,8 @@ COMMIT;
 --   SELECT * FROM public.wie_home_bin_facts(<warehouse>);
 --
 -- Rollback: re-apply 00137 sections 3-4, 00080 section 3 and 00135 sections
---   2 and 5 (the bodies here are theirs plus the wie_home_block call and the
---   unit_load copies), then DROP FUNCTION public.wie_home_block(BIGINT,INT),
+--   2 and 5, and 00126's wie_break_down_putaway_tx (the bodies here are theirs
+--   plus the wie_home_block call and the unit_load copies), then DROP FUNCTION public.wie_home_block(BIGINT,INT),
 --   DROP FUNCTION public.wie_home_bin_facts(INT) and, last, ALTER TABLE
 --   public.wie_putaway_recommendations DROP COLUMN unit_load.
 -- =============================================================================

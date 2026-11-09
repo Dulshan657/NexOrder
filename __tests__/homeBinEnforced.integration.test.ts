@@ -501,6 +501,49 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
     })
   })
 
+  it('unit_load true but the plate is now mixed is not exempt', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      const b = await newProduct(client, s.token, '-B')
+      const mixed = await plate(client, s, [[s.productId, 4], [b.id, 4]])
+      const id = await task(client, s, 4, s.other, { huId: mixed, source: 'overflow', unitLoad: true })
+      await expectRaise(client, complete, [id, s.other], HOME_ROOM(10))
+      expect(await onHand(client, s.productId, s.other)).toBe(0)
+    })
+  })
+
+  it('break-down: a pallet portion keeps the unit-load exemption, a carton portion is held', async () => {
+    await withRollbackTx(async (client) => {
+      const s = await seed(client)
+      await setHome(client, s, s.home)
+      const p = await plate(client, s, [[s.productId, 12]])
+      const parent = await task(client, s, 12, s.other, { huId: p, source: 'overflow', unitLoad: true })
+      await client.query('SELECT public.wie_assign_putaway_tx($1, $2, NULL, NULL)', [parent, s.other])
+      const r = await client.query<{ out: { plates: Array<{ recommendation_id: number; hu_type: string }> } }>(
+        'SELECT public.wie_break_down_putaway_tx($1, $2::jsonb, NULL) AS out',
+        [parent, JSON.stringify([
+          { qty: 6, hu_type: 'pallet', location_id: s.spare },
+          { qty: 6, hu_type: 'carton', location_id: s.spare },
+        ])])
+      const plates = r.rows[0].out.plates
+      const palletRec = plates.find((x) => x.hu_type === 'pallet')!.recommendation_id
+      const cartonRec = plates.find((x) => x.hu_type === 'carton')!.recommendation_id
+      const flags = await client.query<{ id: string; unit_load: boolean }>(
+        'SELECT id, unit_load FROM public.wie_putaway_recommendations WHERE id = ANY($1::bigint[]) ORDER BY id',
+        [[palletRec, cartonRec]])
+      expect(Object.fromEntries(flags.rows.map((x) => [String(x.id), x.unit_load]))).toEqual({
+        [String(palletRec)]: true, [String(cartonRec)]: false,
+      })
+
+      // The pallet portion goes to the reserve bin it was assigned while the
+      // home has room; the carton portion does not.
+      await client.query(complete, [palletRec, s.spare])
+      expect(await onHand(client, s.productId, s.spare)).toBe(6)
+      await expectRaise(client, complete, [cartonRec, s.spare], HOME_ROOM(10))
+    })
+  })
+
   // ── A5: a home putaway could not use does not block ───────────────────────
   it('ineligible home does not block: inactive, then a level role outside allowed_level_roles', async () => {
     await withRollbackTx(async (client) => {
