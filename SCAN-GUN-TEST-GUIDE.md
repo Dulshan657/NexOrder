@@ -247,6 +247,15 @@ Post bar at the bottom should stay visible above it. If it disappears behind the
 keyboard, say so — that is what the `interactive-widget=resizes-content` viewport
 setting exists to prevent, and it would mean the device's Chrome ignores it.
 
+**The scan box keeps the keyboard down on the gun.** On Receive, Putaway and every
+other scan box, the soft keyboard should NOT appear when the box is focused or
+after a scan. Tap the **keyboard button** (next to the camera button) to type a
+code by hand. The keyboard comes up, and it goes away again once the code is
+committed or you leave the box. Quantity boxes still open the number pad as
+before. The gun is recognised by its model; failing that, it is recognised after
+its first scan and remembered from then on. On a fresh device the keyboard may
+therefore show until the first scan.
+
 ### 5.2 Receive Stock — usable, but cramped
 
 **This screen is a dock/desk surface.** The receipt-line table is ~1100 px wide and
@@ -333,6 +342,7 @@ across a pallet, 1.00 mm down an aisle, and refuses anything below 0.25 mm.
 | **4.2** | **All three GTIN spellings → one product** | | ⬅ the important one |
 | 5.1 | Stocktake posts, and undoes | | |
 | 5.1b | Post bar stays above the soft keyboard | | |
+| 5.1c | Scan box: no keyboard on focus or after a scan; keyboard button brings it up | | |
 | 5.2 | Receive: root accepted, bin refused, carton adds a line | | |
 | 5.3 | Replen: wrong source accepted, wrong destination refused | | |
 | 6 | Calibration sheet prints and scans | | narrowest: ____ mm |
