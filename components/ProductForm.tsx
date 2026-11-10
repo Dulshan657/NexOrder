@@ -248,6 +248,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ productToEdit, suppliers, cat
                         onChange={(v) => setFormData(prev => ({ ...prev, barcode: v }))}
                         placeholder="Scan the supplier's carton barcode"
                         cameraTitle="Scan the product barcode"
+                        softKeyboard="auto"
                         helper="The manufacturer's EAN/UPC. Leave blank if the carton has none — the printed barcode label carries the SKU instead."
                     />
                 </div>

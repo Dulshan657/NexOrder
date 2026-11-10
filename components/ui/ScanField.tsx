@@ -39,13 +39,24 @@
 // `noteArrival`, driven by onChange, which behaves the same under that mode and
 // under "Key Event". Do not move it back to onKeyDown, and do not run it in
 // both — see the note on the keydown handler.
+//
+// ── ON THE GUN, THE SOFT KEYBOARD STAYS DOWN ────────────────────────────────
+//
+// The box holds focus permanently (autoFocus, then the refocus after every
+// commit), so Android kept its on-screen keyboard up over half the screen while
+// the gun did all the input. On a device known to be a scan gun
+// (`lib/scan/scanGunDevice.ts`) the box renders `inputmode="none"` and a
+// keyboard button brings the keyboard up for a torn label. A commit or leaving
+// the box puts it away again. Phones, tablets and desktops are untouched and get
+// no button — there the operator types, and needs the keyboard.
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { Camera, ScanLine, X } from 'lucide-react'
+import { Camera, Keyboard, ScanLine, X } from 'lucide-react'
 import { Sheet } from './Sheet'
 import { inputClass } from './Field'
 import { isCameraScanAvailable, useBarcodeScanner } from '@/lib/scan/useBarcodeScanner'
 import { playScanAccept, playScanReject, prefersReducedMotion } from '@/lib/scan/scanFeedback'
+import { markScanGun, useIsScanGun } from '@/lib/scan/scanGunDevice'
 import { WEDGE_FLUSH_IDLE_MS, WEDGE_MAX_INTERKEY_MS, WEDGE_MIN_SCAN_LENGTH } from '@/lib/scan/wedgeBuffer'
 
 export interface ScanFieldProps {
@@ -94,6 +105,13 @@ export interface ScanFieldProps {
   listId?: string
   /** Table-cell variant: no camera button, tighter padding, no label row. */
   compact?: boolean
+  /**
+   * On a scan gun, keep Android's soft keyboard down until the keyboard button
+   * is pressed. Default 'onDemand'. A desk form where the code is often typed
+   * passes 'auto' to keep the keyboard behaving normally. Off the gun, and in
+   * `compact` cells, the keyboard is always 'auto'.
+   */
+  softKeyboard?: 'onDemand' | 'auto'
 }
 
 /**
@@ -140,6 +158,7 @@ export function ScanField({
   flash = null,
   listId,
   compact = false,
+  softKeyboard = 'onDemand',
 }: ScanFieldProps) {
   const inputId = useId()
   const [cameraOpen, setCameraOpen] = useState(false)
@@ -147,6 +166,14 @@ export function ScanField({
   const [pulse, setPulse] = useState<'ok' | 'reject' | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const cameraAvailable = isCameraScanAvailable() && !compact
+  const isScanGun = useIsScanGun()
+  const keyboardOnDemand = isScanGun && softKeyboard === 'onDemand' && !compact
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
+  // Android reads inputmode only when the box GAINS focus, so switching it
+  // means blurring and refocusing — and that blur must not count as the
+  // operator leaving the box.
+  const refocusingRef = useRef(false)
+  const refocusPendingRef = useRef(false)
 
   // Timing of the operator's own keystrokes in THIS field, used only to decide
   // whether a Tab was sent by a gun or pressed by a person, and to spot a gun
@@ -236,8 +263,12 @@ export function ScanField({
     }
     lastCommitRef.current = { code: trimmed, at: now }
 
+    // A machine-speed run that ended in a commit is a hardware scanner.
+    if (machineRunRef.current) markScanGun()
+
     clearIdle()
     machineRunRef.current = false
+    setKeyboardOpen(false)
     onChange(trimmed)
     onScan?.(trimmed)
     if (refocusAfterScan) {
@@ -285,6 +316,23 @@ export function ScanField({
 
   useEffect(() => clearIdle, [])
 
+  const toggleKeyboard = () => {
+    refocusPendingRef.current = true
+    setKeyboardOpen((open) => !open)
+  }
+
+  // After the inputmode attribute has changed, cycle focus so Android applies it.
+  useEffect(() => {
+    if (!refocusPendingRef.current) return
+    refocusPendingRef.current = false
+    const input = inputRef.current
+    if (!input) return
+    refocusingRef.current = true
+    input.blur()
+    input.focus()
+    refocusingRef.current = false
+  }, [keyboardOpen])
+
   return (
     <div className={className}>
       {label && !compact && (
@@ -306,6 +354,9 @@ export function ScanField({
             onChange={(e) => {
               noteArrival(e.target.value, e.timeStamp)
               onChange(e.target.value)
+            }}
+            onBlur={() => {
+              if (!refocusingRef.current) setKeyboardOpen(false)
             }}
             onKeyDown={(e) => {
               // A wedge gun's terminating Enter must never submit the
@@ -337,6 +388,7 @@ export function ScanField({
             placeholder={placeholder}
             disabled={disabled}
             autoFocus={autoFocus}
+            inputMode={keyboardOnDemand ? (keyboardOpen ? 'text' : 'none') : undefined}
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
@@ -347,6 +399,25 @@ export function ScanField({
             aria-invalid={error ? true : undefined}
           />
         </div>
+
+        {keyboardOnDemand && (
+          <button
+            type="button"
+            // Keep focus in the box: the press must not blur it first.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={toggleKeyboard}
+            disabled={disabled}
+            aria-pressed={keyboardOpen}
+            aria-label={keyboardOpen ? 'Hide keyboard' : 'Show keyboard'}
+            className={`shrink-0 inline-flex items-center justify-center min-w-[44px] min-h-[44px] px-3 rounded-lg border btn-press disabled:opacity-40 ${
+              keyboardOpen
+                ? 'border-nexgen-blue bg-nexgen-blue/10 text-nexgen-blue'
+                : 'border-stone-300 bg-white text-stone-600 hover:bg-stone-50'
+            }`}
+          >
+            <Keyboard className="w-4 h-4" aria-hidden="true" />
+          </button>
+        )}
 
         {cameraAvailable && (
           <button
