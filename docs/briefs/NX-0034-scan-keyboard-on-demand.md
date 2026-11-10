@@ -52,4 +52,20 @@ On the CipherLab RS35 the scan box holds focus permanently (autoFocus, then the 
 
 ## FINAL
 
-<!-- written last -->
+Verified at `ae6a654`: `npx tsc --noEmit`, `npm run build`, eslint on the changed files and `npx vitest run` (440 files, 6972 tests at the first cut, plus the journey test) pass. `npm run check:brief`: every named test fails on the base and passes on the tip.
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `ScanField scan-gun journey > a gun scan holds the keyboard down, the button brings it up, a typed code puts it away` fails by assertion on the base and passes on the tip; the `ScanField on the scan gun > ...` tests pass on the tip (check:brief) | |
+| A2 | claimed | `ScanField off the scan gun > leaves the keyboard alone and shows no keyboard button`, `... > softKeyboard='auto' opts a desk form out`, `... > compact table cells are opted out` (check:brief) | Proven by absence on the base (the file imports the new module). |
+| A3 | claimed | `recognising the scan gun > learns the device is a gun from a machine-speed scan`, `... > does not learn it from a person typing and pressing Enter`, `... > remembers it across a reload`, `model "RS35" is a gun: true`, `model "Pixel 7" is a gun: false`; the journey test learns the gun from a scan and fails by assertion on the base | The model path is unit-tested on the matcher only; see Not claimed. |
+| A4 | claimed | `ScanField on the scan gun > still commits Enter, Tab and suffix-less scans with the keyboard down`; existing `scanFieldImeInput`, `wedgeBuffer`, `receiveScan` suites pass | |
+| A5 | claimed | `npm run deploy:dev` from `e0b4ff5` (same app code as this branch; the rebuild added only the brief and the journey test): VERIFIED, nexorder.vercel.app/version.json = `e0b4ff5`, health 200 | |
+| A6 | claimed | Owner, 2026-11-10: "i've tested it on the gun", against dev at `e0b4ff5` | Owner's own check; the steps run are not recorded here. |
+
+### Not claimed
+
+- Whether the RS35's Chrome reports a model that matches RS3x/CipherLab through `userAgentData` is not verified; if it does not, the keyboard can show on a fresh device until its first scan.
+- Scans with the gun in ReaderConfig "Input Method" mode while `inputmode="none"` were not tested; the RS35 is configured for "Key Event".
+- No check on a phone or tablet that the keyboard behaves as before; covered by unit tests only.
+- The branch was rebuilt after the dev deploy so the brief is its first commit; the deployed commit `e0b4ff5` and this tip differ only by the brief and the journey test.
