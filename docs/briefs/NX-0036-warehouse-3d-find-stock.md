@@ -63,3 +63,22 @@ tree or a stock table.
 - Any server, migration or new data.
 
 ## FINAL
+
+Verified at `399f3b0`: `npx tsc --noEmit`, `npm run lint`, `check:demo` and `npm test` (448 files, 7012 tests) pass. `npm run check:brief`: every named test fails on the base and passes on the tip — 3 by assertion, 6 by absence (new modules). An independent review approved with comments; findings #1, #2, #4–#7 are fixed in `399f3b0`.
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `locationsHoldingProduct > returns every location holding on-hand stock of the product, allocated included`, `locationsHoldingProduct > ignores a location whose on-hand for the product is zero` (check:brief) | Proven by absence. |
+| A2 | claimed | `productOptionsInWarehouse > lists only products in stock on this site, by name`; `FindStockBar > picking a product reports its locations and the counts` asserts an out-of-site product is not offered (check:brief) | Proven by absence. |
+| A3 | claimed | `buildScene highlight > dims every level that does not hold the product and keeps the colour of those that do`, `buildScene highlight > raises one beacon per rack holding the product`, both by assertion (check:brief) | After review, a match with no colour of its own (unknown capacity / neutral overlay) is drawn in a highlight tint with a minimum block — render-side, in `RackInstances`, not unit-tested. |
+| A4 | claimed | `framePoints > centres on the matches and stands back far enough to see them all`, by assertion (check:brief) | "Clearing leaves the camera where it is" is by construction (the frame effect only fires for a non-null product) and the owner's walk, not a unit test. |
+| A5 | claimed | `stockSummary > splits placed locations from units not in a rack`, `FindStockBar > picking a product reports its locations and the counts`, `FindStockBar > Clear ends the search` (check:brief) | Proven by absence. After review the headline counts the floor being viewed, other floors in brackets. |
+| A6 | claimed | `git diff c64b049..HEAD`: no file under `hooks/`, `services/` or `supabase/` changed; find stock reads `model.binContents` only | |
+| A7 | claimed | `npm run deploy:dev` from `399f3b0`: VERIFIED, health 200. Owner, 2026-11-12: "tried it", against dev at `fd16dfa` | The owner's walk was on `fd16dfa`, BEFORE the review fixes in `399f3b0`; the merge sha is not yet on dev. |
+
+### Not claimed
+
+- The review fixes in `399f3b0` (highlight tint for colourless matches, wider framing, re-pick re-frames, floor-first counts, `toProduct` mapping) were deployed to dev but not walked by the owner.
+- A product held only on another floor does not switch floor or frame; the bar says "N more on another floor" and the operator switches floor.
+- The search is dropped when leaving 3D (it lives inside the lazy view).
+- The reused `ProductSearchDropdown` has no listbox semantics or arrow-key navigation; keyboard and screen-reader use of the picker was not checked.
