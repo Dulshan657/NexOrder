@@ -54,6 +54,7 @@ export const MODULE_SLUGS = [
   'field_ops',
   'inventory_dispatch',
   'voice_assistant',
+  'warehouse_3d',
 ] as const
 
 export type ModuleSlug = (typeof MODULE_SLUGS)[number]

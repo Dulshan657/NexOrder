@@ -12,7 +12,7 @@
 // except MapControls and the hint pill, both inside MapStage's own stacking
 // context — this component no longer needs one of its own.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InventoryLocation, LayoutObject, LayoutPlacement, PickRouteStop } from '@/types'
 import { useLayoutDetail, useLayouts } from '@/hooks/queries/useLayouts'
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
@@ -67,6 +67,12 @@ import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { useToastActions } from '@/hooks/useToasts'
 import { useWarehouseLabelPrefs } from '@/hooks/queries/useLabelJobs'
 import { resolvePreset } from '@/supabase/functions/_shared/labels/layoutLabelPlan'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { useSettings } from '@/hooks/queries/useSettings'
+import { palletSpecFromSettings } from '@/lib/palletUom'
+import { levelHeightM } from '@/lib/warehouse3d/dimensions'
+import { Warehouse3DView } from './three/lazy3d'
+import { MapViewToggle, type MapView } from './three/MapViewToggle'
 
 /** Module-level for the same identity reason as NOOP below. An inline empty-array
  *  fallback mints a fresh array on every render while the layout is loading, and
@@ -108,9 +114,11 @@ export interface RackedWorkspaceProps {
    *  Warehouse staff read the map; they do not rename what is on it. A button
    *  that always errors is worse than no button. */
   canRename?: boolean
+  /** Offer the 2D/3D toggle (NX-0035): module on, desktop Admin/Manager, WebGL. */
+  canView3d?: boolean
 }
 
-export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: RackedWorkspaceProps) {
+export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canView3d = false }: RackedWorkspaceProps) {
   const { data: detail, isLoading } = useLayoutDetail(layoutId)
   const model = useWarehouseViewerModel(warehouseId, layoutId)
   const { data: storageTypes = [], isLoading: storageTypesLoading } = useStorageTypes()
@@ -214,6 +222,12 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
 
   const [floor, setFloor] = useState(0)
   const [overlay, setOverlay] = useState<OverlayKind>('none')
+  // The 3D view (NX-0035): view + select only, so it closes every editing mode
+  // (modeGuards' third argument) and can only be entered from plain view.
+  const [mapView, setMapView] = useState<MapView>('2d')
+  const threeD = canView3d && Warehouse3DView != null && mapView === '3d'
+  const { data: settingsRow } = useSettings()
+  const levelH = useMemo(() => levelHeightM(palletSpecFromSettings(settingsRow)), [settingsRow])
   /** What the operator was looking at before the sweep armed the code tint, so
    *  cancelling puts the map back rather than leaving it amber. */
   const overlayBeforeRecodeRef = useRef<OverlayKind>('none')
@@ -745,7 +759,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
     recodeActive: recode.state.active,
     slotActive: slot.state.active,
   })
-  const guards = modeGuards(mode, canRename)
+  const guards = modeGuards(mode, canRename, threeD)
 
   const putawayRec = putawayResult?.mode === 'engine' ? putawayResult.recommendations[0] : null
   /**
@@ -920,8 +934,35 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
           stay live and paintable while the operator works through the steps, which
           is the whole reason for stepping rather than modalling. It also means this
           never trips `npm run check:overlays`. */}
+      {canView3d && Warehouse3DView && (
+        <div className="flex justify-end">
+          <MapViewToggle view={mapView} onChange={setMapView} disabled={!guards.canToggle3d} />
+        </div>
+      )}
       <div className={recode.state.active ? 'grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem]' : ''}>
       <div className="aspect-[4/3] w-full md:aspect-auto md:h-[65svh] md:min-h-[420px]">
+        {threeD ? (
+          <ErrorBoundary label="3D map">
+            <Suspense fallback={<div className="wh-shimmer h-full w-full rounded-lg" />}>
+              <Warehouse3DView
+                layout={detail.layout}
+                placements={detail.placements}
+                objects={detail.objects}
+                floor={floor}
+                locationsById={model.locationsById}
+                binFillPct={model.binFillPct}
+                binColors={binColors}
+                zoneTypeByProfileId={zoneTypeByProfileId}
+                levelHeightM={levelH}
+                selectedLocationId={selectedLocationId}
+                onSelect={selectFromMap}
+                onFallback={() => setMapView('2d')}
+                floorCount={detail.layout.floorCount}
+                onFloorChange={setFloor}
+              />
+            </Suspense>
+          </ErrorBoundary>
+        ) : (
         <MapStage
           layout={detail.layout}
           placements={detail.placements}
@@ -1018,6 +1059,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false }: Ra
             onUndo: () => recode.dispatch({ type: 'undo' }),
           }}
         />
+        )}
       </div>
 
       {slot.state.active && (

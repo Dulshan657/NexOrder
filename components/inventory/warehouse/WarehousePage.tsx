@@ -27,6 +27,7 @@ import LayoutLabelBadge from '@/components/admin/labels/LayoutLabelBadge'
 import { ADMIN_TAB_LABELS } from '@/lib/adminTabUrl'
 import { PageFrame } from '@/components/ui/PageFrame'
 import { PageHeader } from '@/components/ui/PageHeader'
+import { useCan3d } from './three/useCan3d'
 
 interface WarehousePageProps {
   currentUser: User
@@ -67,6 +68,8 @@ export function resolveDefaultWarehouse(
 }
 
 const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesigner, onNavigateSetup }) => {
+  // NX-0035: the 3D toggle — module on, desktop Admin/Manager, WebGL present.
+  const canView3d = useCan3d(currentUser.role)
   const { data: warehouses } = useWarehouses()
   const activeWarehouses = useMemo(() => (warehouses ?? []).filter((w) => w.isActive), [warehouses])
 
@@ -176,6 +179,7 @@ const WarehousePage: React.FC<WarehousePageProps> = ({ currentUser, onOpenDesign
               warehouseId={effectiveWarehouseId}
               layoutId={publishedLayout!.id}
               canRename={currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER}
+              canView3d={canView3d}
             />
           </div>
         ) : (

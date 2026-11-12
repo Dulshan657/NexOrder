@@ -56,6 +56,10 @@ export interface ModeGuards {
   canSelectBin: boolean
   /** The header row of mode-entry buttons. */
   showModeButtons: boolean
+  /** The 2D/3D switch (NX-0035). Only from plain view: entering 3D mid-paint or
+   *  mid-sweep would hide an unsaved working set behind a canvas that cannot
+   *  edit it. */
+  canToggle3d: boolean
 }
 
 /**
@@ -63,19 +67,21 @@ export interface ModeGuards {
  * it decides whether an action exists at all, the mode decides whether it is
  * reachable right now.
  */
-export function modeGuards(mode: MapMode, canRename: boolean): ModeGuards {
+export function modeGuards(mode: MapMode, canRename: boolean, threeD = false): ModeGuards {
+  // 3D is a VIEW, not a fifth mode: it composes with `view` and closes every
+  // editing door, because no editing gesture exists on the 3D canvas.
+  const editable = canRename && mode === 'view' && !threeD
   return {
     // Both rewrite the same rows as the thing being edited.
-    canRenameArea: canRename && mode === 'view',
+    canRenameArea: editable,
     // Clicking a sign ENTERS annotate mode, so offering it inside one would
     // re-hydrate the working set and silently discard unsaved edits.
-    canEditSign: canRename && mode === 'view',
-    // A sweep's stroke must not double as a bin click, and Bin detail must not
-    // scroll itself into view from behind the panel mid-selection.
+    canEditSign: editable,
     // A sweep's stroke must not double as a bin click, and Bin detail must not
     // scroll itself into view from behind the panel mid-selection. Slotting is
     // the same gesture and gets the same exclusion.
     canSelectBin: mode !== 'recode' && mode !== 'slotting',
-    showModeButtons: canRename && mode === 'view',
+    showModeButtons: editable,
+    canToggle3d: mode === 'view',
   }
 }

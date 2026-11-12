@@ -155,9 +155,9 @@ environment", the file is stale, not the database.
 - **Tenancy is decided: project-per-tenant, one `main`, module flags.** See
   `MULTI-TENANT-ARCHITECTURE.md` before adding a client or a per-client feature.
   There is never a per-tenant branch.
-- **Module flags are BUILT, and there are EIGHT as of 2026-10-20:**
+- **Module flags are BUILT, and there are NINE as of 2026-11-12:**
   `sales_orders`, `shop`, `po_inbox`, `promotions`, `invoicing`, `field_ops`,
-  `inventory_dispatch`, `voice_assistant`. Two are the sidebar group headings
+  `inventory_dispatch`, `voice_assistant`, `warehouse_3d`. Two are the sidebar group headings
   "Field Ops" and "Inventory & Dispatch"; five subdivide the third heading,
   which is a heading and not a module; `voice_assistant` is neither. **`sales_orders`
   now means the order OBJECT and its status ladder only** — place it, advance it,
@@ -166,6 +166,12 @@ environment", the file is stale, not the database.
   `voice_assistant` — Nex Assistant, the in-app voice assistant; requires `sales_orders`;
   allows the microphone in `Permissions-Policy` (and `api.openai.com` in `connect-src`)
   only where on; see `docs/claude/voice-assistant.md`
+
+  `warehouse_3d` — the 3D view of the warehouse live map (NX-0035); requires
+  `inventory_dispatch`; `dev`-only; **owns no Edge Function** (`CLIENT_ONLY_MODULES`
+  in `config/moduleOwnership.mjs`); three.js lives only in the lazy chunk. See the 3D
+  section of `docs/claude/warehouse-map.md` — and **`npm ls @types/react` must print
+  nothing**: R3F drags it in, and a stub override is what keeps it out.
 
   The gate mechanics, what still leaks, the server half and the per-role
   consequences are in [`docs/claude/environments.md`](docs/claude/environments.md).

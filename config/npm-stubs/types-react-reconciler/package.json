@@ -1,0 +1,7 @@
+{
+  "name": "@types/react-reconciler",
+  "version": "0.0.0-nexorder-stub",
+  "description": "Empty stand-in. See README.md: the real package peers @types/react, which this repo must not install.",
+  "types": "index.d.ts",
+  "license": "MIT"
+}

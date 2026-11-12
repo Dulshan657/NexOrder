@@ -70,3 +70,28 @@ describe('modeGuards', () => {
     expect(modeGuards('slotting', true).showModeButtons).toBe(false)
   })
 })
+
+// NX-0035 A6. 3D is a VIEW of the map, not a fifth mode: it composes with `view`
+// and must close every editing door while it is up, because none of the editing
+// gestures exist on the 3D canvas — a button that enters paint mode from 3D would
+// paint on a canvas nobody can see.
+describe('modeGuards in 3D', () => {
+  it('turns off the mode buttons, area rename and sign edit', () => {
+    const g = modeGuards('view', true, true)
+    expect(g.showModeButtons).toBe(false)
+    expect(g.canRenameArea).toBe(false)
+    expect(g.canEditSign).toBe(false)
+    // Selecting a level is the whole point of the 3D view.
+    expect(g.canSelectBin).toBe(true)
+    // And 2D is untouched when the flag is off.
+    expect(modeGuards('view', true, false).showModeButtons).toBe(true)
+  })
+
+  it('offers the 3D toggle only in view mode', () => {
+    expect(modeGuards('view', true).canToggle3d).toBe(true)
+    expect(modeGuards('view', true, true).canToggle3d).toBe(true)
+    expect(modeGuards('annotate', true).canToggle3d).toBe(false)
+    expect(modeGuards('recode', true).canToggle3d).toBe(false)
+    expect(modeGuards('slotting', true).canToggle3d).toBe(false)
+  })
+})

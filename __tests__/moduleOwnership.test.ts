@@ -5,7 +5,7 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 import { ALL_MODULES } from '../config/environments.mjs'
-import { FUNCTION_MODULES, disabledFunctionsFor } from '../config/moduleOwnership.mjs'
+import { CLIENT_ONLY_MODULES, FUNCTION_MODULES, disabledFunctionsFor } from '../config/moduleOwnership.mjs'
 import { TARGETS } from '../config/environments.mjs'
 
 /**
@@ -105,7 +105,18 @@ describe('module ownership map', () => {
     const owned = new Set(Object.values(FUNCTION_MODULES))
     // field_ops is deliberately thin (its surfaces are RLS-scoped table access)
     // but it must still own something, or a rename here would silently orphan it.
-    for (const slug of ALL_MODULES) expect(owned, `no function owned by ${slug}`).toContain(slug)
+    for (const slug of ALL_MODULES) {
+      if (CLIENT_ONLY_MODULES.includes(slug)) continue
+      expect(owned, `no function owned by ${slug}`).toContain(slug)
+    }
+  })
+
+  it('exempts only real modules, and none that owns a function', () => {
+    const owned = new Set(Object.values(FUNCTION_MODULES))
+    for (const slug of CLIENT_ONLY_MODULES) {
+      expect(ALL_MODULES).toContain(slug)
+      expect(owned.has(slug), `${slug} is listed client-only but owns a function`).toBe(false)
+    }
   })
 })
 
