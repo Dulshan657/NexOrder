@@ -966,6 +966,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
                 onFloorChange={setFloor}
                 products={catalogue}
                 binContents={model.binContents}
+                routeStops={routeStops}
               />
             </Suspense>
           </ErrorBoundary>

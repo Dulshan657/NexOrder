@@ -17,7 +17,7 @@ import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_share
 import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { loadWalkGraph } from '../_shared/loadWalkGraph.ts'
-import { sequencePickRoute, sequenceBatchRoute, type PickStop } from '../_shared/wie/picking.ts'
+import { sequencePickRoute, sequenceBatchRoute, legPaths, simplifyPath, type PickStop } from '../_shared/wie/picking.ts'
 import { requireModule } from '../_shared/modules.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
@@ -87,7 +87,12 @@ serve(async (req: Request) => {
       ? sequencePickRoute(graph, dockNodeId, stopsByOrder[order_ids[0]])
       : sequenceBatchRoute(graph, dockNodeId, stopsByOrder)
 
-    const stops = route.stops.map((s) => ({
+    // The walk behind each leg, from the same graph load that sequenced it
+    // (NX-0037), as corner cells only. Optional: a client that predates it
+    // ignores the field.
+    const nodeById = new Map(graph.nodes.map((n) => [n.id, n]))
+    const paths = legPaths(graph, dockNodeId, route.stops)
+    const stops = route.stops.map((s, i) => ({
       sequence: s.sequence,
       locationId: s.locationId,
       code: (s.meta?.code as string) ?? null,
@@ -96,6 +101,9 @@ serve(async (req: Request) => {
       orderId: (s.meta?.orderId as string) ?? null,
       qtyBase: (s.meta?.qtyBase as number) ?? 0,
       legDistanceM: s.legDistanceM,
+      path: paths[i]
+        ? simplifyPath(paths[i]!.map((id) => nodeById.get(id)!).map((n) => ({ floor: n.floor, x: n.x, y: n.y })))
+        : undefined,
     }))
 
     return new Response(JSON.stringify({

@@ -4,6 +4,8 @@ import {
   buildWalkGraph,
   computeAnchorDistances,
   dijkstra,
+  dijkstraWithPaths,
+  pathTo,
   snapPlacementToNode,
 } from '../../supabase/functions/_shared/wie/graph'
 import type { WalkCell } from '../../supabase/functions/_shared/wie/types'
@@ -122,5 +124,45 @@ describe('allNodesReachable', () => {
     ]
     const g = buildWalkGraph(cells, 1)
     expect(allNodesReachable(g, [0])).toBe(false)
+  })
+})
+
+// NX-0037: the route the engine computed, not just its length. An L-shaped
+// corridor so the shortest path has a corner.
+describe('dijkstraWithPaths', () => {
+  const L: WalkCell[] = [
+    ...Array.from({ length: 5 }, (_, x) => ({ x, y: 0, floor: 0, isDock: x === 0 })),
+    ...Array.from({ length: 3 }, (_, i) => ({ x: 4, y: i + 1, floor: 0, isDock: false })),
+  ]
+  const g = buildWalkGraph(L, 1.5)
+  const idAt = (x: number, y: number) => g.nodes.find((n) => n.x === x && n.y === y)!.id
+
+  it('gives an edge-contiguous path whose weights sum to the distance', () => {
+    const { dist, prev } = dijkstraWithPaths(g, idAt(0, 0))
+    const target = idAt(4, 3)
+    const path = pathTo(prev, idAt(0, 0), target)!
+    expect(path[0]).toBe(idAt(0, 0))
+    expect(path[path.length - 1]).toBe(target)
+    let sum = 0
+    for (let i = 1; i < path.length; i++) {
+      const e = g.edges.find((ed) =>
+        (ed.fromNode === path[i - 1] && ed.toNode === path[i]) ||
+        (ed.bidirectional && ed.fromNode === path[i] && ed.toNode === path[i - 1]))
+      expect(e, `no edge ${path[i - 1]}→${path[i]}`).toBeDefined()
+      sum += e!.weightM
+    }
+    expect(sum).toBeCloseTo(dist.get(target)!, 6)
+    // The distance-only API is the same answer.
+    expect(dijkstra(g, idAt(0, 0))).toEqual(dist)
+    // Source to itself is the one-node path.
+    expect(pathTo(prev, idAt(0, 0), idAt(0, 0))).toEqual([idAt(0, 0)])
+  })
+
+  it('gives no path to an unreachable node', () => {
+    const g2 = buildWalkGraph([...L, { x: 20, y: 20, floor: 0, isDock: false }], 1.5)
+    const island = g2.nodes.find((n) => n.x === 20)!.id
+    const { dist, prev } = dijkstraWithPaths(g2, 0)
+    expect(dist.has(island)).toBe(false)
+    expect(pathTo(prev, 0, island)).toBeNull()
   })
 })

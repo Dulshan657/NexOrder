@@ -10,7 +10,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
-import type { Product } from '@/types'
+import type { PickRouteStop, Product } from '@/types'
+import { routeScene } from '@/lib/warehouse3d/routeScene'
+import { RoutePath3D } from './RoutePath3D'
 import type { BinContentRow } from '@/components/inventory/warehouse/useWarehouseViewerModel'
 import { buildScene, type BuildSceneInput, type Vec3 } from '@/lib/warehouse3d/buildScene'
 import { locationsHoldingProduct } from '@/lib/warehouse3d/findStock'
@@ -25,6 +27,8 @@ export type Warehouse3DViewProps = Omit<BuildSceneInput, 'highlightIds'> & {
   /** Find stock (NX-0036): the catalogue and the map's own per-location stock. */
   products: readonly Product[]
   binContents: ReadonlyMap<number, readonly BinContentRow[]>
+  /** The "Ask the engine" pick route (NX-0037); empty when none is chosen. */
+  routeStops: readonly PickRouteStop[]
   selectedLocationId: number | null
   onSelect: (locationId: number) => void
   /** The GPU dropped the context (driver reset, too many tabs). Back to 2D. */
@@ -58,6 +62,10 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
   const scene = useMemo(
     () => buildScene({ layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM, highlightIds }),
     [layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM, highlightIds],
+  )
+  const route = useMemo(
+    () => routeScene({ stops: props.routeStops, levels: scene.levels, floor, cellSizeM: layout.cellSizeM }),
+    [props.routeStops, scene.levels, floor, layout.cellSizeM],
   )
   const placedIds = useMemo(() => new Set(placements.map((p) => p.locationId)), [placements])
   const visibleIds = useMemo(() => new Set(scene.levels.map((l) => l.locationId)), [scene.levels])
@@ -127,6 +135,7 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
           onSelect={props.onSelect}
         />
         <AreaLabels labels={scene.labels} />
+        <RoutePath3D route={route} />
         <CameraRig bounds={scene.bounds} preset={preset} nonce={nonce} focus={focus} frame={frame} />
       </Canvas>
 
