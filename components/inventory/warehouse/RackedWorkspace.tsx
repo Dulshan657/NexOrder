@@ -14,6 +14,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InventoryLocation, LayoutObject, LayoutPlacement, PickRouteStop } from '@/types'
+import { toProduct } from '@/lib/adapters'
 import { useLayoutDetail, useLayouts } from '@/hooks/queries/useLayouts'
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
@@ -87,6 +88,7 @@ const EMPTY_STRINGS: string[] = []
  *  active pick route, which is every site nearly all of the time. So the scene memo
  *  was being busted on every painted cell regardless of the guards around it. */
 const EMPTY_STOPS: PickRouteStop[] = []
+const EMPTY_PRODUCT_ROWS: any[] = []
 
 /** Module-level so its identity is stable. An inline `() => {}` here re-mints on
  *  every render, which busts MapStage's `guardedSelectBin` useCallback and through
@@ -433,9 +435,12 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
     [slotMembers, levelIdsByRack],
   )
 
-  // Fetched only while the panel is open: the brand suggestions are the only
-  // thing on this screen that needs the catalogue, and the map is heavy enough.
+  // The catalogue: brand suggestions for a slotting block, and the 3D find-stock
+  // picker. useProducts() returns RAW rows — map through toProduct before
+  // anything typed `Product` sees them (the 3D view's props are `any` through
+  // the lazy boundary, so tsc cannot catch a raw row here).
   const slotProducts = useProducts()
+  const catalogue = useMemo(() => (slotProducts.data ?? EMPTY_PRODUCT_ROWS).map(toProduct), [slotProducts.data])
   const slotBrandOptions = useMemo(() => {
     if (!slot.state.active) return [] as string[]
     const found = new Set<string>()
@@ -959,6 +964,8 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
                 onFallback={() => setMapView('2d')}
                 floorCount={detail.layout.floorCount}
                 onFloorChange={setFloor}
+                products={catalogue}
+                binContents={model.binContents}
               />
             </Suspense>
           </ErrorBoundary>

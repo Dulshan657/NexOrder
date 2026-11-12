@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest'
 import type { InventoryLocation, LayoutObject, LayoutPlacement } from '@/types'
-import { buildScene, OVERLAY_NEUTRAL, type BuildSceneInput } from '@/lib/warehouse3d/buildScene'
+import { buildScene, DIMMED_LEVEL, OVERLAY_NEUTRAL, type BuildSceneInput } from '@/lib/warehouse3d/buildScene'
 import { occupancyFill } from '@/components/inventory/warehouse/warehouseOverlays'
 
 const CELL = 1.5
@@ -138,5 +138,43 @@ describe('buildScene', () => {
     expect(scene.bounds).toMatchObject({ width: 20 * CELL, depth: 10 * CELL })
     expect(scene.bounds.center[0]).toBeCloseTo(10 * CELL)
     expect(scene.bounds.center[2]).toBeCloseTo(5 * CELL)
+  })
+})
+
+// NX-0036 A3: find stock. A found product keeps its levels' colour; everything
+// else fades to stone so the matches read from across the floor.
+describe('buildScene highlight', () => {
+  const twoRacks = [
+    ...rackPlacements,
+    placement({ locationId: 21, x: 9, y: 2, levelIndex: 1 }),
+  ]
+  const locations = new Map(rackLocations)
+  locations.set(20, loc({ id: 20, kind: 'RACK' }))
+  locations.set(21, loc({ id: 21, parentId: 20, levelIndex: 1 }))
+  const binFillPct = new Map<number, number | null>([[11, 0.9], [12, 0.4], [13, 0.2], [21, 0.6]])
+
+  it('dims every level that does not hold the product and keeps the colour of those that do', () => {
+    const scene = buildScene(input({ placements: twoRacks, locationsById: locations, binFillPct, highlightIds: new Set([12]) }))
+    const byId = new Map(scene.levels.map((l) => [l.locationId, l]))
+    expect(byId.get(12)).toMatchObject({ color: occupancyFill(0.4), colorSource: 'occupancy', highlighted: true })
+    for (const id of [11, 13, 21]) {
+      expect(byId.get(id)).toMatchObject({ color: DIMMED_LEVEL, colorSource: 'dimmed', highlighted: false })
+    }
+    // No search → nothing dimmed, nothing highlighted, no beacons.
+    const plain = buildScene(input({ placements: twoRacks, locationsById: locations, binFillPct }))
+    expect(plain.levels.every((l) => l.colorSource !== 'dimmed' && !l.highlighted)).toBe(true)
+    expect(plain.beacons).toEqual([])
+  })
+
+  it('raises one beacon per rack holding the product', () => {
+    const scene = buildScene(input({
+      placements: twoRacks, locationsById: locations, binFillPct, highlightIds: new Set([11, 13, 21]),
+    }))
+    // Rack 10 holds it on two levels and still gets ONE beacon; rack 20 gets one.
+    expect(scene.beacons).toHaveLength(2)
+    const rack10 = scene.beacons.find((b) => Math.abs(b[0] - 5 * CELL) < 1e-6)
+    expect(rack10).toBeDefined()
+    // Above the top of the 3-level rack.
+    expect(rack10![1]).toBeGreaterThan(3 * LEVEL_H)
   })
 })

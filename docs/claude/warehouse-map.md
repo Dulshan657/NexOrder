@@ -167,4 +167,12 @@ area rename and sign edit while it is up, and `canToggle3d` is true only in `vie
   is instanced (`InstancedBoxes`) — MAIN's ~945 levels are a handful of draw calls.
   A lost WebGL context drops back to 2D. A click on a level calls the same
   `selectFromMap` as the 2D map, so Bin detail opens unchanged.
-- Next (separate PRs): find stock (SKU highlight) and pick-route paths.
+- **Find stock** (NX-0036): a product picker top-left of the 3D view. Matching
+  levels keep their colour, everything else is `DIMMED_LEVEL`, each matching RACK
+  gets one beacon, and the camera frames the matches **once per search** (and per
+  floor switch) — never on a stock refetch, or it would jump mid-orbit. It reads
+  `model.binContents` only (`lib/warehouse3d/findStock.ts`): no new query, and
+  "holding" is **on hand, allocated included** — reserved stock is on the shelf.
+  The bar reports placed locations, those on another floor, and units **not in a
+  rack** (warehouse root / staging) separately, because those cannot light up.
+- Next (separate PR): pick-route paths.

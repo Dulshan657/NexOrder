@@ -10,14 +10,21 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { buildScene, type BuildSceneInput } from '@/lib/warehouse3d/buildScene'
+import type { Product } from '@/types'
+import type { BinContentRow } from '@/components/inventory/warehouse/useWarehouseViewerModel'
+import { buildScene, type BuildSceneInput, type Vec3 } from '@/lib/warehouse3d/buildScene'
+import { locationsHoldingProduct } from '@/lib/warehouse3d/findStock'
+import { FindStockBar } from './FindStockBar'
 import type { CameraPresetName } from '@/lib/warehouse3d/cameraPresets'
 import { RackInstances } from './RackInstances'
 import { SceneObjects } from './SceneObjects'
 import { AreaLabels } from './AreaLabels'
 import { CameraRig } from './CameraRig'
 
-export type Warehouse3DViewProps = BuildSceneInput & {
+export type Warehouse3DViewProps = Omit<BuildSceneInput, 'highlightIds'> & {
+  /** Find stock (NX-0036): the catalogue and the map's own per-location stock. */
+  products: readonly Product[]
+  binContents: ReadonlyMap<number, readonly BinContentRow[]>
   selectedLocationId: number | null
   onSelect: (locationId: number) => void
   /** The GPU dropped the context (driver reset, too many tabs). Back to 2D. */
@@ -37,10 +44,33 @@ const BACKGROUND = '#f5f5f4' // stone-100
 
 export default function Warehouse3DView(props: Warehouse3DViewProps) {
   const { layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM } = props
-  const scene = useMemo(
-    () => buildScene({ layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM }),
-    [layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM],
+  const [findProductId, setFindProductId] = useState<number | null>(null)
+  /** Bumped by re-picking the current product: re-frames after an orbit. */
+  const [reframe, setReframe] = useState(0)
+  const onFind = (id: number | null) => {
+    if (id != null && id === findProductId) setReframe((n) => n + 1)
+    else setFindProductId(id)
+  }
+  const highlightIds = useMemo(
+    () => (findProductId != null ? locationsHoldingProduct(props.binContents, findProductId) : null),
+    [props.binContents, findProductId],
   )
+  const scene = useMemo(
+    () => buildScene({ layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM, highlightIds }),
+    [layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM, highlightIds],
+  )
+  const placedIds = useMemo(() => new Set(placements.map((p) => p.locationId)), [placements])
+  const visibleIds = useMemo(() => new Set(scene.levels.map((l) => l.locationId)), [scene.levels])
+
+  // Frame the matches once per search (and per floor switch while searching) —
+  // NOT on every stock refetch, or the camera would jump while the operator orbits.
+  const [frame, setFrame] = useState<{ points: Vec3[]; nonce: number } | null>(null)
+  useEffect(() => {
+    if (findProductId == null) return
+    const points = scene.levels.filter((l) => l.highlighted).map((l) => l.center)
+    if (points.length > 0) setFrame((f) => ({ points, nonce: (f?.nonce ?? 0) + 1 }))
+    // scene.levels deliberately omitted — see above.
+  }, [findProductId, floor, reframe])
   const [preset, setPreset] = useState<CameraPresetName>('iso')
   // R3F's own teardown calls forceContextLoss(), which fires the same
   // `webglcontextlost` as a real GPU reset. Only a loss while MOUNTED is a fallback.
@@ -92,12 +122,24 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
         <RackInstances
           levels={scene.levels}
           racks={scene.racks}
+          beacons={scene.beacons}
           selectedLocationId={props.selectedLocationId}
           onSelect={props.onSelect}
         />
         <AreaLabels labels={scene.labels} />
-        <CameraRig bounds={scene.bounds} preset={preset} nonce={nonce} focus={focus} />
+        <CameraRig bounds={scene.bounds} preset={preset} nonce={nonce} focus={focus} frame={frame} />
       </Canvas>
+
+      <div className="absolute left-3 top-3 z-30">
+        <FindStockBar
+          products={props.products}
+          binContents={props.binContents}
+          placedIds={placedIds}
+          visibleIds={visibleIds}
+          productId={findProductId}
+          onChange={onFind}
+        />
+      </div>
 
       <div className="absolute bottom-3 left-3 z-20 flex flex-wrap items-center gap-2">
       <div className="inline-flex items-center gap-0.5 rounded-lg border border-stone-200 bg-white/95 p-0.5 shadow-elevated backdrop-blur-sm">

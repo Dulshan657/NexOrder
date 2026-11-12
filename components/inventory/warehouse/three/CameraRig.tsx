@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
 import { CameraControls } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import type { SceneBounds, Vec3 } from '@/lib/warehouse3d/buildScene'
-import { cameraPreset, type CameraPresetName } from '@/lib/warehouse3d/cameraPresets'
+import { cameraPreset, framePoints, type CameraPresetName } from '@/lib/warehouse3d/cameraPresets'
 
 export interface CameraRigProps {
   bounds: SceneBounds
@@ -13,13 +13,15 @@ export interface CameraRigProps {
   /** Bumped by every preset click, so pressing the active preset re-frames. */
   nonce: number
   focus: Vec3 | null
+  /** Find stock (NX-0036): frame these points, once per nonce. */
+  frame?: { points: Vec3[]; nonce: number } | null
 }
 
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 }
 
-export function CameraRig({ bounds, preset, nonce, focus }: CameraRigProps) {
+export function CameraRig({ bounds, preset, nonce, focus, frame }: CameraRigProps) {
   const ref = useRef<any>(null)
   const boundsKey = `${bounds.width}:${bounds.depth}`
   const invalidate = useThree((s: any) => s.invalidate)
@@ -37,6 +39,16 @@ export function CameraRig({ bounds, preset, nonce, focus }: CameraRigProps) {
     // SIZE, not the object: the scene rebuilds on every fill refetch, and a new
     // bounds object each time would snap the camera back mid-orbit.
   }, [preset, nonce, boundsKey, invalidate])
+
+  const frameNonce = frame?.nonce ?? 0
+  useEffect(() => {
+    const controls = ref.current
+    if (!controls || !frame || frame.points.length === 0) return
+    const { position: p, target: t } = framePoints(frame.points, bounds)
+    controls.setLookAt(p[0], p[1], p[2], t[0], t[1], t[2], !prefersReducedMotion())
+    invalidate()
+    // Keyed on the nonce alone: a new search frames, a stock refetch does not.
+  }, [frameNonce, invalidate])
 
   const span = Math.max(bounds.width, bounds.depth, 1)
   return (

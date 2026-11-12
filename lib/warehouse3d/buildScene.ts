@@ -33,6 +33,9 @@ export interface BuildSceneInput {
   binColors?: Map<number, string>
   zoneTypeByProfileId: Map<number, string>
   levelHeightM: number
+  /** Find stock (NX-0036): locations holding the searched product. When set,
+   *  every other level is dimmed and each matching rack gets a beacon. */
+  highlightIds?: ReadonlySet<number> | null
 }
 
 /** One rack level (or a legacy single bin) — the thing a click selects. */
@@ -47,7 +50,9 @@ export interface LevelBox {
   color: string
   /** Where `color` came from. An overlay colour wins regardless of fill; a level
    *  the overlay says nothing about is neutral, as it is on the 2D map. */
-  colorSource: 'overlay' | 'occupancy' | 'neutral'
+  colorSource: 'overlay' | 'occupancy' | 'neutral' | 'dimmed'
+  /** Holds the product being searched for (NX-0036). */
+  highlighted: boolean
 }
 
 /** The uprights around a rack's stack of levels. */
@@ -100,6 +105,8 @@ export interface SceneModel {
   objects: ObjectBox[]
   areaTiles: AreaTile[]
   labels: SceneLabel[]
+  /** One point above each rack holding the searched product; empty otherwise. */
+  beacons: Vec3[]
   bounds: SceneBounds
 }
 
@@ -120,6 +127,11 @@ const LABEL_LIFT_M = 0.5
 const NAMED_BOX_TYPES: ReadonlySet<LayoutObjectType> = new Set<LayoutObjectType>(['obstacle', 'staging'])
 /** A level an active overlay deliberately leaves uncoloured (Blocks, congestion). */
 export const OVERLAY_NEUTRAL = '#e7e5e4' // stone-200
+/** A level that does not hold the searched product. Lighter than any fill
+ *  colour, so the matches are the only colour on the floor. */
+export const DIMMED_LEVEL = '#f5f5f4' // stone-100
+/** Gap between a rack's top and its find-stock beacon. */
+const BEACON_LIFT_M = 0.8
 const r = (n: number) => Math.round(n * 1e6) / 1e6
 
 export function buildScene(input: BuildSceneInput): SceneModel {
@@ -127,6 +139,8 @@ export function buildScene(input: BuildSceneInput): SceneModel {
   const cell = layout.cellSizeM
   const levels: LevelBox[] = []
   const racks: RackFrame[] = []
+  const beacons: Vec3[] = []
+  const highlight = input.highlightIds ?? null
 
   const onFloor = input.placements.filter((p) => p.floor === floor) as LayoutPlacement[]
   for (const group of groupPlacementsByCell(onFloor)) {
@@ -138,7 +152,9 @@ export function buildScene(input: BuildSceneInput): SceneModel {
     rows.forEach((row, i) => {
       const fillKnown = row.fillPct != null
       const overlayColor = input.binColors?.get(row.locationId)
-      const colorSource = overlayColor ? 'overlay' : input.binColors ? 'neutral' : 'occupancy'
+      const highlighted = highlight?.has(row.locationId) ?? false
+      const dimmed = highlight != null && !highlighted
+      const colorSource = dimmed ? 'dimmed' : overlayColor ? 'overlay' : input.binColors ? 'neutral' : 'occupancy'
       levels.push({
         locationId: row.locationId,
         levelIndex: row.levelIndex,
@@ -146,8 +162,11 @@ export function buildScene(input: BuildSceneInput): SceneModel {
         size: [footprint.w, levelHeightM, footprint.d],
         fillPct: row.fillPct,
         fillKnown,
-        color: overlayColor ?? (input.binColors ? OVERLAY_NEUTRAL : occupancyFill(row.fillPct)),
+        color: dimmed
+          ? DIMMED_LEVEL
+          : overlayColor ?? (input.binColors ? OVERLAY_NEUTRAL : occupancyFill(row.fillPct)),
         colorSource,
+        highlighted,
       })
     })
     if (rows.length === 0) continue
@@ -155,6 +174,10 @@ export function buildScene(input: BuildSceneInput): SceneModel {
     const first = input.locationsById.get(rows[0].locationId)
     const rackId = group.isLegacyBin ? rows[0].locationId : first?.parentId ?? null
     const height = r(rows.length * levelHeightM)
+    // One beacon per RACK, however many of its levels hold the product.
+    if (highlight && rows.some((row) => highlight.has(row.locationId))) {
+      beacons.push([cx, r(height + BEACON_LIFT_M), cz])
+    }
     racks.push({
       key: group.key,
       locationId: rackId,
@@ -195,6 +218,7 @@ export function buildScene(input: BuildSceneInput): SceneModel {
     objects,
     areaTiles,
     labels: [...labels, ...objectLabels],
+    beacons,
     bounds: {
       width: r(layout.gridWidth * cell),
       depth: r(layout.gridHeight * cell),
