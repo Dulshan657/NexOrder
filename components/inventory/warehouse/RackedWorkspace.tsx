@@ -13,7 +13,7 @@
 // context — this component no longer needs one of its own.
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { InventoryLocation, LayoutObject, LayoutPlacement, PickRouteStop } from '@/types'
+import type { InventoryLocation, LayoutObject, LayoutPlacement, PickRouteStop, Product } from '@/types'
 import { useLayoutDetail, useLayouts } from '@/hooks/queries/useLayouts'
 import { usePickRoute } from '@/hooks/queries/usePickRoute'
 import { useStorageTypes } from '@/hooks/queries/useStorageTypes'
@@ -87,6 +87,7 @@ const EMPTY_STRINGS: string[] = []
  *  active pick route, which is every site nearly all of the time. So the scene memo
  *  was being busted on every painted cell regardless of the guards around it. */
 const EMPTY_STOPS: PickRouteStop[] = []
+const EMPTY_PRODUCTS: Product[] = []
 
 /** Module-level so its identity is stable. An inline `() => {}` here re-mints on
  *  every render, which busts MapStage's `guardedSelectBin` useCallback and through
@@ -959,6 +960,8 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
                 onFallback={() => setMapView('2d')}
                 floorCount={detail.layout.floorCount}
                 onFloorChange={setFloor}
+                products={slotProducts.data ?? EMPTY_PRODUCTS}
+                binContents={model.binContents}
               />
             </Suspense>
           </ErrorBoundary>

@@ -1,7 +1,7 @@
 // NX-0035 A5: the three camera presets.
 
 import { describe, it, expect } from 'vitest'
-import { cameraPreset, AISLE_EYE_HEIGHT_M } from '@/lib/warehouse3d/cameraPresets'
+import { cameraPreset, framePoints, AISLE_EYE_HEIGHT_M } from '@/lib/warehouse3d/cameraPresets'
 import type { SceneBounds } from '@/lib/warehouse3d/buildScene'
 
 const bounds: SceneBounds = { width: 30, depth: 20, height: 6, center: [15, 0, 10] }
@@ -38,5 +38,24 @@ describe('cameraPreset', () => {
     const { target } = cameraPreset('aisle', bounds)
     expect(target[0]).toBeCloseTo(15)
     expect(target[2]).toBeCloseTo(10)
+  })
+})
+
+// NX-0036 A4: finding a product swings the camera to frame every match.
+describe('framePoints', () => {
+  it('centres on the matches and stands back far enough to see them all', () => {
+    const points: [number, number, number][] = [[2, 1, 2], [10, 3, 2], [6, 5, 8]]
+    const { position, target } = framePoints(points, bounds)
+    expect(target[0]).toBeCloseTo(6)
+    expect(target[2]).toBeCloseTo(4)
+    const dist = Math.hypot(position[0] - target[0], position[1] - target[1], position[2] - target[2])
+    const radius = Math.max(...points.map((p) => Math.hypot(p[0] - target[0], p[1] - target[1], p[2] - target[2])))
+    // At a 45° field of view, standing back ~2× the spread keeps it all in frame.
+    expect(dist).toBeGreaterThanOrEqual(radius * 2)
+    expect(position[1]).toBeGreaterThan(target[1])
+  })
+
+  it('falls back to the iso view with nothing to frame', () => {
+    expect(framePoints([], bounds)).toEqual(cameraPreset('iso', bounds))
   })
 })
