@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest'
 import type { InventoryLocation, LayoutObject, LayoutPlacement } from '@/types'
-import { buildScene, type BuildSceneInput } from '@/lib/warehouse3d/buildScene'
+import { buildScene, OVERLAY_NEUTRAL, type BuildSceneInput } from '@/lib/warehouse3d/buildScene'
 import { occupancyFill } from '@/components/inventory/warehouse/warehouseOverlays'
 
 const CELL = 1.5
@@ -79,9 +79,13 @@ describe('buildScene', () => {
     const binColors = new Map<number, string>([[11, '#123456']])
     const scene = buildScene(input({ placements: rackPlacements, locationsById: rackLocations, binFillPct, binColors }))
 
-    expect(scene.levels.find((l) => l.locationId === 11)?.color).toBe('#123456')
-    // A level the overlay says nothing about keeps its occupancy colour.
-    expect(scene.levels.find((l) => l.locationId === 12)?.color).toBe(occupancyFill(null))
+    expect(scene.levels.find((l) => l.locationId === 11)).toMatchObject({ color: '#123456', colorSource: 'overlay' })
+    // A level the overlay says nothing about is NEUTRAL, as on the 2D map —
+    // never its occupancy colour (the Blocks overlay is deliberately sparse).
+    expect(scene.levels.find((l) => l.locationId === 12)).toMatchObject({ color: OVERLAY_NEUTRAL, colorSource: 'neutral' })
+    // With no overlay, occupancy again.
+    const plain = buildScene(input({ placements: rackPlacements, locationsById: rackLocations, binFillPct }))
+    expect(plain.levels.find((l) => l.locationId === 11)).toMatchObject({ color: occupancyFill(0.9), colorSource: 'occupancy' })
   })
 
   it('builds only the active floor', () => {
@@ -118,6 +122,15 @@ describe('buildScene', () => {
       zoneTypeByProfileId: new Map([[99, 'COLD']]),
     }))
     expect(scene.racks[0].zoneType).toBe('COLD')
+  })
+
+  it('names a named obstacle or staging box, as the 2D map does', () => {
+    const objects = [
+      { id: 3, layoutId: 1, objectType: 'obstacle', floor: 0, x: 2, y: 2, w: 2, h: 2, meta: { name: 'Cold room' } },
+      { id: 4, layoutId: 1, objectType: 'wall', floor: 0, x: 0, y: 0, w: 1, h: 1, meta: { name: 'ignored' } },
+    ] as LayoutObject[]
+    const scene = buildScene(input({ objects }))
+    expect(scene.labels.map((l) => l.text)).toEqual(['Cold room'])
   })
 
   it('reports scene bounds from the layout grid', () => {

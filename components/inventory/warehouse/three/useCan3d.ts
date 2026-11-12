@@ -30,7 +30,11 @@ export function hasWebGL(): boolean {
   if (typeof document === 'undefined') return false
   try {
     const canvas = document.createElement('canvas')
-    return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'))
+    const gl: any = canvas.getContext('webgl2') || canvas.getContext('webgl')
+    // Release the probe's context now rather than at GC: Chrome caps live
+    // contexts at ~16, and the 3D view itself will want one.
+    gl?.getExtension?.('WEBGL_lose_context')?.loseContext()
+    return !!gl
   } catch {
     return false
   }
@@ -38,13 +42,16 @@ export function hasWebGL(): boolean {
 
 export function useCan3d(role: UserRole | string | null | undefined): boolean {
   return useMemo(
-    () =>
-      can3d({
+    () => {
+      const base = {
         moduleOn: MODULE_WAREHOUSE_3D,
         role,
         wideFinePointer: typeof window !== 'undefined' && !!window.matchMedia?.(DESKTOP_QUERY).matches,
-        webgl: MODULE_WAREHOUSE_3D && hasWebGL(),
-      }),
+      }
+      // Probe WebGL last, and only for someone who would otherwise be offered 3D.
+      if (!can3d({ ...base, webgl: true })) return false
+      return can3d({ ...base, webgl: hasWebGL() })
+    },
     [role],
   )
 }

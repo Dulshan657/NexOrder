@@ -957,6 +957,8 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
                 selectedLocationId={selectedLocationId}
                 onSelect={selectFromMap}
                 onFallback={() => setMapView('2d')}
+                floorCount={detail.layout.floorCount}
+                onFloorChange={setFloor}
               />
             </Suspense>
           </ErrorBoundary>

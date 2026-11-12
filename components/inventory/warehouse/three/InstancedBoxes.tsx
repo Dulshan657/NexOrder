@@ -8,7 +8,7 @@
 // re-keyed on length — a floor switch or a new rack rebuilds it rather than
 // silently drawing only the first N.
 
-import { useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { useThree } from '@react-three/fiber'
 import type { Vec3 } from '@/lib/warehouse3d/buildScene'
@@ -29,6 +29,8 @@ export interface InstancedBoxesProps {
 }
 
 const UNIT = new THREE.BoxGeometry(1, 1, 1)
+/** Pointer travel (px) above which a press-release is an orbit, not a click. */
+const DRAG_TOLERANCE_PX = 4
 
 export function InstancedBoxes({ items, opacity = 1, castShadow = false, receiveShadow = false, onPick }: InstancedBoxesProps) {
   const ref = useRef<THREE.InstancedMesh>(null)
@@ -56,6 +58,16 @@ export function InstancedBoxes({ items, opacity = 1, castShadow = false, receive
     invalidate()
   }, [items, invalidate])
 
+  // R3F never calls onPointerOut for an object that unmounts while hovered
+  // (leaving 3D by keyboard, a remount on a new count), so the pointer cursor
+  // would otherwise stick across the whole app.
+  // Keyed on a boolean, not the (inline, per-render) callback, so the cleanup
+  // runs on unmount rather than on every render under a resting cursor.
+  const pickable = onPick != null
+  useEffect(() => () => {
+    if (pickable) document.body.style.cursor = ''
+  }, [pickable])
+
   if (items.length === 0) return null
   return (
     <instancedMesh
@@ -67,7 +79,10 @@ export function InstancedBoxes({ items, opacity = 1, castShadow = false, receive
       onClick={
         onPick
           ? (e: any) => {
-              if (e.instanceId == null) return
+              // R3F fires click after a drag. An orbit that starts or ends over
+              // a level is not a pick: without this, every orbit across the racks
+              // selected a level and scrolled the page to Bin detail.
+              if (e.instanceId == null || e.delta > DRAG_TOLERANCE_PX) return
               e.stopPropagation()
               onPick(e.instanceId)
             }

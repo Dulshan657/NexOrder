@@ -35,7 +35,9 @@ export function RackInstances({ levels, racks, selectedLocationId, onSelect }: R
       levels.map((l) => ({
         center: l.center,
         size: [l.size[0] * SHELL_INSET, l.size[1] * SHELL_INSET, l.size[2] * SHELL_INSET] as Vec3,
-        color: l.fillKnown ? l.color : UNKNOWN_SHELL,
+        // Unknown fill greys the slot only when occupancy is what is shown;
+        // an overlay colour is meaningful with or without a capacity.
+        color: l.colorSource === 'occupancy' && !l.fillKnown ? UNKNOWN_SHELL : l.color,
       })),
     [levels],
   )

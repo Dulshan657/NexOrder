@@ -8,7 +8,7 @@
 // moves or the data changes. A warehouse map left open on a desk all day should
 // not keep a laptop fan running.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { buildScene, type BuildSceneInput } from '@/lib/warehouse3d/buildScene'
 import type { CameraPresetName } from '@/lib/warehouse3d/cameraPresets'
@@ -22,6 +22,9 @@ export type Warehouse3DViewProps = BuildSceneInput & {
   onSelect: (locationId: number) => void
   /** The GPU dropped the context (driver reset, too many tabs). Back to 2D. */
   onFallback: () => void
+  /** The floor switcher lives in MapStage, which is unmounted in 3D. */
+  floorCount: number
+  onFloorChange: (floor: number) => void
 }
 
 const PRESETS: { name: CameraPresetName; label: string }[] = [
@@ -39,6 +42,15 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
     [layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM],
   )
   const [preset, setPreset] = useState<CameraPresetName>('iso')
+  // R3F's own teardown calls forceContextLoss(), which fires the same
+  // `webglcontextlost` as a real GPU reset. Only a loss while MOUNTED is a fallback.
+  const disposedRef = useRef(false)
+  const onFallbackRef = useRef(props.onFallback)
+  onFallbackRef.current = props.onFallback
+  useEffect(() => {
+    disposedRef.current = false
+    return () => { disposedRef.current = true }
+  }, [])
   const [nonce, setNonce] = useState(0)
 
   const focus = useMemo(() => {
@@ -50,7 +62,7 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
   const span = Math.max(width, depth, 10)
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-lg border border-stone-200" style={{ background: BACKGROUND }}>
+    <div className="relative isolate h-full w-full overflow-hidden rounded-lg border border-stone-200" style={{ background: BACKGROUND }}>
       <Canvas
         frameloop="demand"
         dpr={[1, 1.5]}
@@ -59,7 +71,7 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
         onCreated={({ gl }: any) => {
           gl.domElement.addEventListener('webglcontextlost', (e: Event) => {
             e.preventDefault()
-            props.onFallback()
+            if (!disposedRef.current) onFallbackRef.current()
           })
         }}
         aria-label="3D warehouse map"
@@ -76,7 +88,7 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
           shadow-camera-top={span}
           shadow-camera-bottom={-span}
         />
-        <SceneObjects scene={scene} cellSizeM={layout.cellSizeM} />
+        <SceneObjects scene={scene} layout={layout} />
         <RackInstances
           levels={scene.levels}
           racks={scene.racks}
@@ -87,7 +99,8 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
         <CameraRig bounds={scene.bounds} preset={preset} nonce={nonce} focus={focus} />
       </Canvas>
 
-      <div className="absolute bottom-3 left-3 z-20 inline-flex items-center gap-0.5 rounded-lg border border-stone-200 bg-white/95 p-0.5 shadow-elevated backdrop-blur-sm">
+      <div className="absolute bottom-3 left-3 z-20 flex flex-wrap items-center gap-2">
+      <div className="inline-flex items-center gap-0.5 rounded-lg border border-stone-200 bg-white/95 p-0.5 shadow-elevated backdrop-blur-sm">
         {PRESETS.map((p) => (
           <button
             key={p.name}
@@ -104,6 +117,24 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
             {p.label}
           </button>
         ))}
+      </div>
+      {props.floorCount > 1 && (
+        <div className="inline-flex items-center gap-0.5 rounded-lg border border-stone-200 bg-white/95 p-0.5 shadow-elevated backdrop-blur-sm">
+          {Array.from({ length: props.floorCount }, (_, f) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={floor === f}
+              onClick={() => props.onFloorChange(f)}
+              className={`min-h-[28px] rounded-md px-2.5 py-1 text-xs font-semibold transition-all btn-press ${
+                floor === f ? 'bg-nexgen-blue text-white shadow-sm' : 'text-stone-600 hover:bg-stone-50 hover:text-stone-900'
+              }`}
+            >
+              Floor {f + 1}
+            </button>
+          ))}
+        </div>
+      )}
       </div>
       <p className="pointer-events-none absolute bottom-3 right-3 z-20 rounded bg-white/85 px-2 py-1 text-[11px] text-stone-600">
         Drag to orbit · right-drag to pan · scroll to zoom · click a level for detail

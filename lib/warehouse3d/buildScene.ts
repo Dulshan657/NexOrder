@@ -28,7 +28,8 @@ export interface BuildSceneInput {
   floor: number
   locationsById: Map<number, InventoryLocation>
   binFillPct: Map<number, number | null>
-  /** The 2D overlay's per-bin colour, when one is active. Wins over occupancy. */
+  /** The 2D overlay's per-bin colour, when one is active. Wins over occupancy;
+   *  while it is defined, a bin it omits is neutral, never its occupancy colour. */
   binColors?: Map<number, string>
   zoneTypeByProfileId: Map<number, string>
   levelHeightM: number
@@ -44,6 +45,9 @@ export interface LevelBox {
   fillPct: number | null
   fillKnown: boolean
   color: string
+  /** Where `color` came from. An overlay colour wins regardless of fill; a level
+   *  the overlay says nothing about is neutral, as it is on the 2D map. */
+  colorSource: 'overlay' | 'occupancy' | 'neutral'
 }
 
 /** The uprights around a rack's stack of levels. */
@@ -113,6 +117,9 @@ const OBJECT_HEIGHT_M: Partial<Record<LayoutObjectType, number>> = {
 /** Drawn as labels / washes instead of boxes. */
 const NOT_A_BOX: ReadonlySet<LayoutObjectType> = new Set<LayoutObjectType>(['area', 'label'])
 const LABEL_LIFT_M = 0.5
+const NAMED_BOX_TYPES: ReadonlySet<LayoutObjectType> = new Set<LayoutObjectType>(['obstacle', 'staging'])
+/** A level an active overlay deliberately leaves uncoloured (Blocks, congestion). */
+export const OVERLAY_NEUTRAL = '#e7e5e4' // stone-200
 const r = (n: number) => Math.round(n * 1e6) / 1e6
 
 export function buildScene(input: BuildSceneInput): SceneModel {
@@ -130,6 +137,8 @@ export function buildScene(input: BuildSceneInput): SceneModel {
     const rows = spineRows(group.items, input.locationsById, input.binFillPct)
     rows.forEach((row, i) => {
       const fillKnown = row.fillPct != null
+      const overlayColor = input.binColors?.get(row.locationId)
+      const colorSource = overlayColor ? 'overlay' : input.binColors ? 'neutral' : 'occupancy'
       levels.push({
         locationId: row.locationId,
         levelIndex: row.levelIndex,
@@ -137,7 +146,8 @@ export function buildScene(input: BuildSceneInput): SceneModel {
         size: [footprint.w, levelHeightM, footprint.d],
         fillPct: row.fillPct,
         fillKnown,
-        color: input.binColors?.get(row.locationId) ?? occupancyFill(row.fillPct),
+        color: overlayColor ?? (input.binColors ? OVERLAY_NEUTRAL : occupancyFill(row.fillPct)),
+        colorSource,
       })
     })
     if (rows.length === 0) continue
@@ -156,6 +166,7 @@ export function buildScene(input: BuildSceneInput): SceneModel {
   }
 
   const objects: ObjectBox[] = []
+  const objectLabels: SceneLabel[] = []
   for (const o of input.objects) {
     if (o.floor !== floor || NOT_A_BOX.has(o.objectType)) continue
     const h = OBJECT_HEIGHT_M[o.objectType] ?? 0.05
@@ -167,6 +178,12 @@ export function buildScene(input: BuildSceneInput): SceneModel {
       size: [r(o.w * cell), h, r(o.h * cell)],
       color: OBJECT_FILL[o.objectType] ?? OBJECT_FILL.obstacle,
     })
+    // A named room or staging bay ("Cold room", "Returns") is named on the 2D
+    // map so it is not an anonymous box; same here.
+    const name = typeof o.meta?.name === 'string' ? o.meta.name.trim() : ''
+    if (name && NAMED_BOX_TYPES.has(o.objectType)) {
+      objectLabels.push({ key: `obj:${o.id}`, kind: 'sign', text: name, position: [x, r(h + LABEL_LIFT_M), z] })
+    }
   }
 
   const { areaTiles, labels } = buildAnnotations(input, cell, levelHeightM)
@@ -177,7 +194,7 @@ export function buildScene(input: BuildSceneInput): SceneModel {
     racks,
     objects,
     areaTiles,
-    labels,
+    labels: [...labels, ...objectLabels],
     bounds: {
       width: r(layout.gridWidth * cell),
       depth: r(layout.gridHeight * cell),
@@ -221,8 +238,10 @@ function buildAnnotations(input: BuildSceneInput, cell: number, levelHeightM: nu
   return { areaTiles, labels }
 }
 
-/** The zone a rack sits in, by walking `parentId` to a `kind='ZONE'` ancestor —
- *  the same ancestry rule SQL uses (mig 00096), never `zone_profile_id` on a bin. */
+/** The zone a rack sits in, by walking `parentId` to a `kind='ZONE'` ancestor.
+ *  SQL reads `materialized_path` instead; the two agree because zone binding
+ *  (mig 00096) writes both in one batch — the same caveat as
+ *  `putawayGuards.resolveZoneProfileId`. Never `zone_profile_id` on a bin. */
 function zoneTypeOf(
   locationId: number | null,
   locationsById: Map<number, InventoryLocation>,
