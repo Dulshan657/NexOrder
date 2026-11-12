@@ -46,6 +46,7 @@ declare const __MODULE_INVOICING__: boolean
 declare const __MODULE_FIELD_OPS__: boolean
 declare const __MODULE_INVENTORY_DISPATCH__: boolean
 declare const __MODULE_VOICE_ASSISTANT__: boolean
+declare const __MODULE_WAREHOUSE_3D__: boolean
 
 /**
  * The order object and its status ladder: New Order, Order Import, and the
@@ -77,6 +78,10 @@ export const MODULE_INVENTORY_DISPATCH: boolean = __MODULE_INVENTORY_DISPATCH__
 
 /** Nex Assistant: the in-app voice assistant (mic button, session mint, read-only tools). Requires sales_orders. */
 export const MODULE_VOICE_ASSISTANT: boolean = __MODULE_VOICE_ASSISTANT__
+
+/** The 3D view of the warehouse live map (NX-0035): three.js in a lazy chunk,
+ *  declared only behind this constant. Requires inventory_dispatch. */
+export const MODULE_WAREHOUSE_3D: boolean = __MODULE_WAREHOUSE_3D__
 
 /**
  * CORE surfaces are not listed and are not gateable: Dashboard, Products,

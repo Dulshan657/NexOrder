@@ -132,3 +132,39 @@ the operator state the scheme instead.
   on `mutate-warehouse-location`, whose buckets are for actions rewriting hundreds of
   rows). Clearing DELETES the row: "no row = the built-in default" must have one
   representation. **Read by the sweep only** — drawing a new bin still mints a grid code.
+
+**The 3D view** (NX-0035, module `warehouse_3d`, `dev`-only) — a 2D/3D toggle on the
+live map for desktop Admin/Manager. **View + select only**: no editing gesture exists
+on the 3D canvas, so `modeGuards(mode, canRename, threeD)` closes the mode buttons,
+area rename and sign edit while it is up, and `canToggle3d` is true only in `view`
+(never mid-paint, mid-sweep or mid-slotting). The layout designer stays 2D.
+- **Every decision is `lib/warehouse3d/buildScene.ts`'s** — pure, metres from
+  `layout.cellSizeM`, grid x → world X, grid y → world Z, Y up. It reads exactly what
+  the 2D map reads (`groupPlacementsByCell`, `spineRows`, `binFillPct`, the overlay's
+  `binColors`, `objectRegions`, `zoneTint`), so the two views cannot disagree. A
+  rack's zone is walked by `parentId` to a `kind='ZONE'` ancestor — the 00096 rule.
+  `groupPlacementsByCell` moved to `components/admin/layout/placementGroups.ts` for
+  this (LayoutCanvas re-exports it).
+- **Every level is one pallet tall**: `levelHeightM` = pallet base + max load height
+  (mig 00125) + `LEVEL_CLEARANCE_MM`. There is no height column and no migration for
+  one — a carton shelf renders as tall as a pallet level. Only the active floor is built.
+- **Not shipped where off.** `three/lazy3d.ts` is the single gated `lazyWithRetry`
+  declaration; nothing else may import `./Warehouse3DView`, `three` or
+  `@react-three/*` (`__tests__/warehouse3d/lazyGate.test.ts`). Verify on a build:
+  the amadiya `dist/` must not contain `WebGLRenderer`/`CameraControls`.
+  `vite.config.ts`'s `vendor-react` regex is **anchored to the first `node_modules`**
+  because fiber nests its own `scheduler@0.28`, which an unanchored match pulled into
+  the eager chunk.
+- **drei allow-list: `CameraControls`, `Html`, `Line`.** `Text`/`Text3D` (troika),
+  `Environment` presets and `useGLTF`/Draco/KTX2 fetch from CDNs or build workers the
+  CSP refuses. Area names are drei `Html` in the app's fonts.
+- **`@types/react` must stay absent.** `@react-three/fiber` → `its-fine` →
+  `@types/react-reconciler`, whose `@types/react` peer npm auto-installs — and with
+  it present `tsc` fails across the app. `package.json` `overrides` points
+  `@types/react-reconciler` at an empty stub in `config/npm-stubs/`; `npm ls
+  @types/react` must print nothing after any dependency change.
+- `frameloop="demand"` (nothing animates; the GPU idles) and every box-shaped thing
+  is instanced (`InstancedBoxes`) — MAIN's ~945 levels are a handful of draw calls.
+  A lost WebGL context drops back to 2D. A click on a level calls the same
+  `selectFromMap` as the 2D map, so Bin detail opens unchanged.
+- Next (separate PRs): find stock (SKU highlight) and pick-route paths.

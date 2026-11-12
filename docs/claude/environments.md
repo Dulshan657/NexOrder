@@ -4,9 +4,9 @@
 > Code's 150k-char session limit. The load-bearing summary stays in `CLAUDE.md`;
 > this is the full detail behind it. **Edit here, not there.**
 
-- **Module flags are BUILT, and there are EIGHT as of 2026-10-20:**
+- **Module flags are BUILT, and there are NINE as of 2026-11-12:**
   `sales_orders`, `shop`, `po_inbox`, `promotions`, `invoicing`, `field_ops`,
-  `inventory_dispatch`, `voice_assistant`. Two are the sidebar group headings
+  `inventory_dispatch`, `voice_assistant`, `warehouse_3d`. Two are the sidebar group headings
   "Field Ops" and "Inventory & Dispatch"; five subdivide the third heading,
   which is a heading and not a module; `voice_assistant` is neither (it has no
   nav entry — its surface is the mic button). **`sales_orders` now means the
@@ -67,7 +67,8 @@
     control and roles/RLS are the security ones. `config/moduleOwnership.mjs`
     maps 70 functions to modules — 3 `sales_orders`, 7 `shop`, 11 `po_inbox`,
     1 `promotions`, 1 `invoicing`, 3 `field_ops`, 43 `inventory_dispatch`,
-    1 `voice_assistant` (`voice-session`);
+    1 `voice_assistant` (`voice-session`); `warehouse_3d` owns none and is the
+    one entry in `CLIENT_ONLY_MODULES` — the only way a module may own nothing;
     `deploy-functions.mjs` will not deploy a disabled module's functions at all,
     but it never RETIRES one already deployed — Amadiya's 19 now-disabled
     functions must be deleted by hand. `poll-inbox` uses `isModuleEnabled` and

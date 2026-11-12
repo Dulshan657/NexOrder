@@ -18,6 +18,7 @@ import {
   MODULE_SALES_ORDERS,
   MODULE_SHOP,
   MODULE_VOICE_ASSISTANT,
+  MODULE_WAREHOUSE_3D,
 } from '../lib/modules'
 import { assignableRoles } from '../lib/assignableRoles'
 import { UserRole } from '../types'
@@ -35,7 +36,7 @@ import { UserRole } from '../types'
  */
 
 describe('module vocabulary', () => {
-  it('is the two whole sidebar headings, the five "Sales & Orders" splits and the voice assistant', () => {
+  it('is the two whole sidebar headings, the five "Sales & Orders" splits, the voice assistant and the 3D map', () => {
     expect(ALL_MODULES).toEqual([
       'sales_orders',
       'shop',
@@ -45,6 +46,7 @@ describe('module vocabulary', () => {
       'field_ops',
       'inventory_dispatch',
       'voice_assistant',
+      'warehouse_3d',
     ])
   })
 
@@ -93,6 +95,7 @@ describe('module vocabulary', () => {
       MODULE_FIELD_OPS,
       MODULE_INVENTORY_DISPATCH,
       MODULE_VOICE_ASSISTANT,
+      MODULE_WAREHOUSE_3D,
     ]
     expect(flags).toHaveLength(ALL_MODULES.length)
     for (const flag of flags) {

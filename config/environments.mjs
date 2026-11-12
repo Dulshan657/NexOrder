@@ -98,6 +98,7 @@ export const ALL_MODULES = [
   'field_ops',
   'inventory_dispatch',
   'voice_assistant',
+  'warehouse_3d',
 ]
 
 /**
@@ -117,6 +118,9 @@ export const MODULE_REQUIRES = {
   promotions: ['sales_orders'],
   invoicing: ['sales_orders'],
   voice_assistant: ['sales_orders'],
+  // The 3D live map (NX-0035) is a view of the warehouse map, which is
+  // inventory_dispatch's. Dev-only for now; a tenant gets it by adding the slug.
+  warehouse_3d: ['inventory_dispatch'],
 }
 
 /**

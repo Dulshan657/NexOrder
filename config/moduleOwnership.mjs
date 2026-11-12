@@ -174,6 +174,17 @@ export const FUNCTION_MODULES = {
 }
 
 /**
+ * Modules that own NO Edge Function, on purpose — a gate that is the shipped
+ * bundle alone. Every other module must own at least one function
+ * (__tests__/moduleOwnership.test.ts), so this list is the only way to be
+ * exempt and it has to say why.
+ *
+ * - `warehouse_3d` (NX-0035): a 3D VIEW of data the live map already reads.
+ *   No server surface of its own; the lazy chunk not shipping IS the gate.
+ */
+export const CLIENT_ONLY_MODULES = ['warehouse_3d']
+
+/**
  * Function names that must NOT be deployed to a target, given its modules.
  *
  * Note what this does not do: it cannot retire a function already deployed to

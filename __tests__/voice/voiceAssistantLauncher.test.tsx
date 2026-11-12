@@ -252,7 +252,7 @@ describe('VoiceAssistantLauncher', () => {
 describe('enabledModules', () => {
   it('lists every module slug whose folded constant is on (all of them under test)', () => {
     expect([...enabledModules()].sort()).toEqual(
-      ['field_ops', 'inventory_dispatch', 'invoicing', 'po_inbox', 'promotions', 'sales_orders', 'shop', 'voice_assistant'].sort(),
+      ['field_ops', 'inventory_dispatch', 'invoicing', 'po_inbox', 'promotions', 'sales_orders', 'shop', 'voice_assistant', 'warehouse_3d'].sort(),
     )
   })
 })

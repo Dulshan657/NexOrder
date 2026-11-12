@@ -15,6 +15,7 @@ import {
   MODULE_SALES_ORDERS,
   MODULE_SHOP,
   MODULE_VOICE_ASSISTANT,
+  MODULE_WAREHOUSE_3D,
 } from '@/lib/modules'
 
 const FLAGS: ReadonlyArray<readonly [string, boolean]> = [
@@ -26,6 +27,7 @@ const FLAGS: ReadonlyArray<readonly [string, boolean]> = [
   ['field_ops', MODULE_FIELD_OPS],
   ['inventory_dispatch', MODULE_INVENTORY_DISPATCH],
   ['voice_assistant', MODULE_VOICE_ASSISTANT],
+  ['warehouse_3d', MODULE_WAREHOUSE_3D],
 ]
 
 const ENABLED: readonly string[] = Object.freeze(FLAGS.filter(([, on]) => on).map(([slug]) => slug))

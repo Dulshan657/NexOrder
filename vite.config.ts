@@ -371,9 +371,13 @@ export default defineConfig(() => {
             // that `{'vendor-react': ['react-dom']}` does not catch — it
             // produced a 3.9 kB chunk and left react-dom in the entry.
             // The [\\/] boundaries keep react-leaflet out of vendor-react.
+            // ANCHORED to the FIRST node_modules segment (NX-0035):
+            // @react-three/fiber carries its own nested scheduler@0.28, and an
+            // unanchored match pulled that copy (the lazy 3D view's) into the
+            // eager vendor-react chunk every page loads.
             manualChunks(id: string) {
               if (!id.includes('node_modules')) return;
-              if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'vendor-react';
+              if (/^(?:(?![\\/]node_modules[\\/]).)*[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'vendor-react';
               if (/[\\/]node_modules[\\/]@supabase[\\/]/.test(id)) return 'vendor-supabase';
               if (/[\\/]node_modules[\\/]@tanstack[\\/]/.test(id)) return 'vendor-query';
             },
