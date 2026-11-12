@@ -45,6 +45,12 @@ const BACKGROUND = '#f5f5f4' // stone-100
 export default function Warehouse3DView(props: Warehouse3DViewProps) {
   const { layout, placements, objects, floor, locationsById, binFillPct, binColors, zoneTypeByProfileId, levelHeightM } = props
   const [findProductId, setFindProductId] = useState<number | null>(null)
+  /** Bumped by re-picking the current product: re-frames after an orbit. */
+  const [reframe, setReframe] = useState(0)
+  const onFind = (id: number | null) => {
+    if (id != null && id === findProductId) setReframe((n) => n + 1)
+    else setFindProductId(id)
+  }
   const highlightIds = useMemo(
     () => (findProductId != null ? locationsHoldingProduct(props.binContents, findProductId) : null),
     [props.binContents, findProductId],
@@ -64,7 +70,7 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
     const points = scene.levels.filter((l) => l.highlighted).map((l) => l.center)
     if (points.length > 0) setFrame((f) => ({ points, nonce: (f?.nonce ?? 0) + 1 }))
     // scene.levels deliberately omitted — see above.
-  }, [findProductId, floor])
+  }, [findProductId, floor, reframe])
   const [preset, setPreset] = useState<CameraPresetName>('iso')
   // R3F's own teardown calls forceContextLoss(), which fires the same
   // `webglcontextlost` as a real GPU reset. Only a loss while MOUNTED is a fallback.
@@ -131,7 +137,7 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
           placedIds={placedIds}
           visibleIds={visibleIds}
           productId={findProductId}
-          onChange={setFindProductId}
+          onChange={onFind}
         />
       </div>
 

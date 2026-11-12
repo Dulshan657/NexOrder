@@ -73,3 +73,14 @@ describe('3D lazy gate', () => {
     expect(seen.length).toBeGreaterThan(0)
   })
 })
+
+// NX-0036 review: the 3D view's props are `any` through the lazy boundary, so tsc
+// cannot see a raw snake_case product row handed to it. Pin the mapping.
+describe('3D view inputs', () => {
+  it('hands the 3D view mapped Products, never raw useProducts() rows', () => {
+    const workspace = read('components/inventory/warehouse/RackedWorkspace.tsx')
+    expect(workspace).toMatch(/\.map\(toProduct\)/)
+    expect(workspace).toContain('products={catalogue}')
+    expect(workspace).not.toMatch(/products=\{slotProducts\.data/)
+  })
+})

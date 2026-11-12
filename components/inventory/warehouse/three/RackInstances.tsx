@@ -23,6 +23,21 @@ const UNKNOWN_SHELL = '#d6d3d1' // stone-300: no capacity configured
 const FRAME_DEFAULT = '#78716c' // stone-500
 const BEACON_COLOR = '#0369a1' // sky-700, the selection colour
 const NO_BEACONS: readonly Vec3[] = []
+/** A found level whose own colour says nothing (unknown capacity, or an overlay
+ *  that leaves it neutral) takes this instead, so it never reads as dimmed. */
+const HIGHLIGHT = '#0ea5e9' // sky-500
+const MIN_HIGHLIGHT_FILL = 0.25
+
+function hasOwnColour(l: LevelBox): boolean {
+  if (l.colorSource === 'neutral') return false
+  if (l.colorSource === 'occupancy' && !l.fillKnown) return false
+  return true
+}
+
+function shellColor(l: LevelBox): string {
+  if (l.highlighted) return hasOwnColour(l) ? l.color : HIGHLIGHT
+  return l.colorSource === 'occupancy' && !l.fillKnown ? UNKNOWN_SHELL : l.color
+}
 
 export interface RackInstancesProps {
   levels: readonly LevelBox[]
@@ -41,7 +56,7 @@ export function RackInstances({ levels, racks, beacons = NO_BEACONS, selectedLoc
         size: [l.size[0] * SHELL_INSET, l.size[1] * SHELL_INSET, l.size[2] * SHELL_INSET] as Vec3,
         // Unknown fill greys the slot only when occupancy is what is shown;
         // an overlay colour is meaningful with or without a capacity.
-        color: l.colorSource === 'occupancy' && !l.fillKnown ? UNKNOWN_SHELL : l.color,
+        color: shellColor(l),
       })),
     [levels],
   )
@@ -49,14 +64,17 @@ export function RackInstances({ levels, racks, beacons = NO_BEACONS, selectedLoc
   const fills = useMemo<BoxItem[]>(() => {
     const out: BoxItem[] = []
     for (const l of levels) {
-      const pct = Math.min(1, Math.max(0, l.fillPct ?? 0))
+      // A found level always shows a block, even when empty or of unknown
+      // capacity — otherwise a match could be fainter than the dimmed levels
+      // around it and only the beacon would mark it.
+      const pct = Math.max(Math.min(1, Math.max(0, l.fillPct ?? 0)), l.highlighted ? MIN_HIGHLIGHT_FILL : 0)
       if (pct <= 0) continue
       const h = l.size[1] * FILL_MAX * pct
       const floorY = l.center[1] - (l.size[1] * SHELL_INSET) / 2
       out.push({
         center: [l.center[0], floorY + h / 2, l.center[2]],
         size: [l.size[0] * SHELL_INSET * 0.92, h, l.size[2] * SHELL_INSET * 0.92],
-        color: l.color,
+        color: l.highlighted && !hasOwnColour(l) ? HIGHLIGHT : l.color,
       })
     }
     return out

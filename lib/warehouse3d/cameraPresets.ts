@@ -39,9 +39,13 @@ export function cameraPreset(name: CameraPresetName, bounds: SceneBounds, focus?
   }
 }
 
-/** How far back to stand, as a multiple of the spread of the points. Comfortably
- *  over what a 45° field of view needs to keep a sphere of that radius in frame. */
-const FRAME_STANDOFF = 2.4
+/** How far back to stand, as a multiple of the spread of the points. A sphere
+ *  of radius r fills a 45° field of view at r / sin(22.5°) ≈ 2.61 r; 3.2 leaves
+ *  margin for the overlays at the canvas edges and a near-square viewport. */
+const FRAME_STANDOFF = 3.2
+/** Added to the spread: the points are level CENTRES, but the boxes and the
+ *  beacons above them extend past them. */
+const FRAME_PAD_M = 2.5
 /** Never closer than this, so one matching level is not filled edge to edge. */
 const FRAME_MIN_DISTANCE_M = 8
 
@@ -61,7 +65,7 @@ export function framePoints(points: readonly Vec3[], bounds: SceneBounds): Camer
     0,
     ...points.map((p) => Math.hypot(p[0] - target[0], p[1] - target[1], p[2] - target[2])),
   )
-  const dist = Math.max(radius * FRAME_STANDOFF, FRAME_MIN_DISTANCE_M)
+  const dist = Math.max((radius + FRAME_PAD_M) * FRAME_STANDOFF, FRAME_MIN_DISTANCE_M)
   // The iso direction, normalised: equal parts +X, up and +Z.
   const k = dist / Math.sqrt(3)
   return { position: [target[0] + k, target[1] + k, target[2] + k], target }

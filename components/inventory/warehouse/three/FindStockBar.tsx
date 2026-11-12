@@ -28,8 +28,15 @@ const plural = (n: number, one: string, many: string) => `${n.toLocaleString('en
 
 export function FindStockBar({ products, binContents, placedIds, visibleIds, productId, onChange }: FindStockBarProps) {
   const options = useMemo(() => productOptionsInWarehouse(binContents, products), [binContents, products])
+  // Headline = what is lit up right now (this floor); "not in a rack" is judged
+  // against every floor, so stock on another floor is never called unplaced.
+  const shown = visibleIds ?? placedIds
   const summary = useMemo(
-    () => (productId != null ? stockSummary(binContents, productId, placedIds) : null),
+    () => (productId != null ? stockSummary(binContents, productId, shown) : null),
+    [binContents, productId, shown],
+  )
+  const unplacedUnits = useMemo(
+    () => (productId != null ? stockSummary(binContents, productId, placedIds).unplacedUnits : 0),
     [binContents, productId, placedIds],
   )
   /** Placed matches on another floor: lit up only when that floor is shown. */
@@ -64,19 +71,23 @@ export function FindStockBar({ products, binContents, placedIds, visibleIds, pro
           </button>
         )}
       </div>
-      {summary && (
-        <p className="mt-1.5 px-0.5 text-xs text-stone-600" aria-live="polite">
-          <span className="font-semibold text-stone-800">{plural(summary.placedLocations, 'location', 'locations')}</span>
-          {summary.placedLocations > 0 && <> · {plural(summary.placedUnits, 'unit', 'units')}</>}
-          {otherFloors > 0 && <span className="block">{plural(otherFloors, 'location', 'locations')} on another floor</span>}
-          {summary.unplacedUnits > 0 && (
-            <span className="block text-amber-800">
-              + {plural(summary.unplacedUnits, 'unit', 'units')} not in a rack (dock / unplaced)
-            </span>
-          )}
-          {summary.placedLocations === 0 && summary.unplacedUnits === 0 && <> — none on this site</>}
-        </p>
-      )}
+      {/* Always mounted: a live region that appears WITH its text is usually
+          not announced. */}
+      <p className="mt-1.5 px-0.5 text-xs text-stone-600" aria-live="polite">
+        {summary && (
+          <>
+            <span className="font-semibold text-stone-800">{plural(summary.placedLocations, 'location', 'locations')}</span>
+            {summary.placedLocations > 0 && <> · {plural(summary.placedUnits, 'unit', 'units')}</>}
+            {otherFloors > 0 && <> ({otherFloors} more on another floor)</>}
+            {unplacedUnits > 0 && (
+              <span className="block text-amber-800">
+                + {plural(unplacedUnits, 'unit', 'units')} not in a rack (dock / unplaced)
+              </span>
+            )}
+            {summary.placedLocations === 0 && otherFloors === 0 && unplacedUnits === 0 && <> — none on this site</>}
+          </>
+        )}
+      </p>
     </div>
   )
 }
