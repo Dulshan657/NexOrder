@@ -86,3 +86,27 @@ chunk is not shipped to Amadiya.
 - Shipping to Amadiya (`warehouse_3d` is not in its module set).
 
 ## FINAL
+
+Verified at `c761968`: `npx tsc --noEmit`, `npm run lint`, `check:overlays`, `check:viewport`, `check:csp`, `check:edge-types`, `check:claude-md`, `check:demo` and `npm test` (446 files, 7001 tests) pass. `npm run check:brief`: every named test fails on the base and passes on the tip — 6 by assertion, 8 by absence (new modules).
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `warehouse_3d module > requires inventory_dispatch and is enabled on dev only` fails by assertion on the base, passes on the tip (check:brief) | Amadiya's set asserted unchanged in the same test. |
+| A2 | claimed | `3D lazy gate > declares the 3D view only behind MODULE_WAREHOUSE_3D` and `3D lazy gate > imports nothing from drei outside the allow-list`, both by assertion (check:brief) | |
+| A3 | claimed | `levelHeightM > is pallet base plus max load height plus clearance, in metres`, `buildScene > places a rack in metres from cellSizeM and stacks its levels bottom-first` (check:brief) | Proven by absence on the base. |
+| A4 | claimed | `buildScene > carries each level's location id and colours it by fill, null fill as unknown`, `buildScene > prefers the active overlay colour over occupancy`, `buildScene > builds only the active floor` (check:brief) | Proven by absence. The overlay test was tightened after review: a level the overlay omits is now neutral, not its occupancy colour. |
+| A5 | claimed | `cameraPreset > top looks straight down at the scene centre`, `cameraPreset > aisle sits at eye height at the selected rack` (check:brief); Iso and the no-selection fallback have their own unnamed tests | Proven by absence. |
+| A6 | claimed | `modeGuards in 3D > turns off the mode buttons, area rename and sign edit`, `modeGuards in 3D > offers the 3D toggle only in view mode`, both by assertion (check:brief) | |
+| A7 | claimed | `can3d > is false for the Warehouse role`, `can3d > is false on a coarse pointer or without WebGL` (check:brief) | Proven by absence. The pure rule is tested; the live media query and WebGL probe are not. |
+| A8 | claimed | Owner, 2026-11-12: "i tested it on dev", against nexorder.vercel.app at `c761968` | Owner's own check; the steps run are not recorded here. |
+| A9 | claimed | `check:demo` OK for both targets; amadiya build of `c761968` grepped for `WebGLRenderer\|CameraControls\|webglcontextlost`: 0 files. Dev build: those symbols only in the lazy `Warehouse3DView-*.js` chunk (999 kB, 268 kB gzip); `vendor-react` 194,402 B dev vs 194,394 B amadiya (no nested scheduler pulled in) | |
+| A10 | claimed | `npm run deploy:dev` from `c761968`: VERIFIED, version.json = `c761968`, health 200; owner tested on dev the same day | Deployed from the branch, not the merge — the merge sha is not yet on dev. |
+
+### Not claimed
+
+- No console check for CSP reports was recorded; the owner's test does not say whether the console was opened, and the CSP is Report-Only.
+- The merge commit is not yet deployed to dev; A10's deploy evidence is the branch tip `c761968`.
+- Real rack heights: every level renders one pallet tall (~2.0 m), so carton shelves look as tall as pallet levels — by design, no migration.
+- Selecting a rack, zone or area in the tree highlights nothing in 3D; only a selected level is outlined, and the Aisle preset frames only a selected level.
+- Performance at the 200-cell grid cap or on a low-end GPU was not measured; only MAIN-sized sites on the dev data.
+- The 3D view has no automated rendering test (jsdom has no WebGL); `InstancedBoxes`, `CameraRig` and `Warehouse3DView` are verified by the browser walk only.
