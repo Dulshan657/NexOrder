@@ -80,7 +80,11 @@ export function buildWalkGraph(cells: WalkCell[], cellSizeM: number): WarehouseG
 }
 
 /** Adjacency list: nodeId → [{ to, weight }]. Expands bidirectional edges. */
-function toAdjacency(graph: WarehouseGraph): Map<number, Array<{ to: number; weight: number }>> {
+export type Adjacency = Map<number, Array<{ to: number; weight: number }>>
+
+/** Exported (NX-0037) so a caller running many searches over one graph builds
+ *  this once and passes it to `dijkstraWithPaths`. */
+export function toAdjacency(graph: WarehouseGraph): Adjacency {
   const adj = new Map<number, Array<{ to: number; weight: number }>>()
   for (const n of graph.nodes) adj.set(n.id, [])
   for (const e of graph.edges) {
@@ -151,8 +155,15 @@ export function dijkstra(graph: WarehouseGraph, sourceNodeId: number): Map<numbe
 export function dijkstraWithPaths(
   graph: WarehouseGraph,
   sourceNodeId: number,
+  opts: {
+    /** Prebuilt adjacency, for callers running many searches on one graph. */
+    adj?: Adjacency
+    /** Stop once this node is settled: its distance and path are final, and a
+     *  single leg needs nothing else. Other nodes' entries are then partial. */
+    target?: number
+  } = {},
 ): { dist: Map<number, number>; prev: Map<number, number> } {
-  const adj = toAdjacency(graph)
+  const adj = opts.adj ?? toAdjacency(graph)
   const dist = new Map<number, number>()
   const prev = new Map<number, number>()
   const heap = new MinHeap()
@@ -162,6 +173,7 @@ export function dijkstraWithPaths(
   while (heap.size > 0) {
     const { node, dist: d } = heap.pop()!
     if (d > (dist.get(node) ?? Infinity)) continue
+    if (node === opts.target) break
     for (const { to, weight } of adj.get(node) ?? []) {
       const nd = d + weight
       if (nd < (dist.get(to) ?? Infinity)) {

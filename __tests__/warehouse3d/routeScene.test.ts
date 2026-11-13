@@ -39,7 +39,7 @@ describe('routeScene', () => {
     // Riser: straight up at the aisle end, then into the level.
     expect(pts[3]).toEqual([5.5 * CELL, 3, 1.5 * CELL])
     expect(pts[4]).toEqual(levels[0].center)
-    expect(markers).toEqual([{ sequence: 1, locationId: 1, position: expect.any(Array) }])
+    expect(markers).toEqual([{ sequence: 1, locationId: 1, position: expect.any(Array), label: '1' }])
     expect(markers[0].position[1]).toBeGreaterThan(3)
   })
 
@@ -73,5 +73,11 @@ describe('routeScene', () => {
     expect(f1.lines).toHaveLength(1)
     expect(f1.lines[0][0]).toEqual([3.5 * CELL, WALK_HEIGHT_M, 3.5 * CELL])
     expect(f1.lines[0][f1.lines[0].length - 1]).toEqual(levels[0].center)
+  })
+
+  it('merges two stops at one location into one marker', () => {
+    const stops = [stop(1, 1, [{ floor: 0, x: 5, y: 1 }]), stop(2, 2), stop(3, 1)]
+    const { markers } = routeScene({ stops, levels, floor: 0, cellSizeM: CELL })
+    expect(markers.map((m) => [m.locationId, m.label])).toEqual([[1, '1·3'], [2, '2']])
   })
 })

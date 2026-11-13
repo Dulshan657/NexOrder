@@ -20,7 +20,7 @@ export function RoutePath3D({ route }: RoutePath3DProps) {
       {route.markers.map((m) => (
         <Html key={`stop-${m.sequence}`} position={m.position} center zIndexRange={[20, 0]} style={{ pointerEvents: 'none' }}>
           <span className="grid h-6 min-w-6 place-items-center rounded-full bg-violet-700 px-1.5 font-mono text-xs font-bold text-white shadow-sm">
-            {m.sequence}
+            {m.label}
           </span>
         </Html>
       ))}

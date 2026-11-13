@@ -119,3 +119,17 @@ describe('simplifyPath', () => {
     expect(simplifyPath([{ floor: 0, x: 1, y: 1 }])).toEqual([{ floor: 0, x: 1, y: 1 }])
   })
 })
+
+describe('legPaths early exit', () => {
+  it('matches a full search on every leg of a longer route', () => {
+    const grid: WalkCell[] = []
+    for (let x = 0; x < 8; x++) for (let y = 0; y < 6; y++) grid.push({ x, y, floor: 0, isDock: x === 0 && y === 0 })
+    const g = buildWalkGraph(grid, 1)
+    const at = (x: number, y: number) => g.nodes.find((n) => n.x === x && n.y === y)!.id
+    const stops: PickStop[] = [[7, 5], [3, 2], [6, 0], [1, 4]].map(([x, y], i) => ({ locationId: i, graphNodeId: at(x, y), accessOffsetM: 0 }))
+    const route = sequencePickRoute(g, at(0, 0), stops)
+    legPaths(g, at(0, 0), route.stops).forEach((path, i) => {
+      expect(path!.length - 1).toBeCloseTo(route.stops[i].legDistanceM, 6)
+    })
+  })
+})

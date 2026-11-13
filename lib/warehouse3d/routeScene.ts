@@ -23,9 +23,13 @@ export interface RouteSceneInput {
 }
 
 export interface RouteMarker {
+  /** The first stop at this location. */
   sequence: number
   locationId: number
   position: Vec3
+  /** Every stop at this location, e.g. "3·4" — two lines from one bin share a
+   *  marker rather than drawing one number over the other. */
+  label: string
 }
 
 export interface RouteScene {
@@ -75,11 +79,17 @@ export function routeScene({ stops, levels, floor, cellSizeM }: RouteSceneInput)
     }
 
     if (lvl) {
-      markers.push({
-        sequence: stop.sequence,
-        locationId: stop.locationId,
-        position: [lvl.center[0], r(lvl.center[1] + lvl.size[1] / 2 + MARKER_LIFT_M), lvl.center[2]],
-      })
+      const existing = markers.find((m) => m.locationId === stop.locationId)
+      if (existing) {
+        existing.label = `${existing.label}·${stop.sequence}`
+      } else {
+        markers.push({
+          sequence: stop.sequence,
+          locationId: stop.locationId,
+          position: [lvl.center[0], r(lvl.center[1] + lvl.size[1] / 2 + MARKER_LIFT_M), lvl.center[2]],
+          label: String(stop.sequence),
+        })
+      }
     }
     // A stop on another floor breaks the chain: never draw a straight line
     // through the ceiling to it.

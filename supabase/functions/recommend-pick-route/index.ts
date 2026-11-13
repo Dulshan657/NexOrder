@@ -27,6 +27,25 @@ const inputSchema = z.object({
   order_ids: z.array(z.string().min(1).max(120)).min(1).max(50),
 })
 
+/**
+ * Node ids → corner cells. Any id the loaded graph does not know (a truncated
+ * node load) drops the PATH, never the response: the client then draws a
+ * straight leg, which is what it did before paths existed.
+ */
+function toPathPoints(
+  ids: number[] | null,
+  nodeById: Map<number, { floor: number; x: number; y: number }>,
+): { floor: number; x: number; y: number }[] | undefined {
+  if (!ids) return undefined
+  const points: { floor: number; x: number; y: number }[] = []
+  for (const id of ids) {
+    const n = nodeById.get(id)
+    if (!n) return undefined
+    points.push({ floor: n.floor, x: n.x, y: n.y })
+  }
+  return simplifyPath(points)
+}
+
 serve(async (req: Request) => {
   const corsHeaders = corsHeadersFor(req)
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -101,9 +120,7 @@ serve(async (req: Request) => {
       orderId: (s.meta?.orderId as string) ?? null,
       qtyBase: (s.meta?.qtyBase as number) ?? 0,
       legDistanceM: s.legDistanceM,
-      path: paths[i]
-        ? simplifyPath(paths[i]!.map((id) => nodeById.get(id)!).map((n) => ({ floor: n.floor, x: n.x, y: n.y })))
-        : undefined,
+      path: toPathPoints(paths[i], nodeById),
     }))
 
     return new Response(JSON.stringify({

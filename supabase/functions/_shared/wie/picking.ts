@@ -7,7 +7,7 @@
 // dozens-of-stops orders real pick lists have. Pure: graph + stops in, ordered
 // route out. Batch picking layers on top by merging several orders' stops.
 
-import { dijkstra, dijkstraWithPaths, pathTo } from './graph.ts'
+import { dijkstra, dijkstraWithPaths, pathTo, toAdjacency } from './graph.ts'
 import type { WarehouseGraph } from './types.ts'
 
 export interface PickStop {
@@ -169,15 +169,10 @@ export function sequenceBatchRoute(
  * stops, so in practice none).
  */
 export function legPaths(graph: WarehouseGraph, startNodeId: number, stops: readonly RoutedStop[]): (number[] | null)[] {
-  const prevFrom = new Map<number, Map<number, number>>()
-  const prevOf = (source: number) => {
-    let prev = prevFrom.get(source)
-    if (!prev) {
-      prev = dijkstraWithPaths(graph, source).prev
-      prevFrom.set(source, prev)
-    }
-    return prev
-  }
+  // One adjacency for the whole route, and each search stops as soon as its
+  // leg's target is settled — a big batch route must not cost a second full
+  // Dijkstra per stop on top of the sequencer's.
+  const adj = toAdjacency(graph)
   const out: (number[] | null)[] = []
   let from = startNodeId
   for (const s of stops) {
@@ -185,7 +180,8 @@ export function legPaths(graph: WarehouseGraph, startNodeId: number, stops: read
       out.push(null)
       continue
     }
-    out.push(pathTo(prevOf(from), from, s.graphNodeId))
+    const { prev } = dijkstraWithPaths(graph, from, { adj, target: s.graphNodeId })
+    out.push(pathTo(prev, from, s.graphNodeId))
     from = s.graphNodeId
   }
   return out
