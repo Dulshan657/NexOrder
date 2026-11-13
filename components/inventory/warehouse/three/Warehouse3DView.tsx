@@ -12,7 +12,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import type { PickRouteStop, Product } from '@/types'
 import { routeScene } from '@/lib/warehouse3d/routeScene'
-import { RoutePath3D } from './RoutePath3D'
+import { RoutePath3D, routeLabelItems } from './RoutePath3D'
+import { LabelOverlay, LabelProjector, useLabelRegistry } from './ScreenLabels'
 import type { BinContentRow } from '@/components/inventory/warehouse/useWarehouseViewerModel'
 import { buildScene, type BuildSceneInput, type Vec3 } from '@/lib/warehouse3d/buildScene'
 import { locationsHoldingProduct } from '@/lib/warehouse3d/findStock'
@@ -20,7 +21,7 @@ import { FindStockBar } from './FindStockBar'
 import type { CameraPresetName } from '@/lib/warehouse3d/cameraPresets'
 import { RackInstances } from './RackInstances'
 import { SceneObjects } from './SceneObjects'
-import { AreaLabels } from './AreaLabels'
+import { areaLabelItems } from './AreaLabels'
 import { CameraRig } from './CameraRig'
 
 export type Warehouse3DViewProps = Omit<BuildSceneInput, 'highlightIds'> & {
@@ -66,6 +67,12 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
   const route = useMemo(
     () => routeScene({ stops: props.routeStops, levels: scene.levels, floor, cellSizeM: layout.cellSizeM }),
     [props.routeStops, scene.levels, floor, layout.cellSizeM],
+  )
+  // Every text label over the scene: area names, signs, stop numbers, Start.
+  const labelRegistry = useLabelRegistry()
+  const screenLabels = useMemo(
+    () => [...areaLabelItems(scene.labels), ...routeLabelItems(route)],
+    [scene.labels, route],
   )
   const placedIds = useMemo(() => new Set(placements.map((p) => p.locationId)), [placements])
   const visibleIds = useMemo(() => new Set(scene.levels.map((l) => l.locationId)), [scene.levels])
@@ -134,10 +141,11 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
           selectedLocationId={props.selectedLocationId}
           onSelect={props.onSelect}
         />
-        <AreaLabels labels={scene.labels} />
         <RoutePath3D route={route} />
+        <LabelProjector labels={screenLabels} registry={labelRegistry} />
         <CameraRig bounds={scene.bounds} preset={preset} nonce={nonce} focus={focus} frame={frame} />
       </Canvas>
+      <LabelOverlay labels={screenLabels} registry={labelRegistry} />
 
       <div className="absolute left-3 top-3 z-30">
         <FindStockBar

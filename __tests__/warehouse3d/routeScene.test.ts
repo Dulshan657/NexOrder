@@ -80,4 +80,11 @@ describe('routeScene', () => {
     const { markers } = routeScene({ stops, levels, floor: 0, cellSizeM: CELL })
     expect(markers.map((m) => [m.locationId, m.label])).toEqual([[1, '1·3'], [2, '2']])
   })
+
+  it('marks where the walk starts, on the floor the dock is on', () => {
+    const stops = [stop(1, 1, [{ floor: 0, x: 0, y: 0 }, { floor: 0, x: 5, y: 1 }]), stop(2, 2)]
+    expect(routeScene({ stops, levels, floor: 0, cellSizeM: CELL }).start).toEqual([0.5 * CELL, WALK_HEIGHT_M, 0.5 * CELL])
+    expect(routeScene({ stops, levels, floor: 1, cellSizeM: CELL }).start).toBeNull()
+    expect(routeScene({ stops: [stop(1, 2)], levels, floor: 0, cellSizeM: CELL }).start).toBeNull()
+  })
 })

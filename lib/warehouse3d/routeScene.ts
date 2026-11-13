@@ -35,6 +35,8 @@ export interface RouteMarker {
 export interface RouteScene {
   lines: Vec3[][]
   markers: RouteMarker[]
+  /** Where the walk begins (the dock), when that is on the floor being viewed. */
+  start: Vec3 | null
 }
 
 const r = (n: number) => Math.round(n * 1e6) / 1e6
@@ -47,10 +49,15 @@ export function routeScene({ stops, levels, floor, cellSizeM }: RouteSceneInput)
   const lines: Vec3[][] = []
   const markers: RouteMarker[] = []
   let prevEnd: Vec3 | null = null
+  let start: Vec3 | null = null
+  let first = true
 
   for (const stop of [...stops].sort((a, b) => a.sequence - b.sequence)) {
     const lvl = levelById.get(stop.locationId)
     const path = stop.path ?? []
+    // The first leg's path begins at the dock.
+    if (first && path.length > 0 && path[0].floor === floor) start = toWorld(path[0])
+    first = false
 
     if (path.length > 0) {
       // Split into runs on this floor: a lift leg leaves one floor and arrives on
@@ -95,5 +102,5 @@ export function routeScene({ stops, levels, floor, cellSizeM }: RouteSceneInput)
     // through the ceiling to it.
     prevEnd = lvl ? lvl.center : null
   }
-  return { lines, markers }
+  return { lines, markers, start }
 }
