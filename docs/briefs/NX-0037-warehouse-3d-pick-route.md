@@ -11,7 +11,10 @@
     { "id": "A3", "check": "`recommend-pick-route` returns each stop's walking path as {floor, x, y} corner points; an older client ignores the field and a client given no path falls back to a straight leg." },
     { "id": "A4", "check": "The 3D route draws each leg along those aisle corners in metres at walking height, with a riser up to the stop's rack level and the stop's sequence number; only legs on the floor being viewed are drawn." },
     { "id": "A5", "check": "Choosing an order in 'Ask the engine' while in 3D draws its route along the aisles.", "manual": "fn:deploy:dev recommend-pick-route (with owner consent) + owner browser walk" },
-    { "id": "A6", "check": "Merged and deployed to dev; /version.json shows the merge sha.", "manual": "deploy:dev verification" }
+    { "id": "A6", "check": "Merged and deployed to dev; /version.json shows the merge sha.", "manual": "deploy:dev verification" },
+    { "id": "A7", "check": "The 2D map draws the same walk: from the dock along the engine's aisle corners to each stop on the floor being viewed, a Start marker at the dock, and the route line and stop markers keep a constant on-screen size at every zoom in a colour distinct from the rack fills; a stop without a path falls back to a straight leg from the previous stop." },
+    { "id": "A8", "check": "In 3D, while a route is shown the area names fade so they no longer hide the line, and the Start pill sits above the dock point instead of on top of stop 1." },
+    { "id": "A9", "check": "Dev carries a demo order whose route visits several aisles, so the walk is visible end to end.", "manual": "order placed on dev through place-order; wie_order_pick_stops returns 6 stops; owner browser walk" }
   ],
   "failFirst": [
     { "file": "__tests__/wie/graph.test.ts", "test": "dijkstraWithPaths > gives an edge-contiguous path whose weights sum to the distance", "proves": ["A1"] },
@@ -20,7 +23,12 @@
     { "file": "__tests__/wie/picking.test.ts", "test": "simplifyPath > keeps only the corners of a walk", "proves": ["A2"] },
     { "file": "__tests__/warehouse3d/routeScene.test.ts", "test": "routeScene > draws each leg along its corners in metres, with a riser to the stop's level", "proves": ["A4"] },
     { "file": "__tests__/warehouse3d/routeScene.test.ts", "test": "routeScene > falls back to a straight leg when a stop has no path", "proves": ["A3", "A4"] },
-    { "file": "__tests__/warehouse3d/routeScene.test.ts", "test": "routeScene > draws only legs on the floor being viewed", "proves": ["A4"] }
+    { "file": "__tests__/warehouse3d/routeScene.test.ts", "test": "routeScene > draws only legs on the floor being viewed", "proves": ["A4"] },
+    { "file": "__tests__/warehouse/routeOverlay2d.test.ts", "test": "routeOverlay2d > draws each leg from the dock along the engine's walk to the stop", "proves": ["A7"] },
+    { "file": "__tests__/warehouse/routeOverlay2d.test.ts", "test": "routeOverlay2d > falls back to a straight leg from the previous stop when a stop has no path", "proves": ["A7"] },
+    { "file": "__tests__/warehouse/routeOverlay2d.test.ts", "test": "routeOverlay2d > draws only the floor being viewed", "proves": ["A7"] },
+    { "file": "__tests__/warehouse3d/routeLabels.test.tsx", "test": "route labels > fade the area names while a route is shown", "proves": ["A8"] },
+    { "file": "__tests__/warehouse3d/routeLabels.test.tsx", "test": "route labels > anchor the Start pill above the dock", "proves": ["A8"] }
   ],
   "allow": []
 }
@@ -57,9 +65,19 @@ to the rack level being picked, a numbered marker per stop.
   (`npm run fn:deploy:dev recommend-pick-route` — needs the owner's consent),
   then the frontend.
 
+## Revision 2026-11-13 (owner: "go")
+
+The owner walked dev and saw no line. Testing in their Chrome showed the 3D route
+drawing correctly but invisible in practice: dev's only routable order was one
+stop 5.5 m from the dock, its line hidden under the "Inbound staging" label and
+START covering stop 1; and the 2D route was a 7 px emerald dot on emerald racks
+with no line from the dock. So this PR now also (A7) draws the engine's walk on
+the 2D map in fuchsia at constant screen size, (A8) fades area names in 3D while a
+route is shown and lifts the Start pill above the dock, and (A9) places a
+multi-aisle demo order on dev. 2D drawing was out of scope before; it is not now.
+
 ## Out of scope
 
-- Drawing paths on the 2D map (it keeps straight lines).
 - Putaway / replenishment walks (`recommend-putaway-route`, `recommend-replen-route`).
 - Changing how the route is sequenced; any migration; Amadiya.
 
