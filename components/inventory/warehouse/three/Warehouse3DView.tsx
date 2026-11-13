@@ -71,7 +71,10 @@ export default function Warehouse3DView(props: Warehouse3DViewProps) {
   // Every text label over the scene: area names, signs, stop numbers, Start.
   const labelRegistry = useLabelRegistry()
   const screenLabels = useMemo(
-    () => [...areaLabelItems(scene.labels), ...routeLabelItems(route)],
+    () => {
+      const routeShown = route.lines.length > 0 || route.markers.length > 0
+      return [...areaLabelItems(scene.labels, { muted: routeShown }), ...routeLabelItems(route)]
+    },
     [scene.labels, route],
   )
   const placedIds = useMemo(() => new Set(placements.map((p) => p.locationId)), [placements])

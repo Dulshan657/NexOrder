@@ -7,16 +7,22 @@
 import type { SceneLabel } from '@/lib/warehouse3d/buildScene'
 import type { ScreenLabel } from './ScreenLabels'
 
-export function areaLabelItems(labels: readonly SceneLabel[]): ScreenLabel[] {
+/**
+ * `muted` while a pick route is shown: the labels are DOM over the canvas, so an
+ * area name near the dock ("Inbound staging") hid the first leg of the walk
+ * outright. Faded, it still says where you are without covering the route.
+ */
+export function areaLabelItems(labels: readonly SceneLabel[], opts: { muted?: boolean } = {}): ScreenLabel[] {
+  const fade = opts.muted ? ' opacity-40' : ''
   return labels.map((l) => ({
     key: `label:${l.key}`,
     position: l.position,
     content: (
       <span
         className={
-          l.kind === 'area'
+          (l.kind === 'area'
             ? 'whitespace-nowrap rounded-md bg-white/90 px-2 py-0.5 font-display text-xs font-bold text-stone-800 shadow-sm ring-1 ring-stone-200'
-            : 'whitespace-nowrap rounded bg-stone-800/85 px-1.5 py-0.5 text-[11px] font-semibold text-white'
+            : 'whitespace-nowrap rounded bg-stone-800/85 px-1.5 py-0.5 text-[11px] font-semibold text-white') + fade
         }
       >
         {l.text}

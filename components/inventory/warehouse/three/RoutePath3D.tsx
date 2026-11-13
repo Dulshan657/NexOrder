@@ -50,6 +50,9 @@ export function routeLabelItems(route: RouteScene): ScreenLabel[] {
     items.push({
       key: 'route:start',
       position: route.start,
+      // A pin standing on the dock: centred, it sat on top of stop 1 whenever
+      // the first pick was beside the dock.
+      anchor: 'above',
       content: (
         <span className="whitespace-nowrap rounded-full bg-stone-900 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white shadow-md ring-2 ring-white">
           Start

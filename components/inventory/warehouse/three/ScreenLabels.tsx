@@ -16,6 +16,9 @@ export interface ScreenLabel {
   key: string
   position: Vec3
   content: ReactNode
+  /** Where the label sits on its point: centred on it (default), or standing on
+   *  it — a pin above the spot, so it does not cover whatever is AT the spot. */
+  anchor?: 'center' | 'above'
 }
 
 /** key → the label's DOM node, shared by the overlay (writes) and projector (reads). */
@@ -71,7 +74,9 @@ export function LabelProjector({ labels, registry }: { labels: readonly ScreenLa
       }
       const x = ((v.x + 1) / 2) * size.width
       const y = ((1 - v.y) / 2) * size.height
-      el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`
+      el.style.transform = l.anchor === 'above'
+        ? `translate(${x}px, ${y}px) translate(-50%, calc(-100% - 10px))`
+        : `translate(${x}px, ${y}px) translate(-50%, -50%)`
     }
   })
   return null
