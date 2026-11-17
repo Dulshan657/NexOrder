@@ -100,8 +100,11 @@ app like Achintha's Build Doc help centre. This PR builds both from one source:
 | A11 | claimed | `npm run guide:pdf -- --base=https://nexorder.vercel.app` → 12 A4 pages, 1.50 MB, full-bleed cover with the journey map, footer + page numbers on pages 2–12 | 12 pages against Chamal's 7: each article starts a new page and the phone screenshots are tall |
 | A12 | claimed | all 10 files in `components/help/shots/` reviewed | Shot in the **demo's** "Amadiya" warehouse (dev id 2873) with the demo's Amadiya Agro catalogue rows, at the owner's request on 2026-11-17; no production data. The Warehouse demo login was re-homed to 2873 for the run and restored to 1 |
 | A13 | claimed | `deploy:dev` VERIFIED: nexorder.vercel.app/version.json = `c86b3b2`, health 200 | Deployed as a combined build: NX-0037 (`f656a7e`, unmerged, already on dev) merged with this branch, so dev did not lose NX-0037. `c86b3b2` is that merge, not this branch's tip |
+| A14 | claimed | `help wording > no article calls a place a bin` fails by assertion on base, passes on tip (check:brief); 49 lines reworded across the six articles, the manifest summaries and Putaway's tab descriptions | Image file names and imports kept (`putaway-bin.png`) |
 
 ### Not claimed
+
+- **The screenshots still show the old 'bin' labels.** They were captured before the rename, while the article text now quotes the new names ('Choose location', 'Scan the location', 'Count this location'), which arrive with NX-0039. Re-run `scripts/help/capture-screens.ts` once both are on dev.
 
 - Not walked on the physical RS35; the phone checks are Chromium at 360×664.
 - Button copy in `<Ui>` is not checked against the UI; only screen names (`TabName`) are type-checked.
