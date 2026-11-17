@@ -17,7 +17,8 @@
     { "id": "A9", "check": "Every place is described by what it is, never as a 'bin': a rack level as 'Rack <rack> · Level <n>', a rack as 'Rack <rack>', a bay or floor spot by its name with its zone, a staging spot as staging, and stock at the warehouse root as 'Dock — awaiting putaway'. The scannable code stays beneath the label. The Find a product summary, the walk steps and the Where is it? screen say no 'bin'." },
     { "id": "A10", "check": "Finding a product highlights every place holding it on the map: outlined on the 2D map, and in 3D the existing find-stock highlight (NX-0036) is switched on for that product, framing it. Clearing the product clears the highlight." },
     { "id": "A11", "check": "The putaway tab in Ask the engine takes a scanned or typed product (the same scan box as Find a product) instead of a product dropdown." },
-    { "id": "A12", "check": "Ask the engine is ONE card: a header, a 'preview only — nothing moves' note and one tab per question (Find a product, Put away, Pick route, Simulate). There is no second 'Test bench' box inside it." }
+    { "id": "A12", "check": "Ask the engine is ONE card: a header, a 'preview only — nothing moves' note and one tab per question (Find a product, Put away, Pick route, Simulate). There is no second 'Test bench' box inside it." },
+    { "id": "A13", "check": "On the warehouse map page the 'Locations' list beside the place detail starts collapsed, and while collapsed it takes only a slim column; one click opens it to the full tree." }
   ],
   "failFirst": [
     { "file": "__tests__/wie/productWhereabouts.test.ts", "test": "productWhereabouts > marks stock in the home bin as home, other bins as off home and the warehouse root as at the dock", "proves": ["A1"] },
@@ -35,7 +36,8 @@
     { "file": "__tests__/warehouse/findProductSection.test.tsx", "test": "FindProductSection > hands the places holding the product to the map to highlight, and clears them", "proves": ["A10"] },
     { "file": "__tests__/warehouse/holdingMarkers.test.tsx", "test": "holdingMarkers > outlines every place holding the product on the floor being viewed", "proves": ["A10"] },
     { "file": "__tests__/warehouse/askEnginePanel.test.tsx", "test": "AskEnginePanel > the putaway tab takes a scanned product", "proves": ["A11"] },
-    { "file": "__tests__/warehouse/askEnginePanel.test.tsx", "test": "AskEnginePanel > is one card with a tab per question and no test bench box", "proves": ["A12"] }
+    { "file": "__tests__/warehouse/askEnginePanel.test.tsx", "test": "AskEnginePanel > is one card with a tab per question and no test bench box", "proves": ["A12"] },
+    { "file": "__tests__/warehouse/locationsPanel.test.tsx", "test": "LocationsPanel > starts collapsed and opens on a click", "proves": ["A13"] }
   ],
   "allow": []
 }
@@ -92,6 +94,9 @@ input on the putaway tab; and one tidy card instead of "Ask the engine" wrapping
 - **3D:** a `focusProductId` prop on `Warehouse3DView` drives its existing find state.
 - **The card:** `AskEnginePanel` + `WarehouseTestBench` are folded into one tabbed card. The
   putaway tab uses `ProductScanBox`.
+- **A13 (asked while this was being built):** the Locations tree panel starts collapsed
+  (`FloatingPanel` gains `onOpenChange`), and the map page's grid narrows its first
+  column while it is closed.
 - Out of scope still: `PutawayExplanationCard`, the putaway queue and other screens that
   say "bin" are unchanged.
 
