@@ -62,7 +62,6 @@ import { areaCellsFingerprint } from '@/lib/areaPaint'
 import { signCellsFingerprint } from '@/lib/signPaint'
 import { OverlayControls } from './OverlayControls'
 import { AskEnginePanel } from './AskEnginePanel'
-import { LocationsPanel } from './LocationsPanel'
 import type { ProductHighlight } from './FindProductSection'
 import { slottingArrows, routePath, putawayMarkers, holdingMarkers } from './warehouseMarkers'
 import type { OverlayKind } from './warehouseOverlays'
@@ -244,7 +243,6 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
   const [productWalkStops, setProductWalkStops] = useState<PickRouteStop[] | null>(null)
   // The places holding a product found there, outlined in 2D and lit in 3D.
   const [productHighlight, setProductHighlight] = useState<ProductHighlight | null>(null)
-  const [treeOpen, setTreeOpen] = useState(false)
   const routeStops = productWalkStops && productWalkStops.length > 0
     ? productWalkStops
     : (routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : EMPTY_STOPS)
@@ -1299,15 +1297,11 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
         // sideways by 188px. Tailwind's numeric `grid-cols-*` expand to
         // `minmax(0, 1fr)` exactly to stop this; the arbitrary `lg:` value below
         // already says `minmax(0, ...)` on every track for the same reason.
-        className={`grid-cols-1 gap-4 lg:grid ${
-          // The Locations tree starts collapsed (NX-0039 A13); closed, its column
-          // shrinks to the header so the detail and Ask the engine get the room.
-          treeOpen
-            ? 'lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)]'
-            : 'lg:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_minmax(0,26rem)]'
-        } ${recode.state.active ? 'hidden lg:grid' : 'grid'}`}
+        className={`grid-cols-1 gap-4 lg:grid lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)] ${
+          recode.state.active ? 'hidden lg:grid' : 'grid'
+        }`}
       >
-        <LocationsPanel className={treeOpen ? 'max-h-[70svh]' : 'self-start'} onOpenChange={setTreeOpen}>
+        <FloatingPanel id="wh-tree" title="Locations" className="max-h-[70svh]">
           <WarehouseTreePanel
             tree={model.tree}
             binContents={model.binContents}
@@ -1315,7 +1309,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
             selectedLocationId={selectedLocationId}
             onSelect={selectLocation}
           />
-        </LocationsPanel>
+        </FloatingPanel>
 
         <FloatingPanel
           id="wh-bin-detail"
