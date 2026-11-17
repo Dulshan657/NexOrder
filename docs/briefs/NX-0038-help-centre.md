@@ -82,3 +82,28 @@ app like Achintha's Build Doc help centre. This PR builds both from one source:
 - Keeping screenshots and button copy in sync with the UI automatically.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `parseHelpPath > maps the help paths and ignores everything else` | |
+| A2 | claimed | `helpAudienceForRole > maps each role to its audience`, `visibleArticles > filters by audience in manifest order` | |
+| A3 | claimed | `help manifest > holds the six Phase 1 articles, each with a body` | |
+| A4 | claimed | `ProfileMenu — help link` (3 tests) fail by assertion on base; live on dev: Warehouse → `/help?for=floor`, Admin → `/help?for=supervisor`, both `target=_blank` | |
+| A5 | claimed | `HelpCentre > floor readers do not see the supervisor article until they ask`, `HelpCentre > an article shows its steps and a way back` | |
+| A6 | claimed | `Shot > hides the badges and lists every callout as text`, `help centre a11y > index and an article have no axe violations`; plus `tests/a11y/help.a11y.spec.ts` 2/2 in Chromium (contrast measured) | |
+| A7 | claimed | `HelpLink > opens the article in a new tab with a named topic`; live: Receive Stock "?" opened `/help/receive-a-delivery` in a new tab | |
+| A8 | claimed | `HelpCentre > the print guide has a cover and every article in order` | |
+| A9 | claimed | `assertCaptureBase > allows only the demo origin and localhost` | |
+| A10 | claimed | dev `c86b3b2`: signed-out `/help` at 360px shows "Receipt & Putaway", no login form; profile Help and both header "?" links checked as the Warehouse and Admin demo users | |
+| A11 | claimed | `npm run guide:pdf -- --base=https://nexorder.vercel.app` → 12 A4 pages, 1.50 MB, full-bleed cover with the journey map, footer + page numbers on pages 2–12 | 12 pages against Chamal's 7: each article starts a new page and the phone screenshots are tall |
+| A12 | claimed | all 10 files in `components/help/shots/` reviewed | Shot in the **demo's** "Amadiya" warehouse (dev id 2873) with the demo's Amadiya Agro catalogue rows, at the owner's request on 2026-11-17; no production data. The Warehouse demo login was re-homed to 2873 for the run and restored to 1 |
+| A13 | claimed | `deploy:dev` VERIFIED: nexorder.vercel.app/version.json = `c86b3b2`, health 200 | Deployed as a combined build: NX-0037 (`f656a7e`, unmerged, already on dev) merged with this branch, so dev did not lose NX-0037. `c86b3b2` is that merge, not this branch's tip |
+
+### Not claimed
+
+- Not walked on the physical RS35; the phone checks are Chromium at 360×664.
+- Button copy in `<Ui>` is not checked against the UI; only screen names (`TabName`) are type-checked.
+- The screenshots are fresh as of 2026-11-17 and nothing keeps them current.
+- On a phone the Receive Stock "?" sits on its own row above the form (about 50 px), because that header had no other actions.
+- The capture run left demo data behind: a GUIDE-2026-11-17 receipt in Main Warehouse (Pho Soup Paste, put away; plus an earlier Coconut Milk 400ml line still on the Main walk) and the Roasted Curry Powder receipt in Amadiya, with about 10 stops still on its walk. `demo-export/` was refreshed before the run.
+- Not shipped to Amadiya (nexorder.com.au); that waits for a later `rel-*` tag.
