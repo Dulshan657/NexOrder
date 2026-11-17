@@ -82,3 +82,24 @@ multi-aisle demo order on dev. 2D drawing was out of scope before; it is not now
 - Changing how the route is sequenced; any migration; Amadiya.
 
 ## FINAL
+
+Verified at `f656a7e`: `npx tsc --noEmit`, `npm run lint`, `npm run check:edge-types` (88 functions), `npm run check:demo` and `npm test` (451 files, 7027 tests) pass. `npm run check:brief`: every named test fails on the base and passes on the tip. 4 fail by assertion (`dijkstraWithPaths`, `legPaths`, `simplifyPath`) and 8 by absence (new modules). Review fixes are in `cfc4158`.
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `dijkstraWithPaths > gives an edge-contiguous path whose weights sum to the distance`, `dijkstraWithPaths > gives no path to an unreachable node`, both by assertion (check:brief) | `dijkstra` is unchanged. |
+| A2 | claimed | `legPaths > each leg's path length plus access offset equals its legDistanceM`, `simplifyPath > keeps only the corners of a walk`, both by assertion (check:brief) | |
+| A3 | claimed | `routeScene > falls back to a straight leg when a stop has no path` (check:brief); `recommend-pick-route` deployed to dev 2026-11-17, exit 0 | The response shape is additive. An older client ignoring the field is by construction, not tested. |
+| A4 | claimed | `routeScene > draws each leg along its corners in metres, with a riser to the stop's level`, `routeScene > draws only legs on the floor being viewed` (check:brief) | Proven by absence. |
+| A5 | claimed | Owner, 2026-11-17: "it works". Ask the engine → Pick route on MAIN with `ORD-1794572122642`, in 2D and 3D, against dev at `c86b3b2` (contains `f656a7e`) | |
+| A6 | not-claimed | | Written before the merge. Dev serves `c86b3b2`, a local merge of this tip with NX-0038, not the merge sha. |
+| A7 | claimed | `routeOverlay2d > draws each leg from the dock along the engine's walk to the stop`, `routeOverlay2d > falls back to a straight leg from the previous stop when a stop has no path`, `routeOverlay2d > draws only the floor being viewed` (check:brief); owner walk as A5 | Proven by absence. Constant on-screen size and colour were checked by the owner's walk, not by a unit test. |
+| A8 | claimed | `route labels > fade the area names while a route is shown`, `route labels > anchor the Start pill above the dock` (check:brief); owner walk as A5 | Proven by absence. |
+| A9 | claimed | On dev, `wie_order_pick_stops('ORD-1794572122642', 1)` returns 6 stops (MAIN), queried 2026-11-17; owner walk as A5 | The order routes at MAIN only. It has 0 stops at AMADIYA (2873). |
+
+### Not claimed
+
+- The owner's walk was on dev's combined NX-0037 + NX-0038 build (`c86b3b2`), not on this branch alone or on the merge sha.
+- Putaway and replenishment walks still draw no path. That is next: NX-0039, scan a product → the putaway and pick walks.
+- Only one demo order (MAIN) was walked. Multi-order batch routes (up to 3 orders) were not walked in a browser.
+- Not checked on the RS35, because the map is a desktop surface.
