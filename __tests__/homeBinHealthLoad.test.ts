@@ -152,7 +152,7 @@ describe('loadHomeBinHealth', () => {
 
   it('throws when the facts cannot be read', async () => {
     const { admin } = makeAdmin({ factsError: 'boom' })
-    await expect(loadHomeBinHealth(admin, 7)).rejects.toThrow('home bin facts load failed: boom')
+    await expect(loadHomeBinHealth(admin, 7)).rejects.toThrow('home location facts load failed: boom')
   })
 
   it('fails closed when the slotting rules cannot be read', async () => {
@@ -179,7 +179,7 @@ describe('loadHomeBinChoices', () => {
 
     const failing = makeAdmin({ factsError: 'boom' })
     await expect(loadHomeBinChoices(failing.admin, 7, 1))
-      .rejects.toThrow('home bin candidates load failed: boom')
+      .rejects.toThrow('home location candidates load failed: boom')
   })
 
   it('gives the lines being placed their own space back: p_exclude_rec_ids goes through, and only when there are some', async () => {
@@ -234,7 +234,7 @@ describe('loadHomeChoiceRefusal', () => {
       candidates: [candidateRow({ bin_id: 21, bin_code: 'TST-WALK-B2', is_active: false })],
     })
     expect(await loadHomeChoiceRefusal(admin, 7, 1, 21))
-      .toBe('Bin TST-WALK-B2 is inactive, so putaway never offers it.')
+      .toBe('Location TST-WALK-B2 is inactive, so putaway never offers it.')
     expect(rpcCalls).toEqual([{
       name: 'wie_home_bin_candidate_facts',
       args: { p_warehouse_id: 7, p_product_id: 1, p_bin_id: 21 },
@@ -261,7 +261,7 @@ describe('loadHomeChoiceRefusal', () => {
       candidates: [candidateRow({ bin_id: 21, bin_code: 'TST-WALK-B2', other_home_skus: ['TST-WALK-900'] })],
     })
     expect(await loadHomeChoiceRefusal(admin, 7, 1, 21))
-      .toBe('TST-WALK-B2 is the home bin of TST-WALK-900; choose another bin.')
+      .toBe('TST-WALK-B2 is the home location of TST-WALK-900; choose another location.')
   })
 
   it('is null for a bin that can be the home', async () => {
@@ -271,13 +271,13 @@ describe('loadHomeChoiceRefusal', () => {
 
   it('refuses a location the function returns no row for, as not a bin of this warehouse', async () => {
     const { admin } = makeAdmin({ candidates: [] })
-    expect(await loadHomeChoiceRefusal(admin, 7, 1, 99)).toBe('That location is not a bin in this warehouse.')
+    expect(await loadHomeChoiceRefusal(admin, 7, 1, 99)).toBe('That is not a storage location in this warehouse.')
   })
 
   it('throws on a read error', async () => {
     const { admin } = makeAdmin({ factsError: 'boom' })
     await expect(loadHomeChoiceRefusal(admin, 7, 1, 21))
-      .rejects.toThrow('home bin candidates load failed: boom')
+      .rejects.toThrow('home location candidates load failed: boom')
   })
 
   it('applies a slotting refusal to the one bin', async () => {
@@ -287,7 +287,7 @@ describe('loadHomeChoiceRefusal', () => {
       blockBins: [{ block_id: 11, location_id: 20 }],
     })
     const refusal = await loadHomeChoiceRefusal(admin, 7, 1, 20)
-    expect(refusal).toContain('Slotting rules refuse bin TST-WALK-B1')
+    expect(refusal).toContain('Slotting rules refuse location TST-WALK-B1')
     expect(refusal).toContain('Block A')
   })
 })

@@ -30,9 +30,9 @@ describe('layoutService error surfacing', () => {
   it('surfaces the server message on a failed save', async () => {
     invoke.mockResolvedValue({
       data: null,
-      error: httpError(400, { error: { code: 'INVALID_INPUT', message: 'A bin appears twice in the layout' } }),
+      error: httpError(400, { error: { code: 'INVALID_INPUT', message: 'A location appears twice in the layout' } }),
     })
-    await expect(saveGeometry(78, [], [])).rejects.toThrow('A bin appears twice in the layout')
+    await expect(saveGeometry(78, [], [])).rejects.toThrow('A location appears twice in the layout')
   })
 
   it('does not leak the generic non-2xx message on a failed save', async () => {
@@ -87,9 +87,9 @@ describe('layoutService error surfacing', () => {
   it('leaves a message with no validation details unchanged', async () => {
     invoke.mockResolvedValue({
       data: null,
-      error: httpError(400, { error: { code: 'INVALID_INPUT', message: 'A bin appears twice in the layout', details: { foo: 1 } } }),
+      error: httpError(400, { error: { code: 'INVALID_INPUT', message: 'A location appears twice in the layout', details: { foo: 1 } } }),
     })
-    await expect(saveGeometry(78, [], [])).rejects.toThrow(/^A bin appears twice in the layout$/)
+    await expect(saveGeometry(78, [], [])).rejects.toThrow(/^A location appears twice in the layout$/)
   })
 })
 

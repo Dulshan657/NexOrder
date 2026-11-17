@@ -32,7 +32,7 @@ describe('getHomeBinHealth', () => {
   it('returns the homes with problems, and how many were checked', async () => {
     const rows = [{
       productId: 1, sku: 'TST-HOME-200', binId: 20, binCode: 'TST-A-01-1',
-      problems: [{ code: 'inactive', message: 'Bin TST-A-01-1 is inactive, so putaway never offers it.' }],
+      problems: [{ code: 'inactive', message: 'Location TST-A-01-1 is inactive, so putaway never offers it.' }],
     }]
     invoke.mockResolvedValue({ data: { ok: true, warehouseId: 7, checked: 12, rows }, error: null })
     expect(await getHomeBinHealth(7)).toEqual({ warehouseId: 7, checked: 12, rows })
@@ -51,9 +51,9 @@ describe('getHomeBinHealth', () => {
   it('surfaces the server message on a failure, not the generic non-2xx one', async () => {
     invoke.mockResolvedValue({
       data: null,
-      error: httpError(500, { error: { code: 'INTERNAL', message: 'Could not check home bins, try again.' } }),
+      error: httpError(500, { error: { code: 'INTERNAL', message: 'Could not check home locations, try again.' } }),
     })
-    await expect(getHomeBinHealth(7)).rejects.toThrow('Could not check home bins, try again.')
+    await expect(getHomeBinHealth(7)).rejects.toThrow('Could not check home locations, try again.')
   })
 
   it('falls back to a readable message when the body carries none', async () => {
@@ -101,9 +101,9 @@ describe('getHomeBinChoices', () => {
   it('surfaces the server message on a failure, not the generic non-2xx one', async () => {
     invoke.mockResolvedValue({
       data: null,
-      error: httpError(500, { error: { code: 'INTERNAL', message: 'Could not list bins for a home, try again.' } }),
+      error: httpError(500, { error: { code: 'INTERNAL', message: 'Could not list locations for a home, try again.' } }),
     })
-    await expect(getHomeBinChoices(7, 3)).rejects.toThrow('Could not list bins for a home, try again.')
+    await expect(getHomeBinChoices(7, 3)).rejects.toThrow('Could not list locations for a home, try again.')
   })
 
   it('falls back to a readable message when the body carries none', async () => {

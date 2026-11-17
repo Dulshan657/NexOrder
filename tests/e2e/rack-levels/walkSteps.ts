@@ -31,7 +31,7 @@ export const COPY = {
   notOffered: (code: string) => `${code} can't be this product's home. Pick one of the locations listed.`,
   homeScanLabel: (bin: string) => `Scan ${bin} — it becomes the home location`,
   placedAndSet: (bin: string, sku: string) => `Placed in ${bin} — it is now ${sku}'s home location`,
-  forbidden: 'Only a Manager or Admin can give a product a home bin.',
+  forbidden: 'Only a Manager or Admin can give a product a home location.',
 } as const
 
 export type StageName = 'Assign' | 'Walk'

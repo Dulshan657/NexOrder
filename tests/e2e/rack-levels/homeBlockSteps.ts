@@ -15,7 +15,7 @@ export async function scan(field: Locator, code: string): Promise<void> {
 
 /** The refusal copy every off-home bin gets while the home has room (A1). */
 export function homeRoomMessage(homeCode: string, room: number): string {
-  return `Put this in its home bin ${homeCode}; it still has room for ${room}. If it is full, ask a manager to set its maximum.`
+  return `Put this in its home location ${homeCode}; it still has room for ${room}. If it is full, ask a manager to set its maximum.`
 }
 
 /** What the walk card says at the bin scan when a home task is scanned into another bin. */
@@ -25,7 +25,7 @@ export function walkHomeMessage(homeCode: string): string {
 
 /** The refusal copy for another product's home (A9). */
 export function othersHomeMessage(binCode: string, sku: string): string {
-  return `${binCode} is the home bin of ${sku}; choose another bin.`
+  return `${binCode} is the home location of ${sku}; choose another location.`
 }
 
 /** Nothing on the page that could lift the block: no override, no "Place anyway". */

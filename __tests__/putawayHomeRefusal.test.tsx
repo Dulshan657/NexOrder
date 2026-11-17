@@ -29,8 +29,8 @@ import { completePutaway, decidePutaway } from '@/services/supabase/putawayServi
 import PutawayQueueView from '@/components/inventory/PutawayQueueView'
 
 const HOME_MESSAGE =
-  'Put this in its home bin TST-HOME-H-1; it still has room for 10. If it is full, ask a manager to set its maximum.'
-const OTHERS_HOME_MESSAGE = 'TST-HOME-H-1 is the home bin of TST-HOME-200; choose another bin.'
+  'Put this in its home location TST-HOME-H-1; it still has room for 10. If it is full, ask a manager to set its maximum.'
+const OTHERS_HOME_MESSAGE = 'TST-HOME-H-1 is the home location of TST-HOME-200; choose another location.'
 
 /** What supabase-js hands back for a 409: a generic message, the body on `.context`. */
 function httpError(message: string, status = 409) {

@@ -27,8 +27,8 @@ const row = (o: Record<string, unknown> = {}) => ({
   binId: 20,
   binCode: 'TST-A-01-1',
   problems: [
-    { code: 'inactive', message: 'Bin TST-A-01-1 is inactive, so putaway never offers it.' },
-    { code: 'full', message: 'Bin TST-A-01-1 is full: it has no room left for TST-HOME-200.' },
+    { code: 'inactive', message: 'Location TST-A-01-1 is inactive, so putaway never offers it.' },
+    { code: 'full', message: 'Location TST-A-01-1 is full: it has no room left for TST-HOME-200.' },
   ],
   ...o,
 })
@@ -51,7 +51,7 @@ describe('HomeBinProblemsPanel', () => {
       row(),
       row({
         productId: 2, sku: 'TST-HOME-201', binCode: 'TST-A-01-2',
-        problems: [{ code: 'no_dock_route', message: 'Bin TST-A-01-2 has no walking route from a dock.' }],
+        problems: [{ code: 'no_dock_route', message: 'Location TST-A-01-2 has no walking route from a dock.' }],
       }),
     ], 5))
     render(<HomeBinProblemsPanel warehouseId={7} />)
@@ -63,12 +63,12 @@ describe('HomeBinProblemsPanel', () => {
     const first = within(items[0])
     expect(first.getByText('TST-HOME-200')).toBeTruthy()
     expect(first.getAllByText(/TST-A-01-1/).length).toBeGreaterThan(0)
-    expect(first.getByText('Bin TST-A-01-1 is inactive, so putaway never offers it.')).toBeTruthy()
-    expect(first.getByText('Bin TST-A-01-1 is full: it has no room left for TST-HOME-200.')).toBeTruthy()
+    expect(first.getByText('Location TST-A-01-1 is inactive, so putaway never offers it.')).toBeTruthy()
+    expect(first.getByText('Location TST-A-01-1 is full: it has no room left for TST-HOME-200.')).toBeTruthy()
 
     const second = within(items[1])
     expect(second.getByText('TST-HOME-201')).toBeTruthy()
-    expect(second.getByText('Bin TST-A-01-2 has no walking route from a dock.')).toBeTruthy()
+    expect(second.getByText('Location TST-A-01-2 has no walking route from a dock.')).toBeTruthy()
     expect(screen.queryByText('No problems')).toBeNull()
   })
 
@@ -96,10 +96,10 @@ describe('HomeBinProblemsPanel', () => {
   it('shows the failure, not "No problems", and offers another try', () => {
     health.mockReturnValue({
       data: undefined, isLoading: false, isFetching: false, refetch,
-      error: new Error('Could not check home bins, try again.'),
+      error: new Error('Could not check home locations, try again.'),
     })
     render(<HomeBinProblemsPanel warehouseId={7} />)
-    expect(screen.getByText('Could not check home bins, try again.')).toBeTruthy()
+    expect(screen.getByText('Could not check home locations, try again.')).toBeTruthy()
     expect(screen.queryByText('No problems')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /try again/i }))
     expect(refetch).toHaveBeenCalledTimes(1)

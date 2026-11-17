@@ -44,10 +44,10 @@ const EPS = 1e-9
 const refuse = (code: RefusalCode, message: string): Refusal => ({ ok: false, code, message })
 
 /** NX-0033: giving a product a home from the walk is a Manager's or Admin's call. */
-export const MAKE_HOME_FORBIDDEN = 'Only a Manager or Admin can give a product a home bin.'
+export const MAKE_HOME_FORBIDDEN = 'Only a Manager or Admin can give a product a home location.'
 
 /** NX-0033 I1: a quarantined (held) line is going to a hold bin, never a home. */
-export const MAKE_HOME_HELD = "A held line can't make a home bin."
+export const MAKE_HOME_HELD = "A held line can't make a home location."
 
 /**
  * May a home be made from these lines? Not when any of them is held: its stock
@@ -166,7 +166,7 @@ export function decidePutawayCompletion(input: CompletionInput): CompletionDecis
   let overrideReason: OverrideReason | null = null
   if (elsewhere && task.status === 'suggested') {
     if (!isOverrideReason(input.overrideReason)) {
-      return refuse('INVALID_INPUT', 'say why it went to a different bin: blocked, damaged, full, closer or other')
+      return refuse('INVALID_INPUT', 'say why it went to a different location: blocked, damaged, full, closer or other')
     }
     overrideReason = input.overrideReason
   } else if (elsewhere && isOverrideReason(input.overrideReason)) {
@@ -179,7 +179,7 @@ export function decidePutawayCompletion(input: CompletionInput): CompletionDecis
     // product's home looks like, so the answer does not reveal whether it has one.
     if (!canSetHome(role)) return refuse('FORBIDDEN', MAKE_HOME_FORBIDDEN)
     if (input.existingHomeLocationId !== null) {
-      return refuse('INVALID_INPUT', 'this product already has a home bin; change it in the home bin editor')
+      return refuse('INVALID_INPUT', 'this product already has a home location; change it in the home location editor')
     }
     setHome = true
   }
@@ -251,7 +251,7 @@ export function decideDeskAction(input: DeskActionInput): { ok: true } | Refusal
   if (input.action === 'redirect') {
     return input.taskStatus === 'suggested'
       ? { ok: true }
-      : refuse('CONFLICT', `only a putaway nobody has started can be sent to another bin (this one is ${input.taskStatus})`)
+      : refuse('CONFLICT', `only a putaway nobody has started can be sent to another location (this one is ${input.taskStatus})`)
   }
   if (input.taskStatus !== 'short') {
     return refuse('CONFLICT', `this putaway is ${input.taskStatus}, not short`)

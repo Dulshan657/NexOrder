@@ -25,7 +25,7 @@ import { PutawayPanel } from '@/components/inventory/PutawayPanel'
 import type { PutawayLineRecommendation } from '@/types'
 
 const HOME_MESSAGE =
-  'Put this in its home bin TST-HOME-H-1; it still has room for 10. If it is full, ask a manager to set its maximum.'
+  'Put this in its home location TST-HOME-H-1; it still has room for 10. If it is full, ask a manager to set its maximum.'
 
 function httpError(message: string) {
   const body = JSON.stringify({ error: { code: 'CONFLICT', message } })

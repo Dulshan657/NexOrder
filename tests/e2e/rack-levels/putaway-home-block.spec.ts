@@ -180,7 +180,7 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
     await test.step('6. H is now at its maximum: the health panel lists it as full', async () => {
       await openMinMaxSetup(page, world)
       await checkHomesAgain(page)
-      await expect(healthPanel(page).getByText(`Bin ${h.code} is full`)).toBeVisible()
+      await expect(healthPanel(page).getByText(`Location ${h.code} is full`)).toBeVisible()
       await shot(page, testInfo, '6-panel-lists-full')
     })
 
@@ -256,7 +256,7 @@ test.describe('Putaway goes to the home bin, or is refused', () => {
       await openMinMaxSetup(page, world)
       await checkHomesAgain(page)
       const panel = healthPanel(page)
-      await expect(panel.getByText(`Bin ${h.code} is inactive`)).toBeVisible()
+      await expect(panel.getByText(`Location ${h.code} is inactive`)).toBeVisible()
       await expect(panel.getByText(sku, { exact: true })).toBeVisible()
       await shot(page, testInfo, '10-panel-lists-inactive')
     })

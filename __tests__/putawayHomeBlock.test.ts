@@ -8,7 +8,7 @@ import { HOME_UNAVAILABLE, refuseIfHomeBlocked } from '../supabase/functions/_sh
 import { EdgeFunctionError } from '../supabase/functions/_shared/errors'
 
 const HOME_MESSAGE =
-  'Put this in its home bin TST-HOME-H-1; it still has room for 10. If it is full, ask a manager to set its maximum.'
+  'Put this in its home location TST-HOME-H-1; it still has room for 10. If it is full, ask a manager to set its maximum.'
 
 function adminReplying(reply: { data?: unknown; error?: { message: string } | null }) {
   const rpc = vi.fn().mockResolvedValue({ data: reply.data ?? null, error: reply.error ?? null })
@@ -56,7 +56,7 @@ describe('refuseIfHomeBlocked', () => {
     const { admin } = adminReplying({ error: { message: 'function wie_home_block does not exist' } })
     const err = await refusal(refuseIfHomeBlocked(admin, 7, 3))
     expect(err.code).toBe('INTERNAL')
-    expect(err.message).toBe('Home bin unavailable, try again.')
+    expect(err.message).toBe('Home location unavailable, try again.')
     expect(err.message).toBe(HOME_UNAVAILABLE)
     expect(err.message).not.toContain('wie_home_block')
     expect(logged).toHaveBeenCalledWith(expect.stringContaining('function wie_home_block does not exist'))

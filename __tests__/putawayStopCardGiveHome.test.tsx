@@ -382,7 +382,7 @@ describe('putaway walk card — a product with no home', () => {
 
   it("keeps the stop open with the server's words when the home was set meanwhile", async () => {
     withChoices()
-    const refusal = 'this product already has a home bin; change it in the home bin editor'
+    const refusal = 'this product already has a home location; change it in the home location editor'
     completeMock.mockRejectedValue(new Error(refusal))
     mount()
     open()

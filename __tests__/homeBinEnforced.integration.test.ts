@@ -38,8 +38,8 @@ let seq = 0
 const uniq = (): string => `${Date.now()}-${++seq}`
 
 const HOME_ROOM = (n: number): RegExp =>
-  new RegExp(`CONFLICT: Put this in its home bin TST-HOME-H-[^;]+; it still has room for ${n}\\. If it is full, ask a manager to set its maximum\\.`)
-const OTHERS_HOME = /CONFLICT: TST-HOME-H-\S+ is the home bin of TST-HOME-\S+; choose another bin\./
+  new RegExp(`CONFLICT: Put this in its home location TST-HOME-H-[^;]+; it still has room for ${n}\\. If it is full, ask a manager to set its maximum\\.`)
+const OTHERS_HOME = /CONFLICT: TST-HOME-H-\S+ is the home location of TST-HOME-\S+; choose another location\./
 
 interface Scenario {
   token: string
@@ -217,7 +217,7 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
 
       const id = await task(client, s, 4, s.spare)
       await expectRaise(client, completeWithReason, [id, s.home, 4], OTHERS_HOME)
-      await expectRaise(client, completeWithReason, [id, s.home, 4], new RegExp(`home bin of ${b.sku};`))
+      await expectRaise(client, completeWithReason, [id, s.home, 4], new RegExp(`home location of ${b.sku};`))
       expect(await onHand(client, s.productId, s.home)).toBe(0)
     })
   })
@@ -299,7 +299,7 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
         client,
         "SELECT public.wie_complete_putaway_many_tx($1::jsonb, $2, NULL, 'full')",
         [JSON.stringify([{ id: a, qty: 3 }, { id: b, qty: 2 }]), s.other],
-        /CONFLICT: Put this in its home bin TST-HOME-H-/,
+        /CONFLICT: Put this in its home location TST-HOME-H-/,
       )
       expect(await status(client, a)).toBe('suggested')
       expect(await status(client, b)).toBe('suggested')
@@ -337,7 +337,7 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
       await setHome(client, s, s.home)
       await receive(client, s.productId, s.home, 500)
       const id = await task(client, s, 4, s.other)
-      await expectRaise(client, complete, [id, s.other], /CONFLICT: Put this in its home bin TST-HOME-H-[^;]+; it still has room for \d+\./)
+      await expectRaise(client, complete, [id, s.other], /CONFLICT: Put this in its home location TST-HOME-H-[^;]+; it still has room for \d+\./)
     })
   })
 
@@ -411,7 +411,7 @@ describe('NX-0032 home bin enforced (live RPCs, rollback-isolated)', () => {
 
       // The plate now holds B alone, but the planner sent B home.
       await expectRaise(client, complete, [tB, s.other],
-        /CONFLICT: Put this in its home bin TST-HOME-Y-[^;]+; it still has room for 100\./)
+        /CONFLICT: Put this in its home location TST-HOME-Y-[^;]+; it still has room for 100\./)
       expect(await onHand(client, b.id, s.other)).toBe(0)
     })
   })
@@ -896,8 +896,8 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
 
 /** The refusal as the floor reads it: no "CONFLICT:" prefix, that is the wire code. */
 const HOME_ROOM_MSG = (n: number | string): RegExp =>
-  new RegExp(`^Put this in its home bin TST-HOME-H-[^;]+; it still has room for ${n}\\. If it is full, ask a manager to set its maximum\\.$`)
-const SAY_WHY = /say why it went to a different bin/
+  new RegExp(`^Put this in its home location TST-HOME-H-[^;]+; it still has room for ${n}\\. If it is full, ask a manager to set its maximum\\.$`)
+const SAY_WHY = /say why it went to a different location/
 const LEVEL_ROLE = /level; .* is only allowed on/
 
 interface HttpFixture {

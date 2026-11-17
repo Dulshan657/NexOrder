@@ -71,7 +71,7 @@ serve(async (req: Request) => {
       .select('id').eq('id', warehouseId).eq('kind', 'WAREHOUSE').maybeSingle()
     if (whError) {
       console.error('[home-bin-health] warehouse read failed', whError)
-      throw new EdgeFunctionError('INTERNAL', 'Could not check home bins, try again.')
+      throw new EdgeFunctionError('INTERNAL', 'Could not check home locations, try again.')
     }
     if (!warehouse) throw new EdgeFunctionError('NOT_FOUND', 'Warehouse not found')
 
@@ -81,7 +81,7 @@ serve(async (req: Request) => {
     } catch (e) {
       // The detail goes to the server log; the operator gets a message they can act on.
       console.error('[home-bin-health] load failed', e)
-      throw new EdgeFunctionError('INTERNAL', 'Could not check home bins, try again.')
+      throw new EdgeFunctionError('INTERNAL', 'Could not check home locations, try again.')
     }
 
     return new Response(JSON.stringify({ ok: true, ...report }), {
@@ -91,6 +91,6 @@ serve(async (req: Request) => {
   } catch (e) {
     if (isEdgeFunctionError(e)) return e.toResponse(req)
     console.error('[home-bin-health] unexpected', e)
-    return errorResponse('INTERNAL', 'Could not check home bins, try again.', undefined, undefined, req)
+    return errorResponse('INTERNAL', 'Could not check home locations, try again.', undefined, undefined, req)
   }
 })

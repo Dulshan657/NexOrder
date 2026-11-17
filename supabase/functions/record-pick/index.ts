@@ -178,7 +178,7 @@ serve(async (req: Request) => {
         if (!count) {
           throw new EdgeFunctionError(
             'CONFLICT',
-            `${(huRow as any).code} does not hold any ${product.sku} at this bin.`,
+            `${(huRow as any).code} does not hold any ${product.sku} at this location.`,
             { reason: 'PLATE_MISMATCH' },
           )
         }
@@ -233,10 +233,10 @@ serve(async (req: Request) => {
         )
       }
       if (/LOCATION_HELD/.test(msg)) {
-        throw new EdgeFunctionError('CONFLICT', "This bin is on hold and can't be picked from.", { reason: 'LOCATION_HELD' })
+        throw new EdgeFunctionError('CONFLICT', "This location is on hold and can't be picked from.", { reason: 'LOCATION_HELD' })
       }
       if (/BAD_LOCATION/.test(msg)) {
-        throw new EdgeFunctionError('INVALID_INPUT', 'That bin is not in an active warehouse.', { reason: 'BAD_LOCATION' })
+        throw new EdgeFunctionError('INVALID_INPUT', 'That location is not in an active warehouse.', { reason: 'BAD_LOCATION' })
       }
       const conflict = /OVER_PICK|INSUFFICIENT_STOCK/.test(msg)
       throw new EdgeFunctionError(conflict ? 'CONFLICT' : 'INTERNAL', `pick failed: ${msg}`)

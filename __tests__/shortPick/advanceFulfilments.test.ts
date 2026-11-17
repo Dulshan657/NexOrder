@@ -166,7 +166,7 @@ describe('who advances which sites', () => {
   it('record-pick tells the operator a held bin cannot be picked from', () => {
     const text = source('record-pick')
     expect(text).toMatch(/LOCATION_HELD/)
-    expect(text).toContain("This bin is on hold and can't be picked from.")
+    expect(text).toContain("This location is on hold and can't be picked from.")
   })
 
   it('record-short-pick guards the Warehouse role only, and maps a refused close', () => {

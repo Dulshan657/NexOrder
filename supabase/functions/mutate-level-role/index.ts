@@ -135,7 +135,7 @@ function describeUsage(u: UsageCounts): string {
   if (u.locations) parts.push(`${u.locations} location${u.locations === 1 ? '' : 's'}`)
   if (u.sku_rules) parts.push(`${u.sku_rules} product rule${u.sku_rules === 1 ? '' : 's'}`)
   if (u.form_levels) parts.push(`${u.form_levels} storage form${u.form_levels === 1 ? '' : 's'}`)
-  if (u.home_bins) parts.push(`${u.home_bins} home bin${u.home_bins === 1 ? '' : 's'}`)
+  if (u.home_bins) parts.push(`${u.home_bins} home location${u.home_bins === 1 ? '' : 's'}`)
   return parts.join(', ')
 }
 

@@ -73,16 +73,27 @@ export function findBinWording(src: string): { line: number; text: string }[] {
   return hits.filter((h) => !/wording-ok:/.test(lines[h.line - 1] ?? ''))
 }
 
+function offendersIn(dirs: string[]): string[] {
+  const offenders: string[] = []
+  for (const dir of dirs) {
+    for (const file of sourceFiles(join(ROOT, dir))) {
+      const rel = relative(ROOT, file).replace(/\\/g, '/')
+      if (SKIP_FILES.has(rel)) continue
+      for (const h of findBinWording(readFileSync(file, 'utf8'))) offenders.push(`${rel}:${h.line}  ${h.text}`)
+    }
+  }
+  return offenders
+}
+
 describe('user-facing wording', () => {
   it('no screen calls a place a bin', () => {
-    const offenders: string[] = []
-    for (const dir of DIRS) {
-      for (const file of sourceFiles(join(ROOT, dir))) {
-        const rel = relative(ROOT, file).replace(/\\/g, '/')
-        if (SKIP_FILES.has(rel)) continue
-        for (const h of findBinWording(readFileSync(file, 'utf8'))) offenders.push(`${rel}:${h.line}  ${h.text}`)
-      }
-    }
+    const offenders = offendersIn(DIRS)
+    expect(offenders, `Say "location", not "bin":\n${offenders.join('\n')}`).toEqual([])
+  })
+
+  it('no server message calls a place a bin', () => {
+    // Errors, refusals and explanations the Edge Functions send back are read by an operator.
+    const offenders = offendersIn(['supabase/functions'])
     expect(offenders, `Say "location", not "bin":\n${offenders.join('\n')}`).toEqual([])
   })
 })

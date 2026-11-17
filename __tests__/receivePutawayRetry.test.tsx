@@ -55,7 +55,7 @@ import ReceiveStockView from '@/components/inventory/ReceiveStockView'
 import ReceiveSuccessCard, { type ReceivedSummary } from '@/components/inventory/receive/ReceiveSuccessCard'
 import { UserRole, type Product, type PutawayLineRecommendation, type User } from '@/types'
 
-const HOME_UNAVAILABLE = 'Home bin unavailable, try again.'
+const HOME_UNAVAILABLE = 'Home location unavailable, try again.'
 
 /** What receive-stock returned: base units, the plate, the hold flag. */
 const PUTAWAY_LINES = [

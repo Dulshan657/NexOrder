@@ -248,7 +248,7 @@ export const TARGETS = {
       title: 'Nex Order — wholesale operations, end to end',
       description:
         'Order management for wholesale distribution: inbound purchase orders read ' +
-        'straight from your inbox, pickers routed bin by bin through the racks, and ' +
+        'straight from your inbox, pickers routed location by location through the racks, and ' +
         'tier pricing, stock and invoicing on one ledger.',
       ogImage: '/og-image.png',
 

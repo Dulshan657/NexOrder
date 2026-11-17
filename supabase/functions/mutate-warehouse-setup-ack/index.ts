@@ -79,7 +79,7 @@ async function assertWarehouse(admin: any, id: number): Promise<string> {
   if (data.kind !== 'WAREHOUSE') {
     throw new EdgeFunctionError(
       'INVALID_INPUT',
-      `Location ${id} is a ${data.kind}, not a warehouse. Setup steps are recorded against the site, not a bin.`,
+      `Location ${id} is a ${data.kind}, not a warehouse. Setup steps are recorded against the site, not a location.`,
     )
   }
   if (data.is_active === false) {

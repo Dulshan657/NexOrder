@@ -161,7 +161,7 @@ export function planBreakdown(args: {
       ...base,
       ok: false,
       reason: 'portion_invalid',
-      message: 'Some rows are not ready — each one needs a quantity and a bin.',
+      message: 'Some rows are not ready — each one needs a quantity and a location.',
     }
   }
   if (allocated === 0) return nothingAllocated

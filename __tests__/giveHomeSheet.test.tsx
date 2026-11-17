@@ -182,11 +182,11 @@ describe('GiveHomeSheet', () => {
   it("shows the server's words when the list could not be read", () => {
     choicesMock.mockReturnValue({
       data: undefined, isLoading: false, isError: true,
-      error: new Error('Could not list bins for a home, try again.'),
+      error: new Error('Could not list locations for a home, try again.'),
     })
     mount()
 
-    expect(screen.getByRole('alert').textContent).toBe('Could not list bins for a home, try again.')
+    expect(screen.getByRole('alert').textContent).toBe('Could not list locations for a home, try again.')
     expect(screen.queryByText('No location in this warehouse can be its home right now.')).toBeNull()
   })
 

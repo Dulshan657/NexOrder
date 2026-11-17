@@ -22,7 +22,7 @@ describe('receiveStock', () => {
         ok: true,
         result: RECEIPT,
         putaway: null,
-        putaway_error: 'Home bin unavailable, try again.',
+        putaway_error: 'Home location unavailable, try again.',
         putaway_lines: LINES,
       },
       error: null,
@@ -32,7 +32,7 @@ describe('receiveStock', () => {
       receipt_id: 501,
       location_id: 9,
       putaway: null,
-      putaway_error: 'Home bin unavailable, try again.',
+      putaway_error: 'Home location unavailable, try again.',
       putaway_lines: LINES,
     })
   })
