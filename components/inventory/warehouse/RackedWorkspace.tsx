@@ -776,9 +776,9 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
    * per frame — the same class of mistake the NOOP above documents, and the reason a
    * marquee drag was already janky before anything was painted.
    */
-  const renderMarkers = useCallback((cell: number) => (
+  const renderMarkers = useCallback((cell: number, scale: number) => (
     <g>
-      {routeStops.length > 0 && routePath(cell, routeStops, placementByLocation, floor)}
+      {routeStops.length > 0 && routePath(cell, scale, routeStops, placementByLocation, floor)}
       {putawayRec && putawayMarkers(cell, putawayRec, placementByLocation, floor)}
       {overlay === 'slotting' && slottingArrows(cell, model.slotting, placementByLocation, floor)}
     </g>
@@ -966,6 +966,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
                 onFloorChange={setFloor}
                 products={catalogue}
                 binContents={model.binContents}
+                routeStops={routeStops}
               />
             </Suspense>
           </ErrorBoundary>

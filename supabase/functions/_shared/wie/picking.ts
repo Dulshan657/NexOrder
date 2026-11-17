@@ -7,7 +7,7 @@
 // dozens-of-stops orders real pick lists have. Pure: graph + stops in, ordered
 // route out. Batch picking layers on top by merging several orders' stops.
 
-import { dijkstra } from './graph.ts'
+import { dijkstra, dijkstraWithPaths, pathTo, toAdjacency } from './graph.ts'
 import type { WarehouseGraph } from './types.ts'
 
 export interface PickStop {
@@ -160,3 +160,57 @@ export function sequenceBatchRoute(
   }
   return sequencePickRoute(graph, startNodeId, merged)
 }
+
+/**
+ * The walk behind each leg of a sequenced route (NX-0037): node paths from the
+ * same Dijkstra the sequencer measured with, so the drawn path is the measured
+ * one. Leg i runs from the previous stop's node (the start node for the first)
+ * to stop i's node; null where no path exists (the sequencer excludes those
+ * stops, so in practice none).
+ */
+export function legPaths(graph: WarehouseGraph, startNodeId: number, stops: readonly RoutedStop[]): (number[] | null)[] {
+  // One adjacency for the whole route, and each search stops as soon as its
+  // leg's target is settled — a big batch route must not cost a second full
+  // Dijkstra per stop on top of the sequencer's.
+  const adj = toAdjacency(graph)
+  const out: (number[] | null)[] = []
+  let from = startNodeId
+  for (const s of stops) {
+    if (s.graphNodeId == null) {
+      out.push(null)
+      continue
+    }
+    const { prev } = dijkstraWithPaths(graph, from, { adj, target: s.graphNodeId })
+    out.push(pathTo(prev, from, s.graphNodeId))
+    from = s.graphNodeId
+  }
+  return out
+}
+
+export interface PathPoint {
+  floor: number
+  x: number
+  y: number
+}
+
+/**
+ * Corners only. Walk-graph nodes are grid cells, so a 40-cell aisle is 40 points
+ * that draw the same as its two ends; keeping only direction changes (and floor
+ * changes — a lift) keeps the response small without changing the line.
+ */
+export function simplifyPath<T extends PathPoint>(points: readonly T[]): T[] {
+  if (points.length <= 2) return [...points]
+  const out: T[] = [points[0]]
+  for (let i = 1; i < points.length - 1; i++) {
+    const a = points[i - 1]
+    const b = points[i]
+    const c = points[i + 1]
+    const straight =
+      a.floor === b.floor && b.floor === c.floor &&
+      (b.x - a.x) * (c.y - b.y) === (b.y - a.y) * (c.x - b.x)
+    if (!straight) out.push(b)
+  }
+  out.push(points[points.length - 1])
+  return out
+}
+

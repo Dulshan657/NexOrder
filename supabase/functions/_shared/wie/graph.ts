@@ -80,7 +80,11 @@ export function buildWalkGraph(cells: WalkCell[], cellSizeM: number): WarehouseG
 }
 
 /** Adjacency list: nodeId → [{ to, weight }]. Expands bidirectional edges. */
-function toAdjacency(graph: WarehouseGraph): Map<number, Array<{ to: number; weight: number }>> {
+export type Adjacency = Map<number, Array<{ to: number; weight: number }>>
+
+/** Exported (NX-0037) so a caller running many searches over one graph builds
+ *  this once and passes it to `dijkstraWithPaths`. */
+export function toAdjacency(graph: WarehouseGraph): Adjacency {
   const adj = new Map<number, Array<{ to: number; weight: number }>>()
   for (const n of graph.nodes) adj.set(n.id, [])
   for (const e of graph.edges) {
@@ -139,8 +143,29 @@ class MinHeap {
  * every reachable node (unreachable nodes are absent from the map).
  */
 export function dijkstra(graph: WarehouseGraph, sourceNodeId: number): Map<number, number> {
-  const adj = toAdjacency(graph)
+  return dijkstraWithPaths(graph, sourceNodeId).dist
+}
+
+/**
+ * Dijkstra that also records HOW each node was reached (NX-0037): `prev` maps a
+ * node to its predecessor on the shortest path from the source. `dijkstra` is
+ * this with `prev` discarded — one implementation, so the distances a route is
+ * sequenced by and the path it is drawn along can never disagree.
+ */
+export function dijkstraWithPaths(
+  graph: WarehouseGraph,
+  sourceNodeId: number,
+  opts: {
+    /** Prebuilt adjacency, for callers running many searches on one graph. */
+    adj?: Adjacency
+    /** Stop once this node is settled: its distance and path are final, and a
+     *  single leg needs nothing else. Other nodes' entries are then partial. */
+    target?: number
+  } = {},
+): { dist: Map<number, number>; prev: Map<number, number> } {
+  const adj = opts.adj ?? toAdjacency(graph)
   const dist = new Map<number, number>()
+  const prev = new Map<number, number>()
   const heap = new MinHeap()
   dist.set(sourceNodeId, 0)
   heap.push(sourceNodeId, 0)
@@ -148,15 +173,34 @@ export function dijkstra(graph: WarehouseGraph, sourceNodeId: number): Map<numbe
   while (heap.size > 0) {
     const { node, dist: d } = heap.pop()!
     if (d > (dist.get(node) ?? Infinity)) continue
+    if (node === opts.target) break
     for (const { to, weight } of adj.get(node) ?? []) {
       const nd = d + weight
       if (nd < (dist.get(to) ?? Infinity)) {
         dist.set(to, nd)
+        prev.set(to, node)
         heap.push(to, nd)
       }
     }
   }
-  return dist
+  return { dist, prev }
+}
+
+/** The node path source → target from a `prev` map; null when unreachable. */
+export function pathTo(prev: Map<number, number>, sourceNodeId: number, targetNodeId: number): number[] | null {
+  if (targetNodeId === sourceNodeId) return [sourceNodeId]
+  if (!prev.has(targetNodeId)) return null
+  const path = [targetNodeId]
+  let cur = targetNodeId
+  // Bounded by the node count: a well-formed prev map is a tree rooted at source.
+  for (let guard = 0; guard <= prev.size; guard++) {
+    const p = prev.get(cur)
+    if (p === undefined) return null
+    path.push(p)
+    if (p === sourceNodeId) return path.reverse()
+    cur = p
+  }
+  return null
 }
 
 export interface TravelDistanceRow {

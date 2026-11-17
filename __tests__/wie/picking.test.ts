@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildWalkGraph } from '../../supabase/functions/_shared/wie/graph'
-import { sequencePickRoute, sequenceBatchRoute, type PickStop } from '../../supabase/functions/_shared/wie/picking'
+import { sequencePickRoute, sequenceBatchRoute, legPaths, simplifyPath, type PickStop } from '../../supabase/functions/_shared/wie/picking'
 import type { WalkCell } from '../../supabase/functions/_shared/wie/types'
 
 // Straight corridor: dock at (0,0), then (1,0)…(5,0). Node index == cell index.
@@ -73,5 +73,63 @@ describe('sequenceBatchRoute', () => {
     expect(route.stops).toHaveLength(3)
     expect(route.stops.map((s) => s.graphNodeId)).toEqual([1, 2, 4])
     expect(route.stops.every((s) => typeof s.meta?.orderId === 'string')).toBe(true)
+  })
+})
+
+// NX-0037: the walk the sequencer actually measured, leg by leg.
+describe('legPaths', () => {
+  const L: WalkCell[] = [
+    ...Array.from({ length: 5 }, (_, x) => ({ x, y: 0, floor: 0, isDock: x === 0 })),
+    ...Array.from({ length: 3 }, (_, i) => ({ x: 4, y: i + 1, floor: 0, isDock: false })),
+  ]
+  const CELL = 1.5
+  const g = buildWalkGraph(L, CELL)
+  const idAt = (x: number, y: number) => g.nodes.find((n) => n.x === x && n.y === y)!.id
+
+  it("each leg's path length plus access offset equals its legDistanceM", () => {
+    const stops: PickStop[] = [
+      { locationId: 1, graphNodeId: idAt(4, 3), accessOffsetM: 0.3 },
+      { locationId: 2, graphNodeId: idAt(2, 0), accessOffsetM: 0.5 },
+    ]
+    const route = sequencePickRoute(g, idAt(0, 0), stops)
+    const paths = legPaths(g, idAt(0, 0), route.stops)
+    expect(paths).toHaveLength(route.stops.length)
+    route.stops.forEach((s, i) => {
+      const path = paths[i]!
+      // Every edge here is one cell long.
+      expect((path.length - 1) * CELL + s.accessOffsetM).toBeCloseTo(s.legDistanceM, 6)
+      expect(path[path.length - 1]).toBe(s.graphNodeId)
+    })
+    // The second leg starts where the first ended.
+    expect(paths[1]![0]).toBe(route.stops[0].graphNodeId)
+  })
+})
+
+describe('simplifyPath', () => {
+  it('keeps only the corners of a walk', () => {
+    const walk = [
+      { floor: 0, x: 0, y: 0 }, { floor: 0, x: 1, y: 0 }, { floor: 0, x: 2, y: 0 },
+      { floor: 0, x: 2, y: 1 }, { floor: 0, x: 2, y: 2 },
+    ]
+    expect(simplifyPath(walk)).toEqual([{ floor: 0, x: 0, y: 0 }, { floor: 0, x: 2, y: 0 }, { floor: 0, x: 2, y: 2 }])
+    // A floor change is a corner too (the lift).
+    const lift = [{ floor: 0, x: 3, y: 3 }, { floor: 1, x: 3, y: 3 }, { floor: 1, x: 4, y: 3 }]
+    expect(simplifyPath(lift)).toEqual(lift)
+    expect(simplifyPath([])).toEqual([])
+    expect(simplifyPath([{ floor: 0, x: 1, y: 1 }])).toEqual([{ floor: 0, x: 1, y: 1 }])
+  })
+})
+
+describe('legPaths early exit', () => {
+  it('matches a full search on every leg of a longer route', () => {
+    const grid: WalkCell[] = []
+    for (let x = 0; x < 8; x++) for (let y = 0; y < 6; y++) grid.push({ x, y, floor: 0, isDock: x === 0 && y === 0 })
+    const g = buildWalkGraph(grid, 1)
+    const at = (x: number, y: number) => g.nodes.find((n) => n.x === x && n.y === y)!.id
+    const stops: PickStop[] = [[7, 5], [3, 2], [6, 0], [1, 4]].map(([x, y], i) => ({ locationId: i, graphNodeId: at(x, y), accessOffsetM: 0 }))
+    const route = sequencePickRoute(g, at(0, 0), stops)
+    legPaths(g, at(0, 0), route.stops).forEach((path, i) => {
+      expect(path!.length - 1).toBeCloseTo(route.stops[i].legDistanceM, 6)
+    })
   })
 })

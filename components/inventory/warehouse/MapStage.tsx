@@ -47,7 +47,7 @@ export interface MapStageProps {
   binFillPct?: Map<number, number | null>
   zoneRegions?: ZoneRegion[]
   zoneTypeByProfileId?: Map<number, string>
-  renderOverlay?: (cell: number) => ReactNode
+  renderOverlay?: (cell: number, scale: number) => ReactNode
   /** Location metadata for labelling a rack's exploded level stack (mig 00072). */
   locationsById?: Map<number, InventoryLocation>
   /** Admin/Manager clicked an area's name to rename it (mig 00094). Passed
