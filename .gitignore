@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# Generated help guides (npm run guide:pdf)
+out/guides/
 *.local
 
 # Editor directories and files

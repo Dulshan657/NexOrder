@@ -69,6 +69,7 @@ const TITLE_EXCEPTIONS: Record<string, string> = {
   'components/auth/LoginPage.tsx': 'not a page inside the app',
   'components/auth/ResetPasswordView.tsx': 'not a page inside the app',
   'components/qr/QrEntryScreen.tsx': 'not a page inside the app',
+  'components/help/HelpCentre.tsx': 'not a page inside the app (public /help, rendered before AuthGate)',
   'components/HoReCaProfile.tsx': 'a detail screen headed by the customer name',
   'components/HoReCaAdmin.tsx': 'nothing imports it',
   'components/InvoiceAdmin.tsx': 'nothing imports it',
