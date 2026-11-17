@@ -18,7 +18,8 @@
     { "id": "A10", "check": "Finding a product highlights every place holding it on the map: outlined on the 2D map, and in 3D the existing find-stock highlight (NX-0036) is switched on for that product, framing it. Clearing the product clears the highlight." },
     { "id": "A11", "check": "The putaway tab in Ask the engine takes a scanned or typed product (the same scan box as Find a product) instead of a product dropdown." },
     { "id": "A12", "check": "Ask the engine is ONE card: a header, a 'preview only — nothing moves' note and one tab per question (Find a product, Put away, Pick route, Simulate). There is no second 'Test bench' box inside it." },
-    { "id": "A13", "check": "On the warehouse map page the 'Locations' list beside the place detail starts collapsed, and while collapsed it takes only a slim column; one click opens it to the full tree." }
+    { "id": "A13", "check": "On the warehouse map page the 'Locations' list beside the place detail starts collapsed, and while collapsed it takes only a slim column; one click opens it to the full tree." },
+    { "id": "A14", "check": "No screen calls a place a 'bin': every user-visible string in the app's components, views and lib (labels, headings, buttons, placeholders, toasts, aria-labels, help text) says 'location' instead ('Bin detail' → 'Location detail', 'home bin' → 'home location'). Identifiers, enum values ('BIN'), CSV column names ('bin_code'), element ids and database names are unchanged." }
   ],
   "failFirst": [
     { "file": "__tests__/wie/productWhereabouts.test.ts", "test": "productWhereabouts > marks stock in the home bin as home, other bins as off home and the warehouse root as at the dock", "proves": ["A1"] },
@@ -37,7 +38,8 @@
     { "file": "__tests__/warehouse/holdingMarkers.test.tsx", "test": "holdingMarkers > outlines every place holding the product on the floor being viewed", "proves": ["A10"] },
     { "file": "__tests__/warehouse/askEnginePanel.test.tsx", "test": "AskEnginePanel > the putaway tab takes a scanned product", "proves": ["A11"] },
     { "file": "__tests__/warehouse/askEnginePanel.test.tsx", "test": "AskEnginePanel > is one card with a tab per question and no test bench box", "proves": ["A12"] },
-    { "file": "__tests__/warehouse/locationsPanel.test.tsx", "test": "LocationsPanel > starts collapsed and opens on a click", "proves": ["A13"] }
+    { "file": "__tests__/warehouse/locationsPanel.test.tsx", "test": "LocationsPanel > starts collapsed and opens on a click", "proves": ["A13"] },
+    { "file": "__tests__/ui/noBinWording.test.ts", "test": "user-facing wording > no screen calls a place a bin", "proves": ["A14"] }
   ],
   "allow": []
 }
@@ -97,8 +99,11 @@ input on the putaway tab; and one tidy card instead of "Ask the engine" wrapping
 - **A13 (asked while this was being built):** the Locations tree panel starts collapsed
   (`FloatingPanel` gains `onOpenChange`), and the map page's grid narrows its first
   column while it is closed.
-- Out of scope still: `PutawayExplanationCard`, the putaway queue and other screens that
-  say "bin" are unchanged.
+- **A14 (owner, 2026-11-17: "rename them to location in this change"):** a sweep of
+  user-visible text in `components/`, `views/` and `lib/`, pinned by a source-scanning
+  test. Error text composed by Edge Functions is not part of it (it is a server
+  change and a redeploy of every function that says it), and it is listed under Not claimed.
+- Out of scope still: Edge Function error messages that say "bin".
 
 ## Out of scope
 
