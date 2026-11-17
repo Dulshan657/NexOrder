@@ -49,11 +49,18 @@ export function WhereaboutsSummary({ answer }: { answer: ProductWhereabouts }) {
       </div>
 
       <div className="rounded-md border border-stone-200 px-2 py-1.5">
-        <p className="font-semibold text-stone-700">A new delivery</p>
+        <p className="font-semibold text-stone-700">
+          A new delivery
+          {newDelivery && (
+            <span className="font-normal text-stone-600"> · {qty(newDelivery.quantity)} units (one case), by the putaway rules</span>
+          )}
+        </p>
         {newDelivery ? (
           <p className="text-stone-700">{newDelivery.reason}</p>
         ) : (
-          <p className="text-stone-600">This warehouse has no published layout, so there is no putaway suggestion.</p>
+          <p className="text-stone-600">
+            {answer.newDeliveryNote ?? 'This warehouse has no published layout, so there is no putaway suggestion.'}
+          </p>
         )}
       </div>
     </div>

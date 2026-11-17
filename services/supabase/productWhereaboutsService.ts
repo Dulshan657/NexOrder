@@ -41,6 +41,8 @@ export interface ProductWhereabouts {
   atDockQty: number
   /** Null on a site with no published layout (legacy putaway). */
   newDelivery: NewDelivery | null
+  /** Why there is no new-delivery answer when the putaway rules could not be read. */
+  newDeliveryNote?: string | null
   putawayWalk: ProductWalk | null
   pickWalk: ProductWalk | null
 }

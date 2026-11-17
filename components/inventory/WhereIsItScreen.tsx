@@ -10,7 +10,7 @@ import React, { useMemo, useState } from 'react'
 import { useWarehouses } from '@/hooks/queries/useWarehouses'
 import { useWarehouseScope } from '@/context/WarehouseScopeContext'
 import { useProductWhereabouts } from '@/hooks/queries/useProductWhereabouts'
-import type { User } from '@/types'
+import { UserRole, type User } from '@/types'
 import { ADMIN_TAB_LABELS } from '@/lib/adminTabUrl'
 import { PageFrame } from '@/components/ui/PageFrame'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -27,15 +27,17 @@ const WhereIsItScreen: React.FC<WhereIsItScreenProps> = ({ currentUser }) => {
   const { data: warehouses } = useWarehouses()
   const activeWarehouses = useMemo(() => (warehouses ?? []).filter((w) => w.isActive), [warehouses])
 
-  // Same rule as the other floor pages: the shared scope when one is picked,
-  // otherwise the user's own site, otherwise the first active warehouse.
+  // A Warehouse user looks up stock at their own site — the server refuses
+  // any other. Everyone else: the shared scope when one is picked, otherwise
+  // their own site, otherwise the first active warehouse.
   const { scope } = useWarehouseScope()
+  const ownSite = currentUser.role === UserRole.WAREHOUSE ? currentUser.homeWarehouseId ?? null : null
   const fallback = useMemo(() => {
     const home = currentUser.homeWarehouseId
     if (home != null && activeWarehouses.some((w) => w.id === home)) return home
     return activeWarehouses[0]?.id ?? null
   }, [activeWarehouses, currentUser.homeWarehouseId])
-  const warehouseId = scope !== 'all' ? scope : fallback
+  const warehouseId = ownSite ?? (scope !== 'all' ? scope : fallback)
 
   const [productId, setProductId] = useState<number | null>(null)
   const { data: answer, isLoading, isError } = useProductWhereabouts(warehouseId, productId)

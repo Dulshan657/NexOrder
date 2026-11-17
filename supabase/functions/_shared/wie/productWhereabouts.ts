@@ -100,6 +100,8 @@ export function newDeliveryReason(
   homeBin: { locationId: number; code: string } | null,
 ): NewDeliveryAnswer {
   const placed = lines.filter((l) => l.locationId !== null)
+  const unplacedQty = lines.filter((l) => l.locationId === null).reduce((t, l) => t + l.quantity, 0)
+  const rest = unplacedQty > 0 ? ` ${fmt(unplacedQty)} more have no bin and would stay at the dock.` : ''
   const homeQty = placed.filter((l) => l.source === 'home').reduce((t, l) => t + l.quantity, 0)
   const elsewhere = placed.filter((l) => l.source !== 'home')
   const overflowQty = elsewhere.reduce((t, l) => t + l.quantity, 0)
@@ -117,22 +119,24 @@ export function newDeliveryReason(
   if (!homeBin) {
     return {
       ...answer, source: 'engine',
-      reason: `No home bin set — the engine's best bin is ${first.code}.`,
+      reason: `No home bin set — the engine's best bin is ${first.code}.${rest}`,
     }
   }
   if (elsewhere.length === 0) {
-    return { ...answer, source: 'home', reason: `Goes home to ${homeBin.code} — it has room.` }
+    return { ...answer, source: 'home', reason: `Goes home to ${homeBin.code} — it has room.${rest}` }
   }
   const overflowCodes = [...new Set(elsewhere.map((l) => l.code))].join(', ')
   if (homeQty > 0) {
     return {
       ...answer, source: 'overflow',
-      reason: `Home ${homeBin.code} has room for ${fmt(homeQty)}; the other ${fmt(overflowQty)} go to overflow ${overflowCodes}.`,
+      reason: `Home ${homeBin.code} has room for ${fmt(homeQty)}; the other ${fmt(overflowQty)} go to overflow ${overflowCodes}.${rest}`,
     }
   }
   return {
     ...answer, source: 'overflow',
-    reason: `Home ${homeBin.code} is full — goes to overflow ${overflowCodes}, nearest to home.`,
+    // Putaway also overflows when the home is ruled out (on hold, the wrong
+    // level role, a safety rule), not only when it is full.
+    reason: `Home ${homeBin.code} is full, or ruled out by the putaway rules — goes to overflow ${overflowCodes}, nearest to home.${rest}`,
   }
 }
 

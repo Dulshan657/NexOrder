@@ -29,6 +29,9 @@ export function FindProductSection({ warehouseId, onWalk }: FindProductSectionPr
     onWalk(null)
   }, [productId, warehouseId])
 
+  // Collapsing the section unmounts it: take its walk off the map with it.
+  useEffect(() => () => onWalk(null), [])
+
   const walkOf = (k: WalkKind) => (k === 'putaway' ? answer?.putawayWalk : answer?.pickWalk) ?? null
 
   const choose = (k: WalkKind) => {

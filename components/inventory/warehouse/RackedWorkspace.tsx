@@ -240,8 +240,15 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
   // A product's walk from "Find a product" (NX-0039) is drawn in place of an
   // order route while one is chosen — same stop shape, same renderers.
   const [productWalkStops, setProductWalkStops] = useState<PickRouteStop[] | null>(null)
-  const routeStops = productWalkStops
-    ?? (routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : EMPTY_STOPS)
+  const routeStops = productWalkStops && productWalkStops.length > 0
+    ? productWalkStops
+    : (routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : EMPTY_STOPS)
+  // Choosing orders to route takes the product walk off the map, so the orders
+  // chosen are what is drawn.
+  const chooseRouteOrders = useCallback((ids: string[]) => {
+    setRouteOrderIds(ids)
+    setProductWalkStops(null)
+  }, [])
 
   const placements = detail?.placements ?? EMPTY_PLACEMENTS
   const placementByLocation = useMemo(() => {
@@ -1345,7 +1352,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
           layoutId={layoutId}
           onPutawayResult={setPutawayResult}
           routeOrderIds={routeOrderIds}
-          onRouteOrderIdsChange={setRouteOrderIds}
+          onRouteOrderIdsChange={chooseRouteOrders}
           onProductWalk={setProductWalkStops}
         />
       </div>

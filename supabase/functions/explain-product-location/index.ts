@@ -26,6 +26,7 @@ import { corsHeadersFor } from '../_shared/cors.ts'
 import { checkRateLimit } from '../_shared/rateLimit.ts'
 import { loadWalkGraph } from '../_shared/loadWalkGraph.ts'
 import { generatePutawayTasks } from '../_shared/putawayTasks.ts'
+import { loadHomeBins } from '../_shared/putawayHome.ts'
 import { assertMayActAtWarehouse } from '../_shared/receiveDestination.ts'
 import { requireModule } from '../_shared/modules.ts'
 import { sequencePickRoute, legPaths, simplifyPath, type PickStop } from '../_shared/wie/picking.ts'
@@ -134,35 +135,46 @@ serve(async (req: Request) => {
     // sending thousands of location ids in a URL.
     const balanceRows = (must(
       await admin.from('inventory_balances')
-        .select('location_id, on_hand, available').eq('product_id', product_id) as any,
+        .select('location_id, on_hand, available').eq('product_id', product_id)
+        .gt('on_hand', 0).limit(5000) as any,
       'balances',
     ) ?? []) as any[]
     const ours = balanceRows.filter((b) => inWarehouse.has(Number(b.location_id)))
 
-    const home = must(
-      await admin.from('product_home_bins').select('bin_id')
-        .eq('product_id', product_id).eq('warehouse_id', warehouse_id).maybeSingle() as any,
-      'home bin',
-    ) as any
-    const homeBinId: number | null = home ? Number(home.bin_id) : null
+    // The home putaway fills: the PRIMARY slot, read by the very helper
+    // putaway uses, so this answer and the putaway answer cannot disagree.
+    const homeBinId: number | null = (await loadHomeBins(admin, warehouse_id)).get(product_id)?.binId ?? null
 
-    // A new delivery: one receivable case's worth (the largest receivable unit),
-    // through the NORMAL putaway rules, persisting nothing.
+    // A new delivery: one CASE (the smallest receivable unit above the base
+    // unit) received loose, as a carton line arrives at receiving, through the
+    // NORMAL putaway rules in dry run. A pallet is a unit load and is planned
+    // differently (straight to reserve), so it is not what this asks.
     const uoms = (must(
       await admin.from('product_uoms').select('factor_to_base, is_receivable').eq('product_id', product_id) as any,
       'units',
     ) ?? []) as any[]
-    const deliveryQty = Math.max(
-      1,
-      ...uoms.filter((u) => u.is_receivable).map((u) => Number(u.factor_to_base) || 0),
-    )
-    const putaway = await generatePutawayTasks(admin, {
-      warehouseId: warehouse_id,
-      lines: [{ product_id, quantity: deliveryQty }],
-      actorId: auth.userId,
-      dryRun: true,
-    })
-    const recs = putaway.mode === 'engine' ? putaway.recommendations : []
+    const caseSizes = uoms
+      .filter((u) => u.is_receivable)
+      .map((u) => Number(u.factor_to_base) || 0)
+      .filter((f) => f > 1)
+    const deliveryQty = caseSizes.length ? Math.min(...caseSizes) : 1
+
+    // A read-only lookup: if the putaway rules cannot be read, still show the
+    // stock and say so, rather than failing the whole answer.
+    let putaway: Awaited<ReturnType<typeof generatePutawayTasks>> | null = null
+    let putawayError: string | null = null
+    try {
+      putaway = await generatePutawayTasks(admin, {
+        warehouseId: warehouse_id,
+        lines: [{ product_id, quantity: deliveryQty }],
+        actorId: auth.userId,
+        dryRun: true,
+      })
+    } catch (e) {
+      console.error('[explain-product-location] putaway dry run failed', e)
+      putawayError = 'The putaway rules could not be read just now, so there is no new-delivery answer.'
+    }
+    const recs = putaway?.mode === 'engine' ? putaway.recommendations : []
 
     // Codes for every location mentioned.
     const ids = new Set<number>([
@@ -186,7 +198,7 @@ serve(async (req: Request) => {
       })),
     })
     const homeBin = homeBinId != null ? { locationId: homeBinId, code: codeOf.get(homeBinId) ?? String(homeBinId) } : null
-    const newDelivery = putaway.mode === 'engine'
+    const newDelivery = putaway?.mode === 'engine'
       ? {
         ...newDeliveryReason(
           recs.map((r) => ({
@@ -210,6 +222,7 @@ serve(async (req: Request) => {
       offHomeQty: where.offHomeQty,
       atDockQty: where.atDockQty,
       newDelivery,
+      newDeliveryNote: putawayError,
     }
 
     const graphResult = await loadWalkGraph(admin, warehouse_id)

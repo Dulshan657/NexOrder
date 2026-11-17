@@ -84,6 +84,16 @@ describe('newDeliveryReason', () => {
     expect(homeless).toMatchObject({ source: 'engine', locationId: OTHER })
     expect(homeless.reason).toMatch(/no home bin set/i)
 
+    const partly = newDeliveryReason(
+      [
+        { locationId: HOME, code: 'A-03-02', quantity: 4, source: 'home' },
+        { locationId: null, code: null, quantity: 2, source: 'overflow' },
+      ],
+      { locationId: HOME, code: 'A-03-02' },
+    )
+    expect(partly.source).toBe('home')
+    expect(partly.reason).toContain('2 more have no bin')
+
     const nowhere = newDeliveryReason([{ locationId: null, code: null, quantity: 12, source: 'engine' }], null)
     expect(nowhere.locationId).toBeNull()
     expect(nowhere.reason).toMatch(/dock/i)

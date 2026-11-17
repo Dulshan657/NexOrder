@@ -10,12 +10,23 @@ export interface WalkStepsProps {
   empty: string
 }
 
+function Unreachable({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <p className="mt-1 text-amber-700">
+      {count} bin{count === 1 ? '' : 's'} could not be reached on the layout (no walkway next to it).
+    </p>
+  )
+}
+
 export function WalkSteps({ title, walk, empty }: WalkStepsProps) {
   if (!walk || walk.stops.length === 0) {
     return (
       <div className="text-xs">
         <p className="font-semibold text-stone-700">{title}</p>
-        <p className="text-stone-600">{empty}</p>
+        {walk && walk.unreachableCount > 0
+          ? <Unreachable count={walk.unreachableCount} />
+          : <p className="text-stone-600">{empty}</p>}
       </div>
     )
   }
@@ -28,11 +39,7 @@ export function WalkSteps({ title, walk, empty }: WalkStepsProps) {
         <li className="text-stone-600">Start at the dock</li>
         {walk.steps.map((s) => <li key={s}>{s}</li>)}
       </ol>
-      {walk.unreachableCount > 0 && (
-        <p className="mt-1 text-amber-700">
-          {walk.unreachableCount} bin{walk.unreachableCount === 1 ? '' : 's'} could not be reached on the layout.
-        </p>
-      )}
+      <Unreachable count={walk.unreachableCount} />
     </div>
   )
 }
