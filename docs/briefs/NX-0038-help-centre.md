@@ -18,7 +18,8 @@
     { "id": "A10", "check": "Signed out, /help on the demo shows the help centre, not the login page; Help from the profile menu and the header '?' work as the warehouse demo user at 360px.", "manual": "browser walk on nexorder.vercel.app after deploy:dev" },
     { "id": "A11", "check": "npm run guide:pdf produces an A4 PDF under 5 MB with a full-bleed cover (Peter's journey map) that follows the Chamal Quick Guide layout.", "manual": "run the script, open the PDF, compare page by page" },
     { "id": "A12", "check": "Screenshots are captured on the demo only; no tenant data appears in any image.", "manual": "review every file in components/help/shots/" },
-    { "id": "A13", "check": "Deployed to dev; /version.json shows the branch sha.", "manual": "deploy:dev verification" }
+    { "id": "A13", "check": "Deployed to dev; /version.json shows the branch sha.", "manual": "deploy:dev verification" },
+    { "id": "A14", "check": "The help articles, their summaries and the two pages this branch changes say 'location', not 'bin' (owner, 2026-11-17: not every place is a bin), and quote the on-screen labels by their new names ('Choose location', 'Count this location', 'Scan the location'). Image file names and imports are unchanged." }
   ],
   "failFirst": [
     { "file": "__tests__/profileMenuKitchen.test.tsx", "test": "ProfileMenu — help link > a Warehouse user gets Help for the floor, in a new tab", "proves": ["A4"] },
@@ -34,7 +35,8 @@
     { "file": "__tests__/help/shot.test.tsx", "test": "Shot > hides the badges and lists every callout as text", "proves": ["A6"] },
     { "file": "__tests__/a11y/help.test.tsx", "test": "help centre a11y > index and an article have no axe violations", "proves": ["A6"] },
     { "file": "__tests__/help/helpLink.test.tsx", "test": "HelpLink > opens the article in a new tab with a named topic", "proves": ["A7"] },
-    { "file": "__tests__/help/captureBase.test.ts", "test": "assertCaptureBase > allows only the demo origin and localhost", "proves": ["A9"] }
+    { "file": "__tests__/help/captureBase.test.ts", "test": "assertCaptureBase > allows only the demo origin and localhost", "proves": ["A9"] },
+    { "file": "__tests__/help/helpWording.test.ts", "test": "help wording > no article calls a place a bin", "proves": ["A14"] }
   ],
   "allow": []
 }
