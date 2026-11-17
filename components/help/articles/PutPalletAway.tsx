@@ -8,8 +8,8 @@ export default function PutPalletAway() {
   return (
     <>
       <p className="text-[15px] leading-relaxed text-stone-800">
-        After a delivery is received, its pallets wait on the dock. The <b>Walk</b> lists each one with the bin Nex
-        Order chose for it, in the order that makes the shortest trip. <b>The stock only moves when you scan the bin.</b>
+        After a delivery is received, its pallets wait on the dock. The <b>Walk</b> lists each one with the location Nex
+        Order chose for it, in the order that makes the shortest trip. <b>The stock only moves when you scan the location.</b>
       </p>
 
       <Section title="1. Pick up the next stop">
@@ -17,12 +17,12 @@ export default function PutPalletAway() {
           shot={
             <Shot
               src={putawayWalk}
-              alt="The Putaway Walk tab listing numbered stops, each with a bin code, product, quantity and plate."
+              alt="The Putaway Walk tab listing numbered stops, each with a location code, product, quantity and plate."
               caption="The Walk: one stop per pallet"
               markers={[
                 { label: 'A', x: 41, y: 21.6, text: 'Walk tab, with the number of stops' },
-                { label: 'B', x: 4, y: 53, text: 'A stop: bin, product, quantity, plate' },
-                { label: 'C', x: 4, y: 95.5, text: 'Scan a plate, carton or bin' },
+                { label: 'B', x: 4, y: 53, text: 'A stop: location, product, quantity, plate' },
+                { label: 'C', x: 4, y: 95.5, text: 'Scan a plate, carton or location' },
               ]}
             />
           }
@@ -37,24 +37,24 @@ export default function PutPalletAway() {
             <Step n={3}>Tap the stop (B) to open it.</Step>
           </Steps>
           <Callout kind="good">
-            A big delivery can be split over several stops when one bin can't hold it all. Each stop says how much goes
-            in that bin.
+            A big delivery can be split over several stops when one location can't hold it all. Each stop says how much goes
+            in that location.
           </Callout>
         </WithShot>
       </Section>
 
-      <Section title="2. Take it to the bin and scan">
+      <Section title="2. Take it to the location and scan">
         <WithShot
           shot={
             <Shot
               src={putawayBin}
-              alt="An open putaway stop: Take it to AMADIYA-FAST.A-2-1-L3, quantity 9, plate HU-001321, and the scan-the-bin field."
+              alt="An open putaway stop: Take it to AMADIYA-FAST.A-2-1-L3, quantity 9, plate HU-001321, and the scan-the-location field."
               caption="An open stop"
               markers={[
-                { label: 'A', x: 4, y: 10, text: 'Progress: Product, Bin, Count' },
-                { label: 'B', x: 4, y: 24, text: 'Take it to: the bin to use' },
+                { label: 'A', x: 4, y: 10, text: 'Progress: Product, Location, Count' },
+                { label: 'B', x: 4, y: 24, text: 'Take it to: the location to use' },
                 { label: 'C', x: 4, y: 41, text: 'How much, and which plate' },
-                { label: 'D', x: 4, y: 71, text: 'Scan the bin' },
+                { label: 'D', x: 4, y: 71, text: 'Scan the location' },
                 { label: 'E', x: 4, y: 83, text: 'Put it back on the queue' },
               ]}
             />
@@ -65,15 +65,15 @@ export default function PutPalletAway() {
               If asked, scan the product barcode first. The progress bar (A) ticks <b>Product</b>.
             </Step>
             <Step n={5}>
-              Read <b>Take it to (B)</b> and drive to that bin. The line under it names the area, rack and level, e.g.{' '}
+              Read <b>Take it to (B)</b> and drive to that location. The line under it names the area, rack and level, e.g.{' '}
               <i>Fast Movers · Rack 2 · L3</i>.
             </Step>
             <Step n={6}>
-              Place the goods, then scan the <b>bin label</b> on the rack into the field (D).
+              Place the goods, then scan the <b>location label</b> on the rack into the field (D).
             </Step>
           </Steps>
-          <Callout kind="warn" title="Bin full or blocked?">
-            Use a nearby bin and scan that one instead. A different bay is accepted and recorded, so the system still
+          <Callout kind="warn" title="Location full or blocked?">
+            Use a nearby location and scan that one instead. A different bay is accepted and recorded, so the system still
             knows where the stock is. Can't do the stop now? Tap <Ui>Put it back on the queue</Ui> (E).
           </Callout>
         </WithShot>
@@ -99,7 +99,7 @@ export default function PutPalletAway() {
               placed less.
             </Step>
             <Step n={8}>
-              Tap <Ui>Confirm</Ui> (B). The stop leaves the Walk and the stock is now in that bin.
+              Tap <Ui>Confirm</Ui> (B). The stop leaves the Walk and the stock is now in that location.
             </Step>
           </Steps>
           <Callout kind="good">

@@ -84,7 +84,7 @@ export default function ReceiveDelivery() {
           <Callout kind="good">
             <p>
               A second pallet of the same product? Tap <Ui>New pallet</Ui> (the stacked-layers button) before scanning
-              it, so each pallet gets its own plate and its own bin.
+              it, so each pallet gets its own plate and its own location.
             </p>
             <p>
               One pallet with several products on it? Use <Ui>Mixed pallet</Ui> (the boxes button).

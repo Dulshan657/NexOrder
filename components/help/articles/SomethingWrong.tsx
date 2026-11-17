@@ -56,12 +56,12 @@ export default function SomethingWrong() {
               fix: 'Nothing has been assigned yet. Ask your supervisor to assign the lines on the Assign tab.',
             },
             {
-              problem: 'The bin is full or blocked',
-              fix: 'Put the goods in a nearby bin and scan that one. A different bay is accepted and recorded.',
+              problem: 'The location is full or blocked',
+              fix: 'Put the goods in a nearby location and scan that one. A different bay is accepted and recorded.',
             },
             {
-              problem: 'The bin scan is refused',
-              fix: 'Check you scanned the bin label, not a product. Type the code shown under Take it to if the label will not scan.',
+              problem: 'The location scan is refused',
+              fix: 'Check you scanned the location label, not a product. Type the code shown under Take it to if the label will not scan.',
             },
             {
               problem: "Can't finish a stop now",

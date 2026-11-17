@@ -4,8 +4,8 @@ import journeyMap from '../shots/journey-map.jpg'
 
 const PHASE1 = [
   { n: 1, title: 'Receive', body: 'Book the delivery in: supplier, cartons, quantities.', where: 'Receive Stock' },
-  { n: 2, title: 'Put away', body: 'Carry each pallet to the bin Nex Order chose and scan it.', where: 'Putaway → Walk' },
-  { n: 3, title: 'Check', body: 'Scan a bin to see exactly what is in it.', where: 'Stock → Look up' },
+  { n: 2, title: 'Put away', body: 'Carry each pallet to the location Nex Order chose and scan it.', where: 'Putaway → Walk' },
+  { n: 3, title: 'Check', body: 'Scan a location to see exactly what is in it.', where: 'Stock → Look up' },
 ]
 
 /** The three-card summary, shared with the printed guide's "How it works" page. */
@@ -50,7 +50,7 @@ export function BenefitsAndTips() {
         <ul className="list-disc space-y-1 pl-5">
           <li>Always scan barcodes where you can.</li>
           <li>Check quantities before you confirm.</li>
-          <li>Put away to the bin you are shown.</li>
+          <li>Put away to the location you are shown.</li>
           <li>Ask your supervisor if you are unsure.</li>
         </ul>
       </Callout>

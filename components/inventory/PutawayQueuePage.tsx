@@ -128,7 +128,7 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
     <PageFrame>
       <PageHeader
         title={ADMIN_TAB_LABELS.Putaway}
-        description="Move received stock from the dock into its bins."
+        description="Move received stock from the dock into its locations."
         actions={
           <>
           <HelpLink slug="put-a-pallet-away" topic="putting a pallet away" />
@@ -169,8 +169,8 @@ const PutawayQueuePage: React.FC<PutawayQueuePageProps> = ({ currentUser }) => {
             />
             <p className="mt-2 text-xs text-stone-500">
               {stage === 'assign'
-                ? 'Decide which bin each line goes to. Nothing moves until someone carries it.'
-                : 'Carry each pallet to its bin and scan to confirm. This is when the stock moves.'}
+                ? 'Decide which location each line goes to. Nothing moves until someone carries it.'
+                : 'Carry each pallet to its location and scan to confirm. This is when the stock moves.'}
             </p>
           </div>
 
