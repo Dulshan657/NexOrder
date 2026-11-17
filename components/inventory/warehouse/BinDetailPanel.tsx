@@ -145,7 +145,7 @@ export function BinDetailPanel({
     return (
       <div className="glass-card rounded-xl p-6 text-center">
         <PackageSearch className="mx-auto mb-2 h-7 w-7 text-stone-300" />
-        <p className="text-xs text-stone-500">Select a bin on the map or tree to see its contents.</p>
+        <p className="text-xs text-stone-500">Select a location on the map or tree to see its contents.</p>
       </div>
     )
   }
@@ -318,7 +318,7 @@ export function BinDetailPanel({
           )}
         </dl>
 
-        {isBin && <StockTable rows={contents} showAbc showAllocated emptyLabel="Empty bin" />}
+        {isBin && <StockTable rows={contents} showAbc showAllocated emptyLabel="Empty location" />}
       </div>
 
       {hasRackLevels && (

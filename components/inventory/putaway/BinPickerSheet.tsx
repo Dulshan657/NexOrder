@@ -198,12 +198,12 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
       mobile="bottom"
       dirty={chosenId != null}
       discardConfirm={{
-        title: 'Discard this bin choice?',
+        title: 'Discard this location choice?',
         message: 'The line stays in the queue and nothing moves.',
         confirmLabel: 'Discard',
       }}
       icon={<MapPin className="w-5 h-5 text-emerald-600" />}
-      title="Choose a bin"
+      title="Choose a location"
       description={`${row.product?.name ?? `Product #${row.productId}`} · ${describeQuantity(row.quantity, row.product).primary} waiting`}
       footer={({ requestClose }) => (
         <div className="flex items-center justify-between gap-3">
@@ -233,7 +233,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
           <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
             <p className="text-xs">
-              {row.explanation.hardFilters.find((h) => h.code === 'level_role_mismatch')!.label}. Pick a bin below and
+              {row.explanation.hardFilters.find((h) => h.code === 'level_role_mismatch')!.label}. Pick a location below and
               confirm with <span className="font-medium">Place anyway</span> to override — it's recorded — or leave
               this queued for another level to free up.
             </p>
@@ -278,7 +278,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
             <p className="text-xs text-red-600 mt-1.5">{qtyError}</p>
           ) : remainder > 0 ? (
             <p className="text-xs text-amber-600 mt-1.5">
-              {trimNumber(remainder)} {unitLabel} stay in the queue for another bin.
+              {trimNumber(remainder)} {unitLabel} stay in the queue for another location.
             </p>
           ) : null}
         </div>
@@ -286,7 +286,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
         {/* Engine alternates ---------------------------------------------- */}
         {alternatives.length > 0 && (
           <div>
-            <p className="text-xs font-semibold text-stone-600 mb-1.5">The engine's next-best bins</p>
+            <p className="text-xs font-semibold text-stone-600 mb-1.5">The engine's next-best locations</p>
             <div className="flex flex-wrap gap-1.5">
               {alternatives.map((a) => (
                 <button
@@ -320,7 +320,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
             hears whether the code landed, which is the only thing the gun's own
             beep cannot tell them. */}
         <ScanField
-          label="Scan or type a bin code"
+          label="Scan or type a location code"
           value={code}
           onChange={setCode}
           onScan={(raw) => {
@@ -331,13 +331,13 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
           }}
           flash={flash}
           placeholder="e.g. A-01-02-B"
-          cameraTitle="Scan a bin label"
+          cameraTitle="Scan a location label"
           error={typedCode && !typedMatch ? 'No active location with that code in this warehouse.' : undefined}
         />
 
         {/* Search ---------------------------------------------------------- */}
         <div>
-          <label className="block text-xs font-semibold text-stone-600 mb-1.5">Or browse bins</label>
+          <label className="block text-xs font-semibold text-stone-600 mb-1.5">Or browse locations</label>
           <div className="relative">
             <Search className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -345,15 +345,15 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search code, name or zone"
               className={fieldCls}
-              aria-label="Search bins"
+              aria-label="Search locations"
             />
           </div>
 
           <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-stone-100 divide-y divide-stone-100">
             {locationsQuery.isLoading ? (
-              <div className="p-4 text-xs text-stone-500">Loading bins…</div>
+              <div className="p-4 text-xs text-stone-500">Loading locations…</div>
             ) : matches.length === 0 ? (
-              <div className="p-4 text-xs text-stone-500">No bins match that search.</div>
+              <div className="p-4 text-xs text-stone-500">No locations match that search.</div>
             ) : (
               matches.map((b) => {
                 const used = fill.get(b.id) ?? 0
@@ -392,7 +392,7 @@ export function BinPickerSheet({ open, warehouseId, row, busy, onClose, onConfir
           </div>
           {storageBins.length > matches.length && !search.trim() && (
             <p className="text-[11px] text-stone-500 mt-1.5">
-              Showing {matches.length} of {storageBins.length} bins — search to narrow.
+              Showing {matches.length} of {storageBins.length} locations — search to narrow.
             </p>
           )}
         </div>

@@ -92,9 +92,9 @@ export function CodePatternSection() {
           <Hash className="w-5 h-5 text-nexgen-blue" aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <h3 className="font-display font-semibold text-stone-900">Bin code pattern</h3>
+          <h3 className="font-display font-semibold text-stone-900">Location code pattern</h3>
           <p className="text-sm text-stone-500">
-            How this site names its bins. The recode tool on the Warehouse tab opens on
+            How this site names its locations. The recode tool on the Warehouse tab opens on
             this, and an operator can still override it for one sweep.
           </p>
         </div>
@@ -248,7 +248,7 @@ export function CodePatternSection() {
           Drawing a NEW bin still mints a grid code, and pretending otherwise would
           be the more expensive kind of wrong. */}
       <p className="mt-4 text-xs text-stone-500">
-        This is used when you recode bins from the Warehouse map. Bins drawn in the
+        This is used when you recode locations from the Warehouse map. Locations drawn in the
         layout designer are still given a grid code, and can be recoded afterwards.
       </p>
     </section>

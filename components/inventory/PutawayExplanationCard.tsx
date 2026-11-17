@@ -63,7 +63,7 @@ export function PutawayExplanationCard({ explanation, binById }: {
               </p>
             )}
             <p className="text-[11px] text-amber-700/80 mt-1">
-              This is a hard rule, not a scoring preference — use "Choose bin" to place it on a mismatched level
+              This is a hard rule, not a scoring preference — use "Choose location" to place it on a mismatched level
               anyway. The override is recorded.
             </p>
           </div>
@@ -80,8 +80,8 @@ export function PutawayExplanationCard({ explanation, binById }: {
         </div>
       ) : (
         <p className="text-stone-500">
-          Considered {candidatesConsidered} bin{candidatesConsidered === 1 ? '' : 's'}.
-          {winner ? ` Best score ${winner.totalScore.toFixed(2)}.` : ' No eligible bin.'}
+          Considered {candidatesConsidered} location{candidatesConsidered === 1 ? '' : 's'}.
+          {winner ? ` Best score ${winner.totalScore.toFixed(2)}.` : ' No eligible location.'}
         </p>
       )}
 
@@ -115,12 +115,12 @@ export function PutawayExplanationCard({ explanation, binById }: {
       {hardFilters.length > 0 && (
         <details>
           <summary className="cursor-pointer text-stone-500 hover:text-stone-600">
-            Why some bins were excluded
+            Why some locations were excluded
           </summary>
           <ul className="mt-1.5 space-y-1">
             {hardFilters.map((h) => (
               <li key={`${h.code}-${h.ruleId ?? 'builtin'}`} className="text-stone-500">
-                <span className="font-medium">{h.label}</span> — {h.rejectedCount} bin{h.rejectedCount === 1 ? '' : 's'}
+                <span className="font-medium">{h.label}</span> — {h.rejectedCount} location{h.rejectedCount === 1 ? '' : 's'}
                 {h.sample.length > 0 && <span className="text-stone-500"> (e.g. {h.sample.map((s) => s.code).join(', ')})</span>}
               </li>
             ))}

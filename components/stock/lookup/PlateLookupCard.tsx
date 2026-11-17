@@ -100,7 +100,7 @@ export function PlateLookupCard({ plate, onCountBin }: PlateLookupCardProps) {
           onClick={() => onCountBin(plate.locationId as number)}
           className="touch-target-y flex w-full items-center justify-center gap-2 rounded-xl bg-nexgen-blue-dark px-4 py-2.5 text-sm font-semibold text-white btn-press"
         >
-          <ClipboardList className="h-4 w-4" aria-hidden="true" /> Count {place ?? 'this bin'}
+          <ClipboardList className="h-4 w-4" aria-hidden="true" /> Count {place ?? 'this location'}
         </button>
       ) : null}
 

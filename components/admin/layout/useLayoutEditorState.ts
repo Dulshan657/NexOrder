@@ -1021,7 +1021,7 @@ function editorReducerCore(state: EditorState, action: EditorAction): EditorStat
           rotation: p.rotation, kind: meta?.kind ?? 'BIN', code: meta?.code ?? `L${p.locationId}`,
           // The `?? Bin N` fallback stays: it means "the server sent me no
           // metadata for this row", not "this is how bins are named".
-          name: meta?.name ?? `Bin ${p.locationId}`, capacitySlots: meta?.capacitySlots, slotKind: meta?.slotKind,
+          name: meta?.name ?? `Bin ${p.locationId}`, capacitySlots: meta?.capacitySlots, slotKind: meta?.slotKind, // wording-ok: a placeholder name the editor may save, in the legacy shape isUninformativeName recognises
           weightCapacityKg: meta?.weightCapacityKg, storageTypeId: meta?.storageTypeId,
           nameSeq: meta?.nameSeq ?? null, nameArea: meta?.nameArea ?? null,
           nameIsAuto: meta?.nameIsAuto ?? false, nameNoun: meta?.nameNoun,

@@ -38,7 +38,7 @@ test.describe('Warehouse panels scroll with the mouse wheel', () => {
     expect(remaining, 'nothing the spec made may remain on dev').toEqual([])
   })
 
-  test('the Bin detail panel scrolls with the mouse wheel', async ({ adminPage: page }) => {
+  test('the Location detail panel scrolls with the mouse wheel', async ({ adminPage: page }) => {
     await openWarehouseTab(page)
     await selectWarehouseScope(page, `${world.warehouseName} (${world.warehouseCode})`)
 
@@ -64,7 +64,7 @@ test.describe('Warehouse panels scroll with the mouse wheel', () => {
     const viewport = page.viewportSize()
     if (!viewport) throw new Error('the page has no viewport size')
     const panelBox = await panel.boundingBox()
-    if (!panelBox) throw new Error('the Bin detail panel has no box')
+    if (!panelBox) throw new Error('the Location detail panel has no box')
     expect(
       panelBox.height,
       'the seeded bin must fill the panel up to its 70svh cap; add products to the seed if this fails',
@@ -78,14 +78,14 @@ test.describe('Warehouse panels scroll with the mouse wheel', () => {
 
     // The scroll body is what moves. Polled, because the wheel is smoothed.
     await expect
-      .poll(() => body.evaluate((el) => el.scrollTop), { message: 'the Bin detail body scrolled' })
+      .poll(() => body.evaluate((el) => el.scrollTop), { message: 'the Location detail body scrolled' })
       .toBeGreaterThan(0)
 
     // And it reaches the end of the list, so the last product is reachable.
     await page.mouse.wheel(0, WHEEL_TO_THE_END)
     await expect
       .poll(() => body.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop), {
-        message: 'the Bin detail body scrolled to its last row',
+        message: 'the Location detail body scrolled to its last row',
       })
       .toBeLessThanOrEqual(1)
   })

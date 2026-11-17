@@ -35,6 +35,6 @@ export const GiveHomeOffer: React.FC<GiveHomeOfferProps> = ({ onGive, onDecline 
       </div>
     }
   >
-    This product has no home bin. Give it one?
+    This product has no home location. Give it one?
   </Callout>
 )

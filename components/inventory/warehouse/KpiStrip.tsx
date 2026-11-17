@@ -14,7 +14,7 @@ export function KpiStrip({ warehouseId }: KpiStripProps) {
   if (!report) return null
   const util = report.utilizationPct != null ? `${Math.round(report.utilizationPct * 100)}%` : '—'
   const items = [
-    { label: 'Bins', value: report.binCount },
+    { label: 'Locations', value: report.binCount },
     { label: 'Empty', value: report.emptyBins },
     { label: 'Utilization', value: util },
   ]

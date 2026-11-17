@@ -255,7 +255,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter by product, plate or bin"
+              placeholder="Filter by product, plate or location"
               aria-label="Filter the walk"
               /* `nexgen-blue-dark`, not `nexgen-blue/40`: the translucent ring
                  composites to 1.62:1 against the 3:1 that SC 1.4.11 requires. */
@@ -268,7 +268,7 @@ const PutawayWalkView: React.FC<PutawayWalkViewProps> = ({ warehouseId, canPlace
       {activeId == null && routeQuery.data?.mode === 'engine' && routeQuery.data.unreachableCount > 0 && (
         <p className="text-xs text-amber-700 flex items-start gap-1.5">
           <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-          {routeQuery.data.unreachableCount} bin
+          {routeQuery.data.unreachableCount} location
           {routeQuery.data.unreachableCount === 1 ? ' is' : 's are'} not placed in the current layout, so
           {routeQuery.data.unreachableCount === 1 ? ' it' : ' they'} could not be routed — listed last.
         </p>

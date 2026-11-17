@@ -35,15 +35,15 @@ const SKIP_COPY: Record<ReplenSkipReason, { title: string; detail: string }> = {
   },
   no_source: {
     title: 'Nothing to pull from',
-    detail: 'No reserve or bulk bin in this warehouse holds this product. It needs receiving before the pick zone can be refilled.',
+    detail: 'No reserve or bulk location in this warehouse holds this product. It needs receiving before the pick zone can be refilled.',
   },
   slot_full: {
     title: 'Pick zone is already at its maximum',
     detail: 'The slot holds as much as it physically can, counting stock that is already allocated.',
   },
   bin_not_pick_zone: {
-    title: 'Home bin is not a pick zone',
-    detail: 'Replenishment refills a pick-zone level. Change the level role, or point this product at a different bin.',
+    title: 'Home location is not a pick zone',
+    detail: 'Replenishment refills a pick-zone level. Change the level role, or point this product at a different location.',
   },
   no_pick_zone_configured: {
     title: 'No pick zone configured',
@@ -99,7 +99,7 @@ const ReplenQueueView: React.FC<ReplenQueueViewProps> = ({ warehouseId, canWork 
   const doAssign = async (task: ReplenTask) => {
     const from = sourceByTask[task.id] ?? task.recommendedFromLocationId;
     if (from == null) {
-      addToast('Choose which bin to pull from', 'error');
+      addToast('Choose which location to pull from', 'error');
       return;
     }
     const raw = qtyByTask[task.id];

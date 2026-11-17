@@ -628,7 +628,7 @@ export function WarehouseCanvas({
               } : undefined}
             >
               {fitted}
-              {clickable && <title>Rename “{name}” and the bins inside it</title>}
+              {clickable && <title>Rename “{name}” and the locations inside it</title>}
             </text>
           )
         })}

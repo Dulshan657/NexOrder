@@ -44,7 +44,7 @@ function mount() {
   return { onChoose, onClose }
 }
 
-const FIELD = 'Scan or type the bin code'
+const FIELD = 'Scan or type the location code'
 
 function scan(code: string) {
   const input = screen.getByLabelText(FIELD)
@@ -61,7 +61,7 @@ describe('GiveHomeSheet', () => {
   it('is titled with the product', () => {
     loaded([N1])
     mount()
-    expect(screen.getByText('Give TST-WALK-200 a home bin')).toBeTruthy()
+    expect(screen.getByText('Give TST-WALK-200 a home location')).toBeTruthy()
   })
 
   it("asks for the bins of this product, on this line's own terms, only while open", () => {
@@ -85,7 +85,7 @@ describe('GiveHomeSheet', () => {
     scan('TST-WALK-X9')
 
     expect(screen.getByRole('alert').textContent).toBe(
-      "TST-WALK-X9 can't be this product's home. Pick one of the bins listed.",
+      "TST-WALK-X9 can't be this product's home. Pick one of the locations listed.",
     )
     expect(onChoose).not.toHaveBeenCalled()
   })
@@ -107,7 +107,7 @@ describe('GiveHomeSheet', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Make this its home' }))
 
     expect(screen.getByRole('alert').textContent).toBe(
-      "TST-WALK-X9 can't be this product's home. Pick one of the bins listed.",
+      "TST-WALK-X9 can't be this product's home. Pick one of the locations listed.",
     )
     expect(onChoose).not.toHaveBeenCalled()
   })
@@ -115,7 +115,7 @@ describe('GiveHomeSheet', () => {
   it('picking from the dropdown and pressing Make this its home chooses it', () => {
     loaded([N1, N2])
     const { onChoose } = mount()
-    fireEvent.change(screen.getByLabelText('Or pick a bin'), { target: { value: 'TST-WALK-N2' } })
+    fireEvent.change(screen.getByLabelText('Or pick a location'), { target: { value: 'TST-WALK-N2' } })
     fireEvent.click(screen.getByRole('button', { name: 'Make this its home' }))
 
     expect(onChoose).toHaveBeenCalledTimes(1)
@@ -125,7 +125,7 @@ describe('GiveHomeSheet', () => {
   it('lists each bin as its code and its name, or the code alone when it has no name', () => {
     loaded([N1, N2])
     mount()
-    const options = Array.from(screen.getByLabelText('Or pick a bin').querySelectorAll('option'))
+    const options = Array.from(screen.getByLabelText('Or pick a location').querySelectorAll('option'))
       .map((o) => o.textContent)
     expect(options).toContain('TST-WALK-N1 — TST-WALK Bay One')
     expect(options).toContain('TST-WALK-N2')
@@ -143,7 +143,7 @@ describe('GiveHomeSheet', () => {
   it('prefers the typed code over the dropdown when both are filled', () => {
     loaded([N1, N2])
     const { onChoose } = mount()
-    fireEvent.change(screen.getByLabelText('Or pick a bin'), { target: { value: 'TST-WALK-N2' } })
+    fireEvent.change(screen.getByLabelText('Or pick a location'), { target: { value: 'TST-WALK-N2' } })
     fireEvent.change(screen.getByLabelText(FIELD), { target: { value: 'TST-WALK-N1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Make this its home' }))
 
@@ -156,7 +156,7 @@ describe('GiveHomeSheet', () => {
     scan('TST-WALK-X9')
     expect(screen.getByRole('alert')).toBeTruthy()
 
-    fireEvent.change(screen.getByLabelText('Or pick a bin'), { target: { value: 'TST-WALK-N1' } })
+    fireEvent.change(screen.getByLabelText('Or pick a location'), { target: { value: 'TST-WALK-N1' } })
     expect(screen.queryByRole('alert')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Make this its home' }))
     expect(onChoose).toHaveBeenCalledWith(N1)
@@ -166,7 +166,7 @@ describe('GiveHomeSheet', () => {
     loaded([])
     const { onChoose } = mount()
 
-    expect(screen.getByText('No bin in this warehouse can be its home right now.')).toBeTruthy()
+    expect(screen.getByText('No location in this warehouse can be its home right now.')).toBeTruthy()
     expect(screen.queryByLabelText(FIELD)).toBeNull()
     expect(onChoose).not.toHaveBeenCalled()
   })
@@ -175,8 +175,8 @@ describe('GiveHomeSheet', () => {
     choicesMock.mockReturnValue({ data: undefined, isLoading: true, isError: false, error: null })
     mount()
 
-    expect(screen.queryByText('No bin in this warehouse can be its home right now.')).toBeNull()
-    expect(screen.getByText('Loading bins…')).toBeTruthy()
+    expect(screen.queryByText('No location in this warehouse can be its home right now.')).toBeNull()
+    expect(screen.getByText('Loading locations…')).toBeTruthy()
   })
 
   it("shows the server's words when the list could not be read", () => {
@@ -187,7 +187,7 @@ describe('GiveHomeSheet', () => {
     mount()
 
     expect(screen.getByRole('alert').textContent).toBe('Could not list bins for a home, try again.')
-    expect(screen.queryByText('No bin in this warehouse can be its home right now.')).toBeNull()
+    expect(screen.queryByText('No location in this warehouse can be its home right now.')).toBeNull()
   })
 
   it('closes without choosing', () => {

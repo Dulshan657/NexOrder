@@ -120,7 +120,7 @@ describe('putaway walk — identifying an unlabelled carton', () => {
     mount()
     open()
     scan(/Scan the product/, '4796009868869')
-    scan(/Scan the bin/, 'AMADIYA-FAST.A-2-1-L5')
+    scan(/Scan the location/, 'AMADIYA-FAST.A-2-1-L5')
     fireEvent.click(screen.getByRole('button', { name: /Confirm/i }))
 
     await vi.waitFor(() => expect(completeMock).toHaveBeenCalledTimes(1))
@@ -140,7 +140,7 @@ describe('putaway walk — identifying an unlabelled carton', () => {
     // Asking for one thing does not mean refusing the other — an operator who
     // does have the sticker should never be turned away for using it.
     scan(/Scan the product/, 'HU-000509')
-    scan(/Scan the bin/, 'AMADIYA-FAST.A-2-1-L5')
+    scan(/Scan the location/, 'AMADIYA-FAST.A-2-1-L5')
     fireEvent.click(screen.getByRole('button', { name: /Confirm/i }))
 
     await vi.waitFor(() => expect(completeMock).toHaveBeenCalledTimes(1))
@@ -200,7 +200,7 @@ describe('putaway walk — the other branches of the rule', () => {
   it('skips straight to the bin when nothing can identify the goods', () => {
     mount({ product: { id: 56, name: 'Abalone Sauce 210ml', sku: 'AYM-SAU-018', barcode: null } as Product })
     open()
-    expect(screen.getByLabelText(/Scan the bin/)).toBeTruthy()
+    expect(screen.getByLabelText(/Scan the location/)).toBeTruthy()
     // …but still offers the sticker that would have answered the question.
     expect(screen.getByText(/No label has ever been printed for HU-000509/)).toBeTruthy()
   })

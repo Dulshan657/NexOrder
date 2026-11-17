@@ -56,7 +56,7 @@ describe('HomeBinProblemsPanel', () => {
     ], 5))
     render(<HomeBinProblemsPanel warehouseId={7} />)
 
-    expect(screen.getByRole('heading', { name: /home bin problems/i })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: /home location problems/i })).toBeTruthy()
     const items = screen.getAllByRole('listitem').filter((li) => li.getAttribute('data-home') !== null)
     expect(items).toHaveLength(2)
 
@@ -75,21 +75,21 @@ describe('HomeBinProblemsPanel', () => {
   it('says how many homes have problems out of how many were checked', () => {
     health.mockReturnValue(loaded([row()], 5))
     render(<HomeBinProblemsPanel warehouseId={7} />)
-    expect(screen.getByText(/1 of 5 home bins/i)).toBeTruthy()
+    expect(screen.getByText(/1 of 5 home locations/i)).toBeTruthy()
   })
 
   it('says "No problems" when there are none', () => {
     health.mockReturnValue(loaded([], 12))
     render(<HomeBinProblemsPanel warehouseId={7} />)
-    expect(screen.getByRole('heading', { name: /home bin problems/i })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: /home location problems/i })).toBeTruthy()
     expect(screen.getByText('No problems')).toBeTruthy()
-    expect(screen.getByText(/12 home bins checked/i)).toBeTruthy()
+    expect(screen.getByText(/12 home locations checked/i)).toBeTruthy()
   })
 
   it('says it is checking while the answer is on its way', () => {
     health.mockReturnValue({ data: undefined, isLoading: true, isFetching: true, error: null, refetch })
     render(<HomeBinProblemsPanel warehouseId={7} />)
-    expect(screen.getByText(/checking home bins/i)).toBeTruthy()
+    expect(screen.getByText(/checking home locations/i)).toBeTruthy()
     expect(screen.queryByText('No problems')).toBeNull()
   })
 

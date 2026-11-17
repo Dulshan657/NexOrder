@@ -302,8 +302,8 @@ export function FloorPlanImportModal({ warehouse, onClose, onDraftCreated }: Flo
       // mutate-layout's zod schema caps a single save at PLACEMENT_CAP placements.
       if (allPlacements.length > PLACEMENT_CAP) {
         setCreateError(
-          `This draft would create ${allPlacements.length.toLocaleString()} bins, over the ` +
-          `${PLACEMENT_CAP.toLocaleString()}-bin limit. Switch the largest pallet area(s) to ` +
+          `This draft would create ${allPlacements.length.toLocaleString()} locations, over the ` +
+          `${PLACEMENT_CAP.toLocaleString()}-location limit. Switch the largest pallet area(s) to ` +
           `"Visual only" and try again.`,
         )
         return

@@ -13,8 +13,8 @@ interface ScoringWeightsSectionProps {
 }
 
 const FACTORS: Array<{ key: keyof WieScoringWeights; label: string; hint: string }> = [
-  { key: 'travelDistance', label: 'Travel distance', hint: 'Prefer bins closer to dispatch' },
-  { key: 'capacityFit', label: 'Capacity fit', hint: 'Prefer bins that fit the quantity well' },
+  { key: 'travelDistance', label: 'Travel distance', hint: 'Prefer locations closer to dispatch' },
+  { key: 'capacityFit', label: 'Capacity fit', hint: 'Prefer locations that fit the quantity well' },
   { key: 'grouping', label: 'Grouping', hint: 'Keep like products together' },
   { key: 'zonePreference', label: 'Zone preference', hint: 'Honour product zone affinity' },
   { key: 'congestion', label: 'Congestion', hint: 'Avoid busy aisles' },
@@ -48,7 +48,7 @@ export function ScoringWeightsSection({ warehouse }: ScoringWeightsSectionProps)
         <h4 className="text-sm font-semibold text-stone-700">Scoring weights</h4>
       </div>
       <p className="text-xs text-stone-500 -mt-2">
-        Relative importance of each factor when the engine scores bins. Values are weighed against each
+        Relative importance of each factor when the engine scores locations. Values are weighed against each
         other — only the ratios matter, not the absolute numbers.
       </p>
 

@@ -101,7 +101,7 @@ export function BindZonesModal({ warehouseId, onClose }: BindZonesModalProps) {
         <p className="text-sm text-stone-600">
           A painted area can name a zone profile. Binding makes that real: its racks are re-parented
           under the zone, which is how the putaway engine, the map and the location tree all read a
-          bin&rsquo;s zone.
+          location&rsquo;s zone.
         </p>
 
         {previewError && (
@@ -136,7 +136,7 @@ export function BindZonesModal({ warehouseId, onClose }: BindZonesModalProps) {
             {unzoned.length > 0 && (
               <p className="text-[11px] leading-snug text-stone-500">
                 {unzoned.map((a) => a.areaName).join(', ')} name{unzoned.length === 1 ? 's' : ''} no zone
-                profile, so {unzoned.length === 1 ? 'its' : 'their'} bins stay at the site root. Tag the
+                profile, so {unzoned.length === 1 ? 'its' : 'their'} locations stay at the site root. Tag the
                 area with a zone profile to bind {unzoned.length === 1 ? 'it' : 'them'}.
               </p>
             )}
@@ -147,8 +147,8 @@ export function BindZonesModal({ warehouseId, onClose }: BindZonesModalProps) {
                 {preview.categoryWarnings.map((w) => (
                   <p key={w.areaName} className="text-amber-800/90">
                     <span className="font-medium">{w.areaName}</span> allows only some categories, but{' '}
-                    {w.bins} bin{w.bins === 1 ? '' : 's'} in it hold {w.categories.join(', ')}. Putaway
-                    will stop offering {w.bins === 1 ? 'that bin' : 'those bins'} for{' '}
+                    {w.bins} location{w.bins === 1 ? '' : 's'} in it hold {w.categories.join(', ')}. Putaway
+                    will stop offering {w.bins === 1 ? 'that location' : 'those locations'} for{' '}
                     {w.categories.length === 1 ? 'that category' : 'those categories'} — the stock
                     already there is not moved.
                   </p>

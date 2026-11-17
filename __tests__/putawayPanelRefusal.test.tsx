@@ -93,8 +93,8 @@ describe('PutawayPanel shows a home refusal', () => {
     invoke.mockResolvedValue({ data: null, error: httpError(HOME_MESSAGE) })
     renderPanel()
 
-    fireEvent.click(screen.getByLabelText('Why this bin?'))
-    fireEvent.change(screen.getByLabelText('Choose another bin'), { target: { value: '716' } })
+    fireEvent.click(screen.getByLabelText('Why this location?'))
+    fireEvent.change(screen.getByLabelText('Choose another location'), { target: { value: '716' } })
     fireEvent.click(screen.getByText('Put here'))
 
     const alert = await screen.findByRole('alert')

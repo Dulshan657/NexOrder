@@ -878,7 +878,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
             }}
             className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 btn-press hover:bg-stone-50"
           >
-            Recode bins
+            Recode locations
           </button>
           {/* Assigning stock is its own errand, not a fourth annotate layer: an
               area puts a NAME on the floor, a block decides where goods go.
@@ -1313,7 +1313,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
 
         <FloatingPanel
           id="wh-bin-detail"
-          title="Bin detail"
+          title="Location detail"
           className="max-h-[70svh]"
           containerRef={binDetailRef}
         >

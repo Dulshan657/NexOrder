@@ -134,7 +134,7 @@ test.describe('an open putaway stop fits the screen it is worked on', () => {
 
     // The queue-level finder stands down while a stop is open — two live scan
     // inputs is a coin toss over which one hears the gun.
-    await expect(page.getByLabel(/plate, carton or bin/i)).toHaveCount(0)
+    await expect(page.getByLabel(/plate, carton or location/i)).toHaveCount(0)
 
 
   })

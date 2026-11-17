@@ -79,7 +79,7 @@ export function EditSignModal({ signName, onRename, onErase, onClose }: EditSign
         {issue && text.trim() && <p className="text-[11px] text-rose-600">{issue}</p>}
         <p className="text-[11px] leading-snug text-stone-500">
           Every cell of this sign is retyped. Nothing is written until you press Save on the
-          annotate bar — no bin is renamed and the layout does not need republishing.
+          annotate bar — no location is renamed and the layout does not need republishing.
         </p>
       </div>
     </Modal>

@@ -56,8 +56,8 @@ export function overflowConfirmCopy(binCode: string) {
     /** Above "Take it to" on the open stop. */
     heading: `Home full — put in ${binCode}?`,
     scanLabel: `Scan ${binCode} to confirm`,
-    helper: 'Scanning this bin confirms it. The desk can choose another bin instead.',
-    wrongBin: `Scan ${binCode} to confirm this overflow bin, or leave it for the desk to choose another.`,
+    helper: 'Scanning this location confirms it. The desk can choose another location instead.',
+    wrongBin: `Scan ${binCode} to confirm this overflow location, or leave it for the desk to choose another.`,
     confirmed: `Confirmed — put it in ${binCode}`,
   } as const
 }
@@ -69,9 +69,9 @@ export function overflowConfirmCopy(binCode: string) {
  */
 export function homeTargetCopy(chosenCode: string, sku: string) {
   return {
-    scanLabel: `Scan ${chosenCode} — it becomes the home bin`,
-    wrongBin: `Scan ${chosenCode}, the bin you chose as its home.`,
-    placedAndSet: (placedIn: string) => `Placed in ${placedIn} — it is now ${sku}'s home bin`,
+    scanLabel: `Scan ${chosenCode} — it becomes the home location`,
+    wrongBin: `Scan ${chosenCode}, the location you chose as its home.`,
+    placedAndSet: (placedIn: string) => `Placed in ${placedIn} — it is now ${sku}'s home location`,
     placedNotSet: (placedIn: string) => `Placed in ${placedIn} — someone set a home for ${sku} meanwhile`,
   } as const
 }

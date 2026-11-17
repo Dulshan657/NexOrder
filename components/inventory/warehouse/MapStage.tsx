@@ -505,7 +505,7 @@ export function MapStage({
       {sweeping && select && (
         <div className="map-panel-pill pointer-events-none absolute right-3 top-3 z-20 px-3 py-1.5 text-[11px] font-medium" aria-hidden="true">
           <span className="font-semibold tabular-nums text-nexgen-blue">{select.selectedCount}</span>
-          <span className="text-stone-600"> bin{select.selectedCount === 1 ? '' : 's'} selected</span>
+          <span className="text-stone-600"> location{select.selectedCount === 1 ? '' : 's'} selected</span>
         </div>
       )}
       {/* Suppressed while sweeping — the panel beside the map says the same thing at

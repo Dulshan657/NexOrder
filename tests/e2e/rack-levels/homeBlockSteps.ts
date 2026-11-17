@@ -20,7 +20,7 @@ export function homeRoomMessage(homeCode: string, room: number): string {
 
 /** What the walk card says at the bin scan when a home task is scanned into another bin. */
 export function walkHomeMessage(homeCode: string): string {
-  return `This product's home bin is ${homeCode}. Scan ${homeCode}.`
+  return `This product's home location is ${homeCode}. Scan ${homeCode}.`
 }
 
 /** The refusal copy for another product's home (A9). */
@@ -53,7 +53,7 @@ export async function openMinMaxSetup(page: Page, world: World): Promise<void> {
 }
 
 export function healthPanel(page: Page): Locator {
-  return page.getByRole('region', { name: 'Home bin problems' })
+  return page.getByRole('region', { name: 'Home location problems' })
 }
 
 /** Set `product`'s home on the grid: the bin, a minimum and a maximum, in cartons. */
@@ -66,7 +66,7 @@ export async function setHomeBin(
 ): Promise<void> {
   await page.getByRole('tab', { name: /^All/ }).click()
   await page.getByPlaceholder('Search SKU or name…').fill(product.sku)
-  await page.getByLabel(`Home bin for ${product.sku}`).fill(binCode)
+  await page.getByLabel(`Home location for ${product.sku}`).fill(binCode)
   await page.getByLabel(`Minimum for ${product.sku}`).fill(String(minCartons))
   await page.getByLabel(`Maximum for ${product.sku}`).fill(String(maxCartons))
   await page.getByRole('button', { name: /^Save 1$/ }).click()
@@ -129,13 +129,13 @@ export async function receiveCartons(
 /** The receive card's "Suggested locations" panel, opened. */
 export async function openSuggestions(page: Page): Promise<void> {
   await page.getByRole('button', { name: /Suggested locations/ }).click()
-  await expect(page.getByRole('heading', { name: /Put away — recommended bins/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Put away — recommended locations/ })).toBeVisible()
 }
 
 /** Pick another bin for the one suggestion on the receive card and press "Put here". */
 export async function putHereInstead(page: Page, binCode: string): Promise<void> {
-  await page.getByRole('button', { name: 'Why this bin?' }).click()
-  await page.getByLabel('Choose another bin').selectOption({ label: binCode })
+  await page.getByRole('button', { name: 'Why this location?' }).click()
+  await page.getByLabel('Choose another location').selectOption({ label: binCode })
   await page.getByRole('button', { name: /Put here/ }).click()
 }
 
@@ -151,7 +151,7 @@ export async function assignInQueue(page: Page, product: WorldProduct, warehouse
   if (warehouseCode) await selectPutawayWarehouse(page, warehouseCode)
   await page.getByRole('navigation', { name: 'Putaway stage' }).getByRole('button', { name: /^Assign/ }).click()
   const row = page.locator('div.px-4.py-3', {
-    has: page.getByRole('button', { name: `Why this bin for ${product.name}?` }),
+    has: page.getByRole('button', { name: `Why this location for ${product.name}?` }),
   })
   await row.getByRole('button', { name: 'Assign' }).click()
   await expect(page.getByText(/on the walk now/)).toBeVisible()
@@ -171,7 +171,7 @@ export async function openWalkStop(page: Page, product: WorldProduct, assignedCo
 
 /** The bin scan field of the open stop: present only while the card is on the bin step. */
 export function binField(page: Page): Locator {
-  return page.getByLabel(/^Scan the bin/)
+  return page.getByLabel(/^Scan the location/)
 }
 
 export async function scanBin(page: Page, binCode: string): Promise<void> {

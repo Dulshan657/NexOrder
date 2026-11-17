@@ -187,7 +187,7 @@ const LevelRolesSection: React.FC = () => {
         u.locations ? `${u.locations} location${u.locations === 1 ? '' : 's'}` : null,
         u.skuRules ? `${u.skuRules} product rule${u.skuRules === 1 ? '' : 's'}` : null,
         u.formLevels ? `${u.formLevels} storage form${u.formLevels === 1 ? '' : 's'}` : null,
-        u.homeBins ? `${u.homeBins} home bin${u.homeBins === 1 ? '' : 's'}` : null,
+        u.homeBins ? `${u.homeBins} home location${u.homeBins === 1 ? '' : 's'}` : null,
       ].filter(Boolean)
       setDeleteUsage(parts.length > 0 ? parts.join(', ') : '')
     } catch {
