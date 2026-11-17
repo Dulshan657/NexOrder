@@ -1,0 +1,258 @@
+// explain-product-location Edge Function (NX-0039)
+//
+// "Where is this product, and how do I walk it?" for one product at one
+// warehouse: its home bin, every location holding it (home / off home / at the
+// dock), where a NEW delivery would go and why, and two walks from the dock —
+// the putaway walk to that bin and the pick walk to the stock.
+//
+// Read-only, and it decides nothing of its own:
+//   - where a delivery goes is generatePutawayTasks in DRY RUN — the very path
+//     receiving takes, so the normal putaway rules (wie_rules, category
+//     compatibility, hold zones, home first, overflow nearest home) answer, and
+//     nothing is written;
+//   - which bins hold the stock is inventory_balances over
+//     inv_warehouse_draw_locations, the one definition of "this warehouse";
+//   - both walks are sequencePickRoute + legPaths over loadWalkGraph, exactly as
+//     recommend-pick-route draws an order's walk.
+// Sites with no published layout get the summary and mode 'legacy' (no walks).
+
+// deno-lint-ignore-file no-explicit-any
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0'
+import { z } from 'https://esm.sh/zod@3.23.8'
+import { requireAuth, type UserRole } from '../_shared/auth.ts'
+import { EdgeFunctionError, errorResponse, isEdgeFunctionError } from '../_shared/errors.ts'
+import { corsHeadersFor } from '../_shared/cors.ts'
+import { checkRateLimit } from '../_shared/rateLimit.ts'
+import { loadWalkGraph } from '../_shared/loadWalkGraph.ts'
+import { generatePutawayTasks } from '../_shared/putawayTasks.ts'
+import { assertMayActAtWarehouse } from '../_shared/receiveDestination.ts'
+import { requireModule } from '../_shared/modules.ts'
+import { sequencePickRoute, legPaths, simplifyPath, type PickStop } from '../_shared/wie/picking.ts'
+import type { WarehouseGraph } from '../_shared/wie/types.ts'
+import {
+  productWhereabouts,
+  newDeliveryReason,
+  pickWalkStops,
+  walkSummary,
+  type PlacementRef,
+} from '../_shared/wie/productWhereabouts.ts'
+
+const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
+
+const inputSchema = z.object({
+  warehouse_id: z.number().int().positive(),
+  product_id: z.number().int().positive(),
+})
+
+type PathPoint = { floor: number; x: number; y: number }
+
+function must<T>(res: { data: T; error: { message: string } | null }, what: string): T {
+  if (res.error) throw new EdgeFunctionError('INTERNAL', `${what} load failed: ${res.error.message}`)
+  return res.data
+}
+
+/** Node ids → corner points; an id the graph does not know drops the path (straight leg). */
+function toPathPoints(ids: number[] | null, nodeById: Map<number, PathPoint>): PathPoint[] | undefined {
+  if (!ids) return undefined
+  const points: PathPoint[] = []
+  for (const id of ids) {
+    const n = nodeById.get(id)
+    if (!n) return undefined
+    points.push({ floor: n.floor, x: n.x, y: n.y })
+  }
+  return simplifyPath(points)
+}
+
+/** Sequence stops from the dock and shape them like recommend-pick-route's stops. */
+function buildWalk(graph: WarehouseGraph, dockNodeId: number, stops: PickStop[], productId: number) {
+  const route = sequencePickRoute(graph, dockNodeId, stops)
+  const nodeById = new Map(graph.nodes.map((n) => [n.id, { floor: n.floor, x: n.x, y: n.y }]))
+  const paths = legPaths(graph, dockNodeId, route.stops)
+  const shaped = route.stops.map((s, i) => ({
+    sequence: s.sequence,
+    locationId: s.locationId,
+    code: (s.meta?.code as string) ?? null,
+    productId,
+    orderItemId: null,
+    orderId: null,
+    qtyBase: (s.meta?.qtyBase as number) ?? 0,
+    legDistanceM: s.legDistanceM,
+    path: toPathPoints(paths[i], nodeById),
+  }))
+  const summary = walkSummary(shaped)
+  return {
+    stops: shaped,
+    totalDistanceM: route.totalDistanceM,
+    unreachableCount: route.unreachable.length,
+    steps: summary.steps,
+  }
+}
+
+serve(async (req: Request) => {
+  const corsHeaders = corsHeadersFor(req)
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  try {
+    requireModule('inventory_dispatch')
+    const auth = await requireAuth(req, { allowedRoles: ALLOWED })
+    const rl = await checkRateLimit(`explain-product-location:${auth.userId}`, { windowMs: 60_000, max: 60 })
+    if (!rl.ok) throw new EdgeFunctionError('TOO_MANY_REQUESTS', 'Rate limit exceeded')
+
+    const body = await req.json().catch(() => {
+      throw new EdgeFunctionError('INVALID_INPUT', 'Request body must be valid JSON')
+    })
+    const parsed = inputSchema.safeParse(body)
+    if (!parsed.success) throw new EdgeFunctionError('INVALID_INPUT', 'Invalid request body', parsed.error.flatten())
+    const { warehouse_id, product_id } = parsed.data
+
+    assertMayActAtWarehouse(
+      { role: auth.role, homeWarehouseId: auth.profile.home_warehouse_id },
+      warehouse_id,
+      'You can only look up stock at your own warehouse',
+    )
+
+    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
+      auth: { persistSession: false },
+    })
+
+    const product = must(
+      await admin.from('products').select('id, name').eq('id', product_id).maybeSingle() as any,
+      'product',
+    ) as any
+    if (!product) throw new EdgeFunctionError('NOT_FOUND', 'No such product')
+
+    // This warehouse's locations: the one definition (racked ⇒ root + descendants).
+    const drawRows = must(
+      await admin.rpc('inv_warehouse_draw_locations', { p_warehouse_id: warehouse_id }) as any,
+      'warehouse locations',
+    ) as any[]
+    const inWarehouse = new Set<number>((drawRows ?? []).map((r: any) => Number(r.location_id)))
+    inWarehouse.add(warehouse_id)
+
+    // One product's balances are few; filter to the warehouse here rather than
+    // sending thousands of location ids in a URL.
+    const balanceRows = (must(
+      await admin.from('inventory_balances')
+        .select('location_id, on_hand, available').eq('product_id', product_id) as any,
+      'balances',
+    ) ?? []) as any[]
+    const ours = balanceRows.filter((b) => inWarehouse.has(Number(b.location_id)))
+
+    const home = must(
+      await admin.from('product_home_bins').select('bin_id')
+        .eq('product_id', product_id).eq('warehouse_id', warehouse_id).maybeSingle() as any,
+      'home bin',
+    ) as any
+    const homeBinId: number | null = home ? Number(home.bin_id) : null
+
+    // A new delivery: one receivable case's worth (the largest receivable unit),
+    // through the NORMAL putaway rules, persisting nothing.
+    const uoms = (must(
+      await admin.from('product_uoms').select('factor_to_base, is_receivable').eq('product_id', product_id) as any,
+      'units',
+    ) ?? []) as any[]
+    const deliveryQty = Math.max(
+      1,
+      ...uoms.filter((u) => u.is_receivable).map((u) => Number(u.factor_to_base) || 0),
+    )
+    const putaway = await generatePutawayTasks(admin, {
+      warehouseId: warehouse_id,
+      lines: [{ product_id, quantity: deliveryQty }],
+      actorId: auth.userId,
+      dryRun: true,
+    })
+    const recs = putaway.mode === 'engine' ? putaway.recommendations : []
+
+    // Codes for every location mentioned.
+    const ids = new Set<number>([
+      ...ours.map((b) => Number(b.location_id)),
+      ...recs.map((r) => r.recommendedLocationId).filter((x): x is number => x != null),
+      ...(homeBinId != null ? [homeBinId] : []),
+    ])
+    const codeRows = ids.size
+      ? (must(await admin.from('locations').select('id, code').in('id', [...ids]) as any, 'location codes') ?? []) as any[]
+      : []
+    const codeOf = new Map<number, string>(codeRows.map((c) => [Number(c.id), String(c.code)]))
+
+    const where = productWhereabouts({
+      warehouseId: warehouse_id,
+      homeBinId,
+      balances: ours.map((b) => ({
+        locationId: Number(b.location_id),
+        code: codeOf.get(Number(b.location_id)) ?? String(b.location_id),
+        onHand: Number(b.on_hand) || 0,
+        available: Number(b.available) || 0,
+      })),
+    })
+    const homeBin = homeBinId != null ? { locationId: homeBinId, code: codeOf.get(homeBinId) ?? String(homeBinId) } : null
+    const newDelivery = putaway.mode === 'engine'
+      ? {
+        ...newDeliveryReason(
+          recs.map((r) => ({
+            locationId: r.recommendedLocationId,
+            code: r.recommendedLocationId != null ? codeOf.get(r.recommendedLocationId) ?? null : null,
+            quantity: r.quantity,
+            source: r.suggestionSource,
+          })),
+          homeBin,
+        ),
+        quantity: deliveryQty,
+      }
+      : null
+
+    const base = {
+      ok: true,
+      product: { id: product.id, name: product.name },
+      homeBin,
+      stock: where.stock,
+      homeQty: where.homeQty,
+      offHomeQty: where.offHomeQty,
+      atDockQty: where.atDockQty,
+      newDelivery,
+    }
+
+    const graphResult = await loadWalkGraph(admin, warehouse_id)
+    if (graphResult.mode === 'legacy') {
+      return new Response(JSON.stringify({ ...base, mode: 'legacy', putawayWalk: null, pickWalk: null }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    const { graph, dockNodeId, layoutId } = graphResult
+
+    // Walk-graph anchors for every bin either walk may visit.
+    const putawayBins = [...new Set(recs.map((r) => r.recommendedLocationId).filter((x): x is number => x != null))]
+    const walkIds = [...new Set([...where.stock.map((s) => s.locationId), ...putawayBins])]
+    const placementRows = walkIds.length
+      ? (must(
+        await admin.from('layout_placements').select('location_id, graph_node_id, access_offset_m')
+          .eq('layout_id', layoutId).in('location_id', walkIds) as any,
+        'placements',
+      ) ?? []) as any[]
+      : []
+    const placements = new Map<number, PlacementRef>(placementRows.map((p) => [
+      Number(p.location_id),
+      { graphNodeId: p.graph_node_id ?? null, accessOffsetM: Number(p.access_offset_m) || 0 },
+    ]))
+
+    const putawayStops: PickStop[] = putawayBins.map((id) => ({
+      locationId: id,
+      graphNodeId: placements.get(id)?.graphNodeId ?? null,
+      accessOffsetM: placements.get(id)?.accessOffsetM ?? 0,
+      meta: {
+        code: codeOf.get(id) ?? String(id),
+        qtyBase: recs.filter((r) => r.recommendedLocationId === id).reduce((t, r) => t + r.quantity, 0),
+      },
+    }))
+
+    return new Response(JSON.stringify({
+      ...base,
+      mode: 'engine',
+      putawayWalk: putawayStops.length ? buildWalk(graph, dockNodeId, putawayStops, product_id) : null,
+      pickWalk: buildWalk(graph, dockNodeId, pickWalkStops(where.stock, placements), product_id),
+    }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  } catch (e) {
+    if (isEdgeFunctionError(e)) return e.toResponse(req)
+    return errorResponse('INTERNAL', e instanceof Error ? e.message : 'Unknown error', undefined, undefined, req)
+  }
+})

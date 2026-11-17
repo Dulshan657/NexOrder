@@ -6,7 +6,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { FlaskConical, ChevronDown, ChevronRight } from 'lucide-react'
 import type { PutawayResponse } from '@/services/supabase/putawayService'
-import type { SimulationResult } from '@/types'
+import type { PickRouteStop, SimulationResult } from '@/types'
 import { useProducts } from '@/hooks/queries/useProducts'
 import { usePickQueue } from '@/hooks/queries/usePickQueue'
 import { useRecommendPutaway } from '@/hooks/queries/usePutawayRecommendation'
@@ -14,6 +14,7 @@ import { useRunSimulation } from '@/hooks/queries/useSimulation'
 import { PutawayExplanationCard } from '@/components/inventory/PutawayExplanationCard'
 import { PickRoutePanel } from '@/components/inventory/PickRoutePanel'
 import { SimulationResultCard } from '@/components/admin/layout/SimulationResultCard'
+import { FindProductSection } from './FindProductSection'
 
 interface WarehouseTestBenchProps {
   warehouseId: number
@@ -21,6 +22,7 @@ interface WarehouseTestBenchProps {
   onPutawayResult: (r: PutawayResponse | null) => void
   routeOrderIds: string[]
   onRouteOrderIdsChange: (ids: string[]) => void
+  onProductWalk: (stops: PickRouteStop[] | null) => void
 }
 
 const MAX_ROUTE_ORDERS = 3
@@ -170,7 +172,7 @@ function SimulateTest({ layoutId }: { layoutId: number }) {
 }
 
 export function WarehouseTestBench({
-  warehouseId, layoutId, onPutawayResult, routeOrderIds, onRouteOrderIdsChange,
+  warehouseId, layoutId, onPutawayResult, routeOrderIds, onRouteOrderIdsChange, onProductWalk,
 }: WarehouseTestBenchProps) {
   return (
     <div className="glass-card rounded-xl p-3">
@@ -183,7 +185,10 @@ export function WarehouseTestBench({
       </div>
       <p className="mb-3 text-[11px] text-stone-500">Preview engine decisions on the grid. Nothing is committed — no stock moves.</p>
       <div className="space-y-2">
-        <Section title="Putaway — where would a product go?" defaultOpen>
+        <Section title="Find a product — where does it live, and how do I walk it?" defaultOpen>
+          <FindProductSection warehouseId={warehouseId} onWalk={onProductWalk} />
+        </Section>
+        <Section title="Putaway — where would a product go?">
           <PutawayTest warehouseId={warehouseId} onResult={onPutawayResult} />
         </Section>
         <Section title="Pick route — how would an order be walked?">

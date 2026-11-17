@@ -6,6 +6,7 @@
 
 import { FlaskConical } from 'lucide-react'
 import type { PutawayResponse } from '@/services/supabase/putawayService'
+import type { PickRouteStop } from '@/types'
 import { WarehouseTestBench } from './WarehouseTestBench'
 
 export interface AskEnginePanelProps {
@@ -15,6 +16,8 @@ export interface AskEnginePanelProps {
   onPutawayResult: (r: PutawayResponse | null) => void
   routeOrderIds: string[]
   onRouteOrderIdsChange: (ids: string[]) => void
+  /** A product's walk to draw (NX-0039); null clears it. */
+  onProductWalk: (stops: PickRouteStop[] | null) => void
 }
 
 export function AskEnginePanel({
@@ -24,6 +27,7 @@ export function AskEnginePanel({
   onPutawayResult,
   routeOrderIds,
   onRouteOrderIdsChange,
+  onProductWalk,
 }: AskEnginePanelProps) {
   return (
     <div className={`glass-card flex flex-col rounded-xl ${className}`}>
@@ -38,6 +42,7 @@ export function AskEnginePanel({
           onPutawayResult={onPutawayResult}
           routeOrderIds={routeOrderIds}
           onRouteOrderIdsChange={onRouteOrderIdsChange}
+          onProductWalk={onProductWalk}
         />
       </div>
     </div>
