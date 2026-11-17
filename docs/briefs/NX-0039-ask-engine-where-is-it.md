@@ -20,7 +20,7 @@
     { "id": "A12", "check": "Ask the engine is ONE card: a header, a 'preview only — nothing moves' note and one tab per question (Find a product, Put away, Pick route, Simulate). There is no second 'Test bench' box inside it." },
     { "id": "A13", "check": "On the warehouse map page the 'Locations' panel beside the place detail stays open, and the groups inside its tree (zones, aisles, racks) all start collapsed; selecting a place on the map still opens the groups above it." },
     { "id": "A14", "check": "No screen calls a place a 'bin': every user-visible string in the app's components, views and lib (labels, headings, buttons, placeholders, toasts, aria-labels, help text) says 'location' instead ('Bin detail' → 'Location detail', 'home bin' → 'home location'). Identifiers, enum values ('BIN'), CSV column names ('bin_code'), element ids and database names are unchanged." },
-    { "id": "A15", "check": "Messages composed by the Edge Functions and their shared modules (errors, refusals, problem lists, explanations an operator reads) say 'location', not 'bin', as does the public site's description and its pages. Error CODES, identifiers and stored values are unchanged.", "manual": "fn:deploy:dev of every function (owner asked: 'deploy it when done to dev'); a refused putaway on dev reads 'location'" }
+    { "id": "A15", "check": "Messages composed by the Edge Functions and their shared modules (errors, refusals, problem lists, explanations an operator reads) say 'location', not 'bin', as does the public site's description and its pages. Error CODES, identifiers and stored values are unchanged.", "manual": "fn:deploy:dev of every function and migrate:dev of 00147 (owner asked: 'deploy it when done to dev'); 00147 rehearsed rolled-back on dev first; a refused putaway on dev reads 'location'" }
   ],
   "failFirst": [
     { "file": "__tests__/wie/productWhereabouts.test.ts", "test": "productWhereabouts > marks stock in the home bin as home, other bins as off home and the warehouse root as at the dock", "proves": ["A1"] },
@@ -108,7 +108,10 @@ input on the putaway tab; and one tidy card instead of "Ask the engine" wrapping
 - **A15 (owner, 2026-11-17: "fix other areas saying bin"):** the same sweep over
   `supabase/functions` (non-test) plus `config/environments.mjs`'s public description and
   `site/*.md`; every function redeployed to dev. The NX-0038 help centre is fixed on its
-  own branch (PR #54), not here.
+  own branch (PR #54), not here. Messages raised by SQL functions (home rule, overflow
+  confirm, putaway/replen completion, shortfalls, publish) are reworded by migration
+  `00147_location_wording.sql`, which redefines each function from its own current
+  definition with only the message phrases replaced (no logic copied from old files).
 
 ## Out of scope
 
