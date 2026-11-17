@@ -23,14 +23,14 @@ const stop = (sequence: number, locationId: number, code: string, legDistanceM: 
 const ANSWER: ProductWhereabouts = {
   mode: 'engine',
   product: { id: 7, name: 'Chicken Breast 5kg' },
-  homeBin: { locationId: 10, code: 'A-03-02' },
+  homeBin: { locationId: 10, code: 'A-03-02', place: 'Rack 3 · Level 2' },
   stock: [
-    { locationId: 10, code: 'A-03-02', onHand: 12, available: 12, badge: 'home' },
-    { locationId: 2, code: 'MAIN', onHand: 10, available: 10, badge: 'at_dock' },
+    { locationId: 10, code: 'A-03-02', place: 'Rack 3 · Level 2', onHand: 12, available: 12, badge: 'home' },
+    { locationId: 2, code: 'MAIN', place: 'Dock — awaiting putaway', onHand: 10, available: 10, badge: 'at_dock' },
   ],
   homeQty: 12, offHomeQty: 0, atDockQty: 10,
   newDelivery: {
-    source: 'overflow', locationId: 11, code: 'B-11-04', homeQty: 0, overflowQty: 6,
+    source: 'overflow', locationId: 11, code: 'B-11-04', place: 'Rack 11 · Level 4', homeQty: 0, overflowQty: 6,
     reason: 'Home A-03-02 is full — goes to overflow B-11-04, nearest to home.', quantity: 6,
   },
   putawayWalk: { stops: [stop(1, 11, 'B-11-04', 9)], totalDistanceM: 9, unreachableCount: 0, steps: ['1. B-11-04 — 9 m'] },

@@ -11,6 +11,7 @@
 
 import type { SuggestionSource } from './homeFirst.ts'
 import type { PickStop } from './picking.ts'
+import { NAME_SEP, RACK_WORD, isUninformativeName } from './locationNaming.ts'
 
 export type StockBadge = 'home' | 'off_home' | 'at_dock'
 
@@ -77,7 +78,8 @@ export function productWhereabouts(input: WhereaboutsInput): Whereabouts {
 /** One line of the dry-run putaway answer (generatePutawayTasks' recommendations). */
 export interface PutawayAnswerLine {
   locationId: number | null
-  code: string | null
+  /** The place's label (describePlace), not its code. */
+  place: string | null
   quantity: number
   source: SuggestionSource
 }
@@ -87,7 +89,7 @@ export interface NewDeliveryAnswer {
   source: SuggestionSource
   /** The first bin a putaway walk goes to (home when any of it goes home). Null: no bin can take it. */
   locationId: number | null
-  code: string | null
+  place: string | null
   homeQty: number
   overflowQty: number
   reason: string
@@ -97,11 +99,11 @@ const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).repla
 
 export function newDeliveryReason(
   lines: readonly PutawayAnswerLine[],
-  homeBin: { locationId: number; code: string } | null,
+  home: { locationId: number; place: string } | null,
 ): NewDeliveryAnswer {
   const placed = lines.filter((l) => l.locationId !== null)
   const unplacedQty = lines.filter((l) => l.locationId === null).reduce((t, l) => t + l.quantity, 0)
-  const rest = unplacedQty > 0 ? ` ${fmt(unplacedQty)} more have no bin and would stay at the dock.` : ''
+  const rest = unplacedQty > 0 ? ` ${fmt(unplacedQty)} more have nowhere to go and would stay at the dock.` : ''
   const homeQty = placed.filter((l) => l.source === 'home').reduce((t, l) => t + l.quantity, 0)
   const elsewhere = placed.filter((l) => l.source !== 'home')
   const overflowQty = elsewhere.reduce((t, l) => t + l.quantity, 0)
@@ -109,34 +111,34 @@ export function newDeliveryReason(
 
   if (!first) {
     return {
-      source: homeBin ? 'overflow' : 'engine',
-      locationId: null, code: null, homeQty: 0, overflowQty: 0,
-      reason: 'No bin can take it under the putaway rules — it would stay at the dock.',
+      source: home ? 'overflow' : 'engine',
+      locationId: null, place: null, homeQty: 0, overflowQty: 0,
+      reason: 'Nowhere can take it under the putaway rules — it would stay at the dock.',
     }
   }
 
-  const answer = { locationId: first.locationId, code: first.code, homeQty, overflowQty }
-  if (!homeBin) {
+  const answer = { locationId: first.locationId, place: first.place, homeQty, overflowQty }
+  if (!home) {
     return {
       ...answer, source: 'engine',
-      reason: `No home bin set — the engine's best bin is ${first.code}.${rest}`,
+      reason: `No home location set — the engine's best place is ${first.place}.${rest}`,
     }
   }
   if (elsewhere.length === 0) {
-    return { ...answer, source: 'home', reason: `Goes home to ${homeBin.code} — it has room.${rest}` }
+    return { ...answer, source: 'home', reason: `Goes home to ${home.place} — it has room.${rest}` }
   }
-  const overflowCodes = [...new Set(elsewhere.map((l) => l.code))].join(', ')
+  const overflowPlaces = [...new Set(elsewhere.map((l) => l.place))].join(', ')
   if (homeQty > 0) {
     return {
       ...answer, source: 'overflow',
-      reason: `Home ${homeBin.code} has room for ${fmt(homeQty)}; the other ${fmt(overflowQty)} go to overflow ${overflowCodes}.${rest}`,
+      reason: `Home ${home.place} has room for ${fmt(homeQty)}; the other ${fmt(overflowQty)} go to overflow at ${overflowPlaces}.${rest}`,
     }
   }
   return {
     ...answer, source: 'overflow',
     // Putaway also overflows when the home is ruled out (on hold, the wrong
     // level role, a safety rule), not only when it is full.
-    reason: `Home ${homeBin.code} is full, or ruled out by the putaway rules — goes to overflow ${overflowCodes}, nearest to home.${rest}`,
+    reason: `Home ${home.place} is full, or ruled out by the putaway rules — goes to overflow at ${overflowPlaces}, nearest to home.${rest}`,
   }
 }
 
@@ -175,10 +177,70 @@ export interface WalkSummary {
 }
 
 export function walkSummary(
-  stops: ReadonlyArray<{ sequence: number; code: string | null; legDistanceM: number }>,
+  stops: ReadonlyArray<{ sequence: number; place: string | null; legDistanceM: number }>,
 ): WalkSummary {
   return {
     totalDistanceM: stops.reduce((t, s) => t + s.legDistanceM, 0),
-    steps: stops.map((s) => `${s.sequence}. ${s.code ?? '?'} — ${Math.round(s.legDistanceM)} m`),
+    steps: stops.map((s) => `${s.sequence}. ${s.place ?? '?'} — ${Math.round(s.legDistanceM)} m`),
   }
+}
+
+// ── Places, not "bins" ──────────────────────────────────────────────────────
+//
+// Not everything sits in a bin. A rack level is a rack and a level, a floor bay
+// is a bay in an area, and stock not yet put away is on the dock. The label is
+// for reading; the CODE stays the identity (barcode, scan key) and the screens
+// show it beneath.
+
+export type PlaceKind = 'WAREHOUSE' | 'ZONE' | 'AISLE' | 'RACK' | 'BAY' | 'SHELF' | 'BIN' | 'STAGING'
+
+export interface PlaceInput {
+  /** The location IS the warehouse: stock there has not been put away. */
+  isRoot: boolean
+  kind: PlaceKind
+  code: string
+  name: string | null
+  parent: { kind: PlaceKind; code: string; name: string | null } | null
+  /** The area / zone it sits in, when known. */
+  zoneName: string | null
+}
+
+export const DOCK_PLACE = 'Dock — awaiting putaway'
+
+const titleOf = (name: string | null, code: string) =>
+  isUninformativeName(name, code) ? code : (name ?? '').trim()
+
+/** The level number, from "Level 4", "… · L4", or a code ending "-L4". */
+function levelNumber(name: string | null, code: string): string | null {
+  const fromName = /(?:^|\s|·)(?:Level\s*|L)(\d+)\s*$/i.exec((name ?? '').trim())
+  if (fromName) return fromName[1]
+  const fromCode = /-L(\d+)$/i.exec(code.trim())
+  return fromCode ? fromCode[1] : null
+}
+
+function rackTitle(name: string | null, code: string): string {
+  return isUninformativeName(name, code) ? `${RACK_WORD} ${code}` : (name ?? '').trim()
+}
+
+function withZone(label: string, zoneName: string | null): string {
+  const zone = (zoneName ?? '').trim()
+  if (!zone || label.toLowerCase().startsWith(zone.toLowerCase())) return label
+  return `${zone}${NAME_SEP}${label}`
+}
+
+export function describePlace(p: PlaceInput): string {
+  if (p.isRoot || p.kind === 'WAREHOUSE') return DOCK_PLACE
+
+  if (p.kind === 'SHELF' && p.parent?.kind === 'RACK') {
+    const rack = rackTitle(p.parent.name, p.parent.code)
+    const level = levelNumber(p.name, p.code)
+    const label = level ? `${rack}${NAME_SEP}Level ${level}` : `${rack}${NAME_SEP}${titleOf(p.name, p.code)}`
+    return withZone(label, p.zoneName)
+  }
+  if (p.kind === 'RACK') return withZone(rackTitle(p.name, p.code), p.zoneName)
+  if (p.kind === 'STAGING') {
+    const t = titleOf(p.name, p.code)
+    return /staging/i.test(t) ? t : `Staging${NAME_SEP}${t}`
+  }
+  return withZone(titleOf(p.name, p.code), p.zoneName)
 }

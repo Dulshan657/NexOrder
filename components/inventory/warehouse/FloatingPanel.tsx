@@ -27,6 +27,8 @@ export interface FloatingPanelProps {
    *  is a grid item, and wrapping it in a positioned div to get a handle would
    *  change how it stretches in the row. */
   containerRef?: { current: HTMLDivElement | null }
+  /** Told when the operator opens or closes the panel, for a layout that makes room. */
+  onOpenChange?: (open: boolean) => void
   children: ReactNode
 }
 
@@ -38,6 +40,7 @@ export function FloatingPanel({
   className = '',
   bodyClassName = '',
   containerRef,
+  onOpenChange,
   children,
 }: FloatingPanelProps) {
   const [open, setOpen] = useState(defaultOpen)
@@ -47,7 +50,11 @@ export function FloatingPanel({
     <div ref={containerRef} className={`glass-card flex flex-col rounded-xl ${className}`}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const next = !open
+          setOpen(next)
+          onOpenChange?.(next)
+        }}
         aria-expanded={open}
         aria-controls={bodyId}
         className="flex w-full shrink-0 items-center gap-2 rounded-t-xl px-3 py-2 text-left text-xs font-semibold text-stone-700 btn-press hover:bg-stone-50"

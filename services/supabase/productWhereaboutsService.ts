@@ -9,7 +9,10 @@ export type { StockBadge }
 
 export interface WhereaboutsStock {
   locationId: number
+  /** The scannable identity — shown beneath the place. */
   code: string
+  /** What the place is: "Rack 7 · Level 2", "Fast Moving · F01 right bay 10", "Dock — awaiting putaway". */
+  place: string
   onHand: number
   available: number
   badge: StockBadge
@@ -24,6 +27,7 @@ export interface NewDelivery {
   source: 'home' | 'overflow' | 'engine'
   locationId: number | null
   code: string | null
+  place: string | null
   homeQty: number
   overflowQty: number
   reason: string
@@ -34,7 +38,8 @@ export interface NewDelivery {
 export interface ProductWhereabouts {
   mode: 'engine' | 'legacy'
   product: { id: number; name: string }
-  homeBin: { locationId: number; code: string } | null
+  /** The product's home location (its primary home slot). */
+  homeBin: { locationId: number; code: string; place: string } | null
   stock: WhereaboutsStock[]
   homeQty: number
   offHomeQty: number

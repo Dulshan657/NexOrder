@@ -14,7 +14,7 @@ function Unreachable({ count }: { count: number }) {
   if (count <= 0) return null
   return (
     <p className="mt-1 text-amber-700">
-      {count} bin{count === 1 ? '' : 's'} could not be reached on the layout (no walkway next to it).
+      {count} place{count === 1 ? '' : 's'} could not be reached on the layout (no walkway next to it).
     </p>
   )
 }

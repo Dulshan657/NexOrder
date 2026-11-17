@@ -43,7 +43,9 @@ test.describe('Warehouse panels scroll with the mouse wheel', () => {
     await selectWarehouseScope(page, `${world.warehouseName} (${world.warehouseCode})`)
 
     // Select the bin from the Locations tree, not the map: the tree row is a plain
-    // button, and the bin is the only thing in this warehouse.
+    // button, and the bin is the only thing in this warehouse. The tree starts
+    // collapsed (NX-0039), so open it first.
+    await page.getByRole('button', { name: 'Locations', expanded: false }).click()
     await page.locator('#wh-tree-body').getByRole('button', { name: world.binCode }).click()
 
     const body = page.locator('#wh-bin-detail-body')

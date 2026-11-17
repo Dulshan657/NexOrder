@@ -63,7 +63,7 @@ const WhereIsItScreen: React.FC<WhereIsItScreenProps> = ({ currentUser }) => {
           <WhereaboutsSummary answer={answer} />
           {answer.mode === 'engine' ? (
             <>
-              <WalkSteps title="Put away walk" walk={answer.putawayWalk} empty="No bin can take a new delivery." />
+              <WalkSteps title="Put away walk" walk={answer.putawayWalk} empty="Nowhere can take a new delivery." />
               <WalkSteps title="Pick walk" walk={answer.pickWalk} empty="No stock free to pick." />
             </>
           ) : (

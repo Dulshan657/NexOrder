@@ -36,7 +36,9 @@ import {
   newDeliveryReason,
   pickWalkStops,
   walkSummary,
+  describePlace,
   type PlacementRef,
+  type PlaceKind,
 } from '../_shared/wie/productWhereabouts.ts'
 
 const ALLOWED: ReadonlyArray<UserRole> = ['Admin', 'Manager', 'Warehouse']
@@ -65,6 +67,53 @@ function toPathPoints(ids: number[] | null, nodeById: Map<number, PathPoint>): P
   return simplifyPath(points)
 }
 
+interface LocRow { id: number; kind: PlaceKind; code: string; name: string | null; parent_id: number | null }
+
+/**
+ * Code and readable place label (describePlace) for each location: its parent
+ * says "which rack", and the nearest ZONE among its ancestors says "which area".
+ * Three short reads (the locations, their parents, the grandparents) cover a
+ * rack level under a rack under a zone.
+ */
+async function loadPlaces(admin: any, ids: number[], warehouseId: number) {
+  const byId = new Map<number, LocRow>()
+  let want = [...new Set(ids)]
+  for (let depth = 0; depth < 3 && want.length; depth++) {
+    const rows = (must(
+      await admin.from('locations').select('id, kind, code, name, parent_id').in('id', want) as any,
+      'locations',
+    ) ?? []) as LocRow[]
+    for (const r of rows) byId.set(Number(r.id), { ...r, id: Number(r.id) })
+    want = [...new Set(rows.map((r) => r.parent_id).filter((x): x is number => x != null && !byId.has(Number(x))))]
+  }
+  const zoneOf = (loc: LocRow): string | null => {
+    let cur = loc.parent_id != null ? byId.get(Number(loc.parent_id)) : undefined
+    for (let i = 0; cur && i < 3; i++) {
+      if (cur.kind === 'ZONE') return cur.name ?? cur.code
+      cur = cur.parent_id != null ? byId.get(Number(cur.parent_id)) : undefined
+    }
+    return null
+  }
+  const out = new Map<number, { code: string; place: string }>()
+  for (const id of ids) {
+    const loc = byId.get(id)
+    if (!loc) { out.set(id, { code: String(id), place: String(id) }); continue }
+    const parent = loc.parent_id != null ? byId.get(Number(loc.parent_id)) ?? null : null
+    out.set(id, {
+      code: loc.code,
+      place: describePlace({
+        isRoot: id === warehouseId,
+        kind: loc.kind,
+        code: loc.code,
+        name: loc.name,
+        parent: parent ? { kind: parent.kind, code: parent.code, name: parent.name } : null,
+        zoneName: zoneOf(loc),
+      }),
+    })
+  }
+  return out
+}
+
 /** Sequence stops from the dock and shape them like recommend-pick-route's stops. */
 function buildWalk(graph: WarehouseGraph, dockNodeId: number, stops: PickStop[], productId: number) {
   const route = sequencePickRoute(graph, dockNodeId, stops)
@@ -74,6 +123,7 @@ function buildWalk(graph: WarehouseGraph, dockNodeId: number, stops: PickStop[],
     sequence: s.sequence,
     locationId: s.locationId,
     code: (s.meta?.code as string) ?? null,
+    place: (s.meta?.place as string) ?? null,
     productId,
     orderItemId: null,
     orderId: null,
@@ -176,34 +226,35 @@ serve(async (req: Request) => {
     }
     const recs = putaway?.mode === 'engine' ? putaway.recommendations : []
 
-    // Codes for every location mentioned.
+    // Code and place label for every location mentioned.
     const ids = new Set<number>([
       ...ours.map((b) => Number(b.location_id)),
       ...recs.map((r) => r.recommendedLocationId).filter((x): x is number => x != null),
       ...(homeBinId != null ? [homeBinId] : []),
     ])
-    const codeRows = ids.size
-      ? (must(await admin.from('locations').select('id, code').in('id', [...ids]) as any, 'location codes') ?? []) as any[]
-      : []
-    const codeOf = new Map<number, string>(codeRows.map((c) => [Number(c.id), String(c.code)]))
+    const places = ids.size ? await loadPlaces(admin, [...ids], warehouse_id) : new Map<number, { code: string; place: string }>()
+    const codeOf = (id: number) => places.get(id)?.code ?? String(id)
+    const placeOf = (id: number) => places.get(id)?.place ?? String(id)
 
     const where = productWhereabouts({
       warehouseId: warehouse_id,
       homeBinId,
       balances: ours.map((b) => ({
         locationId: Number(b.location_id),
-        code: codeOf.get(Number(b.location_id)) ?? String(b.location_id),
+        code: codeOf(Number(b.location_id)),
         onHand: Number(b.on_hand) || 0,
         available: Number(b.available) || 0,
       })),
     })
-    const homeBin = homeBinId != null ? { locationId: homeBinId, code: codeOf.get(homeBinId) ?? String(homeBinId) } : null
+    const homeBin = homeBinId != null
+      ? { locationId: homeBinId, code: codeOf(homeBinId), place: placeOf(homeBinId) }
+      : null
     const newDelivery = putaway?.mode === 'engine'
       ? {
         ...newDeliveryReason(
           recs.map((r) => ({
             locationId: r.recommendedLocationId,
-            code: r.recommendedLocationId != null ? codeOf.get(r.recommendedLocationId) ?? null : null,
+            place: r.recommendedLocationId != null ? placeOf(r.recommendedLocationId) : null,
             quantity: r.quantity,
             source: r.suggestionSource,
           })),
@@ -212,16 +263,19 @@ serve(async (req: Request) => {
         quantity: deliveryQty,
       }
       : null
+    const newDeliveryOut = newDelivery
+      ? { ...newDelivery, code: newDelivery.locationId != null ? codeOf(newDelivery.locationId) : null }
+      : null
 
     const base = {
       ok: true,
       product: { id: product.id, name: product.name },
       homeBin,
-      stock: where.stock,
+      stock: where.stock.map((s) => ({ ...s, place: placeOf(s.locationId) })),
       homeQty: where.homeQty,
       offHomeQty: where.offHomeQty,
       atDockQty: where.atDockQty,
-      newDelivery,
+      newDelivery: newDeliveryOut,
       newDeliveryNote: putawayError,
     }
 
@@ -253,7 +307,8 @@ serve(async (req: Request) => {
       graphNodeId: placements.get(id)?.graphNodeId ?? null,
       accessOffsetM: placements.get(id)?.accessOffsetM ?? 0,
       meta: {
-        code: codeOf.get(id) ?? String(id),
+        code: codeOf(id),
+        place: placeOf(id),
         qtyBase: recs.filter((r) => r.recommendedLocationId === id).reduce((t, r) => t + r.quantity, 0),
       },
     }))
@@ -262,7 +317,11 @@ serve(async (req: Request) => {
       ...base,
       mode: 'engine',
       putawayWalk: putawayStops.length ? buildWalk(graph, dockNodeId, putawayStops, product_id) : null,
-      pickWalk: buildWalk(graph, dockNodeId, pickWalkStops(where.stock, placements), product_id),
+      pickWalk: buildWalk(
+        graph, dockNodeId,
+        pickWalkStops(where.stock, placements).map((st) => ({ ...st, meta: { ...st.meta, place: placeOf(st.locationId) } })),
+        product_id,
+      ),
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (e) {
     if (isEdgeFunctionError(e)) return e.toResponse(req)

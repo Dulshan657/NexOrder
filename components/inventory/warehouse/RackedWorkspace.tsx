@@ -62,7 +62,9 @@ import { areaCellsFingerprint } from '@/lib/areaPaint'
 import { signCellsFingerprint } from '@/lib/signPaint'
 import { OverlayControls } from './OverlayControls'
 import { AskEnginePanel } from './AskEnginePanel'
-import { slottingArrows, routePath, putawayMarkers } from './warehouseMarkers'
+import { LocationsPanel } from './LocationsPanel'
+import type { ProductHighlight } from './FindProductSection'
+import { slottingArrows, routePath, putawayMarkers, holdingMarkers } from './warehouseMarkers'
 import type { OverlayKind } from './warehouseOverlays'
 import { useLevelRoles } from '@/hooks/queries/useLevelRoles'
 import { useToastActions } from '@/hooks/useToasts'
@@ -240,6 +242,9 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
   // A product's walk from "Find a product" (NX-0039) is drawn in place of an
   // order route while one is chosen — same stop shape, same renderers.
   const [productWalkStops, setProductWalkStops] = useState<PickRouteStop[] | null>(null)
+  // The places holding a product found there, outlined in 2D and lit in 3D.
+  const [productHighlight, setProductHighlight] = useState<ProductHighlight | null>(null)
+  const [treeOpen, setTreeOpen] = useState(false)
   const routeStops = productWalkStops && productWalkStops.length > 0
     ? productWalkStops
     : (routeQuery.data?.mode === 'engine' ? routeQuery.data.route.stops : EMPTY_STOPS)
@@ -789,11 +794,12 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
    */
   const renderMarkers = useCallback((cell: number, scale: number) => (
     <g>
+      {productHighlight && holdingMarkers(cell, scale, productHighlight.locationIds, placementByLocation, floor)}
       {routeStops.length > 0 && routePath(cell, scale, routeStops, placementByLocation, floor)}
       {putawayRec && putawayMarkers(cell, putawayRec, placementByLocation, floor)}
       {overlay === 'slotting' && slottingArrows(cell, model.slotting, placementByLocation, floor)}
     </g>
-  ), [routeStops, putawayRec, overlay, model.slotting, placementByLocation, floor])
+  ), [productHighlight, routeStops, putawayRec, overlay, model.slotting, placementByLocation, floor])
 
   /**
    * While annotating, the canvas draws the WORKING SET in place of the stored areas
@@ -978,6 +984,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
                 products={catalogue}
                 binContents={model.binContents}
                 routeStops={routeStops}
+                focusProductId={productHighlight?.productId ?? null}
               />
             </Suspense>
           </ErrorBoundary>
@@ -1292,11 +1299,15 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
         // sideways by 188px. Tailwind's numeric `grid-cols-*` expand to
         // `minmax(0, 1fr)` exactly to stop this; the arbitrary `lg:` value below
         // already says `minmax(0, ...)` on every track for the same reason.
-        className={`grid-cols-1 gap-4 lg:grid lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)] ${
-          recode.state.active ? 'hidden lg:grid' : 'grid'
-        }`}
+        className={`grid-cols-1 gap-4 lg:grid ${
+          // The Locations tree starts collapsed (NX-0039 A13); closed, its column
+          // shrinks to the header so the detail and Ask the engine get the room.
+          treeOpen
+            ? 'lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,22rem)]'
+            : 'lg:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_minmax(0,26rem)]'
+        } ${recode.state.active ? 'hidden lg:grid' : 'grid'}`}
       >
-        <FloatingPanel id="wh-tree" title="Locations" className="max-h-[70svh]">
+        <LocationsPanel className={treeOpen ? 'max-h-[70svh]' : 'self-start'} onOpenChange={setTreeOpen}>
           <WarehouseTreePanel
             tree={model.tree}
             binContents={model.binContents}
@@ -1304,7 +1315,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
             selectedLocationId={selectedLocationId}
             onSelect={selectLocation}
           />
-        </FloatingPanel>
+        </LocationsPanel>
 
         <FloatingPanel
           id="wh-bin-detail"
@@ -1354,6 +1365,7 @@ export function RackedWorkspace({ warehouseId, layoutId, canRename = false, canV
           routeOrderIds={routeOrderIds}
           onRouteOrderIdsChange={chooseRouteOrders}
           onProductWalk={setProductWalkStops}
+          onHighlight={setProductHighlight}
         />
       </div>
     </div>
