@@ -11,7 +11,7 @@
     { "id": "A3", "check": "The sales trend draws at a fixed 220px height whatever its width, with axis text that does not scale, and shows the previous period as a faint dashed line." },
     { "id": "A4", "check": "One type scale on the Admin dashboard: every card title shares one style (no text-lg title), big numbers share one number face, chart labels are a fixed size, and the PO Inbox tile drops its monospace capitals." },
     { "id": "A5", "check": "Everything leads somewhere through useDashNav: Revenue, Orders and Avg order value open Order Import; Collection rate opens Accounts; Top Products rows open Products; Top Customers rows open HoReCa; segments open HoReCa Insights; Promotions has View all. No link renders for a tab the role or build cannot open." },
-    { "id": "A6", "check": "Layout, top to bottom: Needs attention; Key numbers; trend beside Top Reps (productivity folded in) and PO Inbox; Inventory & Dispatch; Top Products | Top Customers with segment counts; Programs (Promo ROI top 3, My Targets)." },
+    { "id": "A6", "check": "Layout, top to bottom: Needs attention; Key numbers; trend beside Top Reps (productivity folded in) and PO Inbox; Inventory & Dispatch; Top Products | Top Customers with segment counts; Programs (Promo ROI top 3, My Targets).", "manual": "deploy:dev, then read the band order on the page" },
     { "id": "A7", "check": "The Admin dashboard looks and behaves as above on dev.", "manual": "deploy:dev, then walk it at 1440px and at phone width, clicking every tile and stage, with screenshots" }
   ],
   "failFirst": [
