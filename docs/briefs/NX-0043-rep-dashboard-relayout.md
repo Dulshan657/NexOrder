@@ -62,7 +62,7 @@ reps the same calm, consistent, actionable page.
 | A1 | claimed | `RepDashboard > KPI deltas compare this period with the previous one` (prev month 2×$100, this month $300 → $300.00, +50.0%; the old half-split said +300% on all-time $500), `RepDashboard > offers the same period picker as Admin` | |
 | A2 | claimed | `RepDashboard > visit completion follows the period` (this period 2/2 visited, previous 1/2 → 100%, +50.0 pts) | Added after check:brief flagged A2 as unproved |
 | A3 | not-claimed | deployed to dev as `8b697c0` (previous dev build + this branch), health 200 | Waiting on the owner's walk as a Field Rep and an Office Rep — the assistant may not sign in to the app on this host |
-| A4 | claimed | `RepDashboard > a top customer row starts an order`, `RepDashboard > a low-stock row opens Stock`, `repDashNav > withholds a view the rep cannot open` (+ handler / no-callback cases) | Reorder, at-risk, accounts and visits links are wired the same way but not each unit-tested |
+| A4 | claimed | `RepDashboard > a top customer row starts an order`, `RepDashboard > a low-stock row opens Stock`, `repDashNav > withholds a view the rep cannot open`, `RepDashboard without the shop module > offers no start-order link` | The gate found start-order links reaching a blank page on a build without the shop module (Amadiya); fixed in `repCanStartOrder`. Reorder, at-risk, accounts and visits links are wired the same way but not each unit-tested |
 | A5 | claimed | `RepDashboard > every card title shares one style`; trend is the shared `SalesLineChart` with `previous`; `dailySeries` uses `appDateKeysBetween` | |
 | A6 | claimed | rankings are memoised on the period's metric rows; every date goes through `'en-AU'` / `formatShortDate` | |
 | A7 | not-claimed | as A3 | Owner walk pending |
@@ -77,3 +77,5 @@ Also in this PR, not named in the Approach: `ExpandableSection`, `HorizontalBarC
 - Phone width (360px) not checked in a browser; the `mobile` Playwright project was not run.
 - Colour contrast of the restyled route hero and chips not measured.
 - Dev also carries unmerged NX-0040; the dev check is of that combination.
+- The Visit completion tile still shows to Office Reps, where it reads 0% with no link; left for the owner's walk to decide.
+- Visit completion counts routes the rep created (`createdBy`), not ones a manager assigned to them — existing service behaviour, now in a headline tile.
