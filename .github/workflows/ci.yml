@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # 24 to match the Vercel project's runtime (.vercel/project.json says
       # "24.x"), so CI exercises the same Node the deploy actually runs on.
