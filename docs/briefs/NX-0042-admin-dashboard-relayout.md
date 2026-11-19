@@ -57,3 +57,23 @@ Admin/Manager dashboard on the PR 1 kit, so the page itself changes this time.
 - New data, queries or server changes.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `InventoryDispatchSection > offers a warehouse picker in the Stock Health card` fails on base, passes on tip; on dev the card shows the picker set to Amadiya (AMADIYA) | |
+| A2 | claimed | `InventoryDispatchSection > a pipeline stage opens the matching order list`, `OrderImportPage > opens on the tab it is given`; on dev, clicking Confirmed opened Order Import on In Progress | The tab lists all orders in those statuses, not only this period's |
+| A3 | claimed | `SalesLineChart > draws at a fixed height whatever its width`; on dev at 1440px the trend is 220px with 11px axis text and a dashed previous-period line | |
+| A4 | claimed | `AdminDashboard layout > every card title shares one style` (all h3 share CARD_TITLE_CLASS, none text-lg); on dev every card title, number and toggle matches | |
+| A5 | claimed | `AdminDashboard layout > the Revenue tile opens Order Import`; useDashNav unit tests from NX-0041 cover role/module withholding | |
+| A6 | claimed | on dev: Needs attention, Key numbers with trend / Top reps / PO Inbox, Inventory & dispatch, Breakdown, Programs, in that order | |
+| A7 | not-claimed | dev serves `5ec2703` (previous dev build + this branch), health 200; walked at 1440px with screenshots | Phone width not checked: the Chrome window does not resize below desktop width here |
+
+Full suite: 461 files / 7050 tests pass. `tsc --noEmit`, `lint` (baseline pruned by 13), `check:overlays`, `check:viewport` clean.
+
+### Not claimed
+
+- Phone width (360px) was not checked in a browser, and the `mobile` Playwright project was not run.
+- The Manager role was not walked; it uses the same page, and its link withholding (no Users tab) is covered by the useDashNav tests.
+- A pipeline stage opens the whole Order Import tab, not only the orders that stage counts for the chosen period (brief: out of scope).
+- Colour contrast of the restyled cards was not measured.
+- Dev also carries unmerged NX-0040; the dev check is of that combination.
