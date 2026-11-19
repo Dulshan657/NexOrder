@@ -72,6 +72,7 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
   const [customEnd, setCustomEnd] = useState(() => appDateKey(new Date()));
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [visitHoReCaId, setVisitHoReCaId] = useState<number | null>(null);
+  const [showPastTargets, setShowPastTargets] = useState(false);
 
   const isFieldRep = currentUser.role === UserRole.FIELD_REP;
   // Reps are not HoReCa users, so AppShell's showStockTab is always true for
@@ -141,12 +142,19 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
 
   // ── Targets ──────────────────────────────────────────────────────────────
   const myTargets = salesTargets.filter(t => t.userId === currentUser.id);
+  // A target whose end date has passed is history, not something to chase: it
+  // sits behind "Past targets" and never feeds the "$ to go" chip (owner walk).
+  const todayKey = appDateKey(new Date());
+  const liveTargets = myTargets.filter(t => t.endDate.slice(0, 10) >= todayKey);
+  const pastTargets = myTargets.filter(t => t.endDate.slice(0, 10) < todayKey);
+  const shownTargets = showPastTargets ? [...liveTargets, ...pastTargets] : liveTargets;
   const revenueGap = useMemo(() => {
-    const revenueTarget = myTargets.find(t => t.type === 'revenue');
+    const revenueTarget = liveTargets.find(t => t.type === 'revenue' && t.startDate.slice(0, 10) <= todayKey);
     if (!revenueTarget) return null;
     const achieved = computeTargetAchieved({ ...revenueTarget, userId: currentUser.id }, metricCtx);
     return Math.max(revenueTarget.targetValue - achieved, 0);
-  }, [myTargets, currentUser.id, metricCtx]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [salesTargets, currentUser.id, metricCtx, todayKey]);
 
   // ── Needs attention ──────────────────────────────────────────────────────
   const handleCheckIn = useCallback((hoReCaId: number) => setVisitHoReCaId(hoReCaId), []);
@@ -373,9 +381,18 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
         <DashCard
           title="Targets"
           action={onUpdateSalesTargets ? { label: 'Edit', onClick: () => setShowTargetModal(true) } : undefined}
+          footer={pastTargets.length > 0 ? (
+            <button type="button" onClick={() => setShowPastTargets(v => !v)} aria-expanded={showPastTargets}
+              className="text-xs font-semibold text-nexgen-blue-dark hover:underline cursor-pointer touch-target-y">
+              {showPastTargets ? 'Hide past targets' : `Past targets (${pastTargets.length})`}
+            </button>
+          ) : undefined}
         >
+          {shownTargets.length === 0 && (
+            <p className="text-sm text-stone-600">No current targets.</p>
+          )}
           <div className="space-y-4">
-            {myTargets.map(target => {
+            {shownTargets.map(target => {
               const { achieved, percent } = computeTargetProgress({ ...target, userId: currentUser.id }, metricCtx);
               const isMoney = target.type === 'revenue';
               const fmt = (n: number) => (isMoney ? formatMoney(n, { cents: false }) : formatCount(n));
@@ -417,18 +434,21 @@ const RepDashboardV2: React.FC<RepDashboardV2Props> = ({
           </div>
         }
       >
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div className={`grid grid-cols-2 gap-3 sm:gap-4 ${isFieldRep ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
           <KPICard label="Revenue" value={formatMoney(revenue)} delta={pctDelta(revenue, prevRevenue)} onClick={toOrders} />
           <KPICard label="Orders" value={formatCount(orderCount)} delta={pctDelta(orderCount, prevOrderCount)} onClick={toOrders} />
           <KPICard label="Avg order value" value={formatMoney(aov)} delta={pctDelta(aov, prevAov)} onClick={toOrders} />
+          {isFieldRep && (
           <KPICard
             label="Visit completion"
             value={`${visitCompletion.rate}%`}
-            delta={visitCompletion.planned > 0 || prevVisitCompletion.planned > 0 ? visitCompletion.rate - prevVisitCompletion.rate : undefined}
+            // A change against a period with no planned visits says nothing.
+            delta={visitCompletion.planned > 0 && prevVisitCompletion.planned > 0 ? visitCompletion.rate - prevVisitCompletion.rate : undefined}
             deltaSuffix=" pts"
             subtitle={`${visitCompletion.completed} of ${visitCompletion.planned} visits`}
             onClick={toVisits}
           />
+          )}
         </div>
 
         <DashCard title="Sales trend" caption="Your revenue by day · dashed line is the previous period">

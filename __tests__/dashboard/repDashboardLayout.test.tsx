@@ -100,6 +100,8 @@ describe('RepDashboard', () => {
       stops: [0, 1].map((i) => ({ hoReCaId: 3, order: i, status: i < arrived ? 'arrived' : 'pending' })),
     })
     renderRep({
+      // Visit completion is a Field Rep tile (NX-0043 A8).
+      currentUser: { ...rep, role: UserRole.FIELD_REP },
       routes: [
         route('prev', at(range.previous.from, 1), 1), // 1 of 2 visited
         route('now', at(range.from, 1), 2), // 2 of 2 visited
