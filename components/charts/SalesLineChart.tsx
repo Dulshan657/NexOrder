@@ -1,107 +1,120 @@
-import React, { useState } from 'react';
+import React, { useId, useMemo } from 'react';
+import { Area, AreaChart, CartesianGrid, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { formatMoney, formatMoneyCompact, formatShortDate } from '../../lib/dashboardFormat';
 
 interface SalesLineChartProps {
   data: { date: string; revenue: number }[];
-  lineColor?: string;
-  fillColor?: string;
-  axisColor?: string;
-  labelColor?: string;
-  tooltipBg?: string;
-  tooltipText?: string;
-  dark?: boolean;
+  /**
+   * The previous period, day for day (index i lines up with data[i]). Drawn as a
+   * faint dashed line so the comparison the KPI deltas make is visible.
+   */
+  previous?: { date: string; revenue: number }[];
+  /** Fixed drawing height. The chart fills its width but never its height. */
+  height?: number;
 }
 
-const SalesLineChart: React.FC<SalesLineChartProps> = ({
-  data,
-  lineColor = '#007BFF',
-  fillColor = '#6F7EFF',
-  axisColor,
-  labelColor,
-  tooltipBg,
-  tooltipText = 'white',
-  dark = false,
-}) => {
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; revenue: number } | null>(null);
-  const width = 500;
-  const height = 250;
-  const padding = { top: 20, right: 20, bottom: 30, left: 50 };
+// Pixel values, not a viewBox: the old SVG scaled with its width, so on a wide
+// screen the chart grew ~500px tall and its 10px labels rendered near 20px.
+const AXIS_TICK = { fontSize: 11, fill: '#78716c' }; // stone-500
+const LINE = '#2472C2'; // nexgen-blue-dark
+const GHOST = '#d6d3d1'; // stone-300
+const GRID = '#f5f5f4'; // stone-100
 
-  const resolvedAxisColor = axisColor ?? (dark ? 'rgba(255,255,255,0.15)' : '#e7e5e4');
-  const resolvedLabelColor = labelColor ?? (dark ? 'rgba(255,255,255,0.5)' : '#78716c');
-  const resolvedTooltipBg = tooltipBg ?? (dark ? 'rgba(255,255,255,0.12)' : '#1c1917');
+interface Point {
+  date: string;
+  revenue: number;
+  previous?: number;
+}
 
-  const maxRevenue = Math.max(...data.map(d => d.revenue), 0);
-  const yMax = maxRevenue > 0 ? maxRevenue * 1.1 : 100;
+function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: Point }[] }) {
+  if (!active || !payload?.length) return null;
+  const point = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-stone-200 bg-white px-3 py-2 shadow-sm text-xs">
+      <p className="font-medium text-stone-600">{formatShortDate(point.date)}</p>
+      <p className="mt-0.5 font-semibold tabular-nums text-stone-900">{formatMoney(point.revenue)}</p>
+      {point.previous !== undefined && (
+        <p className="tabular-nums text-stone-500">prev. {formatMoney(point.previous)}</p>
+      )}
+    </div>
+  );
+}
 
-  const getX = (index: number) => padding.left + (index / (data.length - 1)) * (width - padding.left - padding.right);
-  const getY = (revenue: number) => height - padding.bottom - (revenue / yMax) * (height - padding.top - padding.bottom);
+const SalesLineChart: React.FC<SalesLineChartProps> = ({ data, previous, height = 220 }) => {
+  const gradientId = `trend-fill-${useId().replace(/:/g, '')}`;
+
+  const points = useMemo<Point[]>(
+    () => data.map((d, i) => ({ ...d, previous: previous?.[i]?.revenue })),
+    [data, previous],
+  );
 
   if (data.length < 2) {
     return (
-      <div style={{ height: `${height}px` }} className={`flex items-center justify-center ${dark ? 'text-stone-500' : 'text-stone-500'}`}>
-        Not enough data to display trend.
+      <div
+        data-chart="sales-trend"
+        style={{ height: `${height}px` }}
+        className="flex items-center justify-center text-sm text-stone-500"
+      >
+        Pick a longer period to see a trend
       </div>
     );
   }
 
-  const gradientId = `salesGradient-${dark ? 'dark' : 'light'}`;
-  const linePath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d.revenue)}`).join(' ');
-  const areaPath = linePath + ` L ${getX(data.length - 1)} ${height - padding.bottom} L ${getX(0)} ${height - padding.bottom} Z`;
+  const total = data.reduce((s, d) => s + d.revenue, 0);
 
   return (
-    <div className="relative">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
-        <defs>
-          <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor={fillColor} stopOpacity={0.4} />
-            <stop offset="100%" stopColor={fillColor} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-
-        {/* Y-axis */}
-        <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke={resolvedAxisColor} />
-        <text x={padding.left - 8} y={padding.top} textAnchor="end" fontSize="10" fill={resolvedLabelColor}>${yMax.toFixed(0)}</text>
-        <text x={padding.left - 8} y={height - padding.bottom} textAnchor="end" fontSize="10" fill={resolvedLabelColor}>$0</text>
-
-        {/* X-axis */}
-        <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke={resolvedAxisColor} />
-        <text x={padding.left} y={height - padding.bottom + 15} textAnchor="start" fontSize="10" fill={resolvedLabelColor}>
-          {new Date(data[0].date).toLocaleDateString()}
-        </text>
-        <text x={width - padding.right} y={height - padding.bottom + 15} textAnchor="end" fontSize="10" fill={resolvedLabelColor}>
-          {new Date(data[data.length - 1].date).toLocaleDateString()}
-        </text>
-
-        {/* Area and Line */}
-        <path d={areaPath} fill={`url(#${gradientId})`} />
-        <path d={linePath} fill="none" stroke={lineColor} strokeWidth="2" />
-
-        {/* Hover targets and points */}
-        {data.map((d, i) => (
-          <g key={i}>
-            <circle cx={getX(i)} cy={getY(d.revenue)} r="3" fill={lineColor} />
-            <rect
-              x={getX(i) - 10} y={0} width={20} height={height} fill="transparent"
-              onMouseMove={() => setTooltip({ x: getX(i), y: getY(d.revenue), date: d.date, revenue: d.revenue })}
-              onMouseLeave={() => setTooltip(null)}
+    <div data-chart="sales-trend" style={{ height: `${height}px` }} className="w-full">
+      <p className="sr-only">
+        Revenue by day, {formatShortDate(data[0].date)} to {formatShortDate(data[data.length - 1].date)}: {formatMoney(total)} in total.
+      </p>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={LINE} stopOpacity={0.14} />
+              <stop offset="100%" stopColor={LINE} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid vertical={false} stroke={GRID} />
+          <XAxis
+            dataKey="date"
+            tickFormatter={formatShortDate}
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+            minTickGap={24}
+          />
+          <YAxis
+            tickFormatter={formatMoneyCompact}
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+            width={52}
+          />
+          <Tooltip content={<TrendTooltip />} cursor={{ stroke: '#d6d3d1', strokeWidth: 1 }} />
+          {previous && (
+            <Line
+              type="monotone"
+              dataKey="previous"
+              stroke={GHOST}
+              strokeWidth={1.5}
+              strokeDasharray="4 4"
+              dot={false}
+              isAnimationActive={false}
             />
-          </g>
-        ))}
-
-        {/* Tooltip */}
-        {tooltip && (
-          <g transform={`translate(${tooltip.x}, ${tooltip.y})`}>
-            <circle r="5" fill={lineColor} stroke="white" strokeWidth="2" />
-            <g transform={`translate(${tooltip.x > width / 2 ? -140 : 20}, -10)`}>
-              <rect x="0" y="-22" width="120" height="40" fill={resolvedTooltipBg} fillOpacity="0.9" rx="4" />
-              <text x="10" y="0" fill={tooltipText} fontSize="11">
-                <tspan x="10" dy="-0.5em">{new Date(tooltip.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</tspan>
-                <tspan x="10" dy="1.2em" fontWeight="bold">${tooltip.revenue.toFixed(2)}</tspan>
-              </text>
-            </g>
-          </g>
-        )}
-      </svg>
+          )}
+          <Area
+            type="monotone"
+            dataKey="revenue"
+            stroke={LINE}
+            strokeWidth={1.75}
+            fill={`url(#${gradientId})`}
+            dot={false}
+            activeDot={{ r: 3.5, strokeWidth: 0, fill: LINE }}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
 };

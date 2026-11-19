@@ -8,8 +8,8 @@
 //     existing page chrome. Two by two below `sm`, a single row above it.
 
 import React from 'react'
-import { AlertTriangle, CheckCircle2, DollarSign, Inbox } from 'lucide-react'
 import { usePoInboxStats } from '@/hooks/queries/usePoInboxStats'
+import DashCard from '@/components/dashboard/DashCard'
 import {
   describeCost,
   describeRatio,
@@ -51,55 +51,22 @@ const POInboxStatsTile: React.FC<POInboxStatsTileProps> = ({
     )
   }
 
+  // The dashboard card: same card, title and number face as the rest of the
+  // page (NX-0042) — no monospace capitals, no tinted boxes.
   return (
-    <div className="rounded-2xl bg-white shadow-card border border-stone-200 p-5 space-y-4">
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Inbox className="w-4 h-4 text-stone-600" />
-          <h3 className="font-display font-semibold text-stone-900 text-sm">PO Inbox today</h3>
-        </div>
-        {onNavigate && (
-          <button
-            type="button"
-            onClick={onNavigate}
-            className="text-xs font-medium text-nexgen-blue hover:text-nexgen-blue/80 btn-press"
-          >
-            Open inbox →
-          </button>
-        )}
-      </header>
-
-      <div className="grid grid-cols-2 gap-3">
-        <CardStat label="Received" value={received} icon={<Inbox className="w-3 h-3" />} />
-        <CardStat
-          label="Auto-approved"
-          value={autoApproved}
-          tone="emerald"
-          icon={<CheckCircle2 className="w-3 h-3" />}
-        />
-        <CardStat
-          label="Needs review (all time)"
-          value={backlog}
-          tone={backlogTone}
-          icon={<AlertTriangle className="w-3 h-3" />}
-        />
-        <CardStat label="Cost today" value={costToday} icon={<DollarSign className="w-3 h-3" />} />
-      </div>
-
-      {data && data.costUsdSevenDayAvg != null && (
-        <p className="text-[11px] text-stone-500 leading-tight">
-          7-day avg: {describeCost(data.costUsdSevenDayAvg)} / day
-        </p>
-      )}
-    </div>
+    <DashCard
+      title="PO Inbox today"
+      caption={data && data.costUsdSevenDayAvg != null ? `7-day avg cost ${describeCost(data.costUsdSevenDayAvg)} / day` : undefined}
+      action={onNavigate ? { label: 'Open inbox', onClick: onNavigate } : undefined}
+    >
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <CardStat label="Received" value={received} />
+        <CardStat label="Auto-approved" value={autoApproved} tone="emerald" />
+        <CardStat label="Needs review" value={backlog} tone={backlogTone} />
+        <CardStat label="Cost today" value={costToday} />
+      </dl>
+    </DashCard>
   )
-}
-
-const TONE_STYLES: Record<Tone, string> = {
-  default: 'bg-stone-50 text-stone-700 border-stone-200',
-  emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  amber: 'bg-amber-50 text-amber-800 border-amber-200',
-  rose: 'bg-rose-50 text-rose-700 border-rose-200',
 }
 
 const INLINE_VALUE_TONE: Record<Tone, string> = {
@@ -112,22 +79,22 @@ const INLINE_VALUE_TONE: Record<Tone, string> = {
 interface CardStatProps {
   label: string
   value: string
-  icon?: React.ReactNode
   tone?: Tone
 }
 
-const CardStat: React.FC<CardStatProps> = ({ label, value, icon, tone = 'default' }) => {
-  const className = TONE_STYLES[tone] ?? TONE_STYLES.default
-  return (
-    <div className={`rounded-lg border px-3 py-2 ${className}`}>
-      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide opacity-70">
-        {icon}
-        {label}
-      </div>
-      <div className="font-mono text-base mt-0.5 leading-tight">{value}</div>
-    </div>
-  )
+const CARD_VALUE_TONE: Record<Tone, string> = {
+  default: 'text-stone-900',
+  emerald: 'text-emerald-700',
+  amber: 'text-amber-700',
+  rose: 'text-rose-700',
 }
+
+const CardStat: React.FC<CardStatProps> = ({ label, value, tone = 'default' }) => (
+  <div>
+    <dt className="text-[13px] text-stone-600">{label}</dt>
+    <dd className={`mt-0.5 font-display text-xl font-semibold tabular-nums tracking-tight ${CARD_VALUE_TONE[tone]}`}>{value}</dd>
+  </div>
+)
 
 interface RibbonStatProps {
   label: string

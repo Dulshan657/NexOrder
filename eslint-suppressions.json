@@ -20,11 +20,6 @@
       "count": 2
     }
   },
-  "components/AdminDashboard.tsx": {
-    "jsx-a11y/control-has-associated-label": {
-      "count": 2
-    }
-  },
   "components/AppShell.tsx": {
     "jsx-a11y/click-events-have-key-events": {
       "count": 1
@@ -151,14 +146,6 @@
   "components/admin/CodePatternSection.tsx": {
     "jsx-a11y/control-has-associated-label": {
       "count": 2
-    }
-  },
-  "components/admin/InventoryDispatchSection.tsx": {
-    "jsx-a11y/click-events-have-key-events": {
-      "count": 1
-    },
-    "jsx-a11y/no-static-element-interactions": {
-      "count": 1
     }
   },
   "components/admin/LabelPrintingSection.tsx": {

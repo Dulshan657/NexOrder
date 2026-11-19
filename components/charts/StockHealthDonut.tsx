@@ -14,7 +14,7 @@ const SEGMENTS: { key: keyof Omit<StockHealth, 'total'>; label: string; color: s
 function StockHealthDonut({ data }: StockHealthDonutProps) {
   if (data.total === 0) {
     return (
-      <div className="flex h-[220px] items-center justify-center text-sm text-stone-500">
+      <div className="flex h-[180px] items-center justify-center text-sm text-stone-500">
         No products to report
       </div>
     );
@@ -26,7 +26,7 @@ function StockHealthDonut({ data }: StockHealthDonutProps) {
 
   return (
     <div className="flex flex-col items-center gap-4 sm:flex-row">
-      <div className="relative h-[220px] w-full sm:w-1/2">
+      <div className="relative h-[180px] w-full sm:w-1/2">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -51,19 +51,19 @@ function StockHealthDonut({ data }: StockHealthDonutProps) {
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-mono text-2xl font-bold text-stone-900">{data.total}</span>
-          <span className="text-[10px] uppercase tracking-wider text-stone-500">SKUs</span>
+          <span className="font-display text-2xl font-semibold tabular-nums tracking-tight text-stone-900">{data.total}</span>
+          <span className="text-xs text-stone-500">products</span>
         </div>
       </div>
 
       <ul className="w-full space-y-2 sm:w-1/2">
         {SEGMENTS.map((s) => (
-          <li key={s.key} className="flex items-center justify-between text-sm">
+          <li key={s.key} className="flex items-center justify-between text-[13px]">
             <span className="flex items-center gap-2 text-stone-600">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
               {s.label}
             </span>
-            <span className="font-mono font-semibold text-stone-900">{data[s.key]}</span>
+            <span className="font-semibold tabular-nums text-stone-900">{data[s.key]}</span>
           </li>
         ))}
       </ul>

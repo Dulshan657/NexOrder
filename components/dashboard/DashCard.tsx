@@ -1,6 +1,9 @@
 import React from 'react'
 import { ArrowRight } from 'lucide-react'
 
+/** The ONE card-title style on both dashboards (NX-0042). Anything titling a card uses this. */
+export const CARD_TITLE_CLASS = 'text-sm font-semibold text-stone-900 truncate'
+
 export interface DashAction {
   label: string
   onClick: () => void
@@ -8,6 +11,8 @@ export interface DashAction {
 
 interface DashCardProps {
   title?: string
+  /** Controls beside the title (a picker, a window toggle). */
+  headerExtra?: React.ReactNode
   /** A quiet line beside the title — the window the card measures, e.g. "Last 30 days". */
   caption?: string
   /** The card's one way out, e.g. "View all". Omitted when the user cannot go there. */
@@ -23,16 +28,19 @@ interface DashCardProps {
  * The one card both dashboards are built from (NX-0041): white on the stone-50
  * page, a hairline border, a 1px resting shadow, no glass and no gradient.
  */
-export default function DashCard({ title, caption, action, footer, flush = false, className = '', children }: DashCardProps) {
-  const hasHeader = Boolean(title || action)
+export default function DashCard({ title, caption, action, headerExtra, footer, flush = false, className = '', children }: DashCardProps) {
+  const hasHeader = Boolean(title || action || headerExtra)
   return (
     <section className={`dash-card flex flex-col min-w-0 ${className}`}>
       {hasHeader && (
-        <header className="flex items-center justify-between gap-3 px-4 sm:px-5 pt-4 sm:pt-5">
+        <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 sm:px-5 pt-4 sm:pt-5">
           <div className="min-w-0">
-            {title && <h3 className="text-sm font-semibold text-stone-900 truncate">{title}</h3>}
+            {title && <h3 className={CARD_TITLE_CLASS}>{title}</h3>}
             {caption && <p className="text-xs text-stone-500 mt-0.5">{caption}</p>}
           </div>
+          {(headerExtra || action) && (
+          <div className="flex min-w-0 items-center gap-2">
+          {headerExtra}
           {action && (
             <button
               type="button"
@@ -42,6 +50,8 @@ export default function DashCard({ title, caption, action, footer, flush = false
               {action.label}
               <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
+          )}
+          </div>
           )}
         </header>
       )}
