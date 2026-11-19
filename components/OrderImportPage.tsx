@@ -45,6 +45,11 @@ import { PageFrame } from './ui/PageFrame';
 import { PageHeader } from './ui/PageHeader';
 import { PageTabs } from './ui/PageTabs';
 import { ADMIN_TAB_LABELS } from '../lib/adminTabUrl';
+import {
+  clearRequestedOrderImportTab,
+  peekRequestedOrderImportTab,
+  type OrderImportTab,
+} from '../lib/orderImportHandoff';
 import { ErrorBoundary } from './ErrorBoundary';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { MODULE_SHOP } from '../lib/modules';
@@ -73,9 +78,11 @@ interface OrderImportPageProps {
   /** Order id to scroll into view and flash with a brief emerald ring. */
   highlightOrderId?: string | null;
   onClearHighlightOrderId?: () => void;
+  /** Tab to open on (NX-0042: the dashboard's pipeline opens the tab holding a stage's orders). */
+  initialTab?: ActiveTab;
 }
 
-type ActiveTab = 'received' | 'inProgress' | 'completed';
+type ActiveTab = OrderImportTab;
 type SortColumn = 'date' | 'total' | 'status' | 'horeca' | 'payment';
 type SortDirection = 'asc' | 'desc';
 type PaymentFilterValue = 'all' | PaymentDisplayState;
@@ -214,6 +221,7 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   onBack,
   highlightOrderId = null,
   onClearHighlightOrderId,
+  initialTab,
 }) => {
   // Demo persona: relabel "HoReCa" → the client's word and hide pre-seeded orders.
   const demoPersona = getDemoPersona(currentUser);
@@ -221,7 +229,11 @@ const OrderImportPage: React.FC<OrderImportPageProps> = ({
   const customerLabelPlural = demoPersona?.customerLabelPlural ?? 'HoReCa';
 
   // Tab
-  const [activeTab, setActiveTab] = useState<ActiveTab>('received');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(
+    () => initialTab ?? peekRequestedOrderImportTab() ?? 'received',
+  );
+  // The dashboard's request is one-shot: the next visit opens on the default.
+  useEffect(() => { clearRequestedOrderImportTab(); }, []);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');

@@ -1,20 +1,23 @@
-import { BarChart, Bar, XAxis, YAxis, Cell, LabelList, ResponsiveContainer, Tooltip } from 'recharts';
+import { Fragment } from 'react';
+import { ChevronRight } from 'lucide-react';
 import type { DispatchFunnelStage } from '@/services/inventoryDashboardService';
+import type { OrderStatus } from '@/types';
 
 interface DispatchFunnelChartProps {
   data: DispatchFunnelStage[];
   /** Orders placed in the window and since cancelled: a line under the chart, never a stage. */
   cancelled?: number;
+  /** NX-0042: each stage opens the orders it counts. Omitted -> plain rows. */
+  onOpenStage?: (status: OrderStatus) => void;
 }
 
-// Pipeline shading: cool blue early-stage → deeper blue as orders progress toward
-// dispatch/delivery. Indexes line up with the FUNNEL_STAGES order from the service.
+// Light to deep blue as orders move toward delivery. Indexes line up with the
+// service's stage order.
 const STAGE_COLORS = ['#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8'];
 
 /**
- * The chart's numbers as text. An SVG bar chart says nothing to a screen reader
- * (WCAG 1.1.1), and the end-to-end spec reads the same list to check each stage
- * against the database (tests/e2e/order-numbers.spec.ts).
+ * The chart's numbers as text, for screen readers and for the end-to-end spec
+ * that checks each stage against the database (tests/e2e/order-numbers.spec.ts).
  */
 function StageList({ data }: { data: DispatchFunnelStage[] }) {
   return (
@@ -30,16 +33,53 @@ function StageList({ data }: { data: DispatchFunnelStage[] }) {
 
 function CancelledLine({ count }: { count: number }) {
   if (count <= 0) return null;
-  return <p className="mt-2 text-xs text-stone-600">{count} cancelled in this period</p>;
+  return <p className="mt-3 text-xs text-stone-600">{count} cancelled in this period</p>;
 }
 
-function DispatchFunnelChart({ data, cancelled = 0 }: DispatchFunnelChartProps) {
+function StageRow({ stage, color, max, onOpen }: {
+  stage: DispatchFunnelStage;
+  color: string;
+  max: number;
+  onOpen?: () => void;
+}) {
+  const width = max > 0 ? Math.max((stage.count / max) * 100, stage.count > 0 ? 2 : 0) : 0;
+  const body = (
+    <>
+      <span className="w-20 shrink-0 text-[13px] text-stone-600">{stage.label}</span>
+      <span className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-stone-100" aria-hidden="true">
+        <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
+      </span>
+      <span className="w-8 shrink-0 text-right text-[13px] font-semibold tabular-nums text-stone-900">{stage.count}</span>
+    </>
+  );
+
+  if (!onOpen) {
+    return <div className="flex items-center gap-3 px-2 py-1.5">{body}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`${stage.label}: ${stage.count} ${stage.count === 1 ? 'order' : 'orders'}, open the list`}
+      className="group flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-stone-50 transition-colors duration-150 cursor-pointer touch-target-y"
+    >
+      {body}
+      <ChevronRight
+        className="h-4 w-4 shrink-0 text-stone-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+        aria-hidden="true"
+      />
+    </button>
+  );
+}
+
+function DispatchFunnelChart({ data, cancelled = 0, onOpenStage }: DispatchFunnelChartProps) {
   const total = data.reduce((sum, s) => sum + s.count, 0);
+  const max = data.reduce((m, s) => Math.max(m, s.count), 0);
 
   if (total === 0) {
     return (
       <div>
-        <div className="flex h-[240px] items-center justify-center text-sm text-stone-600">
+        <div className="flex h-[180px] items-center justify-center text-sm text-stone-600">
           No orders in this period
         </div>
         <StageList data={data} />
@@ -50,40 +90,17 @@ function DispatchFunnelChart({ data, cancelled = 0 }: DispatchFunnelChartProps) 
 
   return (
     <div>
-      <div className="h-[240px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={data}
-            layout="vertical"
-            margin={{ top: 4, right: 32, bottom: 4, left: 8 }}
-            barCategoryGap="22%"
-          >
-            <XAxis type="number" hide />
-            <YAxis
-              type="category"
-              dataKey="label"
-              width={84}
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 12, fill: '#57534e' }}
+      <div className="-mx-2 space-y-0.5">
+        {data.map((stage, i) => (
+          <Fragment key={stage.status}>
+            <StageRow
+              stage={stage}
+              color={STAGE_COLORS[i] ?? '#3b82f6'}
+              max={max}
+              onOpen={onOpenStage ? () => onOpenStage(stage.status as OrderStatus) : undefined}
             />
-            <Tooltip
-              cursor={{ fill: 'rgba(0,0,0,0.04)' }}
-              formatter={(value: number) => [`${value} orders`, 'Orders']}
-              contentStyle={{ borderRadius: 8, border: '1px solid #e7e5e4', fontSize: 12 }}
-            />
-            <Bar dataKey="count" radius={[0, 4, 4, 0]} isAnimationActive={false}>
-              {data.map((stage, i) => (
-                <Cell key={stage.status} fill={STAGE_COLORS[i] ?? '#3b82f6'} />
-              ))}
-              <LabelList
-                dataKey="count"
-                position="right"
-                style={{ fontSize: 12, fontWeight: 600, fill: '#44403c' }}
-              />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+          </Fragment>
+        ))}
       </div>
       <StageList data={data} />
       <CancelledLine count={cancelled} />
