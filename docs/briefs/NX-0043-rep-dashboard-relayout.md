@@ -17,6 +17,7 @@
   "failFirst": [
     { "file": "__tests__/dashboard/repDashboardLayout.test.tsx", "test": "RepDashboard > KPI deltas compare this period with the previous one", "proves": ["A1"] },
     { "file": "__tests__/dashboard/repDashboardLayout.test.tsx", "test": "RepDashboard > offers the same period picker as Admin", "proves": ["A1"] },
+    { "file": "__tests__/dashboard/repDashboardLayout.test.tsx", "test": "RepDashboard > visit completion follows the period", "proves": ["A2"] },
     { "file": "__tests__/dashboard/repDashboardLayout.test.tsx", "test": "RepDashboard > a top customer row starts an order", "proves": ["A4"] },
     { "file": "__tests__/dashboard/repDashboardLayout.test.tsx", "test": "RepDashboard > a low-stock row opens Stock", "proves": ["A4"] },
     { "file": "__tests__/dashboard/repDashNav.test.ts", "test": "repDashNav > withholds a view the rep cannot open", "proves": ["A4"] },
@@ -58,7 +59,7 @@ reps the same calm, consistent, actionable page.
 | Acceptance | Status | Evidence | Note |
 |---|---|---|---|
 | A1 | claimed | `RepDashboard > KPI deltas compare this period with the previous one` (prev month 2×$100, this month $300 → $300.00, +50.0%; the old half-split said +300% on all-time $500), `RepDashboard > offers the same period picker as Admin` | |
-| A2 | claimed | `getVisitCompletionRate` is called over `dateRange` and `dateRange.previous` (`components/RepDashboardV2.tsx`) | No dedicated test; covered by reading the code |
+| A2 | claimed | `RepDashboard > visit completion follows the period` (this period 2/2 visited, previous 1/2 → 100%, +50.0 pts) | Added after check:brief flagged A2 as unproved |
 | A3 | not-claimed | deployed to dev as `8b697c0` (previous dev build + this branch), health 200 | Waiting on the owner's walk as a Field Rep and an Office Rep — the assistant may not sign in to the app on this host |
 | A4 | claimed | `RepDashboard > a top customer row starts an order`, `RepDashboard > a low-stock row opens Stock`, `repDashNav > withholds a view the rep cannot open` (+ handler / no-callback cases) | Reorder, at-risk, accounts and visits links are wired the same way but not each unit-tested |
 | A5 | claimed | `RepDashboard > every card title shares one style`; trend is the shared `SalesLineChart` with `previous`; `dailySeries` uses `appDateKeysBetween` | |
