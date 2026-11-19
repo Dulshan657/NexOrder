@@ -23,8 +23,13 @@ import { useEffect, useSyncExternalStore } from 'react'
 
 const STORAGE_KEY = 'nex.scanGun'
 
-/** CipherLab handhelds: the RS35 in use, and its RS3x siblings. */
-const GUN_MODEL_PATTERN = /\bRS3\d\b|cipherlab/i
+/**
+ * CipherLab handhelds: the RS35 and its RS3x siblings, and the gun-grip RK95
+ * and its RK9x siblings (NX-0044 — Chrome reports the model as "RK95", which
+ * carries no vendor name). A named list on purpose: a wrong "yes" on a phone
+ * hides that phone's keyboard.
+ */
+const GUN_MODEL_PATTERN = /\bRS3\d\b|\bRK9\d\b|cipherlab/i
 
 export function isScanGunModel(model: string): boolean {
   return GUN_MODEL_PATTERN.test(model)

@@ -15,10 +15,20 @@
  * return or newline as their "send" key, camera decoders occasionally include a
  * trailing NUL, some QR payloads carry zero-width marks, and an operator typing
  * a code off a label will not match its capitalisation.
+ *
+ * And on Android (NX-0044): a scanner delivering through an input method \u2014 the
+ * CipherLab RK95 can \u2014 may wrap or split a code with marks that render as
+ * NOTHING: direction marks, isolates, a word joiner, a soft hyphen, C1 controls.
+ * The operator then reads "Nothing matches 4792082500139" beside a product
+ * storing exactly 4792082500139. So every control (`\p{Cc}`) and every format
+ * character (`\p{Cf}`) goes, anywhere in the code, and NFKC folds full-width
+ * forms to ASCII. Plain ASCII is unchanged by NFKC, so every code, bin and
+ * plate folds exactly as before. Visible characters are never removed.
  */
 export function normalizeScan(raw: string): string {
   return (raw ?? '')
-    .replace(/[\u0000-\u001F\u007F\u200B-\u200D\uFEFF]/g, '')
+    .normalize('NFKC')
+    .replace(/[\p{Cc}\p{Cf}]/gu, '')
     .trim()
     .toUpperCase()
 }

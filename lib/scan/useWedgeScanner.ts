@@ -52,6 +52,7 @@ import {
   type WedgeBuffer,
 } from './wedgeBuffer'
 import { registerWedgeConsumer } from './wedgeRegistry'
+import { markScanGun } from './scanGunDevice'
 
 export interface UseWedgeScannerOptions {
   /**
@@ -121,7 +122,10 @@ export function useWedgeScanner({ active, onScan, claim = true }: UseWedgeScanne
         idleTimer = null
         const step = flushWedgeBuffer(buffer)
         buffer = step.next
-        if (step.outcome.action === 'commit') onScanRef.current(step.outcome.code)
+        if (step.outcome.action === 'commit') {
+          markScanGun()
+          onScanRef.current(step.outcome.code)
+        }
       }, WEDGE_FLUSH_IDLE_MS)
     }
 
@@ -160,6 +164,9 @@ export function useWedgeScanner({ active, onScan, claim = true }: UseWedgeScanne
         // press it again — confirming a putaway the operator was only trying to
         // scan into.
         event.preventDefault()
+        // A committed run is machine-speed by construction (see feedWedgeKey),
+        // which is the same evidence ScanField learns the gun from (NX-0044).
+        markScanGun()
         onScanRef.current(step.outcome.code)
       }
     }
