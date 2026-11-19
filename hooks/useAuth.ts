@@ -5,6 +5,7 @@ import type { Database } from '@/lib/database.types'
 import { recordAuthEvent } from '@/lib/auth/sessionBreadcrumbs'
 import { MODULE_SHOP } from '@/lib/modules'
 import { qrReturnUrl } from '@/lib/qr/qrReturnUrl'
+import { queryClient } from '@/lib/queryClient'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
 type UserRole = Profile['role']
@@ -160,8 +161,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // task that runs after the lock is released.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const sessionUser = session?.user ?? null
-      currentUserIdRef.current = sessionUser?.id ?? null
+      const previousUserId = currentUserIdRef.current
+      const nextUserId = sessionUser?.id ?? null
+      currentUserIdRef.current = nextUserId
       setUser(sessionUser)
+
+      // NX-0045: the person changed (signed out, or someone else signed in), so
+      // nothing loaded for them may survive. Query keys carry no user and the
+      // staleTime is 5 minutes: without this, the next person on a shared
+      // device read the previous person's orders until a refetch. Nothing is
+      // awaited, so it keeps the no-await rule above. A token refresh for
+      // the same user, and the very first sign-in (nothing cached yet), keep
+      // the cache.
+      if (previousUserId !== null && previousUserId !== nextUserId) {
+        // reset, not clear: every query's data goes back to empty, AND any
+        // screen still mounted refetches as the new user instead of keeping
+        // what it was showing. The returned promise is deliberately not
+        // awaited (the refetch waits for the auth lock on its own).
+        void queryClient.resetQueries()
+        queryClient.getMutationCache().clear()
+      }
 
       // Record that a refresh happened, for the shift-long soak test.
       //
