@@ -76,3 +76,19 @@ scan items (A4, A5) were added at that instruction.
 - Releasing to Amadiya. That's a separate `rel-*` step after the dev walk.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `recognising the scan gun > model "RK95" is a gun: true` fails on base, passes on tip; `"RK96"` and `"CipherLab RK95"` true, `"Pixel 7"`, `"SM-G991B"`, `"RMX3085"`, `"RK"` and `""` false | |
+| A2 | claimed | `useWedgeScanner and the scan gun > a machine-speed scan outside the box marks the device as a gun` fails on base, passes on tip | |
+| A3 | claimed | `useWedgeScanner and the scan gun > a person typing outside the box does not` passes on tip | Not fail-first: the base also never marked here, so it guards the change, not the bug |
+| A4 | claimed | `normalizeScan > strips the invisible formatting marks…`, `normalizeScan > folds full-width digits and letters to ASCII`, `resolveReceiveScan > resolves an EAN-13 that an input method wrapped in direction marks` fail on base, pass on tip; `normalizeScan > leaves visible characters inside a code alone` passes; full suite 7063/7063; `check:edge-types` 88 clean | Shared file, so the server pick check folds identically |
+| A5 | claimed | `describeReceiveRefusal > shows the length and any character the operator cannot see` fails on base, passes on tip | |
+| A6 | not-claimed | | Needs the owner on the RK95 after deploy:dev |
+| A7 | not-claimed | | Needs merge (gate from a separate session) and deploy:dev |
+
+### Not claimed
+
+- **That invisible characters were what broke the RK95 scan.** It's the leading explanation (the screen showed the stored digits and the stored value is clean ASCII), but no RK95 keystroke trace has been captured. If A6 still fails, the new refusal note shows the hidden characters or the wrong length, and `scan-diagnostics.html` on the device is the next step.
+- That Chrome on the RK95 reports its model as exactly "RK95". If it doesn't, A2 covers it: the first committed scan marks the device, and that is remembered across reloads.
+- Anything on Amadiya. Nothing here is released until a `rel-*` tag.
