@@ -31,10 +31,18 @@ code is on main and on Amadiya.
 
 ## Approach
 
-- `hooks/useAuth.ts`: in the existing `onAuthStateChange` listener, remember
-  the previous user id; when it was a real user and the new id differs
-  (another user, or none), call `queryClient.clear()` synchronously. Nothing
-  is awaited, so the listener's no-await rule (CLAUDE.md) holds.
+- `hooks/useAuth.ts`, in the existing `onAuthStateChange` listener (nothing
+  awaited, so the no-await rule in CLAUDE.md holds), keyed on the previous and
+  next user id:
+  - real user → none (sign-out): `queryClient.clear()`, no refetch;
+  - none → user after a sign-out: `invalidateQueries()`;
+  - user → different user (no sign-out): `resetQueries()`, clear mutations,
+    and a full page reload via `lib/auth/reloadPage.ts` — unless THIS tab is
+    handling an invite/recovery link (`isAuthLinkUrl()`), so the set-password
+    screen is never cut short;
+  - same user: nothing.
+  (Revised after approval: the first dev check and two gate runs showed
+  `clear()` alone was not enough.)
 - `__tests__/authClearsCacheOnUserChange.test.tsx`: the two fail-first tests
   and a same-user refresh guard (A3).
 
