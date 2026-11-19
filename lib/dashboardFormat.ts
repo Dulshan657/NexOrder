@@ -61,7 +61,9 @@ export function pctDelta(current: number, previous: number): number {
   return current > 0 ? 100 : 0
 }
 
-const SHORT_DATE = new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short' })
+// timeZone UTC: the date below is built at noon UTC, so formatting it in the
+// viewer's zone would move it a day forward anywhere at UTC+12 or beyond.
+const SHORT_DATE = new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' })
 
 /**
  * `1 Nov` from a `YYYY-MM-DD` key. Parsed as a calendar date, not an instant,
