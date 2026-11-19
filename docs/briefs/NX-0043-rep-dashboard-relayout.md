@@ -12,6 +12,7 @@
     { "id": "A4", "check": "Everything leads somewhere the rep can go, under the sidebar's own rules: Revenue/Orders/AOV open Order History; Visit completion and the no-visits card open Scheduled Visits (Field Rep with field_ops only); a top customer or reorder-due row starts an order; an at-risk row opens a visit check-in; low-stock rows and top products open Stock (where stock is shown); the amount-owed chip opens Accounts (invoicing only). No link renders for a view the rep cannot open." },
     { "id": "A5", "check": "Same look as Admin: every card title shares DashCard's one style, numbers share one face, the trend is the 220px chart with the previous period dashed, and trend days use the Sydney calendar keys (not UTC)." },
     { "id": "A6", "check": "Top customers and products follow the period (no stale memo), and every date is formatted en-AU." },
+    { "id": "A8", "check": "From the owner's Field Rep walk: Targets lists only targets that have not ended (ended ones sit behind a 'Past targets (n)' toggle); the '$ to go' chip comes from the current revenue target and is absent when there is none; Visit completion shows no change when the period has no planned visits; and the Visit completion tile is hidden from Office Reps." },
     { "id": "A7", "check": "The Rep dashboard works for a Field Rep and an Office Rep on dev.", "manual": "deploy:dev; the owner walks it as a Field Rep and an Office Rep (the assistant may not sign in to the app on this host)" }
   ],
   "failFirst": [
@@ -22,7 +23,10 @@
     { "file": "__tests__/dashboard/repDashboardLayout.test.tsx", "test": "RepDashboard > a low-stock row opens Stock", "proves": ["A4"] },
     { "file": "__tests__/dashboard/repDashNav.test.ts", "test": "repDashNav > withholds a view the rep cannot open", "proves": ["A4"] },
     { "file": "__tests__/dashboard/repDashboardShopOff.test.tsx", "test": "RepDashboard without the shop module > offers no start-order link", "proves": ["A4"] },
-    { "file": "__tests__/dashboard/repDashboardLayout.test.tsx", "test": "RepDashboard > every card title shares one style", "proves": ["A5", "A6"] }
+    { "file": "__tests__/dashboard/repDashboardLayout.test.tsx", "test": "RepDashboard > every card title shares one style", "proves": ["A5", "A6"] },
+    { "file": "__tests__/dashboard/repDashboardWalkFixes.test.tsx", "test": "RepDashboard walk fixes > shows only current targets, with ended ones behind Past targets", "proves": ["A8"] },
+    { "file": "__tests__/dashboard/repDashboardWalkFixes.test.tsx", "test": "RepDashboard walk fixes > hides Visit completion from an Office Rep", "proves": ["A8"] },
+    { "file": "__tests__/dashboard/repDashboardWalkFixes.test.tsx", "test": "RepDashboard walk fixes > shows no visit change when nothing was planned", "proves": ["A8"] }
   ],
   "allow": []
 }
