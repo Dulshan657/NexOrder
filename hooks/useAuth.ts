@@ -6,6 +6,9 @@ import { recordAuthEvent } from '@/lib/auth/sessionBreadcrumbs'
 import { MODULE_SHOP } from '@/lib/modules'
 import { qrReturnUrl } from '@/lib/qr/qrReturnUrl'
 import { queryClient } from '@/lib/queryClient'
+import { reloadPage } from '@/lib/auth/reloadPage'
+import { isAuthLinkUrl } from '@/lib/auth/recoveryLink'
+import { readPendingPasswordSet } from '@/lib/auth/pendingPasswordSet'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
 type UserRole = Profile['role']
@@ -177,7 +180,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       //     kept as fresh for the next person (found on dev: every order
       //     "Unknown" because the staff list had loaded empty).
       //   - signed in after a sign-out: everything loads again, as this person.
-      //   - switched straight to another person: reset, then refetch as them.
+      //   - switched straight to another person: reset, and reload the page so
+      //     their in-memory state (cart, profile, channel) goes too.
       //   - same person (token refresh): keep the cache.
       if (previousUserId !== null && nextUserId === null) {
         queryClient.clear()
@@ -185,6 +189,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (previousUserId !== null && nextUserId !== previousUserId) {
         void queryClient.resetQueries()
         queryClient.getMutationCache().clear()
+        // The cache is not all the previous person left behind: their cart,
+        // pantry, profile and realtime channel live in React state, and only a
+        // reload drops them. Never mid invite/recovery, though — that screen
+        // writes the "password still owed" marker, and a reload could land the
+        // new user in the app without ever setting one.
+        if (!isAuthLinkUrl() && readPendingPasswordSet() === null) reloadPage()
       } else if (previousUserId === null && nextUserId !== null && reloadOnNextSignInRef.current) {
         reloadOnNextSignInRef.current = false
         void queryClient.invalidateQueries()

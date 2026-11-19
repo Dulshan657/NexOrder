@@ -24,6 +24,9 @@ vi.mock('@/lib/supabase', () => ({
   },
 }))
 
+const reloadPage = vi.fn()
+vi.mock('@/lib/auth/reloadPage', () => ({ reloadPage: () => reloadPage() }))
+
 const { AuthProvider } = await import('@/hooks/useAuth')
 
 const session = (id: string) => ({ user: { id } })
@@ -40,6 +43,7 @@ async function signedInAs(id: string) {
 beforeEach(() => {
   onAuthStateChangeCallback = null
   queryClient.clear()
+  reloadPage.mockReset()
   profileQuery.mockReset()
   profileQuery.mockResolvedValue({ data: { id: 'x', role: 'Field Sales Rep' }, error: null })
 })
@@ -64,6 +68,32 @@ describe('AuthProvider', () => {
     queryClient.setQueryData(['profiles'], [])
     onAuthStateChangeCallback!('SIGNED_IN', session('rep-emma'))
     expect(queryClient.getQueryState(['profiles'])?.isInvalidated).toBe(true)
+  })
+
+  it('reloads the page when a different user signs in without a sign-out', async () => {
+    await signedInAs('rep-charlie')
+    onAuthStateChangeCallback!('SIGNED_IN', session('rep-emma'))
+    expect(reloadPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not reload while an invite or recovery link is being handled', async () => {
+    await signedInAs('rep-charlie')
+    window.location.hash = '#access_token=t&refresh_token=r&type=invite'
+    try {
+      onAuthStateChangeCallback!('SIGNED_IN', session('new-hire'))
+      expect(reloadPage).not.toHaveBeenCalled()
+      expect(queryClient.getQueryData(ORDERS_KEY)).toBeUndefined()
+    } finally {
+      window.location.hash = ''
+    }
+  })
+
+  it('does not reload on a plain sign-out, the next sign-in or a refresh', async () => {
+    await signedInAs('rep-charlie')
+    onAuthStateChangeCallback!('TOKEN_REFRESHED', session('rep-charlie'))
+    onAuthStateChangeCallback!('SIGNED_OUT', null)
+    onAuthStateChangeCallback!('SIGNED_IN', session('rep-emma'))
+    expect(reloadPage).not.toHaveBeenCalled()
   })
 
   it('keeps cached data on a token refresh for the same user', async () => {
