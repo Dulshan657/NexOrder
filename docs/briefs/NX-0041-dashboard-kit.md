@@ -59,3 +59,22 @@ button, which crashes on main today.
 - Gating Rep's static `SalesTargetModal` import.
 
 ## FINAL
+
+| Acceptance | Status | Evidence | Note |
+|---|---|---|---|
+| A1 | claimed | `AdminDashboard Set Targets > opens the targets dialog with the user's existing targets` fails on base with `TypeError: Cannot read properties of undefined (reading 'filter')`, passes on tip; on dev (`923588d`) Edit opened the dialog showing the existing $20,000 revenue target | |
+| A2 | claimed | `KPICard > renders no button when it has no onClick`, plus `is a named button when it has an onClick` | |
+| A3 | claimed | `useDashNav > withholds a tab the role cannot open`, `useDashNav with field_ops off > withholds a tab whose module is off` | |
+| A4 | claimed | `ActionItemsBoard > a clickable row is a keyboard-operable button`, `… dismiss and snooze are named buttons, and dismissing persists under the same key` (asserts the `nexorder_v1_admin_action_items` key and the four BoardState fields) | |
+| A5 | claimed | `TimePeriodToggle > marks the selected period with aria-pressed` | |
+| A6 | claimed | `__tests__/dashboard/kit.test.tsx` (RankedList, TargetBar, EmptyState, DashCard, dashboardFormat) | |
+| A7 | claimed (part) | dev serves `923588d` (merge of dev's previous `a1c4b4a` = main + unmerged NX-0040, with this branch), health 200; Admin dashboard walked at 1440px: new KPI tiles, Action Items header "116 open · 7 urgent", columns, Set Targets | Rep, Manager and Office Rep not walked; 360px not checked in a browser — see below |
+
+Full suite: 458 files / 7044 tests pass. `tsc --noEmit`, `lint` (baseline pruned by 2), `check:overlays`, `check:viewport`, `check:demo` all clean.
+
+### Not claimed
+
+- The Rep, Manager and Office Rep dashboards were not walked in a browser — doing so meant signing the owner's session out. Their only changes are the shared KPICard / ActionItemsBoard styling, covered by the tests above.
+- 360px: the Chrome window would not resize below desktop width, so the handheld layout of the new tiles and board is not eyeballed. The `mobile` Playwright project was not run.
+- Colour contrast of the new styles was not measured (`tests/contrast/` needs credentials and is not in CI); the classes follow the CLAUDE.md rules (`stone-600` on tints, `nexgen-blue-dark` text).
+- Dev currently also carries unmerged NX-0040; the dev check is of that combination.
