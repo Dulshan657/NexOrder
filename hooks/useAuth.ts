@@ -5,6 +5,9 @@ import type { Database } from '@/lib/database.types'
 import { recordAuthEvent } from '@/lib/auth/sessionBreadcrumbs'
 import { MODULE_SHOP } from '@/lib/modules'
 import { qrReturnUrl } from '@/lib/qr/qrReturnUrl'
+import { queryClient } from '@/lib/queryClient'
+import { reloadPage } from '@/lib/auth/reloadPage'
+import { isAuthLinkUrl } from '@/lib/auth/recoveryLink'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
 type UserRole = Profile['role']
@@ -81,6 +84,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Who the session belongs to RIGHT NOW. A profile load resolving after a
   // sign-out or account switch is for someone else and must be dropped.
   const currentUserIdRef = useRef<string | null>(null)
+  // NX-0045: a sign-out emptied the cache; the next sign-in must reload it all.
+  const reloadOnNextSignInRef = useRef(false)
   const profileRef = useRef<Profile | null>(null)
   const inFlightRef = useRef<{ userId: string; promise: Promise<void> } | null>(null)
 
@@ -160,8 +165,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // task that runs after the lock is released.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const sessionUser = session?.user ?? null
-      currentUserIdRef.current = sessionUser?.id ?? null
+      const previousUserId = currentUserIdRef.current
+      const nextUserId = sessionUser?.id ?? null
+      currentUserIdRef.current = nextUserId
       setUser(sessionUser)
+
+      // NX-0045: never let one person's cached data reach the next. Query keys
+      // carry no user and the staleTime is 5 minutes, so without this the next
+      // person on a shared device read the previous person's orders. Nothing
+      // here is awaited, so the no-await rule above holds.
+      //   - signed out: drop everything, and refetch NOTHING — a refetch now
+      //     would run with no session, and its empty RLS answer would then be
+      //     kept as fresh for the next person (found on dev: every order
+      //     "Unknown" because the staff list had loaded empty).
+      //   - signed in after a sign-out: everything loads again, as this person.
+      //   - switched straight to another person: reset, and reload the page so
+      //     their in-memory state (cart, profile, channel) goes too.
+      //   - same person (token refresh): keep the cache.
+      if (previousUserId !== null && nextUserId === null) {
+        queryClient.clear()
+        reloadOnNextSignInRef.current = true
+      } else if (previousUserId !== null && nextUserId !== previousUserId) {
+        void queryClient.resetQueries()
+        queryClient.getMutationCache().clear()
+        // The cache is not all the previous person left behind: their cart,
+        // pantry, profile and realtime channel live in React state, and only a
+        // reload drops them. Skipped only while THIS tab is handling an
+        // invite/recovery link: that screen is mid set-password and a reload
+        // would cut it short. A "password owed" marker left by ANOTHER tab is
+        // not a reason to skip — the reloaded page reads it and shows the
+        // set-password screen, which is the safe place to land.
+        if (!isAuthLinkUrl()) reloadPage()
+      } else if (previousUserId === null && nextUserId !== null && reloadOnNextSignInRef.current) {
+        reloadOnNextSignInRef.current = false
+        void queryClient.invalidateQueries()
+      }
 
       // Record that a refresh happened, for the shift-long soak test.
       //
